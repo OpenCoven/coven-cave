@@ -9,6 +9,7 @@ const tempHome = await mkdtemp(path.join(process.cwd(), ".cave-config-test-"));
 process.env.HOME = tempHome;
 
 const config = await import("./cave-config.ts");
+const { sessionsListCache } = await import("./server/sessions-list-cache.ts");
 
 try {
   assert.deepEqual(await config.loadState(), {
@@ -391,10 +392,25 @@ try {
   // ── autoArchiveReflectedSessionLocal: atomic keep / skip guard ───────────────
   // Archives an eligible session and returns the archive timestamp.
   {
+    const eligibleCacheKey = "reflection:eligible";
+    await sessionsListCache.get(eligibleCacheKey, async () => ({
+      payload: { ok: true, sessions: [{ id: "reflect-eligible" }] },
+    }));
     const reflectedAt = await config.autoArchiveReflectedSessionLocal("reflect-eligible");
     assert.ok(
       typeof reflectedAt === "string" && Number.isFinite(Date.parse(reflectedAt)),
       "eligible session is archived and a timestamp is returned",
+    );
+    let eligibleRecomputes = 0;
+    const refreshedList = await sessionsListCache.get(eligibleCacheKey, async () => {
+      eligibleRecomputes++;
+      return { payload: { ok: true, sessions: [] } };
+    });
+    assert.equal(eligibleRecomputes, 1, "successful reflection archive invalidates the sessions-list cache");
+    assert.deepEqual(
+      refreshedList.payload.sessions,
+      [],
+      "an immediate refresh cannot serve the cached pre-archive session",
     );
     state = await config.loadState();
     assert.equal(state.sessionArchived["reflect-eligible"], reflectedAt, "archive timestamp persisted in state");
@@ -406,8 +422,19 @@ try {
     // Keep prevents archive — checked atomically inside the state write so a
     // concurrent setSessionKeepLocal cannot race with the archive decision.
     await config.setSessionKeepLocal("reflect-kept", true);
+    const keptCacheKey = "reflection:kept";
+    await sessionsListCache.get(keptCacheKey, async () => ({
+      payload: { ok: true, sessions: [{ id: "reflect-kept" }] },
+    }));
     const keptResult = await config.autoArchiveReflectedSessionLocal("reflect-kept");
     assert.equal(keptResult, null, "kept session returns null — keep prevents archive");
+    let keptRecomputes = 0;
+    const keptList = await sessionsListCache.get(keptCacheKey, async () => {
+      keptRecomputes++;
+      return { payload: { ok: true, sessions: [] } };
+    });
+    assert.equal(keptRecomputes, 0, "skipped reflection archive leaves the sessions-list cache intact");
+    assert.equal(keptList.payload.sessions[0]?.id, "reflect-kept");
     state = await config.loadState();
     assert.equal(
       state.sessionArchived["reflect-kept"],
