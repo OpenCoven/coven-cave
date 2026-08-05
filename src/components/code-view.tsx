@@ -22,6 +22,7 @@ import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import {
   CODE_GITHUB_TABS,
+  codePendingOpenProjectRoot,
   codeSessionForPendingOpen,
   groupCodeRailSessions,
   isCodeGithubTab,
@@ -163,8 +164,9 @@ export function CodeView({
 
   const groups = useMemo(() => groupCodeRailSessions(sessions), [sessions]);
 
-  // Consume a routed file/diff open (cave-ohcj): captured roots select the
-  // matching historical workbench; rootless opens use the raising chat session.
+  // Consume a routed file/diff open (cave-ohcj): captured roots prefer a
+  // matching historical workbench. If that session has switched projects, its
+  // workbench hosts the dock while the captured root still scopes the review.
   // Held with the session it resolved to so a later manual session switch
   // doesn't replay a stale file focus into an unrelated workbench.
   const [workbenchTarget, setWorkbenchTarget] = useState<{
@@ -173,6 +175,7 @@ export function CodeView({
   } | null>(null);
   useEffect(() => {
     if (!pendingOpen) return;
+    const capturedRoot = codePendingOpenProjectRoot(pendingOpen);
     const target = codeSessionForPendingOpen(
       groups.flatMap((group) => group.sessions),
       pendingOpen,
@@ -183,7 +186,7 @@ export function CodeView({
     // Root browse with no matching session: there is no workbench to focus —
     // land on the surface and leave the rail/selection as-is.
     setWorkbenchTarget(
-      pendingOpen.root && !target
+      pendingOpen.root !== undefined && (!capturedRoot || !target)
         ? null
         : { open: pendingOpen, sessionId: target?.id ?? null },
     );

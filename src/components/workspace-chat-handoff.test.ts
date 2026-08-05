@@ -213,13 +213,18 @@ assert.match(
 );
 assert.match(
   codeContextDock,
-  /<SessionChangesInner[\s\S]*focusPath=\{openTarget\?\.kind === "changes" \? openTarget\.path : undefined\}[\s\S]*focusNonce=\{openTarget\?\.kind === "changes" \? openTarget\.nonce : undefined\}/,
-  "the dock should focus diff targets in its Changes tab",
+  /const capturedRoot = codePendingOpenProjectRoot\(openTarget\);[\s\S]*const contextRoot = capturedRoot \?\? workRoot;[\s\S]*<SessionChangesInner[\s\S]*key=\{contextRoot\}[\s\S]*projectRoot=\{contextRoot\}[\s\S]*focusPath=\{focusTarget\?\.kind === "changes" \? focusTarget\.path : undefined\}/,
+  "the dock should keep a historical diff's captured root and path after the active session changes projects",
 );
 assert.match(
   codeContextDock,
-  /<LazyFiles[\s\S]*focusPath=\{openTarget\?\.kind === "files" \? openTarget\.path : undefined\}[\s\S]*focusNonce=\{openTarget\?\.kind === "files" \? openTarget\.nonce : undefined\}/,
-  "the dock should focus file targets in its Files tab",
+  /<LazyFiles[\s\S]*key=\{contextRoot\}[\s\S]*projectRoot=\{contextRoot\}[\s\S]*focusPath=\{focusTarget\?\.kind === "files" \? focusTarget\.path : undefined\}/,
+  "the dock should carry captured roots through every routed file consumer",
+);
+assert.match(
+  codeContextDock,
+  /const invalidCapturedRoot = openTarget\?\.root !== undefined && !capturedRoot;[\s\S]*const focusTarget = invalidCapturedRoot \? undefined : openTarget;/,
+  "the dock drops malformed rooted focus payloads instead of falling back to the active workbench",
 );
 assert.match(
   codeWorkbenchFiles,
@@ -253,8 +258,8 @@ assert.match(
 );
 assert.match(
   codeView,
-  /setWorkbenchTarget\(\s*pendingOpen\.root && !target\s*\? null\s*: \{ open: pendingOpen, sessionId: target\?\.id \?\? null \},?\s*\)/,
-  "a captured root with no matching session degrades without a stale focus",
+  /setWorkbenchTarget\(\s*pendingOpen\.root !== undefined && \(!capturedRoot \|\| !target\)\s*\? null\s*: \{ open: pendingOpen, sessionId: target\?\.id \?\? null \},?\s*\)/,
+  "malformed or unhosted captured roots degrade without a stale focus",
 );
 assert.match(
   chatSurface,

@@ -212,7 +212,7 @@ assert.match(
 );
 assert.match(
   codeView,
-  /if \(!pendingOpen\) return;[\s\S]*setTopTab\("sessions"\);\s*setInitialGithubTarget\(null\);\s*if \(target\) setSelectedId\(target\.id\);[\s\S]*setWorkbenchTarget\(root && !target \? null : \{ open: pendingOpen, sessionId: target\?\.id \?\? null \}\);/,
+  /if \(!pendingOpen\) return;[\s\S]*codeSessionForPendingOpen\([\s\S]*setTopTab\("sessions"\);\s*setInitialGithubTarget\(null\);\s*if \(target\) setSelectedId\(target\.id\);[\s\S]*pendingOpen\.root !== undefined && \(!capturedRoot \|\| !target\)[\s\S]*\{ open: pendingOpen, sessionId: target\?\.id \?\? null \}/,
   "file/diff navigation supersedes a pending GitHub detail so it cannot replay: the pending-open effect must switch to Sessions, clear the latched GitHub target, then keep the existing session/workbench selection flow",
 );
 
@@ -227,9 +227,8 @@ const workbenchFiles = await readFile(new URL("./code-workbench-files.tsx", impo
 const contextDock = await readFile(new URL("./code-context-dock.tsx", import.meta.url), "utf8");
 const terminalWorkspace = await readFile(new URL("./code-terminal-workspace.tsx", import.meta.url), "utf8");
 
-// Every context tab scopes to the session's WORK root (worktree over shared
-// checkout, cave-9q24) — pointing any of them at project_root directly would
-// show a different session's churn on shared checkouts.
+// The terminal scopes to the session's WORK root (worktree over shared
+// checkout, cave-9q24). Routed historical context keeps its captured root.
 assert.match(
   workbench,
   /const workRoot = codeSessionWorkRoot\(row\);/,
@@ -237,8 +236,8 @@ assert.match(
 );
 assert.match(
   contextDock,
-  /const workRoot = codeSessionWorkRoot\(row\);/,
-  "the context dock scopes every tab to the same work root",
+  /const workRoot = codeSessionWorkRoot\(row\);[\s\S]*const capturedRoot = codePendingOpenProjectRoot\(openTarget\);[\s\S]*const contextRoot = capturedRoot \?\? workRoot;/,
+  "the context dock prefers immutable routed provenance over the session's current work root",
 );
 
 // The three zones, in order: the terminal center and the dock are siblings of
@@ -293,8 +292,8 @@ assert.match(
 );
 assert.match(
   contextDock,
-  /<SessionChangesInner\s+key=\{workRoot\}\s+projectRoot=\{workRoot\}\s+running=\{running\}/,
-  "Changes mounts the proven changes panel keyed+scoped to the work root",
+  /<SessionChangesInner\s+key=\{contextRoot\}\s+projectRoot=\{contextRoot\}\s+running=\{running\}/,
+  "Changes mounts the proven panel keyed and scoped to the captured review root",
 );
 assert.match(
   contextDock,

@@ -6,7 +6,11 @@
  */
 
 import type { SessionRow } from "@/lib/types";
-import { normalizeProjectRoot } from "./cave-projects-types.ts";
+import {
+  isAbsoluteProjectPath,
+  normalizeProjectRoot,
+  resolvePathWithinProjectRoot,
+} from "./cave-projects-types.ts";
 import type { PendingCodeOpen } from "./pending-code-open.ts";
 
 /** Workbench tabs within a selected session. Diff/Files/Terminal/PR land in
@@ -188,26 +192,43 @@ export function codeSessionWorkRoot(row: SessionRow): string {
   return row.git?.worktreeRoot || row.project_root;
 }
 
+/** Validate and canonicalize immutable root provenance carried by a routed open. */
+export function codePendingOpenProjectRoot(
+  open: PendingCodeOpen | null | undefined,
+): string | null {
+  const root = open?.root?.trim();
+  if (!root || /[\0\r\n]/.test(root) || !isAbsoluteProjectPath(root)) return null;
+  const slashRoot = root.replace(/\\/g, "/");
+  if (slashRoot.split("/").some((segment) => segment === "." || segment === "..")) return null;
+  const normalized = normalizeProjectRoot(slashRoot);
+  const candidatePath = open?.path;
+  if (candidatePath && !resolvePathWithinProjectRoot(normalized, candidatePath)) return null;
+  return normalized;
+}
+
 /**
  * Resolve a routed open to the workbench that owns its captured root. Root
- * provenance outranks the raising session id; if no root matches, fail closed.
+ * provenance outranks the raising session id. If that session has since changed
+ * projects, it can still host the workbench while the dock uses the captured
+ * root; malformed provenance fails closed.
  */
 export function codeSessionForPendingOpen(
   rows: readonly SessionRow[],
   open: PendingCodeOpen,
 ): SessionRow | null {
-  if (open.root) {
-    const targetRoot = normalizeProjectRoot(open.root);
-    return (
-      rows.find(
+  const capturedRoot = codePendingOpenProjectRoot(open);
+  if (open.root !== undefined && !capturedRoot) return null;
+  const byRoot = capturedRoot
+    ? rows.find(
         (row) =>
           isCodeRailSession(row) &&
-          normalizeProjectRoot(codeSessionWorkRoot(row)) === targetRoot,
-      ) ?? null
-    );
-  }
-  if (!open.sessionId) return null;
-  return rows.find((row) => isCodeRailSession(row) && row.id === open.sessionId) ?? null;
+          normalizeProjectRoot(codeSessionWorkRoot(row)) === capturedRoot,
+      )
+    : undefined;
+  const byId = open.sessionId
+    ? rows.find((row) => isCodeRailSession(row) && row.id === open.sessionId)
+    : undefined;
+  return byRoot ?? byId ?? null;
 }
 
 export type CodeSessionActivity = "running" | "error" | "idle";

@@ -37,6 +37,7 @@ import { SessionChangesInner } from "@/components/session-changes-panel";
 import {
   CODE_DOCK_TABS,
   codeDockTabWantsExpanded,
+  codePendingOpenProjectRoot,
   codeSessionWorkRoot,
   type CodeDockSize,
   type CodeDockTab,
@@ -109,6 +110,10 @@ export function CodeContextDock({
 }: CodeContextDockProps) {
   const { announce } = useAnnouncer();
   const workRoot = codeSessionWorkRoot(row);
+  const capturedRoot = codePendingOpenProjectRoot(openTarget);
+  const invalidCapturedRoot = openTarget?.root !== undefined && !capturedRoot;
+  const contextRoot = capturedRoot ?? workRoot;
+  const focusTarget = invalidCapturedRoot ? undefined : openTarget;
   // Browser keepalive: once opened, keep the pane mounted (hidden) so tabs and
   // scroll position survive a switch to Changes and back.
   const [browserOpened, setBrowserOpened] = useState(false);
@@ -212,23 +217,23 @@ export function CodeContextDock({
       {collapsed ? null : (
         <div className="code-context-dock__body" id={`code-context-dock-body-${row.id}`}>
           {tab === "changes" ? (
-            // Keyed by work root: the panel's file/diff/checkpoint state is
-            // per-repo, and switching sessions must never show stale rows.
+            // Keyed by context root: historical opens keep their immutable
+            // execution root even if the raising session has switched projects.
             <SessionChangesInner
-              key={workRoot}
-              projectRoot={workRoot}
+              key={contextRoot}
+              projectRoot={contextRoot}
               running={running}
-              focusPath={openTarget?.kind === "changes" ? openTarget.path : undefined}
-              focusNonce={openTarget?.kind === "changes" ? openTarget.nonce : undefined}
+              focusPath={focusTarget?.kind === "changes" ? focusTarget.path : undefined}
+              focusNonce={focusTarget?.kind === "changes" ? focusTarget.nonce : undefined}
             />
           ) : null}
           {tab === "files" ? (
             <LazyFiles
-              key={workRoot}
-              projectRoot={workRoot}
+              key={contextRoot}
+              projectRoot={contextRoot}
               familiarId={row.familiarId}
-              focusPath={openTarget?.kind === "files" ? openTarget.path : undefined}
-              focusNonce={openTarget?.kind === "files" ? openTarget.nonce : undefined}
+              focusPath={focusTarget?.kind === "files" ? focusTarget.path : undefined}
+              focusNonce={focusTarget?.kind === "files" ? focusTarget.nonce : undefined}
             />
           ) : null}
           {tab === "pr" ? <LazyPr key={row.id} row={row} /> : null}
