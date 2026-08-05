@@ -114,8 +114,7 @@ export function applyChatAttentionProjections(
     for (const [operationId, operation] of operations) {
       if (
         operation.status === "persisted" &&
-        responseRequestId >= operation.canonicalAfterRequestId &&
-        row.attention.state === "none"
+        responseRequestId >= operation.canonicalAfterRequestId
       ) {
         operations.delete(operationId);
       }

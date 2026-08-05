@@ -64,20 +64,42 @@ test("a failed send restores canonical attention on its reconciliation response"
   );
 });
 
-test("successful persistence keeps projecting until canonical none proves catch-up", () => {
+test("a response below the persisted threshold still projects none", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(state, "session-1", "operation-1", chatAttentionProjectionScopeKey("nova"));
   settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
 
   assert.equal(
-    applyChatAttentionProjections(state, [row()], 6, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
+    applyChatAttentionProjections(state, [row()], 5, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
     "none",
   );
+  assert.equal(state.has("session-1"), true);
+});
+
+test("eligible post-settlement canonical awaiting-human releases the persisted projection", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(state, "session-1", "operation-1", chatAttentionProjectionScopeKey("nova"));
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  const canonical = [row()];
+  assert.equal(
+    applyChatAttentionProjections(state, canonical, 6, chatAttentionProjectionScopeKey("nova")),
+    canonical,
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
+test("eligible post-settlement canonical none still releases the persisted projection", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(state, "session-1", "operation-1", chatAttentionProjectionScopeKey("nova"));
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
   const canonicalNone = [row({ attention: NO_CHAT_ATTENTION })];
   assert.equal(
     applyChatAttentionProjections(state, canonicalNone, 6, chatAttentionProjectionScopeKey("nova")),
     canonicalNone,
   );
+  assert.equal(state.has("session-1"), false);
 });
 
 test("the first failed operation cannot undo a second live clear for the same session", () => {
@@ -96,6 +118,20 @@ test("the first failed operation cannot undo a second live clear for the same se
     applyChatAttentionProjections(state, [row()], 9, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
     "awaiting-human",
   );
+});
+
+test("an overlapping pending clear still projects none when an older persisted clear releases", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(state, "session-1", "operation-1", chatAttentionProjectionScopeKey("nova"));
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+  recordChatAttentionClear(state, "session-1", "operation-2", chatAttentionProjectionScopeKey("nova"));
+
+  assert.equal(
+    applyChatAttentionProjections(state, [row()], 6, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
+    "none",
+  );
+  assert.equal(state.get("session-1")?.has("operation-1"), false);
+  assert.equal(state.get("session-1")?.get("operation-2")?.status, "pending");
 });
 
 test("absence cannot release a pending clear but can retire a persisted clear after a fresh response", () => {
