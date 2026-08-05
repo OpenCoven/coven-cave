@@ -33,6 +33,7 @@ export const SUITES = {
     "src/lib/chat-split.test.ts",
     "src/lib/chat-creation-refresh.test.ts",
     "src/lib/chat-session-ownership.test.ts",
+    "src/lib/chat-router-promotion.test.ts",
     "src/lib/code-rail.test.ts",
     "src/lib/use-code-rail.test.ts",
     "src/lib/workspace-tiles.test.ts",

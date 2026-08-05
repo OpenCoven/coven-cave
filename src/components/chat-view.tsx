@@ -350,7 +350,7 @@ type Props = {
   /** Workspace-owned session list; the starting page's "Continue" row reads it
    *  so no extra fetch rides on every new chat. */
   sessions?: SessionRow[];
-  onSessionStarted?: (sessionId: string) => void;
+  onSessionStarted?: (sessionId: string, originSessionId: string | null) => void;
   /** Pre-session voice call: ChatView created a conversation for the call;
    *  the router promotes it and re-enters via openVoiceNonce. */
   onVoiceSessionCreated?: (sessionId: string) => void;
@@ -6007,13 +6007,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             // re-adopt via the done stable-ID fallback.
             displayedCreationRunIdRef.current = null;
           }
-          // Router promotion is restricted to null-origin (sessionless) generations
-          // that own the displayed view. A non-null-origin replacement/fork run must
-          // never promote the router — only dispatch a sidebar refresh (done handler's
-          // shouldReplacementRefresh path), or it can race a fresh null compose and
-          // cause ChatRouter to promote the stale fork.
+          // Router promotion: pass originSessionId so ChatRouter can match the
+          // specific thread this generation started from (null for sessionless
+          // new-chat; non-null for replacement/fork on an existing session).
           if (shouldPromote) {
-            onSessionStarted?.(ev.sessionId);
+            onSessionStarted?.(ev.sessionId, liveGeneration.originSessionId);
           }
         }
         if (taskArmedRef.current) {
@@ -6199,11 +6197,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             // Clear display ownership after adoption (same as session event path).
             displayedCreationRunIdRef.current = null;
           }
-          // Null-origin guard: only a sessionless generation (originSessionId === null)
-          // that owns the displayed view may promote the router. Non-null-origin
-          // replacement/fork runs refresh only through shouldReplacementRefresh below.
+          // Router promotion: pass originSessionId so ChatRouter can match the
+          // specific thread this generation started from (mirrors the session event path).
           if (shouldPromote) {
-            onSessionStarted?.(ev.sessionId);
+            onSessionStarted?.(ev.sessionId, liveGeneration.originSessionId);
           }
         }
         const completedSessionId = ev.sessionId ?? liveGeneration.sessionId;

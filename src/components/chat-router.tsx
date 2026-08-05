@@ -54,6 +54,7 @@ import {
   selectionKey,
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
+import { shouldRouterPromoteSession } from "@/lib/chat-router-promotion";
 import { useAutoExpandNewGroups } from "@/lib/use-auto-expand-new-groups";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
@@ -816,13 +817,16 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       onSessionsChanged={onSessionsChanged}
       onSessionsDeleted={onSessionsDeleted}
       onBack={() => setView({ kind: "list" })}
-      onSessionStarted={(sid) => {
-        // Only promote the sessionId in the view state when the current chat
-        // has no session yet (null). If a session is already set, leave the
-        // view alone — updating it would re-mount ChatView and lose the live
-        // currentSessionRef, breaking follow-up messages.
+      onSessionStarted={(sid, originSessionId) => {
+        // Promote the sessionId when the router's current view is still on the
+        // same thread this generation started from. Handles:
+        // - null→new: origin null, view is a fresh compose (prev.sessionId === null)
+        // - A→B: origin A, view still on A (prev.sessionId === A)
+        // Stale background promotions (router already moved elsewhere) are refused:
+        // prev.sessionId ≠ originSessionId. Duplicate calls after the first A→B
+        // promotion also no-op: prev becomes B while origin stays A.
         setView((prev) =>
-          prev.kind === "chat" && prev.sessionId === null
+          prev.kind === "chat" && shouldRouterPromoteSession(prev.sessionId, originSessionId)
             ? { kind: "chat", sessionId: sid, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
             : prev,
         );
@@ -830,8 +834,8 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       }}
       onVoiceSessionCreated={(sid) => {
         // Pre-session voice call: ChatView created the conversation; promote
-        // it into the view (same null-only guard as onSessionStarted) and arm
-        // the auto-open nonce so the overlay opens once the session mounts.
+        // it into the view (null-only: a voice pre-session is always sessionless)
+        // and arm the auto-open nonce so the overlay opens once the session mounts.
         setView((prev) =>
           prev.kind === "chat" && prev.sessionId === null
             ? { kind: "chat", sessionId: sid, projectRoot: prev.projectRoot, familiarId: prev.familiarId }

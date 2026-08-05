@@ -77,8 +77,8 @@ assert.match(
 
 assert.match(
   source,
-  /case "session":[\s\S]*ev\.sessionId !== currentSessionRef\.current[\s\S]*onSessionStarted\?\.\(ev\.sessionId\)/,
-  "A transparent resume fallback should promote the live chat to the replacement session id",
+  /case "session":[\s\S]*ev\.sessionId !== currentSessionRef\.current[\s\S]*onSessionStarted\?\.\(ev\.sessionId,\s*liveGeneration\.originSessionId\)/,
+  "A transparent resume fallback should promote the live chat to the replacement session id, passing originSessionId to the router",
 );
 
 assert.match(
@@ -722,8 +722,8 @@ assert.match(
 // a newer displayed compose (B) when both share originSessionId === null.
 // Background null-origin runs still bind creation-refresh state and refresh the
 // authoritative sidebar on done — only view adoption and router notification
-// (onSessionStarted) are gated, to prevent ChatRouter's null-view guard from
-// promoting A's session into B's compose view.
+// (onSessionStarted) are gated; ChatRouter's promotion predicate (origin-match
+// guard) prevents promoting A's session into B's compose view.
 assert.match(
   source,
   /const liveGeneration: LiveStreamGeneration = \{[\s\S]*?sessionId: initialLiveSessionId,[\s\S]*?originSessionId: initialLiveSessionId,[\s\S]*?controller,[\s\S]*?runId,/,
@@ -764,22 +764,22 @@ assert.match(
   );
 }
 {
-  // The behavioral helper requires BOTH display ownership AND null origin.
-  // Non-null-origin replacement/fork runs must never call onSessionStarted —
-  // only sessions refresh is dispatched via shouldReplacementRefresh.
+  // Both session and done events notify the router via the display-ownership
+  // predicate, passing originSessionId so the router can match the specific
+  // thread being replaced (null for sessionless creation, non-null for A→B).
   const notifyChecks = source.match(
-    /const shouldPromote = canPromoteDisplayedSession\(\{[\s\S]*?currentSessionId: currentSessionRef\.current,[\s\S]*?originSessionId: liveGeneration\.originSessionId,[\s\S]*?runId: liveGeneration\.runId,[\s\S]*?displayedCreationRunId: displayedCreationRunIdRef\.current,[\s\S]*?\}\);[\s\S]*?if \(shouldPromote\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);\s*\n\s*\}/g,
+    /const shouldPromote = canPromoteDisplayedSession\(\{[\s\S]*?currentSessionId: currentSessionRef\.current,[\s\S]*?originSessionId: liveGeneration\.originSessionId,[\s\S]*?runId: liveGeneration\.runId,[\s\S]*?displayedCreationRunId: displayedCreationRunIdRef\.current,[\s\S]*?\}\);[\s\S]*?if \(shouldPromote\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId,\s*liveGeneration\.originSessionId\);\s*\n\s*\}/g,
   );
   assert.ok(
     notifyChecks && notifyChecks.length === 2,
-    "session and done events call onSessionStarted only through the null-origin display-ownership predicate",
+    "session and done events call onSessionStarted through the display-ownership predicate, passing sessionId and originSessionId",
   );
 }
-// A background non-null-origin fork must never trigger router promotion via a
-// raw owned-only guard — the null-origin check is required in both event paths.
+// onSessionStarted must never be called from an ad hoc owned check — both paths
+// use the promotion predicate so stale background promotions are correctly gated.
 assert.doesNotMatch(
   source,
-  /if \(owned(?: && liveGeneration\.originSessionId === null)?\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);/,
+  /if \(owned(?: && liveGeneration\.originSessionId === null)?\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId/,
   "onSessionStarted is never called from an ad hoc ownership condition; both event paths use the promotion predicate",
 );
 

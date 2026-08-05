@@ -145,7 +145,7 @@ assert.match(
 
 assert.match(
   source,
-  /prev\.kind === "chat" && prev\.sessionId === null\s*\? \{ kind: "chat", sessionId: sid/,
+  /prev\.kind === "chat" && shouldRouterPromoteSession\(prev\.sessionId, originSessionId\)\s*\? \{ kind: "chat", sessionId: sid/,
   "Session promotion must update the view's sessionId via setView so the hash-sync effect writes the promoted id",
 );
 
