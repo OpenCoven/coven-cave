@@ -577,6 +577,16 @@ export function Workspace() {
     const onChatAttentionClear = (event: Event) => {
       const detail = attentionClearFromEvent(event);
       if (!detail) return;
+      const baselineAttention = baseSessionsRef.current
+        .find((session) => session.id === detail.sessionId)?.attention ?? NO_CHAT_ATTENTION;
+      const recordResult = recordChatAttentionClear(
+        chatAttentionProjectionRef.current,
+        detail.sessionId,
+        detail.operationId,
+        chatAttentionProjectionScopeKey(activeIdRef.current),
+        baselineAttention,
+      );
+      if (!recordResult.recorded) return;
       // Invalidate any in-flight loadSessions before patching state: a load
       // started before this clear (mount, the 4s poll, a scope change) can
       // still be in flight and resolve *after* it with a stale, pre-clear
@@ -586,15 +596,6 @@ export function Workspace() {
       // call (e.g. the failure-path reconciliation below) still gets its own
       // newer reqId and is unaffected.
       loadSessionsReqRef.current += 1;
-      const baselineAttention = baseSessionsRef.current
-        .find((session) => session.id === detail.sessionId)?.attention ?? NO_CHAT_ATTENTION;
-      recordChatAttentionClear(
-        chatAttentionProjectionRef.current,
-        detail.sessionId,
-        detail.operationId,
-        chatAttentionProjectionScopeKey(activeIdRef.current),
-        baselineAttention,
-      );
       // Patch only THIS session's attention to none on both the canonical
       // base rows and the currently rendered rows. This is an optimistic
       // clear, not a canonical response: applyChatAttentionProjections also

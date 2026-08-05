@@ -34,9 +34,11 @@ async function withMockWindow(run: (dispatched: Event[]) => void | Promise<void>
 test("validates session-scoped clear and settlement events", () => {
   assert.equal(CHAT_ATTENTION_CLEAR_EVENT, "cave:chat-attention-clear");
   assert.equal(CHAT_ATTENTION_SETTLE_EVENT, "cave:chat-attention-settle");
-  assert.equal(attentionClearedSessionId(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
+  const legacyClear = new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
     detail: { sessionId: " session-0 " },
-  })), "session-0");
+  });
+  assert.equal(attentionClearedSessionId(legacyClear), "session-0");
+  assert.equal(attentionClearFromEvent(legacyClear), null);
   assert.deepEqual(attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
     detail: { sessionId: "session-1", operationId: "run-1" },
   })), { sessionId: "session-1", operationId: "run-1" });

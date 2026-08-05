@@ -19,6 +19,10 @@ type SessionProjection = Map<string, ProjectionOperation>;
 
 export type ChatAttentionProjectionState = Map<string, SessionProjection>;
 export type ChatAttentionSettlementOutcome = "persisted" | "failed";
+export type ChatAttentionClearRecordResult = {
+  recorded: boolean;
+  reason: "recorded" | "duplicate" | "tombstoned" | "no-baseline";
+};
 
 export function createChatAttentionProjectionState(): ChatAttentionProjectionState {
   return new Map();
@@ -69,6 +73,7 @@ function isChatAttentionOperationTombstoned(
 // Overlapping clears can only see projected "none", so keep the last accepted
 // canonical attention per session and use it as the fallback baseline.
 const CHAT_ATTENTION_CANONICAL_TRACKER_LIMIT = 512;
+const CHAT_ATTENTION_SESSION_BUCKET_LIMIT = 512;
 type CanonicalAttentionTrackerEntry = {
   attention: ChatAttention;
   scopeKey: string;
@@ -109,9 +114,72 @@ function forgetLastKnownCanonicalAttention(state: ChatAttentionProjectionState, 
   lastKnownCanonicalAttention.get(state)?.delete(sessionId);
 }
 
-function clearSessionProjectionState(state: ChatAttentionProjectionState, sessionId: string): void {
+const sessionBucketAccessOrder = new WeakMap<ChatAttentionProjectionState, Map<string, true>>();
+
+function sessionBucketAccessOrderFor(state: ChatAttentionProjectionState): Map<string, true> {
+  let accessOrder = sessionBucketAccessOrder.get(state);
+  if (!accessOrder) {
+    accessOrder = new Map();
+    sessionBucketAccessOrder.set(state, accessOrder);
+  }
+  return accessOrder;
+}
+
+function touchSessionProjectionBucket(state: ChatAttentionProjectionState, sessionId: string): void {
+  const accessOrder = sessionBucketAccessOrderFor(state);
+  accessOrder.delete(sessionId);
+  accessOrder.set(sessionId, true);
+}
+
+function dropSessionProjectionBucket(state: ChatAttentionProjectionState, sessionId: string): void {
   state.delete(sessionId);
+  sessionBucketAccessOrder.get(state)?.delete(sessionId);
+}
+
+function clearSessionProjectionState(state: ChatAttentionProjectionState, sessionId: string): void {
+  dropSessionProjectionBucket(state, sessionId);
   forgetLastKnownCanonicalAttention(state, sessionId);
+}
+
+function sessionProjectionHasPendingOperation(operations: SessionProjection): boolean {
+  for (const operation of operations.values()) {
+    if (operation.status === "pending") return true;
+  }
+  return false;
+}
+
+function evictOldestSessionProjectionBuckets(state: ChatAttentionProjectionState): void {
+  const accessOrder = sessionBucketAccessOrderFor(state);
+  while (state.size > CHAT_ATTENTION_SESSION_BUCKET_LIMIT) {
+    let oldestSessionId: string | undefined;
+    let oldestPendingSessionId: string | undefined;
+    for (const sessionId of accessOrder.keys()) {
+      const operations = state.get(sessionId);
+      if (!operations) {
+        accessOrder.delete(sessionId);
+        continue;
+      }
+      oldestPendingSessionId ??= sessionId;
+      if (!sessionProjectionHasPendingOperation(operations)) {
+        oldestSessionId = sessionId;
+        break;
+      }
+    }
+    const evictedSessionId = oldestSessionId ?? oldestPendingSessionId;
+    if (!evictedSessionId) break;
+    const operations = state.get(evictedSessionId);
+    if (!operations) {
+      accessOrder.delete(evictedSessionId);
+      continue;
+    }
+    for (const operationId of operations.keys()) {
+      tombstoneChatAttentionOperation(state, evictedSessionId, operationId);
+    }
+    // Bound long-lived cross-session churn without discarding the last accepted
+    // canonical fallback: an immediate retry can still inherit that baseline,
+    // while the active clear projection yields to newer sessions under pressure.
+    dropSessionProjectionBucket(state, evictedSessionId);
+  }
 }
 
 export function chatAttentionProjectionScopeKey(familiarId: string | null): string {
@@ -134,32 +202,36 @@ export function recordChatAttentionClear(
   operationId: string,
   scopeKey: string,
   canonicalAttention: ChatAttention | null | undefined,
-): void {
-  if (isChatAttentionOperationTombstoned(state, sessionId, operationId)) return;
+): ChatAttentionClearRecordResult {
+  if (isChatAttentionOperationTombstoned(state, sessionId, operationId)) {
+    return { recorded: false, reason: "tombstoned" };
+  }
 
   const operations = state.get(sessionId);
   const existingOperation = operations?.get(operationId);
-  if (existingOperation?.status === "persisted") return;
+  if (existingOperation) return { recorded: false, reason: "duplicate" };
   const normalizedCanonical = normalizeAttentionSnapshot(canonicalAttention);
   const canonicalTracker = canonicalAttentionTrackerFor(state);
   // The caller may already be looking at a projected "none", so overlap cases
   // fall back to the last accepted canonical attention for this session.
-  const baseline = existingOperation?.baseline ??
-    (normalizedCanonical.state !== "none"
-      ? normalizedCanonical
-      : canonicalTracker.get(sessionId)?.attention ?? normalizedCanonical);
-  if (!operations && baseline.state === "none") return;
+  const baseline = normalizedCanonical.state !== "none"
+    ? normalizedCanonical
+    : canonicalTracker.get(sessionId)?.attention ?? normalizedCanonical;
+  if (!operations && baseline.state === "none") return { recorded: false, reason: "no-baseline" };
 
   const nextOperations = operations ?? new Map<string, ProjectionOperation>();
   if (!operations) state.set(sessionId, nextOperations);
   if (!canonicalTracker.has(sessionId)) {
-    trackCanonicalAttention(state, sessionId, baseline, existingOperation?.scopeKey ?? scopeKey);
+    trackCanonicalAttention(state, sessionId, baseline, scopeKey);
   }
   nextOperations.set(operationId, {
     status: "pending",
-    scopeKey: existingOperation?.scopeKey ?? scopeKey,
+    scopeKey,
     baseline,
   });
+  touchSessionProjectionBucket(state, sessionId);
+  evictOldestSessionProjectionBuckets(state);
+  return { recorded: true, reason: "recorded" };
 }
 
 export function settleChatAttentionClear(
@@ -172,11 +244,12 @@ export function settleChatAttentionClear(
   const operations = state.get(sessionId);
   const operation = operations?.get(operationId);
   if (!operations || !operation) return;
+  touchSessionProjectionBucket(state, sessionId);
   if (outcome === "failed") {
     operations.delete(operationId);
     // Keep the canonical tracker until either an immediate retry inherits it or
     // an accepted list response refreshes the caller's canonical session rows.
-    if (operations.size === 0) state.delete(sessionId);
+    if (operations.size === 0) dropSessionProjectionBucket(state, sessionId);
     tombstoneChatAttentionOperation(state, sessionId, operationId);
     return;
   }
@@ -253,12 +326,23 @@ export function applyChatAttentionProjections(
   const projectedRows = rows.map((row) => {
     const operations = state.get(row.id);
     if (!operations) {
-      // Workspace synchronously installs this accepted row as its new canonical
-      // base, so a failure-retained fallback is no longer needed.
-      forgetLastKnownCanonicalAttention(state, row.id);
+      const retainedCanonical = canonicalTracker.get(row.id);
+      if (retainedCanonical) {
+        if (attentionMatchesBaseline(row.attention, retainedCanonical.attention)) {
+          trackCanonicalAttention(
+            state,
+            row.id,
+            row.attention,
+            currentScopeKey ?? retainedCanonical.scopeKey,
+          );
+        } else {
+          forgetLastKnownCanonicalAttention(state, row.id);
+        }
+      }
       return row;
     }
 
+    touchSessionProjectionBucket(state, row.id);
     // Refresh from the accepted row before masking it again for active clears.
     trackCanonicalAttention(
       state,

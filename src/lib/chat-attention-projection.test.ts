@@ -77,6 +77,34 @@ test("a failed send restores canonical attention on its reconciliation response"
   );
 });
 
+test("a matching canonical poll after a failed clear keeps the retry baseline alive for the next operation", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "failed", 5);
+
+  const staleCanonical = [row({ attention: { ...NEEDS_ATTENTION } })];
+  assert.equal(
+    applyChatAttentionProjections(state, staleCanonical, 6, chatAttentionProjectionScopeKey("nova")),
+    staleCanonical,
+  );
+
+  const retried = recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-2",
+    chatAttentionProjectionScopeKey("nova"),
+    NO_CHAT_ATTENTION,
+  );
+  assert.deepEqual(retried, { recorded: true, reason: "recorded" });
+  assert.deepEqual(state.get("session-1")?.get("operation-2")?.baseline, NEEDS_ATTENTION);
+});
+
 test("a response below the persisted threshold still projects none", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
@@ -370,6 +398,32 @@ test("a stale pending notification cannot downgrade an already-persisted operati
   assert.equal(state.has("session-1"), false);
 });
 
+test("a duplicate clear for the same live operation is a full no-op", () => {
+  const state = createChatAttentionProjectionState();
+  const first = recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  const originalOperation = state.get("session-1")?.get("operation-1");
+  const duplicate = recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("sage"),
+    NO_CHAT_ATTENTION,
+  );
+
+  assert.deepEqual(first, { recorded: true, reason: "recorded" });
+  assert.deepEqual(duplicate, { recorded: false, reason: "duplicate" });
+  assert.equal(state.get("session-1")?.get("operation-1"), originalOperation);
+  assert.equal(originalOperation?.status, "pending");
+  assert.equal(originalOperation?.scopeKey, chatAttentionProjectionScopeKey("nova"));
+  assert.deepEqual(originalOperation?.baseline, NEEDS_ATTENTION);
+});
+
 test("an initial canonical none creates no override and cannot hide future attention", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
@@ -449,13 +503,14 @@ test("a clear followed by failed settlement then a duplicate clear for the same 
   settleChatAttentionClear(state, "session-1", "operation-1", "failed", 5);
   assert.equal(state.has("session-1"), false);
 
-  recordChatAttentionClear(
+  const duplicate = recordChatAttentionClear(
     state,
     "session-1",
     "operation-1",
     chatAttentionProjectionScopeKey("nova"),
     NEEDS_ATTENTION,
   );
+  assert.deepEqual(duplicate, { recorded: false, reason: "tombstoned" });
   assert.equal(state.has("session-1"), false);
 
   const canonical = [row()];
@@ -749,6 +804,35 @@ test("the state-wide tombstone bound evicts the oldest composite operation key",
     NEEDS_ATTENTION,
   );
   assert.equal(state.has(`session-${TOMBSTONE_LIMIT}`), false);
+});
+
+test("the outer projection state evicts the oldest settled session before a still-pending one", () => {
+  const state = createChatAttentionProjectionState();
+  const SESSION_LIMIT = 512;
+
+  recordChatAttentionClear(
+    state,
+    "session-pending",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  for (let i = 0; i < SESSION_LIMIT; i += 1) {
+    const sessionId = `session-${i}`;
+    recordChatAttentionClear(
+      state,
+      sessionId,
+      "operation-1",
+      chatAttentionProjectionScopeKey("nova"),
+      NEEDS_ATTENTION,
+    );
+    settleChatAttentionClear(state, sessionId, "operation-1", "persisted", 5);
+  }
+
+  assert.equal(state.size, SESSION_LIMIT);
+  assert.equal(state.has("session-pending"), true);
+  assert.equal(state.has("session-0"), false);
+  assert.equal(state.has(`session-${SESSION_LIMIT - 1}`), true);
 });
 
 test("forgetting a session keeps its settled operation in the bounded replay cache", () => {

@@ -337,12 +337,12 @@ const onChatAttentionClearBlock = workspace.match(
 assert.ok(onChatAttentionClearBlock, "workspace should define the chat-attention clear handler");
 assert.match(
   onChatAttentionClearBlock,
-  /loadSessionsReqRef\.current \+= 1;[\s\S]*?recordChatAttentionClear\([\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
-  "workspace should invalidate any in-flight loadSessions request and record a projection before patching attention state, so stale polls cannot resurrect the cleared attention (cave-zs85n Task 5 race)",
+  /const recordResult = recordChatAttentionClear\([\s\S]*?if \(!recordResult\.recorded\) return;[\s\S]*?loadSessionsReqRef\.current \+= 1;[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
+  "workspace should only invalidate/persist the optimistic clear after the projection actually records it, so tombstoned or duplicate clears stay true no-ops while real clears still supersede stale polls",
 );
 assert.match(
   onChatAttentionClearBlock,
-  /const baselineAttention = baseSessionsRef\.current\s*\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention \?\? NO_CHAT_ATTENTION;[\s\S]*?recordChatAttentionClear\([\s\S]*?baselineAttention[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
+  /const baselineAttention = baseSessionsRef\.current\s*\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention \?\? NO_CHAT_ATTENTION;[\s\S]*?const recordResult = recordChatAttentionClear\([\s\S]*?baselineAttention[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
   "workspace should capture canonical attention before either session array is projected to none",
 );
 // Task 5 spec-compliance: the clear handler patches cached arrays with a
