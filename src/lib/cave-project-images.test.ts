@@ -17,6 +17,9 @@ const fakeDriver = {
   async getAll(store) {
     return Object.fromEntries(idb[store]);
   },
+  async getAllStrict(store) {
+    return Object.fromEntries(idb[store]);
+  },
   async put(store, key, value) {
     if (denyWrites) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
     idb[store].set(key, value);

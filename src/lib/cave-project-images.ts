@@ -37,6 +37,7 @@ const EMPTY: ImageMap = Object.freeze({});
 
 let cached: ImageMap = EMPTY;
 let hydration: Promise<void> | null = null;
+let hydrationEpoch = 0;
 const listeners = new Set<() => void>();
 
 function notify() { for (const fn of listeners) fn(); }
@@ -59,16 +60,22 @@ function broadcast(): void {
   channel?.postMessage("changed");
 }
 
-async function hydrate(): Promise<void> {
+async function hydrate(
+  readAll: () => Promise<Record<string, ProjectImage>>,
+): Promise<void> {
   if (typeof window === "undefined") return;
+  const epoch = ++hydrationEpoch;
   ensureChannel();
-  const map = await avatarStorage().getAll("projectAvatars");
+  const map = await readAll();
+  if (epoch !== hydrationEpoch) return;
   cached = Object.keys(map).length > 0 ? map : EMPTY;
   notify();
 }
 
 function ensureHydrated(): Promise<void> {
-  if (!hydration) hydration = hydrate();
+  if (!hydration) {
+    hydration = hydrate(() => avatarStorage().getAll("projectAvatars"));
+  }
   return hydration;
 }
 
@@ -169,6 +176,22 @@ export function useProjectImages(): ImageMap {
 
 export function readProjectImagesSnapshot(): ImageMap {
   return cached;
+}
+
+/** Refresh from strict storage before acknowledging a root-key migration. */
+export async function hydrateProjectImagesForMigration(): Promise<void> {
+  const strictHydration = hydrate(() =>
+    avatarStorage().getAllStrict("projectAvatars")
+  ).catch((cause: unknown) => {
+    throw new Error("project avatar migration storage read failed", { cause });
+  });
+  hydration = strictHydration;
+  try {
+    await strictHydration;
+  } catch (error) {
+    if (hydration === strictHydration) hydration = null;
+    throw error;
+  }
 }
 
 /** Resolves once the store has loaded persisted images. */
