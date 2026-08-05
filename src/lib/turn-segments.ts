@@ -15,17 +15,19 @@ export type ConsecutiveToolRun<T extends { name: string; textOffset?: number }> 
  */
 export function groupConsecutiveTools<T extends { name: string; textOffset?: number }>(tools: readonly T[]): ConsecutiveToolRun<T>[] {
   const runs: ConsecutiveToolRun<T>[] = [];
+  let lastKnownOffset: number | undefined;
   for (const tool of tools) {
     const normalizedName = tool.name.trim().toLowerCase();
     const previous = runs[runs.length - 1];
-    const previousTool = previous?.tools[previous.tools.length - 1];
-    const bothOffsetsKnown = Number.isFinite(previousTool?.textOffset) && Number.isFinite(tool.textOffset);
-    const sameOffset = !bothOffsetsKnown || previousTool?.textOffset === tool.textOffset;
+    const offset = Number.isFinite(tool.textOffset) ? tool.textOffset : undefined;
+    const sameOffset = offset === undefined || lastKnownOffset === undefined || lastKnownOffset === offset;
     if (previous && previous.name.trim().toLowerCase() === normalizedName && sameOffset) {
       previous.tools.push(tool);
     } else {
       runs.push({ name: tool.name, tools: [tool] });
+      lastKnownOffset = undefined;
     }
+    if (offset !== undefined) lastKnownOffset = offset;
   }
   return runs;
 }

@@ -120,8 +120,8 @@ assert.match(
 );
 assert.match(
   source,
-  /function ToolRuns[\s\S]*?containsEdit = run\.tools\.some\(\(tool\) => isFileMutationTool\(tool\.name\)\)[\s\S]*?const body = containsEdit\s*\? run\.tools\.map\(\(tool\) => <ToolBlock[\s\S]*: <ToolRunGroup/,
-  "ToolRuns classifies edits from stable tool identity and gives every non-edit run the same shell",
+  /function ToolRuns[\s\S]*?containsEdit = run\.tools\.some\(\(tool\) => normalizeFileMutation\(tool\.name, tool\.input\)\)[\s\S]*?const body = containsEdit\s*\? run\.tools\.map\(\(tool\) => <ToolBlock[\s\S]*: <ToolRunGroup/,
+  "ToolRuns classifies edits through the normalized descriptor and gives every non-edit run the same shell",
 );
 assert.match(
   source,
@@ -259,7 +259,7 @@ assert.match(
 
 assert.match(
   turnRow,
-  /const turnTools = turn\.tools \?\? \[\];\s*const editToolIds = new Set\(\s*turnTools\.filter\(\(tool\) => isFileMutationTool\(tool\.name\)\)\.map\(\(tool\) => tool\.id\),?\s*\);\s*const editCards = turnTools\.filter\(\(tool\) => editToolIds\.has\(tool\.id\)\);\s*const otherTools = turnTools\.filter\(\(tool\) => !editToolIds\.has\(tool\.id\)\);/,
+  /const turnTools = turn\.tools \?\? \[\];\s*const editToolIds = new Set\(\s*turnTools\.filter\(\(tool\) => normalizeFileMutation\(tool\.name, tool\.input\)\)\.map\(\(tool\) => tool\.id\),?\s*\);\s*const editCards = turnTools\.filter\(\(tool\) => editToolIds\.has\(tool\.id\)\);\s*const otherTools = turnTools\.filter\(\(tool\) => !editToolIds\.has\(tool\.id\)\);/,
   "tool placement is keyed by id and cannot change when a streamed input becomes parseable",
 );
 assert.match(
@@ -274,15 +274,15 @@ assert.match(
 );
 assert.match(
   turnRow,
-  /isFileMutationTool\(tool\.name\)/,
-  "known mutation tools occupy the edit-card slot before their streamed input is complete",
+  /normalizeFileMutation\(tool\.name, tool\.input\)/,
+  "recognized mutation names return descriptors and occupy the edit-card slot before streamed input is complete",
 );
 // Golden path 4 (cave-qva4): a multi-file turn gets ONE aggregate entry into
 // the working-tree review, riding the per-card cave:open-file-diff contract.
 assert.match(
   turnRow,
-  /const editedFiles = Array\.from\(\s*\n\s*new Set\(\s*\n\s*editCards\s*\n\s*\.map\(\(t\) => toolTargetFile\(t\.name, t\.input\)\)/,
-  "the aggregate counts DISTINCT edited files (the same file edited twice is one change)",
+  /const editedFiles = Array\.from\(\s*\n\s*new Set\(\s*\n\s*editCards\s*\n\s*\.map\(\(tool\) => actionReadyMutationTargetFile\(tool\.name, tool\.input, tool\.status\)\)/,
+  "the aggregate counts distinct action-ready successful files through the shared readiness projection",
 );
 assert.match(
   turnRow,

@@ -253,7 +253,13 @@ import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
 import { useShowThinking } from "@/lib/reasoning-visibility";
 import { useThreadInstrumentsVisible } from "@/lib/thread-instruments-visibility";
-import { isFileMutationTool, toolInputAsDiff, toolTargetFile, toolTargetPath } from "@/lib/tool-input-diff";
+import {
+  actionReadyMutationTargetFile,
+  isFileMutationActionReady,
+  normalizeFileMutation,
+  toolTargetFile,
+  toolTargetPath,
+} from "@/lib/tool-input-diff";
 import { diffStat } from "@/lib/tool-edit-stat";
 import { findTranscriptHits } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
@@ -8356,7 +8362,7 @@ function TurnRowImpl({
   // instances when the turn settles.
   const turnTools = turn.tools ?? [];
   const editToolIds = new Set(
-    turnTools.filter((tool) => isFileMutationTool(tool.name)).map((tool) => tool.id),
+    turnTools.filter((tool) => normalizeFileMutation(tool.name, tool.input)).map((tool) => tool.id),
   );
   const editCards = turnTools.filter((tool) => editToolIds.has(tool.id));
   const otherTools = turnTools.filter((tool) => !editToolIds.has(tool.id));
@@ -8537,7 +8543,7 @@ function TurnRowImpl({
                       const editedFiles = Array.from(
                         new Set(
                           editCards
-                            .map((t) => toolTargetFile(t.name, t.input))
+                            .map((tool) => actionReadyMutationTargetFile(tool.name, tool.input, tool.status))
                             .filter((p): p is string => Boolean(p)),
                         ),
                       );
@@ -8836,9 +8842,9 @@ function ToolRuns({ tools }: { tools: ToolEvent[] }) {
     // change as adjacent repeats append further calls to the same run.
     const key = run.tools[0]!.id;
     const header = headerByToolId.get(run.tools[0]!.id);
-    // File-mutation cards carry review/undo affordances. Keeping each one
-    // standalone means a repeated edit never hides an actionable change.
-    const containsEdit = run.tools.some((tool) => isFileMutationTool(tool.name));
+    // Recognized file mutations own a standalone card from first appearance,
+    // before their streamed input is complete enough for review actions.
+    const containsEdit = run.tools.some((tool) => normalizeFileMutation(tool.name, tool.input));
     const body = containsEdit
       ? run.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)
       : <ToolRunGroup name={run.name} tools={run.tools} />;
@@ -8908,7 +8914,7 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
 // five ToolBlock/ToolGroup render sites.
 const ToolProjectRootContext = createContext<string | null>(null);
 
-// Review + Undo actions for the Codex-style inline edit card. Review adapts to
+// Review + Undo actions for a normalized inline mutation card. Review adapts to
 // where the edit can actually be reviewed: a file under the session's project
 // root jumps to its diff in the code rail's Changes panel (cumulative diff +
 // checkpoint/undo tools); anything else — familiar-workspace docs, repo-less
@@ -9032,19 +9038,19 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   // fallback and stays clickable regardless).
   const railRoot = useContext(ToolProjectRootContext);
   const argSummary = toolArgSummary(tool.name, tool.input);
-  // CHAT-D8-02: Edit/Write/MultiEdit/NotebookEdit inputs render as a
-  // structured before/after diff instead of the raw JSON payload; null for
-  // every other tool (or unparseable input) falls back to the plain block.
-  const inputDiff = toolInputAsDiff(tool.name, tool.input);
-  const targetPath = toolTargetPath(tool.name, tool.input);
+  // Supported Claude, Codex, and OpenClaw mutations share one descriptor for
+  // placement, path, diff rendering, and action readiness.
+  const mutation = normalizeFileMutation(tool.name, tool.input);
+  const inputDiff = mutation?.diff ?? null;
+  const targetPath = mutation ? mutation.path : toolTargetPath(tool.name, tool.input);
   // Click-to-open: a file tool's target opens in the Code workspace preview.
   // Dispatched as an event; the comux pane (Code/Terminal) handles it, and the
   // workspace switches to Code mode first when neither is showing.
-  const targetFile = toolTargetFile(tool.name, tool.input);
-  // An edit tool (Edit/Write/MultiEdit/NotebookEdit — the ones with a structured
-  // input diff) jumps to its file's DIFF in the Changes review; other file tools
-  // open the file preview. The comux pane handles both events.
+  const targetFile = mutation ? mutation.targetFile : toolTargetFile(tool.name, tool.input);
+  // A mutation with a structured diff jumps to its file's Changes review;
+  // other addressable file tools open the file preview.
   const isEditTool = inputDiff != null;
+  const actionReady = mutation && isFileMutationActionReady(mutation, tool.status);
   const openTargetFile = (e: ReactMouseEvent) => {
     if (!targetFile) return;
     e.preventDefault();
@@ -9056,10 +9062,9 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
     );
   };
   const visual = toolVisual(tool.name);
-  // Codex-style inline edit card: a mutation tool (Edit/Write/MultiEdit/
-  // NotebookEdit, i.e. `isEditTool`) stays visible in the transcript as a
-  // compact details summary, and expands to the structured code diff. Review
-  // opens the comux diff when the input carries an absolute target path.
+  // A mutation with actual before/after content stays visible as a compact
+  // details summary and expands to the structured diff. Actions wait for a
+  // successful status and complete normalized path/diff data.
   if (isEditTool) {
     const stat = diffStat(inputDiff ?? "");
     const displayPath = targetPath ?? (argSummary || tool.name);
@@ -9086,7 +9091,9 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
             {tool.status}
           </span>
           <DurationText durationMs={tool.durationMs} />
-          <EditCardActions targetFile={targetFile} diff={inputDiff ?? ""} displayPath={displayPath} />
+          {actionReady ? (
+            <EditCardActions targetFile={targetFile} diff={inputDiff ?? ""} displayPath={displayPath} />
+          ) : null}
         </summary>
         <div className="cave-tool-io mt-2">
           <div className="cave-tool-io-label">Code changes</div>

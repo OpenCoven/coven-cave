@@ -349,12 +349,17 @@ const bigLines = bigDiff.split("\n");
 assert.ok(bigLines.length <= 401, "diff output is capped near 400 lines");
 assert.match(bigLines[bigLines.length - 1], /more lines truncated/, "capped diff ends with a truncation marker");
 
-// ToolBlock routes the Input section through toolInputAsDiff with diff chrome,
-// otherwise through ToolInputView (readable fields + raw-JSON toggle).
+// ToolBlock routes normalized mutation diffs through diff chrome, otherwise
+// through ToolInputView (readable fields + raw-JSON toggle).
 assert.match(
   source,
-  /function ToolBlock[\s\S]*?const inputDiff = toolInputAsDiff\(tool\.name, tool\.input\)[\s\S]*?inputDiff \? \([\s\S]*?<SyntaxBlock text=\{inputDiff\} lang="diff" \/>[\s\S]*?<ToolInputView input=\{tool\.input\} \/>/,
-  "ToolBlock Input renders the structured diff when available, readable fields otherwise",
+  /function ToolBlock[\s\S]*?const mutation = normalizeFileMutation\(tool\.name, tool\.input\)[\s\S]*?const inputDiff = mutation\?\.diff \?\? null[\s\S]*?inputDiff \? \([\s\S]*?<SyntaxBlock text=\{inputDiff\} lang="diff" \/>[\s\S]*?<ToolInputView input=\{tool\.input\} \/>/,
+  "ToolBlock Input renders the normalized structured diff when available, readable fields otherwise",
+);
+assert.match(
+  source,
+  /const actionReady = mutation && isFileMutationActionReady\(mutation, tool\.status\)[\s\S]*?\{actionReady \? \(\s*<EditCardActions/,
+  "Review and Undo actions render only for a successful normalized mutation with valid action data",
 );
 
 // ── Diff gutter excludes file headers; @@ rows are muted meta (CHAT-D8-03) ──

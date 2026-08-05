@@ -179,6 +179,32 @@ assert.deepStrictEqual(
   parseOpenClawToolEvent(toolLifecycleV1.frames[0].event, toolLifecycleV1.frames[0].payload, beta5Profile),
   { kind: "tool_start", id: "tool-1", name: "exec", input: { command: "echo hi" }, seq: 3 },
 );
+const openClawEditStart = {
+  ...toolLifecycleV1.frames[0].payload,
+  data: {
+    ...toolLifecycleV1.frames[0].payload.data,
+    toolCallId: "tool-edit",
+    name: "edit",
+    args: {
+      path: "/repo/src/openclaw.ts",
+      edits: [{ oldText: "const before = true;", newText: "const after = true;" }],
+    },
+  },
+};
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(toolLifecycleV1.frames[0].event, openClawEditStart, beta5Profile),
+  {
+    kind: "tool_start",
+    id: "tool-edit",
+    name: "edit",
+    input: {
+      path: "/repo/src/openclaw.ts",
+      edits: [{ oldText: "const before = true;", newText: "const after = true;" }],
+    },
+    seq: 3,
+  },
+  "OpenClaw edit starts preserve the adapter's path plus camelCase edit pairs",
+);
 assert.deepStrictEqual(
   parseOpenClawToolEvent(toolLifecycleV1.frames[1].event, toolLifecycleV1.frames[1].payload, beta5Profile),
   { kind: "tool_progress", id: "tool-1", output: "hi", seq: 7 },

@@ -13,12 +13,17 @@
 // match), so a full-block -/+ diff is faithful.
 
 /** Tool names whose input mutates a file (case-insensitive exact match). */
-const MUTATION_TOOLS = new Set(["edit", "write", "multiedit", "notebookedit"]);
-
-/** Stable mutation classification available before a streamed input parses. */
-export function isFileMutationTool(name: string): boolean {
-  return MUTATION_TOOLS.has(name.trim().toLowerCase());
-}
+const MUTATION_TOOLS = new Set([
+  "edit",
+  "write",
+  "multiedit",
+  "notebookedit",
+  "file_change",
+  "apply_patch",
+  "applypatch",
+  "patch",
+]);
+const PATCH_TOOLS = new Set(["apply_patch", "applypatch", "patch"]);
 
 /** Cap rendered diff output; beyond this we truncate with a marker. */
 const MAX_DIFF_LINES = 400;
@@ -29,9 +34,37 @@ function str(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-/** Best-effort file path from the well-known keys mutation tools use. */
-function filePathOf(record: Rec): string {
-  return str(record.file_path) ?? str(record.path) ?? str(record.notebook_path) ?? "file";
+function validPath(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const path = value.trim();
+  return path && !/[\0\r\n]/.test(path) ? path : null;
+}
+
+function parseRecord(input?: string | null): Rec | null {
+  const raw = (input ?? "").trim();
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Rec : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Best-effort file path from repository adapter mutation schemas. */
+function filePathOf(record: Rec): string | null {
+  const direct =
+    validPath(record.file_path) ??
+    validPath(record.path) ??
+    validPath(record.notebook_path);
+  if (direct) return direct;
+  if (!Array.isArray(record.changes)) return null;
+  for (const change of record.changes) {
+    if (!change || typeof change !== "object" || Array.isArray(change)) continue;
+    const path = validPath((change as Rec).path);
+    if (path) return path;
+  }
+  return null;
 }
 
 function prefixLines(text: string, prefix: "+" | "-"): string[] {
@@ -51,8 +84,12 @@ function editHunk(oldString: string, newString: string): string[] {
   ];
 }
 
-function isEditLike(record: Rec): record is Rec & { old_string: string; new_string: string } {
-  return typeof record.old_string === "string" && typeof record.new_string === "string";
+type EditPair = { oldText: string; newText: string };
+
+function editPair(record: Rec): EditPair | null {
+  const oldText = str(record.old_string) ?? str(record.old_str) ?? str(record.oldText);
+  const newText = str(record.new_string) ?? str(record.new_str) ?? str(record.newText);
+  return oldText !== undefined && newText !== undefined ? { oldText, newText } : null;
 }
 
 function capLines(lines: string[]): string {
@@ -61,46 +98,29 @@ function capLines(lines: string[]): string {
   return [...lines.slice(0, MAX_DIFF_LINES), `… (${hidden} more lines truncated)`].join("\n");
 }
 
-/**
- * Convert a file-mutation tool input payload into unified-diff-style text.
- *
- * Returns null for non-mutation tools, non-JSON input, or payload shapes we
- * don't recognise — callers fall back to their current raw rendering.
- */
-export function toolInputAsDiff(name: string, input?: string | null): string | null {
-  if (!isFileMutationTool(name)) return null;
-  const raw = (input ?? "").trim();
-  if (!raw) return null;
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const record = parsed as Rec;
-  const file = filePathOf(record);
-
+function mutationDiff(record: Rec, file: string): string | null {
   // Edit-like: { old_string, new_string } → -old/+new with a/b headers.
-  if (isEditLike(record)) {
+  const pair = editPair(record);
+  if (pair) {
     return capLines([
       `--- a/${file}`,
       `+++ b/${file}`,
-      ...editHunk(record.old_string, record.new_string),
+      ...editHunk(pair.oldText, pair.newText),
     ]);
   }
 
-  // MultiEdit: { edits: [{ old_string, new_string }, …] } → one hunk per edit.
+  // MultiEdit/OpenClaw edit: snake_case or camelCase edit pairs.
   if (Array.isArray(record.edits)) {
-    const edits = record.edits.filter((e): e is Rec & { old_string: string; new_string: string } =>
-      Boolean(e) && typeof e === "object" && isEditLike(e as Rec),
-    );
+    const edits = record.edits.flatMap((edit) => {
+      if (!edit || typeof edit !== "object" || Array.isArray(edit)) return [];
+      const normalized = editPair(edit as Rec);
+      return normalized ? [normalized] : [];
+    });
     if (!edits.length) return null;
     const lines = [`--- a/${file}`, `+++ b/${file}`];
     edits.forEach((edit, i) => {
       lines.push(`@@ edit ${i + 1}/${edits.length} @@`);
-      lines.push(...editHunk(edit.old_string, edit.new_string));
+      lines.push(...editHunk(edit.oldText, edit.newText));
     });
     return capLines(lines);
   }
@@ -111,12 +131,81 @@ export function toolInputAsDiff(name: string, input?: string | null): string | n
     return capLines([`+++ b/${file}`, ...prefixLines(content, "+")]);
   }
 
+  const patch = str(record.patch) ?? str(record.diff);
+  if (patch?.trim()) return capLines(patch.split("\n"));
+
   return null;
 }
 
-/** Tool names that operate on a single addressable file we can open in the
- *  editor preview (mutations plus the read tool). */
-const FILE_TOOLS = new Set([...MUTATION_TOOLS, "read"]);
+export type FileMutationDescriptor = {
+  /** Stable exact-name classification; present even while input is partial. */
+  name: string;
+  /** Displayable path, including relative paths. */
+  path: string | null;
+  /** Absolute path suitable for the Code workspace and aggregate review. */
+  targetFile: string | null;
+  /** Structured diff only when the payload contains actual before/after data. */
+  diff: string | null;
+};
+
+/**
+ * Normalize every supported repository adapter mutation shape once.
+ *
+ * A recognized name always returns a descriptor, even when streamed JSON is
+ * partial. Consumers can therefore choose a stable slot from first appearance
+ * without pretending that path-only metadata is reviewable.
+ */
+export function normalizeFileMutation(
+  name: string,
+  input?: string | null,
+): FileMutationDescriptor | null {
+  const normalizedName = name.trim().toLowerCase();
+  if (!MUTATION_TOOLS.has(normalizedName)) return null;
+  const record = parseRecord(input);
+  const path = record ? filePathOf(record) : null;
+  const raw = (input ?? "").trim();
+  const diff = record
+    ? mutationDiff(record, path ?? "file")
+    : PATCH_TOOLS.has(normalizedName) && raw && !raw.startsWith("{")
+      ? capLines(raw.split("\n"))
+      : null;
+  return {
+    name: normalizedName,
+    path,
+    targetFile: path?.startsWith("/") ? path : null,
+    diff,
+  };
+}
+
+/** Stable mutation classification available before a streamed input parses. */
+export function isFileMutationTool(name: string): boolean {
+  return normalizeFileMutation(name) !== null;
+}
+
+/** Review/Undo readiness shared by per-card and aggregate actions. */
+export function isFileMutationActionReady(
+  mutation: FileMutationDescriptor,
+  status: "running" | "ok" | "error",
+): mutation is FileMutationDescriptor & { path: string; diff: string } {
+  return status === "ok" && mutation.path !== null && mutation.diff !== null;
+}
+
+/** Absolute review target only when the mutation is successful and complete. */
+export function actionReadyMutationTargetFile(
+  name: string,
+  input: string | null | undefined,
+  status: "running" | "ok" | "error",
+): string | null {
+  const mutation = normalizeFileMutation(name, input);
+  return mutation && isFileMutationActionReady(mutation, status)
+    ? mutation.targetFile
+    : null;
+}
+
+/** Convert a recognized file mutation into unified-diff-style text. */
+export function toolInputAsDiff(name: string, input?: string | null): string | null {
+  return normalizeFileMutation(name, input)?.diff ?? null;
+}
 
 /**
  * Best-effort file path a tool call targets, for transcript display. Relative
@@ -124,18 +213,11 @@ const FILE_TOOLS = new Set([...MUTATION_TOOLS, "read"]);
  * chat even when the Code workspace cannot open the file directly.
  */
 export function toolTargetPath(name: string, input?: string | null): string | null {
-  if (!FILE_TOOLS.has(name.toLowerCase())) return null;
-  const raw = (input ?? "").trim();
-  if (!raw) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const path = filePathOf(parsed as Rec);
-  return path !== "file" ? path : null;
+  const mutation = normalizeFileMutation(name, input);
+  if (mutation) return mutation.path;
+  if (name.trim().toLowerCase() !== "read") return null;
+  const record = parseRecord(input);
+  return record ? filePathOf(record) : null;
 }
 
 /**
