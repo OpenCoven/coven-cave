@@ -27,10 +27,39 @@ assert.match(
   /const ghFamiliar = useMemo\(\s*\(\) => \(\{ id: familiar\.id, name: familiar\.display_name \}\),/,
   "the turn's familiar reaches the card through ONE memoized object — a fresh literal would rebuild the composer's command tree every commit",
 );
+// Marker pipeline (cave-zs85n): skill -> auto-status -> attention -> next-path
+// extraction must all see the full marker-bearing text before GitHub/image
+// stripping ever runs, and that strip is unconditional and LAST so neither
+// raw tag flashes on a pending OR a settled turn.
 assert.match(
   chatView,
-  /turn\.pending\s*\?\s*stripImageMarkers\(stripGitHubMarkers\(reasoningSplit\.visible\)\)/,
-  "streaming path keeps GitHub stripping nested inside image-marker stripping so neither raw tag flashes",
+  /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\)/,
+  "skill markers extract directly from reasoningSplit.visible — before GitHub/image stripping touches the text",
+);
+assert.match(
+  chatView,
+  /const autoStatusSplit = extractAutoStatusMarkers\(skillSplit\.visible\)/,
+  "auto-status markers extract from the skill split's visible text — skill resolves first",
+);
+assert.match(
+  chatView,
+  /const attentionSplit = extractChatAttentionMarker\(autoStatusSplit\.visible, \{ pending: Boolean\(turn\.pending\) \}\)/,
+  "the attention marker extracts from the auto-status split's visible text — skill and auto-status resolve before attention",
+);
+assert.match(
+  chatView,
+  /const \{ visible: visibleWithGh, suggestions: nextPaths \} = extractNextPaths\(attentionSplit\.visible\)/,
+  "next-path suggestions extract from the attention split's visible text — attention resolves before next-paths, and GitHub/image markers are still intact here for the card-mounting path below",
+);
+assert.match(
+  chatView,
+  /const visible = stripImageMarkers\(stripGitHubMarkers\(visibleWithGh\)\)/,
+  "GitHub/image markers strip unconditionally and LAST — after skill, auto-status, attention, and next-path extraction have all seen the marker-bearing text — so raw tags never flash on pending OR settled turns",
+);
+assert.doesNotMatch(
+  chatView,
+  /turn\.pending\s*\?\s*stripImageMarkers\(stripGitHubMarkers\(/,
+  "GitHub/image stripping must not be gated behind turn.pending — it runs unconditionally on both streaming and settled turns",
 );
 assert.match(
   chatView,

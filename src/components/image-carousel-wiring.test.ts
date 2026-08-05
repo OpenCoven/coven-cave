@@ -28,15 +28,24 @@ assert.match(
   /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(splitSegmentsForImages\(\[\{ kind: "text", text: visibleWithGh \}\]\), artifactCtx\)/,
   "settled path splits images before GitHub/artifact cards, so one group deck can span either boundary",
 );
+// Marker pipeline (cave-zs85n): skill -> auto-status -> attention -> next-path
+// extraction all see the marker-bearing text before image/GitHub stripping
+// runs, and that strip is unconditional and LAST — so raw image tags never
+// flash on a pending OR a settled turn.
 assert.match(
   chatView,
-  /turn\.pending\s*\?\s*stripImageMarkers\(stripGitHubMarkers\(reasoningSplit\.visible\)\)/,
-  "streaming path strips image markers so raw tags never flash",
+  /const \{ visible: visibleWithGh, suggestions: nextPaths \} = extractNextPaths\(attentionSplit\.visible\)/,
+  "next-path extraction (fed by attention, fed by auto-status, fed by skill) runs before image/GitHub markers are stripped",
 );
 assert.match(
   chatView,
-  /stripImageMarkers\(stripGitHubMarkers\(visibleWithGh\)\)/,
-  "the settled fallback text path is image-marker-free too",
+  /const visible = stripImageMarkers\(stripGitHubMarkers\(visibleWithGh\)\)/,
+  "image markers strip unconditionally and LAST, after skill/auto-status/attention/next-path extraction — raw tags never flash on pending OR settled turns",
+);
+assert.doesNotMatch(
+  chatView,
+  /turn\.pending\s*\?\s*stripImageMarkers\(stripGitHubMarkers\(/,
+  "image stripping must not be gated behind turn.pending — it runs unconditionally on both streaming and settled turns",
 );
 assert.match(
   chatView,
