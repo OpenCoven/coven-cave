@@ -641,15 +641,58 @@ type CheckpointFileIdentity = {
   dev: number;
   ino: number;
   mode: number;
+  nlink: number;
   size: number;
   mtimeMs: number;
   ctimeMs: number;
 };
 
-function openCheckpointFileIdentity(file: string): {
+type OpenCheckpointFile = {
   fd: number;
   identity: CheckpointFileIdentity;
-} {
+  closed: boolean;
+};
+
+function checkpointFileIdentity(stat: fs.Stats): CheckpointFileIdentity {
+  return {
+    dev: stat.dev,
+    ino: stat.ino,
+    mode: stat.mode,
+    nlink: stat.nlink,
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    ctimeMs: stat.ctimeMs,
+  };
+}
+
+function sameCheckpointFileObject(
+  actual: CheckpointFileIdentity,
+  expected: CheckpointFileIdentity,
+): boolean {
+  return (
+    actual.dev === expected.dev &&
+    actual.ino === expected.ino &&
+    actual.mode === expected.mode &&
+    actual.size === expected.size &&
+    actual.mtimeMs === expected.mtimeMs
+  );
+}
+
+function sameOpenedCheckpointIdentity(
+  actual: CheckpointFileIdentity,
+  expected: CheckpointFileIdentity,
+): boolean {
+  return (
+    sameCheckpointFileObject(actual, expected) &&
+    actual.nlink === expected.nlink &&
+    actual.ctimeMs === expected.ctimeMs
+  );
+}
+
+function openCheckpointFileIdentity(file: string): OpenCheckpointFile {
+  const pathStat = fs.lstatSync(/* turbopackIgnore: true */ file);
+  if (!pathStat.isFile()) throw new Error("checkpoint is not a regular file");
+  if (pathStat.nlink !== 1) throw new Error("checkpoint must not be hard-linked");
   const noFollow = fs.constants.O_NOFOLLOW ?? 0;
   const fd = fs.openSync(
     /* turbopackIgnore: true */ file,
@@ -658,21 +701,28 @@ function openCheckpointFileIdentity(file: string): {
   try {
     const stat = fs.fstatSync(fd);
     if (!stat.isFile()) throw new Error("checkpoint is not a regular file");
+    const identity = checkpointFileIdentity(stat);
+    if (
+      identity.nlink !== 1 ||
+      !sameOpenedCheckpointIdentity(identity, checkpointFileIdentity(pathStat))
+    ) {
+      throw new Error("checkpoint changed while being inspected");
+    }
     return {
       fd,
-      identity: {
-        dev: stat.dev,
-        ino: stat.ino,
-        mode: stat.mode,
-        size: stat.size,
-        mtimeMs: stat.mtimeMs,
-        ctimeMs: stat.ctimeMs,
-      },
+      identity,
+      closed: false,
     };
   } catch (error) {
     fs.closeSync(fd);
     throw error;
   }
+}
+
+function closeCheckpointFile(file: OpenCheckpointFile | null): void {
+  if (!file || file.closed) return;
+  fs.closeSync(file.fd);
+  file.closed = true;
 }
 
 function sameCheckpointFileIdentity(
@@ -687,57 +737,259 @@ function sameCheckpointFileIdentity(
   }
   return (
     stat.isFile() &&
-    stat.dev === expected.dev &&
-    stat.ino === expected.ino &&
-    stat.mode === expected.mode &&
-    stat.size === expected.size &&
-    stat.mtimeMs === expected.mtimeMs &&
-    stat.ctimeMs === expected.ctimeMs
+    stat.nlink === 1 &&
+    sameCheckpointFileObject(checkpointFileIdentity(stat), expected)
   );
 }
+
+type CheckpointQuarantine = {
+  directory: string;
+  checkpointPath: string;
+  metadataPath: string;
+};
+
+function createCheckpointQuarantine(checkpointPath: string): CheckpointQuarantine {
+  const checkpointDir = path.dirname(checkpointPath);
+  const directory = fs.mkdtempSync(
+    /* turbopackIgnore: true */ path.join(checkpointDir, ".delete-"),
+  );
+  if (path.dirname(directory) !== checkpointDir) {
+    throw new Error("checkpoint quarantine escaped checkpoint directory");
+  }
+  const quarantinedCheckpoint = path.join(directory, "checkpoint.patch");
+  const quarantinedMetadata = path.join(directory, "metadata.scope.json");
+  if (
+    path.dirname(quarantinedCheckpoint) !== directory ||
+    path.dirname(quarantinedMetadata) !== directory
+  ) {
+    throw new Error("checkpoint quarantine path escaped");
+  }
+  return {
+    directory,
+    checkpointPath: quarantinedCheckpoint,
+    metadataPath: quarantinedMetadata,
+  };
+}
+
+function removeEmptyCheckpointQuarantine(quarantine: CheckpointQuarantine): void {
+  try {
+    fs.rmdirSync(/* turbopackIgnore: true */ quarantine.directory);
+  } catch {
+    // A non-empty quarantine can contain an unverified replacement. Preserve it.
+  }
+}
+
+function restoreQuarantinedRegularFile(
+  quarantinedPath: string,
+  originalPath: string,
+): boolean {
+  let quarantinedStat: fs.Stats;
+  try {
+    quarantinedStat = fs.lstatSync(/* turbopackIgnore: true */ quarantinedPath);
+  } catch {
+    return false;
+  }
+  if (!quarantinedStat.isFile() || quarantinedStat.nlink !== 1) return false;
+  const quarantinedIdentity = checkpointFileIdentity(quarantinedStat);
+  try {
+    // link is the same-filesystem, no-replace rollback primitive: unlike rename,
+    // it cannot overwrite a replacement that reached the original name.
+    fs.linkSync(
+      /* turbopackIgnore: true */ quarantinedPath,
+      /* turbopackIgnore: true */ originalPath,
+    );
+  } catch {
+    return false;
+  }
+  try {
+    const originalStat = fs.lstatSync(/* turbopackIgnore: true */ originalPath);
+    const currentQuarantinedStat = fs.lstatSync(
+      /* turbopackIgnore: true */ quarantinedPath,
+    );
+    if (
+      !originalStat.isFile() ||
+      !currentQuarantinedStat.isFile() ||
+      originalStat.dev !== quarantinedIdentity.dev ||
+      originalStat.ino !== quarantinedIdentity.ino ||
+      currentQuarantinedStat.dev !== quarantinedIdentity.dev ||
+      currentQuarantinedStat.ino !== quarantinedIdentity.ino
+    ) {
+      return false;
+    }
+    fs.unlinkSync(/* turbopackIgnore: true */ quarantinedPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+type DeleteCheckpointResult = "deleted" | "not-found" | "unauthorized";
 
 function deleteAuthorizedCheckpoint(
   root: ResolvedRepoRoot,
   checkpointPath: string,
-): boolean {
+): DeleteCheckpointResult {
   const metadataPath = checkpointMetadataPath(checkpointPath);
-  const checkpoint = openCheckpointFileIdentity(checkpointPath);
-  let metadataFile: ReturnType<typeof openCheckpointFileIdentity> | null = null;
+  let checkpoint: OpenCheckpointFile;
+  try {
+    checkpoint = openCheckpointFileIdentity(checkpointPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    try {
+      const orphanedMetadata = openCheckpointFileIdentity(metadataPath);
+      closeCheckpointFile(orphanedMetadata);
+      throw new Error("checkpoint metadata remains after checkpoint deletion");
+    } catch (metadataError) {
+      if ((metadataError as NodeJS.ErrnoException).code === "ENOENT") {
+        return "not-found";
+      }
+      throw metadataError;
+    }
+  }
+  let metadataFile: OpenCheckpointFile | null = null;
+  let metadataRaw: string | null = null;
   let metadata: RevertCheckpointMetadata | null | "invalid" = null;
   try {
     try {
       metadataFile = openCheckpointFileIdentity(metadataPath);
-      metadata = parseRevertCheckpointMetadata(
-        fs.readFileSync(metadataFile.fd, "utf8"),
-      );
+      metadataRaw = fs.readFileSync(metadataFile.fd, "utf8");
+      metadata = parseRevertCheckpointMetadata(metadataRaw);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
+    if (!checkpointAuthorizedForProject(root, metadata)) return "unauthorized";
+
+    const quarantine = createCheckpointQuarantine(checkpointPath);
+    let checkpointMoved = false;
+    let metadataMoved = false;
+    let quarantinedCheckpoint: OpenCheckpointFile | null = null;
+    let quarantinedMetadata: OpenCheckpointFile | null = null;
+    try {
+      fs.renameSync(
+        /* turbopackIgnore: true */ checkpointPath,
+        /* turbopackIgnore: true */ quarantine.checkpointPath,
+      );
+      checkpointMoved = true;
+
+      try {
+        fs.renameSync(
+          /* turbopackIgnore: true */ metadataPath,
+          /* turbopackIgnore: true */ quarantine.metadataPath,
+        );
+        metadataMoved = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT" || metadataFile) {
+          throw error;
+        }
+      }
+
+      if (!metadataFile && metadataMoved) {
+        throw new Error("checkpoint metadata changed during deletion");
+      }
+
+      quarantinedCheckpoint = openCheckpointFileIdentity(
+        quarantine.checkpointPath,
+      );
+      if (
+        !sameCheckpointFileObject(
+          quarantinedCheckpoint.identity,
+          checkpoint.identity,
+        )
+      ) {
+        throw new Error("checkpoint changed during deletion");
+      }
+
+      if (metadataFile) {
+        if (!metadataMoved || metadataRaw === null) {
+          throw new Error("checkpoint metadata changed during deletion");
+        }
+        quarantinedMetadata = openCheckpointFileIdentity(quarantine.metadataPath);
+        const quarantinedMetadataRaw = fs.readFileSync(
+          quarantinedMetadata.fd,
+          "utf8",
+        );
+        if (
+          !sameCheckpointFileObject(
+            quarantinedMetadata.identity,
+            metadataFile.identity,
+          ) ||
+          quarantinedMetadataRaw !== metadataRaw ||
+          !checkpointAuthorizedForProject(
+            root,
+            parseRevertCheckpointMetadata(quarantinedMetadataRaw),
+          )
+        ) {
+          throw new Error("checkpoint metadata changed during deletion");
+        }
+      } else {
+        // Re-check immediately before unlinking the checkpoint. If legacy
+        // metadata appeared after inspection, quarantine and preserve it.
+        try {
+          fs.renameSync(
+            /* turbopackIgnore: true */ metadataPath,
+            /* turbopackIgnore: true */ quarantine.metadataPath,
+          );
+          metadataMoved = true;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+        if (metadataMoved) {
+          throw new Error("checkpoint metadata changed during deletion");
+        }
+      }
+
+      closeCheckpointFile(quarantinedCheckpoint);
+      closeCheckpointFile(quarantinedMetadata);
+      closeCheckpointFile(checkpoint);
+      closeCheckpointFile(metadataFile);
+      if (
+        !sameCheckpointFileIdentity(
+          quarantine.checkpointPath,
+          quarantinedCheckpoint.identity,
+        )
+      ) {
+        throw new Error("checkpoint changed during deletion");
+      }
+      if (
+        quarantinedMetadata &&
+        !sameCheckpointFileIdentity(
+          quarantine.metadataPath,
+          quarantinedMetadata.identity,
+        )
+      ) {
+        throw new Error("checkpoint metadata changed during deletion");
+      }
+
+      fs.unlinkSync(/* turbopackIgnore: true */ quarantine.checkpointPath);
+      checkpointMoved = false;
+      if (metadataMoved) {
+        fs.unlinkSync(/* turbopackIgnore: true */ quarantine.metadataPath);
+        metadataMoved = false;
+      }
+      removeEmptyCheckpointQuarantine(quarantine);
+      return "deleted";
+    } catch (error) {
+      closeCheckpointFile(quarantinedCheckpoint);
+      closeCheckpointFile(quarantinedMetadata);
+      if (checkpointMoved) {
+        if (metadataMoved) {
+          restoreQuarantinedRegularFile(
+            quarantine.metadataPath,
+            metadataPath,
+          );
+        }
+        restoreQuarantinedRegularFile(
+          quarantine.checkpointPath,
+          checkpointPath,
+        );
+      }
+      removeEmptyCheckpointQuarantine(quarantine);
+      throw error;
+    }
   } finally {
-    fs.closeSync(checkpoint.fd);
-    if (metadataFile) fs.closeSync(metadataFile.fd);
+    closeCheckpointFile(checkpoint);
+    closeCheckpointFile(metadataFile);
   }
-
-  if (!checkpointAuthorizedForProject(root, metadata)) return false;
-  if (!sameCheckpointFileIdentity(checkpointPath, checkpoint.identity)) {
-    throw new Error("checkpoint changed during deletion");
-  }
-  if (metadataFile) {
-    if (!sameCheckpointFileIdentity(metadataPath, metadataFile.identity)) {
-      throw new Error("checkpoint metadata changed during deletion");
-    }
-  } else if (fs.existsSync(/* turbopackIgnore: true */ metadataPath)) {
-    throw new Error("checkpoint metadata changed during deletion");
-  }
-
-  fs.unlinkSync(/* turbopackIgnore: true */ checkpointPath);
-  if (metadataFile) {
-    if (!sameCheckpointFileIdentity(metadataPath, metadataFile.identity)) {
-      throw new Error("checkpoint metadata changed during deletion");
-    }
-    fs.unlinkSync(/* turbopackIgnore: true */ metadataPath);
-  }
-  return true;
 }
 
 async function checkpointChanges(
@@ -1081,18 +1333,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "checkpoint name is required" }, { status: 400 });
     }
     const abs = await resolveCheckpointPath(root.repoRoot, body.checkpoint);
-    if (!abs || !fs.existsSync(/* turbopackIgnore: true */ abs)) {
+    if (!abs) {
       return NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
     }
     try {
       if (action === "delete-checkpoint") {
-        if (!deleteAuthorizedCheckpoint(root, abs)) {
+        const result = deleteAuthorizedCheckpoint(root, abs);
+        if (result === "unauthorized") {
           return NextResponse.json(
             { ok: false, error: "checkpoint not authorized for project" },
             { status: 403 },
           );
         }
         return NextResponse.json({ ok: true, deleted: body.checkpoint });
+      }
+      if (!fs.existsSync(/* turbopackIgnore: true */ abs)) {
+        return NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
       }
       const metadata = readRevertCheckpointMetadata(abs);
       if (!checkpointAuthorizedForProject(root, metadata)) {
