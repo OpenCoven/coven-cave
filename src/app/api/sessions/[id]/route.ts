@@ -10,7 +10,6 @@ import {
   setSessionPinnedLocal,
   setSessionTitle,
   setSessionTitleAutoIfOwned,
-  sessionTitleVersion,
   summonSessionLocal,
 } from "@/lib/cave-config";
 import {
@@ -32,6 +31,10 @@ type PatchBody = {
   /** When true with titleOwnership "auto", the automatic title replaces any
    *  current title including a manually owned one. Omit for background callers. */
   replaceManualTitle?: boolean;
+  /** Display title observed by an explicit takeover caller. */
+  observedTitle?: string;
+  /** Ownership revision observed alongside observedTitle. */
+  observedTitleRevision?: number;
   /** true → archive, false → summon (unarchive). */
   archived?: boolean;
   /** true → mark keep (never auto-archived), false → clear the mark. */
@@ -81,10 +84,22 @@ export async function PATCH(
   }
   if (
     body.replaceManualTitle === true &&
-    (body.titleOwnership !== "auto" || typeof body.title !== "string")
+    (
+      body.titleOwnership !== "auto" ||
+      typeof body.title !== "string" ||
+      typeof body.observedTitle !== "string" ||
+      !body.observedTitle.trim() ||
+      body.observedTitle.trim().length > MAX_CHAT_TITLE_LENGTH ||
+      !Number.isSafeInteger(body.observedTitleRevision) ||
+      (body.observedTitleRevision ?? -1) < 0
+    )
   ) {
     return NextResponse.json(
-      { ok: false, error: 'replaceManualTitle requires titleOwnership "auto" and a title' },
+      {
+        ok: false,
+        error:
+          'replaceManualTitle requires titleOwnership "auto", a title, observedTitle, and observedTitleRevision',
+      },
       { status: 400 },
     );
   }
@@ -134,20 +149,14 @@ export async function PATCH(
       const safeDefaults = new Set([defaultChatTitleForSession(id)]);
       if (current && observedDefaults.has(current)) safeDefaults.add(current);
 
-      const takeoverVersion = sessionTitleVersion(state, id);
-      const takeoverConflicted =
-        body.replaceManualTitle === true &&
-        current !== undefined &&
-        !observedDefaults.has(current);
-      const next = takeoverConflicted
-        ? null
-        : await setSessionTitleAutoIfOwned(
-            id,
-            body.title,
-            safeDefaults,
-            !body.replaceManualTitle,
-            body.replaceManualTitle ? takeoverVersion : undefined,
-          );
+      const next = await setSessionTitleAutoIfOwned(
+        id,
+        body.title,
+        safeDefaults,
+        !body.replaceManualTitle,
+        body.replaceManualTitle ? body.observedTitleRevision : undefined,
+        body.replaceManualTitle ? body.observedTitle?.trim() : undefined,
+      );
       result.titleUpdated = next !== null;
       result.title = next ?? (await loadState()).sessionTitles[id] ?? null;
     } else {

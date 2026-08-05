@@ -165,8 +165,18 @@ test("the sparkle sends replaceManualTitle: true to take over any current title"
   // the manual path (where replaceManual is its default false).
   assert.match(
     header,
-    /replaceManual && \{ replaceManualTitle: true \}/,
+    /replaceManual && \{\s*replaceManualTitle: true,/,
     "replaceManualTitle is only spread when the takeover parameter is active",
+  );
+  assert.match(
+    header,
+    /observedTitle:\s*session\.title/,
+    "the sparkle sends the displayed session title it observed",
+  );
+  assert.match(
+    header,
+    /observedTitleRevision:\s*session\.titleRevision/,
+    "the sparkle sends the ownership revision observed alongside the title",
   );
   // The sparkle generate call explicitly opts in to the takeover.
   assert.match(

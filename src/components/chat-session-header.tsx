@@ -339,7 +339,11 @@ export function ChatTitleEditable({
             title,
             titleOwnership: "auto" as const,
             autoDefaults: session.title ? [session.title] : [],
-            ...(replaceManual && { replaceManualTitle: true }),
+            ...(replaceManual && {
+              replaceManualTitle: true,
+              observedTitle: session.title,
+              observedTitleRevision: session.titleRevision,
+            }),
           }
         : { title };
       const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {

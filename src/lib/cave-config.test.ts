@@ -19,6 +19,7 @@ try {
     sessionTitles: {},
     sessionTitleAuto: {},
     sessionTitleManual: {},
+    sessionTitleRevision: {},
     sessionArchived: {},
     sessionSacrificed: {},
     sessionKeep: {},
@@ -52,6 +53,11 @@ try {
       `${mapName} deletions must not be resurrected during state reconciliation`,
     );
   }
+  assert.match(
+    reconciliationSource,
+    /const STATE_MAPS[^;]+["']sessionTitleRevision["']/s,
+    "title revisions must survive Cave-home state reconciliation",
+  );
 
   await config.recordSessionFamiliar("session-1", "cody");
   assert.equal(await config.setSessionTitle("session-1", "  Renamed session  "), "Renamed session");
@@ -265,14 +271,15 @@ try {
   // An explicit sparkle takeover observes the current title before its write.
   // A manual rename that lands after that observation must win the atomic
   // compare-and-set rather than being overwritten by the generated title.
-  const observedTakeoverVersion = config.sessionTitleVersion(state, "session-owned");
+  const observedTakeoverRevision = config.sessionTitleRevision(state, "session-owned");
   await config.setSessionTitle("session-owned", "Newer manual title");
   const conflictedTakeover = await config.setSessionTitleAutoIfOwned(
     "session-owned",
     "Stale sparkle title",
     new Set(["New chat"]),
     false,
-    observedTakeoverVersion,
+    observedTakeoverRevision,
+    "Policy-selected title",
   );
   assert.equal(conflictedTakeover, null, "stale explicit takeover reports a conflict");
   state = await config.loadState();
@@ -288,7 +295,7 @@ try {
   // after observation is still a conflict and must not be reclaimed.
   await config.setSessionTitleAuto("session-owned", "Same visible title");
   state = await config.loadState();
-  const observedAutoVersion = config.sessionTitleVersion(state, "session-owned");
+  const observedAutoRevision = config.sessionTitleRevision(state, "session-owned");
   await config.setSessionTitle("session-owned", "Same visible title");
   assert.equal(
     await config.setSessionTitleAutoIfOwned(
@@ -296,7 +303,8 @@ try {
       "Stale same-text sparkle",
       new Set(["New chat"]),
       false,
-      observedAutoVersion,
+      observedAutoRevision,
+      "Same visible title",
     ),
     null,
     "an ownership-only change conflicts with an explicit takeover",
@@ -307,14 +315,15 @@ try {
 
   // Without an intervening change, the same version authorizes the explicit
   // takeover and preserves normal automatic provenance.
-  const uncontestedVersion = config.sessionTitleVersion(state, "session-owned");
+  const uncontestedRevision = config.sessionTitleRevision(state, "session-owned");
   assert.equal(
     await config.setSessionTitleAutoIfOwned(
       "session-owned",
       "Fresh sparkle title",
       new Set(["New chat"]),
       false,
-      uncontestedVersion,
+      uncontestedRevision,
+      "Same visible title",
     ),
     "Fresh sparkle title",
   );
@@ -688,6 +697,13 @@ try {
   const rawState = JSON.parse(raw);
   // Summon grace timestamps vary per run; the shape checks above cover them.
   delete rawState.sessionArchiveExtendedUntil;
+  assert.ok(
+    Object.values(rawState.sessionTitleRevision).every(
+      (revision) => Number.isSafeInteger(revision) && revision > 0,
+    ),
+    "persisted title revisions are positive safe integers",
+  );
+  delete rawState.sessionTitleRevision;
   assert.deepEqual(rawState, {
     sessionFamiliar: { "session-1": "cody" },
     sessionTitles: {},

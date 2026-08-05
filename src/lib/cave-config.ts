@@ -132,6 +132,7 @@ function defaultState(): CaveState {
     sessionTitles: {},
     sessionTitleAuto: {},
     sessionTitleManual: {},
+    sessionTitleRevision: {},
     sessionArchived: {},
     sessionSacrificed: {},
     sessionKeep: {},
@@ -148,6 +149,22 @@ function normalizeSessionTitleManual(value: unknown): Record<string, true> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return normalized;
   for (const [sessionId, isManual] of Object.entries(value)) {
     if (sessionId && isManual === true) normalized[sessionId] = true;
+  }
+  return normalized;
+}
+
+function normalizeSessionTitleRevision(value: unknown): Record<string, number> {
+  const normalized: Record<string, number> = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return normalized;
+  for (const [sessionId, revision] of Object.entries(value)) {
+    if (
+      sessionId &&
+      typeof revision === "number" &&
+      Number.isSafeInteger(revision) &&
+      revision >= 0
+    ) {
+      normalized[sessionId] = revision;
+    }
   }
   return normalized;
 }
@@ -346,6 +363,9 @@ export type CaveState = {
    *  remains authoritative when a person chooses text equal to an auto default.
    *  Legacy sessions omit it and may still be recognized by known defaults. */
   sessionTitleManual: Record<string, true>;
+  /** Monotonic ownership revision. Every manual or automatic title mutation
+   *  increments it, including same-text ownership changes. */
+  sessionTitleRevision: Record<string, number>;
   /** Session to ISO timestamp when archived in the Cave. Empty when unarchived. */
   sessionArchived: Record<string, string>;
   /** Session to ISO timestamp when sacrificed (soft-deleted) in the Cave. Hidden from lists. */
@@ -365,21 +385,19 @@ export type CaveState = {
   travel: CaveTravelState;
 };
 
-export type SessionTitleVersion = Readonly<{
-  title: string | undefined;
-  autoTitle: string | undefined;
-  manuallyOwned: boolean;
-}>;
-
-export function sessionTitleVersion(
+export function sessionTitleRevision(
   state: CaveState,
   sessionId: string,
-): SessionTitleVersion {
-  return {
-    title: state.sessionTitles[sessionId],
-    autoTitle: state.sessionTitleAuto[sessionId],
-    manuallyOwned: state.sessionTitleManual[sessionId] === true,
-  };
+): number {
+  return state.sessionTitleRevision[sessionId] ?? 0;
+}
+
+function incrementSessionTitleRevision(state: CaveState, sessionId: string): void {
+  const current = sessionTitleRevision(state, sessionId);
+  if (current >= Number.MAX_SAFE_INTEGER) {
+    throw new Error(`session title revision exhausted for ${sessionId}`);
+  }
+  state.sessionTitleRevision[sessionId] = current + 1;
 }
 
 async function loadConfigUnlocked(): Promise<CaveConfig> {
@@ -695,6 +713,7 @@ async function loadStateUnlocked(): Promise<CaveState> {
       sessionTitles: parsed.sessionTitles ?? {},
       sessionTitleAuto: parsed.sessionTitleAuto ?? {},
       sessionTitleManual: normalizeSessionTitleManual(parsed.sessionTitleManual),
+      sessionTitleRevision: normalizeSessionTitleRevision(parsed.sessionTitleRevision),
       sessionArchived: parsed.sessionArchived ?? {},
       sessionSacrificed: parsed.sessionSacrificed ?? {},
       sessionKeep: parsed.sessionKeep ?? {},
@@ -921,6 +940,7 @@ export async function setSessionTitle(sessionId: string, title: string): Promise
       state.sessionTitleManual[sessionId] = true;
     }
     delete state.sessionTitleAuto[sessionId];
+    incrementSessionTitleRevision(state, sessionId);
     return trimmed || null;
   });
   invalidateSessionsListCache();
@@ -940,6 +960,7 @@ export async function setSessionTitleAuto(sessionId: string, title: string): Pro
     state.sessionTitles[sessionId] = trimmed;
     state.sessionTitleAuto[sessionId] = trimmed;
     delete state.sessionTitleManual[sessionId];
+    incrementSessionTitleRevision(state, sessionId);
     return trimmed;
   });
   invalidateSessionsListCache();
@@ -952,35 +973,35 @@ export async function setSessionTitleAuto(sessionId: string, title: string): Pro
  * supplied autoDefaults, or matches the current sessionTitleAuto provenance.
  * This lets legacy defaults be claimed without confusing an equal manually
  * chosen title for an automatic one. When preserveManualTitles is false, the
- * caller may explicitly take ownership of any current title. An optional
- * expectedVersion makes that takeover a compare-and-set across title value and
- * provenance, so a rename after observation wins. Returns the written title,
- * or null if a manual title or version conflict was preserved. Trim/empty input
- * is a no-op (returns null).
+ * caller may explicitly take ownership of any current title. Optional expected
+ * title/revision values make that takeover a compare-and-set, so even a
+ * same-text manual ownership change after observation wins. Returns the written
+ * title, or null if a manual title or observation conflict was preserved.
+ * Trim/empty input is a no-op (returns null).
  */
 export async function setSessionTitleAutoIfOwned(
   sessionId: string,
   title: string,
   autoDefaults: ReadonlySet<string>,
   preserveManualTitles = true,
-  expectedVersion?: SessionTitleVersion,
+  expectedRevision?: number,
+  expectedTitle?: string,
 ): Promise<string | null> {
   const trimmed = title.trim();
   if (!trimmed) return null;
   const result = await updateState((state) => {
     const current = state.sessionTitles[sessionId];
-    const currentAuto = state.sessionTitleAuto[sessionId];
     const explicitlyManual = state.sessionTitleManual[sessionId] === true;
     if (
-      expectedVersion &&
+      expectedRevision !== undefined &&
       (
-        current !== expectedVersion.title ||
-        currentAuto !== expectedVersion.autoTitle ||
-        explicitlyManual !== expectedVersion.manuallyOwned
+        sessionTitleRevision(state, sessionId) !== expectedRevision ||
+        (current !== undefined && current !== expectedTitle)
       )
     ) {
       return null;
     }
+    const currentAuto = state.sessionTitleAuto[sessionId];
     // Write only when the title is absent, is a known auto default, or was
     // previously written by an auto path (provenance match). Explicit manual
     // ownership wins over text equality with a default.
@@ -1000,6 +1021,7 @@ export async function setSessionTitleAutoIfOwned(
     state.sessionTitles[sessionId] = trimmed;
     state.sessionTitleAuto[sessionId] = trimmed;
     delete state.sessionTitleManual[sessionId];
+    incrementSessionTitleRevision(state, sessionId);
     return trimmed;
   });
   if (result !== null) invalidateSessionsListCache();

@@ -937,6 +937,7 @@ const STATE_MAPS = [
   "sessionTitles",
   "sessionTitleAuto",
   "sessionTitleManual",
+  "sessionTitleRevision",
   "sessionArchived",
   "sessionSacrificed",
   "sessionKeep",
