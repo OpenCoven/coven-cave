@@ -133,8 +133,8 @@ assert.match(
 );
 assert.match(
   chatAttentionEvents,
-  /const clearWatermark = normalizeClearWatermark\(detail\?\.clearWatermark\);[\s\S]*const scopeKey = normalizeString\(detail\?\.scopeKey\);[\s\S]*const hasBaselineAttention = hasOwnDetailField\(detail, "baselineAttention"\);[\s\S]*const baselineAttention = hasBaselineAttention[\s\S]*normalizeAttentionDetail\(detail\?\.baselineAttention\)[\s\S]*if \(hasBaselineAttention && !baselineAttention\) return null;[\s\S]*return sessionId && operationId[\s\S]*sessionId,[\s\S]*operationId,[\s\S]*\.\.\.\(clearWatermark \? \{ clearWatermark \} : \{\}\),[\s\S]*\.\.\.\(scopeKey \? \{ scopeKey \} : \{\}\),[\s\S]*\.\.\.\(baselineAttention \? \{ baselineAttention \} : \{\}\),[\s\S]*: null;/,
-  "clear-event parsing should preserve valid optional evidence, reject explicitly malformed baselines, and remain compatible with two-field events",
+  /const hasClearWatermark = hasOwnDetailField\(detail, "clearWatermark"\);[\s\S]*const clearWatermark = hasClearWatermark && isCanonicalIsoInstant\(detail\?\.clearWatermark\)[\s\S]*\? detail\.clearWatermark[\s\S]*: null;[\s\S]*const scopeKey = normalizeString\(detail\?\.scopeKey\);[\s\S]*const hasBaselineAttention = hasOwnDetailField\(detail, "baselineAttention"\);[\s\S]*const baselineAttention = hasBaselineAttention[\s\S]*normalizeAttentionDetail\(detail\?\.baselineAttention\)[\s\S]*if \(hasClearWatermark && !clearWatermark\) return null;[\s\S]*if \(hasBaselineAttention && !baselineAttention\) return null;[\s\S]*return sessionId && operationId[\s\S]*sessionId,[\s\S]*operationId,[\s\S]*\.\.\.\(clearWatermark \? \{ clearWatermark \} : \{\}\),[\s\S]*\.\.\.\(scopeKey \? \{ scopeKey \} : \{\}\),[\s\S]*\.\.\.\(baselineAttention \? \{ baselineAttention \} : \{\}\),[\s\S]*: null;/,
+  "clear-event parsing should preserve absent-field compatibility while rejecting explicitly malformed watermark and baseline evidence",
 );
 assert.match(
   chatView,

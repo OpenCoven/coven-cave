@@ -104,12 +104,16 @@ function attentionEventDetail(event: Event, type: string): ChatAttentionClearDet
   const detail = (event as CustomEvent<Record<string, unknown> | null>).detail;
   const sessionId = normalizeString(detail?.sessionId);
   const operationId = normalizeString(detail?.operationId);
-  const clearWatermark = normalizeClearWatermark(detail?.clearWatermark);
+  const hasClearWatermark = hasOwnDetailField(detail, "clearWatermark");
+  const clearWatermark = hasClearWatermark && isCanonicalIsoInstant(detail?.clearWatermark)
+    ? detail.clearWatermark
+    : null;
   const scopeKey = normalizeString(detail?.scopeKey);
   const hasBaselineAttention = hasOwnDetailField(detail, "baselineAttention");
   const baselineAttention = hasBaselineAttention
     ? normalizeAttentionDetail(detail?.baselineAttention)
     : null;
+  if (hasClearWatermark && !clearWatermark) return null;
   if (hasBaselineAttention && !baselineAttention) return null;
   return sessionId && operationId
     ? {

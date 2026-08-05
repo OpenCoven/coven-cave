@@ -64,7 +64,7 @@ test("preserves optional scope and baseline attention evidence on clear events",
     detail: {
       sessionId: " session-3 ",
       operationId: " run-3 ",
-      clearWatermark: " 2026-08-05T00:00:00.000Z ",
+      clearWatermark: "2026-08-05T00:00:00.000Z",
       scopeKey: " familiar:nova ",
       baselineAttention: {
         state: "awaiting-human",
@@ -90,6 +90,32 @@ function clearWithBaseline(baselineAttention: unknown) {
     detail: { sessionId: "session-3", operationId: "run-3", baselineAttention },
   }));
 }
+
+function clearWithWatermark(clearWatermark: unknown) {
+  return attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
+    detail: { sessionId: "session-3", operationId: "run-3", clearWatermark },
+  }));
+}
+
+test("rejects a present clear watermark unless it is an exact canonical instant", () => {
+  for (const clearWatermark of [
+    null,
+    undefined,
+    "",
+    "   ",
+    "later maybe",
+    "2026-08-05T00:00:00Z",
+    " 2026-08-05T00:00:00.000Z ",
+    1_754_352_000_000,
+    {},
+  ]) {
+    assert.equal(
+      clearWithWatermark(clearWatermark),
+      null,
+      `present invalid clearWatermark ${JSON.stringify(clearWatermark)} must reject the event`,
+    );
+  }
+});
 
 test("accepts every canonical BaselineAttention combo", () => {
   assert.deepEqual(clearWithBaseline({ state: "none", since: null, reason: null }), {
@@ -249,18 +275,12 @@ await test("emits dispatchable clear and settlement events with trimmed ids", as
     });
   });
 
-  test("operation-aware events stay backward compatible when the watermark is omitted or malformed", () => {
+  test("operation-aware events stay backward compatible when the watermark is genuinely absent", () => {
     assert.deepEqual(attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
       detail: { sessionId: "session-10", operationId: "run-10" },
     })), {
       sessionId: "session-10",
       operationId: "run-10",
-    });
-    assert.deepEqual(attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
-      detail: { sessionId: "session-11", operationId: "run-11", clearWatermark: "later maybe" },
-    })), {
-      sessionId: "session-11",
-      operationId: "run-11",
     });
   });
 });
