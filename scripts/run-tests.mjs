@@ -276,6 +276,7 @@ export const SUITES = {
     "src/lib/chat-start-from.test.ts",
     "src/lib/chat-thread-instruments.test.ts",
     "src/lib/chat-tool-batches.test.ts",
+    "src/lib/use-tool-run-disclosure.test.ts",
     "src/lib/reader-outline.test.ts",
     "src/lib/auto-status-blocks.test.ts",
     "src/lib/auto-mission-state.test.ts",
