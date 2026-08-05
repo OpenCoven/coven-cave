@@ -37,7 +37,7 @@ assert.ok(newChatImperative.length > 0, "newChat imperative handler must be pres
 
 assert.match(
   newChatImperative,
-  /setComposeInstance\(\(n\) => n \+ 1\)/,
+  /advanceComposeInstance\(\)/,
   "imperative newChat must increment composeInstance before opening the compose view",
 );
 
@@ -50,7 +50,7 @@ assert.ok(chatListOnNewChat.length > 0, "ChatList onNewChat handler must be pres
 
 assert.match(
   chatListOnNewChat,
-  /setComposeInstance\(\(n\) => n \+ 1\)/,
+  /advanceComposeInstance\(\)/,
   "ChatList onNewChat must increment composeInstance",
 );
 
@@ -63,20 +63,20 @@ assert.ok(sidebarOnNewChat.length > 0, "ChatProjectSidebar onNewChat handler mus
 
 assert.match(
   sidebarOnNewChat,
-  /setComposeInstance\(\(n\) => n \+ 1\)/,
+  /advanceComposeInstance\(\)/,
   "ChatProjectSidebar onNewChat must increment composeInstance",
 );
 
 // ── 5. Familiar-switch increments when creating a new null-session compose ───
 
 const familiarSwitchEffect =
-  routerSource.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[familiar\?\.id\]\);/)?.[0] ?? "";
+  routerSource.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[advanceComposeInstance, familiar\?\.id\]\);/)?.[0] ?? "";
 
 assert.ok(familiarSwitchEffect.length > 0, "familiar-switch effect must be present");
 
 assert.match(
   familiarSwitchEffect,
-  /setComposeInstance\(\(n\) => n \+ 1\)/,
+  /advanceComposeInstance\(\)/,
   "familiar-switch must increment composeInstance when creating a new null-session compose",
 );
 
@@ -95,13 +95,13 @@ assert.match(
 // ── 6. Session promotion does NOT increment the nonce ────────────────────────
 
 const sessionStartedHandler =
-  routerSource.match(/onSessionStarted=\{\(sid,\s*originSessionId\) => \{[\s\S]*?\}\}/)?.[0] ?? "";
+  routerSource.match(/onSessionStarted=\{\(request\) => \{[\s\S]*?\}\}/)?.[0] ?? "";
 
 assert.ok(sessionStartedHandler.length > 0, "onSessionStarted handler must be present in router");
 
 assert.doesNotMatch(
   sessionStartedHandler,
-  /setComposeInstance/,
+  /advanceComposeInstance/,
   "session promotion (onSessionStarted) must NOT increment composeInstance — the stream must survive the null→sessionId transition",
 );
 
@@ -114,7 +114,7 @@ assert.ok(voiceDiscardHandler.length > 0, "onVoiceSessionDiscarded handler must 
 
 assert.match(
   voiceDiscardHandler,
-  /setComposeInstance\(\(n\) => n \+ 1\)/,
+  /advanceComposeInstance\(\)/,
   "onVoiceSessionDiscarded must increment composeInstance (discarded voice chat → new blank compose)",
 );
 
@@ -127,7 +127,7 @@ assert.ok(voiceCreatedHandler.length > 0, "onVoiceSessionCreated handler must be
 
 assert.doesNotMatch(
   voiceCreatedHandler,
-  /setComposeInstance/,
+  /advanceComposeInstance/,
   "onVoiceSessionCreated must NOT increment composeInstance — it is a promotion, not a new compose",
 );
 
@@ -224,12 +224,12 @@ assert.deepEqual(
 
 await act(async () => renderer.unmount());
 
-// ── 12. ChatView relies on keyed unmount, not passive nonce observation ────────
+// ── 12. ChatView carries the nonce as promotion provenance ────────────────────
 
-assert.doesNotMatch(
+assert.match(
   viewSource,
-  /composeInstance\?: number|isFirstComposeInstanceRef|\[composeInstance\]/,
-  "ChatView must not passively observe composeInstance; the router key owns compose replacement",
+  /composeInstance\?: number[\s\S]*?onSessionStarted\?: \(request: ChatSessionPromotionRequest\)/,
+  "ChatView's promotion callback must carry the compose nonce with the expected session identity",
 );
 
 // ── 13. viewRef kept in sync ──────────────────────────────────────────────────
@@ -242,8 +242,8 @@ assert.match(
 
 assert.match(
   routerSource,
-  /viewRef\.current = view;/,
-  "viewRef.current must be updated synchronously in the render body to stay current",
+  /const composeInstanceRef = useRef\(composeInstance\)[\s\S]*?composeInstanceRef\.current = next;[\s\S]*?setComposeInstance\(next\)/,
+  "composeInstanceRef must advance synchronously before rendering the next compose",
 );
 
 console.log("chat-compose-instance.test.ts: ok");

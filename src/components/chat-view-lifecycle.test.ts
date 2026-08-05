@@ -77,8 +77,8 @@ assert.match(
 
 assert.match(
   source,
-  /case "session":[\s\S]*ev\.sessionId !== currentSessionRef\.current[\s\S]*onSessionStarted\?\.\(ev\.sessionId,\s*liveGeneration\.originSessionId\)/,
-  "A transparent resume fallback should promote the live chat to the replacement session id, passing originSessionId to the router",
+  /case "session":[\s\S]*ev\.sessionId !== currentSessionRef\.current[\s\S]*onSessionStarted\?\.\(\{\s*newSessionId: ev\.sessionId,\s*expectedSessionId: liveGeneration\.originSessionId,\s*composeInstance,\s*\}\)/,
+  "A transparent resume fallback should promote the live chat with origin and compose provenance",
 );
 
 assert.match(
@@ -779,11 +779,11 @@ assert.match(
   // predicate, passing originSessionId so the router can match the specific
   // thread being replaced (null for sessionless creation, non-null for A→B).
   const notifyChecks = source.match(
-    /const shouldPromote = canPromoteDisplayedSession\(\{[\s\S]*?currentSessionId: currentSessionRef\.current,[\s\S]*?originSessionId: liveGeneration\.originSessionId,[\s\S]*?runId: liveGeneration\.runId,[\s\S]*?displayedCreationRunId: displayedCreationRunIdRef\.current,[\s\S]*?\}\);[\s\S]*?if \(shouldPromote\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId,\s*liveGeneration\.originSessionId\);\s*\n\s*\}/g,
+    /const shouldPromote = canPromoteDisplayedSession\(\{[\s\S]*?currentSessionId: currentSessionRef\.current,[\s\S]*?originSessionId: liveGeneration\.originSessionId,[\s\S]*?runId: liveGeneration\.runId,[\s\S]*?displayedCreationRunId: displayedCreationRunIdRef\.current,[\s\S]*?\}\);[\s\S]*?if \(shouldPromote\) \{\s*onSessionStarted\?\.\(\{\s*newSessionId: ev\.sessionId,\s*expectedSessionId: liveGeneration\.originSessionId,\s*composeInstance,\s*\}\);\s*\}/g,
   );
   assert.ok(
     notifyChecks && notifyChecks.length === 2,
-    "session and done events call onSessionStarted through the display-ownership predicate, passing sessionId and originSessionId",
+    "session and done events notify through the display-ownership predicate with session, origin, and compose provenance",
   );
 }
 // onSessionStarted must never be called from an ad hoc owned check — both paths

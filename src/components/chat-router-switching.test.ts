@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const familiarChangeEffect =
-  source.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[familiar\?\.id\]\);/)?.[0] ?? "";
+  source.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[advanceComposeInstance, familiar\?\.id\]\);/)?.[0] ?? "";
 
 assert.match(
   familiarChangeEffect,
@@ -145,7 +145,7 @@ assert.match(
 
 assert.match(
   source,
-  /prev\.kind === "chat" && shouldRouterPromoteSession\(prev\.sessionId, originSessionId\)\s*\? \{ kind: "chat", sessionId: sid/,
+  /shouldRouterPromoteSession\(\s*\{ sessionId: prev\.sessionId, composeInstance: composeInstanceRef\.current \},\s*request,\s*\)/,
   "Session promotion must update the view's sessionId via setView so the hash-sync effect writes the promoted id",
 );
 

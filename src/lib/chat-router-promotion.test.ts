@@ -2,22 +2,37 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { shouldRouterPromoteSession } from "./chat-router-promotion.ts";
 
-test("null→B: sessionless creation promotes into null compose view", () => {
-  assert.equal(shouldRouterPromoteSession(null, null), true);
+test("valid A→B replacement promotes while router still owns A", () => {
+  assert.equal(shouldRouterPromoteSession(
+    { sessionId: "sess-a", composeInstance: 4 },
+    { newSessionId: "sess-b", expectedSessionId: "sess-a", composeInstance: 4 },
+  ), true);
 });
 
-test("A→B: replacement on A promotes into view still on A", () => {
-  assert.equal(shouldRouterPromoteSession("sess-a", "sess-a"), true);
+test("stale A→B replacement cannot promote after navigation to a fresh compose", () => {
+  assert.equal(shouldRouterPromoteSession(
+    { sessionId: null, composeInstance: 5 },
+    { newSessionId: "sess-b", expectedSessionId: "sess-a", composeInstance: 4 },
+  ), false);
 });
 
-test("stale C→B refusal: prev moved to C while origin is A — no promotion", () => {
-  assert.equal(shouldRouterPromoteSession("sess-c", "sess-a"), false);
+test("stale A→B replacement cannot promote after navigation to C", () => {
+  assert.equal(shouldRouterPromoteSession(
+    { sessionId: "sess-c", composeInstance: 4 },
+    { newSessionId: "sess-b", expectedSessionId: "sess-a", composeInstance: 4 },
+  ), false);
 });
 
-test("duplicate no-op: after first A→B promoted view to B, second call sees prev=B, origin=A", () => {
-  assert.equal(shouldRouterPromoteSession("sess-b", "sess-a"), false);
+test("current null-origin compose promotes its newly created session", () => {
+  assert.equal(shouldRouterPromoteSession(
+    { sessionId: null, composeInstance: 5 },
+    { newSessionId: "sess-b", expectedSessionId: null, composeInstance: 5 },
+  ), true);
 });
 
-test("null origin does not promote into a non-null view", () => {
-  assert.equal(shouldRouterPromoteSession("sess-b", null), false);
+test("stale old compose nonce cannot promote into the current null compose", () => {
+  assert.equal(shouldRouterPromoteSession(
+    { sessionId: null, composeInstance: 5 },
+    { newSessionId: "sess-b", expectedSessionId: null, composeInstance: 4 },
+  ), false);
 });

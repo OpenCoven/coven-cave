@@ -177,6 +177,12 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   // NOT incremented on session promotion (null→sessionId) — that would remount
   // and lose the live stream.
   const [composeInstance, setComposeInstance] = useState(0);
+  const composeInstanceRef = useRef(composeInstance);
+  const advanceComposeInstance = useCallback(() => {
+    const next = composeInstanceRef.current + 1;
+    composeInstanceRef.current = next;
+    setComposeInstance(next);
+  }, []);
   // Mirror the active session upward when it *changes*. Seeding the ref with
   // the mount value (always null — view starts as the list) means mount never
   // notifies, so a fresh router can't clobber the Workspace's optimistic
@@ -541,7 +547,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       currentView.kind === "chat" &&
       currentView.familiarId !== nextFamiliarId
     ) {
-      setComposeInstance((n) => n + 1);
+      advanceComposeInstance();
     }
     setView((prev) =>
       nextFamiliarId === null
@@ -565,7 +571,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
               }
         : { kind: "list" },
     );
-  }, [familiar?.id]);
+  }, [advanceComposeInstance, familiar?.id]);
 
   // ── Chat-first IA (cave-hsa6): boot into a fresh compose view ──────────────
   // Booting into chat mode should read like ChatGPT — an empty conversation with
@@ -617,7 +623,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       goToList: () => setView({ kind: "list" }),
       newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin, initialControls?: InitialCommandControls, initialAttachments?: ChatAttachment[]) => {
         const next = selectFamiliarForChat(familiarId);
-        setComposeInstance((n) => n + 1);
+        advanceComposeInstance();
         setView({
           kind: "chat",
           sessionId: null,
@@ -653,7 +659,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       clearTranscript: () => viewHandle.current?.clearTranscript(),
       runSlash: (command: string) => viewHandle.current?.runSlash(command),
     }),
-    [fallbackFamiliar, familiar, familiars, onSetActiveFamiliar, sessions, view, enableSplit, split],
+    [advanceComposeInstance, fallbackFamiliar, familiar, familiars, onSetActiveFamiliar, sessions, view, enableSplit, split],
   );
 
   if (familiars.length === 0 && !familiar) {
@@ -758,7 +764,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           // null so NewChatLaunch renders and asks, rather than adopting
           // visibleFamiliars[0] and silently making it the active familiar.
           const next = familiarId ? selectFamiliarForChat(familiarId) : null;
-          setComposeInstance((n) => n + 1);
+          advanceComposeInstance();
           setView({ kind: "chat", sessionId: null, projectRoot, familiarId: next?.id ?? familiarId ?? null });
         }}
       />
@@ -814,22 +820,31 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       openVoiceSessionId={pendingVoice?.sessionId}
       daemonRunning={daemonRunning}
       sessions={sessions}
+      composeInstance={composeInstance}
       onSessionsChanged={onSessionsChanged}
       onSessionsDeleted={onSessionsDeleted}
       onBack={() => setView({ kind: "list" })}
-      onSessionStarted={(sid, originSessionId) => {
-        // Promote the sessionId when the router's current view is still on the
-        // same thread this generation started from. Handles:
-        // - null→new: origin null, view is a fresh compose (prev.sessionId === null)
-        // - A→B: origin A, view still on A (prev.sessionId === A)
-        // Stale background promotions (router already moved elsewhere) are refused:
-        // prev.sessionId ≠ originSessionId. Duplicate calls after the first A→B
-        // promotion also no-op: prev becomes B while origin stays A.
-        setView((prev) =>
-          prev.kind === "chat" && shouldRouterPromoteSession(prev.sessionId, originSessionId)
-            ? { kind: "chat", sessionId: sid, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
-            : prev,
-        );
+      onSessionStarted={(request) => {
+        // Match both the originating session and compose lineage. The functional
+        // update makes A→B atomic with navigation, while the synchronously advanced
+        // nonce prevents an old null-origin compose from claiming a newer one.
+        setView((prev) => {
+          if (
+            prev.kind !== "chat"
+            || !shouldRouterPromoteSession(
+              { sessionId: prev.sessionId, composeInstance: composeInstanceRef.current },
+              request,
+            )
+          ) {
+            return prev;
+          }
+          return {
+            kind: "chat",
+            sessionId: request.newSessionId,
+            projectRoot: prev.projectRoot,
+            familiarId: prev.familiarId,
+          };
+        });
         onSessionStarted?.();
       }}
       onVoiceSessionCreated={(sid) => {
@@ -849,7 +864,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         // the same familiar/project (same reset shape as the promotion
         // above, but back to sessionId: null) instead of leaving the user
         // typing into a session that no longer exists.
-        setComposeInstance((n) => n + 1);
+        advanceComposeInstance();
         setView((prev) =>
           prev.kind === "chat"
             ? { kind: "chat", sessionId: null, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
@@ -924,7 +939,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           // rather than fall back to whichever familiar sorts first.
           const nextFamiliarId = group?.defaultFamiliarId ?? familiar?.id ?? null;
           const next = nextFamiliarId ? selectFamiliarForChat(nextFamiliarId) : null;
-          setComposeInstance((n) => n + 1);
+          advanceComposeInstance();
           setView({
             kind: "chat",
             sessionId: null,

@@ -289,6 +289,7 @@ import {
   shouldReplacementRefreshOnDone,
 } from "@/lib/chat-creation-refresh";
 import { canPromoteDisplayedSession, ownsDisplayedView } from "@/lib/chat-session-ownership";
+import type { ChatSessionPromotionRequest } from "@/lib/chat-router-promotion";
 
 // Chat history commonly arrives before syntax highlighting is needed. Warm the
 // lightweight browser-only serializer while that request is in flight so
@@ -351,7 +352,8 @@ type Props = {
   /** Workspace-owned session list; the starting page's "Continue" row reads it
    *  so no extra fetch rides on every new chat. */
   sessions?: SessionRow[];
-  onSessionStarted?: (sessionId: string, originSessionId: string | null) => void;
+  composeInstance?: number;
+  onSessionStarted?: (request: ChatSessionPromotionRequest) => void;
   /** Pre-session voice call: ChatView created a conversation for the call;
    *  the router promotes it and re-enters via openVoiceNonce. */
   onVoiceSessionCreated?: (sessionId: string) => void;
@@ -1821,7 +1823,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, familiars = [], sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, familiars = [], sessions, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -6021,7 +6023,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // specific thread this generation started from (null for sessionless
           // new-chat; non-null for replacement/fork on an existing session).
           if (shouldPromote) {
-            onSessionStarted?.(ev.sessionId, liveGeneration.originSessionId);
+            onSessionStarted?.({
+              newSessionId: ev.sessionId,
+              expectedSessionId: liveGeneration.originSessionId,
+              composeInstance,
+            });
           }
         }
         if (taskArmedRef.current) {
@@ -6210,7 +6216,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // Router promotion: pass originSessionId so ChatRouter can match the
           // specific thread this generation started from (mirrors the session event path).
           if (shouldPromote) {
-            onSessionStarted?.(ev.sessionId, liveGeneration.originSessionId);
+            onSessionStarted?.({
+              newSessionId: ev.sessionId,
+              expectedSessionId: liveGeneration.originSessionId,
+              composeInstance,
+            });
           }
         }
         const completedSessionId = ev.sessionId ?? liveGeneration.sessionId;
