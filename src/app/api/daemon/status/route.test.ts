@@ -24,7 +24,7 @@ assert.match(
 
 assert.match(
   source,
-  /snapshot = await loadDaemonStatusSnapshot\(\)[\s\S]*?return caveHomeStatusUnavailable\(\)/,
+  /snapshot = await loadDaemonStatusSnapshot\(\)[\s\S]*?return caveHomeStatusUnavailable\(error\)/,
   "Cave home lock failures should return a structured status response instead of HTTP 500",
 );
 
@@ -84,7 +84,7 @@ assert.match(
 
 assert.match(
   source,
-  /if \(!daemonHealthy\) \{/,
+  /if \(!daemonHealthy \|\| \(compatibility && !compatibility\.ok\)\) \{/,
   "daemon status should use the shared daemonHealthy result for the final healthy-response guard",
 );
 
@@ -132,7 +132,7 @@ assert.match(
 
 assert.match(
   source,
-  /availability: failureAvailability\(target, res\)/,
+  /availability: compatibility && !compatibility\.ok \? "incompatible" : failureAvailability\(target, res\)/,
   "daemon failures should expose a machine-readable availability classification",
 );
 
@@ -140,6 +140,18 @@ assert.match(
   source,
   /running: true,[\s\S]{0,80}availability: "online"/,
   "a healthy daemon should expose online availability",
+);
+
+assert.match(
+  source,
+  /assessDaemonStartupCompatibility\(health, installedVersion\)/,
+  "local status must not report a listening but version-skewed daemon as online",
+);
+
+assert.match(
+  source,
+  /availability: compatibility && !compatibility\.ok \? "incompatible"/,
+  "runtime coherence failures should remain separately actionable",
 );
 
 console.log("daemon status route.test.ts: ok");
