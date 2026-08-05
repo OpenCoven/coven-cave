@@ -12,6 +12,7 @@ import {
   type InspectorTabId,
   type WorkingTreeRead,
 } from "@/lib/code-reading";
+import { resolveCodeReadingTargetPath } from "@/lib/code-reading-target";
 import { wireMermaidDiagrams } from "./mermaid-viewer";
 
 export type FileLinkResolver = (ref: FileRef, projectRoot: string) => boolean;
@@ -152,22 +153,33 @@ function wireFilePathLinks(
   container: HTMLElement,
   resolve: FileLinkResolver | null,
   projectRoot: string | null,
+  sourceSessionId: string | null,
+  turnId: string | null,
 ) {
   for (const code of Array.from(container.querySelectorAll<HTMLElement>("code"))) {
     if (code.closest("pre") || code.closest(".cave-code-wrap")) continue;
     const flagged = code as HTMLElement & {
       _caveFileLinkCleanup?: () => void;
       _caveFileLinkProjectRoot?: string;
+      _caveFileLinkSourceSessionId?: string | null;
+      _caveFileLinkTurnId?: string | null;
+      _caveFileLinkResolver?: FileLinkResolver | null;
     };
     const ref = parseFileRef(code.textContent ?? "");
     const want = Boolean(ref && projectRoot && resolve?.(ref, projectRoot));
-    const wiredForRoot =
+    const wiredForIdentity =
       Boolean(flagged._caveFileLinkCleanup) &&
-      flagged._caveFileLinkProjectRoot === projectRoot;
-    if (want && wiredForRoot) continue;
+      flagged._caveFileLinkProjectRoot === projectRoot &&
+      flagged._caveFileLinkSourceSessionId === sourceSessionId &&
+      flagged._caveFileLinkTurnId === turnId &&
+      flagged._caveFileLinkResolver === resolve;
+    if (want && wiredForIdentity) continue;
     flagged._caveFileLinkCleanup?.();
     delete flagged._caveFileLinkCleanup;
     delete flagged._caveFileLinkProjectRoot;
+    delete flagged._caveFileLinkSourceSessionId;
+    delete flagged._caveFileLinkTurnId;
+    delete flagged._caveFileLinkResolver;
     if (!want) {
       continue;
     }
@@ -179,7 +191,7 @@ function wireFilePathLinks(
     const open = () =>
       window.dispatchEvent(
         new CustomEvent("cave:open-project-file", {
-          detail: { path, line, projectRoot },
+          detail: { path, line, projectRoot, sourceSessionId, turnId },
         }),
       );
     const onKeydown = (event: KeyboardEvent) => {
@@ -191,6 +203,9 @@ function wireFilePathLinks(
     code.addEventListener("click", open);
     code.addEventListener("keydown", onKeydown);
     flagged._caveFileLinkProjectRoot = projectRoot!;
+    flagged._caveFileLinkSourceSessionId = sourceSessionId;
+    flagged._caveFileLinkTurnId = turnId;
+    flagged._caveFileLinkResolver = resolve;
     flagged._caveFileLinkCleanup = () => {
       code.removeEventListener("click", open);
       code.removeEventListener("keydown", onKeydown);
@@ -199,6 +214,9 @@ function wireFilePathLinks(
       code.removeAttribute("tabindex");
       code.removeAttribute("title");
       delete flagged._caveFileLinkProjectRoot;
+      delete flagged._caveFileLinkSourceSessionId;
+      delete flagged._caveFileLinkTurnId;
+      delete flagged._caveFileLinkResolver;
     };
   }
 }
@@ -318,11 +336,6 @@ export function clearWorkingTreeCache(): void {
   diskCache.clear();
 }
 
-/** Join a project root and a repo-relative path without doubling the slash. */
-export function joinProjectPath(root: string, relative: string): string {
-  return `${root.replace(/[/\\]+$/, "")}/${relative.replace(/^[/\\]+/, "")}`;
-}
-
 function codeTextFromWrapEl(wrap: Element): string {
   const codeEl = wrap.querySelector("pre code");
   if (!codeEl) return "";
@@ -340,7 +353,9 @@ function codeTextFromWrapEl(wrap: Element): string {
 function markStaleness(wrap: HTMLElement, root: string, relPath: string) {
   const marker = wrap.querySelector<HTMLElement>(".cave-code-stale");
   if (!marker) return;
-  void readWorkingTree(joinProjectPath(root, relPath)).then((read) => {
+  const target = resolveCodeReadingTargetPath(root, relPath);
+  if (!target) return;
+  void readWorkingTree(target.absolutePath).then((read) => {
     // The transcript may have re-rendered under us; the marker we captured is
     // then detached and writing to it is a no-op we skip rather than a crash.
     if (!marker.isConnected) return;
@@ -469,7 +484,13 @@ export function useWireCopyButtons(
       wireMarkdownLinks(el, onOpenUrl);
       wireMermaidDiagrams(el);
       wireExpandableTables(el);
-      wireFilePathLinks(el, fileLinkResolver, projectRoot);
+      wireFilePathLinks(
+        el,
+        fileLinkResolver,
+        projectRoot,
+        reading?.sourceSessionId ?? null,
+        turnId,
+      );
       wireCodeReading(el, reading, projectRoot, turnId);
     };
     wireAll();

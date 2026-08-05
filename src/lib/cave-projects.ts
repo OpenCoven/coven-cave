@@ -7,12 +7,14 @@ export type { CaveProject } from "./cave-projects-types.ts";
 export {
   dedupeProjectsByRoot,
   normalizeProjectRoot,
+  projectPathIdentityKey,
   sortProjectsAlphabetically,
 } from "./cave-projects-types.ts";
 import type { CaveProject } from "./cave-projects-types.ts";
 import {
   dedupeProjectsByRoot as dedupeByRoot,
   normalizeProjectRoot as normalizeSharedProjectRoot,
+  projectPathIdentityKey,
 } from "./cave-projects-types.ts";
 import { caveHome } from "./coven-paths.ts";
 import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
@@ -112,13 +114,28 @@ async function loadProjectsUnlocked(): Promise<CaveProject[]> {
     // The display normalizer deliberately does NOT expand `~`: it runs in the
     // browser, which has no home directory. So the split is closed here, on
     // the side that knows the homedir, rather than by shipping one to the
-    // client. `legacyRoot` carries the old key so the client can re-key what
-    // it already stored; it is response-only and never written back.
-    return dedupeByRoot(parsed.projects, normalizeRootExpandingHome).map((project) => {
+    // client. `legacyRoots` carries every collapsed old key so the client can
+    // re-key what it already stored; the markers are response-only.
+    const normalizedProjects = parsed.projects.map((project) => {
       const expanded = normalizeRootExpandingHome(project.root);
-      if (expanded === project.root) return project;
-      return { ...project, root: expanded, legacyRoot: project.root };
+      const aliases = new Set([
+        ...(project.legacyRoots ?? []),
+        ...(project.legacyRoot ? [project.legacyRoot] : []),
+        ...(expanded === project.root ? [] : [project.root]),
+      ]);
+      aliases.delete(expanded);
+      const legacyRoots = [...aliases];
+      const normalized = { ...project, root: expanded };
+      if (legacyRoots.length) {
+        normalized.legacyRoot = legacyRoots[0];
+        normalized.legacyRoots = legacyRoots;
+      } else {
+        delete normalized.legacyRoot;
+        delete normalized.legacyRoots;
+      }
+      return normalized;
     });
+    return dedupeByRoot(normalizedProjects, normalizeRootExpandingHome);
   } catch {
     return [];
   }
@@ -144,16 +161,21 @@ export function withProjectRegistryLock<T>(
 }
 
 async function saveProjects(projects: CaveProject[]): Promise<void> {
-  // Strip legacyRoot before it reaches disk. loadProjectsUnlocked attaches it
-  // in memory so the client can follow a moved root, and every mutation path
-  // (create/patch/delete) writes back the array that load returned — so without
-  // this the transitional marker would be persisted, and then re-attached on
+  // Strip legacy-root markers before they reach disk. loadProjectsUnlocked
+  // attaches them in memory so the client can follow every moved root, and
+  // every mutation path (create/patch/delete) writes back the array that load
+  // returned. Without this strip the transitional marker would persist and be
+  // re-attached on
   // the next read of a record that no longer needs it. A response-only field
   // has to be stripped at the boundary that writes, not merely documented as
   // response-only.
   const file: ProjectsFile = {
     version: 1,
-    projects: projects.map(({ legacyRoot: _legacyRoot, ...project }) => project),
+    projects: projects.map(({
+      legacyRoot: _legacyRoot,
+      legacyRoots: _legacyRoots,
+      ...project
+    }) => project),
   };
   await writeProjectsFile(projectsFilePath(), JSON.stringify(file, null, 2));
 }
@@ -168,12 +190,17 @@ export function createProject(input: {
   return withProjectsStore(() => withWriteMutex(async () => {
     const projects = await loadProjectsUnlocked();
     const root = normalizeRootExpandingHome(input.root);
+    const rootIdentity = projectPathIdentityKey(root) ?? root;
     // One project per root. Creating at an already-registered root would persist
     // a duplicate on disk that the UI hides via dedupeProjectsByRoot but the
     // server (projectById / trustedProjectCwd) can still resolve to — a
     // client/server divergence. Return the existing project idempotently instead
     // ("this folder is already a project → here it is").
-    const existing = projects.find((entry) => normalizeRootExpandingHome(entry.root) === root);
+    const existing = projects.find(
+      (entry) =>
+        (projectPathIdentityKey(normalizeRootExpandingHome(entry.root)) ??
+          normalizeRootExpandingHome(entry.root)) === rootIdentity,
+    );
     if (existing) return existing;
     const now = new Date().toISOString();
     const project: CaveProject = {
@@ -209,8 +236,12 @@ export function patchProject(
     let nextRoot = current.root;
     if (patch.root !== undefined) {
       const candidate = normalizeRootExpandingHome(patch.root);
+      const candidateIdentity = projectPathIdentityKey(candidate) ?? candidate;
       const collides = projects.some(
-        (entry) => entry.id !== id && normalizeRootExpandingHome(entry.root) === candidate,
+        (entry) =>
+          entry.id !== id &&
+          (projectPathIdentityKey(normalizeRootExpandingHome(entry.root)) ??
+            normalizeRootExpandingHome(entry.root)) === candidateIdentity,
       );
       if (!collides) nextRoot = candidate;
     }
@@ -256,7 +287,11 @@ export function projectForRoot(
 ): CaveProject | null {
   if (!root?.trim()) return null;
   const normalized = normalizeRootExpandingHome(root);
-  return projects.find((project) => normalizeRootExpandingHome(project.root) === normalized) ?? null;
+  const identity = projectPathIdentityKey(normalized) ?? normalized;
+  return projects.find((project) => {
+    const projectRoot = normalizeRootExpandingHome(project.root);
+    return (projectPathIdentityKey(projectRoot) ?? projectRoot) === identity;
+  }) ?? null;
 }
 
 export function projectById(

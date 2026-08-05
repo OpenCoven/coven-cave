@@ -40,6 +40,8 @@ export type CaveProject = {
    * create/patch/delete after an upgrade.
    */
   legacyRoot?: string;
+  /** Every pre-canonical key collapsed into this project, retained for migration. */
+  legacyRoots?: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -128,24 +130,33 @@ export function projectRootsEqual(
   a: string | null | undefined,
   b: string | null | undefined,
 ): boolean {
-  if (!a?.trim() || !b?.trim()) return false;
-  const left = absolutePathParts(a);
-  const right = absolutePathParts(b);
-  return Boolean(
-    left &&
-    right &&
-    pathPrefixesEqual(left, right) &&
-    left.segments.length === right.segments.length &&
-    left.segments.every(
-      (segment, index) => pathPartEquals(left.flavor, segment, right.segments[index] ?? ""),
-    ),
-  );
+  const left = projectPathIdentityKey(a);
+  const right = projectPathIdentityKey(b);
+  return left !== null && right !== null && left === right;
 }
 
 function joinedAbsolutePath(root: AbsolutePathParts, relativeSegments: string[]): string {
   const allSegments = [...root.segments, ...relativeSegments];
   if (root.flavor === "posix") return `/${allSegments.join("/")}`;
   return `${root.prefix}/${allSegments.join("/")}`;
+}
+
+/**
+ * Stable identity for an absolute project path. Drive and UNC identities use
+ * their platform's case-insensitive semantics; POSIX identities remain
+ * case-sensitive.
+ */
+export function projectPathIdentityKey(
+  value: string | null | undefined,
+): string | null {
+  if (!value?.trim()) return null;
+  const parts = absolutePathParts(value);
+  if (!parts) return null;
+  const normalized = joinedAbsolutePath(parts, []);
+  const identity = parts.flavor === "posix"
+    ? normalized
+    : normalized.toLocaleLowerCase("en-US");
+  return `${parts.flavor}:${identity}`;
 }
 
 /**
@@ -198,6 +209,32 @@ export function resolvePathWithinProjectRoot(
   };
 }
 
+export type GitRelativeProjectTarget = {
+  absolutePath: string;
+  projectRelativePath: string;
+  gitRelativePath: string;
+};
+
+/**
+ * Resolve a target under its captured project first, then express that exact
+ * target relative to the enclosing Git root.
+ */
+export function resolveProjectPathForGitRoot(
+  projectRoot: string | null | undefined,
+  gitRoot: string | null | undefined,
+  candidatePath: string | null | undefined,
+): GitRelativeProjectTarget | null {
+  const projectTarget = resolvePathWithinProjectRoot(projectRoot, candidatePath);
+  if (!projectTarget) return null;
+  const gitTarget = resolvePathWithinProjectRoot(gitRoot, projectTarget.absolutePath);
+  if (!gitTarget) return null;
+  return {
+    absolutePath: projectTarget.absolutePath,
+    projectRelativePath: projectTarget.relativePath,
+    gitRelativePath: gitTarget.relativePath,
+  };
+}
+
 /** Client-safe absolute-path classification for POSIX, drive, and UNC paths. */
 export function isAbsoluteProjectPath(value: string | null | undefined): value is string {
   return typeof value === "string" && absolutePathParts(value) !== null;
@@ -210,7 +247,8 @@ export function dedupeAbsoluteProjectPaths(paths: readonly string[]): string[] {
     const parts = absolutePathParts(path);
     if (!parts) return [];
     const normalized = joinedAbsolutePath(parts, []);
-    const key = parts.flavor === "posix" ? normalized : normalized.toLocaleLowerCase("en-US");
+    const key = projectPathIdentityKey(normalized);
+    if (!key) return [];
     if (seen.has(key)) return [];
     seen.add(key);
     return [path];
@@ -245,10 +283,34 @@ export function dedupeProjectsByRoot(
   const byRoot = new Map<string, CaveProject>();
   for (const project of projects) {
     const root = normalizeRoot(project.root);
-    const existing = byRoot.get(root);
-    if (!existing || projectTimestamp(project) > projectTimestamp(existing)) {
-      byRoot.set(root, project);
+    const identity = projectPathIdentityKey(root) ?? root;
+    const existing = byRoot.get(identity);
+    if (!existing) {
+      byRoot.set(identity, project);
+      continue;
     }
+    const winner = projectTimestamp(project) > projectTimestamp(existing)
+      ? project
+      : existing;
+    const aliases = new Set([
+      ...(existing.legacyRoots ?? []),
+      ...(existing.legacyRoot ? [existing.legacyRoot] : []),
+      ...(project.legacyRoots ?? []),
+      ...(project.legacyRoot ? [project.legacyRoot] : []),
+      existing.root,
+      project.root,
+    ]);
+    aliases.delete(winner.root);
+    const legacyRoots = [...aliases];
+    const merged = { ...winner };
+    if (legacyRoots.length) {
+      merged.legacyRoot = legacyRoots[0];
+      merged.legacyRoots = legacyRoots;
+    } else {
+      delete merged.legacyRoot;
+      delete merged.legacyRoots;
+    }
+    byRoot.set(identity, merged);
   }
   return [...byRoot.values()];
 }

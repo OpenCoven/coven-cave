@@ -63,9 +63,8 @@ const migrationDestinationWins = (source, destination) => {
   if (source.dataUrl === destination.dataUrl && source.mime === destination.mime) return true;
   const sourceTime = Date.parse(source.updatedAt);
   const destinationTime = Date.parse(destination.updatedAt);
-  return Number.isFinite(sourceTime) &&
-    Number.isFinite(destinationTime) &&
-    destinationTime >= sourceTime;
+  if (!Number.isFinite(sourceTime) || !Number.isFinite(destinationTime)) return true;
+  return destinationTime >= sourceTime;
 };
 const fakeDriver = {
   async getAll(s) {
@@ -102,7 +101,9 @@ const fakeDriver = {
           idb[s].delete(from);
           return { source: null, destination };
         }
-        return { source, destination };
+        idb[s].set(to, source);
+        idb[s].delete(from);
+        return { source: null, destination: source };
       }
       idb[s].set(to, source);
       idb[s].delete(from);
@@ -163,6 +164,31 @@ const PROJECTS = [
   );
   assert.equal(readProjectOverrides()["session-drive"], "C:/");
   assert.equal(moved, 1);
+}
+
+{
+  const firstAlias = "/legacy/multi-a";
+  const secondAlias = "/legacy/multi-b";
+  const canonical = "/canonical/multi";
+  await images.setProjectImage(firstAlias, IMAGE);
+  store.set(
+    CHAT_PROJECT_OVERRIDES_KEY,
+    JSON.stringify({ "session-multi": secondAlias }),
+  );
+
+  const moved = await migrateProjectRootKeys([
+    {
+      id: "multi-alias",
+      root: canonical,
+      legacyRoot: firstAlias,
+      legacyRoots: [firstAlias, secondAlias],
+    },
+  ]);
+
+  assert.equal(idb.projectAvatars.has(firstAlias), false);
+  assert.equal(idb.projectAvatars.has(canonical), true);
+  assert.equal(readProjectOverrides()["session-multi"], canonical);
+  assert.equal(moved, 2, "every retained legacy alias is migrated");
 }
 
 {
@@ -290,8 +316,8 @@ const PROJECTS = [
   assert.ok(save, "saveProjects is findable");
   assert.match(
     save,
-    /legacyRoot: _legacyRoot, \.\.\.project/,
-    "saveProjects strips legacyRoot before writing",
+    /legacyRoot: _legacyRoot,\s*legacyRoots: _legacyRoots,\s*\.\.\.project/,
+    "saveProjects strips every legacy-root marker before writing",
   );
   assert.doesNotMatch(
     save,

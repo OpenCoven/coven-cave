@@ -59,8 +59,13 @@ assert.match(
 );
 assert.match(
   wiring,
-  /detail: \{ path, line, projectRoot \}/,
-  "clicking a file ref carries its immutable turn root into the Code workspace",
+  /detail: \{ path, line, projectRoot, sourceSessionId, turnId \}/,
+  "clicking a file ref carries complete immutable transcript provenance",
+);
+assert.match(
+  wiring,
+  /_caveFileLinkProjectRoot === projectRoot[\s\S]{0,180}?_caveFileLinkSourceSessionId === sourceSessionId[\s\S]{0,180}?_caveFileLinkTurnId === turnId/,
+  "same-root chat or turn changes rewire inline file listeners",
 );
 // A ref is only linkified when the surface's resolver confirms the click can
 // open it; wiring reconciles (adds AND removes the affordance) so a resolver
@@ -116,6 +121,11 @@ assert.match(
   chatView,
   /<MessageBubble[\s\S]{0,700}?projectRoot=\{toolProjectRoot\}/,
   "a project switch cannot retarget an already-rendered message's inline refs",
+);
+assert.equal(
+  chatView.match(/messageId=\{turn\.id\}/g)?.length,
+  2,
+  "both transcript bubble paths carry their owning turn into file and citation events",
 );
 assert.doesNotMatch(
   chatView,

@@ -52,9 +52,13 @@ function isPlainPrimaryClick(event: ReactMouseEvent<HTMLAnchorElement>): boolean
 function RepoCitationCard({
   citation,
   projectRoot,
+  sourceSessionId,
+  turnId,
 }: {
   citation: Citation;
   projectRoot?: string | null;
+  sourceSessionId?: string | null;
+  turnId?: string | null;
 }) {
   const file = citation.file!;
   const range = lineRangeLabel(file);
@@ -109,6 +113,8 @@ function RepoCitationCard({
                     path: file.path,
                     line: file.lineStart,
                     projectRoot,
+                    sourceSessionId,
+                    turnId,
                   },
                 }),
               )
@@ -129,13 +135,24 @@ function CitationCard({
   citation,
   onOpenUrl,
   projectRoot,
+  sourceSessionId,
+  turnId,
 }: {
   citation: Citation;
   onOpenUrl?: (url: string) => void;
   projectRoot?: string | null;
+  sourceSessionId?: string | null;
+  turnId?: string | null;
 }) {
   if (citation.file) {
-    return <RepoCitationCard citation={citation} projectRoot={projectRoot} />;
+    return (
+      <RepoCitationCard
+        citation={citation}
+        projectRoot={projectRoot}
+        sourceSessionId={sourceSessionId}
+        turnId={turnId}
+      />
+    );
   }
   const presentation = citationSourcePresentation(citation);
   const openSource = (event: ReactMouseEvent<HTMLAnchorElement>) => {
@@ -208,12 +225,16 @@ export function InlineCitationPreviews({
   containerRef,
   onOpenUrl,
   projectRoot,
+  sourceSessionId,
+  turnId,
   renderedHtml,
 }: {
   citations: readonly Citation[];
   containerRef: RefObject<HTMLElement | null>;
   onOpenUrl?: (url: string) => void;
   projectRoot?: string | null;
+  sourceSessionId?: string | null;
+  turnId?: string | null;
   renderedHtml: string;
 }) {
   const anchorRef = useRef<HTMLElement | null>(null);
@@ -351,6 +372,8 @@ export function InlineCitationPreviews({
             citation={activeCitation}
             onOpenUrl={onOpenUrl}
             projectRoot={projectRoot}
+            sourceSessionId={sourceSessionId}
+            turnId={turnId}
           />
         </div>
       </PopoverBody>

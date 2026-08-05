@@ -101,6 +101,43 @@ try {
     normalizeProjectRoot("\\\\Server\\Share\\"),
     "server and client preserve the same canonical UNC root",
   );
+  const windowsCase = await createProject({ name: "Windows case", root: "C:/Work/Case-App" });
+  const windowsCaseAlias = await createProject({
+    name: "Windows case alias",
+    root: "c:\\work\\CASE-app\\",
+  });
+  assert.equal(
+    windowsCaseAlias.id,
+    windowsCase.id,
+    "drive-root project creation uses case-insensitive path identity",
+  );
+  assert.equal(
+    projectForRoot("c:/WORK/case-APP", await loadProjects())?.id,
+    windowsCase.id,
+    "drive-root lookup uses the same path identity as creation",
+  );
+  const uncCase = await createProject({ name: "UNC case", root: "//Server/Share/Case-App" });
+  const uncCaseAlias = await createProject({
+    name: "UNC case alias",
+    root: "\\\\server\\share\\CASE-app",
+  });
+  assert.equal(
+    uncCaseAlias.id,
+    uncCase.id,
+    "UNC project creation uses case-insensitive path identity",
+  );
+  const collisionSource = await createProject({ name: "Collision source", root: "D:/Work/Other" });
+  const windowsCollision = await patchProject(collisionSource.id, {
+    root: "c:/work/case-app",
+  });
+  assert.equal(
+    windowsCollision?.root,
+    "D:/Work/Other",
+    "patch collision checks use case-insensitive drive identity",
+  );
+  const posixUpper = await createProject({ name: "POSIX upper", root: "/Work/Case-App" });
+  const posixLower = await createProject({ name: "POSIX lower", root: "/work/case-app" });
+  assert.notEqual(posixUpper.id, posixLower.id, "POSIX project identity stays case-sensitive");
 
   // (cave-psp8) A manually-typed ~/path expands to the absolute home path —
   // stored literally it never matched the daemon's absolute project_root, so
@@ -151,6 +188,11 @@ try {
   assert.equal(await deleteProject(slashHeavy.id), true);
   assert.equal(await deleteProject(driveRoot.id), true);
   assert.equal(await deleteProject(uncRoot.id), true);
+  assert.equal(await deleteProject(windowsCase.id), true);
+  assert.equal(await deleteProject(uncCase.id), true);
+  assert.equal(await deleteProject(collisionSource.id), true);
+  assert.equal(await deleteProject(posixUpper.id), true);
+  assert.equal(await deleteProject(posixLower.id), true);
   assert.equal(await deleteProject(allSlashProject.id), true);
   assert.deepEqual(await loadProjects(), []);
 
@@ -193,15 +235,22 @@ try {
           id: "tilde-row",
           name: "Tilde",
           root: "~/dupe-home",
-          createdAt: "2026-01-03T00:00:00.000Z",
-          updatedAt: "2026-01-03T00:00:00.000Z",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "slash-row",
+          name: "Trailing slash",
+          root: `${homeAbs}/`,
+          createdAt: "2026-01-02T00:00:00.000Z",
+          updatedAt: "2026-01-02T00:00:00.000Z",
         },
         {
           id: "abs-row",
           name: "Absolute",
           root: homeAbs,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
+          createdAt: "2026-01-03T00:00:00.000Z",
+          updatedAt: "2026-01-03T00:00:00.000Z",
         },
       ],
     }),
@@ -210,8 +259,13 @@ try {
   const dedupedLoad = await loadProjects();
   assert.deepEqual(
     dedupedLoad.map((entry) => entry.id).sort(),
-    ["disk-new", "tilde-row"],
+    ["abs-row", "disk-new"],
     "loadProjects collapses on-disk duplicates by normalized path, newest wins",
+  );
+  assert.deepEqual(
+    dedupedLoad.find((entry) => entry.id === "abs-row")?.legacyRoots,
+    ["~/dupe-home", `${homeAbs}/`],
+    "canonical dedupe retains every original root alias for client migrations",
   );
   assert.equal(
     projectForRoot("/tmp/dupe/", dedupedLoad)?.id,
@@ -219,7 +273,7 @@ try {
     "path lookups resolve to the surviving (newest) duplicate",
   );
   // The next mutation persists the deduped list — the file self-heals.
-  assert.equal(await deleteProject("tilde-row"), true);
+  assert.equal(await deleteProject("abs-row"), true);
   const healed = JSON.parse(
     await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8"),
   );
@@ -250,6 +304,7 @@ try {
   const [migratedDriveRoot] = await loadProjects();
   assert.equal(migratedDriveRoot?.root, "C:/");
   assert.equal(migratedDriveRoot?.legacyRoot, "C:", "clients can re-key stores from the legacy root");
+  assert.deepEqual(migratedDriveRoot?.legacyRoots, ["C:"]);
   const persistedDriveRoot = await patchProject("legacy-drive-root", { name: "Migrated drive root" });
   assert.equal(persistedDriveRoot?.root, "C:/");
   const migratedDisk = JSON.parse(
@@ -257,6 +312,7 @@ try {
   );
   assert.equal(migratedDisk.projects[0]?.root, "C:/", "the next mutation self-heals legacy C:");
   assert.equal("legacyRoot" in migratedDisk.projects[0], false);
+  assert.equal("legacyRoots" in migratedDisk.projects[0], false);
   assert.equal(await deleteProject("legacy-drive-root"), true);
 
   assert.deepEqual(
@@ -280,7 +336,7 @@ try {
     {
       id: "new",
       name: "Alpha",
-      root: "C:/work/alpha",
+      root: "c:/WORK/ALPHA",
       createdAt: "2026-01-02T00:00:00.000Z",
       updatedAt: "2026-01-02T00:00:00.000Z",
     },

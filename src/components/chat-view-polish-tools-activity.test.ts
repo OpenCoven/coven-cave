@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { groupConsecutiveTools } from "../lib/turn-segments.ts";
 import {
   activityCss,
   attachmentsLib,
@@ -15,6 +16,16 @@ import {
   toolRunDisclosureSource,
   turnRow,
 } from "./chat-view-polish-fixtures.ts";
+
+const runsAcrossExtractedEdit = groupConsecutiveTools([
+  { id: "read-before", name: "Read", originalIndex: 0 },
+  { id: "read-after", name: "Read", originalIndex: 2 },
+]);
+assert.deepEqual(
+  runsAcrossExtractedEdit.map((run) => run.tools.map((tool) => tool.id)),
+  [["read-before"], ["read-after"]],
+  "Read → Edit → Read keeps two Read runs after the edit card is extracted",
+);
 
 assert.match(
   splitReasoning,
@@ -259,8 +270,8 @@ assert.match(
 
 assert.match(
   turnRow,
-  /const turnTools = turn\.tools \?\? \[\];\s*const editToolIds = new Set\(\s*turnTools\.filter\(\(tool\) => normalizeFileMutation\(tool\.name, tool\.input\)\)\.map\(\(tool\) => tool\.id\),?\s*\);\s*const editCards = turnTools\.filter\(\(tool\) => editToolIds\.has\(tool\.id\)\);\s*const otherTools = turnTools\.filter\(\(tool\) => !editToolIds\.has\(tool\.id\)\);/,
-  "tool placement is keyed by id and cannot change when a streamed input becomes parseable",
+  /const indexedTurnTools = turnTools\.map\(\(tool, originalIndex\) => \(\{ tool, originalIndex \}\)\)[\s\S]{0,500}?const otherTools = indexedTurnTools[\s\S]{0,300}?originalIndex/,
+  "non-edit extraction retains each tool's original transcript index for adjacency",
 );
 assert.match(
   turnRow,
@@ -301,8 +312,8 @@ assert.match(
 );
 assert.match(
   turnRow,
-  /aria-label=\{`Review all \$\{editedFiles\.length\} changed files in the Changes tab`\}[\s\S]{0,350}?cave:open-file-diff[\s\S]{0,180}?detail: \{ path: editedFiles\[0\], projectRoot: toolProjectRoot \}/,
-  "Review all opens Changes with the turn's captured execution root",
+  /aria-label=\{`Review all \$\{editedFiles\.length\} changed files in the Changes tab`\}[\s\S]{0,350}?cave:open-file-diff[\s\S]{0,240}?detail: \{ path: editedFiles\[0\], projectRoot: toolProjectRoot, sourceSessionId, turnId: turn\.id \}/,
+  "Review all opens Changes with complete immutable transcript provenance",
 );
 assert.match(
   turnRow,

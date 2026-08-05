@@ -7580,6 +7580,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             handlersRef={transcriptHandlersRef}
             followUpTurnId={followUp.turnId}
             turnProjectRoots={turnProjectRoots}
+            sourceSessionId={sessionId}
           />
           {shouldShowChatArchiveNudge({
             taskLifecycle: linkedContext?.task?.lifecycle ?? null,
@@ -8031,6 +8032,7 @@ const TranscriptRows = memo(function TranscriptRows({
   handlersRef,
   followUpTurnId,
   turnProjectRoots,
+  sourceSessionId,
 }: {
   groupedTurns: TranscriptGroup[];
   turnIndexMap: Map<string, number>;
@@ -8048,6 +8050,7 @@ const TranscriptRows = memo(function TranscriptRows({
    *  in-turn (chat-revamp 1b) — TurnRow suppresses its own row for it. */
   followUpTurnId: string | null;
   turnProjectRoots: ReadonlyMap<string, string | null>;
+  sourceSessionId: string | null;
 }) {
   const handlers = () => handlersRef.current;
   // Render cap (TRANSCRIPT_RENDER_CAP): while pinned to the bottom, only
@@ -8104,6 +8107,7 @@ const TranscriptRows = memo(function TranscriptRows({
           branchNav={singleBranchNav}
           suppressSuggestions={t.id === followUpTurnId}
           toolProjectRoot={turnProjectRoots.get(t.id) ?? null}
+          sourceSessionId={sourceSessionId}
         />
       );
     }
@@ -8158,6 +8162,7 @@ const TranscriptRows = memo(function TranscriptRows({
               branchNav={groupBranchNav}
               suppressSuggestions={t.id === followUpTurnId}
               toolProjectRoot={turnProjectRoots.get(t.id) ?? null}
+              sourceSessionId={sourceSessionId}
             />
           );
         })}
@@ -8190,6 +8195,7 @@ function TurnRowImpl({
   branchNav,
   suppressSuggestions = false,
   toolProjectRoot,
+  sourceSessionId,
 }: {
   turn: Turn;
   onSuggestion?: (path: NextPath) => void;
@@ -8227,6 +8233,8 @@ function TurnRowImpl({
   branchNav?: { index: number; total: number; onPrev: () => void; onNext: () => void };
   /** Immutable local execution root recorded for this turn, when available. */
   toolProjectRoot: string | null;
+  /** Chat session that owns this turn, including secondary split panes. */
+  sourceSessionId: string | null;
 }) {
   const profileSnapshot = useUserProfile();
   const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
@@ -8316,6 +8324,7 @@ function TurnRowImpl({
                 onReply={onReply}
                 onOpenUrl={onOpenUrl}
                 projectRoot={toolProjectRoot}
+                messageId={turn.id}
                 branchNav={branchNav}
               />
               {/* An image you attached renders as the image, matching the
@@ -8421,11 +8430,16 @@ function TurnRowImpl({
   // not depend on pending or input parseability, so React updates the same
   // instances when the turn settles.
   const turnTools = turn.tools ?? [];
+  const indexedTurnTools = turnTools.map((tool, originalIndex) => ({ tool, originalIndex }));
   const editToolIds = new Set(
     turnTools.filter((tool) => normalizeFileMutation(tool.name, tool.input)).map((tool) => tool.id),
   );
-  const editCards = turnTools.filter((tool) => editToolIds.has(tool.id));
-  const otherTools = turnTools.filter((tool) => !editToolIds.has(tool.id));
+  const editCards = indexedTurnTools
+    .filter(({ tool }) => editToolIds.has(tool.id))
+    .map(({ tool }) => tool);
+  const otherTools = indexedTurnTools
+    .filter(({ tool }) => !editToolIds.has(tool.id))
+    .map(({ tool, originalIndex }) => ({ ...tool, originalIndex }));
 
   return (
     <div
@@ -8513,6 +8527,8 @@ function TurnRowImpl({
 
           <div className="cave-linear-turn-body">
             <ToolProjectRootContext.Provider value={toolProjectRoot}>
+            <ToolSourceSessionContext.Provider value={sourceSessionId}>
+            <ToolTurnContext.Provider value={turn.id}>
             <ChatToolActivityLayout
               leading={
                 reasoning
@@ -8628,7 +8644,7 @@ function TurnRowImpl({
                                     onClick={() =>
                                       window.dispatchEvent(
                                         new CustomEvent("cave:open-file-diff", {
-                                          detail: { path: editedFiles[0], projectRoot: toolProjectRoot },
+                                          detail: { path: editedFiles[0], projectRoot: toolProjectRoot, sourceSessionId, turnId: turn.id },
                                         }),
                                       )
                                     }
@@ -8646,6 +8662,8 @@ function TurnRowImpl({
                   : null
               }
             />
+            </ToolTurnContext.Provider>
+            </ToolSourceSessionContext.Provider>
             </ToolProjectRootContext.Provider>
             {/* Typed follow-ups render LAST — reply fills the composer, task
                 opens review, and action routes to Tasks; they sit closest to
@@ -8979,6 +8997,8 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
 // Each assistant turn provides its immutable recorded execution root. Legacy
 // turns deliberately receive no filesystem authority.
 const ToolProjectRootContext = createContext<string | null>(null);
+const ToolSourceSessionContext = createContext<string | null>(null);
+const ToolTurnContext = createContext<string | null>(null);
 
 function ToolBlock({ tool }: { tool: ToolEvent }) {
   // The file chip's click opens the code rail, which needs a project root —
@@ -8986,6 +9006,8 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   // instead of a dead button (the edit card's Review has its own modal
   // fallback and stays clickable regardless).
   const railRoot = useContext(ToolProjectRootContext);
+  const sourceSessionId = useContext(ToolSourceSessionContext);
+  const turnId = useContext(ToolTurnContext);
   const argSummary = toolArgSummary(tool.name, tool.input);
   // Supported Claude, Codex, and OpenClaw mutations share one descriptor for
   // placement, path, diff rendering, and action readiness.
@@ -9009,7 +9031,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
     e.stopPropagation();
     window.dispatchEvent(
       new CustomEvent(isEditTool ? "cave:open-file-diff" : "cave:open-project-file", {
-        detail: { path: targetFile, projectRoot: railRoot },
+        detail: { path: targetFile, projectRoot: railRoot, sourceSessionId, turnId },
       }),
     );
   };
@@ -9047,6 +9069,8 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
             <EditCardActions
               key={actionIdentity}
               projectRoot={railRoot}
+              sourceSessionId={sourceSessionId}
+              turnId={turnId}
               mutationPaths={mutation.paths}
               diff={inputDiff ?? ""}
               displayPath={displayPath}
@@ -9188,6 +9212,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     prev.expanded === next.expanded &&
     prev.suppressSuggestions === next.suppressSuggestions &&
     prev.toolProjectRoot === next.toolProjectRoot &&
+    prev.sourceSessionId === next.sourceSessionId &&
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
     Boolean(prev.onReply) === Boolean(next.onReply) &&

@@ -1,3 +1,8 @@
+import {
+  resolvePathWithinProjectRoot,
+  type ProjectRelativePath,
+} from "./cave-projects-types.ts";
+
 export type RootedCodeReadingTarget = {
   turnId: string | null;
   sourceSessionId: string | null;
@@ -9,15 +14,28 @@ export function reconcileCodeReadingTargetRoot<T extends RootedCodeReadingTarget
   sourceSessionId: string | null,
   turnProjectRoots: ReadonlyMap<string, string | null>,
 ): T | null {
+  if (!target) return target;
+  const promoted =
+    target.sourceSessionId === null && sourceSessionId !== null
+      ? { ...target, sourceSessionId }
+      : target;
   if (
-    !target ||
-    target.projectRoot ||
-    !target.turnId ||
-    !target.sourceSessionId ||
-    target.sourceSessionId !== sourceSessionId
+    promoted.projectRoot ||
+    !promoted.turnId ||
+    !promoted.sourceSessionId ||
+    promoted.sourceSessionId !== sourceSessionId
   ) {
-    return target;
+    return promoted;
   }
-  const projectRoot = turnProjectRoots.get(target.turnId);
-  return projectRoot ? { ...target, projectRoot } : target;
+
+  const projectRoot = turnProjectRoots.get(promoted.turnId);
+  return projectRoot ? { ...promoted, projectRoot } : promoted;
+}
+
+/** Resolve a code-fence path only when it remains inside its captured root. */
+export function resolveCodeReadingTargetPath(
+  projectRoot: string | null | undefined,
+  targetPath: string | null | undefined,
+): ProjectRelativePath | null {
+  return resolvePathWithinProjectRoot(projectRoot, targetPath);
 }

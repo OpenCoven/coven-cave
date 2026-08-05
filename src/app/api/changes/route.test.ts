@@ -159,8 +159,18 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!\(await isChangedFile\(root\.repoRoot, body\.path\)\)\) return pathNotAllowed\(\);/,
-  "revert requests should only operate on paths present in git status",
+  /const projectTarget = resolveProjectPathForGitRoot\(root\.projectRoot, root\.repoRoot, body\.path\);[\s\S]{0,200}?resolveContainedFile\(root\.projectRoot, projectTarget\.projectRelativePath\)/,
+  "revert resolves the requested target under the captured project before using the enclosing git root",
+);
+assert.match(
+  source,
+  /if \(!\(await isChangedFile\(root\.repoRoot, projectTarget\.gitRelativePath\)\)\) return pathNotAllowed\(\);/,
+  "revert authorization uses the project-validated git-root-relative target",
+);
+assert.match(
+  source,
+  /\["checkout", "HEAD", "--", projectTarget\.gitRelativePath\][\s\S]{0,500}?\["rm", "-f", "--", projectTarget\.gitRelativePath\][\s\S]{0,350}?\["clean", "-f", "--", projectTarget\.gitRelativePath\]/,
+  "every destructive revert argv uses only the project-validated git-relative path",
 );
 
 // remote=1 — read-only origin probe powering the project-setup modal's GitHub

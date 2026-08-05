@@ -32,6 +32,7 @@ import { highlightToHtml } from "@/components/message-bubble";
 import { splitHighlightedLines } from "@/lib/code-lines";
 import { diffLines, type LineDiffOp } from "@/lib/line-diff";
 import { resolveLangLabel } from "@/lib/code-lang";
+import { resolveCodeReadingTargetPath } from "@/lib/code-reading-target";
 import {
   canOpenInWorkshop,
   extendSelection,
@@ -119,17 +120,18 @@ type DiskState =
 
 function useWorkingTree(projectRoot: string | null, path: string | null, enabled: boolean): DiskState {
   const [state, setState] = useState<DiskState>({ phase: "idle" });
+  const absolutePath =
+    resolveCodeReadingTargetPath(projectRoot, path)?.absolutePath ?? null;
   useEffect(() => {
-    if (!enabled || !projectRoot || !path) {
+    if (!enabled || !absolutePath) {
       setState({ phase: "idle" });
       return;
     }
     let cancelled = false;
     setState({ phase: "loading" });
-    const abs = `${projectRoot.replace(/[/\\]+$/, "")}/${path.replace(/^[/\\]+/, "")}`;
     (async () => {
       try {
-        const res = await fetch(`/api/project-file?path=${encodeURIComponent(abs)}`, { cache: "no-store" });
+        const res = await fetch(`/api/project-file?path=${encodeURIComponent(absolutePath)}`, { cache: "no-store" });
         if (cancelled) return;
         if (res.status === 404) {
           setState({ phase: "absent" });
@@ -155,7 +157,7 @@ function useWorkingTree(projectRoot: string | null, path: string | null, enabled
     return () => {
       cancelled = true;
     };
-  }, [projectRoot, path, enabled]);
+  }, [absolutePath, enabled]);
   return state;
 }
 
@@ -307,7 +309,9 @@ export function CodeReadingInspector({
   // The working tree is needed for the staleness verdict in the header, not
   // just for the file/compare tabs — the header must be able to say "stale"
   // while the reader is still looking at the snippet.
-  const wantsDisk = target.provenance === "file-backed" && Boolean(target.path);
+  const resolvedTargetPath =
+    resolveCodeReadingTargetPath(projectRoot, target.path)?.absolutePath ?? null;
+  const wantsDisk = target.provenance === "file-backed" && Boolean(resolvedTargetPath);
   const disk = useWorkingTree(projectRoot, target.path, wantsDisk);
   const diskContent = disk.phase === "ready" ? disk.content : null;
 
@@ -384,25 +388,25 @@ export function CodeReadingInspector({
   }, [announce, displayName, onQuote, selection, target.code, target.lang, target.path]);
 
   const doOpen = useCallback(() => {
-    if (!onOpenInWorkshop || !target.path) return;
+    if (!onOpenInWorkshop || !resolvedTargetPath) return;
     // The selection is numbered against the file when we know where the
     // snippet starts, so the workshop lands on the same lines the reader
     // selected here rather than on line 1.
     const line = selection ? selection.from : snippetStart;
     onOpenInWorkshop({
-      path: target.path,
+      path: resolvedTargetPath,
       line: line ?? null,
       selectionLabel: label,
       origin: target.origin,
     });
     announce(`Opening ${displayName} in the workshop`);
-  }, [announce, displayName, label, onOpenInWorkshop, selection, snippetStart, target.origin, target.path]);
+  }, [announce, displayName, label, onOpenInWorkshop, resolvedTargetPath, selection, snippetStart, target.origin]);
 
   const offersOpen =
     canOpenInWorkshop(target.provenance) && Boolean(target.path);
   const canOpen =
     offersOpen &&
-    Boolean(projectRoot) &&
+    Boolean(resolvedTargetPath) &&
     Boolean(onOpenInWorkshop);
 
   return (
@@ -457,7 +461,7 @@ export function CodeReadingInspector({
                 type="button"
                 role="tab"
                 aria-selected={tab === entry.id}
-                disabled={entry.id !== "snippet" && !projectRoot}
+                disabled={entry.id !== "snippet" && !resolvedTargetPath}
                 className={`cri-tab focus-ring${tab === entry.id ? " cri-tab--on" : ""}`}
                 onClick={() => setTab(entry.id)}
               >
@@ -484,7 +488,7 @@ export function CodeReadingInspector({
               <CodeRows lines={lines} startLine={1} selection={selection} onPickLine={pickLine} />
             ) : (
               <p className="cri-note cri-note--bad">
-                {!projectRoot ? "No project root for this session." : disk.phase === "absent" ? "This file is not in the working tree any more." : disk.phase === "error" ? disk.message : "Nothing to read yet."}
+                {!projectRoot ? "No project root for this session." : !resolvedTargetPath ? "This file path is outside the turn’s project." : disk.phase === "absent" ? "This file is not in the working tree any more." : disk.phase === "error" ? disk.message : "Nothing to read yet."}
               </p>
             )
           ) : null}
@@ -500,7 +504,7 @@ export function CodeReadingInspector({
               )
             ) : (
               <p className="cri-note cri-note--bad">
-                {!projectRoot ? "No project root for this session." : disk.phase === "absent" ? "This file is not in the working tree any more — nothing to compare against." : disk.phase === "error" ? disk.message : "Nothing to compare yet."}
+                {!projectRoot ? "No project root for this session." : !resolvedTargetPath ? "This file path is outside the turn’s project." : disk.phase === "absent" ? "This file is not in the working tree any more — nothing to compare against." : disk.phase === "error" ? disk.message : "Nothing to compare yet."}
               </p>
             )
           ) : null}

@@ -909,6 +909,8 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [], projectRoot
         containerRef={containerRef}
         onOpenUrl={onOpenUrl}
         projectRoot={projectRoot}
+        sourceSessionId={reading?.sourceSessionId ?? null}
+        turnId={messageId}
         renderedHtml={html}
       />
     </>

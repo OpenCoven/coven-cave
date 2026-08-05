@@ -9,8 +9,9 @@
  * was added, and roots are the KEYS of client-side stores — so an old project's
  * avatar and chat overrides were filed under a key nothing else produced.
  *
- * `loadProjectsUnlocked` now serves one expanded form and attaches `legacyRoot`
- * when it had to move one. This pass follows that move in the client's stores.
+ * `loadProjectsUnlocked` now serves one expanded form and attaches every
+ * pre-canonical key as `legacyRoots`. This pass follows those moves in the
+ * client's stores.
  * It cannot compute the mapping itself: expanding `~` needs a home directory,
  * and the browser has none — which is also why `normalizeProjectRoot` stays
  * deliberately non-expanding.
@@ -45,9 +46,20 @@ import { readProjectOverrides, writeProjectOverrides } from "./chat-project-over
 export async function migrateProjectRootKeys(
   projects: readonly CaveProject[],
 ): Promise<number> {
-  const moves = projects
-    .filter((project) => project.legacyRoot && project.legacyRoot !== project.root)
-    .map((project) => ({ from: project.legacyRoot as string, to: project.root }));
+  const seenMoves = new Set<string>();
+  const moves = projects.flatMap((project) => {
+    const aliases = new Set([
+      ...(project.legacyRoots ?? []),
+      ...(project.legacyRoot ? [project.legacyRoot] : []),
+    ]);
+    return [...aliases].flatMap((from) => {
+      if (!from || from === project.root) return [];
+      const identity = JSON.stringify([from, project.root]);
+      if (seenMoves.has(identity)) return [];
+      seenMoves.add(identity);
+      return [{ from, to: project.root }];
+    });
+  });
   if (moves.length === 0) return 0;
 
   // Count what was actually FOLLOWED, not what was offered. The server keeps

@@ -268,6 +268,24 @@ test("captured source session outranks another workbench with the same historica
   );
 });
 
+test("captured source session selects the owning chat when sessions share a checkout", () => {
+  const first = row({ id: "chat-a", project_root: "/repo/shared" });
+  const source = row({ id: "chat-b", project_root: "/repo/shared" });
+  const pending: PendingCodeOpen = {
+    kind: "changes",
+    path: "/repo/shared/src/history.ts",
+    root: "/repo/shared",
+    sessionId: "chat-b",
+    nonce: 62,
+  };
+
+  assert.equal(
+    codeSessionForPendingOpen([first, source], pending)?.id,
+    "chat-b",
+    "root equality must not collapse two conversation-owned workbenches",
+  );
+});
+
 test("a scope change cannot resolve a rooted open against stale inventory", () => {
   const pending: PendingCodeOpen = {
     kind: "files",

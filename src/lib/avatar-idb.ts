@@ -89,11 +89,10 @@ export function avatarMigrationDestinationWins(
   }
   const sourceTime = Date.parse(source.updatedAt);
   const destinationTime = Date.parse(destination.updatedAt);
-  return (
-    Number.isFinite(sourceTime) &&
-    Number.isFinite(destinationTime) &&
-    destinationTime >= sourceTime
-  );
+  if (!Number.isFinite(sourceTime) || !Number.isFinite(destinationTime)) {
+    return true;
+  }
+  return destinationTime >= sourceTime;
 }
 
 const hasIdb = () => typeof indexedDB !== "undefined";
@@ -140,29 +139,40 @@ const idbDriver: AvatarStorageDriver = {
     if (!hasIdb()) throw new Error("IndexedDB unavailable");
     const db = await openDb();
     const tx = db.transaction(store, "readwrite");
-    const done = transactionToPromise(tx);
+    const done = transactionToPromise(tx).then(
+      () => ({ ok: true as const }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
     const os = tx.objectStore(store);
-    const source = (await requestToPromise(os.get(from))) as AvatarRecord | undefined;
-    const destination = (await requestToPromise(os.get(to))) as AvatarRecord | undefined;
+    try {
+      const source = (await requestToPromise(os.get(from))) as AvatarRecord | undefined;
+      const destination = (await requestToPromise(os.get(to))) as AvatarRecord | undefined;
+      let result: AvatarMoveResult;
 
-    if (!source) {
-      await done;
-      return { source: null, destination: destination ?? null };
-    }
-    if (destination) {
-      if (avatarMigrationDestinationWins(source, destination)) {
+      if (!source) {
+        result = { source: null, destination: destination ?? null };
+      } else if (destination) {
+        if (avatarMigrationDestinationWins(source, destination)) {
+          os.delete(from);
+          result = { source: null, destination };
+        } else {
+          os.put(source, to);
+          os.delete(from);
+          result = { source: null, destination: source };
+        }
+      } else {
+        os.put(source, to);
         os.delete(from);
-        await done;
-        return { source: null, destination };
+        result = { source: null, destination: source };
       }
-      await done;
-      return { source, destination };
-    }
 
-    os.put(source, to);
-    os.delete(from);
-    await done;
-    return { source: null, destination: source };
+      const completion = await done;
+      if (!completion.ok) throw completion.error;
+      return result;
+    } catch (error) {
+      await done;
+      throw error;
+    }
   },
 };
 
