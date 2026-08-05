@@ -33,15 +33,19 @@ async function ensureChatSurface(page: Page) {
   try {
     await surface.waitFor({ state: "visible", timeout: 10_000 });
   } catch {
-    const chatDestination = page
-      .locator('aside[aria-label="Sidebar"]')
-      .getByRole("button", { name: /^Chat\b/ })
-      .first();
+    const nav = page.locator('aside[aria-label="Sidebar"]');
+    const chatDestination = nav.getByRole("button", { name: /^Chat\b/ }).first();
     if (!(await chatDestination.isVisible().catch(() => false))) {
       const openNav = page.getByRole("button", { name: "Open navigation (⌘B)" });
       if (await openNav.isVisible().catch(() => false)) await openNav.click();
     }
-    await chatDestination.click();
+    // The Chat row lives in the Code section of the rail (cave-24d2r); when the
+    // Home section is open, the Code tab is the way in.
+    if (await chatDestination.isVisible().catch(() => false)) {
+      await chatDestination.click();
+    } else {
+      await nav.getByRole("tab", { name: "Code", exact: true }).first().click();
+    }
     await surface.waitFor({ state: "visible", timeout: 30_000 });
   }
   await page.waitForSelector('aside[aria-label="Sidebar"] .chat-sidebar', { timeout: 30_000 });

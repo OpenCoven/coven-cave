@@ -66,7 +66,7 @@ assert.match(
 
 assert.match(
   source,
-  /<div className="sidebar-nav-scroll"/,
+  /<div\s+className="sidebar-nav-scroll"/,
   "Sidebar should keep the main navigation in one continuous scrollable rail",
 );
 
@@ -96,7 +96,7 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /props\.roleSurfaces!\.map\(\(room\) =>/,
+  /const sectionRooms = React\.useMemo\(\s*\(\) => \(props\.roleSurfaces \?\? \[\]\)\.filter\(/,
   "Code Workshop remains registry-driven through the active familiar's rooms",
 );
 assert.match(
@@ -106,8 +106,8 @@ assert.match(
 );
 assert.match(
   source,
-  /import \{[\s\S]*VISIBLE_WORKSPACE_NAV_ITEMS,[\s\S]*\} from "@\/lib\/workspace-navigation"/,
-  "the sidebar consumes the shared registry's already-filtered visible rows",
+  /import \{[\s\S]*navItemsForSection,[\s\S]*\} from "@\/lib\/nav-section"/,
+  "the sidebar consumes the shared registry's visible rows through the section split",
 );
 
 assert.match(
@@ -528,8 +528,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /<SidebarMinimal\s+mode=\{mode\}\s+splitPageModes=\{splitPageModes\}/,
-  "workspace threads splitPageModes into the sidebar",
+  /<SidebarMinimal\s+mode=\{mode\}\s+section=\{navSection\}\s+onSectionChange=\{handleSectionChange\}\s+splitPageModes=\{splitPageModes\}/,
+  "workspace threads the section and splitPageModes into the sidebar",
 );
 assert.match(
   styles,

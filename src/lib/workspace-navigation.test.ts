@@ -34,8 +34,13 @@ assert.match(
 
 assert.match(
   sidebar,
-  /import \{[\s\S]*?VISIBLE_WORKSPACE_NAV_ITEMS,[\s\S]*?type WorkspaceNavItem,[\s\S]*?type WorkspaceNavMode,[\s\S]*?\} from "@\/lib\/workspace-navigation"/,
-  "the desktop sidebar consumes the shared visible registry",
+  /import \{[\s\S]*?navItemsForSection,[\s\S]*?\} from "@\/lib\/nav-section"/,
+  "the desktop sidebar takes its rows from the section-filtered registry derivation",
+);
+assert.match(
+  read("./nav-section.ts"),
+  /VISIBLE_WORKSPACE_NAV_ITEMS\.filter\(\(item\) => navSectionForMode\(item\.id\) === section\)/,
+  "the section split derives from the shared visible registry rather than a second list",
 );
 assert.doesNotMatch(sidebar, /const FOLDER_MODES/, "the sidebar no longer owns a duplicate route registry");
 assert.doesNotMatch(sidebar, /export \{ FOLDER_MODES \}/, "the obsolete component-level registry export is removed");
