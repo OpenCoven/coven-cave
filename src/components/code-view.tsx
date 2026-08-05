@@ -172,7 +172,7 @@ export function CodeView({
   // doesn't replay a stale file focus into an unrelated workbench.
   const [workbenchTarget, setWorkbenchTarget] = useState<{
     open: PendingCodeOpen;
-    sessionId: string | null;
+    sessionId: string;
   } | null>(null);
   useEffect(() => {
     if (!pendingOpen) return;
@@ -182,17 +182,15 @@ export function CodeView({
       sessionsLoaded,
     );
     if (resolution.status === "waiting") return;
+    if (resolution.status !== "ready") {
+      onPendingOpenHandled?.();
+      return;
+    }
     const target = resolution.target;
     setTopTab("sessions");
     setInitialGithubTarget(null);
-    if (target) setSelectedId(target.id);
-    // Root browse with no matching session: there is no workbench to focus —
-    // land on the surface and leave the rail/selection as-is.
-    setWorkbenchTarget(
-      pendingOpen.root !== undefined && resolution.status !== "ready"
-        ? null
-        : { open: pendingOpen, sessionId: target?.id ?? null },
-    );
+    setSelectedId(target.id);
+    setWorkbenchTarget({ open: pendingOpen, sessionId: target.id });
     // A new arrival re-shows the source card even if the reader dismissed the
     // last one — dismissing is "I've read this", not "never show me these".
     setOriginDismissed(false);
@@ -205,7 +203,7 @@ export function CodeView({
   const activeOrigin =
     !originDismissed &&
     workbenchTarget &&
-    (workbenchTarget.sessionId ?? selectedId) === selectedId &&
+    workbenchTarget.sessionId === selectedId &&
     workbenchTarget.open.origin
       ? workbenchTarget.open.origin
       : null;
@@ -342,7 +340,7 @@ export function CodeView({
                     row={selected}
                     initialTab={deepLink?.sessionId === selected.id ? deepLink?.workbenchTab : undefined}
                     openTarget={
-                      workbenchTarget && (workbenchTarget.sessionId ?? selected.id) === selected.id
+                      workbenchTarget && workbenchTarget.sessionId === selected.id
                         ? workbenchTarget.open
                         : undefined
                     }

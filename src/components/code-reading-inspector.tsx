@@ -69,6 +69,10 @@ export type CodeReadingOrigin = {
 };
 
 export type CodeReadingTarget = {
+  /** Stable transcript turn/message identity. */
+  turnId: string | null;
+  /** Chat session that owns the rendered turn. */
+  sourceSessionId: string | null;
   code: string;
   lang: string;
   /** Repo-relative path when the fence named one. */
@@ -290,7 +294,15 @@ export function CodeReadingInspector({
   useEffect(() => {
     setTab(normalizeInspectorTab(target.tab, target.provenance));
     setSelection(null);
-  }, [target]);
+  }, [
+    target.sourceSessionId,
+    target.turnId,
+    target.code,
+    target.lang,
+    target.path,
+    target.provenance,
+    target.tab,
+  ]);
 
   // The working tree is needed for the staleness verdict in the header, not
   // just for the file/compare tabs — the header must be able to say "stale"
@@ -386,9 +398,10 @@ export function CodeReadingInspector({
     announce(`Opening ${displayName} in the workshop`);
   }, [announce, displayName, label, onOpenInWorkshop, selection, snippetStart, target.origin, target.path]);
 
+  const offersOpen =
+    canOpenInWorkshop(target.provenance) && Boolean(target.path);
   const canOpen =
-    canOpenInWorkshop(target.provenance) &&
-    Boolean(target.path) &&
+    offersOpen &&
     Boolean(projectRoot) &&
     Boolean(onOpenInWorkshop);
 
@@ -444,6 +457,7 @@ export function CodeReadingInspector({
                 type="button"
                 role="tab"
                 aria-selected={tab === entry.id}
+                disabled={entry.id !== "snippet" && !projectRoot}
                 className={`cri-tab focus-ring${tab === entry.id ? " cri-tab--on" : ""}`}
                 onClick={() => setTab(entry.id)}
               >
@@ -516,8 +530,13 @@ export function CodeReadingInspector({
             <Icon name="ph:copy" width={11} />
             Copy
           </button>
-          {canOpen ? (
-            <button type="button" className="ui-btn ui-btn--primary ui-btn--xs focus-ring" onClick={doOpen}>
+          {offersOpen ? (
+            <button
+              type="button"
+              className="ui-btn ui-btn--primary ui-btn--xs focus-ring"
+              disabled={!canOpen}
+              onClick={doOpen}
+            >
               Open in workshop
               <Icon name="ph:arrow-square-out" width={11} />
             </button>

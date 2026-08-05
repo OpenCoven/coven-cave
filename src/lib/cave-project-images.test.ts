@@ -24,6 +24,25 @@ const fakeDriver = {
   async delete(store, key) {
     idb[store].delete(key);
   },
+  async move(store, from, to) {
+    if (denyWrites) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+    const source = idb[store].get(from) ?? null;
+    const destination = idb[store].get(to) ?? null;
+    if (!source) return { source: null, destination };
+    if (destination) {
+      const same = source.dataUrl === destination.dataUrl && source.mime === destination.mime;
+      const destinationWins =
+        same || Date.parse(destination.updatedAt) >= Date.parse(source.updatedAt);
+      if (destinationWins) {
+        idb[store].delete(from);
+        return { source: null, destination };
+      }
+      return { source, destination };
+    }
+    idb[store].set(to, source);
+    idb[store].delete(from);
+    return { source: null, destination: source };
+  },
 };
 
 // Inject the fake BEFORE the store module loads — its import-time hydration

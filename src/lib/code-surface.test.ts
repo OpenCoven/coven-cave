@@ -20,6 +20,7 @@ import {
   CODE_DOCK_SIZES,
   normalizeCodeTopTab,
   parseCodeDeepLink,
+  resolveCodeWorkbenchFilePath,
 } from "./code-surface.ts";
 import {
   clearPendingCodeOpen,
@@ -140,16 +141,18 @@ test("historical review selects the captured root when projects share a relative
     kind: "changes" as const,
     path: "/repo-a/src/shared.ts",
     root: "/repo-a",
-    sessionId: "current",
     nonce: 1,
   };
   const target = codeSessionForPendingOpen([current, historical], review);
-  assert.equal(target?.id, "historical", "captured root outranks the currently active chat session");
+  assert.equal(target?.id, "historical", "a root-only review selects its captured workbench");
   assert.equal(codePendingOpenProjectRoot(review), "/repo-a");
   assert.equal(review.path, "/repo-a/src/shared.ts", "the review path stays under the captured root");
 
   assert.equal(
-    codeSessionForPendingOpen([current], review)?.id,
+    codeSessionForPendingOpen(
+      [current],
+      { ...review, sessionId: "current" },
+    )?.id,
     "current",
     "the raising session can host a captured-root review after that session switches projects",
   );
@@ -246,6 +249,25 @@ test("rooted pending open waits for sessions to load, then opens the matching wo
   assert.equal(handled, 1);
 });
 
+test("captured source session outranks another workbench with the same historical root", () => {
+  const source = row({ id: "source-chat", project_root: "/repo-now" });
+  source.git = { ...source.git, worktreeRoot: "/repo-source-worktree" };
+  const sameRoot = row({ id: "newer-code-session", project_root: "/repo-history" });
+  const pending: PendingCodeOpen = {
+    kind: "files",
+    path: "src/history.ts",
+    root: "/repo-history",
+    sessionId: "source-chat",
+    nonce: 61,
+  };
+
+  assert.equal(
+    codeSessionForPendingOpen([sameRoot, source], pending)?.id,
+    "source-chat",
+    "the handoff stays beside its source chat while the dock reads the captured historical root",
+  );
+});
+
 test("a scope change cannot resolve a rooted open against stale inventory", () => {
   const pending: PendingCodeOpen = {
     kind: "files",
@@ -280,7 +302,7 @@ test("a scope change cannot resolve a rooted open against stale inventory", () =
   );
 });
 
-test("a rootless session-targeted open waits for inventory before resolving", () => {
+test("rootless opens fail closed instead of borrowing a session workbench root", () => {
   const pending: PendingCodeOpen = {
     kind: "files",
     path: "src/history.ts",
@@ -289,17 +311,36 @@ test("a rootless session-targeted open waits for inventory before resolving", ()
   };
 
   assert.equal(
-    resolveCodePendingOpen([], pending, false).status,
-    "waiting",
-    "an empty loading inventory cannot disprove a session id",
+    codeSessionForPendingOpen(
+      [row({ id: "historical", project_root: "/repo-a" })],
+      pending,
+    ),
+    null,
+    "a session id cannot supply missing immutable root provenance",
   );
-  const loaded = resolveCodePendingOpen(
-    [row({ id: "historical", project_root: "/repo-a" })],
-    pending,
-    true,
+  assert.deepEqual(
+    resolveCodePendingOpen([], pending, false),
+    { status: "invalid", capturedRoot: null, target: null },
+    "missing provenance is invalid immediately rather than waiting to borrow a later root",
   );
-  assert.equal(loaded.status, "ready");
-  assert.equal(loaded.target?.id, "historical");
+  assert.deepEqual(
+    resolveCodePendingOpen(
+      [row({ id: "historical", project_root: "/repo-a" })],
+      pending,
+      true,
+    ),
+    { status: "invalid", capturedRoot: null, target: null },
+    "a historical rootless payload fails closed after inventory loads",
+  );
+  assert.deepEqual(
+    resolveCodePendingOpen(
+      [row({ id: "selected", project_root: "/repo-selected" })],
+      { kind: "files", path: "/repo-selected/src/current.ts", nonce: 9 },
+      true,
+    ),
+    { status: "invalid", capturedRoot: null, target: null },
+    "an unscoped absolute path cannot inherit the currently selected workbench root",
+  );
 });
 
 test("rooted pending resolution distinguishes invalid and definitively absent roots", () => {
@@ -352,6 +393,19 @@ test("captured-root matching follows Windows and POSIX case semantics", () => {
     null,
     "POSIX roots remain case-sensitive",
   );
+});
+
+test("workbench file opens recognize POSIX, drive, and UNC absolute paths on every host", () => {
+  assert.equal(resolveCodeWorkbenchFilePath("/repo", "/outside/file.ts"), "/outside/file.ts");
+  assert.equal(
+    resolveCodeWorkbenchFilePath("/repo", "C:\\Repos\\App\\src\\file.ts"),
+    "C:\\Repos\\App\\src\\file.ts",
+  );
+  assert.equal(
+    resolveCodeWorkbenchFilePath("/repo", "\\\\Server\\Share\\Repo\\src\\file.ts"),
+    "\\\\Server\\Share\\Repo\\src\\file.ts",
+  );
+  assert.equal(resolveCodeWorkbenchFilePath("/repo/", "./src/file.ts"), "/repo/src/file.ts");
 });
 
 test("deep-link parsing falls back to defaults on unknown values", () => {

@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ProjectTree } from "@/components/project-tree";
 import { RailFilePreview } from "@/components/rail-file-preview";
+import { resolveCodeWorkbenchFilePath } from "@/lib/code-surface";
 
 export function CodeWorkbenchFiles({
   projectRoot,
@@ -32,10 +33,7 @@ export function CodeWorkbenchFiles({
   // against the workbench root (same contract as RailFilesPanel's focusPath).
   const openPath = useCallback(
     (path: string) => {
-      const next = path.startsWith("/")
-        ? path
-        : `${projectRoot.replace(/\/$/, "")}/${path.replace(/^\.?\//, "")}`;
-      setSelectedPath(next);
+      setSelectedPath(resolveCodeWorkbenchFilePath(projectRoot, path));
     },
     [projectRoot],
   );

@@ -212,8 +212,8 @@ assert.match(
 );
 assert.match(
   codeView,
-  /if \(!pendingOpen\) return;[\s\S]*resolveCodePendingOpen\([\s\S]*sessionsLoaded,[\s\S]*\);[\s\S]*if \(resolution\.status === "waiting"\) return;[\s\S]*setTopTab\("sessions"\);\s*setInitialGithubTarget\(null\);\s*if \(target\) setSelectedId\(target\.id\);[\s\S]*pendingOpen\.root !== undefined && resolution\.status !== "ready"[\s\S]*\{ open: pendingOpen, sessionId: target\?\.id \?\? null \}/,
-  "file/diff navigation supersedes a pending GitHub detail so it cannot replay: the pending-open effect must switch to Sessions, clear the latched GitHub target, then keep the existing session/workbench selection flow",
+  /if \(!pendingOpen\) return;[\s\S]*resolveCodePendingOpen\([\s\S]*sessionsLoaded,[\s\S]*\);[\s\S]*if \(resolution\.status === "waiting"\) return;[\s\S]*if \(resolution\.status !== "ready"\) \{\s*onPendingOpenHandled\?\.\(\);\s*return;\s*\}[\s\S]*setTopTab\("sessions"\);\s*setInitialGithubTarget\(null\);\s*setSelectedId\(target\.id\);[\s\S]*\{ open: pendingOpen, sessionId: target\.id \}/,
+  "only a rooted, resolved file/diff open may supersede GitHub detail and retarget the selected workbench",
 );
 
 // ── Workbench: the three-zone Room (terminal center | context dock) ──────────
@@ -226,6 +226,12 @@ const workbench = await readFile(new URL("./code-workbench.tsx", import.meta.url
 const workbenchFiles = await readFile(new URL("./code-workbench-files.tsx", import.meta.url), "utf8");
 const contextDock = await readFile(new URL("./code-context-dock.tsx", import.meta.url), "utf8");
 const terminalWorkspace = await readFile(new URL("./code-terminal-workspace.tsx", import.meta.url), "utf8");
+
+assert.match(
+  workbenchFiles,
+  /import \{ resolveCodeWorkbenchFilePath \} from "@\/lib\/code-surface";[\s\S]*setSelectedPath\(resolveCodeWorkbenchFilePath\(projectRoot, path\)\)/,
+  "the Files workbench uses the shared host-independent path classifier for routed opens",
+);
 
 // The terminal scopes to the session's WORK root (worktree over shared
 // checkout, cave-9q24). Routed historical context keeps its captured root.

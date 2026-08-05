@@ -193,6 +193,12 @@ export function codeSessionWorkRoot(row: SessionRow): string {
   return row.git?.worktreeRoot || row.project_root;
 }
 
+/** Resolve a Files-tab path without relying on the host OS's path flavor. */
+export function resolveCodeWorkbenchFilePath(projectRoot: string, candidatePath: string): string {
+  if (Boolean(isAbsoluteProjectPath(candidatePath))) return candidatePath;
+  return `${projectRoot.replace(/\/$/, "")}/${candidatePath.replace(/^\.?\//, "")}`;
+}
+
 /** Validate and canonicalize immutable root provenance carried by a routed open. */
 export function codePendingOpenProjectRoot(
   open: PendingCodeOpen | null | undefined,
@@ -209,39 +215,37 @@ export function codePendingOpenProjectRoot(
 
 /**
  * Resolve a routed open to the workbench that owns its captured root. Root
- * provenance outranks the raising session id. If that session has since changed
- * projects, it can still host the workbench while the dock uses the captured
- * root; malformed provenance fails closed.
+ * provenance scopes the dock, while an immutable source session chooses the
+ * host workbench when it is still available. If that session has since changed
+ * projects, it still hosts the handoff; the dock keeps the captured root.
  */
 export function codeSessionForPendingOpen(
   rows: readonly SessionRow[],
   open: PendingCodeOpen,
 ): SessionRow | null {
   const capturedRoot = codePendingOpenProjectRoot(open);
-  if (open.root !== undefined && !capturedRoot) return null;
-  const byRoot = capturedRoot
-    ? rows.find(
-        (row) =>
-          isCodeRailSession(row) &&
-          projectRootsEqual(codeSessionWorkRoot(row), capturedRoot),
-      )
-    : undefined;
+  if (!capturedRoot) return null;
+  const byRoot = rows.find(
+    (row) =>
+      isCodeRailSession(row) &&
+      projectRootsEqual(codeSessionWorkRoot(row), capturedRoot),
+  );
   const byId = open.sessionId
     ? rows.find((row) => isCodeRailSession(row) && row.id === open.sessionId)
     : undefined;
-  return byRoot ?? byId ?? null;
+  return byId ?? byRoot ?? null;
 }
 
 export type CodePendingOpenResolution =
-  | { status: "waiting"; capturedRoot: string | null; target: null }
+  | { status: "waiting"; capturedRoot: string; target: null }
   | { status: "invalid"; capturedRoot: null; target: null }
-  | { status: "absent"; capturedRoot: string | null; target: null }
-  | { status: "ready"; capturedRoot: string | null; target: SessionRow | null };
+  | { status: "absent"; capturedRoot: string; target: null }
+  | { status: "ready"; capturedRoot: string; target: SessionRow };
 
 /**
- * Keep rooted and session-targeted opens pending until the current scoped
- * inventory is authoritative. Callers may acknowledge every result except
- * `waiting`.
+ * Keep rooted opens pending until the current scoped inventory is authoritative.
+ * Rootless historical payloads fail closed: a session id or selected workbench
+ * must never be used to infer the missing immutable root.
  */
 export function resolveCodePendingOpen(
   rows: readonly SessionRow[],
@@ -249,15 +253,14 @@ export function resolveCodePendingOpen(
   sessionsLoaded: boolean,
 ): CodePendingOpenResolution {
   const capturedRoot = codePendingOpenProjectRoot(open);
-  if (open.root !== undefined && !capturedRoot) {
+  if (!capturedRoot) {
     return { status: "invalid", capturedRoot: null, target: null };
   }
-  const target = codeSessionForPendingOpen(rows, open);
-  const hasInventoryTarget = Boolean(capturedRoot || open.sessionId);
-  if (hasInventoryTarget && !sessionsLoaded) {
+  if (!sessionsLoaded) {
     return { status: "waiting", capturedRoot, target: null };
   }
-  if (hasInventoryTarget && !target) {
+  const target = codeSessionForPendingOpen(rows, open);
+  if (!target) {
     return { status: "absent", capturedRoot, target: null };
   }
   return { status: "ready", capturedRoot, target };

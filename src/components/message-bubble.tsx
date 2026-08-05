@@ -764,13 +764,15 @@ type MarkdownContentProps = {
   citations?: readonly Citation[];
   /** Immutable execution root of the transcript turn that owns this prose. */
   projectRoot?: string | null;
+  /** Stable transcript turn/message identity for reader provenance. */
+  messageId?: string | null;
   /** Extra classes on the markdown container — the Expand reader uses this to
    *  set its own reading scale (.cave-md--reader). Omitted in the transcript,
    *  which reads at the stream's density. */
   className?: string;
 };
 
-function MarkdownContent({ text, pending, onOpenUrl, citations = [], projectRoot = null, className }: MarkdownContentProps) {
+function MarkdownContent({ text, pending, onOpenUrl, citations = [], projectRoot = null, messageId = null, className }: MarkdownContentProps) {
   const [html, setHtml] = useState<string | null>(
     () => pending ? null : renderCacheGet(text) ?? null,
   );
@@ -787,6 +789,7 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [], projectRoot
     fileLinkResolver,
     reading,
     projectRoot,
+    messageId,
   );
   // mdToHtml is async and several streaming renders can be in flight at once.
   // The gate orders their commits and invalidates pre-settle work synchronously
@@ -1093,6 +1096,7 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
             pending={pending}
             onOpenUrl={onOpenUrl}
             projectRoot={projectRoot}
+            messageId={messageId}
           />
         </div>
         {/* Action row sits BELOW the bubble (right-aligned via the items-end
@@ -1164,6 +1168,7 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
                 onOpenUrl={onOpenUrl}
                 citations={cited.citations}
                 projectRoot={projectRoot}
+                messageId={messageId}
               />
             );
           })
@@ -1174,6 +1179,7 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
             onOpenUrl={onOpenUrl}
             citations={cited.citations}
             projectRoot={projectRoot}
+            messageId={messageId}
           />
         )}
       </div>
@@ -1238,6 +1244,7 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
             onRerunWith={onRerunWith}
             familiarId={readerFamiliarId}
             projectRoot={projectRoot}
+            messageId={messageId}
           />
           <CopyBubble text={content} />
           {role === "assistant" ? (
@@ -1288,6 +1295,7 @@ function ExpandBubble({
   onRerunWith,
   familiarId,
   projectRoot,
+  messageId,
 }: {
   text: string;
   label: string;
@@ -1298,6 +1306,7 @@ function ExpandBubble({
   onRerunWith?: (prompt: string) => void;
   familiarId?: string;
   projectRoot?: string | null;
+  messageId?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const readerCited = useMemo(() => renderCitedBody(text), [text]);
@@ -1343,6 +1352,7 @@ function ExpandBubble({
             text={readerCited.body}
             citations={readerCited.citations}
             projectRoot={projectRoot}
+            messageId={messageId}
             className="cave-md--expanded cave-md--reader"
           />
         </MessageReader>
