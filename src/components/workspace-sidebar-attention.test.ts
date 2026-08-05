@@ -165,7 +165,13 @@ function textContent(node: unknown): string {
   return "";
 }
 
-function makeSession() {
+function makeSession(overrides = {}) {
+  const attention = {
+    state: "awaiting-human",
+    since: "2026-08-05T19:00:00.000Z",
+    reason: "approval",
+    ...(overrides.attention ?? {}),
+  };
   return {
     id: "session-attention",
     project_root: "/repo",
@@ -176,11 +182,8 @@ function makeSession() {
     archived_at: null,
     created_at: "2026-08-05T18:30:00.000Z",
     updated_at: "2026-08-05T19:30:00.000Z",
-    attention: {
-      state: "awaiting-human",
-      since: "2026-08-05T19:00:00.000Z",
-      reason: "approval",
-    },
+    ...overrides,
+    attention,
   };
 }
 
@@ -188,6 +191,24 @@ function mainThreadButton(renderer: ReactTestRenderer) {
   return renderer.root.find(
     (node) => node.type === "button" && node.props.className === "cnav__thread-main focus-ring" && typeof node.props["aria-describedby"] === "string",
   );
+}
+
+function sectionByLabel(renderer: ReactTestRenderer, label: string) {
+  return renderer.root.find(
+    (node) => node.type === "section" && node.props["aria-label"] === label,
+  );
+}
+
+function sectionCount(section: ReturnType<typeof sectionByLabel>) {
+  return section.find(
+    (node) => typeof node.type === "string" && node.props.className === "cnav__label-count",
+  );
+}
+
+function sectionThreadTitles(section: ReturnType<typeof sectionByLabel>) {
+  return section
+    .findAll((node) => typeof node.type === "string" && node.props.className === "cnav__thread-title")
+    .map((node) => textContent(node.children));
 }
 
 beforeEach(() => {
@@ -253,6 +274,105 @@ test("attention rows keep the visible state in the button name and move the deta
   const describedNodes = renderer.root.findAll((node) => typeof node.type === "string" && node.props.id === descriptionId);
   expect(describedNodes).toHaveLength(1);
   expect(textContent(describedNodes[0].children)).toBe("For approval since 1 hour ago.");
+
+  await act(async () => renderer.unmount());
+});
+
+test("recent view shows the visible Awaiting you count and keeps promoted rows out of recency buckets", async () => {
+  let renderer!: ReactTestRenderer;
+  const overdue = makeSession({
+    id: "session-overdue",
+    title: "Overdue approval",
+    updated_at: "2026-08-05T19:59:00.000Z",
+    attention: {
+      state: "overdue-human",
+      since: "2026-08-03T20:00:00.000Z",
+      reason: "approval",
+    },
+  });
+  const awaiting = makeSession({
+    id: "session-awaiting",
+    title: "Needs reply",
+    updated_at: "2026-08-05T19:58:00.000Z",
+    attention: {
+      state: "awaiting-human",
+      since: "2026-08-05T19:00:00.000Z",
+      reason: "reply",
+    },
+  });
+  const leftHanging = makeSession({
+    id: "session-left-hanging",
+    title: "Follow up on branch",
+    updated_at: "2026-08-05T19:57:00.000Z",
+    attention: {
+      state: "left-hanging",
+      since: "2026-08-04T19:00:00.000Z",
+      reason: "follow_up",
+    },
+  });
+  const ordinary = makeSession({
+    id: "session-none",
+    title: "Low priority note",
+    updated_at: "2026-08-05T19:56:00.000Z",
+    attention: {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+  });
+  const archivedAttention = makeSession({
+    id: "session-archived-attention",
+    title: "Archived escalation",
+    archived_at: "2026-08-05T19:55:00.000Z",
+    updated_at: "2026-08-05T19:55:00.000Z",
+    attention: {
+      state: "awaiting-human",
+      since: "2026-08-05T18:00:00.000Z",
+      reason: "approval",
+    },
+  });
+
+  await act(async () => {
+    renderer = create(
+      createElement(WorkspaceSidebar, {
+        sessions: [ordinary, leftHanging, archivedAttention, awaiting, overdue],
+        familiars: [],
+        responseNeeded: new Set(),
+        onSelectFamiliar: () => undefined,
+        onOpenSession: () => undefined,
+        onNavigate: () => undefined,
+        onNewChat: () => undefined,
+        onDeleteSession: async () => undefined,
+        onOpenSettings: () => undefined,
+      }),
+    );
+    await Promise.resolve();
+  });
+
+  const awaitingSection = sectionByLabel(renderer, "Awaiting you");
+  expect(textContent(sectionCount(awaitingSection).children)).toBe("3");
+  expect(sectionThreadTitles(awaitingSection)).toEqual([
+    "Overdue approval",
+    "Needs reply",
+    "Follow up on branch",
+  ]);
+
+  const recencyTitles = renderer.root
+    .findAll(
+      (node) =>
+        node.type === "section"
+        && typeof node.props["aria-label"] === "string"
+        && node.props["aria-label"] !== "Awaiting you"
+        && node.props["aria-label"] !== "Pinned threads",
+    )
+    .flatMap(sectionThreadTitles);
+
+  expect(recencyTitles).toContain("Low priority note");
+  expect(recencyTitles).not.toContain("Overdue approval");
+  expect(recencyTitles).not.toContain("Needs reply");
+  expect(recencyTitles).not.toContain("Follow up on branch");
+  expect(recencyTitles).not.toContain("Archived escalation");
+  expect(recencyTitles.filter((title) => title === "Low priority note")).toHaveLength(1);
 
   await act(async () => renderer.unmount());
 });
