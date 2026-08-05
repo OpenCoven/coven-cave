@@ -189,20 +189,97 @@ function renderReplayTimeline(
   return rendered + output.slice(outputOffset);
 }
 
+function commonPrefixLength(left: string, right: string): number {
+  const limit = Math.min(left.length, right.length);
+  let length = 0;
+  while (length < limit && left[length] === right[length]) length += 1;
+  return length;
+}
+
+function commonSuffixLength(left: string, right: string, prefixLength: number): number {
+  const limit = Math.min(left.length, right.length) - prefixLength;
+  let length = 0;
+  while (
+    length < limit &&
+    left[left.length - length - 1] === right[right.length - length - 1]
+  ) {
+    length += 1;
+  }
+  return length;
+}
+
+function trimInsertionAgainstOutput(
+  insertion: ReplayStructuredInsertion,
+  output: string,
+): void {
+  const offset = Math.min(output.length, insertion.outputOffset);
+  const prefix = output.slice(0, offset);
+  const suffix = output.slice(offset);
+  let text = insertion.text;
+  if (prefix.endsWith(text) || suffix.startsWith(text)) {
+    insertion.text = "";
+    return;
+  }
+
+  const prefixOverlapLimit = Math.min(prefix.length, text.length);
+  for (let overlap = prefixOverlapLimit; overlap > 0; overlap -= 1) {
+    if (prefix.endsWith(text.slice(0, overlap))) {
+      text = text.slice(overlap);
+      break;
+    }
+  }
+  const suffixOverlapLimit = Math.min(suffix.length, text.length);
+  for (let overlap = suffixOverlapLimit; overlap > 0; overlap -= 1) {
+    if (suffix.startsWith(text.slice(text.length - overlap))) {
+      text = text.slice(0, text.length - overlap);
+      break;
+    }
+  }
+  insertion.text = text;
+}
+
+function reconcileReplayOutput(
+  previous: string,
+  next: string,
+  insertions: ReplayStructuredInsertion[],
+): void {
+  if (previous !== next && !next.startsWith(previous)) {
+    const prefixLength = commonPrefixLength(previous, next);
+    const suffixLength = commonSuffixLength(previous, next, prefixLength);
+    const previousChangedEnd = previous.length - suffixLength;
+    const nextChangedEnd = next.length - suffixLength;
+    for (const insertion of insertions) {
+      if (insertion.outputOffset <= prefixLength) continue;
+      if (insertion.outputOffset >= previousChangedEnd) {
+        insertion.outputOffset =
+          nextChangedEnd + (insertion.outputOffset - previousChangedEnd);
+      } else {
+        insertion.outputOffset = nextChangedEnd;
+      }
+    }
+  }
+
+  for (const insertion of insertions) {
+    trimInsertionAgainstOutput(insertion, next);
+  }
+  for (let index = insertions.length - 1; index >= 0; index -= 1) {
+    if (!insertions[index].text) insertions.splice(index, 1);
+  }
+}
+
 function decodePlainTimeline(
   events: ReplayDaemonEvent[],
   decoder: (chunks: string[]) => string,
 ): string | null {
   const chunks: string[] = [];
   const insertions: ReplayStructuredInsertion[] = [];
+  let decodedOutput = "";
 
-  const decodeOutput = () => {
-    let decoded = decoder(chunks);
-    const rawOutput = chunks.join("");
-    if (!rawOutput.endsWith("\n") && decoded.endsWith("\n")) {
-      decoded = decoded.slice(0, -1);
-    }
-    return decoded;
+  const decodeOutput = () => decoder(chunks);
+  const updateOutput = () => {
+    const nextOutput = decodeOutput();
+    reconcileReplayOutput(decodedOutput, nextOutput, insertions);
+    decodedOutput = nextOutput;
   };
 
   for (const event of events) {
@@ -213,18 +290,19 @@ function decodePlainTimeline(
     }
     const structured = structuredAssistantEventText(event);
     if (structured === null) continue;
-    const decoded = decodeOutput();
-    const rendered = renderReplayTimeline(decoded, insertions);
+    updateOutput();
+    const rendered = renderReplayTimeline(decodedOutput, insertions);
     const unseen = unseenReplayAssistantSuffix(rendered, structured);
     if (unseen) {
       insertions.push({
-        outputOffset: decoded.length,
+        outputOffset: decodedOutput.length,
         text: unseen,
         sequence: insertions.length,
       });
     }
   }
-  return renderReplayTimeline(decodeOutput(), insertions).trim() || null;
+  updateOutput();
+  return renderReplayTimeline(decodedOutput, insertions).trim() || null;
 }
 
 function cleanTerminalOutput(chunks: string[]): string {
@@ -235,16 +313,21 @@ function decodeDirectPlain(chunks: string[]): string {
   return cleanTerminalOutput(chunks);
 }
 
-function decodeCodexPlain(chunks: string[]): string {
-  const filter = new AssistantFilter();
+function decodeFilteredPlain(chunks: string[], filter: AssistantFilter): string {
   const cleaned = cleanTerminalOutput(chunks);
-  return filter.push(cleaned) + filter.flush();
+  let decoded = filter.push(cleaned) + filter.flush();
+  if (!cleaned.endsWith("\n") && decoded.endsWith("\n")) {
+    decoded = decoded.slice(0, -1);
+  }
+  return decoded;
+}
+
+function decodeCodexPlain(chunks: string[]): string {
+  return decodeFilteredPlain(chunks, new AssistantFilter());
 }
 
 function decodeHermesPlain(chunks: string[]): string {
-  const filter = new AssistantFilter({ passthrough: true });
-  const cleaned = cleanTerminalOutput(chunks);
-  return filter.push(cleaned) + filter.flush();
+  return decodeFilteredPlain(chunks, new AssistantFilter({ passthrough: true }));
 }
 
 function decodeClaudeStreamJson(chunks: string[]): string {

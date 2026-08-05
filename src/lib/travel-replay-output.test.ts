@@ -160,6 +160,57 @@ test("plain replay applies terminal revisions without retaining stale prefixes",
   );
 });
 
+test("plain replay classifies synthetic newlines after terminal normalization", () => {
+  assert.equal(
+    decodeReplayAssistantOutput({
+      harness: "claude",
+      ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
+      events: [
+        daemonEvent("output", JSON.stringify({ data: "First\n\u001b[0m" })),
+        daemonEvent(
+          "assistant.message",
+          JSON.stringify({ content: "First\nSecond\n" }),
+        ),
+        daemonEvent("output", JSON.stringify({ data: "Third" })),
+      ],
+    }),
+    "First\nSecond\nThird",
+  );
+});
+
+test("plain replay removes structured suffixes duplicated by later output", () => {
+  assert.equal(
+    decodeReplayAssistantOutput({
+      harness: "claude",
+      ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
+      events: [
+        daemonEvent("output", JSON.stringify({ data: "He" })),
+        daemonEvent("assistant.message", JSON.stringify({ content: "Hello" })),
+        daemonEvent("output", JSON.stringify({ data: "llo" })),
+      ],
+    }),
+    "Hello",
+  );
+});
+
+test("plain replay rebases structured suffixes across terminal revisions", () => {
+  assert.equal(
+    decodeReplayAssistantOutput({
+      harness: "claude",
+      ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
+      events: [
+        daemonEvent("output", JSON.stringify({ data: "wrong" })),
+        daemonEvent(
+          "assistant.message",
+          JSON.stringify({ content: "wrong answer" }),
+        ),
+        daemonEvent("output", JSON.stringify({ data: "\b\b\b\bright" })),
+      ],
+    }),
+    "wright answer",
+  );
+});
+
 test("replay rejects truncated output after partial chunks with a typed error", () => {
   assert.throws(
     () =>
