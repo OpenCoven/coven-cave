@@ -281,7 +281,7 @@ import { AttachmentList, AttachmentThumb, InlineImageAttachments, formatAttachme
 import { preloadMarkdownPreview } from "@/lib/markdown-preview";
 import {
   type CreationRefreshState,
-  onSendStart,
+  CREATION_REFRESH_INITIAL,
   onCreationSessionIdentified,
   onDoneCreationRefresh,
 } from "@/lib/chat-creation-refresh";
@@ -2483,7 +2483,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [activeProjectRoot, onProjectRootChange]);
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
-  const creationRefreshStateRef = useRef<CreationRefreshState>({ pendingRuns: {} });
+  const creationRefreshStateRef = useRef<CreationRefreshState>(CREATION_REFRESH_INITIAL);
   const streamHealthSessionRef = useRef(sessionId);
   const currentStreamHealthRunIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -4856,7 +4856,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const initialLiveSessionId = currentSessionRef.current;
     liveSessionIdRef.current = initialLiveSessionId;
     const runId = crypto.randomUUID();
-    creationRefreshStateRef.current = onSendStart(creationRefreshStateRef.current, runId, initialLiveSessionId);
     setHistoryState("loaded");
 
     // Explicit parentTurnId (including null = root) wins; only fall back to the
@@ -5956,7 +5955,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // (originSessionId === null) may bind an unbound pending creation state;
         // an existing-session generation is rejected internally.
         creationRefreshStateRef.current = onCreationSessionIdentified(
-          creationRefreshStateRef.current, liveGeneration.runId, liveGeneration.originSessionId, ev.sessionId,
+          creationRefreshStateRef.current, liveGeneration.originSessionId, ev.sessionId,
         );
         if (ev.sessionId !== currentSessionRef.current) {
           // Only adopt the new session id into THIS view's refs when the view is
@@ -6164,11 +6163,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // unrelated existing-session generation is rejected internally.
         if (completedSessionId) {
           creationRefreshStateRef.current = onCreationSessionIdentified(
-            creationRefreshStateRef.current, liveGeneration.runId, liveGeneration.originSessionId, completedSessionId,
+            creationRefreshStateRef.current, liveGeneration.originSessionId, completedSessionId,
           );
         }
         const { shouldRefresh: shouldCreationRefresh, nextState: nextCreationRefreshState } =
-          onDoneCreationRefresh(creationRefreshStateRef.current, liveGeneration.runId, liveGeneration.originSessionId, completedSessionId, ev.isError);
+          onDoneCreationRefresh(creationRefreshStateRef.current, completedSessionId, ev.isError);
         creationRefreshStateRef.current = nextCreationRefreshState;
         if (shouldCreationRefresh) onSessionsChanged?.();
         persistLiveTurns(
