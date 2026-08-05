@@ -89,10 +89,19 @@ const QUESTION_LEAD_IN_RE =
 // "Here is the deployment rollback safety checklist").
 const ANSWER_HEADING_RE = /^(?:here (?:is|are)|this is)(?:\s+(?:a|an|the))?\s+/i;
 
-function clampAtWordBoundary(text: string, maxLen: number): string {
+// Boilerplate-only guard: "This is.", "Here is.", etc. with no content after
+// the framing phrase must collapse to null, not produce a stub title.
+// Checked before stripping so "This is a test" goes through normally.
+const BOILERPLATE_ONLY_RE =
+  /^(?:here (?:is|are)|this is)(?:\s+(?:a|an|the))?\s*[.!?]?\s*$/i;
+
+// Returns null when no word boundary exists (no spaces) so a single over-length
+// token never produces a mid-word fragment. Callers retain the current title.
+function clampAtWordBoundary(text: string, maxLen: number): string | null {
   if (text.length <= maxLen) return text;
   const slice = text.slice(0, maxLen - 1);
   const lastSpace = slice.lastIndexOf(" ");
+  if (lastSpace < 0) return null;
   const trimmed = lastSpace >= maxLen * 0.6 ? slice.slice(0, lastSpace) : slice;
   return `${trimmed.trimEnd().replace(/[,;:\-–—]$/, "")}…`;
 }
@@ -100,32 +109,53 @@ function clampAtWordBoundary(text: string, maxLen: number): string {
 /**
  * Shared formatter for all auto-generated titles (first-exchange naming,
  * periodic auto-rename, sparkle generation). Deterministic offline contract:
- * removes markdown and edge emoji, strips answer-heading boilerplate and
+ * normalizes markdown links to their label, removes other markdown and edge
+ * emoji, strips answer-heading boilerplate, conversational filler, and
  * question/request lead-ins, removes trailing sentence-ending punctuation,
  * capitalizes, caps at MAX_SUMMARY_TITLE_WORDS words, and clamps at
  * MAX_SUMMARY_TITLE_LENGTH chars at a word boundary (ellipsis only when cut).
- * Returns null when nothing useful remains (< 3 chars after cleanup).
+ * Returns null when nothing useful remains (< 2 chars after cleanup) or when a
+ * single over-length token has no word boundary to cut at cleanly.
  */
 function formatGeneratedTitle(text: string): string | null {
-  // Strip markdown syntax and collapse whitespace
-  let s = text.replace(/[*_`#]+/g, " ").replace(/\s+/g, " ").trim();
-  // Remove edge emoji
+  // Normalize markdown links: [label](url) → label; destination discarded.
+  let s = text.replace(/\[([^\]]+)\]\([^\s)]+(?:\s+"[^"]*")?\)/g, "$1");
+  // Strip remaining markdown syntax and collapse whitespace.
+  s = s.replace(/[*_`#]+/g, " ").replace(/\s+/g, " ").trim();
+  // Cleanup loop: trailing punctuation → edge emoji → trailing punctuation again,
+  // so emoji adjacent to trailing punctuation (e.g. "Fix parser 🎉.") are fully
+  // removed.
+  s = s.replace(/[.!?]+$/, "").trim();
   s = stripLeadingTrailingEmoji(s);
+  s = s.replace(/[.!?]+$/, "").trim();
+  // Boilerplate-only: "This is.", "Here is." → null (no meaningful fallback).
+  if (BOILERPLATE_ONLY_RE.test(s)) return null;
   // Strip answer-heading boilerplate: "Here is the …", "Here are …", "This is a …"
   s = s.replace(ANSWER_HEADING_RE, "").trim();
+  // Strip conversational filler (leading politeness/request framing such as
+  // "can you", "please") so framing is removed from any input path, not only
+  // from text pre-processed through cleanPromptForTitle.
+  let prev = "";
+  while (s && s !== prev) {
+    prev = s;
+    s = s.replace(LEADING_FILLER_RE, "");
+  }
+  s = s.replace(TRAILING_FILLER_RE, "").trim();
   // Strip question/request lead-ins: "How do I …", "What's the best …", etc.
   s = s.replace(QUESTION_LEAD_IN_RE, "").trim();
-  // Strip trailing sentence-ending punctuation
+  // Final trailing-punctuation pass in case stripping exposed new punctuation.
   s = s.replace(/[.!?]+$/, "").trim();
-  if (s.length < 3) return null;
-  // Capitalize
+  // Allow two-character acronyms such as "AI"; single chars are not meaningful.
+  if (s.length < 2) return null;
+  // Capitalize.
   s = s.charAt(0).toUpperCase() + s.slice(1);
-  // Cap at word limit (word boundary, no ellipsis for word truncation alone)
+  // Cap at word limit (word boundary, no ellipsis for word truncation alone).
   const words = s.split(/\s+/);
   if (words.length > MAX_SUMMARY_TITLE_WORDS) {
     s = words.slice(0, MAX_SUMMARY_TITLE_WORDS).join(" ");
   }
-  // Clamp at character limit (word boundary, ellipsis only when truncated)
+  // Clamp at character limit; null when no word boundary exists (prevents
+  // mid-word fragments from single over-length tokens).
   return clampAtWordBoundary(s, MAX_SUMMARY_TITLE_LENGTH);
 }
 

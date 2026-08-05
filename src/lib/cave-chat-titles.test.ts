@@ -165,4 +165,69 @@ assert.equal(titleFromAssistantReply(""), null);
 // normalizeChatTitle max stays at 120 — manual titles not shortened.
 assert.equal(normalizeChatTitle("x".repeat(130))!.length, 120, "manual title max 120 unchanged");
 
+// ── Formatter edge cases (Task 2 spec gaps) ──────────────────────────────────
+
+// Gap 2a: Markdown link syntax → label only, destination discarded.
+assert.equal(
+  chatSummaryTitle({ userText: "[our docs](https://example.com)" }),
+  "Our docs",
+  "markdown link yields label, destination discarded",
+);
+
+// Gap 2b: Emoji removal works adjacent to trailing punctuation.
+assert.equal(
+  titleFromAssistantReply("# Fix parser 🎉."),
+  "Fix parser",
+  "emoji removal works adjacent to trailing punctuation",
+);
+
+// Gap 2c: Conversational framing stripped even when passed directly through
+// the shared formatter (not only via cleanPromptForTitle pre-pass).
+assert.equal(
+  chatSummaryTitle({ userText: "Can you configure retries?" }),
+  "Configure retries",
+  "conversational framing stripped in shared formatter path",
+);
+
+// Gap 2d: Boilerplate-only input yields null, not a stub title.
+assert.equal(
+  chatSummaryTitle({ userText: "This is." }),
+  null,
+  "boilerplate-only yields null",
+);
+
+// Gap 2e: Two-character meaningful topics are preserved.
+assert.equal(
+  chatSummaryTitle({ userText: "AI" }),
+  "AI",
+  "two-character meaningful topic preserved",
+);
+
+// Gap 2f: A single token longer than 40 chars yields null — no mid-word
+// fragment. Callers retain the current/default title.
+{
+  const longToken = "a".repeat(41);
+  const result = chatSummaryTitle({ userText: longToken });
+  assert.equal(result, null, "single token >40 chars yields null, not a fragment");
+}
+
+// ── Long/over-limit inputs: ≤40 chars, ≤7 words, differs from raw input ──────
+{
+  const overLimitUser =
+    "I need detailed guidance on designing and implementing a robust distributed caching layer " +
+    "with automatic failover for high-throughput microservices handling session management at scale";
+  const result = chatSummaryTitle({ userText: overLimitUser });
+  assert.ok(result !== null, "over-limit user text yields a title");
+  assert.ok(
+    result.length <= MAX_SUMMARY_TITLE_LENGTH,
+    `over-limit user text ≤${MAX_SUMMARY_TITLE_LENGTH} chars: "${result}" (${result.length})`,
+  );
+  const wc = result.replace(/…$/, "").trimEnd().split(/\s+/).length;
+  assert.ok(
+    wc <= MAX_SUMMARY_TITLE_WORDS,
+    `over-limit user text ≤${MAX_SUMMARY_TITLE_WORDS} words: "${result}" (${wc})`,
+  );
+  assert.notEqual(result, overLimitUser, "output differs from raw input");
+}
+
 console.log("cave-chat-titles.test.ts ok");

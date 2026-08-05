@@ -102,3 +102,40 @@ assert.match(
   /const announceSession = \(id: string\) => \{[\s\S]{0,1200}addChatRunKeys\(runHandle, \[announcedId\]\)/,
   "announceSession late-keys the run registry with the announced conversation id",
 );
+
+// ── autoNameSessionFromFirstExchange uses chatSummaryTitle (Gap 1 contract) ──
+// The summary must be derived via the shared chatSummaryTitle heuristic, NOT
+// chatTitleFromPrompt (which uses a 64-char truncation and bypasses the shared
+// formatter). The function must also load the stored conversation so it can
+// pass the first settled assistant text to chatSummaryTitle.
+
+assert.match(
+  chatRoute,
+  /import \{[^}]*chatSummaryTitle[^}]*\} from "@\/lib\/cave-chat-titles"/,
+  "chatSummaryTitle must be imported from @/lib/cave-chat-titles",
+);
+
+{
+  const fnMarker = "async function autoNameSessionFromFirstExchange";
+  const fnStart = chatRoute.indexOf(fnMarker);
+  assert.ok(fnStart >= 0, "autoNameSessionFromFirstExchange function must exist");
+  // Grab the function body — from its start to the next top-level async function.
+  const nextFn = chatRoute.indexOf("\nasync function ", fnStart + 1);
+  const fnBody = nextFn > fnStart ? chatRoute.slice(fnStart, nextFn) : chatRoute.slice(fnStart, fnStart + 2000);
+
+  assert.match(
+    fnBody,
+    /chatSummaryTitle\(\s*\{/,
+    "autoNameSessionFromFirstExchange must call chatSummaryTitle with an exchange object",
+  );
+  assert.doesNotMatch(
+    fnBody,
+    /const summary = chatTitleFromPrompt/,
+    "autoNameSessionFromFirstExchange must not derive the title summary via chatTitleFromPrompt",
+  );
+  assert.match(
+    fnBody,
+    /loadConversation/,
+    "autoNameSessionFromFirstExchange must load the stored conversation for the settled exchange",
+  );
+}

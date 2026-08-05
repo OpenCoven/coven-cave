@@ -91,4 +91,17 @@ assert.equal(
   assert.ok(wc <= 7, `≤7 words: "${title}" (${wc})`);
 }
 
+// ── Long/over-limit inputs: ≤40 chars, ≤7 words, differs from raw input ──────
+{
+  const overLimitText =
+    "I need you to help me carefully investigate and fix the session synchronization and cache " +
+    "invalidation issues causing slow performance in our distributed application infrastructure today";
+  const title = renameTitleFromLatestExchange({ userText: overLimitText, assistantText: "" });
+  assert.ok(title !== null, "over-limit text yields a title");
+  assert.ok(title.length <= 40, `≤40 chars: "${title}" (${title.length})`);
+  const wc = title.replace(/…$/, "").trimEnd().split(/\s+/).length;
+  assert.ok(wc <= 7, `≤7 words: "${title}" (${wc})`);
+  assert.notEqual(title, overLimitText, "output differs from raw input");
+}
+
 console.log("chat-auto-rename.test.ts ok");

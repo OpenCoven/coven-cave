@@ -14,7 +14,7 @@ import {
   setSessionTitle,
   setSessionTitleAuto,
 } from "@/lib/cave-config";
-import { chatTitleFromPrompt, defaultChatTitleForSession } from "@/lib/cave-chat-titles";
+import { chatSummaryTitle, chatTitleFromPrompt, defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import {
   isAutoOwnedTitle,
   isRenameDueAtTurn,
@@ -446,8 +446,8 @@ async function autoNameSessionFromFirstExchange(
   promptText: string,
 ): Promise<void> {
   try {
-    const summary = chatTitleFromPrompt(promptText);
-    if (!summary) return;
+    // Recognize the auto-derived defaults this function or the stub-creation
+    // path may have left behind, so a manual rename always wins.
     const autoDefaults = new Set(
       [chatTitleFromPrompt(promptText), defaultChatTitleForSession(sessionId)].filter(
         (t): t is string => Boolean(t),
@@ -456,6 +456,18 @@ async function autoNameSessionFromFirstExchange(
     const state = await loadState();
     const current = state.sessionTitles[sessionId];
     if (current && !autoDefaults.has(current)) return;
+
+    // Derive the title from the first settled exchange: load the conversation
+    // that was persisted just before this call, find the first user turn and
+    // the first settled (non-pending, non-error) assistant turn.
+    const conversation = await loadConversation(sessionId).catch(() => null);
+    const turns = conversation?.turns ?? [];
+    const firstUser =
+      turns.find((t) => t.role === "user")?.text ?? promptText;
+    const firstAssistant =
+      turns.find((t) => t.role === "assistant" && !t.isError)?.text ?? null;
+    const summary = chatSummaryTitle({ userText: firstUser, assistantText: firstAssistant });
+    if (!summary) return;
     if (current === summary) return;
     await setSessionTitle(sessionId, summary);
   } catch {

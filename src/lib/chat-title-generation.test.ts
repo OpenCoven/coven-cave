@@ -82,4 +82,22 @@ assert.equal(generateChatTitle(thread), generateChatTitle(thread));
 assert.equal(typeof generateChatTitle(thread), "string");
 assert.ok(generateChatTitle(thread).length > 0);
 
+// ── Long/over-limit inputs: ≤40 chars, ≤7 words, differs from raw input ──────
+{
+  const longThread = [
+    turn(
+      "user",
+      "I need comprehensive guidance on designing and implementing a robust distributed caching " +
+        "layer with Redis for my high-throughput microservices architecture to handle session management",
+    ),
+    turn("assistant", "## Redis caching architecture for microservices\nHere is a detailed guide..."),
+  ];
+  const title = generateChatTitle(longThread);
+  assert.ok(title !== null, "long thread yields a title");
+  assert.ok(title.length <= 40, `≤40 chars: "${title}" (${title.length})`);
+  const wc = title.replace(/…$/, "").trimEnd().split(/\s+/).length;
+  assert.ok(wc <= 7, `≤7 words: "${title}" (${wc})`);
+  assert.notEqual(title, longThread[0].text, "output differs from raw user text");
+}
+
 console.log("chat-title-generation.test.ts ok");
