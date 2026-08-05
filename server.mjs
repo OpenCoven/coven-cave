@@ -383,7 +383,14 @@ function queuePtyOutput(threadId, session, data) {
   while (offset < data.length && session.ws) {
     const room = PTY_FRAME_MAX_BYTES - session.pendingOutputBytes;
     const take = Math.min(room, data.length - offset);
-    session.pendingOutput.push(data.subarray(offset, offset + take));
+    const chunk = data.subarray(offset, offset + take);
+    if (session.pendingOutputBytes + take === PTY_FRAME_MAX_BYTES) {
+      session.pendingOutput.push(chunk);
+    } else {
+      const boundedChunk = Buffer.allocUnsafeSlow(chunk.length);
+      chunk.copy(boundedChunk);
+      session.pendingOutput.push(boundedChunk);
+    }
     session.pendingOutputBytes += take;
     offset += take;
     if (session.pendingOutputBytes === PTY_FRAME_MAX_BYTES) {

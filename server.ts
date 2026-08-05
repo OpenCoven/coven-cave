@@ -604,7 +604,17 @@ function queuePtyOutput(threadId: string, session: PtySession, data: Buffer): vo
   while (offset < data.length && session.ws) {
     const room = PTY_FRAME_MAX_BYTES - session.pendingOutputBytes;
     const take = Math.min(room, data.length - offset);
-    session.pendingOutput.push(data.subarray(offset, offset + take));
+    const chunk = data.subarray(offset, offset + take);
+    // Full frames flush synchronously. A short final slice survives until the
+    // coalescing timer, so give it a bounded backing allocation instead of
+    // pinning an arbitrarily large node-pty callback through a Buffer view.
+    if (session.pendingOutputBytes + take === PTY_FRAME_MAX_BYTES) {
+      session.pendingOutput.push(chunk);
+    } else {
+      const boundedChunk = Buffer.allocUnsafeSlow(chunk.length);
+      chunk.copy(boundedChunk);
+      session.pendingOutput.push(boundedChunk);
+    }
     session.pendingOutputBytes += take;
     offset += take;
     if (session.pendingOutputBytes === PTY_FRAME_MAX_BYTES) {

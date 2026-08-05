@@ -588,8 +588,19 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
     }),
   );
 
-  queuePtyOutput("coalesce", session, Buffer.alloc(frameLimit * 2 + 3, 0x61));
+  const oversizedCallback = Buffer.alloc(frameLimit * 8 + 3, 0x61);
+  queuePtyOutput("coalesce", session, oversizedCallback);
   assert.ok(sent.slice(1).every((frame) => frame.length - 1 <= frameLimit), "large output is split into bounded frames");
+  assert.equal(session.pendingOutputBytes, 3, "only the short final frame remains queued");
+  assert.notEqual(
+    session.pendingOutput[0]?.buffer,
+    oversizedCallback.buffer,
+    "a short pending frame must not pin an oversized PTY callback allocation",
+  );
+  assert.ok(
+    (session.pendingOutput[0]?.buffer.byteLength ?? 0) <= frameLimit,
+    "pending output owns a bounded backing allocation",
+  );
 
   const slowWs = { ...ws, bufferedAmount: bufferedLimit, closeCode: 0, close(code: number) { this.closeCode = code; } };
   const slow = { ...session, ws: slowWs, pendingOutput: [] as Buffer[], pendingOutputBytes: 0, flushTimer: null, detachTimer: null };
