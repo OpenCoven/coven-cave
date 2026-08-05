@@ -18,9 +18,8 @@
  * - A failed done with a bound session ID preserves the entry for retry.
  * - A failed done with no bound session removes the entry — it cannot be
  *   retried by session ID so there is nothing to preserve.
- * - A terminal non-done path (stream `error` event, abort, send exception)
- *   calls `onCreationRunTerminated` which removes unbound entries and preserves
- *   bound ones.
+ * - Every terminal path calls `onCreationRunTerminated`, which removes unbound
+ *   entries and retry aliases while preserving bound original entries.
  * - A successful done removes all entries sharing the same `sessionId` (the
  *   original run and any retry aliases), preventing duplicate refreshes.
  * - A `runId` not present in `pendingRuns` (ordinary follow-up or unrelated

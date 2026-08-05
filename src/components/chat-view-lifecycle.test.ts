@@ -743,8 +743,8 @@ assert.match(
 );
 assert.match(
   source,
-  /useEffect\(\(\) => \(\) => \{\s*\n\s*displayedCreationRunIdRef\.current = null;\s*\n\s*\}, \[\]\);/,
-  "unmount releases the displayed compose slot so a late event from the stale ChatView cannot promote into a remounted compose",
+  /useEffect\(\(\) => \{[\s\S]*?onSessionsChangedRef\.current = onSessionsChanged;[\s\S]*?return \(\) => \{\s*\n\s*displayedCreationRunIdRef\.current = null;[\s\S]*?onSessionsChangedRef\.current = \(\) => \{\s*\n\s*window\.dispatchEvent\(new CustomEvent\("cave:sessions-refresh"\)\);[\s\S]*?\};\s*\n\s*\}, \[onSessionsChanged\]\);/,
+  "the current callback survives effect replay, while cleanup releases display ownership and redirects late refreshes through Workspace",
 );
 // Set to runId at the start of every send so resumed replacements also lose
 // promotion authority when unmount/thread-switch cleanup clears the slot.
@@ -764,16 +764,15 @@ assert.match(
   );
 }
 {
-  // onSessionStarted is gated on display ownership AND null origin: only
-  // sessionless creations (null origin) may call onSessionStarted so that a
-  // background resumed-session replacement (non-null origin) cannot hijack a
-  // fresh compose via ChatRouter's null-view promotion guard.
+  // onSessionStarted is gated on display ownership for both null and non-null
+  // origins. ownsDisplayedView makes a stale remounted resumed run unowned,
+  // while allowing a same-mount resumed replacement to promote normally.
   const notifyChecks = source.match(
-    /if \(owned && liveGeneration\.originSessionId === null\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);\s*\n\s*\}/g,
+    /if \(owned\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);\s*\n\s*\}/g,
   );
   assert.ok(
     notifyChecks && notifyChecks.length === 2,
-    "session and done events call onSessionStarted only for null-origin (sessionless) runs that own the displayed view",
+    "session and done events call onSessionStarted only when this run owns the displayed view",
   );
 }
 
@@ -789,8 +788,8 @@ assert.match(
 );
 assert.match(
   source,
-  /shouldCreationRefresh \|\| shouldReplacementRefresh[\s\S]{0,400}window\.dispatchEvent\(new CustomEvent\("cave:sessions-refresh"\)\)/,
-  "creation-refresh and replacement-refresh flags feed the consolidated shouldRefreshSessions decision that dispatches cave:sessions-refresh",
+  /shouldCreationRefresh \|\| shouldReplacementRefresh[\s\S]{0,400}onSessionsChangedRef\.current\?\.\(\)/,
+  "creation, replacement, and Board refresh flags feed one consolidated refresh invocation",
 );
 assert.doesNotMatch(
   source,
@@ -840,8 +839,8 @@ assert.match(
 
 // The generation's finally unconditionally calls onCreationRunTerminated, covering every
 // terminal exit: HTTP rejection, missing body, exhausted recovery, abort, and stream
-// exceptions. The helper is safe to call unconditionally — it removes only unbound
-// entries and preserves bound session retry entries.
+// exceptions. The helper is safe to call unconditionally — it removes unbound
+// entries and retry aliases while preserving the original bound retry entry.
 assert.match(
   source,
   /} finally \{[\s\S]{0,800}?onCreationRunTerminated\(\s*creationRefreshStateRef\.current,\s*liveGeneration\.runId/,
@@ -876,18 +875,18 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /shouldCreationRefresh \|\| shouldReplacementRefresh[\s\S]{0,400}window\.dispatchEvent\(new CustomEvent\("cave:sessions-refresh"\)\)/,
-  "creation-refresh and replacement-refresh flags feed the consolidated shouldRefreshSessions decision that dispatches cave:sessions-refresh",
-);
-assert.doesNotMatch(
-  source,
-  /const onSessionsChangedRef = useRef/,
-  "the render-synced ref is replaced by window event dispatch; post-unmount completions reach workspace via the event, not a stale child-held ref",
+  /const onSessionsChangedRef = useRef\(onSessionsChanged\);\s*\n\s*onSessionsChangedRef\.current = onSessionsChanged;/,
+  "while mounted, the refresh ref stays synchronized to the latest callback",
 );
 assert.match(
   source,
-  /startNewConversation[\s\S]{0,400}window\.dispatchEvent\(new CustomEvent\("cave:sessions-refresh"\)\)/,
-  "Board/startNewConversation condition reaches the window event dispatch via the consolidated shouldRefreshSessions path",
+  /onSessionsChangedRef\.current = \(\) => \{\s*\n\s*window\.dispatchEvent\(new CustomEvent\("cave:sessions-refresh"\)\);/,
+  "unmount replaces the familiar-scoped callback with a Workspace refresh event",
+);
+assert.match(
+  source,
+  /startNewConversation[\s\S]{0,400}onSessionsChangedRef\.current\?\.\(\)/,
+  "Board/startNewConversation reaches the same consolidated refresh path",
 );
 
 // cave-b63 (1): model-state / usage-plan refreshes gate their setState on a

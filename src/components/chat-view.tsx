@@ -2490,9 +2490,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Tracks which generation run currently owns the displayed view. Cleared on
   // thread switch, adoption, and unmount. See ownsDisplayedView for the guard.
   const displayedCreationRunIdRef = useRef<string | null>(null);
-  useEffect(() => () => {
-    displayedCreationRunIdRef.current = null;
-  }, []);
+  const onSessionsChangedRef = useRef(onSessionsChanged);
+  onSessionsChangedRef.current = onSessionsChanged;
+  useEffect(() => {
+    // Restore the current callback after React's development effect replay.
+    onSessionsChangedRef.current = onSessionsChanged;
+    return () => {
+      displayedCreationRunIdRef.current = null;
+      // A generation may complete after this ChatView unmounts. Redirect its
+      // eventual refresh through Workspace instead of retaining this view's
+      // familiar-scoped callback.
+      onSessionsChangedRef.current = () => {
+        window.dispatchEvent(new CustomEvent("cave:sessions-refresh"));
+      };
+    };
+  }, [onSessionsChanged]);
   const streamHealthSessionRef = useRef(sessionId);
   const currentStreamHealthRunIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -5997,11 +6009,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             // re-adopt via the done stable-ID fallback.
             displayedCreationRunIdRef.current = null;
           }
-          // Router promotion is display-owned for sessionless creations only.
-          // A non-null origin (resumed/replacement) must not notify the router's
-          // null-view guard — that guard promotes a fresh compose and a
-          // background replacement would hijack it.
-          if (owned && liveGeneration.originSessionId === null) {
+          // Router promotion is display-owned for both new and resumed runs. A
+          // background replacement still refreshes the authoritative sidebar
+          // after persistence in the done handler below.
+          if (owned) {
             onSessionStarted?.(ev.sessionId);
           }
         }
@@ -6182,7 +6193,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             // Clear display ownership after adoption (same as session event path).
             displayedCreationRunIdRef.current = null;
           }
-          if (owned && liveGeneration.originSessionId === null) {
+          if (owned) {
             onSessionStarted?.(ev.sessionId);
           }
         }
@@ -6220,10 +6231,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // its "session" event does not promote the router; refreshing here after
         // persistence restores the normal work/rail view from the one-shot bridge mode.
         const shouldRefreshSessions = shouldCreationRefresh || shouldReplacementRefresh || (startNewConversation && !!ev.sessionId);
-        // Dispatch the window event rather than calling a child-held callback
-        // ref so a long-running completion after ChatView unmounts still reaches
-        // the current workspace scope (the ref holds the pre-unmount callback).
-        if (shouldRefreshSessions) window.dispatchEvent(new CustomEvent("cave:sessions-refresh"));
+        // While mounted this calls the latest prop. Unmount cleanup redirects
+        // the ref through Workspace's current familiar-scoped listener.
+        if (shouldRefreshSessions) onSessionsChangedRef.current?.();
         persistLiveTurns(
           turnsRef.current,
           assistantId,

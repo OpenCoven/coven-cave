@@ -417,8 +417,15 @@ const FRESH = { pendingRuns: {} };
   assert.ok(state.pendingRuns["run-b"]?.isAlias, "first retry is marked isAlias");
   assert.ok(state.pendingRuns["run-a"], "original run-a entry is preserved after first retry");
 
-  // run-b (alias) terminates: alias is removed — a new retry will register a fresh alias via onSendStart
-  const afterTerminated = onCreationRunTerminated(state, "run-b");
+  // A failed done preserves the bound state long enough for the stream's
+  // terminal cleanup to distinguish the original entry from this retry alias.
+  const failedRetry = onDoneCreationRefresh(state, "run-b", "sess-abc", true);
+  assert.equal(failedRetry.shouldRefresh, false, "failed retry does not refresh");
+  assert.deepEqual(failedRetry.nextState, state, "failed done preserves bound retry state until terminal cleanup");
+
+  // The terminal cleanup removes only the alias. A new retry will register a
+  // fresh alias via onSendStart while the original remains retry-eligible.
+  const afterTerminated = onCreationRunTerminated(failedRetry.nextState, "run-b");
   assert.equal(afterTerminated.pendingRuns["run-b"], undefined, "terminated alias run-b is removed (alias entries do not persist for retry)");
   assert.ok(afterTerminated.pendingRuns["run-a"], "original creation entry run-a preserved after alias terminal");
   assert.ok(afterTerminated.pendingRuns["run-x"], "independent run-x unaffected by alias terminal");
@@ -474,11 +481,15 @@ const FRESH = { pendingRuns: {} };
       "run-unrelated": { sessionId: "sess-other" },
     },
   };
-  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-retry", "sess-replacement", false);
-  assert.equal(shouldRefresh, true, "alias with replacement session ID fires sidebar refresh");
-  assert.equal(nextState.pendingRuns["run-retry"], undefined, "alias entry removed after replacement done");
-  assert.equal(nextState.pendingRuns["run-orig"], undefined, "original bound entry also removed (obsolete after replacement)");
-  assert.ok(nextState.pendingRuns["run-unrelated"], "unrelated session entry preserved");
+  const first = onDoneCreationRefresh(state, "run-retry", "sess-replacement", false);
+  assert.equal(first.shouldRefresh, true, "alias with replacement session ID fires sidebar refresh");
+  assert.equal(first.nextState.pendingRuns["run-retry"], undefined, "alias entry removed after replacement done");
+  assert.equal(first.nextState.pendingRuns["run-orig"], undefined, "original bound entry also removed (obsolete after replacement)");
+  assert.ok(first.nextState.pendingRuns["run-unrelated"], "unrelated session entry preserved");
+
+  const duplicate = onDoneCreationRefresh(first.nextState, "run-retry", "sess-replacement", false);
+  assert.equal(duplicate.shouldRefresh, false, "duplicate replacement completion does not double-refresh");
+  assert.deepEqual(duplicate.nextState, first.nextState, "duplicate replacement completion leaves cleaned state unchanged");
 }
 
 // Non-alias mismatch remains a no-op (server sending a different session ID

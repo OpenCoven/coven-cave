@@ -109,8 +109,8 @@ assert.match(chatView, /async function handleAddProject/, "chat-view should impl
 // completions from an unmounted ChatView still reach the current familiar scope.
 assert.match(
   workspace,
-  /window\.addEventListener\("cave:sessions-refresh",[\s\S]*?onSessionsRefresh\)/,
-  "workspace registers cave:sessions-refresh listener so unmounted ChatView completions trigger the current-scope loadSessions",
+  /useEffect\(\(\) => \{[\s\S]*?const onSessionsRefresh = \(\) => void loadSessions\(\);[\s\S]*?window\.addEventListener\("cave:sessions-refresh", onSessionsRefresh\);[\s\S]*?window\.removeEventListener\("cave:sessions-refresh", onSessionsRefresh\);[\s\S]*?\}, \[loadSessions\]\);/,
+  "workspace registers and cleans up cave:sessions-refresh against the current familiar-scoped loadSessions callback",
 );
 
 console.log("workspace-sidebar-wiring.test.ts passed");
