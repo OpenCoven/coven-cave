@@ -259,7 +259,7 @@ export function startLocalDaemon(options: StartLocalDaemonOptions = {}): Promise
 }
 
 async function runLocalDaemonStart({
-  restart = false,
+  restart: restartRequested = false,
   automatic = false,
   healthTimeoutMs = 1500,
   startTimeoutMs = 8000,
@@ -271,6 +271,11 @@ async function runLocalDaemonStart({
   inspectLifecycle = inspectDaemonLifecycle,
   platform = process.platform,
 }: StartLocalDaemonOptions = {}): Promise<DaemonStartResult> {
+  // The lifecycle preflight below is the whole point of the automatic path, and
+  // `restart` skips it. Both flags arrive from a request body, so an automatic
+  // request never restarts — otherwise `{automatic, restart}` spawns a competing
+  // daemon against a live owner.
+  const restart = automatic ? false : restartRequested;
   const compatibilityState: { current: DaemonStartupCompatibility | null } = { current: null };
   const currentCompatibility = (): DaemonStartupCompatibility | null => compatibilityState.current;
   const expectedVersion = probeOverride ? null : await (installedVersion ?? installedCovenVersion)();

@@ -138,6 +138,24 @@ for (const lifecycle of ["stale", "unknown"]) {
   });
 }
 
+test("an automatic request cannot use restart to skip the lifecycle preflight", async () => {
+  let spawnCalls = 0;
+  const result = await startLocalDaemon({
+    automatic: true,
+    restart: true,
+    probe: async () => ({ ok: false }),
+    inspectLifecycle: async () => ({ status: "stale" }),
+    spawnImpl: () => {
+      spawnCalls += 1;
+      return fakeChild();
+    },
+  });
+
+  assert.equal(spawnCalls, 0, "restart must not let an automatic request bypass the fail-closed preflight");
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "owner_unreachable");
+});
+
 test("automatic recovery still starts after lifecycle proves stopped", async () => {
   const child = fakeChild();
   let spawnCalls = 0;
