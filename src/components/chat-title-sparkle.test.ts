@@ -145,4 +145,9 @@ test("manual edits and sparkle titles use distinct ownership contracts", () => {
     /await patchTitle\(trimmed\);/,
     "manual submit keeps the ordinary manual PATCH",
   );
+  assert.match(
+    header,
+    /if \(!res\.ok \|\| json\?\.ok === false\) return;\s*\n\s*onSessionsChanged\?\.\(\);/,
+    "a preserved automatic write still refreshes the UI to show the concurrent manual title",
+  );
 });

@@ -33,6 +33,22 @@ try {
       offlineQueue: [],
     },
   });
+  const reconciliationSource = await readFile(
+    new URL("./server/cave-home-reconciliation.ts", import.meta.url),
+    "utf8",
+  );
+  for (const mapName of ["sessionTitleAuto", "sessionTitleManual"]) {
+    assert.match(
+      reconciliationSource,
+      new RegExp(`const STATE_MAPS[^;]+["']${mapName}["']`, "s"),
+      `${mapName} must survive Cave-home state reconciliation`,
+    );
+    assert.match(
+      reconciliationSource,
+      new RegExp(`const DELETABLE_STATE_MAPS[^;]+["']${mapName}["']`, "s"),
+      `${mapName} deletions must not be resurrected during state reconciliation`,
+    );
+  }
 
   await config.recordSessionFamiliar("session-1", "cody");
   assert.equal(await config.setSessionTitle("session-1", "  Renamed session  "), "Renamed session");
@@ -89,6 +105,14 @@ try {
     undefined,
     "a manual rename clears auto-rename provenance",
   );
+  await config.setSessionTitleAuto("session-3", "Automatic replacement");
+  state = await config.loadState();
+  assert.equal(
+    state.sessionTitleManual["session-3"],
+    undefined,
+    "an automatic setter clears prior manual ownership",
+  );
+  assert.equal(state.sessionTitleAuto["session-3"], "Automatic replacement");
   // Clear session-3 so the whole-state assertion below still sees empty titles.
   await config.setSessionTitle("session-3", "");
   state = await config.loadState();
@@ -198,6 +222,7 @@ try {
 
   const malformedManualState = JSON.parse(await readFile(statePath, "utf8"));
   malformedManualState.sessionTitleManual = {
+    ...malformedManualState.sessionTitleManual,
     valid: true,
     falseMarker: false,
     stringMarker: "true",
@@ -206,7 +231,12 @@ try {
   state = await config.loadState();
   assert.deepEqual(
     state.sessionTitleManual,
-    { valid: true },
+    {
+      "manual-new-chat": true,
+      "manual-prompt-default": true,
+      "session-owned": true,
+      valid: true,
+    },
     "manual ownership state is normalized to explicit true markers",
   );
   await config.setSessionTitle("valid", "");

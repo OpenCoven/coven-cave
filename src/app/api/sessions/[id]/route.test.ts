@@ -31,6 +31,11 @@ assert.match(
 );
 assert.match(
   route,
+  /result\.title = next \?\? \(await loadState\(\)\)\.sessionTitles\[id\] \?\? null/,
+  "a skipped automatic write returns the title that was preserved",
+);
+assert.match(
+  route,
   /\} else \{\s*const next = await setSessionTitle\(id, body\.title\)/,
   "ordinary title PATCHes remain explicitly manual",
 );
