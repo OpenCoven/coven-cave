@@ -1,7 +1,7 @@
 // @ts-nocheck
 // Source pins for the chat composer's context grammar after the 2026-07-22
 // split (cave-g21f) and the adaptive-placement refactor: context chips
-// (ComposerContextChips — project · model · branch) are constructed once as
+// (ComposerContextChips — project · worktree · branch · model) are constructed once as
 // chatContextControls and placed adaptively: footer-band cluster for new chats
 // (inlineComposer), session-header div for active chats (!inlineComposer).
 // The linked-work strip always lives in the footer band regardless of
@@ -84,7 +84,7 @@ assert.doesNotMatch(
   "latest assistant options no longer float above the composer shell",
 );
 
-// ── Split chips (cave-g21f): project · model · branch as separate controls ──
+// ── Split chips (cave-g21f): project · worktree · branch · model as separate controls ──
 assert.match(
   source,
   /<ComposerContextChips\s*\n\s*projects=\{projects\}\s*\n\s*projectValue=\{resolvedProjectId\}\s*\n\s*onProjectChange=\{setProjectIdDraft\}/,

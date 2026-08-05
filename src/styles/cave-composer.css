@@ -1016,9 +1016,9 @@
   .composer-actions__icon--live { animation: none; }
 }
 
-/* Footer context chips (cave-g21f) — project · model · branch ride as
-   separate quiet controls in the footer band; each opens its own picker
-   anchored to the chip. Shared by the chat and home composers. */
+/* Shared adaptive context controls (cave-g21f): project · worktree · branch · model
+   appear as independent picker chips in new-chat footer band and active-chat header;
+   each opens its own picker anchored to the chip. */
 .cave-composer-footer-band__cluster {
   display: flex;
   align-items: center;
