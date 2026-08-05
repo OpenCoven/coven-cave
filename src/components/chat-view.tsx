@@ -67,6 +67,7 @@ import {
   advanceLiveChatGeneration,
   clearLiveChatGeneration,
   mapConversationHistoryTurns,
+  migrateLiveChatGeneration,
   publishLiveChatGenerationMetadata,
   readLiveChatGeneration,
   recordLiveChatGeneration,
@@ -443,6 +444,7 @@ type QueuedChatMessage = {
 type LiveStreamGeneration = {
   sessionId: string | null;
   originSessionId: string | null;
+  sessionAliases: Set<string>;
   controller: AbortController;
   runId: string;
   streamHealth: () => ChatStreamClientHealth;
@@ -4928,6 +4930,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const liveGeneration: LiveStreamGeneration = {
       sessionId: initialLiveSessionId,
       originSessionId: initialLiveSessionId,
+      sessionAliases: new Set(initialLiveSessionId ? [initialLiveSessionId] : []),
       controller,
       runId,
       streamHealth: () => generationStreamHealth,
@@ -5301,7 +5304,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // unbound pending entries and preserves bound session retry ones.
       creationRefreshStateRef.current = onCreationRunTerminated(creationRefreshStateRef.current, liveGeneration.runId);
       // Always retire THIS generation's registry entry (keyed by session).
-      clearLiveChatGeneration(liveGeneration.sessionId, runId);
+      for (const alias of liveGeneration.sessionAliases) {
+        clearLiveChatGeneration(alias, runId);
+      }
       if (needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
         setHistoryRetryKey((k) => k + 1);
       }
@@ -5975,7 +5980,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ) => {
     switch (ev.kind) {
       case "session": {
+        const previousSessionId = liveGeneration.sessionId;
+        if (previousSessionId && previousSessionId !== ev.sessionId) {
+          migrateLiveChatGeneration(previousSessionId, ev.sessionId, liveGeneration.runId);
+        }
         liveGeneration.sessionId = ev.sessionId;
+        liveGeneration.sessionAliases.add(ev.sessionId);
         // Bind creation-refresh OUTSIDE the ownership guard. The provenance
         // gate is now encoded in the helper: only a sessionless generation
         // (originSessionId === null) may bind an unbound pending creation state;

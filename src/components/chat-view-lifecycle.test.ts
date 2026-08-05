@@ -287,6 +287,17 @@ assert.match(
 
 assert.match(
   source,
+  /case "session": \{[\s\S]*?const previousSessionId = liveGeneration\.sessionId;[\s\S]*?migrateLiveChatGeneration\(previousSessionId, ev\.sessionId, liveGeneration\.runId\);[\s\S]*?liveGeneration\.sessionAliases\.add\(ev\.sessionId\)/,
+  "stable session replacement migrates the live snapshot and tracks the final alias",
+);
+assert.match(
+  source,
+  /for \(const alias of liveGeneration\.sessionAliases\) \{\s*clearLiveChatGeneration\(alias, runId\);\s*\}/,
+  "terminal cleanup retires every origin/final alias with the run-id guard",
+);
+
+assert.match(
+  source,
   /readLiveChatGeneration\(sessionId\)[\s\S]*?adoptLiveGenerationMetadata\(live, sessionId\)[\s\S]*?setTurns\(live\.turns\)[\s\S]*?setActiveLeafId\(live\.activeLeafId\)[\s\S]*?abortRef\.current = live\.controller[\s\S]*?setBusy\(true\)/,
   "History loading should restore run/health ownership before rehydrating a live generation snapshot",
 );

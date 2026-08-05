@@ -186,6 +186,21 @@ export function recordLiveChatGeneration(snapshot: LiveChatGenerationSnapshot): 
   return liveChatRegistry.record(snapshot);
 }
 
+export function migrateLiveChatGeneration(
+  fromSessionId: string | null | undefined,
+  toSessionId: string,
+  expectedRunId: string,
+): LiveChatGenerationSnapshot | null {
+  if (!fromSessionId) return null;
+  return liveChatRegistry.move(
+    fromSessionId,
+    toSessionId,
+    (source, target) =>
+      source.runId === expectedRunId &&
+      (target?.runId == null || target.runId === expectedRunId),
+  );
+}
+
 export function stageLiveChatGenerationMetadata(
   sessionId: string,
   metadata: LiveChatGenerationMetadata,
@@ -222,7 +237,13 @@ export function clearLiveChatGeneration(
 ) {
   if (sessionId && expectedRunId) {
     const current = liveChatRegistry.read(sessionId);
-    if (current?.runId != null && current.runId !== expectedRunId) return;
+    if (current) {
+      liveChatRegistry.clearIf(
+        sessionId,
+        (snapshot) => snapshot.runId == null || snapshot.runId === expectedRunId,
+      );
+      return;
+    }
   }
   liveChatRegistry.clear(sessionId);
 }
