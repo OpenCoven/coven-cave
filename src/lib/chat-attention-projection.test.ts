@@ -693,3 +693,179 @@ test("tombstones are bounded so the oldest is evicted once the limit is exceeded
   );
   assert.equal(state.has(`session-bound-${TOMBSTONE_LIMIT}`), false);
 });
+
+// ── Overlap baseline race (cave-zs85n Task 5 final race): a second operation
+//    (op2) starting on a session while an earlier operation (op1) is still
+//    tracked must baseline against the LATEST known canonical attention, not
+//    op1's own (possibly now-stale) baseline. The bug: recordChatAttentionClear
+//    used to fall back to `operations.values().next().value?.baseline` for
+//    ANY new operation, unconditionally inheriting whatever sibling happened
+//    to be first in iteration order — even after canonical genuinely advanced
+//    from A to B while op1's projection was still masking the row. A caller
+//    reading through that mask (applyChatAttentionProjections returns "none"
+//    while any operation is active) only ever sees "none" for op2's own
+//    clear, so op2 would silently inherit op1's stale A. A later poll
+//    reporting the still-current B then looked like a mismatch against A and
+//    falsely retired the queued op2 before it ever got a chance to flush. ───
+test("an overlapping operation captures the latest tracked canonical baseline, not a sibling's stale one", () => {
+  const state = createChatAttentionProjectionState();
+  const canonicalA = NEEDS_ATTENTION;
+  const canonicalB = {
+    state: "awaiting-human" as const,
+    since: "2026-08-05T00:10:00.000Z",
+    reason: "approval" as const,
+  };
+  const canonicalC = {
+    state: "awaiting-human" as const,
+    since: "2026-08-05T00:20:00.000Z",
+    reason: "decision" as const,
+  };
+
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    canonicalA,
+  );
+
+  // Canonical genuinely advances to B while op1's projection is still active
+  // (op1 is pending, so this poll still masks the row to "none" for any
+  // caller reading its return value) — but it must update the tracked
+  // last-known canonical used as the fallback baseline for a NEW operation.
+  applyChatAttentionProjections(
+    state,
+    [row({ attention: canonicalB })],
+    5,
+    chatAttentionProjectionScopeKey("nova"),
+  );
+
+  // op2 starts. A real caller reading through the masked projection above
+  // would only ever observe "none" here — exercise exactly that masked read.
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-2",
+    chatAttentionProjectionScopeKey("nova"),
+    NO_CHAT_ATTENTION,
+  );
+  assert.deepEqual(state.get("session-1")?.get("operation-2")?.baseline, canonicalB);
+
+  // op2 settles persisted/offline immediately — exactly the offline-queue
+  // "done" event shape (queued acceptance, not real completion evidence yet).
+  settleChatAttentionClear(state, "session-1", "operation-2", "persisted", 6);
+
+  // Polls still reporting the SAME canonical B must not retire op2: its own
+  // baseline IS B, so this is not a divergence.
+  for (const responseRequestId of [6, 7]) {
+    assert.equal(
+      applyChatAttentionProjections(
+        state,
+        [row({ attention: canonicalB })],
+        responseRequestId,
+        chatAttentionProjectionScopeKey("nova"),
+      )[0]?.attention.state,
+      "none",
+      `poll ${responseRequestId} must not retire op2 against its own matching baseline B`,
+    );
+    assert.equal(
+      state.get("session-1")?.has("operation-2"),
+      true,
+      `op2 must survive stale-but-matching poll ${responseRequestId}`,
+    );
+  }
+
+  // op1 is unaffected throughout and remains independently tracked, still
+  // pending against its own original baseline A.
+  assert.equal(state.get("session-1")?.get("operation-1")?.status, "pending");
+  assert.deepEqual(state.get("session-1")?.get("operation-1")?.baseline, canonicalA);
+
+  // A later canonical response that actually diverges from B (here: C) proves
+  // op2's queued clear really landed, and retires ONLY op2 — op1 is still
+  // pending on its own baseline and pending operations are never retired by
+  // canonical divergence, so it keeps masking the row.
+  const projectedAfterC = applyChatAttentionProjections(
+    state,
+    [row({ attention: canonicalC })],
+    8,
+    chatAttentionProjectionScopeKey("nova"),
+  );
+  assert.equal(
+    state.get("session-1")?.has("operation-2"),
+    false,
+    "op2 must retire once canonical truly diverges from its own baseline B",
+  );
+  assert.equal(projectedAfterC[0]?.attention.state, "none");
+  assert.equal(state.get("session-1")?.has("operation-1"), true);
+
+  // op1 and op2 settle independently: op1 now settles persisted against its
+  // OWN baseline A, unaffected by op2's already-completed B-based lifecycle.
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 9);
+  assert.equal(
+    applyChatAttentionProjections(
+      state,
+      [row({ attention: canonicalA })],
+      9,
+      chatAttentionProjectionScopeKey("nova"),
+    )[0]?.attention.state,
+    "none",
+  );
+  assert.equal(state.get("session-1")?.has("operation-1"), true);
+
+  // Canonical divergence from A (here: C, matching what was already observed
+  // above) finally retires op1 too, independently of op2's earlier release.
+  const finalProjected = applyChatAttentionProjections(
+    state,
+    [row({ attention: canonicalC })],
+    9,
+    chatAttentionProjectionScopeKey("nova"),
+  );
+  assert.equal(finalProjected[0]?.attention.state, "awaiting-human");
+  assert.equal(state.has("session-1"), false);
+});
+
+test("a duplicate clear for an overlapping operation keeps its already-captured baseline", () => {
+  const state = createChatAttentionProjectionState();
+  const canonicalA = NEEDS_ATTENTION;
+  const canonicalB = {
+    state: "awaiting-human" as const,
+    since: "2026-08-05T00:10:00.000Z",
+    reason: "approval" as const,
+  };
+
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    canonicalA,
+  );
+  applyChatAttentionProjections(
+    state,
+    [row({ attention: canonicalB })],
+    5,
+    chatAttentionProjectionScopeKey("nova"),
+  );
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-2",
+    chatAttentionProjectionScopeKey("nova"),
+    NO_CHAT_ATTENTION,
+  );
+  assert.deepEqual(state.get("session-1")?.get("operation-2")?.baseline, canonicalB);
+
+  // A duplicate/late clear for the SAME operationId (op2) — e.g. a retried
+  // dispatch or a registry-subscription replay — must not reset its already
+  // captured baseline back to op1's A, nor to whatever a fresh masked read
+  // happens to produce, and must not disturb its "pending" status.
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-2",
+    chatAttentionProjectionScopeKey("nova"),
+    canonicalA,
+  );
+  assert.deepEqual(state.get("session-1")?.get("operation-2")?.baseline, canonicalB);
+  assert.equal(state.get("session-1")?.get("operation-2")?.status, "pending");
+});

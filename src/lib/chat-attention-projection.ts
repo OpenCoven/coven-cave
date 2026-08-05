@@ -85,6 +85,37 @@ function forgetChatAttentionTombstones(
   }
 }
 
+// Overlapping operations on the SAME session (op1 clears, then op2 clears
+// again before op1's canonical evidence lands) must each baseline against
+// the latest known canonical attention, never against a sibling operation's
+// (possibly much older) baseline and never against the optimistic projected
+// "none" a caller reading through applyChatAttentionProjections' masked
+// output would see while ANY operation is still active for that session.
+// Without this, a new op2 starting while op1 is still pending or
+// not-yet-released would silently inherit op1's stale baseline A even after
+// a genuine new canonical request B has been observed — so a later poll
+// reporting B (which legitimately still matches B, not A) would be judged a
+// mismatch against A and falsely retire op2 before it ever got a chance to
+// settle. Tracked per ChatAttentionProjectionState via a WeakMap (same
+// lifetime discipline as the tombstone set above) and refreshed by
+// applyChatAttentionProjections on every row it actually inspects, so it
+// always reflects the most recent real canonical evidence for that session —
+// distinct from any single operation's own recorded baseline.
+const lastKnownCanonicalAttention = new WeakMap<ChatAttentionProjectionState, Map<string, ChatAttention>>();
+
+function canonicalAttentionTrackerFor(state: ChatAttentionProjectionState): Map<string, ChatAttention> {
+  let tracker = lastKnownCanonicalAttention.get(state);
+  if (!tracker) {
+    tracker = new Map();
+    lastKnownCanonicalAttention.set(state, tracker);
+  }
+  return tracker;
+}
+
+function forgetLastKnownCanonicalAttention(state: ChatAttentionProjectionState, sessionId: string): void {
+  lastKnownCanonicalAttention.get(state)?.delete(sessionId);
+}
+
 export function chatAttentionProjectionScopeKey(familiarId: string | null): string {
   return familiarId ? `familiar:${familiarId}` : "all-familiars";
 }
@@ -125,12 +156,26 @@ export function recordChatAttentionClear(
   // the persisted entry already carries everything applyChatAttentionProjections
   // needs to retire it once a fresh canonical response proves it safe.
   if (existingOperation?.status === "persisted") return;
-  const inheritedBaseline = existingOperation?.baseline ?? operations?.values().next().value?.baseline;
-  const baseline = inheritedBaseline ?? normalizeAttentionSnapshot(canonicalAttention);
+  const normalizedCanonical = normalizeAttentionSnapshot(canonicalAttention);
+  const canonicalTracker = canonicalAttentionTrackerFor(state);
+  // A brand-new operation (no existingOperation) must NEVER inherit another
+  // operation's baseline — that is the overlap bug this guards against. A
+  // genuine, non-"none" reading is trusted directly: the caller observed real
+  // canonical attention, so it IS the latest known canonical, full stop. Only
+  // when the reading collapses to "none" — which can be a masked read of a
+  // session with an active projection rather than genuine canonical absence —
+  // do we fall back to the tracked last-known canonical for this session
+  // (kept fresh by applyChatAttentionProjections below), and only then to the
+  // "none" reading itself if nothing has ever been tracked for it.
+  const baseline = existingOperation?.baseline ??
+    (normalizedCanonical.state !== "none"
+      ? normalizedCanonical
+      : canonicalTracker.get(sessionId) ?? normalizedCanonical);
   if (!operations && baseline.state === "none") return;
 
   const nextOperations = operations ?? new Map<string, ProjectionOperation>();
   if (!operations) state.set(sessionId, nextOperations);
+  if (!canonicalTracker.has(sessionId)) canonicalTracker.set(sessionId, baseline);
   nextOperations.set(operationId, {
     status: "pending",
     scopeKey: existingOperation?.scopeKey ?? scopeKey,
@@ -155,7 +200,10 @@ export function settleChatAttentionClear(
   if (!operations || !operation) return;
   if (outcome === "failed") {
     operations.delete(operationId);
-    if (operations.size === 0) state.delete(sessionId);
+    if (operations.size === 0) {
+      state.delete(sessionId);
+      forgetLastKnownCanonicalAttention(state, sessionId);
+    }
     tombstoneChatAttentionOperation(state, sessionId, operationId);
     return;
   }
@@ -171,7 +219,10 @@ export function forgetChatAttentionProjections(
   state: ChatAttentionProjectionState,
   sessionIds: readonly string[],
 ): void {
-  for (const sessionId of sessionIds) state.delete(sessionId);
+  for (const sessionId of sessionIds) {
+    state.delete(sessionId);
+    forgetLastKnownCanonicalAttention(state, sessionId);
+  }
   forgetChatAttentionTombstones(state, sessionIds);
 }
 
@@ -224,10 +275,19 @@ export function applyChatAttentionProjections(
   currentScopeKey?: string,
 ): SessionRow[] {
   const presentSessionIds = new Set(rows.map((row) => row.id));
+  const canonicalTracker = canonicalAttentionTrackerFor(state);
   let changed = false;
   const projectedRows = rows.map((row) => {
     const operations = state.get(row.id);
     if (!operations) return row;
+
+    // This is the one place a genuine, unmasked canonical reading for a
+    // tracked session passes through — refresh the tracker with it so a NEW
+    // overlapping operation that only ever sees this function's masked
+    // output still baselines against the real latest canonical (row.attention
+    // here, before clearSessionAttention below optimistically hides it),
+    // rather than a sibling operation's now-stale baseline.
+    canonicalTracker.set(row.id, row.attention);
 
     for (const [operationId, operation] of operations) {
       if (
@@ -246,6 +306,7 @@ export function applyChatAttentionProjections(
     }
     if (operations.size === 0) {
       state.delete(row.id);
+      forgetLastKnownCanonicalAttention(state, row.id);
       return row;
     }
 
@@ -268,7 +329,10 @@ export function applyChatAttentionProjections(
           tombstoneChatAttentionOperation(state, sessionId, operationId);
         }
       }
-      if (operations.size === 0) state.delete(sessionId);
+      if (operations.size === 0) {
+        state.delete(sessionId);
+        forgetLastKnownCanonicalAttention(state, sessionId);
+      }
     }
   }
 
