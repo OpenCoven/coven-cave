@@ -285,6 +285,16 @@ assert.match(
   "sendRaw should persist the active stream snapshot with its controller, run ID, and health",
 );
 
+// sessionAliases must be seeded with the origin id so the pre-migration
+// registry entry is covered even if the run re-records it after migration.
+// Without seeding, a resumed-replacement race could leave a zombie under the
+// original session id that no cleanup path would ever clear.
+assert.match(
+  source,
+  /sessionAliases: new Set\(initialLiveSessionId \? \[initialLiveSessionId\] : \[\]\)/,
+  "generation sessionAliases must seed the origin id so the initial registry entry is always in the cleanup set",
+);
+
 assert.match(
   source,
   /case "session": \{[\s\S]*?reconcileLiveChatGenerationSession\(\s*liveGeneration,\s*ev\.sessionId,\s*liveGeneration\.runId,\s*\)/,
