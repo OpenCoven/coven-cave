@@ -230,4 +230,90 @@ assert.equal(
   assert.notEqual(result, overLimitUser, "output differs from raw input");
 }
 
+// ── Task 2 follow-up: C formatter gaps ──────────────────────────────────────
+
+// C1: Here's (straight apostrophe) boilerplate stripped, same as "Here is".
+assert.equal(
+  chatSummaryTitle({ userText: "Here's the fix" }),
+  "Fix",
+  "Here's (straight apostrophe) boilerplate stripped",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Here's your answer" }),
+  "Your answer",
+  "Here's (straight apostrophe) strips boilerplate and article",
+);
+
+// C1: Here's (Unicode right single quote U+2019) treated identically.
+assert.equal(
+  chatSummaryTitle({ userText: "Here\u2019s the deployment guide" }),
+  "Deployment guide",
+  "Here\u2019s (Unicode right single quote) boilerplate stripped",
+);
+
+// C7: Boilerplate-only variants with trailing punctuation → null.
+assert.equal(
+  chatSummaryTitle({ userText: "Here's." }),
+  null,
+  "Here's. (boilerplate + period, no content) yields null",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Here\u2019s." }),
+  null,
+  "Here\u2019s. (Unicode, boilerplate + period, no content) yields null",
+);
+
+// C2: Trailing ,  :  ; stripped (in addition to existing . ! ?).
+assert.equal(
+  titleFromAssistantReply("## Fix the parser, add tests,"),
+  "Fix the parser, add tests",
+  "trailing comma stripped from generated title",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Deployment guide:" }),
+  "Deployment guide",
+  "trailing colon stripped from title",
+);
+
+// C3: Leading separator exposed after emoji removal is stripped.
+assert.equal(
+  chatSummaryTitle({ userText: "🎉: Fix parser" }),
+  "Fix parser",
+  "🎉: prefix — leading separator after emoji removal is stripped",
+);
+
+// C4: Markdown image → alt text kept; empty alt → nothing (yields null).
+assert.equal(
+  chatSummaryTitle({ userText: "![diagram](img.png)" }),
+  "Diagram",
+  "markdown image with non-empty alt → alt text as title",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "![](img.png)" }),
+  null,
+  "markdown image with empty alt → null (no content)",
+);
+// ! must not leak from image syntax into the title.
+{
+  const imageResult = chatSummaryTitle({ userText: "![diagram](img.png)" });
+  assert.ok(imageResult !== null && !imageResult.includes("!"), "! does not leak from markdown image syntax");
+}
+
+// C5: Markdown link with one level of nested parentheses in destination.
+assert.equal(
+  chatSummaryTitle({ userText: "[Docs](https://x.test/a_(b))" }),
+  "Docs",
+  "markdown link with nested parens in destination → label only, no URL or parens leak",
+);
+
+// C6: Prefixed giant token where only word boundary is too early → null.
+{
+  const prefixedGiant = "Fix " + "a".repeat(38); // 42 chars: "Fix " + 38 a's
+  assert.equal(
+    chatSummaryTitle({ userText: prefixedGiant }),
+    null,
+    "prefixed giant token (boundary too early for 60% threshold) yields null, not a mid-word fragment",
+  );
+}
+
 console.log("cave-chat-titles.test.ts ok");

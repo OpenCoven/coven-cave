@@ -909,6 +909,37 @@ export async function setSessionTitleAuto(sessionId: string, title: string): Pro
   return next;
 }
 
+/**
+ * Atomically set a session title with auto-provenance, but only when the
+ * current title is absent, matches one of the supplied autoDefaults, or matches
+ * the current sessionTitleAuto provenance (indicating the title is still
+ * auto-owned). Returns the written title, or null if a manual title was
+ * preserved. Trim/empty input is a no-op (returns null). Invalidates the
+ * sessions-list cache only when a write actually occurs.
+ */
+export async function setSessionTitleAutoIfOwned(
+  sessionId: string,
+  title: string,
+  autoDefaults: ReadonlySet<string>,
+): Promise<string | null> {
+  const trimmed = title.trim();
+  if (!trimmed) return null;
+  const result = await updateState((state) => {
+    const current = state.sessionTitles[sessionId];
+    const currentAuto = state.sessionTitleAuto[sessionId];
+    // Write only when the title is absent, is a known auto default, or was
+    // previously written by an auto path (provenance match).
+    if (current && !autoDefaults.has(current) && current !== currentAuto) {
+      return null; // manual title present — preserve it
+    }
+    state.sessionTitles[sessionId] = trimmed;
+    state.sessionTitleAuto[sessionId] = trimmed;
+    return trimmed;
+  });
+  if (result !== null) invalidateSessionsListCache();
+  return result;
+}
+
 /** Mark a session as archived in the Cave (does not touch the daemon row). */
 export async function archiveSessionLocal(sessionId: string): Promise<string> {
   const now = new Date().toISOString();

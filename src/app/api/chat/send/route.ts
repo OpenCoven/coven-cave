@@ -11,8 +11,8 @@ import {
   loadConfig,
   loadState,
   recordSessionFamiliar,
-  setSessionTitle,
   setSessionTitleAuto,
+  setSessionTitleAutoIfOwned,
 } from "@/lib/cave-config";
 import { chatSummaryTitle, chatTitleFromPrompt, defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import {
@@ -430,46 +430,45 @@ async function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-async function setDefaultSessionTitleIfMissing(sessionId: string, title: string) {
-  const state = await loadState();
-  if (state.sessionTitles[sessionId]) return;
-  await setSessionTitle(sessionId, title);
+/** Set a session title from the first-turn stub path with auto-provenance,
+ *  atomically skipping when a manual title is already present. Best effort. */
+async function setDefaultStubTitleAuto(sessionId: string, title: string): Promise<void> {
+  const autoDefaults = new Set([title, defaultChatTitleForSession(sessionId)]);
+  await setSessionTitleAutoIfOwned(sessionId, title, autoDefaults).catch(() => undefined);
 }
 
 /** Auto-name a thread from its first user/assistant exchange with a short
- *  summary title. Only fires while the stored title is still one of the
- *  auto-derived defaults (prompt-derived or "New chat") — a manual rename,
- *  even one made mid-stream, always wins. Best effort: failures leave the
- *  default title in place. */
+ *  summary title. Derives the title from the settled conversation first (so
+ *  the ownership check never races with a manual rename made during the
+ *  loadConversation await), then atomically writes only when the title is still
+ *  absent, a known auto default, or auto-owned via provenance. Best effort:
+ *  failures leave the default title in place. */
 async function autoNameSessionFromFirstExchange(
   sessionId: string,
   promptText: string,
 ): Promise<void> {
   try {
-    // Recognize the auto-derived defaults this function or the stub-creation
-    // path may have left behind, so a manual rename always wins.
-    const autoDefaults = new Set(
-      [chatTitleFromPrompt(promptText), defaultChatTitleForSession(sessionId)].filter(
-        (t): t is string => Boolean(t),
-      ),
-    );
-    const state = await loadState();
-    const current = state.sessionTitles[sessionId];
-    if (current && !autoDefaults.has(current)) return;
-
-    // Derive the title from the first settled exchange: load the conversation
-    // that was persisted just before this call, find the first user turn and
-    // the first settled (non-pending, non-error) assistant turn.
+    // Derive the title from the first settled exchange first, before any
+    // ownership check, so stale pre-await state cannot overwrite a manual rename.
     const conversation = await loadConversation(sessionId).catch(() => null);
     const turns = conversation?.turns ?? [];
-    const firstUser =
-      turns.find((t) => t.role === "user")?.text ?? promptText;
+    const firstUser = turns.find((t) => t.role === "user")?.text ?? promptText;
     const firstAssistant =
       turns.find((t) => t.role === "assistant" && !t.isError)?.text ?? null;
     const summary = chatSummaryTitle({ userText: firstUser, assistantText: firstAssistant });
     if (!summary) return;
-    if (current === summary) return;
-    await setSessionTitle(sessionId, summary);
+
+    // Atomic ownership check + write: recognizes auto-derived defaults from both
+    // the stub path (chatTitleFromPrompt, chatSummaryTitle) and the neutral default,
+    // so a manual rename made at any point always wins.
+    const autoDefaults = new Set(
+      [
+        chatTitleFromPrompt(promptText),           // legacy prompt-derived default
+        chatSummaryTitle({ userText: promptText }), // concise summary from prompt alone
+        defaultChatTitleForSession(sessionId),      // "New chat"
+      ].filter((t): t is string => Boolean(t)),
+    );
+    await setSessionTitleAutoIfOwned(sessionId, summary, autoDefaults);
   } catch {
     /* best effort */
   }
@@ -888,8 +887,8 @@ function openClawChatResponse(args: {
         responseMetadata.gatewaySessionId = gatewayDispatch.runId;
         pushProgress("openclaw-gateway", "OpenClaw Gateway dispatch accepted", "done", `run ${gatewayDispatch.runId}`);
         const pendingUserTurnId = crypto.randomUUID();
-        const stubTitle = chatTitleFromPrompt(args.promptText) ?? defaultChatTitleForSession(conversationId);
-        void setDefaultSessionTitleIfMissing(conversationId, stubTitle).catch(() => undefined);
+        const stubTitle = chatSummaryTitle({ userText: args.promptText }) ?? defaultChatTitleForSession(conversationId);
+        void setDefaultStubTitleAuto(conversationId, stubTitle);
         const stubWrite = createConversationStub({
           sessionId: conversationId,
           familiarId: args.body.familiarId,
@@ -964,7 +963,7 @@ function openClawChatResponse(args: {
         const isFirstExchange = !existing || hadFirstTurnStub;
         const now = new Date().toISOString();
         const chatTitle = existing?.title ?? defaultChatTitleForSession(conversationId);
-        if (!existing) await setDefaultSessionTitleIfMissing(conversationId, chatTitle);
+        if (!existing) await setDefaultStubTitleAuto(conversationId, chatTitle);
         const branchParentId =
           args.body.parentTurnId !== undefined ? args.body.parentTurnId : existing?.activeLeafId ?? null;
         const conv = existing ?? {
@@ -1127,8 +1126,8 @@ function openClawChatResponse(args: {
       // authoritative one under the same id.
       const pendingUserTurnId = crypto.randomUUID();
       const stubTitle =
-        chatTitleFromPrompt(args.promptText) ?? defaultChatTitleForSession(conversationId);
-      void setDefaultSessionTitleIfMissing(conversationId, stubTitle).catch(() => undefined);
+        chatSummaryTitle({ userText: args.promptText }) ?? defaultChatTitleForSession(conversationId);
+      void setDefaultStubTitleAuto(conversationId, stubTitle);
       const stubWrite = createConversationStub({
         sessionId: conversationId,
         familiarId: args.body.familiarId,
@@ -1300,7 +1299,7 @@ function openClawChatResponse(args: {
             const userTurnId = pendingUserTurnId;
             const assistantTurnId = crypto.randomUUID();
             const chatTitle = existing?.title ?? defaultChatTitleForSession(sessionId);
-            if (!existing) await setDefaultSessionTitleIfMissing(sessionId, chatTitle);
+            if (!existing) await setDefaultStubTitleAuto(sessionId, chatTitle);
             // Branching: same logic as the coven-run path — client-supplied
             // parentTurnId takes precedence; falls back to prior activeLeafId for
             // normal (non-branch) sends so the linear chain is preserved.
@@ -3006,7 +3005,7 @@ export async function POST(req: Request) {
           harness: binding.harness,
           ...(responseMetadata.model ? { model: responseMetadata.model } : {}),
           ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
-          title: chatTitleFromPrompt(promptText) ?? defaultChatTitleForSession(announcedId),
+          title: chatSummaryTitle({ userText: promptText }) ?? defaultChatTitleForSession(announcedId),
           ...(body.origin ? { origin: body.origin } : {}),
           modelIntent: modelIntentForSend(body, modelState),
           userTurn: {
@@ -3021,10 +3020,10 @@ export async function POST(req: Request) {
         // exists. The daemon's own title derives from the harness
         // prompt — i.e. the identity-canon preamble — and is what the
         // UI would otherwise show until the transcript save runs.
-        void setDefaultSessionTitleIfMissing(
+        void setDefaultStubTitleAuto(
           announcedId,
-          chatTitleFromPrompt(promptText) ?? defaultChatTitleForSession(announcedId),
-        ).catch(() => undefined);
+          chatSummaryTitle({ userText: promptText }) ?? defaultChatTitleForSession(announcedId),
+        );
       };
 
       // Formatted OpenCode output carries no native session id. Cave still
@@ -5128,7 +5127,7 @@ export async function POST(req: Request) {
           const userTurnId = pendingUserTurnId;
           const assistantTurnId = crypto.randomUUID();
           const chatTitle = existing?.title ?? defaultChatTitleForSession(finalSessionId);
-          if (!existing) await setDefaultSessionTitleIfMissing(finalSessionId, chatTitle);
+          if (!existing) await setDefaultStubTitleAuto(finalSessionId, chatTitle);
           // Branching: when the client passes parentTurnId, the new user turn is
           // parented there (its prior sibling stays in the tree). For a normal
           // (non-branch) send, fall back to the prior activeLeafId so the

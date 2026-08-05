@@ -89,6 +89,64 @@ try {
   // Clear session-3 so the whole-state assertion below still sees empty titles.
   await config.setSessionTitle("session-3", "");
 
+  // ── setSessionTitleAutoIfOwned: atomic ownership-gated auto provenance ──────
+  // Missing title → writes with provenance.
+  const ownedResult = await config.setSessionTitleAutoIfOwned(
+    "session-owned",
+    "Auto title A",
+    new Set(["Auto title A", "New chat"]),
+  );
+  assert.equal(ownedResult, "Auto title A", "absent title → writes and returns the title");
+  state = await config.loadState();
+  assert.equal(state.sessionTitles["session-owned"], "Auto title A", "title persisted");
+  assert.equal(state.sessionTitleAuto["session-owned"], "Auto title A", "provenance persisted");
+
+  // Prior auto title (still in autoDefaults) → can update.
+  const ownedUpdate = await config.setSessionTitleAutoIfOwned(
+    "session-owned",
+    "Auto title B",
+    new Set(["Auto title A", "Auto title B", "New chat"]),
+  );
+  assert.equal(ownedUpdate, "Auto title B", "auto-default title → updates to new title");
+  state = await config.loadState();
+  assert.equal(state.sessionTitleAuto["session-owned"], "Auto title B", "provenance updated");
+
+  // Prior auto title recognized via provenance (not in autoDefaults) → can update.
+  const provenanceUpdate = await config.setSessionTitleAutoIfOwned(
+    "session-owned",
+    "Auto title C",
+    new Set(["New chat"]), // does NOT include "Auto title B"
+  );
+  assert.equal(provenanceUpdate, "Auto title C", "auto-provenance owned title → updates via provenance");
+  state = await config.loadState();
+  assert.equal(state.sessionTitleAuto["session-owned"], "Auto title C", "provenance updated");
+
+  // Manual title present → preserved, returns null.
+  await config.setSessionTitle("session-owned", "My manual title");
+  state = await config.loadState();
+  assert.equal(state.sessionTitleAuto["session-owned"], undefined, "manual set cleared provenance");
+  const skipped = await config.setSessionTitleAutoIfOwned(
+    "session-owned",
+    "Auto title D",
+    new Set(["New chat"]),
+  );
+  assert.equal(skipped, null, "manual title present → returns null (not overwritten)");
+  state = await config.loadState();
+  assert.equal(state.sessionTitles["session-owned"], "My manual title", "manual title preserved");
+  assert.equal(state.sessionTitleAuto["session-owned"], undefined, "provenance still absent");
+
+  // Trim/empty input is a no-op (returns null).
+  assert.equal(
+    await config.setSessionTitleAutoIfOwned("session-owned2", "   ", new Set(["New chat"])),
+    null,
+    "blank input is a no-op",
+  );
+  state = await config.loadState();
+  assert.equal(state.sessionTitles["session-owned2"], undefined, "blank input leaves title unset");
+
+  // Clean up so the whole-state assertion below still sees empty titles.
+  await config.setSessionTitle("session-owned", "");
+
   const sacrificedAt = await config.sacrificeSessionLocal("session-1");
   assert.ok(Number.isFinite(Date.parse(sacrificedAt)));
 

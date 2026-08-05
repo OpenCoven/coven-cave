@@ -115,6 +115,13 @@ assert.match(
   "chatSummaryTitle must be imported from @/lib/cave-chat-titles",
 );
 
+// D: setSessionTitleAutoIfOwned must be imported from cave-config.
+assert.match(
+  chatRoute,
+  /import \{[^}]*setSessionTitleAutoIfOwned[^}]*\} from "@\/lib\/cave-config"/,
+  "setSessionTitleAutoIfOwned must be imported from @/lib/cave-config",
+);
+
 {
   const fnMarker = "async function autoNameSessionFromFirstExchange";
   const fnStart = chatRoute.indexOf(fnMarker);
@@ -137,5 +144,44 @@ assert.match(
     fnBody,
     /loadConversation/,
     "autoNameSessionFromFirstExchange must load the stored conversation for the settled exchange",
+  );
+  // D: must use atomic helper, not plain setSessionTitle.
+  assert.match(
+    fnBody,
+    /setSessionTitleAutoIfOwned/,
+    "autoNameSessionFromFirstExchange must call setSessionTitleAutoIfOwned (atomic ownership check)",
+  );
+  assert.doesNotMatch(
+    fnBody,
+    /await setSessionTitle\(sessionId,/,
+    "autoNameSessionFromFirstExchange must not call setSessionTitle — use setSessionTitleAutoIfOwned",
+  );
+}
+
+// D: No stub title path may use chatTitleFromPrompt as the selected title.
+assert.doesNotMatch(
+  chatRoute,
+  /const stubTitle = chatTitleFromPrompt\(/,
+  "no stub title may be derived with chatTitleFromPrompt as the selected title",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /title: chatTitleFromPrompt\(/,
+  "no createConversationStub call may set title via chatTitleFromPrompt",
+);
+
+// D: setDefaultStubTitleAuto must exist, be named correctly, and use the atomic helper.
+{
+  const helperMarker = "async function setDefaultStubTitleAuto";
+  const helperStart = chatRoute.indexOf(helperMarker);
+  assert.ok(helperStart >= 0, "setDefaultStubTitleAuto helper must exist (renamed from setDefaultSessionTitleIfMissing)");
+  const nextFn = chatRoute.indexOf("\nasync function ", helperStart + 1);
+  const helperBody = nextFn > helperStart
+    ? chatRoute.slice(helperStart, nextFn)
+    : chatRoute.slice(helperStart, helperStart + 500);
+  assert.match(
+    helperBody,
+    /setSessionTitleAutoIfOwned/,
+    "setDefaultStubTitleAuto must call setSessionTitleAutoIfOwned (atomic auto-owned write)",
   );
 }

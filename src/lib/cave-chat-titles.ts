@@ -83,27 +83,28 @@ export const MAX_SUMMARY_TITLE_WORDS = 7;
 const QUESTION_LEAD_IN_RE =
   /^(?:what(?:['’]s| is| are)(?: the)?|how (?:do|can|would|should) (?:i|we|you)|how to|why (?:is|are|does|do|did)|where (?:is|are|can|do)|when (?:is|are|does|do|should)|who (?:is|are)|is there (?:a|any) way to|tell me about|explain(?: to me)?|show me(?: how to)?)\b[\s,:;\-–—]*/i;
 
-// Answer-heading boilerplate: "Here is the ...", "Here are ...", "This is a ..."
-// Stripped once from the front of assistant heading text so the title names the
-// topic, not the meta-framing ("Deployment rollback safety checklist" not
-// "Here is the deployment rollback safety checklist").
-const ANSWER_HEADING_RE = /^(?:here (?:is|are)|this is)(?:\s+(?:a|an|the))?\s+/i;
+// Answer-heading boilerplate: "Here is the ...", "Here are ...", "Here's the ...",
+// "Here's ...", "This is a ..." Stripped once from the front of assistant heading
+// text so the title names the topic, not the meta-framing.
+// Covers the contraction forms with straight (') and Unicode (', ') apostrophes.
+const ANSWER_HEADING_RE =
+  /^(?:here\s+(?:is|are)|here['\u2018\u2019]s|this is)(?:\s+(?:a|an|the))?\s+/i;
 
-// Boilerplate-only guard: "This is.", "Here is.", etc. with no content after
-// the framing phrase must collapse to null, not produce a stub title.
+// Boilerplate-only guard: "This is.", "Here is.", "Here's.", etc. with no content
+// after the framing phrase must collapse to null, not produce a stub title.
 // Checked before stripping so "This is a test" goes through normally.
 const BOILERPLATE_ONLY_RE =
-  /^(?:here (?:is|are)|this is)(?:\s+(?:a|an|the))?\s*[.!?]?\s*$/i;
+  /^(?:here\s+(?:is|are)|here['\u2018\u2019]s|this is)(?:\s+(?:a|an|the))?\s*[.,:;!?]?\s*$/i;
 
-// Returns null when no word boundary exists (no spaces) so a single over-length
-// token never produces a mid-word fragment. Callers retain the current title.
+// Returns null when no word boundary exists or the only boundary is too early
+// (< 60% of maxLen), so a single over-length token or a poorly-placed word break
+// never produces a mid-word fragment. Callers retain the current title.
 function clampAtWordBoundary(text: string, maxLen: number): string | null {
   if (text.length <= maxLen) return text;
   const slice = text.slice(0, maxLen - 1);
   const lastSpace = slice.lastIndexOf(" ");
-  if (lastSpace < 0) return null;
-  const trimmed = lastSpace >= maxLen * 0.6 ? slice.slice(0, lastSpace) : slice;
-  return `${trimmed.trimEnd().replace(/[,;:\-–—]$/, "")}…`;
+  if (lastSpace < 0 || lastSpace < maxLen * 0.6) return null;
+  return `${slice.slice(0, lastSpace).trimEnd().replace(/[,;:\-–—]$/, "")}…`;
 }
 
 /**
@@ -118,19 +119,28 @@ function clampAtWordBoundary(text: string, maxLen: number): string | null {
  * single over-length token has no word boundary to cut at cleanly.
  */
 function formatGeneratedTitle(text: string): string | null {
+  // Normalize markdown images: ![alt](url) → alt text if non-empty, else stripped.
+  // Must run before link normalization to avoid the leading ! leaking into the output.
+  // Supports one level of nested parentheses in the destination (e.g. url_(anchor)).
+  let s = text.replace(
+    /!\[([^\]]*)\]\((?:[^()]*|\([^()]*\))*(?:\s+"[^"]*")?\)/g,
+    (_, alt) => alt.trim(),
+  );
   // Normalize markdown links: [label](url) → label; destination discarded.
-  let s = text.replace(/\[([^\]]+)\]\([^\s)]+(?:\s+"[^"]*")?\)/g, "$1");
+  // Supports one level of nested parentheses so [Docs](https://x.test/a_(b)) → Docs.
+  s = s.replace(/\[([^\]]+)\]\((?:[^()]*|\([^()]*\))*(?:\s+"[^"]*")?\)/g, "$1");
   // Strip remaining markdown syntax and collapse whitespace.
   s = s.replace(/[*_`#]+/g, " ").replace(/\s+/g, " ").trim();
-  // Cleanup loop: trailing punctuation → edge emoji → trailing punctuation again,
-  // so emoji adjacent to trailing punctuation (e.g. "Fix parser 🎉.") are fully
-  // removed.
-  s = s.replace(/[.!?]+$/, "").trim();
+  // Cleanup loop: trailing punctuation → edge emoji → leading separators exposed by
+  // emoji removal → trailing punctuation again, so "🎉: Fix parser." → "Fix parser"
+  // and "Fix parser 🎉." are both fully cleaned.
+  s = s.replace(/[.,:;!?]+$/, "").trim();
   s = stripLeadingTrailingEmoji(s);
-  s = s.replace(/[.!?]+$/, "").trim();
-  // Boilerplate-only: "This is.", "Here is." → null (no meaningful fallback).
+  s = s.replace(/^[\s,:;.!?\-–—]+/, "").trim(); // strip separators exposed after emoji removal
+  s = s.replace(/[.,:;!?]+$/, "").trim();
+  // Boilerplate-only: "This is.", "Here is.", "Here's." → null (no meaningful fallback).
   if (BOILERPLATE_ONLY_RE.test(s)) return null;
-  // Strip answer-heading boilerplate: "Here is the …", "Here are …", "This is a …"
+  // Strip answer-heading boilerplate: "Here is the …", "Here are …", "Here's the …", "This is a …"
   s = s.replace(ANSWER_HEADING_RE, "").trim();
   // Strip conversational filler (leading politeness/request framing such as
   // "can you", "please") so framing is removed from any input path, not only
@@ -144,7 +154,7 @@ function formatGeneratedTitle(text: string): string | null {
   // Strip question/request lead-ins: "How do I …", "What's the best …", etc.
   s = s.replace(QUESTION_LEAD_IN_RE, "").trim();
   // Final trailing-punctuation pass in case stripping exposed new punctuation.
-  s = s.replace(/[.!?]+$/, "").trim();
+  s = s.replace(/[.,:;!?]+$/, "").trim();
   // Allow two-character acronyms such as "AI"; single chars are not meaningful.
   if (s.length < 2) return null;
   // Capitalize.

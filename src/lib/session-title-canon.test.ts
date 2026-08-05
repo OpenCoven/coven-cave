@@ -209,12 +209,10 @@ const route = await readFile(
 assert.match(
   route,
   /chatTitleFromPrompt\(promptText\)/,
-  "chat/send should derive default session titles from the user's raw prompt, not the session id alone",
+  "chat/send should reference chatTitleFromPrompt(promptText) in autoDefaults for legacy title recognition",
 );
 assert.ok(
-  route.indexOf("chatTitleFromPrompt") < route.indexOf('push({ kind: "session", sessionId })') ||
-    /setDefaultSessionTitleIfMissing\([^)]*\)[\s\S]{0,200}push\(\{ kind: "session"/.test(route) ||
-    /push\(\{ kind: "session", sessionId \}\);\s*\n\s*void setDefaultSessionTitleIfMissing/.test(route),
+  route.indexOf("chatTitleFromPrompt") < route.indexOf('push({ kind: "session", sessionId })'),
   "the generic stream path should set the default title when the session id first arrives, not only at save time",
 );
 
