@@ -10,7 +10,11 @@ import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert } from "@/
 import { isSafeBranchName } from "@/lib/issue-worktree";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
-import { resolveProjectPathForGitRoot } from "@/lib/cave-projects-types";
+import {
+  projectRootsEqual,
+  resolvePathWithinProjectRoot,
+  resolveProjectPathForGitRoot,
+} from "@/lib/cave-projects-types";
 
 export const dynamic = "force-dynamic";
 
@@ -203,19 +207,30 @@ function stderrOf(err: unknown): string {
 }
 
 type RootResolution =
-  | { ok: true; projectRoot: string; repoRoot: string }
+  | { ok: true; projectRoot: string; repoRoot: string; projectPathspec: string }
   | { ok: false; status: number; error: string; notARepo?: boolean };
+
+type RootAuthorization = "standard" | "scoped-revert";
+
+function projectPathspecForGitRoot(projectRoot: string, repoRoot: string): string | null {
+  if (projectRootsEqual(projectRoot, repoRoot)) return ".";
+  return resolvePathWithinProjectRoot(repoRoot, projectRoot)?.relativePath ?? null;
+}
 
 /** Validate projectRoot: absolute, exists, is a directory, is a git work tree.
  *  Resolves to the repo toplevel so status paths line up with diff/revert. */
-async function resolveRepoRoot(projectRoot: string): Promise<RootResolution> {
+async function resolveRepoRoot(
+  projectRoot: string,
+  authorization: RootAuthorization = "standard",
+): Promise<RootResolution> {
   if (!path.isAbsolute(projectRoot)) {
     return { ok: false, status: 400, error: "projectRoot must be an absolute path" };
   }
   // A path is allowed if it's under the static workspace allow-list OR under a
   // directory the daemon has an active session for (the daemon already spawned
   // a harness there, so it's user-sanctioned). The session-root list is fetched
-  // once and reused for the post-`rev-parse` repo-toplevel re-check below.
+  // once and reused for the standard post-`rev-parse` repo-toplevel re-check.
+  // Scoped reverts instead require a proven project-within-repo relationship.
   let sessionRoots: string[] | null = null;
   const isAllowed = async (candidate: string): Promise<string | null> => {
     const staticAllowed = resolveAllowedProjectPath(candidate);
@@ -244,10 +259,14 @@ async function resolveRepoRoot(projectRoot: string): Promise<RootResolution> {
     const top = stdout.trim();
     if (!top) return { ok: false, status: 422, error: "not a git repository", notARepo: true };
     const repoRoot = fs.realpathSync(top);
-    if (!(await isAllowed(repoRoot))) {
+    const projectPathspec = projectPathspecForGitRoot(real, repoRoot);
+    if (!projectPathspec) {
       return { ok: false, status: 403, error: "path not allowed" };
     }
-    return { ok: true, projectRoot: real, repoRoot };
+    if (authorization === "standard" && !(await isAllowed(repoRoot))) {
+      return { ok: false, status: 403, error: "path not allowed" };
+    }
+    return { ok: true, projectRoot: real, repoRoot, projectPathspec };
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
@@ -287,7 +306,7 @@ function pathNotAllowed(): NextResponse {
 
 async function isTracked(repoRoot: string, relPath: string): Promise<boolean> {
   try {
-    await git(repoRoot, ["ls-files", "--error-unmatch", "--", relPath]);
+    await git(repoRoot, ["ls-files", "--error-unmatch", "--", literalGitPathspec(relPath)]);
     return true;
   } catch {
     return false;
@@ -305,13 +324,25 @@ async function existsInHead(repoRoot: string, relPath: string): Promise<boolean>
   }
 }
 
-async function changedFilePaths(repoRoot: string): Promise<Set<string>> {
-  const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
+function literalGitPathspec(value: string): string {
+  return `:(literal)${value}`;
+}
+
+async function changedFilePaths(repoRoot: string, projectPathspec?: string): Promise<Set<string>> {
+  const args = ["--porcelain=v1", "-z", "--untracked-files=all"];
+  if (projectPathspec) {
+    args.push("--no-renames", "--", literalGitPathspec(projectPathspec));
+  }
+  const { stdout } = await gitStatus(repoRoot, args);
   return new Set(parsePorcelainZ(stdout).map((file) => file.path));
 }
 
-async function isChangedFile(repoRoot: string, relPath: string): Promise<boolean> {
-  return (await changedFilePaths(repoRoot)).has(relPath);
+async function isChangedFile(
+  repoRoot: string,
+  relPath: string,
+  projectPathspec?: string,
+): Promise<boolean> {
+  return (await changedFilePaths(repoRoot, projectPathspec)).has(relPath);
 }
 
 // ── GET: change list / single-file diff ───────────────────────────────────────
@@ -393,12 +424,13 @@ async function branchPr(repoRoot: string): Promise<NextResponse> {
 async function diffFile(repoRoot: string, relPath: string, absPath: string): Promise<NextResponse> {
   let diff = "";
   if (await isTracked(repoRoot, relPath)) {
+    const pathspec = literalGitPathspec(relPath);
     try {
       // Diff vs HEAD so staged edits show up too (status lists them).
-      ({ stdout: diff } = await gitDiff(repoRoot, ["HEAD", "--", relPath]));
+      ({ stdout: diff } = await gitDiff(repoRoot, ["HEAD", "--", pathspec]));
     } catch {
       // No HEAD yet (unborn branch) — fall back to worktree-vs-index.
-      ({ stdout: diff } = await gitDiff(repoRoot, ["--", relPath]));
+      ({ stdout: diff } = await gitDiff(repoRoot, ["--", pathspec]));
     }
   } else {
     // Untracked: synthesize an all-additions diff. --no-index exits 1 when
@@ -515,21 +547,45 @@ async function resolveCheckpointPath(repoRoot: string, name: string): Promise<st
   return abs;
 }
 
-async function checkpointChanges(repoRoot: string): Promise<string> {
+type CheckpointScope = { projectRoot: string; projectPathspec: string };
+
+async function checkpointChanges(repoRoot: string, scope?: CheckpointScope): Promise<string> {
   // Store snapshots under .git/coven-cave/checkpoints so the checkpoint never
   // creates new worktree changes.
+  const scopedPathspec = scope ? literalGitPathspec(scope.projectPathspec) : null;
   let patch = "";
   try {
-    ({ stdout: patch } = await gitDiff(repoRoot, ["--binary", "HEAD", "--"]));
+    ({ stdout: patch } = await gitDiff(
+      repoRoot,
+      scopedPathspec
+        ? ["--binary", "--no-renames", "HEAD", "--", scopedPathspec]
+        : ["--binary", "HEAD", "--"],
+    ));
   } catch {
-    ({ stdout: patch } = await gitDiff(repoRoot, ["--binary", "--"]));
+    ({ stdout: patch } = await gitDiff(
+      repoRoot,
+      scopedPathspec
+        ? ["--binary", "--no-renames", "--", scopedPathspec]
+        : ["--binary", "--"],
+    ));
   }
 
-  const { stdout: statusOut } = await git(repoRoot, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  const statusArgs = ["--porcelain=v1", "-z", "--untracked-files=all"];
+  if (scopedPathspec) statusArgs.push("--no-renames", "--", scopedPathspec);
+  const { stdout: statusOut } = await gitStatus(repoRoot, statusArgs);
   for (const file of parsePorcelainZ(statusOut)) {
     if (file.status === "untracked") {
       const abs = resolveContainedFile(repoRoot, file.path);
-      if (!abs || !fs.existsSync(/* turbopackIgnore: true */ abs)) continue;
+      if (!abs || !fs.existsSync(/* turbopackIgnore: true */ abs)) {
+        if (scope) throw new Error("checkpoint path escaped project scope");
+        continue;
+      }
+      if (scope) {
+        const projectTarget = resolveProjectPathForGitRoot(scope.projectRoot, repoRoot, abs);
+        if (!projectTarget || !resolveContainedFile(scope.projectRoot, projectTarget.projectRelativePath)) {
+          throw new Error("checkpoint path escaped project scope");
+        }
+      }
       try {
         // Pass the REPO-RELATIVE path (cwd is repoRoot) so the synthesized
         // add-file diff carries `b/<relpath>` headers that `git apply` can
@@ -614,7 +670,10 @@ export async function POST(req: NextRequest) {
   }
   const action = body.action ?? "revert";
 
-  const root = await resolveRepoRoot(body.projectRoot);
+  const root = await resolveRepoRoot(
+    body.projectRoot,
+    action === "revert" ? "scoped-revert" : "standard",
+  );
   if (!root.ok) {
     return NextResponse.json({ ok: false, error: root.error }, { status: root.status });
   }
@@ -797,7 +856,9 @@ export async function POST(req: NextRequest) {
   if (!projectTarget) return pathNotAllowed();
   const abs = resolveContainedFile(root.projectRoot, projectTarget.projectRelativePath);
   if (!abs) return pathNotAllowed();
-  if (!(await isChangedFile(root.repoRoot, projectTarget.gitRelativePath))) return pathNotAllowed();
+  if (!(await isChangedFile(root.repoRoot, projectTarget.gitRelativePath, root.projectPathspec))) {
+    return pathNotAllowed();
+  }
 
   try {
     // Decide how to revert based on whether the file exists at HEAD. Reverting
@@ -821,12 +882,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Reverts are destructive (discard edits / delete files). Snapshot the whole
-    // working tree first so the action is recoverable; if the safety snapshot
-    // fails, abort rather than destroy without a backup.
+    // Reverts are destructive (discard edits / delete files). Snapshot only the
+    // captured project first so the action is recoverable without reading or
+    // authorizing sibling/parent changes. Abort if that scoped snapshot fails.
     let checkpointPath: string;
     try {
-      checkpointPath = await checkpointChanges(root.repoRoot);
+      checkpointPath = await checkpointChanges(root.repoRoot, {
+        projectRoot: root.projectRoot,
+        projectPathspec: root.projectPathspec,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return NextResponse.json(
@@ -840,15 +904,20 @@ export async function POST(req: NextRequest) {
         // `checkout HEAD --` updates index AND worktree, so staged edits and
         // staged/unstaged deletions all revert to the committed version —
         // matching the HEAD-relative diff the panel renders.
-        await git(root.repoRoot, ["checkout", "HEAD", "--", projectTarget.gitRelativePath]);
+        await git(root.repoRoot, [
+          "checkout",
+          "HEAD",
+          "--",
+          literalGitPathspec(projectTarget.gitRelativePath),
+        ]);
         return NextResponse.json({ ok: true, reverted: "checkout", path: projectTarget.gitRelativePath, checkpointPath });
       case "rm":
         // Staged new file: it never existed at HEAD, so reverting removes it
         // from both index and worktree.
-        await git(root.repoRoot, ["rm", "-f", "--", projectTarget.gitRelativePath]);
+        await git(root.repoRoot, ["rm", "-f", "--", literalGitPathspec(projectTarget.gitRelativePath)]);
         return NextResponse.json({ ok: true, reverted: "rm", path: projectTarget.gitRelativePath, checkpointPath });
       case "clean":
-        await git(root.repoRoot, ["clean", "-f", "--", projectTarget.gitRelativePath]);
+        await git(root.repoRoot, ["clean", "-f", "--", literalGitPathspec(projectTarget.gitRelativePath)]);
         return NextResponse.json({ ok: true, reverted: "clean", path: projectTarget.gitRelativePath, checkpointPath });
     }
   } catch (err) {

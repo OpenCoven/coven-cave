@@ -149,7 +149,7 @@ assert.match(
 );
 assert.match(
   source,
-  /function changedFilePaths[\s\S]*?gitStatus\(repoRoot, \["--porcelain=v1", "-z", "--untracked-files=all"\]\)/,
+  /function changedFilePaths[\s\S]*?const args = \["--porcelain=v1", "-z", "--untracked-files=all"\][\s\S]*?gitStatus\(repoRoot, args\)/,
   "the diff/revert authorization set must come from the hardened gitStatus helper (fsmonitor disabled)",
 );
 assert.match(
@@ -164,13 +164,38 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!\(await isChangedFile\(root\.repoRoot, projectTarget\.gitRelativePath\)\)\) return pathNotAllowed\(\);/,
+  /isChangedFile\(root\.repoRoot, projectTarget\.gitRelativePath, root\.projectPathspec\)/,
   "revert authorization uses the project-validated git-root-relative target",
 );
 assert.match(
   source,
-  /\["checkout", "HEAD", "--", projectTarget\.gitRelativePath\][\s\S]{0,500}?\["rm", "-f", "--", projectTarget\.gitRelativePath\][\s\S]{0,350}?\["clean", "-f", "--", projectTarget\.gitRelativePath\]/,
-  "every destructive revert argv uses only the project-validated git-relative path",
+  /"checkout",[\s\S]{0,100}?literalGitPathspec\(projectTarget\.gitRelativePath\)[\s\S]{0,500}?\["rm", "-f", "--", literalGitPathspec\(projectTarget\.gitRelativePath\)\][\s\S]{0,350}?\["clean", "-f", "--", literalGitPathspec\(projectTarget\.gitRelativePath\)\]/,
+  "every destructive revert argv uses only the literal project-validated git-relative path",
+);
+assert.match(
+  source,
+  /const allowedRoot = await isAllowed\(projectRoot\);[\s\S]*?git\(real, \["rev-parse", "--show-toplevel"\]\)[\s\S]*?projectPathspecForGitRoot\(real, repoRoot\)/,
+  "root resolution authorizes the captured project before discovering and proving its Git-root relationship",
+);
+assert.match(
+  source,
+  /if \(!projectPathspec\) \{[\s\S]{0,120}?status: 403[\s\S]{0,120}?authorization === "standard" && !\(await isAllowed\(repoRoot\)\)/,
+  "an unproven Git-root relationship fails closed while standard operations retain repo-root authorization",
+);
+assert.match(
+  source,
+  /resolveRepoRoot\(\s*body\.projectRoot,\s*action === "revert" \? "scoped-revert" : "standard",\s*\)/,
+  "only the explicit revert action receives scoped enclosing-Git-root authority",
+);
+assert.match(
+  source,
+  /checkpointChanges\(root\.repoRoot, \{\s*projectRoot: root\.projectRoot,\s*projectPathspec: root\.projectPathspec,/,
+  "the revert safety checkpoint is constrained to the captured project scope",
+);
+assert.match(
+  source,
+  /args\.push\("--no-renames", "--", literalGitPathspec\(projectPathspec\)\)[\s\S]*?scopedPathspec[\s\S]*?\["--binary", "--no-renames", "HEAD", "--", scopedPathspec\]/,
+  "scoped status and checkpoint diffs use literal pathspecs with cross-boundary rename detection disabled",
 );
 
 // remote=1 — read-only origin probe powering the project-setup modal's GitHub
