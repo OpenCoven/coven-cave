@@ -24,22 +24,29 @@ export function createChatAttentionProjectionState(): ChatAttentionProjectionSta
   return new Map();
 }
 
-// A late-arriving duplicate `recordChatAttentionClear` for an operation this
-// projection has ALREADY settled (either failed and removed, or persisted and
-// then released by canonical evidence) must not resurrect it. The in-memory
-// operation itself is gone by the time that replay lands — a
-// registry-subscription can enqueue a pending snapshot before an earlier
-// failed-send settlement and only deliver it after — so idempotency needs a
-// tombstone that survives the operation's removal. Tombstones are scoped per
-// ChatAttentionProjectionState via a WeakMap so they never outlive the state
-// (and thus the ChatView instance) that recorded them, and are bounded via a
-// FIFO so a long-lived app session cannot accumulate unbounded memory from
-// sessions/operations that come and go over the app's lifetime.
+// Keep settled clears idempotent across late replays without letting unrelated
+// session churn evict another session's replay protection.
 const CHAT_ATTENTION_TOMBSTONE_LIMIT = 256;
-const chatAttentionTombstones = new WeakMap<ChatAttentionProjectionState, Map<string, string>>();
+type SessionTombstones = Set<string>;
+const chatAttentionTombstones = new WeakMap<ChatAttentionProjectionState, Map<string, SessionTombstones>>();
 
-function chatAttentionTombstoneKey(sessionId: string, operationId: string): string {
-  return `${sessionId}\u0000${operationId}`;
+function tombstonesForState(state: ChatAttentionProjectionState): Map<string, SessionTombstones> {
+  let tombstones = chatAttentionTombstones.get(state);
+  if (!tombstones) {
+    tombstones = new Map();
+    chatAttentionTombstones.set(state, tombstones);
+  }
+  return tombstones;
+}
+
+function tombstonesForSession(state: ChatAttentionProjectionState, sessionId: string): SessionTombstones {
+  const tombstones = tombstonesForState(state);
+  let sessionTombstones = tombstones.get(sessionId);
+  if (!sessionTombstones) {
+    sessionTombstones = new Set();
+    tombstones.set(sessionId, sessionTombstones);
+  }
+  return sessionTombstones;
 }
 
 function tombstoneChatAttentionOperation(
@@ -47,21 +54,13 @@ function tombstoneChatAttentionOperation(
   sessionId: string,
   operationId: string,
 ): void {
-  let tombstones = chatAttentionTombstones.get(state);
-  if (!tombstones) {
-    tombstones = new Map();
-    chatAttentionTombstones.set(state, tombstones);
-  }
-  const key = chatAttentionTombstoneKey(sessionId, operationId);
-  // Re-inserting (delete then set) moves this entry to the freshest end of
-  // the Map's iteration order, so the FIFO eviction below always reclaims the
-  // truly oldest tombstone rather than one that was merely inserted first.
-  tombstones.delete(key);
-  tombstones.set(key, sessionId);
-  while (tombstones.size > CHAT_ATTENTION_TOMBSTONE_LIMIT) {
-    const oldestKey = tombstones.keys().next().value;
-    if (oldestKey === undefined) break;
-    tombstones.delete(oldestKey);
+  const sessionTombstones = tombstonesForSession(state, sessionId);
+  sessionTombstones.delete(operationId);
+  sessionTombstones.add(operationId);
+  while (sessionTombstones.size > CHAT_ATTENTION_TOMBSTONE_LIMIT) {
+    const oldestOperationId = sessionTombstones.values().next().value;
+    if (oldestOperationId === undefined) break;
+    sessionTombstones.delete(oldestOperationId);
   }
 }
 
@@ -70,37 +69,11 @@ function isChatAttentionOperationTombstoned(
   sessionId: string,
   operationId: string,
 ): boolean {
-  return chatAttentionTombstones.get(state)?.has(chatAttentionTombstoneKey(sessionId, operationId)) ?? false;
+  return chatAttentionTombstones.get(state)?.get(sessionId)?.has(operationId) ?? false;
 }
 
-function forgetChatAttentionTombstones(
-  state: ChatAttentionProjectionState,
-  sessionIds: readonly string[],
-): void {
-  const tombstones = chatAttentionTombstones.get(state);
-  if (!tombstones) return;
-  const forgottenSessionIds = new Set(sessionIds);
-  for (const [key, sessionId] of tombstones) {
-    if (forgottenSessionIds.has(sessionId)) tombstones.delete(key);
-  }
-}
-
-// Overlapping operations on the SAME session (op1 clears, then op2 clears
-// again before op1's canonical evidence lands) must each baseline against
-// the latest known canonical attention, never against a sibling operation's
-// (possibly much older) baseline and never against the optimistic projected
-// "none" a caller reading through applyChatAttentionProjections' masked
-// output would see while ANY operation is still active for that session.
-// Without this, a new op2 starting while op1 is still pending or
-// not-yet-released would silently inherit op1's stale baseline A even after
-// a genuine new canonical request B has been observed — so a later poll
-// reporting B (which legitimately still matches B, not A) would be judged a
-// mismatch against A and falsely retire op2 before it ever got a chance to
-// settle. Tracked per ChatAttentionProjectionState via a WeakMap (same
-// lifetime discipline as the tombstone set above) and refreshed by
-// applyChatAttentionProjections on every row it actually inspects, so it
-// always reflects the most recent real canonical evidence for that session —
-// distinct from any single operation's own recorded baseline.
+// Overlapping clears can only see projected "none", so keep the last accepted
+// canonical attention per session and use it as the fallback baseline.
 const lastKnownCanonicalAttention = new WeakMap<ChatAttentionProjectionState, Map<string, ChatAttention>>();
 
 function canonicalAttentionTrackerFor(state: ChatAttentionProjectionState): Map<string, ChatAttention> {
@@ -114,6 +87,11 @@ function canonicalAttentionTrackerFor(state: ChatAttentionProjectionState): Map<
 
 function forgetLastKnownCanonicalAttention(state: ChatAttentionProjectionState, sessionId: string): void {
   lastKnownCanonicalAttention.get(state)?.delete(sessionId);
+}
+
+function clearSessionProjectionState(state: ChatAttentionProjectionState, sessionId: string): void {
+  state.delete(sessionId);
+  forgetLastKnownCanonicalAttention(state, sessionId);
 }
 
 export function chatAttentionProjectionScopeKey(familiarId: string | null): string {
@@ -137,36 +115,15 @@ export function recordChatAttentionClear(
   scopeKey: string,
   canonicalAttention: ChatAttention | null | undefined,
 ): void {
-  // Idempotency across the operation's full lifetime, not just while it is
-  // still tracked: once (sessionId, operationId) has settled — failed and
-  // been removed, or persisted and later released by canonical evidence —
-  // a tombstone survives that removal so a late-arriving duplicate clear
-  // (e.g. a registry-subscription's queued pending snapshot delivered after
-  // its own failed-send settlement already ran) is ignored rather than
-  // re-adding a pending operation nothing will ever settle again.
   if (isChatAttentionOperationTombstoned(state, sessionId, operationId)) return;
 
   const operations = state.get(sessionId);
   const existingOperation = operations?.get(operationId);
-  // Idempotency for a repeated (sessionId, operationId): once an operation has
-  // settled to "persisted" it is done — a stale/duplicate pending
-  // notification for the SAME operationId (e.g. a late registry-subscription
-  // replay racing its own settle) must never downgrade it back to "pending"
-  // or touch its recorded canonicalAfterRequestId. Recording is a no-op here;
-  // the persisted entry already carries everything applyChatAttentionProjections
-  // needs to retire it once a fresh canonical response proves it safe.
   if (existingOperation?.status === "persisted") return;
   const normalizedCanonical = normalizeAttentionSnapshot(canonicalAttention);
   const canonicalTracker = canonicalAttentionTrackerFor(state);
-  // A brand-new operation (no existingOperation) must NEVER inherit another
-  // operation's baseline — that is the overlap bug this guards against. A
-  // genuine, non-"none" reading is trusted directly: the caller observed real
-  // canonical attention, so it IS the latest known canonical, full stop. Only
-  // when the reading collapses to "none" — which can be a masked read of a
-  // session with an active projection rather than genuine canonical absence —
-  // do we fall back to the tracked last-known canonical for this session
-  // (kept fresh by applyChatAttentionProjections below), and only then to the
-  // "none" reading itself if nothing has ever been tracked for it.
+  // The caller may already be looking at a projected "none", so overlap cases
+  // fall back to the last accepted canonical attention for this session.
   const baseline = existingOperation?.baseline ??
     (normalizedCanonical.state !== "none"
       ? normalizedCanonical
@@ -192,18 +149,10 @@ export function settleChatAttentionClear(
 ): void {
   const operations = state.get(sessionId);
   const operation = operations?.get(operationId);
-  // An unknown (sessionId, operationId) is ignored rather than tombstoned:
-  // real event ordering never guarantees settle follows clear for a pair
-  // this projection never recorded, so tombstoning here on nothing but an
-  // unrecognized settlement could permanently block a legitimate future
-  // clear for that same id pair.
   if (!operations || !operation) return;
   if (outcome === "failed") {
     operations.delete(operationId);
-    if (operations.size === 0) {
-      state.delete(sessionId);
-      forgetLastKnownCanonicalAttention(state, sessionId);
-    }
+    if (operations.size === 0) clearSessionProjectionState(state, sessionId);
     tombstoneChatAttentionOperation(state, sessionId, operationId);
     return;
   }
@@ -220,10 +169,10 @@ export function forgetChatAttentionProjections(
   sessionIds: readonly string[],
 ): void {
   for (const sessionId of sessionIds) {
-    state.delete(sessionId);
-    forgetLastKnownCanonicalAttention(state, sessionId);
+    clearSessionProjectionState(state, sessionId);
   }
-  forgetChatAttentionTombstones(state, sessionIds);
+  // Settled tombstones stay until this state is GC'd so queued late clears
+  // cannot recreate projections after the row itself has been forgotten.
 }
 
 function clearSessionAttention(row: SessionRow): SessionRow {
@@ -281,12 +230,7 @@ export function applyChatAttentionProjections(
     const operations = state.get(row.id);
     if (!operations) return row;
 
-    // This is the one place a genuine, unmasked canonical reading for a
-    // tracked session passes through — refresh the tracker with it so a NEW
-    // overlapping operation that only ever sees this function's masked
-    // output still baselines against the real latest canonical (row.attention
-    // here, before clearSessionAttention below optimistically hides it),
-    // rather than a sibling operation's now-stale baseline.
+    // Refresh from the accepted row before masking it again for active clears.
     canonicalTracker.set(row.id, row.attention);
 
     for (const [operationId, operation] of operations) {
@@ -296,17 +240,11 @@ export function applyChatAttentionProjections(
         !attentionMatchesBaseline(row.attention, operation.baseline)
       ) {
         operations.delete(operationId);
-        // Canonical evidence just proved this operation is done. Tombstone it
-        // too — otherwise a queued late clear for this same operationId
-        // (delivered after this release, e.g. a stale registry-subscription
-        // replay) would re-add a pending projection nothing will ever settle
-        // again, hiding attention this release just correctly restored.
         tombstoneChatAttentionOperation(state, row.id, operationId);
       }
     }
     if (operations.size === 0) {
-      state.delete(row.id);
-      forgetLastKnownCanonicalAttention(state, row.id);
+      clearSessionProjectionState(state, row.id);
       return row;
     }
 
@@ -323,15 +261,11 @@ export function applyChatAttentionProjections(
           responseRequestId >= operation.canonicalAfterRequestId;
         if (canTrustAbsence && scopeProvesAbsence(operation.scopeKey, currentScopeKey)) {
           operations.delete(operationId);
-          // Same tombstone rationale as the present-row release above: proven
-          // absence is canonical evidence this operation is done, so a
-          // queued late clear for it must not be allowed to reopen it.
           tombstoneChatAttentionOperation(state, sessionId, operationId);
         }
       }
       if (operations.size === 0) {
-        state.delete(sessionId);
-        forgetLastKnownCanonicalAttention(state, sessionId);
+        clearSessionProjectionState(state, sessionId);
       }
     }
   }
