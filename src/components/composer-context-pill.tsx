@@ -32,7 +32,7 @@ import {
   type RuntimeModelOption,
 } from "@/lib/runtime-models";
 
-export type ComposerContextView = null | "project" | "model" | "branch";
+export type ComposerContextView = null | "project" | "model" | "branch" | "worktree";
 
 export type ComposerContextProps = {
   projects: CaveProject[];
@@ -209,8 +209,8 @@ export function ComposerContextPickers({
         onPromoteModelToDefault={context.config.onPromoteModelToDefault}
       />
       <GitBranchMenuPopover
-        open={view === "branch"}
-        onOpenChange={(open) => onViewChange(open ? "branch" : null)}
+        open={view === "branch" || view === "worktree"}
+        onOpenChange={(open) => onViewChange(open ? view : null)}
         anchorRef={anchorRef}
         placement={context.config.popoverPlacement}
         projectRoot={context.root}
@@ -230,8 +230,9 @@ export function ComposerContextPickers({
 export function ComposerContextChips(props: ComposerContextProps) {
   const [menu, setMenu] = useState<ComposerContextView>(null);
   const projectRef = useRef<HTMLButtonElement | null>(null);
-  const modelRef = useRef<HTMLButtonElement | null>(null);
+  const worktreeRef = useRef<HTMLButtonElement | null>(null);
   const branchRef = useRef<HTMLButtonElement | null>(null);
+  const modelRef = useRef<HTMLButtonElement | null>(null);
   const context = useComposerContextActions(props);
   const projectLabel = context.selectedProjectLabel;
   const projectAccess = context.selectedProject?.access
@@ -271,6 +272,47 @@ export function ComposerContextChips(props: ComposerContextProps) {
         <span className="cave-context-chip__text">{projectLabel}</span>
         <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
       </button>
+      {context.hasGit && context.worktree ? (
+        <button
+          ref={worktreeRef}
+          type="button"
+          className="cave-context-chip focus-ring"
+          disabled={props.disabled}
+          aria-haspopup="menu"
+          aria-expanded={menu === "worktree"}
+          aria-label={`Worktree: ${context.worktree} — open worktree actions`}
+          title={`Worktree: ${context.worktree} · ${context.dirtyLabel}`}
+          onClick={() => setMenu((c) => (c === "worktree" ? null : "worktree"))}
+        >
+          <span className="cave-context-chip__lead" aria-hidden>
+            <Icon name="ph:tree-structure" width={13} aria-hidden />
+          </span>
+          <span className="cave-context-chip__text">{context.worktree}</span>
+          <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
+        </button>
+      ) : null}
+      {context.hasGit ? (
+        <button
+          ref={branchRef}
+          type="button"
+          className="cave-context-chip focus-ring"
+          disabled={props.disabled}
+          aria-haspopup="menu"
+          aria-expanded={menu === "branch"}
+          aria-label={`Branch: ${context.branch} — switch branch or create a worktree`}
+          title={`Branch: ${context.branch} · ${context.dirtyLabel}`}
+          onClick={() => setMenu((c) => (c === "branch" ? null : "branch"))}
+        >
+          <span className="cave-context-chip__lead" aria-hidden>
+            <Icon name="ph:git-branch" width={13} aria-hidden />
+          </span>
+          <span className="cave-context-chip__text">
+            {context.branch}
+            {context.count > 0 ? ` · +${context.count}` : ""}
+          </span>
+          <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
+        </button>
+      ) : null}
       <button
         ref={modelRef}
         type="button"
@@ -288,29 +330,6 @@ export function ComposerContextChips(props: ComposerContextProps) {
         <span className="cave-context-chip__text">{modelLabel}</span>
         <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
       </button>
-      {context.hasGit ? (
-        <button
-          ref={branchRef}
-          type="button"
-          className="cave-context-chip focus-ring"
-          disabled={props.disabled}
-          aria-haspopup="menu"
-          aria-expanded={menu === "branch"}
-          aria-label={`Branch: ${context.branch} — switch branch or create a worktree`}
-          title={`Branch: ${context.branch} · ${context.dirtyLabel}${context.worktree ? ` · Worktree: ${context.worktree}` : ""}`}
-          onClick={() => setMenu((c) => (c === "branch" ? null : "branch"))}
-        >
-          <span className="cave-context-chip__lead" aria-hidden>
-            <Icon name="ph:git-branch" width={13} aria-hidden />
-          </span>
-          <span className="cave-context-chip__text">
-            {context.branch}
-            {context.count > 0 ? ` · +${context.count}` : ""}
-            {context.worktree ? ` · ${context.worktree}` : ""}
-          </span>
-          <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
-        </button>
-      ) : null}
 
       <ProjectPickerPopover
         open={menu === "project"}
@@ -340,6 +359,17 @@ export function ComposerContextChips(props: ComposerContextProps) {
         promotableModel={context.config.promotableModel ?? null}
         onPromoteModelToDefault={context.config.onPromoteModelToDefault}
       />
+      {context.hasGit && context.worktree ? (
+        <GitBranchMenuPopover
+          open={menu === "worktree"}
+          onOpenChange={(open) => setMenu(open ? "worktree" : null)}
+          anchorRef={worktreeRef}
+          placement={context.config.popoverPlacement}
+          projectRoot={context.root}
+          onSwitched={context.reload}
+          {...branchPopoverExtras(context)}
+        />
+      ) : null}
       {context.hasGit ? (
         <GitBranchMenuPopover
           open={menu === "branch"}

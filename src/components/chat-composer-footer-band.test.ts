@@ -114,10 +114,29 @@ assert.doesNotMatch(
 );
 
 // ── Each chip opens its own picker; the hub popover is gone ─────────────────
+// Grammar: Project > Worktree (conditional) > Branch > Model in control order
 assert.match(
   pill,
-  /aria-label=\{`Project: \$\{projectLabel\} — change project`\}[\s\S]*?aria-label=\{`Model: \$\{modelLabel\} — change model`\}[\s\S]*?aria-label=\{`Branch: \$\{context\.branch\} — switch branch or create a worktree`\}/,
-  "the chips read Project / Model / Branch as separately labelled controls in order",
+  /aria-label=\{`Project: \$\{projectLabel\} — change project`\}[\s\S]*?aria-label=\{`Worktree: \$\{context\.worktree\} — open worktree actions`\}[\s\S]*?aria-label=\{`Branch: \$\{context\.branch\} — switch branch or create a worktree`\}[\s\S]*?aria-label=\{`Model: \$\{modelLabel\} — change model`\}/,
+  "the chips read Project / Worktree / Branch / Model as separately labelled controls in order",
+);
+assert.match(pill, /const worktreeRef = useRef/, "worktree has its own independent ref anchor");
+assert.match(pill, /const branchRef = useRef/, "branch has its own independent ref anchor");
+assert.match(pill, /name="ph:tree-structure"/, "the worktree chip uses the tree-structure icon");
+assert.doesNotMatch(
+  pill,
+  /aria-label=\{`Branch:[\s\S]{0,200}?context\.worktree[\s\S]{0,50}?`\}/,
+  "worktree is no longer folded into the branch chip's accessible name",
+);
+assert.match(
+  pill,
+  /open=\{menu === "worktree"\}[\s\S]*?anchorRef=\{worktreeRef\}[\s\S]*?open=\{menu === "branch"\}[\s\S]*?anchorRef=\{branchRef\}/,
+  "worktree and branch each have a separate GitBranchMenuPopover with its own open state and anchor",
+);
+assert.match(
+  pill,
+  /ComposerContextView\s*=\s*null\s*\|[\s\S]*?"worktree"/,
+  "ComposerContextView supports the worktree picker state",
 );
 assert.match(pill, /context\.hasGit \? \(/, "the branch chip elides for git-less composers (home, no-project chats)");
 assert.doesNotMatch(
