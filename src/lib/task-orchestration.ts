@@ -73,10 +73,18 @@ export function detectCycles(cards: readonly Card[]): string[][] {
   const stack: string[] = [];
   const onStack = new Set<string>();
 
+  // Any component that hits the traversal guard is treated as a data fault
+  // (contract I4). We must mark every member of such a component as cyclic,
+  // not just the nodes visited before the guard fired. Collect the oversized
+  // component roots here and fan-out afterward.
+  const guardedRoots = new Set<string>();
+
   const walk = (id: string, depth: number): void => {
     if (depth >= TRAVERSAL_GUARD) {
-      // Traversal guard hit is treated as a data fault (see contract I4).
+      // Guard hit: record a cycle spanning the current stack and flag the
+      // root so all reachable members get swept in the post-pass below.
       cycles.push([...stack, id]);
+      guardedRoots.add(stack[0] ?? id);
       return;
     }
     seen.add(id);
@@ -97,6 +105,22 @@ export function detectCycles(cards: readonly Card[]): string[][] {
   for (const card of cards) {
     if (!seen.has(card.id)) walk(card.id, 0);
   }
+
+  // Ensure every node reachable from a guarded root is included in a cycle
+  // entry so that `cyclicIds` marks them all, not only the visited prefix.
+  if (guardedRoots.size > 0) {
+    const guardedMembers: string[] = [];
+    const bfsVisited = new Set<string>();
+    const queue = [...guardedRoots];
+    while (queue.length > 0) {
+      const next = queue.shift() as string;
+      if (bfsVisited.has(next)) continue;
+      bfsVisited.add(next);
+      guardedMembers.push(next);
+      queue.push(...(edges.get(next) ?? []));
+    }
+    cycles.push(guardedMembers);
+  }
   return cycles;
 }
 
@@ -116,8 +140,15 @@ export function cyclicIds(cards: readonly Card[]): Set<string> {
  */
 export function dependencyDepth(cards: readonly Card[]): Record<string, number> {
   const edges = buildEdges(cards);
+  // Cycle members always get depth 0 so they never contribute misleading Gantt
+  // bars. Compute membership first, then skip cyclic nodes in the depth walk.
+  const cyclic = cyclicIds(cards);
   const memo: Record<string, number> = {};
   const walk = (id: string, seen: Set<string>): number => {
+    if (cyclic.has(id)) {
+      memo[id] = 0;
+      return 0;
+    }
     const cached = memo[id];
     if (cached !== undefined) return cached;
     if (seen.has(id) || seen.size >= TRAVERSAL_GUARD) return 0;
@@ -277,15 +308,21 @@ export function validateOrchestration(
         message: "This next step was written by a human. Propose a change instead of overwriting it.",
       });
     }
-    const prevById = new Map(dependenciesOf(ctx.previous).map((dep) => [dep.id, dep]));
-    for (const dep of deps) {
-      const before = prevById.get(dep.id);
-      if (!before || before.origin !== "human") continue;
-      if (before.label !== dep.label || before.kind !== dep.kind || before.taskId !== dep.taskId) {
+    // Iterate the *previous* human-authored dependencies, not the new ones.
+    // This catches deletions and field-level rewrites beyond label/kind/taskId.
+    // Use key-sorted serialisation so insertion-order differences don't produce
+    // false positives when the same record is round-tripped through two paths.
+    const sortedJSON = (v: unknown): string =>
+      v == null ? JSON.stringify(v) : JSON.stringify(v, Object.keys(v as object).sort());
+    const newById = new Map(deps.map((dep) => [dep.id, dep]));
+    for (const before of dependenciesOf(ctx.previous)) {
+      if (before.origin !== "human") continue;
+      const after = newById.get(before.id);
+      if (sortedJSON(after ?? null) !== sortedJSON(before)) {
         errors.push({
           code: "next_step_authorship",
           field: "dependencies",
-          dependencyId: dep.id,
+          dependencyId: before.id,
           message: `Dependency "${before.label}" was written by a human. Propose a change instead of overwriting it.`,
         });
       }

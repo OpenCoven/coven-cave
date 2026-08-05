@@ -269,6 +269,49 @@ function codes(errors) {
   assert.ok(TRAVERSAL_GUARD > 50);
 }
 
+{
+  // Guard exhaustion: a cycle larger than TRAVERSAL_GUARD must mark every
+  // member cyclic, not just the prefix the DFS visited before the guard fired.
+  // Without the post-guard BFS sweep, nodes beyond index TRAVERSAL_GUARD
+  // would return no dependency_cycle error even though they're on the loop.
+  const cycleSize = TRAVERSAL_GUARD + 2;
+  const bigCycle = [];
+  for (let i = 0; i < cycleSize; i += 1) {
+    bigCycle.push(
+      card(`n${i}`, {
+        dependencies: [dep(`d${i}`, { taskId: `n${(i + 1) % cycleSize}` })],
+      }),
+    );
+  }
+  const onCycle = cyclicIds(bigCycle);
+  for (let i = 0; i < cycleSize; i += 1) {
+    assert.ok(onCycle.has(`n${i}`), `n${i} is a cycle member and must be marked cyclic`);
+  }
+  // validateOrchestration uses cyclicIds via the projected-graph path, so
+  // every member should also fail validation with dependency_cycle.
+  for (const member of bigCycle) {
+    const errs = validateOrchestration(member, { cards: bigCycle });
+    assert.ok(
+      errs.some((e) => e.code === "dependency_cycle"),
+      `n${member.id} must produce dependency_cycle`,
+    );
+  }
+}
+
+{
+  // Cycle members must always have depth 0, never a nonzero value that would
+  // place them on a misleading Gantt bar. A three-node cycle a->b->c->a
+  // previously produced depths 3, 2, 1 because the back-edge returned 0 and
+  // each caller added 1 before memoizing.
+  const a = card("a", { dependencies: [dep("da", { taskId: "b" })] });
+  const b = card("b", { dependencies: [dep("db", { taskId: "c" })] });
+  const c = card("c", { dependencies: [dep("dc", { taskId: "a" })] });
+  const depth = dependencyDepth([a, b, c]);
+  assert.equal(depth.a, 0, "cycle member a must have depth 0");
+  assert.equal(depth.b, 0, "cycle member b must have depth 0");
+  assert.equal(depth.c, 0, "cycle member c must have depth 0");
+}
+
 // ── I5: resolution requires evidence ─────────────────────────────────────────
 
 {
@@ -338,6 +381,48 @@ function codes(errors) {
     validateOrchestration(next, { cards: [next], previous, automated: true }),
     [],
     "derived records are automation's to refresh",
+  );
+}
+
+{
+  // I6: automation silently deleting a human-authored dependency must be caught.
+  // The old loop iterated current deps, so a missing dep was never compared.
+  const previous = card("a", {
+    dependencies: [dep("d1", { kind: "human", taskId: null, label: "Legal sign-off", origin: "human" })],
+    nextStep: step({ origin: "system" }),
+  });
+  const deleted = card("a", { dependencies: [], nextStep: step({ origin: "system" }) });
+  const errors = validateOrchestration(deleted, {
+    cards: [deleted],
+    previous,
+    automated: true,
+  });
+  assert.ok(
+    errors.some((e) => e.code === "next_step_authorship" && e.field === "dependencies"),
+    "deleting a human dependency must produce next_step_authorship",
+  );
+}
+
+{
+  // I6: automation rewriting a non-label field (e.g. state, evidence) on a
+  // human dependency must be caught. The old check only compared label/kind/taskId.
+  const humanDep = dep("d1", { kind: "human", taskId: null, label: "Design approval", origin: "human", state: "unresolved" });
+  const previous = card("a", {
+    dependencies: [humanDep],
+    nextStep: step({ origin: "system" }),
+  });
+  const fieldRewrite = card("a", {
+    dependencies: [{ ...humanDep, state: "resolved", evidence: "Enhance says so" }],
+    nextStep: step({ origin: "system" }),
+  });
+  const errors = validateOrchestration(fieldRewrite, {
+    cards: [fieldRewrite],
+    previous,
+    automated: true,
+  });
+  assert.ok(
+    errors.some((e) => e.code === "next_step_authorship" && e.dependencyId === "d1"),
+    "rewriting a non-label field on a human dep must produce next_step_authorship",
   );
 }
 
