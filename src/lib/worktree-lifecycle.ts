@@ -146,7 +146,7 @@ export type WorktreeLifecycleItem = NormalizedWorktreeLifecycleObservation & {
 
 type AssertTrue<T extends true> = T;
 export type WorktreeLifecycleTypeContract = [
-  AssertTrue<WorktreeLifecycleObservationInput extends { taskRefs?: WorktreeTaskRef[] } ? true : false>,
+  AssertTrue<{} extends Pick<WorktreeLifecycleObservationInput, "taskRefs"> ? true : false>,
   AssertTrue<WorktreeLifecycleItem["taskRefs"] extends WorktreeTaskRef[] ? true : false>,
 ];
 

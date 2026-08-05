@@ -163,6 +163,7 @@ function legacyObservation(overrides = {}) {
   const {
     kind,
     ref,
+    taskRefs,
     metadata,
     metadataErrors,
     remoteRef,
@@ -366,6 +367,20 @@ function legacyObservation(overrides = {}) {
   );
   assert.equal(item.lane, "recovery", "legacy callers still preserve divergent same-name remotes");
   assert.match(item.reasons.join("\n"), /same-named remote ref .* diverges from local HEAD/i);
+}
+
+{
+  const item = classifyWorktree(
+    legacyObservation({
+      metadata: metadata({ disposition: "pr" }),
+      mergedPr: { number: 61, headOid: "a".repeat(40), url: "https://example.test/61" },
+      headOnDefaultBranch: true,
+      updatedAtMs: NOW - RETIREMENT_COOLDOWN_MS,
+    }),
+    NOW,
+  );
+  assert.equal(item.lane, "review-needed", "legacy callers without taskRefs still preserve missing-metadata review lanes");
+  assert.deepEqual(item.taskRefs, [], "legacy classifyWorktree callers receive normalized empty taskRefs arrays");
 }
 
 {
