@@ -11,7 +11,6 @@ import type { GrokSandboxProfile } from "./grok-build.ts";
 import type { SessionOrigin } from "./types.ts";
 import { linearizeLegacy, resolveActivePath } from "./conversation-tree.ts";
 import { CHAT_ATTENTION_REASONS } from "./chat-attention-marker.ts";
-import { isCanonicalIsoInstant } from "./chat-attention.ts";
 import type { ChatAttentionEvidence } from "./chat-attention.ts";
 
 const CONV_DIR = path.join(caveHome(), "conversations");
@@ -206,16 +205,25 @@ export function clearConversationListMetadataCache(): void {
 }
 
 function activeConversationTurns(conv: Pick<ConversationFile, "turns" | "activeLeafId">): ChatTurn[] {
-  if (!conv.activeLeafId) return conv.turns;
-  // `resolveActivePath` falls back to a full createdAt linearization of every
-  // turn across every branch when the leaf id can't be found — a reasonable
-  // "show something" default for rendering, but wrong here: it would admit
-  // off-path (abandoned-branch) turns as attention/terminal-status evidence.
-  // A missing/corrupt leaf must fail quiet instead of trusting whichever
-  // branch happens to sort last.
-  const hasLeaf = conv.turns.some((turn) => turn.id === conv.activeLeafId);
-  if (!hasLeaf) return [];
-  return resolveActivePath(conv.turns, conv.activeLeafId);
+  if (conv.turns.length === 0) return [];
+  const structuralTurns = conv.turns.filter((turn) => !(turn.role === "system" && turn.parentId == null));
+
+  if (structuralTurns.length === 0) return conv.turns;
+
+  if (!conv.activeLeafId) {
+    if (structuralTurns.every((turn) => turn.parentId == null)) {
+      const linearized = linearizeLegacy(structuralTurns);
+      const linkedById = new Map(linearized.turns.map((turn) => [turn.id, turn]));
+      const turns = conv.turns.map((turn) => linkedById.get(turn.id) ?? turn);
+      return resolveActivePath(turns, linearized.activeLeafId);
+    }
+    const onlyLeafId = soleResolvableLeafId(structuralTurns);
+    return onlyLeafId ? resolveActivePath(conv.turns, onlyLeafId) : [];
+  }
+
+  return hasResolvableAncestorChain(structuralTurns, conv.activeLeafId)
+    ? resolveActivePath(conv.turns, conv.activeLeafId)
+    : [];
 }
 
 function deriveConversationSignals(conv: ConversationFile): {
@@ -229,6 +237,7 @@ function deriveConversationSignals(conv: ConversationFile): {
   let sawLatestUserTurn = false;
   let latestUserTurnAt: string | null = null;
   let request: ChatAttentionEvidence["request"] = null;
+  let sawUserAfterAssistant = false;
 
   for (let i = turns.length - 1; i >= 0; i -= 1) {
     const turn = turns[i];
@@ -250,14 +259,18 @@ function deriveConversationSignals(conv: ConversationFile): {
       latestUserTurnAt = normalizeStableIsoTimestamp(turn.createdAt);
     }
 
+    if (turn.role === "user") sawUserAfterAssistant = true;
+
     if (!request && turn.role === "assistant") {
-      request = normalizeStableAttentionRequest(
+      const candidate = normalizeStableAttentionRequest(
         typeof turn.responseMetadata === "object" && turn.responseMetadata
           ? turn.responseMetadata.attentionRequest
           : undefined,
         conv.sessionId,
         turn.id,
+        turn.createdAt,
       );
+      if (candidate && !sawUserAfterAssistant) request = candidate;
     }
   }
 
@@ -286,19 +299,31 @@ function normalizeStableIsoTimestamp(value: unknown): string | null {
   return Number.isFinite(Date.parse(value)) ? value : null;
 }
 
+function parseFiniteTimestamp(value: unknown): number | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function normalizeStableAttentionRequest(
   value: ChatAttentionEvidence["request"] | undefined,
   sessionId: string,
   assistantTurnId: string,
+  assistantCreatedAt: unknown,
 ): ChatAttentionEvidence["request"] | null {
   if (!value) return null;
+  const normalizedAssistantCreatedAt = normalizeStableIsoTimestamp(assistantCreatedAt);
+  const assistantCreatedAtMs = parseFiniteTimestamp(assistantCreatedAt);
+  const requestedAtMs = parseFiniteTimestamp(value.requestedAt);
   if (
     typeof value.sessionId !== "string" ||
     value.sessionId !== sessionId ||
     typeof value.turnId !== "string" ||
     value.turnId !== assistantTurnId ||
-    typeof value.requestedAt !== "string" ||
-    !isCanonicalIsoInstant(value.requestedAt) ||
+    !normalizedAssistantCreatedAt ||
+    requestedAtMs === null ||
+    assistantCreatedAtMs === null ||
+    requestedAtMs !== assistantCreatedAtMs ||
     typeof value.reason !== "string" ||
     !VALID_ATTENTION_REASON_SET.has(value.reason)
   ) {
@@ -307,9 +332,50 @@ function normalizeStableAttentionRequest(
   return {
     sessionId: value.sessionId,
     turnId: value.turnId,
-    requestedAt: value.requestedAt,
+    requestedAt: normalizedAssistantCreatedAt,
     reason: value.reason,
   };
+}
+
+function resolvableAncestorChainSize(turns: ChatTurn[], leafId: string): number | null {
+  const byId = new Map(turns.map((turn) => [turn.id, turn]));
+  let current = byId.get(leafId);
+  if (!current) return null;
+  const seen = new Set<string>();
+  while (current) {
+    if (seen.has(current.id)) return null;
+    seen.add(current.id);
+    const parentId = current.parentId ?? null;
+    if (parentId === null) return seen.size;
+    current = byId.get(parentId);
+    if (!current) return null;
+  }
+  return null;
+}
+
+function hasResolvableAncestorChain(turns: ChatTurn[], leafId: string): boolean {
+  return resolvableAncestorChainSize(turns, leafId) !== null;
+}
+
+function soleResolvableLeafId(turns: ChatTurn[]): string | null {
+  const childCounts = new Map<string, number>();
+  let rootCount = 0;
+  for (const turn of turns) {
+    const parentId = turn.parentId ?? null;
+    if (parentId === null) {
+      rootCount += 1;
+      continue;
+    }
+    const nextCount = (childCounts.get(parentId) ?? 0) + 1;
+    childCounts.set(parentId, nextCount);
+    if (nextCount > 1) return null;
+  }
+
+  if (rootCount !== 1) return null;
+  const leaves = turns.filter((turn) => !childCounts.has(turn.id));
+  if (leaves.length !== 1) return null;
+  if (resolvableAncestorChainSize(turns, leaves[0].id) !== turns.length) return null;
+  return leaves[0].id;
 }
 
 async function ensureDir() {
@@ -566,13 +632,9 @@ async function readConversationSummary(
   }
 
   try {
-    // Match loadConversation's lazy legacy normalization before deriving the
-    // active-path terminal status, without writing the migrated body here.
-    if (!conv.activeLeafId && conv.turns.length > 0) {
-      const linearized = linearizeLegacy(conv.turns);
-      conv.turns = linearized.turns;
-      conv.activeLeafId = linearized.activeLeafId;
-    }
+    // Derive active-path signals without mutating the on-disk file: legacy
+    // truly-linear transcripts still project a synthetic path, while corrupt or
+    // ambiguous branch state fails quiet instead of picking a branch implicitly.
     const signals = deriveConversationSignals(conv);
     return {
       summary: {

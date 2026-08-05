@@ -463,20 +463,6 @@ const validRootArchived = mergeSessionRows({
       updatedAt: "2026-06-08T18:15:00.000Z",
       status: "completed",
       exitCode: 0,
-      // Regression (cave-zs85n finding #6): a daemon "archived" status must
-      // suppress attention even though archived_at is still null here — the
-      // Cave-local archive bookkeeping (state.sessionArchived) hasn't caught
-      // up yet. Explicit unresolved evidence must not leak through.
-      attentionEvidence: {
-        latestCompletedTurn: { role: "assistant", at: "2026-06-08T18:10:00.000Z" },
-        latestUserTurnAt: null,
-        request: {
-          sessionId: "valid-root-archived",
-          turnId: "archived-assistant",
-          requestedAt: "2026-06-08T18:05:00.000Z",
-          reason: "approval",
-        },
-      },
     },
   ],
   state,
@@ -610,6 +596,63 @@ assert.deepEqual(
   "invalid-root archived recovery should preserve daemon initiator provenance",
 );
 
+for (const [status, exitCode] of [
+  ["orphaned", 143],
+  ["stopped", 0],
+] as const) {
+  const [row] = mergeSessionRows({
+    daemonSessions: [
+      {
+        id: `invalid-root-${status}`,
+        project_root: "/invalid",
+        harness: "codex",
+        title: `${status} chat`,
+        status,
+        exit_code: exitCode,
+        archived_at: null,
+        created_at: "2026-06-08T18:00:00.000Z",
+        updated_at: "2026-06-08T18:10:00.000Z",
+        initiator: { kind: "familiar", label: "Cody", agentId: "cody" },
+      },
+    ],
+    localConversations: [
+      {
+        sessionId: `invalid-root-${status}`,
+        familiarId: "nova",
+        harness: "codex",
+        runtime: "local:/repo",
+        title: `${status} chat`,
+        updatedAt: "2026-06-08T18:15:00.000Z",
+        status: "completed",
+        exitCode: 0,
+        origin: "chat",
+        attentionEvidence: {
+          latestCompletedTurn: { role: "assistant", at: "2026-06-08T18:10:00.000Z" },
+          latestUserTurnAt: null,
+          request: {
+            sessionId: `invalid-root-${status}`,
+            turnId: `${status}-assistant`,
+            requestedAt: "2026-06-08T18:05:00.000Z",
+            reason: "input",
+          },
+        },
+      },
+    ],
+    state,
+    includeArchived: false,
+    isValidDaemonProjectRoot: (root) => root === "/repo",
+    projectRootForCwd: (cwd) => (cwd === "/repo" ? "/repo" : null),
+  });
+
+  assert.equal(row?.status, status);
+  assert.equal(row?.exit_code, exitCode);
+  assert.deepEqual(
+    row?.attention,
+    NO_CHAT_ATTENTION,
+    `invalid-root ${status} recovery must never revive local attention evidence`,
+  );
+}
+
 assert.equal(
   validRootArchived[0]?.status,
   "archived",
@@ -621,11 +664,6 @@ assert.equal(
   "newer local transcripts must not overwrite the daemon exit code for an archived status",
 );
 assert.equal(validRootArchived[0]?.archived_at, null, "the daemon status is authoritative even without archived_at");
-assert.deepEqual(
-  validRootArchived[0]?.attention,
-  NO_CHAT_ATTENTION,
-  "an archived status suppresses attention even when archived_at is still null",
-);
 
 const invalidRootArchived = {
   ...state,

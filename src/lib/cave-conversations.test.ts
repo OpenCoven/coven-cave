@@ -895,7 +895,9 @@ console.log("cave-conversations pending-marker test OK");
     "attention-off-path-request",
     "attention-malformed-turns",
     "attention-corrupt-leaf",
-    "attention-non-canonical-request",
+    "attention-ambiguous-missing-leaf",
+    "attention-request-resolved-by-malformed-user",
+    "attention-requested-at-mismatch",
   ];
 
   await saveConversation({
@@ -1253,45 +1255,138 @@ console.log("cave-conversations pending-marker test OK");
     activeLeafId: "corrupt-leaf-that-does-not-exist",
   });
 
-  // Regression (finding #4): requestedAt must be a canonical ISO-8601 UTC
-  // instant, not merely a `Date.parse`-permissive string. A space instead of
-  // `T` parses fine in V8 but does not round-trip through toISOString().
   await saveConversation({
-    sessionId: "attention-non-canonical-request",
+    sessionId: "attention-ambiguous-missing-leaf",
     familiarId: "charm",
     harness: "claude",
-    title: "Non-canonical timestamp",
+    title: "Ambiguous branch without active leaf",
     createdAt: "2026-08-03T10:00:00.000Z",
-    updatedAt: "2026-08-03T10:05:00.000Z",
+    updatedAt: "2026-08-03T10:06:00.000Z",
     turns: [
       {
-        id: "non-canonical-user",
+        id: "ambiguous-user",
         role: "user",
         text: "Do you need anything?",
         createdAt: "2026-08-03T10:00:00.000Z",
         parentId: null,
       },
       {
-        id: "non-canonical-assistant",
+        id: "ambiguous-request",
         role: "assistant",
         text: "I need your approval.",
         createdAt: "2026-08-03T10:05:00.000Z",
-        parentId: "non-canonical-user",
+        parentId: "ambiguous-user",
         responseMetadata: {
           familiarId: "charm",
           harness: "claude",
           model: "anthropic/claude-sonnet-4.6",
           runtime: "local:/repo",
           attentionRequest: {
-            sessionId: "attention-non-canonical-request",
-            turnId: "non-canonical-assistant",
-            requestedAt: "2026-08-03 10:05:00.000Z",
+            sessionId: "attention-ambiguous-missing-leaf",
+            turnId: "ambiguous-request",
+            requestedAt: "2026-08-03T10:05:00.000Z",
             reason: "approval",
           },
         },
       },
+      {
+        id: "ambiguous-sibling",
+        role: "assistant",
+        text: "Here is the answer.",
+        createdAt: "2026-08-03T10:06:00.000Z",
+        parentId: "ambiguous-user",
+      },
     ],
-    activeLeafId: "non-canonical-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-request-resolved-by-malformed-user",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Malformed user still resolves older request",
+    createdAt: "2026-08-03T15:00:00.000Z",
+    updatedAt: "2026-08-03T18:00:00.000Z",
+    turns: [
+      {
+        id: "malformed-resolution-user-1",
+        role: "user",
+        text: "Need anything?",
+        createdAt: "2026-08-03T15:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "malformed-resolution-request",
+        role: "assistant",
+        text: "I need approval.",
+        createdAt: "2026-08-03T16:00:00.000Z",
+        parentId: "malformed-resolution-user-1",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-request-resolved-by-malformed-user",
+            turnId: "malformed-resolution-request",
+            requestedAt: "2026-08-03T16:00:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      {
+        id: "malformed-resolution-user-2",
+        role: "user",
+        text: "Go ahead.",
+        createdAt: "not-a-date",
+        parentId: "malformed-resolution-request",
+      },
+      {
+        id: "malformed-resolution-assistant",
+        role: "assistant",
+        text: "Thanks — taking it from here.",
+        createdAt: "2026-08-03T18:00:00.000Z",
+        parentId: "malformed-resolution-user-2",
+      },
+    ],
+    activeLeafId: "malformed-resolution-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-requested-at-mismatch",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Reject requestedAt mismatch",
+    createdAt: "2026-08-04T10:00:00.000Z",
+    updatedAt: "2026-08-04T10:05:00.000Z",
+    turns: [
+      {
+        id: "requested-at-mismatch-user",
+        role: "user",
+        text: "Anything blocking you?",
+        createdAt: "2026-08-04T10:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "requested-at-mismatch-assistant",
+        role: "assistant",
+        text: "The request timestamp is wrong.",
+        createdAt: "2026-08-04T10:05:00.000Z",
+        parentId: "requested-at-mismatch-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-requested-at-mismatch",
+            turnId: "requested-at-mismatch-assistant",
+            requestedAt: "2026-08-04T10:04:59.000Z",
+            reason: "input",
+          },
+        },
+      },
+    ],
+    activeLeafId: "requested-at-mismatch-assistant",
   });
 
   const summaries = await listConversations();
@@ -1311,12 +1406,7 @@ console.log("cave-conversations pending-marker test OK");
   assert.deepEqual(byId.get("attention-stale-request-left-hanging")?.attentionEvidence, {
     latestCompletedTurn: { role: "assistant", at: "2026-08-03T18:00:00.000Z" },
     latestUserTurnAt: "2026-08-03T17:00:00.000Z",
-    request: {
-      sessionId: "attention-stale-request-left-hanging",
-      turnId: "stale-assistant-request",
-      requestedAt: "2026-08-03T16:00:00.000Z",
-      reason: "credentials",
-    },
+    request: null,
   });
   assert.deepEqual(
     deriveChatAttention({
@@ -1330,7 +1420,7 @@ console.log("cave-conversations pending-marker test OK");
       since: "2026-08-03T18:00:00.000Z",
       reason: null,
     },
-    "newer human turns resolve historical requests canonically without erasing later left-hanging fallback",
+    "path order resolves historical requests before attention derivation, without erasing later left-hanging fallback",
   );
 
   assert.deepEqual(byId.get("attention-malformed-request")?.attentionEvidence, {
@@ -1342,12 +1432,7 @@ console.log("cave-conversations pending-marker test OK");
   assert.deepEqual(byId.get("attention-user-leaf-resolution")?.attentionEvidence, {
     latestCompletedTurn: { role: "user", at: "2026-08-04T17:00:00.000Z" },
     latestUserTurnAt: "2026-08-04T17:00:00.000Z",
-    request: {
-      sessionId: "attention-user-leaf-resolution",
-      turnId: "user-leaf-request",
-      requestedAt: "2026-08-04T16:00:00.000Z",
-      reason: "decision",
-    },
+    request: null,
   });
   assert.deepEqual(
     deriveChatAttention({
@@ -1416,24 +1501,64 @@ console.log("cave-conversations pending-marker test OK");
     "a corrupt active leaf must never surface an off-path branch's attention request",
   );
 
-  assert.deepEqual(byId.get("attention-non-canonical-request")?.attentionEvidence, {
-    latestCompletedTurn: { role: "assistant", at: "2026-08-03T10:05:00.000Z" },
-    latestUserTurnAt: "2026-08-03T10:00:00.000Z",
+  assert.equal(
+    byId.get("attention-ambiguous-missing-leaf")?.attentionEvidence,
+    undefined,
+    "branched conversations without an activeLeafId must fail quiet instead of choosing a branch implicitly",
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-ambiguous-missing-leaf")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "an ambiguous branched conversation with no active leaf must not surface any attention state",
+  );
+
+  assert.deepEqual(byId.get("attention-request-resolved-by-malformed-user")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-03T18:00:00.000Z" },
+    latestUserTurnAt: null,
     request: null,
   });
   assert.deepEqual(
     deriveChatAttention({
-      evidence: byId.get("attention-non-canonical-request")?.attentionEvidence,
+      evidence: byId.get("attention-request-resolved-by-malformed-user")?.attentionEvidence,
       status: "completed",
       archivedAt: null,
       now: NOW,
     }),
     {
       state: "left-hanging",
-      since: "2026-08-03T10:05:00.000Z",
+      since: "2026-08-03T18:00:00.000Z",
       reason: null,
     },
-    "a Date.parse-permissive but non-canonical requestedAt must not be treated as an explicit request",
+    "a malformed-date user turn still resolves the older request, while a later valid assistant can independently become left-hanging",
+  );
+
+  assert.deepEqual(byId.get("attention-requested-at-mismatch")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T10:05:00.000Z" },
+    latestUserTurnAt: "2026-08-04T10:00:00.000Z",
+    request: null,
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-requested-at-mismatch")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "requestedAt must match the containing assistant turn's instant or the request is discarded",
   );
 
   for (const id of ids) {
