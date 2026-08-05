@@ -9538,7 +9538,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
     const base = displayPath.split("/").pop() || displayPath;
     return (
       <details className="cave-tool-block cave-edit-card" data-default-collapsed="true" data-tool-category={visual.category}>
-        <summary className="cave-edit-card__summary">
+        <summary className="cave-edit-card__summary focus-ring">
           <Icon name="ph:pencil-simple" width={16} className="cave-edit-card__icon" aria-hidden />
           <span className="cave-edit-card__body">
             <span className="cave-edit-card__title">Edited {base}</span>
@@ -9575,7 +9575,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   }
   return (
     <details className="cave-tool-block" data-default-collapsed="true" data-tool-category={visual.category}>
-      <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[length:var(--text-xs)]">
+      <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[length:var(--text-xs)] focus-ring">
         <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
         <span className="cave-tool-name min-w-0 truncate font-mono">{tool.name}</span>
         {argSummary ? (
