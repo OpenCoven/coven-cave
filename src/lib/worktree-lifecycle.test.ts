@@ -384,13 +384,12 @@ function legacyObservation(overrides = {}) {
 }
 
 {
-  const legacyDirect = observation({
+  const { taskRefs: _legacyTaskRefs, ...legacyDirect } = observation({
     metadata: metadata({ disposition: "pr" }),
     taskIds: ["cave-legacy"],
     mergedPr: { number: 60, headOid: "a".repeat(40), url: "https://example.test/60" },
     updatedAtMs: NOW - 2 * DAY,
   });
-  delete legacyDirect.taskRefs;
   const item = classifyLifecycleUnit(legacyDirect, NOW);
   const normalized = classifyLifecycleUnit(
     observation({
@@ -406,6 +405,7 @@ function legacyObservation(overrides = {}) {
     normalized,
     "direct classifier callers without taskRefs behave like legacy taskRefs: [] observations",
   );
+  assert.deepEqual(item.taskRefs, [], "direct classifier callers still receive normalized taskRefs arrays");
 }
 
 {

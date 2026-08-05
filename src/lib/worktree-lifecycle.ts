@@ -61,7 +61,7 @@ export type WorktreeRemoteRef = {
   oid: string;
 };
 
-export type WorktreeLifecycleObservation = {
+type WorktreeLifecycleObservationBase = {
   kind: LifecycleUnitKind;
   path: string | null;
   ref: string | null;
@@ -76,7 +76,6 @@ export type WorktreeLifecycleObservation = {
   processOwners: WorktreeProcessOwner[];
   claimOwners: string[];
   taskIds: string[];
-  taskRefs: WorktreeTaskRef[];
   openPrs: WorktreePrRef[];
   mergedPr: WorktreeMergedPrRef | null;
   activeWorkflowUrls: string[];
@@ -90,8 +89,18 @@ export type WorktreeLifecycleObservation = {
   sessionIds: string[];
 };
 
+export type WorktreeLifecycleObservationInput = WorktreeLifecycleObservationBase & {
+  taskRefs?: WorktreeTaskRef[];
+};
+
+export type WorktreeLifecycleObservation = WorktreeLifecycleObservationInput;
+
+type NormalizedWorktreeLifecycleObservation = WorktreeLifecycleObservationBase & {
+  taskRefs: WorktreeTaskRef[];
+};
+
 type LegacyWorktreeObservation = Pick<
-  WorktreeLifecycleObservation,
+  NormalizedWorktreeLifecycleObservation,
   | "branch"
   | "head"
   | "isPrimary"
@@ -116,7 +125,7 @@ type LegacyWorktreeObservation = Pick<
 
 type WorktreeObservationCompatibilityFields = Partial<
   Pick<
-    WorktreeLifecycleObservation,
+    NormalizedWorktreeLifecycleObservation,
     | "kind"
     | "ref"
     | "metadata"
@@ -130,10 +139,16 @@ type WorktreeObservationCompatibilityFields = Partial<
 export type WorktreeObservation = LegacyWorktreeObservation &
   WorktreeObservationCompatibilityFields;
 
-export type WorktreeLifecycleItem = WorktreeLifecycleObservation & {
+export type WorktreeLifecycleItem = NormalizedWorktreeLifecycleObservation & {
   lane: WorktreeLifecycleLane;
   reasons: string[];
 };
+
+type AssertTrue<T extends true> = T;
+export type WorktreeLifecycleTypeContract = [
+  AssertTrue<WorktreeLifecycleObservationInput extends { taskRefs?: WorktreeTaskRef[] } ? true : false>,
+  AssertTrue<WorktreeLifecycleItem["taskRefs"] extends WorktreeTaskRef[] ? true : false>,
+];
 
 export type WorktreeLifecycleSummary = {
   items: WorktreeLifecycleItem[];
@@ -217,7 +232,7 @@ export function isDisposableIgnoredPath(candidate: string): boolean {
   );
 }
 
-function hardActivityReasons(observation: WorktreeLifecycleObservation): string[] {
+function hardActivityReasons(observation: NormalizedWorktreeLifecycleObservation): string[] {
   const reasons: string[] = [];
   if (observation.changes.length > 0) {
     reasons.push(
@@ -262,7 +277,7 @@ function formatTaskStatus(status: WorktreeTaskRef["status"]): string {
   return status.replaceAll("_", " ");
 }
 
-function administrativeTaskReasons(observation: WorktreeLifecycleObservation): string[] {
+function administrativeTaskReasons(observation: NormalizedWorktreeLifecycleObservation): string[] {
   if (observation.taskRefs.length > 0) {
     return observation.taskRefs.map((taskRef) => {
       const title = taskRef.title.trim();
@@ -276,7 +291,7 @@ function administrativeTaskReasons(observation: WorktreeLifecycleObservation): s
   return [];
 }
 
-function administrativeReviewReasons(observation: WorktreeLifecycleObservation): string[] {
+function administrativeReviewReasons(observation: NormalizedWorktreeLifecycleObservation): string[] {
   const reasons: string[] = [];
   if (!observation.metadata) {
     reasons.push(metadataBackfillReason());
@@ -352,7 +367,11 @@ function metadataBackfillReason(): string {
   return "structured lifecycle metadata backfill required before automated retirement can proceed";
 }
 
-function withReasons(item: WorktreeLifecycleObservation, lane: WorktreeLifecycleLane, reasons: string[]) {
+function withReasons(
+  item: NormalizedWorktreeLifecycleObservation,
+  lane: WorktreeLifecycleLane,
+  reasons: string[],
+) {
   return {
     ...item,
     lane,
@@ -365,7 +384,7 @@ function divergentRemoteRefReason(remoteRef: WorktreeRemoteRef): string {
 }
 
 function classifyLifecycleUnitInternal(
-  observation: WorktreeLifecycleObservation,
+  observation: NormalizedWorktreeLifecycleObservation,
   nowMs: number,
 ): WorktreeLifecycleItem {
   if (observation.isPrimary || observation.protectedBranch) {
@@ -479,17 +498,20 @@ function classifyLifecycleUnitInternal(
   ]);
 }
 
+function normalizeLifecycleObservation(
+  observation: WorktreeLifecycleObservationInput,
+): NormalizedWorktreeLifecycleObservation {
+  return {
+    ...observation,
+    taskRefs: observation.taskRefs ?? [],
+  };
+}
+
 export function classifyLifecycleUnit(
-  observation: WorktreeLifecycleObservation,
+  observation: WorktreeLifecycleObservationInput,
   nowMs = Date.now(),
 ): WorktreeLifecycleItem {
-  return classifyLifecycleUnitInternal(
-    {
-      ...observation,
-      taskRefs: observation.taskRefs ?? [],
-    },
-    nowMs,
-  );
+  return classifyLifecycleUnitInternal(normalizeLifecycleObservation(observation), nowMs);
 }
 
 function normalizeLegacyRef(branch: string | null, ref: string | null | undefined): string | null {
@@ -502,7 +524,7 @@ function hasOwnProperty(value: object, key: PropertyKey): boolean {
 
 function normalizeWorktreeObservation(
   observation: WorktreeObservation,
-): WorktreeLifecycleObservation {
+): NormalizedWorktreeLifecycleObservation {
   return {
     kind: observation.kind ?? "worktree",
     path: observation.path,
