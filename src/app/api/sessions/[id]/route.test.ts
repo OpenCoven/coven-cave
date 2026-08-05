@@ -6,7 +6,7 @@ const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   route,
-  /if \(body\.titleOwnership === "auto"\)[\s\S]*setSessionTitleAutoIfOwned\(id, body\.title, safeDefaults, !body\.replaceManualTitle\)/,
+  /if \(body\.titleOwnership === "auto"\)[\s\S]*setSessionTitleAutoIfOwned\([\s\S]*takeoverVersion/,
   "automatic title PATCHes use the atomic ownership gate",
 );
 assert.match(
@@ -52,8 +52,18 @@ assert.match(
 );
 assert.match(
   route,
-  /setSessionTitleAutoIfOwned\(id, body\.title, safeDefaults, !body\.replaceManualTitle\)/,
-  "preserveManualTitles is the inverse of replaceManualTitle — absent flag preserves, true flag takes over",
+  /const takeoverVersion = sessionTitleVersion\(state, id\)/,
+  "explicit takeover snapshots title value and ownership before the atomic write",
+);
+assert.match(
+  route,
+  /body\.replaceManualTitle[\s\S]*current !== undefined[\s\S]*!observedDefaults\.has\(current\)/,
+  "a takeover already stale against the title observed by the sparkle is refused",
+);
+assert.match(
+  route,
+  /setSessionTitleAutoIfOwned\([\s\S]*!body\.replaceManualTitle,[\s\S]*body\.replaceManualTitle \? takeoverVersion : undefined/,
+  "explicit takeover passes its observed version into the atomic ownership mutation",
 );
 
 console.log("sessions [id] route.test.ts: ok");

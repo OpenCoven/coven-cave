@@ -365,6 +365,23 @@ export type CaveState = {
   travel: CaveTravelState;
 };
 
+export type SessionTitleVersion = Readonly<{
+  title: string | undefined;
+  autoTitle: string | undefined;
+  manuallyOwned: boolean;
+}>;
+
+export function sessionTitleVersion(
+  state: CaveState,
+  sessionId: string,
+): SessionTitleVersion {
+  return {
+    title: state.sessionTitles[sessionId],
+    autoTitle: state.sessionTitleAuto[sessionId],
+    manuallyOwned: state.sessionTitleManual[sessionId] === true,
+  };
+}
+
 async function loadConfigUnlocked(): Promise<CaveConfig> {
   try {
     const raw = await readFile(CONFIG_PATH, "utf8");
@@ -935,15 +952,18 @@ export async function setSessionTitleAuto(sessionId: string, title: string): Pro
  * supplied autoDefaults, or matches the current sessionTitleAuto provenance.
  * This lets legacy defaults be claimed without confusing an equal manually
  * chosen title for an automatic one. When preserveManualTitles is false, the
- * caller may explicitly take ownership of any current title. Returns the
- * written title, or null if a manual title was preserved. Trim/empty input is a
- * no-op (returns null).
+ * caller may explicitly take ownership of any current title. An optional
+ * expectedVersion makes that takeover a compare-and-set across title value and
+ * provenance, so a rename after observation wins. Returns the written title,
+ * or null if a manual title or version conflict was preserved. Trim/empty input
+ * is a no-op (returns null).
  */
 export async function setSessionTitleAutoIfOwned(
   sessionId: string,
   title: string,
   autoDefaults: ReadonlySet<string>,
   preserveManualTitles = true,
+  expectedVersion?: SessionTitleVersion,
 ): Promise<string | null> {
   const trimmed = title.trim();
   if (!trimmed) return null;
@@ -951,6 +971,16 @@ export async function setSessionTitleAutoIfOwned(
     const current = state.sessionTitles[sessionId];
     const currentAuto = state.sessionTitleAuto[sessionId];
     const explicitlyManual = state.sessionTitleManual[sessionId] === true;
+    if (
+      expectedVersion &&
+      (
+        current !== expectedVersion.title ||
+        currentAuto !== expectedVersion.autoTitle ||
+        explicitlyManual !== expectedVersion.manuallyOwned
+      )
+    ) {
+      return null;
+    }
     // Write only when the title is absent, is a known auto default, or was
     // previously written by an auto path (provenance match). Explicit manual
     // ownership wins over text equality with a default.

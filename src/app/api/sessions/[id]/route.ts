@@ -10,6 +10,7 @@ import {
   setSessionPinnedLocal,
   setSessionTitle,
   setSessionTitleAutoIfOwned,
+  sessionTitleVersion,
   summonSessionLocal,
 } from "@/lib/cave-config";
 import {
@@ -133,7 +134,20 @@ export async function PATCH(
       const safeDefaults = new Set([defaultChatTitleForSession(id)]);
       if (current && observedDefaults.has(current)) safeDefaults.add(current);
 
-      const next = await setSessionTitleAutoIfOwned(id, body.title, safeDefaults, !body.replaceManualTitle);
+      const takeoverVersion = sessionTitleVersion(state, id);
+      const takeoverConflicted =
+        body.replaceManualTitle === true &&
+        current !== undefined &&
+        !observedDefaults.has(current);
+      const next = takeoverConflicted
+        ? null
+        : await setSessionTitleAutoIfOwned(
+            id,
+            body.title,
+            safeDefaults,
+            !body.replaceManualTitle,
+            body.replaceManualTitle ? takeoverVersion : undefined,
+          );
       result.titleUpdated = next !== null;
       result.title = next ?? (await loadState()).sessionTitles[id] ?? null;
     } else {

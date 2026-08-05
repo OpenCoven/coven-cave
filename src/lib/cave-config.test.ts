@@ -262,6 +262,66 @@ try {
     "policy takeover records automatic provenance",
   );
 
+  // An explicit sparkle takeover observes the current title before its write.
+  // A manual rename that lands after that observation must win the atomic
+  // compare-and-set rather than being overwritten by the generated title.
+  const observedTakeoverVersion = config.sessionTitleVersion(state, "session-owned");
+  await config.setSessionTitle("session-owned", "Newer manual title");
+  const conflictedTakeover = await config.setSessionTitleAutoIfOwned(
+    "session-owned",
+    "Stale sparkle title",
+    new Set(["New chat"]),
+    false,
+    observedTakeoverVersion,
+  );
+  assert.equal(conflictedTakeover, null, "stale explicit takeover reports a conflict");
+  state = await config.loadState();
+  assert.equal(
+    state.sessionTitles["session-owned"],
+    "Newer manual title",
+    "a manual rename after sparkle observation is preserved",
+  );
+  assert.equal(state.sessionTitleManual["session-owned"], true);
+  assert.equal(state.sessionTitleAuto["session-owned"], undefined);
+
+  // Ownership is part of the version: choosing the same visible text manually
+  // after observation is still a conflict and must not be reclaimed.
+  await config.setSessionTitleAuto("session-owned", "Same visible title");
+  state = await config.loadState();
+  const observedAutoVersion = config.sessionTitleVersion(state, "session-owned");
+  await config.setSessionTitle("session-owned", "Same visible title");
+  assert.equal(
+    await config.setSessionTitleAutoIfOwned(
+      "session-owned",
+      "Stale same-text sparkle",
+      new Set(["New chat"]),
+      false,
+      observedAutoVersion,
+    ),
+    null,
+    "an ownership-only change conflicts with an explicit takeover",
+  );
+  state = await config.loadState();
+  assert.equal(state.sessionTitles["session-owned"], "Same visible title");
+  assert.equal(state.sessionTitleManual["session-owned"], true);
+
+  // Without an intervening change, the same version authorizes the explicit
+  // takeover and preserves normal automatic provenance.
+  const uncontestedVersion = config.sessionTitleVersion(state, "session-owned");
+  assert.equal(
+    await config.setSessionTitleAutoIfOwned(
+      "session-owned",
+      "Fresh sparkle title",
+      new Set(["New chat"]),
+      false,
+      uncontestedVersion,
+    ),
+    "Fresh sparkle title",
+  );
+  state = await config.loadState();
+  assert.equal(state.sessionTitleAuto["session-owned"], "Fresh sparkle title");
+  assert.equal(state.sessionTitleManual["session-owned"], undefined);
+
   // Trim/empty input is a no-op (returns null).
   assert.equal(
     await config.setSessionTitleAutoIfOwned("session-owned2", "   ", new Set(["New chat"])),
