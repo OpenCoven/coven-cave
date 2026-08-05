@@ -3374,6 +3374,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       : modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
       ? modelState.effectiveModel
       : "";
+  const [composerCaret, setComposerCaret] = useState(0);
+  const completeComposerText = useCallback((nextText: string, nextCaret: number) => {
+    setInput(nextText);
+    setComposerCaret(nextCaret);
+    requestAnimationFrame(() => {
+      const textarea = inputRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(nextCaret, nextCaret);
+    });
+  }, []);
   const {
     skills,
     prompts,
@@ -3389,10 +3400,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     slashIdx,
     setSlashIdx,
     slashListboxId,
+    completeCommand,
     handleKeyDown: handleMenuKey,
   } = useInlineSlashMenus({
     text: input,
     setText: setInput,
+    caret: composerCaret,
+    onCompleteText: completeComposerText,
     modelHarness,
     modelOptionsOverride: composerModelOptions,
     onPickModel: (id) => {
@@ -3468,9 +3482,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // @-file mentions (CHAT-D1-04). Typing `@` opens a workspace-file picker
   // for the selected predetermined project. The file index is fetched once
   // per root from /api/project/files and fuzzy-filtered client-side. Mentions
-  // stay disjoint from the slash menu: `@` is mid-token, `/` first-token-only.
+  // stay disjoint from the slash menu because each requires its own boundary.
   const mentionRoot = activeProjectRoot.trim();
-  const [composerCaret, setComposerCaret] = useState(0);
   const [mentionIdx, setMentionIdx] = useState(0);
   // Esc hides the picker for the current input; any edit brings it back.
   const [mentionDismissed, setMentionDismissed] = useState(false);
@@ -5797,6 +5810,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               : {}),
           }
         : undefined;
+      if (
+        (initialAttachments?.length ?? 0) === 0 &&
+        intentFromSlash(initialPrompt)
+      ) {
+        return;
+      }
       void sendRaw(
         initialPrompt,
         initialAttachments ?? [],
@@ -6775,7 +6794,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                           ref={active ? activeSlashOptionRef : null}
                           onMouseEnter={() => setSlashIdx(i)}
                           onClick={() => {
-                            setInput(cmd.name + (cmd.argPlaceholder ? " " : ""));
+                            completeCommand(cmd.name, Boolean(cmd.argPlaceholder));
                             inputRef.current?.focus();
                           }}
                           className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
