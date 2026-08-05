@@ -244,7 +244,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
   }, []);
   useRovingTabIndex({
     containerRef: navScrollRef,
-    itemSelector: ".sidebar-folder-row",
+    itemSelector: ".sidebar-section-label, .sidebar-folder-row",
     orientation: "vertical",
     itemsVersion: navItemsVersion,
   });

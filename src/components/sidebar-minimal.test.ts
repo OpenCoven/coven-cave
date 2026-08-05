@@ -123,6 +123,11 @@ assert.match(
 );
 assert.match(
   source,
+  /itemSelector: "\.sidebar-section-label, \.sidebar-folder-row"/,
+  "section toggles and destinations share one roving keyboard sequence",
+);
+assert.match(
+  source,
   /<div id=\{contentId\} className="sidebar-section__content">\s*\{children\}/,
   "section rows remain mounted so the icon rail can render every destination",
 );
