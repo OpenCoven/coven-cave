@@ -6027,10 +6027,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             // re-adopt via the done stable-ID fallback.
             displayedCreationRunIdRef.current = null;
           }
-          // Router promotion is display-owned for both new and resumed runs. A
-          // background replacement still refreshes the authoritative sidebar
-          // after persistence in the done handler below.
-          if (owned) {
+          // Router promotion is restricted to null-origin (sessionless) generations
+          // that own the displayed view. A non-null-origin replacement/fork run must
+          // never promote the router — only dispatch a sidebar refresh (done handler's
+          // shouldReplacementRefresh path), or it can race a fresh null compose and
+          // cause ChatRouter to promote the stale fork.
+          if (owned && liveGeneration.originSessionId === null) {
             onSessionStarted?.(ev.sessionId);
           }
         }
@@ -6211,7 +6213,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             // Clear display ownership after adoption (same as session event path).
             displayedCreationRunIdRef.current = null;
           }
-          if (owned) {
+          // Null-origin guard: only a sessionless generation (originSessionId === null)
+          // that owns the displayed view may promote the router. Non-null-origin
+          // replacement/fork runs refresh only through shouldReplacementRefresh below.
+          if (owned && liveGeneration.originSessionId === null) {
             onSessionStarted?.(ev.sessionId);
           }
         }
