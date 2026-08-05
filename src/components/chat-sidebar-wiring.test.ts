@@ -127,28 +127,28 @@ assert.match(
 );
 assert.match(
   chatAttentionEvents,
-  /export function emitChatAttentionClear\([\s\S]*sessionId: string,[\s\S]*operationId: string,[\s\S]*options\?: \{[\s\S]*scopeKey\?: string \| null;[\s\S]*baselineAttention\?: ChatAttention \| null;[\s\S]*\},[\s\S]*\): void \{/,
-  "the clear event emitter should accept optional scope and baseline evidence without breaking the session+operation API",
+  /export function emitChatAttentionClear\([\s\S]*sessionId: string,[\s\S]*operationId: string,[\s\S]*options\?: \{[\s\S]*clearWatermark\?: string \| null;[\s\S]*scopeKey\?: string \| null;[\s\S]*baselineAttention\?: ChatAttention \| null;[\s\S]*\},[\s\S]*\): void \{/,
+  "the clear event emitter should accept optional watermark, scope, and baseline evidence without breaking the session+operation API",
 );
 assert.match(
   chatAttentionEvents,
-  /const scopeKey = normalizeString\(detail\?\.scopeKey\);[\s\S]*const baselineAttention = normalizeAttentionDetail\(detail\?\.baselineAttention\);[\s\S]*return sessionId && operationId[\s\S]*sessionId,[\s\S]*operationId,[\s\S]*\.\.\.\(scopeKey \? \{ scopeKey \} : \{\}\),[\s\S]*\.\.\.\(baselineAttention \? \{ baselineAttention \} : \{\}\),[\s\S]*: null;/,
-  "clear-event parsing should preserve optional scope and baseline evidence while remaining compatible with two-field events",
+  /const clearWatermark = normalizeClearWatermark\(detail\?\.clearWatermark\);[\s\S]*const scopeKey = normalizeString\(detail\?\.scopeKey\);[\s\S]*const baselineAttention = normalizeAttentionDetail\(detail\?\.baselineAttention\);[\s\S]*return sessionId && operationId[\s\S]*sessionId,[\s\S]*operationId,[\s\S]*\.\.\.\(clearWatermark \? \{ clearWatermark \} : \{\}\),[\s\S]*\.\.\.\(scopeKey \? \{ scopeKey \} : \{\}\),[\s\S]*\.\.\.\(baselineAttention \? \{ baselineAttention \} : \{\}\),[\s\S]*: null;/,
+  "clear-event parsing should preserve optional watermark, scope, and baseline evidence while remaining compatible with two-field events",
 );
 assert.match(
   chatView,
-  /function emitAttentionClear\(\s*targetSessionId: string,\s*operationId: string,\s*\) \{[\s\S]*emitChatAttentionClear\(targetSessionId, operationId, \{[\s\S]*scopeKey:[\s\S]*baselineAttention:[\s\S]*\}\);[\s\S]*\}/,
-  "chat-view should emit attention clears with the session's actual scope and any known baseline evidence",
+  /function emitAttentionClear\(\s*targetSessionId: string,\s*operationId: string,\s*clearWatermark\?: string \| null,\s*\) \{[\s\S]*emitChatAttentionClear\(targetSessionId, operationId, \{[\s\S]*clearWatermark,[\s\S]*scopeKey:[\s\S]*baselineAttention:[\s\S]*\}\);[\s\S]*\}/,
+  "chat-view should emit attention clears with the stable watermark, actual scope, and any known baseline evidence",
 );
 assert.match(
   chatView,
-  /if \(liveGeneration\.sessionId\) \{\s*emitAttentionClear\(liveGeneration\.sessionId, runId\);[\s\S]{0,240}const res = await fetch\("\/api\/chat\/send"/,
-  "chat-view should clear attention immediately once the target session id is known, before /api/chat/send begins",
+  /if \(liveGeneration\.sessionId\) \{\s*emitAttentionClear\(liveGeneration\.sessionId, runId, liveGeneration\.clearWatermark\);[\s\S]{0,240}const res = await fetch\("\/api\/chat\/send"/,
+  "chat-view should clear attention immediately once the target session id is known, before /api/chat/send begins, using the generation's stable watermark",
 );
 assert.match(
   chatView,
-  /case "session": \{[\s\S]*?emitAttentionClear\(ev\.sessionId, liveGeneration\.runId\);/,
-  "chat-view should clear attention when a live generation first gains a stable session id",
+  /case "session": \{[\s\S]*?emitAttentionClear\(ev\.sessionId, liveGeneration\.runId, liveGeneration\.clearWatermark\);/,
+  "chat-view should clear attention when a live generation first gains a stable session id, using the original send watermark",
 );
 assert.match(
   chatView,
@@ -218,12 +218,12 @@ assert.match(
 );
 assert.match(
   chatView,
-  /if \(liveGeneration\.sessionId\) \{\s*emitAttentionClear\(liveGeneration\.sessionId, runId\);\s*attentionSettlement\.markAttentionCleared\(liveGeneration\.sessionId\);/,
+  /if \(liveGeneration\.sessionId\) \{\s*emitAttentionClear\(liveGeneration\.sessionId, runId, liveGeneration\.clearWatermark\);\s*attentionSettlement\.markAttentionCleared\(liveGeneration\.sessionId\);/,
   "chat-view should track pre-send attention clears on existing sessions",
 );
 assert.match(
   chatView,
-  /case "session": \{[\s\S]*?emitAttentionClear\(ev\.sessionId, liveGeneration\.runId\);\s*liveGeneration\.markAttentionCleared\(ev\.sessionId\);/,
+  /case "session": \{[\s\S]*?emitAttentionClear\(ev\.sessionId, liveGeneration\.runId, liveGeneration\.clearWatermark\);\s*liveGeneration\.markAttentionCleared\(ev\.sessionId\);/,
   "session events should remain id acquisition plus attention-clear bookkeeping, not persistence confirmation",
 );
 assert.match(
@@ -262,8 +262,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /function maybeEmitAdoptedPendingAttentionClear\([\s\S]*?targetSessionId: string,[\s\S]*?live: LiveChatGenerationSnapshot,[\s\S]*?\) \{[\s\S]*?if \(!isLiveGenerationPending\(live\) \|\| !live\.runId\) return;[\s\S]*?if \(!adoptedPendingAttentionClearRef\.current\.shouldEmit\(targetSessionId, live\.runId\)\) return;[\s\S]*?emitAttentionClear\(targetSessionId, live\.runId\);/,
-  "chat-view should centralize adopted pending-generation clears behind a one-per-lifecycle helper",
+  /function maybeEmitAdoptedPendingAttentionClear\([\s\S]*?targetSessionId: string,[\s\S]*?live: LiveChatGenerationSnapshot,[\s\S]*?\) \{[\s\S]*?if \(!isLiveGenerationPending\(live\) \|\| !live\.runId\) return;[\s\S]*?if \(!adoptedPendingAttentionClearRef\.current\.shouldEmit\(targetSessionId, live\.runId\)\) return;[\s\S]*?emitAttentionClear\(targetSessionId, live\.runId, attentionClearWatermarkForLiveGeneration\(live\)\);/,
+  "chat-view should centralize adopted pending-generation clears behind a one-per-lifecycle helper that reuses the snapshot watermark",
 );
 assert.match(
   chatView,

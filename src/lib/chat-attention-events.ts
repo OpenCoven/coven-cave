@@ -1,4 +1,4 @@
-import type { ChatAttention } from "./chat-attention.ts";
+import { isCanonicalIsoInstant, type ChatAttention } from "./chat-attention.ts";
 import { CHAT_ATTENTION_REASONS, type ChatAttentionReason } from "./chat-attention-marker.ts";
 import type { ChatAttentionSettlementOutcome } from "./chat-attention-projection.ts";
 
@@ -8,6 +8,7 @@ export const CHAT_ATTENTION_SETTLE_EVENT = "cave:chat-attention-settle";
 export type ChatAttentionClearDetail = {
   sessionId: string;
   operationId: string;
+  clearWatermark?: string;
   scopeKey?: string;
   baselineAttention?: ChatAttention;
 };
@@ -43,17 +44,24 @@ function normalizeAttentionDetail(value: unknown): ChatAttention | null {
   };
 }
 
+function normalizeClearWatermark(value: unknown): string | null {
+  const normalized = normalizeString(value);
+  return normalized && isCanonicalIsoInstant(normalized) ? normalized : null;
+}
+
 function attentionEventDetail(event: Event, type: string): ChatAttentionClearDetail | null {
   if (event.type !== type) return null;
   const detail = (event as CustomEvent<Record<string, unknown> | null>).detail;
   const sessionId = normalizeString(detail?.sessionId);
   const operationId = normalizeString(detail?.operationId);
+  const clearWatermark = normalizeClearWatermark(detail?.clearWatermark);
   const scopeKey = normalizeString(detail?.scopeKey);
   const baselineAttention = normalizeAttentionDetail(detail?.baselineAttention);
   return sessionId && operationId
     ? {
       sessionId,
       operationId,
+      ...(clearWatermark ? { clearWatermark } : {}),
       ...(scopeKey ? { scopeKey } : {}),
       ...(baselineAttention ? { baselineAttention } : {}),
     }
@@ -64,6 +72,7 @@ export function emitChatAttentionClear(
   sessionId: string,
   operationId: string,
   options?: {
+    clearWatermark?: string | null;
     scopeKey?: string | null;
     baselineAttention?: ChatAttention | null;
   },
@@ -71,6 +80,7 @@ export function emitChatAttentionClear(
   if (typeof window === "undefined") return;
   const normalizedSessionId = normalizeString(sessionId);
   const normalizedOperationId = normalizeString(operationId);
+  const normalizedClearWatermark = normalizeClearWatermark(options?.clearWatermark);
   const normalizedScopeKey = normalizeString(options?.scopeKey);
   const normalizedBaselineAttention = normalizeAttentionDetail(options?.baselineAttention);
   if (!normalizedSessionId || !normalizedOperationId) return;
@@ -78,6 +88,7 @@ export function emitChatAttentionClear(
     detail: {
       sessionId: normalizedSessionId,
       operationId: normalizedOperationId,
+      ...(normalizedClearWatermark ? { clearWatermark: normalizedClearWatermark } : {}),
       ...(normalizedScopeKey ? { scopeKey: normalizedScopeKey } : {}),
       ...(normalizedBaselineAttention ? { baselineAttention: normalizedBaselineAttention } : {}),
     },

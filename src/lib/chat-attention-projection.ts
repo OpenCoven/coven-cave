@@ -1,10 +1,15 @@
-import { NO_CHAT_ATTENTION, type ChatAttention } from "./chat-attention.ts";
+import {
+  isCanonicalIsoInstant,
+  NO_CHAT_ATTENTION,
+  type ChatAttention,
+} from "./chat-attention.ts";
 import type { SessionRow } from "./types.ts";
 
 type PendingProjection = {
   status: "pending";
   scopeKey: string;
   baseline: ChatAttention | null;
+  clearWatermark?: string;
 };
 
 type PersistedProjection = {
@@ -12,6 +17,7 @@ type PersistedProjection = {
   canonicalAfterRequestId: number;
   scopeKey: string;
   baseline: ChatAttention | null;
+  clearWatermark?: string;
   firstAcceptedAttention?: ChatAttention;
 };
 
@@ -203,6 +209,7 @@ export function recordChatAttentionClear(
   operationId: string,
   scopeKey: string,
   canonicalAttention: ChatAttention | null | undefined,
+  clearWatermark?: string | null,
 ): ChatAttentionClearRecordResult {
   if (isChatAttentionOperationTombstoned(state, sessionId, operationId)) {
     return { recorded: false, reason: "tombstoned" };
@@ -228,6 +235,7 @@ export function recordChatAttentionClear(
   const baseline = normalizedCanonical?.state !== "none"
     ? normalizedCanonical
     : trackedCanonical;
+  const normalizedClearWatermark = normalizeIsoInstant(clearWatermark);
   if (!operations && !baseline && hasCanonicalAttention) return { recorded: false, reason: "no-baseline" };
 
   const nextOperations = operations ?? new Map<string, ProjectionOperation>();
@@ -239,6 +247,7 @@ export function recordChatAttentionClear(
     status: "pending",
     scopeKey,
     baseline,
+    ...(normalizedClearWatermark ? { clearWatermark: normalizedClearWatermark } : {}),
   });
   touchSessionProjectionBucket(state, sessionId);
   evictOldestSessionProjectionBuckets(state);
@@ -269,6 +278,7 @@ export function settleChatAttentionClear(
     canonicalAfterRequestId,
     scopeKey: operation.scopeKey,
     baseline: operation.baseline,
+    clearWatermark: operation.clearWatermark,
   });
 }
 
@@ -326,6 +336,17 @@ function attentionMatchesBaseline(attention: ChatAttention, baseline: ChatAttent
   return attentionIdentity(attention) === attentionIdentity(baseline);
 }
 
+function normalizeIsoInstant(value: string | null | undefined): string | null {
+  return isCanonicalIsoInstant(value) ? value : null;
+}
+
+function isoInstantMs(value: string | null | undefined): number | null {
+  const normalized = normalizeIsoInstant(value);
+  if (!normalized) return null;
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function applyChatAttentionProjections(
   state: ChatAttentionProjectionState,
   rows: readonly SessionRow[],
@@ -375,6 +396,15 @@ export function applyChatAttentionProjections(
       if (row.attention.state === "none") {
         operations.delete(operationId);
         tombstoneChatAttentionOperation(state, row.id, operationId);
+        continue;
+      }
+      const clearWatermarkMs = isoInstantMs(operation.clearWatermark);
+      if (clearWatermarkMs !== null) {
+        const acceptedSinceMs = isoInstantMs(row.attention.since);
+        if (acceptedSinceMs !== null && acceptedSinceMs >= clearWatermarkMs) {
+          operations.delete(operationId);
+          tombstoneChatAttentionOperation(state, row.id, operationId);
+        }
         continue;
       }
       if (!operation.firstAcceptedAttention) {

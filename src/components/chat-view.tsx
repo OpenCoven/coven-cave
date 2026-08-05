@@ -529,6 +529,7 @@ type LiveStreamGeneration = {
   originSessionId: string | null;
   controller: AbortController;
   runId: string;
+  clearWatermark: string;
   streamHealth: () => ChatStreamClientHealth;
   markAttentionCleared: (sessionId: string) => void;
   markPersistenceConfirmed: () => void;
@@ -538,6 +539,7 @@ function liveStreamMetadata(liveGeneration: LiveStreamGeneration): LiveChatGener
   return {
     runId: liveGeneration.runId,
     streamHealth: liveGeneration.streamHealth(),
+    clearWatermark: liveGeneration.clearWatermark,
   };
 }
 type ComposerThinkingEffort = CommandThinkingEffort;
@@ -3117,20 +3119,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ) {
     if (!isLiveGenerationPending(live) || !live.runId) return;
     if (!adoptedPendingAttentionClearRef.current.shouldEmit(targetSessionId, live.runId)) return;
-    emitAttentionClear(targetSessionId, live.runId);
+    emitAttentionClear(targetSessionId, live.runId, attentionClearWatermarkForLiveGeneration(live));
   }
 
   function emitAttentionClear(
     targetSessionId: string,
     operationId: string,
+    clearWatermark?: string | null,
   ) {
     const knownSession = session?.id === targetSessionId
       ? session
       : sessions?.find((entry) => entry.id === targetSessionId) ?? null;
     emitChatAttentionClear(targetSessionId, operationId, {
+      clearWatermark,
       scopeKey: chatAttentionProjectionScopeKey(knownSession?.familiarId ?? familiar.id),
       baselineAttention: knownSession?.attention ?? null,
     });
+  }
+
+  function attentionClearWatermarkForLiveGeneration(live: LiveChatGenerationSnapshot): string | null {
+    return live.clearWatermark ?? live.turns.find((turn) => turn.id === live.activeLeafId)?.createdAt ?? null;
   }
 
   function persistLiveTurns(
@@ -5050,6 +5058,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       originSessionId: initialLiveSessionId,
       controller,
       runId,
+      clearWatermark: now,
       streamHealth: () => generationStreamHealth,
       markAttentionCleared: (sessionId) => {
         attentionSettlement.markAttentionCleared(sessionId);
@@ -5138,6 +5147,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         updatedAt: Date.now(),
         runId,
         streamHealth: generationStreamHealth,
+        clearWatermark: now,
       });
     }
     try {
@@ -5151,7 +5161,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // must not be painted on a later revisit of this thread.
       if (liveGeneration.sessionId) invalidateConversation(liveGeneration.sessionId);
       if (liveGeneration.sessionId) {
-        emitAttentionClear(liveGeneration.sessionId, runId);
+        emitAttentionClear(liveGeneration.sessionId, runId, liveGeneration.clearWatermark);
         attentionSettlement.markAttentionCleared(liveGeneration.sessionId);
       }
       const res = await fetch("/api/chat/send", {
@@ -6104,7 +6114,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ) => {
     switch (ev.kind) {
     case "session": {
-      emitAttentionClear(ev.sessionId, liveGeneration.runId);
+      emitAttentionClear(ev.sessionId, liveGeneration.runId, liveGeneration.clearWatermark);
       liveGeneration.markAttentionCleared(ev.sessionId);
       liveGeneration.sessionId = ev.sessionId;
       if (ev.sessionId !== currentSessionRef.current) {

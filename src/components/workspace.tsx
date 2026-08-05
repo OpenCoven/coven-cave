@@ -588,6 +588,7 @@ export function Workspace() {
           detail.operationId,
           detail.scopeKey ?? chatAttentionProjectionScopeKey(activeIdRef.current),
           baselineAttention,
+          detail.clearWatermark,
         );
         if (!recordResult.recorded) return;
       }

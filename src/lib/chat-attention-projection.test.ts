@@ -522,6 +522,111 @@ test("an unknown-baseline persisted clear yields once canonical attention proves
   assert.equal(state.has("session-1"), false);
 });
 
+test("an unknown-baseline persisted clear with a watermark releases when the first canonical row is already newer attention", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    undefined,
+    "2026-08-05T00:01:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  const newerRequest = [row({
+    attention: { state: "awaiting-human", since: "2026-08-05T00:01:00.000Z", reason: "approval" },
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, newerRequest, 6, chatAttentionProjectionScopeKey("nova")),
+    newerRequest,
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
+test("an unknown-baseline persisted clear with a watermark keeps the first stale row masked until newer attention appears", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    undefined,
+    "2026-08-05T00:02:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  const staleCanonical = [row({
+    attention: { state: "awaiting-human", since: "2026-08-05T00:01:59.999Z", reason: "approval" },
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, staleCanonical, 6, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
+    "none",
+  );
+  assert.equal(state.has("session-1"), true);
+
+  const newerRequest = [row({
+    attention: { state: "awaiting-human", since: "2026-08-05T00:02:00.001Z", reason: "approval" },
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, newerRequest, 7, chatAttentionProjectionScopeKey("nova")),
+    newerRequest,
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
+test("an unknown-baseline persisted clear with a watermark treats equal timestamps as newer evidence", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    undefined,
+    "2026-08-05T00:03:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  const boundaryRequest = [row({
+    attention: { state: "awaiting-human", since: "2026-08-05T00:03:00.000Z", reason: "decision" },
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, boundaryRequest, 6, chatAttentionProjectionScopeKey("nova")),
+    boundaryRequest,
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
+test("an unknown-baseline persisted clear with a watermark stays conservative on malformed first evidence but later valid evidence releases it", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    undefined,
+    "2026-08-05T00:04:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  assert.equal(
+    applyChatAttentionProjections(state, [row({
+      attention: { state: "awaiting-human", since: "not-an-iso", reason: "approval" },
+    })], 6, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
+    "none",
+  );
+  assert.equal(state.has("session-1"), true);
+
+  const validNewerRequest = [row({
+    attention: { state: "awaiting-human", since: "2026-08-05T00:04:30.000Z", reason: "approval" },
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, validNewerRequest, 7, chatAttentionProjectionScopeKey("nova")),
+    validNewerRequest,
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
 test("an unknown-baseline off-list clear recorded under its true scope survives an empty unrelated scope", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
