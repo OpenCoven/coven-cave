@@ -321,6 +321,46 @@ assert.equal(failedSummary?.exitCode, 1, "failed conversation summaries expose e
 assert.equal(await deleteConversation("summary-ok"), true);
 assert.equal(await deleteConversation("summary-failed"), true);
 
+await saveConversation({
+  sessionId: "legacy-linear-conversation",
+  familiarId: "charm",
+  harness: "claude",
+  title: "Legacy linear conversation",
+  createdAt: "2026-06-12T01:00:00.000Z",
+  updatedAt: "2026-06-12T01:01:00.000Z",
+  turns: [
+    {
+      id: "legacy-linear-user",
+      role: "user",
+      text: "Need approval?",
+      createdAt: "2026-06-12T01:00:00.000Z",
+    },
+    {
+      id: "legacy-linear-assistant",
+      role: "assistant",
+      text: "Yes.",
+      createdAt: "2026-06-12T01:01:00.000Z",
+    },
+  ],
+});
+const legacyLinearConv = await loadConversation("legacy-linear-conversation");
+assert.equal(
+  legacyLinearConv?.activeLeafId,
+  "legacy-linear-assistant",
+  "genuinely legacy turns without parentId still linearize to the newest turn",
+);
+assert.equal(
+  legacyLinearConv?.turns[0]?.parentId,
+  null,
+  "legacy linearization still marks the first historical turn as the root",
+);
+assert.equal(
+  legacyLinearConv?.turns[1]?.parentId,
+  "legacy-linear-user",
+  "legacy linearization still links later historical turns in createdAt order",
+);
+assert.equal(await deleteConversation("legacy-linear-conversation"), true);
+
 // Issue #3266: metadata scans read each large transcript once, then use the
 // stat-keyed summary cache until that specific file changes.
 {
@@ -897,6 +937,8 @@ console.log("cave-conversations pending-marker test OK");
     "attention-corrupt-leaf",
     "attention-duplicate-leaf-id",
     "attention-ambiguous-missing-leaf",
+    "attention-explicit-null-roots",
+    "attention-legacy-missing-parent-links",
     "attention-request-resolved-by-malformed-user",
     "attention-requested-at-mismatch",
     "attention-request-cleared-by-equal-timestamp",
@@ -1350,6 +1392,85 @@ console.log("cave-conversations pending-marker test OK");
   });
 
   await saveConversation({
+    sessionId: "attention-explicit-null-roots",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Explicit null roots must not linearize",
+    createdAt: "2026-08-04T11:00:00.000Z",
+    updatedAt: "2026-08-04T11:06:00.000Z",
+    turns: [
+      {
+        id: "explicit-null-root-user",
+        role: "user",
+        text: "Need anything?",
+        createdAt: "2026-08-04T11:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "explicit-null-root-request",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T11:05:00.000Z",
+        parentId: null,
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-explicit-null-roots",
+            turnId: "explicit-null-root-request",
+            requestedAt: "2026-08-04T11:05:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      {
+        id: "explicit-null-root-answer",
+        role: "assistant",
+        text: "Here is the answer.",
+        createdAt: "2026-08-04T11:06:00.000Z",
+        parentId: null,
+      },
+    ],
+  });
+
+  await saveConversation({
+    sessionId: "attention-legacy-missing-parent-links",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Legacy missing parent links still linearize",
+    createdAt: "2026-08-04T11:10:00.000Z",
+    updatedAt: "2026-08-04T11:15:00.000Z",
+    turns: [
+      {
+        id: "legacy-missing-parent-user",
+        role: "user",
+        text: "Need anything?",
+        createdAt: "2026-08-04T11:10:00.000Z",
+      },
+      {
+        id: "legacy-missing-parent-request",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T11:15:00.000Z",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-legacy-missing-parent-links",
+            turnId: "legacy-missing-parent-request",
+            requestedAt: "2026-08-04T11:15:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+    ],
+  });
+
+  await saveConversation({
     sessionId: "attention-request-resolved-by-malformed-user",
     familiarId: "charm",
     harness: "claude",
@@ -1781,6 +1902,51 @@ console.log("cave-conversations pending-marker test OK");
       reason: null,
     },
     "an ambiguous branched conversation with no active leaf must not surface any attention state",
+  );
+
+  assert.equal(
+    byId.get("attention-explicit-null-roots")?.attentionEvidence,
+    undefined,
+    "multiple explicit null roots are ambiguous/corrupt, not legacy linear history",
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-explicit-null-roots")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "explicit null-root ambiguity must fail quiet instead of surfacing an abandoned request",
+  );
+
+  assert.deepEqual(byId.get("attention-legacy-missing-parent-links")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T11:15:00.000Z" },
+    latestUserTurnAt: "2026-08-04T11:10:00.000Z",
+    request: {
+      sessionId: "attention-legacy-missing-parent-links",
+      turnId: "legacy-missing-parent-request",
+      requestedAt: "2026-08-04T11:15:00.000Z",
+      reason: "approval",
+    },
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-legacy-missing-parent-links")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "awaiting-human",
+      since: "2026-08-04T11:15:00.000Z",
+      reason: "approval",
+    },
+    "genuinely legacy turns with no parentId must still linearize and surface active requests",
   );
 
   assert.deepEqual(byId.get("attention-request-resolved-by-malformed-user")?.attentionEvidence, {

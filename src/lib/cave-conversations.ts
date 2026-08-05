@@ -213,6 +213,10 @@ function hasDuplicateTurnIds(turns: Pick<ChatTurn, "id">[]): boolean {
   return false;
 }
 
+function isLegacyLinearHistory(turns: Pick<ChatTurn, "parentId">[]): boolean {
+  return turns.length > 0 && turns.every((turn) => turn.parentId === undefined);
+}
+
 function activeConversationTurns(conv: Pick<ConversationFile, "turns" | "activeLeafId">): ChatTurn[] {
   if (conv.turns.length === 0) return [];
   if (hasDuplicateTurnIds(conv.turns)) return [];
@@ -221,7 +225,7 @@ function activeConversationTurns(conv: Pick<ConversationFile, "turns" | "activeL
   if (structuralTurns.length === 0) return conv.turns;
 
   if (!conv.activeLeafId) {
-    if (structuralTurns.every((turn) => turn.parentId == null)) {
+    if (isLegacyLinearHistory(structuralTurns)) {
       const linearized = linearizeLegacy(structuralTurns);
       const linkedById = new Map(linearized.turns.map((turn) => [turn.id, turn]));
       const turns = conv.turns.map((turn) => linkedById.get(turn.id) ?? turn);
@@ -417,13 +421,20 @@ export async function loadConversation(sessionId: string): Promise<ConversationF
   try {
     const raw = await readFile(pathFor(sessionId), "utf8");
     const conv = JSON.parse(raw) as ConversationFile;
-    // Lazy migration: a pre-branching file has no activeLeafId. Linearize its
-    // turns into a single-path tree so callers always see tree shape. Written
-    // back to disk on the next saveConversation.
+    // Lazy migration: only genuinely pre-branching files (parentId absent
+    // throughout) are linearized here. Explicit null roots describe authored
+    // structure, so a missing activeLeafId there is ambiguous/corrupt and must
+    // not be rewritten into a fake linear history.
     if (!conv.activeLeafId && conv.turns.length > 0) {
-      const { turns, activeLeafId } = linearizeLegacy(conv.turns);
-      conv.turns = turns;
-      conv.activeLeafId = activeLeafId;
+      if (isLegacyLinearHistory(conv.turns)) {
+        const { turns, activeLeafId } = linearizeLegacy(conv.turns);
+        conv.turns = turns;
+        conv.activeLeafId = activeLeafId;
+      } else {
+        const structuralTurns = conv.turns.filter((turn) => !(turn.role === "system" && turn.parentId == null));
+        const inferredLeafId = soleResolvableLeafId(structuralTurns);
+        if (inferredLeafId) conv.activeLeafId = inferredLeafId;
+      }
     }
     return conv;
   } catch {
