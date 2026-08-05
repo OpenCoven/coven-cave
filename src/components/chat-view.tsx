@@ -370,6 +370,13 @@ type Props = {
   onOpenTask?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
   onProjectRootChange?: (projectRoot: string | null) => void;
+  /** Monotonically increasing nonce owned by ChatRouter. Incremented on every
+   *  explicit transition that opens a new blank compose (newChat imperative,
+   *  ChatList/sidebar onNewChat, familiar-switch, voice-discard). NOT incremented
+   *  on session promotion (null→sessionId), so the live stream survives.
+   *  When the nonce changes, ChatView revokes the previous compose's display
+   *  ownership, preventing a background send from A promoting into compose B. */
+  composeInstance?: number;
 };
 
 export type ChatViewHandle = {
@@ -1819,7 +1826,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, familiars = [], sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, familiars = [], sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange, composeInstance },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -2490,6 +2497,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Tracks which generation run currently owns the displayed view. Cleared on
   // thread switch, adoption, and unmount. See ownsDisplayedView for the guard.
   const displayedCreationRunIdRef = useRef<string | null>(null);
+  // When ChatRouter opens a new blank compose (explicit new-chat), it increments
+  // composeInstance. Revoke A's ownership so B (also null sessionId) can't be
+  // promoted by A's background session event (null→null race).
+  const isFirstComposeInstanceRef = useRef(true);
+  useEffect(() => {
+    if (isFirstComposeInstanceRef.current) {
+      isFirstComposeInstanceRef.current = false;
+      return;
+    }
+    displayedCreationRunIdRef.current = null;
+  }, [composeInstance]);
   const onSessionsChangedRef = useRef(onSessionsChanged);
   onSessionsChangedRef.current = onSessionsChanged;
   useEffect(() => {

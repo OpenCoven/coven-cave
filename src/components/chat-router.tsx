@@ -166,6 +166,16 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   ref,
 ) {
   const [view, setView] = useState<View>({ kind: "list" });
+  // Always-current ref so effects that use functional setView can still read
+  // the latest view without a stale closure (e.g. familiar-switch nonce guard).
+  const viewRef = useRef<View>(view);
+  viewRef.current = view;
+  // Monotonically increasing nonce passed to ChatView. Incremented on every
+  // explicit "open a new blank compose" transition so ChatView can revoke the
+  // previous compose's display-run ownership even when both are sessionId=null.
+  // NOT incremented on session promotion (null→sessionId) — that would remount
+  // and lose the live stream.
+  const [composeInstance, setComposeInstance] = useState(0);
   // Mirror the active session upward when it *changes*. Seeding the ref with
   // the mount value (always null — view starts as the list) means mount never
   // notifies, so a fresh router can't clobber the Workspace's optimistic
@@ -520,6 +530,18 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     }
     if (previousFamiliarIdRef.current === nextFamiliarId) return;
     previousFamiliarIdRef.current = nextFamiliarId;
+    // A familiar switch in chat mode opens a new blank compose (sessionId:null)
+    // unless the view was already bound to this familiar (router-initiated open).
+    // Increment composeInstance to revoke any in-flight send from the previous
+    // compose — mirrors the condition inside the setView updater below.
+    const currentView = viewRef.current;
+    if (
+      nextFamiliarId !== null &&
+      currentView.kind === "chat" &&
+      currentView.familiarId !== nextFamiliarId
+    ) {
+      setComposeInstance((n) => n + 1);
+    }
     setView((prev) =>
       nextFamiliarId === null
         ? { kind: "list" }
@@ -594,6 +616,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       goToList: () => setView({ kind: "list" }),
       newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin, initialControls?: InitialCommandControls, initialAttachments?: ChatAttachment[]) => {
         const next = selectFamiliarForChat(familiarId);
+        setComposeInstance((n) => n + 1);
         setView({
           kind: "chat",
           sessionId: null,
@@ -734,6 +757,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           // null so NewChatLaunch renders and asks, rather than adopting
           // visibleFamiliars[0] and silently making it the active familiar.
           const next = familiarId ? selectFamiliarForChat(familiarId) : null;
+          setComposeInstance((n) => n + 1);
           setView({ kind: "chat", sessionId: null, projectRoot, familiarId: next?.id ?? familiarId ?? null });
         }}
       />
@@ -820,6 +844,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         // the same familiar/project (same reset shape as the promotion
         // above, but back to sessionId: null) instead of leaving the user
         // typing into a session that no longer exists.
+        setComposeInstance((n) => n + 1);
         setView((prev) =>
           prev.kind === "chat"
             ? { kind: "chat", sessionId: null, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
@@ -831,6 +856,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       onOpenTask={onOpenTask}
       onOpenUrl={onOpenUrl}
       onProjectRootChange={syncSidebarProjectRoot}
+      composeInstance={composeInstance}
     />
   );
 
@@ -894,6 +920,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           // rather than fall back to whichever familiar sorts first.
           const nextFamiliarId = group?.defaultFamiliarId ?? familiar?.id ?? null;
           const next = nextFamiliarId ? selectFamiliarForChat(nextFamiliarId) : null;
+          setComposeInstance((n) => n + 1);
           setView({
             kind: "chat",
             sessionId: null,
