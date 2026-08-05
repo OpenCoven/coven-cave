@@ -114,17 +114,35 @@ const BOILERPLATE_ONLY_RE =
 // its current title. Multiword strings are always cut at the last word boundary,
 // even when that boundary is early in the string — a short first word followed
 // by a long second word must not collapse to null.
+const TRAILING_TITLE_PUNCTUATION_RE =
+  /[.,:;!?\u2026\u3002\uFF01\uFF1F][\s.,:;!?\u2026\u3002\uFF01\uFF1F]*$/u;
+const TRAILING_TRUNCATION_PUNCTUATION_RE =
+  /[.,:;!?\-–—\u2026\u3002\uFF01\uFF1F][\s.,:;!?\-–—\u2026\u3002\uFF01\uFF1F]*$/u;
+
+function stripTrailingTitlePunctuation(text: string): string {
+  return text.replace(TRAILING_TITLE_PUNCTUATION_RE, "").trimEnd();
+}
+
+function appendTruncationEllipsis(text: string): string {
+  const stem = text
+    .trimEnd()
+    .replace(TRAILING_TRUNCATION_PUNCTUATION_RE, "")
+    .trimEnd();
+  return `${stem}…`;
+}
+
 function clampAtWordBoundary(text: string, maxLen: number): string | null {
   if (text.length <= maxLen) return text;
   const slice = text.slice(0, maxLen - 1);
   const lastSpace = slice.lastIndexOf(" ");
   if (lastSpace < 0) return null;
-  return `${slice.slice(0, lastSpace).trimEnd().replace(/[,;:\-–—]$/, "")}…`;
+  return appendTruncationEllipsis(slice.slice(0, lastSpace));
 }
 
 function stripLineMarkdown(text: string): string {
   return text
     .replace(/^(?:\s{0,3}>\s*)+/gm, "")
+    .replace(/^[\t ]*(?:[-+*]|\d{1,9}[.)])[\t ]+(?:\[[ xX]\][\t ]+)?/gm, "")
     .replace(/^\s{0,3}\[[^\]]+\]:\s+\S+.*$/gm, " ");
 }
 
@@ -176,10 +194,10 @@ function formatGeneratedTitle(text: string): string | null {
   // emoji removal → trailing punctuation again, so "🎉: Fix parser." → "Fix parser"
   // and "Fix parser 🎉." are both fully cleaned.
   // Unicode sentence-ending punct (。！？) stripped alongside ASCII .!?
-  s = s.replace(/[.,:;!?\u3002\uFF01\uFF1F]+$/, "").trim();
+  s = stripTrailingTitlePunctuation(s).trim();
   s = stripLeadingTrailingEmoji(s);
   s = s.replace(/^[\s,:;.!?\-–—]+/, "").trim(); // strip separators exposed after emoji removal
-  s = s.replace(/[.,:;!?\u3002\uFF01\uFF1F]+$/, "").trim();
+  s = stripTrailingTitlePunctuation(s).trim();
   // Boilerplate-only: "This is.", "Here is.", "Here's." → null (no meaningful fallback).
   if (BOILERPLATE_ONLY_RE.test(s)) return null;
   // Strip answer-heading boilerplate: "Here is the …", "Here are …", "Here's the …", "This is a …"
@@ -197,7 +215,7 @@ function formatGeneratedTitle(text: string): string | null {
   s = s.replace(QUESTION_LEAD_IN_RE, "").trim();
   // Final trailing-punctuation pass in case stripping exposed new punctuation.
   // Unicode sentence-ending punct (。！？) stripped alongside ASCII .!?
-  s = s.replace(/[.,:;!?\u3002\uFF01\uFF1F]+$/, "").trim();
+  s = stripTrailingTitlePunctuation(s).trim();
   // Allow two-character acronyms such as "AI"; single chars are not meaningful.
   if (s.length < 2) return null;
   // Capitalize.
@@ -206,10 +224,11 @@ function formatGeneratedTitle(text: string): string | null {
   // attached to the final retained word, so it does not increase word count.
   const words = s.split(/\s+/);
   if (words.length > MAX_SUMMARY_TITLE_WORDS) {
-    s = `${words
-      .slice(0, MAX_SUMMARY_TITLE_WORDS)
-      .join(" ")
-      .replace(/[,;:\-–—]$/, "")}…`;
+    s = appendTruncationEllipsis(
+      words
+        .slice(0, MAX_SUMMARY_TITLE_WORDS)
+        .join(" "),
+    );
   }
   // Clamp at character limit; null when no word boundary exists (prevents
   // mid-word fragments from single over-length tokens).

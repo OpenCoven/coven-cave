@@ -462,6 +462,27 @@ assert.equal(
   "Fix parser quoted context",
   "multiline blockquote markers and reference definitions are cleaned before whitespace collapses",
 );
+assert.equal(
+  chatSummaryTitle({
+    userText: "- Fix parser\n* Add focused tests\n+ Keep the text",
+  }),
+  "Fix parser Add focused tests Keep the…",
+  "unordered list markers are stripped per line before whitespace collapses",
+);
+assert.equal(
+  chatSummaryTitle({
+    userText: "1. Fix parser\n2) Add focused tests",
+  }),
+  "Fix parser Add focused tests",
+  "ordered list markers are stripped per line before whitespace collapses",
+);
+assert.equal(
+  chatSummaryTitle({
+    userText: "> 1. Fix parser\n> 2) Add focused tests",
+  }),
+  "Fix parser Add focused tests",
+  "list markers exposed by blockquote cleanup are stripped without losing text",
+);
 
 // Unicode subdivision flags are emoji tag sequences: a pictograph followed by
 // tag characters U+E0020–U+E007E and cancel tag U+E007F.
@@ -479,6 +500,26 @@ assert.equal(
   chatSummaryTitle({ userText: "one two three four five six seven eight" }),
   "One two three four five six seven…",
   "word-limit truncation appends an ellipsis to the final retained word",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Fix parser…" }),
+  "Fix parser",
+  "a source ellipsis is removed when the formatter does not truncate",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Fix parser. …" }),
+  "Fix parser",
+  "spaced source sentence punctuation and ellipsis do not survive normalization",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "one two three four five six seven. eight" }),
+  "One two three four five six seven…",
+  "word-limit truncation replaces retained sentence punctuation with exactly one ellipsis",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Alpha bravo charlie delta echo. foxtrotlong" }),
+  "Alpha bravo charlie delta echo…",
+  "character-limit truncation replaces retained sentence punctuation with exactly one ellipsis",
 );
 {
   const title = chatSummaryTitle({
