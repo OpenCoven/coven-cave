@@ -423,6 +423,27 @@ const newSession = await readFile(new URL("./code-new-session.tsx", import.meta.
 const rail = await readFile(new URL("./code-session-rail.tsx", import.meta.url), "utf8");
 
 assert.match(
+  codeView,
+  /<SurfaceRail[\s\S]*storageKey="cave:code:sessions-rail"[\s\S]*title="Sessions"[\s\S]*ariaLabel="Coding sessions"/,
+  "Code Workshop sessions use the shared persisted left rail",
+);
+assert.match(
+  codeView,
+  /<div className="hidden md:contents">[\s\S]*<SurfaceRail/,
+  "the collapsible rail is desktop-only so mobile keeps its list-first drill-in",
+);
+assert.match(
+  rail,
+  /aria-label=\{open \? undefined : `Open \$\{title\}, \$\{activity\}`\}/,
+  "collapsed session buttons identify the session and expose activity without relying on color",
+);
+assert.match(
+  rail,
+  /onClick=\{\(\) => \{\s*onExpand\?\.\(\);\s*onSelect\(row\.id\);/,
+  "collapsed session buttons expand before selection",
+);
+
+assert.match(
   composer,
   /streamFamiliarText\(\{\s*familiarId: row\.familiarId,\s*sessionId: row\.id,/,
   "the composer RESUMES the selected session (sessionId rides) — never forks a new thread",
@@ -570,8 +591,8 @@ assert.match(
 );
 assert.match(
   codeView,
-  /\$\{selected \? "hidden md:block" : "block"\}/,
-  "picking a session hides the rail below md only",
+  /\$\{selected \? "hidden" : "block"\}[^"]*md:hidden/,
+  "picking a session hides only the mobile list while the desktop rail remains mounted",
 );
 assert.match(
   codeView,

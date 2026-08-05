@@ -35,6 +35,7 @@ import { CodeWorkbench } from "@/components/code-workbench";
 import { CodeNewSession } from "@/components/code-new-session";
 import { CodeSourceContext } from "@/components/code-source-context";
 import { GithubOrganizationSettings } from "@/components/settings-github";
+import { SurfaceRail } from "@/components/ui/surface-rail";
 import type { GitHubItemTarget } from "@/lib/github-item-url";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
 import { codeTopTabForGitHubTarget, type PendingCodeNavigation } from "@/lib/pending-code-navigation";
@@ -207,6 +208,12 @@ export function CodeView({
       ? workbenchTarget.open.origin
       : null;
   const originSessionId = workbenchTarget?.open.sessionId ?? null;
+  const selectSession = (sessionId: string) => {
+    // A manual switch is a context change — drop any pending file focus so it
+    // cannot replay into the newly picked workbench.
+    setWorkbenchTarget(null);
+    setSelectedId(sessionId);
+  };
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
@@ -292,20 +299,41 @@ export function CodeView({
         <div className="flex min-h-0 flex-1">
           {/* Mobile drill-in: below md the rail is the landing screen and the
               workbench replaces it once a session is picked (Back returns). */}
-          <div
-            className={`${selected ? "hidden md:block" : "block"} w-full shrink-0 border-[var(--border-hairline)] md:w-64 md:border-r`}
-          >
+          <div className={`${selected ? "hidden" : "block"} w-full shrink-0 border-[var(--border-hairline)] md:hidden`}>
             <CodeSessionRail
               sessions={sessions}
               selectedId={selectedId ?? null}
-              onSelect={(id) => {
-                // A manual switch is a context change — drop any pending file
-                // focus so it can't replay into the newly picked workbench.
-                setWorkbenchTarget(null);
-                setSelectedId(id);
-              }}
+              onSelect={selectSession}
               onNewSession={() => setNewSessionOpen(true)}
             />
+          </div>
+          <div className="hidden md:contents">
+            <SurfaceRail
+              storageKey="cave:code:sessions-rail"
+              title="Sessions"
+              ariaLabel="Coding sessions"
+              actions={
+                <button
+                  type="button"
+                  onClick={() => setNewSessionOpen(true)}
+                  title="New session"
+                  aria-label="New session"
+                  className="focus-ring text-[var(--accent-presence)]"
+                >
+                  <Icon name="ph:plus-bold" width={14} aria-hidden />
+                </button>
+              }
+            >
+              {(open, setOpen) => (
+                <CodeSessionRail
+                  sessions={sessions}
+                  selectedId={selectedId ?? null}
+                  onSelect={selectSession}
+                  open={open}
+                  onExpand={() => setOpen(true)}
+                />
+              )}
+            </SurfaceRail>
           </div>
           <div className={`${selected ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col`}>
             {selected ? (
