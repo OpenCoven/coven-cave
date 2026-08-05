@@ -209,7 +209,15 @@ export function recordChatAttentionClear(
 
   const operations = state.get(sessionId);
   const existingOperation = operations?.get(operationId);
-  if (existingOperation) return { recorded: false, reason: "duplicate" };
+  if (existingOperation) {
+    // A duplicate/replayed clear for an operation that is still live (pending
+    // or not yet forgotten) proves this session is actively in use. Refresh
+    // its LRU recency here too, or a session hit only by replayed duplicates
+    // (no fresh record ever reaching the touch below) would silently age out
+    // and get evicted/tombstoned ahead of genuinely idle sessions.
+    touchSessionProjectionBucket(state, sessionId);
+    return { recorded: false, reason: "duplicate" };
+  }
   const normalizedCanonical = normalizeAttentionSnapshot(canonicalAttention);
   const canonicalTracker = canonicalAttentionTrackerFor(state);
   // The caller may already be looking at a projected "none", so overlap cases

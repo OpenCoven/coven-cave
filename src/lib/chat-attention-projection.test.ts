@@ -835,6 +835,90 @@ test("the outer projection state evicts the oldest settled session before a stil
   assert.equal(state.has(`session-${SESSION_LIMIT - 1}`), true);
 });
 
+test("a duplicate clear for the same live operation refreshes recency without altering recorded state", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  const before = state.get("session-1")?.get("operation-1");
+
+  const duplicate = recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+
+  assert.deepEqual(duplicate, { recorded: false, reason: "duplicate" });
+  // Idempotent: the recorded operation itself is untouched by the replay.
+  assert.equal(state.get("session-1")?.get("operation-1"), before);
+});
+
+test("a duplicate clear for an already-persisted operation refreshes recency and does not starve under the eviction bound", () => {
+  // Regression: recordChatAttentionClear used to return the "duplicate"
+  // rejection before touching the session's LRU bucket, so a session hit only
+  // by replayed/duplicate clears (its one real record long past) never
+  // refreshed its recency. Under the CHAT_ATTENTION_SESSION_BUCKET_LIMIT
+  // eviction bound that starved it: a still-relevant session (proven live by
+  // the very fact it keeps receiving clear replays) could be evicted ahead of
+  // genuinely idle sessions. The duplicate path must touch recency too.
+  const state = createChatAttentionProjectionState();
+  const SESSION_LIMIT = 512;
+
+  recordChatAttentionClear(
+    state,
+    "session-old",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  settleChatAttentionClear(state, "session-old", "operation-1", "persisted", 5);
+
+  // The first batch session lands immediately after session-old, so it
+  // becomes the new "oldest" once session-old's recency is refreshed below.
+  recordChatAttentionClear(
+    state,
+    "session-0",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  settleChatAttentionClear(state, "session-0", "operation-1", "persisted", 5);
+
+  // A duplicate/replayed clear for session-old's already-persisted operation:
+  // rejected, but must move session-old to the back of the recency order.
+  const duplicate = recordChatAttentionClear(
+    state,
+    "session-old",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  assert.deepEqual(duplicate, { recorded: false, reason: "duplicate" });
+
+  for (let i = 1; i < SESSION_LIMIT; i += 1) {
+    const sessionId = `session-${i}`;
+    recordChatAttentionClear(
+      state,
+      sessionId,
+      "operation-1",
+      chatAttentionProjectionScopeKey("nova"),
+      NEEDS_ATTENTION,
+    );
+    settleChatAttentionClear(state, sessionId, "operation-1", "persisted", 5);
+  }
+
+  assert.equal(state.size, SESSION_LIMIT);
+  assert.equal(state.has("session-old"), true, "the duplicate-refreshed session must survive eviction");
+  assert.equal(state.has("session-0"), false, "the session that fell behind session-old's refresh is now oldest");
+  assert.equal(state.has(`session-${SESSION_LIMIT - 1}`), true);
+});
+
 test("forgetting a session keeps its settled operation in the bounded replay cache", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
