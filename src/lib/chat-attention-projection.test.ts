@@ -1005,6 +1005,402 @@ test("matching operation identity releases non-none attention without timestamp 
   assert.equal(state.has("session-1"), false);
 });
 
+test("a matching causal operation retires older persisted unknown-baseline operations in insertion order", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  for (const operationId of ["operation-1", "operation-2"]) {
+    recordChatAttentionClear(
+      state,
+      "session-1",
+      operationId,
+      scopeKey,
+      undefined,
+      "2026-08-05T00:03:00.000Z",
+    );
+    settleChatAttentionClear(state, "session-1", operationId, "persisted", 6);
+  }
+
+  const causallyNewRequest = [row({
+    attention: { state: "awaiting-human", since: "2026-08-04T23:03:00.000Z", reason: "decision" },
+    attentionAfterOperationId: "operation-2",
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, causallyNewRequest, 6, scopeKey),
+    causallyNewRequest,
+  );
+  assert.equal(
+    state.has("session-1"),
+    false,
+    "operation-2 proves both persisted unknown-baseline clears through it are superseded",
+  );
+});
+
+test("a matching known-baseline operation establishes the cutoff for older unknown-baseline operations", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-unknown",
+    scopeKey,
+    undefined,
+    "2026-08-05T00:03:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-unknown", "persisted", 6);
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-known",
+    scopeKey,
+    NEEDS_ATTENTION,
+    "2026-08-05T00:04:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-known", "persisted", 7);
+
+  const projected = applyChatAttentionProjections(state, [row({
+    attention: { ...NEEDS_ATTENTION },
+    attentionAfterOperationId: "operation-known",
+  })], 7, scopeKey);
+
+  assert.equal(projected[0]?.attention.state, "none");
+  assert.equal(state.get("session-1")?.has("operation-unknown"), false);
+  assert.deepEqual(
+    state.get("session-1")?.get("operation-known")?.baseline,
+    NEEDS_ATTENTION,
+    "the matched known-baseline operation must continue through identity reconciliation",
+  );
+});
+
+test("a changed known-baseline causal anchor releases older unknown operations and exposes the row", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-unknown",
+    scopeKey,
+    undefined,
+    "2026-08-05T00:03:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-unknown", "persisted", 6);
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-known",
+    scopeKey,
+    NEEDS_ATTENTION,
+    "2026-08-05T00:04:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-known", "persisted", 7);
+
+  const canonicalRequest = [row({
+    attention: {
+      state: "awaiting-human",
+      since: "2026-08-05T00:05:00.000Z",
+      reason: "approval",
+    },
+    attentionAfterOperationId: "operation-known",
+  })];
+
+  assert.equal(
+    applyChatAttentionProjections(state, canonicalRequest, 7, scopeKey),
+    canonicalRequest,
+  );
+  assert.equal(
+    state.has("session-1"),
+    false,
+    "the live causal anchor cuts off the older unknown operation before its changed identity retires separately",
+  );
+});
+
+test("a matching newer operation does not retire an older pending operation", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-pending",
+    scopeKey,
+    undefined,
+    "2026-08-05T00:03:00.000Z",
+  );
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-matched",
+    scopeKey,
+    undefined,
+    "2026-08-05T00:04:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-matched", "persisted", 6);
+
+  const projected = applyChatAttentionProjections(state, [row({
+    attentionAfterOperationId: "operation-matched",
+  })], 6, scopeKey);
+
+  assert.equal(projected[0]?.attention.state, "none");
+  assert.equal(state.get("session-1")?.get("operation-pending")?.status, "pending");
+  assert.equal(state.get("session-1")?.has("operation-matched"), false);
+});
+
+test("a matching operation does not retire a newer pending operation after it", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-matched",
+    scopeKey,
+    undefined,
+    "2026-08-05T00:03:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-matched", "persisted", 6);
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-newer-pending",
+    scopeKey,
+    undefined,
+    "2026-08-05T00:04:00.000Z",
+  );
+
+  const projected = applyChatAttentionProjections(state, [row({
+    attentionAfterOperationId: "operation-matched",
+  })], 6, scopeKey);
+
+  assert.equal(projected[0]?.attention.state, "none");
+  assert.equal(state.get("session-1")?.has("operation-matched"), false);
+  assert.equal(state.get("session-1")?.get("operation-newer-pending")?.status, "pending");
+});
+
+test("a matching operation does not retire newer persisted operations after it", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  for (const operationId of ["operation-matched", "operation-newer"]) {
+    recordChatAttentionClear(
+      state,
+      "session-1",
+      operationId,
+      scopeKey,
+      undefined,
+      "2026-08-05T00:03:00.000Z",
+    );
+    settleChatAttentionClear(state, "session-1", operationId, "persisted", 6);
+  }
+
+  const projected = applyChatAttentionProjections(state, [row({
+    attentionAfterOperationId: "operation-matched",
+  })], 6, scopeKey);
+
+  assert.equal(projected[0]?.attention.state, "none");
+  assert.equal(state.get("session-1")?.has("operation-matched"), false);
+  assert.equal(state.get("session-1")?.get("operation-newer")?.status, "persisted");
+});
+
+test("a causal match preserves older persisted operations beyond the response request boundary", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-newer-boundary",
+    scopeKey,
+    undefined,
+    "2026-08-05T00:03:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-newer-boundary", "persisted", 9);
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-matched",
+    scopeKey,
+    undefined,
+    "2026-08-05T00:04:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-matched", "persisted", 6);
+
+  const projected = applyChatAttentionProjections(state, [row({
+    attentionAfterOperationId: "operation-matched",
+  })], 6, scopeKey);
+
+  assert.equal(projected[0]?.attention.state, "none");
+  assert.equal(state.get("session-1")?.get("operation-newer-boundary")?.status, "persisted");
+  assert.equal(state.get("session-1")?.has("operation-matched"), false);
+});
+
+test("a delayed boundary op preserved at an earlier causal match still releases once its own request arrives", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-newer-boundary",
+    scopeKey,
+    undefined,
+    "2026-08-05T00:03:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-newer-boundary", "persisted", 9);
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-matched",
+    scopeKey,
+    undefined,
+    "2026-08-05T00:04:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-matched", "persisted", 6);
+
+  // At request 6 the row still names the earlier-settling operation as its
+  // causal anchor. The later-settling boundary-9 operation isn't eligible yet
+  // and must be preserved rather than masked forever.
+  const preserved = applyChatAttentionProjections(state, [row({
+    attentionAfterOperationId: "operation-matched",
+  })], 6, scopeKey);
+  assert.equal(preserved[0]?.attention.state, "none");
+  assert.equal(state.get("session-1")?.get("operation-newer-boundary")?.status, "persisted");
+  assert.equal(state.get("session-1")?.has("operation-matched"), false);
+
+  // At request 9 the actual accepted response still names the same causal
+  // anchor (its own operation id was never individually exposed), but the
+  // boundary is now eligible. The now-superseded anchor's evidence must
+  // survive its own removal so this later, genuinely new request can still
+  // release the delayed operation instead of masking it forever.
+  const released = applyChatAttentionProjections(state, [row({
+    attentionAfterOperationId: "operation-matched",
+  })], 9, scopeKey);
+  assert.equal(released[0]?.attention.state, "awaiting-human");
+  assert.equal(state.has("session-1"), false);
+});
+
+test("a newest causal match later retires multiple older unknown-baseline operations once their own boundaries settle", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  for (const operationId of ["operation-1", "operation-2", "operation-3"]) {
+    recordChatAttentionClear(
+      state,
+      "session-1",
+      operationId,
+      scopeKey,
+      undefined,
+      "2026-08-05T00:03:00.000Z",
+    );
+  }
+  settleChatAttentionClear(state, "session-1", "operation-2", "persisted", 6);
+  settleChatAttentionClear(state, "session-1", "operation-3", "persisted", 6);
+
+  const newestAccepted = [row({
+    attention: { state: "awaiting-human", since: "2026-08-04T23:03:00.000Z", reason: "decision" },
+    attentionAfterOperationId: "operation-3",
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, newestAccepted, 6, scopeKey)[0]?.attention.state,
+    "none",
+    "the older unsettled operation must keep projecting none until its own boundary arrives",
+  );
+  assert.equal(state.get("session-1")?.has("operation-2"), false);
+  assert.equal(state.get("session-1")?.get("operation-1")?.status, "pending");
+
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 7);
+  assert.equal(
+    applyChatAttentionProjections(state, newestAccepted, 7, scopeKey),
+    newestAccepted,
+    "the preserved newest causal evidence must still retire older operations after a later settle",
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
+test("a middle causal match retires older unknown-baseline operations but preserves later concurrent ones and other scopes", () => {
+  const state = createChatAttentionProjectionState();
+  const novaScope = chatAttentionProjectionScopeKey("nova");
+  const sageScope = chatAttentionProjectionScopeKey("sage");
+  recordChatAttentionClear(state, "session-1", "operation-1", novaScope, undefined, "2026-08-05T00:03:00.000Z");
+  recordChatAttentionClear(state, "session-1", "operation-2", novaScope, undefined, "2026-08-05T00:04:00.000Z");
+  recordChatAttentionClear(state, "session-1", "operation-3", sageScope, undefined, "2026-08-05T00:05:00.000Z");
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+  settleChatAttentionClear(state, "session-1", "operation-2", "persisted", 6);
+  settleChatAttentionClear(state, "session-1", "operation-3", "persisted", 6);
+
+  const middleAccepted = [row({
+    attention: { state: "awaiting-human", since: "2026-08-04T23:04:00.000Z", reason: "approval" },
+    attentionAfterOperationId: "operation-2",
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, middleAccepted, 6, novaScope)[0]?.attention.state,
+    "none",
+  );
+  assert.equal(state.get("session-1")?.has("operation-1"), false);
+  assert.equal(state.get("session-1")?.has("operation-2"), false);
+  assert.equal(
+    state.get("session-1")?.get("operation-3")?.scopeKey,
+    sageScope,
+    "a later concurrent operation must survive even when it sits in another scope bucket",
+  );
+});
+
+test("a failed sibling does not block release once the accepted causal anchor supersedes the session chain", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  for (const operationId of ["operation-1", "operation-2", "operation-3"]) {
+    recordChatAttentionClear(
+      state,
+      "session-1",
+      operationId,
+      scopeKey,
+      undefined,
+      "2026-08-05T00:03:00.000Z",
+    );
+  }
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+  settleChatAttentionClear(state, "session-1", "operation-2", "failed", 6);
+  settleChatAttentionClear(state, "session-1", "operation-3", "persisted", 6);
+
+  const latestAccepted = [row({
+    attention: { state: "awaiting-human", since: "2026-08-04T23:05:00.000Z", reason: "approval" },
+    attentionAfterOperationId: "operation-3",
+  })];
+  assert.equal(applyChatAttentionProjections(state, latestAccepted, 6, scopeKey), latestAccepted);
+  assert.equal(
+    state.has("session-1"),
+    false,
+    "the accepted newer anchor retires itself and every earlier unresolved sibling regardless of an unrelated failed operation",
+  );
+});
+
+test("causally retired overlapping operations are tombstoned against replay", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  for (const operationId of ["operation-1", "operation-2"]) {
+    recordChatAttentionClear(
+      state,
+      "session-1",
+      operationId,
+      scopeKey,
+      undefined,
+      "2026-08-05T00:03:00.000Z",
+    );
+    settleChatAttentionClear(state, "session-1", operationId, "persisted", 6);
+  }
+
+  applyChatAttentionProjections(state, [row({
+    attentionAfterOperationId: "operation-2",
+  })], 6, scopeKey);
+
+  for (const operationId of ["operation-1", "operation-2"]) {
+    assert.deepEqual(
+      recordChatAttentionClear(
+        state,
+        "session-1",
+        operationId,
+        scopeKey,
+        undefined,
+        "2026-08-05T00:05:00.000Z",
+      ),
+      { recorded: false, reason: "tombstoned" },
+    );
+  }
+  assert.equal(state.has("session-1"), false);
+});
+
 test("an unknown-baseline persisted clear rejects malformed causal evidence until a valid identity arrives", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(

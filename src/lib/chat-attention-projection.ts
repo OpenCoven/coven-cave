@@ -11,6 +11,7 @@ type PendingProjection = {
   scopeKey: string;
   baseline: ChatAttention | null;
   latestCanonical?: CanonicalAttentionTrackerEntry;
+  insertionSeq: number;
 };
 
 type PersistedProjection = {
@@ -19,6 +20,7 @@ type PersistedProjection = {
   scopeKey: string;
   baseline: ChatAttention | null;
   latestCanonical?: CanonicalAttentionTrackerEntry;
+  insertionSeq: number;
 };
 
 type ProjectionOperation = PendingProjection | PersistedProjection;
@@ -88,6 +90,90 @@ function tombstoneChatAttentionOperation(
     if (oldestKey === undefined) break;
     tombstones.delete(oldestKey);
   }
+}
+
+// Insertion order alone can't survive an operation's removal from the live
+// map, but a delayed (higher-boundary) operation recorded BEFORE a
+// causally-superseded one still needs to prove it came first, even after that
+// earlier-settling operation is gone. A monotonic sequence assigned once at
+// record time gives every operation (live or evidenced) a stable, comparable
+// position that removal can't erase.
+let chatAttentionInsertionSeqCounter = 0;
+
+function nextChatAttentionInsertionSeq(): number {
+  chatAttentionInsertionSeqCounter += 1;
+  return chatAttentionInsertionSeqCounter;
+}
+
+// A causal match can name an operation that has ALREADY been retired by an
+// earlier causal supersession (its own identity is never individually
+// exposed, so later responses keep naming the same anchor). Without
+// retaining that anchor's evidence, a delayed sibling recorded before it —
+// held back only because its own request boundary hadn't arrived yet — can
+// never be proven eligible once the anchor is gone, and masks forever. This
+// ledger is intentionally separate from the live operations map: tests and
+// callers must see the anchor as fully retired (`.has() === false`) the
+// moment it is superseded, while this evidence persists only for the
+// purpose of resolving later chain lookups. Bounded the same way as the
+// replay tombstones above, and never proactively cleared per-session for the
+// same reason those aren't: a late chain lookup must still be able to find it.
+const CHAT_ATTENTION_CAUSAL_EVIDENCE_LIMIT = 512;
+type ChatAttentionCausalEvidence = {
+  insertionSeq: number;
+  canonicalAfterRequestId: number;
+};
+const chatAttentionCausalEvidence = new WeakMap<
+  ChatAttentionProjectionState,
+  Map<string, ChatAttentionCausalEvidence>
+>();
+
+function causalEvidenceForState(
+  state: ChatAttentionProjectionState,
+): Map<string, ChatAttentionCausalEvidence> {
+  let evidence = chatAttentionCausalEvidence.get(state);
+  if (!evidence) {
+    evidence = new Map();
+    chatAttentionCausalEvidence.set(state, evidence);
+  }
+  return evidence;
+}
+
+function recordChatAttentionCausalEvidence(
+  state: ChatAttentionProjectionState,
+  sessionId: string,
+  operationId: string,
+  entry: ChatAttentionCausalEvidence,
+): void {
+  const evidence = causalEvidenceForState(state);
+  const key = tombstoneKey(sessionId, operationId);
+  evidence.delete(key);
+  evidence.set(key, entry);
+  while (evidence.size > CHAT_ATTENTION_CAUSAL_EVIDENCE_LIMIT) {
+    const oldestKey = evidence.keys().next().value;
+    if (oldestKey === undefined) break;
+    evidence.delete(oldestKey);
+  }
+}
+
+function chatAttentionCausalEvidenceFor(
+  state: ChatAttentionProjectionState,
+  sessionId: string,
+  operationId: string,
+): ChatAttentionCausalEvidence | undefined {
+  return chatAttentionCausalEvidence.get(state)?.get(tombstoneKey(sessionId, operationId));
+}
+
+function rememberRetiredPersistedOperation(
+  state: ChatAttentionProjectionState,
+  sessionId: string,
+  operationId: string,
+  operation: ProjectionOperation,
+): void {
+  if (operation.status !== "persisted") return;
+  recordChatAttentionCausalEvidence(state, sessionId, operationId, {
+    insertionSeq: operation.insertionSeq,
+    canonicalAfterRequestId: operation.canonicalAfterRequestId,
+  });
 }
 
 function isChatAttentionOperationTombstoned(
@@ -331,6 +417,7 @@ export function recordChatAttentionClear(
     status: "pending",
     scopeKey,
     baseline,
+    insertionSeq: nextChatAttentionInsertionSeq(),
   });
   touchSessionProjectionBucket(state, sessionId);
   evictOldestSessionOperations(state, sessionId, nextOperations);
@@ -376,6 +463,7 @@ export function settleChatAttentionClear(
     scopeKey: operation.scopeKey,
     baseline: operation.baseline,
     latestCanonical: operation.latestCanonical,
+    insertionSeq: operation.insertionSeq,
   });
   return { settled: true, sessionId, operationId, outcome };
 }
@@ -495,6 +583,44 @@ export function applyChatAttentionProjections(
       );
     }
 
+    const causallySupersededUnknownOperationIds = new Set<string>();
+    const causalOperationId = row.attention.state === "none"
+      ? null
+      : normalizeChatAttentionOperationId(row.attentionAfterOperationId);
+    if (causalOperationId) {
+      const liveCausalOperation = operations.get(causalOperationId);
+      // The causal anchor is often an operation that a PRIOR call already
+      // retired (its own identity is never individually exposed to the
+      // caller, so later responses keep naming the same anchor). Fall back to
+      // the persisted evidence ledger so a delayed sibling recorded before it
+      // can still be proven eligible once its own boundary arrives.
+      const evidence = liveCausalOperation
+        ? undefined
+        : chatAttentionCausalEvidenceFor(state, row.id, causalOperationId);
+      // Exact row identity proves causal descent from any live persisted
+      // anchor once its request boundary is reached. Baseline reconciliation
+      // below independently decides whether the anchor itself can retire.
+      const liveAnchorEligible = liveCausalOperation?.status === "persisted"
+        && responseRequestId >= liveCausalOperation.canonicalAfterRequestId;
+      const anchorInsertionSeq = liveAnchorEligible
+        ? liveCausalOperation!.insertionSeq
+        : evidence && responseRequestId >= evidence.canonicalAfterRequestId
+        ? evidence.insertionSeq
+        : undefined;
+      if (anchorInsertionSeq !== undefined) {
+        for (const [operationId, operation] of operations) {
+          if (
+            operation.status === "persisted" &&
+            !operation.baseline &&
+            operation.insertionSeq <= anchorInsertionSeq &&
+            responseRequestId >= operation.canonicalAfterRequestId
+          ) {
+            causallySupersededUnknownOperationIds.add(operationId);
+          }
+        }
+      }
+    }
+
     for (const [operationId, operation] of operations) {
       operation.latestCanonical = {
         attention: normalizeAttentionSnapshot(row.attention),
@@ -503,20 +629,20 @@ export function applyChatAttentionProjections(
       if (operation.status !== "persisted" || responseRequestId < operation.canonicalAfterRequestId) continue;
       if (operation.baseline) {
         if (!attentionMatchesBaseline(row.attention, operation.baseline)) {
+          rememberRetiredPersistedOperation(state, row.id, operationId, operation);
           operations.delete(operationId);
           tombstoneChatAttentionOperation(state, row.id, operationId);
         }
         continue;
       }
       if (row.attention.state === "none") {
+        rememberRetiredPersistedOperation(state, row.id, operationId, operation);
         operations.delete(operationId);
         tombstoneChatAttentionOperation(state, row.id, operationId);
         continue;
       }
-      if (
-        normalizeChatAttentionOperationId(row.attentionAfterOperationId) ===
-        operationId
-      ) {
+      if (causallySupersededUnknownOperationIds.has(operationId)) {
+        rememberRetiredPersistedOperation(state, row.id, operationId, operation);
         operations.delete(operationId);
         tombstoneChatAttentionOperation(state, row.id, operationId);
       }
