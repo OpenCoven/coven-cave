@@ -417,9 +417,11 @@ const FRESH = { pendingRuns: {} };
   assert.ok(state.pendingRuns["run-b"]?.isAlias, "first retry is marked isAlias");
   assert.ok(state.pendingRuns["run-a"], "original run-a entry is preserved after first retry");
 
-  // run-b fails without firing done (e.g. onCreationRunTerminated preserves bound entries)
+  // run-b (alias) terminates: alias is removed — a new retry will register a fresh alias via onSendStart
   const afterTerminated = onCreationRunTerminated(state, "run-b");
-  assert.deepEqual(afterTerminated, state, "bound alias preserved after run-b terminal");
+  assert.equal(afterTerminated.pendingRuns["run-b"], undefined, "terminated alias run-b is removed (alias entries do not persist for retry)");
+  assert.ok(afterTerminated.pendingRuns["run-a"], "original creation entry run-a preserved after alias terminal");
+  assert.ok(afterTerminated.pendingRuns["run-x"], "independent run-x unaffected by alias terminal");
 
   // Second retry: must prune run-b alias, leaving only run-a + new alias run-c
   state = onSendStart(afterTerminated, "run-c", "sess-abc");
@@ -439,6 +441,53 @@ const FRESH = { pendingRuns: {} };
   assert.equal(nextState.pendingRuns["run-a"], undefined, "run-a cleared on run-c success");
   assert.equal(nextState.pendingRuns["run-c"], undefined, "run-c cleared on success");
   assert.ok(nextState.pendingRuns["run-x"], "independent run-x unaffected by run-c success");
+}
+
+// Alias entry: removed on terminal (does not linger for retry; a new retry
+// re-registers via onSendStart).
+{
+  const state = { pendingRuns: { "run-alias": { sessionId: "sess-abc", isAlias: true as const } } };
+  const next = onCreationRunTerminated(state, "run-alias");
+  assert.deepEqual(next, FRESH, "onCreationRunTerminated removes a bound alias entry so it does not linger indefinitely");
+}
+
+// Alias entry with original creation entry: alias is removed, original preserved
+{
+  const state = {
+    pendingRuns: {
+      "run-orig": { sessionId: "sess-abc" },
+      "run-alias": { sessionId: "sess-abc", isAlias: true as const },
+    },
+  };
+  const next = onCreationRunTerminated(state, "run-alias");
+  assert.equal(next.pendingRuns["run-alias"], undefined, "alias removed on terminal");
+  assert.ok(next.pendingRuns["run-orig"], "original non-alias entry preserved for retry");
+}
+
+// Retry-to-replacement: alias done with different session ID fires refresh and
+// removes all entries bound to the original session.
+{
+  const state = {
+    pendingRuns: {
+      "run-orig": { sessionId: "sess-old" },
+      "run-retry": { sessionId: "sess-old", isAlias: true as const },
+      "run-unrelated": { sessionId: "sess-other" },
+    },
+  };
+  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-retry", "sess-replacement", false);
+  assert.equal(shouldRefresh, true, "alias with replacement session ID fires sidebar refresh");
+  assert.equal(nextState.pendingRuns["run-retry"], undefined, "alias entry removed after replacement done");
+  assert.equal(nextState.pendingRuns["run-orig"], undefined, "original bound entry also removed (obsolete after replacement)");
+  assert.ok(nextState.pendingRuns["run-unrelated"], "unrelated session entry preserved");
+}
+
+// Non-alias mismatch remains a no-op (server sending a different session ID
+// for a non-retry creation is inconsistent state, not a replacement).
+{
+  const state = { pendingRuns: { "run-a": { sessionId: "sess-new" } } };
+  const { shouldRefresh, nextState } = onDoneCreationRefresh(state, "run-a", "sess-other", false);
+  assert.equal(shouldRefresh, false, "non-alias mismatch does not fire refresh");
+  assert.deepEqual(nextState, state, "non-alias mismatch leaves state untouched");
 }
 
 console.log("chat-creation-refresh.test.ts ok");

@@ -1330,6 +1330,14 @@ export function Workspace() {
     window.addEventListener("cave:familiars-refresh", onFamiliarsRefresh);
     return () => window.removeEventListener("cave:familiars-refresh", onFamiliarsRefresh);
   }, [loadFamiliars]);
+  useEffect(() => {
+    // Long-running chat completions dispatch this event rather than calling a
+    // child-held callback so the current familiar-scope loadSessions is always
+    // the one that fires, even when ChatView unmounts between send and done.
+    const onSessionsRefresh = () => void loadSessions();
+    window.addEventListener("cave:sessions-refresh", onSessionsRefresh);
+    return () => window.removeEventListener("cave:sessions-refresh", onSessionsRefresh);
+  }, [loadSessions]);
   usePausablePoll(() => void loadSessions(), 4000, {
     pauseWhileInputActive: true,
   });

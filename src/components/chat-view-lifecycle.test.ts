@@ -764,13 +764,16 @@ assert.match(
   );
 }
 {
-  // onSessionStarted is gated on display ownership for both null and non-null origins.
+  // onSessionStarted is gated on display ownership AND null origin: only
+  // sessionless creations (null origin) may call onSessionStarted so that a
+  // background resumed-session replacement (non-null origin) cannot hijack a
+  // fresh compose via ChatRouter's null-view promotion guard.
   const notifyChecks = source.match(
-    /if \(owned\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);\s*\n\s*\}/g,
+    /if \(owned && liveGeneration\.originSessionId === null\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);\s*\n\s*\}/g,
   );
   assert.ok(
     notifyChecks && notifyChecks.length === 2,
-    "session and done events call onSessionStarted only when this run owns the displayed view",
+    "session and done events call onSessionStarted only for null-origin (sessionless) runs that own the displayed view",
   );
 }
 
@@ -786,8 +789,8 @@ assert.match(
 );
 assert.match(
   source,
-  /shouldCreationRefresh \|\| shouldReplacementRefresh[\s\S]{0,200}onSessionsChangedRef\.current\?\.\(\)/,
-  "creation-refresh and replacement-refresh flags feed the consolidated shouldRefreshSessions decision that fires onSessionsChangedRef.current",
+  /shouldCreationRefresh \|\| shouldReplacementRefresh[\s\S]{0,400}window\.dispatchEvent\(new CustomEvent\("cave:sessions-refresh"\)\)/,
+  "creation-refresh and replacement-refresh flags feed the consolidated shouldRefreshSessions decision that dispatches cave:sessions-refresh",
 );
 assert.doesNotMatch(
   source,
@@ -871,22 +874,20 @@ assert.doesNotMatch(
   "missing body path has no scattered onCreationRunTerminated — relies on finally",
 );
 
-// Issue 3: render-synced ref keeps onSessionsChanged current across re-renders so that
-// long-lived stream completions call the latest familiar-scope callback, not a stale closure.
 assert.match(
   source,
-  /const onSessionsChangedRef = useRef\(onSessionsChanged\);\s*\n\s*onSessionsChangedRef\.current = onSessionsChanged;/,
-  "onSessionsChangedRef is created and kept in sync with the latest onSessionsChanged prop on every render",
+  /shouldCreationRefresh \|\| shouldReplacementRefresh[\s\S]{0,400}window\.dispatchEvent\(new CustomEvent\("cave:sessions-refresh"\)\)/,
+  "creation-refresh and replacement-refresh flags feed the consolidated shouldRefreshSessions decision that dispatches cave:sessions-refresh",
+);
+assert.doesNotMatch(
+  source,
+  /const onSessionsChangedRef = useRef/,
+  "the render-synced ref is replaced by window event dispatch; post-unmount completions reach workspace via the event, not a stale child-held ref",
 );
 assert.match(
   source,
-  /shouldCreationRefresh \|\| shouldReplacementRefresh[\s\S]{0,200}onSessionsChangedRef\.current\?\.\(\)/,
-  "creation-refresh callback uses the render-synced ref via consolidated shouldRefreshSessions to avoid stale familiar-scope captures",
-);
-assert.match(
-  source,
-  /startNewConversation[\s\S]{0,200}onSessionsChangedRef\.current\?\.\(\)/,
-  "Board/startNewConversation condition feeds the consolidated shouldRefreshSessions decision that fires onSessionsChangedRef.current once",
+  /startNewConversation[\s\S]{0,400}window\.dispatchEvent\(new CustomEvent\("cave:sessions-refresh"\)\)/,
+  "Board/startNewConversation condition reaches the window event dispatch via the consolidated shouldRefreshSessions path",
 );
 
 // cave-b63 (1): model-state / usage-plan refreshes gate their setState on a

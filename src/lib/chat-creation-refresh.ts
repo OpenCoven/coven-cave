@@ -101,15 +101,21 @@ export function onCreationSessionIdentified(
 /**
  * Call when a `done` event is received.
  *
- * Returns `shouldRefresh` (whether to call `onSessionsChanged`) and the next
+ * Returns `shouldRefresh` (whether to call the sessions refresh) and the next
  * state. Rules:
  * - If `runId` is not in `pendingRuns`: no-op (not a tracked creation run).
  * - If `isError` and the entry is bound: preserve the entry for same-ID retry;
  *   no refresh.
  * - If `isError` and the entry is unbound: remove the entry — an unbound run
  *   cannot be retried by session ID; no refresh.
- * - If the entry is unbound (`sessionId: null`) or the completed ID mismatches:
- *   no-op — the caller must bind via `onCreationSessionIdentified` first.
+ * - If the entry is unbound (`sessionId: null`): no-op — the caller must bind
+ *   via `onCreationSessionIdentified` first.
+ * - If the entry is a retry alias and the completed ID differs from the bound
+ *   session (replacement): fire the refresh and remove all entries sharing the
+ *   original `sessionId` — the retry settled on a replacement session and the
+ *   old binding is obsolete.
+ * - If the completed ID mismatches for a non-alias entry: no-op (inconsistent
+ *   state; the server should not assign a different session ID here).
  * - On a successful matching completion: fire the refresh and remove all
  *   entries sharing `sessionId` (original run + retry aliases) so a duplicate
  *   or stale completion cannot double-refresh.
@@ -137,7 +143,24 @@ export function onDoneCreationRefresh(
   if (!completedSessionId) {
     return { shouldRefresh: false, nextState: state };
   }
-  if (run.sessionId === null || completedSessionId !== run.sessionId) {
+  if (run.sessionId === null) {
+    return { shouldRefresh: false, nextState: state };
+  }
+  if (completedSessionId !== run.sessionId) {
+    // Retry alias completed with a replacement session ID. Fire a refresh so
+    // the new row appears in the sidebar and remove all entries bound to the
+    // original session ID — the retry settled on a replacement and the old
+    // binding is now obsolete. Non-alias mismatch is an inconsistency; no-op.
+    if (run.isAlias) {
+      const oldSessionId = run.sessionId;
+      const nextPendingRuns: Record<string, { readonly sessionId: string | null }> = {};
+      for (const [id, r] of Object.entries(state.pendingRuns)) {
+        if (r.sessionId !== oldSessionId) {
+          nextPendingRuns[id] = r;
+        }
+      }
+      return { shouldRefresh: true, nextState: { pendingRuns: nextPendingRuns } };
+    }
     return { shouldRefresh: false, nextState: state };
   }
   // Matching bound ID: fire refresh and remove all entries for this creation
@@ -191,14 +214,20 @@ export function shouldReplacementRefreshOnDone(
  * - If the entry is unbound (`sessionId: null`): remove it — the generation
  *   ended without ever receiving a session ID, so it cannot be retried by
  *   session ID and must not linger in `pendingRuns` indefinitely.
- * - If the entry is bound: preserve it for same-ID retry.
+ * - If the entry is a retry alias (`isAlias: true`): remove it — the alias was
+ *   created for this specific retry attempt; a subsequent retry will register a
+ *   fresh alias via `onSendStart`, so a terminated alias must not linger.
+ * - If the entry is a bound non-alias (original creation run): preserve it for
+ *   same-ID retry.
  */
 export function onCreationRunTerminated(
   state: CreationRefreshState,
   runId: string,
 ): CreationRefreshState {
   const run = state.pendingRuns[runId];
-  if (!run || run.sessionId !== null) return state;
+  if (!run) return state;
+  // Preserve bound non-alias entries for same-ID retry.
+  if (run.sessionId !== null && !run.isAlias) return state;
   const nextPendingRuns = { ...state.pendingRuns };
   delete nextPendingRuns[runId];
   return { pendingRuns: nextPendingRuns };

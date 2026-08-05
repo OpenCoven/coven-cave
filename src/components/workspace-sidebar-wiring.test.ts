@@ -105,4 +105,12 @@ assert.doesNotMatch(workspace, /lastNonChatMode/, "workspace should not track an
 assert.match(chatView, /setProjectAccessRoot/, "chat-view should capture failing project root on 403");
 assert.match(chatView, /async function handleAddProject/, "chat-view should implement add-project recovery");
 
+// Issue 3: Workspace registers cave:sessions-refresh listener so long-running
+// completions from an unmounted ChatView still reach the current familiar scope.
+assert.match(
+  workspace,
+  /window\.addEventListener\("cave:sessions-refresh",[\s\S]*?onSessionsRefresh\)/,
+  "workspace registers cave:sessions-refresh listener so unmounted ChatView completions trigger the current-scope loadSessions",
+);
+
 console.log("workspace-sidebar-wiring.test.ts passed");
