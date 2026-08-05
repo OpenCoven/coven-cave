@@ -277,8 +277,8 @@ assert.match(
 // the working-tree review, riding the per-card cave:open-file-diff contract.
 assert.match(
   turnRow,
-  /const editedFiles = Array\.from\(\s*\n\s*new Set\(\s*\n\s*editCards\s*\n\s*\.map\(\(tool\) => actionReadyMutationTargetFile\(tool\.name, tool\.input, tool\.status\)\)/,
-  "the aggregate counts distinct action-ready successful files through the shared readiness projection",
+  /const editedFiles = Array\.from\(\s*new Set\(\s*editCards\s*\.map\(\(tool\) =>\s*actionReadyMutationTargetFile\(tool\.name, tool\.input, tool\.status, toolProjectRoot\)\s*\)/,
+  "the aggregate counts distinct action-ready successful files within the active project boundary",
 );
 assert.match(
   turnRow,
