@@ -145,18 +145,48 @@ function structuredAssistantEventText(event: ReplayDaemonEvent): string | null {
   return text;
 }
 
-function appendReplayAssistantText(current: string, next: string): string {
-  if (!next) return current;
+function unseenReplayAssistantSuffix(current: string, next: string): string {
+  if (!next) return "";
   if (!current) return next;
-  if (next.startsWith(current)) return next;
-  if (current.startsWith(next) || current.endsWith(next)) return current;
+  if (next.startsWith(current)) return next.slice(current.length);
+  if (current.startsWith(next) || current.endsWith(next)) return "";
   const maxOverlap = Math.min(current.length, next.length);
   for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
     if (current.endsWith(next.slice(0, overlap))) {
-      return current + next.slice(overlap);
+      return next.slice(overlap);
     }
   }
-  return current + next;
+  return next;
+}
+
+function appendReplayAssistantText(current: string, next: string): string {
+  return current + unseenReplayAssistantSuffix(current, next);
+}
+
+type ReplayStructuredInsertion = {
+  outputOffset: number;
+  text: string;
+  sequence: number;
+};
+
+function renderReplayTimeline(
+  output: string,
+  insertions: ReplayStructuredInsertion[],
+): string {
+  const ordered = [...insertions].sort((left, right) =>
+    left.outputOffset - right.outputOffset || left.sequence - right.sequence
+  );
+  let rendered = "";
+  let outputOffset = 0;
+  for (const insertion of ordered) {
+    const insertionOffset = Math.max(
+      outputOffset,
+      Math.min(output.length, insertion.outputOffset),
+    );
+    rendered += output.slice(outputOffset, insertionOffset) + insertion.text;
+    outputOffset = insertionOffset;
+  }
+  return rendered + output.slice(outputOffset);
 }
 
 function decodePlainTimeline(
@@ -164,16 +194,15 @@ function decodePlainTimeline(
   decoder: (chunks: string[]) => string,
 ): string | null {
   const chunks: string[] = [];
-  let decodedPrefix = "";
-  let merged = "";
+  const insertions: ReplayStructuredInsertion[] = [];
 
-  const mergeDecodedPrefix = () => {
-    const decoded = decoder(chunks).trim();
-    const next = decoded.startsWith(decodedPrefix)
-      ? decoded.slice(decodedPrefix.length)
-      : decoded;
-    merged = appendReplayAssistantText(merged, next);
-    decodedPrefix = decoded;
+  const decodeOutput = () => {
+    let decoded = decoder(chunks);
+    const rawOutput = chunks.join("");
+    if (!rawOutput.endsWith("\n") && decoded.endsWith("\n")) {
+      decoded = decoded.slice(0, -1);
+    }
+    return decoded;
   };
 
   for (const event of events) {
@@ -184,11 +213,18 @@ function decodePlainTimeline(
     }
     const structured = structuredAssistantEventText(event);
     if (structured === null) continue;
-    mergeDecodedPrefix();
-    merged = appendReplayAssistantText(merged, structured.trim());
+    const decoded = decodeOutput();
+    const rendered = renderReplayTimeline(decoded, insertions);
+    const unseen = unseenReplayAssistantSuffix(rendered, structured);
+    if (unseen) {
+      insertions.push({
+        outputOffset: decoded.length,
+        text: unseen,
+        sequence: insertions.length,
+      });
+    }
   }
-  mergeDecodedPrefix();
-  return merged.trim() || null;
+  return renderReplayTimeline(decodeOutput(), insertions).trim() || null;
 }
 
 function cleanTerminalOutput(chunks: string[]): string {

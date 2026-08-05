@@ -130,6 +130,36 @@ test("plain replay merges structured compatibility events in daemon order", () =
   );
 });
 
+test("plain replay preserves whitespace between interleaved daemon events", () => {
+  assert.equal(
+    decodeReplayAssistantOutput({
+      harness: "claude",
+      ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
+      events: [
+        daemonEvent("output", JSON.stringify({ data: "First\n" })),
+        daemonEvent("assistant.message", JSON.stringify({ content: "Second\n" })),
+        daemonEvent("output", JSON.stringify({ data: "Third" })),
+      ],
+    }),
+    "First\nSecond\nThird",
+  );
+});
+
+test("plain replay applies terminal revisions without retaining stale prefixes", () => {
+  assert.equal(
+    decodeReplayAssistantOutput({
+      harness: "claude",
+      ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
+      events: [
+        daemonEvent("output", JSON.stringify({ data: "wrong" })),
+        daemonEvent("assistant.message", JSON.stringify({ content: "wrong" })),
+        daemonEvent("output", JSON.stringify({ data: "\b\b\b\bright" })),
+      ],
+    }),
+    "wright",
+  );
+});
+
 test("replay rejects truncated output after partial chunks with a typed error", () => {
   assert.throws(
     () =>
