@@ -6,6 +6,16 @@
   gap: 2px;
 }
 
+.sidebar-section__content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-section--collapsed .sidebar-section__content {
+  display: none;
+}
+
 .sidebar-addins {
   padding-top: var(--space-1);
 }
