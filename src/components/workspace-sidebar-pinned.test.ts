@@ -52,4 +52,29 @@ assert.doesNotMatch(
   "pinned rows must not hide the unpin inside the hover-only row-actions overlay",
 );
 
+// The Pinned rail is a compact ThreadRow twin, not an independently-derived
+// row shape: its runtime tick, archive muting, and archive glyph must reuse
+// the exact same helpers/classes ThreadRow uses rather than re-deriving (and
+// risking drift on) that semantics — see cave-zs85n Task 6 gap-fix notes.
+assert.match(
+  pinnedRail,
+  /<span className=\{`cnav__tick \$\{statusDotClass\(session\.status\)\}`\} aria-hidden \/>/,
+  "pinned rows carry the same runtime tick (statusDotClass) as ThreadRow",
+);
+assert.match(
+  pinnedRail,
+  /const leadGlyph = archived \? \("ph:archive" as IconName\) : null;/,
+  "pinned rows swap in the same archive glyph ThreadRow uses when a pinned session is archived",
+);
+assert.match(
+  pinnedRail,
+  /\{prStatus \? null : leadGlyph \? \(\s*<Icon name=\{leadGlyph\} width=\{13\} className="cnav__lead" aria-hidden \/>/,
+  "the archive glyph takes the same leading-slot precedence order as ThreadRow (PR badge, then glyph, then dot)",
+);
+assert.match(
+  pinnedRail,
+  /className=\{`cnav__thread cnav__thread--flat\$\{active \? " is-active" : ""\}\$\{archived \? " is-archived" : ""\}`\}/,
+  "an archived pinned row applies is-archived so it reads muted like its ThreadRow twin",
+);
+
 console.log("workspace-sidebar-pinned: ok");

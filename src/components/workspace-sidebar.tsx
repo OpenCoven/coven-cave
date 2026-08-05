@@ -405,7 +405,11 @@ type PinnedThreadRowProps = {
 // rather than ThreadRow's row-actions overlay. It still shares attention
 // derivation (resolveThreadAttention) and cue rendering (ThreadAttentionCue)
 // with ThreadRow so the two row shapes can't render divergent attention state
-// for the same session — only the surrounding chrome differs.
+// for the same session — only the surrounding chrome differs. Same rule for
+// the runtime tick/archive semantics below: a pinned session can still be
+// running, failed, or (once "Show archived" is on) archived, so this row
+// reuses ThreadRow's own tick class and archive-glyph derivation rather than
+// re-deriving them — see cave-zs85n Task 6 gap-fix notes.
 function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin }: PinnedThreadRowProps) {
   const attentionDescriptionId = useId();
   const title = sessionRailTitle(session);
@@ -416,11 +420,17 @@ function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin 
     archived,
     now,
   );
+  const leadGlyph = archived ? ("ph:archive" as IconName) : null;
   return (
     <div
-      className={`cnav__thread cnav__thread--flat${active ? " is-active" : ""}`}
+      className={`cnav__thread cnav__thread--flat${active ? " is-active" : ""}${archived ? " is-archived" : ""}`}
       data-attention={attentionState}
     >
+      {/* Chat.dc.html 2a: every row carries a 2px colour tick on its left
+          edge — the session's runtime state, readable down the whole rail
+          without hunting for the dot. Shared with ThreadRow so a pinned row's
+          tick can never diverge from its full-row twin. */}
+      <span className={`cnav__tick ${statusDotClass(session.status)}`} aria-hidden />
       {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
       <button
         type="button"
@@ -429,7 +439,9 @@ function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin 
         onClick={onOpen}
         className="cnav__thread-main focus-ring"
       >
-        {prStatus ? null : (
+        {prStatus ? null : leadGlyph ? (
+          <Icon name={leadGlyph} width={13} className="cnav__lead" aria-hidden />
+        ) : (
           <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
         )}
         <span className="cnav__thread-copy">

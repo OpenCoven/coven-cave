@@ -695,11 +695,17 @@ test("a pinned attention session appears in both Pinned and Awaiting you, keepin
 
   // The Pinned rail's compact row: active, attention-tinted, PR-badged, AND
   // still carries its distinct one-click unpin control (not ThreadRow's
-  // row-actions overlay).
+  // row-actions overlay). Pin these directly against the Pinned section's own
+  // row — not just its Awaiting you twin below — so a regression that only
+  // strips the tick/runtime cue from PinnedThreadRow can't hide behind the
+  // duplicate assertions on the ThreadRow copy (cave-zs85n Task 6 gap-fix).
   const pinnedRow = rowContainerFor(pinnedSection, railTitle);
   expect(pinnedRow.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__thread", "cnav__thread--flat", "is-active"]));
   expect(pinnedRow.props["data-attention"]).toBe("left-hanging");
   expect(attentionCueLabels(pinnedRow)).toEqual(["Left hanging"]);
+  expect(
+    pinnedRow.findAll((node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.includes("cnav__tick") && node.props.className.includes("animate-pulse")),
+  ).toHaveLength(1);
   expect(
     pinnedRow.findAll((node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ").includes("cnav__pr-badge") && node.props["data-pr-state"] === "open"),
   ).toHaveLength(1);
@@ -717,6 +723,76 @@ test("a pinned attention session appears in both Pinned and Awaiting you, keepin
   ).toHaveLength(1);
   expect(
     awaitingRow.findAll((node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ").includes("cnav__pr-badge")),
+  ).toHaveLength(1);
+
+  await act(async () => renderer.unmount());
+});
+
+test("a pinned archived session mutes to is-archived in the Pinned rail and drops its attention cue", async () => {
+  let renderer!: ReactTestRenderer;
+  const session = makeSession({
+    id: "session-pinned-archived",
+    title: "Archived but pinned",
+    status: "idle",
+    archived_at: "2026-08-05T18:00:00.000Z",
+    updated_at: "2026-08-05T18:00:00.000Z",
+    attention: { state: "awaiting-human", since: "2026-08-05T17:00:00.000Z", reason: "approval" },
+  });
+  sidebarPrefs.pinnedIds = [session.id];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, sessions: [session] }) })),
+  );
+
+  await act(async () => {
+    renderer = create(
+      createElement(WorkspaceSidebar, {
+        sessions: [],
+        familiars: [],
+        responseNeeded: new Set(),
+        onSelectFamiliar: () => undefined,
+        onOpenSession: () => undefined,
+        onNavigate: () => undefined,
+        onNewChat: () => undefined,
+        onDeleteSession: async () => undefined,
+        onOpenSettings: () => undefined,
+      }),
+    );
+    await Promise.resolve();
+  });
+
+  // Flip the sidepanel's own "Show archived" option (the Popover mocks render
+  // their children unconditionally, so the menu item is reachable without
+  // simulating the trigger click first) — this is what makes an archived
+  // pinned row's visibility possible at all: pinnedSessions only ever derives
+  // from visibleSessions, which drops archived_at rows unless this is on.
+  const showArchivedItem = renderer.root.find(
+    (node) => typeof node.type === "string" && node.props.onSelect && textContent(node.children) === "Show archived",
+  );
+  await act(async () => {
+    showArchivedItem.props.onSelect();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  const pinnedSection = sectionByLabel(renderer, "Pinned threads");
+  expect(sectionThreadTitles(pinnedSection)).toEqual(["Archived but pinned"]);
+
+  // Same regression guard as the pinned-attention test above: pin the
+  // archive class and cue-suppression directly against the Pinned section's
+  // own row, not a ThreadRow stand-in — a pinned session reaching "Show
+  // archived" must read exactly as muted/settled as its full ThreadRow twin
+  // does (cave-zs85n Task 6 gap-fix).
+  const pinnedRow = rowContainerFor(pinnedSection, "Archived but pinned");
+  expect(pinnedRow.props.className.split(" ")).toEqual(
+    expect.arrayContaining(["cnav__thread", "cnav__thread--flat", "is-archived"]),
+  );
+  expect(pinnedRow.props["data-attention"]).toBe("none");
+  expect(attentionCueLabels(pinnedRow)).toEqual([]);
+  expect(
+    pinnedRow.findAll(
+      (node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.includes("cnav__tick"),
+    ),
   ).toHaveLength(1);
 
   await act(async () => renderer.unmount());
