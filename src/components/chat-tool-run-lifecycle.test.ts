@@ -355,10 +355,17 @@ test("repository adapter mutation payloads normalize through the public helpers"
     "OpenClaw apply_patch derives the changed path from the patch envelope",
   );
   assert.equal(
-    toolInputAsDiff("edit", openClawPatch),
-    null,
-    "the apply_patch input field is not treated as a diff for other mutation tools",
+    mutationTools.actionReadyMutationTargetFile("apply_patch", openClawPatch, "ok", "/repo"),
+    "/repo/src/patch.ts",
+    "a successful OpenClaw patch resolves its relative path inside the active project",
   );
+  for (const field of ["input", "patch", "diff"]) {
+    assert.equal(
+      toolInputAsDiff("edit", JSON.stringify({ path: "src/not-a-patch.ts", [field]: openClawPatchText })),
+      null,
+      `${field} patch text is only interpreted for a patch tool`,
+    );
+  }
 
   for (const name of ["file_change", "edit", "apply_patch"]) {
     assert.equal(
@@ -471,6 +478,19 @@ test("aggregate review includes only successful action-ready mutations", () => {
       "/repo",
     );
   assert.equal(readyEdit("/repo/src/in-project.ts"), "/repo/src/in-project.ts");
+  assert.equal(
+    actionReadyMutationTargetFile(
+      "edit",
+      JSON.stringify({
+        path: "/repo/src/no-project-context.ts",
+        edits: [{ oldText: "before", newText: "after" }],
+      }),
+      "ok",
+      null,
+    ),
+    null,
+    "aggregate review is unavailable without an active Changes-panel project",
+  );
   assert.equal(
     readyEdit("/repo-other/src/prefix-collision.ts"),
     null,
