@@ -36,6 +36,7 @@ import {
   writeCodeReadingPin,
 } from "@/lib/code-reading-pref";
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
+import { resolvePathWithinProjectRoot } from "@/lib/cave-projects-types";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { ChatSessionContextRow } from "@/components/chat-session-context-row";
@@ -7381,7 +7382,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       />
       ) : null}
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
-      <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
+      <ToolProjectRootContext.Provider value={activeProjectRoot || null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <CodeReadingContext.Provider value={codeReading}>
       {/* Row, so a `split` inspector docks BESIDE the transcript and narrows it
@@ -8171,6 +8172,7 @@ function TurnRowImpl({
 }) {
   const profileSnapshot = useUserProfile();
   const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
+  const toolProjectRoot = useContext(ToolProjectRootContext);
   // Tool UI keeps the same render slots for the turn's lifetime: non-edit calls
   // stay in one compact ToolGroup above the answer, while edit cards stay below
   // it. Settlement updates those instances instead of relocating them.
@@ -8543,7 +8545,9 @@ function TurnRowImpl({
                       const editedFiles = Array.from(
                         new Set(
                           editCards
-                            .map((tool) => actionReadyMutationTargetFile(tool.name, tool.input, tool.status))
+                            .map((tool) =>
+                              actionReadyMutationTargetFile(tool.name, tool.input, tool.status, toolProjectRoot)
+                            )
                             .filter((p): p is string => Boolean(p)),
                         ),
                       );
@@ -8935,18 +8939,17 @@ function EditCardActions({
   displayPath: string;
 }) {
   const projectRoot = useContext(ToolProjectRootContext);
-  const relPath =
-    projectRoot && targetFile && targetFile.startsWith(projectRoot)
-      ? targetFile.slice(projectRoot.length).replace(/^\/+/, "")
-      : null;
+  const projectPath = resolvePathWithinProjectRoot(projectRoot, targetFile ?? displayPath);
+  const relPath = projectPath?.relativePath ?? null;
+  const resolvedTargetFile = projectPath?.absolutePath ?? null;
   const [state, setState] = useState<"idle" | "armed" | "reverting" | "reverted" | "error">("idle");
   const [err, setErr] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const base = displayPath.split("/").pop() || displayPath;
 
   const review = () => {
-    if (relPath && targetFile) {
-      window.dispatchEvent(new CustomEvent("cave:open-file-diff", { detail: { path: targetFile } }));
+    if (relPath && resolvedTargetFile) {
+      window.dispatchEvent(new CustomEvent("cave:open-file-diff", { detail: { path: resolvedTargetFile } }));
     } else {
       setReviewOpen(true);
     }

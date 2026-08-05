@@ -49,6 +49,85 @@ export function normalizeProjectRoot(root: string | null | undefined): string {
   return root?.trim().replace(/\\/g, "/").replace(/\/+$/, "") || "/";
 }
 
+export type ProjectRelativePath = {
+  absolutePath: string;
+  relativePath: string;
+};
+
+type AbsolutePathParts = {
+  prefix: string;
+  segments: string[];
+};
+
+function absolutePathParts(value: string): AbsolutePathParts | null {
+  const normalized = value.trim().replace(/\\/g, "/");
+  const drive = normalized.match(/^([A-Za-z]:)(?:\/|$)/);
+  const prefix = drive ? drive[1]!.toUpperCase() : normalized.startsWith("/") ? "/" : null;
+  if (!prefix) return null;
+  const rest = drive ? normalized.slice(drive[0].length) : normalized.slice(1);
+  const segments: string[] = [];
+  for (const segment of rest.split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      if (!segments.length) return null;
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  return { prefix, segments };
+}
+
+function joinedAbsolutePath(parts: AbsolutePathParts): string {
+  const separator = parts.prefix === "/" ? "" : "/";
+  return `${parts.prefix}${separator}${parts.segments.join("/")}` || "/";
+}
+
+/**
+ * Resolve one absolute or project-relative path against a project root.
+ * Segment comparison prevents sibling-prefix collisions, while resolving
+ * relative dot segments refuses traversal above the project boundary.
+ */
+export function resolvePathWithinProjectRoot(
+  projectRoot: string | null | undefined,
+  candidatePath: string | null | undefined,
+): ProjectRelativePath | null {
+  if (!projectRoot?.trim() || !candidatePath?.trim() || /[\0\r\n]/.test(candidatePath)) return null;
+  const root = absolutePathParts(normalizeProjectRoot(projectRoot));
+  if (!root) return null;
+
+  const normalizedCandidate = candidatePath.trim().replace(/\\/g, "/");
+  const absoluteCandidate = absolutePathParts(normalizedCandidate);
+  let candidate: AbsolutePathParts;
+  if (absoluteCandidate) {
+    candidate = absoluteCandidate;
+  } else {
+    const segments = [...root.segments];
+    for (const segment of normalizedCandidate.split("/")) {
+      if (!segment || segment === ".") continue;
+      if (segment === "..") {
+        if (segments.length === root.segments.length) return null;
+        segments.pop();
+        continue;
+      }
+      segments.push(segment);
+    }
+    candidate = { prefix: root.prefix, segments };
+  }
+
+  if (
+    candidate.prefix !== root.prefix ||
+    candidate.segments.length <= root.segments.length ||
+    root.segments.some((segment, index) => candidate.segments[index] !== segment)
+  ) {
+    return null;
+  }
+  return {
+    absolutePath: joinedAbsolutePath(candidate),
+    relativePath: candidate.segments.slice(root.segments.length).join("/"),
+  };
+}
+
 export function compareProjectsAlphabetically(a: CaveProject, b: CaveProject): number {
   const byName = a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
   if (byName !== 0) return byName;

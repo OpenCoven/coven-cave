@@ -205,6 +205,34 @@ assert.deepStrictEqual(
   },
   "OpenClaw edit starts preserve the adapter's path plus camelCase edit pairs",
 );
+const openClawApplyPatchText = [
+  "*** Begin Patch",
+  "*** Update File: src/openclaw.ts",
+  "@@",
+  "-const before = true;",
+  "+const after = true;",
+  "*** End Patch",
+].join("\n");
+const openClawApplyPatchStart = {
+  ...toolLifecycleV1.frames[0].payload,
+  data: {
+    ...toolLifecycleV1.frames[0].payload.data,
+    toolCallId: "tool-apply-patch",
+    name: "apply_patch",
+    args: { input: openClawApplyPatchText },
+  },
+};
+assert.deepStrictEqual(
+  parseOpenClawToolEvent(toolLifecycleV1.frames[0].event, openClawApplyPatchStart, beta5Profile),
+  {
+    kind: "tool_start",
+    id: "tool-apply-patch",
+    name: "apply_patch",
+    input: { input: openClawApplyPatchText },
+    seq: 3,
+  },
+  "OpenClaw apply_patch starts preserve the production { input: patchText } schema",
+);
 assert.deepStrictEqual(
   parseOpenClawToolEvent(toolLifecycleV1.frames[1].event, toolLifecycleV1.frames[1].payload, beta5Profile),
   { kind: "tool_progress", id: "tool-1", output: "hi", seq: 7 },
