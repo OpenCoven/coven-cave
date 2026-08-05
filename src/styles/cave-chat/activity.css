@@ -185,6 +185,13 @@
   text-transform: uppercase;
 }
 
+/* One-off wrappers (data-one-off) render their summary hidden/inert — the
+   shared display:flex above would override [hidden]{display:none}, so this
+   scoped rule wins on specificity to keep the one-off summary truly invisible. */
+details[data-one-off] > .cave-tool-summary {
+  display: none;
+}
+
 .cave-tool-summary::-webkit-details-marker {
   display: none;
 }
