@@ -183,6 +183,22 @@ function normalizeGeneratedTitleSource(input: unknown): string | null {
   return source;
 }
 
+function unescapeMarkdownLabel(label: string): string {
+  let result = "";
+  for (let i = 0; i < label.length; i++) {
+    if (
+      label[i] === "\\" &&
+      i + 1 < label.length &&
+      (label[i + 1] === "[" || label[i + 1] === "]" || label[i + 1] === "\\")
+    ) {
+      result += label[++i];
+    } else {
+      result += label[i];
+    }
+  }
+  return result;
+}
+
 /**
  * Linear normalizer for inline Markdown image and link syntax.
  * Walks the input once: `![alt](dest)` → alt text, `[label](dest)` → label.
@@ -213,8 +229,21 @@ function normalizeMarkdownInlineLinks(s: string): string {
     const labelStart = bracketPos + 1;
     let labelEnd = -1;
     const labelCap = Math.min(labelStart + MAX_CHAT_TITLE_LENGTH + 1, len);
+    let labelDepth = 1;
     for (let k = labelStart; k < labelCap; k++) {
-      if (s[k] === "]") { labelEnd = k; break; }
+      if (s[k] === "\\") {
+        k++;
+        continue;
+      }
+      if (s[k] === "[") {
+        labelDepth++;
+      } else if (s[k] === "]") {
+        labelDepth--;
+        if (labelDepth === 0) {
+          labelEnd = k;
+          break;
+        }
+      }
     }
     if (labelEnd < 0 || labelEnd + 1 >= len || s[labelEnd + 1] !== "(") {
       append(s[i++]);
@@ -253,9 +282,10 @@ function normalizeMarkdownInlineLinks(s: string): string {
       else if (s[j] === ")") depth--;
       j++;
     }
-    const label = isImage
+    const rawLabel = isImage
       ? s.slice(labelStart, labelEnd).trim()
       : s.slice(labelStart, labelEnd);
+    const label = unescapeMarkdownLabel(rawLabel);
     append(label);
     // A malformed destination consumes the remainder rather than exposing URL
     // text. A balanced destination resumes immediately after its closing `)`.

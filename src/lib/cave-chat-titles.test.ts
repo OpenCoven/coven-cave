@@ -751,6 +751,29 @@ assert.equal(
     "manual-length malformed links are processed repeatedly without catastrophic backtracking",
   );
 }
+assert.equal(
+  chatSummaryTitle({ userText: "[outer [inner]](https://example.test)" }),
+  "Outer inner",
+  "nested brackets in a link label are flattened to plain text",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "[outer \\[inner\\]](https://example.test)" }),
+  "Outer inner",
+  "escaped brackets do not terminate the label scan or leak Markdown escapes",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "[outer [inner]](https://example.test/unclosed" }),
+  "Outer inner",
+  "an unclosed destination after a nested label keeps only the safe visible label",
+);
+{
+  const longNestedLink = `[outer [inner]](https://example.test/${"x".repeat(5_000)})`;
+  assert.equal(
+    chatSummaryTitle({ userText: longNestedLink }),
+    "Outer inner",
+    "long nested links are reduced without leaking destination text",
+  );
+}
 
 assert.equal(
   chatSummaryTitle({ userText: '"🎉 Fix parser"' }),
