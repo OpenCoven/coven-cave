@@ -186,11 +186,18 @@ gh api graphql -f query='{repository(owner:"OpenCoven",name:"coven-cave"){pullRe
 # until it is false — a partial listing is worse than no listing.
 # fix what is real, reply naming the commit, then per thread id (optional now):
 gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' -f t=<PRRT_…>
-gh pr merge <#> --squash --delete-branch
+set -euo pipefail
+expected_head=$(git rev-parse HEAD)
+actual_head=$(gh pr view <#> --json headRefOid --jq .headRefOid)
+test "$actual_head" = "$expected_head"
+gh pr checks <#> --required
+gh pr merge <#> --squash --match-head-commit "$expected_head"
 ```
 
 `gh pr merge` on a blocked PR suggests `--admin`. Don't. It bypasses the
 protection this section exists to describe; fix the actual blocker instead.
+Do not add `--delete-branch`: local retirement belongs to the lifecycle patrol,
+and remote deletion remains proposal-only.
 
 Squash-merge through `gh`/the PR UI still works — it's a merge, not a direct push. Non-admin pushes to `main` are blocked server-side; admin-authenticated agent sessions are bound by the repository rule above. Don't work around protection to land your own change — and in particular, **do not touch `enforce_admins` in either direction**: it is the owner's setting, currently off by their standing instruction. If a change can't go through a PR, surface it to the owner.
 
@@ -332,7 +339,7 @@ out. See `cave-l52dt`.
 - Symlink `node_modules` from the main checkout — Next.js + pnpm workspaces are fragile around this.
 - `git worktree remove --force` when status is dirty — investigate first; uncommitted edits may belong to another live session.
 
-**After `gh pr merge --squash --delete-branch`:** normal completion uses the lifecycle patrol.
+**After an exact-head squash merge:** normal completion uses the lifecycle patrol.
 Run `pnpm beads:worktrees`; when the full maintenance
 transaction is available, `pnpm beads:worktrees:apply` retires proven-safe
 local state. If it reports active, recovery, cooldown, uncertain, or
