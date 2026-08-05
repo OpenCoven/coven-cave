@@ -265,7 +265,7 @@ export function validateOrchestration(
     const prevStep = ctx.previous.nextStep;
     if (
       prevStep?.origin === "human" &&
-      card.nextStep?.summary !== prevStep.summary
+      JSON.stringify(card.nextStep ?? null) !== JSON.stringify(prevStep)
     ) {
       errors.push({
         code: "next_step_authorship",
