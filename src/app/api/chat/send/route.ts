@@ -1616,13 +1616,15 @@ export async function POST(req: Request) {
     : null;
 
   // Resolve the direct plan in the exact familiar-scoped environment passed to
-  // the child. The capability probe scrubs credentials only for `--version`;
-  // it must never discover a different launcher than the model spawn uses.
-  const copilotSpawnEnv = copilotDirect ? harnessSpawnEnv(body.familiarId) : null;
+  // the child. The resolver owns bounded PATH discovery so a cold desktop
+  // login-shell lookup cannot consume the launch-plan verification budget.
+  // The capability probe scrubs credentials only for `--version`; it must never
+  // discover a different launcher than the model spawn uses.
   const copilotManifestStream = copilotDirect ? copilotStreamSpec() : null;
   const copilotRuntimeLaunch = copilotManifestStream
     ? await resolveCopilotRuntimeLaunch(copilotManifestStream.executable, {
-        spawnEnv: () => copilotSpawnEnv!,
+        spawnEnv: (discoveryDeadline) =>
+          harnessSpawnEnv(body.familiarId, { discoveryDeadline }),
       })
     : null;
   const copilotCapability = copilotManifestStream && copilotRuntimeLaunch
