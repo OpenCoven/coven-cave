@@ -1676,7 +1676,7 @@ exit 0
     "the stable direct landing becomes eligible after 8 hours",
   );
   assert.deepEqual(report.budgets, {
-    worktrees: { count: 8, warning: 12, exceeded: false },
+    worktrees: { count: 8, warning: 20, exceeded: false },
 
     branches: { count: 11, warning: 30, exceeded: false },
     exceptions: { active: 0, expired: 0 },
@@ -1766,7 +1766,7 @@ exit 0
   assert.match(humanReport, /uncommitted\.txt/, "the routine report includes exact dirty paths");
   assert.match(
     humanReport,
-    /^Worktree budget: 8\/12 \(within budget\)$/m,
+    /^Worktree budget: 8\/20 \(within budget\)$/m,
     "the routine report uses the lifecycle renderer's exact worktree budget line",
   );
   assert.match(

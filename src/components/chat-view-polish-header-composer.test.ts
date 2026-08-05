@@ -820,7 +820,7 @@ assert.match(
 );
 assert.match(
   slashBranch,
-  /cmd\.argPlaceholder && canonicalize\(text\.trim\(\)\) !== cmd\.name[\s\S]*setText\(cmd\.name \+ " "\)/,
+  /cmd\.argPlaceholder &&[\s\S]*canonicalize\(activeInvocation\?\.commandToken \?\? ""\) !== cmd\.name[\s\S]*completeCommand\(cmd\.name, true\)/,
   "Slash-menu Enter autocompletes argument-taking commands (like Tab) instead of running them bare",
 );
 assert.match(

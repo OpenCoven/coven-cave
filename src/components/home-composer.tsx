@@ -19,7 +19,8 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Familiar, SessionRow } from "@/lib/types";
+import type { SessionRow } from "@/lib/types";
+import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import { Icon } from "@/lib/icon";
 import { isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
@@ -58,6 +59,7 @@ import { useKeySymbols } from "@/lib/platform-keys";
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { canonicalHarnessId, COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
+import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
 import { HomeFromTaskRow, type HomeTaskOrigin } from "@/components/home/home-from-task";
 import { HomeContinue } from "@/components/home/home-continue";
@@ -91,8 +93,9 @@ import {
 export type { Destination } from "@/components/home/home-destinations";
 
 type Props = {
-  familiars: Familiar[];
+  familiars: ResolvedFamiliar[];
   activeFamiliarId: string | null;
+  onSetActiveFamiliar: (familiarId: string) => void;
   sessions: SessionRow[];
   /** Open a new chat that sends `prompt` through ChatView's streaming path.
    *  Home never talks to the chat API itself — a fire-and-cancel send here
@@ -111,7 +114,7 @@ type Props = {
   onToast: (msg: string) => void;
   /** Submit a slash command. Mirrors the chat composer's escape hatch so
    *  `/inbox`, `/board`, `/remind …` etc. work from the home screen too. */
-  onSlash?: (command: string, args: string) => void;
+  onSlash?: (command: string, args: string) => boolean;
   /** Resume a recent chat from the Continue column's session cards. */
   onOpenSession?: (sessionId: string, familiarId: string | null) => void;
   /** Voice new-chat: start a live voice call in a brand-new chat with this
@@ -134,6 +137,7 @@ const HOME_COMPOSER_MAX_HEIGHT = 332;
 export function HomeComposer({
   familiars,
   activeFamiliarId,
+  onSetActiveFamiliar,
   sessions,
   onStartChat,
   onNavigateToBoard,
@@ -145,9 +149,12 @@ export function HomeComposer({
   // Hydrate from the same empty draft SSR emitted, then restore local storage
   // before paint so textarea and Send-button state update in one React commit.
   const [text, setText] = useState("");
+  const [composerCaret, setComposerCaret] = useState(0);
   const [draftRestored, setDraftRestored] = useState(false);
   useLayoutEffect(() => {
-    setText(readComposerDraft(HOME_DRAFT_KEY));
+    const restored = readComposerDraft(HOME_DRAFT_KEY);
+    setText(restored);
+    setComposerCaret(restored.length);
     setDraftRestored(true);
   }, []);
   const [destination, setDestination] = useState<Destination>("chat");
@@ -188,6 +195,16 @@ export function HomeComposer({
   }, []);
   const { announce } = useAnnouncer();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const completeComposerText = useCallback((nextText: string, nextCaret: number) => {
+    setText(nextText);
+    setComposerCaret(nextCaret);
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(nextCaret, nextCaret);
+    });
+  }, []);
   // Attachments staged in the composer (cap 10, mirroring the chat composer);
   // handed to the opened chat on submit. Shared hook — home adds the limit
   // toast + SR announce and defers refocus a tick (the chat composer is silent).
@@ -370,10 +387,13 @@ export function HomeComposer({
     slashIdx,
     setSlashIdx,
     slashListboxId,
+    completeCommand,
     handleKeyDown: handleMenuKey,
   } = useInlineSlashMenus({
     text,
     setText,
+    caret: composerCaret,
+    onCompleteText: completeComposerText,
     modelHarness,
     modelOptionsOverride: runtimeModelOptions,
     onPickModel: (id) => { handleSelectModel(id); onToast(`Model set to ${id}.`); setText(""); },
@@ -626,13 +646,32 @@ export function HomeComposer({
         insertPromptTemplate(template);
         return;
       }
-      if (onSlash) {
+      const handled = onSlash?.(command, args) ?? false;
+      if (handled) {
         pushHistory(prompt);
         setText("");
-        onSlash(command, args);
-      } else {
-        onToast(`Slash commands aren't wired up here yet — try ${command} from a chat.`);
+        return;
       }
+      if (!selectedFamiliarId) {
+        onToast("No familiar yet — summon one to run this command. Your draft is saved.");
+        requestSummonFamiliar();
+        return;
+      }
+      if (!projectLaunchReady) {
+        onToast(projectLaunchMessage);
+        return;
+      }
+      if (!(await waitForRuntimeWrite())) {
+        onToast("Runtime selection could not be saved; chat was not started.");
+        return;
+      }
+      pushHistory(prompt);
+      setText("");
+      clearDraft();
+      clearAttachments();
+      onStartChat(prompt, selectedFamiliarId, selectedProjectRoot, {
+        initialControls: initialChatControls,
+      });
       return;
     }
 
@@ -916,7 +955,7 @@ export function HomeComposer({
               const cmd = slashSuggestions[i];
               const s = skillCommandRows[i - slashSuggestions.length];
               if (cmd) {
-                setText(cmd.name + (cmd.argPlaceholder ? " " : ""));
+                completeCommand(cmd.name, Boolean(cmd.argPlaceholder));
                 textareaRef.current?.focus();
               } else if (s) {
                 invokeSkill(s);
@@ -1002,7 +1041,13 @@ export function HomeComposer({
           rows={1}
           value={text}
           readOnly={!draftRestored}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            setComposerCaret(e.target.selectionStart ?? e.target.value.length);
+          }}
+          onSelect={(e) => setComposerCaret(e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
+          onClick={(e) => setComposerCaret(e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
+          onKeyUp={(e) => setComposerCaret(e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
           onPaste={handlePaste}
           onKeyDown={handleKeyDown}
           disabled={sending}
@@ -1219,6 +1264,17 @@ export function HomeComposer({
             above. Send hugs bottom-right, vertically aligned. */}
         <div className="cave-composer-footer-band home-composer-toolbar">
           <div className="home-composer-toolbar__left">
+            <FamiliarQuickSwitch
+              familiars={familiars}
+              activeFamiliarId={selectedFamiliarId || null}
+              sessions={sessions}
+              onSelectFamiliar={(id) => {
+                if (id) onSetActiveFamiliar(id);
+              }}
+              placement="top-start"
+              labeled
+              singleRequired
+            />
             <ComposerContextChips
               projects={projects}
               projectValue={displayProjectId}

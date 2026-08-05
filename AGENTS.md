@@ -18,7 +18,7 @@
   the fallback.** Telling them apart is the whole game, because the wrong choice
   creates a worktree nothing can ever retire.
   - **Exit 2 — refused by the admission gate** (`creating a worktree would
-    exceed the 12-worktree budget`, or `Bead … already owns a registered
+    exceed the 20-worktree budget`, or `Bead … already owns a registered
     worktree`). The gate ran fine and declined. **Do not fall back to `git worktree add` here.** Every refusal
     from this path is lifted by an attributed, expiring exception, and the
     refusal itself now prints the exact rerun. The budget counts every
