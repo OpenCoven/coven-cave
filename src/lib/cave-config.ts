@@ -1130,7 +1130,13 @@ export async function autoArchiveReflectedSessionLocal(
 ): Promise<string | null> {
   const sessionExists = request.sessionExists ?? (async () =>
     Boolean(await loadConversation(sessionId)));
-  if (!(await sessionExists())) return null;
+  let exists: boolean;
+  try {
+    exists = await sessionExists();
+  } catch {
+    return null;
+  }
+  if (!exists) return null;
 
   let archivedAt: string | null = null;
   await updateState((state) => {
