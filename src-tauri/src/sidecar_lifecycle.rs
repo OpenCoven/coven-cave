@@ -23,6 +23,13 @@ impl SidecarProcess {
         self.child.id()
     }
 
+    pub(super) fn has_exited(&mut self) -> Result<bool, String> {
+        self.child
+            .try_wait()
+            .map(|status| status.is_some())
+            .map_err(|error| format!("could not inspect sidecar process: {error}"))
+    }
+
     /// A reachability assertion may only follow the exact child retained by
     /// this state. PID existence alone is not ownership: the OS may reuse a
     /// PID after a crashed sidecar exits.
@@ -59,6 +66,7 @@ pub(super) enum SidecarStartError {
 pub(super) enum PortWaitResult {
     Ready,
     Cancelled,
+    Exited,
     TimedOut,
 }
 
