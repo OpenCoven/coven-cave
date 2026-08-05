@@ -368,6 +368,8 @@ pub(super) fn start_sidecar_runtime(
         command.env("LD_LIBRARY_PATH", whisper_dir);
     }
 
+    #[cfg(unix)]
+    configure_unix_sidecar_parent_watchdog(&mut command);
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     #[cfg(target_os = "windows")]

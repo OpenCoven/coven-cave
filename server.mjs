@@ -55,6 +55,25 @@ const LEGACY_ACCESS_COOKIE = "coven_access_token";
 const ACCESS_QUERY_PARAM = "coven_access_token";
 const SIDECAR_QUERY_PARAM = "covenCaveToken";
 const sessions = /* @__PURE__ */ new Map();
+function terminatePackagedUnixSidecarTree() {
+  for (const session of sessions.values()) {
+    try {
+      session.pty.kill();
+    } catch {
+    }
+  }
+  sessions.clear();
+  try {
+    process.kill(-process.pid, "SIGKILL");
+  } catch {
+    process.exit(1);
+  }
+}
+if (process.platform !== "win32" && process.env.COVEN_CAVE_PARENT_WATCHDOG === "stdin-eof") {
+  process.stdin.once("end", terminatePackagedUnixSidecarTree);
+  process.stdin.once("error", terminatePackagedUnixSidecarTree);
+  process.stdin.resume();
+}
 const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
 const PTY_FRAME_COALESCE_MS = 8;
 const PTY_FRAME_MAX_BYTES = 16 * 1024;
