@@ -36,6 +36,10 @@ import {
   writeCodeReadingPin,
 } from "@/lib/code-reading-pref";
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
+import {
+  dedupeAbsoluteProjectPaths,
+  resolvePathWithinProjectRoot,
+} from "@/lib/cave-projects-types";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { ChatSessionContextRow } from "@/components/chat-session-context-row";
@@ -76,8 +80,10 @@ import {
   reconcileLiveChatGenerationSession,
   recordLiveChatGeneration,
   retryTurnModelRequest,
+  sessionToolProjectRootForIdentity,
   stageLiveChatGenerationMetadata,
   subscribeLiveChatGeneration,
+  turnToolProjectRoot,
   type ChatTurnLifecycle,
   type ConversationHistoryPayload,
   type LiveChatGenerationMetadata,
@@ -285,7 +291,15 @@ import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
 import { useShowThinking } from "@/lib/reasoning-visibility";
 import { useThreadInstrumentsVisible } from "@/lib/thread-instruments-visibility";
-import { isFileMutationTool, toolInputAsDiff, toolTargetFile, toolTargetPath } from "@/lib/tool-input-diff";
+import {
+  actionReadyMutationTargetFiles,
+  isFileMutationActionReady,
+  isFileMutationTool,
+  normalizeFileMutation,
+  toolInputAsDiff,
+  toolTargetFile,
+  toolTargetPath,
+} from "@/lib/tool-input-diff";
 import { diffStat } from "@/lib/tool-edit-stat";
 import { findTranscriptHits } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
@@ -2477,6 +2491,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     session?.project_root ??
     projectRoot ??
     "";
+  const sessionToolProjectRootsRef = useRef(new Map<string, string | null>());
   // ── Code reading (cave-f6mu9) ─────────────────────────────────────────────
   // A code block in the transcript is a claim about a file; the inspector is
   // where the reader checks it against the working tree and carries lines back
@@ -3847,6 +3862,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!activeLeafId) return turns;
     return resolveActivePath(turns, activeLeafId) as Turn[];
   }, [turns, activeLeafId]);
+  const sessionProjectRoot = sessionToolProjectRootForIdentity(
+    sessionToolProjectRootsRef.current,
+    sessionId,
+    session?.runtime,
+    session?.project_root,
+  );
+  const turnProjectRoots = useMemo(
+    () => new Map(turns.map((turn) => [turn.id, turnToolProjectRoot(turn, sessionProjectRoot)])),
+    [sessionProjectRoot, turns],
+  );
 
   // The last settled assistant turn's first reply next-path. Typed task/action
   // suggestions are deliberately excluded: keyboard fill may only prepare
@@ -7776,7 +7801,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       />
       ) : null}
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
-      <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <CodeReadingContext.Provider value={codeReading}>
       {/* Row, so a `split` inspector docks BESIDE the transcript and narrows it
@@ -7927,6 +7951,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setExpandedAvatarTurnId={setExpandedAvatarTurnId}
             onOpenUrl={onOpenUrl}
             handlersRef={transcriptHandlersRef}
+            turnProjectRoots={turnProjectRoots}
           />
           {shouldShowChatArchiveNudge({
             taskLifecycle: linkedContext?.task?.lifecycle ?? null,
@@ -8029,7 +8054,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       </div>
       </CodeReadingContext.Provider>
       </FileLinkResolverContext.Provider>
-      </ToolProjectRootContext.Provider>
 
       {reflectError ? (
         <div
@@ -8418,6 +8442,7 @@ const TranscriptRows = memo(function TranscriptRows({
   setExpandedAvatarTurnId,
   onOpenUrl,
   handlersRef,
+  turnProjectRoots,
 }: {
   groupedTurns: TranscriptGroup[];
   turnIndexMap: Map<string, number>;
@@ -8435,6 +8460,7 @@ const TranscriptRows = memo(function TranscriptRows({
   setExpandedAvatarTurnId: React.Dispatch<React.SetStateAction<string | null>>;
   onOpenUrl?: (url: string) => void;
   handlersRef: React.RefObject<TranscriptHandlers>;
+  turnProjectRoots: ReadonlyMap<string, string | null>;
 }) {
   const handlers = () => handlersRef.current;
   // Earlier-turns fold ("Chat Session - Prototype.dc.html", cave-u5lq7). The
@@ -8506,6 +8532,7 @@ const TranscriptRows = memo(function TranscriptRows({
           expanded={expandedAvatarTurnId === t.id}
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
           branchNav={singleBranchNav}
+          toolProjectRoot={turnProjectRoots.get(t.id) ?? null}
         />
       );
       if (!gapLabel) return row;
@@ -8571,6 +8598,7 @@ const TranscriptRows = memo(function TranscriptRows({
               expanded={expandedAvatarTurnId === t.id}
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
               branchNav={groupBranchNav}
+              toolProjectRoot={turnProjectRoots.get(t.id) ?? null}
             />
           );
         })}
@@ -8624,6 +8652,7 @@ function TurnRowImpl({
   onRequest,
   feedbackContext,
   branchNav,
+  toolProjectRoot,
 }: {
   turn: Turn;
   /** User-authored artifact feedback remains a normal chat send. */
@@ -8655,6 +8684,8 @@ function TurnRowImpl({
   feedbackContext?: FeedbackContext;
   /** Branch navigator: shown when this turn has siblings (alternate branches). */
   branchNav?: { index: number; total: number; onPrev: () => void; onNext: () => void };
+  /** Immutable local execution root recorded for this turn, when available. */
+  toolProjectRoot: string | null;
 }) {
   const profileSnapshot = useUserProfile();
   const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
@@ -8923,6 +8954,7 @@ function TurnRowImpl({
           </div>
 
           <div className="cave-linear-turn-body">
+            <ToolProjectRootContext.Provider value={toolProjectRoot}>
             <ChatToolActivityLayout
               leading={
                 reasoning
@@ -9013,13 +9045,14 @@ function TurnRowImpl({
                   // chip rides the cards' existing cave:open-file-diff
                   // contract (the Changes panel suffix-matches the path and
                   // shows every changed file once open).
-                  const editedFiles = Array.from(
-                    new Set(
-                      editCards
-                        .map((tool) =>
-                          actionReadyMutationTargetFile(tool.name, tool.input, tool.status, toolProjectRoot)
-                        )
-                        .filter((p): p is string => Boolean(p)),
+                  const editedFiles = dedupeAbsoluteProjectPaths(
+                    editCards.flatMap((tool) =>
+                      actionReadyMutationTargetFiles(
+                        tool.name,
+                        tool.input,
+                        tool.status,
+                        toolProjectRoot,
+                      ),
                     ),
                   );
                   return (
@@ -9050,6 +9083,7 @@ function TurnRowImpl({
                   : null
               }
             />
+            </ToolProjectRootContext.Provider>
             {/* Comment on the markdown artifact this turn produced: select any
                 passage above to leave a comment, then request a revision that
                 sends every comment back to the agent. Settled, substantial
@@ -9373,10 +9407,8 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
   );
 }
 
-// The active session's project root, provided by ChatView so the inline edit
-// card can convert an absolute target path into the repo-relative path that the
-// `/api/changes` revert endpoint requires — without prop-threading through the
-// five ToolBlock/ToolGroup render sites.
+// Each assistant turn provides its recorded execution root. A session root is
+// used only for legacy turns with no per-turn response metadata.
 const ToolProjectRootContext = createContext<string | null>(null);
 
 // Review + Undo actions for the Codex-style inline edit card. Review adapts to
@@ -9391,34 +9423,44 @@ const ToolProjectRootContext = createContext<string | null>(null);
 // accidental one-click revert, and is only offered when the target resolves to
 // a repo-relative path under the project root.
 function EditCardActions({
-  targetFile,
+  projectRoot,
+  mutationPath,
+  mutationPaths,
   diff,
   displayPath,
 }: {
-  targetFile: string | null;
+  projectRoot: string | null;
+  mutationPath: string | null;
+  mutationPaths: string[];
   diff: string;
   displayPath: string;
 }) {
-  const projectRoot = useContext(ToolProjectRootContext);
-  const relPath =
-    projectRoot && targetFile && targetFile.startsWith(projectRoot)
-      ? targetFile.slice(projectRoot.length).replace(/^\/+/, "")
-      : null;
+  const resolvedMutationPaths = mutationPaths
+    .map((path) => resolvePathWithinProjectRoot(projectRoot, path))
+    .filter((path): path is NonNullable<typeof path> => path !== null);
+  const allMutationPathsResolved =
+    mutationPaths.length > 0 && resolvedMutationPaths.length === mutationPaths.length;
+  const projectPath = allMutationPathsResolved && mutationPath === mutationPaths[0]
+    ? resolvedMutationPaths[0] ?? null
+    : null;
+  const relPath = projectPath?.relativePath ?? null;
+  const resolvedTargetFile = projectPath?.absolutePath ?? null;
+  const canUndo = allMutationPathsResolved && resolvedMutationPaths.length === 1 && relPath !== null;
   const [state, setState] = useState<"idle" | "armed" | "reverting" | "reverted" | "error">("idle");
   const [err, setErr] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const base = displayPath.split("/").pop() || displayPath;
 
   const review = () => {
-    if (relPath && targetFile) {
-      window.dispatchEvent(new CustomEvent("cave:open-file-diff", { detail: { path: targetFile } }));
+    if (relPath && resolvedTargetFile) {
+      window.dispatchEvent(new CustomEvent("cave:open-file-diff", { detail: { path: resolvedTargetFile } }));
     } else {
       setReviewOpen(true);
     }
   };
 
   const doUndo = async () => {
-    if (!projectRoot || !relPath) return;
+    if (!projectRoot || !canUndo || !relPath) return;
     setState("reverting");
     setErr(null);
     try {
@@ -9465,7 +9507,7 @@ function EditCardActions({
           <SyntaxBlock text={diff} lang="diff" />
         </div>
       </Modal>
-      {relPath ? (
+      {canUndo ? (
         state === "reverted" ? (
           <span className="cave-edit-card__reverted">Reverted</span>
         ) : state === "reverting" ? (
@@ -9503,19 +9545,25 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   // fallback and stays clickable regardless).
   const railRoot = useContext(ToolProjectRootContext);
   const argSummary = toolArgSummary(tool.name, tool.input);
-  // CHAT-D8-02: Edit/Write/MultiEdit/NotebookEdit inputs render as a
-  // structured before/after diff instead of the raw JSON payload; null for
-  // every other tool (or unparseable input) falls back to the plain block.
-  const inputDiff = toolInputAsDiff(tool.name, tool.input);
-  const targetPath = toolTargetPath(tool.name, tool.input);
+  // Supported Claude, Codex, and OpenClaw mutations share one descriptor for
+  // placement, path, diff rendering, and action readiness.
+  const mutation = normalizeFileMutation(tool.name, tool.input);
+  const inputDiff = mutation?.diff ?? null;
+  const targetPath = mutation
+    ? mutation.path ?? (mutation.paths.length > 1 ? `${mutation.paths.length} files` : null)
+    : toolTargetPath(tool.name, tool.input);
   // Click-to-open: a file tool's target opens in the Code workspace preview.
   // Dispatched as an event; the comux pane (Code/Terminal) handles it, and the
   // workspace switches to Code mode first when neither is showing.
-  const targetFile = toolTargetFile(tool.name, tool.input);
+  const targetFile = mutation ? mutation.targetFile : toolTargetFile(tool.name, tool.input);
   // An edit tool (Edit/Write/MultiEdit/NotebookEdit — the ones with a structured
   // input diff) jumps to its file's DIFF in the Changes review; other file tools
   // open the file preview. The comux pane handles both events.
   const isEditTool = inputDiff != null;
+  const actionReady = mutation && isFileMutationActionReady(mutation, tool.status);
+  const actionIdentity = mutation
+    ? [tool.id, ...mutation.paths].join("\0")
+    : tool.id;
   const openTargetFile = (e: ReactMouseEvent) => {
     if (!targetFile) return;
     e.preventDefault();
@@ -9557,7 +9605,16 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
             {tool.status}
           </span>
           <DurationText durationMs={tool.durationMs} />
-          <EditCardActions targetFile={targetFile} diff={inputDiff ?? ""} displayPath={displayPath} />
+          {actionReady ? (
+            <EditCardActions
+              key={actionIdentity}
+              projectRoot={railRoot}
+              mutationPath={mutation.path}
+              mutationPaths={mutation.paths}
+              diff={inputDiff ?? ""}
+              displayPath={displayPath}
+            />
+          ) : null}
         </summary>
         <div className="cave-tool-io mt-2">
           <div className="cave-tool-io-label">Code changes</div>
@@ -9692,6 +9749,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     prev.showTimestamp === next.showTimestamp &&
     prev.found === next.found &&
     prev.expanded === next.expanded &&
+    prev.toolProjectRoot === next.toolProjectRoot &&
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
     Boolean(prev.onReply) === Boolean(next.onReply) &&

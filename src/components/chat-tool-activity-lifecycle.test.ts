@@ -146,8 +146,13 @@ test("TurnRow gives tools stable activity and edit-card slots instead of streami
   );
   assert.match(
     turnRender,
-    /const toolProjectRoot = useContext\(ToolProjectRootContext\)[\s\S]*actionReadyMutationTargetFile\(tool\.name, tool\.input, tool\.status, toolProjectRoot\)/,
-    "aggregate changed-file review is projected through the active Changes-panel project boundary",
+    /toolProjectRoot[\s\S]*actionReadyMutationTargetFiles\([\s\S]*tool\.name,[\s\S]*tool\.input,[\s\S]*tool\.status,[\s\S]*toolProjectRoot/,
+    "aggregate changed-file review is projected through the turn's execution root",
+  );
+  assert.match(
+    source,
+    /toolProjectRoot=\{turnProjectRoots\.get\(t\.id\) \?\? null\}/,
+    "each row receives the root resolved from stable turn/session execution metadata",
   );
   assert.doesNotMatch(
     turnRender,

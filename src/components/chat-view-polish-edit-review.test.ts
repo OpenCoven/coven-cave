@@ -78,7 +78,7 @@ assert.match(
 );
 assert.match(
   source,
-  /<EditCardActions targetFile=\{targetFile\} diff=\{inputDiff \?\? ""\} displayPath=\{displayPath\} \/>/,
+  /<EditCardActions[\s\S]{0,300}projectRoot=\{railRoot\}[\s\S]{0,200}mutationPath=\{mutation\.path\}[\s\S]{0,200}diff=\{inputDiff \?\? ""\}/,
   "edit-card actions render unconditionally (Review works without an absolute target path)",
 );
 assert.match(
@@ -97,11 +97,21 @@ assert.match(
 // changes revert API, resolving the repo-relative path through a context, and
 // pings the Changes panel to refresh.
 assert.match(source, /cave-edit-card__undo/, "edit card has an Undo action");
+assert.match(
+  source,
+  /\{canUndo \? \([\s\S]*cave-edit-card__undo[\s\S]*\) : null\}/,
+  "Undo is only available after exactly one affected path resolves inside the project",
+);
 assert.match(source, /ToolProjectRootContext/, "edit card resolves project root via context for revert");
 assert.match(
   source,
-  /resolvePathWithinProjectRoot\(projectRoot, targetFile \?\? displayPath\)/,
+  /mutationPaths\s*\.map\(\(path\) =>\s*resolvePathWithinProjectRoot\(projectRoot, path\)\)/,
   "individual review and undo actions use boundary-safe project path resolution",
+);
+assert.match(
+  source,
+  /resolvedMutationPaths\.length === mutationPaths\.length[\s\S]*resolvedMutationPaths\.length === 1/,
+  "multi-file mutations never offer a partial one-file undo",
 );
 assert.match(source, /"\/api\/changes"/, "Undo posts to the changes revert API");
 assert.match(source, /cave:changes-refresh/, "Undo notifies the changes panel to refresh");

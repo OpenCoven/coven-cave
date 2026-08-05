@@ -291,6 +291,7 @@ test("repository adapter mutation payloads normalize through the public helpers"
     {
       name: "file_change",
       path: "src/app.ts",
+      paths: ["src/app.ts"],
       targetFile: null,
       diff: null,
     },
@@ -375,6 +376,81 @@ test("repository adapter mutation payloads normalize through the public helpers"
     );
     assert.equal(toolInputAsDiff(name, '{"path":'), null);
   }
+});
+
+test("apply_patch normalization captures every operation and move destination", () => {
+  const renamePatch = [
+    "*** Begin Patch",
+    "*** Update File: src/old-name.ts",
+    "*** Move to: src/new-name.ts",
+    "@@",
+    "-before",
+    "+after",
+    "*** End Patch",
+  ].join("\n");
+  assert.deepEqual(
+    mutationTools.normalizeFileMutation("apply_patch", JSON.stringify({ input: renamePatch })),
+    {
+      name: "apply_patch",
+      path: "src/new-name.ts",
+      paths: ["src/new-name.ts", "src/old-name.ts"],
+      targetFile: null,
+      diff: renamePatch,
+    },
+    "a rename reviews its destination while retaining both affected paths",
+  );
+
+  const multiPatch = [
+    "*** Begin Patch",
+    "*** Add File: src/added.ts",
+    "+added",
+    "*** Update File: src/updated.ts",
+    "@@",
+    "-before",
+    "+after",
+    "*** Delete File: src/deleted.ts",
+    "*** Update File: src/updated.ts",
+    "@@",
+    "-after",
+    "+final",
+    "*** End Patch",
+  ].join("\n");
+  const mutation = mutationTools.normalizeFileMutation("apply_patch", multiPatch);
+  assert.ok(mutation);
+  assert.equal(mutation.path, "src/added.ts");
+  assert.deepEqual(
+    mutation.paths,
+    ["src/added.ts", "src/updated.ts", "src/deleted.ts"],
+    "add, update, and delete targets are complete and deduplicated",
+  );
+});
+
+test("aggregate mutation targets include every contained path exactly once", () => {
+  const containedPatch = [
+    "*** Begin Patch",
+    "*** Update File: src/a.ts",
+    "@@",
+    "-a",
+    "+aa",
+    "*** Add File: src/b.ts",
+    "+b",
+    "*** Delete File: src/a.ts",
+    "*** End Patch",
+  ].join("\n");
+
+  assert.deepEqual(
+    mutationTools.actionReadyMutationTargetFiles("apply_patch", containedPatch, "ok", "/repo"),
+    ["/repo/src/a.ts", "/repo/src/b.ts"],
+  );
+  const escapingPatch = containedPatch.replace(
+    "*** End Patch",
+    "*** Add File: ../outside.ts\n*** End Patch",
+  );
+  assert.deepEqual(
+    mutationTools.actionReadyMutationTargetFiles("apply_patch", escapingPatch, "ok", "/repo"),
+    [],
+    "one escaping operation makes the whole aggregate fail closed",
+  );
 });
 
 test("no-op edit pairs do not produce normalized changes", () => {
