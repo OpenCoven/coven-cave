@@ -86,6 +86,8 @@ import { readDaemonAutomation } from "@/lib/daemon-automation-pref";
 import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
+import { NO_CHAT_ATTENTION } from "@/lib/chat-attention";
+import { CHAT_ATTENTION_CLEAR_EVENT, attentionClearedSessionId } from "@/lib/chat-attention-events";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
 // their chunks (and deps like @uiw/react-codemirror) load on
 // first open instead of shipping in the main bundle. See lazy-surfaces.tsx.
@@ -265,6 +267,22 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
 // the four-second session poll (~900/hour). usePausablePoll also pauses this in
 // hidden windows and while the user is composing input.
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
+
+const clearSessionAttention = (row: SessionRow): SessionRow =>
+  row.attention.state === "none"
+    ? row
+    : { ...row, attention: NO_CHAT_ATTENTION };
+
+function clearSessionAttentionRows(rows: SessionRow[], sessionId: string): SessionRow[] {
+  let changed = false;
+  const nextRows = rows.map((row) => {
+    if (row.id !== sessionId) return row;
+    const nextRow = clearSessionAttention(row);
+    changed = changed || nextRow !== row;
+    return nextRow;
+  });
+  return changed ? nextRows : rows;
+}
 
 export function Workspace() {
   const [acceptedLocalDaemonHealthy, setAcceptedLocalDaemonHealthy] = useState(false);
@@ -551,6 +569,18 @@ export function Workspace() {
     return () => {
       window.removeEventListener("cave:chat-history-push", onChatHistoryPush);
       window.removeEventListener("cave:chat-history-replace", onChatHistoryReplace);
+    };
+  }, []);
+  useEffect(() => {
+    const onChatAttentionClear = (event: Event) => {
+      const sessionId = attentionClearedSessionId(event);
+      if (!sessionId) return;
+      baseSessionsRef.current = clearSessionAttentionRows(baseSessionsRef.current, sessionId);
+      setSessions((currentSessions) => clearSessionAttentionRows(currentSessions, sessionId));
+    };
+    window.addEventListener(CHAT_ATTENTION_CLEAR_EVENT, onChatAttentionClear);
+    return () => {
+      window.removeEventListener(CHAT_ATTENTION_CLEAR_EVENT, onChatAttentionClear);
     };
   }, []);
   // Chat mode replaces the global nav with the project-grouped Chats sidebar.

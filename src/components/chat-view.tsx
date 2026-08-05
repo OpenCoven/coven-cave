@@ -211,6 +211,7 @@ import {
   type AutoMissionRecord,
 } from "@/lib/auto-mission-state";
 import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
+import { emitChatAttentionClear } from "@/lib/chat-attention-events";
 import { GitHubCard } from "@/components/github-card";
 import { ImageCarousel } from "@/components/image-carousel";
 import { GitHubActionCard } from "@/components/github-action-card";
@@ -438,6 +439,8 @@ type LiveStreamGeneration = {
   controller: AbortController;
   runId: string;
   streamHealth: () => ChatStreamClientHealth;
+  markHumanTurnPersisted: () => void;
+  restoreAttentionIfNeeded: () => void;
 };
 function liveStreamMetadata(liveGeneration: LiveStreamGeneration): LiveChatGenerationMetadata {
   return {
@@ -3102,6 +3105,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       if (live && isLiveSnapshotActive(live, Date.now())) {
         adoptLiveGenerationMetadata(live, sessionId);
+        emitChatAttentionClear(sessionId);
         setTurns(live.turns);
         turnsRef.current = live.turns;
         setActiveLeafId(live.activeLeafId);
@@ -3803,6 +3807,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const live = readLiveChatGeneration(sessionId);
     if (live && isLiveSnapshotActive(live, Date.now())) {
       adoptLiveGenerationMetadata(live, sessionId);
+      emitChatAttentionClear(sessionId);
       setTurns(live.turns);
       turnsRef.current = live.turns;
       setActiveLeafId(live.activeLeafId);
@@ -4894,6 +4899,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       runId,
       at: new Date().toISOString(),
     });
+    let attentionNeedsRestore = false;
+    let attentionRestoreTriggered = false;
+    let persistedHumanTurn = false;
+    const restoreAttentionIfNeeded = () => {
+      if (!attentionRestoreTriggered && attentionNeedsRestore && !persistedHumanTurn) {
+        attentionRestoreTriggered = true;
+        onSessionsChanged?.();
+      }
+    };
     // `sessionId` mutates to the server-assigned id as events arrive;
     // `originSessionId` stays the thread this generation started on, so a
     // background generation (user switched threads mid-stream) can tell it no
@@ -4904,6 +4918,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       controller,
       runId,
       streamHealth: () => generationStreamHealth,
+      markHumanTurnPersisted: () => {
+        persistedHumanTurn = true;
+        attentionNeedsRestore = false;
+      },
+      restoreAttentionIfNeeded,
     };
     const publishStreamHealth = (
       action: Exclude<
@@ -4994,6 +5013,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // The on-disk conversation is about to change; a cached pre-send payload
       // must not be painted on a later revisit of this thread.
       if (liveGeneration.sessionId) invalidateConversation(liveGeneration.sessionId);
+      if (liveGeneration.sessionId) {
+        emitChatAttentionClear(liveGeneration.sessionId);
+        attentionNeedsRestore = true;
+      }
       const res = await fetch("/api/chat/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -5106,6 +5129,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           at: new Date().toISOString(),
           error: conciseStreamError(surfacedMessage, "Chat bridge request failed"),
         });
+        restoreAttentionIfNeeded();
         return;
       }
       if (!res.body) {
@@ -5128,6 +5152,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           at: new Date().toISOString(),
           error: message,
         });
+        restoreAttentionIfNeeded();
         return;
       }
 
@@ -5267,6 +5292,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           error: message,
         });
       }
+      liveGeneration.restoreAttentionIfNeeded();
     } finally {
       // Always retire THIS generation's registry entry (keyed by session).
       clearLiveChatGeneration(liveGeneration.sessionId, runId);
@@ -5942,43 +5968,45 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     liveGeneration: LiveStreamGeneration,
   ) => {
     switch (ev.kind) {
-      case "session": {
-        liveGeneration.sessionId = ev.sessionId;
-        if (ev.sessionId !== currentSessionRef.current) {
-          // Only adopt the new session id into THIS view's refs when the view is
-          // still on the thread this generation started from. If the user
-          // switched to another conversation before the id arrived (a new chat's
-          // first-token latency), this is a *background* generation: adopting its
-          // id would splice its chunks into the displayed thread and mis-address
-          // the next send (sendRaw reads currentSessionRef as initialLiveSessionId).
-          // Still notify onSessionStarted — the router promotes a still-open new
-          // chat but leaves an already-switched view alone (chat-router.tsx).
-          if (currentSessionRef.current === liveGeneration.originSessionId) {
-            liveSessionIdRef.current = ev.sessionId;
-            currentSessionRef.current = ev.sessionId;
-            setHistoryState("loaded");
-          }
-          onSessionStarted?.(ev.sessionId);
+    case "session": {
+      liveGeneration.markHumanTurnPersisted();
+      emitChatAttentionClear(ev.sessionId);
+      liveGeneration.sessionId = ev.sessionId;
+      if (ev.sessionId !== currentSessionRef.current) {
+        // Only adopt the new session id into THIS view's refs when the view is
+        // still on the thread this generation started from. If the user
+        // switched to another conversation before the id arrived (a new chat's
+        // first-token latency), this is a *background* generation: adopting its
+        // id would splice its chunks into the displayed thread and mis-address
+        // the next send (sendRaw reads currentSessionRef as initialLiveSessionId).
+        // Still notify onSessionStarted — the router promotes a still-open new
+        // chat but leaves an already-switched view alone (chat-router.tsx).
+        if (currentSessionRef.current === liveGeneration.originSessionId) {
+          liveSessionIdRef.current = ev.sessionId;
+          currentSessionRef.current = ev.sessionId;
+          setHistoryState("loaded");
         }
-        if (taskArmedRef.current) {
-          // One-shot: clear before the async create so a second session event
-          // (or a retried send) can't double-create the card.
-          taskArmedRef.current = false;
-          setTaskArmed(false);
-          void createLinkedTaskCard(ev.sessionId, request.text);
-        }
-        persistLiveTurns(
-          turnsRef.current,
-          assistantId,
-          liveGeneration.controller,
-          liveGeneration.sessionId,
-          {
-            runId: liveGeneration.runId,
-            streamHealth: liveGeneration.streamHealth(),
-          },
-        );
-        return;
+        onSessionStarted?.(ev.sessionId);
       }
+      if (taskArmedRef.current) {
+        // One-shot: clear before the async create so a second session event
+        // (or a retried send) can't double-create the card.
+        taskArmedRef.current = false;
+        setTaskArmed(false);
+        void createLinkedTaskCard(ev.sessionId, request.text);
+      }
+      persistLiveTurns(
+        turnsRef.current,
+        assistantId,
+        liveGeneration.controller,
+        liveGeneration.sessionId,
+        {
+          runId: liveGeneration.runId,
+          streamHealth: liveGeneration.streamHealth(),
+        },
+      );
+      return;
+    }
       case "assistant_chunk": {
         // Direct (non-coalesced) path — the stream loop routes chunks through
         // chunkCoalescer and never reaches this case; it stays for any other
