@@ -150,12 +150,12 @@ function unmanagedPaths(): ManagedNodePaths {
   return {
     platform: process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux",
     root,
-    stagingRoot: path.join(root, "staging"),
-    installDir: path.join(root, "unsupported"),
-    node: path.join(root, "unsupported", "node"),
-    npmCli: path.join(root, "unsupported", "npm-cli.js"),
-    npmPrefix: path.join(root, "npm"),
-    npmBin: path.join(root, "npm", "bin"),
+    stagingRoot: path.join(/* turbopackIgnore: true */ root, "staging"),
+    installDir: path.join(/* turbopackIgnore: true */ root, "unsupported"),
+    node: path.join(/* turbopackIgnore: true */ root, "unsupported", "node"),
+    npmCli: path.join(/* turbopackIgnore: true */ root, "unsupported", "npm-cli.js"),
+    npmPrefix: path.join(/* turbopackIgnore: true */ root, "npm"),
+    npmBin: path.join(/* turbopackIgnore: true */ root, "npm", "bin"),
   };
 }
 

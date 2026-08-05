@@ -399,9 +399,14 @@ function resolveCommand(
     for (const candidate of candidatesFor(command)) {
       // Node resolves relative PATH entries from the child's cwd, not the
       // server cwd that happened to build this availability report.
+      //
+      // `cwd` defaults to process.cwd(), so without the ignore Turbopack
+      // globs the project root here and pulls every file at that level --
+      // next.config.ts among them -- into the standalone NFT bundle. These
+      // are host PATH entries probed at runtime, never module specifiers.
       const full = joiner.isAbsolute(dir)
-        ? joiner.join(dir, candidate)
-        : joiner.resolve(cwd, dir, candidate);
+        ? joiner.join(/* turbopackIgnore: true */ dir, candidate)
+        : joiner.resolve(/* turbopackIgnore: true */ cwd, dir, candidate);
       const resolved = inspect(full);
       if (resolved) return resolved;
     }

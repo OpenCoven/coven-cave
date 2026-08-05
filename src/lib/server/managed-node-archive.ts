@@ -37,7 +37,7 @@ export function safeArchiveDestination(root: string, entryName: string): string 
   if (parts.some((part) => !part || part === "." || part === "..")) {
     throw archiveError("entry path escapes its archive root");
   }
-  const destination = path.resolve(root, ...parts);
+  const destination = path.resolve(/* turbopackIgnore: true */ root, ...parts);
   const relative = path.relative(root, destination);
   if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw archiveError("entry path escapes its archive root");
@@ -50,7 +50,7 @@ async function ensureArchiveDirectory(root: string, directory: string): Promise<
   if (!relative) return;
   let current = root;
   for (const part of relative.split(path.sep)) {
-    current = path.join(current, part);
+    current = path.join(/* turbopackIgnore: true */ current, part);
     try {
       const details = await lstat(/* turbopackIgnore: true */ current);
       if (!details.isDirectory() || details.isSymbolicLink()) {
@@ -88,7 +88,7 @@ function safeArchiveLinkTarget(root: string, entryName: string, linkName: string
     throw archiveError("link target is absolute or empty");
   }
   const destination = safeArchiveDestination(root, entryName);
-  const resolvedTarget = path.resolve(path.dirname(destination), ...linkName.replace(/\\/g, "/").split("/"));
+  const resolvedTarget = path.resolve(/* turbopackIgnore: true */ path.dirname(destination), ...linkName.replace(/\\/g, "/").split("/"));
   const relative = path.relative(root, resolvedTarget);
   if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw archiveError("link target escapes its archive root");
