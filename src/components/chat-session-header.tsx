@@ -293,7 +293,7 @@ export function ChatTitleEditable({
    *  edit input still pre-fills with the override so accepting it patches
    *  the canonical title in the daemon/state. */
   displayTitleOverride?: string | null;
-  onSessionsChanged?: () => void;
+  onSessionsChanged?: () => void | Promise<void>;
   /** Render as a full-width all-caps headline row above the context chips
    *  instead of an inline title inside the session chip. */
   headline?: boolean;
@@ -309,6 +309,16 @@ export function ChatTitleEditable({
   const [value, setValue] = useState(baseTitle);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const submittedRef = useRef(false);
+  const mountedRef = useRef(true);
+  const onSessionsChangedRef = useRef(onSessionsChanged);
+  onSessionsChangedRef.current = onSessionsChanged;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!editing) setValue(baseTitle);
@@ -321,6 +331,10 @@ export function ChatTitleEditable({
     inputRef.current?.select();
   }, [editing]);
 
+  const refreshSessions = () => {
+    if (mountedRef.current) void onSessionsChangedRef.current?.();
+  };
+
   // Rename has two entry points into the same edit mode: the pencil button
   // beside the title and clicking the title text. (The overflow menu's Rename
   // item and its window-event bridge died in cave-zolo — the pencil is the
@@ -328,10 +342,8 @@ export function ChatTitleEditable({
 
   const display = baseTitle || session.id;
 
-  // A resolved fetch is not a successful one: the local-origin gate answers 403
-  // and a rejected patch answers { ok: false }. Refreshing on those would paint
-  // the rename as applied when the server refused it, so the refresh is gated
-  // on a genuine success and anything else falls through to the sessions poll.
+  // A resolved fetch is not necessarily successful. Only a genuine success or
+  // the title CAS conflict contract has authoritative state worth refreshing.
   const patchTitle = async (title: string, ownership: "manual" | "auto" = "manual", replaceManual = false) => {
     try {
       const body = ownership === "auto"
@@ -352,8 +364,21 @@ export function ChatTitleEditable({
         body: JSON.stringify(body),
       });
       const json = await res.json().catch(() => ({ ok: res.ok }));
+      const titleOwnershipConflict =
+        ownership === "auto" &&
+        replaceManual &&
+        res.status === 409 &&
+        json?.ok === false &&
+        json?.conflict === true &&
+        (json?.title === null || typeof json?.title === "string") &&
+        Number.isSafeInteger(json?.titleRevision) &&
+        json.titleRevision >= 0;
+      if (titleOwnershipConflict) {
+        refreshSessions();
+        return;
+      }
       if (!res.ok || json?.ok === false) return;
-      onSessionsChanged?.();
+      refreshSessions();
     } catch {
       /* transient — next sessions poll will reconcile */
     }
@@ -381,7 +406,7 @@ export function ChatTitleEditable({
     try {
       if (next !== (session.title ?? "").trim()) await patchTitle(next, "auto", true);
     } finally {
-      setGenerating(false);
+      if (mountedRef.current) setGenerating(false);
     }
   };
 

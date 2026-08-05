@@ -907,6 +907,7 @@ export const SUITES = {
     "src/lib/chat-auto-rename.test.ts",
     "src/lib/chat-title-generation.test.ts",
     "src/components/chat-title-sparkle.test.ts",
+    "src/components/chat-title-sparkle-behavior.test.tsx",
     "src/components/chat-archive-nudge.test.ts",
     "src/lib/theme-palettes.test.ts",
     "src/lib/theme-contrast-audit.test.ts",
@@ -1776,6 +1777,7 @@ const VITEST_TESTS = new Set([
   "src/components/voice-provider-settings.test.tsx",
   "src/components/voice-provider-settings.integration.test.tsx",
   "src/components/use-openai-voice-preview.test.tsx",
+  "src/components/chat-title-sparkle-behavior.test.tsx",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */

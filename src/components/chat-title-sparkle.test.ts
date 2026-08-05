@@ -113,14 +113,18 @@ test("the sparkle is hover-revealed and the title dims while it runs", () => {
 
 test("a refused PATCH does not paint the rename as applied", () => {
   // Regression (PR #4121 review): a resolved fetch is not a successful one —
-  // the local-origin gate answers 403 and a rejected patch answers
-  // { ok: false }. Refreshing on either would show the new title even though
-  // the server kept the old one.
+  // the local-origin gate answers 403 and unrelated rejected patches answer
+  // { ok: false }. Only the recognized ownership conflict is refresh-worthy.
   assert.match(header, /if \(!res\.ok \|\| json\?\.ok === false\) return;/, "failure short-circuits");
   assert.match(
     header,
-    /if \(!res\.ok \|\| json\?\.ok === false\) return;\s*\n\s*onSessionsChanged\?\.\(\);/,
+    /if \(!res\.ok \|\| json\?\.ok === false\) return;\s*\n\s*refreshSessions\(\);/,
     "the refresh happens only after a genuine success",
+  );
+  assert.match(
+    header,
+    /if \(titleOwnershipConflict\) \{\s*refreshSessions\(\);\s*return;\s*\}/,
+    "a recognized title ownership conflict refreshes and then exits without a duplicate refresh",
   );
 });
 
@@ -147,7 +151,7 @@ test("manual edits and sparkle titles use distinct ownership contracts", () => {
   );
   assert.match(
     header,
-    /if \(!res\.ok \|\| json\?\.ok === false\) return;\s*\n\s*onSessionsChanged\?\.\(\);/,
+    /if \(!res\.ok \|\| json\?\.ok === false\) return;\s*\n\s*refreshSessions\(\);/,
     "a preserved automatic write still refreshes the UI to show the concurrent manual title",
   );
 });
