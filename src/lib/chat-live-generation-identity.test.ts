@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { afterEach } from "node:test";
 import {
   clearLiveChatGeneration,
   clearLiveChatGenerationAliases,
@@ -8,7 +8,17 @@ import {
   recordLiveChatGeneration,
 } from "./chat-turn-state.ts";
 
+const touchedSessionIds = new Set<string>();
+
+afterEach(() => {
+  for (const sessionId of touchedSessionIds) {
+    clearLiveChatGeneration(sessionId);
+  }
+  touchedSessionIds.clear();
+});
+
 function snapshot(sessionId: string, runId: string) {
+  touchedSessionIds.add(sessionId);
   return {
     sessionId,
     runId,
@@ -23,6 +33,7 @@ test("done-only replacement migrates the snapshot and clears both stable aliases
   const origin = "done-only-origin";
   const replacement = "done-only-replacement";
   const runId = "done-only-run";
+  touchedSessionIds.add(replacement);
   const generation = {
     sessionId: origin,
     sessionAliases: new Set([origin]),
@@ -47,6 +58,7 @@ test("cleanup for a replaced run preserves a newer run under its origin alias", 
   const replacement = "older-replacement";
   const oldRunId = "older-run";
   const newRunId = "newer-run";
+  touchedSessionIds.add(replacement);
   const generation = {
     sessionId: origin,
     sessionAliases: new Set([origin]),
@@ -59,5 +71,4 @@ test("cleanup for a replaced run preserves a newer run under its origin alias", 
 
   assert.equal(readLiveChatGeneration(origin)?.runId, newRunId);
   assert.equal(readLiveChatGeneration(replacement), null);
-  clearLiveChatGeneration(origin, newRunId);
 });
