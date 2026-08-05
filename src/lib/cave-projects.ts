@@ -43,7 +43,9 @@ function isPortableWindowsRoot(root: string): boolean {
  * Normalize persisted server roots without applying cross-platform display
  * parsing to a native POSIX path. On POSIX, `\` and edge whitespace are valid
  * filename characters; Windows-looking roots retain the portable registry
- * behavior used when displaying projects from another platform.
+ * behavior used when displaying projects from another platform. This remains
+ * separate from the display normalizer until a migration pass can safely
+ * re-key every persisted root consumer.
  */
 function normalizeRootExpandingHome(root: string): string {
   if (process.platform === "win32" || isPortableWindowsRoot(root)) {
