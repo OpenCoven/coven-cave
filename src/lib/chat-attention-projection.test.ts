@@ -465,6 +465,115 @@ test("a clear followed by failed settlement then a duplicate clear for the same 
   );
 });
 
+test("an immediate retry after a failed final clear inherits its canonical baseline and suppresses stale persisted polls", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "failed", 5);
+
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-2",
+    chatAttentionProjectionScopeKey("nova"),
+    NO_CHAT_ATTENTION,
+  );
+  assert.deepEqual(state.get("session-1")?.get("operation-2")?.baseline, NEEDS_ATTENTION);
+  assert.equal(
+    applyChatAttentionProjections(
+      state,
+      [row({ attention: { ...NEEDS_ATTENTION } })],
+      6,
+      chatAttentionProjectionScopeKey("nova"),
+    )[0]?.attention.state,
+    "none",
+  );
+
+  settleChatAttentionClear(state, "session-1", "operation-2", "persisted", 7);
+  for (const responseRequestId of [7, 8]) {
+    assert.equal(
+      applyChatAttentionProjections(
+        state,
+        [row({ attention: { ...NEEDS_ATTENTION } })],
+        responseRequestId,
+        chatAttentionProjectionScopeKey("nova"),
+      )[0]?.attention.state,
+      "none",
+      `unchanged canonical poll ${responseRequestId} must stay suppressed`,
+    );
+    assert.equal(state.has("session-1"), true);
+  }
+});
+
+test("canonical reconciliation after a failed final clear consumes its retained baseline before a later clear", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "failed", 5);
+
+  const canonicalNone = [row({ attention: NO_CHAT_ATTENTION })];
+  assert.equal(
+    applyChatAttentionProjections(state, canonicalNone, 6, chatAttentionProjectionScopeKey("nova")),
+    canonicalNone,
+  );
+
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-2",
+    chatAttentionProjectionScopeKey("nova"),
+    NO_CHAT_ATTENTION,
+  );
+  assert.equal(state.has("session-1"), false);
+  assert.equal(
+    applyChatAttentionProjections(state, canonicalNone, 7, chatAttentionProjectionScopeKey("nova")),
+    canonicalNone,
+  );
+});
+
+test("scope absence only consumes a failed clear baseline when that response can prove absence", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "failed", 5);
+
+  applyChatAttentionProjections(state, [], 6, chatAttentionProjectionScopeKey("sage"));
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-2",
+    chatAttentionProjectionScopeKey("nova"),
+    NO_CHAT_ATTENTION,
+  );
+  assert.deepEqual(state.get("session-1")?.get("operation-2")?.baseline, NEEDS_ATTENTION);
+
+  settleChatAttentionClear(state, "session-1", "operation-2", "failed", 6);
+  applyChatAttentionProjections(state, [], 7, chatAttentionProjectionScopeKey("nova"));
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-3",
+    chatAttentionProjectionScopeKey("nova"),
+    NO_CHAT_ATTENTION,
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
 test("a clear followed by persisted settlement and canonical release, then a duplicate clear for the same op is ignored", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
@@ -608,54 +717,11 @@ test("forgetting projections preserves settled tombstones so queued late clears 
   assert.equal(state.has("session-2"), false);
 });
 
-test("a session evicts only its own oldest tombstone once the per-session bound is exceeded", () => {
+test("the state-wide tombstone bound evicts the oldest composite operation key", () => {
   const state = createChatAttentionProjectionState();
-  const TOMBSTONE_LIMIT = 256;
-  const sessionId = "session-1";
+  const TOMBSTONE_LIMIT = 512;
   for (let i = 0; i < TOMBSTONE_LIMIT + 1; i += 1) {
-    recordChatAttentionClear(
-      state,
-      sessionId,
-      `operation-${i}`,
-      chatAttentionProjectionScopeKey("nova"),
-      NEEDS_ATTENTION,
-    );
-    settleChatAttentionClear(state, sessionId, `operation-${i}`, "failed", 5);
-  }
-
-  recordChatAttentionClear(
-    state,
-    sessionId,
-    "operation-0",
-    chatAttentionProjectionScopeKey("nova"),
-    NEEDS_ATTENTION,
-  );
-  assert.equal(state.get(sessionId)?.get("operation-0")?.status, "pending");
-
-  recordChatAttentionClear(
-    state,
-    sessionId,
-    `operation-${TOMBSTONE_LIMIT}`,
-    chatAttentionProjectionScopeKey("nova"),
-    NEEDS_ATTENTION,
-  );
-  assert.equal(state.get(sessionId)?.has(`operation-${TOMBSTONE_LIMIT}`), false);
-});
-
-test("unrelated sessions do not evict another session's tombstone", () => {
-  const state = createChatAttentionProjectionState();
-  const TOMBSTONE_LIMIT = 256;
-  recordChatAttentionClear(
-    state,
-    "session-target",
-    "operation-1",
-    chatAttentionProjectionScopeKey("nova"),
-    NEEDS_ATTENTION,
-  );
-  settleChatAttentionClear(state, "session-target", "operation-1", "failed", 5);
-
-  for (let i = 0; i < TOMBSTONE_LIMIT + 1; i += 1) {
-    const sessionId = `session-bound-${i}`;
+    const sessionId = `session-${i}`;
     recordChatAttentionClear(
       state,
       sessionId,
@@ -668,21 +734,80 @@ test("unrelated sessions do not evict another session's tombstone", () => {
 
   recordChatAttentionClear(
     state,
-    "session-target",
+    "session-0",
     "operation-1",
     chatAttentionProjectionScopeKey("nova"),
     NEEDS_ATTENTION,
   );
-  assert.equal(state.has("session-target"), false);
+  assert.equal(state.get("session-0")?.get("operation-1")?.status, "pending");
 
   recordChatAttentionClear(
     state,
-    `session-bound-${TOMBSTONE_LIMIT}`,
+    `session-${TOMBSTONE_LIMIT}`,
     "operation-1",
     chatAttentionProjectionScopeKey("nova"),
     NEEDS_ATTENTION,
   );
-  assert.equal(state.has(`session-bound-${TOMBSTONE_LIMIT}`), false);
+  assert.equal(state.has(`session-${TOMBSTONE_LIMIT}`), false);
+});
+
+test("forgetting a session keeps its settled operation in the bounded replay cache", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "failed", 5);
+  forgetChatAttentionProjections(state, ["session-1"]);
+
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
+test("retained canonical baselines are bounded across sessions", () => {
+  const state = createChatAttentionProjectionState();
+  const TRACKER_LIMIT = 512;
+  for (let i = 0; i < TRACKER_LIMIT + 1; i += 1) {
+    const sessionId = `session-${i}`;
+    recordChatAttentionClear(
+      state,
+      sessionId,
+      "operation-1",
+      chatAttentionProjectionScopeKey("nova"),
+      NEEDS_ATTENTION,
+    );
+    settleChatAttentionClear(state, sessionId, "operation-1", "failed", 5);
+  }
+
+  recordChatAttentionClear(
+    state,
+    "session-0",
+    "operation-2",
+    chatAttentionProjectionScopeKey("nova"),
+    NO_CHAT_ATTENTION,
+  );
+  assert.equal(state.has("session-0"), false);
+
+  recordChatAttentionClear(
+    state,
+    `session-${TRACKER_LIMIT}`,
+    "operation-2",
+    chatAttentionProjectionScopeKey("nova"),
+    NO_CHAT_ATTENTION,
+  );
+  assert.deepEqual(
+    state.get(`session-${TRACKER_LIMIT}`)?.get("operation-2")?.baseline,
+    NEEDS_ATTENTION,
+  );
 });
 
 // Overlapping clears must baseline from the last accepted canonical row.
