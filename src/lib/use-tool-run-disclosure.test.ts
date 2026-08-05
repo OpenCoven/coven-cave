@@ -2,6 +2,7 @@
 // Behavior contract for useToolRunDisclosure — the hook that drives a repeated
 // tool run group's open/closed state.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
@@ -10,11 +11,48 @@ import { useToolRunDisclosure } from "./use-tool-run-disclosure.ts";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-function Probe({ statuses, snapshots }) {
-  const result = useToolRunDisclosure(statuses);
+const hookSource = readFileSync(new URL("./use-tool-run-disclosure.ts", import.meta.url), "utf8");
+
+function Probe({ statuses, snapshots, repeated = true }) {
+  const result = useToolRunDisclosure(statuses, repeated);
   snapshots.push(result);
   return createElement("span");
 }
+
+test("the hook exports one shared status type for disclosure consumers", () => {
+  assert.match(hookSource, /export type ToolRunStatus = "running" \| "ok" \| "error";/);
+});
+
+test("a one-off shell stays open and inert, then collapses when it becomes a settled repeated run", async () => {
+  const snapshots = [];
+  let renderer;
+  await act(async () => {
+    renderer = create(createElement(Probe, {
+      statuses: ["ok"],
+      repeated: false,
+      snapshots,
+    }));
+  });
+  assert.equal(snapshots.at(-1).open, true, "one-off contents stay visible");
+
+  const fakeDetails = { open: true, contains: () => false };
+  snapshots.at(-1).detailsRef.current = fakeDetails;
+  const beforeToggle = snapshots.length;
+  await act(async () => { snapshots.at(-1).onToggle(false); });
+  assert.equal(snapshots.length, beforeToggle, "the inert one-off shell cannot be toggled");
+  assert.equal(fakeDetails.open, true, "the shell restores its open DOM state");
+
+  await act(async () => {
+    renderer.update(createElement(Probe, {
+      statuses: ["ok", "ok"],
+      repeated: true,
+      snapshots,
+    }));
+  });
+  assert.equal(snapshots.at(-1).open, false, "a newly repeated settled run starts collapsed");
+
+  await act(async () => { renderer.unmount(); });
+});
 
 // ── 1. Opens while running; collapses when all settle ────────────────────────
 test("opens while any status is running and collapses when all settle", async () => {

@@ -1,16 +1,21 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   attachmentsLib,
   attachStagingHook,
   emptyStateSource,
-  globalsSrc,
   menusHookSource,
   source,
   splitReasoning,
   styles,
   turnRow,
 } from "./chat-view-polish-fixtures.ts";
+
+const editCardStyles = readFileSync(
+  new URL("../styles/globals/shell-cards-and-controls.css", import.meta.url),
+  "utf8",
+);
 
 // Follow-ups are compact intent cards in both transcript and composer
 // placements. Their visual grammar belongs to the shared component rather
@@ -59,7 +64,7 @@ assert.ok(
 assert.match(source, /cave-edit-card/, "mutation tools render as an inline Codex edit card");
 assert.match(source, /diffStat/, "edit card derives a +/- stat");
 assert.match(source, /Review/, "edit card has a Review action");
-assert.match(globalsSrc, /\.cave-edit-card/, "edit card styling exists");
+assert.match(editCardStyles, /\.cave-edit-card/, "edit card styling exists");
 
 // Review adapts to where the edit can actually be reviewed: a file under the
 // session's project root jumps to the code rail's Changes diff; anything else
@@ -82,7 +87,12 @@ assert.match(
   /<EditCardActions targetFile=\{targetFile\} diff=\{inputDiff \?\? ""\} displayPath=\{displayPath\} \/>/,
   "edit-card actions render unconditionally (Review works without an absolute target path)",
 );
-assert.match(globalsSrc, /\.cave-review-modal/, "review modal styling exists");
+assert.match(
+  source,
+  /const isEditTool = inputDiff != null;[\s\S]*if \(isEditTool\) \{[\s\S]*<EditCardActions[\s\S]*\n  \}\n  return \(/,
+  "Review actions mount only after the streamed payload yields a structured diff",
+);
+assert.match(editCardStyles, /\.cave-review-modal/, "review modal styling exists");
 assert.match(
   source,
   /if \(isEditTool\) \{[\s\S]*<details className="cave-tool-block cave-edit-card"[\s\S]*Edited \{base\}[\s\S]*<DurationText durationMs=\{tool\.durationMs\} \/>[\s\S]*Code changes[\s\S]*<SyntaxBlock text=\{inputDiff\} lang="diff" \/>[\s\S]*<\/details>/,
@@ -93,10 +103,15 @@ assert.match(
 // changes revert API, resolving the repo-relative path through a context, and
 // pings the Changes panel to refresh.
 assert.match(source, /cave-edit-card__undo/, "edit card has an Undo action");
+assert.match(
+  source,
+  /\{relPath \? \([\s\S]*cave-edit-card__undo[\s\S]*\) : null\}/,
+  "Undo is only available after the edit resolves to a project-relative path",
+);
 assert.match(source, /ToolProjectRootContext/, "edit card resolves project root via context for revert");
 assert.match(source, /"\/api\/changes"/, "Undo posts to the changes revert API");
-assert.match(source, /cave:changes-refresh/, "Undo notifies the changes panel to refresh");
-assert.match(globalsSrc, /\.cave-edit-card__undo/, "Undo button styling exists");
+assert.match(source, /cave:changes-refresh/, "Undo notifies the Changes panel to refresh");
+assert.match(editCardStyles, /\.cave-edit-card__undo/, "Undo button styling exists");
 
 // cave-zvr: composer send hygiene + picker Escape.
 // (3) send() clears the persisted draft synchronously — the 250ms debounced

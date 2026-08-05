@@ -333,7 +333,16 @@
   padding: 0;
 }
 
-.cave-work-line__label {
+.cave-work-line__count {
+  flex: none;
+  white-space: nowrap;
+}
+
+.cave-work-line__separator {
+  flex: none;
+}
+
+.cave-work-line__categories {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

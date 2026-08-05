@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from "react";
 
-type RunStatus = "running" | "ok" | "error";
+export type ToolRunStatus = "running" | "ok" | "error";
 
 export type ToolRunDisclosure = {
   open: boolean;
@@ -33,24 +33,24 @@ export type ToolRunDisclosure = {
  *    when a second same-name call turns the shell into a repeated subgroup.
  */
 export function useToolRunDisclosure(
-  statuses: readonly RunStatus[],
-  collapsible = true,
+  statuses: readonly ToolRunStatus[],
+  repeated = true,
 ): ToolRunDisclosure {
   const isRunning = statuses.some((s) => s === "running");
-  const [open, setOpen] = useState(!collapsible || isRunning);
+  const [open, setOpen] = useState(!repeated || isRunning);
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
   const prevRunning = useRef(isRunning);
-  const prevCollapsible = useRef(collapsible);
+  const prevRepeated = useRef(repeated);
   const pendingCollapse = useRef(false);
 
   useEffect(() => {
-    if (!collapsible || isRunning) {
+    if (!repeated || isRunning) {
       pendingCollapse.current = false;
       setOpen(true);
       if (detailsRef.current) {
         detailsRef.current.open = true;
       }
-    } else if (!prevCollapsible.current || prevRunning.current) {
+    } else if (!prevRepeated.current || prevRunning.current) {
       const activeEl = globalThis.document?.activeElement ?? null;
       const details = detailsRef.current;
       if (details && activeEl && details.contains(activeEl)) {
@@ -60,13 +60,13 @@ export function useToolRunDisclosure(
       }
     }
     prevRunning.current = isRunning;
-    prevCollapsible.current = collapsible;
-  }, [collapsible, isRunning]);
+    prevRepeated.current = repeated;
+  }, [isRunning, repeated]);
 
-  const effectiveOpen = !collapsible || isRunning || open;
+  const effectiveOpen = !repeated || isRunning || open;
 
   const onToggle = (nextOpen: boolean) => {
-    if ((!collapsible || isRunning) && !nextOpen) {
+    if ((!repeated || isRunning) && !nextOpen) {
       if (detailsRef.current) {
         detailsRef.current.open = true;
       }

@@ -44,7 +44,7 @@ import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
 import { groupConsecutiveTools } from "@/lib/turn-segments";
-import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
+import { formatBatchDuration, toolActivitySummaryParts, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
 import { ChatToolActivityLayout } from "@/components/chat-tool-activity-layout";
 import { ChatToolRunDisclosure } from "@/components/chat-tool-run-disclosure";
 import {
@@ -253,7 +253,7 @@ import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
 import { useShowThinking } from "@/lib/reasoning-visibility";
 import { useThreadInstrumentsVisible } from "@/lib/thread-instruments-visibility";
-import { toolInputAsDiff, toolTargetFile, toolTargetPath } from "@/lib/tool-input-diff";
+import { isFileMutationTool, toolInputAsDiff, toolTargetFile, toolTargetPath } from "@/lib/tool-input-diff";
 import { diffStat } from "@/lib/tool-edit-stat";
 import { findTranscriptHits } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
@@ -8347,17 +8347,19 @@ function TurnRowImpl({
   const recency = showTimestamp && turn.createdAt ? formatChatRecency(turn.createdAt, dtPrefs) : "";
   const exactTime = turn.createdAt ? formatTimestamp(turn.createdAt, dtPrefs) : "";
 
-  // Chat-revamp 1b: tool activity splits once, up front. Codex
-  // file-edit cards (Edit/Write/etc. with a target file) stay VISIBLE inline
-  // below the prose — they're the actionable output (Review/Undo), so they
-  // must not be buried in a collapsed rollup. All OTHER tool activity (reads,
-  // greps, bash, …) collapses into the ONE work line ABOVE the answer
-  // ("<N> calls · <categories>"). These partitions do not depend on pending,
-  // so React updates the same instances when the turn settles.
-  const isEditCard = (t: ToolEvent) => toolInputAsDiff(t.name, t.input) != null;
+  // Chat-revamp 1b: tool activity splits once, up front. Known file-mutation
+  // events own the visible edit-card slot from their first streamed fragment;
+  // Review/Undo appear only after ToolBlock can parse the required diff/path.
+  // All OTHER tool activity (reads, greps, bash, …) collapses into the ONE work
+  // line ABOVE the answer ("<N> calls · <categories>"). These partitions do
+  // not depend on pending or input parseability, so React updates the same
+  // instances when the turn settles.
   const turnTools = turn.tools ?? [];
-  const editCards = turnTools.filter(isEditCard);
-  const otherTools = turnTools.filter((t) => !isEditCard(t));
+  const editToolIds = new Set(
+    turnTools.filter((tool) => isFileMutationTool(tool.name)).map((tool) => tool.id),
+  );
+  const editCards = turnTools.filter((tool) => editToolIds.has(tool.id));
+  const otherTools = turnTools.filter((tool) => !editToolIds.has(tool.id));
 
   return (
     <div
@@ -8654,7 +8656,7 @@ function ProgressGroup({
 
   return (
     <details className="cave-progress-group mt-3" data-default-collapsed="true" open={pending || undefined}>
-      <summary className="cave-tool-summary">
+      <summary className="cave-tool-summary focus-ring">
         <span className="inline-flex items-center gap-1.5">
           <Icon name="ph:list-checks-bold" width={12} aria-hidden />
           Progress
@@ -8753,7 +8755,7 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
   // The turn's own compact activity summary — count + distinct categories,
   // e.g. "6 calls · read, shell". Running/error calls keep their own tinted
   // counters beside it, so trouble never reads as neutral mono.
-  const summary = toolActivitySummary(tools);
+  const summary = toolActivitySummaryParts(tools);
   // The capabilities this turn actually reached for, as the design's SKILLS
   // eyebrow above the card. Absent when the turn used none — this surface
   // never shows a label with nothing under it.
@@ -8796,11 +8798,14 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
       >
         <summary
           className="cave-tool-summary focus-ring"
+          title={summary.label}
           aria-expanded={open}
-          aria-label={toolGroupAriaLabel(summary, running, errors)}
+          aria-label={toolGroupAriaLabel(summary.label, running, errors)}
         >
           <Icon name="ph:wrench" width={12} className="cave-tool-icon shrink-0" aria-hidden />
-          <span className="cave-work-line__label">{summary}</span>
+          <span className="cave-work-line__count">{summary.count}</span>
+          <span className="cave-work-line__separator" aria-hidden>·</span>
+          <span className="cave-work-line__categories">{summary.categories}</span>
           <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)] cave-work-line__status">
             {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
             {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
@@ -8833,7 +8838,7 @@ function ToolRuns({ tools }: { tools: ToolEvent[] }) {
     const header = headerByToolId.get(run.tools[0]!.id);
     // File-mutation cards carry review/undo affordances. Keeping each one
     // standalone means a repeated edit never hides an actionable change.
-    const containsEdit = run.tools.some((tool) => toolInputAsDiff(tool.name, tool.input) != null);
+    const containsEdit = run.tools.some((tool) => isFileMutationTool(tool.name));
     const body = containsEdit
       ? run.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)
       : <ToolRunGroup name={run.name} tools={run.tools} />;

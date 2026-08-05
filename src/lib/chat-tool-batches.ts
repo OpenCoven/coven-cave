@@ -140,17 +140,33 @@ function batchDuration(group: readonly BatchTool[]): number | undefined {
   return total;
 }
 
-/** Activity summary: count and derive unique tool categories in first-use order.
- *  Formats as "{count} call(s) · {categories}" or empty string if no tools. */
-export function toolActivitySummary(tools: readonly BatchTool[]): string {
-  if (tools.length === 0) return "";
+export type ToolActivitySummaryParts = {
+  count: string;
+  categories: string;
+  label: string;
+};
+
+/** Activity summary split into independently renderable count and category
+ *  phrases while retaining the complete label for tooltips and accessible names. */
+export function toolActivitySummaryParts(tools: readonly BatchTool[]): ToolActivitySummaryParts {
+  if (tools.length === 0) return { count: "", categories: "", label: "" };
   const categories: ToolCategory[] = [];
   for (const tool of tools) {
     const category = toolCategory(tool.name);
     if (!categories.includes(category)) categories.push(category);
   }
-  const calls = `${tools.length} ${tools.length === 1 ? "call" : "calls"}`;
-  return `${calls} · ${categories.join(", ")}`;
+  const count = `${tools.length} ${tools.length === 1 ? "call" : "calls"}`;
+  const categoryList = categories.join(", ");
+  return {
+    count,
+    categories: categoryList,
+    label: `${count} · ${categoryList}`,
+  };
+}
+
+/** Complete activity label retained for non-visual consumers. */
+export function toolActivitySummary(tools: readonly BatchTool[]): string {
+  return toolActivitySummaryParts(tools).label;
 }
 
 /** The band's own duration, to the precision the number deserves: a batch of

@@ -8,6 +8,7 @@ import {
   LONG_RUNNING_BATCH_MS,
   formatBatchDuration,
   toolActivitySummary,
+  toolActivitySummaryParts,
   toolBatches,
   turnSkills,
 } from "./chat-tool-batches.ts";
@@ -120,6 +121,15 @@ test("activity summary counts calls and derives unique tool categories in first-
     toolActivitySummary(tools),
     "4 calls · search, read, shell",
     "derives unique categories in first-use order",
+  );
+  assert.deepEqual(
+    toolActivitySummaryParts(tools),
+    {
+      count: "4 calls",
+      categories: "search, read, shell",
+      label: "4 calls · search, read, shell",
+    },
+    "exposes count and categories separately without losing the full phrase",
   );
 });
 

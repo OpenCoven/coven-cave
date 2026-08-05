@@ -23,13 +23,18 @@ test("2a ④ — the work line states the compact activity summary, trouble stay
   assert.ok(toolGroup, "expected ToolGroup in ChatView");
   assert.match(
     toolGroup,
-    /const summary = toolActivitySummary\(tools\);/,
-    "the summary comes from the pure model, not a second count in the component",
+    /const summary = toolActivitySummaryParts\(tools\);/,
+    "the count and category phrases come from the pure model",
   );
   assert.match(
     toolGroup,
-    /<span className="cave-work-line__label">\{summary\}<\/span>[\s\S]{0,400}cave-tool-count--running[\s\S]{0,300}cave-tool-count--error/,
-    "the compact summary precedes the tinted running and error counters",
+    /cave-work-line__count">\{summary\.count\}[\s\S]*cave-work-line__categories">\{summary\.categories\}[\s\S]{0,400}cave-tool-count--running[\s\S]{0,300}cave-tool-count--error/,
+    "the non-shrinking count and truncatable categories precede the tinted status counters",
+  );
+  assert.match(
+    toolGroup,
+    /title=\{summary\.label\}[\s\S]*aria-label=\{toolGroupAriaLabel\(summary\.label, running, errors\)\}/,
+    "the full untruncated phrase remains available to sighted and assistive readers",
   );
   assert.doesNotMatch(
     toolGroup,
