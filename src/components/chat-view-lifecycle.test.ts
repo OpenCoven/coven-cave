@@ -735,22 +735,23 @@ assert.match(
   /import \{[\s\S]*?ownsDisplayedView[\s\S]*?\} from "@\/lib\/chat-session-ownership"/,
   "ChatView imports the pure ownsDisplayedView predicate from chat-session-ownership",
 );
-// displayedCreationRunIdRef tracks which sessionless run owns the compose slot.
+// displayedCreationRunIdRef tracks which run owns the displayed view.
 assert.match(
   source,
   /const displayedCreationRunIdRef = useRef<string \| null>\(null\)/,
-  "displayedCreationRunIdRef is declared to track the sessionless run owning the displayed compose view",
+  "displayedCreationRunIdRef is declared to track the run owning the displayed view",
 );
 assert.match(
   source,
   /useEffect\(\(\) => \(\) => \{\s*\n\s*displayedCreationRunIdRef\.current = null;\s*\n\s*\}, \[\]\);/,
   "unmount releases the displayed compose slot so a late event from the stale ChatView cannot promote into a remounted compose",
 );
-// Set to runId at the start of each sessionless send.
+// Set to runId at the start of every send so resumed replacements also lose
+// promotion authority when unmount/thread-switch cleanup clears the slot.
 assert.match(
   source,
-  /if \(initialLiveSessionId === null\) \{\s*\n\s*displayedCreationRunIdRef\.current = runId;\s*\n\s*\}/,
-  "sessionless send sets displayedCreationRunIdRef to its runId so older background runs cannot adopt",
+  /creationRefreshStateRef\.current = onSendStart\([\s\S]{0,400}?displayedCreationRunIdRef\.current = runId;/,
+  "every send sets displayedCreationRunIdRef to its runId so stale resumed and sessionless runs cannot adopt",
 );
 {
   // Both session and done events call ownsDisplayedView and gate adoption on it.
@@ -763,13 +764,13 @@ assert.match(
   );
 }
 {
-  // onSessionStarted is gated: called for non-null origin OR when the run owns the compose view.
+  // onSessionStarted is gated on display ownership for both null and non-null origins.
   const notifyChecks = source.match(
-    /if \(liveGeneration\.originSessionId !== null \|\| owned\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);\s*\n\s*\}/g,
+    /if \(owned\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);\s*\n\s*\}/g,
   );
   assert.ok(
     notifyChecks && notifyChecks.length === 2,
-    "session and done events call onSessionStarted only when non-null origin OR this run owns the compose view",
+    "session and done events call onSessionStarted only when this run owns the displayed view",
   );
 }
 

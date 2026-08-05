@@ -2487,9 +2487,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
   const creationRefreshStateRef = useRef<CreationRefreshState>({ pendingRuns: {} });
-  // Tracks which sessionless generation run currently owns the displayed compose
-  // view. Set to a run's id at the start of each sessionless send; cleared on
-  // thread switch and on adoption. See ownsDisplayedView for the guard semantics.
+  // Tracks which generation run currently owns the displayed view. Cleared on
+  // thread switch, adoption, and unmount. See ownsDisplayedView for the guard.
   const displayedCreationRunIdRef = useRef<string | null>(null);
   useEffect(() => () => {
     displayedCreationRunIdRef.current = null;
@@ -3792,8 +3791,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // A queued follow-up belongs to the conversation that was visible when it
     // was composed. Never let a thread switch dispatch it into another chat.
     if (isThreadSwitch) {
-      // Clearing compose ownership on any thread switch means an in-flight
-      // sessionless generation from the previous view can no longer adopt.
+      // Clearing display ownership on any thread switch means an in-flight
+      // generation from the previous view can no longer adopt.
       displayedCreationRunIdRef.current = null;
       queuedMessagesRef.current = [];
       setQueuedMessages([]);
@@ -4872,12 +4871,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     liveSessionIdRef.current = initialLiveSessionId;
     const runId = crypto.randomUUID();
     creationRefreshStateRef.current = onSendStart(creationRefreshStateRef.current, runId, initialLiveSessionId);
-    // Register this run as the one that owns the displayed compose view. Only a
-    // sessionless send (new chat, no prior session) sets the slot; existing-session
-    // follow-ups leave it alone so a concurrent new-chat run keeps its ownership.
-    if (initialLiveSessionId === null) {
-      displayedCreationRunIdRef.current = runId;
-    }
+    // Register this run as the displayed owner for both new and resumed chats.
+    // Unmount/thread-switch cleanup clears the slot before a late replacement
+    // can promote into a different compose.
+    displayedCreationRunIdRef.current = runId;
     setHistoryState("loaded");
 
     // Explicit parentTurnId (including null = root) wins; only fall back to the
@@ -5986,11 +5983,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         );
         if (ev.sessionId !== currentSessionRef.current) {
           // Only adopt the new session id into THIS view's refs when this run
-          // owns the displayed thread. For null-origin runs (sessionless), the
-          // run must also own the displayed compose slot — without this extra
-          // guard two overlapping sessionless runs (A then B) both satisfy
-          // `currentSessionId === null === originSessionId` and A would adopt B's
-          // compose view. For non-null origin the original equality semantics apply.
+          // still owns the displayed thread. The run slot blocks both overlapping
+          // sessionless sends and resumed replacements arriving after switch/unmount.
           const owned = ownsDisplayedView({
             currentSessionId: currentSessionRef.current,
             originSessionId: liveGeneration.originSessionId,
@@ -6001,17 +5995,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
-            // Clear compose ownership: this run adopted its session, so no
-            // subsequent null-origin generation (including a stale background
-            // one) may re-adopt via the done stable-ID fallback.
+            // Clear display ownership after adoption so no late event may
+            // re-adopt via the done stable-ID fallback.
             displayedCreationRunIdRef.current = null;
           }
-          // Non-null origin: always notify the router so a background stream
-          // registers its session. Null origin: only notify when this run owns
-          // the displayed compose — calling onSessionStarted for a background
-          // sessionless run would cause ChatRouter's null-view guard to promote
-          // A's session into B's compose view.
-          if (liveGeneration.originSessionId !== null || owned) {
+          // Router promotion is display-owned for both new and resumed runs. A
+          // background replacement still refreshes the authoritative sidebar
+          // after persistence in the done handler below.
+          if (owned) {
             onSessionStarted?.(ev.sessionId);
           }
         }
@@ -6178,9 +6169,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         void refreshUsagePlan(ev.responseMetadata?.confirmedModel ?? ev.responseMetadata?.model ?? null);
         if (ev.sessionId && ev.sessionId !== currentSessionRef.current) {
           liveGeneration.sessionId = ev.sessionId;
-          // Same ownership predicate as the "session" event: a background null-origin
-          // run (A) must not overwrite the displayed compose (B) when both share
-          // originSessionId === null. Non-null origin uses the original equality check.
+          // Same run-and-thread ownership predicate as the "session" event.
           const owned = ownsDisplayedView({
             currentSessionId: currentSessionRef.current,
             originSessionId: liveGeneration.originSessionId,
@@ -6191,10 +6180,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
-            // Clear compose ownership after adoption (same as session event path).
+            // Clear display ownership after adoption (same as session event path).
             displayedCreationRunIdRef.current = null;
           }
-          if (liveGeneration.originSessionId !== null || owned) {
+          if (owned) {
             onSessionStarted?.(ev.sessionId);
           }
         }

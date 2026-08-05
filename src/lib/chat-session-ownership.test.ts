@@ -10,7 +10,7 @@ test("non-null origin: owns when currentSessionId matches originSessionId", () =
       currentSessionId: "sess-1",
       originSessionId: "sess-1",
       runId: "run-a",
-      displayedCreationRunId: null,
+      displayedCreationRunId: "run-a",
     }),
     true,
   );
@@ -22,7 +22,7 @@ test("non-null origin: does not own when currentSessionId differs", () => {
       currentSessionId: "sess-2",
       originSessionId: "sess-1",
       runId: "run-a",
-      displayedCreationRunId: null,
+      displayedCreationRunId: "run-a",
     }),
     false,
   );
@@ -31,15 +31,26 @@ test("non-null origin: does not own when currentSessionId differs", () => {
       currentSessionId: null,
       originSessionId: "sess-1",
       runId: "run-a",
-      displayedCreationRunId: null,
+      displayedCreationRunId: "run-a",
     }),
     false,
     "null current vs non-null origin: does not own",
   );
 });
 
-test("non-null origin: displayedCreationRunId is irrelevant", () => {
-  // The compose-slot check is only for null-origin generations.
+test("non-null origin: resumed replacement crossing remount cannot promote into fresh compose", () => {
+  // The old ChatView still retains its matching currentSessionId after cleanup,
+  // but unmount has cleared its display ownership before a fresh compose mounts.
+  assert.equal(
+    ownsDisplayedView({
+      currentSessionId: "sess-1",
+      originSessionId: "sess-1",
+      runId: "run-a",
+      displayedCreationRunId: null,
+    }),
+    false,
+    "the stale resumed run cannot promote its replacement after unmount clears display ownership",
+  );
   assert.equal(
     ownsDisplayedView({
       currentSessionId: "sess-1",
@@ -47,18 +58,8 @@ test("non-null origin: displayedCreationRunId is irrelevant", () => {
       runId: "run-a",
       displayedCreationRunId: "run-b",
     }),
-    true,
-    "displayedCreationRunId mismatch does not block a non-null origin that matches its session",
-  );
-  assert.equal(
-    ownsDisplayedView({
-      currentSessionId: "sess-2",
-      originSessionId: "sess-1",
-      runId: "run-a",
-      displayedCreationRunId: "run-a",
-    }),
     false,
-    "displayedCreationRunId match does not rescue a non-null origin with wrong currentSessionId",
+    "a fresh compose run's ownership also blocks the stale resumed run",
   );
 });
 
