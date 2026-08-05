@@ -30,6 +30,11 @@ assert.match(
 );
 assert.match(
   source,
+  /singleRequired\s*\? "Choose familiar"\s*: "All familiars"/,
+  "a required single-familiar picker never labels its empty state as All familiars",
+);
+assert.match(
+  source,
   /familiar-switcher__trigger-caret/,
   "the labeled trigger carries a dropdown caret (it reads as a selector)",
 );

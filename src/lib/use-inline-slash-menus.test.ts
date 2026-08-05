@@ -44,6 +44,11 @@ assert.match(
   /replaceInlineSlashRange\(text, start, end, replacement\)/,
   "completion preserves surrounding draft text instead of replacing the whole composer",
 );
+assert.match(
+  src,
+  /let replacementEnd = activeInvocation\.caret;[\s\S]*?while \(replacementEnd < text\.length && !\/\\s\/\.test\(text\[replacementEnd\] \?\? ""\)\)[\s\S]*?completeRange\(activeInvocation\.start, replacementEnd, replacement\)/,
+  "argument completion replaces the rest of the token after a mid-token caret",
+);
 
 // ── Esc-dismiss: one flag, all four pickers, typing re-opens ─────────────────
 assert.match(

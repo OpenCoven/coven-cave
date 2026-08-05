@@ -138,12 +138,16 @@ export function FamiliarSwitcher({
     ? `${multiScope.size} familiars`
     : active
       ? active.display_name
-      : "All familiars";
+      : singleRequired
+        ? "Choose familiar"
+        : "All familiars";
   const triggerLabel = !singleRequired && multiScope
     ? `Switch familiar — scope: ${multiScope.size} familiars`
     : active
       ? `Switch familiar — current: ${active.display_name}`
-      : "Switch familiar — scope: all familiars";
+      : singleRequired
+        ? "Choose familiar"
+        : "Switch familiar — scope: all familiars";
 
   return (
     <>

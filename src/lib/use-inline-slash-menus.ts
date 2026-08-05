@@ -206,9 +206,13 @@ export function useInlineSlashMenus(opts: {
   const completeInvocation = useCallback(
     (replacement: string) => {
       if (!activeInvocation) return;
-      completeRange(activeInvocation.start, activeInvocation.caret, replacement);
+      let replacementEnd = activeInvocation.caret;
+      while (replacementEnd < text.length && !/\s/.test(text[replacementEnd] ?? "")) {
+        replacementEnd += 1;
+      }
+      completeRange(activeInvocation.start, replacementEnd, replacement);
     },
-    [activeInvocation, completeRange],
+    [activeInvocation, completeRange, text],
   );
 
   const handleKeyDown = useCallback(
