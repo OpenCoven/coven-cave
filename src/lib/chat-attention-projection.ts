@@ -47,7 +47,8 @@ export function recordChatAttentionClear(
     operations = new Map();
     state.set(sessionId, operations);
   }
-  operations.set(operationId, { status: "pending", scopeKey });
+  const retainedScopeKey = operations.get(operationId)?.scopeKey ?? scopeKey;
+  operations.set(operationId, { status: "pending", scopeKey: retainedScopeKey });
 }
 
 export function settleChatAttentionClear(

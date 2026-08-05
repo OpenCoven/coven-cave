@@ -149,6 +149,23 @@ test("absence cannot release a pending clear but can retire a persisted clear af
   assert.equal(state.has("session-1"), false);
 });
 
+test("repeated clears keep the original scope until that scope catches up", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(state, "session-1", "operation-1", chatAttentionProjectionScopeKey("nova"));
+  recordChatAttentionClear(state, "session-1", "operation-1", chatAttentionProjectionScopeKey("sage"));
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 11);
+
+  applyChatAttentionProjections(state, [], 11, chatAttentionProjectionScopeKey("sage"));
+  assert.equal(state.has("session-1"), true);
+
+  const canonicalNone = [row({ attention: NO_CHAT_ATTENTION })];
+  assert.equal(
+    applyChatAttentionProjections(state, canonicalNone, 11, chatAttentionProjectionScopeKey("nova")),
+    canonicalNone,
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
 test("projection preserves array identity when no field changes", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(state, "session-1", "operation-1", chatAttentionProjectionScopeKey("nova"));
