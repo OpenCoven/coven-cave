@@ -290,14 +290,11 @@
   }
 }
 
-/* ── Narrow widths: the room stacks instead of compressing into two unusable
-   columns. The terminal stays first because it is the priority surface. ── */
-@media (max-width: 900px) {
-  .code-room__group {
-    flex-direction: column;
-  }
-  .code-context-dock {
-    border-left: none;
-    border-top: 1px solid var(--border-hairline);
-  }
-}
+/* ── Narrow widths: the Room does NOT stack here.
+   A `flex-direction: column` override was tried and could never work —
+   react-resizable-panels sets flexDirection INLINE from its orientation prop
+   (it even spreads a caller's `style` before its own), and an inline
+   declaration beats any class selector. The rule sat here silently doing
+   nothing while a 390px Room rendered two columns whose minimums add up to
+   620px. The narrow layout is now a real drill-in owned by CodeWorkbench,
+   decided from the Room's MEASURED width rather than the viewport (cave-k3a9u). ── */

@@ -241,19 +241,26 @@ assert.match(
   "the context dock scopes every tab to the same work root",
 );
 
-// The three zones, in order: the terminal center and the dock are siblings of
-// ONE resizable group, which is what keeps the shell mounted while context
-// changes. A layout that nested the dock inside the terminal, or swapped them
-// into the same slot, would reintroduce the tab behaviour this replaced.
+// The three zones, in order: while the Room is wide enough, the terminal center
+// and the dock are siblings of ONE resizable group, which is what keeps the
+// shell mounted while context changes. A layout that nested the dock inside the
+// terminal, or swapped them into the same slot, would reintroduce the tab
+// behaviour this replaced. (The dock body itself lives in a renderDock helper
+// so the wide and narrow layouts cannot drift apart — cave-k3a9u.)
 assert.match(
   workbench,
-  /<CodeTerminalWorkspace[\s\S]*?<Separator[\s\S]*?<CodeContextDock/,
+  /<CodeTerminalWorkspace[\s\S]*?<Separator[\s\S]*?renderDock\(\{ visible: true \}\)/,
   "the Room renders terminal center, a separator, then the context dock",
 );
 assert.match(
   workbench,
-  /minSize=\{MIN_TERMINAL_WIDTH\}/,
-  "the terminal center holds a width floor so the divider can starve context but never the shell",
+  /const renderDock = \(\{ visible, onBack \}[\s\S]{0,120}<CodeContextDock/,
+  "one dock definition serves both layouts",
+);
+assert.match(
+  workbench,
+  /minSize=\{fitsSplit \? MIN_TERMINAL_WIDTH : "0px"\}/,
+  "the terminal center holds a width floor while there is a divider to defend it against",
 );
 assert.doesNotMatch(
   workbench,
@@ -298,8 +305,8 @@ assert.match(
 );
 assert.match(
   contextDock,
-  /\{browserOpened \? \([\s\S]*?active=\{tab === "browser"\}/,
-  "Browser stays mounted once opened (keepalive) and is active only while selected, so native bounds follow the visible pane",
+  /\{browserOpened \? \([\s\S]*?active=\{browserActive\}/,
+  "Browser stays mounted once opened (keepalive) and is active only while selected AND the dock is visible, so native bounds follow the visible pane",
 );
 assert.match(
   contextDock,
@@ -528,12 +535,14 @@ assert.match(
   "code-view threads the workspace's tasks refresh into the workbench",
 );
 
-// ── Mobile drill-in (list-first below md) ────────────────────────────────────
+// ── Narrow drill-in (list-first, measured) ───────────────────────────
 
-// Below the md breakpoint the rail is the landing screen: no newest-session
-// auto-pick on narrow mounts, an explicit Back (null) suppresses re-selection,
-// and the rail/workbench swap is pure CSS (hidden md:block / hidden md:flex)
-// so desktop keeps the three-pane layout untouched.
+// When the Room is too narrow to hold the rail beside a usable workbench, the
+// rail is the landing screen: no newest-session auto-pick, an explicit Back
+// (null) suppresses re-selection, and the rail/workbench swap is driven by the
+// Room's OWN measured width. It used to key off the viewport (`md:`), which
+// this surface cannot ask about honestly — it renders inside the role-surface
+// host beside the sidebar and can sit in a split (cave-k3a9u).
 assert.match(
   codeView,
   /useState<string \| null \| undefined>\(\s*deepLink\?\.sessionId \?\? undefined,?\s*\)/,
@@ -558,30 +567,143 @@ assert.match(
   /useEffect\(\(\) => \{\s*const params = new URLSearchParams\(window\.location\.search\);\s*if \(!params\.has\("session"\)/,
   "the ?session/ctab/wtab strip happens in a mount effect, not the initializer",
 );
-assert.match(
+assert.doesNotMatch(
   codeView,
-  /window\.matchMedia\("\(max-width: 767px\)"\)\.matches/,
-  "narrow mounts land on the session list, not the newest workbench",
+  /matchMedia|\bmd:(block|flex|hidden|w-64|border-r)/,
+  "the Room decides from its measured box, never a viewport query or md: class",
 );
 assert.match(
   codeView,
-  /if \(narrowMountRef\.current\) return;/,
-  "the auto-pick effect honors the narrow-mount guard",
+  /const roomWidth = useMeasuredWidth\(roomRef\);/,
+  "the Room measures its own width",
 );
 assert.match(
   codeView,
-  /\$\{selected \? "hidden md:block" : "block"\}/,
-  "picking a session hides the rail below md only",
+  /const fitsRail = codeRoomFitsRail\(roomWidth, isMobile\);/,
+  "the rail breakpoint comes from the shared layout model, not a literal",
+);
+// The landing decision is captured once and lives in STATE, not just a ref: a
+// ref set inside one effect cannot re-run the auto-pick effect that reads it,
+// so the measurement would land and auto-pick would never fire.
+assert.match(
+  codeView,
+  /const \[narrowLanding, setNarrowLanding\] = useState<boolean \| null>\(null\);/,
+  "the narrow-landing decision is state so the auto-pick effect re-runs on it",
 );
 assert.match(
   codeView,
-  /\$\{selected \? "flex" : "hidden md:flex"\}/,
-  "the workbench column is hidden below md until a session is picked",
+  /if \(narrowLanding !== false\) return;/,
+  "auto-pick waits for a decision and is skipped entirely when narrow",
 );
 assert.match(
   codeView,
-  /aria-label="Back to sessions"[\s\S]{0,80}onClick=\{\(\) => setSelectedId\(null\)\}/,
-  "the mobile Back affordance clears the selection explicitly",
+  /if \(roomWidth === null && typeof ResizeObserver !== "undefined"\) return;/,
+  "the decision waits for a real measurement only when one is actually coming",
+);
+assert.match(
+  codeView,
+  /fitsRail \? "block w-64 border-r" : selected \? "hidden" : "block w-full"/,
+  "picking a session hides the rail only while the Room is too narrow for both",
+);
+assert.match(
+  codeView,
+  /\$\{selected \|\| fitsRail \? "flex" : "hidden"\}/,
+  "the workbench column is hidden on a narrow Room until a session is picked",
+);
+assert.match(
+  codeView,
+  /aria-label="Back to sessions"[\s\S]{0,120}onClick=\{\(\) => setSelectedId\(null\)\}/,
+  "the narrow Back affordance clears the selection explicitly",
+);
+
+// ── Room narrow layout: the split drill-in (cave-k3a9u) ─────────────────────
+
+// THE BUG THIS GUARDS. The Room shipped with
+//   @media (max-width: 900px) { .code-room__group { flex-direction: column } }
+// which never once applied. `react-resizable-panels` renders its Group with an
+// INLINE style whose own keys land after the caller's spread:
+//   { height, width, overflow, ...userStyle, display:"flex",
+//     flexDirection: orientation === "horizontal" ? "row" : "column", ... }
+// Inline beats every class selector, and the library's key beats even a passed
+// `style`. So the rule was inert, and at 390px the Room rendered two columns
+// whose minimums alone sum to 620px. Orientation is a PROP, never CSS.
+const roomCss = await readFile(
+  new URL("../styles/globals/surface-code-room.css", import.meta.url),
+  "utf8",
+);
+assert.doesNotMatch(
+  roomCss,
+  /\.code-room__group[^}]*flex-direction/,
+  "a CSS flex-direction on the panel group is dead code — the library sets it inline",
+);
+assert.doesNotMatch(
+  roomCss,
+  /@media[^{]*max-width:\s*900px/,
+  "the 900px stacking query is retired; the workbench decides in JS instead",
+);
+assert.match(
+  workbench,
+  /const fitsSplit = codeWorkbenchFitsSplit\(bodyWidth, isMobile\);/,
+  "the split/drill-in decision is measured, from the shared layout model",
+);
+assert.match(
+  workbench,
+  /useState<CodeWorkbenchStep>\("terminal"\)/,
+  "the narrow workbench lands on the terminal, not the dock",
+);
+// The terminal must never unmount across the breakpoint: remounting it would
+// drop the live PTY attachment and the scrollback with it. It keeps ONE slot
+// in the tree and only the dock's presence changes around it.
+assert.match(
+  workbench,
+  /visible=\{showTerminal\}/,
+  "the terminal is hidden via its supported keepalive prop, never unmounted",
+);
+assert.doesNotMatch(
+  workbench,
+  /fitsSplit \? \([\s\S]{0,400}<Panel[\s\S]{0,600}\) : \([\s\S]{0,400}<Panel/,
+  "the layouts must not fork into two separate terminal Panels",
+);
+// Announcing from inside a setState updater is a render-phase setState on the
+// live region — React re-invokes updaters while rendering, and it warned
+// exactly that ("Cannot update a component while rendering a different
+// component") until this moved into an effect.
+assert.doesNotMatch(
+  workbench,
+  /setStep\(\([\s\S]{0,200}announce\(/,
+  "the step announcement must not run inside the setState updater",
+);
+assert.match(
+  workbench,
+  /announcedStepRef\.current = step;/,
+  "the step change is announced from an effect, so routed steps announce too",
+);
+
+// A routed diff/file open on a narrow Room has to bring the dock forward too,
+// or it silently points a hidden dock at the right tab and looks like a no-op.
+assert.match(
+  workbench,
+  /setStep\("context"\)/,
+  "a routed open drills into Context so the target is actually visible",
+);
+
+// A mounted-but-hidden dock cannot keep the browser active: BrowserPane draws a
+// NATIVE webview positioned over its container's box, which `display:none` does
+// not clip — it would paint straight over the terminal.
+assert.match(
+  contextDock,
+  /const browserActive = tab === "browser" && visible;/,
+  "the native webview is deactivated whenever the dock is hidden",
+);
+assert.match(
+  contextDock,
+  /visible\?: boolean;/,
+  "the dock takes an explicit visibility prop rather than inferring it",
+);
+assert.match(
+  contextDock,
+  /onBack\?: \(\) => void;/,
+  "the narrow dock offers a way back to the terminal",
 );
 
 // ── Chat stays untouched this phase ──────────────────────────────────────────
