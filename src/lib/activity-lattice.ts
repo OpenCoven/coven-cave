@@ -9,8 +9,8 @@
 //
 // Pure and unit-tested; the rendering lives in familiar-activity-lattice.tsx.
 
-import { buildSessionPulse, type PulseDay } from "@/lib/session-pulse";
-import type { SessionRow } from "@/lib/types";
+import { buildSessionPulse, type PulseDay } from "./session-pulse.ts";
+import type { SessionRow } from "./types.ts";
 
 /** One day cell — the same shape the existing pulse uses. */
 export type LatticeDay = PulseDay;

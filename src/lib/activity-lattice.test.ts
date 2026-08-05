@@ -8,8 +8,8 @@ import {
   FORTNIGHT_DAYS,
   LATTICE_WEEKS,
   QUARTER_WEEKS,
-} from "@/lib/activity-lattice";
-import type { SessionRow } from "@/lib/types";
+} from "./activity-lattice.ts";
+import type { SessionRow } from "./types.ts";
 
 const DAY_MS = 24 * 60 * 60_000;
 // A fixed instant so the windows are deterministic — no Date.now() in tests.
