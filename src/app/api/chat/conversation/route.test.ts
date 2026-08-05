@@ -6,6 +6,17 @@ const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   route,
+  /recordSessionFamiliar,\s*setSessionTitleAuto/,
+  "voice-created New chat titles must be recorded as automatic provenance",
+);
+assert.doesNotMatch(
+  route,
+  /\bsetSessionTitle:\s*async/,
+  "voice creation must not mark its generated default as a manual title",
+);
+
+assert.match(
+  route,
   /authorizeChatProjectLaunch/,
   "voice conversation creation should use the shared project launch gate",
 );
@@ -35,5 +46,15 @@ assert.ok(
 );
 assert.ok(authorizeIndex >= 0, "voice route should await project authorization");
 assert.ok(createIndex > authorizeIndex, "voice route must authorize before minting a conversation");
+assert.match(
+  route,
+  /setSessionTitleAuto:\s*async[\s\S]*await setSessionTitleAuto\(/,
+  "voice-created New chat defaults should record automatic title provenance",
+);
+assert.doesNotMatch(
+  route,
+  /\bsetSessionTitle:\s*async/,
+  "voice-created defaults must not be marked as manually owned",
+);
 
 console.log("chat conversation route.test.ts: ok");

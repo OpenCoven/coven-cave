@@ -11,7 +11,7 @@ function depsFor(overrides: Partial<VoiceChatCreateDeps> = {}) {
     loadFamiliarBinding: async () => ({ harness: "claude" }),
     saveConversation: async (conv) => { saved.push(conv); },
     recordSessionFamiliar: async (sessionId, familiarId) => { recorded.push({ sessionId, familiarId }); },
-    setSessionTitle: async (sessionId, title) => { titles.push({ sessionId, title }); },
+    setSessionTitleAuto: async (sessionId, title) => { titles.push({ sessionId, title }); },
     defaultTitle: () => "New chat",
     mintSessionId: () => "test-session-id",
     ...overrides,

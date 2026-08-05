@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const previousHome = process.env.HOME;
@@ -15,6 +15,7 @@ try {
     sessionFamiliar: {},
     sessionTitles: {},
     sessionTitleAuto: {},
+    sessionTitleManual: {},
     sessionArchived: {},
     sessionSacrificed: {},
     sessionKeep: {},
@@ -71,8 +72,9 @@ try {
   assert.deepEqual(state.sessionTitles, {});
 
   // Auto-rename provenance (chat-auto-rename): setSessionTitleAuto records that
-  // this feature owns the title; a later manual setSessionTitle clears it so the
-  // periodic rename backs off. Empty auto titles are a no-op.
+  // this feature owns the title; a later manual setSessionTitle replaces that
+  // with explicit manual ownership so the periodic rename backs off. Empty auto
+  // titles are a no-op.
   assert.equal(await config.setSessionTitleAuto("session-3", "  Ship the widget "), "Ship the widget");
   state = await config.loadState();
   assert.deepEqual(state.sessionTitles["session-3"], "Ship the widget");
@@ -81,6 +83,7 @@ try {
   await config.setSessionTitle("session-3", "My hand-picked name");
   state = await config.loadState();
   assert.equal(state.sessionTitles["session-3"], "My hand-picked name");
+  assert.equal(state.sessionTitleManual["session-3"], true, "manual title ownership persisted");
   assert.equal(
     state.sessionTitleAuto["session-3"],
     undefined,
@@ -88,6 +91,12 @@ try {
   );
   // Clear session-3 so the whole-state assertion below still sees empty titles.
   await config.setSessionTitle("session-3", "");
+  state = await config.loadState();
+  assert.equal(
+    state.sessionTitleManual["session-3"],
+    undefined,
+    "clearing a title also clears explicit manual ownership",
+  );
 
   // ── setSessionTitleAutoIfOwned: atomic ownership-gated auto provenance ──────
   // Missing title → writes with provenance.
@@ -135,6 +144,73 @@ try {
   assert.equal(state.sessionTitles["session-owned"], "My manual title", "manual title preserved");
   assert.equal(state.sessionTitleAuto["session-owned"], undefined, "provenance still absent");
 
+  // Explicit manual ownership wins even when the chosen text is also a known
+  // automatic default. Text equality alone cannot recover authorship.
+  await config.setSessionTitle("manual-new-chat", "New chat");
+  assert.equal(
+    await config.setSessionTitleAutoIfOwned(
+      "manual-new-chat",
+      "Generated replacement",
+      new Set(["New chat"]),
+    ),
+    null,
+    "a manually chosen New chat title is never claimed as an automatic default",
+  );
+  state = await config.loadState();
+  assert.equal(state.sessionTitles["manual-new-chat"], "New chat");
+  assert.equal(state.sessionTitleManual["manual-new-chat"], true);
+
+  const promptDefault = "Fix parser";
+  await config.setSessionTitle("manual-prompt-default", promptDefault);
+  assert.equal(
+    await config.setSessionTitleAutoIfOwned(
+      "manual-prompt-default",
+      "Generated replacement",
+      new Set([promptDefault]),
+    ),
+    null,
+    "a manually chosen prompt-default title remains manual",
+  );
+  state = await config.loadState();
+  assert.equal(state.sessionTitles["manual-prompt-default"], promptDefault);
+  assert.equal(state.sessionTitleManual["manual-prompt-default"], true);
+
+  // Legacy state has neither explicit manual ownership nor auto provenance.
+  // Known defaults remain claimable so existing sessions still migrate forward.
+  const statePath = path.join(tempHome, ".coven", "cave", "state.json");
+  const legacyState = JSON.parse(await readFile(statePath, "utf8"));
+  legacyState.sessionTitles["legacy-default"] = "New chat";
+  delete legacyState.sessionTitleAuto["legacy-default"];
+  delete legacyState.sessionTitleManual["legacy-default"];
+  await writeFile(statePath, JSON.stringify(legacyState));
+  assert.equal(
+    await config.setSessionTitleAutoIfOwned(
+      "legacy-default",
+      "Generated legacy replacement",
+      new Set(["New chat"]),
+    ),
+    "Generated legacy replacement",
+    "legacy known defaults without a manual marker remain claimable",
+  );
+  state = await config.loadState();
+  assert.equal(state.sessionTitleAuto["legacy-default"], "Generated legacy replacement");
+  assert.equal(state.sessionTitleManual["legacy-default"], undefined);
+
+  const malformedManualState = JSON.parse(await readFile(statePath, "utf8"));
+  malformedManualState.sessionTitleManual = {
+    valid: true,
+    falseMarker: false,
+    stringMarker: "true",
+  };
+  await writeFile(statePath, JSON.stringify(malformedManualState));
+  state = await config.loadState();
+  assert.deepEqual(
+    state.sessionTitleManual,
+    { valid: true },
+    "manual ownership state is normalized to explicit true markers",
+  );
+  await config.setSessionTitle("valid", "");
+
   // preserveManualTitles=false keeps the policy's explicit takeover behavior,
   // while still recording provenance in the same atomic state update.
   const forced = await config.setSessionTitleAutoIfOwned(
@@ -146,6 +222,7 @@ try {
   assert.equal(forced, "Policy-selected title", "preserve-off policy may replace a manual title");
   state = await config.loadState();
   assert.equal(state.sessionTitles["session-owned"], "Policy-selected title");
+  assert.equal(state.sessionTitleManual["session-owned"], undefined);
   assert.equal(
     state.sessionTitleAuto["session-owned"],
     "Policy-selected title",
@@ -163,6 +240,9 @@ try {
 
   // Clean up so the whole-state assertion below still sees empty titles.
   await config.setSessionTitle("session-owned", "");
+  await config.setSessionTitle("manual-new-chat", "");
+  await config.setSessionTitle("manual-prompt-default", "");
+  await config.setSessionTitle("legacy-default", "");
 
   const sacrificedAt = await config.sacrificeSessionLocal("session-1");
   assert.ok(Number.isFinite(Date.parse(sacrificedAt)));
@@ -223,6 +303,7 @@ try {
     sessionFamiliar: { "session-1": "cody" },
     sessionTitles: {},
     sessionTitleAuto: {},
+    sessionTitleManual: {},
     sessionArchived: {},
     sessionSacrificed: { "session-1": sacrificedAt },
     sessionKeep: {},

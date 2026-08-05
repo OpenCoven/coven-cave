@@ -128,6 +128,7 @@ function defaultState(): CaveState {
     sessionFamiliar: {},
     sessionTitles: {},
     sessionTitleAuto: {},
+    sessionTitleManual: {},
     sessionArchived: {},
     sessionSacrificed: {},
     sessionKeep: {},
@@ -137,6 +138,13 @@ function defaultState(): CaveState {
     mergedPrAutoArchived: {},
     travel: defaultTravelState(),
   };
+}
+
+function normalizeSessionTitleManual(value: unknown): Record<string, true> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(([sessionId, isManual]) => Boolean(sessionId) && isManual === true),
+  ) as Record<string, true>;
 }
 
 /** Per-familiar overrides for Omnigent session create. */
@@ -326,9 +334,13 @@ export type CaveState = {
   /** Session to Cave-side title override. Wins over the daemon's title when present. */
   sessionTitles: Record<string, string>;
   /** Session to the last title auto-rename set (provenance). Present only while the
-   *  current override still equals it — a manual rename clears the entry. Lets the
-   *  periodic rename tell its own titles from a person's (chat-auto-rename.ts). */
+   *  current override still equals it. Lets the periodic rename tell its own
+   *  titles from a person's (chat-auto-rename.ts). */
   sessionTitleAuto: Record<string, string>;
+  /** Explicit manual title ownership. Unlike absence of auto provenance, this
+   *  remains authoritative when a person chooses text equal to an auto default.
+   *  Legacy sessions omit it and may still be recognized by known defaults. */
+  sessionTitleManual: Record<string, true>;
   /** Session to ISO timestamp when archived in the Cave. Empty when unarchived. */
   sessionArchived: Record<string, string>;
   /** Session to ISO timestamp when sacrificed (soft-deleted) in the Cave. Hidden from lists. */
@@ -660,6 +672,7 @@ async function loadStateUnlocked(): Promise<CaveState> {
       sessionFamiliar: parsed.sessionFamiliar ?? {},
       sessionTitles: parsed.sessionTitles ?? {},
       sessionTitleAuto: parsed.sessionTitleAuto ?? {},
+      sessionTitleManual: normalizeSessionTitleManual(parsed.sessionTitleManual),
       sessionArchived: parsed.sessionArchived ?? {},
       sessionSacrificed: parsed.sessionSacrificed ?? {},
       sessionKeep: parsed.sessionKeep ?? {},
@@ -872,6 +885,7 @@ export async function recordSessionFamiliar(sessionId: string, familiarId: strin
 
 /**
  * Set or clear a Cave-side title override for a session.
+ * Non-empty titles are explicitly marked as manually owned.
  * Pass an empty/whitespace-only title to clear the override.
  */
 export async function setSessionTitle(sessionId: string, title: string): Promise<string | null> {
@@ -879,11 +893,11 @@ export async function setSessionTitle(sessionId: string, title: string): Promise
     const trimmed = title.trim();
     if (!trimmed) {
       delete state.sessionTitles[sessionId];
+      delete state.sessionTitleManual[sessionId];
     } else {
       state.sessionTitles[sessionId] = trimmed;
+      state.sessionTitleManual[sessionId] = true;
     }
-    // A plain (manual / first-exchange) set clears auto-rename provenance so the
-    // periodic rename treats the new title as a person's choice and backs off.
     delete state.sessionTitleAuto[sessionId];
     return trimmed || null;
   });
@@ -894,8 +908,8 @@ export async function setSessionTitle(sessionId: string, title: string): Promise
 /**
  * Set a session title from the periodic auto-rename (chat-auto-rename.ts),
  * recording provenance so a later rename knows it still owns the title while a
- * person's manual rename (which clears the provenance via setSessionTitle) is
- * left untouched. Pass an empty title to no-op.
+ * person's manual rename (which records explicit ownership via setSessionTitle)
+ * is left untouched. Pass an empty title to no-op.
  */
 export async function setSessionTitleAuto(sessionId: string, title: string): Promise<string | null> {
   const trimmed = title.trim();
@@ -903,6 +917,7 @@ export async function setSessionTitleAuto(sessionId: string, title: string): Pro
   const next = await updateState((state) => {
     state.sessionTitles[sessionId] = trimmed;
     state.sessionTitleAuto[sessionId] = trimmed;
+    delete state.sessionTitleManual[sessionId];
     return trimmed;
   });
   invalidateSessionsListCache();
@@ -911,11 +926,13 @@ export async function setSessionTitleAuto(sessionId: string, title: string): Pro
 
 /**
  * Atomically set a session title with auto-provenance, but only when the
- * current title is absent, matches one of the supplied autoDefaults, or matches
- * the current sessionTitleAuto provenance (indicating the title is still
- * auto-owned). When preserveManualTitles is false, the caller may explicitly
- * take ownership of any current title. Returns the written title, or null if a
- * manual title was preserved. Trim/empty input is a no-op (returns null).
+ * current title has no explicit manual marker and is absent, matches one of the
+ * supplied autoDefaults, or matches the current sessionTitleAuto provenance.
+ * This lets legacy defaults be claimed without confusing an equal manually
+ * chosen title for an automatic one. When preserveManualTitles is false, the
+ * caller may explicitly take ownership of any current title. Returns the
+ * written title, or null if a manual title was preserved. Trim/empty input is a
+ * no-op (returns null).
  */
 export async function setSessionTitleAutoIfOwned(
   sessionId: string,
@@ -928,18 +945,26 @@ export async function setSessionTitleAutoIfOwned(
   const result = await updateState((state) => {
     const current = state.sessionTitles[sessionId];
     const currentAuto = state.sessionTitleAuto[sessionId];
+    const explicitlyManual = state.sessionTitleManual[sessionId] === true;
     // Write only when the title is absent, is a known auto default, or was
-    // previously written by an auto path (provenance match).
+    // previously written by an auto path (provenance match). Explicit manual
+    // ownership wins over text equality with a default.
     if (
       preserveManualTitles &&
-      current &&
-      !autoDefaults.has(current) &&
-      current !== currentAuto
+      (
+        explicitlyManual ||
+        (
+          current &&
+          !autoDefaults.has(current) &&
+          current !== currentAuto
+        )
+      )
     ) {
       return null; // manual title present — preserve it
     }
     state.sessionTitles[sessionId] = trimmed;
     state.sessionTitleAuto[sessionId] = trimmed;
+    delete state.sessionTitleManual[sessionId];
     return trimmed;
   });
   if (result !== null) invalidateSessionsListCache();
