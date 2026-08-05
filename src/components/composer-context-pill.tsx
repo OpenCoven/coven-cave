@@ -2,15 +2,15 @@
 
 import "@/styles/cave-composer.css";
 
-// ComposerContextChips — the composer footer's context controls (cave-g21f):
-// project, model, and (for repo-rooted chats) branch ride as separate,
+// ComposerContextChips — adaptive context controls (cave-g21f):
+// Placed in the new-chat composer footer and active-chat header. Project,
+// model, and (for repo-rooted chats) worktree/branch ride as independent,
 // individually labelled chips. Each opens its own picker popover anchored to
 // the chip itself (ProjectPickerPopover, ComposerRuntimePopover,
-// GitBranchMenuPopover), so every existing flow — project switching +
-// add-project, runtime/model switching, branch switch / new worktree / PR
-// open / git-changes drill-through — stays one click away. This replaced the
-// combined "Project · Model · branch" pill and its hub popover (2026-07-22)
-// on both the chat and home composers.
+// GitBranchMenuPopover), so every workflow — project switching + add-project,
+// runtime/model switching, branch switch / new worktree / PR open / git-changes
+// drill-through — stays one click away. This replaced the combined
+// "Project · Model · branch" pill and its hub popover (2026-07-22).
 
 import { useMemo, useRef, useState, type RefObject } from "react";
 import { Icon } from "@/lib/icon";
