@@ -50,23 +50,68 @@ export function workspaceRootOverrideFile(): string {
 }
 
 /**
- * The workspace root chosen in Settings, or null when none has been saved.
+ * Accept a stored workspace root only if it still looks like one.
  *
- * Read synchronously (and uncached) on purpose: `covenWorkspaceRoot()` is a
- * sync API called from sync callers like project-paths' allowed-root list, and
- * a cache here would keep serving the old root to in-flight requests right
- * after the user picks a new one. The file is a few dozen bytes.
+ * The write path (workspace-root-store's `saveWorkspaceRoot`) already refuses
+ * relative paths and bare volume roots, but this file is plain JSON in the
+ * user's Cave home and a hand-edit must not be able to widen anything. That
+ * matters because `covenWorkspaceRoot()` feeds project-paths' allowed-root
+ * list: a stored `"C:\\"` would otherwise turn a whole drive into an allowed
+ * project root, silently bypassing the guard the writer enforces.
+ */
+function acceptStoredWorkspaceRoot(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const resolved = path.resolve(/* turbopackIgnore: true */ value.trim());
+  // Mirror saveWorkspaceRoot's "unbounded" rejection.
+  return resolved === path.parse(resolved).root ? null : resolved;
+}
+
+/**
+ * Cached parse of the override file, keyed on the stat that produced it.
+ *
+ * `covenWorkspaceRoot()` is sync and sits on hot paths — project-paths'
+ * allowed-root list recomputes it for every path it checks, and fs-browse
+ * checks one path per directory entry, so an uncached read cost ~110 ms of
+ * blocking I/O on a 500-entry folder. A `statSync` is ~35x cheaper than
+ * read+parse and still invalidates the moment a save rewrites the file.
+ *
+ * Staleness bound: mtime *and* size must both be unchanged to reuse the cache,
+ * so serving a stale root would take two writes inside the same filesystem
+ * mtime tick that also produce identical file sizes. `saveWorkspaceRoot` writes
+ * once per user action, so that does not arise in practice — and the stale
+ * value would be a root the same user chose moments earlier, not a widening.
+ */
+let overrideCache: { mtimeMs: number; size: number; value: string | null } | null = null;
+
+/**
+ * The workspace root chosen in Settings, or null when none has been saved.
+ * Missing, unreadable, malformed, and no-longer-valid files all read as null so
+ * a bad file degrades to the default instead of failing every path resolution.
  */
 export function readWorkspaceRootOverride(): string | null {
+  const file = workspaceRootOverrideFile();
   try {
-    const raw = fs.readFileSync(/* turbopackIgnore: true */ workspaceRootOverrideFile(), "utf8");
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return null;
-    const value = (parsed as { workspacePath?: unknown }).workspacePath;
-    return typeof value === "string" && value.trim() ? value : null;
+    const stat = fs.statSync(/* turbopackIgnore: true */ file);
+    if (
+      overrideCache &&
+      overrideCache.mtimeMs === stat.mtimeMs &&
+      overrideCache.size === stat.size
+    ) {
+      return overrideCache.value;
+    }
+    const parsed: unknown = JSON.parse(
+      fs.readFileSync(/* turbopackIgnore: true */ file, "utf8"),
+    );
+    const value =
+      parsed && typeof parsed === "object"
+        ? acceptStoredWorkspaceRoot((parsed as { workspacePath?: unknown }).workspacePath)
+        : null;
+    overrideCache = { mtimeMs: stat.mtimeMs, size: stat.size, value };
+    return value;
   } catch {
-    // Absent (the common case), unreadable, or malformed — fall through to the
-    // env pin / default rather than failing every path resolution.
+    // Absent (the common case), unreadable, or malformed. Drop any cache so a
+    // deleted file stops resolving to the root it used to name.
+    overrideCache = null;
     return null;
   }
 }
