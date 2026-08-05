@@ -344,21 +344,37 @@ function normalizeStableIsoTimestamp(value: unknown): string | null {
   return isCanonicalIsoInstant(value) ? value : null;
 }
 
+function parseFiniteTimestamp(value: unknown): number | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function normalizeStableAttentionRequest(
   value: unknown,
   sessionId: string,
   assistantTurnId: string,
-  _assistantCreatedAt: unknown,
+  assistantCreatedAt: unknown,
 ): ChatAttentionRequest | null {
   if (!value || typeof value !== "object") return null;
+  const normalizedAssistantCreatedAt = normalizeStableIsoTimestamp(assistantCreatedAt);
+  const assistantCreatedAtMs = parseFiniteTimestamp(assistantCreatedAt);
   const candidate = value as Partial<ChatAttentionRequest>;
-  const normalizedRequestedAt = normalizeStableIsoTimestamp(candidate.requestedAt);
+  const requestedAtMs = parseFiniteTimestamp(candidate.requestedAt);
   if (
     typeof candidate.sessionId !== "string" ||
     candidate.sessionId !== sessionId ||
     typeof candidate.turnId !== "string" ||
     candidate.turnId !== assistantTurnId ||
-    !normalizedRequestedAt ||
+    !normalizedAssistantCreatedAt ||
+    // requestedAt must itself be canonical UTC ISO — instant equality alone
+    // (checked next) would otherwise accept a noncanonical requestedAt that
+    // merely parses to the same instant as the assistant's canonical
+    // createdAt, silently canonicalizing it below instead of discarding it.
+    !isCanonicalIsoInstant(candidate.requestedAt) ||
+    requestedAtMs === null ||
+    assistantCreatedAtMs === null ||
+    requestedAtMs !== assistantCreatedAtMs ||
     typeof candidate.reason !== "string" ||
     !VALID_ATTENTION_REASON_SET.has(candidate.reason)
   ) {
@@ -367,7 +383,7 @@ function normalizeStableAttentionRequest(
   return {
     sessionId: candidate.sessionId,
     turnId: candidate.turnId,
-    requestedAt: normalizedRequestedAt,
+    requestedAt: normalizedAssistantCreatedAt,
     reason: candidate.reason,
   };
 }
@@ -663,10 +679,6 @@ export async function persistQueuedOfflineConversation(
       updatedAt: seed.createdAt,
       turns: [],
     };
-
-    const existingTurn = conv.turns.find((turn) => turn.id === seed.userTurn.id);
-    if (existingTurn) return;
-
     conv.familiarId = seed.familiarId;
     conv.harness = seed.harness;
     if (seed.model !== undefined) conv.model = seed.model;
@@ -676,28 +688,31 @@ export async function persistQueuedOfflineConversation(
     if (!conv.modelIntent && seed.modelIntent) conv.modelIntent = seed.modelIntent;
     if (seed.harnessSessionId) conv.harnessSessionId = seed.harnessSessionId;
 
-    const parentId = seed.userTurn.parentId !== undefined
-      ? seed.userTurn.parentId
-      : existing?.activeLeafId ?? null;
-    conv.turns.push({
-      id: seed.userTurn.id,
-      role: "user",
-      text: seed.userTurn.text,
-      ...(seed.userTurn.attachments?.length ? { attachments: seed.userTurn.attachments } : {}),
-      ...(seed.userTurn.reasoningEffort ? { reasoningEffort: seed.userTurn.reasoningEffort } : {}),
-      ...(seed.userTurn.responseSpeed ? { responseSpeed: seed.userTurn.responseSpeed } : {}),
-      ...(seed.userTurn.modelControls && Object.keys(seed.userTurn.modelControls).length > 0
-        ? { modelControls: seed.userTurn.modelControls }
-        : {}),
-      ...(seed.userTurn.modelOverride ? { modelOverride: seed.userTurn.modelOverride } : {}),
-      ...(seed.userTurn.modelOverrideScope === "runtime-default"
-        ? { modelOverrideScope: "runtime-default" as const }
-        : {}),
-      ...(attentionClearOperationId ? { attentionClearOperationId } : {}),
-      createdAt: seed.createdAt,
-      ...(parentId != null ? { parentId } : { parentId: null }),
-    });
-    conv.activeLeafId = seed.userTurn.id;
+    const existingTurn = conv.turns.find((turn) => turn.id === seed.userTurn.id);
+    if (!existingTurn) {
+      const parentId = seed.userTurn.parentId !== undefined
+        ? seed.userTurn.parentId
+        : existing?.activeLeafId ?? null;
+      conv.turns.push({
+        id: seed.userTurn.id,
+        role: "user",
+        text: seed.userTurn.text,
+        ...(seed.userTurn.attachments?.length ? { attachments: seed.userTurn.attachments } : {}),
+        ...(seed.userTurn.reasoningEffort ? { reasoningEffort: seed.userTurn.reasoningEffort } : {}),
+        ...(seed.userTurn.responseSpeed ? { responseSpeed: seed.userTurn.responseSpeed } : {}),
+        ...(seed.userTurn.modelControls && Object.keys(seed.userTurn.modelControls).length > 0
+          ? { modelControls: seed.userTurn.modelControls }
+          : {}),
+        ...(seed.userTurn.modelOverride ? { modelOverride: seed.userTurn.modelOverride } : {}),
+        ...(seed.userTurn.modelOverrideScope === "runtime-default"
+          ? { modelOverrideScope: "runtime-default" as const }
+          : {}),
+        ...(attentionClearOperationId ? { attentionClearOperationId } : {}),
+        createdAt: seed.createdAt,
+        ...(parentId != null ? { parentId } : { parentId: null }),
+      });
+      conv.activeLeafId = seed.userTurn.id;
+    }
     delete conv.pendingUserTurnId;
     if (!existing) {
       conv.updatedAt = seed.createdAt;

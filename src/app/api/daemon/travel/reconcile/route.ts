@@ -14,8 +14,6 @@ type DaemonTravelReconcileRouteDependencies = {
   reconcileDaemonTravelHeartbeatSnapshot: typeof reconcileDaemonTravelHeartbeatSnapshot;
 };
 
-const REPLAY_PENDING_RETRY_MS = 1_000;
-
 function stableErrorCode(error: unknown): string {
   if (typeof error === "object" && error !== null && "code" in error) {
     return String((error as NodeJS.ErrnoException).code ?? "daemon-travel-reconcile");
@@ -30,17 +28,6 @@ function failureResponse() {
   );
 }
 
-function replayRetryAfterMs(
-  result: Awaited<ReturnType<DaemonTravelReconcileRouteDependencies["reconcileDaemonTravelHeartbeatSnapshot"]>>,
-): number | null {
-  if (!result) return null;
-  if (!result.travelStatus.handoffPending) return null;
-  if (result.travelState.manualOffline || result.travelState.hubUnreachableSince) return null;
-  return result.travelState.offlineQueue.some((item) => item.status === "pending" || item.status === "syncing")
-    ? REPLAY_PENDING_RETRY_MS
-    : null;
-}
-
 export function createDaemonTravelReconcilePostHandler(
   dependencies: DaemonTravelReconcileRouteDependencies,
 ) {
@@ -52,11 +39,7 @@ export function createDaemonTravelReconcilePostHandler(
         console.warn(result.failure.code);
         return failureResponse();
       }
-      const retryAfterMs = replayRetryAfterMs(result);
-      return NextResponse.json({
-        ok: true,
-        ...(retryAfterMs !== null ? { retryAfterMs } : {}),
-      });
+      return NextResponse.json({ ok: true });
     } catch (error) {
       console.warn(stableErrorCode(error));
       return failureResponse();

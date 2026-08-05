@@ -16,17 +16,9 @@ import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import type { CodexAutomation } from "@/lib/codex-automations-types";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { isSshRuntime } from "@/lib/familiar-runtime";
-import { ACTIVE_SESSION_STATUSES } from "@/lib/chat-auto-archive";
 import { cleanModelId } from "@/lib/chat-model-state";
-import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
-import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
-import {
-  loadConversation,
-  persistQueuedOfflineConversation,
-  saveConversation,
-  withConversationLock,
-} from "@/lib/cave-conversations";
+import { persistQueuedOfflineConversation } from "@/lib/cave-conversations";
 import { flowExecutionOrder, flowPartialExecutionOrder, compileFlowPrompt } from "@/lib/flow/flow-compile";
 import type { FlowExecutionMode } from "@/lib/flow/flow-compile";
 import type { FlowDoc } from "@/lib/flow/flow-doc";
@@ -43,12 +35,6 @@ import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
 import { recordRun } from "@/lib/workflow-runs";
 import { loadLocalWorkflowList } from "@/lib/workflow-source";
 import type { WorkflowSummary } from "@/lib/workflows";
-import { buildPromptWithResponseControls } from "@/app/api/chat/send/chat-send-models";
-import {
-  decodeReplayAssistantOutput,
-  OFFLINE_REPLAY_LAUNCH_CONTRACT,
-  replayOutputContractBlockReason,
-} from "@/lib/travel-replay-output";
 
 export type TravelOfflineReplayResult = {
   attempted: number;
@@ -58,18 +44,7 @@ export type TravelOfflineReplayResult = {
 };
 
 type DaemonSessionResponse = { id?: string; status?: string };
-type DaemonSessionListRow = { id?: string; status?: string };
-type DaemonEventRow = { kind?: string; payload_json?: string; created_at?: string };
-type ReplayAssistantStatus = {
-  status: string | null;
-  assistantText: string | null;
-  eventsComplete: boolean;
-};
 type WorkflowEngineResponse = { ok?: boolean; runId?: string; status?: string; error?: string };
-type ReplayTravelQueueOutcome = "pending" | "complete";
-
-const REPLAY_EVENT_PAGE_SIZE = 500;
-export const REPLAY_EVENT_PAGE_SAFETY_CAP = 1_000;
 
 function queuedModelOverride(payload: Record<string, unknown>): string | null | undefined {
   const hasModelOverride = Object.prototype.hasOwnProperty.call(payload, "modelOverride");
@@ -144,234 +119,6 @@ function daemonError(res: { status: number; error?: string; data: unknown }): st
     `daemon http ${res.status}`;
 }
 
-function terminalReplayStatus(status: string | null): boolean {
-  if (!status) return false;
-  return !ACTIVE_SESSION_STATUSES.has(status.trim().toLowerCase());
-}
-
-function stableReplayAssistantTurnId(userTurnId: string): string {
-  return `${userTurnId}:offline-replay-assistant`;
-}
-
-function replayChatConversationId(item: CaveTravelQueueItem): string | null {
-  if (item.kind !== "chat") return null;
-  return stringValue(record(item.payload).sessionId) ?? item.id;
-}
-
-function prepareReplayAttentionRequest(args: {
-  text: string;
-  sessionId: string;
-  turnId: string;
-  requestedAt: string;
-}): { text: string; request: ChatResponseMetadata["attentionRequest"] | null } {
-  const { visible, request: marker } = extractChatAttentionMarker(args.text);
-  return {
-    text: visible,
-    request: marker
-      ? {
-          sessionId: args.sessionId,
-          turnId: args.turnId,
-          requestedAt: args.requestedAt,
-          reason: marker.reason,
-        }
-      : null,
-  };
-}
-
-function replayEventPage(
-  data: unknown,
-  previousAfterSeq: number,
-): { events: DaemonEventRow[]; nextAfterSeq: number | null; hasMore: boolean } | null {
-  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
-  const page = data as Record<string, unknown>;
-  if (
-    !Array.isArray(page.events) ||
-    !page.events.every((event) => event && typeof event === "object" && !Array.isArray(event)) ||
-    typeof page.hasMore !== "boolean"
-  ) {
-    return null;
-  }
-
-  if (page.nextCursor === null) {
-    return page.events.length === 0 && page.hasMore === false
-      ? { events: [], nextAfterSeq: null, hasMore: false }
-      : null;
-  }
-  if (!page.nextCursor || typeof page.nextCursor !== "object" || Array.isArray(page.nextCursor)) {
-    return null;
-  }
-  const nextAfterSeq = (page.nextCursor as Record<string, unknown>).afterSeq;
-  if (
-    !Number.isSafeInteger(nextAfterSeq) ||
-    (nextAfterSeq as number) <= previousAfterSeq ||
-    page.events.length === 0
-  ) {
-    return null;
-  }
-  return {
-    events: page.events as DaemonEventRow[],
-    nextAfterSeq: nextAfterSeq as number,
-    hasMore: page.hasMore,
-  };
-}
-
-export async function collectReplayEventPages(args: {
-  harnessSessionId: string;
-  daemonCall?: typeof callDaemon;
-}): Promise<DaemonEventRow[] | null> {
-  const daemonCall = args.daemonCall ?? callDaemon;
-  const collected: DaemonEventRow[] = [];
-  let afterSeq = 0;
-
-  for (let pageNumber = 0; pageNumber < REPLAY_EVENT_PAGE_SAFETY_CAP; pageNumber += 1) {
-    const response = await daemonCall<unknown>({
-      path: `/api/v1/events?sessionId=${encodeURIComponent(args.harnessSessionId)}&afterSeq=${afterSeq}&limit=${REPLAY_EVENT_PAGE_SIZE}`,
-      timeoutMs: 4000,
-    });
-    if (!response.ok) return null;
-    const page = replayEventPage(response.data, afterSeq);
-    if (!page) return null;
-    collected.push(...page.events);
-    if (!page.hasMore) return collected;
-    if (page.nextAfterSeq === null) return null;
-    afterSeq = page.nextAfterSeq;
-  }
-
-  return null;
-}
-
-export function replayAssistantMirrorOutcome(
-  status: ReplayAssistantStatus,
-): "pending" | "missing" | "complete" {
-  if (!terminalReplayStatus(status.status) || !status.eventsComplete) return "pending";
-  return status.assistantText ? "complete" : "missing";
-}
-
-export async function replayAssistantStatus(args: {
-  harnessSessionId: string;
-  harness: string;
-  daemonCall?: typeof callDaemon;
-}): Promise<ReplayAssistantStatus> {
-  const replayBlockReason = replayOutputContractBlockReason({
-    harness: args.harness,
-    ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
-  });
-  if (replayBlockReason) throw new Error(replayBlockReason);
-  const daemonCall = args.daemonCall ?? callDaemon;
-  const sessions = await daemonCall<DaemonSessionListRow[]>({
-    path: "/api/v1/sessions",
-    timeoutMs: 4000,
-  });
-  if (!sessions.ok || !sessions.data) {
-    throw new Error(daemonError(sessions));
-  }
-  const row = sessions.data.find((session) => session?.id === args.harnessSessionId);
-  if (!row) {
-    return {
-      status: null,
-      assistantText: null,
-      eventsComplete: false,
-    };
-  }
-  const status = stringValue(row.status);
-  if (!terminalReplayStatus(status)) {
-    return {
-      status,
-      assistantText: null,
-      eventsComplete: false,
-    };
-  }
-  const events = await collectReplayEventPages({
-    harnessSessionId: args.harnessSessionId,
-    daemonCall,
-  });
-  if (!events) {
-    return {
-      status,
-      assistantText: null,
-      eventsComplete: false,
-    };
-  }
-  const assistant = decodeReplayAssistantOutput({
-    harness: args.harness,
-    ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
-    events,
-  });
-  return {
-    status,
-    assistantText: assistant,
-    eventsComplete: true,
-  };
-}
-
-async function persistReplayHarnessSessionBoundary(args: {
-  sessionId: string;
-  harnessSessionId: string;
-  userTurnId: string;
-}): Promise<void> {
-  await withConversationLock(args.sessionId, async () => {
-    const conv = await loadConversation(args.sessionId);
-    const userTurn = conv?.turns.find((turn) => turn.id === args.userTurnId);
-    if (!conv || userTurn?.role !== "user" || conv.activeLeafId !== args.userTurnId) return;
-    if (conv.harnessSessionId === args.harnessSessionId) return;
-    conv.harnessSessionId = args.harnessSessionId;
-    await saveConversation(conv);
-  });
-}
-
-async function persistReplayAssistantTurn(args: {
-  sessionId: string;
-  harnessSessionId: string;
-  userTurnId: string;
-  assistantText: string;
-  payload: Record<string, unknown>;
-  familiarId: string;
-  isError: boolean;
-}): Promise<boolean> {
-  return withConversationLock(args.sessionId, async () => {
-    const conv = await loadConversation(args.sessionId);
-    if (!conv) return false;
-    const assistantTurnId = stableReplayAssistantTurnId(args.userTurnId);
-    if (conv.turns.some((turn) => turn.id === assistantTurnId)) return true;
-    const userTurn = conv.turns.find((turn) => turn.id === args.userTurnId);
-    if (userTurn?.role !== "user") return false;
-
-    const advancesActiveBoundary = conv.activeLeafId === args.userTurnId;
-    const persistedAssistantCreatedAt = new Date().toISOString();
-    const queuedMetadata = record(args.payload.responseMetadata);
-    const baseResponseMetadata: ChatResponseMetadata = {
-      familiarId: stringValue(queuedMetadata.familiarId) ?? args.familiarId,
-      harness: stringValue(queuedMetadata.harness) ?? conv.harness,
-      model: stringValue(queuedMetadata.model) ?? conv.model ?? "",
-      runtime: stringValue(queuedMetadata.runtime) ?? conv.runtime ?? "local:",
-    };
-    const attention = prepareReplayAttentionRequest({
-      text: args.assistantText,
-      sessionId: args.sessionId,
-      turnId: assistantTurnId,
-      requestedAt: persistedAssistantCreatedAt,
-    });
-    conv.turns.push({
-      id: assistantTurnId,
-      role: "assistant",
-      text: attention.text.trim(),
-      createdAt: persistedAssistantCreatedAt,
-      parentId: args.userTurnId,
-      harnessSessionId: args.harnessSessionId,
-      ...(args.isError ? { isError: true } : {}),
-      responseMetadata: attention.request
-        ? { ...baseResponseMetadata, attentionRequest: attention.request }
-        : baseResponseMetadata,
-    });
-    if (advancesActiveBoundary) {
-      conv.activeLeafId = assistantTurnId;
-      conv.harnessSessionId = args.harnessSessionId;
-    }
-    await saveConversation(conv);
-    return true;
-  });
-}
-
 async function spawnHubSession(args: {
   config: CaveConfig;
   familiarId: string | null;
@@ -389,11 +136,6 @@ async function spawnHubSession(args: {
   if (!isAllowedHarness(harness)) {
     throw new Error(`harness '${harness}' can't run as an agent session`);
   }
-  const replayBlockReason = replayOutputContractBlockReason({
-    harness,
-    ...OFFLINE_REPLAY_LAUNCH_CONTRACT,
-  });
-  if (replayBlockReason) throw new Error(replayBlockReason);
   const projectRoot = normalizeProjectRoot(args.projectRoot ?? process.cwd());
   if (!projectRoot) throw new Error("invalid project root");
 
@@ -404,7 +146,6 @@ async function spawnHubSession(args: {
       projectRoot,
       harness,
       prompt: args.prompt,
-      launchMode: OFFLINE_REPLAY_LAUNCH_CONTRACT.launchMode,
       ...(args.model ? { model: args.model } : {}),
       ...(args.modelOverrideScope ? { modelOverrideScope: args.modelOverrideScope } : {}),
       ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}),
@@ -426,7 +167,7 @@ async function spawnHubSession(args: {
   return res.data.id;
 }
 
-async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promise<ReplayTravelQueueOutcome> {
+async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promise<void> {
   const payload = record(item.payload);
   const familiarId = stringValue(payload.familiarId);
   const prompt = stringValue(payload.prompt);
@@ -470,12 +211,8 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const attachments = objectArray<ChatAttachment>(payload.attachments);
   const queuedPayloadModelOverride = stringValue(payload.modelOverride);
   const queuedRunId = stringValue(payload.runId);
-  const replayPrompt = buildPromptWithResponseControls(
-    buildPromptWithAttachments(prompt, attachments, { imagesSupported: false }),
-    {},
-  );
+  const replayPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });
   let harnessSessionId = stringValue(payload.harnessSessionId);
-  let spawnedHarnessSession = false;
   if (!harnessSessionId) {
     harnessSessionId = await spawnHubSession({
       config,
@@ -496,16 +233,9 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
       projectRoot,
       title: chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(stringValue(payload.sessionId) ?? item.id),
     });
-    spawnedHarnessSession = true;
     await updateOfflineTravelItemPayload(item.id, { ...payload, harnessSessionId });
   }
   const sessionId = stringValue(payload.sessionId) ?? item.id;
-  // Legacy queued chats predate the explicit userTurnId field. Fall back to
-  // the item's own stable id — the same id persistQueuedOfflineConversation
-  // below already uses for the persisted user turn — so the assistant reply
-  // mirrored further down attaches to that same turn instead of blocking on
-  // a field older queue entries never had.
-  const userTurnId = stringValue(payload.userTurnId) ?? item.id;
   await persistQueuedOfflineConversation({
     sessionId,
     familiarId,
@@ -518,8 +248,9 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
       : {}),
     title: chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(sessionId),
     createdAt: item.createdAt,
+    harnessSessionId,
     userTurn: {
-      id: userTurnId,
+      id: stringValue(payload.userTurnId) ?? item.id,
       text: prompt,
       ...(attachments.length ? { attachments } : {}),
       ...(queuedRunId ? { attentionClearOperationId: queuedRunId } : {}),
@@ -541,46 +272,9 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
         : {}),
     },
   });
-  if (spawnedHarnessSession) {
-    await persistReplayHarnessSessionBoundary({
-      sessionId,
-      harnessSessionId,
-      userTurnId,
-    });
-  }
   if (sessionId !== harnessSessionId) {
     await setSessionTitle(harnessSessionId, chatTitleFromPrompt(prompt) ?? `Travel replay: ${item.summary}`);
   }
-  const mirrored = await replayAssistantStatus({
-    harnessSessionId,
-    harness: binding.harness,
-  });
-  const mirrorOutcome = replayAssistantMirrorOutcome(mirrored);
-  if (mirrorOutcome === "pending") {
-    return "pending";
-  }
-  if (mirrorOutcome === "missing" || !mirrored.assistantText) {
-    // The daemon session is done but never produced a validated assistant
-    // reply to mirror (crashed before replying, produced only tool/protocol
-    // output, etc). Returning "pending" here would poll forever — a
-    // terminal session never becomes non-terminal again. Throw so the
-    // caller marks this item failed/retryable with an actionable reason
-    // instead of silently stalling the offline queue.
-    throw new Error("replayed session finished without a usable assistant reply to mirror");
-  }
-  const persisted = await persistReplayAssistantTurn({
-    sessionId,
-    harnessSessionId,
-    userTurnId,
-    assistantText: mirrored.assistantText,
-    payload,
-    familiarId,
-    isError: (mirrored.status ?? "").trim().toLowerCase() === "failed",
-  });
-  if (!persisted) {
-    throw new Error("replayed assistant reply could not be attached to its queued user turn");
-  }
-  return "complete";
 }
 
 async function workflowForPayload(payload: Record<string, unknown>, body: Record<string, unknown>): Promise<WorkflowSummary | null> {
@@ -592,7 +286,7 @@ async function workflowForPayload(payload: Record<string, unknown>, body: Record
   return list.workflows.find((wf) => (wantedId && wf.id === wantedId) || (wantedPath && wf.path === wantedPath)) ?? null;
 }
 
-async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Promise<ReplayTravelQueueOutcome> {
+async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Promise<void> {
   const payload = record(item.payload);
   const body = record(payload.body);
   const workflow = await workflowForPayload(payload, body);
@@ -614,7 +308,7 @@ async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Pr
       summary: engine.data?.runId ? `replayed daemon run ${engine.data.runId}` : `replayed ${item.id}`,
       source: "daemon",
     });
-    return "complete";
+    return;
   }
   if (engine.status !== 404) throw new Error(daemonError(engine));
 
@@ -642,7 +336,6 @@ async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Pr
     source: "cave",
     sessionId,
   });
-  return "complete";
 }
 
 function flowFamiliar(flow: FlowDoc): string | null {
@@ -673,7 +366,7 @@ function flowExecutionMode(value: unknown): FlowExecutionMode {
   return value === "production" ? "production" : "manual";
 }
 
-async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promise<ReplayTravelQueueOutcome> {
+async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promise<void> {
   const payload = record(item.payload);
   const flow = payload.flow as FlowDoc | undefined;
   if (!flow?.id || !Array.isArray(flow.nodes)) throw new Error("queued flow payload missing flow snapshot");
@@ -727,13 +420,12 @@ async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const placeholderRunId = stringValue(payload.placeholderRunId);
   if (placeholderRunId) {
     const updated = await updateFlowRun(placeholderRunId, runFields);
-    if (updated) return "complete";
+    if (updated) return;
   }
   await recordFlowRun(runFields);
-  return "complete";
 }
 
-async function replayJob(item: CaveTravelQueueItem): Promise<ReplayTravelQueueOutcome> {
+async function replayJob(item: CaveTravelQueueItem): Promise<void> {
   const payload = record(item.payload);
   const automation = record(payload.automation) as Partial<CodexAutomation>;
   if (!automation.id || !automation.name || !Array.isArray(automation.cwds) || typeof automation.prompt !== "string") {
@@ -755,13 +447,9 @@ async function replayJob(item: CaveTravelQueueItem): Promise<ReplayTravelQueueOu
     skillPath: automation.skillPath ?? null,
     scheduleHuman: automation.scheduleHuman ?? "manual",
   });
-  return "complete";
 }
 
-async function replayTravelQueueItem(
-  item: CaveTravelQueueItem,
-  config: CaveConfig,
-): Promise<ReplayTravelQueueOutcome> {
+async function replayTravelQueueItem(item: CaveTravelQueueItem, config: CaveConfig): Promise<void> {
   const route = stringValue(record(item.payload).route);
   if (item.kind === "chat") return replayChat(item, config);
   if (item.kind === "workflow" && route === "flow-session") return replayFlow(item, config);
@@ -791,28 +479,18 @@ async function syncOfflineTravelQueueInner(
   const result: TravelOfflineReplayResult = { attempted: 0, synced: 0, failed: 0, errors: [] };
   if (config.multiHost.mode !== "hub") return result;
 
-  const candidates = await offlineTravelItemsNeedingSync();
-  const blockedChatConversations = new Set<string>();
+  const candidates = (await offlineTravelItemsNeedingSync()).slice(0, maxItems);
   for (const candidate of candidates) {
-    if (result.attempted >= maxItems) break;
-    const chatConversationId = replayChatConversationId(candidate);
-    if (chatConversationId && blockedChatConversations.has(chatConversationId)) continue;
     const item = await markOfflineTravelItemSyncing(candidate.id);
     if (!item) continue;
     result.attempted += 1;
     try {
-      const outcome = await replayTravelQueueItem(item, config);
-      if (outcome === "pending" && chatConversationId) {
-        blockedChatConversations.add(chatConversationId);
-      }
-      if (outcome === "complete") {
-        await completeOfflineTravelItem(item.id);
-      }
+      await replayTravelQueueItem(item, config);
+      await completeOfflineTravelItem(item.id);
       result.synced += 1;
     } catch (err) {
       const error = replayError(err);
       await failOfflineTravelItem(item.id, error);
-      if (chatConversationId) blockedChatConversations.add(chatConversationId);
       result.failed += 1;
       result.errors.push({ id: item.id, error });
     }

@@ -15,7 +15,6 @@ const {
   isSafeConversationSessionId,
   listConversations,
   loadConversation,
-  persistQueuedOfflineConversation,
   saveConversation,
 } = await import("./cave-conversations.ts");
 const {
@@ -955,8 +954,7 @@ console.log("cave-conversations pending-marker test OK");
     "attention-explicit-null-roots",
     "attention-legacy-missing-parent-links",
     "attention-request-resolved-by-malformed-user",
-    "attention-requested-at-skew-ahead",
-    "attention-requested-at-skew-behind",
+    "attention-requested-at-mismatch",
     "attention-canonical-assistant-noncanonical-request",
     "attention-request-cleared-by-equal-timestamp",
     "attention-detached-leaf",
@@ -1906,79 +1904,41 @@ console.log("cave-conversations pending-marker test OK");
   });
 
   await saveConversation({
-    sessionId: "attention-requested-at-skew-ahead",
+    sessionId: "attention-requested-at-mismatch",
     familiarId: "charm",
     harness: "claude",
-    title: "Preserve explicit request timestamp across +24h assistant skew",
+    title: "Reject requestedAt mismatch",
     createdAt: "2026-08-04T10:00:00.000Z",
     updatedAt: "2026-08-04T10:05:00.000Z",
     turns: [
       {
-        id: "requested-at-skew-ahead-user",
+        id: "requested-at-mismatch-user",
         role: "user",
         text: "Anything blocking you?",
-        createdAt: "2026-08-02T10:00:00.000Z",
+        createdAt: "2026-08-04T10:00:00.000Z",
         parentId: null,
       },
       {
-        id: "requested-at-skew-ahead-assistant",
+        id: "requested-at-mismatch-assistant",
         role: "assistant",
-        text: "Keep the original request age.",
-        createdAt: "2026-08-03T20:00:00.000Z",
-        parentId: "requested-at-skew-ahead-user",
+        text: "The request timestamp is wrong.",
+        createdAt: "2026-08-04T10:05:00.000Z",
+        parentId: "requested-at-mismatch-user",
         responseMetadata: {
           familiarId: "charm",
           harness: "claude",
           model: "anthropic/claude-sonnet-4.6",
           runtime: "local:/repo",
           attentionRequest: {
-            sessionId: "attention-requested-at-skew-ahead",
-            turnId: "requested-at-skew-ahead-assistant",
-            requestedAt: "2026-08-02T20:00:00.000Z",
+            sessionId: "attention-requested-at-mismatch",
+            turnId: "requested-at-mismatch-assistant",
+            requestedAt: "2026-08-04T10:04:59.000Z",
             reason: "input",
           },
         },
       },
     ],
-    activeLeafId: "requested-at-skew-ahead-assistant",
-  });
-
-  await saveConversation({
-    sessionId: "attention-requested-at-skew-behind",
-    familiarId: "charm",
-    harness: "claude",
-    title: "Preserve explicit request timestamp across -24h assistant skew",
-    createdAt: "2026-08-04T10:00:00.000Z",
-    updatedAt: "2026-08-04T10:05:00.000Z",
-    turns: [
-      {
-        id: "requested-at-skew-behind-user",
-        role: "user",
-        text: "Anything blocking you?",
-        createdAt: "2026-08-02T10:00:00.000Z",
-        parentId: null,
-      },
-      {
-        id: "requested-at-skew-behind-assistant",
-        role: "assistant",
-        text: "Keep the original request age.",
-        createdAt: "2026-08-01T20:00:00.000Z",
-        parentId: "requested-at-skew-behind-user",
-        responseMetadata: {
-          familiarId: "charm",
-          harness: "claude",
-          model: "anthropic/claude-sonnet-4.6",
-          runtime: "local:/repo",
-          attentionRequest: {
-            sessionId: "attention-requested-at-skew-behind",
-            turnId: "requested-at-skew-behind-assistant",
-            requestedAt: "2026-08-02T20:00:00.000Z",
-            reason: "approval",
-          },
-        },
-      },
-    ],
-    activeLeafId: "requested-at-skew-behind-assistant",
+    activeLeafId: "requested-at-mismatch-assistant",
   });
 
   // Regression (cave-zs85n Task 4 spec gap): a noncanonical requestedAt that
@@ -2602,54 +2562,24 @@ console.log("cave-conversations pending-marker test OK");
     "a malformed-date user turn still resolves the older request, while a later valid assistant can independently become left-hanging",
   );
 
-  assert.deepEqual(byId.get("attention-requested-at-skew-ahead")?.attentionEvidence, {
-    latestCompletedTurn: { role: "assistant", at: "2026-08-03T20:00:00.000Z" },
-    latestUserTurnAt: "2026-08-02T10:00:00.000Z",
-    request: {
-      sessionId: "attention-requested-at-skew-ahead",
-      turnId: "requested-at-skew-ahead-assistant",
-      requestedAt: "2026-08-02T20:00:00.000Z",
-      reason: "input",
-    },
+  assert.deepEqual(byId.get("attention-requested-at-mismatch")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T10:05:00.000Z" },
+    latestUserTurnAt: "2026-08-04T10:00:00.000Z",
+    request: { state: "invalid" },
   });
   assert.deepEqual(
     deriveChatAttention({
-      evidence: byId.get("attention-requested-at-skew-ahead")?.attentionEvidence,
+      evidence: byId.get("attention-requested-at-mismatch")?.attentionEvidence,
       status: "completed",
       archivedAt: null,
       now: NOW,
     }),
     {
-      state: "overdue-human",
-      since: "2026-08-02T20:00:00.000Z",
-      reason: "input",
+      state: "none",
+      since: null,
+      reason: null,
     },
-    "a +24h assistant timestamp skew must not re-age or discard the original request",
-  );
-
-  assert.deepEqual(byId.get("attention-requested-at-skew-behind")?.attentionEvidence, {
-    latestCompletedTurn: { role: "assistant", at: "2026-08-01T20:00:00.000Z" },
-    latestUserTurnAt: "2026-08-02T10:00:00.000Z",
-    request: {
-      sessionId: "attention-requested-at-skew-behind",
-      turnId: "requested-at-skew-behind-assistant",
-      requestedAt: "2026-08-02T20:00:00.000Z",
-      reason: "approval",
-    },
-  });
-  assert.deepEqual(
-    deriveChatAttention({
-      evidence: byId.get("attention-requested-at-skew-behind")?.attentionEvidence,
-      status: "completed",
-      archivedAt: null,
-      now: NOW,
-    }),
-    {
-      state: "overdue-human",
-      since: "2026-08-02T20:00:00.000Z",
-      reason: "approval",
-    },
-    "a -24h assistant timestamp skew must not change request age or exact 48h overdue behavior",
+    "requestedAt must match the containing assistant turn's instant or the request is discarded",
   );
 
   assert.deepEqual(
@@ -2819,81 +2749,6 @@ console.log("cave-conversations attention summary test OK");
   await deleteConversation(sessionId);
 }
 console.log("cave-conversations model-lock test OK");
-
-// ── Offline replay does not rewind active runtime metadata ───────────────────
-{
-  const sessionId = "offline-replay-stale-runtime";
-  await saveConversation({
-    sessionId,
-    familiarId: "nova",
-    harness: "claude",
-    model: "anthropic/claude-opus-4-7",
-    runtime: "local:/current-project",
-    harnessSessionId: "current-harness-session",
-    title: "Current active branch",
-    createdAt: "2026-08-05T12:00:00.000Z",
-    updatedAt: "2026-08-05T12:03:00.000Z",
-    turns: [
-      {
-        id: "root-user",
-        role: "user",
-        text: "Root",
-        createdAt: "2026-08-05T12:00:00.000Z",
-        parentId: null,
-      },
-      {
-        id: "queued-user",
-        role: "user",
-        text: "Queued branch",
-        createdAt: "2026-08-05T12:01:00.000Z",
-        parentId: "root-user",
-      },
-      {
-        id: "active-user",
-        role: "user",
-        text: "New active branch",
-        createdAt: "2026-08-05T12:02:00.000Z",
-        parentId: "root-user",
-      },
-      {
-        id: "active-assistant",
-        role: "assistant",
-        text: "Current reply",
-        createdAt: "2026-08-05T12:03:00.000Z",
-        parentId: "active-user",
-      },
-    ],
-    activeLeafId: "active-assistant",
-  });
-
-  await persistQueuedOfflineConversation({
-    sessionId,
-    familiarId: "stale-familiar",
-    harness: "codex",
-    model: "stale-model",
-    runtime: "local:/stale-project",
-    harnessSessionId: "stale-harness-session",
-    title: "Stale queued title",
-    createdAt: "2026-08-05T12:01:00.000Z",
-    userTurn: {
-      id: "queued-user",
-      text: "Queued branch",
-      parentId: "root-user",
-    },
-  });
-
-  const replayed = await loadConversation(sessionId);
-  assert.equal(replayed?.familiarId, "nova");
-  assert.equal(replayed?.harness, "claude");
-  assert.equal(replayed?.model, "anthropic/claude-opus-4-7");
-  assert.equal(replayed?.runtime, "local:/current-project");
-  assert.equal(replayed?.harnessSessionId, "current-harness-session");
-  assert.equal(replayed?.title, "Current active branch");
-  assert.equal(replayed?.activeLeafId, "active-assistant");
-  assert.equal(replayed?.turns.length, 4);
-  await deleteConversation(sessionId);
-}
-console.log("cave-conversations offline replay metadata test OK");
 
 // ── Selected-chain validation stays O(chain length) on long/branched trees ──
 // Regression for the retired `hasSingleStructuralRoot`: that check re-walked

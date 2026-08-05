@@ -97,57 +97,6 @@ try {
   globalThis.fetch = async () => new Response("offline", { status: 503 });
   const transport = await generateArtifactCode({ familiarId: "nova", prompt: "build" });
   assert.equal(transport.failure, "transport", "HTTP/runtime failures are never classified as repairable format failures");
-
-  const streamed = [];
-  globalThis.fetch = async () => responseFor([
-    { kind: "assistant_chunk", text: "Preview incoming " },
-    { kind: "assistant_chunk", text: "<coven:att" },
-    { kind: "assistant_chunk", text: 'ention reason="approval" />```html\n<!doctype html><html></html>\n```' },
-    { kind: "done", sessionId: "canvas-session" },
-  ]);
-  const markerStripped = await generateArtifactCode({
-    familiarId: "nova",
-    prompt: "build",
-    onText: (text) => streamed.push(text),
-  });
-  assert.deepEqual(
-    streamed,
-    [
-      "Preview incoming ",
-      "Preview incoming ",
-      "Preview incoming ```html\n<!doctype html><html></html>\n```",
-    ],
-    "Canvas streaming hides partial attention marker tails and never flashes the completed marker",
-  );
-  assert.equal(
-    markerStripped.text,
-    "Preview incoming ```html\n<!doctype html><html></html>\n```",
-    "the final Canvas contract strips the raw marker before returning text",
-  );
-  assert.equal(markerStripped.code, "<!doctype html><html></html>");
-
-  globalThis.fetch = async () => responseFor([
-    { kind: "assistant_chunk", text: '```\n<coven:attention reason="approval" />\n```' },
-    { kind: "done", sessionId: "canvas-session" },
-  ]);
-  const fenced = await generateArtifactCode({ familiarId: "nova", prompt: "build" });
-  assert.equal(
-    fenced.text,
-    '```\n<coven:attention reason="approval" />\n```',
-    "fenced literal attention examples remain visible in Canvas text output",
-  );
-
-  globalThis.fetch = async () => responseFor([
-    { kind: "assistant_chunk", text: "Bad marker " },
-    { kind: "assistant_chunk", text: '<coven:attention reason="approval">' },
-    { kind: "done", sessionId: "canvas-session" },
-  ]);
-  const malformedMarker = await generateArtifactCode({ familiarId: "nova", prompt: "build" });
-  assert.equal(
-    malformedMarker.text,
-    "Bad marker ",
-    "malformed non-chat attention tags are stripped from the returned Canvas transcript",
-  );
 } finally {
   globalThis.fetch = originalFetch;
 }

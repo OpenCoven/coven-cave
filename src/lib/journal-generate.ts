@@ -4,7 +4,6 @@
 // but returns the assistant's plain text (no artifact extraction).
 
 import { parseSseFrame } from "@/lib/canvas-generate";
-import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
 import { extractNextPaths } from "@/lib/next-paths";
 import { DEFAULT_JOURNAL_PROMPT, renderJournalPrompt } from "@/lib/journal-prompt";
 
@@ -85,11 +84,11 @@ export async function generateReflection(opts: {
         switch (ev.kind) {
           case "assistant_chunk":
             text += ev.text ?? "";
-            opts.onText?.(extractChatAttentionMarker(text, { pending: true }).visible);
+            opts.onText?.(text);
             break;
           case "assistant_replace":
             text = ev.text ?? "";
-            opts.onText?.(extractChatAttentionMarker(text, { pending: true }).visible);
+            opts.onText?.(text);
             break;
           case "done":
             if (ev.isError) error = error ?? "the familiar reported an error";
@@ -112,7 +111,7 @@ export async function generateReflection(opts: {
   // every prompt, and a compliant familiar echoes the block back. The journal
   // has no chip row — strip it (terminated or truncated) so it never lands in
   // the stored reflection.
-  const trimmed = extractNextPaths(extractChatAttentionMarker(text).visible).visible.trim();
+  const trimmed = extractNextPaths(text).visible.trim();
   if (!trimmed && !error) error = "The familiar didn't return a reflection. Try again.";
   return { text: trimmed, error };
 }
