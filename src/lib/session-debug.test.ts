@@ -481,22 +481,23 @@ assert.match(
   "CHAT-D4-01: turn-segments comments should document mid-paragraph streaming behavior",
 );
 
-// TurnRow renders the segmented path from the reasoning-stripped visible
-// text, and keeps the trailing ToolGroup ONLY as the legacy (no-offset) path.
+// TurnRow keeps stateful tool UI in fixed slots across streaming settlement.
+// The offset model remains available for persisted transcript compatibility,
+// but rendering tools through prose segments would relocate focused controls.
 assert.match(
   chatViewSource,
-  /const segments = segmentTurn\(visible, turn\.tools\)/,
-  "CHAT-D4-01: assistant turns segment the visible text by tool offsets",
+  /<ChatToolActivityLayout[\s\S]*activity=\{otherTools\.length \? <ToolGroup tools=\{otherTools\} \/> : null\}[\s\S]*content=\{[\s\S]*<MessageBubble[\s\S]*editCards=\{/,
+  "assistant turns keep non-edit activity, changing turn content, and edit cards in stable render slots",
 );
 assert.match(
   chatViewSource,
-  /!turn\.pending && turn\.tools\?\.length[\s\S]*otherTools\.length \? <ToolGroup tools=\{otherTools\} durationMs=\{turn\.durationMs\} \/>/,
-  "settled turns render edit-tool cards inline and collapse other tool activity into the work-line ToolGroup (chat-revamp 1b: above the answer, stamped with the turn duration)",
+  /const settledTools = turn\.tools \?\? \[\];[\s\S]*const editCards = settledTools\.filter\(isEditCard\);[\s\S]*const otherTools = settledTools\.filter/,
+  "pending and settled turns share one edit/non-edit partition",
 );
-assert.match(
-  chatViewSource,
-  /node: <ToolRuns tools=\{seg\.tools\} \/>/,
-  "CHAT-D4-01: interleaved tools retain their chronology while the shared run renderer preserves each ToolBlock",
+assert.doesNotMatch(
+  chatViewSource.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "",
+  /<ToolRuns/,
+  "TurnRow does not duplicate ToolRuns in prose or tool-first branches",
 );
 
 // MessageBubble: only the LAST text span streams (progressive markdown +

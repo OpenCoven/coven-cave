@@ -43,12 +43,10 @@ import { ChatThreadMinimap, ChatThreadSpine } from "@/components/chat-thread-ins
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
-import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
+import { groupConsecutiveTools } from "@/lib/turn-segments";
 import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
-import {
-  useFocusSafeToolRelocation,
-  useToolRunDisclosure,
-} from "@/lib/use-tool-run-disclosure";
+import { useToolRunDisclosure } from "@/lib/use-tool-run-disclosure";
+import { ChatToolActivityLayout } from "@/components/chat-tool-activity-layout";
 import {
   CHAT_OPEN_COVEN_EVENT,
   CHAT_OPEN_PROJECTS_EVENT,
@@ -8167,16 +8165,13 @@ function TurnRowImpl({
 }) {
   const profileSnapshot = useUserProfile();
   const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
-  // Tool activity renders inline while a turn streams (watching tools run IS the
-  // live feedback). Once the turn settles, the prose is shown uninterrupted and
-  // every tool call is collected into one designated, collapsed "Tool activity"
-  // section below it (the ToolGroup) — so a familiar's response reads cleanly and
-  // its tool usage is clearly separated rather than woven through the text.
+  // Tool UI keeps the same render slots for the turn's lifetime: non-edit calls
+  // stay in one compact ToolGroup above the answer, while edit cards stay below
+  // it. Settlement updates those instances instead of relocating them.
   // Chat timestamp format (12h/24h clock + MM.DD/DD.MM/Off date) — a user
   // preference; the model/cwd/duration that used to sit here now live only in
   // the debug pane's per-turn JSON.
   const dtPrefs = useDateTimePrefs();
-  const toolRelocation = useFocusSafeToolRelocation(!!turn.pending);
 
   // Click-away dismissal for the inline familiar card. Hooks are placed here
   // (before any early return) so React's rules-of-hooks are never violated.
@@ -8246,373 +8241,133 @@ function TurnRowImpl({
               {turn.attachments?.length ? <span className="cave-linear-turn-recency">{turn.attachments.length} file{turn.attachments.length === 1 ? "" : "s"}</span> : null}
             </div>
             <div className="cave-linear-turn-body">
-              <MessageBubble
-                role={turn.role}
-                content={turn.text || (turn.attachments?.length ? "Attached files" : "")}
-                timestamp={turn.createdAt}
-                showTimestamp={false}
-                pending={turn.pending}
-                onEdit={onEdit}
-                onReply={onReply}
-                onOpenUrl={onOpenUrl}
-                branchNav={branchNav}
-              />
-              {/* An image you attached renders as the image, matching the
-                  assistant path — the chip list only carries what has no
-                  pixels to show (text files, oversize/undelivered images). */}
-              {turn.attachments?.length ? (
+            <ChatToolActivityLayout
+              leading={
+                reasoning
+                  ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} pending={!!turn.pending} />
+                  : null
+              }
+              activity={otherTools.length ? <ToolGroup tools={otherTools} /> : null}
+              content={
                 <>
-                  <InlineImageAttachments attachments={turn.attachments} />
-                  {turn.attachments.some((a) => !isInlineImageAttachment(a)) ? (
-                    <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a))} />
-                  ) : null}
-                </>
-              ) : null}
-              {/* Bare-line GitHub URLs in a user message unfurl into cards
-                  beneath the bubble (attachment idiom) — the headline "paste a
-                  PR link" gesture (design §1). User turns only, never system. */}
-              {(() => {
-                const ghRefs = turn.role === "user" ? unfurlUserMessage(turn.text) : [];
-                const skillInvocation = turn.role === "user" ? parseSkillInvocation(turn.text) : null;
-                return ghRefs.length || skillInvocation ? (
-                  <div className="mt-2 space-y-2">
-                    {skillInvocation ? (
-                      // Deterministic /skill card (design §5): the app built
-                      // this prompt itself, so no marker is needed to know a
-                      // skill was invoked. Live stage arrives via the
-                      // assistant turn's own <coven:skill> cards.
-                      <SkillStageCard name={skillInvocation.name} stage="invoked" note={skillInvocation.args} />
-                    ) : null}
-                    {ghRefs.map((d) => (
-                      <GitHubCard key={descriptorUrl(d)} descriptor={d} onOpenUrl={onOpenUrl} familiar={ghFamiliar} />
-                    ))}
-                  </div>
-                ) : null;
-              })()}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Hide raw `coven:attachment` marker blocks from the live-streamed text. The
-  // server strips them from the persisted text and streams the parsed files as
-  // `attachment` events; this keeps the in-flight turn clean before reload.
-  const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(turn.text).text);
-  const inlineReasoning = reasoningSplit.reasoning;
-  // GitHub markers: while streaming, strip complete + partial `<coven:github…>`
-  // tags so they never flash as raw text (cards mount on settle); settled
-  // turns keep them for splitSegmentsForGitHub below to replace with cards.
-  const ghSafeVisible = turn.pending
-    ? stripImageMarkers(stripGitHubMarkers(reasoningSplit.visible))
-    : reasoningSplit.visible;
-  // Skill markers extract on BOTH paths — the whole point is live "which
-  // skill, what stage" visibility while the agent works (design §5). The
-  // extraction also strips partial tails so raw tags never flash.
-  const skillSplit = extractSkillMarkers(ghSafeVisible);
-  // Auto-mission status card (design mirrors skill markers): extracted the
-  // same way, on both the streaming and settled path, so the phase chip
-  // (clarifying/working/blocked/done) updates live.
-  const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);
-  const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(autoStatusSplit.visible);
-  const visible = turn.pending ? visibleWithGh : stripImageMarkers(stripGitHubMarkers(visibleWithGh));
-  const reasoning = turn.reasoning?.trim() || inlineReasoning;
-  const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
-  // CHAT-D12-01: while this turn's own live indicator is showing (pending, no
-  // visible text yet), a Queued/Connecting/Writing chip in the same meta row
-  // duplicates it — suppress the chip until text flows or the turn settles.
-  // Settled chips never hit this (pending is false by then), so the Failed
-  // chip that anchors the Retry pill (#416/#420) always renders.
-  const indicatorVisible = Boolean(turn.pending) && !visible && !reasoning;
-
-  // CHAT-D4-01: when every tool event carries a textOffset (live turns from
-  // this session), render the turn as ordered segments — prose spans with
-  // each tool call inline at its chronological position — instead of the
-  // legacy "all text, then a trailing Tool activity rollup" stack that
-  // inverted causality. Offsets were captured against the raw streamed text;
-  // segmentTurn snaps them forward to fence-safe paragraph boundaries (and
-  // clamps past-end offsets, e.g. when splitReasoning stripped thinking
-  // markup), so a drifted offset degrades toward trailing — never a split
-  // inside a code fence. Stored transcripts without offsets return null and
-  // keep today's trailing ToolGroup.
-  const segments = segmentTurn(visible, turn.tools);
-  const bubbleSegments: MessageBubbleSegment[] | undefined = segments?.map((seg, i) =>
-    seg.kind === "text"
-      ? { kind: "text" as const, text: seg.text }
-      : {
-          kind: "block" as const,
-          key: `tools-${seg.tools[0]?.id ?? i}`,
-          // Each chronology-preserving segment only rolls consecutive calls
-          // with the same name; prose and a new offset stay hard boundaries.
-          node: <InlineToolRuns tools={seg.tools} />,
-        },
-  );
-
-  // Auto-detect renderable artifacts and inject the tabbed viewer. Applies to
-  // SETTLED turns only (streaming shows plain code until the fence closes).
-  const artifactCtx = { familiarId: familiar.id };
-
-  let renderSegments: MessageBubbleSegment[] | undefined;
-  if (toolRelocation.keepToolsInline) {
-    // Streaming: interleave tool blocks inline at their chronological offset so
-    // you can watch them run as live feedback. If a tool owns focus when the
-    // turn settles, retain this exact subtree until focus leaves.
-    renderSegments = bubbleSegments;
-  } else {
-    // Settled: prose only (+ artifact viewers + GitHub cards + image
-    // carousels). Tools are NOT woven into the text — they render in the
-    // designated ToolGroup section below. Image splitting runs first, while
-    // every marker is still in one prose span, so `group` decks can cross an
-    // artifact or GitHub card. The later splitters refine only the remaining
-    // prose; the `visible` fallback/content path is marker-free either way.
-    const split = splitSegmentsForGitHub(
-      splitSegmentsForArtifacts(splitSegmentsForImages([{ kind: "text", text: visibleWithGh }]), artifactCtx),
-      onOpenUrl,
-      ghFamiliar,
-    );
-    renderSegments = split.some((s) => s.kind === "block") ? split : undefined;
-  }
-
-  // Per-turn provenance peek (see turnMetaPeekTitle): the model/cwd/duration
-  // that used to sit inline here now live only in the debug pane, so a quiet
-  // hover affordance brings them back for THIS turn on demand. Skipped while
-  // streaming (the header MetaLine already narrates the live turn).
-  const metaPeek = turn.pending ? null : turnMetaPeekTitle(turn);
-
-  const recency = showTimestamp && turn.createdAt ? formatChatRecency(turn.createdAt, dtPrefs) : "";
-  const exactTime = turn.createdAt ? formatTimestamp(turn.createdAt, dtPrefs) : "";
-
-  // Chat-revamp 1b: settled tool activity splits once, up front. Codex
-  // file-edit cards (Edit/Write/etc. with a target file) stay VISIBLE inline
-  // below the prose — they're the actionable output (Review/Undo), so they
-  // must not be buried in a collapsed rollup. All OTHER tool activity (reads,
-  // greps, bash, …) collapses into the ONE work line ABOVE the answer
-  // ("<N> calls · <categories>"). Streaming turns weave tools inline
-  // instead — see renderSegments.
-  const isEditCard = (t: ToolEvent) => toolInputAsDiff(t.name, t.input) != null;
-  const settledTools = !toolRelocation.keepToolsInline && turn.tools?.length ? turn.tools : [];
-  const editCards = settledTools.filter(isEditCard);
-  const otherTools = settledTools.filter((t) => !isEditCard(t));
-
-  return (
-    <div
-      data-turn-id={turn.id}
-      className={`cave-linear-turn cave-linear-turn--assistant${found ? " cave-turn-found" : ""}`}
-    >
-      <div className="cave-linear-turn-content text-[length:var(--text-md)] leading-relaxed text-[var(--text-primary)] group/turn reveal-scope">
-        {/* Avatar (interactive) + right column */}
-        <div className={`cave-linear-turn-avatar${expanded ? " is-selected" : ""}`} ref={avatarWrapRef}>
-          <button
-            ref={avatarBtnRef}
-            type="button"
-            className="cave-linear-turn-avatar-btn"
-            aria-expanded={expanded}
-            aria-controls={`familiar-card-${turn.id}`}
-            aria-label={`Show ${familiar.display_name}'s details`}
-            onClick={onToggleAvatar}
-          >
-            <FamiliarIcon familiar={familiar} size={expanded ? "xl" : "md"} />
-          </button>
-          {expanded ? (
-            <FamiliarInlineCard
-              familiar={familiar}
-              cardId={`familiar-card-${turn.id}`}
-              onClose={() => onToggleAvatar?.()}
-            />
-          ) : null}
-        </div>
-        <div className="cave-linear-turn-right">
-          {/* Lean meta (cave-xsq.2): name + time (and transient live status /
-              error retry) stay visible; the static identity/usage extras —
-              crest, role, token usage, and the details peek — collapse into a
-              trailing cluster that reveals on turn hover / keyboard focus
-              (reveal-scope on the turn content above). Nothing is removed; the
-              default view just reads "Name · 2h ago" like ChatGPT. */}
-          <div className="cave-linear-turn-meta">
-            <span className="cave-linear-turn-name">{familiar.display_name}</span>
-            {turnStatus !== "complete" && !indicatorVisible && (
-              <span className={`cave-turn-status cave-turn-status--${turnStatus}`}>
-                {lifecycleLabel(turnStatus)}
-              </span>
-            )}
-            {/* CHAT-D12-03: a failed turn must offer retry WITHOUT hover — the
-                bubble action row is hover-revealed (and absent entirely when
-                the turn died with no text), and the lastFailedSend banner only
-                covers transport errors. Same gated callback as Regenerate. */}
-            {turn.error && onRegenerate ? (
-              <button
-                type="button"
-                aria-label="Retry failed turn"
-                title="Retry"
-                onClick={onRegenerate}
-                className="cave-turn-retry"
-              >
-                <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
-                Retry
-              </button>
-            ) : null}
-            {recency ? (
-              <time className="cave-linear-turn-recency" dateTime={turn.createdAt} title={exactTime}>
-                {recency}
-              </time>
-            ) : null}
-            <span className="cave-linear-turn-meta-extra reveal-on-hover">
-              <span className="cave-linear-turn-crest" aria-hidden="true">
-                <Icon name="ph:sparkle" width={13} height={13} />
-              </span>
-              {familiar.role ? (
-                <span className="cave-linear-turn-badge">{familiar.role}</span>
-              ) : null}
-              <UsageText usage={turn.usage} costUsd={turn.costUsd} />
-              {metaPeek ? (
-                <span
-                  className="cave-turn-peek focus-ring"
-                  title={metaPeek}
-                  tabIndex={0}
-                  role="note"
-                  aria-label={`Turn details — ${metaPeek}`}
-                >
-                  <Icon name="ph:info" width={11} aria-hidden />
-                </span>
-              ) : null}
-            </span>
-          </div>
-
-          <div
-            className="cave-linear-turn-body"
-            onFocusCapture={toolRelocation.onFocusCapture}
-            onBlurCapture={toolRelocation.onBlurCapture}
-          >
-            {reasoning ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} pending={!!turn.pending} /> : null}
-            {/* Chat-revamp 1b: the collapsed agent-work line sits ABOVE the
-                answer, so the reader sees "N calls · categories" first and
-                the prose below reads uninterrupted. */}
-            {otherTools.length ? <ToolGroup tools={otherTools} /> : null}
-            {indicatorVisible ? (
-              <ThinkingIndicator label="Thinking" startedAt={turn.createdAt ? new Date(turn.createdAt).getTime() : undefined} />
-            ) : (
-              // `cave-artifact-content` scopes the comment-on-artifact text
-              // selection to this turn's rendered markdown (see ArtifactComments).
-              <div className="cave-artifact-content">
-                <MessageBubble
-                  role="assistant"
-                  content={visible || (turn.pending ? "…" : "")}
-                  timestamp={turn.createdAt}
-                  showTimestamp={false}
-                  pending={turn.pending}
-                  isError={turn.error}
-                  label={familiar.display_name}
-                  messageId={turn.id}
-                  feedbackContext={feedbackContext ?? { familiarId: familiar.id }}
-                  onRegenerate={onRegenerate}
-                  onReply={onReply}
-                  onOpenUrl={onOpenUrl}
-                  // CHAT-D13-01: with tools hidden, fall back to plain content —
-                  // the text segments concatenate to `visible` anyway, so prose
-                  // renders identically with the tool blocks omitted.
-                  segments={renderSegments}
-                  // The reader's "How this was made" footer reads the same
-                  // settled tool events the stream already renders, so the
-                  // provenance it shows can never disagree with the transcript.
-                  readerTools={settledTools}
-                  readerDurationMs={turn.durationMs}
-                  onAskAbout={onAskAbout}
-                  readerPrompt={readerPrompt}
-                  onRerunWith={onRerunWith}
-                  readerFamiliarId={familiar.id}
-                  branchNav={branchNav}
-                />
-                <ResponseModelStatus metadata={turn.responseMetadata} />
-                <ResponseControlStatus metadata={turn.responseMetadata} />
-              </div>
-            )}
-            {/* CHAT-D4-01: tools often run BEFORE the first prose chunk
-                (research-style turns) — show them inline immediately so
-                they don't teleport out of a rollup once text arrives. */}
-            {indicatorVisible && segments?.length ? (
-              <div className="mt-3 space-y-2">
-                {segments.map((seg, index) =>
-                  seg.kind === "tools"
-                    ? <InlineToolRuns key={`tools-${seg.tools[0]?.id ?? index}`} tools={seg.tools} />
-                    : null,
-                )}
-              </div>
-            ) : null}
-            {/* Agent-produced inline attachments: images render full-bleed
-                (e.g. /image generations), everything else stays a file chip
-                that opens the lightbox. */}
-            {turn.attachments?.length ? (
-              <>
-                <InlineImageAttachments attachments={turn.attachments} />
-                {turn.attachments.some((a) => !isInlineImageAttachment(a)) ? (
-                  <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a))} />
-                ) : null}
-              </>
-            ) : null}
-            {/* Skill stage cards (design §5): one per skill name per turn,
-                updated in place by repeated <coven:skill> markers — live
-                while streaming, settled state after. */}
-            {skillSplit.updates.length ? (
-              <div className="mt-2 space-y-1.5">
-                {skillSplit.updates.map((u) => (
-                  <SkillStageCard key={u.name} name={u.name} stage={u.stage} note={u.note} />
-                ))}
-              </div>
-            ) : null}
-            {/* Auto-mission status card: one per turn, updated in place by
-                repeated <coven:auto-status> markers — the human-visible half
-                of the /auto watcher above that fires the blocked/done ping. */}
-            {autoStatusSplit.update ? (
-              <div className="mt-2">
-                <AutoStatusCard state={autoStatusSplit.update.state} note={autoStatusSplit.update.note} />
-              </div>
-            ) : null}
-            {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
-            {/* Edit cards on settled turns (the work line above the answer
-                already collapsed everything else). */}
-            {!turn.pending && turn.tools?.length && editCards.length
-              ? (() => {
-                  // Golden path 4 (cave-qva4): a multi-file turn gets ONE
-                  // aggregate entry into the working-tree review — the
-                  // per-card Review buttons remain, but "which of these five
-                  // cards do I click" shouldn't be the first question. The
-                  // chip rides the cards' existing cave:open-file-diff
-                  // contract (the Changes panel suffix-matches the path and
-                  // shows every changed file once open).
-                  const editedFiles = Array.from(
-                    new Set(
-                      editCards
-                        .map((t) => toolTargetFile(t.name, t.input))
-                        .filter((p): p is string => Boolean(p)),
-                    ),
-                  );
-                  return (
-                    <div className="cave-edit-cards mt-3 space-y-2">
-                      {editedFiles.length > 1 ? (
-                        <div className="cave-turn-changes flex items-center justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5">
-                          <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
-                            {editedFiles.length} files changed
-                          </span>
-                          <button
-                            type="button"
-                            className="focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-                            aria-label={`Review all ${editedFiles.length} changed files in the Changes tab`}
-                            onClick={() =>
-                              window.dispatchEvent(
-                                new CustomEvent("cave:open-file-diff", { detail: { path: editedFiles[0] } }),
-                              )
-                            }
-                          >
-                            Review all
-                          </button>
-                        </div>
-                      ) : null}
-                      {editCards.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
+                  {indicatorVisible ? (
+                    <ThinkingIndicator
+                      label="Thinking"
+                      startedAt={turn.createdAt ? new Date(turn.createdAt).getTime() : undefined}
+                    />
+                  ) : (
+                    // `cave-artifact-content` scopes the comment-on-artifact text
+                    // selection to this turn's rendered markdown (see ArtifactComments).
+                    <div className="cave-artifact-content">
+                      <MessageBubble
+                        role="assistant"
+                        content={visible || (turn.pending ? "…" : "")}
+                        timestamp={turn.createdAt}
+                        showTimestamp={false}
+                        pending={turn.pending}
+                        isError={turn.error}
+                        label={familiar.display_name}
+                        messageId={turn.id}
+                        feedbackContext={feedbackContext ?? { familiarId: familiar.id }}
+                        onRegenerate={onRegenerate}
+                        onReply={onReply}
+                        onOpenUrl={onOpenUrl}
+                        segments={renderSegments}
+                        // The reader's "How this was made" footer reads the same
+                        // events that settle into the transcript activity slots.
+                        readerTools={settledTools}
+                        readerDurationMs={turn.durationMs}
+                        onAskAbout={onAskAbout}
+                        readerPrompt={readerPrompt}
+                        onRerunWith={onRerunWith}
+                        readerFamiliarId={familiar.id}
+                        branchNav={branchNav}
+                      />
+                      <ResponseModelStatus metadata={turn.responseMetadata} />
+                      <ResponseControlStatus metadata={turn.responseMetadata} />
                     </div>
-                  );
-                })()
-              : null}
+                  )}
+                  {/* Agent-produced inline attachments: images render full-bleed
+                      (e.g. /image generations), everything else stays a file chip
+                      that opens the lightbox. */}
+                  {turn.attachments?.length ? (
+                    <>
+                      <InlineImageAttachments attachments={turn.attachments} />
+                      {turn.attachments.some((a) => !isInlineImageAttachment(a)) ? (
+                        <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a))} />
+                      ) : null}
+                    </>
+                  ) : null}
+                  {/* Skill stage cards (design §5): one per skill name per turn,
+                      updated in place by repeated <coven:skill> markers — live
+                      while streaming, settled state after. */}
+                  {skillSplit.updates.length ? (
+                    <div className="mt-2 space-y-1.5">
+                      {skillSplit.updates.map((u) => (
+                        <SkillStageCard key={u.name} name={u.name} stage={u.stage} note={u.note} />
+                      ))}
+                    </div>
+                  ) : null}
+                  {/* Auto-mission status card: one per turn, updated in place by
+                      repeated <coven:auto-status> markers — the human-visible half
+                      of the /auto watcher above that fires the blocked/done ping. */}
+                  {autoStatusSplit.update ? (
+                    <div className="mt-2">
+                      <AutoStatusCard state={autoStatusSplit.update.state} note={autoStatusSplit.update.note} />
+                    </div>
+                  ) : null}
+                  {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
+                </>
+              }
+              editCards={
+                editCards.length
+                  ? (() => {
+                      // Golden path 4 (cave-qva4): a multi-file turn gets ONE
+                      // aggregate entry into the working-tree review — the
+                      // per-card Review buttons remain, but "which of these five
+                      // cards do I click" shouldn't be the first question. The
+                      // chip rides the cards' existing cave:open-file-diff
+                      // contract (the Changes panel suffix-matches the path and
+                      // shows every changed file once open).
+                      const editedFiles = Array.from(
+                        new Set(
+                          editCards
+                            .map((t) => toolTargetFile(t.name, t.input))
+                            .filter((p): p is string => Boolean(p)),
+                        ),
+                      );
+                      return (
+                        <div className="cave-edit-cards mt-3 space-y-2">
+                          {!turn.pending && turn.tools?.length && editCards.length ? (
+                            <>
+                              {editedFiles.length > 1 ? (
+                                <div className="cave-turn-changes flex items-center justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5">
+                                  <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
+                                    {editedFiles.length} files changed
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                                    aria-label={`Review all ${editedFiles.length} changed files in the Changes tab`}
+                                    onClick={() =>
+                                      window.dispatchEvent(
+                                        new CustomEvent("cave:open-file-diff", { detail: { path: editedFiles[0] } }),
+                                      )
+                                    }
+                                  >
+                                    Review all
+                                  </button>
+                                </div>
+                              ) : null}
+                            </>
+                          ) : null}
+                          {editCards.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
+                        </div>
+                      );
+                    })()
+                  : null
+              }
+            />
             {/* Typed follow-ups render LAST — reply fills the composer, task
                 opens review, and action routes to Tasks; they sit closest to
                 the composer and aren't pushed up by tool activity. */}
@@ -8853,14 +8608,6 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
         </div>
       </details>
     </>
-  );
-}
-
-function InlineToolRuns({ tools }: { tools: ToolEvent[] }) {
-  return (
-    <div data-inline-tool-runs>
-      <ToolRuns tools={tools} />
-    </div>
   );
 }
 
