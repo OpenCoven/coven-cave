@@ -132,7 +132,7 @@ test("derives all four attention states with inclusive boundaries", () => {
   });
 });
 
-test("clears stale requests for newer user turns, even after a later assistant reply, and for active or archived sessions", () => {
+test("clears stale requests for newer user turns, falls back to ordinary left-hanging derivation, and ignores active or archived sessions", () => {
   const staleRequest = {
     sessionId: "s1",
     turnId: "a1",
@@ -155,6 +155,30 @@ test("clears stale requests for newer user turns, even after a later assistant r
       now: NOW,
     }).state,
     "none",
+  );
+
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: {
+        latestCompletedTurn: {
+          role: "assistant",
+          at: "2026-08-03T18:00:00.000Z",
+        },
+        latestUserTurnAt: "2026-08-03T17:00:00.000Z",
+        request: {
+          ...staleRequest,
+          requestedAt: "2026-08-03T16:00:00.000Z",
+        },
+      },
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "left-hanging",
+      since: "2026-08-03T18:00:00.000Z",
+      reason: null,
+    },
   );
 
   assert.deepEqual(

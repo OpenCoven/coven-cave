@@ -56,20 +56,19 @@ export function deriveChatAttention(args: {
   const request = normalizeAttentionRequest(evidence.request, nowMs);
   if (evidence.request && request === null) return NO_CHAT_ATTENTION;
 
-  if (request && latestUserTurnAtMs !== null && latestUserTurnAtMs > request.requestedAtMs) {
-    return NO_CHAT_ATTENTION;
-  }
+  const resolvedRequest =
+    request &&
+    ((latestUserTurnAtMs !== null && latestUserTurnAtMs > request.requestedAtMs) ||
+      (latest?.role === "user" && latest.atMs > request.requestedAtMs))
+      ? null
+      : request;
 
-  if (latest?.role === "user" && request && latest.atMs > request.requestedAtMs) {
-    return NO_CHAT_ATTENTION;
-  }
-
-  if (request) {
-    const elapsedMs = nowMs - request.requestedAtMs;
+  if (resolvedRequest) {
+    const elapsedMs = nowMs - resolvedRequest.requestedAtMs;
     return {
       state: elapsedMs >= OVERDUE_HUMAN_MS ? "overdue-human" : "awaiting-human",
-      since: request.requestedAt,
-      reason: request.reason,
+      since: resolvedRequest.requestedAt,
+      reason: resolvedRequest.reason,
     };
   }
 
