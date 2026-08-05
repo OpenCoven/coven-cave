@@ -238,8 +238,13 @@ function activeConversationTurns(conv: Pick<ConversationFile, "turns" | "activeL
     return onlyLeafId ? resolveActivePath(conv.turns, onlyLeafId) : [];
   }
 
-  return hasResolvableAncestorChain(structuralTurns, conv.activeLeafId) &&
-    hasSingleStructuralRoot(structuralTurns, conv.activeLeafId)
+  // Validate only the chain the active leaf actually selects: unique ids are
+  // already guaranteed above, the leaf itself must exist, and every parent it
+  // names on the way to a root must exist with no cycle back into the walk.
+  // Other root-level siblings (e.g. a regenerate/rerun that starts a fresh
+  // root turn) are legitimate and are simply never visited here — a single
+  // shared root across the whole file is not part of the contract.
+  return hasResolvableAncestorChain(structuralTurns, conv.activeLeafId)
     ? resolveActivePath(conv.turns, conv.activeLeafId)
     : [];
 }
@@ -359,10 +364,17 @@ function normalizeStableAttentionRequest(
   };
 }
 
+// Walks only the selected leaf's own ancestor chain — never the whole turn
+// set — so cost is O(chain length) once the id map is built. `byId` is built
+// once per activeConversationTurns() call (a single O(n) pass over the file),
+// not per turn, so there is no quadratic re-walk here: no other turn's chain
+// is ever inspected, and root-level siblings elsewhere in the file (a
+// regenerate/rerun that starts a fresh root turn, for instance) are simply
+// never visited. `seen` catches a cycle back into this one walk.
 function resolveAncestorChainFromMap(
   byId: ReadonlyMap<string, ChatTurn>,
   leafId: string,
-): { size: number; rootId: string } | null {
+): { size: number } | null {
   let current = byId.get(leafId);
   if (!current) return null;
   const seen = new Set<string>();
@@ -370,14 +382,14 @@ function resolveAncestorChainFromMap(
     if (seen.has(current.id)) return null;
     seen.add(current.id);
     const parentId = current.parentId ?? null;
-    if (parentId === null) return { size: seen.size, rootId: current.id };
+    if (parentId === null) return { size: seen.size };
     current = byId.get(parentId);
     if (!current) return null;
   }
   return null;
 }
 
-function resolveAncestorChain(turns: ChatTurn[], leafId: string): { size: number; rootId: string } | null {
+function resolveAncestorChain(turns: ChatTurn[], leafId: string): { size: number } | null {
   return resolveAncestorChainFromMap(new Map(turns.map((turn) => [turn.id, turn])), leafId);
 }
 
@@ -387,79 +399,6 @@ function resolvableAncestorChainSize(turns: ChatTurn[], leafId: string): number 
 
 function hasResolvableAncestorChain(turns: ChatTurn[], leafId: string): boolean {
   return resolvableAncestorChainSize(turns, leafId) !== null;
-}
-
-// Test-only step counter: incremented once per parent hop the resolver below
-// actually walks. A single-root check that re-walks every ancestor chain per
-// turn (the previous implementation) costs O(n) steps per turn, O(n^2) total
-// on a long history. The memoized walk below visits each turn's *unresolved*
-// ancestors at most once ever, so this count stays <= turns.length across the
-// whole call — see cave-conversations.test.ts for the regression that pins it.
-let structuralRootResolutionSteps = 0;
-
-export function getStructuralRootResolutionStepsForTests(): number {
-  return structuralRootResolutionSteps;
-}
-
-export function resetStructuralRootResolutionStepsForTests(): void {
-  structuralRootResolutionSteps = 0;
-}
-
-/**
- * Resolves every turn's ultimate structural root (the id at the top of its
- * parentId chain) in a single left-to-right pass with path compression: once
- * a turn's root is known it is memoized in `rootOf`, so any later chain that
- * reaches it stops immediately instead of re-walking it. Each turn is pushed
- * onto a chain-in-progress at most once for the lifetime of the call, which
- * bounds total work at O(n) regardless of traversal order (a reversed leaf
- * walks its whole ancestor chain once and memoizes every ancestor along the
- * way; later turns in that chain then resolve in O(1)).
- *
- * Returns null the instant any turn's chain fails to resolve — an unknown
- * parent id or a cycle back to a node still being walked — matching the
- * fail-quiet contract the caller relies on: one broken chain invalidates the
- * whole transcript, not just the turn that owns it.
- */
-function resolveStructuralRoots(
-  turns: ChatTurn[],
-  byId: ReadonlyMap<string, ChatTurn>,
-): Map<string, string> | null {
-  const rootOf = new Map<string, string>();
-  const visiting = new Set<string>();
-  for (const turn of turns) {
-    if (rootOf.has(turn.id)) continue;
-    const chain: string[] = [];
-    let currentId: string | null = turn.id;
-    while (currentId !== null && !rootOf.has(currentId)) {
-      structuralRootResolutionSteps += 1;
-      if (visiting.has(currentId)) return null; // cycle back into the in-progress walk
-      const node = byId.get(currentId);
-      if (!node) return null; // dangling reference to an id no longer in the walk set
-      visiting.add(currentId);
-      chain.push(currentId);
-      const parentId = node.parentId ?? null;
-      if (parentId !== null && !byId.has(parentId)) return null; // unresolvable parent
-      currentId = parentId;
-    }
-    const rootId = currentId === null ? chain[chain.length - 1] : rootOf.get(currentId)!;
-    for (const id of chain) {
-      rootOf.set(id, rootId);
-      visiting.delete(id);
-    }
-  }
-  return rootOf;
-}
-
-function hasSingleStructuralRoot(turns: ChatTurn[], activeLeafId: string): boolean {
-  const byId = new Map(turns.map((turn) => [turn.id, turn]));
-  const roots = resolveStructuralRoots(turns, byId);
-  if (!roots) return false;
-  const activeRoot = roots.get(activeLeafId);
-  if (!activeRoot) return false;
-  for (const turn of turns) {
-    if (roots.get(turn.id) !== activeRoot) return false;
-  }
-  return true;
 }
 
 function soleResolvableLeafId(turns: ChatTurn[]): string | null {

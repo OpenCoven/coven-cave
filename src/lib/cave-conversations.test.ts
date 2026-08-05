@@ -936,7 +936,8 @@ console.log("cave-conversations pending-marker test OK");
     "attention-error-request-turn",
     "attention-mismatched-turnid-request",
     "attention-off-path-request",
-    "attention-multi-root-active-leaf",
+    "attention-root-sibling-active-request",
+    "attention-root-sibling-inactive-request",
     "attention-malformed-turns",
     "attention-corrupt-leaf",
     "attention-duplicate-leaf-id",
@@ -1324,56 +1325,93 @@ console.log("cave-conversations pending-marker test OK");
     activeLeafId: "branch-active",
   });
 
-  await saveConversation({
-    sessionId: "attention-multi-root-active-leaf",
-    familiarId: "charm",
-    harness: "claude",
-    title: "Explicit active leaf with disconnected roots",
-    createdAt: "2026-08-04T12:10:00.000Z",
-    updatedAt: "2026-08-04T12:13:00.000Z",
-    turns: [
-      {
-        id: "multi-root-request-user",
-        role: "user",
-        text: "Do you need approval?",
-        createdAt: "2026-08-04T12:10:00.000Z",
-        parentId: null,
-      },
-      {
-        id: "multi-root-request-assistant",
-        role: "assistant",
-        text: "I need your approval.",
-        createdAt: "2026-08-04T12:11:00.000Z",
-        parentId: "multi-root-request-user",
-        responseMetadata: {
-          familiarId: "charm",
-          harness: "claude",
-          model: "anthropic/claude-sonnet-4.6",
-          runtime: "local:/repo",
-          attentionRequest: {
-            sessionId: "attention-multi-root-active-leaf",
-            turnId: "multi-root-request-assistant",
-            requestedAt: "2026-08-04T12:11:00.000Z",
-            reason: "approval",
-          },
+  // Regenerate/rerun legitimately produces a second *root-level* generation
+  // (a fresh parentId: null turn) sitting alongside the first — this is not
+  // corruption, it's a sibling generation the user can switch between. Only
+  // the branch activeLeafId actually selects should ever be validated; the
+  // other root sibling and its evidence must simply be ignored, never treated
+  // as a "disconnected root" that invalidates the whole file.
+  const rootSiblingTurns = [
+    {
+      id: "root-sibling-a-user",
+      role: "user",
+      text: "Do you need approval?",
+      createdAt: "2026-08-04T12:10:00.000Z",
+      parentId: null,
+    },
+    {
+      id: "root-sibling-a-assistant",
+      role: "assistant",
+      text: "I need your approval.",
+      createdAt: "2026-08-04T12:11:00.000Z",
+      parentId: "root-sibling-a-user",
+      responseMetadata: {
+        familiarId: "charm",
+        harness: "claude",
+        model: "anthropic/claude-sonnet-4.6",
+        runtime: "local:/repo",
+        attentionRequest: {
+          sessionId: "attention-root-sibling-active-request",
+          turnId: "root-sibling-a-assistant",
+          requestedAt: "2026-08-04T12:11:00.000Z",
+          reason: "approval",
         },
       },
-      {
-        id: "multi-root-active-user",
-        role: "user",
-        text: "Never mind, summarize it instead.",
-        createdAt: "2026-08-04T12:12:00.000Z",
-        parentId: null,
-      },
-      {
-        id: "multi-root-active-leaf",
-        role: "assistant",
-        text: "Here is the summary.",
-        createdAt: "2026-08-04T12:13:00.000Z",
-        parentId: "multi-root-active-user",
-      },
-    ],
-    activeLeafId: "multi-root-active-leaf",
+    },
+    {
+      id: "root-sibling-b-user",
+      role: "user",
+      text: "Never mind, summarize it instead.",
+      createdAt: "2026-08-04T12:12:00.000Z",
+      parentId: null,
+    },
+    {
+      id: "root-sibling-b-assistant",
+      role: "assistant",
+      text: "Here is the summary.",
+      createdAt: "2026-08-04T12:13:00.000Z",
+      parentId: "root-sibling-b-user",
+    },
+  ];
+
+  // activeLeafId selects the request-bearing root-sibling branch: its request
+  // must surface.
+  await saveConversation({
+    sessionId: "attention-root-sibling-active-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Active leaf selects the request-bearing root sibling",
+    createdAt: "2026-08-04T12:10:00.000Z",
+    updatedAt: "2026-08-04T12:13:00.000Z",
+    turns: rootSiblingTurns,
+    activeLeafId: "root-sibling-a-assistant",
+  });
+
+  // Same tree, but activeLeafId selects the *other* root-sibling branch: the
+  // inactive branch's request must be ignored, not surfaced and not treated
+  // as disqualifying evidence.
+  await saveConversation({
+    sessionId: "attention-root-sibling-inactive-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Active leaf ignores an inactive root sibling's request",
+    createdAt: "2026-08-04T12:10:00.000Z",
+    updatedAt: "2026-08-04T12:13:00.000Z",
+    turns: rootSiblingTurns.map((turn) =>
+      turn.responseMetadata
+        ? {
+            ...turn,
+            responseMetadata: {
+              ...turn.responseMetadata,
+              attentionRequest: {
+                ...turn.responseMetadata.attentionRequest,
+                sessionId: "attention-root-sibling-inactive-request",
+              },
+            },
+          }
+        : turn,
+    ),
+    activeLeafId: "root-sibling-b-assistant",
   });
 
   await saveConversation({
@@ -2104,14 +2142,45 @@ console.log("cave-conversations pending-marker test OK");
     "a one-root branched transcript remains valid when activeLeafId selects a sibling leaf",
   );
 
-  assert.equal(
-    byId.get("attention-multi-root-active-leaf")?.attentionEvidence,
-    undefined,
-    "an explicit active leaf must fail quiet when the transcript contains disconnected root components",
-  );
+  // Regenerate/rerun root siblings: when activeLeafId selects the
+  // request-bearing branch, its request must surface normally — the other
+  // root-level sibling elsewhere in the file is irrelevant to that selection.
+  assert.deepEqual(byId.get("attention-root-sibling-active-request")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T12:11:00.000Z" },
+    latestUserTurnAt: "2026-08-04T12:10:00.000Z",
+    request: {
+      sessionId: "attention-root-sibling-active-request",
+      turnId: "root-sibling-a-assistant",
+      requestedAt: "2026-08-04T12:11:00.000Z",
+      reason: "approval",
+    },
+  });
   assert.deepEqual(
     deriveChatAttention({
-      evidence: byId.get("attention-multi-root-active-leaf")?.attentionEvidence,
+      evidence: byId.get("attention-root-sibling-active-request")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "awaiting-human",
+      since: "2026-08-04T12:11:00.000Z",
+      reason: "approval",
+    },
+    "a legitimate root-sibling generation must surface its own request when activeLeafId selects it",
+  );
+
+  // Same tree, but activeLeafId selects the other root sibling: its own,
+  // request-free branch is what must be reflected — the inactive sibling's
+  // request must be ignored, not surfaced and not treated as corrupt.
+  assert.deepEqual(byId.get("attention-root-sibling-inactive-request")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T12:13:00.000Z" },
+    latestUserTurnAt: "2026-08-04T12:12:00.000Z",
+    request: null,
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-root-sibling-inactive-request")?.attentionEvidence,
       status: "completed",
       archivedAt: null,
       now: NOW,
@@ -2121,7 +2190,7 @@ console.log("cave-conversations pending-marker test OK");
       since: null,
       reason: null,
     },
-    "a multi-root transcript must not surface attention from a different disconnected root even with an explicit active leaf",
+    "an inactive root sibling's request must never leak into the selected branch's evidence",
   );
 
   assert.deepEqual(byId.get("attention-malformed-turns")?.attentionEvidence, {
@@ -2457,24 +2526,17 @@ console.log("cave-conversations attention summary test OK");
 }
 console.log("cave-conversations model-lock test OK");
 
-// ── Structural-root validation stays linear on long/malformed histories ────
-// Regression for the O(n^2) `hasSingleStructuralRoot`: the previous
-// implementation re-walked a turn's full ancestor chain for every single turn
-// in the transcript, which benchmarked ~2.28s for a 10k-turn conversation on
-// this exact session-list summary path. A wall-clock assertion here would be
-// fragile (slow CI runners, noisy neighbors), so instead the resolver below
-// is instrumented with a step counter — one increment per parent hop it
-// actually walks. A linear/memoized resolver visits each turn's *unresolved*
-// ancestors at most once for the whole call, so the count is bounded by the
-// turn count regardless of traversal order; a quadratic re-walk would blow
-// past that bound by orders of magnitude (millions of hops at this length),
-// so this fails loudly and deterministically instead of merely running slow.
+// ── Selected-chain validation stays O(chain length) on long/branched trees ──
+// Regression for the retired `hasSingleStructuralRoot`: that check re-walked
+// every turn's full ancestor chain looking for a shared root across the
+// *entire* file, which cost O(n) per turn — O(n^2) overall — and wrongly
+// treated legitimate root-level siblings (a regenerate/rerun starting a fresh
+// root turn) as corruption. The current design never does that walk: it only
+// resolves the ids the selected activeLeafId actually visits, via one O(n)
+// id-map build (`resolveAncestorChainFromMap`'s caller) followed by an
+// O(chain length) walk — which is visible directly in the resolver's source,
+// so no runtime step-counter or wall-clock timing is needed here to prove it.
 {
-  const {
-    getStructuralRootResolutionStepsForTests,
-    resetStructuralRootResolutionStepsForTests,
-  } = await import("./cave-conversations.ts");
-
   function buildLinearChain(prefix, length, baseMs) {
     const turns = [];
     for (let i = 0; i < length; i += 1) {
@@ -2490,9 +2552,8 @@ console.log("cave-conversations model-lock test OK");
     return turns;
   }
 
-  // A long, entirely valid linear history: this is the case that must stay
-  // fast. The active path must still resolve and surface the true latest
-  // turns — the perf fix must not have traded correctness for speed.
+  // A long, entirely valid linear/selected chain: the active path must still
+  // resolve correctly and surface the true latest turns at scale.
   const LONG_CHAIN_LENGTH = 6000;
   const longChainBaseMs = Date.UTC(2026, 7, 4, 0, 0, 0);
   const longChainTurns = buildLinearChain("long-chain-turn", LONG_CHAIN_LENGTH, longChainBaseMs);
@@ -2509,17 +2570,11 @@ console.log("cave-conversations model-lock test OK");
     activeLeafId: longChainLeafId,
   });
 
-  resetStructuralRootResolutionStepsForTests();
   const longChainSummaries = await listConversations();
-  const longChainSteps = getStructuralRootResolutionStepsForTests();
   const longChainSummary = longChainSummaries.find(
     (summary) => summary.sessionId === "structural-root-long-chain",
   );
 
-  assert.ok(
-    longChainSteps <= LONG_CHAIN_LENGTH,
-    `structural root resolution must visit each turn's unresolved ancestors at most once: saw ${longChainSteps} steps for ${LONG_CHAIN_LENGTH} turns (an O(n^2) re-walk would need millions)`,
-  );
   assert.ok(
     longChainSummary?.attentionEvidence,
     "a long, entirely valid linear history must still resolve its active path and surface attention evidence",
@@ -2539,8 +2594,8 @@ console.log("cave-conversations model-lock test OK");
 
   // A long history whose parent links form one big cycle (no turn's chain
   // ever reaches a null parentId). Must fail quiet — not hang, not stack
-  // overflow via recursion, and not blow past a linear step budget while
-  // detecting it.
+  // overflow via recursion — since the walk is iterative and bounded by the
+  // selected chain length (here, the whole ring).
   const CYCLE_LENGTH = 4000;
   const cycleBaseMs = Date.UTC(2026, 7, 5, 0, 0, 0);
   const cycleTurns = buildLinearChain("cycle-turn", CYCLE_LENGTH, cycleBaseMs);
@@ -2559,9 +2614,7 @@ console.log("cave-conversations model-lock test OK");
     activeLeafId: cycleTurns[CYCLE_LENGTH - 1].id,
   });
 
-  resetStructuralRootResolutionStepsForTests();
   const cycleSummaries = await listConversations();
-  const cycleSteps = getStructuralRootResolutionStepsForTests();
   const cycleSummary = cycleSummaries.find(
     (summary) => summary.sessionId === "structural-root-long-cycle",
   );
@@ -2571,52 +2624,52 @@ console.log("cave-conversations model-lock test OK");
     undefined,
     "a long parent cycle must fail quiet instead of resolving a looping chain",
   );
-  assert.ok(
-    cycleSteps <= CYCLE_LENGTH,
-    `cycle detection over a long ring must stay bounded: saw ${cycleSteps} steps for ${CYCLE_LENGTH} turns`,
-  );
 
   await deleteConversation("structural-root-long-cycle");
 
-  // Two long, individually valid chains that never connect (a disconnected
-  // second root). The active leaf lives on chain A; chain B's turns must
-  // never be treated as sharing its root, and validation must still stay
-  // linear across the combined turn count.
-  const MULTI_ROOT_HALF_LENGTH = 3000;
+  // Two long, individually valid chains that never connect: a legitimate
+  // large-scale regenerate/rerun scenario (two big root-level siblings). The
+  // active leaf lives on chain A; chain B is a disconnected root sibling and
+  // must simply be ignored — never walked, and never treated as corruption —
+  // while chain A's own evidence still resolves correctly at scale.
+  const ROOT_SIBLING_HALF_LENGTH = 3000;
   const chainABaseMs = Date.UTC(2026, 7, 6, 0, 0, 0);
   const chainBBaseMs = Date.UTC(2026, 7, 6, 1, 0, 0);
-  const chainATurns = buildLinearChain("multi-root-a", MULTI_ROOT_HALF_LENGTH, chainABaseMs);
-  const chainBTurns = buildLinearChain("multi-root-b", MULTI_ROOT_HALF_LENGTH, chainBBaseMs);
-  const multiRootActiveLeafId = chainATurns[MULTI_ROOT_HALF_LENGTH - 1].id;
+  const chainATurns = buildLinearChain("root-sibling-a", ROOT_SIBLING_HALF_LENGTH, chainABaseMs);
+  const chainBTurns = buildLinearChain("root-sibling-b", ROOT_SIBLING_HALF_LENGTH, chainBBaseMs);
+  const rootSiblingActiveLeafId = chainATurns[ROOT_SIBLING_HALF_LENGTH - 1].id;
 
   await saveConversation({
-    sessionId: "structural-root-long-multi-root",
+    sessionId: "structural-root-long-root-siblings",
     familiarId: "charm",
     harness: "claude",
-    title: "Long disconnected roots must fail quiet",
+    title: "Long root-sibling generations resolve the active one",
     createdAt: chainATurns[0].createdAt,
-    updatedAt: chainBTurns[MULTI_ROOT_HALF_LENGTH - 1].createdAt,
+    updatedAt: chainBTurns[ROOT_SIBLING_HALF_LENGTH - 1].createdAt,
     turns: [...chainATurns, ...chainBTurns],
-    activeLeafId: multiRootActiveLeafId,
+    activeLeafId: rootSiblingActiveLeafId,
   });
 
-  resetStructuralRootResolutionStepsForTests();
-  const multiRootSummaries = await listConversations();
-  const multiRootSteps = getStructuralRootResolutionStepsForTests();
-  const multiRootSummary = multiRootSummaries.find(
-    (summary) => summary.sessionId === "structural-root-long-multi-root",
+  const rootSiblingSummaries = await listConversations();
+  const rootSiblingSummary = rootSiblingSummaries.find(
+    (summary) => summary.sessionId === "structural-root-long-root-siblings",
   );
 
-  assert.equal(
-    multiRootSummary?.attentionEvidence,
-    undefined,
-    "a long disconnected second root must fail quiet even with a valid, resolvable active leaf",
-  );
   assert.ok(
-    multiRootSteps <= MULTI_ROOT_HALF_LENGTH * 2,
-    `multi-root detection must stay linear in the combined turn count: saw ${multiRootSteps} steps for ${MULTI_ROOT_HALF_LENGTH * 2} turns`,
+    rootSiblingSummary?.attentionEvidence,
+    "a large disconnected root sibling must never prevent the active chain from resolving",
+  );
+  assert.equal(
+    rootSiblingSummary?.attentionEvidence?.latestUserTurnAt,
+    chainATurns[ROOT_SIBLING_HALF_LENGTH - 2].createdAt,
+    "the active chain's own latest user turn must resolve, ignoring the disconnected sibling entirely",
+  );
+  assert.deepEqual(
+    rootSiblingSummary?.attentionEvidence?.latestCompletedTurn,
+    { role: "assistant", at: chainATurns[ROOT_SIBLING_HALF_LENGTH - 1].createdAt },
+    "the active chain's own latest completed turn must resolve, ignoring the disconnected sibling entirely",
   );
 
-  await deleteConversation("structural-root-long-multi-root");
+  await deleteConversation("structural-root-long-root-siblings");
 }
 console.log("cave-conversations structural-root perf/regression test OK");
