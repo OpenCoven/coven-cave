@@ -363,6 +363,7 @@ try {
         {
           id: "cave-old",
           status: "closed",
+          updated_at: "2026-07-27T12:00:00Z",
           title: "Malformed metadata date",
           metadata: { coven: { worktree } },
         },
@@ -372,6 +373,7 @@ try {
   const branchOnlyMetadataTask = {
     id: "cave-branch-only",
     status: "closed",
+    updated_at: "2026-07-27T12:00:00Z",
     title: "Branch only",
     metadata: {
       coven: {
@@ -389,6 +391,7 @@ try {
   const metadataTask = (id, branch, worktreePath, purpose) => ({
     id,
     status: "closed",
+    updated_at: "2026-07-27T12:00:00Z",
     title: purpose,
     metadata: {
       coven: {
@@ -446,9 +449,10 @@ try {
     JSON.stringify([
       branchOnlyMetadataTask,
       {
-        id: "cave-oid-owner",
-        status: "open",
-        title: "Investigate captured commit",
+        id: "cave-review",
+        status: "blocked",
+        updated_at: "2026-07-28T12:00:00Z",
+        title: "Review landed legacy work",
         description: "",
         notes: "",
         external_ref: `commit:${branchOnlyHead}`,
@@ -462,6 +466,7 @@ try {
       {
         id: "cave-short-oid",
         status: "open",
+        updated_at: "2026-07-27T12:00:00Z",
         title: "Investigate abbreviated commit",
         description: "",
         notes: branchOnlyHead.slice(0, 12),
@@ -475,6 +480,7 @@ try {
       {
         id: "cave-old",
         status: "closed",
+        updated_at: "2026-07-27T12:00:00Z",
         title: "Impossible metadata path",
         metadata: {
           coven: {
@@ -497,6 +503,7 @@ try {
       {
         id: "cave-old",
         status: "closed",
+        updated_at: "2026-07-27T12:00:00Z",
         title: "Impossible exception path",
         metadata: {
           coven: {
@@ -1308,47 +1315,49 @@ elif [ "\${LIFECYCLE_NUL_METADATA_PATH:-0}" = "1" ]; then
 elif [ "\${LIFECYCLE_NUL_EXCEPTION_PATH:-0}" = "1" ]; then
   cat ${JSON.stringify(path.join(fixtureRoot, "tasks-nul-exception-path.json"))}
 elif [ "\${LIFECYCLE_BAD_TASKS:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-bad","status":"open","title":[]}]'
+  printf '%s\n' '[{"id":"cave-bad","status":"open","updated_at":"2026-07-27T12:00:00Z","title":[]}]'
+elif [ "\${LIFECYCLE_BAD_TASK_UPDATED_AT:-0}" = "1" ]; then
+  printf '%s\n' '[{"id":"cave-bad-time","status":"open","updated_at":"2026-07-32T12:00:00Z","title":"Bad timestamp"}]'
 elif [ -n "\${LIFECYCLE_BAD_METADATA_DATE_CASE:-}" ]; then
   cat "${path.join(fixtureRoot, "metadata-")}\${LIFECYCLE_BAD_METADATA_DATE_CASE}.json"
 elif [ "\${LIFECYCLE_MULTI_WORKTREE_METADATA:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Multi-worktree fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Shared split","expiresAt":"2026-08-11T00:00:00.1Z","additionalPaths":["${old}","${live}"]}},"worktrees":[{"branch":"feat/live","path":"${live}","owner":"Kitty","purpose":"Additional fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z","exception":{"owner":"Kitty","reason":"Shared split","expiresAt":"2026-08-11T00:00:00.1Z","additionalPaths":["${live}","${old}"]}}]}}}]'
+  printf '%s\n' '[{"id":"cave-multi","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Multi-worktree fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Shared split","expiresAt":"2026-08-11T00:00:00.1Z","additionalPaths":["${old}","${live}"]}},"worktrees":[{"branch":"feat/live","path":"${live}","owner":"Kitty","purpose":"Additional fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z","exception":{"owner":"Kitty","reason":"Shared split","expiresAt":"2026-08-11T00:00:00.1Z","additionalPaths":["${live}","${old}"]}}]}}}]'
 elif [ "\${LIFECYCLE_MALFORMED_WORKTREES:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Malformed array","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":{}}}}]'
+  printf '%s\n' '[{"id":"cave-multi","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Malformed array","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":{}}}}]'
 elif [ "\${LIFECYCLE_DUPLICATE_WORKTREE_BRANCH:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Duplicate branch","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/old","path":"${live}","owner":"Kitty","purpose":"Duplicate fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
+  printf '%s\n' '[{"id":"cave-multi","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Duplicate branch","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/old","path":"${live}","owner":"Kitty","purpose":"Duplicate fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_DUPLICATE_WORKTREE_PATH:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Duplicate path","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/live","path":"${path.join(old, "..", "old")}","owner":"Kitty","purpose":"Duplicate fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
+  printf '%s\n' '[{"id":"cave-multi","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Duplicate path","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/live","path":"${path.join(old, "..", "old")}","owner":"Kitty","purpose":"Duplicate fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_UNUSABLE_ADDITIONAL_BRANCH:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Unusable branch","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/bad..name","path":"${live}","owner":"Kitty","purpose":"Invalid fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
+  printf '%s\n' '[{"id":"cave-multi","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Unusable branch","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/bad..name","path":"${live}","owner":"Kitty","purpose":"Invalid fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_EXCEPTION_BUDGETS:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${realpathSync(old)}/","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active matched exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${realpathSync(old)}"]}}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${path.join(repo, ".worktrees", "path-mismatch")}","owner":"Kitty","purpose":"Mismatched fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired path mismatch","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${recentMerge}"]}}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired matched exception","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${branchOnlyPath}"]}}}}},{"id":"cave-stale","status":"closed","title":"Stale metadata","metadata":{"coven":{"worktree":{"branch":"feat/stale","path":"${path.join(repo, ".worktrees", "stale")}","owner":"Kitty","purpose":"Stale fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active stale exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${path.join(repo, ".worktrees", "stale")}"]}}}}}]'
+  printf '%s\n' '[{"id":"cave-old","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${realpathSync(old)}/","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active matched exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${realpathSync(old)}"]}}}}},{"id":"cave-recent-merge","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${path.join(repo, ".worktrees", "path-mismatch")}","owner":"Kitty","purpose":"Mismatched fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired path mismatch","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${recentMerge}"]}}}}},{"id":"cave-recent-reflog","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Expired matched exception","expiresAt":"2026-08-10T21:00:00Z","additionalPaths":["${branchOnlyPath}"]}}}}},{"id":"cave-stale","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Stale metadata","metadata":{"coven":{"worktree":{"branch":"feat/stale","path":"${path.join(repo, ".worktrees", "stale")}","owner":"Kitty","purpose":"Stale fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Active stale exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${path.join(repo, ".worktrees", "stale")}"]}}}}}]'
 elif [ "\${LIFECYCLE_LINKED_TASK:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"CAVE-LINK1","status":"open","title":"Unrelated task","description":"","notes":""},{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+  printf '%s\n' '[{"id":"CAVE-LINK1","status":"open","updated_at":"2026-07-27T12:00:00Z","title":"Unrelated task","description":"","notes":""},{"id":"cave-old","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_MISSING_BRANCH_METADATA:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+  printf '%s\n' '[{"id":"cave-old","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_DUPLICATE_METADATA:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"First duplicate exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${branchOnlyPath}"]}}}}},{"id":"cave-branch-only-copy","status":"closed","title":"Branch only duplicate","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Duplicate fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Second duplicate exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${branchOnlyPath}"]}}}}}]'
+  printf '%s\n' '[{"id":"cave-old","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"First duplicate exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${branchOnlyPath}"]}}}}},{"id":"cave-branch-only-copy","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Branch only duplicate","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Duplicate fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Second duplicate exception","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${branchOnlyPath}"]}}}}}]'
 elif [ "\${LIFECYCLE_OPEN_STRUCTURED_TASK:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"open","title":"Unrelated task","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+  printf '%s\n' '[{"id":"cave-old","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"open","updated_at":"2026-07-27T12:00:00Z","title":"Unrelated task","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_OPEN_CONFLICTING_STRUCTURED_PATH:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-other-owner","status":"open","title":"Other branch owner","metadata":{"coven":{"worktree":{"branch":"feat/other-owner","path":"${old}","owner":"Kitty","purpose":"Conflicting fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+  printf '%s\n' '[{"id":"cave-other-owner","status":"open","updated_at":"2026-07-27T12:00:00Z","title":"Other branch owner","metadata":{"coven":{"worktree":{"branch":"feat/other-owner","path":"${old}","owner":"Kitty","purpose":"Conflicting fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_CLOSED_CONFLICTING_STRUCTURED_PATH:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-other-owner","status":"closed","title":"Other branch owner","metadata":{"coven":{"worktree":{"branch":"feat/other-owner","path":"${old}","owner":"Kitty","purpose":"Conflicting fixture","disposition":"archive","createdAt":"2026-07-20T12:00:00Z","reason":"Closed conflict fixture","reviewAfter":"2026-08-11"}}}}]'
+  printf '%s\n' '[{"id":"cave-other-owner","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Other branch owner","metadata":{"coven":{"worktree":{"branch":"feat/other-owner","path":"${old}","owner":"Kitty","purpose":"Conflicting fixture","disposition":"archive","createdAt":"2026-07-20T12:00:00Z","reason":"Closed conflict fixture","reviewAfter":"2026-08-11"}}}}]'
 elif [ "\${LIFECYCLE_SIBLING_STRUCTURED_PATH:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-sibling","status":"open","title":"Open sibling path","metadata":{"coven":{"worktree":{"branch":"feat/sibling","path":"${old}-sibling","owner":"Kitty","purpose":"Sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+  printf '%s\n' '[{"id":"cave-old","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-sibling","status":"open","updated_at":"2026-07-27T12:00:00Z","title":"Open sibling path","metadata":{"coven":{"worktree":{"branch":"feat/sibling","path":"${old}-sibling","owner":"Kitty","purpose":"Sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_SYMLINK_METADATA_ALIAS:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Alias metadata","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${metadataAlias}","owner":"Kitty","purpose":"Alias fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+  printf '%s\n' '[{"id":"cave-old","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Alias metadata","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${metadataAlias}","owner":"Kitty","purpose":"Alias fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_OPEN_SYMLINK_PATH_OWNER:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-alias-owner","status":"open","title":"Alias owner","metadata":{"coven":{"worktree":{"branch":"feat/alias-owner","path":"${metadataAlias}","owner":"Kitty","purpose":"Alias ownership fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+  printf '%s\n' '[{"id":"cave-old","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-alias-owner","status":"open","updated_at":"2026-07-27T12:00:00Z","title":"Alias owner","metadata":{"coven":{"worktree":{"branch":"feat/alias-owner","path":"${metadataAlias}","owner":"Kitty","purpose":"Alias ownership fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_ALIAS_EXCEPTION_BUDGETS:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Lexical exception fixture","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${metadataAlias}"]}}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Lexical exception fixture","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${old}"]}}}}}]'
+  printf '%s\n' '[{"id":"cave-old","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Lexical exception fixture","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${metadataAlias}"]}}}}},{"id":"cave-recent-reflog","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Lexical exception fixture","expiresAt":"2026-08-11T00:00:00Z","additionalPaths":["${old}"]}}}}}]'
 elif [ "\${LIFECYCLE_WHITESPACE_METADATA_PATH:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Whitespace metadata","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old} ","owner":"Kitty","purpose":"Whitespace fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+  printf '%s\n' '[{"id":"cave-old","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Whitespace metadata","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old} ","owner":"Kitty","purpose":"Whitespace fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_NULL_EXCEPTION:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":null}}}}]'
+  printf '%s\n' '[{"id":"cave-old","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-merge","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Recent merge","metadata":{"coven":{"worktree":{"branch":"feat/recent-merge","path":"${recentMerge}","owner":"Kitty","purpose":"Recent fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-recent-reflog","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Recent reflog","metadata":{"coven":{"worktree":{"branch":"feat/recent-reflog","path":"${recentReflog}","owner":"Kitty","purpose":"Reflog fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-branch-only","status":"closed","updated_at":"2026-07-27T12:00:00Z","title":"Branch only","metadata":{"coven":{"worktree":{"branch":"feat/branch-only","path":"${branchOnlyPath}","owner":"Kitty","purpose":"Removed worktree fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":null}}}}]'
 elif [ "\${LIFECYCLE_SPACED_PATH:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-spaced","status":"open","title":"Spaced path","metadata":{"coven":{"worktree":{"branch":"feat/spaced","path":${JSON.stringify(spaced)},"owner":"Kitty","purpose":"Exact path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+  printf '%s\n' '[{"id":"cave-spaced","status":"open","updated_at":"2026-07-27T12:00:00Z","title":"Spaced path","metadata":{"coven":{"worktree":{"branch":"feat/spaced","path":${JSON.stringify(spaced)},"owner":"Kitty","purpose":"Exact path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 else
   cat ${JSON.stringify(path.join(fixtureRoot, "tasks-default.json"))}
 
@@ -1606,7 +1615,12 @@ exit 0
       mergedPr: byBranch.get("feat/old").mergedPr,
     }),
   );
-  assert.equal(byBranch.get("feat/old").mergedPr.number, 42);
+  assert.deepEqual(byBranch.get("feat/old").mergedPr, {
+    number: 42,
+    url: "https://github.com/OpenCoven/coven-cave/pull/42",
+    headOid: oldHead,
+    base: "main",
+  });
   assert.match(
     byBranch.get("feat/old").reasons.join("\n"),
     /maintenance gate/,
@@ -1779,6 +1793,13 @@ exit 0
     /^Budgets:/m,
     "the routine report does not append the legacy combined budget block",
   );
+  const reviewNeededHumanReport = patrol([], { LIFECYCLE_OID_ONLY_TASK: "1" });
+  assert.match(reviewNeededHumanReport, /^review-needed$/m);
+  assert.match(
+    reviewNeededHumanReport,
+    /^  Bead cave-review \(blocked\): Review landed legacy work; updated 2026-07-28T12:00:00Z$/m,
+    "review-needed human output preserves exact Bead evidence",
+  );
 
   const safetyRegressionFailures = [];
   const verifySafetyRegression = (name, check) => {
@@ -1940,8 +1961,16 @@ exit 0
     const oidOwnedBranch = oidOwnerReport.items.find(
       (item) => item.branch === "feat/branch-only",
     );
-    assert.equal(oidOwnedBranch.lane, "active");
-    assert.deepEqual(oidOwnedBranch.taskIds, ["cave-oid-owner"]);
+    assert.equal(oidOwnedBranch.lane, "review-needed");
+    assert.deepEqual(oidOwnedBranch.taskIds, ["cave-review"]);
+    assert.deepEqual(oidOwnedBranch.taskRefs, [
+      {
+        id: "cave-review",
+        title: "Review landed legacy work",
+        status: "blocked",
+        updatedAt: "2026-07-28T12:00:00Z",
+      },
+    ]);
   });
 
   verifySafetyRegression("abbreviated OID is not Bead ownership", () => {
@@ -2240,6 +2269,7 @@ exit 0
       /could not query GitHub — all \d+ commit association quer(?:y|ies) failed:[\s\S]*rate limit/i,
     ],
     ["LIFECYCLE_BAD_TASKS", /Beads inventory returned malformed data/],
+    ["LIFECYCLE_BAD_TASK_UPDATED_AT", /Beads inventory returned malformed data/],
     ["LIFECYCLE_BEADS_STDERR", /Beads inventory omitted records/],
     ["LIFECYCLE_PR_CAP", /exact-head PR search.*(?:cap|1000)/i],
     [
@@ -2651,6 +2681,7 @@ exit 0
     number: 98,
     url: "https://github.com/OpenCoven/coven-cave/pull/98",
     headOid: oldHead,
+    base: "main",
   });
 
   const closedUnmergedReport = JSON.parse(

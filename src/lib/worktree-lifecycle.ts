@@ -29,6 +29,7 @@ export type WorktreePrRef = {
 
 export type WorktreeMergedPrRef = WorktreePrRef & {
   headOid: string;
+  base: string;
 };
 
 export type WorktreeTaskRef = {
@@ -273,16 +274,10 @@ function hardActivityReasons(observation: NormalizedWorktreeLifecycleObservation
   return reasons;
 }
 
-function formatTaskStatus(status: WorktreeTaskRef["status"]): string {
-  return status.replaceAll("_", " ");
-}
-
 function administrativeTaskReasons(observation: NormalizedWorktreeLifecycleObservation): string[] {
   if (observation.taskRefs.length > 0) {
     return observation.taskRefs.map((taskRef) => {
-      const title = taskRef.title.trim();
-      const detail = title.length > 0 ? `: ${title}` : "";
-      return `Bead ${taskRef.id} (${formatTaskStatus(taskRef.status)})${detail}`;
+      return `Bead ${taskRef.id} (${taskRef.status}): ${taskRef.title}; updated ${taskRef.updatedAt}`;
     });
   }
   if (observation.taskIds.length > 0) {

@@ -18,6 +18,7 @@ import {
   type WorktreeObservation,
   type WorktreeProcessOwner,
   type WorktreeRemoteRef,
+  type WorktreeTaskRef,
 } from "../src/lib/worktree-lifecycle.ts";
 import { beadIdsInText } from "../src/lib/beads-pr-management.ts";
 
@@ -114,7 +115,9 @@ type CovenSession = {
 
 type BeadTask = {
   id: string;
-  status: string;
+  status: "open" | "in_progress" | "blocked" | "deferred" | "closed";
+  title: string;
+  updatedAt: string;
   text: string;
   structured: StructuredMetadataRecord[];
   structuredErrors: string[];
@@ -130,6 +133,17 @@ type StructuredMetadataRecord = {
 type StructuredMetadataParse = {
   records: StructuredMetadataRecord[];
   errors: string[];
+};
+
+type RawBeadInventoryTask = {
+  id: string;
+  status: BeadTask["status"];
+  title: string;
+  description?: string | null;
+  notes?: string | null;
+  external_ref?: string | null;
+  updated_at: string;
+  metadata?: unknown;
 };
 
 const ACTIVE_WORKFLOW_STATES = [
@@ -1704,27 +1718,19 @@ function fetchTasks(root: string): { tasks: BeadTask[]; error: string | null } {
     return { tasks: [], error: result.stderr || "Beads inventory unavailable" };
   }
   try {
-    const parsed = parseJson<
-      Array<{
-        id: string;
-        status: string;
-        title?: string;
-        description?: string;
-        notes?: string;
-        external_ref?: string;
-        metadata?: unknown;
-      }>
-    >(result.stdout, "Beads inventory");
+    const parsed = parseJson<RawBeadInventoryTask[]>(result.stdout, "Beads inventory");
     if (
       !Array.isArray(parsed) ||
       !parsed.every(
-        (task) =>
+        (task): task is RawBeadInventoryTask =>
           isRecord(task) &&
           typeof task.id === "string" &&
           task.id.length > 0 &&
           typeof task.status === "string" &&
           BEAD_STATUSES.has(task.status) &&
           typeof task.title === "string" &&
+          typeof task.updated_at === "string" &&
+          isCanonicalRfc3339Instant(task.updated_at) &&
           (task.description === undefined ||
             task.description === null ||
             typeof task.description === "string") &&
@@ -1742,6 +1748,8 @@ function fetchTasks(root: string): { tasks: BeadTask[]; error: string | null } {
         return {
           id: task.id,
           status: task.status,
+          title: task.title,
+          updatedAt: task.updated_at,
           text: [
             task.title ?? "",
             task.description ?? "",
@@ -2206,7 +2214,7 @@ function matchingTasks(
   worktreePath: string | null,
   head: string,
   tasks: BeadTask[],
-): string[] {
+): WorktreeTaskRef[] {
   const matchedBranch =
     branch !== null && !PROTECTED_BRANCHES.has(branch) ? branch : null;
   const branchBeadIds = new Set(matchedBranch ? beadIdsInText(matchedBranch) : []);
@@ -2215,7 +2223,10 @@ function matchingTasks(
 
   const exactOid = new RegExp(`(?:^|[^0-9a-f])${head}(?:$|[^0-9a-f])`, "i");
   return tasks
-    .filter((task) => task.status !== "closed")
+    .filter(
+      (task): task is BeadTask & { status: WorktreeTaskRef["status"] } =>
+        task.status !== "closed",
+    )
     .filter(
       (task) =>
         task.structured.some(
@@ -2231,7 +2242,13 @@ function matchingTasks(
           worktreePath !== null &&
           task.text.includes(worktreePath)),
     )
-    .map((task) => task.id);
+    .map((task) => ({
+      id: task.id,
+      title: task.title,
+      status: task.status,
+      updatedAt: task.updatedAt,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
 }
 
 function metadataFor(
@@ -2630,6 +2647,7 @@ export function collectWorktreeLifecycleInventory(
       ? exactRemoteRef(root, unit.ref)
       : { remoteRef: null, error: null };
     const metadata = metadataFor(unit.branch, unit.path, tasks.tasks);
+    const taskRefs = matchingTasks(unit.branch, unit.path, unit.head, tasks.tasks);
     const openPrs = unitPullRequests
       .filter((pullRequest) => pullRequest.state === "OPEN" || pullRequest.isDraft)
       .map((pullRequest) => ({
@@ -2691,13 +2709,15 @@ export function collectWorktreeLifecycleInventory(
             .map((claim) => claim.agent_id),
         ),
       ],
-      taskIds: matchingTasks(unit.branch, unit.path, unit.head, tasks.tasks),
+      taskIds: taskRefs.map((task) => task.id),
+      taskRefs,
       openPrs,
       mergedPr: exactMerged
         ? {
             number: exactMerged.number,
             url: exactMerged.url,
             headOid: exactMerged.headRefOid,
+            base: exactMerged.baseRefName,
           }
         : null,
       activeWorkflowUrls,
