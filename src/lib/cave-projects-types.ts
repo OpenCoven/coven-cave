@@ -46,7 +46,9 @@ export type CaveProject = {
 
 /** Normalise a project root path to a canonical forward-slash, no-trailing-slash form. */
 export function normalizeProjectRoot(root: string | null | undefined): string {
-  return root?.trim().replace(/\\/g, "/").replace(/\/+$/, "") || "/";
+  const normalized = root?.trim().replace(/\\/g, "/");
+  if (/^[A-Za-z]:\/+$/.test(normalized ?? "")) return `${normalized!.slice(0, 2)}/`;
+  return normalized?.replace(/\/+$/, "") || "/";
 }
 
 export type ProjectRelativePath = {
@@ -55,18 +57,14 @@ export type ProjectRelativePath = {
 };
 
 type AbsolutePathParts = {
+  flavor: "posix" | "drive" | "unc";
   prefix: string;
   segments: string[];
 };
 
-function absolutePathParts(value: string): AbsolutePathParts | null {
-  const normalized = value.trim().replace(/\\/g, "/");
-  const drive = normalized.match(/^([A-Za-z]:)(?:\/|$)/);
-  const prefix = drive ? drive[1]!.toUpperCase() : normalized.startsWith("/") ? "/" : null;
-  if (!prefix) return null;
-  const rest = drive ? normalized.slice(drive[0].length) : normalized.slice(1);
+function normalizedPathSegments(value: string): string[] | null {
   const segments: string[] = [];
-  for (const segment of rest.split("/")) {
+  for (const segment of value.split("/")) {
     if (!segment || segment === ".") continue;
     if (segment === "..") {
       if (!segments.length) return null;
@@ -75,25 +73,71 @@ function absolutePathParts(value: string): AbsolutePathParts | null {
     }
     segments.push(segment);
   }
-  return { prefix, segments };
+  return segments;
 }
 
-function joinedAbsolutePath(parts: AbsolutePathParts): string {
-  const separator = parts.prefix === "/" ? "" : "/";
-  return `${parts.prefix}${separator}${parts.segments.join("/")}` || "/";
+function absolutePathParts(value: string): AbsolutePathParts | null {
+  const normalized = value.trim().replace(/\\/g, "/");
+  const unc = normalized.match(/^\/\/([^/]+)\/([^/]+)(?:\/(.*))?$/);
+  if (unc) {
+    const [, server, share, rest = ""] = unc;
+    if (
+      !server ||
+      !share ||
+      server === "." ||
+      server === "?" ||
+      share === "." ||
+      share === ".."
+    ) {
+      return null;
+    }
+    const segments = normalizedPathSegments(rest);
+    return segments
+      ? { flavor: "unc", prefix: `//${server}/${share}`, segments }
+      : null;
+  }
+  if (normalized.startsWith("//")) return null;
+
+  const drive = normalized.match(/^([A-Za-z]:)\/(.*)$/);
+  if (drive) {
+    const segments = normalizedPathSegments(drive[2] ?? "");
+    return segments
+      ? { flavor: "drive", prefix: drive[1]!.toUpperCase(), segments }
+      : null;
+  }
+  if (/^[A-Za-z]:/.test(normalized)) return null;
+
+  if (!normalized.startsWith("/")) return null;
+  const segments = normalizedPathSegments(normalized.slice(1));
+  return segments ? { flavor: "posix", prefix: "/", segments } : null;
+}
+
+function pathPartEquals(flavor: AbsolutePathParts["flavor"], a: string, b: string): boolean {
+  return flavor === "posix" ? a === b : a.toLocaleLowerCase("en-US") === b.toLocaleLowerCase("en-US");
+}
+
+function rootsEqual(a: AbsolutePathParts, b: AbsolutePathParts): boolean {
+  return a.flavor === b.flavor && pathPartEquals(a.flavor, a.prefix, b.prefix);
+}
+
+function joinedAbsolutePath(root: AbsolutePathParts, relativeSegments: string[]): string {
+  const allSegments = [...root.segments, ...relativeSegments];
+  if (root.flavor === "posix") return `/${allSegments.join("/")}`;
+  return `${root.prefix}/${allSegments.join("/")}`;
 }
 
 /**
  * Resolve one absolute or project-relative path against a project root.
- * Segment comparison prevents sibling-prefix collisions, while resolving
- * relative dot segments refuses traversal above the project boundary.
+ * Structured POSIX/drive/UNC parts prevent sibling-prefix collisions. Windows
+ * roots compare case-insensitively, while relative dot segments may never pop
+ * above the project boundary.
  */
 export function resolvePathWithinProjectRoot(
   projectRoot: string | null | undefined,
   candidatePath: string | null | undefined,
 ): ProjectRelativePath | null {
   if (!projectRoot?.trim() || !candidatePath?.trim() || /[\0\r\n]/.test(candidatePath)) return null;
-  const root = absolutePathParts(normalizeProjectRoot(projectRoot));
+  const root = absolutePathParts(projectRoot);
   if (!root) return null;
 
   const normalizedCandidate = candidatePath.trim().replace(/\\/g, "/");
@@ -102,6 +146,7 @@ export function resolvePathWithinProjectRoot(
   if (absoluteCandidate) {
     candidate = absoluteCandidate;
   } else {
+    if (normalizedCandidate.startsWith("/") || /^[A-Za-z]:/.test(normalizedCandidate)) return null;
     const segments = [...root.segments];
     for (const segment of normalizedCandidate.split("/")) {
       if (!segment || segment === ".") continue;
@@ -112,20 +157,42 @@ export function resolvePathWithinProjectRoot(
       }
       segments.push(segment);
     }
-    candidate = { prefix: root.prefix, segments };
+    candidate = { flavor: root.flavor, prefix: root.prefix, segments };
   }
 
   if (
-    candidate.prefix !== root.prefix ||
+    !rootsEqual(candidate, root) ||
     candidate.segments.length <= root.segments.length ||
-    root.segments.some((segment, index) => candidate.segments[index] !== segment)
+    root.segments.some(
+      (segment, index) => !pathPartEquals(root.flavor, candidate.segments[index] ?? "", segment),
+    )
   ) {
     return null;
   }
+  const relativeSegments = candidate.segments.slice(root.segments.length);
   return {
-    absolutePath: joinedAbsolutePath(candidate),
-    relativePath: candidate.segments.slice(root.segments.length).join("/"),
+    absolutePath: joinedAbsolutePath(root, relativeSegments),
+    relativePath: relativeSegments.join("/"),
   };
+}
+
+/** Client-safe absolute-path classification for POSIX, drive, and UNC paths. */
+export function isAbsoluteProjectPath(value: string | null | undefined): value is string {
+  return typeof value === "string" && absolutePathParts(value) !== null;
+}
+
+/** Deduplicate absolute paths using the case semantics of their path flavor. */
+export function dedupeAbsoluteProjectPaths(paths: readonly string[]): string[] {
+  const seen = new Set<string>();
+  return paths.flatMap((path) => {
+    const parts = absolutePathParts(path);
+    if (!parts) return [];
+    const normalized = joinedAbsolutePath(parts, []);
+    const key = parts.flavor === "posix" ? normalized : normalized.toLocaleLowerCase("en-US");
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [path];
+  });
 }
 
 export function compareProjectsAlphabetically(a: CaveProject, b: CaveProject): number {

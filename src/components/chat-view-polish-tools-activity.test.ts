@@ -281,8 +281,18 @@ assert.match(
 // the working-tree review, riding the per-card cave:open-file-diff contract.
 assert.match(
   turnRow,
-  /const editedFiles = Array\.from\(\s*new Set\(\s*editCards\s*\.map\(\(tool\) =>\s*actionReadyMutationTargetFile\(tool\.name, tool\.input, tool\.status, toolProjectRoot\)\s*\)/,
-  "the aggregate counts distinct action-ready successful files within the active project boundary",
+  /const editedFiles = dedupeAbsoluteProjectPaths\(\s*editCards\.flatMap\(\(tool\) =>\s*actionReadyMutationTargetFiles\([\s\S]*?toolProjectRoot,[\s\S]*?\)\s*,?\s*\)\s*,?\s*\)/,
+  "the aggregate counts every distinct action-ready file within the turn's captured project boundary",
+);
+assert.match(
+  source,
+  /sessionToolProjectRootForIdentity\([\s\S]*sessionToolProjectRootsRef\.current,[\s\S]*sessionId,[\s\S]*session\?\.runtime,[\s\S]*session\?\.project_root,[\s\S]*\)[\s\S]*turnToolProjectRoot\(turn, sessionProjectRoot\)/,
+  "tool actions use per-turn execution metadata with the session root only as a legacy fallback",
+);
+assert.doesNotMatch(
+  source,
+  /projectRootSnapshotForIdentity|turnProjectRoots[\s\S]{0,500}activeProjectRoot/,
+  "historical tool roots are never snapshotted from the mutable active project selection",
 );
 assert.match(
   turnRow,

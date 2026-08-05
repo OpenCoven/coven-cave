@@ -36,7 +36,10 @@ import {
   writeCodeReadingPin,
 } from "@/lib/code-reading-pref";
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
-import { resolvePathWithinProjectRoot } from "@/lib/cave-projects-types";
+import {
+  dedupeAbsoluteProjectPaths,
+  resolvePathWithinProjectRoot,
+} from "@/lib/cave-projects-types";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { ChatSessionContextRow } from "@/components/chat-session-context-row";
@@ -74,8 +77,10 @@ import {
   readLiveChatGeneration,
   recordLiveChatGeneration,
   retryTurnModelRequest,
+  sessionToolProjectRootForIdentity,
   stageLiveChatGenerationMetadata,
   subscribeLiveChatGeneration,
+  turnToolProjectRoot,
   type ChatTurnLifecycle,
   type ConversationHistoryPayload,
   type LiveChatGenerationMetadata,
@@ -255,7 +260,7 @@ import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/
 import { useShowThinking } from "@/lib/reasoning-visibility";
 import { useThreadInstrumentsVisible } from "@/lib/thread-instruments-visibility";
 import {
-  actionReadyMutationTargetFile,
+  actionReadyMutationTargetFiles,
   isFileMutationActionReady,
   normalizeFileMutation,
   toolTargetFile,
@@ -2380,6 +2385,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     session?.project_root ??
     projectRoot ??
     "";
+  const sessionToolProjectRootsRef = useRef(new Map<string, string | null>());
   // ── Code reading (cave-f6mu9) ─────────────────────────────────────────────
   // A code block in the transcript is a claim about a file; the inspector is
   // where the reader checks it against the working tree and carries lines back
@@ -3666,6 +3672,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!activeLeafId) return turns;
     return resolveActivePath(turns, activeLeafId) as Turn[];
   }, [turns, activeLeafId]);
+  const sessionProjectRoot = sessionToolProjectRootForIdentity(
+    sessionToolProjectRootsRef.current,
+    sessionId,
+    session?.runtime,
+    session?.project_root,
+  );
+  const turnProjectRoots = useMemo(
+    () => new Map(turns.map((turn) => [turn.id, turnToolProjectRoot(turn, sessionProjectRoot)])),
+    [sessionProjectRoot, turns],
+  );
 
   // The last settled assistant turn's first reply next-path. Typed task/action
   // suggestions are deliberately excluded: keyboard fill may only prepare
@@ -7382,7 +7398,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       />
       ) : null}
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
-      <ToolProjectRootContext.Provider value={activeProjectRoot || null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <CodeReadingContext.Provider value={codeReading}>
       {/* Row, so a `split` inspector docks BESIDE the transcript and narrows it
@@ -7532,6 +7547,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             onOpenUrl={onOpenUrl}
             handlersRef={transcriptHandlersRef}
             followUpTurnId={followUp.turnId}
+            turnProjectRoots={turnProjectRoots}
           />
           {shouldShowChatArchiveNudge({
             taskLifecycle: linkedContext?.task?.lifecycle ?? null,
@@ -7619,7 +7635,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       </div>
       </CodeReadingContext.Provider>
       </FileLinkResolverContext.Provider>
-      </ToolProjectRootContext.Provider>
 
       {reflectError ? (
         <div
@@ -7979,6 +7994,7 @@ const TranscriptRows = memo(function TranscriptRows({
   onOpenUrl,
   handlersRef,
   followUpTurnId,
+  turnProjectRoots,
 }: {
   groupedTurns: TranscriptGroup[];
   turnIndexMap: Map<string, number>;
@@ -7995,6 +8011,7 @@ const TranscriptRows = memo(function TranscriptRows({
   /** The turn whose follow-up pills render above the composer instead of
    *  in-turn (chat-revamp 1b) — TurnRow suppresses its own row for it. */
   followUpTurnId: string | null;
+  turnProjectRoots: ReadonlyMap<string, string | null>;
 }) {
   const handlers = () => handlersRef.current;
   // Render cap (TRANSCRIPT_RENDER_CAP): while pinned to the bottom, only
@@ -8050,6 +8067,7 @@ const TranscriptRows = memo(function TranscriptRows({
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
           branchNav={singleBranchNav}
           suppressSuggestions={t.id === followUpTurnId}
+          toolProjectRoot={turnProjectRoots.get(t.id) ?? null}
         />
       );
     }
@@ -8103,6 +8121,7 @@ const TranscriptRows = memo(function TranscriptRows({
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
               branchNav={groupBranchNav}
               suppressSuggestions={t.id === followUpTurnId}
+              toolProjectRoot={turnProjectRoots.get(t.id) ?? null}
             />
           );
         })}
@@ -8134,6 +8153,7 @@ function TurnRowImpl({
   feedbackContext,
   branchNav,
   suppressSuggestions = false,
+  toolProjectRoot,
 }: {
   turn: Turn;
   onSuggestion?: (path: NextPath) => void;
@@ -8169,10 +8189,11 @@ function TurnRowImpl({
   feedbackContext?: FeedbackContext;
   /** Branch navigator: shown when this turn has siblings (alternate branches). */
   branchNav?: { index: number; total: number; onPrev: () => void; onNext: () => void };
+  /** Immutable local execution root recorded for this turn, when available. */
+  toolProjectRoot: string | null;
 }) {
   const profileSnapshot = useUserProfile();
   const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
-  const toolProjectRoot = useContext(ToolProjectRootContext);
   // Tool UI keeps the same render slots for the turn's lifetime: non-edit calls
   // stay in one compact ToolGroup above the answer, while edit cards stay below
   // it. Settlement updates those instances instead of relocating them.
@@ -8454,6 +8475,7 @@ function TurnRowImpl({
           </div>
 
           <div className="cave-linear-turn-body">
+            <ToolProjectRootContext.Provider value={toolProjectRoot}>
             <ChatToolActivityLayout
               leading={
                 reasoning
@@ -8542,13 +8564,14 @@ function TurnRowImpl({
                       // chip rides the cards' existing cave:open-file-diff
                       // contract (the Changes panel suffix-matches the path and
                       // shows every changed file once open).
-                      const editedFiles = Array.from(
-                        new Set(
-                          editCards
-                            .map((tool) =>
-                              actionReadyMutationTargetFile(tool.name, tool.input, tool.status, toolProjectRoot)
-                            )
-                            .filter((p): p is string => Boolean(p)),
+                      const editedFiles = dedupeAbsoluteProjectPaths(
+                        editCards.flatMap((tool) =>
+                          actionReadyMutationTargetFiles(
+                            tool.name,
+                            tool.input,
+                            tool.status,
+                            toolProjectRoot,
+                          ),
                         ),
                       );
                       return (
@@ -8583,6 +8606,7 @@ function TurnRowImpl({
                   : null
               }
             />
+            </ToolProjectRootContext.Provider>
             {/* Typed follow-ups render LAST — reply fills the composer, task
                 opens review, and action routes to Tasks; they sit closest to
                 the composer and aren't pushed up by tool activity. */}
@@ -8912,10 +8936,8 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
   );
 }
 
-// The active session's project root, provided by ChatView so the inline edit
-// card can convert an absolute target path into the repo-relative path that the
-// `/api/changes` revert endpoint requires — without prop-threading through the
-// five ToolBlock/ToolGroup render sites.
+// Each assistant turn provides its recorded execution root. A session root is
+// used only for legacy turns with no per-turn response metadata.
 const ToolProjectRootContext = createContext<string | null>(null);
 
 // Review + Undo actions for a normalized inline mutation card. Review adapts to
@@ -8930,18 +8952,29 @@ const ToolProjectRootContext = createContext<string | null>(null);
 // accidental one-click revert, and is only offered when the target resolves to
 // a repo-relative path under the project root.
 function EditCardActions({
-  targetFile,
+  projectRoot,
+  mutationPath,
+  mutationPaths,
   diff,
   displayPath,
 }: {
-  targetFile: string | null;
+  projectRoot: string | null;
+  mutationPath: string | null;
+  mutationPaths: string[];
   diff: string;
   displayPath: string;
 }) {
-  const projectRoot = useContext(ToolProjectRootContext);
-  const projectPath = resolvePathWithinProjectRoot(projectRoot, targetFile ?? displayPath);
+  const resolvedMutationPaths = mutationPaths
+    .map((path) => resolvePathWithinProjectRoot(projectRoot, path))
+    .filter((path): path is NonNullable<typeof path> => path !== null);
+  const allMutationPathsResolved =
+    mutationPaths.length > 0 && resolvedMutationPaths.length === mutationPaths.length;
+  const projectPath = allMutationPathsResolved && mutationPath === mutationPaths[0]
+    ? resolvedMutationPaths[0] ?? null
+    : null;
   const relPath = projectPath?.relativePath ?? null;
   const resolvedTargetFile = projectPath?.absolutePath ?? null;
+  const canUndo = allMutationPathsResolved && resolvedMutationPaths.length === 1 && relPath !== null;
   const [state, setState] = useState<"idle" | "armed" | "reverting" | "reverted" | "error">("idle");
   const [err, setErr] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -8956,7 +8989,7 @@ function EditCardActions({
   };
 
   const doUndo = async () => {
-    if (!projectRoot || !relPath) return;
+    if (!projectRoot || !canUndo || !relPath) return;
     setState("reverting");
     setErr(null);
     try {
@@ -9003,7 +9036,7 @@ function EditCardActions({
           <SyntaxBlock text={diff} lang="diff" />
         </div>
       </Modal>
-      {relPath ? (
+      {canUndo ? (
         state === "reverted" ? (
           <span className="cave-edit-card__reverted">Reverted</span>
         ) : state === "reverting" ? (
@@ -9045,7 +9078,9 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   // placement, path, diff rendering, and action readiness.
   const mutation = normalizeFileMutation(tool.name, tool.input);
   const inputDiff = mutation?.diff ?? null;
-  const targetPath = mutation ? mutation.path : toolTargetPath(tool.name, tool.input);
+  const targetPath = mutation
+    ? mutation.path ?? (mutation.paths.length > 1 ? `${mutation.paths.length} files` : null)
+    : toolTargetPath(tool.name, tool.input);
   // Click-to-open: a file tool's target opens in the Code workspace preview.
   // Dispatched as an event; the comux pane (Code/Terminal) handles it, and the
   // workspace switches to Code mode first when neither is showing.
@@ -9054,6 +9089,9 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   // other addressable file tools open the file preview.
   const isEditTool = inputDiff != null;
   const actionReady = mutation && isFileMutationActionReady(mutation, tool.status);
+  const actionIdentity = mutation
+    ? [tool.id, ...mutation.paths].join("\0")
+    : tool.id;
   const openTargetFile = (e: ReactMouseEvent) => {
     if (!targetFile) return;
     e.preventDefault();
@@ -9095,7 +9133,14 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
           </span>
           <DurationText durationMs={tool.durationMs} />
           {actionReady ? (
-            <EditCardActions targetFile={targetFile} diff={inputDiff ?? ""} displayPath={displayPath} />
+            <EditCardActions
+              key={actionIdentity}
+              projectRoot={railRoot}
+              mutationPath={mutation.path}
+              mutationPaths={mutation.paths}
+              diff={inputDiff ?? ""}
+              displayPath={displayPath}
+            />
           ) : null}
         </summary>
         <div className="cave-tool-io mt-2">
@@ -9232,6 +9277,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     prev.found === next.found &&
     prev.expanded === next.expanded &&
     prev.suppressSuggestions === next.suppressSuggestions &&
+    prev.toolProjectRoot === next.toolProjectRoot &&
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
     Boolean(prev.onReply) === Boolean(next.onReply) &&

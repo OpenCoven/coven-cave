@@ -12,7 +12,11 @@
 // already minimal context by construction (the harness requires a unique
 // match), so a full-block -/+ diff is faithful.
 
-import { resolvePathWithinProjectRoot } from "./cave-projects-types.ts";
+import {
+  dedupeAbsoluteProjectPaths,
+  isAbsoluteProjectPath,
+  resolvePathWithinProjectRoot,
+} from "./cave-projects-types.ts";
 
 /** Tool names whose input mutates a file (case-insensitive exact match). */
 const MUTATION_TOOLS = new Set([
@@ -53,20 +57,28 @@ function parseRecord(input?: string | null): Rec | null {
   }
 }
 
-/** Best-effort file path from repository adapter mutation schemas. */
-function filePathOf(record: Rec): string | null {
+function uniquePaths(paths: Array<string | null>): string[] {
+  const seen = new Set<string>();
+  return paths.flatMap((path) => {
+    if (!path || seen.has(path)) return [];
+    seen.add(path);
+    return [path];
+  });
+}
+
+/** Best-effort file paths from repository adapter mutation schemas. */
+function filePathsOf(record: Rec): string[] {
   const direct =
     validPath(record.file_path) ??
     validPath(record.path) ??
     validPath(record.notebook_path);
-  if (direct) return direct;
-  if (!Array.isArray(record.changes)) return null;
+  const paths: Array<string | null> = [direct];
+  if (!Array.isArray(record.changes)) return uniquePaths(paths);
   for (const change of record.changes) {
     if (!change || typeof change !== "object" || Array.isArray(change)) continue;
-    const path = validPath((change as Rec).path);
-    if (path) return path;
+    paths.push(validPath((change as Rec).path));
   }
-  return null;
+  return uniquePaths(paths);
 }
 
 function prefixLines(text: string, prefix: "+" | "-"): string[] {
@@ -99,14 +111,43 @@ function patchTextOf(toolName: string, record: Rec): string | null {
   return str(record.input) ?? str(record.patch) ?? str(record.diff) ?? null;
 }
 
-function patchPathOf(patch: string | null): string | null {
-  if (!patch) return null;
+type PatchOperation = {
+  kind: "Add" | "Update" | "Delete";
+  path: string;
+  moveTo: string | null;
+};
+
+function patchOperations(patch: string | null): PatchOperation[] {
+  if (!patch) return [];
+  const operations: PatchOperation[] = [];
+  let current: PatchOperation | null = null;
   for (const line of patch.split(/\r?\n/)) {
-    const marker = line.trim().match(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/);
-    const path = validPath(marker?.[1]);
-    if (path) return path;
+    const marker = line.trim().match(/^\*\*\* (Add|Update|Delete) File: (.+)$/);
+    const path = validPath(marker?.[2]);
+    if (marker && path) {
+      current = {
+        kind: marker[1] as PatchOperation["kind"],
+        path,
+        moveTo: null,
+      };
+      operations.push(current);
+      continue;
+    }
+    const move = line.trim().match(/^\*\*\* Move to: (.+)$/);
+    const moveTo = validPath(move?.[1]);
+    if (moveTo && current?.kind === "Update") current.moveTo = moveTo;
   }
-  return null;
+  return operations;
+}
+
+function patchPaths(operations: PatchOperation[]): string[] {
+  return uniquePaths(
+    operations.flatMap((operation) =>
+      operation.moveTo
+        ? [operation.moveTo, operation.path]
+        : [operation.path],
+    ),
+  );
 }
 
 function capLines(lines: string[]): string {
@@ -160,6 +201,8 @@ export type FileMutationDescriptor = {
   name: string;
   /** Displayable path, including relative paths. */
   path: string | null;
+  /** Every affected path, with a move destination first for its operation. */
+  paths: string[];
   /** Absolute path suitable for the Code workspace. */
   targetFile: string | null;
   /** Structured diff only when the payload contains actual before/after data. */
@@ -180,18 +223,34 @@ export function normalizeFileMutation(
   const normalizedName = name.trim().toLowerCase();
   if (!MUTATION_TOOLS.has(normalizedName)) return null;
   const record = parseRecord(input);
-  const patch = record ? patchTextOf(normalizedName, record) : null;
-  const path = record ? filePathOf(record) ?? patchPathOf(patch) : null;
   const raw = (input ?? "").trim();
+  const patch = record
+    ? patchTextOf(normalizedName, record)
+    : PATCH_TOOLS.has(normalizedName) && raw && !raw.startsWith("{")
+      ? raw
+      : null;
+  const operations = patchOperations(patch);
+  const operationPaths = patchPaths(operations);
+  const recordPaths = record ? filePathsOf(record) : [];
+  const primaryPath =
+    operations[0]?.moveTo ??
+    operations[0]?.path ??
+    recordPaths[0] ??
+    null;
+  const paths = uniquePaths([
+    primaryPath,
+    ...(operationPaths.length ? operationPaths : recordPaths),
+  ]);
   const diff = record
-    ? mutationDiff(record, path ?? "file", normalizedName)
+    ? mutationDiff(record, primaryPath ?? "file", normalizedName)
     : PATCH_TOOLS.has(normalizedName) && raw && !raw.startsWith("{")
       ? capLines(raw.split("\n"))
       : null;
   return {
     name: normalizedName,
-    path,
-    targetFile: path?.startsWith("/") ? path : null,
+    path: primaryPath,
+    paths,
+    targetFile: isAbsoluteProjectPath(primaryPath) ? primaryPath : null,
     diff,
   };
 }
@@ -206,19 +265,33 @@ export function isFileMutationActionReady(
   mutation: FileMutationDescriptor,
   status: "running" | "ok" | "error",
 ): mutation is FileMutationDescriptor & { path: string; diff: string } {
-  return status === "ok" && mutation.path !== null && mutation.diff !== null;
+  return status === "ok" && mutation.path !== null && mutation.paths.length > 0 && mutation.diff !== null;
 }
 
-/** Project-contained review target only when the mutation is successful and complete. */
+/** Project-contained review targets only when the complete mutation is safe. */
+export function actionReadyMutationTargetFiles(
+  name: string,
+  input: string | null | undefined,
+  status: "running" | "ok" | "error",
+  projectRoot: string | null | undefined,
+): string[] {
+  const mutation = normalizeFileMutation(name, input);
+  if (!mutation || !isFileMutationActionReady(mutation, status)) return [];
+  const resolved = mutation.paths.map((path) =>
+    resolvePathWithinProjectRoot(projectRoot, path)?.absolutePath ?? null
+  );
+  if (resolved.some((path) => path === null)) return [];
+  return dedupeAbsoluteProjectPaths(resolved as string[]);
+}
+
+/** Primary contained target retained for single-file consumers. */
 export function actionReadyMutationTargetFile(
   name: string,
   input: string | null | undefined,
   status: "running" | "ok" | "error",
   projectRoot: string | null | undefined,
 ): string | null {
-  const mutation = normalizeFileMutation(name, input);
-  if (!mutation || !isFileMutationActionReady(mutation, status)) return null;
-  return resolvePathWithinProjectRoot(projectRoot, mutation.path)?.absolutePath ?? null;
+  return actionReadyMutationTargetFiles(name, input, status, projectRoot)[0] ?? null;
 }
 
 /** Convert a recognized file mutation into unified-diff-style text. */
@@ -236,7 +309,7 @@ export function toolTargetPath(name: string, input?: string | null): string | nu
   if (mutation) return mutation.path;
   if (name.trim().toLowerCase() !== "read") return null;
   const record = parseRecord(input);
-  return record ? filePathOf(record) : null;
+  return record ? filePathsOf(record)[0] ?? null : null;
 }
 
 /**
@@ -247,5 +320,5 @@ export function toolTargetPath(name: string, input?: string | null): string | nu
  */
 export function toolTargetFile(name: string, input?: string | null): string | null {
   const path = toolTargetPath(name, input);
-  return path && path.startsWith("/") ? path : null;
+  return isAbsoluteProjectPath(path) ? path : null;
 }
