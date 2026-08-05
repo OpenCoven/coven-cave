@@ -183,6 +183,11 @@ assert.match(
   "split-pane provenance reaches every conversation-originated tool emitter",
 );
 assert.match(
+  chatView,
+  /reconcileCodeReadingTargetRoot\(\s*current,\s*sessionId,\s*turnProjectRoots,\s*liveSessionIdRef\.current,\s*\)/,
+  "reader provenance promotion is correlated to the live session created by this ChatView",
+);
+assert.match(
   codeRoom,
   /sessionsLoaded=\{context\.runtimeState\.sessionsLoaded\}[\s\S]*pendingOpen=\{pendingOpen\}[\s\S]*onPendingOpenHandled=\{clearPendingCodeOpen\}/,
   "the Code room should pass session readiness and pending opens into CodeView",
