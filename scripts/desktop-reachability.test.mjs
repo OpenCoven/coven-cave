@@ -146,6 +146,11 @@ assert.match(
   "window teardown must hand off to launchd only after stopping the owned sidecar",
 );
 assert.match(
+  setup,
+  /stop_after_startup_error\(error\)[\s\S]*fatal_exit\(&error\)/,
+  "Non-Windows startup failure should reap the owned sidecar before fatal exit",
+);
+assert.match(
   lifecycle,
   /pub\(super\) fn id\(&self\) -> u32/,
   "power assertions must bind to the exact owned sidecar process",
