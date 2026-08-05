@@ -105,12 +105,17 @@ assert.doesNotMatch(workspace, /lastNonChatMode/, "workspace should not track an
 assert.match(chatView, /setProjectAccessRoot/, "chat-view should capture failing project root on 403");
 assert.match(chatView, /async function handleAddProject/, "chat-view should implement add-project recovery");
 
-// Workspace owns one stable refresh callback. ChatView retains that callback
-// after unmount, and its ref-backed scope lookup keeps late completions current.
+// ChatView uses the stable Workspace callback directly, including for a
+// completion retained past keyed unmount.
 assert.doesNotMatch(
-  `${workspace}\n${chatView}`,
-  new RegExp(["cave", "sessions-refresh"].join(":")),
-  "the direct ChatView → ChatRouter → Workspace callback is the only session refresh path",
+  chatView,
+  /cave:sessions-refresh/,
+  "ChatView does not introduce a second global sessions-refresh mechanism",
+);
+assert.doesNotMatch(
+  workspace,
+  /cave:sessions-refresh/,
+  "Workspace keeps the callback chain as the single explicit refresh mechanism",
 );
 assert.match(
   workspace,

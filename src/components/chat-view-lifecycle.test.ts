@@ -743,8 +743,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const onSessionsChangedRef = useRef\(onSessionsChanged\);\s*\n\s*onSessionsChangedRef\.current = onSessionsChanged;\s*\n\s*useEffect\(\(\) => \{\s*\n\s*return \(\) => \{\s*\n\s*displayedCreationRunIdRef\.current = null;\s*\n\s*\};\s*\n\s*\}, \[\]\);/,
-  "the callback ref stays render-synchronized while unmount cleanup only releases compose ownership",
+  /const onSessionsChangedRef = useRef\(onSessionsChanged\);\s*\n\s*onSessionsChangedRef\.current = onSessionsChanged;\s*\n\s*useLayoutEffect\(\(\) => \{\s*\n\s*return \(\) => \{\s*\n\s*displayedCreationRunIdRef\.current = null;\s*\n\s*\};\s*\n\s*\}, \[\]\);/,
+  "the callback ref stays render-synchronized while layout cleanup synchronously releases compose ownership",
 );
 // Set to runId at the start of every send so resumed replacements also lose
 // promotion authority when unmount/thread-switch cleanup clears the slot.
@@ -764,25 +764,23 @@ assert.match(
   );
 }
 {
-  // onSessionStarted is gated on BOTH display ownership AND null origin. Only a
-  // sessionless generation (originSessionId === null) that owns the displayed
-  // compose may promote the router. Non-null-origin replacement/fork runs must
-  // never call onSessionStarted — only sessions refresh is dispatched via the
-  // done handler's shouldReplacementRefresh path.
+  // The behavioral helper requires BOTH display ownership AND null origin.
+  // Non-null-origin replacement/fork runs must never call onSessionStarted —
+  // only sessions refresh is dispatched via shouldReplacementRefresh.
   const notifyChecks = source.match(
-    /if \(owned && liveGeneration\.originSessionId === null\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);\s*\n\s*\}/g,
+    /const shouldPromote = canPromoteDisplayedSession\(\{[\s\S]*?currentSessionId: currentSessionRef\.current,[\s\S]*?originSessionId: liveGeneration\.originSessionId,[\s\S]*?runId: liveGeneration\.runId,[\s\S]*?displayedCreationRunId: displayedCreationRunIdRef\.current,[\s\S]*?\}\);[\s\S]*?if \(shouldPromote\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);\s*\n\s*\}/g,
   );
   assert.ok(
     notifyChecks && notifyChecks.length === 2,
-    "session and done events call onSessionStarted only for null-origin generations that own the displayed view (non-null-origin forks must not notify the router)",
+    "session and done events call onSessionStarted only through the null-origin display-ownership predicate",
   );
 }
 // A background non-null-origin fork must never trigger router promotion via a
 // raw owned-only guard — the null-origin check is required in both event paths.
 assert.doesNotMatch(
   source,
-  /if \(owned\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);\s*\n\s*\}/,
-  "onSessionStarted is never called on the raw owned-only path — null-origin guard is required in both session and done handlers",
+  /if \(owned(?: && liveGeneration\.originSessionId === null)?\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);/,
+  "onSessionStarted is never called from an ad hoc ownership condition; both event paths use the promotion predicate",
 );
 
 assert.match(
@@ -889,8 +887,13 @@ assert.match(
 );
 assert.doesNotMatch(
   source,
-  new RegExp(["cave", "sessions-refresh"].join(":")),
-  "ChatView uses the callback chain directly and has no session-refresh event fallback",
+  /cave:sessions-refresh/,
+  "session refreshes stay on the ChatView → ChatRouter → Workspace callback chain",
+);
+assert.match(
+  source,
+  /useLayoutEffect\(\(\) => \{\s*\n\s*return \(\) => \{\s*\n\s*displayedCreationRunIdRef\.current = null;/,
+  "keyed compose replacement synchronously revokes the old view's display ownership",
 );
 assert.match(
   source,

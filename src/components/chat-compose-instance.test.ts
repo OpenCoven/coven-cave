@@ -14,6 +14,8 @@
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createElement, useLayoutEffect, useRef, useState } from "react";
+import { act, create } from "react-test-renderer";
 
 const routerSource = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const viewSource = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
@@ -129,39 +131,7 @@ assert.doesNotMatch(
   "onVoiceSessionCreated must NOT increment composeInstance — it is a promotion, not a new compose",
 );
 
-// ── 9. composeInstance is passed to the primary ChatView ─────────────────────
-
-assert.match(
-  routerSource,
-  /composeInstance=\{composeInstance\}/,
-  "ChatRouter must pass composeInstance to ChatView",
-);
-
-// ── 10. ChatView accepts composeInstance prop ─────────────────────────────────
-
-assert.match(
-  viewSource,
-  /composeInstance\?: number/,
-  "ChatView Props must include composeInstance as an optional number",
-);
-
-// ── 11. ChatView clears displayedCreationRunIdRef when nonce changes ──────────
-
-const composeInstanceEffect =
-  viewSource.match(/isFirstComposeInstanceRef[\s\S]*?displayedCreationRunIdRef\.current = null[\s\S]*?\}, \[composeInstance\]\)/)?.[0] ?? "";
-
-assert.ok(
-  composeInstanceEffect.length > 0,
-  "ChatView must have an effect keyed on [composeInstance] that clears displayedCreationRunIdRef",
-);
-
-assert.match(
-  composeInstanceEffect,
-  /isFirstComposeInstanceRef\.current[\s\S]*?return/,
-  "The composeInstance effect must skip its first run (first mount is not a compose switch)",
-);
-
-// ── 12. Primary ChatView is keyed by composeInstance ──────────────────────────
+// ── 9. Primary ChatView is keyed by composeInstance ───────────────────────────
 
 const primaryChatViewRendering =
   routerSource.match(/<ChatView[\s\S]*?key=\{[^}]*composeInstance[^}]*\}[\s\S]*?\/>/)?.[0] ?? "";
@@ -171,7 +141,7 @@ assert.ok(
   "Primary ChatView must have a key prop that includes composeInstance so it remounts on nonce change",
 );
 
-// ── 13. Session promotion does NOT cause a remount (key uses composeInstance, not sessionId) ──
+// ── 10. Session promotion does NOT cause a remount ─────────────────────────────
 
 assert.doesNotMatch(
   primaryChatViewRendering,
@@ -179,7 +149,90 @@ assert.doesNotMatch(
   "ChatView key must not include sessionId — session promotion (null→assigned) must not remount",
 );
 
-// ── 14. viewRef kept in sync ──────────────────────────────────────────────────
+assert.match(
+  primaryChatViewRendering,
+  /key=\{`chat-compose-\$\{composeInstance\}`\}/,
+  "The primary ChatView key must name the stable compose lineage rather than using an opaque numeric key",
+);
+
+// ── 11. Changing the compose key unmounts all old local state synchronously ───
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+const mountedInstances: Array<{
+  label: string;
+  transcript: string[];
+  stream: { aborted: boolean };
+}> = [];
+const unmountedInstances: string[] = [];
+
+function StatefulChatViewProbe({ label }: { label: string }) {
+  const [transcript] = useState([label]);
+  const stream = useRef({ aborted: false });
+
+  useLayoutEffect(() => {
+    mountedInstances.push({ label, transcript, stream: stream.current });
+    return () => {
+      stream.current.aborted = true;
+      unmountedInstances.push(label);
+    };
+  }, []);
+
+  return createElement("div", null, transcript.join(""));
+}
+
+let renderer;
+await act(async () => {
+  renderer = create(createElement(StatefulChatViewProbe, {
+    key: "chat-compose-1",
+    label: "old transcript",
+  }));
+});
+const oldInstance = mountedInstances[0];
+
+await act(async () => {
+  renderer.update(createElement(StatefulChatViewProbe, {
+    key: "chat-compose-2",
+    label: "fresh transcript",
+  }));
+});
+
+assert.deepEqual(unmountedInstances, ["old transcript"], "null→null compose key change unmounts the old ChatView");
+assert.equal(oldInstance.stream.aborted, true, "old ChatView stream cleanup runs during keyed replacement");
+assert.deepEqual(
+  mountedInstances[1]?.transcript,
+  ["fresh transcript"],
+  "the replacement ChatView starts with isolated transcript state",
+);
+
+await act(async () => {
+  renderer.update(createElement(StatefulChatViewProbe, {
+    key: "chat-compose-2",
+    label: "ordinary active-session rerender",
+  }));
+});
+
+assert.deepEqual(
+  unmountedInstances,
+  ["old transcript"],
+  "an ordinary rerender in the same compose lineage does not remount ChatView",
+);
+assert.deepEqual(
+  mountedInstances[1]?.transcript,
+  ["fresh transcript"],
+  "ordinary active-session rerenders retain the current transcript",
+);
+
+await act(async () => renderer.unmount());
+
+// ── 12. ChatView relies on keyed unmount, not passive nonce observation ────────
+
+assert.doesNotMatch(
+  viewSource,
+  /composeInstance\?: number|isFirstComposeInstanceRef|\[composeInstance\]/,
+  "ChatView must not passively observe composeInstance; the router key owns compose replacement",
+);
+
+// ── 13. viewRef kept in sync ──────────────────────────────────────────────────
 
 assert.match(
   routerSource,
