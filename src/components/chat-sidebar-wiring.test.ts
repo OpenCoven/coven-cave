@@ -148,8 +148,33 @@ assert.doesNotMatch(
 );
 assert.match(
   chatView,
-  /if \(!attentionRestoreTriggered && attentionNeedsRestore && !persistedHumanTurn\) \{\s*attentionRestoreTriggered = true;\s*onSessionsChanged\?\.\(\);\s*\}/,
-  "chat-view should restore canonical attention once when a send fails before the human turn is persisted",
+  /import \{ createChatAttentionSettlementTracker \} from "@\/lib\/chat-attention-settlement";/,
+  "chat-view should use the shared attention-settlement tracker",
+);
+assert.match(
+  chatView,
+  /const attentionSettlement = createChatAttentionSettlementTracker\(\(\) => onSessionsChanged\?\.\(\)\);/,
+  "chat-view should centralize sidebar-attention reconciliation through one tracker",
+);
+assert.match(
+  chatView,
+  /if \(liveGeneration\.sessionId\) \{\s*emitChatAttentionClear\(liveGeneration\.sessionId\);\s*attentionSettlement\.markAttentionCleared\(\);/,
+  "chat-view should track pre-send attention clears on existing sessions",
+);
+assert.match(
+  chatView,
+  /case "session": \{[\s\S]*?emitChatAttentionClear\(ev\.sessionId\);\s*liveGeneration\.markAttentionCleared\(\);/,
+  "session events should remain id acquisition plus attention-clear bookkeeping, not persistence confirmation",
+);
+assert.match(
+  chatView,
+  /case "done": \{[\s\S]*?if \(ev\.isError\) \{[\s\S]*?\} else \{[\s\S]*?liveGeneration\.markPersistenceConfirmed\(\);[\s\S]*?stampFirstReplyOnce\(\);/,
+  "only a successful terminal done event should confirm persistence",
+);
+assert.match(
+  chatView,
+  /finally \{[\s\S]*?attentionSettlement\.reconcileIfNeeded\(\);[\s\S]*?clearLiveChatGeneration\(liveGeneration\.sessionId, runId\)/,
+  "chat-view should reconcile canonical sessions exactly once at settlement before retiring the live snapshot",
 );
 assert.match(
   workspace,

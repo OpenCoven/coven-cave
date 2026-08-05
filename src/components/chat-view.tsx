@@ -211,6 +211,7 @@ import {
   type AutoMissionRecord,
 } from "@/lib/auto-mission-state";
 import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
+import { createChatAttentionSettlementTracker } from "@/lib/chat-attention-settlement";
 import { emitChatAttentionClear } from "@/lib/chat-attention-events";
 import { GitHubCard } from "@/components/github-card";
 import { ImageCarousel } from "@/components/image-carousel";
@@ -439,8 +440,8 @@ type LiveStreamGeneration = {
   controller: AbortController;
   runId: string;
   streamHealth: () => ChatStreamClientHealth;
-  markHumanTurnPersisted: () => void;
-  restoreAttentionIfNeeded: () => void;
+  markAttentionCleared: () => void;
+  markPersistenceConfirmed: () => void;
 };
 function liveStreamMetadata(liveGeneration: LiveStreamGeneration): LiveChatGenerationMetadata {
   return {
@@ -4899,15 +4900,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       runId,
       at: new Date().toISOString(),
     });
-    let attentionNeedsRestore = false;
-    let attentionRestoreTriggered = false;
-    let persistedHumanTurn = false;
-    const restoreAttentionIfNeeded = () => {
-      if (!attentionRestoreTriggered && attentionNeedsRestore && !persistedHumanTurn) {
-        attentionRestoreTriggered = true;
-        onSessionsChanged?.();
-      }
-    };
+    const attentionSettlement = createChatAttentionSettlementTracker(() => onSessionsChanged?.());
     // `sessionId` mutates to the server-assigned id as events arrive;
     // `originSessionId` stays the thread this generation started on, so a
     // background generation (user switched threads mid-stream) can tell it no
@@ -4918,11 +4911,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       controller,
       runId,
       streamHealth: () => generationStreamHealth,
-      markHumanTurnPersisted: () => {
-        persistedHumanTurn = true;
-        attentionNeedsRestore = false;
+      markAttentionCleared: () => {
+        attentionSettlement.markAttentionCleared();
       },
-      restoreAttentionIfNeeded,
+      markPersistenceConfirmed: () => {
+        attentionSettlement.markPersistenceConfirmed();
+      },
     };
     const publishStreamHealth = (
       action: Exclude<
@@ -5015,7 +5009,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       if (liveGeneration.sessionId) invalidateConversation(liveGeneration.sessionId);
       if (liveGeneration.sessionId) {
         emitChatAttentionClear(liveGeneration.sessionId);
-        attentionNeedsRestore = true;
+        attentionSettlement.markAttentionCleared();
       }
       const res = await fetch("/api/chat/send", {
         method: "POST",
@@ -5129,7 +5123,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           at: new Date().toISOString(),
           error: conciseStreamError(surfacedMessage, "Chat bridge request failed"),
         });
-        restoreAttentionIfNeeded();
         return;
       }
       if (!res.body) {
@@ -5152,7 +5145,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           at: new Date().toISOString(),
           error: message,
         });
-        restoreAttentionIfNeeded();
         return;
       }
 
@@ -5292,8 +5284,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           error: message,
         });
       }
-      liveGeneration.restoreAttentionIfNeeded();
     } finally {
+      attentionSettlement.reconcileIfNeeded();
       // Always retire THIS generation's registry entry (keyed by session).
       clearLiveChatGeneration(liveGeneration.sessionId, runId);
       if (needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
@@ -5969,8 +5961,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ) => {
     switch (ev.kind) {
     case "session": {
-      liveGeneration.markHumanTurnPersisted();
       emitChatAttentionClear(ev.sessionId);
+      liveGeneration.markAttentionCleared();
       liveGeneration.sessionId = ev.sessionId;
       if (ev.sessionId !== currentSessionRef.current) {
         // Only adopt the new session id into THIS view's refs when the view is
@@ -6144,6 +6136,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           setError((prev) => prev ?? "The agent run ended with an error.");
           raiseDebugError({ turnId: assistantId });
         } else {
+          liveGeneration.markPersistenceConfirmed();
           // cave-fy1q phase 3: first completed reply ever — no-op unless the
           // first-open anchor exists (fresh installs only).
           stampFirstReplyOnce();
