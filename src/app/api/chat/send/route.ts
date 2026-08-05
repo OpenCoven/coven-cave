@@ -242,6 +242,7 @@ import {
   type TurnUsage,
 } from "@/lib/usage-format";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
+import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
 import type { StreamEvent } from "@/lib/stream-events";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import {
@@ -428,6 +429,34 @@ const TOOL_HOOK_RE =
 
 async function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+/** Chat sidebar attention (task 3): every assistant-turn persistence path
+ *  calls this exactly once, immediately before building the persisted turn,
+ *  so an explicit `<coven:attention reason="...">` marker becomes a durable
+ *  `attentionRequest` stamp instead of leaking into the saved transcript
+ *  text. Returns the marker-stripped text unconditionally and a nullable
+ *  request the caller clones onto its OWN copy of `responseMetadata` — never
+ *  mutate `responseMetadata` in place here, since the same object is reused
+ *  for the SSE `done` event emitted right after persistence. */
+function prepareAttentionRequest(args: {
+  text: string;
+  sessionId: string;
+  turnId: string;
+  requestedAt: string;
+}): { text: string; request: ChatResponseMetadata["attentionRequest"] | null } {
+  const { visible, request: marker } = extractChatAttentionMarker(args.text);
+  return {
+    text: visible,
+    request: marker
+      ? {
+          sessionId: args.sessionId,
+          turnId: args.turnId,
+          requestedAt: args.requestedAt,
+          reason: marker.reason,
+        }
+      : null,
+  };
 }
 
 async function setDefaultSessionTitleIfMissing(sessionId: string, title: string) {
@@ -980,12 +1009,19 @@ function openClawChatResponse(args: {
         const reportedPrUrl = latestPrUrlFromText(gatewayAssistantText);
         if (reportedPrUrl) conv.prUrl = reportedPrUrl;
         const assistantTurnId = crypto.randomUUID();
+        const assistantCreatedAt = new Date().toISOString();
         const leadingTrimShift =
           gatewayAssistantText.length - gatewayAssistantText.trimStart().length;
         const persistedGatewayTools = toPersistedTools(
           gatewayToolTracker.snapshot(),
           leadingTrimShift,
         );
+        const gatewayAttention = prepareAttentionRequest({
+          text: gatewayAssistantText,
+          sessionId: conversationId,
+          turnId: assistantTurnId,
+          requestedAt: assistantCreatedAt,
+        });
         conv.turns.push(
           {
             id: pendingUserTurnId,
@@ -999,12 +1035,14 @@ function openClawChatResponse(args: {
           {
             id: assistantTurnId,
             role: "assistant",
-            text: gatewayAssistantText.trim(),
-            createdAt: new Date().toISOString(),
+            text: gatewayAttention.text.trim(),
+            createdAt: assistantCreatedAt,
             durationMs,
             isError,
             parentId: pendingUserTurnId,
-            responseMetadata,
+            responseMetadata: gatewayAttention.request
+              ? { ...responseMetadata, attentionRequest: gatewayAttention.request }
+              : responseMetadata,
             ...(persistedGatewayTools ? { tools: persistedGatewayTools } : {}),
             ...(cancelledByUser ? { cancelled: true } : {}),
           },
@@ -1325,6 +1363,13 @@ function openClawChatResponse(args: {
             // attribution for chats whose work happens in agent worktrees).
             const reportedPrUrl = latestPrUrlFromText(assistantText);
             if (reportedPrUrl) conv.prUrl = reportedPrUrl;
+            const assistantCreatedAt = new Date().toISOString();
+            const nativeAttention = prepareAttentionRequest({
+              text: assistantText,
+              sessionId,
+              turnId: assistantTurnId,
+              requestedAt: assistantCreatedAt,
+            });
             conv.turns.push(
               {
                 id: userTurnId,
@@ -1338,12 +1383,14 @@ function openClawChatResponse(args: {
               {
                 id: assistantTurnId,
                 role: "assistant",
-                text: assistantText.trim(),
-                createdAt: new Date().toISOString(),
+                text: nativeAttention.text.trim(),
+                createdAt: assistantCreatedAt,
                 durationMs,
                 isError,
                 parentId: userTurnId,
-                responseMetadata,
+                responseMetadata: nativeAttention.request
+                  ? { ...responseMetadata, attentionRequest: nativeAttention.request }
+                  : responseMetadata,
                 ...(cancelledByUser ? { cancelled: true } : {}),
               },
             );
@@ -5143,12 +5190,19 @@ export async function POST(req: Request) {
           const persistedAssistantText = persistCovenProcessFailure && !cleanedAssistantText
             ? launchFailure!.message
             : cleanedAssistantText;
+          const assistantCreatedAt = new Date().toISOString();
+          const covenAttention = prepareAttentionRequest({
+            text: persistedAssistantText,
+            sessionId: finalSessionId,
+            turnId: assistantTurnId,
+            requestedAt: assistantCreatedAt,
+          });
           const assistantTurn: ChatTurn = {
             id: assistantTurnId,
             role: "assistant",
-            text: persistedAssistantText,
+            text: covenAttention.text,
             ...(agentAttachments.length ? { attachments: agentAttachments } : {}),
-            createdAt: new Date().toISOString(),
+            createdAt: assistantCreatedAt,
             durationMs: result.duration_ms,
             isError: result.is_error,
             ...(cancelledByUser ? { cancelled: true } : {}),
@@ -5159,7 +5213,9 @@ export async function POST(req: Request) {
               ? { progress: persistedCompatibilityDiagnostics }
               : {}),
             parentId: userTurnId,
-            responseMetadata,
+            responseMetadata: covenAttention.request
+              ? { ...responseMetadata, attentionRequest: covenAttention.request }
+              : responseMetadata,
           };
           const conv = existing ?? {
             sessionId: finalSessionId,

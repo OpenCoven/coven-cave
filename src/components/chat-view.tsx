@@ -199,6 +199,7 @@ import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl
 import { imageCarouselKey, sliceImageBlocks, stripImageMarkers } from "@/lib/image-blocks";
 import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
 import { extractAutoStatusMarkers } from "@/lib/auto-status-blocks";
+import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
 import {
   AUTO_BRIEFED_KEY,
   clearAutoMission,
@@ -8282,7 +8283,15 @@ function TurnRowImpl({
   // same way, on both the streaming and settled path, so the phase chip
   // (clarifying/working/blocked/done) updates live.
   const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);
-  const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(autoStatusSplit.visible);
+  // Explicit human-attention marker (chat sidebar attention task 3): strip on
+  // BOTH the streaming and settled paths, same as skill/auto-status above, so
+  // a complete or partial `<coven:attention …>` tag never flashes as raw text.
+  // Runs after skill/auto-status (their own markers must resolve first) and
+  // before next-path/GitHub/image stripping (those must never see a marker
+  // still in the text). No inline card renders here — attention surfaces in
+  // the sidebar, derived from persisted `attentionRequest` metadata.
+  const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible);
+  const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(attentionSplit.visible);
   const visible = turn.pending ? visibleWithGh : stripImageMarkers(stripGitHubMarkers(visibleWithGh));
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");

@@ -1235,6 +1235,7 @@ export const SUITES = {
     "src/app/api/sessions/list/route.test.ts",
     "src/app/api/chat/send/harness-routing-host-session.test.ts",
     "src/app/api/chat/send/ios-first-turn-project-contract.test.ts",
+    "src/app/api/chat/send/chat-attention-persistence.test.ts",
     "src/app/api/chat/send/harness-routing-attachments.test.ts",
     "src/app/api/chat/send/harness-routing-tool-events.test.ts",
     "src/app/api/chat/send/harness-routing-model-capabilities.test.ts",
