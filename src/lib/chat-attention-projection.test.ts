@@ -539,6 +539,36 @@ test("a no-baseline rejection tombstones the operation id so a late replay canno
   assert.equal(state.has("session-1"), false);
 });
 
+test("a cached canonical none plus a valid watermark records an unknown-baseline clear instead of rejecting it", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  assert.deepEqual(
+    recordChatAttentionClear(
+      state,
+      "session-1",
+      "operation-1",
+      scopeKey,
+      NO_CHAT_ATTENTION,
+      "2026-08-05T00:01:00.000Z",
+    ),
+    { recorded: true, reason: "recorded" },
+  );
+  assert.equal(state.get("session-1")?.get("operation-1")?.baseline, null);
+
+  settleChatAttentionClear(state, "session-1", "operation-1", "failed", 6);
+  assert.equal(state.has("session-1"), false);
+  assert.equal(
+    applyChatAttentionProjections(
+      state,
+      [row({ attention: { state: "awaiting-human", since: "2026-08-05T00:00:59.999Z", reason: "approval" } })],
+      7,
+      scopeKey,
+    )[0]?.attention.state,
+    "awaiting-human",
+    "failed watermark-backed clears must release immediately instead of staying masked",
+  );
+});
+
 test("an unknown settlement does not poison a later legitimate first clear for the same session", () => {
   const state = createChatAttentionProjectionState();
   settleChatAttentionClear(state, "session-1", "operation-unknown", "persisted", 6);
@@ -650,6 +680,59 @@ test("an unknown-baseline persisted clear with a watermark keeps the first stale
   assert.equal(
     applyChatAttentionProjections(state, newerRequest, 7, chatAttentionProjectionScopeKey("nova")),
     newerRequest,
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
+test("a cached canonical none plus a valid watermark keeps stale canonical attention masked until newer evidence arrives", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    scopeKey,
+    NO_CHAT_ATTENTION,
+    "2026-08-05T00:02:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  const staleCanonical = [row({
+    attention: { state: "awaiting-human", since: "2026-08-05T00:01:59.999Z", reason: "approval" },
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, staleCanonical, 6, scopeKey)[0]?.attention.state,
+    "none",
+  );
+  assert.equal(state.has("session-1"), true);
+
+  const newerCanonical = [row({
+    attention: { state: "awaiting-human", since: "2026-08-05T00:02:00.001Z", reason: "approval" },
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, newerCanonical, 7, scopeKey),
+    newerCanonical,
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
+test("a cached canonical none plus a valid watermark retires on the first eligible canonical none", () => {
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    scopeKey,
+    NO_CHAT_ATTENTION,
+    "2026-08-05T00:03:00.000Z",
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  const canonicalNone = [row({ attention: NO_CHAT_ATTENTION })];
+  assert.equal(
+    applyChatAttentionProjections(state, canonicalNone, 6, scopeKey),
+    canonicalNone,
   );
   assert.equal(state.has("session-1"), false);
 });

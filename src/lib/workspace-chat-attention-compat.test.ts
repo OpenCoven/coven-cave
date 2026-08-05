@@ -126,6 +126,55 @@ test("invalid attention-clear payloads remain full no-ops", () => {
   assert.equal(projectionState.size, 0);
 });
 
+test("a malformed present watermark cannot enter the persisted unknown-baseline projection lifecycle", () => {
+  const projectionState = createChatAttentionProjectionState();
+  const malformedClear = new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
+    detail: {
+      sessionId: "session-1",
+      operationId: "run-malformed-watermark",
+      clearWatermark: "2026-08-05T00:00:00.000+00:00",
+    },
+  });
+  function recordParsedClear(event: Event) {
+    const detail = attentionClearFromEvent(event);
+    if (!detail) return;
+    recordChatAttentionClear(
+      projectionState,
+      detail.sessionId,
+      detail.operationId,
+      chatAttentionProjectionScopeKey("nova"),
+      undefined,
+      detail.clearWatermark,
+    );
+  }
+  assert.equal(
+    attentionClearFromEvent(malformedClear),
+    null,
+    "the malformed modern event must be rejected before projection recording",
+  );
+  recordParsedClear(malformedClear);
+  settleChatAttentionClear(
+    projectionState,
+    "session-1",
+    "run-malformed-watermark",
+    "persisted",
+    1,
+  );
+
+  const staleCanonical = [row("session-1")];
+  assert.equal(
+    applyChatAttentionProjections(
+      projectionState,
+      staleCanonical,
+      1,
+      chatAttentionProjectionScopeKey("nova"),
+    ),
+    staleCanonical,
+    "the first eligible stale row must not retire a projection that malformed evidence never created",
+  );
+  assert.equal(projectionState.size, 0);
+});
+
 test("legacy one-shot compatibility rejects session-only payloads that also mention modern fields", () => {
   const legacyLookingButModern = new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, {
     detail: {
@@ -207,6 +256,70 @@ test("an accepted canonical row wins over a stale event-carried baseline (clear-
     { state: "awaiting-human", since: "2026-08-05T01:00:00.000Z", reason: "approval" },
     "a genuinely new request must surface once it diverges from the correctly-recorded B baseline",
   );
+});
+
+test("a cached canonical none plus a valid watermark still records and masks stale workspace attention until a newer row wins", () => {
+  const projectionState = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  const baseSessions = [row("session-1", { attention: NO_CHAT_ATTENTION })];
+  const detail = {
+    sessionId: "session-1",
+    operationId: "run-3",
+    clearWatermark: "2026-08-05T00:01:00.000Z",
+    baselineAttention: undefined,
+  };
+
+  function resolveClearBaseline(sessionId: string, eventBaseline: ChatAttention | null | undefined) {
+    const acceptedRow = baseSessions.find((session) => session.id === sessionId);
+    const acceptedCanonical = acceptedRow && acceptedRow.attention.state !== "none"
+      ? acceptedRow.attention
+      : null;
+    return acceptedCanonical ?? eventBaseline ?? acceptedRow?.attention;
+  }
+
+  const baseline = resolveClearBaseline(detail.sessionId, detail.baselineAttention);
+  assert.deepEqual(baseline, NO_CHAT_ATTENTION, "workspace should still pass through the cached none snapshot when it has no fresher baseline");
+  assert.deepEqual(
+    recordChatAttentionClear(
+      projectionState,
+      detail.sessionId,
+      detail.operationId,
+      scopeKey,
+      baseline,
+      detail.clearWatermark,
+    ),
+    { recorded: true, reason: "recorded" },
+  );
+
+  settleChatAttentionClear(projectionState, detail.sessionId, detail.operationId, "persisted", 1);
+  const staleCanonical = applyChatAttentionProjections(
+    projectionState,
+    [row("session-1", {
+      attention: { state: "awaiting-human", since: "2026-08-05T00:00:59.999Z", reason: "approval" },
+    })],
+    2,
+    scopeKey,
+  );
+  assert.deepEqual(
+    staleCanonical[0]?.attention,
+    NO_CHAT_ATTENTION,
+    "a stale in-flight workspace response older than the watermark must stay masked",
+  );
+
+  const released = applyChatAttentionProjections(
+    projectionState,
+    [row("session-1", {
+      attention: { state: "awaiting-human", since: "2026-08-05T00:01:00.000Z", reason: "approval" },
+    })],
+    3,
+    scopeKey,
+  );
+  assert.deepEqual(
+    released[0]?.attention,
+    { state: "awaiting-human", since: "2026-08-05T00:01:00.000Z", reason: "approval" },
+    "the first eligible canonical row at-or-after the watermark must retire the workspace projection",
+  );
+  assert.equal(projectionState.has("session-1"), false);
 });
 
 test("a cached row keeps the scope of the accepted request rather than its familiar identity", () => {

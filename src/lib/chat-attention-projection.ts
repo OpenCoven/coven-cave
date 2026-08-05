@@ -169,6 +169,42 @@ function sessionProjectionHasPendingOperation(operations: SessionProjection): bo
   return false;
 }
 
+// A single session's own operation map has no independent bound otherwise: a
+// flood of off-list/overlapping clears that each mint a unique operation id
+// for the SAME session grows this inner map without limit even while the
+// outer per-session bucket count (CHAT_ATTENTION_SESSION_BUCKET_LIMIT) stays
+// at one entry. Mirror the outer eviction's preference for the oldest
+// non-pending (settled or already-retired) operation, only falling back to
+// the oldest pending one when every tracked operation for the session is
+// still live, and tombstone whatever is evicted so a late replay of its id
+// cannot recreate an un-settleable projection.
+const CHAT_ATTENTION_SESSION_OPERATION_LIMIT = 64;
+
+function evictOldestSessionOperations(
+  state: ChatAttentionProjectionState,
+  sessionId: string,
+  operations: SessionProjection,
+): void {
+  while (operations.size > CHAT_ATTENTION_SESSION_OPERATION_LIMIT) {
+    let oldestOperationId: string | undefined;
+    let oldestPendingOperationId: string | undefined;
+    for (const [operationId, operation] of operations) {
+      oldestPendingOperationId ??= operationId;
+      if (operation.status !== "pending") {
+        oldestOperationId = operationId;
+        break;
+      }
+    }
+    const evictedOperationId = oldestOperationId ?? oldestPendingOperationId;
+    if (!evictedOperationId) break;
+    operations.delete(evictedOperationId);
+    tombstoneChatAttentionOperation(state, sessionId, evictedOperationId);
+  }
+  if (operations.size === 0) {
+    dropSessionProjectionBucket(state, sessionId);
+  }
+}
+
 function evictOldestSessionProjectionBuckets(state: ChatAttentionProjectionState): void {
   const accessOrder = sessionBucketAccessOrderFor(state);
   while (state.size > CHAT_ATTENTION_SESSION_BUCKET_LIMIT) {
@@ -255,7 +291,11 @@ export function recordChatAttentionClear(
   const baseline = trackedNonNoneCanonical ??
     (normalizedCanonical?.state !== "none" ? normalizedCanonical : null);
   const normalizedClearWatermark = normalizeIsoInstant(clearWatermark);
-  if (!operations && !baseline && hasCanonicalAttention) {
+  // A valid watermark is durable evidence that a clear belongs to a real human
+  // reply boundary even when every available cached/event baseline is already
+  // "none". Preserve that as an unknown-baseline projection so stale older
+  // attention stays masked until canonical evidence catches up.
+  if (!operations && !baseline && hasCanonicalAttention && !normalizedClearWatermark) {
     tombstoneChatAttentionOperation(state, sessionId, operationId);
     return { recorded: false, reason: "no-baseline" };
   }
