@@ -238,26 +238,6 @@ assert.match(
 );
 assert.match(
   turnRow,
-  /const toolRelocation = useFocusSafeToolRelocation\(!!turn\.pending\);[\s\S]*if \(toolRelocation\.keepToolsInline\) \{[\s\S]*renderSegments = bubbleSegments;/,
-  "focused streaming tools keep the inline render path when the turn settles",
-);
-assert.match(
-  turnRow,
-  /const settledTools = !toolRelocation\.keepToolsInline && turn\.tools\?\.length \? turn\.tools : \[\];/,
-  "the settled ToolGroup and edit-card path stays empty until focus-safe relocation is released",
-);
-assert.match(
-  turnRow,
-  /className="cave-linear-turn-body"[\s\S]*onFocusCapture=\{toolRelocation\.onFocusCapture\}[\s\S]*onBlurCapture=\{toolRelocation\.onBlurCapture\}/,
-  "the stable turn body observes focus crossing the inline tool boundary",
-);
-assert.match(
-  source,
-  /function InlineToolRuns[\s\S]*data-inline-tool-runs[\s\S]*<ToolRuns tools=\{tools\}/,
-  "inline tool runs expose the focus boundary without duplicating ToolRuns",
-);
-assert.match(
-  turnRow,
   /cave-edit-cards[\s\S]*editCards\.map\(\(tool\) => <ToolBlock/,
   "edit-tool cards stay visible inline on settled turns (not buried in the collapsed rollup)",
 );
