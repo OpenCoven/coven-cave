@@ -27,7 +27,7 @@ function isSafeTrashId(trashId: string): boolean {
 }
 
 function trashRoot(home: string): string {
-  return path.join(home, ".coven", TRASH_DIRNAME, "memory");
+  return path.join(/* turbopackIgnore: true */ home, ".coven", TRASH_DIRNAME, "memory");
 }
 
 function isWithinRoot(candidate: string, root: string): boolean {
@@ -94,11 +94,11 @@ export async function archiveMemoryFile(fullPath: string, home = homedir()): Pro
   const dir = trashRoot(home);
   const trashId = `${Date.now()}-${path.basename(resolved)}`;
   try {
-    await mkdir(dir, { recursive: true });
+    await mkdir(/* turbopackIgnore: true */ dir, { recursive: true });
     // Rename the canonical path: the checked value is the moved value.
-    await rename(realTarget, path.join(dir, trashId));
+    await rename(/* turbopackIgnore: true */ realTarget, path.join(/* turbopackIgnore: true */ dir, trashId));
     const meta: Sidecar = { originalPath: resolved, deletedAt: new Date().toISOString() };
-    await writeFile(path.join(dir, `${trashId}.json`), JSON.stringify(meta), { mode: 0o600 });
+    await writeFile(path.join(/* turbopackIgnore: true */ dir, `${trashId}.json`), JSON.stringify(meta), { mode: 0o600 });
     return { ok: true, trashId };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "archive failed" };
@@ -108,12 +108,12 @@ export async function archiveMemoryFile(fullPath: string, home = homedir()): Pro
 export async function listMemoryTrash(home = homedir()): Promise<TrashItem[]> {
   const dir = trashRoot(home);
   let names: string[];
-  try { names = await readdir(dir); } catch { return []; }
+  try { names = await readdir(/* turbopackIgnore: true */ dir); } catch { return []; }
   const out: TrashItem[] = [];
   for (const n of names) {
     if (!n.endsWith(".json")) continue;
     try {
-      const meta = JSON.parse(await readFile(path.join(dir, n), "utf8")) as Sidecar;
+      const meta = JSON.parse(await readFile(path.join(/* turbopackIgnore: true */ dir, n), "utf8")) as Sidecar;
       out.push({ trashId: n.slice(0, -5), originalPath: meta.originalPath, deletedAt: meta.deletedAt });
     } catch { /* skip */ }
   }
@@ -128,13 +128,13 @@ export async function restoreMemoryFile(trashId: string, home = homedir()): Prom
   const safeId = path.basename(trashId);
   let meta: Sidecar;
   try {
-    meta = JSON.parse(await readFile(path.join(dir, `${safeId}.json`), "utf8")) as Sidecar;
+    meta = JSON.parse(await readFile(path.join(/* turbopackIgnore: true */ dir, `${safeId}.json`), "utf8")) as Sidecar;
   } catch { return { ok: false, error: "not found" }; }
   const destination = path.resolve(meta.originalPath);
   const classification = classifyMemoryFilePath(destination, home);
   if (!classification) return { ok: false, error: "restore target not allowed" };
   try {
-    await mkdir(path.dirname(destination), { recursive: true });
+    await mkdir(/* turbopackIgnore: true */ path.dirname(destination), { recursive: true });
     // The classification above is lexical. Canonicalize the destination
     // parent (which now exists) against the classified root so a symlinked
     // parent cannot route the restored file into canonical storage or
@@ -142,11 +142,11 @@ export async function restoreMemoryFile(trashId: string, home = homedir()): Prom
     // basename makes the checked parent the written parent.
     const realParent = await canonicalContainedPath(path.dirname(destination), classification.rootPath);
     if (realParent === null) return { ok: false, error: "restore target not allowed" };
-    const realDestination = path.join(realParent, path.basename(destination));
-    const occupied = await access(realDestination).then(() => true).catch(() => false);
+    const realDestination = path.join(/* turbopackIgnore: true */ realParent, path.basename(destination));
+    const occupied = await access(/* turbopackIgnore: true */ realDestination).then(() => true).catch(() => false);
     if (occupied) return { ok: false, error: "target already exists" };
-    await rename(path.join(dir, safeId), realDestination);
-    await rm(path.join(dir, `${safeId}.json`), { force: true });
+    await rename(path.join(/* turbopackIgnore: true */ dir, safeId), realDestination);
+    await rm(path.join(/* turbopackIgnore: true */ dir, `${safeId}.json`), { force: true });
     return { ok: true, trashId };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "restore failed" };
@@ -162,8 +162,8 @@ export async function purgeMemoryTrash(trashId: string | undefined, home = homed
   try {
     for (const id of ids) {
       const safeId = path.basename(id);
-      await rm(path.join(dir, safeId), { force: true });
-      await rm(path.join(dir, `${safeId}.json`), { force: true });
+      await rm(path.join(/* turbopackIgnore: true */ dir, safeId), { force: true });
+      await rm(path.join(/* turbopackIgnore: true */ dir, `${safeId}.json`), { force: true });
     }
     return { ok: true, trashId: trashId ?? "all" };
   } catch (err) {

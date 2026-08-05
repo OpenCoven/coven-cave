@@ -147,7 +147,10 @@ function terminateProbeProcessTree(child: OpenCodeProbeChild): Promise<void> {
       finish();
     }, openCodeProbeCleanupGraceMs());
     try {
-      killer = spawn(treeKill.command, treeKill.args, { stdio: "ignore", windowsHide: true });
+      // `treeKill.command` is a host binary (`taskkill.exe` / `kill`) resolved
+      // at runtime, never a bundled module. The ignore stops Turbopack from
+      // treating it as a traceable specifier and globbing the checkout.
+      killer = spawn(/* turbopackIgnore: true */ treeKill.command, treeKill.args, { stdio: "ignore", windowsHide: true });
       killer.once("error", () => {
         try { child.kill("SIGTERM"); } catch { /* Best-effort fallback. */ }
         finish();
