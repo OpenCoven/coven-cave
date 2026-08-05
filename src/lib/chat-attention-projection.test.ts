@@ -288,6 +288,44 @@ test("projection preserves array identity when no field changes", () => {
   assert.equal(applyChatAttentionProjections(state, unrelated, 1), unrelated);
 });
 
+test("a stale pending notification cannot downgrade an already-persisted operation", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+  assert.equal(state.get("session-1")?.get("operation-1")?.status, "persisted");
+
+  // A duplicate/late recordChatAttentionClear for the SAME operationId (e.g. a
+  // registry-subscription replay racing its own settle) must be a no-op: it
+  // must not resurrect "pending" status, and it must not overwrite the
+  // canonicalAfterRequestId or baseline the settlement already recorded.
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("sage"),
+    NO_CHAT_ATTENTION,
+  );
+  const operation = state.get("session-1")?.get("operation-1");
+  assert.equal(operation?.status, "persisted");
+  assert.equal((operation as { canonicalAfterRequestId?: number })?.canonicalAfterRequestId, 6);
+  assert.deepEqual(operation?.baseline, NEEDS_ATTENTION);
+
+  // The persisted operation still retires correctly on a fresh, eligible
+  // canonical response — proving the no-op left it fully functional.
+  const canonicalNone = [row({ attention: NO_CHAT_ATTENTION })];
+  assert.equal(
+    applyChatAttentionProjections(state, canonicalNone, 6, chatAttentionProjectionScopeKey("nova")),
+    canonicalNone,
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
 test("an initial canonical none creates no override and cannot hide future attention", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(
@@ -306,4 +344,76 @@ test("an initial canonical none creates no override and cannot hide future atten
     applyChatAttentionProjections(state, futureRequest, 2, chatAttentionProjectionScopeKey("nova")),
     futureRequest,
   );
+});
+
+// ── Offline-queued sends (cave-zs85n Task 5): the offline travel queue's SSE
+//    "done" event reports isError:false as soon as the human turn is accepted
+//    into the queue (src/app/api/chat/send/route.ts maybeQueueOfflineChat) —
+//    long before the queued item is actually flushed and appended to the
+//    conversation file. ChatView cannot distinguish that queued acceptance
+//    from a real persisted completion at the "done" event, so it settles the
+//    same "persisted" outcome either way (chat-sidebar-wiring.test.ts pins
+//    that only ev.isError gates markPersistenceConfirmed). Correctness must
+//    therefore live here: a "persisted" settlement must not retire the
+//    projection just because a poll became eligible — only once the
+//    canonical row's attention actually diverges from the baseline captured
+//    at clear time does that poll prove the queued turn (or its sync) really
+//    landed. Until then the row keeps returning the exact same stale
+//    awaiting-human snapshot every poll, since the travel queue hasn't
+//    touched the conversation file yet. ──────────────────────────────────
+test("an offline-queued send settled persisted before travel sync keeps projecting none across repeated stale canonical polls", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  // The offline-queue "done" event is isError:false, so ChatView settles
+  // "persisted" exactly as it would for a real completion — there is no
+  // distinct queued outcome at this layer.
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  // Every subsequent poll before the travel queue flushes returns the exact
+  // same canonical row: the human turn was only queued, never written to the
+  // conversation file, so nothing about the session's attention has changed.
+  const staleCanonical = [row({ attention: { ...NEEDS_ATTENTION } })];
+  for (const responseRequestId of [6, 7, 8]) {
+    assert.equal(
+      applyChatAttentionProjections(state, staleCanonical, responseRequestId, chatAttentionProjectionScopeKey("nova"))[0]?.attention.state,
+      "none",
+      `poll ${responseRequestId} must not resurrect the stale awaiting-human snapshot`,
+    );
+    assert.equal(state.has("session-1"), true, `projection must survive stale poll ${responseRequestId}`);
+  }
+});
+
+test("a later durably-synced canonical response releases the offline-queued projection and reveals canonical state", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    chatAttentionProjectionScopeKey("nova"),
+    NEEDS_ATTENTION,
+  );
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  // Two stale polls first, matching the queued-but-unsynced window above.
+  applyChatAttentionProjections(state, [row({ attention: { ...NEEDS_ATTENTION } })], 6, chatAttentionProjectionScopeKey("nova"));
+  applyChatAttentionProjections(state, [row({ attention: { ...NEEDS_ATTENTION } })], 7, chatAttentionProjectionScopeKey("nova"));
+  assert.equal(state.has("session-1"), true);
+
+  // The travel queue flushes: the queued human turn is finally appended to
+  // the conversation file, which resolves the outstanding attention request
+  // (no new one has been stamped since). This is the first canonical
+  // evidence that actually differs from the recorded baseline, so it must
+  // retire the projection and surface the true, now-resolved row.
+  const syncedCanonical = [row({ attention: NO_CHAT_ATTENTION })];
+  assert.equal(
+    applyChatAttentionProjections(state, syncedCanonical, 8, chatAttentionProjectionScopeKey("nova")),
+    syncedCanonical,
+  );
+  assert.equal(state.has("session-1"), false);
 });

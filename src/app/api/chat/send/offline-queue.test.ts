@@ -68,3 +68,33 @@ assert.ok(
   queueIndex < harnessPromptIndex,
   "Offline queueing should run before prompt assembly and harness spawning work",
 );
+
+// ── cave-zs85n Task 5: the queued-offline "done" event reports success the
+//    moment the human turn is *accepted into the travel queue*, not once it
+//    is durably persisted to the conversation file (that only happens later,
+//    when travel sync flushes the queue). ChatView's "done" handler treats
+//    any isError:false terminal as persistence-confirmed
+//    (chat-sidebar-wiring.test.ts pins this), so this route must never signal
+//    isError:true here just to *look* unsettled — the sidebar-attention
+//    correctness for this gap lives entirely in the projection's
+//    baseline-vs-canonical comparison (chat-attention-projection.ts /
+//    chat-attention-projection.test.ts), not in a special "done" shape. ────
+const offlineChatResponseBlock = chatRoute.match(
+  /async function maybeQueueOfflineChat\([\s\S]*?\n\}\n/,
+)?.[0] ?? "";
+assert.ok(offlineChatResponseBlock, "maybeQueueOfflineChat should be defined");
+const queuedSessionIndex = offlineChatResponseBlock.indexOf('push({ kind: "session", sessionId });');
+const queuedProgressIndex = offlineChatResponseBlock.indexOf('id: "queued-offline"');
+const queuedDoneIndex = offlineChatResponseBlock.indexOf('kind: "done"');
+assert.ok(queuedSessionIndex >= 0, "the queued offline stream should push a session event");
+assert.ok(queuedProgressIndex >= 0, "the queued offline stream should push the queued-offline progress step");
+assert.ok(queuedDoneIndex >= 0, "the queued offline stream should push a terminal done event");
+assert.ok(
+  queuedSessionIndex < queuedProgressIndex && queuedProgressIndex < queuedDoneIndex,
+  "the queued offline stream must push session, then the queued-offline progress step, then done — in that order, so ChatView records the attention clear before the outcome settles",
+);
+assert.match(
+  offlineChatResponseBlock,
+  /push\(\{\s*kind: "done",\s*isError: false,/,
+  "the queued offline stream's done event must report isError:false — it is a genuine acceptance, not a failure — even though the human turn is not yet durably persisted; premature attention-projection retirement is guarded at the projection layer, not by faking an error here",
+);
