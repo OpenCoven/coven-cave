@@ -102,6 +102,31 @@ test("eligible post-settlement canonical none still releases the persisted proje
   assert.equal(state.has("session-1"), false);
 });
 
+test("a later canonical response is never suppressed after a persisted projection retires", () => {
+  const state = createChatAttentionProjectionState();
+  recordChatAttentionClear(state, "session-1", "operation-1", chatAttentionProjectionScopeKey("nova"));
+  settleChatAttentionClear(state, "session-1", "operation-1", "persisted", 6);
+
+  const firstEligible = [row()];
+  assert.equal(
+    applyChatAttentionProjections(state, firstEligible, 6, chatAttentionProjectionScopeKey("nova")),
+    firstEligible,
+  );
+  assert.equal(state.has("session-1"), false);
+
+  // A brand-new canonical attention request arrives on a later poll, after the
+  // retiring response. Retirement must be permanent: nothing should still be
+  // tracked to suppress it.
+  const laterRequest = [row({
+    attention: { state: "awaiting-human", since: "2026-08-05T00:05:00.000Z", reason: "approval" },
+  })];
+  assert.equal(
+    applyChatAttentionProjections(state, laterRequest, 7, chatAttentionProjectionScopeKey("nova")),
+    laterRequest,
+  );
+  assert.equal(state.has("session-1"), false);
+});
+
 test("the first failed operation cannot undo a second live clear for the same session", () => {
   const state = createChatAttentionProjectionState();
   recordChatAttentionClear(state, "session-1", "operation-1", chatAttentionProjectionScopeKey("nova"));
