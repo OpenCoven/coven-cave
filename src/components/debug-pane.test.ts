@@ -612,18 +612,18 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /\["clean", "-f", "--", projectTarget\.gitRelativePath\]/,
-  "Untracked revert uses the project-validated Git-relative path",
+  /\["clean"[\s\S]*?"-f"[\s\S]*?"--"[\s\S]*?literalGitPathspec\(projectTarget\.gitRelativePath\)\]/,
+  "Untracked revert hardens Git-relative path against shell interpretation with literalGitPathspec()",
 );
 assert.match(
   changesRoute,
-  /\["rm", "-f", "--", projectTarget\.gitRelativePath\]/,
-  "Reverting a staged-new file uses the project-validated Git-relative path",
+  /\["rm"[\s\S]*?"-f"[\s\S]*?"--"[\s\S]*?literalGitPathspec\(projectTarget\.gitRelativePath\)\]/,
+  "Reverting a staged-new file hardens Git-relative path against shell interpretation with literalGitPathspec()",
 );
 assert.match(
   changesRoute,
-  /\["checkout", "HEAD", "--", projectTarget\.gitRelativePath\]/,
-  "Tracked revert restores the project-validated Git-relative path against HEAD",
+  /\["checkout"[\s\S]*?"HEAD"[\s\S]*?"--"[\s\S]*?literalGitPathspec\(projectTarget\.gitRelativePath\)\]/,
+  "Tracked revert hardens Git-relative path against shell interpretation with literalGitPathspec()",
 );
 assert.match(
   changesRoute,
@@ -637,12 +637,12 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /gitDiff\(repoRoot, \["--binary", "HEAD", "--"\]\)/,
+  /gitDiff\(repoRoot,[\s\S]*?\["--binary"[\s\S]*?"HEAD"[\s\S]*?"--"\]/,
   "Checkpoint snapshots should capture binary-safe tracked diffs versus HEAD",
 );
 assert.match(
   changesRoute,
-  /status === "untracked"[\s\S]*?gitDiff\(repoRoot, \["--no-index", "--", DEV_NULL, file\.path\]\)/,
+  /status === "untracked"[\s\S]*?gitDiff\(repoRoot,[\s\S]*?\["--no-index"[\s\S]*?"--"[\s\S]*?DEV_NULL[\s\S]*?file\.path\]/,
   "Untracked checkpoint diffs use repo-relative paths so the snapshot can be git apply'd back",
 );
 assert.match(
