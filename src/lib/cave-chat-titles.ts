@@ -227,9 +227,25 @@ function normalizeMarkdownInlineLinks(s: string): string {
     const destStart = labelEnd + 2;
     let depth = 1;
     let j = destStart;
+    let quotedTitle: '"' | "'" | null = null;
     while (j < len && depth > 0) {
       if (s[j] === "\\") {
         j += 2; // escaped char is neither opener nor closer
+        continue;
+      }
+      if (quotedTitle) {
+        if (s[j] === quotedTitle) quotedTitle = null;
+        j++;
+        continue;
+      }
+      if (
+        depth === 1 &&
+        (s[j] === '"' || s[j] === "'") &&
+        j > destStart &&
+        /\s/.test(s[j - 1])
+      ) {
+        quotedTitle = s[j] as '"' | "'";
+        j++;
         continue;
       }
       if (s[j] === "(") depth++;
