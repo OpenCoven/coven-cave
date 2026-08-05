@@ -79,9 +79,11 @@ assert.match(source, /role="tabpanel"[\s\S]*?aria-labelledby=\{`nav-section-tab-
 // them. Its section-heading half is dead — nothing emits sidebar-section*
 // anymore — but the recent-activity half is live: RecentActivityRollup still
 // renders in the Code section, and the 56px rail has no room for it.
+// Tolerant of the group's ordering: the dead .sidebar-section-label half should
+// eventually be deleted from this rule, and that cleanup must not fail here.
 assert.match(
   styles,
-  /\.shell-nav--rail \.recent-activity \{\s*display: none;/,
+  /\.shell-nav--rail \.recent-activity[^{]*\{[^}]*display:\s*none/,
   "the icon rail hides the recent-activity list while retaining destination icons",
 );
 

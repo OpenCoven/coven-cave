@@ -7,21 +7,19 @@ const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 // sidebar-minimal.css is only an import facade — the rules live in the modules
-// beside it, so read those too (the same set sidebar-minimal.test.ts reads).
-// Without them these assertions run against a file of @import lines and the
-// styling hooks below can never be found.
-const sidebarStyleModules = [
-  "shell-chrome.css",
-  "section-tabs.css",
-  "navigation-recents.css",
-  "familiars.css",
-  "activity-rail.css",
-];
+// it imports, so without them these assertions run against a file of @import
+// lines and the styling hooks below can never be found. The module list is
+// derived from the facade itself (as css-module-order.test.ts does) rather than
+// hardcoded: a hardcoded list goes stale the next time a module is added, which
+// is exactly how this test started passing over nothing.
+const sidebarStylesRoot = new URL("../styles/", import.meta.url);
+const sidebarFacade = readFileSync(new URL("sidebar-minimal.css", sidebarStylesRoot), "utf8");
 const styles = [
-  readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8"),
-  ...sidebarStyleModules.map((file) =>
-    readFileSync(new URL(`../styles/sidebar-minimal/${file}`, import.meta.url), "utf8"),
-  ),
+  sidebarFacade,
+  ...[...sidebarFacade.matchAll(/^@import\s+"([^"]+)";/gm)]
+    .map((match) => match[1])
+    .filter((specifier) => specifier.startsWith("."))
+    .map((specifier) => readFileSync(new URL(specifier, sidebarStylesRoot), "utf8")),
 ].join("\n");
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
