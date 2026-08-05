@@ -29,6 +29,7 @@ const MODERN_CLEAR_DETAIL_KEYS = [
   "clearWatermark",
   "baselineAttention",
 ] as const;
+const LEGACY_CLEAR_DETAIL_KEYS = new Set<string>(["sessionId"]);
 
 // Exact allow-lists for the two modern event shapes. A clear payload must
 // contain ONLY its own keys — never a settlement-only field like `outcome`,
@@ -42,14 +43,24 @@ const MODERN_CLEAR_DETAIL_KEYS = [
 // the only supported broadening of the modern clear shape.
 const CLEAR_DETAIL_KEYS = new Set<string>(["sessionId", ...MODERN_CLEAR_DETAIL_KEYS]);
 const SETTLE_DETAIL_KEYS = new Set<string>(["sessionId", "operationId", "outcome"]);
+const RECOGNIZED_DETAIL_KEYS = new Set<string>([...CLEAR_DETAIL_KEYS, ...SETTLE_DETAIL_KEYS]);
+
+function isPlainDetailObject(detail: unknown): detail is Record<string, unknown> {
+  if (!detail || typeof detail !== "object" || Array.isArray(detail)) return false;
+  const prototype = Object.getPrototypeOf(detail);
+  return prototype === Object.prototype || prototype === null;
+}
 
 function hasOnlyAllowedDetailKeys(
-  detail: Record<string, unknown> | null | undefined,
+  detail: unknown,
   allowedKeys: ReadonlySet<string>,
-): boolean {
-  if (!detail || typeof detail !== "object") return false;
-  return Reflect.ownKeys(detail).every((key) => typeof key === "string" && allowedKeys.has(key)) &&
-    [...allowedKeys].every((key) => !(key in detail) || hasOwnDetailField(detail, key));
+): detail is Record<string, unknown> {
+  if (!isPlainDetailObject(detail)) return false;
+  if (!Reflect.ownKeys(detail).every((key) => typeof key === "string" && allowedKeys.has(key))) return false;
+  for (const key in detail) {
+    if (!hasOwnDetailField(detail, key) || !allowedKeys.has(key)) return false;
+  }
+  return [...RECOGNIZED_DETAIL_KEYS].every((key) => !(key in detail) || hasOwnDetailField(detail, key));
 }
 
 function normalizeString(value: unknown): string | null {
@@ -209,10 +220,9 @@ export function attentionClearedSessionId(event: Event): string | null {
   if (event.type !== CHAT_ATTENTION_CLEAR_EVENT) return null;
   const detail = (event as CustomEvent<Record<string, unknown> | null>).detail;
   const sessionId = normalizeString(detail?.sessionId);
-  if (!sessionId || !detail || typeof detail !== "object") return null;
+  if (!sessionId || !hasOnlyAllowedDetailKeys(detail, LEGACY_CLEAR_DETAIL_KEYS)) return null;
   const detailKeys = Reflect.ownKeys(detail);
   if (detailKeys.length !== 1 || detailKeys[0] !== "sessionId") return null;
-  if (MODERN_CLEAR_DETAIL_KEYS.some((key) => hasOwnDetailField(detail, key))) return null;
   return sessionId;
 }
 

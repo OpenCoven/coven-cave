@@ -250,6 +250,16 @@ test("settlement events accept only their own keys and reject clear-only or unkn
 });
 
 test("event shape validation requires own keys and rejects hidden unknown fields", () => {
+  const inheritedOperationId = Object.create({ operationId: "run-legacy" });
+  inheritedOperationId.sessionId = "session-legacy";
+  const inheritedOperationEvent = new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, { detail: inheritedOperationId });
+  assert.equal(attentionClearFromEvent(inheritedOperationEvent), null);
+  assert.equal(
+    attentionClearedSessionId(inheritedOperationEvent),
+    null,
+    "legacy session-only fallback must reject inherited modern fields as well",
+  );
+
   const inheritedOutcome = Object.create({ outcome: "persisted" });
   inheritedOutcome.sessionId = "session-9";
   inheritedOutcome.operationId = "run-9";
@@ -269,6 +279,49 @@ test("event shape validation requires own keys and rejects hidden unknown fields
   Object.defineProperty(hiddenLegacyUnknown, "operationId", { value: "run-legacy" });
   assert.equal(
     attentionClearedSessionId(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, { detail: hiddenLegacyUnknown })),
+    null,
+  );
+
+  const enumerableInheritedUnknown = Object.create({ futureField: true });
+  enumerableInheritedUnknown.sessionId = "session-8";
+  enumerableInheritedUnknown.operationId = "run-8";
+  assert.equal(
+    attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, { detail: enumerableInheritedUnknown })),
+    null,
+  );
+});
+
+test("event detail must be a plain object with own fields", () => {
+  const nullPrototypeClear = Object.assign(Object.create(null) as Record<string, unknown>, {
+    sessionId: "session-10",
+    operationId: "run-10",
+  });
+  assert.deepEqual(
+    attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, { detail: nullPrototypeClear })),
+    { sessionId: "session-10", operationId: "run-10" },
+  );
+
+  const nullPrototypeLegacy = Object.assign(Object.create(null) as Record<string, unknown>, {
+    sessionId: " session-legacy-null ",
+  });
+  assert.equal(
+    attentionClearedSessionId(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, { detail: nullPrototypeLegacy })),
+    "session-legacy-null",
+  );
+
+  class DetailPayload {
+    sessionId = "session-11";
+    operationId = "run-11";
+  }
+
+  assert.equal(
+    attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, { detail: new DetailPayload() })),
+    null,
+  );
+
+  const arrayDetail = Object.assign([], { sessionId: "session-12", operationId: "run-12" });
+  assert.equal(
+    attentionClearFromEvent(new CustomEvent(CHAT_ATTENTION_CLEAR_EVENT, { detail: arrayDetail })),
     null,
   );
 });
