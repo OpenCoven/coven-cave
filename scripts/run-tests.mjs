@@ -352,6 +352,7 @@ export const SUITES = {
     "src/lib/command-controls.test.ts",
     "src/lib/travel-client-state.test.ts",
     "src/lib/travel-offline-replay.test.ts",
+    "src/lib/travel-replay-output.test.ts",
     "src/lib/travel-network-drop-proof.test.ts",
     "src/lib/role-manifest.test.ts",
     "src/lib/chat-reply.test.ts",

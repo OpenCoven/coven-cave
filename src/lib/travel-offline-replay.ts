@@ -12,13 +12,14 @@ import {
 } from "@/lib/cave-config";
 import { chatTitleFromPrompt, defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import { buildPromptWithAttachments, type ChatAttachment } from "@/lib/chat-attachments";
+import { buildPromptWithResponseControls } from "@/app/api/chat/send/chat-send-models";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import type { CodexAutomation } from "@/lib/codex-automations-types";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 import { cleanModelId } from "@/lib/chat-model-state";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
-import { persistQueuedOfflineConversation } from "@/lib/cave-conversations";
+import { loadConversation, persistQueuedOfflineConversation, saveConversation } from "@/lib/cave-conversations";
 import { flowExecutionOrder, flowPartialExecutionOrder, compileFlowPrompt } from "@/lib/flow/flow-compile";
 import type { FlowExecutionMode } from "@/lib/flow/flow-compile";
 import type { FlowDoc } from "@/lib/flow/flow-doc";
@@ -35,6 +36,7 @@ import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
 import { recordRun } from "@/lib/workflow-runs";
 import { loadLocalWorkflowList } from "@/lib/workflow-source";
 import type { WorkflowSummary } from "@/lib/workflows";
+import { decodeReplayAssistantOutput, replayOutputContractForHarness } from "@/lib/travel-replay-output";
 
 export type TravelOfflineReplayResult = {
   attempted: number;
@@ -45,6 +47,23 @@ export type TravelOfflineReplayResult = {
 
 type DaemonSessionResponse = { id?: string; status?: string };
 type WorkflowEngineResponse = { ok?: boolean; runId?: string; status?: string; error?: string };
+type DaemonSessionSummary = {
+  id?: string;
+  status?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+  completed_at?: string | null;
+};
+type DaemonEventPage = {
+  events?: Array<{ kind?: string; payload_json?: string | null; timestamp?: string | null }>;
+  next_cursor?: string | null;
+};
+type ReplayAssistantStatus = {
+  status: string | null;
+  assistantText: string | null;
+  completedAt: string | null;
+};
+type ReplayTravelQueueOutcome = "complete" | "pending";
 
 function queuedModelOverride(payload: Record<string, unknown>): string | null | undefined {
   const hasModelOverride = Object.prototype.hasOwnProperty.call(payload, "modelOverride");
@@ -119,6 +138,136 @@ function daemonError(res: { status: number; error?: string; data: unknown }): st
     `daemon http ${res.status}`;
 }
 
+function canonicalDaemonTimestamp(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Date.parse(trimmed);
+  if (Number.isNaN(parsed)) return null;
+  return new Date(parsed).toISOString();
+}
+
+function parseDaemonEventTimestamp(event: { timestamp?: string | null; payload_json?: string | null }): string | null {
+  const topLevel = canonicalDaemonTimestamp(event.timestamp);
+  if (topLevel) return topLevel;
+  if (typeof event.payload_json !== "string" || !event.payload_json.trim()) return null;
+  try {
+    const payload = JSON.parse(event.payload_json) as Record<string, unknown>;
+    return canonicalDaemonTimestamp(payload.timestamp);
+  } catch {
+    return null;
+  }
+}
+
+async function loadDaemonSession(harnessSessionId: string): Promise<DaemonSessionSummary | null> {
+  const res = await callDaemon<DaemonSessionSummary | { sessions?: DaemonSessionSummary[] }>({
+    method: "GET",
+    path: `/api/v1/sessions?id=${encodeURIComponent(harnessSessionId)}&include_archived=true`,
+    timeoutMs: 8000,
+  });
+  if (!res.ok) return null;
+  if (Array.isArray((res.data as { sessions?: DaemonSessionSummary[] } | null | undefined)?.sessions)) {
+    return (res.data as { sessions?: DaemonSessionSummary[] }).sessions?.find((session) => session?.id === harnessSessionId) ?? null;
+  }
+  const direct = res.data as DaemonSessionSummary | null | undefined;
+  return direct?.id === harnessSessionId ? direct : null;
+}
+
+async function collectReplayEventPages(harnessSessionId: string): Promise<Array<{ kind?: string; payload_json?: string | null; timestamp?: string | null }>> {
+  const events: Array<{ kind?: string; payload_json?: string | null; timestamp?: string | null }> = [];
+  let cursor: string | null = null;
+  while (true) {
+    const path = cursor
+      ? `/api/v1/events?session_id=${encodeURIComponent(harnessSessionId)}&cursor=${encodeURIComponent(cursor)}`
+      : `/api/v1/events?session_id=${encodeURIComponent(harnessSessionId)}`;
+    const res: Awaited<ReturnType<typeof callDaemon<DaemonEventPage>>> = await callDaemon<DaemonEventPage>({
+      method: "GET",
+      path,
+      timeoutMs: 8000,
+    });
+    if (!res.ok) throw new Error(daemonError(res));
+    const pageEvents = Array.isArray(res.data?.events) ? res.data.events : [];
+    events.push(...pageEvents);
+    cursor = typeof res.data?.next_cursor === "string" && res.data.next_cursor.trim() ? res.data.next_cursor : null;
+    if (!cursor) break;
+  }
+  return events;
+}
+
+function replayAssistantMirrorOutcome(status: ReplayAssistantStatus): ReplayTravelQueueOutcome | "missing" {
+  const normalized = (status.status ?? "").trim().toLowerCase();
+  if (!normalized || normalized === "running" || normalized === "queued" || normalized === "pending") return "pending";
+  if (!status.assistantText) return "missing";
+  return "complete";
+}
+
+async function persistReplayAssistantTurn(args: {
+  sessionId: string;
+  harnessSessionId: string;
+  userTurnId: string;
+  assistantText: string;
+  payload: Record<string, unknown>;
+  familiarId: string;
+  isError: boolean;
+  completedAt: string | null;
+}): Promise<boolean> {
+  const metadata = record(args.payload.responseMetadata);
+  const metadataHarness = stringValue(metadata.harness);
+  const metadataModel = stringValue(metadata.model);
+  const metadataRuntime = stringValue(metadata.runtime);
+  const conversation = await loadConversation(args.sessionId);
+  if (!conversation) return false;
+  const existing = conversation.turns.find((turn) => turn.role === "assistant" && turn.parentId === args.userTurnId);
+  if (existing) return true;
+  const createdAt = args.completedAt ?? new Date().toISOString();
+  const turnId = `${args.userTurnId}-assistant`;
+  const responseHarness = metadataHarness ?? conversation.harness ?? "claude";
+  const responseModel = metadataModel ?? conversation.model ?? "";
+  const responseRuntime = metadataRuntime ?? conversation.runtime ?? "";
+  conversation.turns.push({
+    id: turnId,
+    role: "assistant",
+    text: args.assistantText,
+    createdAt,
+    parentId: args.userTurnId,
+    ...(args.isError ? { isError: true } : {}),
+    responseMetadata: {
+      familiarId: args.familiarId,
+      harness: responseHarness,
+      model: responseModel,
+      runtime: responseRuntime,
+      ...(args.completedAt
+        ? {
+            attentionRequest: {
+              sessionId: args.sessionId,
+              turnId,
+              requestedAt: args.completedAt,
+              reason: "approval",
+            },
+          }
+        : {}),
+    },
+  });
+  conversation.activeLeafId = turnId;
+  conversation.updatedAt = createdAt;
+  await saveConversation(conversation);
+  return true;
+}
+
+async function replayAssistantStatus(args: { harnessSessionId: string; harness: string }): Promise<ReplayAssistantStatus> {
+  const session = await loadDaemonSession(args.harnessSessionId);
+  const status = stringValue(session?.status) ?? null;
+  const events = await collectReplayEventPages(args.harnessSessionId);
+  const assistantText = decodeReplayAssistantOutput({
+    harness: args.harness,
+    ...replayOutputContractForHarness(args.harness),
+    events,
+  });
+  const eventCompletion = [...events].reverse().map((event) => parseDaemonEventTimestamp(event)).find(Boolean) ?? null;
+  const completedAt = canonicalDaemonTimestamp(session?.completed_at) ?? canonicalDaemonTimestamp(session?.updated_at) ?? canonicalDaemonTimestamp(session?.created_at) ?? eventCompletion;
+  return { status, assistantText, completedAt };
+}
+
 async function spawnHubSession(args: {
   config: CaveConfig;
   familiarId: string | null;
@@ -167,7 +316,7 @@ async function spawnHubSession(args: {
   return res.data.id;
 }
 
-async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promise<void> {
+async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promise<ReplayTravelQueueOutcome> {
   const payload = record(item.payload);
   const familiarId = stringValue(payload.familiarId);
   const prompt = stringValue(payload.prompt);
@@ -211,7 +360,10 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const attachments = objectArray<ChatAttachment>(payload.attachments);
   const queuedPayloadModelOverride = stringValue(payload.modelOverride);
   const queuedRunId = stringValue(payload.runId);
-  const replayPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });
+  const replayPrompt = buildPromptWithResponseControls(
+    buildPromptWithAttachments(prompt, attachments, { imagesSupported: false }),
+    {},
+  );
   let harnessSessionId = stringValue(payload.harnessSessionId);
   if (!harnessSessionId) {
     harnessSessionId = await spawnHubSession({
@@ -219,10 +371,6 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
       familiarId,
       harness: binding.harness,
       prompt: replayPrompt,
-      // Preserve the distinction between an omitted model and an explicit
-      // runtime-default request. The daemon receives no model argument in both
-      // cases, while the scope marker prevents this replay path from treating a
-      // cleared model as an accidental static/catalog fallback.
       model: modelOverride,
       ...(payload.modelOverrideScope === "runtime-default"
         ? { modelOverrideScope: "runtime-default" as const }
@@ -236,6 +384,7 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     await updateOfflineTravelItemPayload(item.id, { ...payload, harnessSessionId });
   }
   const sessionId = stringValue(payload.sessionId) ?? item.id;
+  const userTurnId = stringValue(payload.userTurnId) ?? item.id;
   await persistQueuedOfflineConversation({
     sessionId,
     familiarId,
@@ -250,7 +399,7 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     createdAt: item.createdAt,
     harnessSessionId,
     userTurn: {
-      id: stringValue(payload.userTurnId) ?? item.id,
+      id: userTurnId,
       text: prompt,
       ...(attachments.length ? { attachments } : {}),
       ...(queuedRunId ? { attentionClearOperationId: queuedRunId } : {}),
@@ -275,6 +424,26 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   if (sessionId !== harnessSessionId) {
     await setSessionTitle(harnessSessionId, chatTitleFromPrompt(prompt) ?? `Travel replay: ${item.summary}`);
   }
+  const mirrored = await replayAssistantStatus({ harnessSessionId, harness: binding.harness });
+  const mirrorOutcome = replayAssistantMirrorOutcome(mirrored);
+  if (mirrorOutcome === "pending") return "pending";
+  if (mirrorOutcome === "missing" || !mirrored.assistantText) {
+    throw new Error("replayed session finished without a usable assistant reply to mirror");
+  }
+  const persisted = await persistReplayAssistantTurn({
+    sessionId,
+    harnessSessionId,
+    userTurnId,
+    assistantText: mirrored.assistantText,
+    payload,
+    familiarId,
+    isError: (mirrored.status ?? "").trim().toLowerCase() === "failed",
+    completedAt: mirrored.completedAt,
+  });
+  if (!persisted) {
+    throw new Error("replayed assistant reply could not be attached to its queued user turn");
+  }
+  return "complete";
 }
 
 async function workflowForPayload(payload: Record<string, unknown>, body: Record<string, unknown>): Promise<WorkflowSummary | null> {
@@ -286,7 +455,7 @@ async function workflowForPayload(payload: Record<string, unknown>, body: Record
   return list.workflows.find((wf) => (wantedId && wf.id === wantedId) || (wantedPath && wf.path === wantedPath)) ?? null;
 }
 
-async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Promise<void> {
+async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Promise<ReplayTravelQueueOutcome> {
   const payload = record(item.payload);
   const body = record(payload.body);
   const workflow = await workflowForPayload(payload, body);
@@ -308,7 +477,7 @@ async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Pr
       summary: engine.data?.runId ? `replayed daemon run ${engine.data.runId}` : `replayed ${item.id}`,
       source: "daemon",
     });
-    return;
+    return "complete";
   }
   if (engine.status !== 404) throw new Error(daemonError(engine));
 
@@ -336,6 +505,7 @@ async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Pr
     source: "cave",
     sessionId,
   });
+  return "complete";
 }
 
 function flowFamiliar(flow: FlowDoc): string | null {
@@ -366,7 +536,7 @@ function flowExecutionMode(value: unknown): FlowExecutionMode {
   return value === "production" ? "production" : "manual";
 }
 
-async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promise<void> {
+async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promise<ReplayTravelQueueOutcome> {
   const payload = record(item.payload);
   const flow = payload.flow as FlowDoc | undefined;
   if (!flow?.id || !Array.isArray(flow.nodes)) throw new Error("queued flow payload missing flow snapshot");
@@ -420,12 +590,13 @@ async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const placeholderRunId = stringValue(payload.placeholderRunId);
   if (placeholderRunId) {
     const updated = await updateFlowRun(placeholderRunId, runFields);
-    if (updated) return;
+    if (updated) return "complete";
   }
   await recordFlowRun(runFields);
+  return "complete";
 }
 
-async function replayJob(item: CaveTravelQueueItem): Promise<void> {
+async function replayJob(item: CaveTravelQueueItem): Promise<ReplayTravelQueueOutcome> {
   const payload = record(item.payload);
   const automation = record(payload.automation) as Partial<CodexAutomation>;
   if (!automation.id || !automation.name || !Array.isArray(automation.cwds) || typeof automation.prompt !== "string") {
@@ -447,9 +618,10 @@ async function replayJob(item: CaveTravelQueueItem): Promise<void> {
     skillPath: automation.skillPath ?? null,
     scheduleHuman: automation.scheduleHuman ?? "manual",
   });
+  return "complete";
 }
 
-async function replayTravelQueueItem(item: CaveTravelQueueItem, config: CaveConfig): Promise<void> {
+async function replayTravelQueueItem(item: CaveTravelQueueItem, config: CaveConfig): Promise<ReplayTravelQueueOutcome> {
   const route = stringValue(record(item.payload).route);
   if (item.kind === "chat") return replayChat(item, config);
   if (item.kind === "workflow" && route === "flow-session") return replayFlow(item, config);
@@ -479,18 +651,26 @@ async function syncOfflineTravelQueueInner(
   const result: TravelOfflineReplayResult = { attempted: 0, synced: 0, failed: 0, errors: [] };
   if (config.multiHost.mode !== "hub") return result;
 
-  const candidates = (await offlineTravelItemsNeedingSync()).slice(0, maxItems);
+  const candidates = await offlineTravelItemsNeedingSync();
+  const blockedChatConversations = new Set<string>();
   for (const candidate of candidates) {
+    if (result.attempted >= maxItems) break;
+    const chatConversationId = candidate.kind === "chat" ? stringValue(record(candidate.payload).sessionId) ?? candidate.id : null;
+    if (chatConversationId && blockedChatConversations.has(chatConversationId)) continue;
     const item = await markOfflineTravelItemSyncing(candidate.id);
     if (!item) continue;
     result.attempted += 1;
     try {
-      await replayTravelQueueItem(item, config);
-      await completeOfflineTravelItem(item.id);
+      const outcome = await replayTravelQueueItem(item, config);
+      if (outcome === "pending" && chatConversationId) blockedChatConversations.add(chatConversationId);
+      if (outcome === "complete") {
+        await completeOfflineTravelItem(item.id);
+      }
       result.synced += 1;
     } catch (err) {
       const error = replayError(err);
       await failOfflineTravelItem(item.id, error);
+      if (chatConversationId) blockedChatConversations.add(chatConversationId);
       result.failed += 1;
       result.errors.push({ id: item.id, error });
     }

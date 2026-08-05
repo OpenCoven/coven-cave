@@ -146,17 +146,35 @@ assert.match(
   "chat replay should revalidate the current familiar project grant before spawning a hub session",
 );
 
-assert.doesNotMatch(
+assert.match(
   replay,
   /travel-replay-output|replayAssistantStatus|collectReplayEventPages|\/api\/v1\/events|assistantText/,
-  "baseline travel replay must not decode or mirror daemon assistant output",
+  "travel replay should collect daemon events and mirror assistant output when available",
+);
+
+assert.match(
+  replay,
+  /const replayPrompt = buildPromptWithResponseControls\(\s*buildPromptWithAttachments\(prompt, attachments, \{ imagesSupported: false \}\),/,
+  "chat replay should launch with the structured response-controls prompt contract",
+);
+
+assert.match(
+  replay,
+  /const mirrorOutcome = replayAssistantMirrorOutcome\(mirrored\);[\s\S]*if \(mirrorOutcome === "pending"\) return "pending";[\s\S]*completedAt: mirrored\.completedAt/,
+  "chat replay should keep pending daemon sessions retryable and persist the daemon completion timestamp with mirrored assistant turns",
+);
+
+assert.match(
+  replay,
+  /canonicalDaemonTimestamp\([\s\S]*parseDaemonEventTimestamp\([\s\S]*completedAt = canonicalDaemonTimestamp\(/,
+  "travel replay should normalize authoritative daemon timestamps before persisting mirrored assistant state",
 );
 
 console.log("travel-offline-replay.test.ts: ok");
 
 assert.match(
   replay,
-  /const placeholderRunId = stringValue\(payload\.placeholderRunId\);[\s\S]*?if \(placeholderRunId\) \{[\s\S]*?await updateFlowRun\(placeholderRunId, runFields\);[\s\S]*?if \(updated\) return;[\s\S]*?await recordFlowRun\(runFields\);/,
+  /const placeholderRunId = stringValue\(payload\.placeholderRunId\);[\s\S]*?if \(placeholderRunId\) \{[\s\S]*?await updateFlowRun\(placeholderRunId, runFields\);[\s\S]*?if \(updated\) return "complete";[\s\S]*?await recordFlowRun\(runFields\);/,
   "flow replay must update the queued placeholder run in place (mission iterations keep its id), falling back to a fresh record only for legacy/evicted items",
 );
 
