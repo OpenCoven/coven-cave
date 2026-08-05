@@ -481,9 +481,6 @@ details[open] > .cave-tool-summary::before {
 .cave-tool-skills__icon { color: var(--accent-presence); }
 .cave-tool-skills__count { color: var(--text-muted); }
 
-/* The work line's quiet rollup — "4 batches · 6 ok". One phrase, never wrapped
-   away from the tinted running/error counters beside it. */
-.cave-tool-rollup { white-space: nowrap; }
 
 /* CHAT-D4-07: expanded tool I/O is secondary context — clamp it tighter than
    prose code blocks (which cap at min(60vh, 520px), CHAT-D7-03). 360px sits
