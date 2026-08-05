@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { readFile } from "node:fs/promises";
 import { sanitizeAboutDiagnosticText } from "./about-diagnostics.ts";
 import {
+  parseDaemonLifecycleInspection,
   startLocalDaemon,
   terminateDaemonLaunchTree,
 } from "./daemon-start.ts";
@@ -29,6 +30,16 @@ assert.match(daemonStart, /assessDaemonStartupCompatibility/, "readiness must va
 assert.match(daemonStart, /code: "runtime_incompatible"/, "a stale or incompatible runtime has a stable actionable outcome");
 assert.match(daemonStart, /RuntimeStartupThrottle/, "repeated failed starts must be bounded to prevent a restart storm");
 assert.match(daemonStart, /activeDaemonStart/, "concurrent start requests must share one owned launch");
+
+for (const [payload, expected] of [
+  [{ status: "running", ok: true }, { status: "running" }],
+  [{ status: "stopped", ok: false }, { status: "stopped" }],
+  [{ status: "stale", ok: false, pid: 42 }, { status: "stale" }],
+  [{ status: "future" }, { status: "unknown" }],
+  [null, { status: "unknown" }],
+]) {
+  assert.deepEqual(parseDaemonLifecycleInspection(payload), expected);
+}
 
 function fakeChild(pid = 4321) {
   const child = Object.assign(new EventEmitter(), {
@@ -89,6 +100,78 @@ test("an exited launcher reports not-ready only after its final probe", async ()
     sleep: async () => assert.fail("an exited launcher should not sleep"),
   });
   assert.deepEqual(result, { ready: true, attempts: 2, elapsedMs: 0, runnerExited: true });
+});
+
+test("an exited launcher keeps probing through a bounded supervisor grace", async () => {
+  let now = 0;
+  let probes = 0;
+  const result = await waitForDaemonReadiness({
+    probe: async () => ({ ok: ++probes === 3 }),
+    timeoutMs: 1000,
+    pollMs: 100,
+    runnerExitGraceMs: 200,
+    runnerExited: () => true,
+    now: () => now,
+    sleep: async (ms) => { now += ms; },
+  });
+  assert.deepEqual(result, { ready: true, attempts: 3, elapsedMs: 200, runnerExited: true });
+});
+
+for (const lifecycle of ["stale", "unknown"]) {
+  test(`automatic recovery defers without spawning when lifecycle is ${lifecycle}`, async () => {
+    let spawnCalls = 0;
+    const result = await startLocalDaemon({
+      automatic: true,
+      probe: async () => ({ ok: false }),
+      inspectLifecycle: async () => ({ status: lifecycle }),
+      spawnImpl: () => {
+        spawnCalls += 1;
+        return fakeChild();
+      },
+    });
+
+    assert.equal(spawnCalls, 0, "a live or unconfirmed owner must never get a competing daemon");
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "owner_unreachable");
+    assert.equal(result.status, 409);
+    assert.equal(result.launchMode, "none");
+  });
+}
+
+test("an automatic request cannot use restart to skip the lifecycle preflight", async () => {
+  let spawnCalls = 0;
+  const result = await startLocalDaemon({
+    automatic: true,
+    restart: true,
+    probe: async () => ({ ok: false }),
+    inspectLifecycle: async () => ({ status: "stale" }),
+    spawnImpl: () => {
+      spawnCalls += 1;
+      return fakeChild();
+    },
+  });
+
+  assert.equal(spawnCalls, 0, "restart must not let an automatic request bypass the fail-closed preflight");
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "owner_unreachable");
+});
+
+test("automatic recovery still starts after lifecycle proves stopped", async () => {
+  const child = fakeChild();
+  let spawnCalls = 0;
+  let probes = 0;
+  const result = await startLocalDaemon({
+    automatic: true,
+    probe: async () => ({ ok: ++probes >= 2 }),
+    inspectLifecycle: async () => ({ status: "stopped" }),
+    spawnImpl: () => {
+      spawnCalls += 1;
+      return child;
+    },
+  });
+
+  assert.equal(spawnCalls, 1);
+  assert.equal(result.ok, true);
 });
 
 test("a readiness timeout terminates the Windows launch tree", async () => {
