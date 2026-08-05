@@ -70,7 +70,72 @@ assert.equal(
   "preserve off → auto-rename may take over any title",
 );
 
-// ── Derivation reuses the pure chatSummaryTitle over the LATEST exchange ──────
+// ── P1: explicit manual ownership wins over text equality ────────────────────
+// When the cave-config state carries an explicit sessionTitleManual marker,
+// isAutoOwnedTitle must return false regardless of text match with autoDefaults.
+// This prevents provenance inference from falsely reclaiming a user-chosen
+// title that happens to equal "New chat" or a first-prompt summary default.
+assert.equal(
+  isAutoOwnedTitle({
+    current: "New chat",
+    lastAutoTitle: null,
+    autoDefaults: defaults,
+    preserveManualTitles: true,
+    explicitlyManual: true,
+  }),
+  false,
+  "explicitly manual 'New chat' is never auto-owned, even though it equals an autoDefault",
+);
+assert.equal(
+  isAutoOwnedTitle({
+    current: "Fix the sync path",
+    lastAutoTitle: null,
+    autoDefaults: defaults,
+    preserveManualTitles: true,
+    explicitlyManual: true,
+  }),
+  false,
+  "explicitly manual first-prompt summary is never auto-owned, even though it equals an autoDefault",
+);
+// explicitlyManual wins over lastAutoTitle match too.
+assert.equal(
+  isAutoOwnedTitle({
+    current: "Deploying to prod",
+    lastAutoTitle: "Deploying to prod",
+    autoDefaults: defaults,
+    preserveManualTitles: true,
+    explicitlyManual: true,
+  }),
+  false,
+  "explicitly manual title wins even when current equals lastAutoTitle",
+);
+// explicitlyManual with preserveManualTitles: false — preserve flag is off so
+// manual marker is not consulted; caller explicitly opted out of protection.
+assert.equal(
+  isAutoOwnedTitle({
+    current: "New chat",
+    lastAutoTitle: null,
+    autoDefaults: defaults,
+    preserveManualTitles: false,
+    explicitlyManual: true,
+  }),
+  true,
+  "preserve off — auto-rename may take over any title including explicitly manual ones",
+);
+// Auto-set "New chat" without explicitlyManual remains replaceable.
+assert.equal(
+  isAutoOwnedTitle({
+    current: "New chat",
+    lastAutoTitle: null,
+    autoDefaults: defaults,
+    preserveManualTitles: true,
+    explicitlyManual: false,
+  }),
+  true,
+  "auto-set 'New chat' without explicit manual marker remains replaceable",
+);
+
+
 assert.equal(
   renameTitleFromLatestExchange({ userText: "help me migrate the auth service to OAuth", assistantText: "" }),
   "Migrate the auth service to OAuth",

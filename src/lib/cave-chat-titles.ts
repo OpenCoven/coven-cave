@@ -21,7 +21,7 @@ const EMOJI_TAG_SEQUENCE = String.raw`(?:[\u{E0020}-\u{E007E}]+\u{E007F})`;
 // presentation. Both must be consumed as part of the preceding base character
 // so they do not leak into the stripped output (e.g. "❤︎ Fix" → "Fix").
 const EMOJI_COMPONENT = String.raw`${PICTOGRAPHIC}(?:\uFE0F|\uFE0E|\p{Emoji_Modifier})?(?:${EMOJI_TAG_SEQUENCE})?`;
-const EMOJI_SEQUENCE = String.raw`(?:[#*0-9]\uFE0F?\u20E3|${EMOJI_COMPONENT}(?:\u200D${EMOJI_COMPONENT})*)`;
+const EMOJI_SEQUENCE = String.raw`(?:[#*0-9][\uFE0F\uFE0E]?\u20E3|${EMOJI_COMPONENT}(?:\u200D${EMOJI_COMPONENT})*)`;
 // Lone tag characters (U+E0020–U+E007F) at a title edge are invisible garbage
 // that can be left behind when a subdivision-flag sequence is only partially
 // present (e.g. tag chars without a preceding base pictographic). They must be
@@ -139,12 +139,13 @@ const BOILERPLATE_ONLY_RE =
 // are NOT consumed — `"Fix parser."` becomes `"Fix parser"`, not `Fix parser`.
 // Placing the delimiters in the lookahead also means a bare trailing punct run
 // (`Fix parser.`) is handled identically: zero closing chars before `$`.
-// U+203D = interrobang ‽, U+061F = Arabic question mark ؟ — both are
-// sentence-ending characters not covered by ASCII .!? and must be stripped.
+// U+203D = interrobang ‽, U+061F = Arabic question mark ؟, U+FF0E = fullwidth
+// full stop ．— all sentence-ending characters not covered by ASCII .!? and
+// must be stripped.
 const TRAILING_TITLE_PUNCTUATION_RE =
-  /[.,:;!?\u2026\u203D\u061F\u3002\uFF01\uFF1F][\s.,:;!?\u2026\u203D\u061F\u3002\uFF01\uFF1F]*(?=['")\]}\u2018\u2019\u201C\u201D\u203A\u00BB]*$)/u;
+  /[.,:;!?\u2026\u203D\u061F\u3002\uFF01\uFF1F\uFF0E][\s.,:;!?\u2026\u203D\u061F\u3002\uFF01\uFF1F\uFF0E]*(?=['")\]}\u2018\u2019\u201C\u201D\u203A\u00BB]*$)/u;
 const TRAILING_TRUNCATION_PUNCTUATION_RE =
-  /[.,:;!?\-–—\u2026\u203D\u061F\u3002\uFF01\uFF1F][\s.,:;!?\-–—\u2026\u203D\u061F\u3002\uFF01\uFF1F]*$/u;
+  /[.,:;!?\-–—\u2026\u203D\u061F\u3002\uFF01\uFF1F\uFF0E][\s.,:;!?\-–—\u2026\u203D\u061F\u3002\uFF01\uFF1F\uFF0E]*$/u;
 
 function stripTrailingTitlePunctuation(text: string): string {
   return text.replace(TRAILING_TITLE_PUNCTUATION_RE, "").trimEnd();
@@ -290,9 +291,13 @@ function formatGeneratedTitle(text: string): string | null {
   // Normalize markdown images and links linearly (no backtracking regex).
   // ![alt](dest) → alt text; [label](dest) → label; destination discarded.
   s = normalizeMarkdownInlineLinks(s);
-  // Markdown autolinks have no human-readable label, so discard the entire
-  // construct rather than leaking either the URL or its angle brackets.
+  // Markdown URL/mailto autolinks have no human-readable label, so discard
+  // the entire construct rather than leaking URL text or angle brackets.
   s = s.replace(/<(?:https?:\/\/|mailto:)[^>\s]+>/gi, " ");
+  // Markdown email autolinks (<user@example.com>) carry useful content — strip
+  // only the angle brackets so the address remains legible in the title.
+  // RFC 5321 local-part: printable ASCII except <>@,;:\"/[]{}
+  s = s.replace(/<([a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9.-]+)>/g, "$1");
   // Normalize full/collapsed reference links and shortcut reference links.
   // These simple patterns are safe (no nested quantifiers).
   s = s

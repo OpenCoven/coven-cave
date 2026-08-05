@@ -728,6 +728,29 @@ assert.equal(
     "deeply nested balanced destinations reduce to their label",
   );
 }
+assert.equal(
+  chatSummaryTitle({
+    userText: '[Docs](https://x.test/a_(b) "see ) details") safely',
+  }),
+  "Docs safely",
+  "parentheses inside an optional quoted link title do not terminate the destination or leak title text",
+);
+{
+  const malformedAtManualLimit = `[Docs](${"a".repeat(113)}`;
+  assert.equal(malformedAtManualLimit.length, 120, "performance fixture stays at the manual-title limit");
+  const startedAt = performance.now();
+  for (let iteration = 0; iteration < 200; iteration++) {
+    assert.equal(
+      chatSummaryTitle({ userText: malformedAtManualLimit }),
+      "Docs",
+      "an unclosed destination is safely reduced to its label",
+    );
+  }
+  assert.ok(
+    performance.now() - startedAt < 3_000,
+    "manual-length malformed links are processed repeatedly without catastrophic backtracking",
+  );
+}
 
 assert.equal(
   chatSummaryTitle({ userText: '"🎉 Fix parser"' }),
@@ -906,6 +929,98 @@ assert.equal(
   chatSummaryTitle({ userText: "I need help with parsers" }),
   "I need help with parsers",
   "I need help preserved — no you to or to form to match",
+);
+
+// ── P2: Markdown email autolink ───────────────────────────────────────────────
+// <user@example.com> is a valid Markdown autolink whose content (the address
+// itself) IS useful. Strip the angle brackets but preserve the address text,
+// unlike URL autolinks whose destination is always discarded.
+assert.equal(
+  chatSummaryTitle({ userText: "<user@example.com>" }),
+  "User@example.com",
+  "bare Markdown email autolink: angle brackets stripped, address text preserved",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Contact <user@example.com> now" }),
+  "Contact user@example.com now",
+  "inline Markdown email autolink: angle brackets stripped, address stays lowercase",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "<https://example.com>" }),
+  null,
+  "URL autolink is still fully stripped (no content preserved)",
+);
+
+// ── P2: Fullwidth full stop U+FF0E stripped at sentence end ──────────────────
+// U+FF0E (FULLWIDTH FULL STOP ．) is a sentence-ending character that must be
+// stripped from title ends, just like its ASCII counterpart and 。！？.
+assert.equal(
+  chatSummaryTitle({ userText: "Fix parser\uFF0E" }),
+  "Fix parser",
+  "fullwidth full stop U+FF0E stripped from bare title end",
+);
+assert.equal(
+  chatSummaryTitle({ userText: '"Fix parser\uFF0E"' }),
+  '"Fix parser"',
+  "fullwidth full stop before closing quote stripped; quote preserved",
+);
+// U+FF0E must not survive truncation (same contract as . before ellipsis).
+{
+  const fullwidthTrunc = chatSummaryTitle({
+    userText: "one two three four five six seven eight\uFF0E",
+  });
+  assert.ok(fullwidthTrunc !== null, "fullwidth-stop truncation: yields a title");
+  assert.ok(
+    !fullwidthTrunc!.includes("\uFF0E"),
+    `fullwidth stop removed before truncation ellipsis, got "${fullwidthTrunc}"`,
+  );
+  assert.ok(fullwidthTrunc!.endsWith("…"), "truncation ellipsis appended after fullwidth stop stripped");
+}
+
+// ── P2: Edge emoji after opening quotes ──────────────────────────────────────
+// Emoji immediately following an opening delimiter (quote, paren, bracket)
+// must be stripped while the delimiter itself is preserved.
+assert.equal(
+  chatSummaryTitle({ userText: '"🎉 Fix parser"' }),
+  '"Fix parser"',
+  "leading emoji after straight double-quote stripped; quote preserved",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "(\uD83D\uDC69\u200D\uD83D\uDCBB Fix parser)" }),
+  "(Fix parser)",
+  "leading ZWJ emoji after opening paren stripped; paren preserved",
+);
+assert.equal(
+  chatSummaryTitle({ userText: '"\uD83C\uDF89 Fix 🎉 parser"' }),
+  '"\uD83C\uDF89 Fix 🎉 parser"'.replace(/^"\uD83C\uDF89 /, '"'),
+  "leading emoji after quote stripped; meaningful mid-title emoji preserved",
+);
+
+// ── P2: VS15 keycap sequences stripped at edges ──────────────────────────────
+// Keycap sequences with the text-presentation selector VS15 (U+FE0E) instead
+// of VS16 (U+FE0F) must also be consumed at title edges. The EMOJI_SEQUENCE
+// matcher handles [#*0-9][\uFE0F\uFE0E]?\u20E3 so both variation selectors
+// (and no selector at all) are covered.
+assert.equal(
+  chatSummaryTitle({ userText: "1\uFE0E\u20E3 Fix parser" }),
+  "Fix parser",
+  "leading keycap with VS15 (text presentation selector) fully stripped",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "Fix parser #\uFE0E\u20E3" }),
+  "Fix parser",
+  "trailing keycap with VS15 fully stripped",
+);
+assert.equal(
+  chatSummaryTitle({ userText: "*\uFE0E\u20E3 Fix parser" }),
+  "Fix parser",
+  "leading asterisk-keycap with VS15 stripped",
+);
+// VS16 keycap (existing contract) remains unaffected.
+assert.equal(
+  chatSummaryTitle({ userText: "1\uFE0F\u20E3 Fix parser" }),
+  "Fix parser",
+  "leading keycap with VS16 still stripped (no regression)",
 );
 
 console.log("cave-chat-titles.test.ts ok");
