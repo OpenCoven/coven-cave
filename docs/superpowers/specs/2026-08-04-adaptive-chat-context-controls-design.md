@@ -1,7 +1,7 @@
 # Adaptive chat context controls
 
-**Bead:** `cave-qvh18`  
-**Status:** Approved design  
+**Bead:** `cave-qvh18`
+**Status:** Approved design
 **Scope:** Chat project, worktree, branch, and model controls
 
 ## Problem
