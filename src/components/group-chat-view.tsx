@@ -1487,13 +1487,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                 </div>
               ) : (
                 <div className="mx-auto flex max-w-3xl flex-col gap-5">
-                  {threads.map(({ user, replies }) => {
+                  {threads.map(({ user, replies }, threadIndex) => {
                     const targets = user.targetFamiliarIds
                       ?.map((id) => byId.get(id))
                       .filter((f): f is ResolvedFamiliar => Boolean(f));
                     const delegator = user.delegatedByFamiliarId
                       ? byId.get(user.delegatedByFamiliarId)
                       : undefined;
+                    const isLatestThread = threadIndex === threads.length - 1;
                     return (
                     <div key={user.id} className="flex flex-col gap-2">
                       <CovenMentionPills familiars={targets ?? []} align="end" />
@@ -1598,7 +1599,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                                     })()}
                                   </div>
                                 ) : null}
-                                {r.status === "done" && suggestions.length > 0 ? (
+                                {isLatestThread && r.status === "done" && suggestions.length > 0 ? (
                                   <div className="cave-next-paths mt-1.5" data-count={suggestions.length}>
                                     {suggestions.map((s, i) => {
                                       // The agent lists next steps best-first, so

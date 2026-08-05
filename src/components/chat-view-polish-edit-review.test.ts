@@ -12,19 +12,14 @@ import {
   turnRow,
 } from "./chat-view-polish-fixtures.ts";
 
-// Follow-ups are compact intent cards in both transcript and composer
-// placements. Their visual grammar belongs to the shared component rather
-// than the legacy send-on-click chip row.
+// Follow-ups are compact intent cards above the composer. Historical transcript
+// rows strip the control block without retaining stale actions.
 assert.match(
   source,
   /import \{ FollowUpCards \} from "@\/components\/chat-follow-up-cards"/,
   "ChatView imports the shared typed follow-up cards",
 );
-assert.match(
-  source,
-  /<FollowUpCards paths=\{nextPaths\} onActivate=\{onSuggestion\} \/>/,
-  "historical transcript turns use the same cards",
-);
+assert.equal([...source.matchAll(/<FollowUpCards/g)].length, 1, "only the current composer renders follow-up cards");
 assert.match(
   styles,
   /\.cave-followup-cards__grid \{[\s\S]*?grid-auto-flow: column;[\s\S]*?grid-auto-columns: minmax\(0, 1fr\)/,
