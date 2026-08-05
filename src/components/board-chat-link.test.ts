@@ -170,8 +170,13 @@ assert.match(
 );
 assert.match(
   chatView,
-  /case "done":[\s\S]{0,6000}startNewConversation && ev\.sessionId\) onSessionsChangedRef\.current\?\.\(\)/,
-  "A completed Board bridge refreshes sessions so the cockpit leaves its one-shot handoff mode",
+  /const shouldRefreshSessions = shouldCreationRefresh \|\| shouldReplacementRefresh \|\| \(startNewConversation && !!ev\.sessionId\)/,
+  "Board startNewConversation && !!ev.sessionId participates in the consolidated shouldRefreshSessions boolean",
+);
+assert.match(
+  chatView,
+  /if \(shouldRefreshSessions\) onSessionsChangedRef\.current\?\.\(\)/,
+  "The consolidated shouldRefreshSessions boolean causes exactly one onSessionsChangedRef.current() call at done completion",
 );
 assert.match(
   taskWorkCockpit,
