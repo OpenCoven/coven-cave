@@ -205,7 +205,7 @@ if (process.platform !== "win32") {
     );
     const outcome = await probeHelpOutcome(process.execPath, [childScript], () => true, process.env);
     assert.equal(outcome.ok, false, "a probe terminated by signal does not look like a successful capability miss");
-    if (!outcome.ok) assert.match(outcome.reason, /exited with code null/, "signal termination keeps its failure reason");
+    if (!outcome.ok) assert.match(outcome.reason, /exited without an exit code/, "signal termination keeps its failure reason");
   } finally {
     await rm(probeDir, { recursive: true, force: true });
   }
@@ -216,7 +216,7 @@ if (process.platform !== "win32") {
       throw new Error("matcher failed");
     }, process.env);
   assert.equal(outcome.ok, false, "an exception inside the help matcher resolves rather than hanging");
-  if (!outcome.ok) assert.match(outcome.reason, /help output could not be matched/, "matcher failures keep their probe-failure reason");
+  if (!outcome.ok) assert.match(outcome.reason, /help output could not be evaluated: matcher failed/, "matcher failures keep their probe-failure reason");
 }
 
 const capabilities = parseOpenCodeRunCapabilitiesHelp(`
