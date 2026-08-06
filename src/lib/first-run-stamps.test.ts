@@ -95,8 +95,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /\} else \{[^}]*stampFirstReplyOnce\(\);/,
-  "chat-view stamps the first reply only on a non-error done",
+  /\} else if \(!cancelled\) \{[\s\S]*?stampFirstReplyOnce\(\);/,
+  "chat-view stamps the first reply only on a non-error, non-cancelled done",
 );
 assert.match(
   analytics,
