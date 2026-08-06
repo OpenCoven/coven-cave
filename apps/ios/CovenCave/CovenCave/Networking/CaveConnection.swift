@@ -36,11 +36,16 @@ struct CaveConnection: Codable, Equatable {
             return URL(string: "https://\(trimmed)")
         }
 
-        // Bare host or IP → HTTP on the dev server port unless a port is present.
+        // Bare host or IP → HTTP on Cave's dedicated PRODUCTION port unless a
+        // port is present. A phone pairs with the packaged desktop app, which
+        // now always binds that port (src-tauri/src/sidecar_ports.rs); it used
+        // to take a random one per launch, so this default was only ever right
+        // for someone running `pnpm dev` on their Mac. The dev port stays in the
+        // alternates below so that case still connects.
         if trimmed.contains(":") {
             return URL(string: "http://\(trimmed)")
         }
-        return URL(string: "http://\(trimmed):3000")
+        return URL(string: "http://\(trimmed):\(CavePorts.production)")
     }
 
     /// WebSocket base derived from `baseURL` (https→wss, http→ws). Used by the
@@ -82,8 +87,11 @@ struct CaveConnection: Codable, Equatable {
             add("https://\(hostname):8443")   // Tailscale Serve's usual TLS port
             add("https://\(hostname)")        // bare 443
         } else {
-            // The desktop falls back through 3000-3010 when ports are taken
-            // (scripts/dev-app.sh / server.ts PORT), so probe the whole range.
+            // The dedicated ports come first: production is what a packaged
+            // desktop binds, dev is what `pnpm dev` binds. The 3000-3010 sweep
+            // stays behind them because the macOS background-availability
+            // daemon can still fall back into that range when the dedicated
+            // port is occupied (src-tauri/src/desktop_reachability.rs).
             //
             // These extra candidates are NOT free: the paired path probes
             // sequentially on purpose (see AppModel.discoverBaseURL — fanning
@@ -92,6 +100,8 @@ struct CaveConnection: Codable, Equatable {
             // when packets are silently dropped. `lastGoodBaseURL` is what keeps
             // the common case at a single probe; do not add candidates on the
             // assumption that they cost nothing (cave-ioswipe.3).
+            add("http://\(hostname):\(CavePorts.production)")
+            add("http://\(hostname):\(CavePorts.dev)")
             for port in 3000...3010 { add("http://\(hostname):\(port)") }
             for port in ["4500", "4555", "8443"] { add("http://\(hostname):\(port)") }
             add("https://\(hostname):8443")

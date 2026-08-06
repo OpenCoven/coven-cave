@@ -1148,6 +1148,8 @@ export const SUITES = {
     "scripts/dev-app.test.mjs",
     "scripts/dev-app-origin-health.test.mjs",
     "scripts/dev-app-teardown.test.mjs",
+    "scripts/dev-port-owner.test.mjs",
+    "scripts/port-contract.test.mjs",
     "scripts/sync-runtimes.test.mjs",
     "scripts/surface-claim-guard.test.mjs",
     "scripts/worktree-guard.test.mjs",

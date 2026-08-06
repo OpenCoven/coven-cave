@@ -12,10 +12,30 @@ assert.match(
   /source scripts\/whisper-runtime-dev-env\.sh/,
   "the development launcher must stage and export Whisper before starting Tauri",
 );
+// The launcher takes the DEDICATED dev port from the shared contract rather
+// than scanning 3000-3010 for whatever is free. Scanning is what made the
+// address depend on whatever else happened to be running; see scripts/ports.mjs.
 assert.match(
   source,
-  /if \[ -n "\$\{PORT:-\}" \]; then[\s\S]*?dev_port="\$PORT"[\s\S]*?for candidate in \$\(seq 3000 3010\)/,
-  "explicit PORT and automatic 3000-3010 discovery must remain part of the launcher contract",
+  /resolvePort\('dev', process\.env\)/,
+  "the launcher must resolve its port from the shared contract",
+);
+assert.doesNotMatch(
+  source,
+  /for candidate in \$\(seq 3000 3010\)/,
+  "the free-port scan is retired — a dedicated port that relocates is not dedicated",
+);
+// Busy is answered by identity, not by moving: attach to our own dev server,
+// refuse anything else by name.
+assert.match(
+  source,
+  /port_owner="\$\(node scripts\/dev-port-owner\.mjs --port "\$dev_port"[\s\S]*?ours\)[\s\S]*?should_start_server=false/,
+  "a dedicated port already served by CovenCave must be attached to, not restarted",
+);
+assert.match(
+  source,
+  /stranger\)[\s\S]*?is held by something that is not CovenCave[\s\S]*?exit 1/,
+  "a stranger on the dedicated port must fail loudly instead of relocating",
 );
 assert.match(
   source,
