@@ -489,8 +489,8 @@ assert.match(
 );
 assert.match(
   sendRuntimeHelpers,
-  /export async function resolveReplayBackedResumeSessionId\([\s\S]*?callDaemon<DaemonSessionRecord>\([\s\S]*?`\/api\/v1\/sessions\/\$\{encodeURIComponent\(latestReplay\.sessionId\)\}`[\s\S]*?persistResolvedReplayConversationId\(/,
-  "live resume should resolve replay-backed native continuity through the daemon session record and persist the recovered conversation id",
+  /export async function resolveReplayBackedResumeSessionId\([\s\S]*?callDaemon<DaemonSessionRecord>\([\s\S]*?`\/api\/v1\/sessions\/\$\{encodeURIComponent\(latestReplay\.sessionId\)\}`[\s\S]*?if \(conversationId && conversationId !== latestReplay\.sessionId\) \{[\s\S]*?persistResolvedReplayConversationId\(/,
+  "live resume should persist only a distinct native conversation id, never the daemon replay execution id",
 );
 assert.match(
   chatRoute,

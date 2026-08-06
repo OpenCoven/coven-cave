@@ -112,7 +112,7 @@ export async function resolveReplayBackedResumeSessionId(
   const conversationId =
     normalizeDaemonConversationId(res.data.conversationId)
     ?? normalizeDaemonConversationId(res.data.conversation_id);
-  if (conversationId) {
+  if (conversationId && conversationId !== latestReplay.sessionId) {
     const persisted = await persistResolvedReplayConversationId({
       sessionId,
       replaySessionId: latestReplay.sessionId,

@@ -573,7 +573,11 @@ try {
       projectRoot,
     },
   });
-  sessionResponses.push({ id: "hub-session-running-wait", status: "running" });
+  sessionResponses.push({
+    id: "hub-session-running-wait",
+    status: "running",
+    conversationId: "hub-session-running-wait",
+  });
   assert.deepEqual(
     await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 }),
     { attempted: 1, synced: 1, failed: 0, errors: [] },
@@ -621,7 +625,11 @@ try {
       projectRoot,
     },
   });
-  sessionResponses.push({ id: "hub-session-terminal-missing", status: "failed" });
+  sessionResponses.push({
+    id: "hub-session-terminal-missing",
+    status: "failed",
+    conversation_id: "hub-session-terminal-missing",
+  });
   assert.deepEqual(
     await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 }),
     { attempted: 1, synced: 1, failed: 0, errors: [] },
