@@ -14,10 +14,14 @@ import { promisify } from "node:util";
 
 const LEGACY_INTENT_NAME =
   /^(\d{24})-(\d+)-([a-f0-9]{16})-([a-f0-9]+)\.lock$/;
-const INTENT_NAME = /^(\d{24})\.lock$/;
+const TRANSITIONAL_INTENT_NAME = /^(\d{24})\.lock$/;
 const INTENT_DRAFT_NAME =
   /^\.intent-(\d+)-([a-f0-9]{16})-([a-f0-9]+)\.tmp$/;
+const INTENT_STATE_NAME =
+  /^\.published-(\d{24}-\d+-[a-f0-9]{16}-[a-f0-9]+\.lock)\.intent$/;
+const RELEASED_INTENT_NAME = /^\.released-/;
 const INTENT_OWNER_FILE = "owner.json";
+const MALFORMED_INTENT_GRACE_MS = 30_000;
 const execFileAsync = promisify(execFile);
 const pendingIntentRemovals = new Map<
   string,
@@ -93,6 +97,7 @@ async function retireIntent(pathname: string): Promise<boolean> {
       /* turbopackIgnore: true */ pathname,
       /* turbopackIgnore: true */ retiredPath,
     );
+    await fsyncDirectoryIfSupported(path.dirname(pathname));
     return removeIntent(retiredPath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
@@ -184,6 +189,16 @@ export type ProcessIntentLockOptions = {
   signal?: AbortSignal;
   /** Test/diagnostic boundary immediately before atomic intent publication. */
   beforePublish?: () => Promise<void>;
+  /** Test/diagnostic crash boundary for durability conformance. */
+  publicationStage?: (
+    stage:
+      | "owner-file-synced"
+      | "draft-directory-synced"
+      | "gate-name-selected"
+      | "gate-parent-synced"
+      | "state-renamed"
+      | "state-parent-synced",
+  ) => Promise<void>;
 };
 
 function timeoutError(label: string): Error {
@@ -246,10 +261,12 @@ type IntentEntry = {
   name: string;
   order: bigint;
   owner: IntentOwner | null;
+  modifiedAtMs: number;
 };
 
 function intentOrder(name: string): bigint | null {
-  const match = INTENT_NAME.exec(name) ?? LEGACY_INTENT_NAME.exec(name);
+  const match =
+    LEGACY_INTENT_NAME.exec(name) ?? TRANSITIONAL_INTENT_NAME.exec(name);
   return match ? BigInt(match[1]) : null;
 }
 
@@ -260,26 +277,43 @@ async function readIntentEntry(
   const order = intentOrder(name);
   if (order === null) return null;
   const legacyOwner = legacyIntentOwner(name);
-  if (legacyOwner) return { name, order, owner: legacyOwner };
-
   const intentPath = path.join(
     /* turbopackIgnore: true */ intentsDirectory,
     name,
   );
+  let info: Awaited<ReturnType<typeof lstat>>;
   try {
-    const info = await lstat(/* turbopackIgnore: true */ intentPath);
-    if (info.isSymbolicLink() || !info.isDirectory()) {
-      return { name, order, owner: null };
-    }
-    const parsed = JSON.parse(
-      await readFile(
-        /* turbopackIgnore: true */ path.join(intentPath, INTENT_OWNER_FILE),
-        "utf8",
-      ),
-    ) as Partial<IntentOwner>;
+    info = await lstat(/* turbopackIgnore: true */ intentPath);
+  } catch {
+    return null;
+  }
+  if (legacyOwner) {
     return {
       name,
       order,
+      owner: legacyOwner,
+      modifiedAtMs: info.mtimeMs,
+    };
+  }
+  if (info.isSymbolicLink() || !info.isDirectory()) {
+    return { name, order, owner: null, modifiedAtMs: info.mtimeMs };
+  }
+  let ownerRaw: string;
+  try {
+    ownerRaw = await readFile(
+      /* turbopackIgnore: true */ path.join(intentPath, INTENT_OWNER_FILE),
+      "utf8",
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return { name, order, owner: null, modifiedAtMs: info.mtimeMs };
+  }
+  try {
+    const parsed = JSON.parse(ownerRaw) as Partial<IntentOwner>;
+    return {
+      name,
+      order,
+      modifiedAtMs: info.mtimeMs,
       owner:
         Number.isSafeInteger(parsed.pid) &&
         Number(parsed.pid) > 0 &&
@@ -292,9 +326,10 @@ async function readIntentEntry(
           : null,
     };
   } catch {
-    // A malformed published entry must block rather than disappear from the
-    // queue and let two owners overlap.
-    return { name, order, owner: null };
+    // Transitional directory intents are published only after their owner
+    // file is durable. A malformed entry therefore receives a grace period
+    // before stale recovery rather than blocking the repository forever.
+    return { name, order, owner: null, modifiedAtMs: info.mtimeMs };
   }
 }
 
@@ -334,19 +369,109 @@ async function removeStaleIntentDrafts(
   );
 }
 
-async function isRenameCollision(
-  error: unknown,
-  destination: string,
-): Promise<boolean> {
-  const code = (error as NodeJS.ErrnoException).code;
-  if (code === "EEXIST" || code === "ENOTEMPTY") return true;
-  if (code !== "EPERM" && code !== "EACCES") return false;
+async function removeStaleIntentArtifacts(
+  intentsDirectory: string,
+): Promise<void> {
+  const names = await readdir(/* turbopackIgnore: true */ intentsDirectory);
+  await Promise.all(
+    names.map(async (name) => {
+      const pathname = path.join(
+        /* turbopackIgnore: true */ intentsDirectory,
+        name,
+      );
+      if (RELEASED_INTENT_NAME.test(name)) {
+        await removeIntent(pathname);
+        return;
+      }
+      const stateMatch = INTENT_STATE_NAME.exec(name);
+      if (!stateMatch) return;
+      const gatePath = path.join(
+        /* turbopackIgnore: true */ intentsDirectory,
+        stateMatch[1],
+      );
+      try {
+        await lstat(/* turbopackIgnore: true */ gatePath);
+        return;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") return;
+      }
+      // The compatibility gate is always durable before this sidecar rename
+      // and is retired last. With no gate, the sidecar is never authoritative
+      // and cannot represent an in-progress publication.
+      await removeIntent(pathname);
+    }),
+  );
+}
+
+const UNSUPPORTED_DIRECTORY_SYNC_CODES = new Set([
+  "EACCES",
+  "EBADF",
+  "EISDIR",
+  "EINVAL",
+  "ENOSYS",
+  "ENOTSUP",
+  "EPERM",
+]);
+
+function isUnsupportedDirectorySync(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code ?? "";
+  return process.platform === "win32"
+    ? UNSUPPORTED_DIRECTORY_SYNC_CODES.has(code)
+    : code === "EINVAL" || code === "ENOSYS" || code === "ENOTSUP";
+}
+
+async function fsyncDirectoryIfSupported(directory: string): Promise<void> {
+  let handle;
   try {
-    await lstat(/* turbopackIgnore: true */ destination);
-    return true;
-  } catch {
-    return false;
+    handle = await open(/* turbopackIgnore: true */ directory, "r");
+  } catch (error) {
+    if (isUnsupportedDirectorySync(error)) return;
+    throw error;
   }
+  try {
+    try {
+      await handle.sync();
+    } catch (error) {
+      if (!isUnsupportedDirectorySync(error)) throw error;
+    }
+  } finally {
+    await handle.close();
+  }
+}
+
+async function ensureIntentDirectory(
+  directory: string,
+  label: string,
+): Promise<Awaited<ReturnType<typeof lstat>>> {
+  const missing: string[] = [];
+  let existing = directory;
+  let existingInfo: Awaited<ReturnType<typeof lstat>>;
+  for (;;) {
+    try {
+      existingInfo = await lstat(/* turbopackIgnore: true */ existing);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const parent = path.dirname(existing);
+      if (parent === existing) throw error;
+      missing.push(path.basename(existing));
+      existing = parent;
+    }
+  }
+  assertIntentDirectory(existingInfo, label);
+  for (const name of missing.reverse()) {
+    const child = path.join(/* turbopackIgnore: true */ existing, name);
+    try {
+      await mkdir(/* turbopackIgnore: true */ child, { mode: 0o700 });
+      await fsyncDirectoryIfSupported(existing);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    existing = child;
+    existingInfo = await lstat(/* turbopackIgnore: true */ existing);
+    assertIntentDirectory(existingInfo, label);
+  }
+  return existingInfo;
 }
 
 async function waitAtPublicationBoundary(
@@ -403,6 +528,9 @@ async function prepareIntentDraft(
         } finally {
           await ownerHandle.close();
         }
+        await options.publicationStage?.("owner-file-synced");
+        await fsyncDirectoryIfSupported(draftPath);
+        await options.publicationStage?.("draft-directory-synced");
         return draftPath;
       } catch (error) {
         await rm(
@@ -411,6 +539,7 @@ async function prepareIntentDraft(
         );
         throw error;
       }
+
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
       throw error;
@@ -418,34 +547,66 @@ async function prepareIntentDraft(
   }
 }
 
+async function publishCompatibilityGate(
+  intentsDirectory: string,
+  owner: IntentOwner,
+  options: ProcessIntentLockOptions,
+  minimumOrder = BigInt(0),
+): Promise<{ name: string; path: string }> {
+  for (;;) {
+    const now = process.hrtime.bigint();
+    const order = (now > minimumOrder ? now : minimumOrder)
+      .toString()
+      .padStart(24, "0");
+    const name =
+      `${order}-${owner.pid}-${owner.startIdentityHash}-` +
+      `${randomBytes(8).toString("hex")}.lock`;
+    await options.publicationStage?.("gate-name-selected");
+    const pathname = path.join(
+      /* turbopackIgnore: true */ intentsDirectory,
+      name,
+    );
+    let created = false;
+    try {
+      const handle = await open(
+        /* turbopackIgnore: true */ pathname,
+        "wx",
+        0o600,
+      );
+      created = true;
+      try {
+        await handle.writeFile(`${JSON.stringify(owner)}\n`);
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      await fsyncDirectoryIfSupported(intentsDirectory);
+      await options.publicationStage?.("gate-parent-synced");
+      return { name, path: pathname };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
+      if (created) await removeIntent(pathname);
+      throw error;
+    }
+  }
+}
+
 /**
- * Cross-process FIFO lock where every contender owns one atomically published
- * intent directory. An exclusive directory rename assigns the next creation
- * sequence: a contender paused before that rename has no priority to publish
- * later. Release removes only the caller's unique entry. Dead owners are
- * recoverable by PID plus verified process-start identity; a live owner is
- * never reclaimed merely because an I/O stall made its intent old.
+ * Cross-process lock with a legacy-shaped compatibility gate plus a durable
+ * owner directory. The gate is published only after the diagnostic pause, so
+ * a late contender cannot carry pre-publication priority into an active
+ * critical section. Deployed legacy processes recognize the gate and current
+ * processes retain the owner directory for crash-stage recovery.
  */
 export async function acquireProcessIntentLock(
   options: ProcessIntentLockOptions,
 ): Promise<() => Promise<void>> {
   const timeoutMs = options.timeoutMs ?? 15_000;
   const deadline = Date.now() + timeoutMs;
-  let intentsInfo;
-  try {
-    intentsInfo = await lstat(
-      /* turbopackIgnore: true */ options.intentsDirectory,
-    );
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    await mkdir(
-      /* turbopackIgnore: true */ options.intentsDirectory,
-      { recursive: true },
-    );
-    intentsInfo = await lstat(
-      /* turbopackIgnore: true */ options.intentsDirectory,
-    );
-  }
+  const intentsInfo = await ensureIntentDirectory(
+    options.intentsDirectory,
+    options.label,
+  );
   assertIntentDirectory(intentsInfo, options.label);
   const ownStartIdentity = await processStartIdentity(process.pid);
   if (!ownStartIdentity) {
@@ -456,36 +617,33 @@ export async function acquireProcessIntentLock(
     startIdentityHash: identityHash(ownStartIdentity),
   };
   await removeStaleIntentDrafts(options.intentsDirectory);
+  await removeStaleIntentArtifacts(options.intentsDirectory);
   const draftPath = await prepareIntentDraft(options, owner);
   let ownName: string | null = null;
   let ownPath: string | null = null;
+  let ownStatePath: string | null = null;
+  let yieldedPrepublicationPriority = false;
   try {
-    while (!ownName) {
-      assertCanContinue(deadline, options.label, options.signal);
-      const entries = await listIntentEntries(options.intentsDirectory);
-      const nextOrder =
-        entries.reduce(
-          (highest, entry) => (entry.order > highest ? entry.order : highest),
-          BigInt(0),
-        ) + BigInt(1);
-      const candidateName = `${nextOrder.toString().padStart(24, "0")}.lock`;
-      const candidatePath = path.join(
-        /* turbopackIgnore: true */ options.intentsDirectory,
-        candidateName,
-      );
-      await waitAtPublicationBoundary(options, deadline);
-      try {
-        await rename(
-          /* turbopackIgnore: true */ draftPath,
-          /* turbopackIgnore: true */ candidatePath,
-        );
-        ownName = candidateName;
-        ownPath = candidatePath;
-      } catch (error) {
-        if (await isRenameCollision(error, candidatePath)) continue;
-        throw error;
-      }
-    }
+    assertCanContinue(deadline, options.label, options.signal);
+    await waitAtPublicationBoundary(options, deadline);
+    const gate = await publishCompatibilityGate(
+      options.intentsDirectory,
+      owner,
+      options,
+    );
+    ownName = gate.name;
+    ownPath = gate.path;
+    ownStatePath = path.join(
+      /* turbopackIgnore: true */ options.intentsDirectory,
+      `.published-${ownName}.intent`,
+    );
+    await rename(
+      /* turbopackIgnore: true */ draftPath,
+      /* turbopackIgnore: true */ ownStatePath,
+    );
+    await options.publicationStage?.("state-renamed");
+    await fsyncDirectoryIfSupported(options.intentsDirectory);
+    await options.publicationStage?.("state-parent-synced");
 
     while (true) {
       assertCanContinue(deadline, options.label, options.signal);
@@ -500,15 +658,66 @@ export async function acquireProcessIntentLock(
         assertCanContinue(deadline, options.label, options.signal);
         const oldest = entries[0];
         if (oldest?.name === ownName) {
+          // A contender can be descheduled after choosing its lexical order
+          // but before creating the gate. Yield once behind every intent it
+          // then observes. A single yield is deliberate: two current
+          // contenders that repeatedly yield would leapfrog forever.
+          if (entries.length > 1 && !yieldedPrepublicationPriority) {
+            const highestOrder = entries.reduce(
+              (highest, entry) =>
+                entry.order > highest ? entry.order : highest,
+              oldest.order,
+            );
+            const replacement = await publishCompatibilityGate(
+              options.intentsDirectory,
+              owner,
+              options,
+              highestOrder + BigInt(1),
+            );
+            const replacementStatePath = path.join(
+              /* turbopackIgnore: true */ options.intentsDirectory,
+              `.published-${replacement.name}.intent`,
+            );
+            try {
+              await rename(
+                /* turbopackIgnore: true */ ownStatePath!,
+                /* turbopackIgnore: true */ replacementStatePath,
+              );
+              await fsyncDirectoryIfSupported(options.intentsDirectory);
+            } catch (error) {
+              await retireIntent(replacement.path);
+              throw error;
+            }
+            const previousPath = ownPath!;
+            ownName = replacement.name;
+            ownPath = replacement.path;
+            ownStatePath = replacementStatePath;
+            yieldedPrepublicationPriority = true;
+            await retireIntent(previousPath);
+            continue;
+          }
           let released = false;
           return async () => {
             if (released) return;
             released = true;
+            await retireIntent(ownStatePath!);
             await retireIntent(ownPath!);
           };
         }
         if (oldest) {
           if (!oldest.owner) {
+            if (
+              Date.now() - oldest.modifiedAtMs >=
+              MALFORMED_INTENT_GRACE_MS
+            ) {
+              const removed = await removeIntent(
+                path.join(
+                  /* turbopackIgnore: true */ options.intentsDirectory,
+                  oldest.name,
+                ),
+              );
+              if (removed) continue;
+            }
             await waitBeforeRetry(
               deadline,
               options.label,
@@ -554,7 +763,9 @@ export async function acquireProcessIntentLock(
       }
     }
   } catch (error) {
-    await removeIntent(ownPath ?? draftPath);
+    if (ownStatePath) await removeIntent(ownStatePath);
+    else await removeIntent(draftPath);
+    if (ownPath) await removeIntent(ownPath);
     throw error;
   }
 }

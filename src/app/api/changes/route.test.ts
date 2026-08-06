@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+const checkpointStoreSource = await readFile(
+  new URL("../../../lib/server/checkpoint-store.ts", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   source,
@@ -269,18 +273,18 @@ assert.match(
 );
 assert.match(
   source,
-  /recoverCheckpointStore\(await checkpointDirOf\(repoRoot\)\)[\s\S]*?return await operation\(\)/,
+  /openCheckpointStore\(await checkpointDirOf\(repoRoot\)\)[\s\S]{0,300}?recoverCheckpointStoreArtifacts\([\s\S]*?return await operation\(\)/,
   "every locked operation recovers orphan publication artifacts before work",
 );
 assert.match(
-  source,
-  /writeDurableExclusiveFile\(patchTemp, patch\)[\s\S]{0,180}?writeDurableExclusiveFile\(metadataTemp, metadata\)[\s\S]{0,100}?fsyncDirectoryIfSupported\(tempDirectory\)[\s\S]*?randomBytes\(6\)[\s\S]*?fs\.renameSync\([\s\S]*?fsyncDirectoryIfSupported\(checkpointDir\)/,
+  checkpointStoreSource,
+  /writeDurableExclusiveFile\([\s\S]{0,180}?CHECKPOINT_PATCH_FILE[\s\S]{0,300}?writeDurableExclusiveFile\([\s\S]{0,180}?CHECKPOINT_METADATA_FILE[\s\S]{0,200}?fsyncDirectoryIfSupported\(draft\)[\s\S]*?fs\.renameSync\([\s\S]*?fsyncDirectoryIfSupported\(store\.directory\)/,
   "fsynced patch and metadata publish together by collision-retried directory rename",
 );
-assert.doesNotMatch(
-  source,
-  /fs\.linkSync\(/,
-  "checkpoint publication and deletion do not depend on hard links",
+assert.match(
+  checkpointStoreSource,
+  /process\.platform === "win32"[\s\S]{0,1400}?O_EXCL[\s\S]*?fs\.linkSync\(/,
+  "rollback uses a Windows exclusive-file fallback and POSIX no-replace hard links",
 );
 
 // remote=1 — read-only origin probe powering the project-setup modal's GitHub
