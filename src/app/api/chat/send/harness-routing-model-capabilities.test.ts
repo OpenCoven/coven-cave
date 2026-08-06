@@ -88,6 +88,31 @@ assert.match(
 );
 assert.match(
   capabilityProbes,
+  /export type HelpProbeOutcome =[\s\S]*?\{ ok: true; matched: boolean \}[\s\S]*?\{ ok: false; reason: string \}/,
+  "Help probes report an incomplete probe separately from an unmatched flag",
+);
+for (const failure of [
+  /did not respond within \$\{timeoutMs\}ms/,
+  /child\.on\("error", \(error: Error\) => \{[\s\S]*?ok: false, reason: `\\`\$\{command\}\\` could not be started: \$\{error\.message\}`/,
+]) {
+  assert.match(
+    capabilityProbes,
+    failure,
+    "Timeouts and spawn errors carry the underlying reason instead of resolving false",
+  );
+}
+assert.match(
+  capabilityProbes,
+  /const probe = start\(\)\.then\(\(outcome\) => \{[\s\S]*?if \(!outcome\.ok\) write\(null\);/,
+  "Only answered capability probes are cached; a failed probe must not pin itself for the process lifetime",
+);
+assert.match(
+  capabilityProbes,
+  /export function covenRunModelFlagOutcome\(\): Promise<HelpProbeOutcome>[\s\S]*?export function covenRunSupportsModel\(\): Promise<boolean> \{[\s\S]*?outcome\.ok && outcome\.matched/,
+  "The boolean model capability is derived from the outcome rather than replacing it",
+);
+assert.match(
+  capabilityProbes,
   /export function hermesChatSupportsModel\(launch:[\s\S]*?\["chat", "--help"\][\s\S]*?launch\.env[\s\S]*?launch\.cwd/,
   "Direct Hermes model forwarding must probe hermes chat --help with its resolved command, scoped environment, and spawn cwd",
 );
