@@ -296,18 +296,13 @@ test("slice/strip: fenced markers are example text — literal, no cards, fence 
   assert.equal(stripGitHubMarkers(streaming), streaming);
 });
 
-test("slice/strip: a live GitHub marker after a list-contained fence still activates", () => {
+test("slice/strip: a list-contained renderer fence keeps following GitHub markers literal", () => {
   const fenced = '- ```xml\n  <coven:github kind="pr" repo="o/r" number="7" />\n  ```';
   const live = '<coven:github kind="issue" repo="o/r" number="8" />';
   const text = `${fenced}\n${live}`;
   const pieces = sliceGitHubBlocks(text);
-  assert.equal(pieces.filter((piece) => piece.kind === "card").length, 1);
-  assert.equal(
-    pieces.find((piece) => piece.kind === "card")?.descriptor.number,
-    8,
-    "the fenced literal stays inert while the following marker becomes a card",
-  );
-  assert.equal(stripGitHubMarkers(text), `${fenced}\n`);
+  assert.deepEqual(pieces, [{ kind: "text", text }]);
+  assert.equal(stripGitHubMarkers(text), text);
 });
 
 test("slice/strip: a live GitHub marker survives a blockquoted fence with a longer close", () => {
@@ -322,6 +317,18 @@ test("slice/strip: a live GitHub marker survives a blockquoted fence with a long
   assert.equal(pieces.filter((piece) => piece.kind === "card").length, 1);
   assert.equal(pieces.find((piece) => piece.kind === "card")?.descriptor.number, 8);
   assert.equal(stripGitHubMarkers(text), `${fenced}\n`);
+});
+
+test("slice/strip: overlapping blockquoted fence delimiters keep following GitHub markers literal", () => {
+  const text = [
+    "> ```x",
+    "> ````",
+    '> <coven:github-action kind="merge" repo="o/r" number="7" />',
+    "> ```",
+  ].join("\n");
+  const pieces = sliceGitHubBlocks(text);
+  assert.deepEqual(pieces, [{ kind: "text", text }]);
+  assert.equal(stripGitHubMarkers(text), text);
 });
 
 test("action attrs: issue-state requires an explicit state; resolve accepts a thread id", () => {

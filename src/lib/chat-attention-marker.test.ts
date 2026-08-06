@@ -102,7 +102,7 @@ test("fenced markers stay literal example text", () => {
   });
 });
 
-test("detects a marker after a list-contained fenced example", () => {
+test("list-contained fenced examples keep following attention markers literal", () => {
   const fenced = [
     "- ```typescript-react",
     '  <coven:attention reason="credentials" />',
@@ -110,12 +110,38 @@ test("detects a marker after a list-contained fenced example", () => {
   ].join("\n");
   const text = `${fenced}\n<coven:attention reason="decision" />`;
   assert.deepEqual(extractChatAttentionMarker(text), {
-    visible: `${fenced}\n`,
-    request: { reason: "decision" },
+    visible: text,
+    request: null,
   });
 });
 
-test("handles ordered and nested list fences without activating their markers", () => {
+test("list-contained renderer fences keep following attention markers literal", () => {
+  const text = [
+    "- ```xml",
+    "  example",
+    "  ```",
+    '<coven:attention reason="decision" />',
+  ].join("\n");
+  assert.deepEqual(extractChatAttentionMarker(text), {
+    visible: text,
+    request: null,
+  });
+});
+
+test("overlapping blockquoted fence delimiters keep attention markers literal", () => {
+  const text = [
+    "> ```x",
+    "> ````",
+    '> <coven:attention reason="decision" />',
+    "> ```",
+  ].join("\n");
+  assert.deepEqual(extractChatAttentionMarker(text), {
+    visible: text,
+    request: null,
+  });
+});
+
+test("ordered and nested list-contained fences keep following attention markers literal", () => {
   const fenced = [
     "1. ~~~xml",
     '   <coven:attention reason="credentials" />',
@@ -126,8 +152,8 @@ test("handles ordered and nested list fences without activating their markers", 
   ].join("\n");
   const text = `${fenced}\n<coven:attention reason="input" />`;
   assert.deepEqual(extractChatAttentionMarker(text), {
-    visible: `${fenced}\n`,
-    request: { reason: "input" },
+    visible: text,
+    request: null,
   });
 });
 

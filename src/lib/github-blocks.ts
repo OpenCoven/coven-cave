@@ -306,21 +306,36 @@ function rendererFenceRanges(text: string): Array<[number, number]> {
   let offset = 0;
   let start = -1;
   let character = "";
+  let openedFromList = false;
+  let interiorLines = 0;
   for (const line of text.split("\n")) {
     if (start === -1) {
-      const opening = /^[ \t]*(?:(?:[-+*]|\d{1,9}[.)])[ \t]+)?(`{3,}|~{3,})(.*)$/.exec(line);
+      const opening = /^([ \t]*)(?:(?:([-+*]|\d{1,9}[.)])[ \t]+))?(`{3,}|~{3,})(.*)$/.exec(line);
       const validOpening = opening &&
-        !(opening[1][0] === "`" && opening[2].includes("`"));
+        !(opening[3][0] === "`" && opening[4].includes("`"));
       if (validOpening) {
         start = offset;
-        character = opening[1][0];
+        character = opening[3][0];
+        openedFromList = Boolean(opening[2]);
+        interiorLines = 0;
       }
     } else {
       const closing = /^[ \t]*(`{3,}|~{3,})[ \t]*$/.exec(line);
       if (closing && closing[1][0] === character) {
         ranges.push([start, offset + line.length]);
-        start = -1;
-        character = "";
+        if (openedFromList || interiorLines === 0) {
+          start = offset;
+          character = closing[1][0];
+          openedFromList = false;
+          interiorLines = 0;
+        } else {
+          start = -1;
+          character = "";
+          openedFromList = false;
+          interiorLines = 0;
+        }
+      } else {
+        interiorLines += 1;
       }
     }
     offset += line.length + 1;
@@ -340,6 +355,8 @@ export function fencedRanges(text: string): Array<[number, number]> {
   let fenceLength = 0;
   let fenceQuoteDepth = 0;
   let closingIndent = 3;
+  let openedFromList = false;
+  let interiorLines = 0;
   for (const line of text.split("\n")) {
     let contentOffset = 0;
     let quoteDepth = 0;
@@ -370,6 +387,8 @@ export function fencedRanges(text: string): Array<[number, number]> {
         fenceLength = fence.length;
         fenceQuoteDepth = quoteDepth;
         closingIndent = indent + 3;
+        openedFromList = Boolean(list);
+        interiorLines = 0;
       }
     } else {
       const closing = /^([ \t]*)(`{3,}|~{3,})\s*$/.exec(containerContent);
@@ -381,11 +400,25 @@ export function fencedRanges(text: string): Array<[number, number]> {
         && closing[2].length >= fenceLength
       ) {
         containerRanges.push([fenceStart, offset + line.length]);
-        fenceStart = -1;
-        fenceCharacter = "";
-        fenceLength = 0;
-        fenceQuoteDepth = 0;
-        closingIndent = 3;
+        if (openedFromList || interiorLines === 0) {
+          fenceStart = offset;
+          fenceCharacter = closing[2][0];
+          fenceLength = closing[2].length;
+          fenceQuoteDepth = quoteDepth;
+          closingIndent = closing[1].length + 3;
+          openedFromList = false;
+          interiorLines = 0;
+        } else {
+          fenceStart = -1;
+          fenceCharacter = "";
+          fenceLength = 0;
+          fenceQuoteDepth = 0;
+          closingIndent = 3;
+          openedFromList = false;
+          interiorLines = 0;
+        }
+      } else {
+        interiorLines += 1;
       }
     }
     offset += line.length + 1;

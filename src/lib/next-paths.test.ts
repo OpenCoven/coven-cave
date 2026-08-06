@@ -99,8 +99,8 @@ for (const malformed of ["[", "[action"]) {
 }
 
 // A renderer-style list fence must end at its real closing delimiter; otherwise
-// that closing line is mistaken for a new unclosed fence and hides the live
-// protocol block that follows it.
+// that closing line is mistaken for a new fence opener and keeps following
+// protocol examples literal.
 {
   const fenced = [
     "- ```text",
@@ -112,10 +112,8 @@ for (const malformed of ["[", "[action"]) {
   const r = extractNextPaths(
     `${fenced}\n<coven:next-paths>\n- [reply] Continue the work\n</coven:next-paths>`,
   );
-  assert.equal(r.visible, fenced);
-  assert.deepEqual(r.suggestions, [
-    { kind: "reply", label: "Continue the work", prompt: "Continue the work" },
-  ] satisfies NextPath[]);
+  assert.equal(r.visible, `${fenced}\n<coven:next-paths>\n- [reply] Continue the work\n</coven:next-paths>`);
+  assert.deepEqual(r.suggestions, []);
 }
 
 {
@@ -133,6 +131,20 @@ for (const malformed of ["[", "[action"]) {
   assert.deepEqual(r.suggestions, [
     { kind: "reply", label: "Continue the work", prompt: "Continue the work" },
   ] satisfies NextPath[]);
+}
+
+{
+  const text = [
+    "> ```x",
+    "> ````",
+    "> <coven:next-paths>",
+    "> - [reply] Continue the work",
+    "> </coven:next-paths>",
+    "> ```",
+  ].join("\n");
+  const r = extractNextPaths(text);
+  assert.equal(r.visible, text);
+  assert.deepEqual(r.suggestions, []);
 }
 
 console.log("next-paths.test.ts: ok");

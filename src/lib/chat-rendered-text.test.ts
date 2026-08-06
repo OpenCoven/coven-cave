@@ -95,3 +95,27 @@ test("fenced reasoning tags stay literal in rendered text", () => {
   );
   assert.equal(result.inlineReasoning, "private plan");
 });
+
+test("renderer-code fence quirks keep attention examples literal in rendered text", () => {
+  const listText = [
+    "- ```xml",
+    "  example",
+    "  ```",
+    '<coven:attention reason="decision" />',
+  ].join("\n");
+  const listed = extractChatRenderedText(listText);
+  assert.equal(listed.visible, listText);
+  assert.equal(listed.cardText, listText);
+  assert.equal(listed.attentionRequest, null);
+
+  const quotedText = [
+    "> ```x",
+    "> ````",
+    '> <coven:attention reason="approval" />',
+    "> ```",
+  ].join("\n");
+  const quoted = extractChatRenderedText(quotedText);
+  assert.equal(quoted.visible, quotedText);
+  assert.equal(quoted.cardText, quotedText);
+  assert.equal(quoted.attentionRequest, null);
+});
