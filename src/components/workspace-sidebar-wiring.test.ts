@@ -34,14 +34,14 @@ assert.match(workspaceSidebar, /function groupMeta\(group: ChatProjectGroup\): s
 assert.match(workspaceSidebar, /<ProjectAvatar name=\{label\} root=\{group\.projectRoot\} color=\{group\.projectColor\} size="sm" className="cnav__folder" \/>/, "group header avatar uses the explicit project color");
 assert.match(workspaceSidebar, /<span className="cnav__group-text">[\s\S]*?cnav__group-name[\s\S]*?<span className="cnav__group-meta">\{groupMeta\(group\)\}<\/span>/, "group header stacks name over the activity meta line");
 assert.doesNotMatch(workspaceSidebar, /cnav__count/, "the count badge is retired — the meta line carries the count");
-// One-row quick actions: New chat + the Scheduled/Plugins icon chips share a
-// single row (no stacked mini-row), and the header hosts the familiar switcher.
-assert.doesNotMatch(workspaceSidebar, /cnav__mini-row/, "the stacked mini-row is retired — quick actions are one row");
-assert.match(workspaceSidebar, /aria-label=\{scheduledCount \? `Scheduled \(\$\{scheduledCount\}\)` : "Scheduled"\}/, "Scheduled shortcut is an icon chip with an accessible name");
-assert.match(workspaceSidebar, /type WorkspaceSidebarMode = "home" \| "inbox" \| "marketplace";/, "sidebar navigation callback should accept only Home, Scheduled, and Plugins destinations");
+// Quick actions are New chat alone: the Scheduled/Plugins icon chips and the
+// band that carried them are retired (both destinations live in the Home rail's
+// list), so the only navigation shortcut left is the standalone-host Home
+// button. The header hosts the familiar switcher.
+assert.doesNotMatch(workspaceSidebar, /cnav__mini-row|cnav__mini|cnav__utilities/, "the utilities band and its icon chips are retired");
+assert.doesNotMatch(workspaceSidebar, /scheduledCount/, "the Scheduled chip's badge prop goes with it");
+assert.match(workspaceSidebar, /type WorkspaceSidebarMode = "home";/, "sidebar navigation callback should accept only the Home destination");
 assert.match(workspaceSidebar, /onClick=\{\(\) => onNavigate\("home"\)\}/, "Home button should navigate through the explicit sidebar callback");
-assert.match(workspaceSidebar, /onClick=\{\(\) => onNavigate\("inbox"\)\}/, "Scheduled button should navigate through the explicit sidebar callback");
-assert.match(workspaceSidebar, /onClick=\{\(\) => onNavigate\("marketplace"\)\}/, "Plugins button should navigate through the explicit sidebar callback");
 assert.doesNotMatch(workspaceSidebar, /cave:navigate-mode/, "workspace-sidebar should not dispatch raw mode events for its own navigation buttons");
 // The Chats primary-nav header keeps a labeled familiar switcher near thread
 // navigation (#2747, restored by cave-l3ay after #2750 briefly removed it as a
@@ -49,7 +49,6 @@ assert.doesNotMatch(workspaceSidebar, /cave:navigate-mode/, "workspace-sidebar s
 assert.match(workspaceSidebar, /<header className="cnav__header">[\s\S]*?<FamiliarSwitcher/, "the chat sidebar header hosts the familiar switcher");
 assert.doesNotMatch(workspaceSidebar, /cnav__eyebrow/, "the old Recent eyebrow stays retired");
 assert.match(workspaceSidebar, /ph:git-pull-request/, "should support PR glyph on thread rows");
-assert.match(workspaceSidebar, /scheduledCount/, "should accept scheduledCount prop");
 // Hover row-actions order: bookmark (pin) → archive → delete, so archive sits
 // to the RIGHT of the bookmark button. The archive button flips to unarchive
 // on archived rows, and the sidebar options menu exposes Show archived
@@ -95,7 +94,7 @@ assert.ok((chatSidebarBlock.match(/dismissNavMobile/g) ?? []).length >= 6, "chat
 assert.match(workspace, /onOpenSession=\{\(session\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "opening a chat session dismisses the mobile nav drawer");
 assert.match(workspace, /onOpenSessionInSplit=\{\(session\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "opening a split chat dismisses the mobile nav drawer");
 assert.match(workspace, /onNewChat=\{\(projectRoot\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "starting a new chat dismisses the mobile nav drawer");
-assert.match(workspace, /onNavigate=\{\(nextMode\) => \{[\s\S]*?setMode\(nextMode\);[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "sidebar Home, Scheduled, and Plugins routes dismiss the mobile nav drawer");
+assert.match(workspace, /onNavigate=\{\(nextMode\) => \{[\s\S]*?setMode\(nextMode\);[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "the sidebar Home route dismisses the mobile nav drawer");
 assert.match(workspace, /onOpenUrl=\{\(url\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?openUrlInApp\(url\);[\s\S]*?\}\}/, "sidebar PR links dismiss the mobile nav drawer before opening");
 assert.match(workspace, /onOpenSettings=\{\(\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?nextRouter\.push\("\/settings"\);[\s\S]*?\}\}/, "chat sidebar settings dismisses the mobile nav drawer");
 assert.match(workspace, /hideThreadRail/, "ChatSurface keeps its internal thread rail hidden");

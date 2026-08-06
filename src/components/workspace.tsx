@@ -3103,7 +3103,6 @@ export function Workspace() {
         shellRef.current?.dismissNavMobile();
         openUrlInApp(url);
       }}
-      scheduledCount={scheduleNeedsCount}
       onOpenSettings={() => {
         shellRef.current?.dismissNavMobile();
         nextRouter.push("/settings");

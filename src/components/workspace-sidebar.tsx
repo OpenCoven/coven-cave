@@ -40,7 +40,7 @@ import { NavSectionTabs } from "@/components/nav-section-tabs";
 import type { NavSection } from "@/lib/nav-section";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
-type WorkspaceSidebarMode = "home" | "inbox" | "marketplace";
+type WorkspaceSidebarMode = "home";
 
 type Props = {
   sessions: SessionRow[];
@@ -57,8 +57,9 @@ type Props = {
   /** ⌥↵ / ⌥-click / drag on a thread row: open it in a split pane beside the
    *  current chat (the chat surface falls back to a plain open on mobile). */
   onOpenSessionInSplit?: (session: SessionRow) => void;
-  /** Home / Scheduled / Plugins shortcuts route through Workspace so it can
-   *  coordinate mode changes with mobile drawer dismissal. */
+  /** The Home shortcut routes through Workspace so it can coordinate the mode
+   *  change with mobile drawer dismissal. Only rendered for standalone hosts
+   *  that mount this rail without the Home | Chat section tabs. */
   onNavigate: (mode: WorkspaceSidebarMode) => void;
   /** Global section switcher (Home | Chat). This sidebar hosts the Code room,
    *  so the tabs ride at its top too — leaving Code returns to the Home rail. */
@@ -71,8 +72,6 @@ type Props = {
   /** Opens the thread's pull request in the in-app browser (PR badge click);
    *  without it the badge falls back to a new tab. Same chain as chat-list. */
   onOpenUrl?: (url: string) => void;
-  /** Badge count for the Scheduled shortcut (from code-sidebar). */
-  scheduledCount?: number;
   /** Opens Settings — powers the shared footer so Chat keeps the same
    *  Dashboard/Settings footer as every other surface. */
   onOpenSettings: () => void;
@@ -353,7 +352,6 @@ export function WorkspaceSidebar({
   onDeleteSession,
   onSessionsChanged,
   onOpenUrl,
-  scheduledCount,
   onOpenSettings,
 }: Props) {
   const { projects, createProject, createProjectOrThrow, reload } = useProjects({ familiarId: activeFamiliarId });
@@ -599,8 +597,21 @@ export function WorkspaceSidebar({
           </button>
         </div>
 
-        {/* Secondary chat utilities follow the full-width primary action. */}
-        <div className="cnav__utilities">
+        {/* Grouping tabs share their row with the overflow menu. The standalone
+            utilities band (Scheduled / Plugins icon chips) is retired — both
+            destinations live in the Home rail's list, and dropping the band
+            gives Chat the same tabs → switcher → New chat rhythm as Home. */}
+        <div className="cnav__tabs-row">
+          <Tabs<ChatSidebarView>
+            items={CHAT_SIDEBAR_TABS}
+            value={view}
+            onChange={selectView}
+            ariaLabel="Group chats"
+            className="cnav__tabs"
+            size="sm"
+            idPrefix="chat-sidebar-group"
+            fill
+          />
           {/* The Home tab above owns the exit now; the icon button only remains
               when the section switcher is not mounted (standalone hosts). */}
           {onSectionChange ? null : (
@@ -609,32 +620,11 @@ export function WorkspaceSidebar({
               aria-label="Go to Home"
               title="Home"
               onClick={() => onNavigate("home")}
-              className="cnav__back focus-ring ml-auto"
+              className="cnav__back focus-ring"
             >
               <Icon name="ph:house-bold" width={15} aria-hidden />
             </button>
           )}
-          <button
-            type="button"
-            title="Scheduled"
-            aria-label={scheduledCount ? `Scheduled (${scheduledCount})` : "Scheduled"}
-            onClick={() => onNavigate("inbox")}
-            className="cnav__mini focus-ring"
-          >
-            <Icon name="ph:clock" width={14} className="cnav__mini-icon" aria-hidden />
-            {typeof scheduledCount === "number" && scheduledCount > 0 ? (
-              <span className="cnav__mini-count">{scheduledCount}</span>
-            ) : null}
-          </button>
-          <button
-            type="button"
-            title="Plugins"
-            aria-label="Plugins"
-            onClick={() => onNavigate("marketplace")}
-            className="cnav__mini focus-ring"
-          >
-            <Icon name="ph:plugs" width={14} className="cnav__mini-icon" aria-hidden />
-          </button>
           <button
             ref={menuAnchorRef}
             type="button"
@@ -643,7 +633,7 @@ export function WorkspaceSidebar({
             aria-expanded={menuOpen}
             title="Sidebar options"
             onClick={() => setMenuOpen((cur) => !cur)}
-            className={`cnav__back focus-ring${onSectionChange ? " ml-auto" : ""}`}
+            className="cnav__back focus-ring"
           >
             <Icon name="ph:dots-three-bold" width={15} aria-hidden />
           </button>
@@ -672,17 +662,6 @@ export function WorkspaceSidebar({
             </div>
           </Popover>
         </div>
-
-        <Tabs<ChatSidebarView>
-          items={CHAT_SIDEBAR_TABS}
-          value={view}
-          onChange={selectView}
-          ariaLabel="Group chats"
-          className="cnav__tabs"
-          size="sm"
-          idPrefix="chat-sidebar-group"
-          fill
-        />
 
         <div className="cnav__search-wrap">
           <label className="cnav__search">
