@@ -11,6 +11,7 @@ import {
 const source = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
 const primitives = readFileSync(new URL("./chat-list-primitives.tsx", import.meta.url), "utf8");
 const model = readFileSync(new URL("../lib/chat-list-model.ts", import.meta.url), "utf8");
+const sortModel = readFileSync(new URL("../lib/chat-session-sort.ts", import.meta.url), "utf8");
 
 assert.doesNotMatch(
   source,
@@ -338,14 +339,17 @@ assert.doesNotMatch(
   "Old non-uniform px-1.5 py-0.5 action-button chrome must be gone",
 );
 
-// The flat "All" view sorts by recency (most-recent-first), restoring the
-// global order the per-project flatMap drops — while still honoring an explicit
-// manual drag order and floating pinned sessions first.
-assert.match(model, /function sortChatRowsByRecency\(rows: readonly SessionRow\[\]\)/, "a recency sorter exists");
+// The flat "All" view restores the global order the per-project flatMap drops
+// — while still honoring an explicit manual drag order and floating pinned
+// sessions first. cave-n3jg2 made the order the reader's choice (the SORT
+// menu), so the sorter now takes the chosen order rather than assuming recency;
+// `sortChatSessionRows(rows, "recent")` IS the old recency sort, and remains
+// the default.
+assert.match(sortModel, /export function sortChatSessionRows\(\s*rows: readonly SessionRow\[\],\s*sort: ChatSessionSort,\s*\)/, "a sorter takes the reader's chosen order");
 assert.match(
   source,
-  /sessionOrder\.length === 0\s*\?\s*partitionPinnedFirst\(sortChatRowsByRecency\(rows\), pinnedIds\)\s*:\s*applyManualOrder\(rows, sessionOrder\)/,
-  "the All view sorts by recency by default, defers to manual order when the user has dragged, and keeps pinned-first",
+  /sessionOrder\.length === 0\s*\?\s*partitionPinnedFirst\(sortChatSessionRows\(rows, sessionSort\), pinnedIds\)\s*:\s*applyManualOrder\(rows, sessionOrder\)/,
+  "the All view sorts by the chosen order by default, defers to manual order when the user has dragged, and keeps pinned-first",
 );
 
 // ── Bulk-select: pick several chats and delete/archive them at once ─────────

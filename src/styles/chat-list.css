@@ -247,13 +247,16 @@
     align-items: center;
     margin: 0 var(--space-3);
     padding: var(--space-2) var(--space-3);
-    border: 1px solid transparent;
+    /* The mock's 2% fill reads on its near-black ground; Cave's --bg-base is
+       several steps lighter, so the same mix disappears. 4% over a resting
+       hairline is the translation that keeps a row reading as a card here. */
+    border: 1px solid color-mix(in oklch, var(--foreground) 6%, transparent);
     border-radius: var(--radius-card);
-    background: color-mix(in oklch, var(--foreground) 2%, transparent);
+    background: color-mix(in oklch, var(--foreground) 4%, transparent);
   }
   .chat-list-row.chat-session-card:hover {
-    border-color: var(--border-hairline);
-    background: color-mix(in oklch, var(--foreground) 4%, transparent);
+    border-color: var(--border-strong);
+    background: color-mix(in oklch, var(--foreground) 7%, transparent);
     /* The card's own border replaces the flat list's leading-edge hairline. */
     box-shadow: none;
   }

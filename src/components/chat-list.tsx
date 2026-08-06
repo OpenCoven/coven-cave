@@ -146,17 +146,10 @@ function repoName(p: string): string {
   return parts[parts.length - 1] ?? p;
 }
 
-const STATUS_STYLES: Record<string, { dot: string; label: string; preview: string }> = {
-  running: { dot: "bg-[var(--color-success)] animate-pulse", label: "running", preview: "text-[var(--color-success)]" },
-  completed: { dot: "bg-[var(--text-muted)]", label: "done", preview: "text-[var(--text-muted)]" },
-  failed: { dot: "bg-[var(--color-danger)]", label: "failed", preview: "text-[var(--color-danger)]" },
-  queued: { dot: "bg-[var(--color-warning)]", label: "queued", preview: "text-[var(--color-warning)]" },
-  paused: { dot: "bg-[var(--accent-presence-soft)]", label: "paused", preview: "text-[var(--accent-presence-soft)]" },
-};
-
-function statusStyle(s: string) {
-  return STATUS_STYLES[s] ?? STATUS_STYLES.completed;
-}
+// The row's status now renders as a labelled pill with a glyph
+// (chat-session-status.ts), so the dot/preview style map this file used to
+// carry has nothing left to style — a colour with no label was the thing the
+// pill replaced.
 
 // ── Content search (CHAT-D9-02) ───────────────────────────────────────────────
 // Title filtering stays instant/local; conversation bodies are searched
@@ -860,6 +853,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             count beside it and the one primary action on the right. The
             identity dossier above stays for the all-familiars view — this
             row is the surface's heading, not the familiar's. */}
+        {!compact && (
         <div className="flex items-center gap-3 px-4 pb-0 pt-3">
           <h1 className="chat-sessions-title min-w-0 truncate">Sessions</h1>
           <span className="chat-sessions-count shrink-0">
@@ -876,6 +870,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             New session
           </button>
         </div>
+        )}
 
         {/* Search + filter row */}
         <div className="mt-3 flex items-center gap-2 px-4 pb-3">
@@ -966,6 +961,21 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             <Icon name="ph:list-checks-bold" width={12} aria-hidden />
           </button>
 
+          {/* Compact companion panels drop the surface title row (no width for
+              a serif heading), so the one primary action rides here instead —
+              the panel must never be the one place you cannot start a chat. */}
+          {compact && (
+            <button
+              type="button"
+              onClick={() => onNewChat(undefined, scopedFamiliarId)}
+              disabled={!canStartChat}
+              aria-label="New session"
+              title="New session"
+              className="chat-list-new-button focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius-control)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-all hover:opacity-90 active:scale-95 disabled:opacity-[var(--opacity-disabled)]"
+            >
+              <Icon name="ph:plus-bold" width={12} aria-hidden />
+            </button>
+          )}
         </div>
 
         {/* ── Status chips + sort (cave-n3jg2) ────────────────────────────
@@ -1241,7 +1251,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                 )}
                 <ul className="chat-session-list divide-y divide-[var(--border-hairline)]">
                   {rows.map((s, idx) => {
-                    const st = statusStyle(s.status);
                     const prStatus = sessionPrStatus(s.pullRequest);
                     const rel = relativeTime(s.updated_at);
                     const project = repoName(s.project_root ?? "");
@@ -1271,6 +1280,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                     const elapsed = formatChatSessionDuration(chatSessionDurationMs(s));
                     const adds = s.diff?.additions ?? 0;
                     const dels = s.diff?.deletions ?? 0;
+                    // Retention is the one thing the status pill cannot say.
+                    const retentionMark = Boolean(s.keep || s.archive_extended_until || s.archived_at);
 
                     return (
                       <Fragment key={s.id}>
@@ -1513,30 +1524,28 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                               ) : null}
                             </span>
 
-                            {/* Row 3: status preview */}
-                            <span className={`chat-list-row-preview truncate text-[length:var(--text-sm)] ${st.preview}`}>
-                              {s.keep ? <span className="text-[var(--accent-presence)]">Keep · </span> : null}
-                              {!s.keep && s.archive_extended_until ? (
-                                <span
-                                  className="text-[var(--text-muted)]"
-                                  title={`Auto-archive deferred until ${chatDate(s.archive_extended_until, dtPrefs)}`}
-                                >
-                                  Extended ·{" "}
-                                </span>
-                              ) : null}
-                              {s.archived_at ? <span className="text-[var(--text-muted)]">Archived · </span> : null}
-                              {st.label === "running"
-                                ? "Active now…"
-                                : st.label === "failed"
-                                  ? "Ended with an error"
-                                  : st.label === "queued"
-                                    ? "Waiting to start"
-                                    : st.label === "paused"
-                                      ? "Paused"
-                                      : project
-                                        ? `${rowFamiliarName} · ${project}`
-                                        : `${rowFamiliarName}`}
-                            </span>
+                            {/* Row 3: retention marks only (cave-n3jg2). This
+                                line used to restate the status — "Active now…"
+                                under a row whose pill now reads RUNNING,
+                                "Waiting to start" under QUEUED. The pill says
+                                it with a label, so the sentence was a second
+                                boundary on the same fact costing every row a
+                                full line. What survives is what the pill does
+                                NOT say: whether the chat is kept, deferred or
+                                archived. */}
+                            {retentionMark ? (
+                              <span className="chat-list-row-preview truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                                {s.keep ? (
+                                  <span className="text-[var(--accent-presence)]">Keep</span>
+                                ) : s.archive_extended_until ? (
+                                  <span title={`Auto-archive deferred until ${chatDate(s.archive_extended_until, dtPrefs)}`}>
+                                    Extended
+                                  </span>
+                                ) : (
+                                  <span>Archived</span>
+                                )}
+                              </span>
+                            ) : null}
                           </span>
 
                           {!selectMode && (confirmDeleteId === s.id ? (
