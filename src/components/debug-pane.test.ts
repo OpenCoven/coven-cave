@@ -554,6 +554,10 @@ const changesRoute = await readFile(
   new URL("../app/api/changes/route.ts", import.meta.url),
   "utf8",
 );
+const checkpointStoreSource = await readFile(
+  new URL("../lib/server/checkpoint-store.ts", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   changesRoute,
@@ -652,8 +656,33 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /writeDurableExclusiveFile\(patchTemp, patch\)/,
-  "Checkpoint snapshots durably persist the generated patch without changing the working tree",
+  /import \{[\s\S]*?publishCheckpointUnit,[\s\S]*?\} from "@\/lib\/server\/checkpoint-store"/,
+  "Changes API must durably publish checkpoints via the crash-atomic checkpoint-store module, not ad-hoc file writes",
+);
+assert.match(
+  changesRoute,
+  /publishCheckpointUnit\(\s*checkpointStore,[\s\S]*?patch,\s*JSON\.stringify\(\{[\s\S]*?\.\.\.scope,[\s\S]*?\} satisfies CheckpointMetadata\),\s*\);/,
+  "Checkpoint publication must hand the generated patch and authorized project scope/metadata to publishCheckpointUnit",
+);
+assert.match(
+  checkpointStoreSource,
+  /function writeDurableExclusiveFile\([\s\S]*?O_CREAT[\s\S]*?O_EXCL[\s\S]*?fs\.fsyncSync\(descriptor\)/,
+  "Checkpoint artifacts must be written via exclusive-create-then-fsync so a crash mid-write cannot silently corrupt them",
+);
+assert.match(
+  checkpointStoreSource,
+  /export function publishCheckpointUnit\([\s\S]*?writeDurableExclusiveFile\(\s*path\.join\(draft, CHECKPOINT_PATCH_FILE\),\s*patchContents,\s*\);[\s\S]*?writeDurableExclusiveFile\(\s*path\.join\(draft, CHECKPOINT_METADATA_FILE\),\s*metadataContents,\s*\);[\s\S]*?fsyncDirectoryIfSupported\(draft\);/,
+  "publishCheckpointUnit must durably write the patch then the metadata into a draft unit and fsync the draft directory before installing it",
+);
+assert.match(
+  checkpointStoreSource,
+  /installCheckpointDirectoryNoReplace\(\s*store,\s*draft,\s*destination,/,
+  "The durably-written draft unit must be installed by the no-replace directory installer, not copied in place",
+);
+assert.match(
+  checkpointStoreSource,
+  /function installCheckpointDirectoryNoReplace\([\s\S]*?fs\.renameSync\(\s*\/\* turbopackIgnore: true \*\/ sourceDirectory,\s*\/\* turbopackIgnore: true \*\/ purge,\s*\);\s*fsyncDirectoryIfSupported\(store\.directory\);/,
+  "Checkpoint publication must retire the draft via an atomic rename and fsync the store directory so the complete unit publishes crash-atomically",
 );
 // Finished-checkpoint surface: restore + delete actions and a name guard.
 assert.match(
