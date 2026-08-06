@@ -714,7 +714,6 @@ export type QueuedOfflineConversationSeed = {
   modelIntent?: ConversationModelIntent;
   createdAt: string;
   harnessSessionId?: string;
-  preserveExistingHarnessSessionId?: boolean;
   userTurn: {
     id: string;
     text: string;
@@ -822,12 +821,7 @@ export async function persistQueuedOfflineConversation(
     if (!conv.title && seed.title) conv.title = seed.title;
     if (!conv.origin && seed.origin) conv.origin = seed.origin;
     if (!conv.modelIntent && seed.modelIntent) conv.modelIntent = seed.modelIntent;
-    if (
-      seed.harnessSessionId
-      && (!seed.preserveExistingHarnessSessionId || !conv.harnessSessionId)
-    ) {
-      conv.harnessSessionId = seed.harnessSessionId;
-    }
+    if (seed.harnessSessionId) conv.harnessSessionId = seed.harnessSessionId;
 
     const existingTurn = conv.turns.find((turn) => turn.id === seed.userTurn.id);
     if (!existingTurn) {
