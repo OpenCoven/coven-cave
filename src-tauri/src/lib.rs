@@ -68,6 +68,8 @@ mod sidecar_discovery;
 #[cfg(desktop)]
 mod sidecar_lifecycle;
 #[cfg(desktop)]
+mod sidecar_ports;
+#[cfg(desktop)]
 mod sidecar_startup;
 #[cfg(desktop)]
 mod speech;

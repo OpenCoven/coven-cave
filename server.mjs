@@ -20,8 +20,20 @@ if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDAL
   } catch {
   }
 }
+const CAVE_DEV_PORT = 3e3;
+const CAVE_PRODUCTION_PORT = 3020;
+function parseCavePort(raw) {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535 ? parsed : null;
+}
+function cavePort() {
+  const channelDefault = process.env.COVEN_CAVE_BUNDLE === "1" ? CAVE_PRODUCTION_PORT : CAVE_DEV_PORT;
+  return parseCavePort(process.env.COVEN_CAVE_PORT) ?? parseCavePort(process.env.PORT) ?? channelDefault;
+}
 function persistedMobileAccessSecretFile() {
-  const port2 = (process.env.PORT || "3000").trim() || "3000";
+  const port2 = String(cavePort());
   const stateRoot = process.env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim() || join(
     process.env.XDG_STATE_HOME?.trim() || join(homedir(), ".local", "state"),
     "coven-cave"
@@ -570,7 +582,7 @@ function handlePtyConnection(ws, threadId, cols, rows, cwd, replayCursor) {
 }
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME ?? "127.0.0.1";
-const port = Number.parseInt(process.env.PORT ?? "3000", 10);
+const port = cavePort();
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 const wss = new WebSocketServer({ noServer: true });
