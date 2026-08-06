@@ -62,6 +62,37 @@ export function nativeProjectPathsEqual(
   return leftKey !== null && rightKey !== null && leftKey === rightKey;
 }
 
+export function nativeGitRelativePathIdentityKey(
+  value: string | null | undefined,
+  platform: NativeProjectPathPlatform = process.platform,
+): string | null {
+  const input = nativePathInput(value, platform);
+  if (input === null) return null;
+  const api = pathApi(platform);
+  if (
+    api.isAbsolute(input) ||
+    (platform === "win32" && /^[A-Za-z]:(?![\\/])/.test(input))
+  ) {
+    return null;
+  }
+  const normalized = api.normalize(input);
+  if (normalized.split(api.sep).includes("..")) return null;
+  const gitPath = platform === "win32"
+    ? normalized.replace(/\\/g, "/")
+    : normalized;
+  return foldNativePath(gitPath, platform);
+}
+
+export function nativeGitRelativePathsEqual(
+  left: string | null | undefined,
+  right: string | null | undefined,
+  platform: NativeProjectPathPlatform = process.platform,
+): boolean {
+  const leftKey = nativeGitRelativePathIdentityKey(left, platform);
+  const rightKey = nativeGitRelativePathIdentityKey(right, platform);
+  return leftKey !== null && rightKey !== null && leftKey === rightKey;
+}
+
 export type NativeProjectRelativePath = {
   absolutePath: string;
   relativePath: string;
@@ -120,12 +151,20 @@ export function resolveNativeRepoRelativePathWithinProject(
   if (api.isAbsolute(input)) return null;
   const repoTarget = resolveNativePathWithinRoot(gitRoot, input, platform);
   if (!repoTarget) return null;
-  return resolveNativeProjectPathForGitRoot(
+  const projectTarget = resolveNativeProjectPathForGitRoot(
     projectRoot,
     gitRoot,
     repoTarget.absolutePath,
     platform,
   );
+  if (!projectTarget) return null;
+  return {
+    ...projectTarget,
+    gitRelativePath:
+      platform === "win32"
+        ? api.normalize(input).replace(/\\/g, "/")
+        : api.normalize(input),
+  };
 }
 
 export function resolveNativeProjectPathForGitRoot(

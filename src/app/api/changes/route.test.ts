@@ -199,18 +199,48 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /checkpointChanges\(root\.repoRoot, \{\s*projectRoot: root\.projectRoot,\s*targetProjectRelativePath: projectTarget\.projectRelativePath,\s*targetGitPath: projectTarget\.gitRelativePath,/,
+  /checkpointChanges\(root\.repoRoot, \{\s*kind: "revert-target",\s*projectRoot: root\.projectRoot,\s*targetProjectRelativePath: projectTarget\.projectRelativePath,\s*targetGitPath: projectTarget\.gitRelativePath,/,
   "the revert safety checkpoint is constrained to the exact destructive target",
 );
 assert.match(
   source,
-  /scope \? literalGitPathspec\(scope\.targetGitPath\) : null[\s\S]*?\["--binary", "--no-renames", "HEAD", "--", scopedPathspec\]/,
+  /scope\.kind === "revert-target"[\s\S]{0,120}?scope\.targetGitPath[\s\S]{0,120}?scope\.projectPathspec[\s\S]{0,180}?\["--binary", "--no-renames", "HEAD", "--", scopedPathspec\]/,
   "automatic checkpoint diffs use one literal target pathspec with rename detection disabled",
 );
 assert.match(
   source,
-  /function checkpointAuthorizedForProject\([\s\S]*?nativeProjectPathsEqual\(metadata\.projectRoot, root\.projectRoot\)[\s\S]{0,180}?target\.gitRelativePath === metadata\.targetGitPath/,
+  /function checkpointAuthorizedForProject\([\s\S]*?nativeProjectPathsEqual\(metadata\.projectRoot, root\.projectRoot\)[\s\S]*?nativeGitRelativePathsEqual\(target\.gitRelativePath, metadata\.targetGitPath\)/,
   "scoped checkpoint operations require metadata for the exact captured project and target",
+);
+assert.match(
+  source,
+  /checkpointChanges\(root\.repoRoot, \{\s*kind: "project-scope",\s*projectRoot: root\.projectRoot,\s*projectPathspec: root\.projectPathspec,/,
+  "manual checkpoints persist the resolved project's explicit aggregate pathspec",
+);
+assert.match(
+  source,
+  /if \(!metadata\) return nativeProjectPathsEqual\(root\.projectRoot, root\.repoRoot\)/,
+  "legacy repo-wide checkpoints are authorized only from the enclosing repository",
+);
+assert.match(
+  source,
+  /changedFilePaths\(root\.repoRoot, root\.projectPathspec\)[\s\S]{0,900}?\["add", "-A", "--", projectPathspec\][\s\S]{0,300}?"--only",\s*"--",\s*projectPathspec/,
+  "commit status, staging, and commit path selection all stay inside the resolved project",
+);
+assert.match(
+  source,
+  /nativeGitRelativePathIdentityKey\(file\.path\)[\s\S]{0,260}?nativeGitRelativePathIdentityKey\(relPath\)/,
+  "status membership uses host-native Git path identity rather than rebuilt root casing",
+);
+assert.match(
+  source,
+  /checkpointPatchPathAuthorized\([\s\S]*?resolveNativeRepoRelativePathWithinProject\([\s\S]*?gitWithInput\([\s\S]*?\["apply", "--3way", "--whitespace=nowarn", "-"\]/,
+  "restore validates every patch path against metadata before applying the same buffered patch",
+);
+assert.match(
+  source,
+  /if \(!isPostAction\(requestedAction\)\) \{[\s\S]{0,180}?unsupported action/,
+  "unknown aggregate actions cannot fall through to the revert path",
 );
 
 // remote=1 — read-only origin probe powering the project-setup modal's GitHub

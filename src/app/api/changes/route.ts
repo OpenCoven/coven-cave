@@ -11,6 +11,8 @@ import { isSafeBranchName } from "@/lib/issue-worktree";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
 import {
+  nativeGitRelativePathIdentityKey,
+  nativeGitRelativePathsEqual,
   nativeProjectPathsEqual,
   resolveNativePathWithinRoot,
   resolveNativeProjectPathForGitRoot,
@@ -45,7 +47,8 @@ const DEV_NULL = os.devNull;
  * enclosing Git root (repoRelativePath, as returned by GET), then must pass
  * captured-project containment before mutation. Reverting an untracked file
  * deletes it, so that path is gated behind an explicit confirmUntracked flag;
- * the blast radius of POST is one file.
+ * the blast radius of a revert POST is one file. Aggregate snapshots and
+ * commits are constrained to the resolved project's literal Git pathspec.
  */
 
 const execFileAsync = promisify(execFile);
@@ -64,6 +67,37 @@ function git(cwd: string, args: string[]): Promise<{ stdout: string; stderr: str
     cwd,
     timeout: GIT_TIMEOUT_MS,
     maxBuffer: MAX_GIT_BUFFER,
+  });
+}
+
+function gitWithInput(
+  cwd: string,
+  args: string[],
+  input: string,
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      "git",
+      args,
+      {
+        cwd,
+        timeout: GIT_TIMEOUT_MS,
+        maxBuffer: MAX_GIT_BUFFER,
+        encoding: "utf8",
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          Object.assign(error, { stdout, stderr });
+          reject(error);
+          return;
+        }
+        resolve({ stdout, stderr });
+      },
+    );
+    child.stdin?.on("error", () => {
+      // The exec callback reports the Git failure; ignore a concurrent EPIPE.
+    });
+    child.stdin?.end(input);
   });
 }
 
@@ -349,7 +383,11 @@ async function changedFilePaths(repoRoot: string, projectPathspec?: string): Pro
     args.push("--no-renames", "--", literalGitPathspec(projectPathspec));
   }
   const { stdout } = await gitStatus(repoRoot, args);
-  return new Set(parsePorcelainZ(stdout).map((file) => file.path));
+  return new Set(
+    parsePorcelainZ(stdout)
+      .map((file) => nativeGitRelativePathIdentityKey(file.path))
+      .filter((file): file is string => file !== null),
+  );
 }
 
 async function isChangedFile(
@@ -357,7 +395,8 @@ async function isChangedFile(
   relPath: string,
   projectPathspec?: string,
 ): Promise<boolean> {
-  return (await changedFilePaths(repoRoot, projectPathspec)).has(relPath);
+  const key = nativeGitRelativePathIdentityKey(relPath);
+  return key !== null && (await changedFilePaths(repoRoot, projectPathspec)).has(key);
 }
 
 // ── GET: change list / single-file diff ───────────────────────────────────────
@@ -513,7 +552,7 @@ export async function GET(req: NextRequest) {
     if (checkpointName !== null) {
       const abs = await resolveCheckpointPath(root.repoRoot, checkpointName);
       if (!abs) return NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
-      const metadata = readRevertCheckpointMetadata(abs);
+      const metadata = readCheckpointMetadata(abs);
       if (!checkpointAuthorizedForProject(root, metadata)) {
         return NextResponse.json(
           { ok: false, error: "checkpoint not authorized for project" },
@@ -588,23 +627,31 @@ async function resolveCheckpointPath(repoRoot: string, name: string): Promise<st
 }
 
 type RevertCheckpointScope = {
+  kind: "revert-target";
   projectRoot: string;
   targetProjectRelativePath: string;
   targetGitPath: string;
 };
 
-type RevertCheckpointMetadata = RevertCheckpointScope & {
+type ProjectCheckpointScope = {
+  kind: "project-scope";
+  projectRoot: string;
+  projectPathspec: string;
+};
+
+type CheckpointScope = RevertCheckpointScope | ProjectCheckpointScope;
+
+type CheckpointMetadata = CheckpointScope & {
   version: 1;
-  kind: "revert-target";
 };
 
 function checkpointMetadataPath(checkpointPath: string): string {
   return `${checkpointPath}.scope.json`;
 }
 
-function readRevertCheckpointMetadata(
+function readCheckpointMetadata(
   checkpointPath: string,
-): RevertCheckpointMetadata | null | "invalid" {
+): CheckpointMetadata | null | "invalid" {
   const metadataPath = checkpointMetadataPath(checkpointPath);
   let metadataFile: ReturnType<typeof openCheckpointFileIdentity>;
   try {
@@ -614,27 +661,37 @@ function readRevertCheckpointMetadata(
     return "invalid";
   }
   try {
-    return parseRevertCheckpointMetadata(fs.readFileSync(metadataFile.fd, "utf8"));
+    return parseCheckpointMetadata(fs.readFileSync(metadataFile.fd, "utf8"));
   } finally {
     fs.closeSync(metadataFile.fd);
   }
 }
 
-function parseRevertCheckpointMetadata(
+function parseCheckpointMetadata(
   raw: string,
-): RevertCheckpointMetadata | "invalid" {
+): CheckpointMetadata | "invalid" {
   try {
-    const parsed = JSON.parse(raw) as Partial<RevertCheckpointMetadata>;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (
       parsed.version !== 1 ||
-      parsed.kind !== "revert-target" ||
-      typeof parsed.projectRoot !== "string" ||
-      typeof parsed.targetProjectRelativePath !== "string" ||
-      typeof parsed.targetGitPath !== "string"
+      typeof parsed.projectRoot !== "string"
     ) {
       return "invalid";
     }
-    return parsed as RevertCheckpointMetadata;
+    if (
+      parsed.kind === "revert-target" &&
+      typeof parsed.targetProjectRelativePath === "string" &&
+      typeof parsed.targetGitPath === "string"
+    ) {
+      return parsed as CheckpointMetadata;
+    }
+    if (
+      parsed.kind === "project-scope" &&
+      typeof parsed.projectPathspec === "string"
+    ) {
+      return parsed as CheckpointMetadata;
+    }
+    return "invalid";
   } catch {
     return "invalid";
   }
@@ -642,19 +699,27 @@ function parseRevertCheckpointMetadata(
 
 function checkpointAuthorizedForProject(
   root: ResolvedRepoRoot,
-  metadata: RevertCheckpointMetadata | null | "invalid",
-): metadata is RevertCheckpointMetadata | null {
+  metadata: CheckpointMetadata | null | "invalid",
+): metadata is CheckpointMetadata | null {
   if (metadata === "invalid") return false;
-  if (!metadata) return true;
+  if (!metadata) return nativeProjectPathsEqual(root.projectRoot, root.repoRoot);
+  if (!nativeProjectPathsEqual(metadata.projectRoot, root.projectRoot)) {
+    return false;
+  }
+  if (metadata.kind === "project-scope") {
+    return nativeGitRelativePathsEqual(
+      metadata.projectPathspec,
+      root.projectPathspec,
+    );
+  }
   const target = resolveNativeProjectPathForGitRoot(
     root.projectRoot,
     root.repoRoot,
     metadata.targetProjectRelativePath,
   );
   return (
-    nativeProjectPathsEqual(metadata.projectRoot, root.projectRoot) &&
     target !== null &&
-    target.gitRelativePath === metadata.targetGitPath
+    nativeGitRelativePathsEqual(target.gitRelativePath, metadata.targetGitPath)
   );
 }
 
@@ -869,12 +934,12 @@ function deleteAuthorizedCheckpoint(
   }
   let metadataFile: OpenCheckpointFile | null = null;
   let metadataRaw: string | null = null;
-  let metadata: RevertCheckpointMetadata | null | "invalid" = null;
+  let metadata: CheckpointMetadata | null | "invalid" = null;
   try {
     try {
       metadataFile = openCheckpointFileIdentity(metadataPath);
       metadataRaw = fs.readFileSync(metadataFile.fd, "utf8");
-      metadata = parseRevertCheckpointMetadata(metadataRaw);
+      metadata = parseCheckpointMetadata(metadataRaw);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
@@ -937,7 +1002,7 @@ function deleteAuthorizedCheckpoint(
           quarantinedMetadataRaw !== metadataRaw ||
           !checkpointAuthorizedForProject(
             root,
-            parseRevertCheckpointMetadata(quarantinedMetadataRaw),
+            parseCheckpointMetadata(quarantinedMetadataRaw),
           )
         ) {
           throw new Error("checkpoint metadata changed during deletion");
@@ -1015,50 +1080,47 @@ function deleteAuthorizedCheckpoint(
 
 async function checkpointChanges(
   repoRoot: string,
-  scope?: RevertCheckpointScope,
+  scope: CheckpointScope,
 ): Promise<string> {
   // Store snapshots under .git/coven-cave/checkpoints so the checkpoint never
   // creates new worktree changes.
-  const scopedPathspec = scope ? literalGitPathspec(scope.targetGitPath) : null;
+  const scopedPathspec = literalGitPathspec(
+    scope.kind === "revert-target"
+      ? scope.targetGitPath
+      : scope.projectPathspec,
+  );
   let patch = "";
   try {
     ({ stdout: patch } = await gitDiff(
       repoRoot,
-      scopedPathspec
-        ? ["--binary", "--no-renames", "HEAD", "--", scopedPathspec]
-        : ["--binary", "HEAD", "--"],
+      ["--binary", "--no-renames", "HEAD", "--", scopedPathspec],
     ));
   } catch {
     ({ stdout: patch } = await gitDiff(
       repoRoot,
-      scopedPathspec
-        ? ["--binary", "--no-renames", "--", scopedPathspec]
-        : ["--binary", "--"],
+      ["--binary", "--no-renames", "--", scopedPathspec],
     ));
   }
 
   const statusArgs = ["--porcelain=v1", "-z", "--untracked-files=all"];
-  if (scopedPathspec) statusArgs.push("--no-renames", "--", scopedPathspec);
+  statusArgs.push("--no-renames", "--", scopedPathspec);
   const { stdout: statusOut } = await gitStatus(repoRoot, statusArgs);
   for (const file of parsePorcelainZ(statusOut)) {
     if (file.status === "untracked") {
       const abs = resolveContainedFile(repoRoot, file.path);
       if (!abs || !fs.existsSync(/* turbopackIgnore: true */ abs)) {
-        if (scope) throw new Error("checkpoint path escaped project scope");
-        continue;
+        throw new Error("checkpoint path escaped project scope");
       }
-      if (scope) {
-        const projectTarget = resolveNativeProjectPathForGitRoot(
-          scope.projectRoot,
-          repoRoot,
-          abs,
-        );
-        if (
-          !projectTarget ||
-          !resolveContainedFile(scope.projectRoot, projectTarget.projectRelativePath)
-        ) {
-          throw new Error("checkpoint path escaped project scope");
-        }
+      const projectTarget = resolveNativeProjectPathForGitRoot(
+        scope.projectRoot,
+        repoRoot,
+        abs,
+      );
+      if (
+        !projectTarget ||
+        !resolveContainedFile(scope.projectRoot, projectTarget.projectRelativePath)
+      ) {
+        throw new Error("checkpoint path escaped project scope");
       }
       try {
         // Pass the REPO-RELATIVE path (cwd is repoRoot) so the synthesized
@@ -1086,21 +1148,18 @@ async function checkpointChanges(
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const checkpointPath = path.join(/* turbopackIgnore: true */ checkpointDir, `${stamp}.patch`);
   writeFileSync(checkpointPath, patch, { mode: 0o600 });
-  if (scope) {
-    try {
-      writeFileSync(
-        checkpointMetadataPath(checkpointPath),
-        JSON.stringify({
-          version: 1,
-          kind: "revert-target",
-          ...scope,
-        } satisfies RevertCheckpointMetadata),
-        { mode: 0o600 },
-      );
-    } catch (error) {
-      fs.rmSync(/* turbopackIgnore: true */ checkpointPath, { force: true });
-      throw error;
-    }
+  try {
+    writeFileSync(
+      checkpointMetadataPath(checkpointPath),
+      JSON.stringify({
+        version: 1,
+        ...scope,
+      } satisfies CheckpointMetadata),
+      { mode: 0o600 },
+    );
+  } catch (error) {
+    fs.rmSync(/* turbopackIgnore: true */ checkpointPath, { force: true });
+    throw error;
   }
   return checkpointPath;
 }
@@ -1124,7 +1183,7 @@ async function listCheckpoints(root: ResolvedRepoRoot): Promise<CheckpointMeta[]
       if (
         !checkpointAuthorizedForProject(
           root,
-          readRevertCheckpointMetadata(checkpointPath),
+          readCheckpointMetadata(checkpointPath),
         )
       ) {
         continue;
@@ -1141,34 +1200,92 @@ async function listCheckpoints(root: ResolvedRepoRoot): Promise<CheckpointMeta[]
 
 /** Apply a saved checkpoint patch onto the current worktree (3-way so it can
  *  reconstruct the snapshot even if the tree has moved since). */
+function checkpointPatchPaths(numstat: string): string[] {
+  const tokens = numstat.split("\0");
+  const paths: string[] = [];
+  for (let index = 0; index < tokens.length; index++) {
+    const record = tokens[index];
+    const firstTab = record.indexOf("\t");
+    const secondTab = record.indexOf("\t", firstTab + 1);
+    if (firstTab < 0 || secondTab < 0) continue;
+    const directPath = record.slice(secondTab + 1);
+    if (directPath) {
+      paths.push(directPath);
+      continue;
+    }
+    const oldPath = tokens[index + 1];
+    const newPath = tokens[index + 2];
+    if (oldPath) paths.push(oldPath);
+    if (newPath) paths.push(newPath);
+    index += 2;
+  }
+  return paths;
+}
+
+function checkpointPatchPathAuthorized(
+  root: ResolvedRepoRoot,
+  metadata: CheckpointMetadata,
+  candidate: string,
+): boolean {
+  if (metadata.kind === "revert-target") {
+    return nativeGitRelativePathsEqual(candidate, metadata.targetGitPath);
+  }
+  const target = resolveNativeRepoRelativePathWithinProject(
+    root.projectRoot,
+    root.repoRoot,
+    candidate,
+  );
+  return (
+    target !== null &&
+    resolveContainedFile(root.projectRoot, target.projectRelativePath) !== null
+  );
+}
+
 async function restoreCheckpoint(
-  repoRoot: string,
+  root: ResolvedRepoRoot,
   abs: string,
-  targetGitPath?: string,
+  metadata: CheckpointMetadata | null,
 ): Promise<void> {
   const patch = fs.readFileSync(/* turbopackIgnore: true */ abs, "utf8");
   if (!patch.trim()) return; // empty snapshot — nothing to apply
-  if (targetGitPath) {
-    const { stdout } = await git(repoRoot, ["apply", "--numstat", "-z", abs]);
-    const paths = stdout
-      .split("\0")
-      .filter(Boolean)
-      .map((record) => {
-        const firstTab = record.indexOf("\t");
-        const secondTab = record.indexOf("\t", firstTab + 1);
-        return secondTab < 0 ? null : record.slice(secondTab + 1);
-      });
+  if (metadata) {
+    const { stdout } = await gitWithInput(
+      root.repoRoot,
+      ["apply", "--numstat", "-z", "-"],
+      patch,
+    );
+    const paths = checkpointPatchPaths(stdout);
     if (
       paths.length === 0 ||
-      paths.some((candidate) => candidate !== targetGitPath)
+      paths.some((candidate) => !checkpointPatchPathAuthorized(root, metadata, candidate))
     ) {
-      throw new Error("checkpoint target does not match authorized path");
+      throw new Error("checkpoint contains paths outside its authorized scope");
     }
   }
-  await git(repoRoot, ["apply", "--3way", "--whitespace=nowarn", abs]);
+  await gitWithInput(
+    root.repoRoot,
+    ["apply", "--3way", "--whitespace=nowarn", "-"],
+    patch,
+  );
 }
 
 // ── POST: revert one file / checkpoint changes ───────────────────────────────
+
+const POST_ACTIONS = new Set([
+  "revert",
+  "checkpoint",
+  "restore-checkpoint",
+  "delete-checkpoint",
+  "commit",
+  "create-pr",
+  "switch-branch",
+  "create-worktree",
+] as const);
+type PostAction = typeof POST_ACTIONS extends Set<infer T> ? T : never;
+
+function isPostAction(value: unknown): value is PostAction {
+  return typeof value === "string" && POST_ACTIONS.has(value as PostAction);
+}
 
 export async function POST(req: NextRequest) {
   let body: {
@@ -1176,7 +1293,7 @@ export async function POST(req: NextRequest) {
     path?: string;
     repoRelativePath?: string;
     confirmUntracked?: boolean;
-    action?: "revert" | "checkpoint" | "restore-checkpoint" | "delete-checkpoint" | "commit" | "create-pr" | "switch-branch" | "create-worktree";
+    action?: unknown;
     checkpoint?: string;
     message?: string;
     title?: string;
@@ -1195,7 +1312,14 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-  const action = body.action ?? "revert";
+  const requestedAction = body.action ?? "revert";
+  if (!isPostAction(requestedAction)) {
+    return NextResponse.json(
+      { ok: false, error: "unsupported action" },
+      { status: 400 },
+    );
+  }
+  const action = requestedAction;
 
   const root = await resolveRepoRoot(body.projectRoot);
   if (!root.ok) {
@@ -1203,16 +1327,20 @@ export async function POST(req: NextRequest) {
   }
   if (action === "checkpoint") {
     try {
-      const checkpointPath = await checkpointChanges(root.repoRoot);
+      const checkpointPath = await checkpointChanges(root.repoRoot, {
+        kind: "project-scope",
+        projectRoot: root.projectRoot,
+        projectPathspec: root.projectPathspec,
+      });
       return NextResponse.json({ ok: true, checkpointPath });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return NextResponse.json({ ok: false, error: message }, { status: 500 });
     }
   }
-  // Stage all working-tree changes and commit them. To keep the default branch
-  // clean (and set up the PR flow), a commit made while on the default branch
-  // (or a detached HEAD) first spins up a fresh `cave/<slug>` feature branch.
+  // Stage and commit only this project's working-tree changes. A commit made
+  // while on the default branch (or a detached HEAD) first spins up a fresh
+  // `cave/<slug>` feature branch so the default branch remains clean.
   // The commit is signed (-S) to match the repo norm; a signing failure is
   // surfaced rather than silently dropped.
   if (action === "commit") {
@@ -1221,9 +1349,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "commit message is required" }, { status: 400 });
     }
     try {
-      const { stdout: statusOut } = await git(root.repoRoot, ["status", "--porcelain"]);
-      if (!statusOut.trim()) {
-        return NextResponse.json({ ok: false, error: "nothing to commit — the working tree is clean" }, { status: 400 });
+      if ((await changedFilePaths(root.repoRoot, root.projectPathspec)).size === 0) {
+        return NextResponse.json(
+          { ok: false, error: "nothing to commit — the project is clean" },
+          { status: 400 },
+        );
       }
       const cur = await currentBranch(root.repoRoot);
       const def = await defaultBranch(root.repoRoot);
@@ -1234,11 +1364,20 @@ export async function POST(req: NextRequest) {
         await git(root.repoRoot, ["checkout", "-b", branch]);
         branchCreated = true;
       }
-      await git(root.repoRoot, ["add", "-A"]);
+      const projectPathspec = literalGitPathspec(root.projectPathspec);
       try {
-        await gitLong(root.repoRoot, ["commit", "-S", "-m", message]);
+        await git(root.repoRoot, ["add", "-A", "--", projectPathspec]);
+        await gitLong(root.repoRoot, [
+          "commit",
+          "-S",
+          "-m",
+          message,
+          "--only",
+          "--",
+          projectPathspec,
+        ]);
       } catch (err) {
-        // Roll back the just-created branch so a failed commit doesn't strand it.
+        // Roll back the just-created branch after a failed stage or commit.
         if (branchCreated) await git(root.repoRoot, ["checkout", cur]).catch(() => {});
         const detail = stderrOf(err);
         const signing = /gpg|signing|ssh|secret key|sign/i.test(detail);
@@ -1372,7 +1511,7 @@ export async function POST(req: NextRequest) {
       if (!fs.existsSync(/* turbopackIgnore: true */ abs)) {
         return NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
       }
-      const metadata = readRevertCheckpointMetadata(abs);
+      const metadata = readCheckpointMetadata(abs);
       if (!checkpointAuthorizedForProject(root, metadata)) {
         return NextResponse.json(
           { ok: false, error: "checkpoint not authorized for project" },
@@ -1380,12 +1519,12 @@ export async function POST(req: NextRequest) {
         );
       }
       if (metadata) {
-        await restoreCheckpoint(root.repoRoot, abs, metadata.targetGitPath);
+        await restoreCheckpoint(root, abs, metadata);
       } else {
         // Legacy/manual checkpoints can span the repository. A captured nested
         // project may restore only target-scoped checkpoints; broad snapshots
         // still require the enclosing repository to pass standard authorization.
-        await restoreCheckpoint(root.repoRoot, abs);
+        await restoreCheckpoint(root, abs, null);
       }
       return NextResponse.json({ ok: true, restored: body.checkpoint });
     } catch (err) {
@@ -1451,6 +1590,7 @@ export async function POST(req: NextRequest) {
     let checkpointPath: string;
     try {
       checkpointPath = await checkpointChanges(root.repoRoot, {
+        kind: "revert-target",
         projectRoot: root.projectRoot,
         targetProjectRelativePath: projectTarget.projectRelativePath,
         targetGitPath: projectTarget.gitRelativePath,
