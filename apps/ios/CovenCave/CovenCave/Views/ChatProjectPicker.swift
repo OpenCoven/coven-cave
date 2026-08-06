@@ -10,9 +10,9 @@ struct ChatProjectPicker: View {
     let recentRoots: [String]
     @Binding var selectedRoot: String?
     @Binding var isResolved: Bool
-    // Declaration order IS the memberwise initializer's argument order, so it
-    // has to match how the call sites read: the required `refreshToken` ahead
-    // of the defaulted flag and callbacks.
+    // Declaration order must preserve the memberwise initializer: required
+    // refreshToken, then the defaulted requiresExplicitSelection flag, then
+    // the optional callbacks in the order onResolved, onManageAccess.
     let refreshToken: Int
     var requiresExplicitSelection = false
     var onResolved: (() -> Void)?

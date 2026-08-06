@@ -1417,14 +1417,36 @@ fn background_availability_supported() -> bool {
     false
 }
 
+/// The background-availability daemon serves the SAME address the GUI does.
+///
+/// This is the point of the dedicated port. LaunchAgent mode is a handoff — the
+/// GUI's sidecar exits and `server.mjs` keeps serving so paired phones stay
+/// reachable — and a handoff that changes the port is not a handoff at all: the
+/// phone's stored host stops resolving and `tailscale serve` is left pointing
+/// at a loopback port nothing answers on. Previously the GUI took a random port
+/// and this daemon scanned 3000..=3010, so the two essentially never agreed.
+///
+/// The old scan survives only as a last resort. Here, unlike the GUI path, not
+/// starting is worse than moving: the GUI can show the user an error, whereas a
+/// background daemon that refuses to bind leaves the phone silently unreachable
+/// with nothing on screen to explain it. The fallback logs loudly, and the
+/// serve-repair pass re-points Tailscale at whatever port was actually taken.
 #[cfg(all(desktop, target_os = "macos"))]
 fn daemon_port() -> Result<u16, String> {
+    let dedicated = crate::sidecar_ports::dedicated_port();
+    if TcpListener::bind(("127.0.0.1", dedicated)).is_ok() {
+        return Ok(dedicated);
+    }
+    log::warn!(
+        "[cave] dedicated port {dedicated} is occupied; the background daemon is falling back to \
+         a scanned port, so paired phones depend on the Tailscale serve repair pass to follow it"
+    );
     for port in 3000..=3010 {
         if TcpListener::bind(("127.0.0.1", port)).is_ok() {
             return Ok(port);
         }
     }
-    find_free_port().ok_or_else(|| "no free loopback port is available".to_string())
+    Err("no free loopback port is available".to_string())
 }
 
 #[cfg(all(desktop, target_os = "macos"))]

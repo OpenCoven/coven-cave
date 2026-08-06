@@ -92,9 +92,13 @@ assert.match(
   /historyExpanded \|\| groupedTurns\.length <= TRANSCRIPT_RENDER_CAP/,
   "the render cap decision moved with the loop",
 );
+// cave-u5lq7: the loop now assigns instead of returning, because the
+// earlier-turns fold prepends a pill ahead of the rows. What this pin cares
+// about — that the mapping lives INSIDE the memo, not in ChatView's body —
+// is unchanged.
 assert.match(
   transcriptRowsBody,
-  /return renderGroups\.map\(\(g\) => \{/,
+  /const rows = renderGroups\.map\(\(g, groupIndex\) => \{/,
   "the row loop lives inside the memo component",
 );
 // The pre-extraction inline IIFE form must not come back to ChatView's JSX.

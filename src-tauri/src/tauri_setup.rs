@@ -282,6 +282,11 @@ pub fn run() {
         .manage(SidecarState(Arc::clone(&sidecar_process)))
         .manage(Arc::clone(&reachability_runtime))
         .manage(browser::BrowserLifecycleState::default());
+    // Registered on every desktop platform even though the watcher thread is
+    // non-Windows: the teardown path reads this flag unconditionally, and a
+    // missing state would silently make that a no-op.
+    #[cfg(desktop)]
+    let builder = builder.manage(Arc::new(SidecarSupervisor::default()));
     #[cfg(all(desktop, target_os = "windows"))]
     let builder = builder.manage(Arc::new(SidecarStartupControl::new()));
     #[cfg(desktop)]
@@ -373,6 +378,10 @@ pub fn run() {
                             fatal_exit(&error)
                         }
                     };
+                    // Nothing watched the child after this point: if node
+                    // died an hour later the window kept pointing at a dead
+                    // port, silently. cave-qg38n.
+                    spawn_sidecar_supervisor(app.handle().clone());
                     Some(sidecar_url)
                 }
             };
@@ -631,6 +640,14 @@ pub fn run() {
 
             if let tauri::WindowEvent::Destroyed = event {
                 if window.label() == "main" {
+                    // Before the stop, never after: the supervisor polls every
+                    // couple of seconds, and a flag set afterwards races it
+                    // into respawning the sidecar we are deliberately killing.
+                    if let Some(supervisor) =
+                        window.app_handle().try_state::<Arc<SidecarSupervisor>>()
+                    {
+                        supervisor.request_stop();
+                    }
                     let sidecar_stopped = match window.app_handle().try_state::<SidecarState>() {
                         Some(state) => match state.stop() {
                             Ok(()) => true,

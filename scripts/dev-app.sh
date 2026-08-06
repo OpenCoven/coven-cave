@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
 # scripts/dev-app.sh — launch CovenCave in Tauri dev mode.
 #
-# Auto-detects or starts a dev server, discovering its actual port (which may
-# be >3000 if lower ports are in use), then configures Tauri's devUrl to match.
-# Respects explicit PORT= override.
+# Starts (or attaches to) the dev server on Cave's DEDICATED dev port, then
+# configures Tauri's devUrl to match.
+#
+# This used to scan 3000..3010 for whatever was free, which meant the address
+# depended on what else happened to be running. Now the port is fixed by
+# scripts/ports.mjs and a busy port is resolved by identity, not by moving:
+#
+#   busy, and it answers as Cave  -> attach to it (the common case: you already
+#                                    have `pnpm dev` running in another terminal)
+#   busy, and it is a stranger    -> refuse, and say what to do about it
 #
 # Usage:
-#   pnpm dev:app             # auto-detect, start on default or next free port
-#   PORT=3001 pnpm dev:app   # force specific port
-#   pnpm dev:app -- --release    # forwarded flags to Tauri
+#   pnpm dev:app                    # attach to, or start, the dev port
+#   COVEN_CAVE_PORT=3007 pnpm dev:app   # override the port
+#   PORT=3007 pnpm dev:app          # same, honoured second
+#   pnpm dev:app -- --release       # forwarded flags to Tauri
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -28,37 +36,41 @@ origin_is_ready() {
   node scripts/dev-app-origin-health.mjs --port "$1" --timeout-ms "${2:-1500}" >/dev/null 2>&1
 }
 
-# If PORT is explicitly set, use that; otherwise auto-discover
-if [ -n "${PORT:-}" ]; then
-  dev_port="$PORT"
-  echo "[dev:app] using explicit PORT=${dev_port}"
+# The dedicated dev port, honouring COVEN_CAVE_PORT then PORT.
+dev_port="$(node -e "import('./scripts/ports.mjs').then((m) => console.log(m.resolvePort('dev', process.env)))")"
+if [ -n "${COVEN_CAVE_PORT:-}" ] || [ -n "${PORT:-}" ]; then
+  echo "[dev:app] using overridden port ${dev_port}"
 else
-  # Find a free port in the default range
-  dev_port=""
-  for candidate in $(seq 3000 3010); do
-    if ! port_is_listening "$candidate" >/dev/null 2>&1; then
-      dev_port="$candidate"
-      break
-    fi
-  done
+  echo "[dev:app] dedicated dev port ${dev_port}"
+fi
 
-  if [ -z "$dev_port" ]; then
-    echo "[dev:app] ERROR: no free port found in 3000-3010" >&2
+# Busy is resolved by identity, never by relocating — a port that moves is what
+# this contract exists to stop. See scripts/dev-port-owner.mjs.
+port_owner="$(node scripts/dev-port-owner.mjs --port "$dev_port" 2>/dev/null || echo free)"
+case "$port_owner" in
+  ours)
+    echo "[dev:app] attaching to the CovenCave dev server already on 127.0.0.1:${dev_port}"
+    should_start_server=false
+    ;;
+  gated)
+    echo "[dev:app] ERROR: 127.0.0.1:${dev_port} is serving with an access token configured," >&2
+    echo "[dev:app]        so it cannot be identified as CovenCave from here." >&2
+    echo "[dev:app]        Stop it, or pick another port: COVEN_CAVE_PORT=3007 pnpm dev:app" >&2
     exit 1
-  fi
-
-  echo "[dev:app] port ${dev_port} is free"
-fi
-
-# Check if a dev server is already running on that port
-if port_is_listening "$dev_port" >/dev/null 2>&1; then
-  echo "[dev:app] dev server already listening on 127.0.0.1:${dev_port}"
-  # Configure Tauri to use it (skip beforeDevCommand)
-  should_start_server=false
-else
-  echo "[dev:app] starting dev server on ${dev_port}"
-  should_start_server=true
-fi
+    ;;
+  stranger)
+    echo "[dev:app] ERROR: port ${dev_port} is held by something that is not CovenCave." >&2
+    if command -v lsof >/dev/null 2>&1; then
+      echo "[dev:app]        holder: $(lsof -nP -iTCP:"$dev_port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1" (pid "$2")"}')" >&2
+    fi
+    echo "[dev:app]        Free it, or pick another port: COVEN_CAVE_PORT=3007 pnpm dev:app" >&2
+    exit 1
+    ;;
+  *)
+    echo "[dev:app] starting dev server on ${dev_port}"
+    should_start_server=true
+    ;;
+esac
 
 TAURI_OVERRIDE_CONFIG="$(mktemp)"
 WATCHDOG_VERDICT="$(mktemp)"

@@ -1,3 +1,4 @@
+import { createFamiliarLivenessPolicy } from "@/lib/familiar-liveness";
 import type { DaemonStatusPollResult } from "@/lib/daemon-status-classification";
 import type { TauriPlatform } from "@/lib/tauri-platform";
 
@@ -26,10 +27,15 @@ export type DaemonDesktopAutoStartCoordinator = {
 };
 
 /**
- * Backoff for unattended restarts, in ms since the previous attempt. A daemon
- * that cannot start must not be relaunched every 5 seconds forever: the list
- * is finite, so after the last entry the coordinator gives up and leaves the
- * offline banner to say so. A single observed `running` result resets it.
+ * Retained for the surfaces that describe the restart cadence to the user. The
+ * schedule itself now comes from createFamiliarLivenessPolicy, which spends the
+ * same budget and then COOLS OFF rather than stopping for good.
+ *
+ * The finite list was the bug: `restartAttempts >= DAEMON_RESTART_BACKOFF_MS
+ * .length` gave up permanently, and the only thing that cleared the counter was
+ * a `running` poll — which, for a daemon that is genuinely gone and cannot
+ * return on its own, never arrives. Four failures inside six minutes and the
+ * familiar was down for the rest of the session.
  */
 export const DAEMON_RESTART_BACKOFF_MS = [0, 15_000, 60_000, 300_000] as const;
 
@@ -61,8 +67,14 @@ export function createDaemonDesktopAutoStartCoordinator(
   let platform: TauriPlatform = "unknown";
   let firstStatus: DaemonStatusPollResult | null = null;
   let consumed = false;
-  let restartAttempts = 0;
-  let lastAttemptAt: number | null = null;
+  // One policy owns the schedule, the burst budget and its refill. See
+  // src/lib/familiar-liveness.ts for why "N attempts then never" was wrong.
+  const liveness = options
+    ? createFamiliarLivenessPolicy({
+        now: options.now,
+        burstAttempts: DAEMON_RESTART_BACKOFF_MS.length,
+      })
+    : null;
 
   const reconcile = () => {
     if (consumed) return;
@@ -70,8 +82,10 @@ export function createDaemonDesktopAutoStartCoordinator(
     if (decision === "wait") return;
     consumed = true;
     if (decision === "start") {
-      lastAttemptAt = options ? options.now() : null;
-      restartAttempts = 1;
+      // The boot start is unconditional and spends the burst's first attempt,
+      // so a daemon that is still absent a moment later waits out the backoff
+      // rather than being started twice in a row.
+      liveness?.observe("absent");
       start();
     }
   };
@@ -82,26 +96,27 @@ export function createDaemonDesktopAutoStartCoordinator(
    * state captured at boot.
    */
   const considerRestart = (status: DaemonStatusPollResult) => {
-    if (!options || !consumed) return;
+    if (!options || !liveness || !consumed) return;
     if (status.kind === "running") {
-      // Proof the daemon is back: forget the attempt history so a later,
-      // unrelated outage gets a full budget rather than the tail of this one.
-      restartAttempts = 0;
-      lastAttemptAt = null;
+      // Proof the daemon is back: the policy forgets the attempt history so a
+      // later, unrelated outage gets a full budget rather than the tail of this
+      // one.
+      liveness.observe("healthy");
       return;
     }
     if (platform !== "desktop") return;
     if (status.kind !== "offline" || status.targetMode !== "local") return;
+    // Re-read, never captured: the user can turn the preference off mid-session
+    // and the very next poll must respect that. Note this is checked BEFORE the
+    // policy is told anything, so a disabled preference never consumes budget.
     if (!options.autoRestartEnabled()) return;
-    if (restartAttempts >= DAEMON_RESTART_BACKOFF_MS.length) return;
 
-    const wait = DAEMON_RESTART_BACKOFF_MS[restartAttempts];
-    const at = options.now();
-    if (lastAttemptAt !== null && at - lastAttemptAt < wait) return;
-
-    restartAttempts += 1;
-    lastAttemptAt = at;
-    start();
+    // Scope note (cave-9pqt9): only `offline` + `local` reaches here, which is
+    // the status service's own confirmation that nothing is running. Widening
+    // this to hangs would mean issuing a stop, and stopping a daemon an external
+    // supervisor owns is precisely the contention that gate exists to avoid.
+    const decision = liveness.observe("absent");
+    if (decision.action === "revive") start();
   };
 
   return {
