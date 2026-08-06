@@ -13,9 +13,11 @@ import path from "node:path";
 import { after, test } from "node:test";
 
 import { acquireProcessIntentLock } from "./process-intent-lock.ts";
+import { acquireBaseProcessIntentLock } from "./process-intent-lock-base-fixture.ts";
 import { acquireLegacyProcessIntentLock } from "./process-intent-lock-legacy-fixture.ts";
 
 const workerMode = process.env.PROCESS_INTENT_COMPAT_WORKER as
+  | "base"
   | "legacy"
   | "current"
   | undefined;
@@ -47,12 +49,13 @@ function deferred() {
   return { promise, resolve };
 }
 
-async function runWorker(mode: "legacy" | "current"): Promise<void> {
+async function runWorker(mode: "base" | "legacy" | "current"): Promise<void> {
   const directory = process.env.PROCESS_INTENT_COMPAT_DIRECTORY!;
   const markerDirectory = process.env.PROCESS_INTENT_COMPAT_MARKERS!;
   const workerId = process.env.PROCESS_INTENT_COMPAT_WORKER_ID!;
-  const acquire =
-    mode === "legacy"
+  const acquire = mode === "base"
+    ? acquireBaseProcessIntentLock
+    : mode === "legacy"
       ? acquireLegacyProcessIntentLock
       : acquireProcessIntentLock;
   const crashStage = process.env.PROCESS_INTENT_CRASH_STAGE;
@@ -103,7 +106,7 @@ if (workerMode) {
   });
 
   function startWorker(
-    mode: "legacy" | "current",
+    mode: "base" | "legacy" | "current",
     directory: string,
     markerDirectory: string,
     id: string,
@@ -166,6 +169,8 @@ if (workerMode) {
   }
 
   for (const [holderMode, contenderMode] of [
+    ["base", "current"],
+    ["current", "base"],
     ["legacy", "current"],
     ["current", "legacy"],
   ] as const) {
@@ -224,7 +229,7 @@ if (workerMode) {
       return release;
     });
     await currentPaused.promise;
-    const releaseLegacy = await acquireLegacyProcessIntentLock({
+    const releaseLegacy = await acquireBaseProcessIntentLock({
       intentsDirectory: directory,
       label: "live legacy compatibility owner",
     });
@@ -239,6 +244,154 @@ if (workerMode) {
     const releaseCurrent = await current;
     await releaseCurrent();
   });
+
+  for (const [fixtureName, acquireFrozen] of [
+    ["base", acquireBaseProcessIntentLock],
+    ["legacy", acquireLegacyProcessIntentLock],
+  ] as const) {
+    test(`${fixtureName} paused after choosing a name cannot publish into a current holder`, async () => {
+      const directory = path.join(
+        temporary,
+        `${fixtureName}-after-name-current-holder`,
+      );
+      const frozenPaused = deferred();
+      const resumeFrozen = deferred();
+      let frozenEntered = false;
+      const frozen = acquireFrozen({
+        intentsDirectory: directory,
+        label: `${fixtureName} paused after name`,
+        pauseAfterName: async () => {
+          frozenPaused.resolve();
+          await resumeFrozen.promise;
+        },
+      }).then((release) => {
+        frozenEntered = true;
+        return release;
+      });
+      await frozenPaused.promise;
+      const releaseCurrent = await acquireProcessIntentLock({
+        intentsDirectory: directory,
+        label: `current holder before late ${fixtureName} publication`,
+      });
+      resumeFrozen.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      assert.equal(
+        frozenEntered,
+        false,
+        `${fixtureName} must observe the current migration barrier`,
+      );
+      await releaseCurrent();
+      const releaseFrozen = await frozen;
+      await releaseFrozen();
+    });
+
+    test(`current holder excludes ${fixtureName} paused after its scan`, async () => {
+      const directory = path.join(
+        temporary,
+        `current-holder-${fixtureName}-after-scan`,
+      );
+      const releaseCurrent = await acquireProcessIntentLock({
+        intentsDirectory: directory,
+        label: `current holder before ${fixtureName} scan`,
+      });
+      const frozenPaused = deferred();
+      const resumeFrozen = deferred();
+      let frozenEntered = false;
+      const frozen = acquireFrozen({
+        intentsDirectory: directory,
+        label: `${fixtureName} paused after current-holder scan`,
+        pauseAfterScan: async () => {
+          frozenPaused.resolve();
+          await resumeFrozen.promise;
+        },
+      }).then((release) => {
+        frozenEntered = true;
+        return release;
+      });
+      await frozenPaused.promise;
+      resumeFrozen.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      assert.equal(frozenEntered, false);
+      await releaseCurrent();
+      const releaseFrozen = await frozen;
+      await releaseFrozen();
+    });
+
+    test(`${fixtureName} paused after choosing a name waits for an existing current holder`, async () => {
+      const directory = path.join(
+        temporary,
+        `current-holder-${fixtureName}-after-name`,
+      );
+      const releaseCurrent = await acquireProcessIntentLock({
+        intentsDirectory: directory,
+        label: `current holder before ${fixtureName} name selection`,
+      });
+      const frozenPaused = deferred();
+      const resumeFrozen = deferred();
+      let frozenEntered = false;
+      const frozen = acquireFrozen({
+        intentsDirectory: directory,
+        label: `${fixtureName} paused after name with current holder`,
+        pauseAfterName: async () => {
+          frozenPaused.resolve();
+          await resumeFrozen.promise;
+        },
+      }).then((release) => {
+        frozenEntered = true;
+        return release;
+      });
+      await frozenPaused.promise;
+      resumeFrozen.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      assert.equal(
+        frozenEntered,
+        false,
+        `${fixtureName} must queue behind the current migration barrier`,
+      );
+      await releaseCurrent();
+      const releaseFrozen = await frozen;
+      await releaseFrozen();
+    });
+
+    test(`current waits for ${fixtureName} paused after its winning scan`, async () => {
+      const directory = path.join(
+        temporary,
+        `${fixtureName}-after-scan-before-current`,
+      );
+      const frozenPaused = deferred();
+      const resumeFrozen = deferred();
+      let currentEntered = false;
+      const frozen = acquireFrozen({
+        intentsDirectory: directory,
+        label: `${fixtureName} paused after winning scan`,
+        pauseAfterScan: async () => {
+          frozenPaused.resolve();
+          await resumeFrozen.promise;
+        },
+      });
+      await frozenPaused.promise;
+      const current = acquireProcessIntentLock({
+        intentsDirectory: directory,
+        label: `current after scanned ${fixtureName}`,
+      }).then((release) => {
+        currentEntered = true;
+        return release;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      assert.equal(
+        currentEntered,
+        false,
+        "a published frozen contender remains a migration blocker after its scan",
+      );
+      resumeFrozen.resolve();
+      const releaseFrozen = await frozen;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      assert.equal(currentEntered, false);
+      await releaseFrozen();
+      const releaseCurrent = await current;
+      await releaseCurrent();
+    });
+  }
 
   for (const stage of [
     "owner-file-synced",

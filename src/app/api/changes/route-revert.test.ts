@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import { access, chmod, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { access, chmod, lstat, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const originalCwd = process.cwd();
@@ -532,6 +532,25 @@ try {
     if (includeMetadata) await writeFile(metadataPath, metadataContents);
     return { checkpointPath, metadataPath };
   };
+  const readStoredCheckpoint = async (checkpointPath: string) => {
+    const stat = await lstat(checkpointPath);
+    return readFile(
+      stat.isDirectory()
+        ? path.join(checkpointPath, "checkpoint.patch")
+        : checkpointPath,
+    );
+  };
+  const readStoredMetadata = async (
+    checkpointPath: string,
+    metadataPath: string,
+  ) => {
+    const stat = await lstat(checkpointPath);
+    return readFile(
+      stat.isDirectory()
+        ? path.join(checkpointPath, "metadata.scope.json")
+        : metadataPath,
+    );
+  };
 
   const checkpointRaceName = "2026-08-05T17-20-00-001Z.patch";
   const checkpointRace = await cloneCheckpoint(checkpointRaceName);
@@ -554,7 +573,9 @@ try {
     "a checkpoint replacement between inspection and quarantine aborts deletion",
   );
   assert.equal(
-    await readFile(checkpointRace.checkpointPath, "utf8"),
+    await readStoredCheckpoint(checkpointRace.checkpointPath).then((contents) =>
+      contents.toString("utf8"),
+    ),
     "replacement checkpoint\n",
     "the unverified checkpoint replacement is restored rather than deleted",
   );
@@ -564,7 +585,10 @@ try {
     "the inspected checkpoint displaced by the race remains untouched",
   );
   assert.deepEqual(
-    await readFile(checkpointRace.metadataPath),
+    await readStoredMetadata(
+      checkpointRace.checkpointPath,
+      checkpointRace.metadataPath,
+    ),
     metadataContents,
     "checkpoint replacement rollback leaves paired metadata untouched",
   );
@@ -589,15 +613,40 @@ try {
     500,
     "a metadata replacement between authorization and quarantine aborts deletion",
   );
+  await Promise.all([
+    assert.rejects(() => access(metadataRace.checkpointPath)),
+    assert.rejects(() => access(metadataRace.metadataPath)),
+  ]);
+  const metadataRaceQuarantine = (await readdir(checkpointDir, {
+    withFileTypes: true,
+  })).find(
+    (entry) =>
+      entry.isDirectory() &&
+      entry.name.startsWith(`.delete-legacy-${metadataRaceName}-`),
+  );
+  assert.ok(metadataRaceQuarantine);
   assert.deepEqual(
-    await readFile(metadataRace.checkpointPath),
+    await readFile(
+      path.join(
+        checkpointDir,
+        metadataRaceQuarantine.name,
+        "checkpoint.patch",
+      ),
+    ),
     checkpointContents,
-    "metadata replacement rollback restores the verified checkpoint",
+    "the verified checkpoint stays quarantined beside unverified metadata",
   );
   assert.match(
-    await readFile(metadataRace.metadataPath, "utf8"),
+    await readFile(
+      path.join(
+        checkpointDir,
+        metadataRaceQuarantine.name,
+        "metadata.scope.json",
+      ),
+      "utf8",
+    ),
     /"projectRoot":"\/replacement"/,
-    "the unverified metadata replacement is restored rather than deleted",
+    "the unverified metadata replacement remains quarantined and untouched",
   );
   assert.deepEqual(
     await readFile(heldMetadata),
@@ -659,7 +708,11 @@ try {
     "rollback never overwrites an unverified replacement at the public path",
   );
   const retainedQuarantines = (await readdir(checkpointDir, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith(".delete-"))
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        entry.name.startsWith(`.delete-legacy-${rollbackConflictName}-`),
+    )
     .map((entry) => path.join(checkpointDir, entry.name, "checkpoint.patch"));
   assert.equal(retainedQuarantines.length, 1);
   assert.deepEqual(
@@ -706,15 +759,91 @@ try {
     500,
     "metadata appearing after a legacy checkpoint inspection aborts deletion",
   );
+  await Promise.all([
+    assert.rejects(() => access(legacyRace.checkpointPath)),
+    assert.rejects(() => access(legacyRace.metadataPath)),
+  ]);
+  const legacyRaceQuarantine = (await readdir(checkpointDir, {
+    withFileTypes: true,
+  })).find(
+    (entry) =>
+      entry.isDirectory() &&
+      entry.name.startsWith(`.delete-legacy-${legacyRaceName}-`),
+  );
+  assert.ok(legacyRaceQuarantine);
   assert.deepEqual(
-    await readFile(legacyRace.checkpointPath),
+    await readFile(
+      path.join(
+        checkpointDir,
+        legacyRaceQuarantine.name,
+        "checkpoint.patch",
+      ),
+    ),
     checkpointContents,
-    "legacy metadata races restore the verified checkpoint",
+    "legacy metadata races retain the verified checkpoint in quarantine",
   );
   assert.equal(
-    await readFile(legacyRace.metadataPath, "utf8"),
+    await readFile(
+      path.join(
+        checkpointDir,
+        legacyRaceQuarantine.name,
+        "metadata.scope.json",
+      ),
+      "utf8",
+    ),
     '{"replacement":true}',
-    "metadata that appeared during legacy deletion is preserved",
+    "metadata that appeared during legacy deletion remains quarantined",
+  );
+
+  const unverifiedName = "2026-08-05T17-20-00-007Z.patch";
+  const unverifiedDirectory = path.join(checkpointDir, unverifiedName);
+  const unexpectedDirectory = path.join(
+    unverifiedDirectory,
+    "unexpected-directory",
+  );
+  const unexpectedLink = path.join(unverifiedDirectory, "unexpected-link");
+  await mkdir(unexpectedDirectory, { recursive: true });
+  await Promise.all([
+    writeFile(
+      path.join(unverifiedDirectory, "checkpoint.patch"),
+      checkpointContents,
+    ),
+    writeFile(
+      path.join(unverifiedDirectory, "metadata.scope.json"),
+      metadataContents,
+    ),
+  ]);
+  await symlink(
+    unexpectedDirectory,
+    unexpectedLink,
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  const listWithUnverified = await GET({
+    nextUrl: new URL(
+      `http://127.0.0.1/api/changes?projectRoot=${encodeURIComponent(projectRoot)}&checkpoints=1`,
+    ),
+  });
+  assert.equal(listWithUnverified.status, 200);
+  assert.equal(
+    (await listWithUnverified.json()).checkpoints.some(
+      (entry: { name: string }) => entry.name === unverifiedName,
+    ),
+    false,
+    "a checkpoint directory with unknown entries is never listed",
+  );
+  const unverifiedDelete = await POST(
+    checkpointRequest("delete-checkpoint", projectRoot, unverifiedName),
+  );
+  assert.equal(unverifiedDelete.status, 200);
+  assert.equal(
+    (await lstat(unexpectedDirectory)).isDirectory(),
+    true,
+    "delete leaves an unknown directory untouched",
+  );
+  assert.equal(
+    (await lstat(unexpectedLink)).isSymbolicLink(),
+    true,
+    "delete leaves an unknown symlink untouched",
   );
 
   const authorizedDelete = await POST(
