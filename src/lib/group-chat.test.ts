@@ -95,6 +95,7 @@ test("applyGroupEvent: done settles the reply", () => {
   let r = baseReply();
   r = applyGroupEvent(r, { kind: "assistant_chunk", text: "done text" });
   r = applyGroupEvent(r, { kind: "done", durationMs: 1200, costUsd: 0.01 });
+  r = applyGroupEvent(r, { kind: "assistant_text", text: "done text" });
   assert.equal(r.status, "done");
   assert.equal(r.durationMs, 1200);
   assert.equal(r.costUsd, 0.01);
@@ -104,6 +105,24 @@ test("applyGroupEvent: done settles the reply", () => {
 test("applyGroupEvent: done with isError flips to error", () => {
   const r = applyGroupEvent(baseReply(), { kind: "done", isError: true });
   assert.equal(r.status, "error");
+});
+
+test("applyGroupEvent: text-only settlement preserves a terminal error", () => {
+  let r = baseReply({ text: "<coven:attention reason=\"approval\" />", status: "streaming" });
+  r = applyGroupEvent(r, { kind: "done", isError: true });
+  r = applyGroupEvent(r, { kind: "assistant_text", text: "" });
+  assert.equal(r.status, "error");
+  assert.equal(r.error, "request failed");
+  assert.equal(r.text, "");
+});
+
+test("applyGroupEvent: text-only settlement preserves an explicit error", () => {
+  let r = baseReply({ text: "<coven:attention reason=\"approval\" />", status: "streaming" });
+  r = applyGroupEvent(r, { kind: "error", message: "boom" });
+  r = applyGroupEvent(r, { kind: "assistant_text", text: "" });
+  assert.equal(r.status, "error");
+  assert.equal(r.error, "boom");
+  assert.equal(r.text, "");
 });
 
 test("applyGroupEvent: error captures the message", () => {

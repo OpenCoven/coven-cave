@@ -648,7 +648,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
           }
         }
         apply((r) => applyGroupEvent(r, {
-          kind: "assistant_replace", text: attentionText.settled(),
+          kind: "assistant_text", text: attentionText.settled(),
         }));
         // Stream closed without an explicit `done` — settle anything still live.
         apply((r) =>
@@ -657,7 +657,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       } catch (err) {
         const aborted = (err as Error)?.name === "AbortError";
         apply((r) => applyGroupEvent(r, {
-          kind: "assistant_replace", text: aborted ? attentionText.cancelled() : attentionText.settled(),
+          kind: "assistant_text", text: aborted ? attentionText.cancelled() : attentionText.settled(),
         }));
         apply((r) =>
           aborted

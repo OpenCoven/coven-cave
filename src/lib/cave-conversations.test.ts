@@ -15,6 +15,7 @@ const {
   isSafeConversationSessionId,
   listConversations,
   loadConversation,
+  persistQueuedOfflineConversation,
   resolveConversationSessionId,
   saveConversation,
 } = await import("./cave-conversations.ts");
@@ -270,6 +271,89 @@ await deleteConversation("hub-replay-root");
 await deleteConversation("stable-self-alias");
 await deleteConversation("cycle-replay-root");
 await deleteConversation("hub-replay-cycle");
+
+await persistQueuedOfflineConversation({
+  sessionId: "queued-replay-null",
+  familiarId: "charm",
+  harness: "claude",
+  createdAt: "2026-06-10T00:00:00.000Z",
+  replaySessionId: "hub-replay-null",
+  userTurn: { id: "queued-null-user", text: "queued replay null" },
+});
+const queuedReplayNull = await loadConversation("queued-replay-null");
+assert.equal(
+  queuedReplayNull?.harnessSessionId,
+  "hub-replay-null",
+  "a replay without a distinct conversation id falls back to the replay session id for resume",
+);
+assert.deepEqual(
+  queuedReplayNull?.replaySessions,
+  [{
+    sessionId: "hub-replay-null",
+    createdAt: "2026-06-10T00:00:00.000Z",
+    updatedAt: "2026-06-10T00:00:00.000Z",
+  }],
+);
+
+await persistQueuedOfflineConversation({
+  sessionId: "queued-replay-equal",
+  familiarId: "charm",
+  harness: "claude",
+  createdAt: "2026-06-10T00:01:00.000Z",
+  replaySessionId: "hub-replay-equal",
+  conversationId: "hub-replay-equal",
+  userTurn: { id: "queued-equal-user", text: "queued replay equal" },
+});
+const queuedReplayEqual = await loadConversation("queued-replay-equal");
+assert.equal(
+  queuedReplayEqual?.harnessSessionId,
+  "hub-replay-equal",
+  "a non-distinct conversation id should not replace the replay session id",
+);
+
+await persistQueuedOfflineConversation({
+  sessionId: "queued-replay-distinct",
+  familiarId: "charm",
+  harness: "claude",
+  createdAt: "2026-06-10T00:03:00.000Z",
+  replaySessionId: "hub-replay-distinct",
+  conversationId: "native-thread-distinct",
+  userTurn: { id: "queued-distinct-user", text: "queued replay distinct" },
+});
+await persistQueuedOfflineConversation({
+  sessionId: "queued-replay-distinct",
+  familiarId: "charm",
+  harness: "claude",
+  createdAt: "2026-06-10T00:02:00.000Z",
+  replaySessionId: "hub-replay-older",
+  userTurn: { id: "queued-older-user", text: "queued replay older" },
+});
+const queuedReplayDistinct = await loadConversation("queued-replay-distinct");
+assert.equal(
+  queuedReplayDistinct?.harnessSessionId,
+  "native-thread-distinct",
+  "an older replay alias must not overwrite the newer distinct native resume id",
+);
+assert.deepEqual(
+  queuedReplayDistinct?.replaySessions,
+  [
+    {
+      sessionId: "hub-replay-distinct",
+      conversationId: "native-thread-distinct",
+      createdAt: "2026-06-10T00:03:00.000Z",
+      updatedAt: "2026-06-10T00:03:00.000Z",
+    },
+    {
+      sessionId: "hub-replay-older",
+      createdAt: "2026-06-10T00:02:00.000Z",
+      updatedAt: "2026-06-10T00:02:00.000Z",
+    },
+  ],
+  "replay aliases remain recorded separately for canonical mapping",
+);
+await deleteConversation("queued-replay-null");
+await deleteConversation("queued-replay-equal");
+await deleteConversation("queued-replay-distinct");
 
 // CHAT-D5-02: a user-cancelled turn persists as an honest cancelled record —
 // partial text kept, cancelled flag set, never re-flagged as an error.

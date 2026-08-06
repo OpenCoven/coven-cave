@@ -24,6 +24,7 @@ delete process.env.CAVE_PROJECTS_PATH_OVERRIDE;
 const sessionRequests: Array<Record<string, unknown>> = [];
 let nextSession = 1;
 let server: http.Server | null = null;
+const sessionResponses: Array<Record<string, unknown>> = [];
 
 async function readJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
@@ -37,7 +38,7 @@ async function listenHub(port = 0): Promise<number> {
     if (req.method === "POST" && req.url === "/api/v1/sessions") {
       sessionRequests.push(await readJson(req));
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ id: `hub-session-${nextSession++}`, status: "running" }));
+      res.end(JSON.stringify(sessionResponses.shift() ?? { id: `hub-session-${nextSession++}`, status: "running" }));
       return;
     }
     if (req.method === "GET" && req.url === "/api/v1/health") {
@@ -331,6 +332,70 @@ try {
     1,
     "duplicate/retry persistence remains idempotent by stable user-turn id",
   );
+
+  const replayCases = [
+    {
+      sessionId: "offline-chat-equal",
+      createdAt: "2026-06-30T12:03:00.000Z",
+      response: { id: "hub-session-2", status: "running", conversation_id: "hub-session-2" },
+      expectedHarnessSessionId: "hub-session-2",
+      expectedReplaySession: {
+        sessionId: "hub-session-2",
+        conversationId: "hub-session-2",
+        createdAt: "2026-06-30T12:03:00.000Z",
+        updatedAt: "2026-06-30T12:03:00.000Z",
+      },
+    },
+    {
+      sessionId: "offline-chat-distinct",
+      createdAt: "2026-06-30T12:04:00.000Z",
+      response: { id: "hub-session-3", status: "running", conversationId: "native-thread-3" },
+      expectedHarnessSessionId: "native-thread-3",
+      expectedReplaySession: {
+        sessionId: "hub-session-3",
+        conversationId: "native-thread-3",
+        createdAt: "2026-06-30T12:04:00.000Z",
+        updatedAt: "2026-06-30T12:04:00.000Z",
+      },
+    },
+  ] as const;
+  for (const replayCase of replayCases) {
+    await conversations.persistQueuedOfflineConversation({
+      sessionId: replayCase.sessionId,
+      familiarId: "sage",
+      harness: "claude",
+      createdAt: replayCase.createdAt,
+      userTurn: {
+        id: `${replayCase.sessionId}-user`,
+        text: `queued ${replayCase.sessionId}`,
+      },
+    });
+    const extraItem = await config.enqueueOfflineTravelItem({
+      kind: "chat",
+      summary: replayCase.sessionId,
+      payload: {
+        familiarId: "sage",
+        prompt: `queued ${replayCase.sessionId}`,
+        sessionId: replayCase.sessionId,
+        userTurnId: `${replayCase.sessionId}-user`,
+        projectRoot,
+      },
+    });
+    sessionResponses.push(replayCase.response);
+    const extraReplayResult = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+    assert.deepEqual(extraReplayResult, { attempted: 1, synced: 1, failed: 0, errors: [] });
+    const extraState = await config.loadState();
+    const extraSynced = extraState.travel.offlineQueue.find((item) => item.id === extraItem.id);
+    assert.equal(extraSynced?.payload?.harnessSessionId, replayCase.expectedHarnessSessionId);
+    const extraConversation = await conversations.loadConversation(replayCase.sessionId);
+    assert.equal(extraConversation?.harnessSessionId, replayCase.expectedHarnessSessionId);
+    assert.equal(extraConversation?.replaySessions?.length, 1);
+    assert.equal(extraConversation?.replaySessions?.[0]?.sessionId, replayCase.expectedReplaySession.sessionId);
+    assert.equal(
+      extraConversation?.replaySessions?.[0]?.conversationId,
+      replayCase.expectedReplaySession.conversationId,
+    );
+  }
 
   console.log("offline-queue-replay.integration.test.ts: ok");
 } finally {
