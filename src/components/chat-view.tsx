@@ -85,6 +85,7 @@ import {
 } from "@/lib/chat-turn-state";
 import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat-transcript-groups";
 import { generateChatTitle } from "@/lib/chat-title-generation";
+import { chatTurnGapLabel } from "@/lib/chat-turn-gap";
 import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
 import {
   newSessionDefaults,
@@ -8167,6 +8168,11 @@ const TranscriptRows = memo(function TranscriptRows({
       const t = g.turn;
       const i = turnIndexMap.get(t.id) ?? -1;
       const prev = allTurns[i - 1];
+      // "Chat Session - Prototype.dc.html" (cave-n3jg2): a long pause gets a
+      // named rule across the column. The transcript already revealed a
+      // timestamp here; the divider says what the timestamp only implies —
+      // that the turns above and below are separate sittings.
+      const gapLabel = chatTurnGapLabel(prev?.createdAt, t.createdAt);
       const showTimestamp = (() => {
         if (!t.createdAt) return false;
         if (!prev?.createdAt) return true;
@@ -8185,7 +8191,7 @@ const TranscriptRows = memo(function TranscriptRows({
           onNext: () => void handlers().switchBranch(t.id, 1),
         };
       })();
-      return (
+      const row = (
         <TurnRow
           key={t.id}
           turn={t}
@@ -8207,6 +8213,20 @@ const TranscriptRows = memo(function TranscriptRows({
           branchNav={singleBranchNav}
           suppressSuggestions={t.id === followUpTurnId}
         />
+      );
+      if (!gapLabel) return row;
+      return (
+        <Fragment key={t.id}>
+          {/* Decorative: the pause is already legible from the timestamp the
+              same condition reveals on the turn below, so a screen reader
+              hearing this twice would be noise. */}
+          <div className="cave-chat-turn-gap" aria-hidden="true">
+            <span className="cave-chat-turn-gap__rule" />
+            <span className="cave-chat-turn-gap__label">{gapLabel}</span>
+            <span className="cave-chat-turn-gap__rule" />
+          </div>
+          {row}
+        </Fragment>
       );
     }
     const mm = String(Math.floor(g.durationSec / 60)).padStart(2, "0");
