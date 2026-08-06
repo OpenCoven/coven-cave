@@ -16,8 +16,62 @@ const temporary = await mkdtemp(
   path.join(process.cwd(), ".process-intent-lock-test-"),
 );
 
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 after(async () => {
   await rm(temporary, { recursive: true, force: true });
+});
+
+test("a contender paused before publication cannot preempt a published owner", async () => {
+  const intentsDirectory = path.join(temporary, "publish-order");
+  const firstPaused = deferred();
+  const resumeFirst = deferred();
+  let firstEntered = false;
+
+  const first = acquireProcessIntentLock({
+    intentsDirectory,
+    label: "test-paused-publisher",
+    beforePublish: async () => {
+      firstPaused.resolve();
+      await resumeFirst.promise;
+    },
+  }).then((release) => {
+    firstEntered = true;
+    return release;
+  });
+
+  const paused = await Promise.race([
+    firstPaused.promise.then(() => true),
+    new Promise<false>((resolve) => setTimeout(() => resolve(false), 100)),
+  ]);
+  if (!paused) {
+    const release = await first;
+    await release();
+    assert.fail("the contender never reached the pre-publication boundary");
+  }
+  const releaseSecond = await acquireProcessIntentLock({
+    intentsDirectory,
+    label: "test-published-successor",
+  });
+  resumeFirst.resolve();
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(
+    firstEntered,
+    false,
+    "the late publication must remain queued behind the current owner",
+  );
+
+  await releaseSecond();
+  const releaseFirst = await first;
+  assert.equal(firstEntered, true);
+  await releaseFirst();
 });
 
 test("an arbitrarily old live-owner intent is never reclaimed", async () => {
@@ -54,22 +108,25 @@ test("an orphan from a reused PID is reclaimed by process-start identity", async
   });
   const [liveName] = await readdir(intentsDirectory);
   await initialRelease();
-  const reusedName = liveName.replace(
-    /-([a-f0-9]{16})-([a-f0-9]+)\.lock$/,
-    "-0000000000000000-$2.lock",
+  const reusedPath = path.join(intentsDirectory, liveName);
+  await mkdir(reusedPath);
+  await writeFile(
+    path.join(reusedPath, "owner.json"),
+    `${JSON.stringify({
+      pid: process.pid,
+      startIdentityHash: "0000000000000000",
+    })}\n`,
   );
-  assert.notEqual(reusedName, liveName);
-  await writeFile(path.join(intentsDirectory, reusedName), "orphan\n");
 
   const release = await acquireProcessIntentLock({
     intentsDirectory,
     label: "test-pid-reuse",
   });
-  assert.ok(!(await readdir(intentsDirectory)).includes(reusedName));
+  assert.ok(!(await readdir(intentsDirectory)).includes(liveName));
   await release();
 });
 
-test("persistent stale-intent removal failure respects the absolute timeout", async () => {
+test("a malformed published intent fails closed within the absolute timeout", async () => {
   const intentsDirectory = path.join(temporary, "stale-removal-timeout");
   const seedRelease = await acquireProcessIntentLock({
     intentsDirectory,
@@ -114,27 +171,25 @@ test("persistent stale-intent removal failure respects the absolute timeout", as
   }
 });
 
-test("one release call retains cleanup until a failed removal recovers", async () => {
-  const intentsDirectory = path.join(temporary, "release-retry");
-  const release = await acquireProcessIntentLock({
+test("an aborted contender removes its published intent", async () => {
+  const intentsDirectory = path.join(temporary, "abort");
+  const releaseHolder = await acquireProcessIntentLock({
     intentsDirectory,
-    label: "test-release-retry",
+    label: "test-abort-holder",
   });
-  const [ownName] = await readdir(intentsDirectory);
-  const ownPath = path.join(intentsDirectory, ownName);
-  await rm(ownPath);
-  await mkdir(ownPath);
-  await writeFile(path.join(ownPath, "obstruction"), "blocked\n");
-
-  await release();
-  await rm(ownPath, { recursive: true });
-  const successorRelease = await acquireProcessIntentLock({
+  const controller = new AbortController();
+  const contender = acquireProcessIntentLock({
     intentsDirectory,
-    timeoutMs: 1_000,
-    label: "test-release-retry-successor",
+    label: "test-abort-contender",
+    signal: controller.signal,
   });
-  await successorRelease();
-  assert.deepEqual(await readdir(intentsDirectory), []);
+  while ((await readdir(intentsDirectory)).length < 2) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  controller.abort();
+  await assert.rejects(contender, { name: "AbortError" });
+  assert.equal((await readdir(intentsDirectory)).length, 1);
+  await releaseHolder();
 });
 
 test("release is idempotent and cannot remove a successor intent", async () => {
