@@ -128,16 +128,19 @@ function transcriptText(renderer: ReactTestRenderer): string {
     .join("\n");
 }
 
-function makeGroups() {
+function makeGroups(
+  familiarIds: string[] = ["nova"],
+  sessionOverrides: Record<string, string> = {},
+) {
   return [
     {
       id: "group-a",
       name: "Alpha Coven",
-      familiarIds: ["nova"],
-      sessions: {},
+      familiarIds,
+      sessions: sessionOverrides,
       projectId: "project-1",
       responseMode: "broadcast",
-      nextRoundRobinLeadId: "nova",
+      nextRoundRobinLeadId: familiarIds[0],
       createdAt: "2026-08-06T00:00:00.000Z",
       updatedAt: "2026-08-06T00:00:00.000Z",
     },
@@ -155,7 +158,10 @@ function makeGroups() {
   ];
 }
 
-function installStorage(options?: { throwOnLatePersist?: boolean }) {
+function installStorage(options?: {
+  throwOnLatePersist?: boolean;
+  groups?: ReturnType<typeof makeGroups>;
+}) {
   const data = new Map<string, string>();
   const counts = new Map<string, number>();
   const storage = {
@@ -176,7 +182,7 @@ function installStorage(options?: { throwOnLatePersist?: boolean }) {
       data.delete(key);
     }),
   };
-  data.set("cave:group-chat:groups:v1", JSON.stringify(makeGroups()));
+  data.set("cave:group-chat:groups:v1", JSON.stringify(options?.groups ?? makeGroups()));
   data.set("cave:group-chat:transcript:group-a", JSON.stringify([]));
   data.set("cave:group-chat:transcript:group-b", JSON.stringify([]));
   return { data, storage };
@@ -393,5 +399,91 @@ test("returning to the original coven before a retired reply settles reconciles 
   expect(JSON.parse(data.get("cave:group-chat:transcript:group-a") ?? "[]")).toEqual([
     expect.objectContaining({ role: "user", text: "Hello again" }),
     expect.objectContaining({ role: "assistant", status: "done", text: "final reconciled reply" }),
+  ]);
+});
+
+test("retired multi-reply batches keep original familiar order when terminals settle in reverse", async () => {
+  const { data, storage } = installStorage({
+    groups: makeGroups(["nova", "sage"]),
+  });
+  vi.stubGlobal("window", {
+    localStorage: storage,
+    setTimeout,
+    clearTimeout,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    dispatchEvent: () => true,
+  });
+  vi.stubGlobal("localStorage", storage);
+
+  const streams: ReadableStreamDefaultController<Uint8Array>[] = [];
+  const encoder = new TextEncoder();
+  vi.stubGlobal("fetch", vi.fn(async () => ({
+    ok: true,
+    body: new ReadableStream({
+      start(controller) {
+        streams.push(controller);
+      },
+    }),
+  } as Response)));
+
+  let renderer!: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(createElement(GroupChatView, {
+      familiars: [
+        { id: "nova", display_name: "Nova", role: "Scout" },
+        { id: "sage", display_name: "Sage", role: "Analyst" },
+      ],
+    }));
+    await Promise.resolve();
+  });
+
+  await act(async () => {
+    findTextarea(renderer, "Message the Alpha Coven coven").props.onChange({ target: { value: "Order check" } });
+    await Promise.resolve();
+  });
+  await act(async () => {
+    findButton(renderer, "Send").props.onClick();
+    await Promise.resolve();
+  });
+
+  expect(fetch).toHaveBeenCalledTimes(2);
+
+  await act(async () => {
+    findCovenRowButton(renderer, "Beta Coven").props.onClick();
+    await Promise.resolve();
+  });
+  await act(async () => {
+    findCovenRowButton(renderer, "Alpha Coven").props.onClick();
+    await Promise.resolve();
+  });
+
+  await act(async () => {
+    streams[1].enqueue(encoder.encode(`data: ${JSON.stringify({ kind: "assistant_replace", text: "Sage settled second" })}\n\n`));
+    streams[1].enqueue(encoder.encode(`data: ${JSON.stringify({ kind: "done", sessionId: "session-sage" })}\n\n`));
+    streams[1].close();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  await act(async () => {
+    streams[0].enqueue(encoder.encode(`data: ${JSON.stringify({ kind: "assistant_replace", text: "Nova settled first" })}\n\n`));
+    streams[0].enqueue(encoder.encode(`data: ${JSON.stringify({ kind: "done", sessionId: "session-nova" })}\n\n`));
+    streams[0].close();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  const liveTranscript = transcriptText(renderer);
+  expect(liveTranscript.indexOf("Nova settled first")).toBeGreaterThan(-1);
+  expect(liveTranscript.indexOf("Sage settled second")).toBeGreaterThan(-1);
+  expect(liveTranscript.indexOf("Nova settled first")).toBeLessThan(
+    liveTranscript.indexOf("Sage settled second"),
+  );
+
+  const saved = JSON.parse(data.get("cave:group-chat:transcript:group-a") ?? "[]");
+  expect(saved).toEqual([
+    expect.objectContaining({ role: "user", text: "Order check" }),
+    expect.objectContaining({ role: "assistant", familiarId: "nova", text: "Nova settled first", slotIndex: 0 }),
+    expect.objectContaining({ role: "assistant", familiarId: "sage", text: "Sage settled second", slotIndex: 1 }),
   ]);
 });

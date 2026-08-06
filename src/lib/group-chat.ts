@@ -922,7 +922,14 @@ export function loadTranscript(groupId: string): GroupTurn[] {
     const parsed = JSON.parse(raw) as unknown;
     // Cap on load too so a legacy oversized transcript shrinks the first time
     // it is opened instead of being re-serialized whole on every save.
-    return Array.isArray(parsed) ? capTranscript(parsed as GroupTurn[], TRANSCRIPT_CAP) : [];
+    return Array.isArray(parsed)
+      ? capTranscript(
+          parsed
+            .map((turn) => normalizeTranscriptTurn(turn))
+            .filter((turn): turn is GroupTurn => turn !== null),
+          TRANSCRIPT_CAP,
+        )
+      : [];
   } catch {
     return [];
   }
@@ -1038,4 +1045,83 @@ function normalizeCovenGroup(group: CovenGroup): CovenGroup {
         ? group.projectId.trim()
         : undefined,
   };
+}
+
+function normalizeTranscriptTurn(value: unknown): GroupTurn | null {
+  if (!value || typeof value !== "object") return null;
+  const turn = value as Record<string, unknown>;
+  if (turn.role === "user") {
+    if (
+      typeof turn.id !== "string" ||
+      typeof turn.text !== "string" ||
+      typeof turn.createdAt !== "string"
+    ) {
+      return null;
+    }
+    return {
+      id: turn.id,
+      role: "user",
+      text: turn.text,
+      targetFamiliarIds: normalizeTargetFamiliarIds(turn.targetFamiliarIds),
+      delegatedByFamiliarId:
+        typeof turn.delegatedByFamiliarId === "string" ? turn.delegatedByFamiliarId : undefined,
+      delegationSourceReplyId:
+        typeof turn.delegationSourceReplyId === "string" ? turn.delegationSourceReplyId : undefined,
+      delegationDepth:
+        Number.isInteger(turn.delegationDepth) && (turn.delegationDepth as number) >= 0
+          ? (turn.delegationDepth as number)
+          : undefined,
+      responseMode: COVEN_RESPONSE_MODES.includes(turn.responseMode as CovenResponseMode)
+        ? (turn.responseMode as CovenResponseMode)
+        : undefined,
+      createdAt: turn.createdAt,
+    };
+  }
+  if (turn.role !== "assistant") return null;
+  if (
+    typeof turn.id !== "string" ||
+    typeof turn.familiarId !== "string" ||
+    typeof turn.replyTo !== "string" ||
+    typeof turn.text !== "string" ||
+    typeof turn.createdAt !== "string"
+  ) {
+    return null;
+  }
+  const status: GroupReplyStatus =
+    turn.status === "queued" ||
+    turn.status === "streaming" ||
+    turn.status === "done" ||
+    turn.status === "error"
+      ? turn.status
+      : "error";
+  return {
+    id: turn.id,
+    role: "assistant",
+    familiarId: turn.familiarId,
+    replyTo: turn.replyTo,
+    slotIndex:
+      Number.isInteger(turn.slotIndex) && (turn.slotIndex as number) >= 0
+        ? (turn.slotIndex as number)
+        : undefined,
+    sessionId: typeof turn.sessionId === "string" ? turn.sessionId : null,
+    text: turn.text,
+    status,
+    activity: typeof turn.activity === "string" ? turn.activity : undefined,
+    error: typeof turn.error === "string" ? turn.error : undefined,
+    durationMs:
+      typeof turn.durationMs === "number" && Number.isFinite(turn.durationMs)
+        ? turn.durationMs
+        : undefined,
+    costUsd:
+      typeof turn.costUsd === "number" && Number.isFinite(turn.costUsd)
+        ? turn.costUsd
+        : undefined,
+    createdAt: turn.createdAt,
+  };
+}
+
+function normalizeTargetFamiliarIds(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const ids = value.filter((item): item is string => typeof item === "string");
+  return ids.length > 0 ? ids : undefined;
 }

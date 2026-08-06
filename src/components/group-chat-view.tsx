@@ -838,6 +838,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
         role: "assistant",
         familiarId: fid,
         replyTo: userTurn.id,
+        slotIndex: index,
         sessionId: group.sessions[fid] ?? null,
         text: "",
         status: "queued",
@@ -945,6 +946,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
               role: "assistant",
               familiarId: targetId,
               replyTo: delegatedTurn.id,
+              slotIndex: 0,
               sessionId: groupsRef.current.find((item) => item.id === group.id)?.sessions[targetId] ?? null,
               text: "",
               status: "queued",
@@ -1051,6 +1053,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       // Reset the failed bubble in place so it re-enters the streaming state.
       const fresh: GroupReply = {
         ...reply,
+        slotIndex: reply.slotIndex,
         sessionId: group.sessions[reply.familiarId] ?? reply.sessionId ?? null,
         text: "",
         status: "queued",

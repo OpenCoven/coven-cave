@@ -1080,3 +1080,41 @@ test("saveTranscript merges with stored settled replies instead of erasing a lat
     else delete (globalThis as { localStorage?: unknown }).localStorage;
   }
 });
+
+test("loadTranscript tolerates legacy replies without slots and drops invalid slot data", () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const store = new Map<string, string>();
+  store.set(
+    "cave:group-chat:transcript:g1",
+    JSON.stringify([
+      user("u1", "hello"),
+      reply("r1", "nova", "u1", "legacy"),
+      reply("r2", "sage", "u1", "invalid", "done", { slotIndex: "1" as unknown as number }),
+    ]),
+  );
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+    },
+  });
+  try {
+    const loaded = loadTranscript("g1");
+    assert.deepEqual(
+      loaded.map((turn) =>
+        turn.role === "assistant"
+          ? { id: turn.id, slotIndex: turn.slotIndex }
+          : { id: turn.id },
+      ),
+      [
+        { id: "u1" },
+        { id: "r1", slotIndex: undefined },
+        { id: "r2", slotIndex: undefined },
+      ],
+    );
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  }
+});
