@@ -1850,6 +1850,7 @@ const VITEST_TESTS = new Set([
   "src/components/use-openai-voice-preview.test.tsx",
   "src/components/workspace-sidebar-attention.test.ts",
   "src/components/chat-sidebar-wiring.behavior.test.ts",
+  "src/components/group-chat-view.behavior.test.tsx",
   "src/components/chat-title-sparkle-behavior.test.tsx",
 ]);
 
