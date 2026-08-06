@@ -1412,6 +1412,108 @@ assert.equal(
 }
 
 {
+  const state = { sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {} };
+  const localConversations = [{
+    sessionId: "offline-chat-native-current",
+    harnessSessionId: "codex-thread-current",
+    familiarId: "charm",
+    harness: "codex",
+    title: "Offline current native",
+    updatedAt: "2026-06-25T04:30:30.000Z",
+    attentionEvidence: {
+      latestCompletedTurn: { role: "assistant", at: "2026-06-25T04:30:00.000Z" },
+      latestUserTurnAt: null,
+      request: {
+        sessionId: "offline-chat-native-current",
+        turnId: "assistant-attention-current",
+        requestedAt: "2026-06-25T04:30:00.000Z",
+        reason: "approval",
+      },
+    },
+    replaySessions: [{
+      sessionId: "hub-session-offline-older",
+      conversationId: "codex-thread-current",
+      createdAt: "2026-06-25T04:20:00.000Z",
+      updatedAt: "2026-06-25T04:21:00.000Z",
+    }],
+  }];
+  const merge = (daemonSessions: DaemonSessionRow[]) => mergeSessionRows({
+    daemonSessions,
+    localConversations,
+    state,
+    includeArchived: false,
+  });
+  const activeRows = merge([
+    {
+      id: "hub-session-offline-older",
+      project_root: "/repo",
+      harness: "codex",
+      title: "Older replay terminal",
+      status: "failed",
+      exit_code: 1,
+      archived_at: null,
+      created_at: "2026-06-25T04:20:00.000Z",
+      updated_at: "2026-06-25T04:21:00.000Z",
+      conversation_id: "codex-thread-current",
+    },
+    {
+      id: "hub-session-native-current",
+      project_root: "/repo",
+      harness: "codex",
+      title: "Current native live row",
+      status: "running",
+      exit_code: 0,
+      archived_at: null,
+      created_at: "2026-06-25T04:31:00.000Z",
+      updated_at: "2026-06-25T04:32:00.000Z",
+      conversation_id: "codex-thread-current",
+    },
+  ]);
+  assert.equal(activeRows[0]?.daemonSessionId, "hub-session-native-current");
+  assert.equal(activeRows[0]?.status, "running");
+  assert.deepEqual(
+    activeRows[0]?.attention,
+    NO_CHAT_ATTENTION,
+    "an active daemon row always beats older replay terminal history and suppresses stale attention",
+  );
+
+  const terminalRows = merge([
+    {
+      id: "hub-session-offline-older",
+      project_root: "/repo",
+      harness: "codex",
+      title: "Older replay terminal",
+      status: "completed",
+      exit_code: 0,
+      archived_at: null,
+      created_at: "2026-06-25T04:20:00.000Z",
+      updated_at: "2026-06-25T04:33:00.000Z",
+      conversation_id: "codex-thread-current",
+    },
+    {
+      id: "hub-session-native-current",
+      project_root: "/repo",
+      harness: "codex",
+      title: "Current native paused row",
+      status: "paused",
+      exit_code: 1,
+      archived_at: null,
+      created_at: "2026-06-25T04:31:00.000Z",
+      updated_at: "2026-06-25T04:32:00.000Z",
+      conversation_id: "codex-thread-current",
+    },
+  ]);
+  assert.equal(
+    terminalRows[0]?.daemonSessionId,
+    "hub-session-native-current",
+    "when every candidate is terminal, the current native harness row wins before older replay rows",
+  );
+  assert.equal(terminalRows[0]?.status, "paused");
+  assert.equal(terminalRows[0]?.attention.reason, "approval");
+  assert.equal(terminalRows[0]?.attention.state, "overdue-human");
+}
+
+{
   const caveId = "mapped-cave-duplicate";
   const harnessId = "mapped-harness-duplicate";
   const duplicateMappedRows = mergeSessionRows({

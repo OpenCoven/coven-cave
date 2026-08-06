@@ -1,11 +1,18 @@
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
-import { loadConversation } from "@/lib/cave-conversations";
-import { callDaemon } from "@/lib/coven-daemon";
+import {
+  latestConversationReplaySession,
+  loadConversation,
+  normalizeDaemonConversationId,
+  persistResolvedReplayConversationId,
+  validatedConversationHarnessSessionId,
+} from "@/lib/cave-conversations";
+import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import {
   familiarWorkspacesRoot,
   readFamiliarWorkspaces,
 } from "@/lib/coven-paths";
+import { ACTIVE_SESSION_STATUSES } from "@/lib/chat-auto-archive";
 
 /** Resolve the local cwd recorded when a conversation was first created. */
 export async function conversationCwd(sessionId?: string): Promise<string | undefined> {
@@ -24,6 +31,12 @@ export async function conversationCwd(sessionId?: string): Promise<string | unde
 }
 
 type DaemonSessionRow = { id?: string; project_root?: string };
+type DaemonSessionRecord = DaemonSessionRow & {
+  status?: string;
+  conversationId?: string | null;
+  conversation_id?: string | null;
+  updated_at?: string | null;
+};
 
 /**
  * Resume-cwd fallback for sessions the Cave conversation store has no local
@@ -47,6 +60,85 @@ export async function daemonSessionCwd(sessionId?: string): Promise<string | und
     /* daemon offline — the caller keeps its remaining fallbacks */
   }
   return undefined;
+}
+
+export type ReplayBackedResumeResolution =
+  | { ok: true; resumeSessionId: string | null; replayBound: boolean }
+  | {
+    ok: false;
+    retryable: boolean;
+    code: "conversation_continuity_lookup_failed" | "conversation_continuity_syncing" | "conversation_continuity_unavailable";
+    error: string;
+    retryAfter?: string;
+  };
+
+export async function resolveReplayBackedResumeSessionId(
+  sessionId?: string,
+): Promise<ReplayBackedResumeResolution> {
+  if (!sessionId) return { ok: true, resumeSessionId: null, replayBound: false };
+  const conversation = await loadConversation(sessionId).catch(() => null);
+  if (!conversation) return { ok: true, resumeSessionId: null, replayBound: false };
+  const validatedNativeId = validatedConversationHarnessSessionId(conversation);
+  if (validatedNativeId) {
+    return { ok: true, resumeSessionId: validatedNativeId, replayBound: false };
+  }
+  const latestReplay = latestConversationReplaySession(conversation);
+  if (!latestReplay?.sessionId) {
+    return { ok: true, resumeSessionId: null, replayBound: false };
+  }
+  const res = await callDaemon<DaemonSessionRecord>({
+    path: `/api/v1/sessions/${encodeURIComponent(latestReplay.sessionId)}`,
+  });
+  if (!res.ok || !res.data) {
+    if (res.status === 404) {
+      return {
+        ok: false,
+        retryable: false,
+        code: "conversation_continuity_unavailable",
+        error:
+          `Daemon session ${latestReplay.sessionId} is no longer available, so Cave cannot recover the native conversation needed to resume this replayed chat safely.`,
+      };
+    }
+    return {
+      ok: false,
+      retryable: true,
+      code: "conversation_continuity_lookup_failed",
+      error:
+        `Cave could not verify replay continuity from daemon session ${latestReplay.sessionId}: ${extractDaemonError(res) ?? res.error ?? `daemon http ${res.status}`}. Retry once the daemon is reachable.`,
+      retryAfter: "2",
+    };
+  }
+  const status = typeof res.data.status === "string" ? res.data.status.trim().toLowerCase() : "";
+  const conversationId =
+    normalizeDaemonConversationId(res.data.conversationId)
+    ?? normalizeDaemonConversationId(res.data.conversation_id);
+  if (conversationId) {
+    const persisted = await persistResolvedReplayConversationId({
+      sessionId,
+      replaySessionId: latestReplay.sessionId,
+      conversationId,
+      status: res.data.status ?? null,
+      updatedAt: res.data.updated_at ?? null,
+    });
+    return { ok: true, resumeSessionId: persisted ?? conversationId, replayBound: true };
+  }
+  if (ACTIVE_SESSION_STATUSES.has(status)) {
+    return {
+      ok: false,
+      retryable: true,
+      code: "conversation_continuity_syncing",
+      error:
+        `Daemon session ${latestReplay.sessionId} is still ${status} and has not exposed a native conversation id yet. Retry in a moment so Cave can resume the same provider conversation instead of forking a new one.`,
+      retryAfter: "2",
+    };
+  }
+  return {
+    ok: false,
+    retryable: false,
+    code: "conversation_continuity_unavailable",
+    error:
+      `Daemon session ${latestReplay.sessionId} finished without a resumable native conversation id. Cave will not fall back to the stable chat id and fork this replayed conversation.`,
+  };
 }
 
 /**

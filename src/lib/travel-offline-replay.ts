@@ -18,7 +18,11 @@ import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 import { cleanModelId } from "@/lib/chat-model-state";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
-import { persistQueuedOfflineConversation } from "@/lib/cave-conversations";
+import {
+  loadConversation,
+  persistQueuedOfflineConversation,
+  validatedConversationHarnessSessionId,
+} from "@/lib/cave-conversations";
 import { flowExecutionOrder, flowPartialExecutionOrder, compileFlowPrompt } from "@/lib/flow/flow-compile";
 import type { FlowExecutionMode } from "@/lib/flow/flow-compile";
 import type { FlowDoc } from "@/lib/flow/flow-doc";
@@ -129,6 +133,7 @@ async function spawnHubSession(args: {
   familiarId: string | null;
   harness: string;
   prompt: string;
+  conversationId?: string | null;
   model?: string | null;
   modelOverrideScope?: "runtime-default";
   reasoningEffort?: string | null;
@@ -151,6 +156,8 @@ async function spawnHubSession(args: {
       projectRoot,
       harness,
       prompt: args.prompt,
+      launchMode: "nonInteractive",
+      ...(args.conversationId ? { conversation: { mode: "resume", id: args.conversationId } } : {}),
       ...(args.model ? { model: args.model } : {}),
       ...(args.modelOverrideScope ? { modelOverrideScope: args.modelOverrideScope } : {}),
       ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}),
@@ -219,6 +226,9 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const queuedPayloadModelOverride = stringValue(payload.modelOverride);
   const queuedRunId = stringValue(payload.runId);
   const replayPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });
+  const sessionId = stringValue(payload.sessionId) ?? item.id;
+  const existingConversation = await loadConversation(sessionId).catch(() => null);
+  const nativeConversationId = validatedConversationHarnessSessionId(existingConversation);
   let replaySessionId = stringValue(payload.replaySessionId) ?? stringValue(payload.harnessSessionId);
   let conversationId = stringValue(payload.conversationId);
   if (!replaySessionId) {
@@ -227,6 +237,7 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
       familiarId,
       harness: binding.harness,
       prompt: replayPrompt,
+      conversationId: nativeConversationId,
       // Preserve the distinction between an omitted model and an explicit
       // runtime-default request. The daemon receives no model argument in both
       // cases, while the scope marker prevents this replay path from treating a
@@ -249,7 +260,6 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
       ...(conversationId ? { conversationId } : {}),
     });
   }
-  const sessionId = stringValue(payload.sessionId) ?? item.id;
   await persistQueuedOfflineConversation({
     sessionId,
     familiarId,

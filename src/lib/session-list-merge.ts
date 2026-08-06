@@ -119,6 +119,22 @@ function looksLikeProviderNativeSessionLink(value: string): boolean {
   return /thread/i.test(value) || /^resp[-_]/i.test(value) || /^native[-_]/i.test(value);
 }
 
+function localConversationCurrentNativeId(conv: LocalConversationSummary): string | null {
+  const harnessSessionId = conv.harnessSessionId?.trim() ?? "";
+  if (!harnessSessionId || harnessSessionId === conv.sessionId) return null;
+  if (!isValidSessionId(harnessSessionId)) return null;
+  const replayConversationIds = conversationReplaySessions(conv)
+    .map((replay) => replay.conversationId)
+    .filter((value): value is string => Boolean(value));
+  if (
+    !looksLikeProviderNativeSessionLink(harnessSessionId)
+    && !replayConversationIds.includes(harnessSessionId)
+  ) {
+    return null;
+  }
+  return harnessSessionId;
+}
+
 function localConversationDaemonSessionId(conv: LocalConversationSummary): string | null {
   const latestReplay = latestConversationReplaySession(conv);
   if (latestReplay?.sessionId) return latestReplay.sessionId;
@@ -223,6 +239,7 @@ export function mergeSessionRows({
   const localUpdatedById = new Map<string, string>();
   const localById = new Map<string, LocalConversationSummary>();
   const localByHarnessSessionId = new Map<string, LocalConversationSummary>();
+  const localByCurrentNativeId = new Map<string, LocalConversationSummary>();
   const localByReplaySessionId = new Map<string, { local: LocalConversationSummary; replayIndex: number }>();
   const localByReplayConversationId = new Map<string, { local: LocalConversationSummary; replayIndex: number }>();
   const retainLocal = <T extends { local: LocalConversationSummary; replayIndex?: number }>(
@@ -268,6 +285,17 @@ export function mergeSessionRows({
         localByHarnessSessionId.set(conv.harnessSessionId, conv);
       }
     }
+    const currentNativeId = localConversationCurrentNativeId(conv);
+    if (currentNativeId) {
+      const existing = localByCurrentNativeId.get(currentNativeId);
+      if (
+        !existing
+        || conv.updatedAt > existing.updatedAt
+        || (conv.updatedAt === existing.updatedAt && conv.sessionId > existing.sessionId)
+      ) {
+        localByCurrentNativeId.set(currentNativeId, conv);
+      }
+    }
     for (const [replayIndex, replay] of conversationReplaySessions(conv).entries()) {
       retainLocal(localByReplaySessionId, replay.sessionId, { local: conv, replayIndex });
       if (replay.conversationId) {
@@ -276,7 +304,13 @@ export function mergeSessionRows({
     }
   }
 
-  type DaemonMatchKind = "none" | "direct" | "replay-conversation" | "replay-session" | "harness";
+  type DaemonMatchKind =
+    | "none"
+    | "direct"
+    | "replay-conversation"
+    | "replay-session"
+    | "native-conversation"
+    | "harness";
   type MappedDaemonSession = {
     session: DaemonSessionRow;
     local: LocalConversationSummary | undefined;
@@ -288,13 +322,17 @@ export function mergeSessionRows({
     none: 0,
     direct: 1,
     "replay-conversation": 2,
-    "replay-session": 3,
+    "replay-session": 2,
+    "native-conversation": 3,
     harness: 4,
   };
   const preferMappedDaemon = (
     candidate: MappedDaemonSession,
     existing: MappedDaemonSession,
   ): boolean => {
+    const candidateActive = ACTIVE_SESSION_STATUSES.has(candidate.session.status.toLowerCase());
+    const existingActive = ACTIVE_SESSION_STATUSES.has(existing.session.status.toLowerCase());
+    if (candidateActive !== existingActive) return candidateActive;
     const rankDelta = matchRank[candidate.matchKind] - matchRank[existing.matchKind];
     if (rankDelta !== 0) return rankDelta > 0;
     const replayDelta = (candidate.replayIndex ?? -1) - (existing.replayIndex ?? -1);
@@ -314,13 +352,18 @@ export function mergeSessionRows({
     const replaySessionMatch = directLocal || harnessLocal
       ? undefined
       : localByReplaySessionId.get(session.id);
-    const replayConversationMatch = directLocal || harnessLocal || replaySessionMatch
+    const nativeConversationLocal = directLocal || harnessLocal || replaySessionMatch
+      ? undefined
+      : session.conversation_id && session.conversation_id !== session.id
+        ? localByCurrentNativeId.get(session.conversation_id)
+        : undefined;
+    const replayConversationMatch = directLocal || harnessLocal || replaySessionMatch || nativeConversationLocal
       ? undefined
       : session.conversation_id
         ? localByReplayConversationId.get(session.conversation_id)
         : undefined;
     const replayMatch = replaySessionMatch ?? replayConversationMatch;
-    const local = directLocal ?? harnessLocal ?? replayMatch?.local;
+    const local = directLocal ?? harnessLocal ?? nativeConversationLocal ?? replayMatch?.local;
     const stateSessionId = local?.sessionId ?? session.id;
     const candidate = {
       session,
@@ -330,6 +373,8 @@ export function mergeSessionRows({
         ? "direct"
         : harnessLocal
           ? "harness"
+          : nativeConversationLocal
+            ? "native-conversation"
           : replaySessionMatch
             ? "replay-session"
             : replayConversationMatch

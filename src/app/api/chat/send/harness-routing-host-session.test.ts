@@ -433,6 +433,11 @@ assert.match(
 // Native (coven) path: same stable-identity contract.
 assert.match(
   chatRoute,
+  /const replayResumeResolution = body\.sessionId && existingConversation[\s\S]*?await resolveReplayBackedResumeSessionId\(body\.sessionId\)[\s\S]*?if \(!replayResumeResolution\.ok\) \{[\s\S]*?status: 409/,
+  "live sends refuse replay-backed continuity gaps before argv fallback can fork the chat",
+);
+assert.match(
+  chatRoute,
   /const resumeTarget = body\.startNewConversation && !existingConversation[\s\S]*?body\.sessionId[\s\S]*?openCodeDirect[\s\S]*?existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
   "OpenCode preserves a submitted native session token when no Cave transcript is recorded",
 );
@@ -481,6 +486,11 @@ assert.match(
   sendRuntimeHelpers,
   /export async function daemonSessionCwd\(sessionId\?: string\): Promise<string \| undefined> \{[\s\S]*?callDaemon<DaemonSessionRow\[\]>\(\{ path: "\/api\/v1\/sessions" \}\)[\s\S]*?path\.isAbsolute\(root\)[\s\S]*?\n\}/,
   "daemonSessionCwd resolves the session's project_root from the daemon's own session list and only trusts absolute paths",
+);
+assert.match(
+  sendRuntimeHelpers,
+  /export async function resolveReplayBackedResumeSessionId\([\s\S]*?callDaemon<DaemonSessionRecord>\([\s\S]*?`\/api\/v1\/sessions\/\$\{encodeURIComponent\(latestReplay\.sessionId\)\}`[\s\S]*?persistResolvedReplayConversationId\(/,
+  "live resume should resolve replay-backed native continuity through the daemon session record and persist the recovered conversation id",
 );
 assert.match(
   chatRoute,

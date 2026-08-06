@@ -310,6 +310,19 @@ export function latestConversationReplaySession(
   return replays.at(-1) ?? null;
 }
 
+export function validatedConversationHarnessSessionId(
+  conv: Pick<ConversationFile | ConversationSummary, "sessionId" | "harnessSessionId" | "replaySessions"> | null | undefined,
+): string | null {
+  const harnessSessionId =
+    typeof conv?.harnessSessionId === "string" ? conv.harnessSessionId.trim() : "";
+  if (!harnessSessionId || !conv || harnessSessionId === conv.sessionId) return null;
+  if (!isSafeConversationSessionId(harnessSessionId)) return null;
+  if (conversationReplaySessions(conv).some((replay) => replay.sessionId === harnessSessionId)) {
+    return null;
+  }
+  return harnessSessionId;
+}
+
 export function linkedReplaySessionIds(
   conv: Pick<ConversationFile | ConversationSummary, "replaySessions"> | null | undefined,
 ): string[] {
@@ -981,6 +994,53 @@ export async function persistQueuedOfflineConversation(
       conv.updatedAt = seed.createdAt;
     }
     await saveConversation(conv);
+  });
+}
+
+export async function persistResolvedReplayConversationId(args: {
+  sessionId: string;
+  replaySessionId: string;
+  conversationId: string;
+  status?: string | null;
+  updatedAt?: string | null;
+}): Promise<string | null> {
+  const conversationId = normalizeDaemonConversationId(args.conversationId);
+  if (!conversationId) return null;
+  return withConversationLock(args.sessionId, async () => {
+    const conv = await loadConversation(args.sessionId);
+    if (!conv) return null;
+    const existingValidated = validatedConversationHarnessSessionId(conv);
+    let changed = false;
+    const replayUpdatedAt = isCanonicalIsoInstant(args.updatedAt) ? args.updatedAt : null;
+    const replayStatus = normalizeReplayStatus(args.status);
+    const replaySessions = conversationReplaySessions(conv).map((replay) => {
+      if (replay.sessionId !== args.replaySessionId) return replay;
+      const next = {
+        ...replay,
+        conversationId,
+        ...(replayStatus ? { status: replayStatus } : {}),
+        ...(replayUpdatedAt ? { updatedAt: replayUpdatedAt } : {}),
+      };
+      if (
+        next.conversationId !== replay.conversationId
+        || next.status !== replay.status
+        || next.updatedAt !== replay.updatedAt
+      ) {
+        changed = true;
+      }
+      return next;
+    });
+    if (changed) conv.replaySessions = replaySessions;
+    if (existingValidated) {
+      if (changed) await saveConversation(conv);
+      return existingValidated;
+    }
+    if (conv.harnessSessionId !== conversationId) {
+      conv.harnessSessionId = conversationId;
+      changed = true;
+    }
+    if (changed) await saveConversation(conv);
+    return conversationId;
   });
 }
 

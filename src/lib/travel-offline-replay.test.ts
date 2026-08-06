@@ -109,6 +109,11 @@ assert.match(
   /const harness = canonicalHarnessId\(args\.harness\)[\s\S]*path: "\/api\/v1\/sessions"[\s\S]*body:[\s\S]*harness,/,
   "travel replay canonicalizes runtime aliases before the hub launch boundary",
 );
+assert.match(
+  replay,
+  /body:\s*\{[\s\S]*launchMode: "nonInteractive"[\s\S]*\.\.\.\(args\.conversationId \? \{ conversation: \{ mode: "resume", id: args\.conversationId \} \} : \{\}\)/,
+  "replayed chats launch through the daemon's non-interactive contract and reuse validated native conversation ids when available",
+);
 
 assert.match(
   replay,

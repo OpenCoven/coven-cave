@@ -288,6 +288,7 @@ import {
 } from "@/lib/model-control-capabilities";
 import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
 import { conversationCwd, daemonSessionCwd, resolveFamiliarWorkspace } from "./chat-send-runtime";
+import { resolveReplayBackedResumeSessionId } from "./chat-send-runtime";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -1614,7 +1615,7 @@ export async function POST(req: Request) {
 
   const config = await loadConfig();
   const binding = bindingFor(config, body.familiarId);
-  const existingConversation = body.sessionId
+  let existingConversation = body.sessionId
     ? await loadConversation(body.sessionId).catch(() => null)
     : null;
   // Canonicalize the bound harness id up front so a familiar carrying a
@@ -1635,6 +1636,35 @@ export async function POST(req: Request) {
   // rejects any malformed legacy value.
   if (existingConversation) {
     binding.harness = canonicalHarnessId(existingConversation.harness);
+  }
+  const replayResumeResolution = body.sessionId && existingConversation
+    ? await resolveReplayBackedResumeSessionId(body.sessionId)
+    : { ok: true as const, resumeSessionId: null, replayBound: false };
+  if (!replayResumeResolution.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        retryable: replayResumeResolution.retryable,
+        code: replayResumeResolution.code,
+        error: replayResumeResolution.error,
+      },
+      {
+        status: 409,
+        ...(replayResumeResolution.retryAfter
+          ? { headers: { "Retry-After": replayResumeResolution.retryAfter } }
+          : {}),
+      },
+    );
+  }
+  if (
+    existingConversation
+    && replayResumeResolution.resumeSessionId
+    && replayResumeResolution.resumeSessionId !== existingConversation.harnessSessionId
+  ) {
+    existingConversation = {
+      ...existingConversation,
+      harnessSessionId: replayResumeResolution.resumeSessionId,
+    };
   }
   // Native Board handoffs reserve Cave's conversation id before the harness
   // writes its transcript. Bind that pre-transcript id to the server-owned
@@ -2628,8 +2658,8 @@ export async function POST(req: Request) {
         // If the Cave transcript was removed, the submitted token may still be
         // a valid native OpenCode session. Preserve it for a help-confirmed
         // resume rather than silently creating a context-free chat.
-        ? existingConversation?.harnessSessionId ?? body.sessionId
-        : existingConversation?.harnessSessionId ?? body.sessionId
+        ? replayResumeResolution.resumeSessionId ?? existingConversation?.harnessSessionId ?? body.sessionId
+        : replayResumeResolution.resumeSessionId ?? existingConversation?.harnessSessionId ?? body.sessionId
       : null;
   // Grok deliberately refuses to change a resumed session's sandbox. Persist
   // the profile used for the previous native session and transparently start a

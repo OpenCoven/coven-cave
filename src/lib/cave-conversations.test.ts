@@ -18,9 +18,11 @@ const {
   isSafeConversationSessionId,
   listConversations,
   loadConversation,
+  persistResolvedReplayConversationId,
   persistQueuedOfflineConversation,
   resolveConversationSessionId,
   saveConversation,
+  validatedConversationHarnessSessionId,
 } = await import("./cave-conversations.ts");
 const {
   mapConversationHistoryTurns,
@@ -510,9 +512,82 @@ assert.equal(
   "native-thread-revalidated",
   "only a separately validated native conversation id may replace the native resume token",
 );
+await saveConversation({
+  sessionId: "queued-replay-resolve",
+  harnessSessionId: "daemon-session-bug",
+  familiarId: "charm",
+  harness: "claude",
+  createdAt: "2026-06-10T00:05:00.000Z",
+  updatedAt: "2026-06-10T00:05:00.000Z",
+  replaySessions: [{
+    sessionId: "daemon-session-bug",
+    createdAt: "2026-06-10T00:05:00.000Z",
+    updatedAt: "2026-06-10T00:05:00.000Z",
+  }],
+  turns: [],
+});
+assert.equal(
+  validatedConversationHarnessSessionId(await loadConversation("queued-replay-resolve")),
+  null,
+  "a harnessSessionId copied from a replay daemon row is not treated as a validated native resume id",
+);
+assert.equal(
+  await persistResolvedReplayConversationId({
+    sessionId: "queued-replay-resolve",
+    replaySessionId: "daemon-session-bug",
+    conversationId: "native-thread-resolved",
+    status: "completed",
+    updatedAt: "2026-06-10T00:05:30.000Z",
+  }),
+  "native-thread-resolved",
+);
+assert.equal(
+  (await loadConversation("queued-replay-resolve"))?.harnessSessionId,
+  "native-thread-resolved",
+  "daemon-resolved native ids replace daemon-row bugs atomically",
+);
+await saveConversation({
+  sessionId: "queued-replay-resolve-existing",
+  harnessSessionId: "native-thread-newer",
+  familiarId: "charm",
+  harness: "claude",
+  createdAt: "2026-06-10T00:06:00.000Z",
+  updatedAt: "2026-06-10T00:06:00.000Z",
+  replaySessions: [{
+    sessionId: "daemon-session-existing",
+    createdAt: "2026-06-10T00:06:00.000Z",
+    updatedAt: "2026-06-10T00:06:00.000Z",
+  }],
+  turns: [],
+});
+assert.equal(
+  await persistResolvedReplayConversationId({
+    sessionId: "queued-replay-resolve-existing",
+    replaySessionId: "daemon-session-existing",
+    conversationId: "native-thread-older",
+    updatedAt: "2026-06-10T00:06:30.000Z",
+  }),
+  "native-thread-newer",
+);
+assert.equal(
+  (await loadConversation("queued-replay-resolve-existing"))?.harnessSessionId,
+  "native-thread-newer",
+  "daemon resolution never clobbers a newer validated native id",
+);
+assert.equal(
+  await persistResolvedReplayConversationId({
+    sessionId: "queued-replay-resolve-existing",
+    replaySessionId: "daemon-session-existing",
+    conversationId: "malicious/session",
+  }),
+  null,
+  "malformed daemon conversation ids are rejected before they can touch the transcript",
+);
 await deleteConversation("queued-replay-null");
 await deleteConversation("queued-replay-equal");
 await deleteConversation("queued-replay-distinct");
+await deleteConversation("queued-replay-resolve");
+await deleteConversation("queued-replay-resolve-existing");
 
 // CHAT-D5-02: a user-cancelled turn persists as an honest cancelled record —
 // partial text kept, cancelled flag set, never re-flagged as an error.
