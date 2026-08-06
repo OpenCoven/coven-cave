@@ -344,12 +344,17 @@ test.describe("code surface (Coding familiar's room)", () => {
           sessionsTab.evaluate((element) => {
             const style = getComputedStyle(element);
             const root = getComputedStyle(document.documentElement);
-            const ringWidth = root.getPropertyValue("--ring-width").trim();
-            const ringOffsetInset = root.getPropertyValue("--ring-offset-inset").trim();
+            // Compare numerically: the tokens compute to `calc()` expressions
+            // that never string-equal the browser-evaluated pixel values.
+            // `.focus-ring` uses the OUTSET --ring-offset, not the inset
+            // variant, so the expected offset is positive.
+            const ringWidth = Number.parseFloat(root.getPropertyValue("--ring-width"));
+            const ringOffset = Number.parseFloat(root.getPropertyValue("--ring-offset"));
             return {
               focusVisible: element.matches(":focus-visible"),
               outlineMatchesToken:
-                style.outlineWidth === ringWidth && style.outlineOffset === ringOffsetInset,
+                Number.parseFloat(style.outlineWidth) === ringWidth &&
+                Number.parseFloat(style.outlineOffset) === ringOffset,
             };
           }),
         { timeout: 30_000 },
