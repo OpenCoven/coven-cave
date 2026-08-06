@@ -8,6 +8,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   bumpVersion,
+  nextIosBuildStamp,
   STAMP_FILES,
   applyReplacement,
   stampContent,
@@ -57,30 +58,120 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
   const { replaced } = stampContent("toml-version", `[package]\nname = "app"\nversion = "0.0.159"\n`, "0.0.159", "0.0.160");
   assert.equal(replaced, 1);
 }
+// ── nextIosBuildStamp: the CFBundleVersion the App Store checks ──────────────
 {
   assert.equal(
+    nextIosBuildStamp("2026080322", new Date("2026-08-06T01:40:38Z")),
+    "2026080601",
+    "a fresh cut takes the current YYYYMMDDHH UTC instant",
+  );
+  assert.equal(
+    nextIosBuildStamp("2026080322", new Date("2026-09-07T09:05:00Z")),
+    "2026090709",
+    "month/day/hour are zero-padded to keep the stamp ten digits",
+  );
+  assert.equal(
+    nextIosBuildStamp(undefined, new Date("2026-08-06T01:40:38Z")),
+    "2026080601",
+    "an unreadable previous stamp still yields the current instant",
+  );
+  // The whole point: a stamp that did not move is what App Store Connect
+  // rejects, so a same-hour re-cut must still advance.
+  assert.equal(
+    nextIosBuildStamp("2026080601", new Date("2026-08-06T01:59:00Z")),
+    "2026080602",
+    "a second cut in the same UTC hour advances an hour",
+  );
+  assert.equal(
+    nextIosBuildStamp("2026080623", new Date("2026-08-06T23:10:00Z")),
+    "2026080700",
+    "advancing off hour 23 rolls the date rather than emitting hour 24",
+  );
+  assert.equal(
+    nextIosBuildStamp("2026123123", new Date("2026-12-31T23:10:00Z")),
+    "2027010100",
+    "advancing off the last hour of the year rolls the year",
+  );
+  assert.equal(
+    nextIosBuildStamp("2026090101", new Date("2026-08-06T01:40:38Z")),
+    "2026090102",
+    "a backwards clock never regresses the stamp",
+  );
+  for (const stamp of [
+    nextIosBuildStamp("2026080601", new Date("2026-08-06T01:59:00Z")),
+    nextIosBuildStamp("2026080623", new Date("2026-08-06T23:10:00Z")),
+  ]) {
+    assert.match(stamp, /^\d{10}$/, "every advanced stamp keeps the ten-digit shape");
+    assert.ok(
+      Number(stamp.slice(8, 10)) <= 23,
+      "every advanced stamp keeps a real UTC hour (src/lib/app-version.test.ts pins this)",
+    );
+  }
+  assert.throws(() => nextIosBuildStamp("1", new Date("nope")), /valid date/);
+}
+
+{
+  const now = new Date("2026-08-06T01:40:38Z");
+  assert.equal(
     applyReplacement(
-      "yaml-marketing-version",
+      "yaml-ios-versions",
       [
         "name: CovenCave",
         "settings:",
         "  base:",
         '    MARKETING_VERSION: "0.2.1"',
-        '    CURRENT_PROJECT_VERSION: "1"',
+        '    CURRENT_PROJECT_VERSION: "2026080322"',
         "",
       ].join("\n"),
       "0.2.2",
       "apps/ios/CovenCave/project.yml",
+      now,
     ),
     [
       "name: CovenCave",
       "settings:",
       "  base:",
       '    MARKETING_VERSION: "0.2.2"',
-      '    CURRENT_PROJECT_VERSION: "1"',
+      '    CURRENT_PROJECT_VERSION: "2026080601"',
       "",
     ].join("\n"),
-    "the canonical scalar is replaced without changing quoting, indentation, or the build version",
+    "both canonical scalars are replaced without changing quoting or indentation",
+  );
+  assert.throws(
+    () =>
+      applyReplacement(
+        "yaml-ios-versions",
+        ["name: Example", "settings:", "  base:", '    MARKETING_VERSION: "0.2.1"', ""].join("\n"),
+        "0.2.2",
+        "apps/ios/CovenCave/project.yml",
+        now,
+      ),
+    /must define CURRENT_PROJECT_VERSION exactly once.*was not found/,
+    "a project.yml with no build stamp fails loudly instead of shipping a stale CFBundleVersion",
+  );
+  assert.throws(
+    () =>
+      applyReplacement(
+        "yaml-ios-versions",
+        [
+          "name: Example",
+          "settings:",
+          "  base:",
+          '    MARKETING_VERSION: "0.2.1"',
+          '    CURRENT_PROJECT_VERSION: "2026080322"',
+          "targets:",
+          "  Example:",
+          "    settings:",
+          "      base:",
+          '        CURRENT_PROJECT_VERSION: "9"',
+          "",
+        ].join("\n"),
+        "0.2.2",
+        "apps/ios/CovenCave/project.yml",
+        now,
+      ),
+    /must define CURRENT_PROJECT_VERSION exactly once/,
+    "a target-level build-stamp override makes the release setting ambiguous",
   );
   for (const [label, source] of [
     [
@@ -93,7 +184,7 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
     ],
   ]) {
     assert.throws(
-      () => applyReplacement("yaml-marketing-version", source, "0.2.2", "apps/ios/CovenCave/project.yml"),
+      () => applyReplacement("yaml-ios-versions", source, "0.2.2", "apps/ios/CovenCave/project.yml"),
       (err) => {
         const message = String(err?.message ?? err);
         assert.match(message, /apps\/ios\/CovenCave\/project\.yml/);
@@ -134,7 +225,7 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
     assert.throws(
       () =>
         applyReplacement(
-          "yaml-marketing-version",
+          "yaml-ios-versions",
           source,
           "0.2.2",
           "apps/ios/CovenCave/project.yml",
@@ -171,7 +262,7 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
     assert.throws(
       () =>
         applyReplacement(
-          "yaml-marketing-version",
+          "yaml-ios-versions",
           lines.join("\n"),
           "0.2.2",
           "apps/ios/CovenCave/project.yml",
@@ -188,7 +279,7 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
   assert.throws(
     () =>
       applyReplacement(
-        "yaml-marketing-version",
+        "yaml-ios-versions",
         [
           "name: Example",
           "targets:",
@@ -207,7 +298,7 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
   assert.throws(
     () =>
       applyReplacement(
-        "yaml-marketing-version",
+        "yaml-ios-versions",
         [
           "name: Example",
           "settings:",
@@ -229,7 +320,7 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
   assert.throws(
     () =>
       applyReplacement(
-        "yaml-marketing-version",
+        "yaml-ios-versions",
         ["name: Example", "settings:", "  base:", '    CURRENT_PROJECT_VERSION: "1"', ""].join(
           "\n",
         ),
@@ -241,7 +332,7 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
   assert.throws(
     () =>
       applyReplacement(
-        "yaml-marketing-version",
+        "yaml-ios-versions",
         [
           "name: Example",
           "settings:",
@@ -258,7 +349,7 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
   assert.throws(
     () =>
       applyReplacement(
-        "yaml-marketing-version",
+        "yaml-ios-versions",
         [
           "name: Example",
           "settings:",
@@ -276,7 +367,7 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
     STAMP_FILES.find(
       (entry) => entry.path === "apps/ios/CovenCave/project.yml",
     )?.kind,
-    "yaml-marketing-version",
+    "yaml-ios-versions",
   );
 }
 assert.equal(STAMP_FILES.length, 5, "exactly the five stamp locations");
@@ -338,6 +429,11 @@ await import(new URL(script, "file://"));
     changedFiles,
     expectedChangedFiles,
     `dry run should report exactly the five stamped manifests:\n${dryRun.stdout}`,
+  );
+  assert.match(
+    dryRun.stdout,
+    /would stamp apps\/ios\/CovenCave\/project\.yml \(2 occurrences\)/,
+    "the iOS manifest stamps both the marketing version and the build stamp",
   );
   assert.match(dryRun.stdout, /\(dry run — nothing written\)/, "dry run banner is preserved");
 }

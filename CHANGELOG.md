@@ -7,6 +7,55 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-08-06
+
+> A tabbed sidebar, the Coding Room rebuilt as a three-zone workbench, image
+> carousels familiars can drive, and a release stamp that finally moves the iOS
+> build number.
+
+Patch release on top of v0.2.3.
+
+### Added
+
+- Rebuilt the Coding Room as a three-zone workbench and landed its approved design (#4311, #4319).
+- Added a shared chat image carousel that familiars can drive (#4315).
+- Added playable canvas sketches, a waiting-room arcade, and iOS voice calls (#4314).
+- Restructured sidebar navigation from stacked sections into a tabbed layout, with collapsible side-panel destination groups (#4347).
+- Gave the web folder picker Explorer's Quick access and This PC rails, and made Settings > Workspace path's Browse actually choose a folder (#4352).
+- Added a mission catalog with renown bonuses, and the first cut of the activity lattice (#4335).
+- Added the orchestration task validator with readiness derivation, and wrote down the orchestration-ready task contract (#4343, #4306).
+- Added a Cave-safe branch-to-merge skill available to every familiar (#4307).
+- Added a fast local worktree status dashboard (#4313).
+
+### Changed
+
+- Bounded PTY streaming and added replay cursors, so a busy terminal no longer floods its client (#4362).
+- Bounded desktop sidecar output (#4373).
+- Improved chat discovery, titles, and reflection archiving (#4357), and the adaptive chat context controls (#4356).
+- Injected the familiar contract (`SOUL.md` / `IDENTITY.md`) into chat prompt assembly (#4344).
+- Raised the worktree admission budget from 12 to 20 (#4348) and the sidecar file-count budget to 5,926 for the image carousel, recording that the budget is a rate problem rather than a count problem (#4331, #4332, #4333).
+- Hardened exact-head branch merges (#4346), stopped creation exceptions from blocking worktree retirement (#4366), and made a budget refusal name the exception that would admit it (#4308).
+- Lifted the notification dropdown above page content (#4273).
+- Removed Play mode from the canvas editor.
+
+### Fixed
+
+- **The iOS app compiles again.** A `ChatProjectPicker` call in `ChatView` closed its argument list with `}` instead of `)`, and `refreshToken` sat between the flag and the callbacks so the memberwise initializer's argument order disagreed with both call sites. The Swift target had not built since 2026-08-03; CI never noticed, because it builds the web app and the Rust shell but not the Swift one.
+- **`scripts/stamp-release.mjs` now refreshes the iOS `CURRENT_PROJECT_VERSION` build stamp alongside `MARKETING_VERSION`.** A stamped release used to carry the previous cut's build number, which App Store Connect rejects as a duplicate — that is what blocked the v0.2.3 TestFlight upload.
+- Fixed the iOS session picker not switching conversations, kept the thread-row zoom anchored to the row itself, and kept the ⌘1–4 tab shortcuts out of the accessibility tree (#4322, #4360).
+- Fixed the iOS build generating its web bundles after xcodegen had already scanned for them (#4345).
+- Fixed cold managed npm startup on Windows during onboarding (#4359).
+- Hardened chat capability help probes (#4363).
+- Reaped Unix sidecars on parent exit (#4374), with a portable test for it (#4368).
+- Restored the Canvas and focus-ring contracts and cleared the Canvas editor merge remnants (#4367).
+- Parsed image data URLs without running a regex over the whole payload (#4340).
+- Reported thin budget headroom everywhere and reseated the caps by rate (#4353).
+- Contained async polling failures (#4349).
+- Fixed the Home slash-command handoff and discovery (#4342), and restored accessible solo-to-coven promotion (#4295).
+- Kept automatic daemon recovery fail-closed when restart is set, and supervised daemon startup coherence (#4329).
+- Aligned scoped analytics workbench evidence (#4283).
+- Snapped the voice call overlay's spacing to the scale (#4303).
+
 ## [0.2.3] - 2026-08-03
 
 > Live call transcripts, answer rewriting in the reader, a familiar analytics

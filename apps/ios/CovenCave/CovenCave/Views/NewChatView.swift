@@ -103,10 +103,10 @@ struct NewChatView: View {
                             selectedRoot: $selectedProjectRoot,
                             isResolved: $projectResolved,
                             refreshToken: projectRefreshToken,
+                            onResolved: nil,
                             onManageAccess: fixedFamiliar == nil ? nil : {
                                 showProjectAccess = true
-                            },
-                            onResolved: nil
+                            }
                         )
                     }
                 }

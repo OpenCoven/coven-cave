@@ -488,7 +488,7 @@ struct ChatView: View {
                     thread.needsProjectSelection = false
                     app.touch(thread)
                 }
-            }
+            )
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(chrome.bgRaised)
