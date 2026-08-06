@@ -298,21 +298,21 @@ async function runParent(): Promise<void> {
       writeFile(crashedReserve, "orphan reservation\n"),
     ]);
 
-    const originalRenameSync = fs.renameSync;
+    const originalMkdirSync = fs.mkdirSync;
     let collisionInjected = false;
-    fs.renameSync = ((source, destination) => {
+    let injectedDestination = "";
+    fs.mkdirSync = ((directory, options) => {
       if (
         !collisionInjected &&
-        String(source).includes(".publish-") &&
-        String(destination).endsWith(".patch")
+        String(directory).endsWith(".patch") &&
+        !fs.existsSync(directory)
       ) {
         collisionInjected = true;
-        const error = new Error("injected checkpoint collision") as NodeJS.ErrnoException;
-        error.code = "EEXIST";
-        throw error;
+        injectedDestination = String(directory);
+        originalMkdirSync(directory, options);
       }
-      return originalRenameSync(source, destination);
-    }) as typeof fs.renameSync;
+      return originalMkdirSync(directory, options);
+    }) as typeof fs.mkdirSync;
     const originalLinkSync = fs.linkSync;
     fs.linkSync = (() => {
       throw new Error("hard links are unsupported");
@@ -324,12 +324,17 @@ async function runParent(): Promise<void> {
     } finally {
       restoreClock();
       fs.linkSync = originalLinkSync;
-      fs.renameSync = originalRenameSync;
+      fs.mkdirSync = originalMkdirSync;
     }
     assert.equal(collisionResponse.status, 200, await collisionResponse.clone().text());
-    assert.equal(collisionInjected, true, "rename collisions retry with a new name");
+    assert.equal(
+      collisionInjected,
+      true,
+      "atomic destination reservation collisions retry with a new name",
+    );
+    assert.deepEqual(await readdir(injectedDestination), []);
     await assert.rejects(() => access(crashedTemp));
-    await assert.rejects(() => access(crashedReserve));
+    await access(crashedReserve);
     assert.deepEqual(await readFile(existingPatchPath), existingPatch);
     assert.deepEqual(await readFile(existingMetadataPath), existingMetadata);
 

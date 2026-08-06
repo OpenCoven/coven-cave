@@ -720,6 +720,24 @@ try {
     checkpointContents,
     "a verified checkpoint that cannot be restored remains safely quarantined",
   );
+  const rollbackConflictDirectory = path.dirname(retainedQuarantines[0]);
+  await access(path.join(rollbackConflictDirectory, ".conflict.json"));
+  await rm(rollbackConflict.checkpointPath);
+  const recoveryProbe = await POST(
+    checkpointRequest(
+      "delete-checkpoint",
+      projectRoot,
+      "2026-08-05T17-20-00-999Z.patch",
+    ),
+  );
+  assert.equal(recoveryProbe.status, 200, await recoveryProbe.clone().text());
+  await assert.rejects(() => access(rollbackConflict.checkpointPath));
+  assert.deepEqual(
+    await readFile(retainedQuarantines[0]),
+    checkpointContents,
+    "generic locked recovery never republishes an authorization-conflicted quarantine",
+  );
+  await access(path.join(rollbackConflictDirectory, ".conflict.json"));
 
   const legacyName = "2026-08-05T17-20-00-004Z.patch";
   const legacyCheckpoint = await cloneCheckpoint(legacyName, false);

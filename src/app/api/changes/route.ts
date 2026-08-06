@@ -17,9 +17,11 @@ import {
   assertCheckpointStore,
   checkpointDeleteQuarantinePath,
   fsyncDirectoryIfSupported,
+  markCheckpointQuarantineConflict,
   openCheckpointStore,
   publishCheckpointUnit,
   recoverCheckpointStore as recoverCheckpointStoreArtifacts,
+  retireCheckpointQuarantine,
   restoreCheckpointDirectoryQuarantineNoReplace,
   restoreQuarantinedRegularFileNoReplace,
   type CheckpointStore,
@@ -1165,26 +1167,13 @@ function deleteDirectoryCheckpoint(
     ) {
       throw new Error("checkpoint changed during deletion");
     }
-    fs.unlinkSync(
-      /* turbopackIgnore: true */ path.join(
-        quarantine,
-        CHECKPOINT_PATCH_FILE,
-      ),
-    );
-    fs.unlinkSync(
-      /* turbopackIgnore: true */ path.join(
-        quarantine,
-        CHECKPOINT_METADATA_FILE,
-      ),
-    );
-    fs.rmdirSync(/* turbopackIgnore: true */ quarantine);
+    retireCheckpointQuarantine(checkpoint.store, quarantine, true);
     moved = false;
-    fsyncDirectoryIfSupported(checkpoint.store.directory);
     return "deleted";
   } catch (error) {
     if (moved && !fileExists(checkpoint.publishedPath)) {
       try {
-        if (
+        const restored =
           restoreCheckpointDirectoryQuarantineNoReplace(
             checkpoint.store,
             quarantine,
@@ -1195,9 +1184,15 @@ function deleteDirectoryCheckpoint(
                 root,
                 parseCheckpointMetadata(raw),
               ),
-          )
-        ) {
+          );
+        if (restored) {
           moved = false;
+        } else if (fileExists(checkpoint.publishedPath)) {
+          markCheckpointQuarantineConflict(
+            checkpoint.store,
+            quarantine,
+            checkpoint.publishedPath,
+          );
         }
       } catch {
         // A complete unit remains quarantined for the next locked recovery.
@@ -1354,14 +1349,13 @@ function deleteAuthorizedCheckpoint(
         throw new Error("checkpoint metadata changed during deletion");
       }
 
-      fs.unlinkSync(/* turbopackIgnore: true */ quarantine.checkpointPath);
+      retireCheckpointQuarantine(
+        checkpointUnit.store,
+        quarantine.directory,
+        metadataMoved,
+      );
       checkpointMoved = false;
-      if (metadataMoved) {
-        fs.unlinkSync(/* turbopackIgnore: true */ quarantine.metadataPath);
-        metadataMoved = false;
-      }
-      removeEmptyCheckpointQuarantine(quarantine);
-      fsyncDirectoryIfSupported(checkpointUnit.store.directory);
+      metadataMoved = false;
       return "deleted";
     } catch (error) {
       closeCheckpointFile(quarantinedCheckpoint);
@@ -1374,7 +1368,7 @@ function deleteAuthorizedCheckpoint(
       }
       if (checkpointMoved && storeIsPinned) {
         if (metadataMoved) {
-          restoreCheckpointDirectoryQuarantineNoReplace(
+          const restored = restoreCheckpointDirectoryQuarantineNoReplace(
             checkpointUnit.store,
             quarantine.directory,
             checkpointPath,
@@ -1386,11 +1380,25 @@ function deleteAuthorizedCheckpoint(
                 parseCheckpointMetadata(raw),
               ),
           );
+          if (!restored && fileExists(checkpointPath)) {
+            markCheckpointQuarantineConflict(
+              checkpointUnit.store,
+              quarantine.directory,
+              checkpointPath,
+            );
+          }
         } else {
-          restoreQuarantinedRegularFileNoReplace(
+          const restored = restoreQuarantinedRegularFileNoReplace(
             quarantine.checkpointPath,
             checkpointPath,
           );
+          if (!restored && fileExists(checkpointPath)) {
+            markCheckpointQuarantineConflict(
+              checkpointUnit.store,
+              quarantine.directory,
+              checkpointPath,
+            );
+          }
         }
       }
       if (storeIsPinned) removeEmptyCheckpointQuarantine(quarantine);

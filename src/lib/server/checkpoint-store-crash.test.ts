@@ -104,6 +104,15 @@ if (restoreCrashStage) {
     "patch-file-synced",
     "metadata-file-synced",
     "draft-directory-synced",
+    "destination-name-reserved",
+    "destination-reservation-synced",
+    "destination-patch-staged",
+    "destination-metadata-staged",
+    "destination-directory-synced",
+    "destination-patch-installed",
+    "destination-metadata-installed",
+    "publication-source-retired",
+    "publication-marker-removed",
     "checkpoint-renamed",
     "store-directory-synced",
   ]) {
@@ -142,12 +151,34 @@ if (restoreCrashStage) {
         false,
         `${stage} leaves no publication draft after recovery`,
       );
-      const published = entries.filter((name) => name.endsWith(".patch"));
+      const published = [];
+      for (const name of entries.filter((entry) => entry.endsWith(".patch"))) {
+        try {
+          const files = (await readdir(path.join(storePath, name))).sort();
+          if (
+            files.length === 2 &&
+            files[0] === "checkpoint.patch" &&
+            files[1] === "metadata.scope.json"
+          ) {
+            published.push(name);
+          }
+        } catch {
+          // Legacy regular-file checkpoints are not produced by this matrix.
+        }
+      }
       assert.equal(
         published.length,
         stage === "patch-file-synced" ? 0 : 1,
         `${stage} recovers exactly the complete durable unit`,
       );
+      if (stage === "destination-name-reserved") {
+        assert.deepEqual(
+          await readdir(
+            path.join(storePath, "2026-08-05T20-00-00-000Z.patch"),
+          ),
+          [],
+        );
+      }
       await writeFile(path.join(caseRoot, "recovered"), "ok\n");
     });
   }
@@ -156,6 +187,15 @@ if (restoreCrashStage) {
     "staged-patch-synced",
     "staged-metadata-synced",
     "staging-directory-synced",
+    "destination-name-reserved",
+    "destination-reservation-synced",
+    "destination-patch-staged",
+    "destination-metadata-staged",
+    "destination-directory-synced",
+    "destination-patch-installed",
+    "destination-metadata-installed",
+    "publication-source-retired",
+    "publication-marker-removed",
     "destination-renamed",
     "store-directory-synced",
   ]) {
@@ -204,6 +244,17 @@ if (restoreCrashStage) {
       const reopened = openCheckpointStore(storePath)!;
       recoverCheckpointStore(reopened, metadataIsValid);
       const destination = path.join(storePath, checkpointName);
+      if (stage === "destination-name-reserved") {
+        assert.deepEqual(await readdir(destination), []);
+        assert.equal(
+          await readFile(
+            path.join(quarantine, "checkpoint.patch"),
+            "utf8",
+          ),
+          "restored checkpoint\n",
+        );
+        return;
+      }
       assert.equal(
         await readFile(
           path.join(destination, "checkpoint.patch"),
