@@ -965,6 +965,7 @@ export const SUITES = {
     "src/components/labels-and-live-regions.test.ts",
     "src/components/workspace-inspector-mount.test.ts",
     "src/middleware.test.ts",
+    "src/tailnet-identity.test.ts",
     "src/lib/font-settings.test.ts",
     "src/lib/font-wiring.test.ts",
     "src/lib/cave-config.test.ts",
