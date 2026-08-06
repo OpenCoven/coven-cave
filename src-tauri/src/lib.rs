@@ -72,6 +72,8 @@ mod sidecar_ports;
 #[cfg(desktop)]
 mod sidecar_startup;
 #[cfg(desktop)]
+mod sidecar_supervisor;
+#[cfg(desktop)]
 mod speech;
 mod tauri_setup;
 #[cfg(desktop)]
@@ -101,5 +103,7 @@ use sidecar_discovery::*;
 use sidecar_lifecycle::*;
 #[cfg(desktop)]
 use sidecar_startup::*;
+#[cfg(desktop)]
+use sidecar_supervisor::*;
 #[cfg(desktop)]
 use window_geometry::*;

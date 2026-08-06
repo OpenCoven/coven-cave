@@ -198,6 +198,21 @@ pub(super) fn node_arg_path(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
+/// Replace the main webview's dead/startup page without leaving it in session
+/// history. Both first startup and later supervisor revivals use this exact
+/// path so URL escaping and the native-navigation fallback cannot drift.
+#[cfg(desktop)]
+pub(super) fn replace_main_window_url(app: &tauri::AppHandle, url: Url) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window is unavailable".to_string())?;
+    let escaped = url.to_string().replace('"', "%22");
+    window
+        .eval(format!("window.location.replace(\"{escaped}\");"))
+        .or_else(|_| window.navigate(url))
+        .map_err(|error| format!("could not navigate the main window: {error}"))
+}
+
 #[cfg(desktop)]
 pub(super) fn start_sidecar_runtime(
     app: &tauri::AppHandle,
@@ -564,23 +579,10 @@ pub(super) fn spawn_sidecar_startup(
                 Ok(url) => {
                     pty::trust_main_origin(&url);
                     remember_main_startup_url(&url);
-                    let navigation = app
-                        .get_webview_window("main")
-                        .ok_or_else(|| "startup window is unavailable".to_string())
-                        .and_then(|window| {
-                            // location.replace() swaps startup.html out of the
-                            // webview's session history; window.navigate() pushes
-                            // a new entry instead, so the shell's Back control
-                            // (history.back) could land users on the dead splash
-                            // screen. Fall back to navigate() if eval cannot
-                            // reach the page — a stale history entry beats a
-                            // startup failure.
-                            let escaped = url.to_string().replace('"', "%22");
-                            window
-                                .eval(format!("window.location.replace(\"{escaped}\");"))
-                                .or_else(|_| window.navigate(url))
-                                .map_err(|error| format!("could not open CovenCave: {error}"))
-                        });
+                    // location.replace() swaps startup.html out of session
+                    // history; native navigation is the shared fallback when
+                    // the page's JS context is unreachable.
+                    let navigation = replace_main_window_url(&app, url);
                     match navigation {
                         Ok(()) => SidecarStartupStatus::ready(),
                         Err(error) => {
