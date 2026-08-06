@@ -174,7 +174,7 @@ export type HelpProbeOutcome =
   | { ok: true; matched: boolean }
   | { ok: false; reason: string };
 
-function probeHelpOutcome(
+export function probeHelpOutcome(
   command: string,
   args: string[],
   matches: (help: string) => boolean,

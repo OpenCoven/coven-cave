@@ -62,7 +62,7 @@ assert.match(
   "Help probes report an incomplete probe separately from an unmatched flag",
 );
 for (const failure of [
-  /did not respond within \$\{openCodeCapabilityProbeTimeoutMs\(\)\}ms/,
+  /const timeoutMs = openCodeCapabilityProbeTimeoutMs\(\);[\s\S]*?did not respond within \$\{timeoutMs\}ms/,
   /child\.on\("error", \(error: Error\) => \{[\s\S]*?ok: false, reason: `\\`\$\{command\}\\` could not be started: \$\{error\.message\}`/,
 ]) {
   assert.match(
