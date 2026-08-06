@@ -841,6 +841,7 @@ test("podcast drafter normalizes TTS-hostile glyphs into spoken words", () => {
       "",
       "- Throughput improved 3× at ≥ 90% recall (≈ baseline cost).",
       "- Latency held near ~5 s once the spec+regression checks ran 2+2 times.",
+      "- The spec + regression pair also passes when padded, and C++ stays C++.",
     ].join("\n"),
   }, "standard", "debate");
   assert.equal(content.kind, "podcast");
@@ -851,10 +852,13 @@ test("podcast drafter normalizes TTS-hostile glyphs into spoken words", () => {
   assert.ok(narration.includes("about baseline cost"), `≈ spoken as 'about' (${narration})`);
   assert.ok(narration.includes("about 5 s"), `~5 spoken as 'about 5' (${narration})`);
   assert.ok(narration.includes("spec and regression"), `word+word spoken as 'and' (${narration})`);
+  assert.ok(narration.includes("spec and regression pair also passes"), `whitespace-padded word + word spoken as 'and' (${narration})`);
+  assert.ok(narration.includes("C++ stays C++"), `C++ survives normalization (${narration})`);
   assert.ok(narration.includes("2 plus 2 times"), `digit+digit spoken as 'plus' (${narration})`);
-  for (const glyph of ["→", "×", "≥", "≈", "~", "+"]) {
+  for (const glyph of ["→", "×", "≥", "≈", "~"]) {
     assert.ok(!narration.includes(glyph), `no raw ${glyph} reaches speech`);
   }
+  assert.ok(!narration.replace(/C\+\+/g, "").includes("+"), `no raw '+' outside C++ reaches speech (${narration})`);
 });
 
 test("video storyboard drafter maps headings, bullets, and narration without invention", () => {
