@@ -40,11 +40,17 @@ async function ensureChatSurface(page: Page) {
       if (await openNav.isVisible().catch(() => false)) await openNav.click();
     }
     // The Chat row lives in the Code section of the rail (cave-24d2r); when the
-    // Home section is open, the Code tab is the way in.
+    // Home section is open, that section tab is the way in. Scope the lookup to
+    // the sections tablist: the tab is labelled "Chat" (68342e3, which renamed
+    // it from "Code"), the same word the nav row inside the section uses.
     if (await chatDestination.isVisible().catch(() => false)) {
       await chatDestination.click();
     } else {
-      await nav.getByRole("tab", { name: "Code", exact: true }).first().click();
+      await nav
+        .getByRole("tablist", { name: "Workspace sections" })
+        .getByRole("tab", { name: "Chat", exact: true })
+        .first()
+        .click();
     }
     await surface.waitFor({ state: "visible", timeout: 30_000 });
   }
