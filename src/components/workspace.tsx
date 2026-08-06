@@ -2921,15 +2921,11 @@ export function Workspace() {
       clearPendingCodeNavigation();
       return;
     }
-    if (!roleSurfaceSession.context) {
-      if (
-        !activeFamiliarHydrated
-        || !familiarsLoaded
-        || !familiarRosterLoadedSuccessfully
-      ) return;
-      clearPendingCodeNavigation();
-      return;
-    }
+    if (
+      !activeFamiliarHydrated
+      || !familiarsLoaded
+      || !familiarRosterLoadedSuccessfully
+    ) return;
     if (!roleSurfaceSession.rolesLoaded) return;
     if (!roleSurfaceSession.rolesLoadedSuccessfully) return;
     if (!roleSurfaceSession.visibleSurfaces.some((surface) => surface.id === CODE_SURFACE_ID)) {
