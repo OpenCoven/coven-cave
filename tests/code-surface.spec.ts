@@ -76,6 +76,16 @@ async function base(
       },
     }),
   );
+  await page.route("**/api/daemon/connection**", (route) =>
+    route.fulfill({
+      json: {
+        running: true,
+        availability: "online",
+        checkedAt: new Date().toISOString(),
+        target: { mode: "local", label: "Local daemon", socket: "/tmp/coven.sock" },
+      },
+    }),
+  );
   await page.route("**/api/onboarding/status**", (route) =>
     route.fulfill({ json: { ok: true, complete: true, steps: {}, tools: [] } }),
   );
@@ -301,7 +311,6 @@ test.describe("code surface (Coding familiar's room)", () => {
     isMobile,
   }) => {
     test.skip(!!isMobile, "desktop project supplies the narrow viewport explicitly");
-    await page.setViewportSize({ width: 320, height: 700 });
     await base(page);
     let releaseMemberships = () => {};
     const membershipsReady = new Promise<void>((resolve) => {
@@ -321,24 +330,40 @@ test.describe("code surface (Coding familiar's room)", () => {
     });
     await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
 
-    const sessionsTab = page.getByRole("tab", { name: "Sessions" });
+    const sessionsTab = page
+      .getByRole("tablist", { name: "Code surface" })
+      .getByRole("tab", { name: "Sessions" });
+    // Establish keyboard modality before programmatically selecting the exact
+    // tab under test so Chromium applies the :focus-visible inset ring.
+    await page.keyboard.press("Tab");
     await sessionsTab.focus();
     await expect(sessionsTab).toBeFocused();
-    await expect(sessionsTab).toHaveClass(/\bfocus-ring(?:\s|$)/);
     await expect
       .poll(
         () =>
           sessionsTab.evaluate((element) => {
             const style = getComputedStyle(element);
+            const root = getComputedStyle(document.documentElement);
+            // Compare numerically: the tokens compute to `calc()` expressions
+            // that never string-equal the browser-evaluated pixel values.
+            // `.focus-ring` uses the OUTSET --ring-offset, not the inset
+            // variant, so the expected offset is positive.
+            const ringWidth = Number.parseFloat(root.getPropertyValue("--ring-width"));
+            const ringOffset = Number.parseFloat(root.getPropertyValue("--ring-offset"));
             return {
-              outlineOffset: style.outlineOffset,
-              outlineWidth: style.outlineWidth,
+              focusVisible: element.matches(":focus-visible"),
+              outlineMatchesToken:
+                Number.parseFloat(style.outlineWidth) === ringWidth &&
+                Number.parseFloat(style.outlineOffset) === ringOffset,
             };
           }),
         { timeout: 30_000 },
       )
-      .toEqual({ outlineOffset: "2px", outlineWidth: "2px" });
+      .toEqual({ focusVisible: true, outlineMatchesToken: true });
 
+    // Resize only after the desktop Code surface has mounted. Starting at a
+    // phone width intentionally routes to the mobile workshop fallback.
+    await page.setViewportSize({ width: 320, height: 700 });
     await page.getByRole("button", { name: "GitHub organization settings" }).click();
     const popover = page.getByRole("dialog", { name: "GitHub organization settings" });
     await expect(popover).toBeVisible({ timeout: 30_000 });

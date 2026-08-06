@@ -270,14 +270,17 @@ function defaultInspectCandidate(
   platform: NodeJS.Platform,
 ): CandidateInspection {
   try {
-    if (!statSync(candidate).isFile()) return "unlaunchable";
+    // `candidate` is a host executable path resolved from the spawn env's PATH
+    // at runtime, never a bundled module. Without the ignore, Turbopack treats
+    // it as a specifier, globs the checkout root, and traces the whole project.
+    if (!statSync(/* turbopackIgnore: true */ candidate).isFile()) return "unlaunchable";
   } catch (error) {
     if (isMissingCandidateError(error)) return "missing";
     throw error;
   }
   if (platform !== "win32") {
     try {
-      accessSync(candidate, constants.X_OK);
+      accessSync(/* turbopackIgnore: true */ candidate, constants.X_OK);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException)?.code;
       if (code === "EACCES" || code === "EPERM") return "unlaunchable";
@@ -294,8 +297,8 @@ function inspectWithStatFile(candidate: string, statFile: StatFileFn): Candidate
 
 function defaultReadableFile(candidate: string): boolean {
   try {
-    if (!statSync(candidate).isFile()) return false;
-    accessSync(candidate, constants.R_OK);
+    if (!statSync(/* turbopackIgnore: true */ candidate).isFile()) return false;
+    accessSync(/* turbopackIgnore: true */ candidate, constants.R_OK);
     return true;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException)?.code;
@@ -396,9 +399,14 @@ function resolveCommand(
     for (const candidate of candidatesFor(command)) {
       // Node resolves relative PATH entries from the child's cwd, not the
       // server cwd that happened to build this availability report.
+      //
+      // `cwd` defaults to process.cwd(), so without the ignore Turbopack
+      // globs the project root here and pulls every file at that level --
+      // next.config.ts among them -- into the standalone NFT bundle. These
+      // are host PATH entries probed at runtime, never module specifiers.
       const full = joiner.isAbsolute(dir)
-        ? joiner.join(dir, candidate)
-        : joiner.resolve(cwd, dir, candidate);
+        ? joiner.join(/* turbopackIgnore: true */ dir, candidate)
+        : joiner.resolve(/* turbopackIgnore: true */ cwd, dir, candidate);
       const resolved = inspect(full);
       if (resolved) return resolved;
     }

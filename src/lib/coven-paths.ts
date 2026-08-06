@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 export function covenHome(): string {
-  return process.env.COVEN_HOME || path.join(homedir(), ".coven");
+  return process.env.COVEN_HOME || path.join(/* turbopackIgnore: true */ homedir(), ".coven");
 }
 
 /**
@@ -17,11 +17,11 @@ export function covenHome(): string {
  * writables (.env.local, vault.yaml, workflows/) already lived here.
  */
 export function caveHome(): string {
-  return process.env.COVEN_CAVE_HOME || path.join(covenHome(), "cave");
+  return process.env.COVEN_CAVE_HOME || path.join(/* turbopackIgnore: true */ covenHome(), "cave");
 }
 
 export function covenWorkspacesRoot(): string {
-  return process.env.COVEN_WORKSPACES_ROOT || path.join(covenHome(), "workspaces");
+  return process.env.COVEN_WORKSPACES_ROOT || path.join(/* turbopackIgnore: true */ covenHome(), "workspaces");
 }
 
 /**
@@ -46,7 +46,7 @@ export function workspaceRootEnvPin(): { name: string; value: string } | null {
 
 /** File holding the workspace root the user chose in Settings. */
 export function workspaceRootOverrideFile(): string {
-  return path.join(caveHome(), "workspace-root.json");
+  return path.join(/* turbopackIgnore: true */ caveHome(), "workspace-root.json");
 }
 
 /**
@@ -80,12 +80,12 @@ export function covenWorkspaceRoot(): string {
 }
 
 export function familiarWorkspacesRoot(): string {
-  return path.join(covenWorkspacesRoot(), "familiars");
+  return path.join(/* turbopackIgnore: true */ covenWorkspacesRoot(), "familiars");
 }
 
 function expandHome(value: string): string {
   if (value === "~") return homedir();
-  if (value.startsWith("~/")) return path.join(homedir(), value.slice(2));
+  if (value.startsWith("~/")) return path.join(/* turbopackIgnore: true */ homedir(), value.slice(2));
   return value;
 }
 

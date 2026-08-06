@@ -1,10 +1,15 @@
 export type ShellPanelLayout = Record<string, number>;
 
+export const SHELL_NAV_MIN_PX = 220;
+export const SHELL_NAV_MAX_PX = 420;
+export const SHELL_NAV_DEFAULT_PX = 240;
+
 type ResolveShellDestinationLayoutOptions = {
   panelIds: string[];
   savedLayout: ShellPanelLayout | undefined;
   groupSize: number;
   defaultPanelPixels: Partial<Record<string, number>>;
+  preferredNavPixels: number;
   collapsedNavPixels: number;
   isMobile: boolean;
 };
@@ -12,6 +17,15 @@ type ResolveShellDestinationLayoutOptions = {
 const roundPercentage = (value: number) => Number.parseFloat(value.toFixed(3));
 const LAYOUT_SUM_TOLERANCE = 0.1;
 const COLLAPSED_PIXEL_TOLERANCE = 1;
+
+export function resolveShellNavWidth(raw: string | null): number {
+  if (raw === null || raw.trim() === "") return SHELL_NAV_DEFAULT_PX;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return SHELL_NAV_DEFAULT_PX;
+
+  return Math.min(SHELL_NAV_MAX_PX, Math.max(SHELL_NAV_MIN_PX, parsed));
+}
 
 export function resolveShellNavOpenPreference(
   persistedOpen: boolean | null,
@@ -118,6 +132,7 @@ export function resolveShellDestinationLayout({
   savedLayout,
   groupSize,
   defaultPanelPixels,
+  preferredNavPixels,
   collapsedNavPixels,
   isMobile,
 }: ResolveShellDestinationLayoutOptions): ShellPanelLayout | undefined {
@@ -125,7 +140,8 @@ export function resolveShellDestinationLayout({
     isMobile ||
     !Number.isFinite(groupSize) ||
     groupSize <= 0 ||
-    panelIds.length === 0
+    panelIds.length === 0 ||
+    !Number.isFinite(preferredNavPixels)
   ) {
     return undefined;
   }
@@ -138,39 +154,55 @@ export function resolveShellDestinationLayout({
     groupSize,
     collapsedNavPixels,
   });
-  if (
-    savedLayoutIsComplete &&
-    !savedNavIsCollapsed
-  ) {
-    return Object.fromEntries(panelIds.map((panelId) => [panelId, savedLayout[panelId]]));
-  }
+  const navPercentage = roundPercentage((preferredNavPixels / groupSize) * 100);
 
-  const layout: ShellPanelLayout = {};
-  const flexiblePanelIds: string[] = [];
-  let assigned = 0;
+  const resolveLayout = (
+    preserveSavedNonNavPanels: boolean,
+  ): ShellPanelLayout | undefined => {
+    const layout: ShellPanelLayout = {};
+    const flexiblePanelIds: string[] = [];
+    let assigned = navPercentage;
 
-  for (const panelId of panelIds) {
-    const defaultPixels = defaultPanelPixels[panelId];
-    if (typeof defaultPixels === "number" && Number.isFinite(defaultPixels)) {
-      const percentage = roundPercentage((defaultPixels / groupSize) * 100);
-      layout[panelId] = percentage;
-      assigned += percentage;
-    } else {
-      flexiblePanelIds.push(panelId);
+    for (const panelId of panelIds) {
+      if (panelId === "nav" || panelId === "detail") continue;
+
+      if (preserveSavedNonNavPanels) {
+        layout[panelId] = savedLayout![panelId];
+        assigned += layout[panelId];
+        continue;
+      }
+
+      const defaultPixels = defaultPanelPixels[panelId];
+      if (typeof defaultPixels === "number" && Number.isFinite(defaultPixels)) {
+        const percentage = roundPercentage((defaultPixels / groupSize) * 100);
+        layout[panelId] = percentage;
+        assigned += percentage;
+      } else {
+        flexiblePanelIds.push(panelId);
+      }
     }
-  }
 
-  if (flexiblePanelIds.length > 0) {
-    if (assigned >= 100) return undefined;
-    const flexibleSize = roundPercentage((100 - assigned) / flexiblePanelIds.length);
-    for (let index = 0; index < flexiblePanelIds.length; index += 1) {
-      const panelId = flexiblePanelIds[index];
-      layout[panelId] =
-        index === flexiblePanelIds.length - 1
-          ? roundPercentage(100 - assigned - flexibleSize * index)
-          : flexibleSize;
+    if (flexiblePanelIds.length > 0) {
+      const flexibleSize = roundPercentage(
+        (100 - assigned) / (flexiblePanelIds.length + 1),
+      );
+      for (const panelId of flexiblePanelIds) {
+        layout[panelId] = flexibleSize;
+        assigned += flexibleSize;
+      }
     }
-  }
 
-  return isCompleteLayout(layout, panelIds) ? layout : undefined;
+    const detailPercentage = roundPercentage(100 - assigned);
+    if (detailPercentage <= 0) return undefined;
+    layout.nav = navPercentage;
+    layout.detail = detailPercentage;
+
+    return isCompleteLayout(layout, panelIds) ? layout : undefined;
+  };
+
+  const preserveSavedNonNavPanels = savedLayoutIsComplete && !savedNavIsCollapsed;
+  return (
+    (preserveSavedNonNavPanels && resolveLayout(true)) ||
+    resolveLayout(false)
+  );
 }

@@ -33,6 +33,10 @@ import {
   resolveShellDestinationLayout,
   resolveShellLayoutPersistence,
   resolveShellNavOpenPreference,
+  SHELL_NAV_DEFAULT_PX,
+  SHELL_NAV_MAX_PX,
+  SHELL_NAV_MIN_PX,
+  resolveShellNavWidth,
   type ShellPanelLayout,
 } from "./shell-layout";
 
@@ -153,6 +157,7 @@ function markShellMinimizeApplied(id: string): void {
 // preference; only user-driven resizes write it (the code-rail auto
 // collapse/restore coupling and programmatic group-swap layout churn don't).
 const NAV_OPEN_PREF_KEY = "cave:shell:nav-open";
+const NAV_WIDTH_PREF_KEY = "cave:shell:nav-width";
 function readNavOpenPref(): boolean | null {
   if (typeof window === "undefined") return null;
   try {
@@ -175,6 +180,22 @@ function seedNavOpenPref(defaultOpen: boolean): boolean {
   if (resolved.shouldPersist) writeNavOpenPref(resolved.open);
   return resolved.open;
 }
+function readNavWidthPref(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(NAV_WIDTH_PREF_KEY);
+  } catch {
+    return null;
+  }
+}
+function writeNavWidthPref(width: number): void {
+  if (typeof window === "undefined" || !Number.isFinite(width)) return;
+  try {
+    window.localStorage.setItem(NAV_WIDTH_PREF_KEY, String(width));
+  } catch {
+    /* ignore — strict privacy mode or quota */
+  }
+}
 
 // The left nav collapses to an icons-only rail (instead of vanishing) so the
 // destination icons stay reachable. Sizes at/below the rail read as "collapsed".
@@ -182,7 +203,7 @@ const NAV_RAIL_PX = 56;
 // The nav Panel's open width (its defaultSize) — the ⌘B / hover-peek expand
 // target, and the basis for the minimized-by-default layout injection (the rail
 // is NAV_RAIL_PX/NAV_OPEN_PX of the open width).
-const NAV_OPEN_PX = 240;
+const NAV_OPEN_PX = SHELL_NAV_DEFAULT_PX;
 const NAV_OPEN_THRESHOLD_PX = NAV_RAIL_PX + 16;
 
 export type ShellHandle = {
@@ -264,6 +285,9 @@ function ShellInner({
   // their intent wins and we leave the nav alone.
   const railAutoCollapsedNavRef = useRef(false);
   const userOverrodeNavRef = useRef(false);
+  const [preferredNavWidth, setPreferredNavWidth] = useState(() =>
+    resolveShellNavWidth(readNavWidthPref()),
+  );
   const [mounted, setMounted] = useState(false);
   useLayoutEffect(() => setMounted(true), []);
   const layoutStorage = mounted ? shellStorage : hydrationShellStorage;
@@ -398,11 +422,8 @@ function ShellInner({
   // match the Cave's minimized default. The mounted layout effects restore a
   // remembered open panel before the first post-hydration paint.
   const [navOpen, setNavOpen] = useState(chatContextual);
-  const defaultNavSize = chatContextual
-    ? "260px"
-    : mounted
-      ? `${NAV_OPEN_PX}px`
-      : `${NAV_RAIL_PX}px`;
+  const defaultNavSize =
+    chatContextual || mounted ? `${NAV_OPEN_PX}px` : `${NAV_RAIL_PX}px`;
 
   // Hover-to-peek: when the desktop nav is collapsed to its icon rail, hovering
   // floats it open as an overlay (navPeeking) without changing the collapse
@@ -542,13 +563,13 @@ function ShellInner({
     const cur = group.getLayout();
     const nav = cur.nav;
     if (typeof nav !== "number" || typeof cur.detail !== "number") return;
-    const railPct = nav * (NAV_RAIL_PX / NAV_OPEN_PX);
+    const railPct = nav * (NAV_RAIL_PX / preferredNavWidth);
     if (railPct >= nav) return; // already at/under the rail
     minimizedGroupsRef.current.add(groupId);
     seedNavOpenPref(false);
     markShellMinimizeApplied(groupId);
     group.setLayout({ ...cur, nav: railPct, detail: cur.detail + (nav - railPct) });
-  }, [settled, isMobile, groupId, chatContextual]);
+  }, [settled, isMobile, groupId, chatContextual, preferredNavWidth]);
 
   // The library retains an in-memory layout by panel-id set when Group's id
   // changes. Restore the destination group's complete saved/default layout
@@ -602,7 +623,8 @@ function ShellInner({
       panelIds,
       savedLayout: defaultLayout,
       groupSize,
-      defaultPanelPixels: { nav: chatContextual ? 260 : NAV_OPEN_PX, ...(!twoPane && { list: 260 }) },
+      defaultPanelPixels: { ...(!twoPane && { list: 260 }) },
+      preferredNavPixels: preferredNavWidth,
       collapsedNavPixels: chatContextual ? 0 : NAV_RAIL_PX,
       isMobile,
     });
@@ -624,7 +646,16 @@ function ShellInner({
       minimizedGroupsRef.current.add(groupId);
       markShellMinimizeApplied(groupId);
     }
-  }, [mounted, isMobile, groupId, chatContextual, defaultLayout, twoPane, navPolicy]);
+  }, [
+    mounted,
+    isMobile,
+    groupId,
+    chatContextual,
+    defaultLayout,
+    twoPane,
+    navPolicy,
+    preferredNavWidth,
+  ]);
 
   const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
   const visitCollapsedGroupRef = useRef<string | null>(null);
@@ -815,7 +846,7 @@ function ShellInner({
       groupRef={groupRef}
       elementRef={groupElementRef}
       defaultLayout={isMobile ? undefined : defaultLayout}
-      onLayoutChanged={(layout, detail) => {
+      onLayoutChanged={(layout, meta) => {
         if (layoutPersistenceGroupRef.current !== groupId) return;
         const navCollapsed = navRef.current?.isCollapsed() ?? true;
         const persistedLayout = resolveShellLayoutPersistence({
@@ -834,7 +865,23 @@ function ShellInner({
         if (!persistedLayout) return;
         collapsedLayoutRef.current = navCollapsed ? { groupId, layout } : null;
         expandedLayoutRef.current = { groupId, layout: persistedLayout };
-        onLayoutChanged(persistedLayout, detail);
+        onLayoutChanged(persistedLayout, meta);
+
+        // Unlike Panel.onResize, Group.onLayoutChanged identifies a completed
+        // direct separator interaction. This excludes observer, window-resize,
+        // mount, and imperative-layout notifications.
+        const pixelWidth = navRef.current?.getSize().inPixels;
+        if (
+          !isMobile &&
+          meta.isUserInteraction &&
+          !navCollapsed &&
+          Number.isFinite(pixelWidth) &&
+          !railAutoCollapsedNavRef.current
+        ) {
+          const normalizedWidth = resolveShellNavWidth(String(pixelWidth));
+          writeNavWidthPref(normalizedWidth);
+          setPreferredNavWidth(normalizedWidth);
+        }
       }}
       data-mobile-drawer={isMobile && mobileDrawer ? mobileDrawer : undefined}
     >
@@ -844,8 +891,8 @@ function ShellInner({
         // Chat uses list-like sizing for contextual workspace/session content.
         // Normal navigation keeps NAV_OPEN_PX as the ⌘B / hover-peek target.
         defaultSize={defaultNavSize}
-        minSize={chatContextual ? "220px" : "200px"}
-        maxSize="420px"
+        minSize={`${SHELL_NAV_MIN_PX}px`}
+        maxSize={`${SHELL_NAV_MAX_PX}px`}
         collapsible
         // Contextual Chat and mobile drawers close fully; normal desktop
         // navigation collapses to its icons-only rail.

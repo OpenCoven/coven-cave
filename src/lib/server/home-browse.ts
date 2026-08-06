@@ -322,8 +322,11 @@ export function listKnownFolders(): Place[] {
   const places: Place[] = [];
   const seen = new Set<string>();
   for (const folder of KNOWN_FOLDERS) {
-    const candidate = registry.get(folder.registryValue) ?? path.join(homeRoot(), folder.dirName);
-    const resolved = path.resolve(candidate);
+    // Desktop/Documents/... under the user's home, redirection-aware on win32.
+    // Runtime paths only — the ignores keep NFT from globbing the checkout.
+    const candidate = registry.get(folder.registryValue)
+      ?? path.join(/* turbopackIgnore: true */ homeRoot(), folder.dirName);
+    const resolved = path.resolve(/* turbopackIgnore: true */ candidate);
     if (seen.has(resolved) || !isDirectory(resolved)) continue;
     seen.add(resolved);
     places.push({ id: folder.id, name: folder.name, path: resolved, kind: "known" });

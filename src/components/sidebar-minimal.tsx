@@ -4,7 +4,7 @@
  * SidebarMinimal -- the redesigned Cave sidebar.
  *
  * Layout (top to bottom):
- *   1. Familiar scope selector + New chat CTA
+ *   1. Home / Chat section tabs, familiar scope selector, and New chat CTA
  *   2. Grouped app destinations and role-surface rooms
  *   3. Footer: Dashboard, Settings
  */
@@ -51,7 +51,7 @@ export type SidebarRoleSurfaceRow = {
 
 export type SidebarMinimalProps = {
   mode: string;
-  /** Active global section (Home | Code). The shell owns it so deep links and
+  /** Active global section (Home | Chat). The shell owns it so deep links and
    *  the ⌘K palette can move rooms; omitted falls back to Home. */
   section?: NavSection;
   onSectionChange?: (section: NavSection) => void;
@@ -216,6 +216,8 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       {/* Static wordmark. Collapsing the sidebar is now owned by the shell's
           floating top-left toggle (and ⌘B), so the header is no longer a
           button — it just leaves room for the float. */}
+      {onSectionChange ? <NavSectionTabs section={section} onSectionChange={onSectionChange} /> : null}
+
       {/* Familiar scope lives HERE, on every page (cave-vtk9) — the sidenav
           header carries the labeled dropdown switcher; the collapsed rail
           keeps the avatar-only trigger. The mobile top bar keeps its own
@@ -245,8 +247,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           <span>New chat</span>
         </button>
       </div>
-
-      {onSectionChange ? <NavSectionTabs section={section} onSectionChange={onSectionChange} /> : null}
 
       <div
         className="sidebar-nav-scroll"
