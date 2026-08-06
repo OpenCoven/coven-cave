@@ -240,6 +240,21 @@ export type OrchestrationContext = {
   automated?: boolean;
 };
 
+export class OrchestrationValidationError extends Error {
+  readonly errors: OrchestrationError[];
+
+  constructor(errors: OrchestrationError[]) {
+    super("Task orchestration validation failed");
+    this.name = "OrchestrationValidationError";
+    this.errors = errors;
+  }
+}
+
+export function assertValidOrchestration(card: Card, ctx: OrchestrationContext): void {
+  const errors = validateOrchestration(card, ctx);
+  if (errors.length > 0) throw new OrchestrationValidationError(errors);
+}
+
 /**
  * Every way a write can violate the contract. Returns all of them rather than
  * the first, so the inspector can mark every bad field in one pass instead of

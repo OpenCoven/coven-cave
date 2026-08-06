@@ -1047,6 +1047,7 @@ export const SUITES = {
     "src/lib/server/codex-oauth-port.test.ts",
     "src/lib/env-local-bundle.test.ts",
     "src/lib/cave-board-schedule.test.ts",
+    "src/lib/cave-board-orchestration.test.ts",
     "src/lib/cave-board-model-override.test.ts",
     "src/components/ui/tabs.test.ts",
     "src/components/ui/charts/charts.test.ts",
@@ -1578,6 +1579,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/cave-board-orchestration.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
   "src/lib/podcast-script.test.ts",
   // resolves "@/lib/tool-visual" for the batch band's tint
@@ -1715,6 +1717,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/cave-board-ops.test.ts",
   "src/lib/cave-board-attachments.test.ts",
   "src/lib/cave-board-schedule.test.ts",
+  "src/lib/cave-board-orchestration.test.ts",
   "src/lib/cave-board-model-override.test.ts",
   "src/lib/salem/pathfinder-feedback.test.ts",
   "src/lib/message-feedback-rollup.test.ts",
