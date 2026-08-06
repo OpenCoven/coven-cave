@@ -40,6 +40,7 @@ Patch release on top of v0.2.3.
 
 ### Fixed
 
+- **The iOS app compiles again.** A `ChatProjectPicker` call in `ChatView` closed its argument list with `}` instead of `)`, and `refreshToken` sat between the flag and the callbacks so the memberwise initializer's argument order disagreed with both call sites. The Swift target had not built since 2026-08-03; CI never noticed, because it builds the web app and the Rust shell but not the Swift one.
 - **`scripts/stamp-release.mjs` now refreshes the iOS `CURRENT_PROJECT_VERSION` build stamp alongside `MARKETING_VERSION`.** A stamped release used to carry the previous cut's build number, which App Store Connect rejects as a duplicate — that is what blocked the v0.2.3 TestFlight upload.
 - Fixed the iOS session picker not switching conversations, kept the thread-row zoom anchored to the row itself, and kept the ⌘1–4 tab shortcuts out of the accessibility tree (#4322, #4360).
 - Fixed the iOS build generating its web bundles after xcodegen had already scanned for them (#4345).
