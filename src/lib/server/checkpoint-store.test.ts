@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import {
   access,
@@ -16,10 +17,13 @@ import path from "node:path";
 import { after, test } from "node:test";
 
 import {
+  CHECKPOINT_METADATA_FILE,
+  CHECKPOINT_PATCH_FILE,
   checkpointDeleteQuarantinePath,
   openCheckpointStore,
   publishCheckpointUnit,
   recoverCheckpointStore,
+  retireCheckpointQuarantine,
   restoreCheckpointDirectoryQuarantineNoReplace,
   restoreQuarantinedRegularFileNoReplace,
 } from "./checkpoint-store.ts";
@@ -45,6 +49,46 @@ function metadataIsValid(raw: string): boolean {
   } catch {
     return false;
   }
+}
+
+function sha256(contents: string): string {
+  return createHash("sha256").update(contents).digest("hex");
+}
+
+async function writeLegacyReservation(
+  storePath: string,
+  targetName: string,
+  token: string,
+  patchContents: string,
+  metadataContents: string,
+): Promise<{
+  reservation: string;
+  patchTemp: string;
+  metadataTemp: string;
+}> {
+  const patchTempName = `.publish-${token}.patch.tmp`;
+  const metadataTempName = `.publish-${token}.scope.tmp`;
+  const reservation = path.join(
+    storePath,
+    `.legacy-reservation-${token}.json`,
+  );
+  await writeFile(
+    reservation,
+    JSON.stringify({
+      version: 1,
+      token,
+      targetName,
+      patchTempName,
+      metadataTempName,
+      patchSha256: sha256(patchContents),
+      metadataSha256: sha256(metadataContents),
+    }),
+  );
+  return {
+    reservation,
+    patchTemp: path.join(storePath, patchTempName),
+    metadataTemp: path.join(storePath, metadataTempName),
+  };
 }
 
 test("creating the first store fsyncs each new hierarchy parent", async () => {
@@ -206,7 +250,7 @@ test("incomplete and unverified quarantines remain available for retry", async (
   );
 });
 
-test("legacy publish files and reservations recover as one directory unit", async () => {
+test("ambiguous legacy reservations and source pairs remain quarantined", async () => {
   const storePath = path.join(temporary, "legacy-publish", ".git", "coven-cave", "checkpoints");
   await mkdir(path.join(temporary, "legacy-publish", ".git"), { recursive: true });
   const store = openCheckpointStore(storePath, { create: true })!;
@@ -221,14 +265,288 @@ test("legacy publish files and reservations recover as one directory unit", asyn
   ]);
 
   recoverCheckpointStore(store, metadataIsValid);
-  assert.equal(
-    await readFile(path.join(storePath, targetName, "checkpoint.patch"), "utf8"),
-    "legacy durable patch\n",
+  await assert.rejects(() => access(path.join(storePath, targetName)));
+  assert.equal(await readFile(patchTemp, "utf8"), "legacy durable patch\n");
+  assert.equal(await readFile(metadataTemp, "utf8"), validMetadata);
+  assert.equal(await readFile(reservation, "utf8"), "legacy reservation\n");
+});
+
+for (const state of [
+  "reservation-only",
+  "both-temps",
+  "patch-only",
+  "metadata-only",
+  "target-and-both-temps",
+  "target-and-patch-temp",
+  "target-and-metadata-temp",
+  "target-only",
+] as const) {
+  test(`associated legacy reservation recovery handles ${state}`, async () => {
+    const storePath = path.join(
+      temporary,
+      `associated-legacy-${state}`,
+      ".git",
+      "coven-cave",
+      "checkpoints",
+    );
+    await mkdir(
+      path.join(temporary, `associated-legacy-${state}`, ".git"),
+      { recursive: true },
+    );
+    const store = openCheckpointStore(storePath, { create: true })!;
+    const token = "1".repeat(23) +
+      String(
+        [
+          "reservation-only",
+          "both-temps",
+          "patch-only",
+          "metadata-only",
+          "target-and-both-temps",
+          "target-and-patch-temp",
+          "target-and-metadata-temp",
+          "target-only",
+        ].indexOf(state),
+      );
+    const targetName =
+      `2026-08-05T20-00-01-00${String(
+        [
+          "reservation-only",
+          "both-temps",
+          "patch-only",
+          "metadata-only",
+          "target-and-both-temps",
+          "target-and-patch-temp",
+          "target-and-metadata-temp",
+          "target-only",
+        ].indexOf(state),
+      )}Z.patch`;
+    const patchContents = `${state} patch\n`;
+    const reservation = await writeLegacyReservation(
+      storePath,
+      targetName,
+      token,
+      patchContents,
+      validMetadata,
+    );
+    const targetExists = state.startsWith("target-");
+    if (targetExists) {
+      publishCheckpointUnit(
+        store,
+        targetName,
+        patchContents,
+        validMetadata,
+      );
+    }
+    if (
+      state === "both-temps" ||
+      state === "patch-only" ||
+      state === "target-and-both-temps" ||
+      state === "target-and-patch-temp"
+    ) {
+      await writeFile(reservation.patchTemp, patchContents);
+    }
+    if (
+      state === "both-temps" ||
+      state === "metadata-only" ||
+      state === "target-and-both-temps" ||
+      state === "target-and-metadata-temp"
+    ) {
+      await writeFile(reservation.metadataTemp, validMetadata);
+    }
+
+    recoverCheckpointStore(store, metadataIsValid);
+
+    const recoverableWithoutTarget =
+      state === "reservation-only" ||
+      state === "patch-only" ||
+      state === "metadata-only";
+    if (recoverableWithoutTarget) {
+      await access(reservation.reservation);
+      await assert.rejects(() => access(path.join(storePath, targetName)));
+    } else {
+      assert.equal(
+        await readFile(
+          path.join(storePath, targetName, "checkpoint.patch"),
+          "utf8",
+        ),
+        patchContents,
+      );
+      await Promise.all([
+        assert.rejects(() => access(reservation.reservation)),
+        assert.rejects(() => access(reservation.patchTemp)),
+        assert.rejects(() => access(reservation.metadataTemp)),
+      ]);
+    }
+  });
+}
+
+for (const [index, state] of [
+  "empty",
+  "patch-only",
+  "metadata-only",
+  "complete",
+].entries()) {
+  test(`associated legacy recovery resumes a ${state} recovery stage`, async () => {
+    const storePath = path.join(
+      temporary,
+      `associated-legacy-stage-${state}`,
+      ".git",
+      "coven-cave",
+      "checkpoints",
+    );
+    await mkdir(
+      path.join(temporary, `associated-legacy-stage-${state}`, ".git"),
+      { recursive: true },
+    );
+    const store = openCheckpointStore(storePath, { create: true })!;
+    const token = `${index + 2}`.repeat(24);
+    const targetName = `2026-08-05T20-00-02-00${index}Z.patch`;
+    const patchContents = `${state} staged patch\n`;
+    const reservation = await writeLegacyReservation(
+      storePath,
+      targetName,
+      token,
+      patchContents,
+      validMetadata,
+    );
+    await Promise.all([
+      writeFile(reservation.patchTemp, patchContents),
+      writeFile(reservation.metadataTemp, validMetadata),
+    ]);
+    const recoveryStage = path.join(
+      storePath,
+      `.legacy-stage-${token}.tmp`,
+    );
+    await mkdir(recoveryStage);
+    if (state === "patch-only" || state === "complete") {
+      await writeFile(
+        path.join(recoveryStage, "checkpoint.patch"),
+        patchContents,
+      );
+    }
+    if (state === "metadata-only" || state === "complete") {
+      await writeFile(
+        path.join(recoveryStage, "metadata.scope.json"),
+        validMetadata,
+      );
+    }
+
+    recoverCheckpointStore(store, metadataIsValid);
+
+    assert.equal(
+      await readFile(
+        path.join(storePath, targetName, "checkpoint.patch"),
+        "utf8",
+      ),
+      patchContents,
+    );
+    await Promise.all([
+      assert.rejects(() => access(reservation.reservation)),
+      assert.rejects(() => access(reservation.patchTemp)),
+      assert.rejects(() => access(reservation.metadataTemp)),
+      assert.rejects(() => access(recoveryStage)),
+    ]);
+  });
+}
+
+test("multiple associated legacy reservations recover independently", async () => {
+  const storePath = path.join(
+    temporary,
+    "associated-legacy-multiple",
+    ".git",
+    "coven-cave",
+    "checkpoints",
+  );
+  await mkdir(path.join(temporary, "associated-legacy-multiple", ".git"), {
+    recursive: true,
+  });
+  const store = openCheckpointStore(storePath, { create: true })!;
+  for (const [index, token] of [
+    ["020", "2".repeat(24)],
+    ["021", "3".repeat(24)],
+  ] as const) {
+    const targetName = `2026-08-05T20-00-00-${index}Z.patch`;
+    const patchContents = `${token} patch\n`;
+    const reservation = await writeLegacyReservation(
+      storePath,
+      targetName,
+      token,
+      patchContents,
+      validMetadata,
+    );
+    await Promise.all([
+      writeFile(reservation.patchTemp, patchContents),
+      writeFile(reservation.metadataTemp, validMetadata),
+    ]);
+  }
+
+  recoverCheckpointStore(store, metadataIsValid);
+
+  for (const [index, token] of [
+    ["020", "2".repeat(24)],
+    ["021", "3".repeat(24)],
+  ] as const) {
+    assert.equal(
+      await readFile(
+        path.join(
+          storePath,
+          `2026-08-05T20-00-00-${index}Z.patch`,
+          "checkpoint.patch",
+        ),
+        "utf8",
+      ),
+      `${token} patch\n`,
+    );
+  }
+});
+
+test("conflicting associated reservations preserve the later source pair", async () => {
+  const storePath = path.join(
+    temporary,
+    "associated-legacy-conflict",
+    ".git",
+    "coven-cave",
+    "checkpoints",
+  );
+  await mkdir(path.join(temporary, "associated-legacy-conflict", ".git"), {
+    recursive: true,
+  });
+  const store = openCheckpointStore(storePath, { create: true })!;
+  const targetName = "2026-08-05T20-00-00-022Z.patch";
+  const first = await writeLegacyReservation(
+    storePath,
+    targetName,
+    "4".repeat(24),
+    "first associated patch\n",
+    validMetadata,
+  );
+  const conflicting = await writeLegacyReservation(
+    storePath,
+    targetName,
+    "5".repeat(24),
+    "conflicting associated patch\n",
+    validMetadata,
   );
   await Promise.all([
-    assert.rejects(() => access(patchTemp)),
-    assert.rejects(() => access(metadataTemp)),
-    assert.rejects(() => access(reservation)),
+    writeFile(first.patchTemp, "first associated patch\n"),
+    writeFile(first.metadataTemp, validMetadata),
+    writeFile(conflicting.patchTemp, "conflicting associated patch\n"),
+    writeFile(conflicting.metadataTemp, validMetadata),
+  ]);
+
+  recoverCheckpointStore(store, metadataIsValid);
+
+  assert.equal(
+    await readFile(
+      path.join(storePath, targetName, CHECKPOINT_PATCH_FILE),
+      "utf8",
+    ),
+    "first associated patch\n",
+  );
+  await Promise.all([
+    access(conflicting.reservation),
+    access(conflicting.patchTemp),
+    access(conflicting.metadataTemp),
   ]);
 });
 
@@ -363,6 +681,103 @@ test("rollback cannot overwrite a replacement created at the no-replace boundary
   assert.equal(await readFile(source, "utf8"), "verified checkpoint\n");
 });
 
+test("directory publication preserves an empty destination inserted at the reservation boundary", async () => {
+  const storePath = path.join(
+    temporary,
+    "directory-publication-boundary",
+    ".git",
+    "coven-cave",
+    "checkpoints",
+  );
+  await mkdir(
+    path.join(temporary, "directory-publication-boundary", ".git"),
+    { recursive: true },
+  );
+  const store = openCheckpointStore(storePath, { create: true })!;
+  const checkpointName = "2026-08-05T20-00-00-030Z.patch";
+  const destination = path.join(storePath, checkpointName);
+  const originalMkdirSync = fs.mkdirSync;
+  const originalRenameSync = fs.renameSync;
+  let injected = false;
+  const injectDestination = () => {
+    if (injected) return;
+    injected = true;
+    originalMkdirSync(destination);
+  };
+  fs.mkdirSync = ((file, options) => {
+    if (String(file) === destination) injectDestination();
+    return originalMkdirSync(file, options);
+  }) as typeof fs.mkdirSync;
+  fs.renameSync = ((source, target) => {
+    if (String(target) === destination) injectDestination();
+    return originalRenameSync(source, target);
+  }) as typeof fs.renameSync;
+  let published: string;
+  try {
+    published = publishCheckpointUnit(
+      store,
+      checkpointName,
+      "published after collision\n",
+      validMetadata,
+    );
+  } finally {
+    fs.mkdirSync = originalMkdirSync;
+    fs.renameSync = originalRenameSync;
+  }
+
+  assert.equal(injected, true);
+  assert.notEqual(published, destination);
+  assert.deepEqual(await readdir(destination), []);
+  assert.equal(
+    await readFile(path.join(published, "checkpoint.patch"), "utf8"),
+    "published after collision\n",
+  );
+});
+
+test("directory publication exposes only a complete checkpoint unit", async () => {
+  const storePath = path.join(
+    temporary,
+    "directory-publication-visibility",
+    ".git",
+    "coven-cave",
+    "checkpoints",
+  );
+  await mkdir(
+    path.join(temporary, "directory-publication-visibility", ".git"),
+    { recursive: true },
+  );
+  const store = openCheckpointStore(storePath, { create: true })!;
+  const checkpointName = "2026-08-05T20-00-00-033Z.patch";
+  const destination = path.join(storePath, checkpointName);
+  const prepublicationStages: string[] = [];
+  publishCheckpointUnit(
+    store,
+    checkpointName,
+    "visible only when complete\n",
+    validMetadata,
+    {
+      publicationStage: (stage) => {
+        if (!stage.startsWith("destination-")) return;
+        const entries = fs.existsSync(destination)
+          ? fs.readdirSync(destination).sort()
+          : [];
+        assert.notDeepEqual(
+          entries,
+          [CHECKPOINT_PATCH_FILE, CHECKPOINT_METADATA_FILE].sort(),
+          `${stage} is not reader-visible as a complete unit`,
+        );
+        prepublicationStages.push(stage);
+      },
+    },
+  );
+
+  assert.equal(prepublicationStages.length, 7);
+  assert.deepEqual(
+    await readdir(destination).then((entries) => entries.sort()),
+    [CHECKPOINT_PATCH_FILE, CHECKPOINT_METADATA_FILE].sort(),
+  );
+});
+
 test("the real host rollback path restores without replacement semantics", async () => {
   const caseRoot = path.join(temporary, `host-${process.platform}`);
   const source = path.join(caseRoot, "quarantined.patch");
@@ -433,6 +848,63 @@ test("directory rollback keeps a durable replacement when quarantine cleanup fai
   );
 });
 
+test("checkpoint bundle retirement renames atomically before verified cleanup", async () => {
+  const storePath = path.join(
+    temporary,
+    "atomic-bundle-retirement",
+    ".git",
+    "coven-cave",
+    "checkpoints",
+  );
+  await mkdir(path.join(temporary, "atomic-bundle-retirement", ".git"), {
+    recursive: true,
+  });
+  const store = openCheckpointStore(storePath, { create: true })!;
+  const checkpointName = "2026-08-05T20-00-00-032Z.patch";
+  const published = publishCheckpointUnit(
+    store,
+    checkpointName,
+    "retire atomically\n",
+    validMetadata,
+  );
+  const quarantine = checkpointDeleteQuarantinePath(
+    store,
+    checkpointName,
+    "directory",
+  );
+  await rename(published, quarantine);
+  const originalUnlinkSync = fs.unlinkSync;
+  let cleanupInterrupted = false;
+  fs.unlinkSync = ((file) => {
+    if (
+      !cleanupInterrupted &&
+      String(file).includes(`${path.sep}.purge-`)
+    ) {
+      cleanupInterrupted = true;
+      assert.equal(fs.existsSync(quarantine), false);
+      throw new Error("injected purge cleanup interruption");
+    }
+    return originalUnlinkSync(file);
+  }) as typeof fs.unlinkSync;
+  try {
+    retireCheckpointQuarantine(store, quarantine, true);
+  } finally {
+    fs.unlinkSync = originalUnlinkSync;
+  }
+
+  assert.equal(cleanupInterrupted, true);
+  await assert.rejects(() => access(quarantine));
+  assert.equal(
+    (await readdir(storePath)).some((name) => name.startsWith(".purge-")),
+    true,
+  );
+  recoverCheckpointStore(store, metadataIsValid);
+  assert.equal(
+    (await readdir(storePath)).some((name) => name.startsWith(".purge-")),
+    false,
+  );
+});
+
 test("directory restoration collision preserves destination and quarantine", async () => {
   const storePath = path.join(
     temporary,
@@ -444,6 +916,7 @@ test("directory restoration collision preserves destination and quarantine", asy
   await mkdir(path.join(temporary, "directory-restore-collision", ".git"), {
     recursive: true,
   });
+
   const store = openCheckpointStore(storePath, { create: true })!;
   const checkpointName = "2026-08-05T20-00-00-015Z.patch";
   const quarantine = checkpointDeleteQuarantinePath(
@@ -479,6 +952,70 @@ test("directory restoration collision preserves destination and quarantine", asy
   assert.equal(
     await readFile(path.join(quarantine, "checkpoint.patch"), "utf8"),
     "quarantined\n",
+  );
+});
+
+test("directory restoration preserves an empty destination inserted at the reservation boundary", async () => {
+  const storePath = path.join(
+    temporary,
+    "directory-restore-boundary",
+    ".git",
+    "coven-cave",
+    "checkpoints",
+  );
+  await mkdir(path.join(temporary, "directory-restore-boundary", ".git"), {
+    recursive: true,
+  });
+  const store = openCheckpointStore(storePath, { create: true })!;
+  const checkpointName = "2026-08-05T20-00-00-031Z.patch";
+  const published = publishCheckpointUnit(
+    store,
+    checkpointName,
+    "quarantined at boundary\n",
+    validMetadata,
+  );
+  const quarantine = checkpointDeleteQuarantinePath(
+    store,
+    checkpointName,
+    "directory",
+  );
+  await rename(published, quarantine);
+  const destination = path.join(storePath, checkpointName);
+  const originalMkdirSync = fs.mkdirSync;
+  const originalRenameSync = fs.renameSync;
+  let injected = false;
+  const injectDestination = () => {
+    if (injected) return;
+    injected = true;
+    originalMkdirSync(destination);
+  };
+  fs.mkdirSync = ((file, options) => {
+    if (String(file) === destination) injectDestination();
+    return originalMkdirSync(file, options);
+  }) as typeof fs.mkdirSync;
+  fs.renameSync = ((source, target) => {
+    if (String(target) === destination) injectDestination();
+    return originalRenameSync(source, target);
+  }) as typeof fs.renameSync;
+  let restored: boolean;
+  try {
+    restored = restoreCheckpointDirectoryQuarantineNoReplace(
+      store,
+      quarantine,
+      destination,
+      metadataIsValid,
+    );
+  } finally {
+    fs.mkdirSync = originalMkdirSync;
+    fs.renameSync = originalRenameSync;
+  }
+
+  assert.equal(injected, true);
+  assert.equal(restored, false);
+  assert.deepEqual(await readdir(destination), []);
+  assert.equal(
+    await readFile(path.join(quarantine, "checkpoint.patch"), "utf8"),
+    "quarantined at boundary\n",
   );
 });
 
