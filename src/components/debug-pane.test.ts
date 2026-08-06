@@ -627,7 +627,7 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /action\?: "revert" \| "checkpoint"/,
+  /const POST_ACTIONS = new Set\(\[[\s\S]*?"checkpoint"[\s\S]*?"restore-checkpoint"/,
   "Changes POST should accept an explicit checkpoint action as a non-destructive review operation",
 );
 assert.match(
@@ -637,7 +637,7 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /gitDiff\(repoRoot,[\s\S]*?\["--binary"[\s\S]*?"HEAD"[\s\S]*?"--"\]/,
+  /gitDiff\([\s\S]*?repoRoot,[\s\S]*?\["--binary", "--no-renames", "HEAD", "--", scopedPathspec\]/,
   "Checkpoint snapshots should capture binary-safe tracked diffs versus HEAD",
 );
 assert.match(
@@ -652,8 +652,8 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /writeFileSync\(checkpointPath, patch/,
-  "Checkpoint snapshots should persist the generated patch without changing the working tree",
+  /writeDurableExclusiveFile\(patchTemp, patch\)/,
+  "Checkpoint snapshots durably persist the generated patch without changing the working tree",
 );
 // Finished-checkpoint surface: restore + delete actions and a name guard.
 assert.match(
@@ -663,7 +663,7 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /resolveCheckpointPath[\s\S]*?isCheckpointName/,
+  /async function resolveCheckpoint\([\s\S]*?if \(!isCheckpointName\(name\)\) return null/,
   "Checkpoint names must be validated (path-traversal guard) before filesystem access",
 );
 assert.match(

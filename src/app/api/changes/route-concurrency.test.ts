@@ -4,6 +4,7 @@ import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import {
   access,
+  lstat,
   mkdir,
   readFile,
   readdir,
@@ -208,12 +209,33 @@ async function runParent(): Promise<void> {
       workerB.body.checkpointPath,
       "separate processes publishing in the same millisecond reserve distinct checkpoint names",
     );
-    const [patchA, patchB, metadataA, metadataB] = await Promise.all([
-      readFile(workerA.body.checkpointPath, "utf8"),
-      readFile(workerB.body.checkpointPath, "utf8"),
-      readFile(`${workerA.body.checkpointPath}.scope.json`, "utf8").then(JSON.parse),
-      readFile(`${workerB.body.checkpointPath}.scope.json`, "utf8").then(JSON.parse),
-    ]);
+    const [patchA, patchB, metadataA, metadataB, patchStatA, metadataStatA] =
+      await Promise.all([
+        readFile(
+          path.join(workerA.body.checkpointPath, "checkpoint.patch"),
+          "utf8",
+        ),
+        readFile(
+          path.join(workerB.body.checkpointPath, "checkpoint.patch"),
+          "utf8",
+        ),
+        readFile(
+          path.join(workerA.body.checkpointPath, "metadata.scope.json"),
+          "utf8",
+        ).then(JSON.parse),
+        readFile(
+          path.join(workerB.body.checkpointPath, "metadata.scope.json"),
+          "utf8",
+        ).then(JSON.parse),
+        lstat(path.join(workerA.body.checkpointPath, "checkpoint.patch")),
+        lstat(path.join(workerA.body.checkpointPath, "metadata.scope.json")),
+      ]);
+    assert.equal(
+      patchStatA.nlink,
+      1,
+      "published checkpoint files never gain extra hard links",
+    );
+    assert.equal(metadataStatA.nlink, 1);
     assert.match(patchA, /packages\/a\/src\/a\.ts/);
     assert.doesNotMatch(patchA, /packages\/b\/src\/b\.ts/);
     assert.match(patchB, /packages\/b\/src\/b\.ts/);
@@ -222,13 +244,11 @@ async function runParent(): Promise<void> {
     assert.equal(metadataB.projectRoot, projectB);
 
     const checkpointDir = path.dirname(workerA.body.checkpointPath);
-    const existingPath = path.join(
-      checkpointDir,
-      "2026-08-05T20-00-00-000Z.patch",
-    );
-    const existingMetadataPath = `${existingPath}.scope.json`;
+    const existingPath = path.join(checkpointDir, "2026-08-05T20-00-00-000Z.patch");
+    const existingPatchPath = path.join(existingPath, "checkpoint.patch");
+    const existingMetadataPath = path.join(existingPath, "metadata.scope.json");
     const [existingPatch, existingMetadata, beforeEntries] = await Promise.all([
-      readFile(existingPath),
+      readFile(existingPatchPath),
       readFile(existingMetadataPath),
       readdir(checkpointDir).then((entries) => entries.sort()),
     ]);
@@ -263,44 +283,79 @@ async function runParent(): Promise<void> {
       "repository contention respects the configured bounded wait",
     );
 
-    const restoreClock = installFixedClock(fixedCheckpointIso);
-    const originalLinkSync = fs.linkSync;
-    let publicationFailureInjected = false;
-    fs.linkSync = ((source, destination) => {
-      const sourcePath = String(source);
-      const destinationPath = String(destination);
+    const crashedTemp = path.join(checkpointDir, ".publish-deadbeef.tmp");
+    const crashedReserve = path.join(
+      checkpointDir,
+      "2026-08-05T20-00-00-111Z.patch.reserve",
+    );
+    await mkdir(crashedTemp);
+    await Promise.all([
+      writeFile(path.join(crashedTemp, "checkpoint.patch"), "crashed patch\n"),
+      writeFile(
+        path.join(crashedTemp, "metadata.scope.json"),
+        JSON.stringify(metadataA),
+      ),
+      writeFile(crashedReserve, "orphan reservation\n"),
+    ]);
+
+    const originalRenameSync = fs.renameSync;
+    let collisionInjected = false;
+    fs.renameSync = ((source, destination) => {
       if (
-        !publicationFailureInjected &&
-        sourcePath.includes(".publish-") &&
-        destinationPath.endsWith(".patch")
+        !collisionInjected &&
+        String(source).includes(".publish-") &&
+        String(destination).endsWith(".patch")
       ) {
-        publicationFailureInjected = true;
-        const error = new Error("injected checkpoint publication failure") as NodeJS.ErrnoException;
-        error.code = "EIO";
+        collisionInjected = true;
+        const error = new Error("injected checkpoint collision") as NodeJS.ErrnoException;
+        error.code = "EEXIST";
         throw error;
       }
-      return originalLinkSync(source, destination);
+      return originalRenameSync(source, destination);
+    }) as typeof fs.renameSync;
+    const originalLinkSync = fs.linkSync;
+    fs.linkSync = (() => {
+      throw new Error("hard links are unsupported");
     }) as typeof fs.linkSync;
-    let failedPublication: Response;
+    const restoreClock = installFixedClock(fixedCheckpointIso);
+    let collisionResponse: Response;
     try {
-      failedPublication = await POST(request(projectA, "checkpoint"));
+      collisionResponse = await POST(request(projectA, "checkpoint"));
     } finally {
-      fs.linkSync = originalLinkSync;
       restoreClock();
+      fs.linkSync = originalLinkSync;
+      fs.renameSync = originalRenameSync;
+    }
+    assert.equal(collisionResponse.status, 200, await collisionResponse.clone().text());
+    assert.equal(collisionInjected, true, "rename collisions retry with a new name");
+    await assert.rejects(() => access(crashedTemp));
+    await assert.rejects(() => access(crashedReserve));
+    assert.deepEqual(await readFile(existingPatchPath), existingPatch);
+    assert.deepEqual(await readFile(existingMetadataPath), existingMetadata);
+
+    const originalOpenSync = fs.openSync;
+    fs.openSync = ((file, flags, ...args) => {
+      if (
+        flags === fs.constants.O_RDONLY &&
+        (String(file) === checkpointDir || String(file).includes(".publish-"))
+      ) {
+        const error = new Error("directory fsync unsupported") as NodeJS.ErrnoException;
+        error.code = "EINVAL";
+        throw error;
+      }
+      return originalOpenSync(file, flags, ...args);
+    }) as typeof fs.openSync;
+    let limitedDirectoryFsync: Response;
+    try {
+      limitedDirectoryFsync = await POST(request(projectA, "checkpoint"));
+    } finally {
+      fs.openSync = originalOpenSync;
     }
     assert.equal(
-      failedPublication.status,
-      500,
-      "a failure after metadata publication aborts the whole checkpoint",
+      limitedDirectoryFsync.status,
+      200,
+      "Windows-style directory fsync limitations rely on next-operation recovery",
     );
-    assert.equal(publicationFailureInjected, true);
-    assert.deepEqual(
-      await readdir(checkpointDir).then((entries) => entries.sort()),
-      beforeEntries,
-      "failed publication removes reservation, temporary, and partial public files",
-    );
-    assert.deepEqual(await readFile(existingPath), existingPatch);
-    assert.deepEqual(await readFile(existingMetadataPath), existingMetadata);
 
     git(["reset", "--hard", "HEAD"]);
     git(["branch", "feature-b"]);

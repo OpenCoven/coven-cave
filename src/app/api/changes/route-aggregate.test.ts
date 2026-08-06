@@ -165,12 +165,28 @@ try {
   assert.equal(checkpointResponse.status, 200, await checkpointResponse.clone().text());
   const checkpointPath = (await checkpointResponse.json()).checkpointPath as string;
   const checkpointName = path.basename(checkpointPath);
-  const checkpointPatch = await readFile(checkpointPath, "utf8");
+  const checkpointPatch = await readFile(
+    path.join(checkpointPath, "checkpoint.patch"),
+    "utf8",
+  );
   assert.match(checkpointPatch, /packages\/mixedcaseapp\/src\/nested\.ts/i);
   assert.doesNotMatch(checkpointPatch, /diff --git a\/parent\.txt b\/parent\.txt/);
   assert.doesNotMatch(checkpointPatch, /packages\/sibling/);
   const checkpointMetadata = JSON.parse(
-    await readFile(`${checkpointPath}.scope.json`, "utf8"),
+    await readFile(
+      path.join(checkpointPath, "metadata.scope.json"),
+      "utf8",
+    ),
+  );
+  const checkpointRead = await GET({
+    nextUrl: new URL(
+      `http://127.0.0.1/api/changes?projectRoot=${encodeURIComponent(projectRoot)}&checkpoint=${encodeURIComponent(checkpointName)}`,
+    ),
+  });
+  assert.match(
+    (await checkpointRead.json()).patch,
+    /packages\/mixedcaseapp\/src\/nested\.ts/i,
+    "directory checkpoints are readable only after the complete unit is published",
   );
   assert.equal(
     process.platform === "win32"
@@ -262,6 +278,59 @@ try {
   assert.equal(restoredAgain.status, 200, await restoredAgain.clone().text());
   await writeFile(siblingFile, "sibling after checkpoint\n");
 
+  const legacyPairName = "2026-08-06T00-00-00-996Z.patch";
+  const legacyPairPath = path.join(path.dirname(checkpointPath), legacyPairName);
+  await Promise.all([
+    writeFile(legacyPairPath, checkpointPatch),
+    writeFile(
+      `${legacyPairPath}.scope.json`,
+      JSON.stringify(checkpointMetadata),
+    ),
+  ]);
+  const listedWithLegacy = await GET({
+    nextUrl: new URL(
+      `http://127.0.0.1/api/changes?projectRoot=${encodeURIComponent(projectRoot)}&checkpoints=1`,
+    ),
+  });
+  assert.equal(
+    (await listedWithLegacy.json()).checkpoints.some(
+      (entry: { name: string }) => entry.name === legacyPairName,
+    ),
+    true,
+    "legacy flat patch and metadata pairs remain listable",
+  );
+  const legacyPairRead = await GET({
+    nextUrl: new URL(
+      `http://127.0.0.1/api/changes?projectRoot=${encodeURIComponent(projectRoot)}&checkpoint=${encodeURIComponent(legacyPairName)}`,
+    ),
+  });
+  assert.match(
+    (await legacyPairRead.json()).patch,
+    /packages\/mixedcaseapp\/src\/nested\.ts/i,
+    "legacy flat checkpoint pairs remain readable",
+  );
+  git(["checkout", "HEAD", "--", ":(literal)packages/mixedcaseapp/src/nested.ts"]);
+  const legacyPairRestore = await POST(
+    request(projectRoot, "restore-checkpoint", {
+      checkpoint: legacyPairName,
+    }),
+  );
+  assert.equal(
+    legacyPairRestore.status,
+    200,
+    "legacy flat checkpoint pairs remain restorable",
+  );
+  const legacyPairDelete = await POST(
+    request(projectRoot, "delete-checkpoint", {
+      checkpoint: legacyPairName,
+    }),
+  );
+  assert.equal(legacyPairDelete.status, 200);
+  await Promise.all([
+    assert.rejects(() => access(legacyPairPath)),
+    assert.rejects(() => access(`${legacyPairPath}.scope.json`)),
+  ]);
+
   const legacyCheckpointName = "2026-08-06T00-00-00-998Z.patch";
   await writeFile(
     path.join(path.dirname(checkpointPath), legacyCheckpointName),
@@ -314,7 +383,10 @@ try {
     await literalCheckpointResponse.clone().text(),
   );
   const literalCheckpointPath = (await literalCheckpointResponse.json()).checkpointPath as string;
-  const literalPatch = await readFile(literalCheckpointPath, "utf8");
+  const literalPatch = await readFile(
+    path.join(literalCheckpointPath, "checkpoint.patch"),
+    "utf8",
+  );
   assert.match(literalPatch, /packages\/project\[1\]\/src\/literal\.ts/);
   assert.doesNotMatch(
     literalPatch,
@@ -348,7 +420,6 @@ try {
   );
   assert.equal(deleted.status, 200, await deleted.clone().text());
   await assert.rejects(() => access(checkpointPath));
-  await assert.rejects(() => access(`${checkpointPath}.scope.json`));
 
   const unsupported = await POST(request(projectRoot, "discard"));
   assert.equal(unsupported.status, 400);
@@ -358,7 +429,12 @@ try {
   assert.equal(rootCheckpoint.status, 200, await rootCheckpoint.clone().text());
   const rootCheckpointPath = (await rootCheckpoint.json()).checkpointPath as string;
   assert.equal(
-    JSON.parse(await readFile(`${rootCheckpointPath}.scope.json`, "utf8")).projectPathspec,
+    JSON.parse(
+      await readFile(
+        path.join(rootCheckpointPath, "metadata.scope.json"),
+        "utf8",
+      ),
+    ).projectPathspec,
     ".",
     "the repository root itself uses a literal dot pathspec",
   );
