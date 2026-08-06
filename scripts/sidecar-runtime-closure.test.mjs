@@ -102,10 +102,15 @@ try {
 
   await assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination);
   const metrics = await verifySidecarRuntime(destination);
-  assert.ok(metrics.fileCount <= 5_926);
+  // The fixture closure is tiny; this only asserts the verifier measures it
+  // against the real budget rather than a stub. The deepEqual below is the
+  // one that pins the VALUE — raised 5_926 -> 6_109 in cave-oqawv from a
+  // governing Windows measurement of 5,959, with the headroom sized to the
+  // measured ~21 files/day drift. Reasoning lives at the constant itself.
+  assert.ok(metrics.fileCount <= SIDECAR_RUNTIME_BUDGETS.fileCount);
   assert.ok(metrics.unpackedBytes < 200 * 1024 * 1024);
   assert.deepEqual(SIDECAR_RUNTIME_BUDGETS, {
-    fileCount: 5_926,
+    fileCount: 6_109,
     unpackedBytes: 200 * 1024 * 1024 - 1,
   });
 

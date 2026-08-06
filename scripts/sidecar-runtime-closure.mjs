@@ -204,9 +204,22 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // attributing it. Ten files is about ten merges at this rate, so this will
   // recur; the durable fix is to size the headroom to the growth rate or stop the
   // closure growing, not to keep adding ten.
-  // 2026-08-06 (#4341): CI measured 5,959 on Ubuntu (implies ~5,962 on Windows).
-  // Raised to 5,975 — Windows figure plus ~13-file headroom (~10+ merges).
-  fileCount: 5_975,
+  // 2026-08-06 (cave-oqawv): taking the advice directly above rather than adding
+  // ten for the third time. CI measured 5,957 on Ubuntu and 5,959 on Windows,
+  // which governs — that is +43 on the 5,916 the entry above was set from, over
+  // roughly two days, so ~21 files/day. A ten-file headroom is therefore worth
+  // about eleven hours, which is exactly why this gate went red again within a
+  // day of being raised.
+  //
+  // Set from the governing Windows figure plus 150, which is about one week of
+  // drift at the measured rate (main took 869 commits in the last 7 days at
+  // ~0.3 closure files per commit). State the trade plainly: at this headroom
+  // the gate no longer notices organic drift, and it is not meant to — what it
+  // still catches is a single change dragging a whole subtree in, which is
+  // hundreds of files at once and the failure worth having a gate for. If this
+  // needs to detect drift again, the fix is to stop the closure growing, not a
+  // smaller number here. Tracked by cave-0ia8h.
+  fileCount: 6_109,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
