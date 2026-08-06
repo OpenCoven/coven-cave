@@ -1133,6 +1133,7 @@ export const SUITES = {
     "src/components/detail-split-host.test.ts",
     "src/lib/server/chat-stop-registry.test.ts",
     "src/lib/server/chat-stream-buffer.test.ts",
+    "src/app/api/chat/stop/route.test.ts",
     "src/app/api/chat/stream/route.test.ts",
     "src/app/api/chat/stream/status/route.test.ts",
     "src/lib/harness-failure.test.ts",
@@ -1632,6 +1633,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/workspace-root-store.test.ts",
   // imports the route module, which resolves "@/lib/server/..." aliases.
   "src/app/api/daemon/travel/reconcile/route.test.ts",
+  "src/app/api/chat/stop/route.test.ts",
   "src/app/api/sessions/list/route.test.ts",
   "src/app/api/sessions/[id]/route.test.ts",
   "src/app/api/familiars/route.test.ts",

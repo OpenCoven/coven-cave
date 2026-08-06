@@ -17,6 +17,8 @@ export type ChatRunHandle = {
   /** Set when a deliberate stop arrived via /api/chat/stop. The send route
    *  reads this — not `req.signal.aborted` — to decide cancel semantics. */
   stopRequested: boolean;
+  /** Monotonic: true once the transport produced its definitive outcome. */
+  settled: boolean;
   /** Registry keys this run is reachable under (runId, conversation id). */
   keys: string[];
 };
@@ -29,7 +31,7 @@ export function registerChatRun(
   keys: Array<string | null | undefined>,
   kill: () => void,
 ): ChatRunHandle {
-  const handle: ChatRunHandle = { stopRequested: false, keys: [] };
+  const handle: ChatRunHandle = { stopRequested: false, settled: false, keys: [] };
   const entry: ChatRunEntry = { handle, kill };
   for (const key of keys) {
     if (!key) continue;
@@ -66,6 +68,7 @@ export function addChatRunKeys(
   handle: ChatRunHandle,
   keys: Array<string | null | undefined>,
 ): void {
+  if (handle.settled) return;
   const entry = handle.keys
     .map((key) => active.get(key))
     .find((candidate) => candidate?.handle === handle);
@@ -87,14 +90,15 @@ export function addChatRunKeys(
  * mid-turn — the row reports `failed` instead of a phantom `completed`.
  */
 export function hasActiveChatRun(key: string): boolean {
-  return active.has(key);
+  const entry = active.get(key);
+  return Boolean(entry && !entry.handle.settled);
 }
 
 /** Deliberate user stop: mark the run cancelled and SIGTERM its child.
  *  Returns false when nothing is in flight under the key. */
 export function requestChatStop(key: string): boolean {
   const entry = active.get(key);
-  if (!entry) return false;
+  if (!entry || entry.handle.settled) return false;
   entry.handle.stopRequested = true;
   try {
     entry.kill();
@@ -102,4 +106,13 @@ export function requestChatStop(key: string): boolean {
     /* child already gone */
   }
   return true;
+}
+
+/** Freeze cancellation semantics as soon as a run reaches a definitive outcome.
+ *  Late /chat/stop requests become no-ops even if persistence is still running.
+ */
+export function markChatRunSettled(handle: ChatRunHandle): void {
+  if (handle.settled) return;
+  handle.settled = true;
+  if (handle.keys.length > 0) invalidateSessionsListCache();
 }

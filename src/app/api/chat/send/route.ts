@@ -147,6 +147,7 @@ import {
 } from "@/lib/server/knowledge-vault";
 import { parseAgentAttachments } from "@/lib/server/agent-attachments";
 import {
+  markChatRunSettled,
   registerChatRun,
   unregisterChatRun,
   addChatRunKeys,
@@ -1025,6 +1026,7 @@ function openClawChatResponse(args: {
         args.req.signal.addEventListener("abort", onAbort, { once: true });
         pushProgress("openclaw-response", "Waiting for OpenClaw Gateway response", "running");
         const gatewayResult = await gatewayDispatch.done;
+        markChatRunSettled(runHandle);
         settleOpenGatewayTools(
           gatewayResult.state === "aborted"
             ? "[tool cancelled by user]"
@@ -1264,6 +1266,7 @@ function openClawChatResponse(args: {
       const failChild = (err: NodeJS.ErrnoException) => {
         if (terminal) return;
         terminal = true;
+        markChatRunSettled(runHandle);
         const failure = localRuntimeLaunchError("openclaw", err.code);
         pushProgress("openclaw-response", "OpenClaw bridge failed", "error", failure.message);
         push({ kind: "error", code: failure.code, message: failure.message });
@@ -1321,6 +1324,7 @@ function openClawChatResponse(args: {
           return;
         }
         terminal = true;
+        markChatRunSettled(runHandle);
         args.req.signal.removeEventListener("abort", onAbort);
         if (detachKillTimer != null) clearTimeout(detachKillTimer);
         unregisterChatRun(runHandle);
@@ -5101,6 +5105,7 @@ export async function POST(req: Request) {
       }
       }
 
+      markChatRunSettled(runHandle);
       // Unknown direct-Codex protocol events surface as ONE safe diagnostic
       // per turn: a count plus up to three shape fingerprints. The payloads
       // themselves were never rendered, persisted, or logged.
