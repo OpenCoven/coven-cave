@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * NavSectionTabs — the global Home / Code switcher that tops the left siderail
+ * NavSectionTabs — the global Home / Chat switcher that tops the left siderail
  * (cave-24d2r).
  *
  * Rendered by both siderail hosts (SidebarMinimal and the Chat-time

@@ -43,7 +43,7 @@ export const NAV_SECTIONS: readonly NavSectionDescriptor[] = [
     },
     {
         id: "code",
-        label: "Code",
+        label: "Chat",
         iconName: "ph:code-bold",
         description: "Chat, coding sessions, and the code workshop",
         kbd: "⌃2",

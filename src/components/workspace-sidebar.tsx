@@ -60,7 +60,7 @@ type Props = {
   /** Home / Scheduled / Plugins shortcuts route through Workspace so it can
    *  coordinate mode changes with mobile drawer dismissal. */
   onNavigate: (mode: WorkspaceSidebarMode) => void;
-  /** Global section switcher (Home | Code). This sidebar hosts the Code room,
+  /** Global section switcher (Home | Chat). This sidebar hosts the Code room,
    *  so the tabs ride at its top too — leaving Code returns to the Home rail. */
   onSectionChange?: (section: NavSection) => void;
   onNewChat: (projectRoot: string | null) => void;
@@ -569,7 +569,7 @@ export function WorkspaceSidebar({
   return (
     <div className="workspace-sidebar chat-sidebar flex h-full min-h-0 flex-col">
       <div className="workspace-sidebar__full chat-sidebar__full cnav">
-        {/* Global section switcher — Home | Code (cave-24d2r). This sidebar IS
+        {/* Global section switcher — Home | Chat (cave-24d2r). This sidebar IS
             the Code room, so switching to Home hands the rail back to the
             standard destination list. */}
         {onSectionChange ? <NavSectionTabs section="code" onSectionChange={onSectionChange} /> : null}
@@ -589,6 +589,18 @@ export function WorkspaceSidebar({
               labeled
             />
           </div>
+        </header>
+
+        <div className="cnav__quick">
+          <button type="button" title="New chat (⌘N)" onClick={() => onNewChat(null)} className="cnav__new focus-ring">
+            <Icon name="ph:pencil-simple" width={15} className="cnav__new-icon" aria-hidden />
+            <span className="cnav__new-label">New chat</span>
+            <kbd className="cnav__new-kbd">⌘N</kbd>
+          </button>
+        </div>
+
+        {/* Secondary chat utilities follow the full-width primary action. */}
+        <div className="cnav__utilities">
           {/* The Home tab above owns the exit now; the icon button only remains
               when the section switcher is not mounted (standalone hosts). */}
           {onSectionChange ? null : (
@@ -602,6 +614,27 @@ export function WorkspaceSidebar({
               <Icon name="ph:house-bold" width={15} aria-hidden />
             </button>
           )}
+          <button
+            type="button"
+            title="Scheduled"
+            aria-label={scheduledCount ? `Scheduled (${scheduledCount})` : "Scheduled"}
+            onClick={() => onNavigate("inbox")}
+            className="cnav__mini focus-ring"
+          >
+            <Icon name="ph:clock" width={14} className="cnav__mini-icon" aria-hidden />
+            {typeof scheduledCount === "number" && scheduledCount > 0 ? (
+              <span className="cnav__mini-count">{scheduledCount}</span>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            title="Plugins"
+            aria-label="Plugins"
+            onClick={() => onNavigate("marketplace")}
+            className="cnav__mini focus-ring"
+          >
+            <Icon name="ph:plugs" width={14} className="cnav__mini-icon" aria-hidden />
+          </button>
           <button
             ref={menuAnchorRef}
             type="button"
@@ -638,38 +671,6 @@ export function WorkspaceSidebar({
               </PopoverBody>
             </div>
           </Popover>
-        </header>
-
-        {/* One-row quick actions: New chat takes the slack; the Scheduled and
-            Plugins shortcuts ride along as icon chips (labels live in
-            title/aria — the badge still shows the scheduled count). */}
-        <div className="cnav__quick">
-          <button type="button" title="New chat (⌘N)" onClick={() => onNewChat(null)} className="cnav__new focus-ring">
-            <Icon name="ph:pencil-simple" width={15} className="cnav__new-icon" aria-hidden />
-            <span className="cnav__new-label">New chat</span>
-            <kbd className="cnav__new-kbd">⌘N</kbd>
-          </button>
-          <button
-            type="button"
-            title="Scheduled"
-            aria-label={scheduledCount ? `Scheduled (${scheduledCount})` : "Scheduled"}
-            onClick={() => onNavigate("inbox")}
-            className="cnav__mini focus-ring"
-          >
-            <Icon name="ph:clock" width={14} className="cnav__mini-icon" aria-hidden />
-            {typeof scheduledCount === "number" && scheduledCount > 0 ? (
-              <span className="cnav__mini-count">{scheduledCount}</span>
-            ) : null}
-          </button>
-          <button
-            type="button"
-            title="Plugins"
-            aria-label="Plugins"
-            onClick={() => onNavigate("marketplace")}
-            className="cnav__mini focus-ring"
-          >
-            <Icon name="ph:plugs" width={14} className="cnav__mini-icon" aria-hidden />
-          </button>
         </div>
 
         <Tabs<ChatSidebarView>
