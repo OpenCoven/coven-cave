@@ -204,7 +204,23 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // attributing it. Ten files is about ten merges at this rate, so this will
   // recur; the durable fix is to size the headroom to the growth rate or stop the
   // closure growing, not to keep adding ten.
-  fileCount: 5_926,
+  // 2026-08-05 (conjure flow, cave-2nsm3): the entry above predicted "roughly a
+  // file per merge, diffuse across many PRs" — and one merge broke that model.
+  // feat/cave-3rz-conjure-flow (3f2630d6d1) landed the scry/rite/foil surface in
+  // a single push: src/lib/scry*.ts, src/lib/foil/*, src/lib/rite-flow.ts,
+  // src/lib/cave-familiar-foil.ts, src/lib/use-scry.ts and their components all
+  // join the closure at once. CI measured 5,957 on Ubuntu and 5,959 on Windows —
+  // 33 over a budget that had 10 files of headroom, so this was never going to be
+  // absorbed. Set from the HIGHER figure plus the usual ten, per the convention
+  // above; Windows still governs, though at +2 here rather than the +3 the entry
+  // above recorded.
+  //
+  // Both legs were red, unlike #4315 where only Windows crossed — that is the
+  // signature of a step change rather than headroom running out, and it is worth
+  // reading the measured counts before assuming otherwise. Note this budget was
+  // NOT what made main red: it went red on a direct push whose own CI run was
+  // cancelled by push churn, so nothing reported the step until a PR ran.
+  fileCount: 5_969,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
