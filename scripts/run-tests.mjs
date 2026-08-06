@@ -655,6 +655,7 @@ export const SUITES = {
     "src/components/session-changes-totals.test.ts",
     "src/lib/session-changes-api.test.ts",
     "src/components/session-changes-rows.test.ts",
+    "src/components/session-changes-rows-behavior.test.tsx",
     "src/components/session-changes-panel.test.ts",
     "src/components/project-tree-keynav.test.ts",
     "src/components/a11y-audit-fixes.test.ts",
@@ -1775,6 +1776,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
   "src/components/document-reader-view.test.ts",
+  "src/components/session-changes-rows-behavior.test.tsx",
   "src/components/chat-edit-card-actions-lifecycle.test.tsx",
   "src/components/role-surfaces/familiar-room-interactions.test.tsx",
   "src/components/familiars-memory-recovery.test.tsx",

@@ -3,6 +3,8 @@ export type FileStatus = "modified" | "added" | "deleted" | "renamed" | "untrack
 export type ChangedFile = {
   path: string;
   status: FileStatus;
+  /** Server-authorized project containment; false rows are repo context only. */
+  revertible: boolean;
   renamedFrom?: string;
   insertions?: number;
   deletions?: number;

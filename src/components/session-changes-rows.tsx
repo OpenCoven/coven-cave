@@ -130,7 +130,7 @@ export function FileRow({
         </td>
         <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[length:var(--text-2xs)] tabular-nums">{diffCounts}</td>
         <td className="px-2 py-1.5 text-right">
-          {confirmRevert ? null : (
+          {confirmRevert ? null : file.revertible ? (
             <IconButton
               icon={untracked ? "ph:trash" : "ph:arrow-counter-clockwise"}
               size="sm"
@@ -140,10 +140,17 @@ export function FileRow({
               title={untracked ? `Delete ${file.path}` : `Revert ${file.path}`}
               aria-label={untracked ? `Delete untracked file ${file.path}` : `Revert ${file.path}`}
             />
+          ) : (
+            <span
+              className="whitespace-nowrap text-[length:var(--text-2xs)] text-[var(--text-muted)]"
+              title="Outside this project"
+            >
+              Read only
+            </span>
           )}
         </td>
       </tr>
-      {confirmRevert ? (
+      {confirmRevert && file.revertible ? (
         <tr className="bg-[color-mix(in_oklch,var(--color-danger)_7%,transparent)]">
           <td colSpan={3} className="px-2 py-1.5">
             <span

@@ -322,6 +322,25 @@ try {
     "packages/app/src/a.ts",
     "GET exposes the changed file relative to the enclosing repository",
   );
+  assert.equal(
+    listedAppFile?.revertible,
+    true,
+    "GET marks a changed file inside the nested project as revertible",
+  );
+  assert.equal(
+    nestedChangesBody.files.find(
+      (file: { path: string }) => file.path === "src/a.ts",
+    )?.revertible,
+    false,
+    "GET keeps parent-repository context but marks it read only",
+  );
+  assert.equal(
+    nestedChangesBody.files.find(
+      (file: { path: string }) => file.path === "packages/sibling/src/a.ts",
+    )?.revertible,
+    false,
+    "GET keeps sibling-project context but marks it read only",
+  );
   for (const repoRelativePath of [
     "../outside.ts",
     "packages/sibling/src/a.ts",
@@ -335,6 +354,11 @@ try {
       (file: { path: string }) => file.path === "packages/app/src/outside-link.ts",
     );
     assert.equal(listedSymlink?.path, "packages/app/src/outside-link.ts");
+    assert.equal(
+      listedSymlink?.revertible,
+      false,
+      "GET fail-closes a project-contained symlink that resolves outside",
+    );
     const symlinkEscape = await POST(repoRelativeRevertRequest(listedSymlink.path));
     assert.equal(symlinkEscape.status, 403, "a changed symlink resolving outside the project is rejected");
   }

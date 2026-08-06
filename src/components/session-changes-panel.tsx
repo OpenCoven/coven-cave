@@ -193,6 +193,7 @@ export function SessionChangesInner({
   // expanded file's diff so it doesn't show a frozen snapshot. Keyed on a
   // signature of the list so it only fires when something actually changed.
   const filesSig = files.map((f) => `${f.path}:${f.insertions ?? 0}:${f.deletions ?? 0}`).join("|");
+  const projectFiles = files.filter((file) => file.revertible);
   // Aggregate +/- across all changed files for the header summary.
   const totalInsertions = files.reduce((sum, f) => sum + (f.insertions ?? 0), 0);
   const totalDeletions = files.reduce((sum, f) => sum + (f.deletions ?? 0), 0);
@@ -380,7 +381,10 @@ export function SessionChangesInner({
     }
   }, [prTitle, prBody, projectRoot]);
 
-  const canCommit = loaded && !notARepo && !error && files.length > 0;
+  const canReadChanges = loaded && !notARepo && !error && files.length > 0;
+  const canReview = canReadChanges;
+  const canMutateAllFiles = canReadChanges && projectFiles.length === files.length;
+  const canCommit = canMutateAllFiles;
 
   // Commit review — start a NEW chat session whose opening prompt reviews the
   // working-tree changes. Dispatched through the cave:agents-new-chat bridge:
@@ -434,7 +438,7 @@ export function SessionChangesInner({
               leadingIcon="ph:git-diff"
               className="shrink-0"
               onClick={startReviewSession}
-              disabled={!canCommit}
+              disabled={!canReview}
               title="Start a new session that reviews these changes like a commit review"
               aria-label="Review changes in a new session"
             >
@@ -445,8 +449,12 @@ export function SessionChangesInner({
               size="sm"
               className="shrink-0"
               onClick={() => void saveCheckpoint()}
-              disabled={checkpointing || notARepo || !!error}
-              title="Save patch checkpoint"
+              disabled={checkpointing || !canMutateAllFiles}
+              title={
+                canMutateAllFiles
+                  ? "Save patch checkpoint"
+                  : "Checkpoint unavailable while changes outside this project are visible"
+              }
               aria-label="Save patch checkpoint"
             />
             <button
@@ -684,7 +692,13 @@ export function SessionChangesInner({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void commitChanges();
                 }}
-                placeholder={canCommit ? "Commit message" : "No changes to commit"}
+                placeholder={
+                  canCommit
+                    ? "Commit message"
+                    : projectFiles.length < files.length
+                      ? "Outside-project changes are read only"
+                      : "No changes to commit"
+                }
                 aria-label="Commit message"
                 disabled={!canCommit || committing}
                 className="focus-ring min-w-0 flex-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)] disabled:opacity-40"
