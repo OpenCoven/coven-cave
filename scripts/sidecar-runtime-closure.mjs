@@ -204,7 +204,9 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // attributing it. Ten files is about ten merges at this rate, so this will
   // recur; the durable fix is to size the headroom to the growth rate or stop the
   // closure growing, not to keep adding ten.
-  fileCount: 5_926,
+  // 2026-08-06 (#4341): CI measured 5,959 on Ubuntu (implies ~5,962 on Windows).
+  // Raised to 5,975 — Windows figure plus ~13-file headroom (~10+ merges).
+  fileCount: 5_975,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
