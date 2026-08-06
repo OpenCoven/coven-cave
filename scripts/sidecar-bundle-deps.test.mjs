@@ -77,7 +77,13 @@ for (const forbiddenRoot of [
 ]) {
   assert.match(closureSource, new RegExp(forbiddenRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `runtime verifier must exclude ${forbiddenRoot}`);
 }
-assert.match(closureSource, /fileCount: 5_926/, "runtime closure must retain combined cross-platform headroom");
+// Pins the VALUE so a raise is a deliberate, reviewed edit in two places rather
+// than a number quietly drifting up whenever CI complains. cave-oqawv moved it
+// from 5_926 to 6_109: Windows measured 5,959 (it governs, Ubuntu read 5,957)
+// and the headroom is now sized to a week of the measured ~21 files/day drift
+// instead of the ten files that lasted eleven hours. See the reasoning block at
+// the constant itself, and cave-0ia8h for stopping the growth.
+assert.match(closureSource, /fileCount: 6_109/, "runtime closure must retain combined cross-platform headroom");
 assert.match(closureSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "runtime closure must stay strictly below 200 MiB expanded");
 for (const runtimeFile of [
   "dist/compiled/webpack/webpack-lib.js",
