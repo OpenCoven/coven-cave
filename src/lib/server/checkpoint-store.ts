@@ -1173,6 +1173,9 @@ export function restoreCheckpointDirectoryQuarantineNoReplace(
       validateMetadata,
     );
     if (!published || !completeDirectorySnapshotsEqual(source, published)) {
+      if (!markCheckpointQuarantineConflict(store, quarantine, destination)) {
+        throw new Error("could not quarantine checkpoint restoration conflict");
+      }
       return false;
     }
     if (cleanupQuarantineMatchingDestination(store, quarantine, published)) {
@@ -1236,6 +1239,9 @@ export function restoreCheckpointDirectoryQuarantineNoReplace(
         options.restorationStage,
       )
     ) {
+      if (!markCheckpointQuarantineConflict(store, quarantine, destination)) {
+        throw new Error("could not quarantine checkpoint restoration conflict");
+      }
       return false;
     }
     published = true;
@@ -1256,6 +1262,16 @@ export function restoreCheckpointDirectoryQuarantineNoReplace(
     }
     return true;
   } catch {
+    if (
+      !published &&
+      fileExists(destination) &&
+      !fileExists(path.join(destination, DIRECTORY_RESERVATION_FILE)) &&
+      !fileExists(path.join(quarantine, QUARANTINE_CONFLICT_FILE))
+    ) {
+      if (!markCheckpointQuarantineConflict(store, quarantine, destination)) {
+        throw new Error("could not quarantine checkpoint restoration failure");
+      }
+    }
     return published;
   } finally {
     if (!published && fileExists(staging)) {
