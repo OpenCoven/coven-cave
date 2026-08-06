@@ -20,9 +20,11 @@ const previousCovenBin = process.env.COVEN_BIN;
 const previousCovenTestLog = process.env.COVEN_TEST_LOG;
 const previousCovenTestMode = process.env.COVEN_TEST_MODE;
 const previousCovenCancelReady = process.env.COVEN_TEST_CANCEL_READY;
+const previousTerminalCloseGrace = process.env.COVEN_CAVE_CHAT_TERMINAL_CLOSE_GRACE_MS;
 const previousCodexBin = process.env.CODEX_BIN;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
+process.env.COVEN_CAVE_CHAT_TERMINAL_CLOSE_GRACE_MS = "250";
 process.env.COVEN_TEST_LOG = log;
 
 // Every scenario in this file exercises the GENERIC `coven run codex`
@@ -119,6 +121,42 @@ async function readSse(response) {
     .map((line) => JSON.parse(line.slice("data: ".length)));
   return { body, events };
 }
+
+async function openSseStream(response) {
+  assert.equal(response.status, 200, await response.clone().text());
+  const reader = response.body?.getReader();
+  assert.ok(reader, "expected SSE body");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const events = [];
+
+  async function pump(predicate) {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return null;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const event = JSON.parse(line.slice("data: ".length));
+        events.push(event);
+        if (predicate(event, events)) return event;
+      }
+    }
+  }
+
+  return {
+    events,
+    readUntil: pump,
+    finish: async () => {
+      await pump(() => false);
+      return events;
+    },
+  };
+}
+
+
 
 async function waitForText(file, timeoutMs = 5_000) {
   const deadline = Date.now() + timeoutMs;
@@ -228,6 +266,31 @@ try {
   );
   assert.equal(envelopeEvents.find((event) => event.kind === "error"), undefined);
   assert.equal(envelopeEvents.findLast((event) => event.kind === "done")?.isError, false);
+
+  const envelopeLateStopSessionId = "coven-envelope-late-stop-session";
+  const envelopeLateStopRunId = "coven-envelope-late-stop-run";
+  const envelopeLateStopResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "opal",
+      prompt: "decode Coven envelope with late stop",
+      projectRoot: familiarWorkspace,
+      sessionId: envelopeLateStopSessionId,
+      runId: envelopeLateStopRunId,
+    }),
+  }));
+  const envelopeLateStopStream = await openSseStream(envelopeLateStopResponse);
+  await envelopeLateStopStream.readUntil(
+    (event) => event.kind === "progress" && event.id === "save-transcript" && event.status === "done",
+  );
+  assert.deepEqual(
+    requestChatStop(envelopeLateStopRunId),
+    { state: "transport-settled", terminalOutcome: "completed" },
+    "generic Codex late stop keeps the settled completed outcome visible until the terminal done path closes",
+  );
+  const envelopeLateStopEvents = await envelopeLateStopStream.finish();
+  assert.equal(envelopeLateStopEvents.findLast((event) => event.kind === "done")?.isError, false);
 
   // Coven is only the outer launch vehicle. A post-response cleanup failure
   // cannot rewrite a completed assistant/result pair into a failed turn.
@@ -442,6 +505,8 @@ try {
   else process.env.COVEN_TEST_MODE = previousCovenTestMode;
   if (previousCovenCancelReady === undefined) delete process.env.COVEN_TEST_CANCEL_READY;
   else process.env.COVEN_TEST_CANCEL_READY = previousCovenCancelReady;
+  if (previousTerminalCloseGrace === undefined) delete process.env.COVEN_CAVE_CHAT_TERMINAL_CLOSE_GRACE_MS;
+  else process.env.COVEN_CAVE_CHAT_TERMINAL_CLOSE_GRACE_MS = previousTerminalCloseGrace;
   if (previousCodexBin === undefined) delete process.env.CODEX_BIN;
   else process.env.CODEX_BIN = previousCodexBin;
   await rm(home, { recursive: true, force: true });

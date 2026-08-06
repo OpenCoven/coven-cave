@@ -166,8 +166,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /pushProgress\("save-transcript", "Transcript saved", "done"\);[\s\S]*?markChatRunProjectionSettled\(runHandle\);[\s\S]*?unregisterChatRun\(runHandle\);[\s\S]*?push\(\{\s*kind: "done"/,
-  "Gateway keeps projection live through transcript persistence, then settles projection and unregisters before done",
+  /const finishRegisteredStream = async \([\s\S]*?markChatRunProjectionSettled\(runHandle\);[\s\S]*?push\(doneEvent\);[\s\S]*?afterDone\?\.\(\);[\s\S]*?runBuffer\?\.finish\(\);[\s\S]*?await sleep\(CHAT_TERMINAL_CLOSE_GRACE_MS\);[\s\S]*?close\(\);[\s\S]*?await sleep\(CHAT_TERMINAL_CLOSE_GRACE_MS\);[\s\S]*?unregisterChatRun\(runHandle\);[\s\S]*?pushProgress\("save-transcript", "Transcript saved", "done"\);[\s\S]*?await finishRegisteredStream\(runHandle,\s*\{[\s\S]*?kind: "done"[\s\S]*?\}, \(\) => gatewayDispatch\.close\(\)\);/,
+  "Gateway keeps projection live through transcript persistence, emits done from shared terminal cleanup, then closes and unregisters",
 );
 // ── Tool-event fidelity (CHAT-D4-03 + CHAT-D4-04) ──────────────────────────
 // Source pins: the route must route BOTH tool-event sources through the

@@ -24,9 +24,11 @@ const previous = {
   OPENCLAW_TEST_CANCEL_READY: process.env.OPENCLAW_TEST_CANCEL_READY,
   OPENCLAW_EMBEDDED_LOCAL: process.env.OPENCLAW_EMBEDDED_LOCAL,
   OPENCLAW_GATEWAY_DISPATCH: process.env.OPENCLAW_GATEWAY_DISPATCH,
+  COVEN_CAVE_CHAT_TERMINAL_CLOSE_GRACE_MS: process.env.COVEN_CAVE_CHAT_TERMINAL_CLOSE_GRACE_MS,
 };
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
+process.env.COVEN_CAVE_CHAT_TERMINAL_CLOSE_GRACE_MS = "250";
 process.env.OPENCLAW_TEST_LOG = log;
 process.env.OPENCLAW_TEST_CANCEL_READY = cancelReady;
 delete process.env.OPENCLAW_GATEWAY_DISPATCH;
@@ -209,6 +211,32 @@ try {
   assert.equal(gatewayCalls.length, 1, "a working CLI Gateway turn must not fall through to embedded mode");
   assert.equal(gatewayCalls[0].local, false, "the default CLI invocation preserves paired Gateway routing");
 
+  await clearCalls();
+  const gatewayLateStopRunId = "gateway-late-stop-run";
+  const gatewayLateStopSessionId = "gateway-late-stop-session";
+  const gatewayLateStopResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "wren",
+      prompt: "preserve configured Gateway with late stop",
+      projectRoot: workspace,
+      sessionId: gatewayLateStopSessionId,
+      runId: gatewayLateStopRunId,
+    }),
+  }));
+  const gatewayLateStopStream = await openSseStream(gatewayLateStopResponse);
+  await gatewayLateStopStream.readUntil(
+    (event) => event.kind === "progress" && event.id === "save-transcript" && event.status === "done",
+  );
+  assert.deepEqual(
+    requestChatStop(gatewayLateStopRunId),
+    { state: "transport-settled", terminalOutcome: "completed" },
+    "Gateway late stop keeps the settled completed outcome visible until done/close cleanup",
+  );
+  const gatewayLateStopEvents = await gatewayLateStopStream.finish();
+  assert.equal(gatewayLateStopEvents.findLast((event) => event.kind === "done")?.isError, false);
+
   process.env.OPENCLAW_TEST_MODE = "gateway-credentials-then-local";
   await clearCalls();
   const recoveryEvents = await readSse(await send("recover local-only installation"));
@@ -302,6 +330,14 @@ try {
     (event) => event.kind === "assistant_chunk" && /returned no text/i.test(event.text ?? ""),
   );
   assert.ok(emptyDiagnostic, "empty OpenClaw output should emit the no-text diagnostic");
+  await emptyOutputStream.readUntil(
+    (event) => event.kind === "progress" && event.id === "save-transcript" && event.status === "done",
+  );
+  assert.deepEqual(
+    requestChatStop("openclaw-empty-output-run"),
+    { state: "transport-settled", terminalOutcome: "error" },
+    "late stop reports the persisted OpenClaw error outcome until the stream closes",
+  );
   const emptyOutputEvents = await emptyOutputStream.finish();
   assert.equal(emptyOutputEvents.findLast((event) => event.kind === "done")?.isError, true);
   assert.equal(
@@ -328,7 +364,16 @@ try {
       { state: "accepted", terminalOutcome: null },
       `${mode} should register with the shared stop registry`,
     );
-    const events = await readSse(response);
+    const stream = await openSseStream(response);
+    await stream.readUntil(
+      (event) => event.kind === "progress" && event.id === "save-transcript" && event.status === "done",
+    );
+    assert.deepEqual(
+      requestChatStop(runId),
+      { state: "transport-settled", terminalOutcome: "cancelled" },
+      `${mode} late stop should expose the settled cancelled outcome before done closes the stream`,
+    );
+    const events = await stream.finish();
     assert.equal(events.find((event) => event.kind === "error"), undefined, `${mode} stop never emits an error event`);
     assert.equal(
       events.find((event) => event.kind === "progress" && event.id === "openclaw-protocol"),

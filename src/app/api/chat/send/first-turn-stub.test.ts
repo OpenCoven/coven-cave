@@ -51,8 +51,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /pushProgress\("save-transcript", "Transcript saved", "done"\);[\s\S]*?\}\s*\n\s*markChatRunProjectionSettled\(runHandle\);[\s\S]*?push\(\{\s*kind: "done"[\s\S]*?unregisterChatRun\(runHandle\);/,
-  "general transports keep the session live through persistence, then settle projection before final unregister/cleanup",
+  /const finishRegisteredStream = async \([\s\S]*?markChatRunProjectionSettled\(runHandle\);[\s\S]*?push\(doneEvent\);[\s\S]*?afterDone\?\.\(\);[\s\S]*?await sleep\(CHAT_TERMINAL_CLOSE_GRACE_MS\);[\s\S]*?close\(\);[\s\S]*?await sleep\(CHAT_TERMINAL_CLOSE_GRACE_MS\);[\s\S]*?unregisterChatRun\(runHandle\);[\s\S]*?pushProgress\("save-transcript", "Transcript saved", "done"\);[\s\S]*?\}\s*\n\s*await finishRegisteredStream\(runHandle,\s*\{[\s\S]*?kind: "done"[\s\S]*?runBuffer\?\.finish\(\);/,
+  "general transports keep the session live through persistence, emit done before stream closure, then unregister in final cleanup",
 );
 
 assert.match(
@@ -141,8 +141,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /pushProgress\("save-transcript", "Transcript saved", "done"\);[\s\S]*?markChatRunProjectionSettled\(runHandle\);[\s\S]*?unregisterChatRun\(runHandle\);[\s\S]*?push\(\{\s*kind: "done"/,
-  "OpenClaw keeps projection live through persistence, then settles projection/unregisters before the final done event",
+  /const finishRegisteredStream = async \([\s\S]*?markChatRunProjectionSettled\(runHandle\);[\s\S]*?push\(doneEvent\);[\s\S]*?afterDone\?\.\(\);[\s\S]*?runBuffer\?\.finish\(\);[\s\S]*?await sleep\(CHAT_TERMINAL_CLOSE_GRACE_MS\);[\s\S]*?close\(\);[\s\S]*?await sleep\(CHAT_TERMINAL_CLOSE_GRACE_MS\);[\s\S]*?unregisterChatRun\(runHandle\);[\s\S]*?pushProgress\("save-transcript", "Transcript saved", "done"\);[\s\S]*?await finishRegisteredStream\(runHandle,\s*\{[\s\S]*?kind: "done"/,
+  "OpenClaw keeps projection live through persistence, emits done while the settled registry still answers late Stop, then unregisters after stream cleanup",
 );
 
 assert.match(

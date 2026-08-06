@@ -307,6 +307,10 @@ const CHAT_DETACH_MAX_MS = Math.max(
   60_000,
   Number(process.env.COVEN_CAVE_CHAT_DETACH_MAX_MS ?? 10 * 60_000) || 10 * 60_000,
 );
+const CHAT_TERMINAL_CLOSE_GRACE_MS = Math.max(
+  20,
+  Number(process.env.COVEN_CAVE_CHAT_TERMINAL_CLOSE_GRACE_MS ?? 20) || 20,
+);
 
 type LocalRuntimePlan = LocalRuntimeCapabilityPlan & {
   command: string;
@@ -740,13 +744,31 @@ function openClawChatResponse(args: {
         });
       const heartbeat = startChatSseHeartbeat(controller, () => closed || args.req.signal.aborted);
       const close = () => {
-        if (closed) return;
-        closed = true;
         clearInterval(heartbeat);
+        const alreadyClosed = closed;
+        closed = true;
+        if (alreadyClosed) return;
         try {
           controller.close();
         } catch {
           /* already */
+        }
+      };
+      const finishRegisteredStream = async (
+        runHandle: ChatRunHandle,
+        doneEvent: StreamEvent,
+        afterDone?: () => void,
+      ) => {
+        markChatRunProjectionSettled(runHandle);
+        try {
+          push(doneEvent);
+          afterDone?.();
+          runBuffer?.finish();
+          await sleep(CHAT_TERMINAL_CLOSE_GRACE_MS);
+          close();
+          await sleep(CHAT_TERMINAL_CLOSE_GRACE_MS);
+        } finally {
+          unregisterChatRun(runHandle);
         }
       };
 
@@ -1146,20 +1168,14 @@ function openClawChatResponse(args: {
           pushProgress("save-transcript", "Transcript save failed", "error");
           push({ kind: "error", code: "transcript_save_failed", message: "Cave could not save the transcript." });
         }
-        markChatRunProjectionSettled(runHandle);
-        unregisterChatRun(runHandle);
-        push({
+        await finishRegisteredStream(runHandle, {
           kind: "done",
           durationMs,
           isError,
           sessionId: conversationId,
           ...(cancelledByUser ? { cancelled: true } : {}),
           responseMetadata: terminalResponseMetadata,
-        });
-        gatewayDispatch.close();
-        runBuffer?.finish();
-        await sleep(20);
-        close();
+        }, () => gatewayDispatch.close());
         return;
       }
       const openclawLaunch = openClawLaunchCommand();
@@ -1281,18 +1297,14 @@ function openClawChatResponse(args: {
         const failure = localRuntimeLaunchError("openclaw", err.code);
         pushProgress("openclaw-response", "OpenClaw bridge failed", "error", failure.message);
         push({ kind: "error", code: failure.code, message: failure.message });
-        push({
+        args.req.signal.removeEventListener("abort", onAbort);
+        if (detachKillTimer != null) clearTimeout(detachKillTimer);
+        void finishRegisteredStream(runHandle, {
           kind: "done",
           durationMs: Date.now() - startedAt,
           isError: true,
           responseMetadata,
         });
-        args.req.signal.removeEventListener("abort", onAbort);
-        if (detachKillTimer != null) clearTimeout(detachKillTimer);
-        markChatRunProjectionSettled(runHandle);
-        unregisterChatRun(runHandle);
-        runBuffer?.finish();
-        close();
       };
       const attachChild = (launchedChild: ReturnType<typeof spawn>) => {
         launchedChild.stdout?.on("data", (data: Buffer) => {
@@ -1515,9 +1527,7 @@ function openClawChatResponse(args: {
           }
         }
 
-        markChatRunProjectionSettled(runHandle);
-        unregisterChatRun(runHandle);
-        push({
+        await finishRegisteredStream(runHandle, {
           kind: "done",
           durationMs,
           isError,
@@ -1525,9 +1535,6 @@ function openClawChatResponse(args: {
           ...(cancelledByUser ? { cancelled: true } : {}),
           responseMetadata: terminalResponseMetadata,
         });
-        runBuffer?.finish();
-        await sleep(20);
-        close();
       }
       pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
       child = spawnChild(executionMode);
@@ -2923,13 +2930,30 @@ export async function POST(req: Request) {
       };
       const heartbeat = startChatSseHeartbeat(controller, () => closed || req.signal.aborted);
       const close = () => {
-        if (closed) return;
-        closed = true;
         clearInterval(heartbeat);
+        const alreadyClosed = closed;
+        closed = true;
+        if (alreadyClosed) return;
         try {
           controller.close();
         } catch {
           /* already */
+        }
+      };
+      const finishRegisteredStream = async (
+        runHandle: ChatRunHandle,
+        doneEvent: StreamEvent,
+        afterDone?: () => void,
+      ) => {
+        markChatRunProjectionSettled(runHandle);
+        try {
+          push(doneEvent);
+          afterDone?.();
+          await sleep(CHAT_TERMINAL_CLOSE_GRACE_MS);
+          close();
+          await sleep(CHAT_TERMINAL_CLOSE_GRACE_MS);
+        } finally {
+          unregisterChatRun(runHandle);
         }
       };
 
@@ -5549,8 +5573,7 @@ export async function POST(req: Request) {
         }
       }
 
-      markChatRunProjectionSettled(runHandle);
-      push({
+      await finishRegisteredStream(runHandle, {
         kind: "done",
         durationMs: result.duration_ms,
         isError: result.is_error,
@@ -5559,16 +5582,14 @@ export async function POST(req: Request) {
         ...(result.usage ? { usage: result.usage } : {}),
         ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
         responseMetadata: terminalResponseMetadata,
+      }, () => {
+        runBuffer?.finish();
+        // Best-effort temp cleanup: the harness child process has already
+        // exited (including any resume retry), so nothing can still be reading
+        // the saved images. Failures just leave files in tmpdir.
+        cleanupImageTempFiles(imageFilePaths);
+        if (detachKillTimer != null) clearTimeout(detachKillTimer);
       });
-      // Best-effort temp cleanup: the harness child process has already
-      // exited (including any resume retry), so nothing can still be reading
-      // the saved images. Failures just leave files in tmpdir.
-      cleanupImageTempFiles(imageFilePaths);
-      if (detachKillTimer != null) clearTimeout(detachKillTimer);
-      unregisterChatRun(runHandle);
-      runBuffer?.finish();
-      await sleep(20);
-      close();
     },
   });
 
