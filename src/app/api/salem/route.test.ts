@@ -17,11 +17,21 @@ function sseResponse(events: unknown[]): Response {
   }), { status: 200 });
 }
 
-test("Salem strips complete and partial attention directives from local synthesis", async () => {
+test("Salem uses pending marker handling only while local synthesis is streaming", async () => {
   try {
-    for (const chunks of [
-      ["Grounded answer.\n", '<coven:attention reason="decision" />'],
-      ["Grounded answer.\n<cov", "en:attention rea"],
+    for (const { chunks, expected } of [
+      {
+        chunks: ["Grounded answer.\n", '<coven:attention reason="decision" />'],
+        expected: "Grounded answer.",
+      },
+      {
+        chunks: ["Grounded answer.\n<cov", "en:attention rea"],
+        expected: "Grounded answer.\n<coven:attention rea",
+      },
+      {
+        chunks: ['<coven:attention" reason="decision">', "AFTER"],
+        expected: "AFTER",
+      },
     ]) {
       globalThis.fetch = (async (input: string | URL) => {
         const url = String(input);
@@ -48,8 +58,7 @@ test("Salem strips complete and partial attention directives from local synthesi
       const json = await response.json();
       assert.equal(response.status, 200);
       assert.equal(json.source, "local-familiar");
-      assert.equal(json.reply, "Grounded answer.");
-      assert.doesNotMatch(json.reply, /<cov/);
+      assert.equal(json.reply, expected);
     }
   } finally {
     globalThis.fetch = originalFetch;

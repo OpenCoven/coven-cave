@@ -223,6 +223,46 @@ test("pending extraction keeps malformed nonprefix tails visible", () => {
   );
 });
 
+test("malformed quoted tags never consume following settled prose or fabricate a request", () => {
+  for (const text of [
+    '<coven:attention" reason="decision">AFTER',
+    '<coven:attention" reason="decision" />AFTER',
+    '<coven:attention reason="decision"" />AFTER',
+  ]) {
+    assert.deepEqual(
+      extractChatAttentionMarker(text, { pending: true }),
+      { visible: "AFTER", request: null },
+      `pending extraction recovers after ${JSON.stringify(text)}`,
+    );
+    assert.deepEqual(
+      extractChatAttentionMarker(text),
+      { visible: "AFTER", request: null },
+      `settled extraction recovers after ${JSON.stringify(text)}`,
+    );
+    assert.deepEqual(
+      extractIncompleteChatAttentionMarker(text),
+      { visible: "AFTER", request: null },
+      `interrupted extraction recovers after ${JSON.stringify(text)}`,
+    );
+  }
+});
+
+test("only a still-possible quoted marker tail stays hidden while pending", () => {
+  const text = '<coven:attention reason="decision>AFTER';
+  assert.deepEqual(extractChatAttentionMarker(text, { pending: true }), {
+    visible: "",
+    request: null,
+  });
+  assert.deepEqual(extractChatAttentionMarker(text), {
+    visible: "AFTER",
+    request: null,
+  });
+  assert.deepEqual(extractIncompleteChatAttentionMarker(text), {
+    visible: "AFTER",
+    request: null,
+  });
+});
+
 test("incomplete extraction strips only marker-like tails across every fragmented boundary", () => {
   const markerStart = "<coven:attention";
   for (let length = 2; length <= markerStart.length; length++) {

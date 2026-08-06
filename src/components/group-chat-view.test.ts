@@ -560,6 +560,11 @@ test("coven bubbles strip attention markers before next-paths/delegations/Messag
     /ev\.kind === "assistant_chunk"[\s\S]{0,240}kind: "assistant_replace", text: attentionText\.append\(ev\.text\)[\s\S]{0,240}ev\.kind === "assistant_replace"[\s\S]{0,180}attentionText\.replace\(ev\.text\)/,
     "chunk and replacement frames become authoritative safe replacements before transcript storage",
   );
+  assert.match(
+    view,
+    /kind: "assistant_replace", text: attentionText\.settled\(\)/,
+    "the final group reply switches from pending to settled marker extraction",
+  );
   // The transcript is already attention-safe before render; next-paths then
   // feed delegation extraction and MessageBubble.
   assert.match(

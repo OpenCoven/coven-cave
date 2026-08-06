@@ -8,11 +8,12 @@ import { readFileSync } from "node:fs";
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const carousel = readFileSync(new URL("./image-carousel.tsx", import.meta.url), "utf8");
 const attachmentCards = readFileSync(new URL("./chat-attachment-cards.tsx", import.meta.url), "utf8");
+const renderedText = readFileSync(new URL("../lib/chat-rendered-text.ts", import.meta.url), "utf8");
 
 // ── chat-view: imports and render paths ─────────────────────────────────────
 assert.match(
   chatView,
-  /import \{ imageCarouselKey, sliceImageBlocks, stripImageMarkers \} from "@\/lib\/image-blocks"/,
+  /import \{ imageCarouselKey, sliceImageBlocks \} from "@\/lib\/image-blocks"/,
   "chat-view imports the image-blocks lib",
 );
 assert.match(
@@ -28,23 +29,19 @@ assert.match(
   /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(splitSegmentsForImages\(\[\{ kind: "text", text: visibleWithGh \}\]\), artifactCtx\)/,
   "settled path splits images before GitHub/artifact cards, so one group deck can span either boundary",
 );
-// Marker pipeline (cave-zs85n): skill -> auto-status -> attention -> next-path
-// extraction all see the marker-bearing text before image/GitHub stripping
-// runs, and that strip is unconditional and LAST — so raw image tags never
-// flash on a pending OR a settled turn.
 assert.match(
   chatView,
-  /const \{ visible: visibleWithGh, suggestions: nextPaths \} = extractNextPaths\(attentionSplit\.visible\)/,
-  "next-path extraction (fed by attention, fed by auto-status, fed by skill) runs before image/GitHub markers are stripped",
+  /extractChatRenderedText\(turn\.text, \{ pending: Boolean\(turn\.pending\) \}\)/,
+  "pending and settled image text uses the shared rendered-text projection",
 );
 assert.match(
-  chatView,
-  /const visible = stripImageMarkers\(stripGitHubMarkers\(visibleWithGh\)\)/,
+  renderedText,
+  /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);[\s\S]*visible: stripImageMarkers\(stripGitHubMarkers\(nextPathSplit\.visible\)\)/,
   "image markers strip unconditionally and LAST, after skill/auto-status/attention/next-path extraction — raw tags never flash on pending OR settled turns",
 );
 assert.doesNotMatch(
-  chatView,
-  /turn\.pending\s*\?\s*stripImageMarkers\(stripGitHubMarkers\(/,
+  renderedText,
+  /pending\s*\?\s*stripImageMarkers\(stripGitHubMarkers\(/,
   "image stripping must not be gated behind turn.pending — it runs unconditionally on both streaming and settled turns",
 );
 assert.match(

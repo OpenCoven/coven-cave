@@ -128,7 +128,6 @@ import { LinkedContextRow } from "@/components/composer-linked-work-actions";
 import { ComposerContextChips } from "@/components/composer-context-pill";
 import {
   cleanImageDataUrl,
-  extractAgentAttachmentMarkers,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
@@ -192,15 +191,16 @@ import {
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
 import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
-import { extractNextPaths, type NextPath } from "@/lib/next-paths";
+import type { NextPath } from "@/lib/next-paths";
 import { FollowUpCards } from "@/components/chat-follow-up-cards";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
-import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
-import { imageCarouselKey, sliceImageBlocks, stripImageMarkers } from "@/lib/image-blocks";
-import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
-import { extractAutoStatusMarkers } from "@/lib/auto-status-blocks";
-import { extractChatAttentionMarker } from "@/lib/chat-attention-marker";
-import { splitReasoning } from "@/lib/chat-reasoning";
+import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
+import { imageCarouselKey, sliceImageBlocks } from "@/lib/image-blocks";
+import { parseSkillInvocation } from "@/lib/skill-blocks";
+import {
+  chatTurnVisibleText,
+  extractChatRenderedText,
+} from "@/lib/chat-rendered-text";
 import {
   AUTO_BRIEFED_KEY,
   clearAutoMission,
@@ -3219,9 +3219,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       turns.map((t) => ({
         id: t.id,
         role: t.role,
-        // Visible text only: assistant turns may carry inline <thinking>
-        // blocks in `text`; match what the transcript actually renders.
-        text: t.role === "assistant" ? splitReasoning(t.text).visible : t.text,
+        // Match the exact prose projection used by the transcript, excluding
+        // reasoning and every non-visible control marker.
+        text: chatTurnVisibleText(t),
       })),
       findDebouncedQuery,
       { matchCase: findMatchCase, wholeWord: findWholeWord },
@@ -3692,7 +3692,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return null;
-    return extractNextPaths(last.text).suggestions.find((path) => path.kind === "reply") ?? null;
+    return extractChatRenderedText(last.text).nextPaths.find((path) => path.kind === "reply") ?? null;
   }, [activePath]);
 
   // Chat-revamp 1b: the LATEST settled turn's follow-up suggestions render as
@@ -3707,7 +3707,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return empty;
-    const suggestions = extractNextPaths(splitReasoning(last.text).visible).suggestions;
+    const suggestions = extractChatRenderedText(last.text).nextPaths;
     return suggestions.length ? { turnId: last.id, suggestions } : empty;
   }, [activePath]);
 
@@ -5580,7 +5580,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // comparator that ignores callback identity, so a captured hook
           // value could go stale (chat-view memo notes below).
           : userDisplayName(readUserProfileSnapshot()?.profile);
-    const source = turn.role === "assistant" ? extractNextPaths(splitReasoning(turn.text).visible).visible : turn.text;
+    const source = chatTurnVisibleText(turn);
     // A quote is a passage the reader selected inside the Expand reader; with
     // none, the whole turn is the subject, exactly as the Reply action means.
     const snippet = buildReplySnippet(quote ?? source);
@@ -5597,8 +5597,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // captures a stale `replyToTurn`.
     let canReply = replyableTurnCache.get(turn);
     if (canReply === undefined) {
-      const source =
-        turn.role === "assistant" ? extractNextPaths(splitReasoning(turn.text).visible).visible : turn.text;
+      const source = chatTurnVisibleText(turn);
       canReply = source.trim().length > 0;
       replyableTurnCache.set(turn, canReply);
     }
@@ -8378,40 +8377,14 @@ function TurnRowImpl({
     );
   }
 
-  // Hide raw `coven:attachment` marker blocks from the live-streamed text. The
-  // server strips them from the persisted text and streams the parsed files as
-  // `attachment` events; this keeps the in-flight turn clean before reload.
-  const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(turn.text).text);
-  const inlineReasoning = reasoningSplit.reasoning;
-  // Skill markers extract on BOTH paths — the whole point is live "which
-  // skill, what stage" visibility while the agent works (design §5). The
-  // extraction also strips partial tails so raw tags never flash. This reads
-  // reasoningSplit.visible DIRECTLY: skill/auto-status/attention/next-path
-  // extraction must all see the full marker-bearing text before anything
-  // strips GitHub/image markers out from under them (see the GitHub/image
-  // cleanup below, which is the only place that happens now).
-  const skillSplit = extractSkillMarkers(reasoningSplit.visible);
-  // Auto-mission status card (design mirrors skill markers): extracted the
-  // same way, on both the streaming and settled path, so the phase chip
-  // (clarifying/working/blocked/done) updates live.
-  const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);
-  // Explicit human-attention marker (chat sidebar attention task 3): strip on
-  // BOTH the streaming and settled paths, same as skill/auto-status above, so
-  // a complete or partial `<coven:attention …>` tag never flashes as raw text.
-  // Runs after skill/auto-status (their own markers must resolve first) and
-  // before next-path/GitHub/image stripping (those must never see a marker
-  // still in the text). No inline card renders here — attention surfaces in
-  // the sidebar, derived from persisted `attentionRequest` metadata.
-  const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible, { pending: Boolean(turn.pending) });
-  const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(attentionSplit.visible);
-  // GitHub/image markers: strip complete + partial `<coven:github…>` /
-  // `<coven:image…>` tags out of the PROSE fallback so they never flash as
-  // raw text on either path (cards mount on settle via visibleWithGh below,
-  // which still carries the markers for splitSegmentsForGitHub/Images to
-  // replace with cards). Runs unconditionally, LAST, after next-path
-  // extraction — never before skill/auto-status/attention/next-path have all
-  // seen the marker-bearing text.
-  const visible = stripImageMarkers(stripGitHubMarkers(visibleWithGh));
+  const {
+    visible,
+    cardText: visibleWithGh,
+    inlineReasoning,
+    skillUpdates,
+    autoStatusUpdate,
+    nextPaths,
+  } = extractChatRenderedText(turn.text, { pending: Boolean(turn.pending) });
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
   // CHAT-D12-01: while this turn's own live indicator is showing (pending, no
@@ -8643,9 +8616,9 @@ function TurnRowImpl({
             {/* Skill stage cards (design §5): one per skill name per turn,
                 updated in place by repeated <coven:skill> markers — live
                 while streaming, settled state after. */}
-            {skillSplit.updates.length ? (
+            {skillUpdates.length ? (
               <div className="mt-2 space-y-1.5">
-                {skillSplit.updates.map((u) => (
+                {skillUpdates.map((u) => (
                   <SkillStageCard key={u.name} name={u.name} stage={u.stage} note={u.note} />
                 ))}
               </div>
@@ -8653,9 +8626,9 @@ function TurnRowImpl({
             {/* Auto-mission status card: one per turn, updated in place by
                 repeated <coven:auto-status> markers — the human-visible half
                 of the /auto watcher above that fires the blocked/done ping. */}
-            {autoStatusSplit.update ? (
+            {autoStatusUpdate ? (
               <div className="mt-2">
-                <AutoStatusCard state={autoStatusSplit.update.state} note={autoStatusSplit.update.note} />
+                <AutoStatusCard state={autoStatusUpdate.state} note={autoStatusUpdate.note} />
               </div>
             ) : null}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}

@@ -143,10 +143,23 @@ try {
   assert.equal(partialAttention.code, "<div>safe</div>");
   assert.equal(
    partialAttention.text,
-   "```html\n<div>safe</div>\n```\n",
-   "an unterminated marker cannot enter settled Canvas text",
+   "```html\n<div>safe</div>\n```\n<coven:attention rea",
+   "settled Canvas text preserves an incomplete marker that never became valid",
   );
   assert.ok(streamed.every((value) => !value.includes("<cov")));
+
+  globalThis.fetch = async () => responseFor([
+   { kind: "assistant_chunk", text: '<coven:attention" reason="decision">AFTER\n```html\n<div>safe</div>\n```' },
+   { kind: "done", sessionId: "canvas-malformed-quote" },
+  ]);
+  const malformedQuotedAttention = await generateArtifactCode({ familiarId: "nova", prompt: "build" });
+  assert.equal(malformedQuotedAttention.failure, null);
+  assert.equal(malformedQuotedAttention.code, "<div>safe</div>");
+  assert.equal(
+   malformedQuotedAttention.text,
+   "AFTER\n```html\n<div>safe</div>\n```",
+   "malformed quoted markup cannot truncate following Canvas prose",
+  );
 
   globalThis.fetch = async (_url, init) => {
    sentBody = JSON.parse(init.body);

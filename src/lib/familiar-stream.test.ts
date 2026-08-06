@@ -290,7 +290,7 @@ describe("streamFamiliarText", () => {
     assert.equal(text, "Pick one.\n", "the completed marker is stripped from the final text");
   });
 
-  it("never returns an unterminated attention marker after the stream settles", async () => {
+  it("hides a possible marker tail while streaming but preserves it after settlement", async () => {
     globalThis.fetch = (async () => sseResponse([
       frame({ kind: "assistant_chunk", text: "Still useful.\n<coven:attention rea" }),
       frame({ kind: "done" }),
@@ -303,8 +303,20 @@ describe("streamFamiliarText", () => {
       onText: (value) => seen.push(value),
     });
     assert.equal(error, null);
-    assert.equal(text, "Still useful.\n");
+    assert.equal(text, "Still useful.\n<coven:attention rea");
     assert.ok(seen.every((value) => !value.includes("<coven:")));
+  });
+
+  it("preserves prose after malformed quoted attention markup", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: '<coven:attention" reason="decision">' }),
+      frame({ kind: "assistant_chunk", text: "AFTER" }),
+      frame({ kind: "done" }),
+    ])) as typeof fetch;
+
+    const { text, error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
+    assert.equal(error, null);
+    assert.equal(text, "AFTER");
   });
 
   it("keeps a fenced literal attention marker visible (never a live request)", async () => {

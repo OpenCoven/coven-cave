@@ -46,6 +46,7 @@ export function extractChatAttentionMarker(
     }
     return "";
   });
+  visible = stripMalformedCompleteAttentionMarkers(visible, Boolean(options.pending));
 
   const pendingTail = options.pending ? trailingMarkerPrefixStart(visible) : -1;
   if (
@@ -121,7 +122,79 @@ function stripIncompleteMarkerTail(text: string): string {
 function isPotentialAttentionMarkerFragment(fragment: string): boolean {
   if (ATTENTION_MARKER_START.startsWith(fragment)) return true;
   if (!fragment.startsWith(ATTENTION_MARKER_START)) return false;
-  return /\W/.test(fragment[ATTENTION_MARKER_START.length] ?? "");
+  let cursor = ATTENTION_MARKER_START.length;
+  if (cursor === fragment.length) return true;
+  if (!/\s|\//.test(fragment[cursor])) return false;
+
+  while (cursor < fragment.length) {
+    while (cursor < fragment.length && /\s/.test(fragment[cursor])) cursor += 1;
+    if (cursor === fragment.length) return true;
+    if (fragment[cursor] === "/") {
+      cursor += 1;
+      while (cursor < fragment.length && /\s/.test(fragment[cursor])) cursor += 1;
+      return cursor === fragment.length;
+    }
+
+    if (!/[A-Za-z_:]/.test(fragment[cursor])) return false;
+    cursor += 1;
+    while (cursor < fragment.length && /[A-Za-z0-9:._-]/.test(fragment[cursor])) cursor += 1;
+    while (cursor < fragment.length && /\s/.test(fragment[cursor])) cursor += 1;
+    if (cursor === fragment.length) return true;
+    if (fragment[cursor] !== "=") return false;
+    cursor += 1;
+    while (cursor < fragment.length && /\s/.test(fragment[cursor])) cursor += 1;
+    if (cursor === fragment.length) return true;
+    if (fragment[cursor] !== '"') return false;
+    cursor += 1;
+    const closeQuote = fragment.indexOf('"', cursor);
+    if (closeQuote === -1) return true;
+    cursor = closeQuote + 1;
+    if (cursor < fragment.length && !/\s|\//.test(fragment[cursor])) return false;
+  }
+  return true;
+}
+
+function stripMalformedCompleteAttentionMarkers(text: string, pending: boolean): string {
+  if (!text.includes(ATTENTION_MARKER_START)) return text;
+  const codeRanges = markdownCodeRanges(text);
+  let out = "";
+  let cursor = 0;
+  let start = text.indexOf(ATTENTION_MARKER_START);
+
+  while (start !== -1) {
+    if (codeRanges.some(([rangeStart, rangeEnd]) => start >= rangeStart && start < rangeEnd)) {
+      start = text.indexOf(ATTENTION_MARKER_START, start + ATTENTION_MARKER_START.length);
+      continue;
+    }
+    const boundary = text[start + ATTENTION_MARKER_START.length] ?? "";
+    if (boundary && /[A-Za-z0-9:_-]/.test(boundary)) {
+      start = text.indexOf(ATTENTION_MARKER_START, start + ATTENTION_MARKER_START.length);
+      continue;
+    }
+
+    const lineEnd = text.indexOf("\n", start);
+    const rawEnd = text.indexOf(">", start + ATTENTION_MARKER_START.length);
+    if (rawEnd === -1 || (lineEnd !== -1 && rawEnd > lineEnd)) {
+      start = text.indexOf(ATTENTION_MARKER_START, start + ATTENTION_MARKER_START.length);
+      continue;
+    }
+    const protectedRange = codeRanges.find(([rangeStart]) => rangeStart > start && rangeStart < rawEnd);
+    if (protectedRange) {
+      start = text.indexOf(ATTENTION_MARKER_START, protectedRange[1]);
+      continue;
+    }
+
+    const fragment = text.slice(start);
+    if (pending && isPotentialAttentionMarkerFragment(fragment)) {
+      start = text.indexOf(ATTENTION_MARKER_START, start + ATTENTION_MARKER_START.length);
+      continue;
+    }
+    out += text.slice(cursor, start);
+    cursor = rawEnd + 1;
+    start = text.indexOf(ATTENTION_MARKER_START, cursor);
+  }
+
+  return out + text.slice(cursor);
 }
 
 function parseAttentionReason(marker: string, rawAttrs: string): string | null {

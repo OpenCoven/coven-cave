@@ -408,21 +408,20 @@ function inRanges(ranges: Array<[number, number]>, index: number): boolean {
  * briefly activate protocol controls before their closing delimiter arrives. */
 export function markdownCodeRanges(text: string): Array<[number, number]> {
   const fences = fencedRanges(text);
-  const rendererFences = rendererFenceRanges(text);
   const inline: Array<[number, number]> = [];
   let cursor = 0;
-  let rendererFenceIndex = 0;
+  let fenceIndex = 0;
 
   while (cursor < text.length) {
     while (
-      rendererFenceIndex < rendererFences.length
-      && cursor >= rendererFences[rendererFenceIndex][1]
+      fenceIndex < fences.length
+      && cursor >= fences[fenceIndex][1]
     ) {
-      rendererFenceIndex += 1;
+      fenceIndex += 1;
     }
-    const rendererFence = rendererFences[rendererFenceIndex];
-    if (rendererFence && cursor >= rendererFence[0]) {
-      cursor = rendererFence[1];
+    const fence = fences[fenceIndex];
+    if (fence && cursor >= fence[0]) {
+      cursor = fence[1];
       continue;
     }
     if (text[cursor] !== "`") {
@@ -435,16 +434,16 @@ export function markdownCodeRanges(text: string): Array<[number, number]> {
     const delimiterLength = cursor - start;
     let closingEnd = -1;
     let search = cursor;
-    let searchFenceIndex = rendererFenceIndex;
+    let searchFenceIndex = fenceIndex;
 
     while (search < text.length) {
       while (
-        searchFenceIndex < rendererFences.length
-        && search >= rendererFences[searchFenceIndex][1]
+        searchFenceIndex < fences.length
+        && search >= fences[searchFenceIndex][1]
       ) {
         searchFenceIndex += 1;
       }
-      const searchFence = rendererFences[searchFenceIndex];
+      const searchFence = fences[searchFenceIndex];
       if (searchFence && search >= searchFence[0]) {
         search = searchFence[1];
         continue;

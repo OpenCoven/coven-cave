@@ -19,15 +19,19 @@ const chatView = await readFile(
   new URL("../../../../components/chat-view.tsx", import.meta.url),
   "utf8",
 );
+const renderedText = await readFile(
+  new URL("../../../../lib/chat-rendered-text.ts", import.meta.url),
+  "utf8",
+);
 
-function chatViewAttentionPipeline() {
-  const start = chatView.indexOf(
-    "const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(turn.text).text);",
+function renderedTextAttentionPipeline() {
+  const start = renderedText.indexOf(
+    "const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(text).text);",
   );
-  const end = chatView.indexOf("const reasoning = turn.reasoning?.trim() || inlineReasoning;");
-  assert.notEqual(start, -1, "expected the chat-view marker pipeline to start at reasoningSplit");
-  assert.notEqual(end, -1, "expected the chat-view marker pipeline to end before reasoning fallback");
-  return chatView.slice(start, end);
+  const end = renderedText.indexOf("\nexport function chatTurnVisibleText", start);
+  assert.notEqual(start, -1, "expected the shared marker pipeline to start at reasoningSplit");
+  assert.notEqual(end, -1, "expected the shared marker pipeline to end before the turn helper");
+  return renderedText.slice(start, end);
 }
 
 test("route imports the attention marker parser", () => {
@@ -147,39 +151,39 @@ test("existing response metadata fields are preserved through the conditional cl
   }
 });
 
-test("ChatView imports the attention marker parser and strips it before rendering", () => {
+test("ChatView renders through the shared attention-aware text projection", () => {
   assert.match(
     chatView,
-    /import \{ extractChatAttentionMarker \} from "@\/lib\/chat-attention-marker";/,
-    "chat-view should strip explicit attention markers the same way it strips skill/auto-status markers",
+    /extractChatRenderedText,[\s\S]*from "@\/lib\/chat-rendered-text";/,
+    "chat-view should use the shared rendered-text projection",
   );
   assert.match(
-    chatView,
-    /import \{ splitReasoning \} from "@\/lib\/chat-reasoning";/,
-    "chat-view and persistence must share one reasoning splitter",
+    renderedText,
+    /import \{ extractChatAttentionMarker \} from "\.\/chat-attention-marker\.ts";/,
+    "the shared projection should strip explicit attention markers",
   );
   assert.doesNotMatch(
     chatView,
-    /function splitReasoning\(/,
-    "ChatView must not drift into a duplicate reasoning parser",
+    /extractChatAttentionMarker\(/,
+    "ChatView must not drift into a duplicate attention pipeline",
   );
 });
 
-test("ChatView extracts attention after skill/auto-status and before next-path/GitHub/image stripping", () => {
+test("the shared projection extracts attention after skill/auto-status and before next-path/GitHub/image stripping", () => {
   // Pinned as a flow (per the skill-stage-card-wiring precedent above this
   // file): what must hold is that autoStatusSplit's visible text feeds the
   // attention extractor, and the attention-stripped visible feeds
   // extractNextPaths — never the reverse and never skipped, so a complete OR
   // partial `<coven:attention>` tag can't flash mid-stream.
-  const pipeline = chatViewAttentionPipeline();
+  const pipeline = renderedTextAttentionPipeline();
   const autoStatusIndex = pipeline.indexOf(
     "const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);",
   );
   const attentionIndex = pipeline.indexOf(
-    "const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible, { pending: Boolean(turn.pending) });",
+    "const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible, {",
   );
   const nextPathsIndex = pipeline.indexOf(
-    "const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(attentionSplit.visible);",
+    "const nextPathSplit = extractNextPaths(attentionSplit.visible);",
   );
   assert.notEqual(autoStatusIndex, -1, "auto-status extraction should read skillSplit.visible");
   assert.notEqual(attentionIndex, -1, "attention extraction should read autoStatusSplit.visible");
@@ -189,27 +193,27 @@ test("ChatView extracts attention after skill/auto-status and before next-path/G
     "attention extraction must run strictly between auto-status extraction and next-path extraction",
   );
   assert.doesNotMatch(
-    chatView,
-    /extractNextPaths\((?:ghSafeVisible|turn\.text|reasoningSplit\.visible|skillSplit\.visible|autoStatusSplit\.visible)\)/,
+    renderedText,
+    /extractNextPaths\((?:text|reasoningSplit\.visible|skillSplit\.visible|autoStatusSplit\.visible)\)/,
     "next-paths must never run on text upstream of the attention split — a raw or partial marker would flash",
   );
 });
 
-test("ChatView never strips GitHub/image markers before skill/auto-status/attention extraction sees the marker-bearing text", () => {
+test("the shared projection never strips GitHub/image markers before attention extraction", () => {
   // The order test above only pins that attention sits between auto-status and
   // next-path textually — it says nothing about whether an EARLIER step (e.g.
   // a pending-turn GitHub/image pre-clean feeding extractSkillMarkers) already
   // stripped markers out of the text before skill/auto-status/attention ever
   // ran. Pin the actual head of the pipeline: extractSkillMarkers must consume
   // reasoningSplit.visible directly, with no intermediate stripped variable.
-  const pipeline = chatViewAttentionPipeline();
+  const pipeline = renderedTextAttentionPipeline();
   assert.match(
     pipeline,
-    /const inlineReasoning = reasoningSplit\.reasoning;[\s\S]{0,700}const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);/,
+    /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);/,
     "skill markers must extract directly from reasoningSplit.visible — nothing may strip GitHub/image markers out of the marker-bearing text before skill/auto-status/attention/next-path all see it",
   );
   const attentionIndex = pipeline.indexOf(
-    "const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible, { pending: Boolean(turn.pending) });",
+    "const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible, {",
   );
   const stripGitHubIndex = pipeline.indexOf("stripGitHubMarkers(");
   const stripImageIndex = pipeline.indexOf("stripImageMarkers(");
@@ -222,17 +226,17 @@ test("ChatView never strips GitHub/image markers before skill/auto-status/attent
   );
 });
 
-test("ChatView strips GitHub/image markers only after next-path extraction, unconditionally on both pending and settled turns", () => {
+test("the shared projection strips GitHub/image markers only after next-path extraction", () => {
   // Complements the two tests above: this pins the TAIL of the pipeline.
   // GitHub/image cleanup must consume `visibleWithGh` (next-path extraction's
   // output) unconditionally — not gated behind `turn.pending ? visibleWithGh :
   // strip(...)`, which would mean the settled path cleans up post-next-paths
   // while the pending path (streaming) never gets this late cleanup at all
   // because it was already (wrongly) pre-cleaned upstream of skill/auto-status.
-  const pipeline = chatViewAttentionPipeline();
+  const pipeline = renderedTextAttentionPipeline();
   assert.match(
     pipeline,
-    /const \{ visible: visibleWithGh, suggestions: nextPaths \} = extractNextPaths\(attentionSplit\.visible\);[\s\S]*const visible = stripImageMarkers\(stripGitHubMarkers\(visibleWithGh\)\);/,
+    /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);[\s\S]*visible: stripImageMarkers\(stripGitHubMarkers\(nextPathSplit\.visible\)\)/,
     "GitHub/image cleanup must run unconditionally, immediately after next-path extraction resolves visibleWithGh, on both pending and settled turns",
   );
 });
@@ -243,7 +247,7 @@ test("ChatView does not render an inline attention card yet", () => {
   // inline per-turn card should consume the parsed request here.
   assert.doesNotMatch(
     chatView,
-    /attentionSplit\.request/,
+    /attentionRequest/,
     "the parsed request must not be consumed for rendering in this task — only the marker-stripped visible text is used",
   );
 });

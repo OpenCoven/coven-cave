@@ -409,8 +409,8 @@ assert.match(
 
 assert.match(
   chatViewSource,
-  /t\.role === "assistant" \? splitReasoning\(t\.text\)\.visible : t\.text/,
-  "Find must match the VISIBLE transcript text — never turn.reasoning or unsplit thinking blocks",
+  /text: chatTurnVisibleText\(t\),/,
+  "Find must match the shared visible transcript text — never turn.reasoning or unsplit thinking/control blocks",
 );
 
 // 8. Highlight CSS: temporary cave-turn-found flash with reduced-motion
