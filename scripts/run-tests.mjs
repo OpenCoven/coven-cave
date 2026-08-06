@@ -1447,7 +1447,6 @@ export const SUITES = {
     "scripts/sidecar-runtime-closure.test.mjs",
     "scripts/standalone-budget.test.mjs",
     "scripts/tray-icon.test.mjs",
-    "src/app/api/sessions/[id]/route.test.ts",
     "src/app/api/sessions/[id]/events/route.test.ts",
     "src/app/api/sessions/prune/prune-response.test.ts",
     "src/lib/server/familiar-contract-files.test.ts",
@@ -1759,7 +1758,6 @@ const ALIAS_LOADER = new Set([
   "src/app/api/hermes-profiles/route.test.ts",
   "src/app/api/salem/route.test.ts",
   "src/app/api/chat/conversation/[id]/route.test.ts",
-  "src/app/api/sessions/[id]/route.test.ts",
   // familiar-brain imports familiar-stream, whose graph reaches "@/lib/…".
   "src/lib/voice/familiar-brain.test.ts",
   "src/lib/voice/registry.test.ts",

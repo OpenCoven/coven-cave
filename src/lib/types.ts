@@ -78,8 +78,6 @@ export type DaemonStatus = {
 
 export type SessionRow = {
   id: string;
-  /** Daemon-owned session id for event-log / kill / other daemon-scoped ops. */
-  daemonSessionId?: string | null;
   project_root: string;
   harness: string;
   model?: string | null;

@@ -77,7 +77,7 @@ assert.match(
 
 assert.match(
   source,
-  /case "session":[\s\S]*ev\.sessionId !== previousSessionId[\s\S]*onSessionStarted\?\.\(ev\.sessionId\)/,
+  /case "session":[\s\S]*ev\.sessionId !== currentSessionRef\.current[\s\S]*onSessionStarted\?\.\(ev\.sessionId\)/,
   "A transparent resume fallback should promote the live chat to the replacement session id",
 );
 
@@ -745,19 +745,13 @@ assert.match(
 );
 {
   const guarded = source.match(
-    /if \(previousSessionId === liveGeneration\.originSessionId\) \{\s*\n\s*liveSessionIdRef\.current = ev\.sessionId;\s*\n\s*currentSessionRef\.current = ev\.sessionId;\s*\n\s*setHistoryState\("loaded"\);\s*\n\s*if \(previousSessionId\) onSessionCanonicalized\?\.\(previousSessionId, ev\.sessionId\);\s*\n\s*\}\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);/g,
+    /if \(currentSessionRef\.current === liveGeneration\.originSessionId\) \{\s*\n\s*liveSessionIdRef\.current = ev\.sessionId;\s*\n\s*currentSessionRef\.current = ev\.sessionId;\s*\n\s*setHistoryState\("loaded"\);\s*\n\s*\}\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);/g,
   );
   assert.ok(
     guarded && guarded.length === 2,
-    "both the session and done events gate currentSessionRef adoption on still owning the displayed thread, update router identity when a replay alias canonicalizes, and still notify onSessionStarted",
+    "both the session and done events gate currentSessionRef adoption on still owning the displayed thread, yet always notify onSessionStarted",
   );
 }
-
-assert.match(
-  source,
-  /const maybeAdoptCanonicalSessionId = \(requestedSessionId: string, json: ConversationHistoryPayload\) => \{[\s\S]*currentSessionRef\.current = canonicalSessionId;[\s\S]*liveSessionIdRef\.current = canonicalSessionId;[\s\S]*invalidateConversation\(requestedSessionId\);[\s\S]*onSessionCanonicalized\?\.\(requestedSessionId, canonicalSessionId\);/,
-  "history loads should adopt a canonical conversation id returned by the server before future sends reuse a replay alias",
-);
 
 // cave-b63 (1): model-state / usage-plan refreshes gate their setState on a
 // caller predicate so a fetch resolving after a thread switch can't overwrite

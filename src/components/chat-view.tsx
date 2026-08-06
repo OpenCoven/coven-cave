@@ -389,7 +389,6 @@ type Props = {
    *  so no extra fetch rides on every new chat. */
   sessions?: SessionRow[];
   onSessionStarted?: (sessionId: string) => void;
-  onSessionCanonicalized?: (fromSessionId: string, toSessionId: string) => void;
   /** Pre-session voice call: ChatView created a conversation for the call;
    *  the router promotes it and re-enters via openVoiceNonce. */
   onVoiceSessionCreated?: (sessionId: string) => void;
@@ -1806,7 +1805,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, onSessionStarted, onSessionCanonicalized, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -3884,16 +3883,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         onSessionsChangedRef.current?.();
       }
     }
-    const maybeAdoptCanonicalSessionId = (requestedSessionId: string, json: ConversationHistoryPayload) => {
-      const canonicalSessionId =
-        typeof json.conversation?.sessionId === "string" ? json.conversation.sessionId : null;
-      if (!canonicalSessionId || canonicalSessionId === requestedSessionId) return canonicalSessionId;
-      currentSessionRef.current = canonicalSessionId;
-      liveSessionIdRef.current = canonicalSessionId;
-      invalidateConversation(requestedSessionId);
-      onSessionCanonicalized?.(requestedSessionId, canonicalSessionId);
-      return canonicalSessionId;
-    };
     const applyConversationPayload = (json: ConversationHistoryPayload) => {
       const mapped = mapConversationHistoryTurns(json.conversation?.turns ?? []);
       setFlowTranscriptFallback(null);
@@ -3920,10 +3909,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const cachedConversation =
       cachedPayload?.ok && cachedPayload.conversation ? cachedPayload : null;
     if (cachedConversation) {
-      const cachedSessionId = maybeAdoptCanonicalSessionId(sessionId, cachedConversation) ?? sessionId;
       setLinkedContext(cachedConversation.context ?? null);
       applyConversationPayload(cachedConversation);
-      storeConversation(cachedSessionId, cachedConversation);
     } else if (isThreadSwitch) {
       // Thread switch: blank the PREVIOUS thread's transcript synchronously so
       // the history skeleton renders while this thread's history loads —
@@ -3973,14 +3960,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         }
         const json = await res.json() as ConversationHistoryPayload;
         if (cancelled) return;
-        const canonicalSessionId = maybeAdoptCanonicalSessionId(sessionId, json) ?? sessionId;
         setLinkedContext(json.context ?? null);
         if (json.ok && json.conversation) {
           if (hasLiveGeneration()) {
             setHistoryState("loaded");
             return;
           }
-          storeConversation(canonicalSessionId, json);
+          storeConversation(sessionId, json);
           // Revalidation no-op guard: when the cache already painted this exact
           // conversation, skip re-applying it. applyConversationPayload maps
           // fresh turn objects every call, so an identical re-apply rebuilds the
@@ -6052,8 +6038,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         liveGeneration.markAttentionCleared(ev.sessionId);
       }
       liveGeneration.sessionId = ev.sessionId;
-      const previousSessionId = currentSessionRef.current;
-      if (ev.sessionId !== previousSessionId) {
+      if (ev.sessionId !== currentSessionRef.current) {
         // Only adopt the new session id into THIS view's refs when the view is
         // still on the thread this generation started from. If the user
         // switched to another conversation before the id arrived (a new chat's
@@ -6062,11 +6047,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // the next send (sendRaw reads currentSessionRef as initialLiveSessionId).
         // Still notify onSessionStarted — the router promotes a still-open new
         // chat but leaves an already-switched view alone (chat-router.tsx).
-        if (previousSessionId === liveGeneration.originSessionId) {
+        if (currentSessionRef.current === liveGeneration.originSessionId) {
           liveSessionIdRef.current = ev.sessionId;
           currentSessionRef.current = ev.sessionId;
           setHistoryState("loaded");
-          if (previousSessionId) onSessionCanonicalized?.(previousSessionId, ev.sessionId);
         }
         onSessionStarted?.(ev.sessionId);
       }
@@ -6234,15 +6218,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         void refreshUsagePlan(ev.responseMetadata?.confirmedModel ?? ev.responseMetadata?.model ?? null);
         if (ev.sessionId && ev.sessionId !== currentSessionRef.current) {
           liveGeneration.sessionId = ev.sessionId;
-          const previousSessionId = currentSessionRef.current;
           // Same ownership guard as the "session" event: a background generation
           // (user switched threads before this settled) must not overwrite the
           // displayed thread's currentSessionRef. Still let the router register it.
-          if (previousSessionId === liveGeneration.originSessionId) {
+          if (currentSessionRef.current === liveGeneration.originSessionId) {
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
-            if (previousSessionId) onSessionCanonicalized?.(previousSessionId, ev.sessionId);
           }
           onSessionStarted?.(ev.sessionId);
         }

@@ -11,11 +11,6 @@ import {
   summonSessionLocal,
 } from "@/lib/cave-config";
 import { clampExtendDays, extendUntilIso } from "@/lib/chat-auto-archive";
-import {
-  linkedReplaySessionIds,
-  loadConversation,
-  resolveConversationSessionId,
-} from "@/lib/cave-conversations";
 import { resolveArchiveNudges } from "@/lib/task-archive-nudge-emit";
 
 export const dynamic = "force-dynamic";
@@ -40,20 +35,7 @@ export async function PATCH(
   const forbidden = rejectNonLocalRequest(req);
   if (forbidden) return forbidden;
 
-  const { id: requestedId } = await params;
-  const resolved = await resolveConversationSessionId(requestedId);
-  if (resolved.sessionId === null) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: resolved.error === "ambiguous-replay-history"
-          ? "replay history is ambiguous for this session id"
-          : "replay history contains a cycle for this session id",
-      },
-      { status: 409 },
-    );
-  }
-  const id = resolved.sessionId;
+  const { id } = await params;
   if (!id || !isValidSessionId(id)) {
     return NextResponse.json({ ok: false, error: "invalid session id" }, { status: 400 });
   }
@@ -125,27 +107,10 @@ export async function DELETE(
   const forbidden = rejectNonLocalRequest(req);
   if (forbidden) return forbidden;
 
-  const { id: requestedId } = await params;
-  const resolved = await resolveConversationSessionId(requestedId);
-  if (resolved.sessionId === null) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: resolved.error === "ambiguous-replay-history"
-          ? "replay history is ambiguous for this session id"
-          : "replay history contains a cycle for this session id",
-      },
-      { status: 409 },
-    );
-  }
-  const id = resolved.sessionId;
+  const { id } = await params;
   if (!id || !isValidSessionId(id)) {
     return NextResponse.json({ ok: false, error: "invalid session id" }, { status: 400 });
   }
-  const linkedReplayIds = linkedReplaySessionIds(await loadConversation(id));
   const sacrificedAt = await sacrificeSessionLocal(id);
-  for (const replaySessionId of linkedReplayIds) {
-    await sacrificeSessionLocal(replaySessionId);
-  }
   return NextResponse.json({ ok: true, sacrificedAt });
 }

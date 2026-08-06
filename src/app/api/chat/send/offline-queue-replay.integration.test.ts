@@ -111,6 +111,13 @@ try {
       projectRoot,
       sessionId: "offline-chat-1",
       runId: " run-offline-1 ",
+      parentTurnId: null,
+      attachments: [{
+        name: "queue-context.txt",
+        type: "text/plain",
+        size: 11,
+        text: "queue proof",
+      }],
     }),
   }));
   const queuedEvents = await readSse(response);
@@ -123,10 +130,28 @@ try {
   assert.equal(queuedItem.payload?.sessionId, "offline-chat-1");
   assert.equal(queuedItem.payload?.runId, "run-offline-1");
   assert.equal(typeof queuedItem.payload?.userTurnId, "string");
+  assert.equal(queuedItem.payload?.parentTurnId, null);
+  assert.deepEqual(queuedItem.payload?.attachments, [{
+    name: "queue-context.txt",
+    type: "text/plain",
+    size: 11,
+    text: "queue proof",
+  }]);
+  assert.equal("replaySessionId" in (queuedItem.payload ?? {}), false);
+  assert.equal("daemonSessionId" in (queuedItem.payload ?? {}), false);
+  assert.equal("conversationId" in (queuedItem.payload ?? {}), false);
 
   const queuedConversation = await conversations.loadConversation("offline-chat-1");
   assert.equal(queuedConversation?.turns.length, 1, "queue acceptance should persist the original user turn");
   assert.equal(queuedConversation?.turns[0]?.role, "user");
+  assert.equal(queuedConversation?.turns[0]?.id, queuedItem.payload?.userTurnId);
+  assert.equal(queuedConversation?.turns[0]?.parentId, null);
+  assert.deepEqual(queuedConversation?.turns[0]?.attachments, [{
+    name: "queue-context.txt",
+    type: "text/plain",
+    size: 11,
+    text: "queue proof",
+  }]);
   assert.equal(queuedConversation?.turns[0]?.attentionClearOperationId, "run-offline-1");
   assert.equal(
     queuedConversation?.pendingUserTurnId,
@@ -139,6 +164,7 @@ try {
     latestCompletedTurn: { role: "user", at: queuedItem.createdAt },
     latestUserTurnAt: queuedItem.createdAt,
     attentionAfterOperationId: "run-offline-1",
+    attentionOperationLineage: ["run-offline-1"],
     request: null,
   });
 
@@ -146,8 +172,11 @@ try {
   const replayResult = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
   assert.deepEqual(replayResult, { attempted: 1, synced: 1, failed: 0, errors: [] });
   assert.equal(sessionRequests.length, 1, "the first replay should spawn exactly one daemon session");
-  assert.equal(sessionRequests[0]?.prompt, "queued during travel mode");
+  assert.match(String(sessionRequests[0]?.prompt), /queued during travel mode/);
+  assert.match(String(sessionRequests[0]?.prompt), /queue-context\.txt/);
   assert.equal(sessionRequests[0]?.harness, "codex");
+  assert.equal("conversation" in (sessionRequests[0] ?? {}), false);
+  assert.equal("conversationId" in (sessionRequests[0] ?? {}), false);
 
   const syncedState = await config.loadState();
   const syncedItem = syncedState.travel.offlineQueue[0];
@@ -165,6 +194,7 @@ try {
     1,
     "successful replay should not duplicate the already persisted offline user turn",
   );
+  assert.equal(replayedConversation?.turns[0]?.id, queuedItem.payload?.userTurnId);
   assert.equal(replayedConversation?.turns[0]?.attentionClearOperationId, "run-offline-1");
 
   const merged = mergeSessionRows({

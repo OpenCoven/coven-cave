@@ -121,10 +121,7 @@ try {
   const { refreshCovenBin } = await import("@/lib/coven-bin");
   const { clearCodexRuntimeDiscoveryCache } = await import("@/lib/codex-compatibility");
   const { saveConfig } = await import("@/lib/cave-config");
-  const {
-    loadConversation,
-    persistQueuedOfflineConversation,
-  } = await import("@/lib/cave-conversations");
+  const { loadConversation } = await import("@/lib/cave-conversations");
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { POST } = await import("./route.ts");
@@ -227,53 +224,6 @@ try {
     "a verified direct turn never starts `coven run codex`",
   );
 
-  await persistQueuedOfflineConversation({
-    sessionId: done.sessionId,
-    familiarId: "opal",
-    harness: "codex",
-    createdAt: "2026-08-05T18:00:00.000Z",
-    replaySessionId: "daemon-codex-execution-row",
-    conversationId: "daemon-codex-conversation-alias",
-    userTurn: {
-      id: "offline-codex-user",
-      text: "queued Codex turn",
-    },
-  });
-  assert.equal(
-    (await loadConversation(done.sessionId))?.harnessSessionId,
-    "thread-current",
-    "offline replay metadata preserves Codex's validated native thread id",
-  );
-  const callsBeforeFollowUp = (await loggedCalls(codexLog)).length;
-  const followUp = await POST(new Request("http://localhost/api/chat/send", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      familiarId: "opal",
-      prompt: "Codex follow-up after offline replay",
-      projectRoot: familiarWorkspace,
-      sessionId: done.sessionId,
-    }),
-  }));
-  await readSse(followUp);
-  const followUpCalls = (await loggedCalls(codexLog)).slice(callsBeforeFollowUp);
-  const followUpExec = followUpCalls.find(
-    (call) => call[0] === "exec" && call[1] === "resume" && !call.includes("--help"),
-  );
-  assert.equal(
-    followUpExec?.[2],
-    "thread-current",
-    `Codex follow-up resumes its native thread: ${JSON.stringify(followUpCalls)}`,
-  );
-  assert.equal(
-    followUpCalls.some((call) => call.includes("daemon-codex-execution-row")),
-    false,
-    "Codex never receives the daemon execution row as a resume token",
-  );
-  const directExecCountBeforeFallback = (await loggedCalls(codexLog))
-    .filter((call) => call[0] === "exec" && !call.includes("--help"))
-    .length;
-
   // ── Fallback: an unknown future version keeps the generic Coven path ──────
   process.env.CODEX_BIN = codexFuture;
   clearCodexRuntimeDiscoveryCache();
@@ -315,7 +265,7 @@ try {
   );
   assert.equal(
     futureCodexCalls.filter((args) => args[0] === "exec" && !args.includes("--help")).length,
-    directExecCountBeforeFallback,
+    1,
     "the unsupported future CLI is probed but never runs a direct exec turn",
   );
   assert.ok(

@@ -85,10 +85,7 @@ try {
     "the explicit Hermes fixture isolates discovery from every host PATH fallback",
   );
   const { saveConfig } = await import("@/lib/cave-config");
-  const {
-    loadConversation,
-    persistQueuedOfflineConversation,
-  } = await import("@/lib/cave-conversations");
+  const { loadConversation } = await import("@/lib/cave-conversations");
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { POST } = await import("./route.ts");
@@ -229,95 +226,6 @@ try {
       conversation?.turns.at(-1)?.text.trim(),
       "fresh Hermes response",
       "the successful fresh retry persists instead of being suppressed by the stale attempt",
-    );
-  }
-
-  // Offline daemon replay metadata is not a native Hermes session. A direct
-  // follow-up must keep using the session id emitted by the Hermes process.
-  {
-    const resumeCapture = path.join(home, "hermes-resume-argv.txt");
-    process.env.HERMES_ARGV_CAPTURE = resumeCapture;
-    await installHermesFixture(
-      [
-        'printf "%s\\n" "$*" >> "$HERMES_ARGV_CAPTURE"',
-        'case " $* " in',
-        '  *" --resume "*) printf "%s\\n" "Hermes native follow-up"; exit 0 ;;',
-        "esac",
-        "printf '%s\\n' 'session_id: native-hermes-session' >&2",
-        "printf '%s\\n' 'Hermes native first reply'",
-      ].join("\n"),
-      [
-        'const { appendFileSync, writeSync } = require("node:fs");',
-        'appendFileSync(process.env.HERMES_ARGV_CAPTURE, JSON.stringify(process.argv.slice(2)) + "\\n");',
-        'if (process.argv.includes("--resume")) { writeSync(1, "Hermes native follow-up\\n"); process.exit(0); }',
-        'writeSync(2, "session_id: native-hermes-session\\n");',
-        'writeSync(1, "Hermes native first reply\\n");',
-      ].join("\n"),
-    );
-    const first = await POST(new Request("http://localhost/api/chat/send", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        familiarId: "ember",
-        prompt: "start a native Hermes session",
-        projectRoot: familiarWorkspace,
-      }),
-    }));
-    const { events: firstEvents } = await readSse(first);
-    const stableSessionId = firstEvents.findLast((event) => event.kind === "done")?.sessionId;
-    assert.equal(typeof stableSessionId, "string");
-    assert.equal(
-      (await loadConversation(stableSessionId))?.harnessSessionId,
-      "native-hermes-session",
-      "Hermes persists its process-emitted native session id",
-    );
-
-    await persistQueuedOfflineConversation({
-      sessionId: stableSessionId,
-      familiarId: "ember",
-      harness: "hermes",
-      createdAt: "2026-08-05T18:03:00.000Z",
-      replaySessionId: "daemon-hermes-execution-row",
-      conversationId: "daemon-hermes-conversation-alias",
-      userTurn: {
-        id: "offline-hermes-user",
-        text: "queued Hermes turn",
-      },
-    });
-    assert.equal(
-      (await loadConversation(stableSessionId))?.harnessSessionId,
-      "native-hermes-session",
-      "offline replay metadata preserves Hermes's validated native session id",
-    );
-
-    await writeFile(resumeCapture, "");
-    const followUp = await POST(new Request("http://localhost/api/chat/send", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        familiarId: "ember",
-        prompt: "Hermes follow-up after offline replay",
-        projectRoot: familiarWorkspace,
-        sessionId: stableSessionId,
-      }),
-    }));
-    const { events: followUpEvents } = await readSse(followUp);
-    assert.notEqual(
-      followUpEvents.findLast((event) => event.kind === "done")?.isError,
-      true,
-      "Hermes native follow-up completes successfully",
-    );
-    const followUpArgv = await readFile(resumeCapture, "utf8");
-    assert.match(followUpArgv, /--resume/, "Hermes follow-up uses its native resume option");
-    assert.match(
-      followUpArgv,
-      /native-hermes-session/,
-      "Hermes follow-up resumes the native session retained by the conversation",
-    );
-    assert.doesNotMatch(
-      followUpArgv,
-      /daemon-hermes-execution-row/,
-      "Hermes never receives the daemon execution row as a resume token",
     );
   }
 

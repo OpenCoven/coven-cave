@@ -8,7 +8,6 @@ import { readFileSync } from "node:fs";
 
 const eventsSource = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 const inputSource = readFileSync(new URL("../input/route.ts", import.meta.url), "utf8");
-const killSource = readFileSync(new URL("../kill/route.ts", import.meta.url), "utf8");
 const sessionSource = readFileSync(new URL("../route.ts", import.meta.url), "utf8");
 
 // ── events route ─────────────────────────────────────────────────────────────
@@ -29,11 +28,6 @@ assert.match(
   eventsSource,
   /isOwnedSession/,
   "events route must verify session ownership to prevent cross-session data access",
-);
-assert.match(
-  eventsSource,
-  /resolveConversationSessionId/,
-  "events route must resolve replay daemon ids back to the owned canonical conversation before the ownership check",
 );
 
 assert.match(
@@ -71,11 +65,6 @@ assert.match(
   /isOwnedSession/,
   "input route must verify session ownership before forwarding input",
 );
-assert.match(
-  inputSource,
-  /resolveConversationSessionId/,
-  "input route must accept replay daemon ids only when they map back to an owned canonical conversation",
-);
 
 assert.match(
   inputSource,
@@ -90,17 +79,6 @@ assert.match(
 );
 
 // ── session route (kill / general) ───────────────────────────────────────────
-
-assert.match(
-  killSource,
-  /resolveConversationSessionId/,
-  "kill route must accept replay daemon ids only when they map back to an owned canonical conversation",
-);
-assert.match(
-  killSource,
-  /isOwnedSession/,
-  "kill route must verify session ownership before proxying a daemon kill",
-);
 
 assert.match(
   sessionSource,

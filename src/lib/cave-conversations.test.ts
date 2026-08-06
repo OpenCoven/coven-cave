@@ -15,6 +15,7 @@ const {
   isSafeConversationSessionId,
   listConversations,
   loadConversation,
+  persistQueuedOfflineConversation,
   saveConversation,
 } = await import("./cave-conversations.ts");
 const {
@@ -34,6 +35,86 @@ assert.equal(isSafeConversationSessionId("nested\\session-1"), false);
 assert.equal(isSafeConversationSessionId("."), false);
 assert.equal(isSafeConversationSessionId(".."), false);
 assert.equal(isSafeConversationSessionId(""), false);
+
+await saveConversation({
+  sessionId: "queued-offline-idempotent",
+  familiarId: "sage",
+  harness: "claude",
+  title: "Existing local conversation",
+  createdAt: "2026-08-05T20:00:00.000Z",
+  updatedAt: "2026-08-05T20:00:01.000Z",
+  activeLeafId: "queued-parent-assistant",
+  turns: [
+    {
+      id: "queued-parent-user",
+      role: "user",
+      text: "What needs attention?",
+      createdAt: "2026-08-05T20:00:00.000Z",
+      parentId: null,
+    },
+    {
+      id: "queued-parent-assistant",
+      role: "assistant",
+      text: "Please approve the next step.",
+      createdAt: "2026-08-05T20:00:01.000Z",
+      parentId: "queued-parent-user",
+    },
+  ],
+});
+const queuedOfflineSeed = {
+  sessionId: "queued-offline-idempotent",
+  familiarId: "sage",
+  harness: "claude",
+  createdAt: "2026-08-05T20:00:02.000Z",
+  userTurn: {
+    id: "queued-stable-user-turn",
+    text: "Approved while offline.",
+    attachments: [{
+      name: "approval.txt",
+      type: "text/plain",
+      size: 8,
+      text: "approved",
+    }],
+    reasoningEffort: "medium" as const,
+    responseSpeed: "careful" as const,
+    modelControls: { reasoning: "medium" },
+    modelOverride: "anthropic/claude-opus-4-6",
+    attentionClearOperationId: " run-offline-stable ",
+    parentId: "queued-parent-assistant",
+  },
+};
+await persistQueuedOfflineConversation(queuedOfflineSeed);
+await persistQueuedOfflineConversation(queuedOfflineSeed);
+const queuedOfflineConversation = await loadConversation("queued-offline-idempotent");
+const queuedOfflineTurns = queuedOfflineConversation?.turns.filter(
+  (turn) => turn.id === queuedOfflineSeed.userTurn.id,
+) ?? [];
+assert.equal(queuedOfflineTurns.length, 1, "re-saving the same queued user turn is idempotent");
+assert.deepEqual(
+  queuedOfflineTurns[0],
+  {
+    id: "queued-stable-user-turn",
+    role: "user",
+    text: "Approved while offline.",
+    attachments: [{
+      name: "approval.txt",
+      type: "text/plain",
+      size: 8,
+      text: "approved",
+    }],
+    reasoningEffort: "medium",
+    responseSpeed: "careful",
+    modelControls: { reasoning: "medium" },
+    modelOverride: "anthropic/claude-opus-4-6",
+    attentionClearOperationId: "run-offline-stable",
+    createdAt: "2026-08-05T20:00:02.000Z",
+    parentId: "queued-parent-assistant",
+  },
+  "queue-time persistence keeps stable identity, parentage, attachments, controls, and attention lineage",
+);
+assert.equal(queuedOfflineConversation?.activeLeafId, "queued-stable-user-turn");
+assert.equal(queuedOfflineConversation?.pendingUserTurnId, undefined);
+assert.equal(await deleteConversation("queued-offline-idempotent"), true);
 
 assert.deepEqual(
   mapConversationHistoryTurns([{

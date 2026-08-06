@@ -25,7 +25,7 @@ type EventsResponse =
 
 /** The overlay only needs an id + display title, so any surface that knows a
  *  session id (session rows, confidence events, thread reports) can open it. */
-export type TraceTarget = { id: string; daemonId?: string | null; title?: string | null };
+export type TraceTarget = { id: string; title?: string | null };
 
 /**
  * Session trace timeline — a chronological read of the daemon events behind
@@ -34,7 +34,6 @@ export type TraceTarget = { id: string; daemonId?: string | null; title?: string
  * was only reachable by curling the daemon.
  */
 export function SessionTraceOverlay({ target, onClose }: { target: TraceTarget; onClose: () => void }) {
-  const traceSessionId = target.daemonId?.trim() || target.id;
   const [events, setEvents] = useState<SessionTraceEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -56,7 +55,7 @@ export function SessionTraceOverlay({ target, onClose }: { target: TraceTarget; 
     setNoEventLog(false);
     try {
       const res = await fetch(
-        `/api/sessions/${encodeURIComponent(traceSessionId)}/events?afterSeq=${afterSeq}&limit=${TRACE_PAGE_SIZE}`,
+        `/api/sessions/${encodeURIComponent(target.id)}/events?afterSeq=${afterSeq}&limit=${TRACE_PAGE_SIZE}`,
         { cache: "no-store", signal: controller.signal },
       );
       const json = (await res.json().catch(() => null)) as EventsResponse | null;
@@ -84,7 +83,7 @@ export function SessionTraceOverlay({ target, onClose }: { target: TraceTarget; 
         setLoadingMore(false);
       }
     }
-  }, [traceSessionId]);
+  }, [target.id]);
 
   useEffect(() => {
     void load();

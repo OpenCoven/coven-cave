@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -33,13 +33,10 @@ process.env.PATH = [
 ].join(path.delimiter);
 
 const executable = process.platform === "win32" ? "opencode.cmd" : "opencode";
-const opencodeLog = path.join(home, "opencode-calls.log");
 const expectedReply = process.platform === "win32" ? "route reply" : "split 😀";
 if (process.platform === "win32") {
   await writeFile(path.join(bin, "opencode-shim.mjs"), [
-    "import { appendFileSync } from \"node:fs\";",
     "const args = process.argv.slice(2);",
-    `appendFileSync(${JSON.stringify(opencodeLog)}, JSON.stringify(args) + "\\n");`,
     "const plain = process.env.OPENCODE_TEST_MODE === \"plain\";",
     "if (args[0] === \"--version\") { console.log(plain ? \"1.2.4\" : \"1.2.3\"); process.exit(0); }",
     "if (args[0] === \"run\" && args[1] === \"--help\") {",
@@ -79,7 +76,6 @@ const launcher = process.platform === "win32"
   ? '"%dp0%\\node.exe" "%dp0%\\opencode-shim.mjs" %*\r\n'
   : [
       "#!/bin/sh",
-      `printf '%s\\n' "$*" >> "${opencodeLog}"`,
       "if [ \"$1\" = \"--version\" ]; then if [ \"$OPENCODE_TEST_MODE\" = \"plain\" ]; then echo 1.2.4; else echo 1.2.3; fi; exit 0; fi",
       "if [ \"$1\" = \"run\" ] && [ \"$2\" = \"--help\" ]; then",
       "  if [ \"$OPENCODE_TEST_MODE\" = \"plain\" ]; then printf '%s\\n' '  --format <format>  Output format: text, json-v2' '  --model <model>    Model to use'; else printf '%s\\n' '  --format <format>  Output format: text, json' '  --model <model>    Model to use' '  --session <id>     Session to continue'; fi",
@@ -107,10 +103,7 @@ try {
   const { refreshCovenBin } = await import("@/lib/coven-bin");
   refreshCovenBin();
   const { saveConfig } = await import("@/lib/cave-config");
-  const {
-    loadConversation,
-    persistQueuedOfflineConversation,
-  } = await import("@/lib/cave-conversations");
+  const { loadConversation } = await import("@/lib/cave-conversations");
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { POST } = await import("./route.ts");
@@ -147,49 +140,6 @@ try {
   assert.notEqual(sessionId, "native_opencode_session", "Cave keeps its stable conversation id separate from OpenCode's native resume id");
   const conversation = await loadConversation(sessionId);
   assert.equal(conversation?.harnessSessionId, "native_opencode_session", "the route persists the native OpenCode session id separately from Cave's stable id");
-
-  await persistQueuedOfflineConversation({
-    sessionId,
-    familiarId: "opal",
-    harness: "opencode",
-    createdAt: "2026-08-05T18:01:00.000Z",
-    replaySessionId: "daemon-opencode-execution-row",
-    conversationId: "daemon-opencode-conversation-alias",
-    userTurn: {
-      id: "offline-opencode-user",
-      text: "queued OpenCode turn",
-    },
-  });
-  assert.equal(
-    (await loadConversation(sessionId))?.harnessSessionId,
-    "native_opencode_session",
-    "offline replay metadata preserves OpenCode's validated native session id",
-  );
-  await writeFile(opencodeLog, "");
-  const followUpResponse = await POST(new Request("http://localhost/api/chat/send", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      familiarId: "opal",
-      prompt: "OpenCode follow-up after offline replay",
-      projectRoot: familiarWorkspace,
-      sessionId,
-    }),
-  }));
-  assert.equal(followUpResponse.status, 200, await followUpResponse.clone().text());
-  await followUpResponse.text();
-  const followUpCalls = await readFile(opencodeLog, "utf8");
-  assert.match(followUpCalls, /--session/, "OpenCode follow-up uses its verified native resume option");
-  assert.match(
-    followUpCalls,
-    /native_opencode_session/,
-    "OpenCode follow-up resumes the native session retained by the conversation",
-  );
-  assert.doesNotMatch(
-    followUpCalls,
-    /daemon-opencode-execution-row/,
-    "OpenCode never receives the daemon execution row as a resume token",
-  );
 
   // A future JSON format with no signed parser must fall back to plain chat
   // without turning source-code indentation or blank lines into data loss.

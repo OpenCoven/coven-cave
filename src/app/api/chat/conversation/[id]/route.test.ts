@@ -29,9 +29,8 @@ process.env.COVEN_HOME = TMP_COVEN;
 const CONV_DIR = join(TMP, "conversations");
 const STATE_PATH = join(TMP, "state.json");
 const BOARD_PATH = join(TMP, "board.json");
-const { clearConversationAliasIndexForTests } = await import("@/lib/cave-conversations");
 
-function writeConversation(id: string, turns: unknown[] = [], extra: Record<string, unknown> = {}) {
+function writeConversation(id: string, turns: unknown[] = []) {
   mkdirSync(CONV_DIR, { recursive: true });
   writeFileSync(
     join(CONV_DIR, `${id}.json`),
@@ -43,10 +42,8 @@ function writeConversation(id: string, turns: unknown[] = [], extra: Record<stri
       createdAt: "2026-06-01T00:00:00Z",
       updatedAt: "2026-06-01T00:00:00Z",
       turns,
-      ...extra,
     }),
   );
-  clearConversationAliasIndexForTests();
 }
 
 function conversationPath(id: string) {
@@ -72,14 +69,6 @@ const { PUT, POST } = await import("./route.ts");
 function writeReq(bodyObj: unknown) {
   return new Request("http://test/api/chat/conversation/x", {
     method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(bodyObj),
-  });
-}
-
-function postReq(bodyObj: unknown) {
-  return new Request("http://test/api/chat/conversation/x", {
-    method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(bodyObj),
   });
@@ -166,134 +155,6 @@ test("default DELETE (no ifEmpty) still deletes AND sacrifices, even with turns"
   assert.equal(typeof state.sessionSacrificed["sess-default"], "string", "sacrificed — other callers depend on this");
   const board = JSON.parse(readFileSync(BOARD_PATH, "utf8"));
   assert.equal(board.cards[0].sessionId, null, "deleted conversations cannot leave dangling task links");
-});
-
-test("GET and DELETE resolve replay daemon ids back to the stable local conversation", async () => {
-  writeConversation(
-    "sess-replay-root",
-    [{ id: "t1", role: "user", text: "queued", createdAt: "2026-06-01T00:00:00Z" }],
-    {
-      harnessSessionId: "codex-thread-1",
-      replaySessions: [
-        {
-          sessionId: "hub-session-1",
-          conversationId: "codex-thread-1",
-          createdAt: "2026-06-01T00:00:00.000Z",
-          updatedAt: "2026-06-01T00:01:00.000Z",
-        },
-      ],
-    },
-  );
-
-  const getRes = await GET(new Request("http://test/api/chat/conversation/hub-session-1"), paramsFor("hub-session-1"));
-  const getJson = await getRes.json();
-  assert.equal(getRes.status, 200);
-  assert.equal(getJson.conversation.sessionId, "sess-replay-root");
-
-  const deleteRes = await DELETE(deleteReq(), paramsFor("hub-session-1"));
-  const deleteJson = await deleteRes.json();
-  assert.equal(deleteRes.status, 200);
-  assert.equal(deleteJson.deleted, true);
-  assert.equal(existsSync(conversationPath("sess-replay-root")), false, "stable conversation file removed");
-  const state = readState();
-  assert.equal(typeof state.sessionSacrificed["sess-replay-root"], "string");
-  assert.equal(typeof state.sessionSacrificed["hub-session-1"], "string", "linked replay ids are sacrificed too");
-});
-
-test("replay alias GET prefers explicit replay history over a stray alias file", async () => {
-  writeConversation(
-    "sess-replay-stable",
-    [{ id: "t1", role: "user", text: "stable", createdAt: "2026-06-01T00:00:00Z" }],
-    {
-      harnessSessionId: "codex-thread-stable",
-      replaySessions: [{
-        sessionId: "hub-session-stray",
-        conversationId: "codex-thread-stable",
-        createdAt: "2026-06-01T00:00:00.000Z",
-        updatedAt: "2026-06-01T00:01:00.000Z",
-      }],
-    },
-  );
-  writeConversation(
-    "hub-session-stray",
-    [{ id: "alias-turn", role: "user", text: "stray", createdAt: "2026-06-01T00:00:00Z" }],
-    {
-      title: "Stray alias file",
-    },
-  );
-
-  const res = await GET(new Request("http://test/api/chat/conversation/hub-session-stray"), paramsFor("hub-session-stray"));
-  const json = await res.json();
-  assert.equal(res.status, 200);
-  assert.equal(json.conversation.sessionId, "sess-replay-stable");
-  assert.equal(json.conversation.turns[0]?.text, "stable");
-});
-
-test("POST via replay alias appends only to the canonical conversation", async () => {
-  writeConversation(
-    "sess-replay-write-root",
-    [{ id: "root-turn", role: "user", text: "root", createdAt: "2026-06-01T00:00:00Z" }],
-    {
-      familiarId: "milo",
-      harness: "claude",
-      replaySessions: [{
-        sessionId: "hub-session-write",
-        conversationId: "codex-thread-write",
-        createdAt: "2026-06-01T00:00:00.000Z",
-        updatedAt: "2026-06-01T00:01:00.000Z",
-      }],
-    },
-  );
-
-  const res = await POST(
-    postReq({
-      sessionId: "hub-session-write",
-      familiarId: "milo",
-      harness: "claude",
-      turn: { role: "user", text: "follow-up" },
-    }),
-    paramsFor("hub-session-write"),
-  );
-  const json = await res.json();
-  assert.equal(res.status, 200);
-  assert.equal(json.conversation.sessionId, "sess-replay-write-root");
-  assert.equal(existsSync(conversationPath("hub-session-write")), false, "no alias conversation file created");
-  const stable = JSON.parse(readFileSync(conversationPath("sess-replay-write-root"), "utf8"));
-  assert.equal(stable.turns.at(-1)?.text, "follow-up");
-});
-
-test("cyclic replay mappings fail closed instead of choosing a stray local file", async () => {
-  writeConversation(
-    "cycle-root",
-    [{ id: "root", role: "user", text: "root", createdAt: "2026-06-01T00:00:00Z" }],
-    {
-      replaySessions: [{
-        sessionId: "hub-cycle",
-        conversationId: "codex-thread-cycle",
-        createdAt: "2026-06-01T00:00:00.000Z",
-        updatedAt: "2026-06-01T00:01:00.000Z",
-      }],
-    },
-  );
-  writeConversation(
-    "hub-cycle",
-    [{ id: "alias", role: "user", text: "alias", createdAt: "2026-06-01T00:00:00Z" }],
-    {
-      replaySessions: [{
-        sessionId: "cycle-root",
-        conversationId: "codex-thread-cycle",
-        createdAt: "2026-06-01T00:00:00.000Z",
-        updatedAt: "2026-06-01T00:01:00.000Z",
-      }],
-    },
-  );
-
-  const res = await GET(new Request("http://test/api/chat/conversation/hub-cycle"), paramsFor("hub-cycle"));
-  assert.equal(res.status, 409);
-  assert.deepEqual(await res.json(), {
-    ok: false,
-    error: "replay history contains a cycle for this session id",
-  });
 });
 
 // --- #3469: client PUT cannot forge harness telemetry onto assistant turns ---

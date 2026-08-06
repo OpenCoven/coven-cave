@@ -38,7 +38,7 @@ assert.match(
 assert.match(
   chatRoute,
   /runId: args\.body\.runId,/,
-  "Queued offline chat payloads should preserve the normalized client run id for causal replay",
+  "Queued offline chat payloads should preserve the normalized client run id for queue-time attention persistence",
 );
 
 assert.match(
@@ -84,6 +84,16 @@ const offlineChatResponseBlock = chatRoute.match(
   /async function maybeQueueOfflineChat\([\s\S]*?\n\}\n/,
 )?.[0] ?? "";
 assert.ok(offlineChatResponseBlock, "maybeQueueOfflineChat should be defined");
+assert.match(
+  offlineChatResponseBlock,
+  /const queuedUserTurnId = crypto\.randomUUID\(\);[\s\S]*userTurnId: queuedUserTurnId,[\s\S]*await persistQueuedOfflineConversation\(\{[\s\S]*userTurn: \{[\s\S]*id: queuedUserTurnId,[\s\S]*attachments: args\.persistedAttachments[\s\S]*attentionClearOperationForTurn\(args\.body\.runId\)[\s\S]*persistedTurnControls\([\s\S]*parentId: args\.body\.parentTurnId/,
+  "the queue payload and original local human turn share one stable id and preserve attachments, controls, parentage, and the attention operation",
+);
+assert.doesNotMatch(
+  offlineChatResponseBlock,
+  /replaySessions|replaySessionId|daemonSessionId|continuity|resolveReplayBacked/,
+  "queue-time persistence must not promise replay continuity or daemon identity",
+);
 const queuedSessionIndex = offlineChatResponseBlock.indexOf('push({ kind: "session", sessionId });');
 const queuedProgressIndex = offlineChatResponseBlock.indexOf('id: "queued-offline"');
 const queuedDoneIndex = offlineChatResponseBlock.indexOf('kind: "done"');

@@ -433,11 +433,6 @@ assert.match(
 // Native (coven) path: same stable-identity contract.
 assert.match(
   chatRoute,
-  /const replayResumeResolution = !offlineTravelStatus && body\.sessionId && existingConversation[\s\S]*?await resolveReplayBackedResumeSessionId\(body\.sessionId\)[\s\S]*?if \(!replayResumeResolution\.ok\) \{[\s\S]*?status: 409/,
-  "live non-travel sends refuse replay-backed continuity gaps before argv fallback can fork the chat",
-);
-assert.match(
-  chatRoute,
   /const resumeTarget = body\.startNewConversation && !existingConversation[\s\S]*?body\.sessionId[\s\S]*?openCodeDirect[\s\S]*?existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
   "OpenCode preserves a submitted native session token when no Cave transcript is recorded",
 );
@@ -470,8 +465,8 @@ assert.match(
 // (never cross an ssh: runtime onto a local root).
 assert.match(
   chatRoute,
-  /const resumeCwd =\s*conversationResumeCwd \?\?\s*\(!offlineTravelStatus && !sshRuntime && !body\.projectRoot && existingConversation\?\.runtime == null\s*\? await daemonSessionCwd\(body\.sessionId\)\s*: undefined\);/,
-  "Live non-travel rootless sessions without a recorded runtime resume in the daemon session's project_root",
+  /const resumeCwd =\s*conversationResumeCwd \?\?\s*\(!sshRuntime && !body\.projectRoot && existingConversation\?\.runtime == null\s*\? await daemonSessionCwd\(body\.sessionId\)\s*: undefined\);/,
+  "Rootless sessions without a conversation-recorded runtime resume in the daemon session's project_root",
 );
 assert.match(
   chatRoute,
@@ -486,16 +481,6 @@ assert.match(
   sendRuntimeHelpers,
   /export async function daemonSessionCwd\(sessionId\?: string\): Promise<string \| undefined> \{[\s\S]*?callDaemon<DaemonSessionRow\[\]>\(\{ path: "\/api\/v1\/sessions" \}\)[\s\S]*?path\.isAbsolute\(root\)[\s\S]*?\n\}/,
   "daemonSessionCwd resolves the session's project_root from the daemon's own session list and only trusts absolute paths",
-);
-assert.match(
-  sendRuntimeHelpers,
-  /export async function resolveReplayBackedResumeSessionId\([\s\S]*?callDaemon<DaemonSessionRecord>\([\s\S]*?`\/api\/v1\/sessions\/\$\{encodeURIComponent\(latestReplay\.sessionId\)\}`[\s\S]*?ACTIVE_SESSION_STATUSES\.has\(status\)[\s\S]*?!SETTLED_REPLAY_SESSION_STATUSES\.has\(status\)[\s\S]*?const conversationId = \[[\s\S]*?recordedReplayConversationId[\s\S]*?candidate !== latestReplay\.sessionId[\s\S]*?if \(conversationId\) \{[\s\S]*?persistResolvedReplayConversationId\(/,
-  "live resume waits for the latest replay row to settle before persisting a distinct native conversation id",
-);
-assert.doesNotMatch(
-  sendRuntimeHelpers,
-  /if \(recordedReplayConversationId\) \{[\s\S]{0,500}persistResolvedReplayConversationId\(/,
-  "recorded replay metadata must not bypass daemon settlement polling",
 );
 assert.match(
   chatRoute,

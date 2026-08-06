@@ -189,7 +189,6 @@ import {
   createConversationStub,
   loadConversation,
   persistQueuedOfflineConversation,
-  resolveConversationSessionId,
   saveConversation,
   stripConversationStubTurn,
   withConversationLock,
@@ -288,7 +287,6 @@ import {
 } from "@/lib/model-control-capabilities";
 import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
 import { conversationCwd, daemonSessionCwd, resolveFamiliarWorkspace } from "./chat-send-runtime";
-import { resolveReplayBackedResumeSessionId } from "./chat-send-runtime";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -427,7 +425,6 @@ type OfflineChatQueuePayload = Pick<
   attachments: ChatAttachment[];
   responseMetadata: ChatResponseMetadata;
 };
-type OfflineTravelStatus = ReturnType<typeof deriveTravelClientStatus>;
 
 
 // Hook-line shapes emitted by codex/claude harnesses while a tool runs.
@@ -567,27 +564,21 @@ async function maybeAutoRenameFromContext(
   }
 }
 
-async function offlineTravelStatusForChat(config: CaveConfig): Promise<OfflineTravelStatus | null> {
-  const state = await loadState();
-  const travelStatus = deriveTravelClientStatus({
-    multiHost: config.multiHost,
-    travel: state.travel,
-    hubReachable: state.travel.hubUnreachableSince ? false : null,
-  });
-  if (travelStatus.authority !== "travel-local") return null;
-  return travelStatus;
-}
-
 async function maybeQueueOfflineChat(args: {
   body: SendBody;
   config: CaveConfig;
   promptText: string;
   persistedAttachments: ChatAttachment[];
   responseMetadata: ChatResponseMetadata;
-  travelStatus: OfflineTravelStatus | null;
 }): Promise<Response | null> {
-  const travelStatus = args.travelStatus;
-  if (!travelStatus) return null;
+  const state = await loadState();
+  const travelStatus = deriveTravelClientStatus({
+    multiHost: args.config.multiHost,
+    travel: state.travel,
+    hubReachable: state.travel.hubUnreachableSince ? false : null,
+  });
+  if (travelStatus.authority !== "travel-local") return null;
+
   const sessionId = args.body.sessionId ?? crypto.randomUUID();
   const queuedUserTurnId = crypto.randomUUID();
   const queuedModelIntent = offlineQueuedModelIntent({
@@ -1535,21 +1526,6 @@ export async function POST(req: Request) {
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
-  if (body.sessionId) {
-    const resolvedSession = await resolveConversationSessionId(body.sessionId);
-    if (resolvedSession.sessionId === null) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: resolvedSession.error === "ambiguous-replay-history"
-            ? "replay history is ambiguous for this session id"
-            : "replay history contains a cycle for this session id",
-        }),
-        { status: 409, headers: { "content-type": "application/json" } },
-      );
-    }
-    body.sessionId = resolvedSession.sessionId;
-  }
   // Model ids are untrusted input. Reject malformed or flag-shaped values at
   // the send boundary before capability probes or any runtime can spawn. The
   // empty string is the explicit runtime-default sentinel, not a model id.
@@ -1621,11 +1597,8 @@ export async function POST(req: Request) {
   );
 
   const config = await loadConfig();
-  // Freeze travel-local authority before any daemon continuity lookup. The
-  // remaining local validation still runs before the queued turn is accepted.
-  const offlineTravelStatus = await offlineTravelStatusForChat(config);
   const binding = bindingFor(config, body.familiarId);
-  let existingConversation = body.sessionId
+  const existingConversation = body.sessionId
     ? await loadConversation(body.sessionId).catch(() => null)
     : null;
   // Canonicalize the bound harness id up front so a familiar carrying a
@@ -1646,35 +1619,6 @@ export async function POST(req: Request) {
   // rejects any malformed legacy value.
   if (existingConversation) {
     binding.harness = canonicalHarnessId(existingConversation.harness);
-  }
-  const replayResumeResolution = !offlineTravelStatus && body.sessionId && existingConversation
-    ? await resolveReplayBackedResumeSessionId(body.sessionId)
-    : { ok: true as const, resumeSessionId: null, replayBound: false };
-  if (!replayResumeResolution.ok) {
-    return NextResponse.json(
-      {
-        ok: false,
-        retryable: replayResumeResolution.retryable,
-        code: replayResumeResolution.code,
-        error: replayResumeResolution.error,
-      },
-      {
-        status: 409,
-        ...(replayResumeResolution.retryAfter
-          ? { headers: { "Retry-After": replayResumeResolution.retryAfter } }
-          : {}),
-      },
-    );
-  }
-  if (
-    existingConversation
-    && replayResumeResolution.resumeSessionId
-    && replayResumeResolution.resumeSessionId !== existingConversation.harnessSessionId
-  ) {
-    existingConversation = {
-      ...existingConversation,
-      harnessSessionId: replayResumeResolution.resumeSessionId,
-    };
   }
   // Native Board handoffs reserve Cave's conversation id before the harness
   // writes its transcript. Bind that pre-transcript id to the server-owned
@@ -2009,7 +1953,7 @@ export async function POST(req: Request) {
   // onto a local root).
   const resumeCwd =
     conversationResumeCwd ??
-    (!offlineTravelStatus && !sshRuntime && !body.projectRoot && existingConversation?.runtime == null
+    (!sshRuntime && !body.projectRoot && existingConversation?.runtime == null
       ? await daemonSessionCwd(body.sessionId)
       : undefined);
   const projectRootForLaunch = body.projectRoot ?? resumeCwd;
@@ -2342,7 +2286,6 @@ export async function POST(req: Request) {
     promptText,
     persistedAttachments,
     responseMetadata,
-    travelStatus: offlineTravelStatus,
   });
   if (offlineChatResponse) return offlineChatResponse;
 
@@ -2669,8 +2612,8 @@ export async function POST(req: Request) {
         // If the Cave transcript was removed, the submitted token may still be
         // a valid native OpenCode session. Preserve it for a help-confirmed
         // resume rather than silently creating a context-free chat.
-        ? replayResumeResolution.resumeSessionId ?? existingConversation?.harnessSessionId ?? body.sessionId
-        : replayResumeResolution.resumeSessionId ?? existingConversation?.harnessSessionId ?? body.sessionId
+        ? existingConversation?.harnessSessionId ?? body.sessionId
+        : existingConversation?.harnessSessionId ?? body.sessionId
       : null;
   // Grok deliberately refuses to change a resumed session's sandbox. Persist
   // the profile used for the previous native session and transparently start a

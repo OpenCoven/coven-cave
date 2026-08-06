@@ -144,12 +144,6 @@ assert.match(
 );
 
 assert.match(
-  source,
-  /onSessionCanonicalized=\{\(fromSessionId, toSessionId\) => \{[\s\S]*prev\.kind === "chat" && prev\.sessionId === fromSessionId[\s\S]*\{ \.\.\.prev, sessionId: toSessionId \}/,
-  "Replay rows that resolve to a canonical conversation should update the router's active session id in place",
-);
-
-assert.match(
   chatSurfaceSource,
   /<ChatRouter[\s\S]*?syncUrlHash[\s\S]*?\/>/,
   "The main chat surface's ChatRouter must opt into URL hash sync",
