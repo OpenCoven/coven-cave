@@ -5,7 +5,9 @@ import {
   access,
   mkdir,
   mkdtemp,
+  readFile,
   readdir,
+  rename,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -13,12 +15,15 @@ import path from "node:path";
 import { after, test } from "node:test";
 
 import {
+  checkpointDeleteQuarantinePath,
   openCheckpointStore,
   publishCheckpointUnit,
   recoverCheckpointStore,
+  restoreCheckpointDirectoryQuarantineNoReplace,
 } from "./checkpoint-store.ts";
 
 const crashStage = process.env.CHECKPOINT_STORE_CRASH_STAGE;
+const restoreCrashStage = process.env.CHECKPOINT_RESTORE_CRASH_STAGE;
 
 function metadataIsValid(raw: string): boolean {
   try {
@@ -28,7 +33,29 @@ function metadataIsValid(raw: string): boolean {
   }
 }
 
-if (crashStage) {
+if (restoreCrashStage) {
+  const storePath = process.env.CHECKPOINT_STORE_CRASH_PATH!;
+  const marker = process.env.CHECKPOINT_STORE_CRASH_MARKER!;
+  const store = openCheckpointStore(storePath)!;
+  const checkpointName = "2026-08-05T20-00-00-100Z.patch";
+  const quarantine = path.join(
+    storePath,
+    process.env.CHECKPOINT_RESTORE_QUARANTINE!,
+  );
+  restoreCheckpointDirectoryQuarantineNoReplace(
+    store,
+    quarantine,
+    path.join(storePath, checkpointName),
+    metadataIsValid,
+    {
+      restorationStage: (stage) => {
+        if (stage !== restoreCrashStage) return;
+        writeFileSync(marker, "reached\n");
+        process.kill(process.pid, "SIGKILL");
+      },
+    },
+  );
+} else if (crashStage) {
   const storePath = process.env.CHECKPOINT_STORE_CRASH_PATH!;
   const marker = process.env.CHECKPOINT_STORE_CRASH_MARKER!;
   const store = openCheckpointStore(storePath, { create: true })!;
@@ -68,6 +95,7 @@ if (crashStage) {
       } catch {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
+
     }
     throw new Error(`timed out waiting for ${file}`);
   }
@@ -121,6 +149,78 @@ if (crashStage) {
         `${stage} recovers exactly the complete durable unit`,
       );
       await writeFile(path.join(caseRoot, "recovered"), "ok\n");
+    });
+  }
+
+  for (const stage of [
+    "staged-patch-synced",
+    "staged-metadata-synced",
+    "staging-directory-synced",
+    "destination-renamed",
+    "store-directory-synced",
+  ]) {
+    test(`quarantine restoration recovers after ${stage}`, async () => {
+      const caseRoot = path.join(temporary, `restore-${stage}`);
+      const gitDirectory = path.join(caseRoot, ".git");
+      const storePath = path.join(gitDirectory, "coven-cave", "checkpoints");
+      const marker = path.join(caseRoot, "stage-reached");
+      await mkdir(gitDirectory, { recursive: true });
+      const store = openCheckpointStore(storePath, { create: true })!;
+      const checkpointName = "2026-08-05T20-00-00-100Z.patch";
+      const published = publishCheckpointUnit(
+        store,
+        checkpointName,
+        "restored checkpoint\n",
+        JSON.stringify({ version: 1 }),
+      );
+      const quarantine = checkpointDeleteQuarantinePath(
+        store,
+        checkpointName,
+        "directory",
+      );
+      await rename(published, quarantine);
+      const child = spawn(
+        process.execPath,
+        ["--experimental-strip-types", import.meta.filename],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            CHECKPOINT_RESTORE_CRASH_STAGE: stage,
+            CHECKPOINT_STORE_CRASH_PATH: storePath,
+            CHECKPOINT_STORE_CRASH_MARKER: marker,
+            CHECKPOINT_RESTORE_QUARANTINE: path.basename(quarantine),
+          },
+          stdio: "ignore",
+        },
+      );
+      const exited = new Promise<void>((resolve, reject) => {
+        child.once("error", reject);
+        child.once("exit", () => resolve());
+      });
+      await waitFor(marker);
+      await exited;
+
+      const reopened = openCheckpointStore(storePath)!;
+      recoverCheckpointStore(reopened, metadataIsValid);
+      const destination = path.join(storePath, checkpointName);
+      assert.equal(
+        await readFile(
+          path.join(destination, "checkpoint.patch"),
+          "utf8",
+        ),
+        "restored checkpoint\n",
+      );
+      const names = await readdir(storePath);
+      assert.equal(
+        names.some(
+          (name) =>
+            name.startsWith(".restore-directory-") ||
+            name.startsWith(".delete-directory-"),
+        ),
+        false,
+        `${stage} leaves no restoration staging or quarantine`,
+      );
     });
   }
 }

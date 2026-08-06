@@ -12,6 +12,8 @@ const NAMED_PUBLISH_DRAFT =
 const LEGACY_PUBLISH_DRAFT = /^\.publish-[a-f0-9]+\.tmp$/;
 const DELETE_QUARANTINE =
   /^\.delete-(directory|legacy)-(.+\.patch)-([a-f0-9]{24})\.tmp$/;
+const RESTORE_DIRECTORY_STAGING =
+  /^\.restore-directory-(.+\.patch)-([a-f0-9]{24})\.tmp$/;
 
 type DirectoryIdentity = {
   dev: number;
@@ -295,11 +297,9 @@ export function publishCheckpointUnit(
     if (!published) {
       try {
         assertCheckpointStore(store);
-        fs.rmSync(
-          /* turbopackIgnore: true */ draft,
-          { recursive: true, force: true },
-        );
-        fsyncDirectoryIfSupported(store.directory);
+        if (removeGeneratedDirectoryIfSafe(draft, CHECKPOINT_UNIT_FILES)) {
+          fsyncDirectoryIfSupported(store.directory);
+        }
       } catch {
         // Preserve the draft if the pinned store changed or cleanup failed.
       }
@@ -323,90 +323,76 @@ export function checkpointDeleteQuarantinePath(
 
 type InstalledFile = {
   destination: string;
-  source: string;
+  source: RegularFileSnapshot;
   destinationStat: fs.Stats;
 };
+
+function sameCreatedFile(left: fs.Stats, right: fs.Stats): boolean {
+  return (
+    left.isFile() &&
+    right.isFile() &&
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.birthtimeMs === right.birthtimeMs
+  );
+}
 
 function installRegularFileNoReplace(
   source: string,
   destination: string,
 ): InstalledFile | null {
-  let sourceStat: fs.Stats;
+  let sourceSnapshot: RegularFileSnapshot;
   try {
-    sourceStat = fs.lstatSync(/* turbopackIgnore: true */ source);
+    sourceSnapshot = snapshotRegularFile(source);
   } catch {
     return null;
   }
-  if (!sourceStat.isFile() || sourceStat.nlink !== 1) return null;
-  try {
-    if (process.platform === "win32") {
-      const sourceDescriptor = fs.openSync(
-        /* turbopackIgnore: true */ source,
-        fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0),
-      );
-      let destinationDescriptor: number | null = null;
-      let installed: InstalledFile | null = null;
-      try {
-        const openedSource = fs.fstatSync(sourceDescriptor);
-        if (
-          !openedSource.isFile() ||
-          openedSource.dev !== sourceStat.dev ||
-          openedSource.ino !== sourceStat.ino ||
-          openedSource.size !== sourceStat.size ||
-          openedSource.mtimeMs !== sourceStat.mtimeMs
-        ) {
-          return null;
-        }
-        destinationDescriptor = fs.openSync(
-          /* turbopackIgnore: true */ destination,
-          fs.constants.O_WRONLY |
-            fs.constants.O_CREAT |
-            fs.constants.O_EXCL |
-            (fs.constants.O_NOFOLLOW ?? 0),
-          0o600,
-        );
-        installed = {
-          destination,
-          source,
-          destinationStat: fs.fstatSync(destinationDescriptor),
-        };
-        fs.writeFileSync(
-          destinationDescriptor,
-          fs.readFileSync(sourceDescriptor),
-        );
-        fs.fsyncSync(destinationDescriptor);
-        const destinationStat = fs.fstatSync(destinationDescriptor);
-        installed.destinationStat = destinationStat;
-        return installed;
-      } catch {
-        if (installed) removeInstalledFile(installed);
-        return null;
-      } finally {
-        if (destinationDescriptor !== null) {
-          fs.closeSync(destinationDescriptor);
-        }
-        fs.closeSync(sourceDescriptor);
-      }
-    }
 
-    fs.linkSync(
-      /* turbopackIgnore: true */ source,
+  let destinationDescriptor: number | null = null;
+  let installed: InstalledFile | null = null;
+  let completed = false;
+  try {
+    destinationDescriptor = fs.openSync(
       /* turbopackIgnore: true */ destination,
+      fs.constants.O_WRONLY |
+        fs.constants.O_CREAT |
+        fs.constants.O_EXCL |
+        (fs.constants.O_NOFOLLOW ?? 0),
+      sourceSnapshot.identity.mode & 0o777,
     );
-    const destinationStat = fs.lstatSync(
+    installed = {
+      destination,
+      source: sourceSnapshot,
+      destinationStat: fs.fstatSync(destinationDescriptor),
+    };
+    fs.writeFileSync(destinationDescriptor, sourceSnapshot.contents);
+    fs.fsyncSync(destinationDescriptor);
+    installed.destinationStat = fs.fstatSync(destinationDescriptor);
+    const destinationPathStat = fs.lstatSync(
       /* turbopackIgnore: true */ destination,
     );
     if (
-      !destinationStat.isFile() ||
-      destinationStat.dev !== sourceStat.dev ||
-      destinationStat.ino !== sourceStat.ino
+      !sameCreatedFile(destinationPathStat, installed.destinationStat) ||
+      destinationPathStat.nlink !== 1 ||
+      destinationPathStat.size !== sourceSnapshot.contents.length
     ) {
-      return null;
+      throw new Error("installed checkpoint destination changed");
     }
-    return { destination, source, destinationStat };
+    const sourceAfterCopy = fs.lstatSync(/* turbopackIgnore: true */ source);
+    if (!sameRegularFileIdentity(sourceAfterCopy, sourceSnapshot.identity)) {
+      throw new Error("checkpoint quarantine source changed during copy");
+    }
+    completed = true;
   } catch {
+    completed = false;
+  } finally {
+    if (destinationDescriptor !== null) fs.closeSync(destinationDescriptor);
+  }
+  if (!completed) {
+    if (installed) removeInstalledFile(installed);
     return null;
   }
+  return installed;
 }
 
 function removeInstalledFile(installed: InstalledFile): void {
@@ -414,11 +400,7 @@ function removeInstalledFile(installed: InstalledFile): void {
     const stat = fs.lstatSync(
       /* turbopackIgnore: true */ installed.destination,
     );
-    const isInstalled =
-      stat.isFile() &&
-      stat.dev === installed.destinationStat.dev &&
-      stat.ino === installed.destinationStat.ino &&
-      stat.birthtimeMs === installed.destinationStat.birthtimeMs;
+    const isInstalled = sameCreatedFile(stat, installed.destinationStat);
     if (isInstalled) {
       fs.unlinkSync(/* turbopackIgnore: true */ installed.destination);
     }
@@ -440,7 +422,10 @@ export function restoreQuarantinedRegularFileNoReplace(
     return false;
   }
   try {
-    fs.unlinkSync(/* turbopackIgnore: true */ quarantinedPath);
+    if (!removeSnapshottedFile(installed.source)) {
+      removeInstalledFile(installed);
+      return false;
+    }
     fsyncDirectoryIfSupported(path.dirname(quarantinedPath));
     return true;
   } catch {
@@ -456,29 +441,158 @@ function completeDirectoryUnit(
   directory: string,
   validateMetadata: (raw: string) => boolean,
 ): boolean {
+  return snapshotCompleteDirectoryUnit(directory, validateMetadata) !== null;
+}
+
+type CompleteDirectorySnapshot = {
+  directoryIdentity: fs.Stats;
+  patch: RegularFileSnapshot;
+  metadata: RegularFileSnapshot;
+};
+
+function sameDirectoryIdentity(left: fs.Stats, right: fs.Stats): boolean {
+  return (
+    left.isDirectory() &&
+    right.isDirectory() &&
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.birthtimeMs === right.birthtimeMs
+  );
+}
+
+function snapshotCompleteDirectoryUnit(
+  directory: string,
+  validateMetadata: (raw: string) => boolean,
+): CompleteDirectorySnapshot | null {
   try {
     const info = fs.lstatSync(/* turbopackIgnore: true */ directory);
-    if (info.isSymbolicLink() || !info.isDirectory()) return false;
+    if (info.isSymbolicLink() || !info.isDirectory()) return null;
     const entries = fs.readdirSync(/* turbopackIgnore: true */ directory).sort();
     if (
       entries.length !== 2 ||
       entries[0] !== CHECKPOINT_PATCH_FILE ||
       entries[1] !== CHECKPOINT_METADATA_FILE
     ) {
-      return false;
+      return null;
     }
-    const patch = fs.lstatSync(
-      /* turbopackIgnore: true */ path.join(directory, CHECKPOINT_PATCH_FILE),
+    const patch = snapshotRegularFile(
+      path.join(directory, CHECKPOINT_PATCH_FILE),
     );
     const metadataPath = path.join(directory, CHECKPOINT_METADATA_FILE);
-    const metadata = fs.lstatSync(/* turbopackIgnore: true */ metadataPath);
-    return (
-      patch.isFile() &&
-      metadata.isFile() &&
-      patch.nlink === 1 &&
-      metadata.nlink === 1 &&
-      validateMetadata(fs.readFileSync(metadataPath, "utf8"))
+    const metadata = snapshotRegularFile(metadataPath);
+    if (!validateMetadata(metadata.contents.toString("utf8"))) return null;
+    const verifiedDirectory = fs.lstatSync(
+      /* turbopackIgnore: true */ directory,
     );
+    const verifiedEntries = fs.readdirSync(
+      /* turbopackIgnore: true */ directory,
+    ).sort();
+    if (
+      !sameDirectoryIdentity(info, verifiedDirectory) ||
+      verifiedEntries.length !== 2 ||
+      verifiedEntries[0] !== CHECKPOINT_PATCH_FILE ||
+      verifiedEntries[1] !== CHECKPOINT_METADATA_FILE
+    ) {
+      return null;
+    }
+    return { directoryIdentity: info, patch, metadata };
+  } catch {
+    return null;
+  }
+}
+
+function snapshotGeneratedDirectoryEntries(
+  directory: string,
+  allowedNames: ReadonlySet<string>,
+): { directoryIdentity: fs.Stats; files: RegularFileSnapshot[] } | null {
+  try {
+    const directoryStat = fs.lstatSync(
+      /* turbopackIgnore: true */ directory,
+    );
+    if (directoryStat.isSymbolicLink() || !directoryStat.isDirectory()) {
+      return null;
+    }
+    const names = fs.readdirSync(/* turbopackIgnore: true */ directory);
+    if (names.some((name) => !allowedNames.has(name))) return null;
+    const files = names.map((name) =>
+      snapshotRegularFile(path.join(directory, name)),
+    );
+    const verifiedDirectory = fs.lstatSync(
+      /* turbopackIgnore: true */ directory,
+    );
+    if (!sameDirectoryIdentity(directoryStat, verifiedDirectory)) return null;
+    return { directoryIdentity: directoryStat, files };
+  } catch {
+    return null;
+  }
+}
+
+function removeGeneratedDirectoryIfSafe(
+  directory: string,
+  allowedNames: ReadonlySet<string>,
+): boolean {
+  const generated = snapshotGeneratedDirectoryEntries(directory, allowedNames);
+  if (!generated) return false;
+  for (const file of generated.files) {
+    if (!removeSnapshottedFile(file)) return false;
+  }
+  try {
+    const current = fs.lstatSync(/* turbopackIgnore: true */ directory);
+    if (!sameDirectoryIdentity(current, generated.directoryIdentity)) {
+      return false;
+    }
+    fs.rmdirSync(/* turbopackIgnore: true */ directory);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const CHECKPOINT_UNIT_FILES = new Set([
+  CHECKPOINT_PATCH_FILE,
+  CHECKPOINT_METADATA_FILE,
+]);
+
+function completeDirectorySnapshotsEqual(
+  left: CompleteDirectorySnapshot,
+  right: CompleteDirectorySnapshot,
+): boolean {
+  return (
+    left.patch.contents.equals(right.patch.contents) &&
+    left.metadata.contents.equals(right.metadata.contents)
+  );
+}
+
+function cleanupQuarantineMatchingDestination(
+  quarantine: string,
+  destination: CompleteDirectorySnapshot,
+): boolean {
+  const generated = snapshotGeneratedDirectoryEntries(
+    quarantine,
+    CHECKPOINT_UNIT_FILES,
+  );
+  if (
+    !generated ||
+    generated.files.length !== CHECKPOINT_UNIT_FILES.size ||
+    generated.files.some(
+      (file) => !CHECKPOINT_UNIT_FILES.has(path.basename(file.pathname)),
+    )
+  ) {
+    return false;
+  }
+  for (const file of generated.files) {
+    const expected = path.basename(file.pathname) === CHECKPOINT_PATCH_FILE
+      ? destination.patch
+      : destination.metadata;
+    if (!file.contents.equals(expected.contents)) return false;
+  }
+  return removeGeneratedDirectoryIfSafe(quarantine, CHECKPOINT_UNIT_FILES);
+}
+
+function metadataIsJson(raw: string): boolean {
+  try {
+    JSON.parse(raw);
+    return true;
   } catch {
     return false;
   }
@@ -488,46 +602,112 @@ export function restoreCheckpointDirectoryQuarantineNoReplace(
   store: CheckpointStore,
   quarantine: string,
   destination: string,
+  validateMetadata: (raw: string) => boolean = metadataIsJson,
+  options: {
+    restorationStage?: (
+      stage:
+        | "staged-patch-synced"
+        | "staged-metadata-synced"
+        | "staging-directory-synced"
+        | "destination-renamed"
+        | "store-directory-synced",
+    ) => void;
+  } = {},
 ): boolean {
   assertCheckpointStore(store);
   assertDirectStoreChildPath(store, quarantine);
   assertDirectStoreChildPath(store, destination);
+  const source = snapshotCompleteDirectoryUnit(quarantine, validateMetadata);
+  if (!source) return false;
+  if (fileExists(destination)) {
+    const published = snapshotCompleteDirectoryUnit(
+      destination,
+      validateMetadata,
+    );
+    if (!published || !completeDirectorySnapshotsEqual(source, published)) {
+      return false;
+    }
+    if (cleanupQuarantineMatchingDestination(quarantine, published)) {
+      fsyncDirectoryIfSupported(store.directory);
+    }
+    return true;
+  }
+  const staging = directStoreChild(
+    store,
+    `.restore-directory-${path.basename(destination)}-` +
+      `${randomBytes(12).toString("hex")}.tmp`,
+  );
   try {
-    fs.mkdirSync(/* turbopackIgnore: true */ destination, { mode: 0o700 });
+    fs.mkdirSync(/* turbopackIgnore: true */ staging, { mode: 0o700 });
   } catch {
     return false;
   }
 
-  const installed: InstalledFile[] = [];
-  let destinationDurable = false;
+  let published = false;
   try {
-    for (const name of [CHECKPOINT_PATCH_FILE, CHECKPOINT_METADATA_FILE]) {
-      const file = installRegularFileNoReplace(
-        path.join(quarantine, name),
-        path.join(destination, name),
-      );
-      if (!file) throw new Error("checkpoint quarantine restore failed");
-      installed.push(file);
+    writeDurableExclusiveFile(
+      path.join(staging, CHECKPOINT_PATCH_FILE),
+      source.patch.contents,
+    );
+    options.restorationStage?.("staged-patch-synced");
+    writeDurableExclusiveFile(
+      path.join(staging, CHECKPOINT_METADATA_FILE),
+      source.metadata.contents,
+    );
+    options.restorationStage?.("staged-metadata-synced");
+    fsyncDirectoryIfSupported(staging);
+    options.restorationStage?.("staging-directory-synced");
+
+    const verifiedSource = snapshotCompleteDirectoryUnit(
+      quarantine,
+      validateMetadata,
+    );
+    const verifiedStaging = snapshotCompleteDirectoryUnit(
+      staging,
+      validateMetadata,
+    );
+    if (
+      !verifiedSource ||
+      !verifiedStaging ||
+      !sameDirectoryIdentity(
+        source.directoryIdentity,
+        verifiedSource.directoryIdentity,
+      ) ||
+      !completeDirectorySnapshotsEqual(source, verifiedSource) ||
+      !completeDirectorySnapshotsEqual(source, verifiedStaging)
+    ) {
+      throw new Error("checkpoint quarantine changed during staging");
     }
-    fsyncDirectoryIfSupported(destination);
+    if (fileExists(destination)) return false;
     assertCheckpointStore(store);
+    fs.renameSync(
+      /* turbopackIgnore: true */ staging,
+      /* turbopackIgnore: true */ destination,
+    );
+    published = true;
+    options.restorationStage?.("destination-renamed");
     fsyncDirectoryIfSupported(store.directory);
-    destinationDurable = true;
-    for (const file of installed) {
-      fs.unlinkSync(/* turbopackIgnore: true */ file.source);
+    options.restorationStage?.("store-directory-synced");
+    const publishedUnit = snapshotCompleteDirectoryUnit(
+      destination,
+      validateMetadata,
+    );
+    if (
+      !publishedUnit ||
+      !completeDirectorySnapshotsEqual(source, publishedUnit)
+    ) {
+      throw new Error("published checkpoint failed verification");
     }
-    fs.rmdirSync(/* turbopackIgnore: true */ quarantine);
-    fsyncDirectoryIfSupported(store.directory);
+    if (cleanupQuarantineMatchingDestination(quarantine, publishedUnit)) {
+      fsyncDirectoryIfSupported(store.directory);
+    }
     return true;
   } catch {
-    if (destinationDurable) return true;
-    for (const file of installed) removeInstalledFile(file);
-    try {
-      fs.rmdirSync(/* turbopackIgnore: true */ destination);
-    } catch {
-      // Preserve any incomplete destination and the complete quarantine.
+    return published;
+  } finally {
+    if (!published && fileExists(staging)) {
+      removeGeneratedDirectoryIfSafe(staging, CHECKPOINT_UNIT_FILES);
     }
-    return false;
   }
 }
 
@@ -579,8 +759,17 @@ function restoreLegacyQuarantine(
   quarantine: string,
   destination: string,
   hasMetadata: boolean,
+  validateMetadata: (raw: string) => boolean,
 ): boolean {
   assertCheckpointStore(store);
+  if (hasMetadata) {
+    return restoreCheckpointDirectoryQuarantineNoReplace(
+      store,
+      quarantine,
+      destination,
+      validateMetadata,
+    );
+  }
   const installed: InstalledFile[] = [];
   let destinationDurable = false;
   try {
@@ -590,19 +779,13 @@ function restoreLegacyQuarantine(
     );
     if (!patch) return false;
     installed.push(patch);
-    if (hasMetadata) {
-      const metadata = installRegularFileNoReplace(
-        path.join(quarantine, CHECKPOINT_METADATA_FILE),
-        `${destination}.scope.json`,
-      );
-      if (!metadata) throw new Error("checkpoint metadata restore failed");
-      installed.push(metadata);
-    }
     assertCheckpointStore(store);
     fsyncDirectoryIfSupported(store.directory);
     destinationDurable = true;
     for (const file of installed) {
-      fs.unlinkSync(/* turbopackIgnore: true */ file.source);
+      if (!removeSnapshottedFile(file.source)) {
+        throw new Error("legacy checkpoint quarantine changed during cleanup");
+      }
     }
     fs.rmdirSync(/* turbopackIgnore: true */ quarantine);
     fsyncDirectoryIfSupported(store.directory);
@@ -684,6 +867,15 @@ export function recoverCheckpointStore(
   );
 
   for (const name of names) {
+    if (!RESTORE_DIRECTORY_STAGING.test(name)) continue;
+    assertCheckpointStore(store);
+    const staging = directStoreChild(store, name);
+    if (removeGeneratedDirectoryIfSafe(staging, CHECKPOINT_UNIT_FILES)) {
+      fsyncDirectoryIfSupported(store.directory);
+    }
+  }
+
+  for (const name of names) {
     assertCheckpointStore(store);
     const quarantineMatch = DELETE_QUARANTINE.exec(name);
     if (!quarantineMatch) continue;
@@ -692,11 +884,28 @@ export function recoverCheckpointStore(
     const quarantine = directStoreChild(store, name);
     const destination = directStoreChild(store, checkpointName);
     if (format === "directory") {
-      if (!completeDirectoryUnit(quarantine, validateMetadata)) continue;
+      const complete = snapshotCompleteDirectoryUnit(
+        quarantine,
+        validateMetadata,
+      );
+      if (!complete) {
+        const published = snapshotCompleteDirectoryUnit(
+          destination,
+          validateMetadata,
+        );
+        if (
+          published &&
+          cleanupQuarantineMatchingDestination(quarantine, published)
+        ) {
+          fsyncDirectoryIfSupported(store.directory);
+        }
+        continue;
+      }
       restoreCheckpointDirectoryQuarantineNoReplace(
         store,
         quarantine,
         destination,
+        validateMetadata,
       );
     } else {
       const complete = completeLegacyQuarantine(
@@ -709,6 +918,7 @@ export function recoverCheckpointStore(
         quarantine,
         destination,
         complete.metadata,
+        validateMetadata,
       );
     }
   }
@@ -723,11 +933,9 @@ export function recoverCheckpointStore(
     if (!completeDirectoryUnit(draft, validateMetadata)) {
       assertCheckpointStore(store);
       try {
-        fs.rmSync(
-          /* turbopackIgnore: true */ draft,
-          { force: true, recursive: true },
-        );
-        fsyncDirectoryIfSupported(store.directory);
+        if (removeGeneratedDirectoryIfSafe(draft, CHECKPOINT_UNIT_FILES)) {
+          fsyncDirectoryIfSupported(store.directory);
+        }
       } catch {
         // Leave an artifact that cannot be safely removed for manual recovery.
       }
@@ -778,6 +986,9 @@ export function recoverCheckpointStore(
   });
   const legacyPatchTemps = remaining.filter((name) =>
     /^\.publish-([a-f0-9]+)\.patch\.tmp$/.test(name),
+  );
+  const legacyMetadataTemps = remaining.filter((name) =>
+    /^\.publish-([a-f0-9]+)\.scope\.tmp$/.test(name),
   );
   const legacyPairs = legacyPatchTemps.flatMap((patchTempName) => {
     assertCheckpointStore(store);
@@ -854,13 +1065,16 @@ export function recoverCheckpointStore(
         fsyncDirectoryIfSupported(store.directory);
         recovered = true;
       }
-      if (
-        recovered &&
-        removeSnapshottedFile(patchSource) &&
-        removeSnapshottedFile(metadataSource)
-      ) {
-        fs.rmSync(/* turbopackIgnore: true */ reservation, { force: true });
-        fsyncDirectoryIfSupported(store.directory);
+      if (recovered) {
+        const patchRemoved = removeSnapshottedFile(patchSource);
+        const metadataRemoved = removeSnapshottedFile(metadataSource);
+        if (
+          (patchRemoved || !fileExists(patchSource.pathname)) &&
+          (metadataRemoved || !fileExists(metadataSource.pathname))
+        ) {
+          fs.rmSync(/* turbopackIgnore: true */ reservation, { force: true });
+          fsyncDirectoryIfSupported(store.directory);
+        }
       }
     } catch {
       // The source pair and reservation remain recoverable after interruption.
@@ -868,15 +1082,12 @@ export function recoverCheckpointStore(
   }
 
   for (const reservation of reservations) {
-    const target = directStoreChild(
-      store,
-      reservation.slice(0, -".reserve".length),
-    );
-    const hasRecoverableLegacyPair =
+    const hasRecoverableLegacyArtifacts =
       reservations.length === 1 &&
-      legacyPairs.length === 1 &&
-      !fileExists(target);
-    if (hasRecoverableLegacyPair) continue;
+      (legacyPairs.length === 1 ||
+        legacyPatchTemps.length > 0 ||
+        legacyMetadataTemps.length > 0);
+    if (hasRecoverableLegacyArtifacts) continue;
     assertCheckpointStore(store);
     fs.rmSync(
       /* turbopackIgnore: true */ directStoreChild(store, reservation),

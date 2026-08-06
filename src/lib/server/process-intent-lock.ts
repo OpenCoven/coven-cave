@@ -17,11 +17,14 @@ const LEGACY_INTENT_NAME =
 const TRANSITIONAL_INTENT_NAME = /^(\d{24})\.lock$/;
 const INTENT_DRAFT_NAME =
   /^\.intent-(\d+)-([a-f0-9]{16})-([a-f0-9]+)\.tmp$/;
-const INTENT_STATE_NAME =
+const INTENT_STATE_NAME = /^\.current-(\d{24})\.intent$/;
+const PREVIOUS_INTENT_STATE_NAME =
   /^\.published-(\d{24}-\d+-[a-f0-9]{16}-[a-f0-9]+\.lock)\.intent$/;
 const RELEASED_INTENT_NAME = /^\.released-/;
 const INTENT_OWNER_FILE = "owner.json";
+const INTENT_GATE_FILE = "gate.json";
 const MALFORMED_INTENT_GRACE_MS = 30_000;
+const LEGACY_QUIESCENCE_NS = BigInt(50_000_000);
 const execFileAsync = promisify(execFile);
 const pendingIntentRemovals = new Map<
   string,
@@ -260,6 +263,7 @@ type IntentEntry = {
   order: bigint;
   owner: IntentOwner | null;
   modifiedAtMs: number;
+  currentOrder: bigint | null;
 };
 
 function intentOrder(name: string): bigint | null {
@@ -268,9 +272,99 @@ function intentOrder(name: string): bigint | null {
   return match ? BigInt(match[1]) : null;
 }
 
+type CurrentPublication = {
+  gateName: string;
+  order: bigint;
+  owner: IntentOwner;
+  statePath: string;
+};
+
+function sameOwner(left: IntentOwner, right: IntentOwner): boolean {
+  return (
+    left.pid === right.pid &&
+    left.startIdentityHash === right.startIdentityHash
+  );
+}
+
+async function readCurrentPublication(
+  intentsDirectory: string,
+  name: string,
+): Promise<CurrentPublication | null> {
+  const match = INTENT_STATE_NAME.exec(name);
+  if (!match) return null;
+  const statePath = path.join(
+    /* turbopackIgnore: true */ intentsDirectory,
+    name,
+  );
+  try {
+    const info = await lstat(/* turbopackIgnore: true */ statePath);
+    if (info.isSymbolicLink() || !info.isDirectory()) return null;
+    const [ownerRaw, gateRaw] = await Promise.all([
+      readFile(
+        /* turbopackIgnore: true */ path.join(statePath, INTENT_OWNER_FILE),
+        "utf8",
+      ),
+      readFile(
+        /* turbopackIgnore: true */ path.join(statePath, INTENT_GATE_FILE),
+        "utf8",
+      ),
+    ]);
+    const owner = JSON.parse(ownerRaw) as Partial<IntentOwner>;
+    const gate = JSON.parse(gateRaw) as { gateName?: unknown };
+    if (
+      !Number.isSafeInteger(owner.pid) ||
+      Number(owner.pid) <= 0 ||
+      typeof owner.startIdentityHash !== "string" ||
+      !/^[a-f0-9]{16}$/.test(owner.startIdentityHash) ||
+      typeof gate.gateName !== "string"
+    ) {
+      return null;
+    }
+    const gateOwner = legacyIntentOwner(gate.gateName);
+    const publicationOwner = {
+      pid: Number(owner.pid),
+      startIdentityHash: owner.startIdentityHash,
+    };
+    if (!gateOwner || !sameOwner(gateOwner, publicationOwner)) return null;
+    return {
+      gateName: gate.gateName,
+      order: BigInt(match[1]),
+      owner: publicationOwner,
+      statePath,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function listCurrentPublications(
+  intentsDirectory: string,
+  names: string[],
+): Promise<Map<string, CurrentPublication>> {
+  const publications = (
+    await Promise.all(
+      names.map((name) => readCurrentPublication(intentsDirectory, name)),
+    )
+  ).filter(
+    (publication): publication is CurrentPublication => publication !== null,
+  );
+  const byGate = new Map<string, CurrentPublication>();
+  const duplicates = new Set<string>();
+  for (const publication of publications) {
+    if (byGate.has(publication.gateName)) {
+      duplicates.add(publication.gateName);
+    } else {
+      byGate.set(publication.gateName, publication);
+    }
+  }
+  for (const duplicate of duplicates) byGate.delete(duplicate);
+  return byGate;
+}
+
 async function readIntentEntry(
   intentsDirectory: string,
   name: string,
+  currentPublications: Map<string, CurrentPublication>,
 ): Promise<IntentEntry | null> {
   const order = intentOrder(name);
   if (order === null) return null;
@@ -286,15 +380,26 @@ async function readIntentEntry(
     return null;
   }
   if (legacyOwner) {
+    const publication = currentPublications.get(name);
     return {
       name,
       order,
       owner: legacyOwner,
       modifiedAtMs: info.mtimeMs,
+      currentOrder:
+        publication && sameOwner(publication.owner, legacyOwner)
+          ? publication.order
+          : null,
     };
   }
   if (info.isSymbolicLink() || !info.isDirectory()) {
-    return { name, order, owner: null, modifiedAtMs: info.mtimeMs };
+    return {
+      name,
+      order,
+      owner: null,
+      modifiedAtMs: info.mtimeMs,
+      currentOrder: null,
+    };
   }
   let ownerRaw: string;
   try {
@@ -304,7 +409,13 @@ async function readIntentEntry(
     );
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    return { name, order, owner: null, modifiedAtMs: info.mtimeMs };
+    return {
+      name,
+      order,
+      owner: null,
+      modifiedAtMs: info.mtimeMs,
+      currentOrder: null,
+    };
   }
   try {
     const parsed = JSON.parse(ownerRaw) as Partial<IntentOwner>;
@@ -312,6 +423,7 @@ async function readIntentEntry(
       name,
       order,
       modifiedAtMs: info.mtimeMs,
+      currentOrder: null,
       owner:
         Number.isSafeInteger(parsed.pid) &&
         Number(parsed.pid) > 0 &&
@@ -327,7 +439,13 @@ async function readIntentEntry(
     // Transitional directory intents are published only after their owner
     // file is durable. A malformed entry therefore receives a grace period
     // before stale recovery rather than blocking the repository forever.
-    return { name, order, owner: null, modifiedAtMs: info.mtimeMs };
+    return {
+      name,
+      order,
+      owner: null,
+      modifiedAtMs: info.mtimeMs,
+      currentOrder: null,
+    };
   }
 }
 
@@ -335,9 +453,15 @@ async function listIntentEntries(
   intentsDirectory: string,
 ): Promise<IntentEntry[]> {
   const names = await readdir(/* turbopackIgnore: true */ intentsDirectory);
+  const currentPublications = await listCurrentPublications(
+    intentsDirectory,
+    names,
+  );
   const entries = (
     await Promise.all(
-      names.map((name) => readIntentEntry(intentsDirectory, name)),
+      names.map((name) =>
+        readIntentEntry(intentsDirectory, name, currentPublications),
+      ),
     )
   ).filter((entry): entry is IntentEntry => entry !== null);
   entries.sort(
@@ -381,11 +505,31 @@ async function removeStaleIntentArtifacts(
         await removeIntent(pathname);
         return;
       }
-      const stateMatch = INTENT_STATE_NAME.exec(name);
-      if (!stateMatch) return;
+      const previousState = PREVIOUS_INTENT_STATE_NAME.exec(name);
+      if (previousState) {
+        try {
+          await lstat(
+            /* turbopackIgnore: true */ path.join(
+              intentsDirectory,
+              previousState[1],
+            ),
+          );
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+            await removeIntent(pathname);
+          }
+        }
+        return;
+      }
+      if (!INTENT_STATE_NAME.test(name)) return;
+      const publication = await readCurrentPublication(
+        intentsDirectory,
+        name,
+      );
+      if (!publication) return;
       const gatePath = path.join(
         /* turbopackIgnore: true */ intentsDirectory,
-        stateMatch[1],
+        publication.gateName,
       );
       try {
         await lstat(/* turbopackIgnore: true */ gatePath);
@@ -393,9 +537,8 @@ async function removeStaleIntentArtifacts(
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") return;
       }
-      // The compatibility gate is always durable before this sidecar rename
-      // and is retired last. With no gate, the sidecar is never authoritative
-      // and cannot represent an in-progress publication.
+      // The compatibility gate is durable before the sequenced state rename
+      // and is retired last. With no gate, the state is never authoritative.
       await removeIntent(pathname);
     }),
   );
@@ -549,13 +692,9 @@ async function publishCompatibilityGate(
   intentsDirectory: string,
   owner: IntentOwner,
   options: ProcessIntentLockOptions,
-  minimumOrder = BigInt(0),
 ): Promise<{ name: string; path: string }> {
   for (;;) {
-    const now = process.hrtime.bigint();
-    const order = (now > minimumOrder ? now : minimumOrder)
-      .toString()
-      .padStart(24, "0");
+    const order = "000000000000000000000000";
     const name =
       `${order}-${owner.pid}-${owner.startIdentityHash}-` +
       `${randomBytes(8).toString("hex")}.lock`;
@@ -589,12 +728,82 @@ async function publishCompatibilityGate(
   }
 }
 
+async function renameCollision(
+  error: unknown,
+  destination: string,
+): Promise<boolean> {
+    const code = (error as NodeJS.ErrnoException).code ?? "";
+    if (code === "EEXIST" || code === "ENOTEMPTY") return true;
+    if (code !== "EACCES" && code !== "EPERM") return false;
+    try {
+      await lstat(/* turbopackIgnore: true */ destination);
+      return true;
+    } catch {
+      return false;
+    }
+}
+
+async function publishCurrentState(
+  intentsDirectory: string,
+  draftPath: string,
+  gateName: string,
+  options: ProcessIntentLockOptions,
+): Promise<{ order: bigint; path: string }> {
+    const gateHandle = await open(
+      /* turbopackIgnore: true */ path.join(draftPath, INTENT_GATE_FILE),
+      "wx",
+      0o600,
+    );
+    try {
+      await gateHandle.writeFile(`${JSON.stringify({ gateName })}\n`);
+      await gateHandle.sync();
+    } finally {
+      await gateHandle.close();
+    }
+    await fsyncDirectoryIfSupported(draftPath);
+
+    for (;;) {
+      const names = await readdir(
+        /* turbopackIgnore: true */ intentsDirectory,
+      );
+      const highest = names.reduce((current, name) => {
+        const match = INTENT_STATE_NAME.exec(name);
+        if (!match) return current;
+        const order = BigInt(match[1]);
+        return order > current ? order : current;
+      }, BigInt(0));
+      const order = highest + BigInt(1);
+      const statePath = path.join(
+        /* turbopackIgnore: true */ intentsDirectory,
+        `.current-${order.toString().padStart(24, "0")}.intent`,
+      );
+      try {
+        await rename(
+          /* turbopackIgnore: true */ draftPath,
+          /* turbopackIgnore: true */ statePath,
+        );
+        await options.publicationStage?.("state-renamed");
+        await fsyncDirectoryIfSupported(intentsDirectory);
+        await options.publicationStage?.("state-parent-synced");
+        return { order, path: statePath };
+      } catch (error) {
+        if (await renameCollision(error, statePath)) continue;
+        throw error;
+    }
+  }
+}
+
 /**
- * Cross-process lock with a legacy-shaped compatibility gate plus a durable
- * owner directory. The gate is published only after the diagnostic pause, so
- * a late contender cannot carry pre-publication priority into an active
- * critical section. Deployed legacy processes recognize the gate and current
- * processes retain the owner directory for crash-stage recovery.
+ * Cross-version safety invariant:
+ *
+ * Every current contender publishes an order-zero, base-visible barrier before
+ * joining the separately sequenced current queue, and retains that barrier
+ * through release. Base and legacy publishers can never backdate ahead of an
+ * order-zero barrier. Before the first current owner enters, it also observes a
+ * full quiet interval with no live gate lacking a valid current queue state.
+ * That catches an old owner paused after its final scan; an old contender
+ * paused before publication will publish behind the retained barrier. Unknown
+ * or unverifiable version state blocks rather than granting compatibility.
  */
 export async function acquireProcessIntentLock(
   options: ProcessIntentLockOptions,
@@ -620,7 +829,8 @@ export async function acquireProcessIntentLock(
   let ownName: string | null = null;
   let ownPath: string | null = null;
   let ownStatePath: string | null = null;
-  let yieldedPrepublicationPriority = false;
+  let ownCurrentOrder: bigint | null = null;
+  let legacyClearSince: bigint | null = null;
   try {
     assertCanContinue(deadline, options.label, options.signal);
     await waitAtPublicationBoundary(options, deadline);
@@ -631,17 +841,14 @@ export async function acquireProcessIntentLock(
     );
     ownName = gate.name;
     ownPath = gate.path;
-    ownStatePath = path.join(
-      /* turbopackIgnore: true */ options.intentsDirectory,
-      `.published-${ownName}.intent`,
+    const currentState = await publishCurrentState(
+      options.intentsDirectory,
+      draftPath,
+      ownName,
+      options,
     );
-    await rename(
-      /* turbopackIgnore: true */ draftPath,
-      /* turbopackIgnore: true */ ownStatePath,
-    );
-    await options.publicationStage?.("state-renamed");
-    await fsyncDirectoryIfSupported(options.intentsDirectory);
-    await options.publicationStage?.("state-parent-synced");
+    ownStatePath = currentState.path;
+    ownCurrentOrder = currentState.order;
 
     while (true) {
       assertCanContinue(deadline, options.label, options.signal);
@@ -654,101 +861,104 @@ export async function acquireProcessIntentLock(
         );
         const entries = await listIntentEntries(options.intentsDirectory);
         assertCanContinue(deadline, options.label, options.signal);
-        const oldest = entries[0];
-        if (oldest?.name === ownName) {
-          // A contender can be descheduled after choosing its lexical order
-          // but before creating the gate. Yield once behind every intent it
-          // then observes. A single yield is deliberate: two current
-          // contenders that repeatedly yield would leapfrog forever.
-          if (entries.length > 1 && !yieldedPrepublicationPriority) {
-            const highestOrder = entries.reduce(
-              (highest, entry) =>
-                entry.order > highest ? entry.order : highest,
-              oldest.order,
-            );
-            const replacement = await publishCompatibilityGate(
-              options.intentsDirectory,
-              owner,
-              options,
-              highestOrder + BigInt(1),
-            );
-            const replacementStatePath = path.join(
-              /* turbopackIgnore: true */ options.intentsDirectory,
-              `.published-${replacement.name}.intent`,
-            );
-            try {
-              await rename(
-                /* turbopackIgnore: true */ ownStatePath!,
-                /* turbopackIgnore: true */ replacementStatePath,
-              );
-              await fsyncDirectoryIfSupported(options.intentsDirectory);
-            } catch (error) {
-              await retireIntent(replacement.path);
-              throw error;
-            }
-            const previousPath = ownPath!;
-            ownName = replacement.name;
-            ownPath = replacement.path;
-            ownStatePath = replacementStatePath;
-            yieldedPrepublicationPriority = true;
-            await retireIntent(previousPath);
-            continue;
-          }
-          let released = false;
-          return async () => {
-            if (released) return;
-            released = true;
-            await retireIntent(ownStatePath!);
-            await retireIntent(ownPath!);
-          };
+        const ownEntry = entries.find(
+          (entry) =>
+            entry.name === ownName &&
+            entry.currentOrder === ownCurrentOrder,
+        );
+        if (!ownEntry) {
+          legacyClearSince = null;
+          await waitBeforeRetry(deadline, options.label, options.signal);
+          continue;
         }
-        if (oldest) {
-          if (!oldest.owner) {
+
+        let removedBlocker = false;
+        let legacyBlocked = false;
+        let currentQueueBlocked = false;
+        for (const entry of entries) {
+          if (entry.name === ownName) continue;
+          const isLegacy = entry.currentOrder === null;
+          const isEarlierCurrent =
+            entry.currentOrder !== null &&
+            entry.currentOrder < ownCurrentOrder!;
+          if (!isLegacy && !isEarlierCurrent) continue;
+
+          if (!entry.owner) {
             if (
-              Date.now() - oldest.modifiedAtMs >=
+              Date.now() - entry.modifiedAtMs >=
               MALFORMED_INTENT_GRACE_MS
             ) {
               const removed = await removeIntent(
                 path.join(
                   /* turbopackIgnore: true */ options.intentsDirectory,
-                  oldest.name,
+                  entry.name,
                 ),
               );
-              if (removed) continue;
+              if (removed) {
+                removedBlocker = true;
+                continue;
+              }
             }
-            await waitBeforeRetry(
-              deadline,
-              options.label,
-              options.signal,
-            );
+            if (isLegacy) legacyBlocked = true;
+            else currentQueueBlocked = true;
             continue;
           }
-          const currentIdentity = await processStartIdentity(oldest.owner.pid);
+
+          const currentIdentity = await processStartIdentity(entry.owner.pid);
           assertCanContinue(deadline, options.label, options.signal);
-          // Never infer death from age: only a dead PID or a demonstrably
-          // different process incarnation can make an intent reclaimable.
           if (
             currentIdentity === null ||
-            identityHash(currentIdentity) !== oldest.owner.startIdentityHash
+            identityHash(currentIdentity) !== entry.owner.startIdentityHash
           ) {
+            if (entry.currentOrder !== null) {
+              await removeIntent(
+                path.join(
+                  /* turbopackIgnore: true */ options.intentsDirectory,
+                  `.current-${entry.currentOrder
+                    .toString()
+                    .padStart(24, "0")}.intent`,
+                ),
+              );
+            }
             const removed = await removeIntent(
               path.join(
                 /* turbopackIgnore: true */ options.intentsDirectory,
-                oldest.name,
+                entry.name,
               ),
             );
             assertCanContinue(deadline, options.label, options.signal);
-            if (!removed) {
-              await waitBeforeRetry(
-                deadline,
-                options.label,
-                options.signal,
-              );
+            if (removed) {
+              removedBlocker = true;
+              continue;
             }
-            continue;
           }
+          if (isLegacy) legacyBlocked = true;
+          else currentQueueBlocked = true;
         }
-        await waitBeforeRetry(deadline, options.label, options.signal);
+
+        if (removedBlocker) continue;
+        if (legacyBlocked) {
+          legacyClearSince = null;
+        } else if (legacyClearSince === null) {
+          legacyClearSince = process.hrtime.bigint();
+        }
+        if (
+          legacyBlocked ||
+          currentQueueBlocked ||
+          legacyClearSince === null ||
+          process.hrtime.bigint() - legacyClearSince < LEGACY_QUIESCENCE_NS
+        ) {
+          await waitBeforeRetry(deadline, options.label, options.signal);
+          continue;
+        }
+
+        let released = false;
+        return async () => {
+          if (released) return;
+          released = true;
+          await retireIntent(ownStatePath!);
+          await retireIntent(ownPath!);
+        };
       } catch (error) {
         if (
           error instanceof InvalidIntentDirectoryError ||

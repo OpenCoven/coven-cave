@@ -283,8 +283,8 @@ assert.match(
 );
 assert.match(
   checkpointStoreSource,
-  /process\.platform === "win32"[\s\S]{0,1400}?O_EXCL[\s\S]*?fs\.linkSync\(/,
-  "rollback uses a Windows exclusive-file fallback and POSIX no-replace hard links",
+  /O_EXCL[\s\S]{0,1000}?fs\.writeFileSync\(destinationDescriptor, sourceSnapshot\.contents\)[\s\S]{0,500}?sourceAfterCopy/,
+  "rollback stages an exclusive copy and re-verifies the quarantine without hard-linking it",
 );
 
 // remote=1 — read-only origin probe powering the project-setup modal's GitHub
