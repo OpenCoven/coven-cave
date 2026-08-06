@@ -923,9 +923,16 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                 <option value="project">Group by project</option>
                 <option value="date">Group by date</option>
               </select>
-              <span className="chat-list-count-line ml-auto hidden shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)] min-[900px]:inline">
-                {sessionCountLine(visibleRows, mine.length)}
-              </span>
+              {/* The title row's pill already carries the total, so this line
+                  only earns its place when the two numbers differ — i.e. when
+                  a search or a status chip is actually hiding something. An
+                  unfiltered list showed "11 of 11 sessions" beside "11
+                  sessions", which is the duplicated-count-in-a-header trap. */}
+              {visibleRows !== mine.length ? (
+                <span className="chat-list-count-line ml-auto hidden shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)] min-[900px]:inline">
+                  {sessionCountLine(visibleRows, mine.length)}
+                </span>
+              ) : null}
             </>
           )}
 
