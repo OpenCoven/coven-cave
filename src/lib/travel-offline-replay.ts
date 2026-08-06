@@ -19,6 +19,7 @@ import { isSshRuntime } from "@/lib/familiar-runtime";
 import { cleanModelId } from "@/lib/chat-model-state";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import {
+  latestValidatedReplayConversationId,
   loadConversation,
   persistQueuedOfflineConversation,
   validatedConversationHarnessSessionId,
@@ -128,6 +129,13 @@ function daemonError(res: { status: number; error?: string; data: unknown }): st
     `daemon http ${res.status}`;
 }
 
+function replayPromotableConversationId(
+  replaySessionId: string | null | undefined,
+  conversationId: string | null | undefined,
+): string | undefined {
+  return conversationId && conversationId !== replaySessionId ? conversationId : undefined;
+}
+
 async function spawnHubSession(args: {
   config: CaveConfig;
   familiarId: string | null;
@@ -205,6 +213,11 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   });
 
   const binding = bindingFor(config, familiarId);
+  if (canonicalHarnessId(binding.harness) === "copilot") {
+    throw new Error(
+      "Offline Copilot replay cannot safely use the daemon's non-interactive session API yet. Reconnect to the hub, reopen this chat online, and retry so Cave can resume Copilot through its supported live path.",
+    );
+  }
   const modelOverride = queuedModelOverride(payload);
   if (modelOverride && !isModelAllowedByRuntime(binding.harness, modelOverride)) {
     throw new Error("queued chat model id is not allowed by the selected runtime");
@@ -228,7 +241,9 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const replayPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });
   const sessionId = stringValue(payload.sessionId) ?? item.id;
   const existingConversation = await loadConversation(sessionId).catch(() => null);
-  const nativeConversationId = validatedConversationHarnessSessionId(existingConversation);
+  const nativeConversationId =
+    validatedConversationHarnessSessionId(existingConversation)
+    ?? latestValidatedReplayConversationId(existingConversation);
   let replaySessionId = stringValue(payload.replaySessionId) ?? stringValue(payload.harnessSessionId);
   let conversationId = stringValue(payload.conversationId);
   if (!replaySessionId) {
@@ -274,6 +289,7 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     createdAt: item.createdAt,
     replaySessionId: replaySessionId ?? undefined,
     conversationId,
+    validatedNativeConversationId: replayPromotableConversationId(replaySessionId, conversationId),
     userTurn: {
       id: stringValue(payload.userTurnId) ?? item.id,
       text: prompt,

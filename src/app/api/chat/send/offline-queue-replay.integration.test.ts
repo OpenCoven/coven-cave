@@ -497,8 +497,10 @@ try {
     const extraConversation = await conversations.loadConversation(replayCase.sessionId);
     assert.equal(
       extraConversation?.harnessSessionId,
-      undefined,
-      "new offline conversations leave the native resume id unset",
+      replayCase.expectedReplaySession.conversationId === replayCase.expectedReplaySession.sessionId
+        ? undefined
+        : replayCase.expectedReplaySession.conversationId,
+      "offline replay promotes only distinct daemon-returned native conversation ids onto the stable transcript",
     );
     assert.equal(extraConversation?.replaySessions?.length, 1);
     assert.equal(extraConversation?.replaySessions?.[0]?.sessionId, replayCase.expectedReplaySession.sessionId);
@@ -668,6 +670,246 @@ try {
     (await conversations.loadConversation("offline-chat-malicious-id"))?.harnessSessionId,
     undefined,
     "malicious daemon conversation ids are rejected instead of being cached as native continuity",
+  );
+
+  await conversations.saveConversation({
+    sessionId: "offline-chat-consecutive",
+    familiarId: "sage",
+    harness: "claude",
+    model: "anthropic/claude-sonnet-4-6",
+    runtime: `local:${projectRoot}`,
+    title: "Consecutive offline chat",
+    createdAt: "2026-06-30T12:09:00.000Z",
+    updatedAt: "2026-06-30T12:09:00.000Z",
+    replaySessions: [
+      {
+        sessionId: "hub-history-valid",
+        conversationId: "native-thread-history",
+        createdAt: "2026-06-30T12:08:00.000Z",
+        updatedAt: "2026-06-30T12:08:00.000Z",
+      },
+      {
+        sessionId: "hub-history-equal",
+        conversationId: "hub-history-equal",
+        createdAt: "2026-06-30T12:08:30.000Z",
+        updatedAt: "2026-06-30T12:08:30.000Z",
+      },
+      {
+        sessionId: "hub-history-malicious",
+        createdAt: "2026-06-30T12:08:45.000Z",
+        updatedAt: "2026-06-30T12:08:45.000Z",
+      },
+    ],
+    turns: [{
+      id: "offline-chat-consecutive-root",
+      role: "user",
+      text: "root",
+      createdAt: "2026-06-30T12:09:00.000Z",
+      parentId: null,
+    }],
+    activeLeafId: "offline-chat-consecutive-root",
+  });
+  for (const [index, createdAt] of [
+    "2026-06-30T12:10:00.000Z",
+    "2026-06-30T12:11:00.000Z",
+    "2026-06-30T12:12:00.000Z",
+  ].entries()) {
+    const turnNumber = index + 1;
+    const userTurnId = `offline-chat-consecutive-user-${turnNumber}`;
+    const parentId = turnNumber === 1
+      ? "offline-chat-consecutive-root"
+      : `offline-chat-consecutive-user-${turnNumber - 1}`;
+    await conversations.persistQueuedOfflineConversation({
+      sessionId: "offline-chat-consecutive",
+      familiarId: "sage",
+      harness: "claude",
+      createdAt,
+      userTurn: {
+        id: userTurnId,
+        text: `queued consecutive turn ${turnNumber}`,
+        parentId,
+      },
+    });
+    await config.enqueueOfflineTravelItem({
+      kind: "chat",
+      summary: `offline-chat-consecutive-${turnNumber}`,
+      payload: {
+        familiarId: "sage",
+        prompt: `queued consecutive turn ${turnNumber}`,
+        sessionId: "offline-chat-consecutive",
+        userTurnId,
+        parentTurnId: parentId,
+        projectRoot,
+      },
+    });
+  }
+  const requestCountBeforeConsecutive = sessionRequests.length;
+  sessionResponses.push(
+    { id: "hub-consecutive-1", status: "running", conversationId: "native-thread-1" },
+    { id: "hub-consecutive-2", status: "running", conversationId: "native-thread-2" },
+    { id: "hub-consecutive-3", status: "running", conversationId: "native-thread-3" },
+  );
+  assert.deepEqual(
+    await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 3 }),
+    { attempted: 3, synced: 3, failed: 0, errors: [] },
+  );
+  const consecutiveRequests = sessionRequests.slice(requestCountBeforeConsecutive);
+  assert.equal(consecutiveRequests.length, 3);
+  assert.deepEqual(consecutiveRequests[0]?.conversation, {
+    mode: "resume",
+    id: "native-thread-history",
+  }, "first replay falls back to the newest valid recorded native replay conversation id");
+  assert.deepEqual(consecutiveRequests[1]?.conversation, {
+    mode: "resume",
+    id: "native-thread-1",
+  }, "second replay promotes the daemon-returned native conversation id instead of reusing the daemon session id");
+  assert.deepEqual(consecutiveRequests[2]?.conversation, {
+    mode: "resume",
+    id: "native-thread-2",
+  }, "third replay reuses the latest promoted native conversation id after consecutive fresh offline turns");
+  assert.equal(
+    (await conversations.loadConversation("offline-chat-consecutive"))?.harnessSessionId,
+    "native-thread-3",
+    "consecutive replays promote each recovered native conversation id onto the stable transcript",
+  );
+
+  await conversations.persistQueuedOfflineConversation({
+    sessionId: "offline-chat-crash-retry",
+    familiarId: "sage",
+    harness: "claude",
+    createdAt: "2026-06-30T12:13:00.000Z",
+    userTurn: {
+      id: "offline-chat-crash-retry-user-1",
+      text: "queued crash retry turn 1",
+    },
+  });
+  const crashRetryItem = await config.enqueueOfflineTravelItem({
+    kind: "chat",
+    summary: "offline-chat-crash-retry-1",
+    payload: {
+      familiarId: "sage",
+      prompt: "queued crash retry turn 1",
+      sessionId: "offline-chat-crash-retry",
+      userTurnId: "offline-chat-crash-retry-user-1",
+      projectRoot,
+      replaySessionId: "hub-crash-retry-1",
+      conversationId: "native-thread-crash",
+    },
+  });
+  const requestCountBeforeCrashRetry = sessionRequests.length;
+  assert.deepEqual(
+    await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 }),
+    { attempted: 1, synced: 1, failed: 0, errors: [] },
+  );
+  assert.equal(
+    sessionRequests.length,
+    requestCountBeforeCrashRetry,
+    "retrying a replay that already persisted daemon/native ids must not spawn a second daemon session after a crash",
+  );
+  assert.equal(
+    (await conversations.loadConversation("offline-chat-crash-retry"))?.harnessSessionId,
+    "native-thread-crash",
+    "crash-retry replay state promotes the saved native conversation id before the next queued send launches",
+  );
+  await conversations.persistQueuedOfflineConversation({
+    sessionId: "offline-chat-crash-retry",
+    familiarId: "sage",
+    harness: "claude",
+    createdAt: "2026-06-30T12:14:00.000Z",
+    userTurn: {
+      id: "offline-chat-crash-retry-user-2",
+      text: "queued crash retry turn 2",
+      parentId: "offline-chat-crash-retry-user-1",
+    },
+  });
+  await config.enqueueOfflineTravelItem({
+    kind: "chat",
+    summary: "offline-chat-crash-retry-2",
+    payload: {
+      familiarId: "sage",
+      prompt: "queued crash retry turn 2",
+      sessionId: "offline-chat-crash-retry",
+      userTurnId: "offline-chat-crash-retry-user-2",
+      parentTurnId: "offline-chat-crash-retry-user-1",
+      projectRoot,
+    },
+  });
+  sessionResponses.push({ id: "hub-crash-retry-2", status: "running", conversationId: "native-thread-crash-2" });
+  assert.deepEqual(
+    await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 }),
+    { attempted: 1, synced: 1, failed: 0, errors: [] },
+  );
+  assert.deepEqual(
+    sessionRequests.at(-1)?.conversation,
+    { mode: "resume", id: "native-thread-crash" },
+    "the first launch after a crash retry resumes the promoted native thread rather than the daemon replay session id",
+  );
+  const crashRetryState = await config.loadState();
+  assert.equal(
+    crashRetryState.travel.offlineQueue.find((item) => item.id === crashRetryItem.id)?.status,
+    "synced",
+  );
+
+  await config.saveConfig({
+    defaults: { harness: "claude", model: "anthropic/claude-sonnet-4-6" },
+    familiars: {
+      sage: { harness: "claude" },
+      pilot: { harness: "copilot" },
+    },
+    multiHost: { mode: "hub", hubUrl, executorUrls: [] },
+  });
+  await grantProjectToFamiliar({ familiarId: "pilot", projectId: project.id, source: "human", access: "write" });
+  await conversations.persistQueuedOfflineConversation({
+    sessionId: "offline-chat-copilot-blocked",
+    familiarId: "pilot",
+    harness: "copilot",
+    createdAt: "2026-06-30T12:15:00.000Z",
+    userTurn: {
+      id: "offline-chat-copilot-blocked-user",
+      text: "multi word prompt for copilot replay",
+    },
+  });
+  const copilotBlocked = await config.enqueueOfflineTravelItem({
+    kind: "chat",
+    summary: "offline-chat-copilot-blocked",
+    payload: {
+      familiarId: "pilot",
+      prompt: "multi word prompt for copilot replay",
+      sessionId: "offline-chat-copilot-blocked",
+      userTurnId: "offline-chat-copilot-blocked-user",
+      projectRoot,
+    },
+  });
+  const requestCountBeforeCopilotReplay = sessionRequests.length;
+  assert.deepEqual(
+    await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 }),
+    {
+      attempted: 1,
+      synced: 0,
+      failed: 1,
+      errors: [{
+        id: copilotBlocked.id,
+        error: "Offline Copilot replay cannot safely use the daemon's non-interactive session API yet. Reconnect to the hub, reopen this chat online, and retry so Cave can resume Copilot through its supported live path.",
+      }],
+    },
+  );
+  assert.equal(
+    sessionRequests.length,
+    requestCountBeforeCopilotReplay,
+    "offline Copilot replay must fail closed before any daemon session spawn is attempted",
+  );
+  const copilotBlockedState = await config.loadState();
+  const copilotBlockedItem = copilotBlockedState.travel.offlineQueue.find((item) => item.id === copilotBlocked.id);
+  assert.equal(copilotBlockedItem?.status, "failed");
+  assert.match(
+    copilotBlockedItem?.lastError ?? "",
+    /reopen this chat online, and retry/i,
+    "offline Copilot replay surfaces a retryable, actionable error instead of silently launching a broken non-interactive session",
+  );
+  assert.equal(
+    (await conversations.loadConversation("offline-chat-copilot-blocked"))?.replaySessions?.length ?? 0,
+    0,
+    "a blocked Copilot replay spawns no daemon session and records no replay metadata",
   );
 
   console.log("offline-queue-replay.integration.test.ts: ok");

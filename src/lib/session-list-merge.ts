@@ -328,6 +328,10 @@ export function mergeSessionRows({
     "replay-session": 3,
     harness: 4,
   };
+  const parseDaemonTime = (value: string): number | null => {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
   const preferMappedDaemon = (
     candidate: MappedDaemonSession,
     existing: MappedDaemonSession,
@@ -335,16 +339,24 @@ export function mergeSessionRows({
     const candidateActive = ACTIVE_SESSION_STATUSES.has(candidate.session.status.toLowerCase());
     const existingActive = ACTIVE_SESSION_STATUSES.has(existing.session.status.toLowerCase());
     if (candidateActive !== existingActive) return candidateActive;
+    const candidateCreatedAt = parseDaemonTime(candidate.session.created_at);
+    const existingCreatedAt = parseDaemonTime(existing.session.created_at);
+    if (candidateCreatedAt !== existingCreatedAt) {
+      if (candidateCreatedAt === null) return false;
+      if (existingCreatedAt === null) return true;
+      return candidateCreatedAt > existingCreatedAt;
+    }
+    const candidateUpdatedAt = parseDaemonTime(candidate.session.updated_at);
+    const existingUpdatedAt = parseDaemonTime(existing.session.updated_at);
+    if (candidateUpdatedAt !== existingUpdatedAt) {
+      if (candidateUpdatedAt === null) return false;
+      if (existingUpdatedAt === null) return true;
+      return candidateUpdatedAt > existingUpdatedAt;
+    }
     const rankDelta = matchRank[candidate.matchKind] - matchRank[existing.matchKind];
     if (rankDelta !== 0) return rankDelta > 0;
     const replayDelta = (candidate.replayIndex ?? -1) - (existing.replayIndex ?? -1);
     if (replayDelta !== 0) return replayDelta > 0;
-    if (candidate.session.updated_at !== existing.session.updated_at) {
-      return candidate.session.updated_at > existing.session.updated_at;
-    }
-    if (candidate.session.created_at !== existing.session.created_at) {
-      return candidate.session.created_at > existing.session.created_at;
-    }
     return candidate.session.id > existing.session.id;
   };
   const daemonByMappedId = new Map<string, MappedDaemonSession>();

@@ -1505,10 +1505,10 @@ assert.equal(
   ]);
   assert.equal(
     terminalRows[0]?.daemonSessionId,
-    "hub-session-offline-older",
-    "when every candidate is terminal, explicit replay history wins before a generic conversation_id/native match",
+    "hub-session-native-current",
+    "when every candidate is terminal, the newest valid daemon runtime evidence wins before replay/native match rank",
   );
-  assert.equal(terminalRows[0]?.status, "completed");
+  assert.equal(terminalRows[0]?.status, "paused");
   assert.equal(terminalRows[0]?.attention.reason, "approval");
   assert.equal(terminalRows[0]?.attention.state, "overdue-human");
 }
@@ -1591,6 +1591,52 @@ assert.equal(
     "the selected replay daemon's terminal status remains authoritative over newer local state",
   );
   assert.equal(forward[0]?.exit_code, 0);
+
+  const malformedTimestamps = merge([
+    {
+      ...recordedNewerReplay,
+      id: "daemon-recorded-malformed",
+      title: "Recorded replay with malformed timestamp",
+      status: "failed",
+      exit_code: 1,
+      created_at: "not-a-date",
+      updated_at: "not-a-date",
+    },
+    {
+      ...genericOlderFailure,
+      id: "daemon-generic-valid",
+      title: "Generic replay with valid timestamp",
+      updated_at: "2026-06-25T04:24:00.000Z",
+    },
+  ]);
+  assert.equal(
+    malformedTimestamps[0]?.daemonSessionId,
+    "daemon-generic-valid",
+    "valid daemon runtime timestamps outrank malformed timestamps before replay/native tie-breakers apply",
+  );
+  assert.equal(malformedTimestamps[0]?.status, "failed");
+
+  const equalTimestamps = merge([
+    {
+      ...genericOlderFailure,
+      id: "daemon-generic-equal-timestamp",
+      updated_at: "2026-06-25T04:24:00.000Z",
+    },
+    {
+      ...recordedNewerReplay,
+      id: "daemon-recorded-equal-timestamp",
+      status: "failed",
+      exit_code: 1,
+      created_at: "2026-06-25T04:20:00.000Z",
+      updated_at: "2026-06-25T04:24:00.000Z",
+    },
+  ]);
+  assert.equal(
+    equalTimestamps[0]?.daemonSessionId,
+    "daemon-recorded-equal-timestamp",
+    "equal daemon timestamps fall back to the stronger recorded replay/native tie-breaker deterministically",
+  );
+  assert.equal(equalTimestamps[0]?.status, "failed");
 }
 
 {

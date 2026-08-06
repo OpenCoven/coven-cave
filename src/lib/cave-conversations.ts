@@ -323,6 +323,18 @@ export function validatedConversationHarnessSessionId(
   return harnessSessionId;
 }
 
+export function latestValidatedReplayConversationId(
+  conv: Pick<ConversationFile | ConversationSummary, "replaySessions"> | null | undefined,
+): string | null {
+  const replays = conversationReplaySessions(conv);
+  for (let index = replays.length - 1; index >= 0; index -= 1) {
+    const replay = replays[index];
+    if (!replay.conversationId || replay.conversationId === replay.sessionId) continue;
+    return replay.conversationId;
+  }
+  return null;
+}
+
 export function linkedReplaySessionIds(
   conv: Pick<ConversationFile | ConversationSummary, "replaySessions"> | null | undefined,
 ): string[] {

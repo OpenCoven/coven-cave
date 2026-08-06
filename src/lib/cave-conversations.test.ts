@@ -18,6 +18,7 @@ const {
   isSafeConversationSessionId,
   listConversations,
   loadConversation,
+  latestValidatedReplayConversationId,
   persistResolvedReplayConversationId,
   persistQueuedOfflineConversation,
   resolveConversationSessionId,
@@ -438,6 +439,11 @@ assert.equal(
   undefined,
   "a daemon conversation id equal to its execution row id is not a native resume token",
 );
+assert.equal(
+  latestValidatedReplayConversationId(queuedReplayEqual),
+  null,
+  "a replay conversation id equal to its daemon session id is never reused as provider continuity",
+);
 
 await saveConversation({
   sessionId: "queued-replay-distinct",
@@ -497,6 +503,38 @@ assert.deepEqual(
     },
   ],
   "replay aliases remain recorded separately for canonical mapping",
+);
+assert.equal(
+  latestValidatedReplayConversationId({
+    replaySessions: [
+      {
+        sessionId: "hub-replay-history-valid",
+        conversationId: "native-thread-history",
+        createdAt: "2026-06-10T00:00:30.000Z",
+        updatedAt: "2026-06-10T00:00:30.000Z",
+      },
+      {
+        sessionId: "hub-replay-history-equal",
+        conversationId: "hub-replay-history-equal",
+        createdAt: "2026-06-10T00:03:30.000Z",
+        updatedAt: "2026-06-10T00:03:30.000Z",
+      },
+      {
+        sessionId: "hub-replay-history-malicious",
+        conversationId: "../malicious",
+        createdAt: "2026-06-10T00:04:30.000Z",
+        updatedAt: "2026-06-10T00:04:30.000Z",
+      },
+      {
+        sessionId: "hub-replay-history-newest",
+        conversationId: "native-thread-newest",
+        createdAt: "2026-06-10T00:05:30.000Z",
+        updatedAt: "2026-06-10T00:05:30.000Z",
+      },
+    ],
+  }),
+  "native-thread-newest",
+  "replay continuity falls back to the newest valid replay conversation id after ignoring equal-id and malicious history",
 );
 
 await persistQueuedOfflineConversation({
