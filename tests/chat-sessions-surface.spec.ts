@@ -69,9 +69,14 @@ async function openSessionsList(page: Page) {
   await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions } }));
   await page.goto("/");
   await page.waitForSelector(".shell-frame", { timeout: 30_000 });
-  await page.evaluate(() =>
-    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } })));
-  await page.waitForSelector(".chat-surface", { timeout: 30_000 });
+  await page.waitForFunction(
+    () => {
+      window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } }));
+      return document.querySelector(".chat-surface") !== null;
+    },
+    undefined,
+    { timeout: 30_000 },
+  );
   // The surface lands on the new-chat launcher with Sessions already selected,
   // so clicking that tab fires no onChange. Bounce off Projects to make the
   // router hand back the list.

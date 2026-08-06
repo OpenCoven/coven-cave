@@ -82,9 +82,14 @@ async function openFoldedThread(page: Page) {
   // cave:agents-open-session is handled by ChatSurface, so the surface has to
   // be MOUNTED before the event is dispatched — the app boots on home, where
   // that listener does not exist yet and the event lands on nothing.
-  await page.evaluate(() =>
-    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } })));
-  await page.waitForSelector(".chat-surface", { timeout: 30_000 });
+  await page.waitForFunction(
+    () => {
+      window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } }));
+      return document.querySelector(".chat-surface") !== null;
+    },
+    undefined,
+    { timeout: 30_000 },
+  );
   await page.evaluate((id) =>
     window.dispatchEvent(
       new CustomEvent("cave:agents-open-session", { detail: { sessionId: id, familiarId: "nova" } }),
