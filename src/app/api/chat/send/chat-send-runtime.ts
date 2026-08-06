@@ -132,7 +132,7 @@ export async function resolveReplayBackedResumeSessionId(
     });
     return { ok: true, resumeSessionId: persisted ?? conversationId, replayBound: true };
   }
-  if (ACTIVE_SESSION_STATUSES.has(status) || status === "created" || status === "idle") {
+  if (ACTIVE_SESSION_STATUSES.has(status) || status === "created") {
     return {
       ok: false,
       retryable: true,
@@ -140,6 +140,15 @@ export async function resolveReplayBackedResumeSessionId(
       error:
         `Daemon session ${latestReplay.sessionId} is still ${status} and has not exposed a native conversation id yet. Retry in a moment so Cave can resume the same provider conversation instead of forking a new one.`,
       retryAfter: "2",
+    };
+  }
+  if (status === "idle") {
+    return {
+      ok: false,
+      retryable: false,
+      code: "conversation_continuity_unavailable",
+      error:
+        `Daemon session ${latestReplay.sessionId} is idle without a resumable native conversation id. Cave will not guess and risk forking this replayed conversation.`,
     };
   }
   return {

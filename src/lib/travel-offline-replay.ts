@@ -19,6 +19,7 @@ import { isSshRuntime } from "@/lib/familiar-runtime";
 import { cleanModelId } from "@/lib/chat-model-state";
 import { ACTIVE_SESSION_STATUSES } from "@/lib/chat-auto-archive";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
+import { REGISTRY_RUNTIMES } from "@/lib/runtime-registry.gen";
 import {
   latestValidatedReplayConversationId,
   loadConversation,
@@ -67,11 +68,11 @@ type TravelQueueReplayOutcome =
 
 const ACTIVE_REPLAY_SESSION_STATUSES = new Set([
   "created",
-  "idle",
   ...ACTIVE_SESSION_STATUSES,
 ]);
 const COMPLETED_REPLAY_SESSION_STATUSES = new Set(["completed", "complete", "done"]);
 const FAILED_REPLAY_SESSION_STATUSES = new Set(["failed", "error", "killed", "orphaned"]);
+const DAEMON_PREASSIGNED_CONTINUITY_HARNESSES = new Set(["claude", "codex"]);
 
 function queuedModelOverride(payload: Record<string, unknown>): string | null | undefined {
   const hasModelOverride = Object.prototype.hasOwnProperty.call(payload, "modelOverride");
@@ -158,6 +159,63 @@ function replaySessionStatus(value: unknown): string {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
+function continuityLabel(harness: string): string {
+  switch (canonicalHarnessId(harness)) {
+    case "claude":
+      return "Claude Code";
+    case "codex":
+      return "Codex";
+    case "copilot":
+      return "Copilot";
+    case "grok":
+      return "Grok";
+    case "hermes":
+      return "Hermes";
+    case "opencode":
+      return "OpenCode";
+    default:
+      return harness;
+  }
+}
+
+function daemonSupportsExplicitReplayConversationIds(harness: string): boolean {
+  const canonical = canonicalHarnessId(harness);
+  if (DAEMON_PREASSIGNED_CONTINUITY_HARNESSES.has(canonical)) return true;
+  const runtime = REGISTRY_RUNTIMES.find((entry) => entry.id === canonical);
+  return runtime?.capabilities.preassignedSessionId === true;
+}
+
+function blockedReplayContinuityReason(harness: string): string | null {
+  const canonical = canonicalHarnessId(harness);
+  if (canonical === "copilot") {
+    return "Offline Copilot replay cannot safely use the daemon's non-interactive session API yet. Reconnect to the hub, reopen this chat online, and retry so Cave can resume Copilot through its supported live path.";
+  }
+  if (daemonSupportsExplicitReplayConversationIds(canonical)) return null;
+  return `Offline ${continuityLabel(canonical)} replay cannot safely use the daemon's non-interactive session API because that runtime does not support explicit new/resume conversation ids. Reconnect to the hub, reopen this chat online, and retry through the runtime's supported live path.`;
+}
+
+function normalizedPreallocatedReplayConversationId(value: string | null | undefined): string | null {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) return null;
+  const normalized = trimmed
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .slice(0, 240);
+  return normalizeDaemonConversationId(normalized);
+}
+
+function preallocateReplayConversationId(item: CaveTravelQueueItem, payload: Record<string, unknown>): string {
+  const existing =
+    normalizedPreallocatedReplayConversationId(stringValue(payload.conversationId))
+    ?? normalizedPreallocatedReplayConversationId(stringValue(payload.resumeConversationId));
+  if (existing) return existing;
+  const candidate =
+    normalizedPreallocatedReplayConversationId(stringValue(payload.runId))
+    ?? normalizedPreallocatedReplayConversationId(item.id)
+    ?? crypto.randomUUID();
+  return candidate;
+}
+
 function retryAfterSecondsValue(value: unknown): string | undefined {
   if (typeof value === "number" && Number.isFinite(value) && value > 0) {
     return String(Math.max(1, Math.floor(value)));
@@ -202,6 +260,7 @@ async function reconcileQueuedChatReplay(args: {
   sessionId: string;
   replaySessionId: string;
   knownResumeConversationId: string | null;
+  launchConversationId: string | null;
 }): Promise<TravelQueueReplayOutcome> {
   const res = await callDaemon<DaemonSessionResponse>({
     path: `/api/v1/sessions/${encodeURIComponent(args.replaySessionId)}`,
@@ -234,6 +293,31 @@ async function reconcileQueuedChatReplay(args: {
     ...(retryAfter ? { retryAfterUntil: retryAfterIso(retryAfter) } : {}),
   });
 
+  if (status === "idle") {
+    const resolvedConversationId =
+      daemonConversationId
+      ?? replayPromotableConversationId(args.replaySessionId, args.launchConversationId);
+    if (!resolvedConversationId) {
+      throw new Error(
+        `daemon replay session ${args.replaySessionId} is idle without a resumable native conversation id; Cave refuses to mark this chat synced and risk forking continuity`,
+      );
+    }
+    await persistResolvedReplayConversationId({
+      sessionId: args.sessionId,
+      replaySessionId: args.replaySessionId,
+      conversationId: resolvedConversationId,
+      status: res.data.status ?? null,
+      updatedAt: res.data.updated_at ?? null,
+    });
+    await updateOfflineTravelRetryAfter(args.item, {
+      ...args.payload,
+      replaySessionId: args.replaySessionId,
+      conversationId: resolvedConversationId,
+      ...(args.knownResumeConversationId ? { resumeConversationId: args.knownResumeConversationId } : {}),
+    });
+    return { disposition: "synced" };
+  }
+
   if (ACTIVE_REPLAY_SESSION_STATUSES.has(status)) {
     return { disposition: "syncing", retryAfter };
   }
@@ -241,6 +325,7 @@ async function reconcileQueuedChatReplay(args: {
   if (COMPLETED_REPLAY_SESSION_STATUSES.has(status)) {
     const resolvedConversationId =
       daemonConversationId
+      ?? replayPromotableConversationId(args.replaySessionId, args.launchConversationId)
       ?? replayPromotableConversationId(args.replaySessionId, args.knownResumeConversationId);
     if (!resolvedConversationId) {
       throw new Error(
@@ -279,6 +364,7 @@ async function spawnHubSession(args: {
   familiarId: string | null;
   harness: string;
   prompt: string;
+  conversationMode?: "new" | "resume";
   conversationId?: string | null;
   model?: string | null;
   modelOverrideScope?: "runtime-default";
@@ -303,9 +389,9 @@ async function spawnHubSession(args: {
       harness,
       prompt: args.prompt,
       launchMode: "nonInteractive",
-      ...(args.conversationId
+      ...(args.conversationMode && args.conversationId
         ? {
-          conversation: { mode: "resume", id: args.conversationId },
+          conversation: { mode: args.conversationMode, id: args.conversationId },
           conversationId: args.conversationId,
         }
         : {}),
@@ -356,11 +442,8 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   });
 
   const binding = bindingFor(config, familiarId);
-  if (canonicalHarnessId(binding.harness) === "copilot") {
-    throw new Error(
-      "Offline Copilot replay cannot safely use the daemon's non-interactive session API yet. Reconnect to the hub, reopen this chat online, and retry so Cave can resume Copilot through its supported live path.",
-    );
-  }
+  const continuityBlock = blockedReplayContinuityReason(binding.harness);
+  if (continuityBlock) throw new Error(continuityBlock);
   const modelOverride = queuedModelOverride(payload);
   if (modelOverride && !isModelAllowedByRuntime(binding.harness, modelOverride)) {
     throw new Error("queued chat model id is not allowed by the selected runtime");
@@ -387,6 +470,8 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const nativeConversationId =
     validatedConversationHarnessSessionId(existingConversation)
     ?? latestValidatedReplayConversationId(existingConversation);
+  const launchConversationId = nativeConversationId ?? preallocateReplayConversationId(item, payload);
+  const launchConversationMode = nativeConversationId ? "resume" as const : "new" as const;
   let replaySessionId = stringValue(payload.replaySessionId) ?? stringValue(payload.harnessSessionId);
   let conversationId = replayPromotableConversationId(replaySessionId, stringValue(payload.conversationId)) ?? null;
   const knownResumeConversationId =
@@ -394,12 +479,16 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     ?? replayPromotableConversationId(replaySessionId, nativeConversationId)
     ?? null;
   if (!replaySessionId) {
+    payload.conversationId = launchConversationId;
+    if (knownResumeConversationId) payload.resumeConversationId = knownResumeConversationId;
+    await updateOfflineTravelRetryAfter(item, payload);
     const spawned = await spawnHubSession({
       config,
       familiarId,
       harness: binding.harness,
       prompt: replayPrompt,
-      conversationId: nativeConversationId,
+      conversationMode: launchConversationMode,
+      conversationId: launchConversationId,
       // Preserve the distinction between an omitted model and an explicit
       // runtime-default request. The daemon receives no model argument in both
       // cases, while the scope marker prevents this replay path from treating a
@@ -415,11 +504,13 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
       title: chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(stringValue(payload.sessionId) ?? item.id),
     });
     replaySessionId = spawned.replaySessionId;
-    conversationId = replayPromotableConversationId(replaySessionId, spawned.conversationId) ?? null;
+    conversationId =
+      replayPromotableConversationId(replaySessionId, spawned.conversationId)
+      ?? replayPromotableConversationId(replaySessionId, launchConversationId)
+      ?? null;
     payload.replaySessionId = replaySessionId;
     delete payload.harnessSessionId;
     if (conversationId) payload.conversationId = conversationId;
-    if (knownResumeConversationId) payload.resumeConversationId = knownResumeConversationId;
     await updateOfflineTravelRetryAfter(item, payload);
   }
   await persistQueuedOfflineConversation({
@@ -435,7 +526,9 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     title: chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(sessionId),
     createdAt: item.createdAt,
     replaySessionId: replaySessionId ?? undefined,
-    conversationId,
+    conversationId: conversationId ?? launchConversationId,
+    baseConversationId: launchConversationId,
+    expectedHarnessSessionId: launchConversationId,
     userTurn: {
       id: stringValue(payload.userTurnId) ?? item.id,
       text: prompt,
@@ -473,6 +566,7 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     sessionId,
     replaySessionId,
     knownResumeConversationId,
+    launchConversationId,
   });
 }
 

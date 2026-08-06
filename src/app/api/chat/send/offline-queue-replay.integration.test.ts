@@ -38,11 +38,19 @@ async function readJson(req: http.IncomingMessage): Promise<Record<string, unkno
 async function listenHub(port = 0): Promise<number> {
   server = http.createServer(async (req, res) => {
     if (req.method === "POST" && req.url === "/api/v1/sessions") {
-      sessionRequests.push(await readJson(req));
+      const request = await readJson(req);
+      sessionRequests.push(request);
       const response = sessionResponses.shift() ?? { id: `hub-session-${nextSession++}`, status: "running" };
-      if (typeof response.id === "string") sessionRecords.set(response.id, response);
+      const requestedConversationId =
+        typeof request.conversationId === "string" && request.conversationId.trim()
+          ? request.conversationId.trim()
+          : null;
+      const hydratedResponse = requestedConversationId && !response.conversationId && !response.conversation_id
+        ? { ...response, conversation_id: requestedConversationId }
+        : response;
+      if (typeof hydratedResponse.id === "string") sessionRecords.set(hydratedResponse.id, hydratedResponse);
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify(response));
+      res.end(JSON.stringify(hydratedResponse));
       return;
     }
     if (req.method === "GET" && req.url?.startsWith("/api/v1/sessions/")) {
@@ -507,18 +515,24 @@ try {
   );
   const fifoRequests = sessionRequests.slice(requestCountBeforeFifo);
   assert.equal(fifoRequests.length, 1);
-  assert.equal(
-    Object.prototype.hasOwnProperty.call(fifoRequests[0] ?? {}, "conversation"),
-    false,
-    "fresh daemon launches must not invent continuity metadata before the daemon knows it",
-  );
+  assert.equal(fifoRequests[0]?.conversation?.mode, "new");
+  assert.equal(typeof fifoRequests[0]?.conversation?.id, "string");
+  assert.equal(fifoRequests[0]?.conversationId, fifoRequests[0]?.conversation?.id);
   let fifoState = await config.loadState();
+  const fifoFirstConversationId = String(
+    fifoState.travel.offlineQueue.find((item) => item.id === fifoFirst.id)?.payload?.conversationId,
+  );
+  assert.equal(
+    fifoFirstConversationId,
+    fifoRequests[0]?.conversationId,
+    "fresh replays preallocate and persist a stable daemon-safe conversation id before launch",
+  );
   assert.equal(fifoState.travel.offlineQueue.find((item) => item.id === fifoFirst.id)?.status, "syncing");
   assert.equal(fifoState.travel.offlineQueue.find((item) => item.id === fifoSecond.id)?.status, "pending");
   sessionRecords.set("hub-fifo-1", {
     id: "hub-fifo-1",
     status: "completed",
-    conversationId: "native-thread-fifo-1",
+    conversationId: fifoFirstConversationId,
     updated_at: "2026-06-30T12:04:30.000Z",
   });
   await config.updateOfflineTravelItemPayload(fifoFirst.id, {
@@ -534,14 +548,14 @@ try {
   assert.equal(fifoLaunchRequests.length, 2, "the second same-chat launch waits for the first replay to finish");
   assert.deepEqual(fifoLaunchRequests[1]?.conversation, {
     mode: "resume",
-    id: "native-thread-fifo-1",
+    id: fifoFirstConversationId,
   });
-  assert.equal(fifoLaunchRequests[1]?.conversationId, "native-thread-fifo-1");
+  assert.equal(fifoLaunchRequests[1]?.conversationId, fifoFirstConversationId);
   fifoState = await config.loadState();
   sessionRecords.set("hub-fifo-2", {
     id: "hub-fifo-2",
     status: "completed",
-    conversationId: "native-thread-fifo-2",
+    conversationId: fifoFirstConversationId,
     updated_at: "2026-06-30T12:05:00.000Z",
   });
   await config.updateOfflineTravelItemPayload(fifoSecond.id, {
@@ -554,8 +568,43 @@ try {
   );
   assert.equal(
     (await conversations.loadConversation("offline-chat-fifo"))?.harnessSessionId,
-    "native-thread-fifo-2",
-    "completed daemon replays promote the recovered provider id before later queued turns launch",
+    fifoFirstConversationId,
+    "fresh replay continuity keeps the preallocated provider conversation id across later queued turns",
+  );
+
+  await conversations.persistQueuedOfflineConversation({
+    sessionId: "offline-chat-idle-ready",
+    familiarId: "sage",
+    harness: "claude",
+    createdAt: "2026-06-30T12:05:30.000Z",
+    userTurn: {
+      id: "offline-chat-idle-ready-user-1",
+      text: "queued idle-ready turn 1",
+    },
+  });
+  const idleReady = await config.enqueueOfflineTravelItem({
+    kind: "chat",
+    summary: "offline-chat-idle-ready-1",
+    payload: {
+      familiarId: "sage",
+      prompt: "queued idle-ready turn 1",
+      sessionId: "offline-chat-idle-ready",
+      userTurnId: "offline-chat-idle-ready-user-1",
+      projectRoot,
+    },
+  });
+  sessionResponses.push({ id: "hub-idle-ready-1", status: "idle" });
+  assert.deepEqual(
+    await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 }),
+    { attempted: 1, synced: 1, failed: 0, errors: [] },
+  );
+  const idleReadyState = await config.loadState();
+  const idleReadyItem = idleReadyState.travel.offlineQueue.find((item) => item.id === idleReady.id);
+  assert.equal(idleReadyItem?.status, "synced");
+  assert.equal(
+    (await conversations.loadConversation("offline-chat-idle-ready"))?.harnessSessionId,
+    idleReadyItem?.payload?.conversationId,
+    "idle daemon sessions with the expected continuity id are immediately continuity-ready",
   );
 
   await conversations.saveConversation({
@@ -600,14 +649,44 @@ try {
   sessionRecords.set("hub-session-running-wait", {
     id: "hub-session-running-wait",
     status: "completed",
-    conversationId: "native-thread-retry-success",
+    conversationId: "native-thread-older",
     updated_at: "2026-06-30T12:06:30.000Z",
   });
   assert.deepEqual(
     await sendRuntime.resolveReplayBackedResumeSessionId("offline-chat-running-wait"),
-    { ok: true, resumeSessionId: "native-thread-retry-success", replayBound: true },
-    "retrying after the daemon publishes conversation_id succeeds and persists the native resume id",
+    { ok: true, resumeSessionId: "native-thread-older", replayBound: true },
+    "retrying after the daemon exposes the expected resume conversation id succeeds without inventing a new provider thread",
   );
+
+  await conversations.saveConversation({
+    sessionId: "offline-chat-idle-missing",
+    familiarId: "sage",
+    harness: "claude",
+    createdAt: "2026-06-30T12:06:40.000Z",
+    updatedAt: "2026-06-30T12:06:40.000Z",
+    replaySessions: [{
+      sessionId: "hub-session-idle-missing",
+      createdAt: "2026-06-30T12:06:40.000Z",
+      updatedAt: "2026-06-30T12:06:40.000Z",
+    }],
+    turns: [{
+      id: "offline-chat-idle-missing-user",
+      role: "user",
+      text: "queued offline-chat-idle-missing",
+      createdAt: "2026-06-30T12:06:40.000Z",
+      parentId: null,
+    }],
+    activeLeafId: "offline-chat-idle-missing-user",
+  });
+  sessionRecords.set("hub-session-idle-missing", {
+    id: "hub-session-idle-missing",
+    status: "idle",
+    updated_at: "2026-06-30T12:06:50.000Z",
+  });
+  const idleMissingResolution = await sendRuntime.resolveReplayBackedResumeSessionId("offline-chat-idle-missing");
+  assert.equal(idleMissingResolution.ok, false);
+  assert.equal(idleMissingResolution.code, "conversation_continuity_unavailable");
+  assert.match(idleMissingResolution.error, /idle without a resumable native conversation id/i);
 
   await conversations.persistQueuedOfflineConversation({
     sessionId: "offline-chat-failed-fifo",
@@ -675,6 +754,8 @@ try {
   const failedFifoState = await config.loadState();
   assert.equal(failedFifoState.travel.offlineQueue.find((item) => item.id === failedFifoFirst.id)?.status, "failed");
   assert.equal(failedFifoState.travel.offlineQueue.find((item) => item.id === failedFifoSecond.id)?.status, "pending");
+  await config.completeOfflineTravelItem(failedFifoFirst.id);
+  await config.completeOfflineTravelItem(failedFifoSecond.id);
 
   await conversations.saveConversation({
     sessionId: "offline-chat-malicious-id",
@@ -814,10 +895,14 @@ try {
     familiars: {
       sage: { harness: "claude" },
       pilot: { harness: "copilot" },
+      ember: { harness: "opencode" },
+      opal: { harness: "grok" },
     },
     multiHost: { mode: "hub", hubUrl, executorUrls: [] },
   });
   await grantProjectToFamiliar({ familiarId: "pilot", projectId: project.id, source: "human", access: "write" });
+  await grantProjectToFamiliar({ familiarId: "ember", projectId: project.id, source: "human", access: "write" });
+  await grantProjectToFamiliar({ familiarId: "opal", projectId: project.id, source: "human", access: "write" });
   await conversations.persistQueuedOfflineConversation({
     sessionId: "offline-chat-copilot-blocked",
     familiarId: "pilot",
@@ -869,6 +954,80 @@ try {
     (await conversations.loadConversation("offline-chat-copilot-blocked"))?.replaySessions?.length ?? 0,
     0,
     "a blocked Copilot replay spawns no daemon session and records no replay metadata",
+  );
+  await config.completeOfflineTravelItem(copilotBlocked.id);
+
+  await conversations.persistQueuedOfflineConversation({
+    sessionId: "offline-chat-opencode-blocked",
+    familiarId: "ember",
+    harness: "opencode",
+    createdAt: "2026-06-30T12:16:00.000Z",
+    userTurn: {
+      id: "offline-chat-opencode-blocked-user",
+      text: "multi word prompt for opencode replay",
+    },
+  });
+  const opencodeBlocked = await config.enqueueOfflineTravelItem({
+    kind: "chat",
+    summary: "offline-chat-opencode-blocked",
+    payload: {
+      familiarId: "ember",
+      prompt: "multi word prompt for opencode replay",
+      sessionId: "offline-chat-opencode-blocked",
+      userTurnId: "offline-chat-opencode-blocked-user",
+      projectRoot,
+    },
+  });
+  const requestCountBeforeOpenCodeReplay = sessionRequests.length;
+  assert.deepEqual(
+    await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 }),
+    {
+      attempted: 1,
+      synced: 0,
+      failed: 1,
+      errors: [{
+        id: opencodeBlocked.id,
+        error:
+          "Offline OpenCode replay cannot safely use the daemon's non-interactive session API because that runtime does not support explicit new/resume conversation ids. Reconnect to the hub, reopen this chat online, and retry through the runtime's supported live path.",
+      }],
+    },
+  );
+  assert.equal(sessionRequests.length, requestCountBeforeOpenCodeReplay);
+  await config.completeOfflineTravelItem(opencodeBlocked.id);
+
+  await conversations.persistQueuedOfflineConversation({
+    sessionId: "offline-chat-grok-new",
+    familiarId: "opal",
+    harness: "grok",
+    createdAt: "2026-06-30T12:17:00.000Z",
+    userTurn: {
+      id: "offline-chat-grok-new-user",
+      text: "fresh grok replay turn",
+    },
+  });
+  const grokNew = await config.enqueueOfflineTravelItem({
+    kind: "chat",
+    summary: "offline-chat-grok-new",
+    payload: {
+      familiarId: "opal",
+      prompt: "fresh grok replay turn",
+      sessionId: "offline-chat-grok-new",
+      userTurnId: "offline-chat-grok-new-user",
+      projectRoot,
+    },
+  });
+  sessionResponses.push({ id: "hub-grok-new-1", status: "idle" });
+  const requestCountBeforeGrok = sessionRequests.length;
+  assert.deepEqual(
+    await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 }),
+    { attempted: 1, synced: 1, failed: 0, errors: [] },
+  );
+  const grokRequest = sessionRequests[requestCountBeforeGrok];
+  assert.deepEqual(grokRequest?.conversation?.mode, "new");
+  assert.equal(
+    (await conversations.loadConversation("offline-chat-grok-new"))?.harnessSessionId,
+    grokRequest?.conversationId,
+    "supported non-claude runtimes also use the explicit daemon new-conversation contract",
   );
 
   console.log("offline-queue-replay.integration.test.ts: ok");

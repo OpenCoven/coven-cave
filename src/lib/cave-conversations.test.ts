@@ -612,6 +612,68 @@ assert.equal(
   "native-thread-newer",
   "daemon resolution never clobbers a newer validated native id",
 );
+await saveConversation({
+  sessionId: "queued-replay-resolve-base",
+  harnessSessionId: "preallocated-thread-base",
+  familiarId: "charm",
+  harness: "claude",
+  createdAt: "2026-06-10T00:07:00.000Z",
+  updatedAt: "2026-06-10T00:07:00.000Z",
+  replaySessions: [{
+    sessionId: "daemon-session-base",
+    conversationId: "preallocated-thread-base",
+    baseConversationId: "preallocated-thread-base",
+    expectedHarnessSessionId: "preallocated-thread-base",
+    createdAt: "2026-06-10T00:07:00.000Z",
+    updatedAt: "2026-06-10T00:07:00.000Z",
+  }],
+  turns: [],
+});
+assert.equal(
+  await persistResolvedReplayConversationId({
+    sessionId: "queued-replay-resolve-base",
+    replaySessionId: "daemon-session-base",
+    conversationId: "preallocated-thread-base",
+    status: "idle",
+    updatedAt: "2026-06-10T00:07:30.000Z",
+  }),
+  "preallocated-thread-base",
+  "a late idle/completed promotion keeps the preallocated continuity id when the current thread still matches its launch base",
+);
+await saveConversation({
+  sessionId: "queued-replay-resolve-late",
+  harnessSessionId: "native-thread-current",
+  familiarId: "charm",
+  harness: "claude",
+  createdAt: "2026-06-10T00:08:00.000Z",
+  updatedAt: "2026-06-10T00:08:00.000Z",
+  replaySessions: [{
+    sessionId: "daemon-session-late",
+    conversationId: "preallocated-thread-late",
+    baseConversationId: "preallocated-thread-late",
+    expectedHarnessSessionId: "preallocated-thread-late",
+    createdAt: "2026-06-10T00:08:00.000Z",
+    updatedAt: "2026-06-10T00:08:00.000Z",
+  }],
+  turns: [],
+});
+assert.equal(
+  await persistResolvedReplayConversationId({
+    sessionId: "queued-replay-resolve-late",
+    replaySessionId: "daemon-session-late",
+    conversationId: "preallocated-thread-late",
+    status: "completed",
+    updatedAt: "2026-06-10T00:08:30.000Z",
+  }),
+  "native-thread-current",
+  "late replay completion preserves a newer validated native id instead of rewinding continuity to the older replay launch base",
+);
+assert.equal(
+  (await loadConversation("queued-replay-resolve-late"))?.replaySessions?.find((replay) => replay.sessionId === "daemon-session-late")
+    ?.conversationId,
+  "preallocated-thread-late",
+  "late completion still records the replay-linked continuity id for aliasing and traceability even when the current validated thread stays newer",
+);
 assert.equal(
   await persistResolvedReplayConversationId({
     sessionId: "queued-replay-resolve-existing",
@@ -625,6 +687,8 @@ await deleteConversation("queued-replay-null");
 await deleteConversation("queued-replay-equal");
 await deleteConversation("queued-replay-distinct");
 await deleteConversation("queued-replay-resolve");
+await deleteConversation("queued-replay-resolve-base");
+await deleteConversation("queued-replay-resolve-late");
 await deleteConversation("queued-replay-resolve-existing");
 
 // CHAT-D5-02: a user-cancelled turn persists as an honest cancelled record —
