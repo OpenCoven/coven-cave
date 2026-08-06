@@ -251,8 +251,8 @@ test("rail — rows carry a state tick and groups carry a count and a rule", () 
   );
   assert.match(
     shellNav,
-    /\.cnav__thread\.is-active \.cnav__tick \{\s*\n\s*opacity: 0;/,
-    "the active row's accent tick replaces the state tick instead of doubling it",
+    /\.cnav__thread\.is-active \.cnav__tick \{\s*\n\s*left: var\(--space-3\);\s*\n\s*opacity: 1;/,
+    "the active row keeps its runtime tick visible and shifts it away from the selection accent",
   );
   assert.match(
     shellNav,
