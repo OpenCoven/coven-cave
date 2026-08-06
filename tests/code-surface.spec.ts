@@ -338,28 +338,24 @@ test.describe("code surface (Coding familiar's room)", () => {
     await page.keyboard.press("Tab");
     await sessionsTab.focus();
     await expect(sessionsTab).toBeFocused();
+    // Report the real computed values rather than a collapsed boolean: a bare
+    // `outlineMatchesToken: false` hides which half mismatched, which cost two
+    // CI rounds. The tab carries `focus-ring-inset`, so the ring is drawn
+    // inside the box — width `--ring-width` (2px) at the negated offset.
     await expect
       .poll(
         () =>
           sessionsTab.evaluate((element) => {
             const style = getComputedStyle(element);
-            const root = getComputedStyle(document.documentElement);
-            // Compare numerically: the tokens compute to `calc()` expressions
-            // that never string-equal the browser-evaluated pixel values.
-            // `.focus-ring` uses the OUTSET --ring-offset, not the inset
-            // variant, so the expected offset is positive.
-            const ringWidth = Number.parseFloat(root.getPropertyValue("--ring-width"));
-            const ringOffset = Number.parseFloat(root.getPropertyValue("--ring-offset"));
             return {
               focusVisible: element.matches(":focus-visible"),
-              outlineMatchesToken:
-                Number.parseFloat(style.outlineWidth) === ringWidth &&
-                Number.parseFloat(style.outlineOffset) === ringOffset,
+              outlineWidth: style.outlineWidth,
+              outlineOffset: style.outlineOffset,
             };
           }),
         { timeout: 30_000 },
       )
-      .toEqual({ focusVisible: true, outlineMatchesToken: true });
+      .toEqual({ focusVisible: true, outlineWidth: "2px", outlineOffset: "-2px" });
 
     // Resize only after the desktop Code surface has mounted. Starting at a
     // phone width intentionally routes to the mobile workshop fallback.
