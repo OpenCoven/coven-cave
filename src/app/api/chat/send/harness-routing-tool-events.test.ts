@@ -151,8 +151,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const gatewayResult = await gatewayDispatch\.done;[\s\S]*?settleOpenGatewayTools\([\s\S]*?"\[tool did not settle before the Gateway turn ended\]"[\s\S]*?\);[\s\S]*?pushProgress\("save-transcript"/,
-  "every Gateway terminal state must settle unfinished cards before persistence",
+  /const gatewayResult = await gatewayDispatch\.done;[\s\S]*?markChatRunTransportSettled\(runHandle\);[\s\S]*?settleOpenGatewayTools\([\s\S]*?"\[tool did not settle before the Gateway turn ended\]"[\s\S]*?\);[\s\S]*?try \{\s*pushProgress\("save-transcript"/,
+  "every Gateway terminal state must freeze Stop, settle unfinished cards, and only then enter persistence",
 );
 assert.match(
   chatRoute,
@@ -163,6 +163,11 @@ assert.match(
   chatRoute,
   /\.\.\.\(persistedGatewayTools \? \{ tools: persistedGatewayTools \} : \{\}\)/,
   "the Gateway assistant turn must persist tools only when the tracker snapshot is nonempty",
+);
+assert.match(
+  chatRoute,
+  /pushProgress\("save-transcript", "Transcript saved", "done"\);[\s\S]*?markChatRunProjectionSettled\(runHandle\);[\s\S]*?unregisterChatRun\(runHandle\);[\s\S]*?push\(\{\s*kind: "done"/,
+  "Gateway keeps projection live through transcript persistence, then settles projection and unregisters before done",
 );
 // ── Tool-event fidelity (CHAT-D4-03 + CHAT-D4-04) ──────────────────────────
 // Source pins: the route must route BOTH tool-event sources through the

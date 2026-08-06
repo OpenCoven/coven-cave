@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { POST } from "./route.ts";
 import {
-  markChatRunSettled,
+  markChatRunTransportSettled,
   registerChatRun,
   unregisterChatRun,
 } from "@/lib/server/chat-stop-registry";
@@ -46,7 +46,7 @@ test("returns stopped:false once a run has already settled", async () => {
   const handle = registerChatRun(["settled-route-run"], () => {
     kills += 1;
   });
-  markChatRunSettled(handle);
+  markChatRunTransportSettled(handle);
   try {
     const response = await POST(new Request("http://127.0.0.1/api/chat/stop", {
       method: "POST",

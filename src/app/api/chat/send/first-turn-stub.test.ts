@@ -13,6 +13,11 @@ assert.match(
   /createConversationStub,[\s\S]*?stripConversationStubTurn,[\s\S]*?withConversationLock,[\s\S]*?\} from "@\/lib\/cave-conversations";/,
   "Chat send should persist and serialize first-turn stubs through the conversation store helpers",
 );
+assert.match(
+  chatRoute,
+  /markChatRunProjectionSettled,[\s\S]*?markChatRunTransportSettled,[\s\S]*?registerChatRun,[\s\S]*?unregisterChatRun,[\s\S]*?addChatRunKeys,[\s\S]*?type ChatRunHandle,[\s\S]*?\} from "@\/lib\/server\/chat-stop-registry";/,
+  "Chat send should distinguish transport settlement from projection settlement in the shared run registry",
+);
 
 // ── coven-run path ───────────────────────────────────────────────────────────
 
@@ -38,6 +43,16 @@ assert.match(
   chatRoute,
   /if \(stubWrite\) await stubWrite;\s*const isFirstExchange = await withConversationLock\(finalSessionId, async \(\) => \{\s*const existing = await loadConversation\(finalSessionId\);/,
   "the coven-run save must settle the stub write and lock before loading, so a stub or model PATCH can never lose an authoritative update",
+);
+assert.match(
+  chatRoute,
+  /markChatRunTransportSettled\(runHandle\);[\s\S]*?const cancelledByUser = runHandle\.stopRequested;[\s\S]*?if \(finalSessionId && \(!launchFailure \|\| persistCovenProcessFailure\)\) \{\s*try \{\s*pushProgress\("save-transcript", "Saving transcript", "running"/,
+  "general Coven transports must freeze Stop only after transport completion and before persistence starts",
+);
+assert.match(
+  chatRoute,
+  /pushProgress\("save-transcript", "Transcript saved", "done"\);[\s\S]*?\}\s*\n\s*markChatRunProjectionSettled\(runHandle\);[\s\S]*?push\(\{\s*kind: "done"[\s\S]*?unregisterChatRun\(runHandle\);/,
+  "general transports keep the session live through persistence, then settle projection before final unregister/cleanup",
 );
 
 assert.match(
@@ -118,6 +133,16 @@ assert.match(
   chatRoute,
   /await stubWrite;\s*const isFirstExchange = await withConversationLock\(sessionId, async \(\) => \{\s*const existing = await loadConversation\(sessionId\);/,
   "the OpenClaw close handler must settle the stub write and lock before loading the conversation",
+);
+assert.match(
+  chatRoute,
+  /markChatRunTransportSettled\(runHandle\);[\s\S]*?if \(sessionId\) \{\s*try \{\s*pushProgress\("save-transcript", "Saving transcript", "running"/,
+  "OpenClaw transport settlement must freeze Stop before transcript persistence begins",
+);
+assert.match(
+  chatRoute,
+  /pushProgress\("save-transcript", "Transcript saved", "done"\);[\s\S]*?markChatRunProjectionSettled\(runHandle\);[\s\S]*?unregisterChatRun\(runHandle\);[\s\S]*?push\(\{\s*kind: "done"/,
+  "OpenClaw keeps projection live through persistence, then settles projection/unregisters before the final done event",
 );
 
 assert.match(

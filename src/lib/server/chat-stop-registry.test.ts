@@ -9,7 +9,8 @@ const {
   requestChatStop,
   addChatRunKeys,
   hasActiveChatRun,
-  markChatRunSettled,
+  markChatRunTransportSettled,
+  markChatRunProjectionSettled,
 } =
   await import("./chat-stop-registry.ts");
 
@@ -20,7 +21,8 @@ const {
     kills += 1;
   });
   assert.equal(handle.stopRequested, false, "fresh runs are not stop-flagged");
-  assert.equal(handle.settled, false, "fresh runs are unsettled");
+  assert.equal(handle.acceptingStop, true, "fresh runs accept Stop");
+  assert.equal(handle.projectionActive, true, "fresh runs project as live");
   assert.equal(requestChatStop("run-1"), true, "stop resolves by runId");
   assert.equal(kills, 1, "stop SIGTERMs through the registered kill");
   assert.equal(handle.stopRequested, true, "the handle records the deliberate stop");
@@ -41,13 +43,17 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
     kills += 1;
   });
   assert.equal(hasActiveChatRun("run-settled"), true, "fresh unsettled run is active");
-  markChatRunSettled(handle);
-  assert.equal(handle.settled, true, "settlement latches on the handle");
-  assert.equal(hasActiveChatRun("run-settled"), false, "settled runs no longer count as active");
-  assert.equal(requestChatStop("run-settled"), false, "late stops are ignored once outcome is settled");
-  assert.equal(requestChatStop("session-settled"), false, "every settled key becomes a no-op");
+  markChatRunTransportSettled(handle);
+  assert.equal(handle.acceptingStop, false, "transport settlement closes the Stop window");
+  assert.equal(handle.projectionActive, true, "projection stays live through persistence");
+  assert.equal(hasActiveChatRun("run-settled"), true, "transport-settled runs remain active until projection cleanup");
+  assert.equal(requestChatStop("run-settled"), false, "late stops are ignored once transport is settled");
+  assert.equal(requestChatStop("session-settled"), false, "every transport-settled key becomes a no-op");
   assert.equal(handle.stopRequested, false, "late stop must not retroactively mark the run cancelled");
   assert.equal(kills, 0, "late stop must not re-kill an already settled run");
+  markChatRunProjectionSettled(handle);
+  assert.equal(handle.projectionActive, false, "projection settlement drops liveness before unregister");
+  assert.equal(hasActiveChatRun("run-settled"), false, "projection-settled runs no longer count as active");
   unregisterChatRun(handle);
 }
 
@@ -59,9 +65,9 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
     kills += 1;
   });
   assert.equal(requestChatStop("run-cancel-first"), true, "pre-settlement stop still lands");
-  markChatRunSettled(handle);
+  markChatRunTransportSettled(handle);
   assert.equal(handle.stopRequested, true, "settlement must preserve an earlier stop");
-  assert.equal(handle.settled, true, "the handle still becomes settled");
+  assert.equal(handle.acceptingStop, false, "the handle still stops accepting Stop");
   assert.equal(kills, 1, "the registered kill only fires for the pre-settlement stop");
   unregisterChatRun(handle);
 }
@@ -121,7 +127,7 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
 // announce callback ran.
 {
   const handle = registerChatRun(["run-6"], () => {});
-  markChatRunSettled(handle);
+  markChatRunTransportSettled(handle);
   unregisterChatRun(handle);
   addChatRunKeys(handle, ["conv-6"]);
   assert.equal(hasActiveChatRun("conv-6"), false, "no resurrection after unregister");

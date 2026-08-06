@@ -40,7 +40,7 @@ assert.equal(
 assert.match(
   source,
   /if \(hasActiveChatRun\(conv\.sessionId\)\) return \{ \.\.\.conv, status: "running", exitCode: 0 \};\s*\n\s*if \(conv\.pending\) return \{ \.\.\.conv, status: "failed", exitCode: 1 \};\s*\n\s*return conv;/,
-  "all active conversations resolve running via the live-run registry while inactive pending stubs fail",
+  "projection-live conversations stay running via the live-run registry while inactive pending stubs fail",
 );
 assert.match(
   source,
@@ -92,11 +92,16 @@ try {
   const route = await import("./route.ts");
   const {
     clearConversationListMetadataCache,
+    createConversationStub,
     getConversationListMetrics,
+    loadConversation,
     saveConversation,
+    stripConversationStubTurn,
   } = await import("../../../../lib/cave-conversations.ts");
   const {
+    markChatRunTransportSettled,
     registerChatRun,
+    requestChatStop,
     unregisterChatRun,
   } = await import("../../../../lib/server/chat-stop-registry.ts");
   const { sessionsListCache } = await import("../../../../lib/server/sessions-list-cache.ts");
@@ -431,6 +436,101 @@ try {
       },
       "settling the run invalidates the cached running row and restores canonical attention",
     );
+
+    await createConversationStub({
+      sessionId: "route-deferred",
+      familiarId: "charm",
+      harness: "claude",
+      runtime: `local:${projectRoot}`,
+      title: "Route deferred",
+      userTurn: {
+        id: "deferred-user",
+        text: "Need a later decision.",
+      },
+    });
+    const deferredHandle = registerChatRun(["route-deferred", "route-deferred-run"], () => {});
+    markChatRunTransportSettled(deferredHandle);
+    assert.equal(
+      requestChatStop("route-deferred-run"),
+      false,
+      "late stop is ignored once transport settlement starts the persistence window",
+    );
+    clearConversationListMetadataCache();
+    sessionsListCache.clear();
+    const deferredDuringSave = await fetchSessions();
+    const deferredDuringSaveRow = new Map(deferredDuringSave.sessions.map((row) => [row.id, row])).get("route-deferred");
+    assert.equal(deferredDuringSaveRow?.status, "running");
+    assert.deepEqual(
+      deferredDuringSaveRow?.attention,
+      { state: "none", since: null, reason: null },
+      "during deferred persistence the stub stays running and suppresses stale attention",
+    );
+    const deferredConversation = await loadConversation("route-deferred");
+    if (!deferredConversation) assert.fail("expected deferred stub conversation");
+    stripConversationStubTurn(deferredConversation, "deferred-user");
+    deferredConversation.turns.push(
+      {
+        id: "deferred-user",
+        role: "user",
+        text: "Need a later decision.",
+        attentionClearOperationId: "route-deferred-run",
+        createdAt: "2026-08-04T19:40:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "deferred-assistant",
+        role: "assistant",
+        text: "Please decide.",
+        createdAt: "2026-08-04T19:41:00.000Z",
+        parentId: "deferred-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: `local:${projectRoot}`,
+          attentionRequest: {
+            sessionId: "route-deferred",
+            turnId: "deferred-assistant",
+            requestedAt: "2026-08-04T19:41:00.000Z",
+            reason: "decision",
+          },
+        },
+      },
+    );
+    deferredConversation.activeLeafId = "deferred-assistant";
+    deferredConversation.updatedAt = "2026-08-04T19:41:00.000Z";
+    await saveConversation(deferredConversation);
+    unregisterChatRun(deferredHandle);
+    clearConversationListMetadataCache();
+    sessionsListCache.clear();
+    const deferredAfterSave = await fetchSessions();
+    const deferredAfterSaveRow = new Map(deferredAfterSave.sessions.map((row) => [row.id, row])).get("route-deferred");
+    assert.equal(deferredAfterSaveRow?.status, "completed");
+    assert.deepEqual(deferredAfterSaveRow?.attention, {
+      state: "awaiting-human",
+      since: "2026-08-04T19:41:00.000Z",
+      reason: "decision",
+    });
+
+    await createConversationStub({
+      sessionId: "route-save-failed",
+      familiarId: "charm",
+      harness: "claude",
+      runtime: `local:${projectRoot}`,
+      title: "Route save failed",
+      userTurn: {
+        id: "failed-user",
+        text: "Please persist me.",
+      },
+    });
+    const failedHandle = registerChatRun(["route-save-failed"], () => {});
+    markChatRunTransportSettled(failedHandle);
+    unregisterChatRun(failedHandle);
+    clearConversationListMetadataCache();
+    sessionsListCache.clear();
+    const failedAfterRelease = await fetchSessions();
+    const failedRow = new Map(failedAfterRelease.sessions.map((row) => [row.id, row])).get("route-save-failed");
+    assert.equal(failedRow?.status, "failed", "a released pending stub becomes failed instead of hanging active");
 
     await stopDaemon();
     stopDaemon = async () => {};

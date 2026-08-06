@@ -78,3 +78,20 @@ test("user and system text remains unchanged", () => {
   assert.equal(chatTurnVisibleText({ role: "user", text }), text);
   assert.equal(chatTurnVisibleText({ role: "system", text }), text);
 });
+
+test("fenced reasoning tags stay literal in rendered text", () => {
+  const text = [
+    "```xml",
+    "<thinking>literal example</thinking>",
+    "```",
+    "<thinking>private plan</thinking>",
+    "Visible answer.",
+  ].join("\n");
+
+  const result = extractChatRenderedText(text);
+  assert.equal(
+    result.visible,
+    "```xml\n<thinking>literal example</thinking>\n```\n\nVisible answer.",
+  );
+  assert.equal(result.inlineReasoning, "private plan");
+});

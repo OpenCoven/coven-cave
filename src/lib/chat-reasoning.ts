@@ -1,3 +1,5 @@
+import { markdownCodeRanges } from "./github-blocks.ts";
+
 /**
  * Split assistant text into its visible body and hidden reasoning blocks.
  * Unclosed blocks stay hidden while a response is streaming.
@@ -6,12 +8,15 @@ export function splitReasoning(text: string): { visible: string; reasoning: stri
   const reasoningParts: string[] = [];
   const visibleParts: string[] = [];
   const tagRe = /<(\/?)(thinking|reasoning)>/gi;
+  const codeRanges = markdownCodeRanges(text);
   let activeTag: string | null = null;
   let reasoningStart = 0;
   let cursor = 0;
   let match: RegExpExecArray | null;
 
   while ((match = tagRe.exec(text)) !== null) {
+    const matchIndex = match.index;
+    if (codeRanges.some(([start, end]) => matchIndex >= start && matchIndex < end)) continue;
     const closing = match[1] === "/";
     const tag = match[2].toLowerCase();
 
