@@ -97,6 +97,7 @@ import {
   runtimeProcessFailure,
   type DirectRunnerId,
   type RuntimeAvailability,
+  type RuntimeRunnerId,
 } from "@/lib/runtime-availability";
 import {
   isModelAllowedByRuntime,
@@ -157,6 +158,7 @@ import { probeCopilotCapability } from "@/lib/server/copilot-capability-probe";
 import { resolveCopilotRuntimeLaunch } from "@/lib/server/copilot-runtime-launch";
 import {
   probeReadyLocalRuntimeCapability,
+  probeReadyLocalRuntimeCapabilityOutcome,
   type LocalRuntimeCapabilityPlan,
 } from "@/lib/server/local-runtime-capability-gate";
 import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
@@ -256,7 +258,7 @@ import {
 } from "./chat-send-attachments";
 import {
   covenRunSupportsAddDir,
-  covenRunSupportsModel,
+  covenRunModelFlagOutcome,
   hermesChatSupportsModel,
   covenRunSupportsPermission,
   openCodeRunCapabilities,
@@ -313,6 +315,7 @@ function createLocalRuntimePlan(input: {
   };
   env: NodeJS.ProcessEnv;
   availability?: RuntimeAvailability;
+  availabilityRunner?: RuntimeRunnerId;
   cwd?: string;
 }): LocalRuntimePlan {
   const availability = input.availability ?? evaluateRuntimeAvailability({
@@ -331,6 +334,7 @@ function createLocalRuntimePlan(input: {
     env: input.env,
     ...(input.cwd ? { cwd: input.cwd } : {}),
     availability,
+    ...(input.availabilityRunner ? { availabilityRunner: input.availabilityRunner } : {}),
     ...(input.launch.unresolvedWindowsShim
       ? { unresolvedWindowsShim: true as const }
       : {}),
@@ -1792,6 +1796,9 @@ export async function POST(req: Request) {
                   launch.unresolvedWindowsShim === true,
               })
             : undefined,
+        ...(binding.harness === "claude"
+          ? { availabilityRunner: "claude" as const }
+          : {}),
       });
     }
   }
@@ -2031,6 +2038,39 @@ export async function POST(req: Request) {
       probe,
       allowWithoutLocalPlan: Boolean(sshRuntime),
     });
+  const probeCovenCapabilityOutcome = <T,>(probe: () => Promise<T>) =>
+    probeReadyLocalRuntimeCapabilityOutcome({
+      plan: localRuntimePlan,
+      runner: "coven",
+      probe,
+      allowWithoutLocalPlan: Boolean(sshRuntime),
+    });
+  const covenModelProbeDecides =
+    !hermesDirect &&
+    !openCodeDirect &&
+    !copilotStream &&
+    !codexDirect &&
+    binding.harness !== "grok" &&
+    binding.harness !== "openclaw";
+  const covenModelForwarding = covenModelProbeDecides
+    ? await probeCovenCapabilityOutcome(covenRunModelFlagOutcome)
+    : null;
+  const modelForwardingProbeFailure: { code: string; reason: string } | null =
+    covenModelForwarding === null
+      ? null
+      : covenModelForwarding.ran === false
+        ? { code: covenModelForwarding.code, reason: covenModelForwarding.reason }
+        : covenModelForwarding.value.ok === false
+          ? {
+              code: RUNTIME_AVAILABILITY_ERROR_CODES.probe_failed,
+              reason: covenModelForwarding.value.reason,
+            }
+          : null;
+  const covenModelForwardingSupported =
+    covenModelForwarding !== null &&
+    covenModelForwarding.ran === true &&
+    covenModelForwarding.value.ok === true &&
+    covenModelForwarding.value.matched === true;
   const modelForwardingEnabled =
     hermesDirect
       ? hermesApi !== null || (hermesModelCapability ?? false)
@@ -2040,8 +2080,7 @@ export async function POST(req: Request) {
           ? true
           : codexDirect
             ? codexDirectCapabilities?.model === true
-            : binding.harness === "grok" ||
-              (binding.harness !== "openclaw" && ((await probeCovenCapability(covenRunSupportsModel)) ?? false));
+            : binding.harness === "grok" || covenModelForwardingSupported;
   const explicitModelSelection = body.modelOverride !== undefined && body.modelOverride !== "";
   if (explicitModelSelection && (!requestedModel || !isModelAllowedByRuntime(binding.harness, requestedModel))) {
     return new Response(
@@ -2057,6 +2096,20 @@ export async function POST(req: Request) {
     );
   }
   if (explicitModelSelection && !modelForwardingEnabled) {
+    if (modelForwardingProbeFailure) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          code: "model_forwarding_probe_failed",
+          error: "Could not check whether this runtime accepts a model override, so the turn was not run.",
+          requestedModel,
+          modelApplicationState: "rejected",
+          modelApplicationReason: modelForwardingProbeFailure.reason,
+          probeFailureCode: modelForwardingProbeFailure.code,
+        }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    }
     return new Response(
       JSON.stringify({
         ok: false,
@@ -2117,6 +2170,17 @@ export async function POST(req: Request) {
     }, { status: 400 });
   }
   if (savedModelRejection === "forwarding") {
+    if (modelForwardingProbeFailure) {
+      return NextResponse.json({
+        ok: false,
+        code: "model_forwarding_probe_failed",
+        error: "Could not check whether this runtime accepts the saved model, so the turn was not run.",
+        desiredModel,
+        modelApplicationState: "rejected",
+        modelApplicationReason: modelForwardingProbeFailure.reason,
+        probeFailureCode: modelForwardingProbeFailure.code,
+      }, { status: 400 });
+    }
     return NextResponse.json({
       ok: false,
       code: "unsupported_saved_model",

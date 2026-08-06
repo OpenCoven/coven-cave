@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { probeReadyLocalRuntimeCapability } from "./local-runtime-capability-gate.ts";
+import {
+  probeReadyLocalRuntimeCapability,
+  probeReadyLocalRuntimeCapabilityOutcome,
+} from "./local-runtime-capability-gate.ts";
 
 assert.equal(
   typeof probeReadyLocalRuntimeCapability,
@@ -115,5 +118,101 @@ assert.equal(
   1,
   "the explicit no-local-plan bypass preserves existing SSH capability routing",
 );
+
+{
+  let covenBackedCalls = 0;
+  const covenBackedResult = await probeReadyLocalRuntimeCapability({
+    plan: {
+      runner: "coven",
+      availabilityRunner: "claude",
+      availability: {
+        state: "ready",
+        runner: "claude",
+        resolvedPath: "/private/claude",
+      },
+    },
+    runner: "coven",
+    probe: async () => {
+      covenBackedCalls += 1;
+      return true;
+    },
+  });
+  assert.equal(
+    covenBackedResult,
+    true,
+    "a Coven-backed Claude plan probes `coven run` capabilities",
+  );
+  assert.equal(covenBackedCalls, 1, "the Coven-backed plan calls the probe exactly once");
+}
+
+{
+  let driftCalls = 0;
+  const drift = await probeReadyLocalRuntimeCapabilityOutcome({
+    plan: {
+      runner: "coven",
+      availabilityRunner: "claude",
+      availability: {
+        state: "ready",
+        runner: "opencode",
+        resolvedPath: "/private/opencode",
+      },
+    },
+    runner: "coven",
+    probe: async () => {
+      driftCalls += 1;
+      return true;
+    },
+  });
+  assert.equal(drift.ran, false, "an unrelated readiness record never authorizes a probe");
+  assert.equal(driftCalls, 0, "a drifted plan never spawns the capability probe");
+}
+
+{
+  const notReady = await probeReadyLocalRuntimeCapabilityOutcome({
+    plan: {
+      runner: "coven",
+      availability: {
+        state: "missing",
+        runner: "coven",
+        code: "runtime_coven_missing",
+        message: "Coven is not installed.",
+      },
+    },
+    runner: "coven",
+    probe: async () => true,
+  });
+  assert.equal(notReady.ran, false);
+  assert.equal(
+    notReady.ran === false && notReady.reason,
+    "Coven is not installed.",
+    "a not-ready plan surfaces the underlying availability reason rather than a bare false",
+  );
+
+  const noPlan = await probeReadyLocalRuntimeCapabilityOutcome({
+    plan: null,
+    runner: "coven",
+    probe: async () => true,
+  });
+  assert.equal(noPlan.ran, false);
+  assert.match(
+    noPlan.ran === false ? noPlan.reason : "",
+    /never probed/,
+    "a missing plan reports that the capability was never probed",
+  );
+
+  const answeredNo = await probeReadyLocalRuntimeCapabilityOutcome({
+    plan: {
+      runner: "coven",
+      availability: { state: "ready", runner: "coven", resolvedPath: "/private/coven" },
+    },
+    runner: "coven",
+    probe: async () => false,
+  });
+  assert.deepEqual(
+    answeredNo,
+    { ran: true, value: false },
+    "a probe that ran and answered no is not confusable with one that never ran",
+  );
+}
 
 console.log("local-runtime-capability-gate.test.ts: ok");
