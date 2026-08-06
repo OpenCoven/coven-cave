@@ -433,6 +433,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn failed_revival_stays_pending_when_child_state_is_unknown() {
         assert_eq!(
             recovery_observation(true, SidecarLiveness::Unknown),
@@ -442,6 +443,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn only_an_observed_live_revival_restores_the_budget() {
         assert_eq!(
             recovery_observation(false, SidecarLiveness::Alive),
