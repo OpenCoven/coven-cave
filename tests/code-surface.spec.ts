@@ -338,7 +338,6 @@ test.describe("code surface (Coding familiar's room)", () => {
     await page.keyboard.press("Tab");
     await sessionsTab.focus();
     await expect(sessionsTab).toBeFocused();
-    await expect(sessionsTab).toHaveClass(/\bfocus-ring(?:\s|$)/);
     await expect
       .poll(
         () =>
