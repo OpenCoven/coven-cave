@@ -283,8 +283,9 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   useEffect(() => {
     // Switching covens abandons any in-flight broadcast on the previous one.
     // Retire that scope before swapping so any late completion becomes inert
-    // here, ask the server to stop its runs, and let the helper abort the local
-    // stream once the stop dispatch settles.
+    // here, and ask the server to stop its runs. The retired stream may keep
+    // consuming until terminal done/error so a late persistence failure cannot
+    // be rewritten into a provisional completed state.
     const retiringScopeId = runScopeRef.current;
     runScopeRef.current += 1;
     abortRef.current = null;
@@ -618,7 +619,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     return stopActiveGroupReplyRuns({
       entries,
       stopRun: stopServerRun,
-      abortLocalOnTransportSettled: true,
       isEntryActive: (entry) => activeRunsRef.current.get(entry.runId) === entry,
       onError: (result, entry) => {
         console.warn("[group-chat] stop failed", {

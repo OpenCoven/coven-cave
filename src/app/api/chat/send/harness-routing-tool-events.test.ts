@@ -154,10 +154,45 @@ assert.match(
   /const abortGatewayTransport = \(\) => \{[\s\S]*?settleOpenGatewayTools\("\[tool connection lost before the Gateway turn ended\]"\);[\s\S]*?void gatewayDispatch\.abortTransport\(\);/,
   "disconnect reaping must settle Gateway tool cards without persisting a user-cancelled stop",
 );
+assert.ok(
+  chatRoute.includes(`const gatewayResult = await gatewayDispatch.done;
+        const cancelledByUser = runHandle.stopRequested;
+        settleOpenGatewayTools(
+          cancelledByUser
+            ? "[tool cancelled by user]"
+            : "[tool did not settle before the Gateway turn ended]",
+        );`),
+  "Gateway tool settlement must blame the user only for an explicit Stop",
+);
+assert.ok(
+  chatRoute.includes(`const transportAborted = gatewayResult.state === "aborted";
+        const gatewayFailureMessage = transportAborted && !cancelledByUser`) &&
+    chatRoute.includes(`let isError = gatewayResult.state === "error" || transportAborted;`),
+  "Gateway abort transport state must still flow through the failed terminal path until an explicit Stop overrides it",
+);
+assert.ok(
+  chatRoute.includes(`const terminalOutcome = cancelledByUser
+          ? "cancelled"
+          : isError
+            ? "error"
+            : "completed";
+        markChatRunTransportSettled(runHandle, terminalOutcome);`),
+  "Gateway transport settlement must freeze the provisional terminal outcome before persistence begins",
+);
 assert.match(
   chatRoute,
-  /const gatewayResult = await gatewayDispatch\.done;[\s\S]*?settleOpenGatewayTools\([\s\S]*?"\[tool did not settle before the Gateway turn ended\]"[\s\S]*?\);[\s\S]*?const cancelledByUser = runHandle\.stopRequested;[\s\S]*?const transportAborted = gatewayResult\.state === "aborted";[\s\S]*?let isError = gatewayResult\.state === "error" \|\| transportAborted;[\s\S]*?if \(!gatewayAssistantText\.trim\(\)\) \{[\s\S]*?isError = true;[\s\S]*?\}[\s\S]*?const terminalOutcome = cancelledByUser\s*\?\s*"cancelled"\s*:\s*isError\s*\?\s*"error"\s*:\s*"completed";[\s\S]*?markChatRunTransportSettled\(runHandle,\s*terminalOutcome\);[\s\S]*?try \{\s*pushProgress\("save-transcript"/,
-  "Gateway transport aborts must stay failed unless Stop explicitly marked the run cancelled, then freeze that outcome before persistence",
+  /const gatewayFailureMessage = transportAborted && !cancelledByUser[\s\S]*?"OpenClaw Gateway turn aborted before completion\."/,
+  "remote Gateway aborts must be rewritten to neutral failure wording instead of blaming the user",
+);
+assert.match(
+  chatRoute,
+  /if \(!gatewayAssistantText\.trim\(\)\) \{[\s\S]*?gatewayFailureMessage \?\? "_The OpenClaw Gateway returned no text\._";[\s\S]*?if \(!cancelledByUser\) isError = true;/,
+  "the assistant fallback text must use the neutral Gateway failure wording for remote aborts",
+);
+assert.match(
+  chatRoute,
+  /catch \{\s*isError = true;\s*if \(!cancelledByUser\) markChatRunTerminalOutcome\(runHandle,\s*"error"\);[\s\S]*?pushProgress\("save-transcript", "Transcript save failed", "error"\);/,
+  "Gateway persistence failures must revise the provisional completed transport outcome to an error before terminal cleanup",
 );
 assert.match(
   chatRoute,

@@ -234,7 +234,7 @@ test("stopActiveGroupReplyRuns preserves completed transports through slow persi
   ]);
 });
 
-test("stopActiveGroupReplyRuns can abort stale local continuation after transport settlement without relabeling completion", async () => {
+test("stopActiveGroupReplyRuns keeps consuming a transport-settled stream until terminal finalization", async () => {
   const entry = makeEntry("run-completed-only", 14);
 
   const results = await stopActiveGroupReplyRuns({
@@ -246,11 +246,10 @@ test("stopActiveGroupReplyRuns can abort stale local continuation after transpor
       state: "transport-settled",
       terminalOutcome: "completed",
     }),
-    abortLocalOnTransportSettled: true,
   });
 
-  assert.equal(entry.controller.signal.aborted, true, "retired-scope cleanup aborts local continuation once the server confirms transport settlement");
-  assert.equal(entry.terminalOutcome, "completed", "local abort keeps the retained completed outcome for abort cleanup");
+  assert.equal(entry.controller.signal.aborted, false, "transport settlement alone must not abort the local stream before final done/error arrives");
+  assert.equal(entry.terminalOutcome, "completed", "the provisional transport outcome stays available without forcing a local abort");
   assert.deepEqual(results, [{
     runId: "run-completed-only",
     ok: true,

@@ -353,22 +353,22 @@ test("Group chat stop preserves completed transports through slow persistence", 
   assert.match(
     view,
     /const terminalOutcome = activeRunsRef\.current\.get\(replyRunId\)\?\.terminalOutcome;/,
-    "abort cleanup reads any retained terminal evidence before rewriting the reply",
+    "explicit abort cleanup reads any retained terminal evidence before rewriting the reply",
   );
   assert.match(
     view,
     /terminalOutcome === "completed"\s*\?\s*\{ \.\.\.r, status: "done", activity: undefined \}/,
-    "an aborted completed transport is preserved as done instead of rewritten cancelled",
+    "an explicit abort on a completed transport is preserved as done instead of rewritten cancelled",
   );
   assert.match(
     view,
     /terminalOutcome: null/,
     "active runs start without terminal evidence and gain it only from the stop/persistence path",
   );
-  assert.match(
+  assert.doesNotMatch(
     view,
     /abortLocalOnTransportSettled: true/,
-    "retired-scope cleanup aborts stale local continuation even when the server already settled transport",
+    "retired-scope cleanup must not abort a transport-settled stream before terminal done/error finalization",
   );
   assert.match(
     view,
@@ -379,6 +379,11 @@ test("Group chat stop preserves completed transports through slow persistence", 
     view,
     /if \(!scopeIsStillActive\(scopeId, controller\.signal\)\) return;[\s\S]{0,120}const failed = settled\.filter/,
     "retired-scope broadcasts skip completion announcements after local invalidation",
+  );
+  assert.match(
+    view,
+    /scopeId !== runScopeRef\.current\) return;\s*updateReply\(reply\.id, fn\);/,
+    "retired-scope stream chunks stay local to their settled snapshot instead of mutating the newly active coven",
   );
 });
 

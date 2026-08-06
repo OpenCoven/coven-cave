@@ -10,6 +10,7 @@ const {
   addChatRunKeys,
   hasActiveChatRun,
   markChatRunTransportSettled,
+  markChatRunTerminalOutcome,
   markChatRunProjectionSettled,
 } =
   await import("./chat-stop-registry.ts");
@@ -28,6 +29,20 @@ const {
   assert.equal(handle.stopRequested, true, "the handle records the deliberate stop");
   assert.deepEqual(requestChatStop("session-1"), { state: "accepted", terminalOutcome: null }, "stop also resolves by session key");
   assert.equal(kills, 2, "kill is safe to invoke repeatedly");
+  unregisterChatRun(handle);
+}
+
+// Finalization may revise a provisional transport success into a persisted
+// failure before the stream unregisters.
+{
+  const handle = registerChatRun(["run-finalize-error"], () => {});
+  markChatRunTransportSettled(handle, "completed");
+  markChatRunTerminalOutcome(handle, "error");
+  assert.deepEqual(
+    requestChatStop("run-finalize-error"),
+    { state: "transport-settled", terminalOutcome: "error" },
+    "late stops must expose the final persisted failure instead of the provisional transport success",
+  );
   unregisterChatRun(handle);
 }
 

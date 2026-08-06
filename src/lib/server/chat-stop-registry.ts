@@ -19,7 +19,7 @@ export type ChatRunHandle = {
   stopRequested: boolean;
   /** Monotonic: false once the transport produced its definitive outcome. */
   acceptingStop: boolean;
-  /** Transport outcome once Stop is no longer accepted. */
+  /** Latest reportable terminal outcome; transport seeds it, finalization may revise it. */
   terminalOutcome: ChatRunTerminalOutcome | null;
   /** True while sessions/list should still treat the run as live. */
   projectionActive: boolean;
@@ -143,6 +143,14 @@ export function markChatRunTransportSettled(
   terminalOutcome: ChatRunTerminalOutcome,
 ): void {
   handle.acceptingStop = false;
+  handle.terminalOutcome = terminalOutcome;
+}
+
+/** Revise the reportable terminal outcome after post-transport finalization. */
+export function markChatRunTerminalOutcome(
+  handle: ChatRunHandle,
+  terminalOutcome: ChatRunTerminalOutcome,
+): void {
   handle.terminalOutcome = terminalOutcome;
 }
 

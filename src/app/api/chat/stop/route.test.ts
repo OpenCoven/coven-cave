@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { POST } from "./route.ts";
 import {
+  markChatRunTerminalOutcome,
   markChatRunTransportSettled,
   registerChatRun,
   unregisterChatRun,
@@ -113,6 +114,26 @@ test("transport-settled error outcomes are returned without being rewritten comp
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ runId: "settled-route-error-run" }),
+    }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(
+      await readJson(response),
+      { ok: true, stopped: false, state: "transport-settled", terminalOutcome: "error" },
+    );
+  } finally {
+    unregisterChatRun(handle);
+  }
+});
+
+test("transport-settled persistence failures replace the provisional completed outcome", async () => {
+  const handle = registerChatRun(["settled-route-finalize-error-run"], () => {});
+  markChatRunTransportSettled(handle, "completed");
+  markChatRunTerminalOutcome(handle, "error");
+  try {
+    const response = await POST(new Request("http://127.0.0.1/api/chat/stop", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId: "settled-route-finalize-error-run" }),
     }));
     assert.equal(response.status, 200);
     assert.deepEqual(

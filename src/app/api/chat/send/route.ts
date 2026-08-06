@@ -148,6 +148,7 @@ import {
 import { parseAgentAttachments } from "@/lib/server/agent-attachments";
 import {
   markChatRunProjectionSettled,
+  markChatRunTerminalOutcome,
   markChatRunTransportSettled,
   registerChatRun,
   unregisterChatRun,
@@ -1053,29 +1054,34 @@ function openClawChatResponse(args: {
         args.req.signal.addEventListener("abort", onAbort, { once: true });
         pushProgress("openclaw-response", "Waiting for OpenClaw Gateway response", "running");
         const gatewayResult = await gatewayDispatch.done;
+        const cancelledByUser = runHandle.stopRequested;
         settleOpenGatewayTools(
-          gatewayResult.state === "aborted"
+          cancelledByUser
             ? "[tool cancelled by user]"
             : "[tool did not settle before the Gateway turn ended]",
         );
         args.req.signal.removeEventListener("abort", onAbort);
         if (detachKillTimer != null) clearTimeout(detachKillTimer);
         const durationMs = Date.now() - startedAt;
-        const cancelledByUser = runHandle.stopRequested;
         const transportAborted = gatewayResult.state === "aborted";
+        const gatewayFailureMessage = transportAborted && !cancelledByUser
+          ? gatewayResult.message && !/cancelled by user/i.test(gatewayResult.message)
+            ? gatewayResult.message
+            : "OpenClaw Gateway turn aborted before completion."
+          : gatewayResult.message;
         let isError = gatewayResult.state === "error" || transportAborted;
         if (cancelledByUser) isError = false;
         if (!gatewayAssistantText.trim()) {
           gatewayAssistantText = cancelledByUser
             ? "(cancelled)"
-            : gatewayResult.message ?? "_The OpenClaw Gateway returned no text._";
+            : gatewayFailureMessage ?? "_The OpenClaw Gateway returned no text._";
           if (!cancelledByUser) isError = true;
         }
         pushProgress(
           "openclaw-response",
           isError ? "OpenClaw Gateway response failed" : "OpenClaw Gateway response received",
           isError ? "error" : "done",
-          gatewayResult.message,
+          gatewayFailureMessage,
           durationMs,
         );
         const terminalOutcome = cancelledByUser
@@ -1176,6 +1182,7 @@ function openClawChatResponse(args: {
           pushProgress("save-transcript", "Transcript saved", "done");
         } catch {
           isError = true;
+          if (!cancelledByUser) markChatRunTerminalOutcome(runHandle, "error");
           pushProgress("save-transcript", "Transcript save failed", "error");
           push({ kind: "error", code: "transcript_save_failed", message: "Cave could not save the transcript." });
         }
