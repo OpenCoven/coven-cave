@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { homedir } from "node:os";
 import {
   covenWorkspaceRoot,
   readWorkspaceRootOverride,
@@ -142,5 +143,67 @@ test("a file (not a directory) is never accepted as a workspace root", async () 
     const file = path.join(base, "notes.txt");
     fs.writeFileSync(file, "x");
     assert.deepEqual(validateWorkspaceRoot(file), { ok: false, reason: "invalid-path" });
+  });
+});
+
+test("$HOME itself is refused, matching what the picker lets you select", async () => {
+  await withScratchHome(() => {
+    // The picker disables selecting bare $HOME (selectDisabled), and the
+    // server has to mirror it or the two disagree about the same click.
+    assert.deepEqual(validateWorkspaceRoot(homedir()), { ok: false, reason: "unbounded" });
+  });
+});
+
+// The writer refuses relative paths and bare volume roots, but the override is
+// plain JSON in the user's Cave home. covenWorkspaceRoot() feeds project-paths'
+// allowed-root list, so a hand-edited file must not be able to widen it past
+// what a save would have permitted.
+test("a hand-edited override cannot widen past what saving allows", async () => {
+  await withScratchHome((base) => {
+    const write = (workspacePath: string) => {
+      fs.mkdirSync(path.dirname(workspaceRootOverrideFile()), { recursive: true });
+      fs.writeFileSync(workspaceRootOverrideFile(), JSON.stringify({ workspacePath }));
+    };
+    const fallback = path.join(base, "workspaces");
+
+    write(path.parse(process.cwd()).root);
+    assert.equal(readWorkspaceRootOverride(), null, "a bare volume root is rejected on read");
+    assert.equal(covenWorkspaceRoot(), fallback);
+
+    write("relative/dir");
+    assert.equal(
+      readWorkspaceRootOverride(),
+      path.resolve("relative/dir"),
+      "a relative value is resolved rather than handed on raw",
+    );
+
+    write(42 as unknown as string);
+    assert.equal(readWorkspaceRootOverride(), null, "a non-string value is rejected");
+  });
+});
+
+// covenWorkspaceRoot() is sync and sits on hot paths (one call per directory
+// entry in fs-browse), so the parse is cached against the file's stat. The
+// cache must never outlive a write or a delete.
+test("the cached override is invalidated by a rewrite and by a delete", async () => {
+  await withScratchHome(async (base) => {
+    const first = path.join(base, "first");
+    const second = path.join(base, "second-with-a-different-length");
+    fs.mkdirSync(first, { recursive: true });
+    fs.mkdirSync(second, { recursive: true });
+
+    await saveWorkspaceRoot(first);
+    assert.equal(covenWorkspaceRoot(), first);
+    assert.equal(covenWorkspaceRoot(), first, "a repeat read is served from cache");
+
+    await saveWorkspaceRoot(second);
+    assert.equal(covenWorkspaceRoot(), second, "a save is visible immediately");
+
+    await clearWorkspaceRoot();
+    assert.equal(
+      covenWorkspaceRoot(),
+      path.join(base, "workspaces"),
+      "a deleted override stops resolving to the root it named",
+    );
   });
 });

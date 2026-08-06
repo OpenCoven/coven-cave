@@ -218,7 +218,7 @@ function probeHelpOutcome(
         if (code === null) {
           done({
             ok: false,
-            reason: `\`${command} ${args.join(" ")}\` exited with code null.`,
+            reason: `\`${command} ${args.join(" ")}\` exited without an exit code.`,
           });
           return;
         }
@@ -230,11 +230,11 @@ function probeHelpOutcome(
           return;
         }
         try {
-          done({ ok: true, matched: matches(output) });
-        } catch {
+          done({ ok: true, matched: (acceptNonZeroExit || code === 0) && matches(output) });
+        } catch (error) {
           done({
             ok: false,
-            reason: `\`${command} ${args.join(" ")}\` help output could not be matched.`,
+            reason: `\`${command} ${args.join(" ")}\` help output could not be evaluated: ${error instanceof Error ? error.message : String(error)}`,
           });
         }
       });
