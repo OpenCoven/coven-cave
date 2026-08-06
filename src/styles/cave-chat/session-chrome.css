@@ -481,3 +481,63 @@
   color: var(--text-muted);
   white-space: nowrap;
 }
+
+/* ── Earlier-turns fold ("Chat Session - Prototype.dc.html", cave-u5lq7) ─────
+   A long thread opens on its recent exchange; everything older sits behind one
+   pill on a rule, which reads as a seam in the conversation rather than as a
+   toolbar. Same rule + mono-uppercase vocabulary as the turn-gap divider above,
+   because both mark a discontinuity in the transcript — the difference is that
+   this one is actionable, so it is a real button with a caret. */
+.cave-chat-fold {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-4);
+}
+.cave-chat-fold__rule {
+  flex: 1;
+  min-width: var(--space-2);
+  height: 1px;
+  background: var(--border-hairline);
+}
+.cave-chat-fold__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  height: 22px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--bg-panel) 55%, transparent);
+  color: var(--text-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.cave-chat-fold__pill:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+/* The caret points at what the press will do: up = fold away, down = reveal.
+   Driven off the button's aria-expanded rather than a data attribute on the
+   glyph — Icon forwards only aria-* and role, so anything else is dropped and
+   the caret would sit frozen in one direction while the label changed. */
+.cave-chat-fold__caret {
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+.cave-chat-fold__pill[aria-expanded="false"] .cave-chat-fold__caret {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cave-chat-fold__caret {
+    transition: none;
+  }
+}

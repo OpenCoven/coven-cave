@@ -957,7 +957,10 @@ function WorkspacePathField() {
   const [saving, setSaving] = useState(false);
   const desktop = useIsTauriDesktop();
   const { announce } = useAnnouncer();
-  const [openError, setOpenError] = useState("");
+  // One slot for both failures the row can surface (saving a pick, revealing
+  // the folder natively) — they are mutually exclusive in practice and share
+  // the same alert line.
+  const [fieldError, setFieldError] = useState("");
 
   useEffect(() => {
     const ctl = new AbortController();
@@ -975,7 +978,7 @@ function WorkspacePathField() {
   const choose = async (dir: string) => {
     setPickerOpen(false);
     setSaving(true);
-    setOpenError("");
+    setFieldError("");
     try {
       const res = await fetch("/api/config/workspace-path", {
         method: "POST",
@@ -986,14 +989,14 @@ function WorkspacePathField() {
       const body = (await res.json()) as { ok?: boolean; workspacePath?: string; error?: string };
       if (!res.ok || !body.ok || !body.workspacePath) {
         const message = body.error ?? "Couldn't save the workspace path.";
-        setOpenError(message);
+        setFieldError(message);
         announce(message, "assertive");
         return;
       }
       setPath(body.workspacePath);
       announce("Workspace path saved.");
     } catch {
-      setOpenError("Couldn't save the workspace path.");
+      setFieldError("Couldn't save the workspace path.");
       announce("Couldn't save the workspace path.", "assertive");
     } finally {
       setSaving(false);
@@ -1002,13 +1005,13 @@ function WorkspacePathField() {
 
   const reveal = async () => {
     if (!desktop || !path) return;
-    setOpenError("");
+    setFieldError("");
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("shell_open_path", { path });
       announce("Workspace folder opened.");
     } catch {
-      setOpenError("Couldn't open the workspace folder.");
+      setFieldError("Couldn't open the workspace folder.");
       announce("Couldn't open the workspace folder.", "assertive");
     }
   };
@@ -1032,7 +1035,11 @@ function WorkspacePathField() {
               ? `Pinned by ${envPin}`
               : "Choose where Coven stores familiar workspaces"
           }
-          onClick={() => setPickerOpen(true)}
+          onClick={() => {
+            // Don't carry a previous failure into a fresh attempt.
+            setFieldError("");
+            setPickerOpen(true);
+          }}
         >
           {saving ? "Saving…" : "Browse"}
         </Button>
@@ -1052,7 +1059,7 @@ function WorkspacePathField() {
           Pinned by the {envPin} environment variable.
         </p>
       ) : null}
-      {openError ? <p role="alert" className="settings-workspace-error">{openError}</p> : null}
+      {fieldError ? <p role="alert" className="settings-workspace-error">{fieldError}</p> : null}
       <DirectoryPickerModal
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}

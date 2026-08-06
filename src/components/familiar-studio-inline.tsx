@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { FamiliarCardOverlay } from "@/components/familiar-card-overlay";
 import { FamiliarStudioBrainTab } from "@/components/familiar-studio-brain-tab";
 import { FamiliarStudioIdentityTab } from "@/components/familiar-studio-identity-tab";
 import { FamiliarStudioMemoryTab } from "@/components/familiar-studio-memory-tab";
@@ -292,6 +293,7 @@ function FamiliarStudioHero({
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [cardOpen, setCardOpen] = useState(false);
   const { onFile, toast } = useFamiliarImageUpload(familiar.id);
   const types = resolveFamiliarTypes(familiar.familiarType);
   const visibleTypes = types.length > 0 ? types : [FAMILIAR_TYPES[0]];
@@ -339,14 +341,23 @@ function FamiliarStudioHero({
 
   return (
     <header className="familiar-studio-control__hero">
+      {/* View and edit both live on this avatar, and they are split the same
+          way as everywhere else in the app: the primary click VIEWS — it opens
+          the familiar's card — and replacing the portrait is its own labelled
+          control. It used to be the click, which meant there was no way to look
+          at a familiar's own portrait without being one gesture away from
+          overwriting it. Dropping an image on the avatar still replaces it,
+          exactly as before: a drop can only ever have meant "use this one". */}
       <div className="familiar-studio-control__avatar-wrap">
         <button
           type="button"
           className="familiar-studio-control__avatar focus-ring"
           data-dragging={dragging || undefined}
-          aria-label={`Replace ${familiar.display_name}'s portrait`}
-          title="Click or drop an image to replace the portrait"
-          onClick={() => inputRef.current?.click()}
+          aria-label={`Open ${familiar.display_name}'s card`}
+          aria-haspopup="dialog"
+          aria-expanded={cardOpen}
+          title="Click to open the card · drop an image to replace the portrait"
+          onClick={() => setCardOpen(true)}
           onDragOver={(event) => {
             event.preventDefault();
             setDragging(true);
@@ -359,6 +370,15 @@ function FamiliarStudioHero({
             size="xl"
             className="familiar-studio-control__avatar-image"
           />
+        </button>
+        <button
+          type="button"
+          className="familiar-studio-control__avatar-edit focus-ring"
+          aria-label={`Replace ${familiar.display_name}'s portrait`}
+          title="Replace the portrait"
+          onClick={() => inputRef.current?.click()}
+        >
+          <Icon name="ph:camera" width={12} height={12} aria-hidden />
         </button>
         <input
           ref={inputRef}
@@ -375,6 +395,11 @@ function FamiliarStudioHero({
             {toast}
           </span>
         ) : null}
+        <FamiliarCardOverlay
+          familiar={familiar}
+          open={cardOpen}
+          onClose={() => setCardOpen(false)}
+        />
       </div>
 
       <div className="familiar-studio-control__identity">

@@ -15,10 +15,12 @@ export type ResolvedFamiliar = Omit<Familiar, "display_name" | "role"> & {
   /** Always non-empty; falls back to var(--accent-presence). */
   color: string;
   /**
-   * Avatar image source: the familiar's workspace avatar URL (`base.avatarUrl`,
-   * served from `~/.coven/workspaces/familiars/<id>/avatars/`) when present,
-   * else a Cave-local uploaded data URL as fallback. Undefined when neither
-   * exists — the glyph renders instead.
+   * Avatar image source. Two stores can hold a portrait for the same familiar —
+   * the workspace avatar (`base.avatarUrl`, served from
+   * `~/.coven/workspaces/familiars/<id>/avatars/`) and a Cave-local upload — and
+   * when both exist this is the one written MOST RECENTLY (see
+   * `orderAvatarSources`). Undefined when neither exists — the glyph renders
+   * instead.
    */
   avatarImage?: string;
   /**
@@ -40,6 +42,60 @@ type ResolveContext = {
   archived: boolean;
 };
 
+/**
+ * When was the workspace avatar last written? `/api/familiars` cache-busts the
+ * URL with the file's mtime (`?v=<mtimeMs>`), so the URL dates itself. `null`
+ * when there is no avatar, or when the URL carries no readable stamp.
+ */
+function workspaceAvatarWrittenAt(avatarUrl: string | undefined): number | null {
+  if (!avatarUrl) return null;
+  const stamp = /[?&]v=(\d+)/.exec(avatarUrl)?.[1];
+  if (!stamp) return null;
+  const ms = Number(stamp);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * Order the two portrait sources — **most recently written first**.
+ *
+ * A familiar can be given a portrait from two places that do not know about
+ * each other: the summoning rite POSTs one to `/api/familiars/<id>/avatar`
+ * (workspace, on disk), and Identity → Look's dropzone writes one to the
+ * Cave-local IndexedDB store. Ranking them by KIND — workspace always first —
+ * meant a familiar that already had a workspace avatar could never have its
+ * portrait changed from the dropzone: the dropzone showed the new picture (it
+ * renders its own store directly) while every `FamiliarAvatar` on the surface
+ * kept rendering the workspace file, and no reload ever cleared it, because
+ * nothing was stale — the resolve simply recomputed the same answer.
+ *
+ * Recency is the rule the user is actually expressing: the portrait they set
+ * last is the portrait they want. Both sources are still returned, so the
+ * fallback chain that degrades a failed image to the alternate one (rather than
+ * to the glyph) is unchanged — only the order is.
+ *
+ * A source that cannot be dated never displaces one that can; when neither can
+ * be dated the historic workspace-first order stands.
+ *
+ * Exported for tests.
+ */
+export function orderAvatarSources(
+  avatarUrl: string | undefined,
+  image: FamiliarImage | undefined,
+): { avatarImage?: string; avatarImageFallback?: string } {
+  const upload = image?.dataUrl || undefined;
+  if (!avatarUrl) return { avatarImage: upload, avatarImageFallback: undefined };
+  if (!upload) return { avatarImage: avatarUrl, avatarImageFallback: undefined };
+
+  const workspaceAt = workspaceAvatarWrittenAt(avatarUrl);
+  const uploadAt = image?.updatedAt ? Date.parse(image.updatedAt) : Number.NaN;
+  const uploadIsNewer =
+    Number.isFinite(uploadAt) && (workspaceAt === null || uploadAt > workspaceAt);
+
+  return uploadIsNewer
+    ? { avatarImage: upload, avatarImageFallback: avatarUrl }
+    : { avatarImage: avatarUrl, avatarImageFallback: upload };
+}
+
 export function resolveFamiliar(base: Familiar, ctx: ResolveContext): ResolvedFamiliar {
   const ov = ctx.override ?? {};
   const glyphOverrides = ctx.glyphOverride ? { [base.id]: ctx.glyphOverride } : {};
@@ -51,14 +107,12 @@ export function resolveFamiliar(base: Familiar, ctx: ResolveContext): ResolvedFa
     pronouns: ov.pronouns ?? base.pronouns,
     description: ov.description ?? base.description,
     color: ov.color ?? base.color ?? "var(--accent-presence)",
-    // The familiar's workspace avatar (.../familiars/<id>/avatars/<img>) is the
-    // source of truth and wins as the primary; a Cave-local upload is the
-    // fallback. Crucially, when BOTH exist the upload is kept as
-    // `avatarImageFallback` so a failed workspace image degrades to the upload
-    // (not straight to the glyph) — the avatar image is always preferred over
-    // the icon when any source can load.
-    avatarImage: base.avatarUrl ?? ctx.image?.dataUrl,
-    avatarImageFallback: base.avatarUrl ? ctx.image?.dataUrl : undefined,
+    // The two portrait stores are ranked by recency, not by kind — see
+    // `orderAvatarSources`. When BOTH exist the loser is kept as
+    // `avatarImageFallback` so a failed primary degrades to the other image
+    // (not straight to the glyph): an avatar image is always preferred over the
+    // icon when any source can load.
+    ...orderAvatarSources(base.avatarUrl, ctx.image),
     glyph: resolveFamiliarGlyph(
       { id: base.id, icon: base.icon, emoji: base.emoji, role: ov.role ?? base.role },
       glyphOverrides,
