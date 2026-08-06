@@ -10,7 +10,6 @@ export type ActiveGroupReplyRun = {
 
 export type GroupChatStopRequest = {
   runId: string;
-  sessionId: string | null;
 };
 
 export type GroupChatStopResult = {
@@ -64,41 +63,97 @@ function stopFailureMessage(result: GroupChatStopResult): string {
 }
 
 function isAcceptableStopResult(result: GroupChatStopResult): boolean {
-  return result.ok || result.status === 404;
+  return result.stopped || result.status === 404;
+}
+
+const GROUP_CHAT_STOP_RETRY_DELAY_MS = 50;
+const GROUP_CHAT_STOP_TIMEOUT_MS = 400;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, ms);
+  });
 }
 
 export async function stopActiveGroupReplyRuns(args: {
   entries: readonly ActiveGroupReplyRun[];
   stopRun: (request: GroupChatStopRequest) => Promise<Omit<GroupChatStopResult, "runId">>;
   onError?: (result: GroupChatStopResult, entry: ActiveGroupReplyRun) => void;
+  isEntryActive?: (entry: ActiveGroupReplyRun) => boolean;
+  isStopScopeCurrent?: () => boolean;
+  retryDelayMs?: number;
+  timeoutMs?: number;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
 }): Promise<GroupChatStopResult[]> {
-  return Promise.all(
+  const isEntryActive = args.isEntryActive ?? (() => true);
+  const isStopScopeCurrent = args.isStopScopeCurrent ?? (() => true);
+  const now = args.now ?? (() => Date.now());
+  const pause = args.sleep ?? sleep;
+  const retryDelayMs = args.retryDelayMs ?? GROUP_CHAT_STOP_RETRY_DELAY_MS;
+  const timeoutMs = args.timeoutMs ?? GROUP_CHAT_STOP_TIMEOUT_MS;
+  const controllerGroups = new Map<AbortController, number>();
+  for (const entry of args.entries) {
+    controllerGroups.set(entry.controller, (controllerGroups.get(entry.controller) ?? 0) + 1);
+  }
+  const settled = await Promise.all(
     args.entries.map(async (entry) => {
-      let result: GroupChatStopResult;
-      try {
-        const response = await args.stopRun({
-          runId: entry.runId,
-          sessionId: entry.sessionId,
-        });
-        result = { runId: entry.runId, ...response };
-      } catch (error) {
-        result = {
-          runId: entry.runId,
-          ok: false,
-          stopped: false,
-          status: null,
-          error: error instanceof Error ? error.message : "stop failed",
-        };
-      } finally {
-        entry.controller.abort();
+      const deadline = now() + timeoutMs;
+      let acceptable = false;
+      let result: GroupChatStopResult = {
+        runId: entry.runId,
+        ok: false,
+        stopped: false,
+        status: null,
+      };
+      for (;;) {
+        if (!isEntryActive(entry)) {
+          acceptable = true;
+          break;
+        }
+        try {
+          const response = await args.stopRun({ runId: entry.runId });
+          result = { runId: entry.runId, ...response };
+        } catch (error) {
+          result = {
+            runId: entry.runId,
+            ok: false,
+            stopped: false,
+            status: null,
+            error: error instanceof Error ? error.message : "stop failed",
+          };
+        }
+        if (result.stopped) {
+          acceptable = true;
+          break;
+        }
+        if (!isEntryActive(entry)) {
+          acceptable = true;
+          break;
+        }
+        const retryable = isStopScopeCurrent() && now() < deadline;
+        if (!retryable) {
+          if (!result.error && isEntryActive(entry)) {
+            result = {
+              ...result,
+              error: now() >= deadline ? "stop timed out" : "stop failed",
+            };
+          }
+          break;
+        }
+        await pause(retryDelayMs);
       }
-      if (!isAcceptableStopResult(result)) {
-        args.onError?.(
-          { ...result, error: stopFailureMessage(result) },
-          entry,
-        );
-      }
-      return result;
+      return { entry, result, acceptable };
     }),
   );
+  for (const [controller] of controllerGroups) controller.abort();
+  for (const { entry, result, acceptable } of settled) {
+    if (!acceptable && !isAcceptableStopResult(result)) {
+      args.onError?.(
+        { ...result, error: stopFailureMessage(result) },
+        entry,
+      );
+    }
+  }
+  return settled.map(({ result }) => result);
 }

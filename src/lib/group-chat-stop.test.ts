@@ -29,7 +29,7 @@ test("stopActiveGroupReplyRuns stops every concurrent run and aborts only after 
   const registry = new Map<string, ActiveGroupReplyRun>();
   const aborts: string[] = [];
   const releases: Array<() => void> = [];
-  const seen: Array<{ runId: string; sessionId: string | null }> = [];
+  const seen: string[] = [];
   const first = makeEntry("run-a", 7, { sessionId: "session-a" });
   const second = makeEntry("run-b", 7);
   first.controller.signal.addEventListener("abort", () => aborts.push(first.runId));
@@ -39,22 +39,19 @@ test("stopActiveGroupReplyRuns stops every concurrent run and aborts only after 
 
   const pending = stopActiveGroupReplyRuns({
     entries: listActiveGroupReplyRuns(registry, 7),
-    stopRun: ({ runId, sessionId }) =>
+    stopRun: ({ runId }) =>
       new Promise((resolve) => {
-        seen.push({ runId, sessionId });
+        seen.push(runId);
         releases.push(() => resolve({ ok: true, stopped: true, status: 200 }));
       }),
   });
 
   assert.deepEqual(aborts, [], "local controllers stay live until stop dispatch settles");
-  assert.deepEqual(seen, [
-    { runId: "run-a", sessionId: "session-a" },
-    { runId: "run-b", sessionId: null },
-  ]);
+  assert.deepEqual(seen, ["run-a", "run-b"]);
 
   releases.shift()?.();
   await Promise.resolve();
-  assert.deepEqual(aborts, ["run-a"], "each local controller aborts only after its own stop settles");
+  assert.deepEqual(aborts, [], "group stop waits to abort local streams until every run settles");
 
   releases.shift()?.();
   const results = await pending;
@@ -66,6 +63,96 @@ test("stopActiveGroupReplyRuns stops every concurrent run and aborts only after 
       { runId: "run-b", ok: true, stopped: true, status: 200 },
     ],
   );
+});
+
+test("stopActiveGroupReplyRuns retries a registration race until the server accepts the exact runId", async () => {
+  const sharedController = new AbortController();
+  const registry = new Map<string, ActiveGroupReplyRun>();
+  const entry = makeEntry("run-retry", 8, { controller: sharedController });
+  registerActiveGroupReplyRun(registry, entry);
+  let attempts = 0;
+
+  const results = await stopActiveGroupReplyRuns({
+    entries: [entry],
+    stopRun: async ({ runId }) => {
+      attempts += 1;
+      assert.equal(runId, "run-retry");
+      return attempts === 1
+        ? { ok: true, stopped: false, status: 200 }
+        : { ok: true, stopped: true, status: 200 };
+    },
+    isEntryActive: (candidate) => registry.get(candidate.runId) === candidate,
+    sleep: async () => {},
+  });
+
+  assert.equal(attempts, 2, "a 200 stopped:false is not success while the run is still active");
+  assert.equal(sharedController.signal.aborted, true, "local teardown waits until the accepted stop arrives");
+  assert.deepEqual(results, [{ runId: "run-retry", ok: true, stopped: true, status: 200 }]);
+});
+
+test("stopActiveGroupReplyRuns stops retrying once the terminal stream already removed the run", async () => {
+  const registry = new Map<string, ActiveGroupReplyRun>();
+  const entry = makeEntry("run-terminal", 9);
+  registerActiveGroupReplyRun(registry, entry);
+  const errors: Array<{ runId: string; error?: string }> = [];
+  let sleeps = 0;
+
+  const results = await stopActiveGroupReplyRuns({
+    entries: [entry],
+    stopRun: async () => ({ ok: true, stopped: false, status: 200 }),
+    isEntryActive: (candidate) => registry.get(candidate.runId) === candidate,
+    sleep: async () => {
+      sleeps += 1;
+      unregisterActiveGroupReplyRun(registry, entry.runId);
+    },
+    onError: (result) => errors.push({ runId: result.runId, error: result.error }),
+  });
+
+  assert.equal(sleeps, 1, "one bounded retry window lets the terminal cleanup win the race");
+  assert.deepEqual(results, [{ runId: "run-terminal", ok: true, stopped: false, status: 200 }]);
+  assert.deepEqual(errors, [], "terminal cleanup is not reported as a stop failure");
+});
+
+test("stopActiveGroupReplyRuns retries network errors before surfacing a final success", async () => {
+  const entry = makeEntry("run-network", 10);
+  let attempts = 0;
+
+  const results = await stopActiveGroupReplyRuns({
+    entries: [entry],
+    stopRun: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("gateway down");
+      return { ok: true, stopped: true, status: 200 };
+    },
+    sleep: async () => {},
+  });
+
+  assert.equal(attempts, 2, "transient stop transport failures retry within the bounded window");
+  assert.deepEqual(results, [{ runId: "run-network", ok: true, stopped: true, status: 200 }]);
+});
+
+test("stopActiveGroupReplyRuns times out a still-live run and reports the final failure", async () => {
+  const entry = makeEntry("run-timeout", 11);
+  const errors: Array<{ runId: string; error?: string; status: number | null }> = [];
+  let clock = 0;
+
+  const results = await stopActiveGroupReplyRuns({
+    entries: [entry],
+    stopRun: async () => ({ ok: true, stopped: false, status: 200 }),
+    now: () => clock,
+    sleep: async () => {
+      clock += 50;
+    },
+    retryDelayMs: 50,
+    timeoutMs: 100,
+    onError: (result) => {
+      errors.push({ runId: result.runId, error: result.error, status: result.status });
+    },
+  });
+
+  assert.equal(entry.controller.signal.aborted, true, "timeout policy explicitly tears down the local stream");
+  assert.deepEqual(results, [{ runId: "run-timeout", ok: true, stopped: false, status: 200, error: "stop timed out" }]);
+  assert.deepEqual(errors, [{ runId: "run-timeout", error: "stop timed out", status: 200 }]);
 });
 
 test("active scope snapshots exclude completed runs and another coven's newer scope", () => {
@@ -118,6 +205,9 @@ test("idempotent stop outcomes are accepted while endpoint failures still abort 
     onError: (result) => {
       errors.push({ runId: result.runId, error: result.error, status: result.status });
     },
+    now: () => 1_000,
+    sleep: async () => {},
+    timeoutMs: 0,
   });
 
   assert.equal(notFound.controller.signal.aborted, true, "404 stop still tears down the local stream");

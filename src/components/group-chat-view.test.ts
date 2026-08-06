@@ -336,6 +336,10 @@ test("Group chat stop cleanup targets only the retired scope on switch and unmou
   assert.match(view, /registerActiveGroupReplyRun\(/, "each reply registers itself when its stream starts");
   assert.match(view, /updateActiveGroupReplyRunSession\(/, "session announcements update the active stop payload");
   assert.match(view, /unregisterActiveGroupReplyRun\(/, "active replies leave the registry only in terminal cleanup");
+  assert.match(view, /body: JSON\.stringify\(\{ runId: entry\.runId \}\)/, "group stop posts only the exact runId");
+  assert.doesNotMatch(view, /body: JSON\.stringify\(\{[\s\S]{0,120}sessionId: entry\.sessionId/, "group stop never falls back to a reusable session key");
+  assert.match(view, /isEntryActive: \(entry\) => activeRunsRef\.current\.get\(entry\.runId\) === entry/, "retry only continues while the same active run is still registered");
+  assert.match(view, /isStopScopeCurrent: \(\) => scopeId === runScopeRef\.current/, "retry stops once this stop scope is no longer current");
   assert.match(view, /console\.warn\("\[group-chat\] stop failed"/, "stop endpoint failures are explicitly logged");
   assert.match(view, /Some replies may keep running on the server\./, "stop endpoint failures are announced instead of silently swallowed");
 });

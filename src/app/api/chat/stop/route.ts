@@ -15,9 +15,10 @@ export const runtime = "nodejs";
  * the client recovers the full reply on resync.
  *
  * Body: `{ runId?, sessionId? }` — runId is the per-send client token (works
- * before the server has assigned a conversation id), sessionId the
- * conversation key. Either may match; `stopped: false` means nothing was in
- * flight under those keys (already finished — not an error).
+ * before the server has assigned a conversation id) and, when present, MUST
+ * resolve the exact run only. sessionId remains a legacy fallback for callers
+ * that have no runId. `stopped: false` means nothing was in flight under the
+ * chosen lookup key (already finished — not an error).
  */
 export async function POST(req: Request) {
   let body: { runId?: string; sessionId?: string } = {};
@@ -27,13 +28,12 @@ export async function POST(req: Request) {
     // Malformed body → nothing to stop; fall through to the not-found reply.
   }
 
-  const keys = [body.runId, body.sessionId].filter(
-    (key): key is string => typeof key === "string" && key.length > 0,
-  );
-  if (keys.length === 0) {
+  const runId = typeof body.runId === "string" && body.runId.length > 0 ? body.runId : null;
+  const sessionId = typeof body.sessionId === "string" && body.sessionId.length > 0 ? body.sessionId : null;
+  if (!runId && !sessionId) {
     return NextResponse.json({ ok: false, error: "runId or sessionId required" }, { status: 400 });
   }
 
-  const stopped = keys.some((key) => requestChatStop(key));
+  const stopped = runId ? requestChatStop(runId) : requestChatStop(sessionId!);
   return NextResponse.json({ ok: true, stopped });
 }

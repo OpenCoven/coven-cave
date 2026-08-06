@@ -597,14 +597,11 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     });
   }, []);
 
-  async function stopServerRun(entry: { runId: string; sessionId: string | null }) {
+  async function stopServerRun(entry: { runId: string }) {
     const response = await fetch("/api/chat/stop", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        runId: entry.runId,
-        ...(entry.sessionId ? { sessionId: entry.sessionId } : {}),
-      }),
+      body: JSON.stringify({ runId: entry.runId }),
     });
     let payload: { ok?: boolean; stopped?: boolean; error?: string } | null = null;
     try {
@@ -630,6 +627,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     return stopActiveGroupReplyRuns({
       entries,
       stopRun: stopServerRun,
+      isEntryActive: (entry) => activeRunsRef.current.get(entry.runId) === entry,
+      isStopScopeCurrent: () => scopeId === runScopeRef.current,
       onError: (result, entry) => {
         console.warn("[group-chat] stop failed", {
           runId: result.runId,
