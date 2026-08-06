@@ -1,3 +1,5 @@
+import { websocketUrl } from "./websocket-url.ts";
+
 type DataHandler = (bytes: Uint8Array) => void;
 type ExitHandler = (code: number) => void;
 type CloseHandler = (code: number, reason: string) => void;
@@ -111,7 +113,6 @@ export class PtyWsBridge {
       }
     }
     return new Promise((resolve, reject) => {
-      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
       const params = new URLSearchParams({
         threadId: target.threadId,
         cols: String(target.cols),
@@ -125,7 +126,10 @@ export class PtyWsBridge {
         params.set("projectRoot", target.projectRoot);
       }
 
-      const url = `${proto}//${window.location.host}/api/pty-ws?${params}`;
+      // Scheme and host both come from websocketUrl: `wss:` whenever the page is
+      // TLS-terminated (tailscale serve, a MagicDNS host), `ws:` for the plain
+      // loopback desktop shell. See src/lib/websocket-url.ts.
+      const url = websocketUrl("/api/pty-ws", params);
       const ws = new WebSocket(url);
       let settled = false;
       ws.binaryType = "arraybuffer";

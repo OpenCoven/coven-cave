@@ -1415,6 +1415,7 @@ export const SUITES = {
     "src/server-pty-ws.test.ts",
     "src/server-heap-monitor.test.ts",
     "src/lib/pty-ws-bridge.test.ts",
+    "src/lib/websocket-url.test.ts",
     "scripts/release-macos-signing.test.mjs",
     "scripts/release-notes.test.mjs",
     "scripts/generate-latest-json.test.mjs",
