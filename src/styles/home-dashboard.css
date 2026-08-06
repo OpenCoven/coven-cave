@@ -145,14 +145,84 @@
     opacity: 1;
   }
 }
+/* ── New-session hero ("Chat Session - Prototype.dc.html", cave-n3jg2) ──────
+   The handoff frames the whole hero as one card and lights it from two
+   corners, so the surface reads as a threshold rather than as the top of a
+   list. Both washes and all three specks are drawn with color-mix off
+   `--accent-presence` and the foreground, so the card survives every palette
+   and both modes without a second hue.
+
+   The specks are radial-gradient dots, not elements: three of them at ~2px,
+   which is the size that reads as "the dark has depth" rather than as dust. */
+.home-dash__board-head {
+  position: relative;
+  padding: var(--space-8) var(--space-8) var(--space-6);
+  border: 1px solid color-mix(in oklch, var(--foreground) 5%, transparent);
+  border-radius: var(--radius-panel);
+  background:
+    radial-gradient(
+      560px 320px at 12% 0%,
+      color-mix(in oklch, var(--accent-presence) 8%, transparent),
+      transparent 68%
+    ),
+    radial-gradient(
+      420px 260px at 88% 30%,
+      color-mix(in oklch, var(--accent-presence-soft) 5%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      2px 2px at 23% 18%,
+      color-mix(in oklch, var(--accent-presence) 55%, transparent) 45%,
+      transparent 55%
+    ),
+    radial-gradient(
+      2px 2px at 67% 8%,
+      color-mix(in oklch, var(--accent-presence-soft) 50%, transparent) 45%,
+      transparent 55%
+    ),
+    radial-gradient(
+      2px 2px at 45% 30%,
+      color-mix(in oklch, var(--foreground) 30%, transparent) 45%,
+      transparent 55%
+    );
+}
+
 .home-dash__headline {
   margin: 0;
   font-family: var(--font-eb-garamond), "EB Garamond", serif;
   font-weight: 500;
-  font-size: var(--text-display);
-  line-height: 1.05;
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
+  /* The display token is the floor, not the size: this is the one identity
+     moment on the surface and the mock lets it grow with the pane. */
+  font-size: clamp(var(--text-display), 5.6vw, 56px);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  background: linear-gradient(
+    105deg,
+    var(--text-primary) 34%,
+    var(--accent-presence) 92%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+/* Windows High Contrast strips background images, which would leave the
+   headline transparent on transparent — hand the colour back. */
+@media (forced-colors: active) {
+  .home-dash__headline {
+    background: none;
+    color: CanvasText;
+  }
+}
+
+/* The one line that names the two ways off this page. */
+.home-dash__lede {
+  margin: 0;
+  max-width: 520px;
+  font-size: var(--text-md);
+  line-height: var(--leading-relaxed);
+  color: var(--text-muted);
+  text-wrap: pretty;
 }
 /* Identity meta under the headline — harness · model, quiet mono text. */
 .home-dash__meta {

@@ -4,8 +4,23 @@ import path from "node:path";
 import { signMobileAccessToken } from "./mobile-access-token.ts";
 import { scrubSidecarInternalEnv } from "./coven-bin.ts";
 import { appTokenTtlMs } from "./mobile-token-refresh.ts";
+import { classifyTailscaleFailureKind } from "./tailscale-failure.ts";
 
 export const MOBILE_INVITE_TTL_MS = 8 * 60 * 60 * 1000;
+
+export function shouldAllowMagicDnsFallback({
+  serveOk,
+  serveError,
+  statusOk,
+}: {
+  serveOk: boolean;
+  serveError: string;
+  statusOk: boolean;
+}) {
+  if (statusOk) return false;
+  if (!serveOk && classifyTailscaleFailureKind(serveError) === "serve-permission") return false;
+  return true;
+}
 
 type TailscaleServeStatus = {
   Web?: Record<
@@ -206,10 +221,12 @@ export function tailnetDiscoveryProof({
   selfStatus,
   serveStatus,
   backendUrl,
+  allowMagicDnsFallback = true,
 }: {
   selfStatus: unknown;
   serveStatus: unknown;
   backendUrl: string;
+  allowMagicDnsFallback?: boolean;
 }): TailnetDiscoveryProof {
   const fromServe = findServeUrl(serveStatus, backendUrl);
   const host = magicDnsHost(selfStatus);
@@ -222,7 +239,7 @@ export function tailnetDiscoveryProof({
     };
   }
 
-  const fromMagicDns = magicDnsServeUrl(selfStatus);
+  const fromMagicDns = allowMagicDnsFallback ? magicDnsServeUrl(selfStatus) : null;
   if (fromMagicDns && host) {
     return {
       ok: true,
@@ -234,7 +251,9 @@ export function tailnetDiscoveryProof({
 
   return {
     ok: false,
-    reason: "tailscale serve URL not found and status --self had no MagicDNS DNSName",
+    reason: allowMagicDnsFallback
+      ? "tailscale serve URL not found and status --self had no MagicDNS DNSName"
+      : `tailscale serve route not found for ${backendUrl}`,
   };
 }
 
@@ -254,12 +273,19 @@ export function nativeAppDiscoveryProof({
   selfStatus,
   serveStatus,
   backendUrl,
+  allowMagicDnsFallback = true,
 }: {
   selfStatus: unknown;
   serveStatus: unknown;
   backendUrl: string;
+  allowMagicDnsFallback?: boolean;
 }): NativeAppDiscoveryProof {
-  const tailnet = tailnetDiscoveryProof({ selfStatus, serveStatus, backendUrl });
+  const tailnet = tailnetDiscoveryProof({
+    selfStatus,
+    serveStatus,
+    backendUrl,
+    allowMagicDnsFallback,
+  });
   if (tailnet.ok) return tailnet;
 
   const serveUrl = nativeHttpServeUrl(selfStatus, backendUrl);

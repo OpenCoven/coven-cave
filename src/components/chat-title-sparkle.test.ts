@@ -113,13 +113,85 @@ test("the sparkle is hover-revealed and the title dims while it runs", () => {
 
 test("a refused PATCH does not paint the rename as applied", () => {
   // Regression (PR #4121 review): a resolved fetch is not a successful one —
-  // the local-origin gate answers 403 and a rejected patch answers
-  // { ok: false }. Refreshing on either would show the new title even though
-  // the server kept the old one.
+  // the local-origin gate answers 403 and unrelated rejected patches answer
+  // { ok: false }. Only the recognized ownership conflict is refresh-worthy.
   assert.match(header, /if \(!res\.ok \|\| json\?\.ok === false\) return;/, "failure short-circuits");
   assert.match(
     header,
-    /if \(!res\.ok \|\| json\?\.ok === false\) return;\s*\n\s*onSessionsChanged\?\.\(\);/,
+    /if \(!res\.ok \|\| json\?\.ok === false\) return;\s*\n\s*refreshSessions\(\);/,
     "the refresh happens only after a genuine success",
+  );
+  assert.match(
+    header,
+    /if \(titleOwnershipConflict\) \{\s*refreshSessions\(\);\s*return;\s*\}/,
+    "a recognized title ownership conflict refreshes and then exits without a duplicate refresh",
+  );
+});
+
+test("manual edits and sparkle titles use distinct ownership contracts", () => {
+  assert.match(
+    header,
+    /ownership === "auto"[\s\S]*?titleOwnership: "auto"[\s\S]*?autoDefaults: session\.title \? \[session\.title\] : \[\]/,
+    "sparkle PATCHes identify automatic ownership and the title it observed",
+  );
+  assert.match(
+    header,
+    /const patchTitle = async \(title: string, ownership: "manual" \| "auto" = "manual"/,
+    "ordinary pencil edits default to manual ownership",
+  );
+  assert.match(
+    header,
+    /await patchTitle\(next, "auto", true\)/,
+    "only sparkle generation opts into the automatic path",
+  );
+  assert.match(
+    header,
+    /await patchTitle\(trimmed\);/,
+    "manual submit keeps the ordinary manual PATCH",
+  );
+  assert.match(
+    header,
+    /if \(!res\.ok \|\| json\?\.ok === false\) return;\s*\n\s*refreshSessions\(\);/,
+    "a preserved automatic write still refreshes the UI to show the concurrent manual title",
+  );
+});
+
+test("the sparkle sends replaceManualTitle: true to take over any current title", () => {
+  // User-triggered sparkle is an explicit takeover: it must be able to replace
+  // a manually owned title atomically. The flag travels as a PATCH body field
+  // and is only included in the sparkle path, never in the manual pencil path.
+  assert.match(
+    header,
+    /replaceManualTitle: true/,
+    "sparkle PATCH body includes the takeover flag",
+  );
+  // The flag is included conditionally via the spread, so it never leaks into
+  // the manual path (where replaceManual is its default false).
+  assert.match(
+    header,
+    /replaceManual && \{\s*replaceManualTitle: true,/,
+    "replaceManualTitle is only spread when the takeover parameter is active",
+  );
+  assert.match(
+    header,
+    /observedTitle:\s*session\.title/,
+    "the sparkle sends the displayed session title it observed",
+  );
+  assert.match(
+    header,
+    /observedTitleRevision:\s*session\.titleRevision \?\? 0/,
+    "the sparkle sends the ownership revision observed alongside the title, with a safe legacy default",
+  );
+  // The sparkle generate call explicitly opts in to the takeover.
+  assert.match(
+    header,
+    /await patchTitle\(next, "auto", true\)/,
+    "sparkle passes the takeover flag as the third argument",
+  );
+  // Manual pencil submit uses the plain two-argument form — no takeover.
+  assert.match(
+    header,
+    /await patchTitle\(trimmed\);/,
+    "manual submit keeps the ordinary manual PATCH without the takeover flag",
   );
 });

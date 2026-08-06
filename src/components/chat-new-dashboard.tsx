@@ -349,6 +349,16 @@ export function ChatNewDashboard({
               <h1 className="home-dash__headline">
                 {bands.length > 0 ? "What should we begin?" : "A clean slate — what shall we conjure?"}
               </h1>
+              {/* "Chat Session - Prototype.dc.html" (cave-n3jg2): one line under
+                  the headline naming the two ways off this page, in the order
+                  the surface presents them — the brief below, then the launcher
+                  under it. Without it the hero asks a question and offers no
+                  reading of what to do next. */}
+              <p className="home-dash__lede">
+                {bands.length > 0
+                  ? "Describe the work below, or start from something you already ran."
+                  : "Describe the work below and we\u2019ll begin."}
+              </p>
               {/* Identity meta — the roster's familiar.harness beside the
                   effective model, echoing the retired chrome's name·model. */}
               <p className="home-dash__meta">

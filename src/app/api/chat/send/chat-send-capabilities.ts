@@ -160,7 +160,7 @@ function terminateProbeProcessTree(child: OpenCodeProbeChild): Promise<void> {
   });
 }
 
-function probeHelp(
+export function probeHelp(
   command: string,
   args: string[],
   matches: (help: string) => boolean,
@@ -172,6 +172,7 @@ function probeHelp(
   return new Promise<boolean>((resolve) => {
     let output = "";
     let settled = false;
+    const timeoutMs = openCodeCapabilityProbeTimeoutMs();
     const done = (value: boolean) => {
       if (settled) return;
       settled = true;
@@ -194,10 +195,18 @@ function probeHelp(
           // The capability is unsupported when the probe cannot complete.
         }
         done(false);
-      }, openCodeCapabilityProbeTimeoutMs());
+      }, timeoutMs);
       child.on("close", (code) => {
         clearTimeout(timeout);
-        done((acceptNonZeroExit || code === 0) && matches(output));
+        if (code === null) {
+          done(false);
+          return;
+        }
+        try {
+          done((acceptNonZeroExit || code === 0) && matches(output));
+        } catch {
+          done(false);
+        }
       });
       child.on("error", () => {
         clearTimeout(timeout);

@@ -350,3 +350,26 @@ assert.match(
   /if \(changeCountRootRef\.current !== root\) \{\s*\n\s*setChangeCount\(null\);/,
   "changeCount drops to null (unknown) on a real root change — clears the stale badge AND keeps first-load dirt from faking a fresh-batch reveal (cave-xsq.7)",
 );
+
+// Workspace → ChatSurface onSessionStarted wiring:
+// - Workspace must pass onSessionStarted so GroupChatView can refresh the
+//   session list after a new group chat is created.
+// - ChatSurface must forward onSessionStarted to GroupChatView.
+// - ChatSurface must NOT forward onSessionStarted to ChatRouter: the
+//   single-chat path uses the creation-refresh helper (onSessionsChanged) to
+//   avoid a redundant pre-persistence sidebar load (Task 1 fix).
+assert.match(
+  workspace,
+  /<ChatSurface[\s\S]*?onSessionStarted=\{loadSessions\}/,
+  "Workspace must pass onSessionStarted={loadSessions} to ChatSurface so GroupChatView gets session-list refreshes",
+);
+assert.match(
+  chatSurface,
+  /<GroupChatView[\s\S]*?onSessionStarted=\{onSessionStarted\}/,
+  "ChatSurface must forward onSessionStarted to GroupChatView",
+);
+assert.doesNotMatch(
+  chatSurface,
+  /<ChatRouter\b[\s\S]*?onSessionStarted=/,
+  "ChatSurface must not forward onSessionStarted to ChatRouter (single-chat path uses creation-refresh helper)",
+);

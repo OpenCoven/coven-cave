@@ -935,6 +935,8 @@ function mergeInbox(legacy: unknown, canonical: unknown): MergeOutcome {
 const STATE_MAPS = [
   "sessionFamiliar",
   "sessionTitles",
+  "sessionTitleAuto",
+  "sessionTitleManual",
   "sessionArchived",
   "sessionSacrificed",
   "sessionKeep",
@@ -955,6 +957,8 @@ const TIMESTAMP_STATE_MAPS = new Set<string>([
 
 const DELETABLE_STATE_MAPS = new Set<string>([
   "sessionTitles",
+  "sessionTitleAuto",
+  "sessionTitleManual",
   "sessionArchived",
   "sessionKeep",
   "sessionPinned",
@@ -986,6 +990,43 @@ function mergeRecordMap(
     const rightTime = parseDate(right[key]);
     if (!leftTime || !rightTime || leftTime === rightTime) return { ok: false, summary: `State map ${name} has an ambiguous timestamp for ${key}.` };
     value[key] = leftTime > rightTime ? left[key] : right[key];
+  }
+  return { ok: true, value };
+}
+
+function validateSessionTitleRevisions(
+  value: unknown,
+): { ok: true; value: Record<string, number> } | { ok: false; summary: string } {
+  const revisions = record(value);
+  if (!revisions) {
+    return { ok: false, summary: "State map sessionTitleRevision is malformed." };
+  }
+  for (const [sessionId, revision] of Object.entries(revisions)) {
+    if (
+      !sessionId ||
+      typeof revision !== "number" ||
+      !Number.isSafeInteger(revision) ||
+      revision < 0
+    ) {
+      return { ok: false, summary: `State map sessionTitleRevision is malformed for ${sessionId || "(empty session ID)"}.` };
+    }
+  }
+  return { ok: true, value: revisions as Record<string, number> };
+}
+
+function mergeSessionTitleRevisions(
+  leftValue: unknown,
+  rightValue: unknown,
+): { ok: true; value: Record<string, number> } | { ok: false; summary: string } {
+  const left = validateSessionTitleRevisions(leftValue);
+  if (!left.ok) return left;
+  const right = validateSessionTitleRevisions(rightValue);
+  if (!right.ok) return right;
+  const value: Record<string, number> = {};
+  for (const revisions of [left.value, right.value]) {
+    for (const [sessionId, revision] of Object.entries(revisions)) {
+      value[sessionId] = Math.max(value[sessionId] ?? 0, revision);
+    }
   }
   return { ok: true, value };
 }
@@ -1056,6 +1097,12 @@ function mergeState(legacy: unknown, canonical: unknown): MergeOutcome {
     if (!merged.ok) return merged;
     value[name] = merged.value;
   }
+  const titleRevisions = mergeSessionTitleRevisions(
+    left.sessionTitleRevision === undefined ? {} : left.sessionTitleRevision,
+    right.sessionTitleRevision === undefined ? {} : right.sessionTitleRevision,
+  );
+  if (!titleRevisions.ok) return titleRevisions;
+  value.sessionTitleRevision = titleRevisions.value;
   const travel = mergeTravel(left.travel ?? {}, right.travel ?? {});
   if (!travel.ok) return travel;
   value.travel = travel.value;
@@ -1225,7 +1272,15 @@ async function validateCanonical(
       if (!value || !Array.isArray(value.items) || value.items.some((item) => typeof record(item)?.id !== "string")) throw new Error("canonical inbox validation failed");
     } else if (entry.strategy === "state") {
       const value = record(parsed);
-      if (!value || STATE_MAPS.some((key) => !record(value[key] ?? {})) || !record(value.travel ?? {})) throw new Error("canonical state validation failed");
+      const titleRevisions = validateSessionTitleRevisions(
+        value?.sessionTitleRevision === undefined ? {} : value.sessionTitleRevision,
+      );
+      if (
+        !value ||
+        STATE_MAPS.some((key) => !record(value[key] ?? {})) ||
+        !titleRevisions.ok ||
+        !record(value.travel ?? {})
+      ) throw new Error("canonical state validation failed");
     } else if (entry.strategy === "preferences" && !validPreferences(parsed)) {
       throw new Error("canonical preferences validation failed");
     } else if (entry.strategy === "board") {

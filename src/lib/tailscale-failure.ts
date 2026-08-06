@@ -3,6 +3,7 @@ export type TailscaleFailureKind =
   | "not-installed"
   | "signed-out"
   | "not-running"
+  | "serve-permission"
   | "serve-failed"
   | "unknown";
 
@@ -26,6 +27,14 @@ export function classifyTailscaleFailureKind(raw: string): TailscaleFailureKind 
       text.includes("unreachable"))
   ) {
     return "not-running";
+  }
+  if (
+    text.includes("serve") &&
+    (text.includes("serve config denied") ||
+      text.includes("sudo tailscale serve") ||
+      text.includes("tailscale set --operator"))
+  ) {
+    return "serve-permission";
   }
   if (/\bserve\b/.test(text)) {
     return "serve-failed";

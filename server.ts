@@ -106,16 +106,65 @@ type PtySession = {
    *  client repaints the screen instead of staring at a blank pane. */
   scrollback: Buffer[];
   scrollbackBytes: number;
+  /** Absolute byte cursor at the front of the retained scrollback ring. */
+  scrollbackStart: number;
+  /** Absolute cursor immediately after the newest PTY byte. */
+  streamEnd: number;
+  /** Coalesced output waiting for one bounded WebSocket frame. */
+  pendingOutput: Buffer[];
+  pendingOutputBytes: number;
+  flushTimer: NodeJS.Timeout | null;
   /** Pending kill while detached — cleared when a client reattaches. */
   detachTimer: NodeJS.Timeout | null;
 };
 
 const sessions = new Map<string, PtySession>();
 
+// Packaged Unix sidecars receive stdin as a private pipe whose write end is
+// owned only by the Tauri GUI. EOF therefore identifies the exact parent
+// lifetime without polling a reusable PID. The sidecar is also launched as
+// its own process-group leader, so one signal removes the root and ordinary
+// descendants; node-pty sessions are asked to stop explicitly because a PTY
+// may create a separate session/process group.
+function terminatePackagedUnixSidecarTree(): void {
+  for (const session of sessions.values()) {
+    try {
+      session.pty.kill();
+    } catch {
+      // The PTY may already have exited.
+    }
+  }
+  sessions.clear();
+  try {
+    process.kill(-process.pid, "SIGKILL");
+  } catch {
+    process.exit(1);
+  }
+}
+
+if (
+  process.platform !== "win32" &&
+  process.env.COVEN_CAVE_PARENT_WATCHDOG === "stdin-eof"
+) {
+  process.stdin.once("end", terminatePackagedUnixSidecarTree);
+  process.stdin.once("error", terminatePackagedUnixSidecarTree);
+  process.stdin.resume();
+}
+
 // Recent-output ring replayed to a (re)attaching client so it repaints the
 // screen instead of staring at a blank pane. Matches the Rust desktop PTY's
 // 256KB ring (src-tauri/src/pty.rs).
 const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
+// PTYs often emit a write-sized chunk for every line. Coalesce a short burst
+// before framing it, but cap the userland queue and every individual frame.
+const PTY_FRAME_COALESCE_MS = 8;
+const PTY_FRAME_MAX_BYTES = 16 * 1024;
+// `ws` otherwise retains arbitrary output for a client whose TCP receive
+// window stopped advancing. This is deliberately larger than one legacy
+// scrollback replay, so a healthy reattach is never evicted for the replay.
+const PTY_WS_BUFFERED_AMOUNT_LIMIT = 512 * 1024;
+const PTY_SLOW_CONSUMER_CLOSE_CODE = 1013;
+const PTY_SLOW_CONSUMER_CLOSE_REASON = "slow terminal consumer; reconnect";
 // How long a shell survives after its socket drops before being reaped. A
 // terminal pane remounts whenever the Comux layout restructures (split,
 // drag-reorganize, tab switch) or the page reloads; killing the shell the
@@ -131,15 +180,47 @@ const DETACH_GRACE_MS = (() => {
 })();
 
 function appendScrollback(session: PtySession, data: Buffer): void {
+  const nextEnd = session.streamEnd + data.length;
+  // Retain the tail even if one node-pty callback is larger than the entire
+  // ring. The old `length > 1` loop kept that one large callback forever.
+  if (data.length >= SCROLLBACK_LIMIT_BYTES) {
+    // `subarray` alone would retain the oversized callback's entire backing
+    // allocation. Copy the bounded tail so retained memory matches the ring.
+    session.scrollback = [Buffer.from(data.subarray(data.length - SCROLLBACK_LIMIT_BYTES))];
+    session.scrollbackBytes = SCROLLBACK_LIMIT_BYTES;
+    session.scrollbackStart = nextEnd - SCROLLBACK_LIMIT_BYTES;
+    session.streamEnd = nextEnd;
+    return;
+  }
+
   session.scrollback.push(data);
   session.scrollbackBytes += data.length;
+  session.streamEnd = nextEnd;
   while (
     session.scrollbackBytes > SCROLLBACK_LIMIT_BYTES &&
     session.scrollback.length > 1
   ) {
     const dropped = session.scrollback.shift();
-    if (dropped) session.scrollbackBytes -= dropped.length;
+    if (dropped) {
+      session.scrollbackBytes -= dropped.length;
+      session.scrollbackStart += dropped.length;
+    }
   }
+}
+
+/** Return retained output beginning at an absolute stream cursor. */
+function scrollbackFrom(session: PtySession, cursor: number): Buffer[] {
+  const output: Buffer[] = [];
+  let remaining = cursor - session.scrollbackStart;
+  for (const chunk of session.scrollback) {
+    if (remaining >= chunk.length) {
+      remaining -= chunk.length;
+      continue;
+    }
+    output.push(remaining > 0 ? chunk.subarray(remaining) : chunk);
+    remaining = 0;
+  }
+  return output;
 }
 
 function getTokensFromCookie(header: string | undefined): string[] {
@@ -287,6 +368,18 @@ function isAllowedUpgradeSource(req: IncomingMessage, tokenAuthenticated = false
 
 function firstQueryValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+/** `-1` is a capability probe: cursor-aware clients use it on their first
+ * attach, then send the last delivered absolute byte cursor on reconnect.
+ * Absence remains the legacy full-replay protocol. */
+function parsePtyReplayCursor(value: string | string[] | undefined): number | undefined | null {
+  const raw = firstQueryValue(value);
+  if (raw === undefined) return undefined;
+  if (raw === "-1") return -1;
+  if (!/^(?:0|[1-9]\d*)$/.test(raw)) return null;
+  const cursor = Number(raw);
+  return Number.isSafeInteger(cursor) ? cursor : null;
 }
 
 type UpgradeQuery = Record<string, string | string[] | undefined>;
@@ -445,13 +538,166 @@ function sanitizedEnv(): Record<string, string> {
   return env;
 }
 
-function sendPtyData(ws: WebSocket, data: string): void {
-  if (ws.readyState !== WebSocket.OPEN) return;
-  const encoded = Buffer.from(data, "utf8");
-  const frame = Buffer.allocUnsafe(1 + encoded.length);
+function sendPtyData(ws: WebSocket, data: Buffer): boolean {
+  if (ws.readyState !== WebSocket.OPEN) return false;
+  const frame = Buffer.allocUnsafe(1 + data.length);
   frame[0] = 0x01;
-  encoded.copy(frame, 1);
-  ws.send(frame);
+  data.copy(frame, 1);
+  try {
+    ws.send(frame);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Cursor control frames are opt-in (`ptyReplayCursor` query parameter), so
+ * legacy clients continue to receive the original 0x01 + terminal bytes wire
+ * format unchanged. The cursor is a safe integer stored as Float64 LE; that
+ * covers many petabytes while working in every supported WebView. */
+function sendPtyReplayCursor(ws: WebSocket, cursor: number, reset: boolean): boolean {
+  if (ws.readyState !== WebSocket.OPEN) return false;
+  const frame = Buffer.allocUnsafe(10);
+  frame[0] = 0x06;
+  frame.writeDoubleLE(cursor, 1);
+  frame[9] = reset ? 1 : 0;
+  try {
+    ws.send(frame);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function clearPendingPtyOutput(session: PtySession): void {
+  if (session.flushTimer) {
+    clearTimeout(session.flushTimer);
+    session.flushTimer = null;
+  }
+  session.pendingOutput = [];
+  session.pendingOutputBytes = 0;
+}
+
+function armPtyDetach(threadId: string, session: PtySession): void {
+  if (session.detachTimer) clearTimeout(session.detachTimer);
+  session.detachTimer = setTimeout(() => {
+    const current = sessions.get(threadId);
+    if (current !== session || current.ws) return;
+    sessions.delete(threadId);
+    try {
+      session.pty.kill();
+    } catch {
+      // Already gone.
+    }
+  }, DETACH_GRACE_MS);
+}
+
+function detachPtyConsumer(threadId: string, session: PtySession, ws: WebSocket): void {
+  if (session.ws !== ws) return;
+  session.ws = null;
+  clearPendingPtyOutput(session);
+  armPtyDetach(threadId, session);
+}
+
+function evictSlowPtyConsumer(threadId: string, session: PtySession, ws: WebSocket): void {
+  if (session.ws !== ws) return;
+  // Closing only the transport is intentional: output remains in the bounded
+  // ring and the live PTY gets the normal reconnect grace window.
+  detachPtyConsumer(threadId, session, ws);
+  try {
+    ws.close(PTY_SLOW_CONSUMER_CLOSE_CODE, PTY_SLOW_CONSUMER_CLOSE_REASON);
+  } catch {
+    // The close handler is only cleanup; the session is already detached.
+  }
+}
+
+function flushPtyOutput(threadId: string, session: PtySession): void {
+  session.flushTimer = null;
+  const ws = session.ws;
+  if (!ws || session.pendingOutputBytes === 0) return;
+
+  const chunks = session.pendingOutput;
+  clearPendingPtyOutput(session);
+  const payload = Buffer.concat(chunks);
+  if (ws.readyState !== WebSocket.OPEN || session.ws !== ws) return;
+  if (ws.bufferedAmount + payload.length + 1 > PTY_WS_BUFFERED_AMOUNT_LIMIT) {
+    evictSlowPtyConsumer(threadId, session, ws);
+    return;
+  }
+  if (!sendPtyData(ws, payload)) {
+    detachPtyConsumer(threadId, session, ws);
+  }
+}
+
+function queuePtyOutput(threadId: string, session: PtySession, data: Buffer): void {
+  if (!session.ws || data.length === 0) return;
+  let offset = 0;
+  while (offset < data.length && session.ws) {
+    const room = PTY_FRAME_MAX_BYTES - session.pendingOutputBytes;
+    const take = Math.min(room, data.length - offset);
+    const chunk = data.subarray(offset, offset + take);
+    // Full frames flush synchronously. A short final slice survives until the
+    // coalescing timer, so give it a bounded backing allocation instead of
+    // pinning an arbitrarily large node-pty callback through a Buffer view.
+    if (session.pendingOutputBytes + take === PTY_FRAME_MAX_BYTES) {
+      session.pendingOutput.push(chunk);
+    } else {
+      const boundedChunk = Buffer.allocUnsafeSlow(chunk.length);
+      chunk.copy(boundedChunk);
+      session.pendingOutput.push(boundedChunk);
+    }
+    session.pendingOutputBytes += take;
+    offset += take;
+    if (session.pendingOutputBytes === PTY_FRAME_MAX_BYTES) {
+      flushPtyOutput(threadId, session);
+    }
+  }
+  if (session.ws && session.pendingOutputBytes > 0 && !session.flushTimer) {
+    session.flushTimer = setTimeout(
+      () => flushPtyOutput(threadId, session),
+      PTY_FRAME_COALESCE_MS,
+    );
+  }
+}
+
+/** Queue either the missed suffix (cursor clients) or the bounded complete
+ * ring (legacy clients). Sending the cursor control frame first means every
+ * following 0x01 payload advances the client cursor byte-for-byte. */
+function replayPtyOutput(
+  threadId: string,
+  session: PtySession,
+  replayCursor: number | undefined,
+): void {
+  if (!session.ws || session.scrollbackBytes === 0) {
+    if (session.ws && replayCursor !== undefined) {
+      sendPtyReplayCursor(
+        session.ws,
+        session.streamEnd,
+        replayCursor !== -1 && replayCursor !== session.streamEnd,
+      );
+    }
+    return;
+  }
+
+  if (replayCursor === undefined) {
+    for (const chunk of session.scrollback) queuePtyOutput(threadId, session, chunk);
+    return;
+  }
+
+  const validCursor =
+    replayCursor >= session.scrollbackStart && replayCursor <= session.streamEnd;
+  const start = validCursor && replayCursor !== -1 ? replayCursor : session.scrollbackStart;
+  const reset = replayCursor !== -1 && !validCursor;
+  const ws = session.ws;
+  if (
+    !ws ||
+    ws.bufferedAmount + 10 > PTY_WS_BUFFERED_AMOUNT_LIMIT ||
+    !sendPtyReplayCursor(ws, start, reset)
+  ) {
+    if (ws) evictSlowPtyConsumer(threadId, session, ws);
+    return;
+  }
+  for (const chunk of scrollbackFrom(session, start)) queuePtyOutput(threadId, session, chunk);
 }
 
 function sendPtyExit(ws: WebSocket, exitCode: number): void {
@@ -462,7 +708,14 @@ function sendPtyExit(ws: WebSocket, exitCode: number): void {
   ws.send(frame);
 }
 
-function spawnPty(threadId: string, ws: WebSocket, cols: number, rows: number, cwd?: string): void {
+function spawnPty(
+  threadId: string,
+  ws: WebSocket,
+  cols: number,
+  rows: number,
+  cwd: string | undefined,
+  replayCursor: number | undefined,
+): void {
   const shell = pty.spawn(defaultShell(), defaultShellArgs(), {
     name: "xterm-256color",
     cols: cols > 0 ? cols : 120,
@@ -481,9 +734,14 @@ function spawnPty(threadId: string, ws: WebSocket, cols: number, rows: number, c
 
   const session: PtySession = {
     pty: shell,
-    ws,
+    ws: null,
     scrollback: [],
     scrollbackBytes: 0,
+    scrollbackStart: 0,
+    streamEnd: 0,
+    pendingOutput: [],
+    pendingOutputBytes: 0,
+    flushTimer: null,
     detachTimer: null,
   };
   sessions.set(threadId, session);
@@ -493,13 +751,17 @@ function spawnPty(threadId: string, ws: WebSocket, cols: number, rows: number, c
     // (split/reorg remount, reload, sleep/wake) sees what happened while it
     // was away. Route live output to the CURRENTLY-attached socket, not the
     // spawn-time one — adoptSession swaps session.ws on reattach.
-    appendScrollback(session, Buffer.from(data, "utf8"));
-    if (session.ws) sendPtyData(session.ws, data);
+    const bytes = Buffer.from(data, "utf8");
+    appendScrollback(session, bytes);
+    queuePtyOutput(threadId, session, bytes);
   });
   shell.onExit(({ exitCode }: { exitCode?: number | null }) => {
     const current = sessions.get(threadId);
+    // Ensure all bytes observed before onExit stay ahead of the exit frame.
+    if (session.ws) flushPtyOutput(threadId, session);
     if (current?.pty === shell) {
       if (current.detachTimer) clearTimeout(current.detachTimer);
+      clearPendingPtyOutput(current);
       sessions.delete(threadId);
     }
     if (session.ws) {
@@ -507,6 +769,8 @@ function spawnPty(threadId: string, ws: WebSocket, cols: number, rows: number, c
       session.ws.close(1000, "pty exit");
     }
   });
+
+  adoptSession(threadId, session, ws, cols, rows, replayCursor);
 }
 
 function rawDataToBuffer(data: RawData): Buffer {
@@ -535,6 +799,7 @@ function onWsMessage(threadId: string, data: RawData): void {
     // just drops the socket, which the close handler treats as a transient
     // detach — leaking the shell (and its foreground job) for DETACH_GRACE_MS.
     if (session.detachTimer) clearTimeout(session.detachTimer);
+    clearPendingPtyOutput(session);
     sessions.delete(threadId);
     try {
       session.pty.kill();
@@ -548,16 +813,19 @@ function onWsMessage(threadId: string, data: RawData): void {
  *  socket (if any) is told it was replaced, the pending detach-kill is
  *  cancelled, and the scrollback ring is replayed so the client repaints. */
 function adoptSession(
+  threadId: string,
   session: PtySession,
   ws: WebSocket,
   cols: number,
   rows: number,
+  replayCursor: number | undefined,
 ): void {
   if (session.detachTimer) {
     clearTimeout(session.detachTimer);
     session.detachTimer = null;
   }
   const previous = session.ws;
+  clearPendingPtyOutput(session);
   session.ws = ws;
   if (previous && previous !== ws) {
     try {
@@ -573,9 +841,7 @@ function adoptSession(
       // Exited between adopt and resize; onExit handles the rest.
     }
   }
-  if (session.scrollbackBytes > 0) {
-    sendPtyData(ws, Buffer.concat(session.scrollback).toString("utf8"));
-  }
+  replayPtyOutput(threadId, session, replayCursor);
 }
 
 function handlePtyConnection(
@@ -584,6 +850,7 @@ function handlePtyConnection(
   cols: number,
   rows: number,
   cwd?: string,
+  replayCursor?: number,
 ): void {
   // Same threadId while the shell is alive (tab switch, page reload, network
   // blip, second window) → adopt the running PTY instead of killing it.
@@ -591,9 +858,9 @@ function handlePtyConnection(
   // every reconnect.
   const existing = sessions.get(threadId);
   if (existing) {
-    adoptSession(existing, ws, cols, rows);
+    adoptSession(threadId, existing, ws, cols, rows, replayCursor);
   } else {
-    spawnPty(threadId, ws, cols, rows, cwd);
+    spawnPty(threadId, ws, cols, rows, cwd, replayCursor);
   }
 
   ws.on("message", (data: RawData) => onWsMessage(threadId, data));
@@ -605,18 +872,7 @@ function handlePtyConnection(
     // Detach, don't kill: give the client a grace window to come back
     // (layout restructure remount, reload, sleep/wake). The ring keeps
     // collecting output; the timer reaps only truly-abandoned shells.
-    session.ws = null;
-    if (session.detachTimer) clearTimeout(session.detachTimer);
-    session.detachTimer = setTimeout(() => {
-      const current = sessions.get(threadId);
-      if (current !== session || current.ws) return;
-      sessions.delete(threadId);
-      try {
-        session.pty.kill();
-      } catch {
-        // Already gone.
-      }
-    }, DETACH_GRACE_MS);
+    detachPtyConsumer(threadId, session, ws);
   });
 }
 
@@ -698,6 +954,13 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
+  const replayCursor = parsePtyReplayCursor(query.ptyReplayCursor);
+  if (replayCursor === null) {
+    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+
   let cwd: string | undefined;
   try {
     cwd = validateCwd(query.projectRoot ? String(query.projectRoot) : undefined);
@@ -711,7 +974,7 @@ server.on("upgrade", (req, socket, head) => {
   const rows = Number.parseInt(String(query.rows ?? "40"), 10);
 
   wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-    handlePtyConnection(ws, threadId, cols, rows, cwd);
+    handlePtyConnection(ws, threadId, cols, rows, cwd, replayCursor);
   });
 });
 

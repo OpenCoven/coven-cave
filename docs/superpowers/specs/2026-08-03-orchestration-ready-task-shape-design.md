@@ -183,7 +183,8 @@ at the offending field:
 | `dependency_cycle` | I4, task edge closes a cycle |
 | `dependency_dangling` | I4, unknown `taskId` or `primaryBlockerId` |
 | `dependency_needs_evidence` | I5 |
-| `next_step_authorship` | I6, automation tried to overwrite a human record |
+| `dependency_authorship` | I6, automation tried to overwrite a human dependency |
+| `next_step_authorship` | I6, automation tried to overwrite a human next step |
 
 ## Automation behavior
 

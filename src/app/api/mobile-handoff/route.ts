@@ -19,6 +19,7 @@ import {
   MOBILE_INVITE_TTL_MS,
   nativeAppDiscoveryProof,
   resolveIosInstallUrl,
+  shouldAllowMagicDnsFallback,
   tailnetDiscoveryProof,
   tailscaleBin,
   tailscaleSpawnEnv,
@@ -332,13 +333,32 @@ async function ensureNativeAppServeReady(
     const parsed = parseServeStatus(status.stdout);
     if (!("error" in parsed)) serveStatus = parsed.value;
   }
-  const tailnetDiscovery = tailnetDiscoveryProof({ selfStatus, serveStatus, backendUrl: backend });
+  const tailnetDiscovery = tailnetDiscoveryProof({
+    selfStatus,
+    serveStatus,
+    backendUrl: backend,
+    // A successful status command with no matching handler proves there is no
+    // live route. MagicDNS alone only identifies the node; it does not publish
+    // the loopback backend.
+    allowMagicDnsFallback: shouldAllowMagicDnsFallback({
+      serveOk: serve.ok,
+      serveError: serveWarning ?? "",
+      statusOk: status.ok,
+    }),
+  });
   let discovery: ReturnType<typeof nativeAppDiscoveryProof> = tailnetDiscovery;
   let fallbackWarning: string | null = null;
   if (!tailnetDiscovery.ok) {
     const httpServe = await runTailscale(["serve", "--bg", `--http=${backendPort(backend)}`, backend]);
     if (httpServe.ok) {
-      discovery = nativeAppDiscoveryProof({ selfStatus, serveStatus, backendUrl: backend });
+      discovery = nativeAppDiscoveryProof({
+        selfStatus,
+        serveStatus,
+        backendUrl: backend,
+        // The explicit HTTP Serve fallback is addressed by Tailscale IP. Do
+        // not replace it with an unproven MagicDNS HTTPS URL.
+        allowMagicDnsFallback: false,
+      });
       if (discovery.ok && discovery.source === "tailscale-ip-http") {
         fallbackWarning = serveWarning
           ? `${serveWarning} Using the Tailscale IP fallback for the native app.`
@@ -494,7 +514,16 @@ async function mobileHandoffReady(
     if (!("error" in parsed)) serveStatus = parsed.value;
   }
 
-  const discovery = tailnetDiscoveryProof({ selfStatus, serveStatus, backendUrl: backend });
+  const discovery = tailnetDiscoveryProof({
+    selfStatus,
+    serveStatus,
+    backendUrl: backend,
+    allowMagicDnsFallback: shouldAllowMagicDnsFallback({
+      serveOk: serve.ok,
+      serveError: serveWarning ?? "",
+      statusOk: status.ok,
+    }),
+  });
 
   if (!discovery.ok) {
     // Nothing usable — surface the most actionable error we have.

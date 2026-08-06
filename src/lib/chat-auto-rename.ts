@@ -70,15 +70,25 @@ export function isRenameDueAtTurn(assistantTurns: number, everyTurns: number): b
  * defaults (New chat / first-prompt summary), or when this feature set it last
  * (`lastAutoTitle`). Anything else is a human's choice and is left untouched
  * while `preserveManualTitles` is on.
+ *
+ * `explicitlyManual` — when true the caller has verified that the title was
+ * stored with explicit manual ownership (i.e. `sessionTitleManual` is set in
+ * cave-config state). This flag wins over every text-equality heuristic: a
+ * manually chosen title that happens to equal an auto default is still manual.
  */
 export function isAutoOwnedTitle(input: {
   current: string | null | undefined;
   lastAutoTitle: string | null | undefined;
   autoDefaults: ReadonlySet<string>;
   preserveManualTitles: boolean;
+  /** True when the config state carries an explicit manual-ownership marker for
+   *  this title. Wins over all text-equality checks when preserveManualTitles
+   *  is on. */
+  explicitlyManual?: boolean;
 }): boolean {
   const current = input.current?.trim();
   if (!current) return true;
+  if (input.preserveManualTitles && input.explicitlyManual) return false;
   if (input.autoDefaults.has(current)) return true;
   if (input.lastAutoTitle && current === input.lastAutoTitle) return true;
   return !input.preserveManualTitles;

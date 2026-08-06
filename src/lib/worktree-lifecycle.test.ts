@@ -362,8 +362,36 @@ function legacyObservation(overrides = {}) {
     }),
     NOW,
   );
-  assert.equal(item.lane, "active", "a live exception keeps an equivalent normalized worktree path active");
-  assert.match(item.reasons.join("\n"), /Primary checkout is conflicted and user-owned/);
+  assert.equal(
+    item.lane,
+    "retire-after-gate",
+    "a creation exception is admission authority only and never blocks retirement of landed work",
+  );
+  assert.doesNotMatch(item.reasons.join("\n"), /exception active/i);
+}
+
+{
+  const item = classifyLifecycleUnit(
+    observation({
+      metadata: metadata({
+        exception: {
+          owner: "Kitty",
+          reason: "Budget was full when this unit was created",
+          expiresAt: "2026-08-30T00:00:00Z",
+          additionalPaths: ["/repo/.worktrees/feat-x"],
+        },
+      }),
+      headOnDefaultBranch: false,
+      mergedPr: null,
+    }),
+    NOW,
+  );
+  assert.equal(
+    item.lane,
+    "recovery",
+    "an unlanded unit is still held by the landed check, not by its creation exception",
+  );
+  assert.match(item.reasons.join("\n"), /not proven landed/i);
 }
 
 {
