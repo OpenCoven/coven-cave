@@ -124,7 +124,7 @@ assert.match(source, /<SortableContext items=\{displayIds\} strategy=\{verticalL
 assert.match(primitives, /useSortable\(\{ id \}\)/, "ChatList rows should be individually sortable by session id");
 assert.match(source, /setSessionOrder\(readSessionOrder\(\)\)/, "ChatList should hydrate the persisted manual order after mount");
 assert.match(source, /if \(effectiveSelection === "all" && groupBy !== "project"\) \{[\s\S]*scopedGroups\.flatMap\(\(group\) => group\.sessions\)/, "All chats should flatten groups (unless grouping by project) so cross-project drag order can stick");
-assert.match(source, /partitionPinnedFirst\(sortChatRowsByRecency\(rows\), pinnedIds\)/, "Pinned rows still float, over a recency-sorted rest, in the flat All chats view until manual drag order exists");
+assert.match(source, /partitionPinnedFirst\(sortChatSessionRows\(rows, sessionSort\), pinnedIds\)/, "Pinned rows still float, over a rest in the reader's chosen order, in the flat All chats view until manual drag order exists");
 assert.match(source, /applyManualOrder\(group\.sessions, sessionOrder\)/, "ChatList should apply the manual order inside visible project groups");
 assert.match(source, /mergeVisibleOrder\(prev\.length > 0 \? prev : fallbackOrderIds, nextVisible\)/, "ChatList should merge dragged visible rows back into the full saved order");
 assert.match(source, /const pruned = merged\.filter\(\(id\) => liveSessionIds\.has\(id\)\)/, "ChatList should prune stale session ids before persisting drag order");

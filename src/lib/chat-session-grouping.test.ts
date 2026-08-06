@@ -158,16 +158,52 @@ test("chat-list: Escape in search clears the query", () => {
 
 // ── Source pins: toolbar contracts (chat-list.tsx) ───────────────────────────
 
-test("chat-list: All / Active segmented control drives the running-only filter", () => {
+// cave-n3jg2 ("Chat Session - Prototype.dc.html"): the All/Active segmented
+// control and its duplicate dot toggle are replaced by one counted chip per
+// state the daemon actually reports. "Active" could only ever answer "what is
+// running?"; the chips also answer "what failed?" and "what is waiting on me?".
+test("chat-list: counted status chips drive the status filter", () => {
   assert.match(
     chatList,
-    /aria-pressed=\{!unreadsOnly\}\s*\n\s*onClick=\{\(\) => setUnreadsOnly\(false\)\}/,
-    "All clears the active-only filter",
+    /aria-pressed=\{statusFilter === "all"\}\s*\n\s*onClick=\{\(\) => setStatusFilter\("all"\)\}/,
+    "All clears the status filter",
   );
   assert.match(
     chatList,
-    /aria-pressed=\{unreadsOnly\}\s*\n\s*onClick=\{\(\) => setUnreadsOnly\(true\)\}/,
-    "Active enables the running-only filter (same state as the dot toggle)",
+    /\{CHAT_SESSION_STATUS_ORDER\.map\(\(key\) => \{[\s\S]{0,600}?onClick=\{\(\) => setStatusFilter\(key\)\}/,
+    "one chip per reported status, each setting the filter",
+  );
+  assert.match(
+    chatList,
+    /<span className="chat-status-chip__count">\{statusCounts\[key\]\}<\/span>/,
+    "each chip carries its own count",
+  );
+  // Counting the SEARCHED set (not the filtered one) is what keeps the numbers
+  // under the chips you did not press from changing when you press one.
+  assert.match(
+    chatList,
+    /const statusCounts = useMemo\(\(\) => countChatSessionStatuses\(searched\), \[searched\]\);/,
+    "counts describe the searched set, so pressing a chip never renumbers the others",
+  );
+});
+
+test("chat-list: activity bands head the default recency order", () => {
+  assert.match(
+    chatList,
+    /const activityBanded =\s*\n\s*groupBy === "none" && effectiveSelection === "all" && sessionSort === "recent" && sessionOrder\.length === 0;/,
+    "bands are scoped to the flat, ungrouped, unsorted-by-hand recency view",
+  );
+  assert.match(
+    chatList,
+    /<li className="chat-activity-header" data-bucket=\{band\.bucket\}>/,
+    "each band renders its own header keyed by bucket",
+  );
+  // A named flat order still gets one header, so the list never presents rows
+  // in an order it has not named.
+  assert.match(
+    chatList,
+    /map\.set\(offset, \{ bucket: "flat", label: CHAT_SESSION_SORT_HEADING\[sessionSort\], count: rest\.length \}\);/,
+    "non-recency orders get a single named header",
   );
 });
 
