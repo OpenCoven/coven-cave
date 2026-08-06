@@ -1148,6 +1148,8 @@ export const SUITES = {
     "scripts/dev-app.test.mjs",
     "scripts/dev-app-origin-health.test.mjs",
     "scripts/dev-app-teardown.test.mjs",
+    "scripts/dev-port-owner.test.mjs",
+    "scripts/port-contract.test.mjs",
     "scripts/sync-runtimes.test.mjs",
     "scripts/surface-claim-guard.test.mjs",
     "scripts/worktree-guard.test.mjs",
@@ -1413,6 +1415,8 @@ export const SUITES = {
     "src/server-pty-ws.test.ts",
     "src/server-heap-monitor.test.ts",
     "src/lib/pty-ws-bridge.test.ts",
+    "src/lib/websocket-url.test.ts",
+    "src/lib/familiar-liveness.test.ts",
     "scripts/release-macos-signing.test.mjs",
     "scripts/release-notes.test.mjs",
     "scripts/generate-latest-json.test.mjs",
@@ -1594,6 +1598,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/daemon-desktop-auto-start.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
   "src/lib/podcast-script.test.ts",
   // the foil-plate store resolves "@/lib/avatar-idb" for its IndexedDB driver

@@ -226,9 +226,17 @@ function restartHarness({ enabled = true, startClock = 0 } = {}) {
   assert.equal(h.starts.length, 1, "turning the switch off stops the next restart");
 }
 {
-  // Backoff, and a real ceiling. A daemon that cannot start must not be
-  // relaunched every 5s forever — the poll cadence would otherwise make this
-  // an infinite loop against a broken install.
+  // Backoff, a bounded burst, and then MORE attempts after cooling off.
+  //
+  // This used to assert a permanent ceiling: four attempts and never again. The
+  // ceiling was the bug — the only thing that reset the counter was a `running`
+  // poll, which for a daemon that is genuinely gone never arrives, so the
+  // familiar stayed down for the rest of the session with nothing further tried
+  // and nothing on screen saying so. The budget now refills after a cooldown
+  // (src/lib/familiar-liveness.ts).
+  //
+  // What must still hold is the thing the ceiling was protecting against: a
+  // broken install must not be relaunched on every 5s poll.
   const h = restartHarness();
   h.coordinator.observePlatform("desktop");
   h.coordinator.observeStatus(RUNNING);
@@ -236,16 +244,21 @@ function restartHarness({ enabled = true, startClock = 0 } = {}) {
     h.advance(5_000); // the real poll cadence
     h.coordinator.observeStatus(OFFLINE);
   }
-  assert.equal(
-    h.starts.length,
-    DAEMON_RESTART_BACKOFF_MS.length,
-    "attempts stop at the ceiling instead of looping forever",
+  assert.ok(
+    h.starts.length > DAEMON_RESTART_BACKOFF_MS.length,
+    `the budget refills after cooling off, so a long outage keeps getting attempts (${h.starts.length})`,
   );
+  assert.ok(
+    h.starts.length < 20,
+    `but nowhere near the 400 polls it saw — a crash loop still cannot spin (${h.starts.length})`,
+  );
+  // Jitter is [0.5, 1.5) of nominal, so the floor is half the scheduled wait.
+  // Assert against the smallest in-burst delay: no two attempts are adjacent.
   const gaps = h.starts.slice(1).map((at, i) => at - h.starts[i]);
   for (const [i, gap] of gaps.entries()) {
     assert.ok(
-      gap >= DAEMON_RESTART_BACKOFF_MS[i + 1],
-      `attempt ${i + 2} waited at least its backoff (${gap} >= ${DAEMON_RESTART_BACKOFF_MS[i + 1]})`,
+      gap >= DAEMON_RESTART_BACKOFF_MS[1] / 2,
+      `attempt ${i + 2} waited at least the jittered floor (${gap})`,
     );
   }
 }

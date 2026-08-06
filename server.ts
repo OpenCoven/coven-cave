@@ -37,8 +37,43 @@ if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDAL
 // Serve route stays token-gated. Mirrors src/lib/server/mobile-access-
 // provision.ts, inlined because the standalone server.mjs cannot import from
 // src/.
+// The port contract, inlined for the same reason as everything else in this
+// block: `build:server` runs esbuild with `--bundle=false`, so any import here
+// must still resolve at runtime from wherever server.mjs is unpacked — and the
+// packaged bundle ships server.mjs without scripts/. scripts/ports.mjs is the
+// source of truth and scripts/port-contract.test.mjs fails if this copy drifts.
+const CAVE_DEV_PORT = 3000;
+const CAVE_PRODUCTION_PORT = 3020;
+
+function parseCavePort(raw: string | undefined): number | null {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535 ? parsed : null;
+}
+
+/**
+ * COVEN_CAVE_PORT wins over PORT so Cave can be pinned without disturbing a
+ * PORT that some parent set for its own reasons — pnpm exports its config to
+ * children as env vars, and inheriting one by accident is how the port stopped
+ * being dependable before. The packaged bundle takes the production port; a
+ * `pnpm dev` server takes the dev port, so the two can run side by side.
+ */
+function cavePort(): number {
+  const channelDefault =
+    process.env.COVEN_CAVE_BUNDLE === "1" ? CAVE_PRODUCTION_PORT : CAVE_DEV_PORT;
+  return (
+    parseCavePort(process.env.COVEN_CAVE_PORT) ??
+    parseCavePort(process.env.PORT) ??
+    channelDefault
+  );
+}
+
 function persistedMobileAccessSecretFile(): string {
-  const port = (process.env.PORT || "3000").trim() || "3000";
+  // Keyed by the port on purpose (it mirrors scripts/mobile-tailscale.sh), which
+  // is precisely why the port had to stop moving: a per-launch port meant a
+  // per-launch secret directory, so every desktop restart re-paired every phone.
+  const port = String(cavePort());
   const stateRoot =
     process.env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim() ||
     join(
@@ -878,7 +913,7 @@ function handlePtyConnection(
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME ?? "127.0.0.1";
-const port = Number.parseInt(process.env.PORT ?? "3000", 10);
+const port = cavePort();
 
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
