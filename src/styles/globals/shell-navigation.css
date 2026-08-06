@@ -335,39 +335,36 @@
   height: 34px;
   padding: 0 var(--space-2);
   border-radius: 10px;
-  /* Filled brand accent (--accent-presence): New chat is the panel's primary
-     action, so it gets the solid treatment with its paired on-accent ink.
-     Hover shifts through --accent-presence-hover (WCAG-AA pair, cave-c7hy).
-     var(--accent) is the shadcn surface token and rendered this button's
-     chrome nearly invisible. */
-  border: 1px solid var(--accent-presence);
-  background: var(--accent-presence);
-  color: var(--accent-presence-foreground);
+  /* Quiet primary: New chat still reads as the panel's one button — full width,
+     bordered, its own surface — but it no longer shouts with a solid accent
+     fill. The tint derives from --accent-presence so the brand hue is present
+     without the label needing --accent-presence-foreground to stay legible;
+     ink is plain --text-primary, which holds in every theme. */
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 24%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 9%, transparent);
+  color: var(--text-primary);
   font-size: var(--text-sm);
   font-weight: 560;
   text-align: left;
   transition: background var(--duration-fast) var(--ease-standard),
     border-color var(--duration-fast) var(--ease-standard);
 }
-.cnav__utilities {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 0 var(--cnav-pad) var(--space-2);
-}
 .cnav__new:hover {
-  background: var(--accent-presence-hover);
-  border-color: var(--accent-presence-hover);
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
 }
 .cnav__new-icon {
   flex-shrink: 0;
-  color: var(--accent-presence-foreground);
+  color: var(--text-secondary);
+}
+.cnav__new:hover .cnav__new-icon {
+  color: var(--text-primary);
 }
 .cnav__new-kbd {
   flex: none;
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
-  color: color-mix(in oklch, var(--accent-presence-foreground) 62%, transparent);
+  color: var(--text-muted);
 }
 .cnav__new-label {
   flex: 1;
@@ -386,55 +383,20 @@
   border: 1px solid var(--border-hairline);
   background: color-mix(in oklch, var(--foreground) 5%, transparent);
 }
-.cnav__mini {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  height: 34px;
-  min-width: 30px;
-  padding: 0 var(--space-1);
-  border-radius: 10px;
-  border: 1px solid var(--border-hairline);
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-  transition: background var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
-}
-.cnav__mini:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-.cnav__mini-icon {
-  flex-shrink: 0;
-  color: var(--text-muted);
-}
-/* Count rides the chip's corner (overlay, not inline) so the icon chips stay
-   narrow enough for the one-row layout at the sidebar's minimum width. */
-.cnav__mini-count {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 3px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--bg-raised);
-  background: color-mix(in oklch, var(--foreground) 12%, var(--bg-raised));
-  font-size: var(--text-2xs);
-  font-weight: 650;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
 /* Grouping is a first-class choice, not a setting hidden in the overflow menu.
    The two visible tabs mirror the reference rail while retaining the existing
-   persisted Recent/Projects preference. */
-.cnav__tabs {
+   persisted Recent/Projects preference. The overflow menu rides at the end of
+   the same row — the separate utilities band it used to share with the
+   Scheduled/Plugins chips is retired. */
+.cnav__tabs-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   margin: 0 var(--cnav-pad) var(--space-2);
+}
+.cnav__tabs {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* Search */

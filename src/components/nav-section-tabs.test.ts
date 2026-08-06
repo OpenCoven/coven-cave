@@ -56,6 +56,14 @@ assert.match(
   /\.sidebar-action-row\s*\{[\s\S]*?\bwidth:\s*100%;/,
   "the Home New chat action remains full width",
 );
+// Quiet primary: New chat keeps its button chrome (full width, border, own
+// surface) but no longer takes a solid accent fill on either rail. The tint
+// still derives from --accent-presence so the brand hue is present.
+assert.match(
+  homeChrome,
+  /\.sidebar-actions:not\(\.sidebar-actions--footer\) \.sidebar-action-row \{[\s\S]*?background: color-mix\(in oklch, var\(--accent-presence\) 9%, transparent\);[\s\S]*?color: var\(--text-primary\);/,
+  "the Home New chat action is a tinted quiet button, not a solid accent fill",
+);
 
 assert.match(
   chatSidebar,
@@ -72,10 +80,16 @@ assert.doesNotMatch(
   /<div className="cnav__switcher">[\s\S]*?Sidebar options[\s\S]*?<\/header>/,
   "the Chat selector row has no trailing Sidebar options button",
 );
+// The Scheduled/Plugins icon chips and the band that carried them are retired:
+// both destinations live in the Home rail's list, and dropping the band gives
+// Chat the same tabs → switcher → New chat rhythm as Home. Sidebar options
+// (the only entry point for "Show archived") moves onto the grouping-tabs row.
+assert.doesNotMatch(chatSidebar, /cnav__utilities|cnav__mini/, "the Scheduled/Plugins utilities band is retired");
+assert.doesNotMatch(chatChrome, /\.cnav__utilities|\.cnav__mini/, "the utilities band styles are retired with it");
 assert.match(
   chatSidebar,
-  /<div className="cnav__quick">[\s\S]*?New chat[\s\S]*?<div className="cnav__utilities">[\s\S]*?Scheduled[\s\S]*?Plugins[\s\S]*?Sidebar options/,
-  "Scheduled, Plugins, and Sidebar options remain below the primary action",
+  /<div className="cnav__quick">[\s\S]*?New chat[\s\S]*?<div className="cnav__tabs-row">[\s\S]*?<Tabs<ChatSidebarView>[\s\S]*?Sidebar options/,
+  "Sidebar options rides at the end of the grouping-tabs row, below the primary action",
 );
 assert.match(
   chatChrome,
@@ -86,6 +100,11 @@ assert.match(
   chatChrome,
   /\.cnav__new\s*\{[\s\S]*?\bwidth:\s*100%;/,
   "the Chat New chat action remains full width",
+);
+assert.match(
+  chatChrome,
+  /\.cnav__new\s*\{[\s\S]*?background: color-mix\(in oklch, var\(--accent-presence\) 9%, transparent\);[\s\S]*?color: var\(--text-primary\);/,
+  "the Chat New chat action is a tinted quiet button, not a solid accent fill",
 );
 assert.match(
   chatSidebar,

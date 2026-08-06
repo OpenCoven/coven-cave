@@ -1258,3 +1258,4 @@
 {"id":"int-573b00ef0465c9b58597486ddea00466","kind":"field_change","created_at":"2026-08-06T02:07:28.393438Z","actor":"Val Alexander","issue_id":"cave-agmbk","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
 {"id":"int-d2deb16ac535855887cf0300de9ebcf0","kind":"field_change","created_at":"2026-08-06T02:18:42.976613Z","actor":"Val Alexander","issue_id":"cave-n3jg2","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
 {"id":"int-c7c76457623e3fb0e38bf59b71b8ce08","kind":"field_change","created_at":"2026-08-06T02:48:13.495468Z","actor":"Val Alexander","issue_id":"cave-1c8zf","extra":{"field":"status","new_value":"open","old_value":"in_progress"}}
+{"id":"int-5def7e6b83bb6e7ec9c939756eeea024","kind":"field_change","created_at":"2026-08-06T03:40:33.494378Z","actor":"Val Alexander","issue_id":"cave-1c8zf","extra":{"field":"status","new_value":"open","old_value":"in_progress"}}
