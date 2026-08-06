@@ -86,8 +86,7 @@ impl ReviveBudget {
     }
 
     /// A first attempt that is nearly immediate (the common case is a one-off
-    /// crash), growing to a minute, then fifteen minutes of quiet before the
-    /// budget refills.
+    /// crash), then 2s, 4s, and 8s before fifteen minutes of quiet and a refill.
     pub(super) fn defaults() -> Self {
         Self::new(
             4,
@@ -175,20 +174,20 @@ impl SidecarSupervisor {
 pub(super) fn spawn_sidecar_supervisor(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         let mut budget = ReviveBudget::defaults();
+        let mut recovery_pending = false;
         loop {
             if !sleep_unless_stopping(&app, SUPERVISOR_POLL_INTERVAL) {
                 return;
             }
-            match sidecar_liveness(&app) {
-                SidecarLiveness::Alive => {
+            match recovery_observation(recovery_pending, sidecar_liveness(&app)) {
+                RecoveryObservation::Recovered => {
                     // Forget any earlier crash history so an unrelated failure
                     // weeks into a session gets a full budget.
                     budget.recovered();
                     continue;
                 }
-                // Nothing to act on, and nothing to forgive. See SidecarLiveness.
-                SidecarLiveness::Unknown => continue,
-                SidecarLiveness::Dead => {}
+                RecoveryObservation::Wait => continue,
+                RecoveryObservation::Revive => recovery_pending = true,
             }
 
             let Some(delay) = budget.next_delay() else {
@@ -213,7 +212,11 @@ pub(super) fn spawn_sidecar_supervisor(app: tauri::AppHandle) {
             if !sleep_unless_stopping(&app, delay) {
                 return;
             }
-            revive(&app);
+            match revive(&app) {
+                ReviveOutcome::Revived => recovery_pending = false,
+                ReviveOutcome::Failed => {}
+                ReviveOutcome::Cancelled => return,
+            }
         }
     });
 }
@@ -250,11 +253,35 @@ fn is_stopping(app: &tauri::AppHandle) -> bool {
 /// child behind would look like a recovery and never be retried. Unknown means
 /// "do nothing": neither revive, nor forgive the crash history.
 #[cfg(all(desktop, not(target_os = "windows")))]
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 enum SidecarLiveness {
     Alive,
     Dead,
     Unknown,
+}
+
+#[cfg(all(desktop, not(target_os = "windows")))]
+#[derive(Debug, PartialEq, Eq)]
+enum RecoveryObservation {
+    Recovered,
+    Revive,
+    Wait,
+}
+
+/// A failed revive stays actionable even after cleanup removes the partial
+/// child from `SidecarState`. Without this episode bit, `Unknown` would make
+/// the supervisor wait forever. Conversely, only a later live probe proves a
+/// successful revive remained healthy long enough to restore the budget.
+#[cfg(all(desktop, not(target_os = "windows")))]
+fn recovery_observation(recovery_pending: bool, liveness: SidecarLiveness) -> RecoveryObservation {
+    if recovery_pending {
+        return RecoveryObservation::Revive;
+    }
+    match liveness {
+        SidecarLiveness::Alive => RecoveryObservation::Recovered,
+        SidecarLiveness::Dead => RecoveryObservation::Revive,
+        SidecarLiveness::Unknown => RecoveryObservation::Wait,
+    }
 }
 
 #[cfg(all(desktop, not(target_os = "windows")))]
@@ -280,7 +307,23 @@ fn sidecar_liveness(app: &tauri::AppHandle) -> SidecarLiveness {
 }
 
 #[cfg(all(desktop, not(target_os = "windows")))]
-fn revive(app: &tauri::AppHandle) {
+enum ReviveOutcome {
+    Revived,
+    Failed,
+    Cancelled,
+}
+
+#[cfg(all(desktop, not(target_os = "windows")))]
+fn cleanup_failed_revival(app: &tauri::AppHandle) {
+    if let Some(sidecar) = app.try_state::<SidecarState>() {
+        if let Err(error) = sidecar.stop() {
+            log::warn!("[cave] could not clean up failed sidecar revival: {error}");
+        }
+    }
+}
+
+#[cfg(all(desktop, not(target_os = "windows")))]
+fn revive(app: &tauri::AppHandle) -> ReviveOutcome {
     let should_cancel = {
         let app = app.clone();
         move || is_stopping(&app)
@@ -294,29 +337,30 @@ fn revive(app: &tauri::AppHandle) {
             // Windows startup path: location.replace() keeps the dead page out
             // of session history, with navigate() as the fallback for a webview
             // whose JS context is no longer reachable.
-            let navigated = app
-                .get_webview_window("main")
-                .ok_or_else(|| "main window is unavailable".to_string())
-                .and_then(|window| {
-                    let escaped = url.to_string().replace('"', "%22");
-                    window
-                        .eval(format!("window.location.replace(\"{escaped}\");"))
-                        .or_else(|_| window.navigate(url))
-                        .map_err(|error| format!("could not reopen CovenCave: {error}"))
-                });
+            let navigated = replace_main_window_url(app, url);
             match navigated {
-                Ok(()) => log::info!("[cave] sidecar revived and the window was reopened"),
-                Err(error) => log::warn!("[cave] sidecar revived but the window did not follow: {error}"),
+                Ok(()) => {
+                    log::info!("[cave] sidecar revived and the window was reopened");
+                    ReviveOutcome::Revived
+                }
+                Err(error) => {
+                    log::warn!("[cave] sidecar revived but the window did not follow: {error}");
+                    cleanup_failed_revival(app);
+                    ReviveOutcome::Failed
+                }
             }
         }
         // Matched rather than `{:?}`-formatted: SidecarStartError carries no
         // Debug impl, and a cancel is not a failure — it is the app shutting
         // down between the poll and the respawn.
         Err(SidecarStartError::Cancelled) => {
-            log::info!("[cave] sidecar revive abandoned: shutdown began mid-attempt")
+            log::info!("[cave] sidecar revive abandoned: shutdown began mid-attempt");
+            ReviveOutcome::Cancelled
         }
         Err(SidecarStartError::Failed(error)) => {
-            log::warn!("[cave] sidecar revive failed: {error}")
+            log::warn!("[cave] sidecar revive failed: {error}");
+            cleanup_failed_revival(app);
+            ReviveOutcome::Failed
         }
     }
 }
@@ -385,6 +429,28 @@ mod tests {
             budget.next_delay(),
             Some(Duration::from_millis(250)),
             "a later unrelated crash starts from a prompt retry again"
+        );
+    }
+
+    #[test]
+    fn failed_revival_stays_pending_when_child_state_is_unknown() {
+        assert_eq!(
+            recovery_observation(true, SidecarLiveness::Unknown),
+            RecoveryObservation::Revive,
+            "cleanup leaves no recorded child, but a failed revival still needs its next attempt"
+        );
+    }
+
+    #[test]
+    fn only_an_observed_live_revival_restores_the_budget() {
+        assert_eq!(
+            recovery_observation(false, SidecarLiveness::Alive),
+            RecoveryObservation::Recovered,
+        );
+        assert_eq!(
+            recovery_observation(false, SidecarLiveness::Unknown),
+            RecoveryObservation::Wait,
+            "unknown is not proof that a successful revival stayed alive"
         );
     }
 }
