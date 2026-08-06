@@ -811,6 +811,9 @@
   left: var(--space-3);
   opacity: 1;
 }
+.cnav__thread.is-active .cnav__tick {
+  opacity: 0;
+}
 .cnav__thread.is-active.cnav__thread--pr .cnav__tick {
   left: var(--space-1);
 }
