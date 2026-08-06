@@ -104,9 +104,9 @@ test("renderer-code fence quirks keep attention examples literal in rendered tex
     '<coven:attention reason="decision" />',
   ].join("\n");
   const listed = extractChatRenderedText(listText);
-  assert.equal(listed.visible, listText);
-  assert.equal(listed.cardText, listText);
-  assert.equal(listed.attentionRequest, null);
+  assert.equal(listed.visible, "- ```xml\n  example\n  ```\n");
+  assert.equal(listed.cardText, "- ```xml\n  example\n  ```\n");
+  assert.deepEqual(listed.attentionRequest, { reason: "decision" });
 
   const quotedText = [
     "> ```x",

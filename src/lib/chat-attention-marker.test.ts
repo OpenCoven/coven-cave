@@ -102,7 +102,7 @@ test("fenced markers stay literal example text", () => {
   });
 });
 
-test("list-contained fenced examples keep following attention markers literal", () => {
+test("list-contained fenced examples end before a following live attention marker", () => {
   const fenced = [
     "- ```typescript-react",
     '  <coven:attention reason="credentials" />',
@@ -110,12 +110,12 @@ test("list-contained fenced examples keep following attention markers literal", 
   ].join("\n");
   const text = `${fenced}\n<coven:attention reason="decision" />`;
   assert.deepEqual(extractChatAttentionMarker(text), {
-    visible: text,
-    request: null,
+    visible: `${fenced}\n`,
+    request: { reason: "decision" },
   });
 });
 
-test("list-contained renderer fences keep following attention markers literal", () => {
+test("list-contained renderer fences end before a following live attention marker", () => {
   const text = [
     "- ```xml",
     "  example",
@@ -123,8 +123,8 @@ test("list-contained renderer fences keep following attention markers literal", 
     '<coven:attention reason="decision" />',
   ].join("\n");
   assert.deepEqual(extractChatAttentionMarker(text), {
-    visible: text,
-    request: null,
+    visible: "- ```xml\n  example\n  ```\n",
+    request: { reason: "decision" },
   });
 });
 
@@ -141,7 +141,7 @@ test("overlapping blockquoted fence delimiters keep attention markers literal", 
   });
 });
 
-test("ordered and nested list-contained fences keep following attention markers literal", () => {
+test("ordered and nested list-contained fences end before a following live attention marker", () => {
   const fenced = [
     "1. ~~~xml",
     '   <coven:attention reason="credentials" />',
@@ -152,8 +152,8 @@ test("ordered and nested list-contained fences keep following attention markers 
   ].join("\n");
   const text = `${fenced}\n<coven:attention reason="input" />`;
   assert.deepEqual(extractChatAttentionMarker(text), {
-    visible: text,
-    request: null,
+    visible: `${fenced}\n`,
+    request: { reason: "input" },
   });
 });
 

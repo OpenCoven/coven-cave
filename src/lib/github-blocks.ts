@@ -301,14 +301,20 @@ function mergeRanges(ranges: Array<[number, number]>): Array<[number, number]> {
   return merged;
 }
 
+function leadingWhitespaceLength(line: string): number {
+  return /^[ \t]*/.exec(line)?.[0].length ?? 0;
+}
+
 function rendererFenceRanges(text: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
+  const lines = text.split("\n");
   let offset = 0;
   let start = -1;
   let character = "";
   let openedFromList = false;
   let interiorLines = 0;
-  for (const line of text.split("\n")) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     if (start === -1) {
       const opening = /^([ \t]*)(?:(?:([-+*]|\d{1,9}[.)])[ \t]+))?(`{3,}|~{3,})(.*)$/.exec(line);
       const validOpening = opening &&
@@ -320,12 +326,15 @@ function rendererFenceRanges(text: string): Array<[number, number]> {
         interiorLines = 0;
       }
     } else {
-      const closing = /^[ \t]*(`{3,}|~{3,})[ \t]*$/.exec(line);
-      if (closing && closing[1][0] === character) {
+      const closing = /^([ \t]*)(`{3,}|~{3,})[ \t]*$/.exec(line);
+      if (closing && closing[2][0] === character) {
         ranges.push([start, offset + line.length]);
-        if (openedFromList || interiorLines === 0) {
+        const nextLine = lines[index + 1];
+        const canReopen = nextLine !== undefined
+          && leadingWhitespaceLength(nextLine) >= closing[1].length;
+        if ((openedFromList || interiorLines === 0) && canReopen) {
           start = offset;
-          character = closing[1][0];
+          character = closing[2][0];
           openedFromList = false;
           interiorLines = 0;
         } else {
@@ -349,6 +358,7 @@ function rendererFenceRanges(text: string): Array<[number, number]> {
  *  cave-m0r6); an unclosed trailing fence protects through the text end. */
 export function fencedRanges(text: string): Array<[number, number]> {
   const containerRanges: Array<[number, number]> = [];
+  const lines = text.split("\n");
   let offset = 0;
   let fenceStart = -1;
   let fenceCharacter = "";
@@ -357,7 +367,8 @@ export function fencedRanges(text: string): Array<[number, number]> {
   let closingIndent = 3;
   let openedFromList = false;
   let interiorLines = 0;
-  for (const line of text.split("\n")) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     let contentOffset = 0;
     let quoteDepth = 0;
     while (true) {
@@ -400,7 +411,21 @@ export function fencedRanges(text: string): Array<[number, number]> {
         && closing[2].length >= fenceLength
       ) {
         containerRanges.push([fenceStart, offset + line.length]);
-        if (openedFromList || interiorLines === 0) {
+        const nextLine = lines[index + 1];
+        let canReopen = false;
+        if (nextLine !== undefined) {
+          let nextContentOffset = 0;
+          let nextQuoteDepth = 0;
+          while (true) {
+            const quote = /^ {0,3}>[ \t]?/.exec(nextLine.slice(nextContentOffset));
+            if (!quote) break;
+            nextContentOffset += quote[0].length;
+            nextQuoteDepth += 1;
+          }
+          canReopen = nextQuoteDepth === quoteDepth
+            && leadingWhitespaceLength(nextLine.slice(nextContentOffset)) >= closing[1].length;
+        }
+        if ((openedFromList || interiorLines === 0) && canReopen) {
           fenceStart = offset;
           fenceCharacter = closing[2][0];
           fenceLength = closing[2].length;

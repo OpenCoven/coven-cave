@@ -112,8 +112,10 @@ for (const malformed of ["[", "[action"]) {
   const r = extractNextPaths(
     `${fenced}\n<coven:next-paths>\n- [reply] Continue the work\n</coven:next-paths>`,
   );
-  assert.equal(r.visible, `${fenced}\n<coven:next-paths>\n- [reply] Continue the work\n</coven:next-paths>`);
-  assert.deepEqual(r.suggestions, []);
+  assert.equal(r.visible, fenced);
+  assert.deepEqual(r.suggestions, [
+    { kind: "reply", label: "Continue the work", prompt: "Continue the work" },
+  ] satisfies NextPath[]);
 }
 
 {
