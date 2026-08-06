@@ -116,7 +116,7 @@ export async function generateReflection(opts: {
   // every prompt, and a compliant familiar echoes the block back. The journal
   // has no chip row — strip it (terminated or truncated) so it never lands in
   // the stored reflection.
-  const trimmed = extractNextPaths(error === "cancelled" ? attentionText.cancelled() : attentionText.settled()).visible.trim();
+  const trimmed = extractNextPaths(error !== null ? attentionText.terminal() : attentionText.settled()).visible.trim();
   if (!trimmed && !error) error = "The familiar didn't return a reflection. Try again.";
   return { text: trimmed, error };
 }

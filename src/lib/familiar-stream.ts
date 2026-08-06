@@ -127,19 +127,30 @@ export async function streamFamiliarText(opts: {
     } else if (ev.kind === "error") error = ev.message ?? "generation error";
   };
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let idx;
-    while ((idx = buffer.indexOf("\n\n")) >= 0) {
-      handleFrame(buffer.slice(0, idx));
-      buffer = buffer.slice(idx + 2);
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf("\n\n")) >= 0) {
+        handleFrame(buffer.slice(0, idx));
+        buffer = buffer.slice(idx + 2);
+      }
     }
+    // Flush the decoder (a multi-byte character can straddle the final chunk)
+    // and process a last frame that arrived without its trailing blank line.
+    buffer += decoder.decode();
+    if (buffer.trim()) handleFrame(buffer);
+  } catch (err) {
+    error = opts.signal?.aborted
+      ? "cancelled"
+      : error ?? (err as Error)?.message ?? "the connection dropped mid-generation";
   }
-  // Flush the decoder (a multi-byte character can straddle the final chunk)
-  // and process a last frame that arrived without its trailing blank line.
-  buffer += decoder.decode();
-  if (buffer.trim()) handleFrame(buffer);
-  return { text: error === "cancelled" ? attentionText.cancelled() : attentionText.settled(), error, sessionId, responseMetadata };
+  return {
+    text: error !== null ? attentionText.terminal() : attentionText.settled(),
+    error,
+    sessionId,
+    responseMetadata,
+  };
 }

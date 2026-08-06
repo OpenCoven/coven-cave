@@ -294,6 +294,7 @@ import {
 } from "@/lib/model-control-capabilities";
 import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
 import { conversationCwd, daemonSessionCwd, resolveFamiliarWorkspace } from "./chat-send-runtime";
+import { resolveOpenClawGatewayOutcome } from "./openclaw-gateway-outcome";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -1002,15 +1003,21 @@ function openClawChatResponse(args: {
           }
           return created;
         }).catch(() => false);
-        const stopGateway = () => {
-          settleOpenGatewayTools("[tool cancelled by user]");
+        const abortGateway = (toolOutcome: string) => {
+          settleOpenGatewayTools(toolOutcome);
           void gatewayDispatch.abort();
         };
+        const stopGateway = () => abortGateway("[tool cancelled by user]");
+        const stopDetachedGateway = () => abortGateway("[tool did not settle before the Gateway turn ended]");
         const runHandle = registerChatRun([args.body.runId, conversationId], stopGateway);
         let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
+        let detachTimeoutFired = false;
         const armDetachKill = () => {
           if (runHandle.stopRequested || detachKillTimer != null) return;
-          detachKillTimer = setTimeout(stopGateway, CHAT_DETACH_MAX_MS);
+          detachKillTimer = setTimeout(() => {
+            detachTimeoutFired = true;
+            stopDetachedGateway();
+          }, CHAT_DETACH_MAX_MS);
         };
         runBuffer = openRunBuffer([args.body.runId, conversationId], {
           attach: () => {
@@ -1029,25 +1036,28 @@ function openClawChatResponse(args: {
         const gatewayResult = await gatewayDispatch.done;
         markChatRunTransportSettled(runHandle);
         settleOpenGatewayTools(
-          gatewayResult.state === "aborted"
+          runHandle.stopRequested
             ? "[tool cancelled by user]"
             : "[tool did not settle before the Gateway turn ended]",
         );
         args.req.signal.removeEventListener("abort", onAbort);
         if (detachKillTimer != null) clearTimeout(detachKillTimer);
         const durationMs = Date.now() - startedAt;
-        const cancelledByUser = runHandle.stopRequested || gatewayResult.state === "aborted";
-        let isError = gatewayResult.state === "error";
+        const gatewayOutcome = resolveOpenClawGatewayOutcome(
+          gatewayResult,
+          runHandle.stopRequested,
+          detachTimeoutFired,
+        );
+        const { cancelledByUser } = gatewayOutcome;
+        let { isError } = gatewayOutcome;
         if (!gatewayAssistantText.trim()) {
-          gatewayAssistantText = cancelledByUser
-            ? "(cancelled)"
-            : gatewayResult.message ?? "_The OpenClaw Gateway returned no text._";
+          gatewayAssistantText = gatewayOutcome.emptyText;
         }
         pushProgress(
           "openclaw-response",
           isError ? "OpenClaw Gateway response failed" : "OpenClaw Gateway response received",
           isError ? "error" : "done",
-          gatewayResult.message,
+          gatewayOutcome.progressMessage,
           durationMs,
         );
         push({ kind: "session", sessionId: conversationId });

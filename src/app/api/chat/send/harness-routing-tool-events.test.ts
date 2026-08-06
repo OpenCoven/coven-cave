@@ -146,8 +146,18 @@ assert.equal(
 );
 assert.match(
   chatRoute,
-  /const stopGateway = \(\) => \{[\s\S]*?settleOpenGatewayTools\("\[tool cancelled by user\]"\);[\s\S]*?void gatewayDispatch\.abort\(\);/,
-  "Stop must settle live Gateway cards before the fire-and-forget abort",
+  /const abortGateway = \(toolOutcome: string\) => \{[\s\S]*?settleOpenGatewayTools\(toolOutcome\);[\s\S]*?void gatewayDispatch\.abort\(\);[\s\S]*?const stopGateway = \(\) => abortGateway\("\[tool cancelled by user\]"\);[\s\S]*?const stopDetachedGateway = \(\) => abortGateway\("\[tool did not settle before the Gateway turn ended\]"\);/,
+  "explicit Stop and detached-client expiry must share Gateway abort mechanics but retain distinct user-facing tool outcomes",
+);
+assert.match(
+  chatRoute,
+  /let detachTimeoutFired = false;[\s\S]*?detachKillTimer = setTimeout\(\(\) => \{\s*detachTimeoutFired = true;\s*stopDetachedGateway\(\);[\s\S]*?\}, CHAT_DETACH_MAX_MS\);/,
+  "the detach timeout must record its causal flag before taking the non-user interruption path",
+);
+assert.match(
+  chatRoute,
+  /const gatewayOutcome = resolveOpenClawGatewayOutcome\(\s*gatewayResult,\s*runHandle\.stopRequested,\s*detachTimeoutFired,\s*\);[\s\S]*?const \{ cancelledByUser \} = gatewayOutcome;[\s\S]*?let \{ isError \} = gatewayOutcome;[\s\S]*?gatewayAssistantText = gatewayOutcome\.emptyText;[\s\S]*?pushProgress\([\s\S]*?gatewayOutcome\.progressMessage,/,
+  "Gateway persistence and progress derive cancellation solely from the stop-registry handle and distinguish timeout-fired from remote interruptions",
 );
 assert.match(
   chatRoute,

@@ -152,13 +152,52 @@ describe("streamFamiliarText", () => {
 
   it("surfaces an error frame", async () => {
     globalThis.fetch = (async () => sseResponse([
-      frame({ kind: "assistant_chunk", text: "partial" }),
+      frame({ kind: "assistant_chunk", text: "Useful text.<coven:atten" }),
       frame({ kind: "error", message: "boom" }),
     ])) as typeof fetch;
 
     const { text, error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
-    assert.equal(text, "partial");
+    assert.equal(text, "Useful text.");
     assert.equal(error, "boom");
+  });
+
+  it("removes a partial attention marker after a failed done frame", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: "Useful text.<coven:atten" }),
+      frame({ kind: "done", isError: true }),
+    ])) as typeof fetch;
+
+    const { text, error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
+    assert.equal(text, "Useful text.");
+    assert.equal(error, "the familiar reported an error");
+  });
+
+  it("returns terminally stripped text when an aborted reader rejects", async () => {
+    const abortController = new AbortController();
+    const encoder = new TextEncoder();
+    let pulls = 0;
+    globalThis.fetch = (async () => ({
+      ok: true,
+      body: new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulls += 1;
+          if (pulls === 1) {
+            controller.enqueue(encoder.encode(frame({ kind: "assistant_chunk", text: "Useful text.<coven:atten" })));
+            abortController.abort();
+            return;
+          }
+          controller.error(new Error("request aborted"));
+        },
+      }),
+    }) as unknown as Response) as typeof fetch;
+
+    const { text, error } = await streamFamiliarText({
+      familiarId: "nova",
+      prompt: "hi",
+      signal: abortController.signal,
+    });
+    assert.equal(text, "Useful text.");
+    assert.equal(error, "cancelled");
   });
 
   it("reports a non-ok HTTP status as an error", async () => {
