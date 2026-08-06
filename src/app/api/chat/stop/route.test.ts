@@ -104,3 +104,22 @@ test("returns stopped:false once a run has already settled", async () => {
     unregisterChatRun(handle);
   }
 });
+
+test("transport-settled error outcomes are returned without being rewritten completed", async () => {
+  const handle = registerChatRun(["settled-route-error-run"], () => {});
+  markChatRunTransportSettled(handle, "error");
+  try {
+    const response = await POST(new Request("http://127.0.0.1/api/chat/stop", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId: "settled-route-error-run" }),
+    }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(
+      await readJson(response),
+      { ok: true, stopped: false, state: "transport-settled", terminalOutcome: "error" },
+    );
+  } finally {
+    unregisterChatRun(handle);
+  }
+});

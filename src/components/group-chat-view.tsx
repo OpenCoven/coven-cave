@@ -438,6 +438,11 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     [],
   );
 
+  const scopeIsStillActive = useCallback(
+    (scopeId: number, signal: AbortSignal) => scopeId === runScopeRef.current && !signal.aborted,
+    [],
+  );
+
   const recordSession = useCallback(
     (groupId: string, familiarId: string, sessionId: string) => {
       // A broadcast streams every familiar concurrently, so several session/done
@@ -641,6 +646,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     return stopActiveGroupReplyRuns({
       entries,
       stopRun: stopServerRun,
+      abortLocalOnTransportSettled: true,
       isEntryActive: (entry) => activeRunsRef.current.get(entry.runId) === entry,
       onError: (result, entry) => {
         console.warn("[group-chat] stop failed", {
@@ -898,15 +904,15 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
         depth: number,
         lineage: Set<string>,
       ): Promise<void> => {
-        if (depth >= MAX_COVEN_DELEGATION_DEPTH || controller.signal.aborted) return;
+        if (depth >= MAX_COVEN_DELEGATION_DEPTH || !scopeIsStillActive(scopeId, controller.signal)) return;
         for (const source of sourceReplies) {
-          if (controller.signal.aborted || delegationCount >= MAX_COVEN_DELEGATIONS_PER_TURN) return;
+          if (!scopeIsStillActive(scopeId, controller.signal) || delegationCount >= MAX_COVEN_DELEGATIONS_PER_TURN) return;
           if (source.status !== "done") continue;
           const withoutNextPaths = extractNextPaths(source.text).visible;
           const { visible, delegations } = extractCovenDelegations(withoutNextPaths);
           const visibleTargets = new Set(parseMentions(visible, mentionable));
           for (const delegation of delegations) {
-            if (controller.signal.aborted || delegationCount >= MAX_COVEN_DELEGATIONS_PER_TURN) return;
+            if (!scopeIsStillActive(scopeId, controller.signal) || delegationCount >= MAX_COVEN_DELEGATIONS_PER_TURN) return;
             const targetId = delegation.targetFamiliarId;
             const dedupeKey = `${source.id}:${targetId}`;
             if (
@@ -943,6 +949,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
             };
             delivered.add(dedupeKey);
             delegationCount += 1;
+            if (!scopeIsStillActive(scopeId, controller.signal)) return;
             setTranscript((prev) => [...prev, delegatedTurn, delegatedReply]);
             const delegatedBy = byId.get(source.familiarId)?.display_name ?? source.familiarId;
             const child = await streamOne(
@@ -958,10 +965,12 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
               scopeId,
               controller.signal,
             );
+            if (!scopeIsStillActive(scopeId, controller.signal)) return;
             await runDelegations([child], depth + 1, new Set([...lineage, targetId]));
           }
         }
       };
+      if (!scopeIsStillActive(scopeId, controller.signal)) return;
       for (const source of settled) {
         await runDelegations([source], 0, new Set([source.familiarId]));
       }
@@ -973,6 +982,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
         abortRef.current = null;
         setBusy(false);
       }
+      if (!scopeIsStillActive(scopeId, controller.signal)) return;
       // The streaming bubbles are visual-only — announce the outcome for AT.
       const failed = settled.filter((r) => r.status === "error").length;
       const total = settled.length;
@@ -1087,6 +1097,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
         abortRef.current = null;
         setBusy(false);
       }
+      if (!scopeIsStillActive(scopeId, controller.signal)) return;
       const name = byId.get(fresh.familiarId)?.display_name ?? "Familiar";
       announce(
         settled.status === "error" ? `${name} failed again.` : `${name} replied.`,
@@ -1102,6 +1113,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       operatorDisplayName,
       projectLaunchMessage,
       projectLaunchReady,
+      scopeIsStillActive,
       selectedGroupProject,
     ],
   );

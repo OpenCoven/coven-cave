@@ -1037,11 +1037,11 @@ function openClawChatResponse(args: {
         const durationMs = Date.now() - startedAt;
         const cancelledByUser = runHandle.stopRequested || gatewayResult.state === "aborted";
         let isError = gatewayResult.state === "error";
-        markChatRunTransportSettled(runHandle, cancelledByUser ? "cancelled" : isError ? "error" : "completed");
         if (!gatewayAssistantText.trim()) {
           gatewayAssistantText = cancelledByUser
             ? "(cancelled)"
             : gatewayResult.message ?? "_The OpenClaw Gateway returned no text._";
+          if (!cancelledByUser) isError = true;
         }
         pushProgress(
           "openclaw-response",
@@ -1050,6 +1050,7 @@ function openClawChatResponse(args: {
           gatewayResult.message,
           durationMs,
         );
+        markChatRunTransportSettled(runHandle, cancelledByUser ? "cancelled" : isError ? "error" : "completed");
         push({ kind: "session", sessionId: conversationId });
         if (!gatewayAssistantTextEmitted) push({ kind: "assistant_chunk", text: gatewayAssistantText });
         try {
@@ -1383,7 +1384,6 @@ function openClawChatResponse(args: {
             );
           }
         }
-        markChatRunTransportSettled(runHandle, cancelledByUser ? "cancelled" : isError ? "error" : "completed");
         if (gatewaySessionId) {
           pushProgress(
             "openclaw-session",
@@ -1405,6 +1405,7 @@ function openClawChatResponse(args: {
             : `_The "openclaw" agent bridge returned no text._`;
           isError = true;
         }
+        markChatRunTransportSettled(runHandle, cancelledByUser ? "cancelled" : isError ? "error" : "completed");
 
         if (sessionId) push({ kind: "session", sessionId });
         push({ kind: "assistant_chunk", text: assistantText });
@@ -5110,9 +5111,7 @@ export async function POST(req: Request) {
         await runAttempt(buildArgs(null, retry.prompt), retry.prompt);
       }
       }
-
       const cancelledByUser = runHandle.stopRequested;
-      markChatRunTransportSettled(runHandle, cancelledByUser ? "cancelled" : result.is_error ? "error" : "completed");
       // Unknown direct-Codex protocol events surface as ONE safe diagnostic
       // per turn: a count plus up to three shape fingerprints. The payloads
       // themselves were never rendered, persisted, or logged.
@@ -5214,6 +5213,7 @@ export async function POST(req: Request) {
         result.is_error = true;
         push({ kind: "assistant_chunk", text: diagnostic });
       }
+      markChatRunTransportSettled(runHandle, cancelledByUser ? "cancelled" : result.is_error ? "error" : "completed");
 
       // Created-row leak sweep (bd cave-p08l): `coven run` registers the
       // daemon session row before launching the harness, and the row's id

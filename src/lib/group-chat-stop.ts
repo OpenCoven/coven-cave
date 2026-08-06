@@ -87,6 +87,7 @@ export async function stopActiveGroupReplyRuns(args: {
   stopRun: (request: GroupChatStopRequest) => Promise<Omit<GroupChatStopResult, "runId">>;
   onError?: (result: GroupChatStopResult, entry: ActiveGroupReplyRun) => void;
   isEntryActive?: (entry: ActiveGroupReplyRun) => boolean;
+  abortLocalOnTransportSettled?: boolean;
   retryDelayMs?: number;
   timeoutMs?: number;
   now?: () => number;
@@ -137,6 +138,7 @@ export async function stopActiveGroupReplyRuns(args: {
         if (result.state === "transport-settled") {
           acceptable = true;
           entry.terminalOutcome = result.terminalOutcome;
+          shouldAbortLocal = args.abortLocalOnTransportSettled ?? false;
           break;
         }
         if (!isEntryActive(entry)) {

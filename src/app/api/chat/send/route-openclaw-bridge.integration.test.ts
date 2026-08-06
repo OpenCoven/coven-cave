@@ -68,6 +68,9 @@ const shim = [
   "if (mode === 'attention-visible') {",
   "  process.stdout.write(JSON.stringify({ payloads: [{ text: '<reasoning>private notes</reasoning>\\nVisible question.\\n<coven:attention reason=\"decision\" />' }] })); process.exit(0);",
   "}",
+  "if (mode === 'empty-output') {",
+  "  process.stdout.write(JSON.stringify(local ? { payloads: [{ text: '   ' }], meta: { agentMeta: { sessionId: 'empty-output-session' } } } : { result: { payloads: [{ text: '   ' }], sessionId: 'empty-output-session' } })); process.exit(0);",
+  "}",
   "if (mode === 'truncated') { process.stdout.write('{\"payloads\":[{\"text\":\"truncated'); process.exit(1); }",
   "if (mode === 'cancel-empty') {",
   "  record({ cancelReady: true, mode });",
@@ -110,6 +113,40 @@ async function readSse(response) {
     .filter((line) => line.startsWith("data: "))
     .map((line) => JSON.parse(line.slice("data: ".length)));
   return events;
+}
+
+async function openSseStream(response) {
+  assert.equal(response.status, 200, await response.clone().text());
+  const reader = response.body?.getReader();
+  assert.ok(reader, "expected SSE body");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const events = [];
+
+  async function pump(predicate) {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return null;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const event = JSON.parse(line.slice("data: ".length));
+        events.push(event);
+        if (predicate(event, events)) return event;
+      }
+    }
+  }
+
+  return {
+    events,
+    readUntil: pump,
+    finish: async () => {
+      await pump(() => false);
+      return events;
+    },
+  };
 }
 
 async function calls() {
@@ -245,6 +282,34 @@ try {
   assert.equal(truncatedEvents.find((event) => event.kind === "assistant_chunk")?.text, "The OpenClaw bridge emitted an invalid response.");
   assert.ok(truncatedEvents.some((event) => event.id === "openclaw-protocol" && event.status === "error"));
   assert.equal(truncatedEvents.findLast((event) => event.kind === "done")?.isError, true, "truncated stdout remains a real invalid-response failure when not cancelled");
+
+  process.env.OPENCLAW_TEST_MODE = "empty-output";
+  process.env.OPENCLAW_EMBEDDED_LOCAL = "true";
+  await clearCalls();
+  const emptyOutputResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "wren",
+      prompt: "persist empty openclaw output as an error",
+      projectRoot: workspace,
+      sessionId: "empty-output-session",
+      runId: "openclaw-empty-output-run",
+    }),
+  }));
+  const emptyOutputStream = await openSseStream(emptyOutputResponse);
+  const emptyDiagnostic = await emptyOutputStream.readUntil(
+    (event) => event.kind === "assistant_chunk" && /returned no text/i.test(event.text ?? ""),
+  );
+  assert.ok(emptyDiagnostic, "empty OpenClaw output should emit the no-text diagnostic");
+  const emptyOutputEvents = await emptyOutputStream.finish();
+  assert.equal(emptyOutputEvents.findLast((event) => event.kind === "done")?.isError, true);
+  assert.equal(
+    (await loadConversation("empty-output-session"))?.turns.at(-1)?.isError,
+    true,
+    "the persisted OpenClaw no-text reply remains failed",
+  );
+  delete process.env.OPENCLAW_EMBEDDED_LOCAL;
 
   for (const mode of ["cancel-empty", "cancel-truncated", "cancel-full-output"]) {
     process.env.OPENCLAW_TEST_MODE = mode;

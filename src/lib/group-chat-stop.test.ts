@@ -234,6 +234,33 @@ test("stopActiveGroupReplyRuns preserves completed transports through slow persi
   ]);
 });
 
+test("stopActiveGroupReplyRuns can abort stale local continuation after transport settlement without relabeling completion", async () => {
+  const entry = makeEntry("run-completed-only", 14);
+
+  const results = await stopActiveGroupReplyRuns({
+    entries: [entry],
+    stopRun: async () => ({
+      ok: true,
+      stopped: false,
+      status: 200,
+      state: "transport-settled",
+      terminalOutcome: "completed",
+    }),
+    abortLocalOnTransportSettled: true,
+  });
+
+  assert.equal(entry.controller.signal.aborted, true, "retired-scope cleanup aborts local continuation once the server confirms transport settlement");
+  assert.equal(entry.terminalOutcome, "completed", "local abort keeps the retained completed outcome for abort cleanup");
+  assert.deepEqual(results, [{
+    runId: "run-completed-only",
+    ok: true,
+    stopped: false,
+    status: 200,
+    state: "transport-settled",
+    terminalOutcome: "completed",
+  }]);
+});
+
 test("active scope snapshots exclude completed runs and another coven's newer scope", () => {
   const registry = new Map<string, ActiveGroupReplyRun>();
   const completed = makeEntry("run-completed", 1);

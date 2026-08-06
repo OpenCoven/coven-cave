@@ -232,7 +232,7 @@ test("completed familiar delegation trailers route bounded, attributable follow-
   assert.match(view, /delivered\.has\(dedupeKey\)/, "deduplicates source-to-target deliveries");
   assert.match(view, /MAX_COVEN_DELEGATION_DEPTH/, "bounds delegation depth");
   assert.match(view, /MAX_COVEN_DELEGATIONS_PER_TURN/, "bounds total delegated sends per human turn");
-  assert.match(view, /controller\.signal\.aborted/, "Stop prevents queued delegated sends from starting");
+  assert.match(view, /scopeIsStillActive\(scopeId, controller\.signal\)/, "Stop prevents queued delegated sends from starting");
   assert.match(view, /delegatedByFamiliarId: source\.familiarId/, "records who delegated the task");
   assert.match(view, /delegationSourceReplyId: source\.id/, "records the stable source reply for persistence and idempotency");
   assert.match(view, /targetFamiliarIds: \[targetId\]/, "routes only to the explicitly delegated target");
@@ -364,6 +364,21 @@ test("Group chat stop preserves completed transports through slow persistence", 
     view,
     /terminalOutcome: null/,
     "active runs start without terminal evidence and gain it only from the stop/persistence path",
+  );
+  assert.match(
+    view,
+    /abortLocalOnTransportSettled: true/,
+    "retired-scope cleanup aborts stale local continuation even when the server already settled transport",
+  );
+  assert.match(
+    view,
+    /if \(!scopeIsStillActive\(scopeId, controller\.signal\)\) return;/,
+    "broadcast and retry continuations bail out once a retired scope is locally invalidated",
+  );
+  assert.match(
+    view,
+    /if \(!scopeIsStillActive\(scopeId, controller\.signal\)\) return;[\s\S]{0,120}const failed = settled\.filter/,
+    "retired-scope broadcasts skip completion announcements after local invalidation",
   );
 });
 

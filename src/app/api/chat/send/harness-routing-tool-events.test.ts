@@ -151,8 +151,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const gatewayResult = await gatewayDispatch\.done;[\s\S]*?markChatRunTransportSettled\(runHandle\);[\s\S]*?settleOpenGatewayTools\([\s\S]*?"\[tool did not settle before the Gateway turn ended\]"[\s\S]*?\);[\s\S]*?try \{\s*pushProgress\("save-transcript"/,
-  "every Gateway terminal state must freeze Stop, settle unfinished cards, and only then enter persistence",
+  /const gatewayResult = await gatewayDispatch\.done;[\s\S]*?settleOpenGatewayTools\([\s\S]*?"\[tool did not settle before the Gateway turn ended\]"[\s\S]*?\);[\s\S]*?if \(!gatewayAssistantText\.trim\(\)\) \{[\s\S]*?isError = true;[\s\S]*?\}[\s\S]*?markChatRunTransportSettled\(runHandle,\s*cancelledByUser \? "cancelled" : isError \? "error" : "completed"\);[\s\S]*?try \{\s*pushProgress\("save-transcript"/,
+  "every Gateway terminal state must settle unfinished cards, classify no-text failures, then freeze Stop before persistence",
 );
 assert.match(
   chatRoute,
