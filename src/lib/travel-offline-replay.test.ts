@@ -109,23 +109,6 @@ assert.match(
   /const harness = canonicalHarnessId\(args\.harness\)[\s\S]*path: "\/api\/v1\/sessions"[\s\S]*body:[\s\S]*harness,/,
   "travel replay canonicalizes runtime aliases before the hub launch boundary",
 );
-assert.match(
-  replay,
-  /body:\s*\{[\s\S]*launchMode: "nonInteractive"[\s\S]*args\.conversationId[\s\S]*conversation: \{ mode: "resume", id: args\.conversationId \}[\s\S]*conversationId: args\.conversationId/,
-  "replayed chats launch through the daemon's non-interactive contract and mirror a known native conversation id into daemon continuity metadata",
-);
-
-assert.match(
-  replay,
-  /if \(status === "idle"\) \{[\s\S]*if \(!daemonConversationId\)[\s\S]*persistResolvedReplayConversationId\(/,
-  "the daemon's real idle terminal status only syncs after its row exposes a valid native conversation id",
-);
-
-assert.match(
-  replay,
-  /persistQueuedOfflineConversation\(\{[\s\S]*predecessorConversationId: nativeConversationId/,
-  "replay metadata captures the native predecessor used for atomic continuity promotion",
-);
 
 assert.match(
   replay,
@@ -161,12 +144,6 @@ assert.match(
   replay,
   /const allowLocalRuntimeCwd = normalizeProjectRoot\(projectRoot\) === normalizeProjectRoot\(process\.cwd\(\)\)[\s\S]*await assertProjectRootAccess\(\{ familiarId \}, projectRoot, "chat", \{[\s\S]*allowUnregisteredRoot: allowLocalRuntimeCwd/,
   "chat replay should revalidate the current familiar project grant before spawning a hub session",
-);
-
-assert.doesNotMatch(
-  replay,
-  /travel-replay-output|replayAssistantStatus|collectReplayEventPages|\/api\/v1\/events|assistantText/,
-  "baseline travel replay must not decode or mirror daemon assistant output",
 );
 
 console.log("travel-offline-replay.test.ts: ok");

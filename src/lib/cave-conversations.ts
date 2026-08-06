@@ -94,16 +94,6 @@ export type ConversationModelIntent = {
   reason?: string;
 };
 
-export type ConversationReplaySession = {
-  sessionId: string;
-  conversationId?: string;
-  predecessorConversationId?: string;
-  title?: string;
-  status?: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type ConversationFile = {
   /** Cave-owned conversation identity — stable for the life of the chat. */
   sessionId: string;
@@ -140,8 +130,6 @@ export type ConversationFile = {
   createdAt: string;
   updatedAt: string;
   turns: ChatTurn[];
-  /** Ordered daemon replay history for offline-travel chat sends. */
-  replaySessions?: ConversationReplaySession[];
   /** Branching: id of the turn at the tip of the currently selected path. The
    *  rendered conversation is the chain from here to the root. */
   activeLeafId?: string;
@@ -179,7 +167,6 @@ export type ConversationSummary = {
   createdAt?: string;
   updatedAt: string;
   attentionEvidence?: ChatAttentionEvidence;
-  replaySessions?: ConversationReplaySession[];
 };
 
 export type ConversationListMetrics = {
@@ -195,7 +182,6 @@ export type ConversationListMetrics = {
 };
 
 const CONVERSATION_LIST_READ_CONCURRENCY = 8;
-const SAFE_DAEMON_CONVERSATION_ID_RE = /^[A-Za-z0-9._-]+$/;
 // The list route only needs this compact projection. Stat keys detect both
 // ordinary edits (mtime/size) and atomic replacements (ctime), while keeping
 // unchanged transcript bodies out of the four-second polling path.
@@ -206,13 +192,6 @@ type ConversationSummaryCacheEntry = {
   summary: ConversationSummary | null;
 };
 const conversationSummaryCache = new Map<string, ConversationSummaryCacheEntry>();
-type ConversationAliasIndex = {
-  aliasesBySessionId: Map<string, Set<string>>;
-  ownersByAlias: Map<string, Set<string>>;
-};
-let conversationAliasIndex: ConversationAliasIndex | null = null;
-let conversationAliasIndexBuild: Promise<ConversationAliasIndex> | null = null;
-let conversationAliasIndexEpoch = 0;
 let conversationListScanCount = 0;
 let conversationListMetrics: ConversationListMetrics = {
   scanCount: 0,
@@ -232,245 +211,6 @@ export function getConversationListMetrics(): ConversationListMetrics {
 
 export function clearConversationListMetadataCache(): void {
   conversationSummaryCache.clear();
-}
-
-export function clearConversationAliasIndexForTests(): void {
-  conversationAliasIndexEpoch += 1;
-  conversationAliasIndex = null;
-  conversationAliasIndexBuild = null;
-}
-
-export function normalizeDaemonConversationId(value: unknown): string | null {
-  const trimmed = typeof value === "string" ? value.trim() : "";
-  if (!trimmed || trimmed.length > 240 || !SAFE_DAEMON_CONVERSATION_ID_RE.test(trimmed)) return null;
-  return trimmed;
-}
-
-function normalizeReplayTitle(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > 240) return undefined;
-  return trimmed;
-}
-
-function normalizeReplayStatus(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > 80) return undefined;
-  return trimmed;
-}
-
-function normalizeConversationReplaySession(value: unknown): ConversationReplaySession | null {
-  if (!value || typeof value !== "object") return null;
-  const item = value as Partial<ConversationReplaySession>;
-  const sessionId =
-    typeof item.sessionId === "string" && isSafeConversationSessionId(item.sessionId)
-      ? item.sessionId
-      : null;
-  if (!sessionId) return null;
-  const createdAt = isCanonicalIsoInstant(item.createdAt) ? item.createdAt : null;
-  const updatedAt = isCanonicalIsoInstant(item.updatedAt) ? item.updatedAt : createdAt;
-  if (!createdAt || !updatedAt) return null;
-  const conversationId = normalizeDaemonConversationId(item.conversationId);
-  const predecessorConversationId = normalizeDaemonConversationId(item.predecessorConversationId);
-  const title = normalizeReplayTitle(item.title);
-  const status = normalizeReplayStatus(item.status);
-  return {
-    sessionId,
-    ...(conversationId ? { conversationId } : {}),
-    ...(predecessorConversationId ? { predecessorConversationId } : {}),
-    ...(title ? { title } : {}),
-    ...(status ? { status } : {}),
-    createdAt,
-    updatedAt,
-  };
-}
-
-export function conversationReplaySessions(
-  conv: Pick<ConversationFile | ConversationSummary, "replaySessions"> | null | undefined,
-): ConversationReplaySession[] {
-  const normalized = Array.isArray(conv?.replaySessions)
-    ? conv.replaySessions.flatMap((entry) => {
-        const replay = normalizeConversationReplaySession(entry);
-        return replay ? [replay] : [];
-      })
-    : [];
-  const deduped = new Map<string, ConversationReplaySession>();
-  for (const replay of normalized) {
-    const existing = deduped.get(replay.sessionId);
-    deduped.set(replay.sessionId, existing ? { ...existing, ...replay } : replay);
-  }
-  return [...deduped.values()].sort((a, b) => {
-    if (a.createdAt === b.createdAt) return a.updatedAt < b.updatedAt ? -1 : 1;
-    return a.createdAt < b.createdAt ? -1 : 1;
-  });
-}
-
-export function latestConversationReplaySession(
-  conv: Pick<ConversationFile | ConversationSummary, "replaySessions"> | null | undefined,
-): ConversationReplaySession | null {
-  const replays = conversationReplaySessions(conv);
-  return replays.at(-1) ?? null;
-}
-
-export function validatedConversationHarnessSessionId(
-  conv: Pick<ConversationFile | ConversationSummary, "sessionId" | "harnessSessionId" | "replaySessions"> | null | undefined,
-): string | null {
-  const harnessSessionId =
-    typeof conv?.harnessSessionId === "string" ? conv.harnessSessionId.trim() : "";
-  if (!harnessSessionId || !conv || harnessSessionId === conv.sessionId) return null;
-  if (!isSafeConversationSessionId(harnessSessionId)) return null;
-  if (conversationReplaySessions(conv).some((replay) => replay.sessionId === harnessSessionId)) {
-    return null;
-  }
-  return harnessSessionId;
-}
-
-export function latestValidatedReplayConversationId(
-  conv: Pick<ConversationFile | ConversationSummary, "replaySessions"> | null | undefined,
-): string | null {
-  const replays = conversationReplaySessions(conv);
-  for (let index = replays.length - 1; index >= 0; index -= 1) {
-    const replay = replays[index];
-    if (!replay.conversationId || replay.conversationId === replay.sessionId) continue;
-    return replay.conversationId;
-  }
-  return null;
-}
-
-export function linkedReplaySessionIds(
-  conv: Pick<ConversationFile | ConversationSummary, "replaySessions"> | null | undefined,
-): string[] {
-  return conversationReplaySessions(conv).map((replay) => replay.sessionId);
-}
-
-export function linkedReplayAliases(
-  conv: Pick<ConversationFile | ConversationSummary, "replaySessions"> | null | undefined,
-): string[] {
-  const aliases = new Set<string>();
-  for (const replay of conversationReplaySessions(conv)) {
-    aliases.add(replay.sessionId);
-    if (replay.conversationId) aliases.add(replay.conversationId);
-  }
-  return [...aliases];
-}
-
-type ConversationAliasSource = Pick<
-  ConversationFile | ConversationSummary,
-  "sessionId" | "harnessSessionId" | "replaySessions"
->;
-
-function conversationAliases(conv: ConversationAliasSource): Set<string> {
-  const aliases = new Set(linkedReplayAliases(conv));
-  const harnessSessionId =
-    typeof conv.harnessSessionId === "string" ? conv.harnessSessionId.trim() : "";
-  if (isSafeConversationSessionId(harnessSessionId)) aliases.add(harnessSessionId);
-  return aliases;
-}
-
-function removeConversationAliasIndexEntry(
-  index: ConversationAliasIndex,
-  sessionId: string,
-): void {
-  const previousAliases = index.aliasesBySessionId.get(sessionId);
-  if (!previousAliases) return;
-  index.aliasesBySessionId.delete(sessionId);
-  for (const alias of previousAliases) {
-    const owners = index.ownersByAlias.get(alias);
-    if (!owners) continue;
-    owners.delete(sessionId);
-    if (owners.size === 0) index.ownersByAlias.delete(alias);
-  }
-}
-
-function updateConversationAliasIndexEntry(
-  index: ConversationAliasIndex,
-  conv: ConversationAliasSource,
-): void {
-  removeConversationAliasIndexEntry(index, conv.sessionId);
-  const aliases = conversationAliases(conv);
-  index.aliasesBySessionId.set(conv.sessionId, aliases);
-  for (const alias of aliases) {
-    const owners = index.ownersByAlias.get(alias) ?? new Set<string>();
-    owners.add(conv.sessionId);
-    index.ownersByAlias.set(alias, owners);
-  }
-}
-
-function buildConversationAliasIndex(
-  summaries: ConversationSummary[],
-): ConversationAliasIndex {
-  const index: ConversationAliasIndex = {
-    aliasesBySessionId: new Map(),
-    ownersByAlias: new Map(),
-  };
-  for (const summary of summaries) updateConversationAliasIndexEntry(index, summary);
-  return index;
-}
-
-async function getConversationAliasIndex(): Promise<ConversationAliasIndex> {
-  if (conversationAliasIndex) return conversationAliasIndex;
-  const epoch = conversationAliasIndexEpoch;
-  if (!conversationAliasIndexBuild) {
-    const build = listConversations().then((summaries) => {
-      const index = buildConversationAliasIndex(summaries);
-      if (conversationAliasIndexEpoch === epoch) conversationAliasIndex = index;
-      return index;
-    });
-    conversationAliasIndexBuild = build;
-    const clearBuild = () => {
-      if (conversationAliasIndexBuild === build) conversationAliasIndexBuild = null;
-    };
-    void build.then(clearBuild, clearBuild);
-  }
-  const index = await conversationAliasIndexBuild;
-  if (conversationAliasIndexEpoch !== epoch) return getConversationAliasIndex();
-  return conversationAliasIndex ?? index;
-}
-
-async function updateBuiltConversationAliasIndex(
-  conv: ConversationAliasSource | null,
-  sessionId: string,
-): Promise<void> {
-  const epoch = conversationAliasIndexEpoch;
-  const pendingBuild = conversationAliasIndexBuild;
-  if (!conversationAliasIndex && pendingBuild) {
-    try {
-      await pendingBuild;
-    } catch {
-      return;
-    }
-  }
-  if (conversationAliasIndexEpoch !== epoch || !conversationAliasIndex) return;
-  if (conv) updateConversationAliasIndexEntry(conversationAliasIndex, conv);
-  else removeConversationAliasIndexEntry(conversationAliasIndex, sessionId);
-}
-
-export type ConversationSessionResolution =
-  | { sessionId: string; canonicalized: boolean }
-  | { sessionId: null; error: "ambiguous-replay-history" | "cyclic-replay-history" };
-
-function resolveReplayAliasOwner(
-  sessionId: string,
-  aliasOwners: ReadonlyMap<string, ReadonlySet<string>>,
-  visited: Set<string> = new Set(),
-): ConversationSessionResolution {
-  const owners = [...(aliasOwners.get(sessionId) ?? [])];
-  if (owners.length === 0) return { sessionId, canonicalized: false };
-  const distinctOwners = owners.filter((owner) => owner !== sessionId);
-  if (distinctOwners.length === 0) return { sessionId, canonicalized: false };
-  if (owners.length !== 1 || distinctOwners.length !== 1) {
-    return { sessionId: null, error: "ambiguous-replay-history" };
-  }
-  const owner = distinctOwners[0];
-  if (visited.has(sessionId) || visited.has(owner)) {
-    return { sessionId: null, error: "cyclic-replay-history" };
-  }
-  visited.add(sessionId);
-  const resolved = resolveReplayAliasOwner(owner, aliasOwners, visited);
-  return resolved.sessionId === null
-    ? resolved
-    : { sessionId: resolved.sessionId, canonicalized: resolved.sessionId !== sessionId };
 }
 
 function hasDuplicateTurnIds(turns: Pick<ChatTurn, "id">[]): boolean {
@@ -797,7 +537,6 @@ export async function saveConversation(conv: ConversationFile): Promise<void> {
   // torn half-JSON that loadConversation silently drops.
   await writeJsonAtomic(pathFor(conv.sessionId), conv);
   conversationSummaryCache.delete(pathFor(conv.sessionId));
-  await updateBuiltConversationAliasIndex(conv, conv.sessionId);
   // Bust the sessions-list SWR cache (cave-53yx): a new or updated
   // conversation must be visible to the event-driven list refresh that fires
   // right after the save, not 1-2 polls later.
@@ -846,14 +585,7 @@ export type QueuedOfflineConversationSeed = {
   origin?: SessionOrigin;
   modelIntent?: ConversationModelIntent;
   createdAt: string;
-  replaySessionId?: string;
-  conversationId?: string | null;
-  predecessorConversationId?: string | null;
-  /**
-   * A harness-native id obtained from that harness's own protocol. Daemon
-   * session responses are execution-row metadata and must never use this field.
-   */
-  validatedNativeConversationId?: string;
+  harnessSessionId?: string;
   userTurn: {
     id: string;
     text: string;
@@ -961,35 +693,7 @@ export async function persistQueuedOfflineConversation(
     if (!conv.title && seed.title) conv.title = seed.title;
     if (!conv.origin && seed.origin) conv.origin = seed.origin;
     if (!conv.modelIntent && seed.modelIntent) conv.modelIntent = seed.modelIntent;
-    if (seed.replaySessionId) {
-      const existingReplays = conversationReplaySessions(conv);
-      const existingReplay = existingReplays.find(
-        (entry) => entry.sessionId === seed.replaySessionId,
-      );
-      const replay = normalizeConversationReplaySession({
-        ...existingReplay,
-        sessionId: seed.replaySessionId,
-        conversationId: seed.conversationId ?? existingReplay?.conversationId,
-        predecessorConversationId:
-          existingReplay?.predecessorConversationId
-          ?? seed.predecessorConversationId
-          ?? undefined,
-        createdAt: existingReplay?.createdAt ?? seed.createdAt,
-        updatedAt: existingReplay?.updatedAt ?? seed.createdAt,
-      });
-      if (replay) {
-        conv.replaySessions = [
-          ...existingReplays.filter((entry) => entry.sessionId !== replay.sessionId),
-          replay,
-        ];
-      }
-    }
-    const validatedNativeConversationId = normalizeDaemonConversationId(
-      seed.validatedNativeConversationId,
-    );
-    if (validatedNativeConversationId) {
-      conv.harnessSessionId = validatedNativeConversationId;
-    }
+    if (seed.harnessSessionId) conv.harnessSessionId = seed.harnessSessionId;
 
     const existingTurn = conv.turns.find((turn) => turn.id === seed.userTurn.id);
     if (!existingTurn) {
@@ -1022,75 +726,6 @@ export async function persistQueuedOfflineConversation(
     }
     await saveConversation(conv);
   });
-}
-
-export async function persistResolvedReplayConversationId(args: {
-  sessionId: string;
-  replaySessionId: string;
-  conversationId: string;
-  status?: string | null;
-  updatedAt?: string | null;
-}): Promise<string | null> {
-  const conversationId = normalizeDaemonConversationId(args.conversationId);
-  if (!conversationId || conversationId === args.replaySessionId) return null;
-  return withConversationLock(args.sessionId, async () => {
-    const conv = await loadConversation(args.sessionId);
-    if (!conv) return null;
-    let changed = false;
-    const replayUpdatedAt = isCanonicalIsoInstant(args.updatedAt) ? args.updatedAt : null;
-    const replayStatus = normalizeReplayStatus(args.status);
-    const replaySessions = conversationReplaySessions(conv).map((replay) => {
-      if (replay.sessionId !== args.replaySessionId) return replay;
-      const next = {
-        ...replay,
-        conversationId,
-        ...(replayStatus ? { status: replayStatus } : {}),
-        ...(replayUpdatedAt ? { updatedAt: replayUpdatedAt } : {}),
-      };
-      if (
-        next.conversationId !== replay.conversationId
-        || next.status !== replay.status
-        || next.updatedAt !== replay.updatedAt
-      ) {
-        changed = true;
-      }
-      return next;
-    });
-    const targetReplay =
-      replaySessions.find((replay) => replay.sessionId === args.replaySessionId) ?? null;
-    if (changed) conv.replaySessions = replaySessions;
-    const latestReplaySessionId = latestConversationReplaySession({
-      replaySessions,
-    })?.sessionId ?? null;
-    const currentValidated = validatedConversationHarnessSessionId(conv);
-    const predecessorConversationId = targetReplay?.predecessorConversationId ?? null;
-    const shouldPromoteLatestReplay =
-      targetReplay !== null && latestReplaySessionId === args.replaySessionId;
-    const canCompareAndSwap =
-      currentValidated === null || currentValidated === predecessorConversationId;
-    if (
-      shouldPromoteLatestReplay
-      && canCompareAndSwap
-      && conv.harnessSessionId !== conversationId
-    ) {
-      conv.harnessSessionId = conversationId;
-      changed = true;
-    }
-    if (changed) await saveConversation(conv);
-    return validatedConversationHarnessSessionId(conv);
-  });
-}
-
-export async function resolveConversationSessionId(sessionId: string): Promise<ConversationSessionResolution> {
-  const aliases = await getConversationAliasIndex();
-  const replayResolved = resolveReplayAliasOwner(sessionId, aliases.ownersByAlias);
-  if (replayResolved.sessionId === null || replayResolved.canonicalized) return replayResolved;
-  return { sessionId, canonicalized: false };
-}
-
-export async function resolveCanonicalConversationSessionId(sessionId: string): Promise<string | null> {
-  const resolved = await resolveConversationSessionId(sessionId);
-  return resolved.sessionId;
 }
 
 /**
@@ -1130,7 +765,6 @@ export async function deleteConversation(sessionId: string): Promise<boolean> {
     const file = pathFor(sessionId);
     await unlink(file);
     conversationSummaryCache.delete(file);
-    await updateBuiltConversationAliasIndex(null, sessionId);
     invalidateSessionsListCache();
     return true;
   } catch {
@@ -1177,7 +811,6 @@ async function readConversationSummary(
     // truly-linear transcripts still project a synthetic path, while corrupt or
     // ambiguous branch state fails quiet instead of picking a branch implicitly.
     const signals = deriveConversationSignals(conv);
-    const replaySessions = conversationReplaySessions(conv);
     return {
       summary: {
         sessionId: conv.sessionId,
@@ -1195,7 +828,6 @@ async function readConversationSummary(
           : {}),
         ...(conv.pendingUserTurnId ? { pending: true } : {}),
         ...(signals.attentionEvidence ? { attentionEvidence: signals.attentionEvidence } : {}),
-        ...(replaySessions.length ? { replaySessions } : {}),
         createdAt: conv.createdAt,
         updatedAt: conv.updatedAt,
       },

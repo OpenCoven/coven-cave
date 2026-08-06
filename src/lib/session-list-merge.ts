@@ -4,11 +4,6 @@ import {
   sanitizeSessionTitle,
 } from "./cave-chat-titles.ts";
 import {
-  conversationReplaySessions,
-  latestConversationReplaySession,
-  type ConversationReplaySession,
-} from "./cave-conversations.ts";
-import {
   deriveChatAttention,
   NO_CHAT_ATTENTION,
   normalizeChatAttentionOperationId,
@@ -18,15 +13,12 @@ import {
 import { ACTIVE_SESSION_STATUSES } from "./chat-auto-archive.ts";
 import { initiatorFromSessionKey } from "./session-initiator.ts";
 import { inferOrigin } from "./session-origin.ts";
-import { isValidSessionId } from "./server/session-id.ts";
 import type { SessionInitiator, SessionOrigin, SessionRow } from "./types.ts";
 
 export type DaemonSessionRow = Omit<
   SessionRow,
   "attention" | "attentionAfterOperationId" | "attentionOperationLineage" | "familiarId" | "origin"
-> & {
-  conversation_id?: string | null;
-};
+>;
 
 export type LocalConversationSummary = {
   sessionId: string;
@@ -47,7 +39,6 @@ export type LocalConversationSummary = {
   /** PR URL the chat reported in an assistant reply (transcript snapshot). */
   prUrl?: string;
   attentionEvidence?: ChatAttentionEvidence;
-  replaySessions?: ConversationReplaySession[];
 };
 
 type MergeOptions = {
@@ -115,35 +106,6 @@ function isDaemonAuthoritativeStatus(status: string): boolean {
   return isDaemonAuthoritativeTerminalStatus(status) || isDaemonAuthoritativeActiveStatus(status);
 }
 
-function looksLikeProviderNativeSessionLink(value: string): boolean {
-  return /thread/i.test(value) || /^resp[-_]/i.test(value) || /^native[-_]/i.test(value);
-}
-
-function localConversationCurrentNativeId(conv: LocalConversationSummary): string | null {
-  const harnessSessionId = conv.harnessSessionId?.trim() ?? "";
-  if (!harnessSessionId || harnessSessionId === conv.sessionId) return null;
-  if (!isValidSessionId(harnessSessionId)) return null;
-  const replayConversationIds = conversationReplaySessions(conv)
-    .map((replay) => replay.conversationId)
-    .filter((value): value is string => Boolean(value));
-  if (
-    !looksLikeProviderNativeSessionLink(harnessSessionId)
-    && !replayConversationIds.includes(harnessSessionId)
-  ) {
-    return null;
-  }
-  return harnessSessionId;
-}
-
-function localConversationDaemonSessionId(conv: LocalConversationSummary): string | null {
-  const latestReplay = latestConversationReplaySession(conv);
-  if (latestReplay?.sessionId) return latestReplay.sessionId;
-  const harnessSessionId = conv.harnessSessionId?.trim() ?? "";
-  if (!harnessSessionId || harnessSessionId === conv.sessionId) return null;
-  if (!isValidSessionId(harnessSessionId)) return null;
-  return looksLikeProviderNativeSessionLink(harnessSessionId) ? null : harnessSessionId;
-}
-
 function localConversationToSession(
   conv: LocalConversationSummary,
   state: CaveState,
@@ -166,10 +128,8 @@ function localConversationToSession(
   // design (see resolveChatProjectSelection in chat-projects.ts).
   const cwd = conversationLocalCwd(conv.runtime);
   const projectRoot = (cwd ? projectRootForCwd?.(cwd) : null) ?? "";
-  const daemonSessionId = localConversationDaemonSessionId(conv);
   return {
     id: conv.sessionId,
-    ...(daemonSessionId ? { daemonSessionId } : {}),
     project_root: projectRoot,
     harness: conv.harness ?? "chat",
     ...(conv.model ? { model: conv.model } : {}),
@@ -239,165 +199,36 @@ export function mergeSessionRows({
   const localUpdatedById = new Map<string, string>();
   const localById = new Map<string, LocalConversationSummary>();
   const localByHarnessSessionId = new Map<string, LocalConversationSummary>();
-  const localByCurrentNativeId = new Map<string, LocalConversationSummary>();
-  const localByReplaySessionId = new Map<string, { local: LocalConversationSummary; replayIndex: number }>();
-  const localByReplayConversationId = new Map<string, { local: LocalConversationSummary; replayIndex: number }>();
-  const retainLocal = <T extends { local: LocalConversationSummary; replayIndex?: number }>(
-    mappings: Map<string, T>,
-    key: string,
-    candidate: T,
-  ) => {
-    const existing = mappings.get(key);
-    if (!existing) {
-      mappings.set(key, candidate);
-      return;
-    }
-    const candidateReplayIndex = candidate.replayIndex ?? -1;
-    const existingReplayIndex = existing.replayIndex ?? -1;
-    if (
-      candidateReplayIndex > existingReplayIndex
-      || (
-        candidateReplayIndex === existingReplayIndex
-        && (
-          candidate.local.updatedAt > existing.local.updatedAt
-          || (
-            candidate.local.updatedAt === existing.local.updatedAt
-            && candidate.local.sessionId > existing.local.sessionId
-          )
-        )
-      )
-    ) {
-      mappings.set(key, candidate);
-    }
-  };
   for (const conv of localConversations) {
     if (conv.updatedAt) {
       localUpdatedById.set(conv.sessionId, conv.updatedAt);
       localById.set(conv.sessionId, conv);
     }
     if (conv.harnessSessionId) {
-      const existing = localByHarnessSessionId.get(conv.harnessSessionId);
-      if (
-        !existing
-        || conv.updatedAt > existing.updatedAt
-        || (conv.updatedAt === existing.updatedAt && conv.sessionId > existing.sessionId)
-      ) {
-        localByHarnessSessionId.set(conv.harnessSessionId, conv);
-      }
-    }
-    const currentNativeId = localConversationCurrentNativeId(conv);
-    if (currentNativeId) {
-      const existing = localByCurrentNativeId.get(currentNativeId);
-      if (
-        !existing
-        || conv.updatedAt > existing.updatedAt
-        || (conv.updatedAt === existing.updatedAt && conv.sessionId > existing.sessionId)
-      ) {
-        localByCurrentNativeId.set(currentNativeId, conv);
-      }
-    }
-    for (const [replayIndex, replay] of conversationReplaySessions(conv).entries()) {
-      retainLocal(localByReplaySessionId, replay.sessionId, { local: conv, replayIndex });
-      if (replay.conversationId) {
-        retainLocal(localByReplayConversationId, replay.conversationId, { local: conv, replayIndex });
-      }
+      localByHarnessSessionId.set(conv.harnessSessionId, conv);
     }
   }
 
-  type DaemonMatchKind =
-    | "none"
-    | "direct"
-    | "replay-conversation"
-    | "replay-session"
-    | "native-conversation"
-    | "harness";
   type MappedDaemonSession = {
     session: DaemonSessionRow;
     local: LocalConversationSummary | undefined;
     stateSessionId: string;
-    matchKind: DaemonMatchKind;
-    replayIndex: number | null;
-  };
-  // Recorded replay matches carry durable chronology; conversation_id/native
-  // matches are only generic aliases and must not eclipse that history.
-  const matchRank: Record<DaemonMatchKind, number> = {
-    none: 0,
-    direct: 1,
-    "native-conversation": 2,
-    "replay-conversation": 3,
-    "replay-session": 3,
-    harness: 4,
-  };
-  const parseDaemonTime = (value: string): number | null => {
-    const parsed = Date.parse(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  };
-  const preferMappedDaemon = (
-    candidate: MappedDaemonSession,
-    existing: MappedDaemonSession,
-  ): boolean => {
-    const candidateActive = ACTIVE_SESSION_STATUSES.has(candidate.session.status.toLowerCase());
-    const existingActive = ACTIVE_SESSION_STATUSES.has(existing.session.status.toLowerCase());
-    if (candidateActive !== existingActive) return candidateActive;
-    const candidateCreatedAt = parseDaemonTime(candidate.session.created_at);
-    const existingCreatedAt = parseDaemonTime(existing.session.created_at);
-    if (candidateCreatedAt !== existingCreatedAt) {
-      if (candidateCreatedAt === null) return false;
-      if (existingCreatedAt === null) return true;
-      return candidateCreatedAt > existingCreatedAt;
-    }
-    const candidateUpdatedAt = parseDaemonTime(candidate.session.updated_at);
-    const existingUpdatedAt = parseDaemonTime(existing.session.updated_at);
-    if (candidateUpdatedAt !== existingUpdatedAt) {
-      if (candidateUpdatedAt === null) return false;
-      if (existingUpdatedAt === null) return true;
-      return candidateUpdatedAt > existingUpdatedAt;
-    }
-    const rankDelta = matchRank[candidate.matchKind] - matchRank[existing.matchKind];
-    if (rankDelta !== 0) return rankDelta > 0;
-    const replayDelta = (candidate.replayIndex ?? -1) - (existing.replayIndex ?? -1);
-    if (replayDelta !== 0) return replayDelta > 0;
-    return candidate.session.id > existing.session.id;
+    harnessMatched: boolean;
   };
   const daemonByMappedId = new Map<string, MappedDaemonSession>();
   for (const session of daemonSessions) {
     const directLocal = localById.get(session.id);
     const harnessLocal = directLocal ? undefined : localByHarnessSessionId.get(session.id);
-    const replaySessionMatch = directLocal || harnessLocal
-      ? undefined
-      : localByReplaySessionId.get(session.id);
-    const nativeConversationLocal = directLocal || harnessLocal || replaySessionMatch
-      ? undefined
-      : session.conversation_id && session.conversation_id !== session.id
-        ? localByCurrentNativeId.get(session.conversation_id)
-        : undefined;
-    const replayConversationMatch = directLocal || harnessLocal || replaySessionMatch || nativeConversationLocal
-      ? undefined
-      : session.conversation_id
-        ? localByReplayConversationId.get(session.conversation_id)
-        : undefined;
-    const replayMatch = replaySessionMatch ?? replayConversationMatch;
-    const local = directLocal ?? harnessLocal ?? nativeConversationLocal ?? replayMatch?.local;
+    const local = directLocal ?? harnessLocal;
     const stateSessionId = local?.sessionId ?? session.id;
     const candidate = {
       session,
       local,
       stateSessionId,
-      matchKind: directLocal
-        ? "direct"
-        : harnessLocal
-          ? "harness"
-          : nativeConversationLocal
-            ? "native-conversation"
-          : replaySessionMatch
-            ? "replay-session"
-            : replayConversationMatch
-              ? "replay-conversation"
-              : "none",
-      replayIndex: replayMatch?.replayIndex ?? null,
-    } satisfies MappedDaemonSession;
+      harnessMatched: Boolean(harnessLocal),
+    };
     const existing = daemonByMappedId.get(stateSessionId);
-    if (!existing || preferMappedDaemon(candidate, existing)) {
+    if (!existing || (candidate.harnessMatched && !existing.harnessMatched)) {
       daemonByMappedId.set(stateSessionId, candidate);
     }
   }
@@ -419,7 +250,6 @@ export function mergeSessionRows({
               });
         const row: SessionRow = {
           ...recovered,
-          daemonSessionId: session.id,
           status: session.status,
           exit_code: session.exit_code,
           archived_at,
@@ -449,13 +279,7 @@ export function mergeSessionRows({
       Number.isFinite(Date.parse(localUpdatedAt)) &&
       Number.isFinite(Date.parse(session.updated_at)) &&
       Date.parse(localUpdatedAt) > Date.parse(session.updated_at);
-    const mappedDaemonTerminalStatusIsAuthoritative =
-      Boolean(local)
-      && session.id !== stateSessionId
-      && !ACTIVE_SESSION_STATUSES.has(session.status.toLowerCase());
-    const daemonStatusIsAuthoritative =
-      isDaemonAuthoritativeStatus(session.status)
-      || mappedDaemonTerminalStatusIsAuthoritative;
+    const daemonStatusIsAuthoritative = isDaemonAuthoritativeStatus(session.status);
     const mergedStatus =
       localIsNewer && !daemonStatusIsAuthoritative && local?.status
         ? local.status
@@ -471,7 +295,6 @@ export function mergeSessionRows({
           });
     const row: SessionRow = {
       ...session,
-      daemonSessionId: session.id,
       ...(local && local.sessionId !== session.id ? { id: local.sessionId } : {}),
       ...(localUpdatedAt ? { updated_at: localUpdatedAt } : {}),
       // Cave conversations record the concrete runtime selected for the chat
@@ -490,7 +313,7 @@ export function mergeSessionRows({
       title:
         titleOverride ??
         sanitizeSessionTitle(session.title) ??
-        defaultChatTitleForSession(stateSessionId),
+        defaultChatTitleForSession(session.id),
       archived_at,
       attention,
       attentionAfterOperationId: attentionAfterOperationId(local?.attentionEvidence),
@@ -526,8 +349,5 @@ export function mergeSessionRows({
     rows.push(row);
   }
 
-  return rows.sort((a, b) => {
-    if (a.updated_at !== b.updated_at) return a.updated_at < b.updated_at ? 1 : -1;
-    return a.id.localeCompare(b.id);
-  });
+  return rows.sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
 }
