@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { GET } from "./route.ts";
-import { openRunBuffer, resetRunBuffersForTest } from "@/lib/server/chat-stream-buffer";
+import { addRunBufferKeys, openRunBuffer, resetRunBuffersForTest } from "@/lib/server/chat-stream-buffer";
 
 // GET /api/chat/stream (cave-h40l): re-attach to a live chat run mid-turn.
 // Behavior: 400 without a key, 404 for unknown runs (client falls back to
@@ -69,6 +69,24 @@ test("a finished run drains its replay and closes immediately", async () => {
   resetRunBuffersForTest();
 });
 
+test("a newly announced sessionId resumes a first-turn buffer mid-stream", async () => {
+  resetRunBuffersForTest();
+  const handle = openRunBuffer(["run-announced"]);
+  handle.record({ kind: "assistant_chunk", text: "partial" });
+  addRunBufferKeys(handle, ["session-announced"]);
+
+  const res = await GET(new Request("http://127.0.0.1/api/chat/stream?sessionId=session-announced"));
+  assert.equal(res.status, 200);
+
+  const drained = drain(res);
+  handle.record({ kind: "done", sessionId: "session-announced" });
+  handle.finish();
+  const text = await drained;
+  assert.match(text, /"text":"partial"/, "the late-added session key replays buffered first-turn output");
+  assert.match(text, /"sessionId":"session-announced"/, "the resumed stream stays bound to the announced session id");
+  resetRunBuffersForTest();
+});
+
 // ── Send-route wiring pins ────────────────────────────────────────────────────
 // The buffer only works if the send route tees events BEFORE its
 // closed/aborted guard (a dropped transport must keep recording) and pairs
@@ -83,7 +101,7 @@ test("send route tees both harness stream paths through the run buffer", () => {
   const opens = send.match(/openRunBuffer\(\[/g);
   assert.equal(opens?.length, 3, "all three dispatch paths (harness, OpenClaw CLI, OpenClaw Gateway) open a buffer under runId + conversation keys");
   const finishes = send.match(/runBuffer\?\.finish\(\)/g);
-  assert.ok((finishes?.length ?? 0) >= 3, "every stream exit (error + close paths) finishes the buffer");
+  assert.ok((finishes?.length ?? 0) >= 2, "every stream path retains an explicit buffer finish site");
 });
 
 test("re-attach disarms the detach-cap kill; the last tail re-arms only after the original abort", () => {

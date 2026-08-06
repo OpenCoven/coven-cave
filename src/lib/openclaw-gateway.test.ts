@@ -960,6 +960,62 @@ if (abortRejectingDispatch.kind === "accepted") {
 assert.deepEqual(abortEvents, [{ kind: "aborted", message: "Cancelled by user" }]);
 assert.ok(abortDispatchStops > 0, "an abort transport rejection still stops the dispatch client");
 
+let transportAbortClientCount = 0;
+let transportAbortDispatchStops = 0;
+const transportAbortEvents = [];
+const transportAbortDispatch = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "disconnect reaping",
+  idempotencyKey: "cave-request-transport-abort",
+  env: {
+    OPENCLAW_GATEWAY_DISPATCH: "1",
+    OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789",
+  },
+  onEvent: (event) => transportAbortEvents.push(event),
+  clientFactory: (options) => {
+    const clientIndex = transportAbortClientCount++;
+    return {
+      start() {
+        queueMicrotask(() => options.onHelloOk?.(helloOk()));
+      },
+      stop() {
+        if (clientIndex === 1) transportAbortDispatchStops += 1;
+      },
+      async request(method, _params, requestOptions) {
+        if (method === "sessions.messages.subscribe") return { subscribed: true };
+        if (method === "chat.send") {
+          requestOptions?.onSent?.();
+          return { runId: expected.runId };
+        }
+        if (method === "chat.abort") throw new Error("disconnect reaping must not call chat.abort");
+        return {};
+      },
+    };
+  },
+});
+
+assert.equal(transportAbortDispatch.kind, "accepted");
+if (transportAbortDispatch.kind === "accepted") {
+  await assert.doesNotReject(
+    () => transportAbortDispatch.abortTransport(),
+    "transport abort remains fire-and-forget after the turn has settled locally",
+  );
+  assert.deepEqual(
+    await transportAbortDispatch.done,
+    { state: "error", message: "Gateway client disconnected before the turn completed" },
+  );
+}
+assert.deepEqual(
+  transportAbortEvents,
+  [{ kind: "error", message: "Gateway client disconnected before the turn completed" }],
+  "disconnect reaping must surface a transport failure rather than a user-cancelled abort",
+);
+assert.ok(
+  transportAbortDispatchStops > 0,
+  "transport abort stops the dispatch client without sending a user abort request",
+);
+
 for (const [driftId, driftHello] of [
   ["version", {
     ...helloOk(),

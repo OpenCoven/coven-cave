@@ -178,8 +178,8 @@ assert.doesNotMatch(
 // the sessions-list liveness probe (hasActiveChatRun) sees the run.
 assert.match(
   chatRoute,
-  /const announceSession = \(id: string\) => \{[\s\S]{0,1200}addChatRunKeys\(runHandle, \[announcedId\]\)/,
-  "announceSession late-keys the run registry with the announced conversation id",
+  /const announceSession = \(id: string\) => \{[\s\S]{0,1200}addChatRunKeys\(runHandle, \[announcedId\]\);[\s\S]{0,200}if \(runBuffer\) addRunBufferKeys\(runBuffer, \[announcedId\]\);/,
+  "announceSession late-keys both the run registry and live stream buffer with the announced conversation id",
 );
 
 // ── autoNameSessionFromFirstExchange uses chatSummaryTitle (Gap 1 contract) ──

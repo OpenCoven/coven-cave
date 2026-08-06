@@ -49,6 +49,7 @@ const RING_MAX_BYTES = 512 * 1024;
 const FINISHED_RETENTION_MS = 2 * 60_000;
 
 const buffers = new Map<string, RunBuffer>();
+const handleBuffers = new WeakMap<RunBufferHandle, RunBuffer>();
 
 export type RunBufferHandle = {
   /** Records the event and returns its seq — the SSE `id:` the original
@@ -88,7 +89,7 @@ export function openRunBuffer(
     buffer.keys.push(key);
   }
 
-  return {
+  const handle: RunBufferHandle = {
     record: (event: StreamEvent) => {
       if (buffer.done) return buffer.nextSeq - 1;
       const entry: BufferedStreamEvent = {
@@ -120,6 +121,26 @@ export function openRunBuffer(
       buffer.reapTimer.unref?.();
     },
   };
+  handleBuffers.set(handle, buffer);
+  return handle;
+}
+
+/**
+ * Late-key a live buffer once a first-turn session id is announced. Never
+ * steals a key already owned by another run, so a successor buffer cannot be
+ * retroactively attached by a stale first turn finishing late.
+ */
+export function addRunBufferKeys(
+  handle: RunBufferHandle,
+  keys: Array<string | null | undefined>,
+): void {
+  const buffer = handleBuffers.get(handle);
+  if (!buffer || buffer.done) return;
+  for (const key of keys) {
+    if (!key || buffer.keys.includes(key) || buffers.has(key)) continue;
+    buffers.set(key, buffer);
+    buffer.keys.push(key);
+  }
 }
 
 export type RunStreamSubscription = {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  addRunBufferKeys,
   hasRunBuffer,
   getRunBufferStatus,
   openRunBuffer,
@@ -127,6 +128,47 @@ test("a follow-up preserves the predecessor reap timer", (t) => {
     hasRunBuffer("conv-shared"),
     true,
     "the predecessor timer never deletes the replacement conversation mapping",
+  );
+  resetRunBuffersForTest();
+});
+
+test("late-added session keys resume the same run without stealing a successor key", () => {
+  resetRunBuffersForTest();
+  const first = openRunBuffer(["run-first"]);
+  first.record({ kind: "assistant_chunk", text: "first-turn" });
+  addRunBufferKeys(first, ["conv-first"]);
+  const resumed = subscribeRunStream("conv-first", 0, () => {}, () => {});
+  assert.equal(
+    JSON.parse(resumed!.replay[0].json).text,
+    "first-turn",
+    "a newly announced session id resolves the already-open first-turn buffer",
+  );
+
+  const successor = openRunBuffer(["run-second", "conv-shared"]);
+  successor.record({ kind: "assistant_chunk", text: "successor-turn" });
+  const predecessor = openRunBuffer(["run-third"]);
+  predecessor.record({ kind: "assistant_chunk", text: "predecessor-turn" });
+  addRunBufferKeys(predecessor, ["conv-shared"]);
+
+  const stillSuccessor = subscribeRunStream("conv-shared", 0, () => {}, () => {});
+  assert.equal(
+    JSON.parse(stillSuccessor!.replay[0].json).text,
+    "successor-turn",
+    "late-keying must not steal a conversation id already owned by a successor run",
+  );
+  const byRunId = subscribeRunStream("run-third", 0, () => {}, () => {});
+  assert.equal(
+    JSON.parse(byRunId!.replay[0].json).text,
+    "predecessor-turn",
+    "the older run stays reachable under its exact run id",
+  );
+
+  predecessor.finish();
+  addRunBufferKeys(predecessor, ["conv-finished"]);
+  assert.equal(
+    hasRunBuffer("conv-finished"),
+    false,
+    "finished buffers cannot grow new aliases during late cleanup",
   );
   resetRunBuffersForTest();
 });

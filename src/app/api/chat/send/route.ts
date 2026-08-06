@@ -154,7 +154,7 @@ import {
   addChatRunKeys,
   type ChatRunHandle,
 } from "@/lib/server/chat-stop-registry";
-import { openRunBuffer, type RunBufferHandle } from "@/lib/server/chat-stream-buffer";
+import { addRunBufferKeys, openRunBuffer, type RunBufferHandle } from "@/lib/server/chat-stream-buffer";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 import { probeCopilotCapability } from "@/lib/server/copilot-capability-probe";
@@ -1028,11 +1028,15 @@ function openClawChatResponse(args: {
           settleOpenGatewayTools("[tool cancelled by user]");
           void gatewayDispatch.abort();
         };
+        const abortGatewayTransport = () => {
+          settleOpenGatewayTools("[tool connection lost before the Gateway turn ended]");
+          void gatewayDispatch.abortTransport();
+        };
         const runHandle = registerChatRun([args.body.runId, conversationId], stopGateway);
         let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
         const armDetachKill = () => {
           if (runHandle.stopRequested || detachKillTimer != null) return;
-          detachKillTimer = setTimeout(stopGateway, CHAT_DETACH_MAX_MS);
+          detachKillTimer = setTimeout(abortGatewayTransport, CHAT_DETACH_MAX_MS);
         };
         runBuffer = openRunBuffer([args.body.runId, conversationId], {
           attach: () => {
@@ -1057,8 +1061,10 @@ function openClawChatResponse(args: {
         args.req.signal.removeEventListener("abort", onAbort);
         if (detachKillTimer != null) clearTimeout(detachKillTimer);
         const durationMs = Date.now() - startedAt;
-        const cancelledByUser = runHandle.stopRequested || gatewayResult.state === "aborted";
-        let isError = gatewayResult.state === "error";
+        const cancelledByUser = runHandle.stopRequested;
+        const transportAborted = gatewayResult.state === "aborted";
+        let isError = gatewayResult.state === "error" || transportAborted;
+        if (cancelledByUser) isError = false;
         if (!gatewayAssistantText.trim()) {
           gatewayAssistantText = cancelledByUser
             ? "(cancelled)"
@@ -1072,7 +1078,12 @@ function openClawChatResponse(args: {
           gatewayResult.message,
           durationMs,
         );
-        markChatRunTransportSettled(runHandle, cancelledByUser ? "cancelled" : isError ? "error" : "completed");
+        const terminalOutcome = cancelledByUser
+          ? "cancelled"
+          : isError
+            ? "error"
+            : "completed";
+        markChatRunTransportSettled(runHandle, terminalOutcome);
         push({ kind: "session", sessionId: conversationId });
         if (!gatewayAssistantTextEmitted) push({ kind: "assistant_chunk", text: gatewayAssistantText });
         let terminalResponseMetadata = responseMetadata;
@@ -3316,6 +3327,7 @@ export async function POST(req: Request) {
         // conversation id. runHandle is declared later in this scope but is
         // always initialized before the stream handlers that call announce.
         if (runHandle) addChatRunKeys(runHandle, [announcedId]);
+        if (runBuffer) addRunBufferKeys(runBuffer, [announcedId]);
         // First-turn visibility (cave-0g2x): persist a stub conversation with
         // the pending user turn as soon as the id exists, so the sessions
         // list can surface this chat during its entire first turn (and after

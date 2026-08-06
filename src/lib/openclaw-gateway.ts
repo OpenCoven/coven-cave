@@ -69,6 +69,7 @@ export type OpenClawGatewayDispatch =
       runId: string;
       done: Promise<{ state: "final" | "aborted" | "error"; message?: string }>;
       abort: () => Promise<void>;
+      abortTransport: () => Promise<void>;
       close: () => void;
     };
 
@@ -874,6 +875,13 @@ export async function dispatchOpenClawGatewayTurn(args: {
       } finally {
         client.stop();
       }
+    },
+    abortTransport: async () => {
+      if (settled) return;
+      const message = "Gateway client disconnected before the turn completed";
+      settle("error", message);
+      args.onEvent({ kind: "error", message });
+      client.stop();
     },
     close: () => client.stop(),
   };
