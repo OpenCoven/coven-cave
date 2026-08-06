@@ -526,11 +526,14 @@
   color: var(--text-primary);
   border-color: var(--border-strong);
 }
-/* The caret points at what the press will do: up = fold away, down = reveal. */
+/* The caret points at what the press will do: up = fold away, down = reveal.
+   Driven off the button's aria-expanded rather than a data attribute on the
+   glyph — Icon forwards only aria-* and role, so anything else is dropped and
+   the caret would sit frozen in one direction while the label changed. */
 .cave-chat-fold__caret {
   transition: transform var(--duration-fast) var(--ease-standard);
 }
-.cave-chat-fold__caret:not([data-open="true"]) {
+.cave-chat-fold__pill[aria-expanded="false"] .cave-chat-fold__caret {
   transform: rotate(180deg);
 }
 @media (prefers-reduced-motion: reduce) {

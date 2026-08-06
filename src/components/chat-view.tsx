@@ -8219,7 +8219,7 @@ const TranscriptRows = memo(function TranscriptRows({
     : historyExpanded || groupedTurns.length <= TRANSCRIPT_RENDER_CAP
       ? groupedTurns
       : groupedTurns.slice(-TRANSCRIPT_RENDER_CAP);
-  const rows = renderGroups.map((g) => {
+  const rows = renderGroups.map((g, groupIndex) => {
     if (g.kind === "single") {
       const t = g.turn;
       const i = turnIndexMap.get(t.id) ?? -1;
@@ -8228,7 +8228,12 @@ const TranscriptRows = memo(function TranscriptRows({
       // named rule across the column. The transcript already revealed a
       // timestamp here; the divider says what the timestamp only implies —
       // that the turns above and below are separate sittings.
-      const gapLabel = chatTurnGapLabel(prev?.createdAt, t.createdAt);
+      // …but never on the FIRST rendered row. Its `prev` is a turn the reader
+      // cannot see — folded away, or below the render cap — so the rule would
+      // measure a pause against nothing, and it lands one line under the fold
+      // pill, which is already the boundary there (design language §8: one
+      // hairline per boundary).
+      const gapLabel = groupIndex === 0 ? null : chatTurnGapLabel(prev?.createdAt, t.createdAt);
       const showTimestamp = (() => {
         if (!t.createdAt) return false;
         if (!prev?.createdAt) return true;
@@ -8355,13 +8360,10 @@ const TranscriptRows = memo(function TranscriptRows({
         aria-label={chatFoldAriaLabel(fold.hiddenTurns, foldOpen)}
         onClick={onToggleFold}
       >
-        <Icon
-          name="ph:caret-up"
-          width={9}
-          className="cave-chat-fold__caret"
-          data-open={foldOpen ? "true" : undefined}
-          aria-hidden
-        />
+        {/* The caret's direction is driven off the button's own aria-expanded,
+            not a data-prop on the Icon: Icon only forwards aria-* / role, so a
+            data attribute here is silently dropped and the caret never turns. */}
+        <Icon name="ph:caret-up" width={9} className="cave-chat-fold__caret" aria-hidden />
         {chatFoldLabel(fold.hiddenTurns, foldOpen)}
       </button>
       <span aria-hidden className="cave-chat-fold__rule" />
