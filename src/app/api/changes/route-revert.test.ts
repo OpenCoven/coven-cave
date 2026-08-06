@@ -664,10 +664,19 @@ try {
   const legacyDelete = await POST(
     checkpointRequest("delete-checkpoint", projectRoot, legacyName),
   );
-  assert.equal(legacyDelete.status, 200, await legacyDelete.clone().text());
+  assert.equal(
+    legacyDelete.status,
+    403,
+    "a metadata-free repository checkpoint cannot be deleted through a nested project",
+  );
+  await access(legacyCheckpoint.checkpointPath);
+  const repoLegacyDelete = await POST(
+    checkpointRequest("delete-checkpoint", repoRoot, legacyName),
+  );
+  assert.equal(repoLegacyDelete.status, 200, await repoLegacyDelete.clone().text());
   await assert.rejects(
     () => access(legacyCheckpoint.checkpointPath),
-    "authorized legacy checkpoints without metadata remain deletable",
+    "the enclosing repository can still delete its legacy checkpoint",
   );
 
   const legacyRaceName = "2026-08-05T17-20-00-005Z.patch";
@@ -681,7 +690,7 @@ try {
       }
       rename(source, destination);
     },
-    () => POST(checkpointRequest("delete-checkpoint", projectRoot, legacyRaceName)),
+    () => POST(checkpointRequest("delete-checkpoint", repoRoot, legacyRaceName)),
   );
   assert.equal(
     legacyRaceDelete.status,

@@ -2,11 +2,45 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  nativeGitRelativePathsEqual,
   nativeProjectPathsEqual,
   resolveNativeRepoRelativePathWithinProject,
   resolveNativePathWithinRoot,
   resolveNativeProjectPathForGitRoot,
 } from "./native-project-path.ts";
+
+test("Git-relative identity follows host casing and separator semantics", () => {
+  assert.equal(
+    nativeGitRelativePathsEqual(
+      "packages/APP/src/File.ts",
+      "Packages\\app\\SRC\\file.ts",
+      "win32",
+    ),
+    true,
+  );
+  assert.equal(
+    nativeGitRelativePathsEqual(
+      "packages/APP/src/File.ts",
+      "Packages/app/src/File.ts",
+      "linux",
+    ),
+    false,
+  );
+  assert.equal(
+    nativeGitRelativePathsEqual("../packages/app", "packages/app", "win32"),
+    false,
+    "traversal is never normalized into an authorized Git-relative identity",
+  );
+  assert.equal(
+    nativeGitRelativePathsEqual(
+      "packages/APP/src/File.ts",
+      "PACKAGES\\app\\src\\file.ts",
+      "win32",
+    ),
+    true,
+    "UNC repositories use the same Windows-relative identity semantics",
+  );
+});
 
 test("POSIX authorization preserves backslashes and surrounding whitespace exactly", () => {
   assert.equal(
@@ -111,6 +145,20 @@ test("Windows authorization normalizes separators and case with segment boundari
     ),
     null,
   );
+  assert.deepEqual(
+    resolveNativeRepoRelativePathWithinProject(
+      "\\\\Server\\Share\\Repo\\Packages\\App",
+      "\\\\server\\share\\repo",
+      "packages/APP/src/File.ts",
+      "win32",
+    ),
+    {
+      absolutePath: "\\\\Server\\Share\\Repo\\Packages\\App\\src\\File.ts",
+      projectRelativePath: "src\\File.ts",
+      gitRelativePath: "packages/APP/src/File.ts",
+    },
+    "UNC containment preserves the status path's spelling",
+  );
 });
 
 test("repo-relative project eligibility rejects parent and sibling boundaries cross-platform", () => {
@@ -118,14 +166,15 @@ test("repo-relative project eligibility rejects parent and sibling boundaries cr
     resolveNativeRepoRelativePathWithinProject(
       "C:\\Repo\\Packages\\App",
       "c:\\repo",
-      "packages/app/src/File.ts",
+      "packages/APP/src/File.ts",
       "win32",
     ),
     {
       absolutePath: "C:\\Repo\\Packages\\App\\src\\File.ts",
       projectRelativePath: "src\\File.ts",
-      gitRelativePath: "Packages/App/src/File.ts",
+      gitRelativePath: "packages/APP/src/File.ts",
     },
+    "containment uses Windows identity while Git comparisons keep status spelling",
   );
   for (const outside of [
     "src/parent.ts",
