@@ -1020,6 +1020,7 @@ export const SUITES = {
     "src/lib/wiki-link-parser.test.ts",
     "src/lib/wiki-link-resolve.test.ts",
     "src/lib/grimoire-graph.test.ts",
+    "src/lib/grimoire-graph-scope.test.ts",
     "src/lib/grimoire-force.test.ts",
     "src/lib/recent-colors.test.ts",
 	    "src/components/ui/color-picker.test.ts",

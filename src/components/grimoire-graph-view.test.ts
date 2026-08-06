@@ -99,4 +99,24 @@ assert.match(
   "the graph status pill reads at --text-xs, not 10px",
 );
 
+// ── Familiar scoping (cave-relations-scope) ──────────────────────────────────
+// The graph arrives ALREADY scoped by grimoire-view; this component's job is
+// to make the narrowing legible instead of silently showing less.
+assert.match(view, /scopeLabel\?: string \| null;/, "the view accepts the active familiar-scope label");
+assert.match(
+  view,
+  /scopeLabel \? `No relations for \$\{scopeLabel\}` : "Nothing to graph yet"/,
+  "an empty graph blames the scope, not the corpus, when a familiar is selected",
+);
+assert.match(
+  view,
+  /Memory is scoped to \{scopeLabel\}\. Stitches and journal days stay coven-wide\./,
+  "the filter card states what the scope does and does not narrow",
+);
+assert.match(
+  view,
+  /\{meta\.memory\.total\} memory files\s*\n\s*\{scopeLabel \? " across the coven" : ""\}/,
+  "the truncation count stays honest under a scope — those totals are coven-wide",
+);
+
 console.log("grimoire-graph-view.test.ts: ok");
