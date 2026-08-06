@@ -40,6 +40,17 @@
         ],
         "matcher": ""
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/worktree-session-exit-retirement.mjs\"",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
     ]
   },
   "permissions": {
