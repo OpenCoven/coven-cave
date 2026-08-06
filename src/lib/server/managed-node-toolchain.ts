@@ -15,6 +15,8 @@ import { extractSafeTarGz, extractSafeZip } from "./managed-node-archive.ts";
 
 const execFileAsync = promisify(execFile);
 const INSTALL_TIMEOUT_MS = 5 * 60_000;
+const NODE_PROBE_TIMEOUT_MS = 1_500;
+const NPM_PROBE_TIMEOUT_MS = 10_000;
 
 export type ManagedNodePaths = {
   platform: ManagedNodePlatform;
@@ -34,6 +36,12 @@ export type ManagedNodeProbe =
   | { status: "missing"; paths: ManagedNodePaths }
   | { status: "incompatible"; version: string; paths: ManagedNodePaths }
   | { status: "unusable"; detail: string; paths: ManagedNodePaths };
+
+type ManagedNodeProbeExec = (
+  file: string,
+  args: readonly string[],
+  options: { env: NodeJS.ProcessEnv; timeout: number },
+) => Promise<{ stdout: string; stderr: string }>;
 
 function supportedPlatform(platform: NodeJS.Platform): platform is ManagedNodePlatform {
   return platform === "win32" || platform === "darwin" || platform === "linux";
@@ -119,7 +127,7 @@ export async function probeManagedNodeToolchain(
     architecture?: string;
     env?: NodeJS.ProcessEnv;
     home?: string;
-    exec?: typeof execFileAsync;
+    exec?: ManagedNodeProbeExec;
   } = {},
 ): Promise<ManagedNodeProbe> {
   const paths = managedNodePaths(options.platform, options.architecture, options.env, options.home);
@@ -129,8 +137,8 @@ export async function probeManagedNodeToolchain(
   const run = options.exec ?? execFileAsync;
   try {
     const [{ stdout }, npm] = await Promise.all([
-      run(paths.node, ["--version"], { env, timeout: 1500 }),
-      run(paths.node, [paths.npmCli, "--version"], { env, timeout: 1500 }),
+      run(paths.node, ["--version"], { env, timeout: NODE_PROBE_TIMEOUT_MS }),
+      run(paths.node, [paths.npmCli, "--version"], { env, timeout: NPM_PROBE_TIMEOUT_MS }),
     ]);
     if (!npm.stdout.trim()) return { status: "unusable", detail: "npm did not report a version", paths };
     const version = stdout.trim().replace(/^v/, "");

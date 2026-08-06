@@ -31,6 +31,10 @@ export const SUITES = {
     "src/lib/tool-edit-stat.test.ts",
     "src/lib/split-snap.test.ts",
     "src/lib/chat-split.test.ts",
+    "src/lib/chat-creation-refresh.test.ts",
+    "src/lib/chat-session-ownership.test.ts",
+    "src/lib/chat-live-generation-identity.test.ts",
+    "src/lib/chat-router-promotion.test.ts",
     "src/lib/code-rail.test.ts",
     "src/lib/use-code-rail.test.ts",
     "src/lib/workspace-tiles.test.ts",
@@ -248,6 +252,10 @@ export const SUITES = {
     "src/lib/use-auto-expand-new-groups.test.ts",
     "src/lib/chat-session-order.test.ts",
     "src/lib/chat-session-grouping.test.ts",
+    "src/lib/chat-session-status.test.ts",
+    "src/lib/chat-session-activity.test.ts",
+    "src/lib/chat-session-sort.test.ts",
+    "src/lib/chat-turn-gap.test.ts",
     "src/lib/chat-project-overrides.test.ts",
     "src/lib/chat-add-project.test.ts",
     "src/lib/project-setup-offer.test.ts",
@@ -447,6 +455,7 @@ export const SUITES = {
     "src/components/chat-list-collapse.test.ts",
     "src/components/chat-router-hide-archived.test.ts",
     "src/components/chat-router-switching.test.ts",
+    "src/components/chat-compose-instance.test.ts",
     "src/components/chat-split-host.test.ts",
     "src/lib/chat-split.test.ts",
     "src/components/chat-thread-rail.test.ts",
@@ -705,6 +714,7 @@ export const SUITES = {
     "src/lib/milestone-defs.test.ts",
     "src/lib/mission-defs.test.ts",
     "src/lib/session-pulse.test.ts",
+    "src/lib/activity-lattice.test.ts",
     "src/lib/session-trace.test.ts",
     "src/lib/first-run-stamps.test.ts",
     "src/lib/summoning-draft.test.ts",
@@ -914,6 +924,7 @@ export const SUITES = {
     "src/lib/chat-auto-rename.test.ts",
     "src/lib/chat-title-generation.test.ts",
     "src/components/chat-title-sparkle.test.ts",
+    "src/components/chat-title-sparkle-behavior.test.tsx",
     "src/components/chat-archive-nudge.test.ts",
     "src/lib/theme-palettes.test.ts",
     "src/lib/theme-contrast-audit.test.ts",
@@ -1166,6 +1177,7 @@ export const SUITES = {
     "src/lib/server/daemon-travel-reconcile.test.ts",
     "src/app/api/chat/conversation/route.test.ts",
     "src/app/api/chat/conversation/[id]/route.test.ts",
+    "src/app/api/sessions/[id]/route.test.ts",
     "src/app/api/canvas/route.test.ts",
     "src/app/api/api-contracts.test.ts",
     "src/app/api/x/account-routes.test.ts",
@@ -1570,6 +1582,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/chat-live-generation-identity.test.ts",
   "src/lib/podcast-script.test.ts",
   // resolves "@/lib/tool-visual" for the batch band's tint
   "src/lib/chat-tool-batches.test.ts",
@@ -1591,6 +1604,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/workspace-root-store.test.ts",
   // imports the route module, which resolves "@/lib/server/..." aliases.
   "src/app/api/daemon/travel/reconcile/route.test.ts",
+  "src/app/api/sessions/[id]/route.test.ts",
   "src/app/api/familiars/route.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
   "src/lib/opencode-models.test.ts",
@@ -1793,6 +1807,7 @@ const VITEST_TESTS = new Set([
   "src/components/voice-provider-settings.test.tsx",
   "src/components/voice-provider-settings.integration.test.tsx",
   "src/components/use-openai-voice-preview.test.tsx",
+  "src/components/chat-title-sparkle-behavior.test.tsx",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */

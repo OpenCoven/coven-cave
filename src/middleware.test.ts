@@ -238,6 +238,16 @@ assert.match(
 );
 assert.match(
   tauriSource,
-  /wait_for_sidecar_ready\(port, &log_path, sidecar_start_timeout, &should_cancel\)/,
-  "Tauri sidecar should require the launched sidecar's ready log before trusting the URL",
+  /wait_for_sidecar_ready\(\s*port,\s*&sidecar_output,\s*sidecar_start_timeout,\s*&should_cancel,\s*child_exited,\s*\)/,
+  "Tauri sidecar should require bounded launch output and a live child before trusting the URL",
+);
+assert.match(
+  tauriSource,
+  /let child_exited = \|\|[\s\S]*sidecar\.has_exited\(\)/,
+  "Tauri sidecar readiness should detect an early child exit",
+);
+assert.doesNotMatch(
+  tauriSource,
+  /sidecar_log_path|sidecar-daemon-server\.log|create_fresh_log_file/,
+  "Tauri sidecar should not persist daemon launch output",
 );

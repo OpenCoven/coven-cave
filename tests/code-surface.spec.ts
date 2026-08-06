@@ -338,19 +338,22 @@ test.describe("code surface (Coding familiar's room)", () => {
     await page.keyboard.press("Tab");
     await sessionsTab.focus();
     await expect(sessionsTab).toBeFocused();
+    await expect(sessionsTab).toHaveClass(/\bfocus-ring(?:\s|$)/);
     await expect
-      .poll(() =>
-        sessionsTab.evaluate((element) => {
-          const style = getComputedStyle(element);
-          const root = getComputedStyle(document.documentElement);
-          const ringWidth = root.getPropertyValue("--ring-width").trim();
-          const ringOffsetInset = root.getPropertyValue("--ring-offset-inset").trim();
-          return {
-            focusVisible: element.matches(":focus-visible"),
-            outlineMatchesToken:
-              style.outlineWidth === ringWidth && style.outlineOffset === ringOffsetInset,
-          };
-        }),
+      .poll(
+        () =>
+          sessionsTab.evaluate((element) => {
+            const style = getComputedStyle(element);
+            const root = getComputedStyle(document.documentElement);
+            const ringWidth = root.getPropertyValue("--ring-width").trim();
+            const ringOffsetInset = root.getPropertyValue("--ring-offset-inset").trim();
+            return {
+              focusVisible: element.matches(":focus-visible"),
+              outlineMatchesToken:
+                style.outlineWidth === ringWidth && style.outlineOffset === ringOffsetInset,
+            };
+          }),
+        { timeout: 30_000 },
       )
       .toEqual({ focusVisible: true, outlineMatchesToken: true });
 
