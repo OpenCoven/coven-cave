@@ -20,7 +20,7 @@ import {
 import type { OpenCodeRunCapabilities } from "@/lib/opencode-compatibility";
 import { evaluateRuntimeAvailability } from "@/lib/runtime-availability";
 
-let modelFlagProbe: Promise<boolean> | null = null;
+let modelFlagProbe: Promise<HelpProbeOutcome> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
 let openCodeModelFlagProbe: Promise<boolean> | null = null;
@@ -147,7 +147,10 @@ function terminateProbeProcessTree(child: OpenCodeProbeChild): Promise<void> {
       finish();
     }, openCodeProbeCleanupGraceMs());
     try {
-      killer = spawn(treeKill.command, treeKill.args, { stdio: "ignore", windowsHide: true });
+      // `treeKill.command` is a host binary (`taskkill.exe` / `kill`) resolved
+      // at runtime, never a bundled module. The ignore stops Turbopack from
+      // treating it as a traceable specifier and globbing the checkout.
+      killer = spawn(/* turbopackIgnore: true */ treeKill.command, treeKill.args, { stdio: "ignore", windowsHide: true });
       killer.once("error", () => {
         try { child.kill("SIGTERM"); } catch { /* Best-effort fallback. */ }
         finish();
@@ -156,6 +159,94 @@ function terminateProbeProcessTree(child: OpenCodeProbeChild): Promise<void> {
     } catch {
       try { child.kill("SIGTERM"); } catch { /* Best-effort fallback. */ }
       finish();
+    }
+  });
+}
+
+/**
+ * A help probe that could not be completed is NOT the same as a CLI that does
+ * not advertise the flag. `matched: false` means "asked, and the help text has
+ * no such option"; `ok: false` means "never got an answer". Collapsing the two
+ * makes a spawn failure or a timeout read as an unsupported capability, which
+ * is how a broken probe ends up telling a user their model is unsupported.
+ */
+export type HelpProbeOutcome =
+  | { ok: true; matched: boolean }
+  | { ok: false; reason: string };
+
+function probeHelpOutcome(
+  command: string,
+  args: string[],
+  matches: (help: string) => boolean,
+  env = harnessSpawnEnv(),
+  input?: string,
+  acceptNonZeroExit = true,
+  cwd?: string,
+): Promise<HelpProbeOutcome> {
+  return new Promise<HelpProbeOutcome>((resolve) => {
+    let output = "";
+    let settled = false;
+    const timeoutMs = openCodeCapabilityProbeTimeoutMs();
+    const done = (value: HelpProbeOutcome) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    try {
+      const child = spawn(/* turbopackIgnore: true */ command, args, {
+        env,
+        cwd,
+        stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
+        ...openCodeProbeSpawnOptions(),
+      }) as ChildProcessByStdio<Writable, Readable, Readable>;
+      if (input !== undefined) child.stdin.end(input, "utf8");
+      child.stdout.on("data", (chunk) => (output += chunk.toString()));
+      child.stderr.on("data", (chunk) => (output += chunk.toString()));
+      const timeout = setTimeout(() => {
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          // The probe is already being abandoned; the timeout is the report.
+        }
+        done({
+          ok: false,
+          reason: `\`${command} ${args.join(" ")}\` did not respond within ${timeoutMs}ms.`,
+        });
+      }, timeoutMs);
+      child.on("close", (code) => {
+        clearTimeout(timeout);
+        if (code === null) {
+          done({
+            ok: false,
+            reason: `\`${command} ${args.join(" ")}\` exited with code null.`,
+          });
+          return;
+        }
+        if (!acceptNonZeroExit && code !== 0) {
+          done({
+            ok: false,
+            reason: `\`${command} ${args.join(" ")}\` exited with code ${code}.`,
+          });
+          return;
+        }
+        try {
+          done({ ok: true, matched: matches(output) });
+        } catch {
+          done({
+            ok: false,
+            reason: `\`${command} ${args.join(" ")}\` help output could not be matched.`,
+          });
+        }
+      });
+      child.on("error", (error: Error) => {
+        clearTimeout(timeout);
+        done({ ok: false, reason: `\`${command}\` could not be started: ${error.message}` });
+      });
+    } catch (error) {
+      done({
+        ok: false,
+        reason: `\`${command}\` could not be started: ${error instanceof Error ? error.message : String(error)}`,
+      });
     }
   });
 }
@@ -169,44 +260,8 @@ function probeHelp(
   acceptNonZeroExit = true,
   cwd?: string,
 ): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
-    let output = "";
-    let settled = false;
-    const done = (value: boolean) => {
-      if (settled) return;
-      settled = true;
-      resolve(value);
-    };
-    try {
-      const child = spawn(command, args, {
-        env,
-        cwd,
-        stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
-        ...openCodeProbeSpawnOptions(),
-      }) as ChildProcessByStdio<Writable, Readable, Readable>;
-      if (input !== undefined) child.stdin.end(input, "utf8");
-      child.stdout.on("data", (chunk) => (output += chunk.toString()));
-      child.stderr.on("data", (chunk) => (output += chunk.toString()));
-      const timeout = setTimeout(() => {
-        try {
-          child.kill("SIGTERM");
-        } catch {
-          // The capability is unsupported when the probe cannot complete.
-        }
-        done(false);
-      }, openCodeCapabilityProbeTimeoutMs());
-      child.on("close", (code) => {
-        clearTimeout(timeout);
-        done((acceptNonZeroExit || code === 0) && matches(output));
-      });
-      child.on("error", () => {
-        clearTimeout(timeout);
-        done(false);
-      });
-    } catch {
-      done(false);
-    }
-  });
+  return probeHelpOutcome(command, args, matches, env, input, acceptNonZeroExit, cwd)
+    .then((outcome) => outcome.ok && outcome.matched);
 }
 
 type ProbeOutput = { output: string; complete: boolean };
@@ -227,7 +282,7 @@ function probeOutput(
       resolve({ output, complete });
     };
     try {
-      const child = spawn(command, args, {
+      const child = spawn(/* turbopackIgnore: true */ command, args, {
         env,
         stdio: ["ignore", "pipe", "pipe"],
         ...openCodeProbeSpawnOptions(),
@@ -433,7 +488,7 @@ function rememberOpenCodeFileIdentity(key: string, identity: string): void {
 async function hashFile(file: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = createHash("sha256");
-    const stream = createReadStream(file);
+    const stream = createReadStream(/* turbopackIgnore: true */ file);
     stream.on("data", (chunk: string | Buffer) => { hash.update(chunk); });
     stream.once("error", reject);
     stream.once("end", () => resolve(hash.digest("hex")));
@@ -444,8 +499,8 @@ async function fileIdentity(file: string, platform: NodeJS.Platform): Promise<st
   try {
     // Resolve a symlink before reading it so changing its target changes the
     // identity even when the link itself keeps its old metadata.
-    const resolved = await realpath(file);
-    const entry = await stat(resolved);
+    const resolved = await realpath(/* turbopackIgnore: true */ file);
+    const entry = await stat(/* turbopackIgnore: true */ resolved);
     if (!entry.isFile() || entry.size > MAX_OPENCODE_IDENTITY_FILE_BYTES) return null;
     const stablePath = platform === "win32" ? resolved.toLowerCase() : resolved;
     // ctime and inode invalidate a retained digest for ordinary in-place
@@ -457,7 +512,7 @@ async function fileIdentity(file: string, platform: NodeJS.Platform): Promise<st
       return cached;
     }
     const digest = await hashFile(resolved);
-    const after = await stat(resolved);
+    const after = await stat(/* turbopackIgnore: true */ resolved);
     const afterKey = `${stablePath}\0${after.size}\0${after.mtimeMs}\0${after.ctimeMs}\0${after.ino}`;
     // An update racing the stream makes the hash ambiguous. Do not cache or
     // reuse it; the caller will safely fall back to plain mode for this turn.
@@ -578,14 +633,40 @@ export function parseOpenCodeRunCapabilitiesHelp(help: string, version: string |
   };
 }
 
-/** Capability probes are cached because old Coven CLIs reject unknown flags. */
-export function covenRunSupportsModel(): Promise<boolean> {
+/** Capability probes are cached because old Coven CLIs reject unknown flags.
+ * Only ANSWERS are cached: a probe that never completed says nothing about the
+ * installed CLI, and caching that failure would pin a transient spawn error to
+ * the process for its whole lifetime. */
+function cachedHelpOutcome(
+  read: () => Promise<HelpProbeOutcome> | null,
+  write: (probe: Promise<HelpProbeOutcome> | null) => void,
+  start: () => Promise<HelpProbeOutcome>,
+): Promise<HelpProbeOutcome> {
+  const cached = read();
+  if (cached) return cached;
+  const probe = start().then((outcome) => {
+    if (!outcome.ok) write(null);
+    return outcome;
+  }, (error: unknown) => {
+    write(null);
+    throw error;
+  });
+  write(probe);
+  return probe;
+}
+
+/** The `coven run --model` capability with its probe failures intact. */
+export function covenRunModelFlagOutcome(): Promise<HelpProbeOutcome> {
   const { command, fixedArgs } = covenLaunchCommand();
-  return (modelFlagProbe ??= probeHelp(
-    command,
-    [...fixedArgs, "run", "--help"],
-    covenRunSupportsModelFlag,
-  ));
+  return cachedHelpOutcome(
+    () => modelFlagProbe,
+    (probe) => { modelFlagProbe = probe; },
+    () => probeHelpOutcome(command, [...fixedArgs, "run", "--help"], covenRunSupportsModelFlag),
+  );
+}
+
+export function covenRunSupportsModel(): Promise<boolean> {
+  return covenRunModelFlagOutcome().then((outcome) => outcome.ok && outcome.matched);
 }
 
 export function covenRunSupportsPermission(): Promise<boolean> {

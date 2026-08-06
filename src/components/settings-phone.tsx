@@ -102,6 +102,12 @@ export function classifyTailscaleFailure(raw: string): { headline: string; hint:
       hint: "Open Tailscale and sign in — pairing resumes here automatically.",
     };
   }
+  if (kind === "serve-permission") {
+    return {
+      headline: "Tailscale Serve needs permission",
+      hint: "On Linux, run `sudo tailscale set --operator=$USER` once, then retry phone pairing.",
+    };
+  }
   if (kind === "serve-failed") {
     return {
       headline: "Tailscale Serve couldn’t start",

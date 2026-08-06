@@ -478,7 +478,6 @@ export function ChatSurface({
                   onRetryFamiliars={onRetryFamiliars}
                   hideRail={compactRail}
                   onSetActiveFamiliar={onSetActiveFamiliar}
-                  onSessionStarted={onSessionStarted}
                   onSessionsChanged={onSessionsChanged}
                   onSessionsDeleted={onSessionsDeleted}
                   onSlashFromChat={onSlashFromChat}

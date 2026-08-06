@@ -98,7 +98,7 @@ function response(ok, payload) {
   const refreshes = [];
   let dismissed = 0;
   const errors = [];
-  const ok = await runWorkspaceDaemonStart({
+  const outcome = await runWorkspaceDaemonStart({
     fetchImpl: async function (...args) {
       assert.equal(this, undefined, "WebView fetch must not receive the dependency object as its receiver");
       requests.push(args);
@@ -108,8 +108,8 @@ function response(ok, payload) {
     reportError: (message) => errors.push(message),
     refreshStatus: async (opts) => { refreshes.push(opts); },
   });
-  assert.equal(ok, true);
-  assert.deepEqual(requests, [["/api/daemon/start", { method: "POST" }]], "automatic start never sends restart mode");
+  assert.equal(outcome, "started");
+  assert.deepEqual(requests, [["/api/daemon/start", { method: "POST" }]], "manual start keeps its existing request shape");
   assert.equal(dismissed, 1);
   assert.deepEqual(errors, []);
   assert.deepEqual(refreshes, [{ trusted: true }], "success performs the trusted refresh");
@@ -128,11 +128,40 @@ function response(ok, payload) {
     reportError: (message) => errors.push(message),
     refreshStatus: async (opts) => { refreshes.push(opts); },
   };
-  assert.equal(await runWorkspaceDaemonStart(deps), false);
-  assert.equal(await runWorkspaceDaemonStart(deps), false, "manual retry remains available after failure");
+  assert.equal(await runWorkspaceDaemonStart(deps), "failed");
+  assert.equal(await runWorkspaceDaemonStart(deps), "failed", "manual retry remains available after failure");
   assert.equal(requests, 2);
   assert.deepEqual(errors, ["Coven CLI missing", "Coven CLI missing"]);
   assert.deepEqual(refreshes, [undefined, undefined], "failure keeps ordinary status authoritative");
+}
+
+{
+  const requests = [];
+  const refreshes = [];
+  const errors = [];
+  const outcome = await runWorkspaceDaemonStart({
+    automatic: true,
+    fetchImpl: async (...args) => {
+      requests.push(args);
+      return response(false, {
+        ok: false,
+        code: "owner_unreachable",
+        error: "automatic recovery deferred",
+      });
+    },
+    dismissError: () => assert.fail("deferred recovery has no prior error to dismiss"),
+    reportError: (message) => errors.push(message),
+    refreshStatus: async (opts) => { refreshes.push(opts); },
+  });
+
+  assert.equal(outcome, "deferred");
+  assert.deepEqual(requests, [["/api/daemon/start", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ automatic: true }),
+  }]]);
+  assert.deepEqual(errors, [], "automatic ownership deferral stays out of the error banner");
+  assert.deepEqual(refreshes, [undefined], "deferral immediately rechecks ordinary connection state");
 }
 
 

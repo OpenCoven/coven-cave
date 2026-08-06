@@ -23,8 +23,9 @@ const OPEN_COVEN_TOOL_PACKAGES: Record<OpenCovenToolInstallTarget, string> = {
 const REQUIRED_TOOL: OpenCovenToolInstallTarget = "coven-cli";
 
 export function openCovenToolActionTargets(
-  tools: readonly OpenCovenToolInstallStatus[],
+  tools: readonly OpenCovenToolInstallStatus[] | null,
 ): OpenCovenToolInstallTarget[] {
+  if (tools === null) return [];
   if (tools.length === 0) return [REQUIRED_TOOL];
   const actionable = new Set(
     tools
@@ -45,8 +46,9 @@ export function openCovenToolsInstallCommand(
 }
 
 export function openCovenToolsPrimaryActionLabel(
-  tools: readonly OpenCovenToolInstallStatus[],
+  tools: readonly OpenCovenToolInstallStatus[] | null,
 ): string {
+  if (tools === null) return "Checking local installation…";
   if (tools.length === 0) return "Install the Coven CLI";
   const actions = tools.filter((tool) =>
     openCovenToolActionTargets(tools).includes(tool.id),
@@ -54,6 +56,7 @@ export function openCovenToolsPrimaryActionLabel(
   if (actions.length === 0) return "Coven CLI ready";
   if (actions.length === 1) {
     const [tool] = actions;
+    if (!tool.installed && tool.id === REQUIRED_TOOL) return "Install the Coven CLI";
     return `${tool.installed ? "Update" : "Install"} ${tool.label}`;
   }
   if (actions.every((tool) => !tool.installed)) return "Install OpenCoven tools";

@@ -10,6 +10,7 @@ import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
 import { IconButton } from "@/components/ui/icon-button";
+import { DirectoryPickerModal } from "@/components/directory-picker-modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { SettingControlRow, Segmented } from "@/components/ui/settings-controls";
 import { SearchInput } from "@/components/ui/search-input";
@@ -936,24 +937,70 @@ function ScheduledSyncSettings() {
   );
 }
 
+/**
+ * Workspace path — read the current root, and let Browse *change* it.
+ *
+ * Browse used to hand the path to the OS file manager (`shell_open_path`),
+ * which meant it did nothing at all on the web build and, on desktop, could
+ * only ever show you the folder you already had. Choosing a different one had
+ * no UI at all. It now opens the in-app folder browser — the same modal the
+ * new-project flow uses, so this works identically on web and desktop with no
+ * native dialog — and persists the pick through /api/config/workspace-path.
+ *
+ * Revealing the folder in the OS file manager is still available on desktop,
+ * as its own control rather than as the meaning of "Browse".
+ */
 function WorkspacePathField() {
   const [path, setPath] = useState("");
+  const [envPin, setEnvPin] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const desktop = useIsTauriDesktop();
   const { announce } = useAnnouncer();
   const [openError, setOpenError] = useState("");
 
   useEffect(() => {
     const ctl = new AbortController();
-    fetch("/api/config", { cache: "no-store", signal: ctl.signal })
+    fetch("/api/config/workspace-path", { cache: "no-store", signal: ctl.signal })
       .then((r) => r.json())
-      .then((j: { workspacePath?: string }) => {
-        if (!ctl.signal.aborted && j.workspacePath) setPath(j.workspacePath);
+      .then((j: { workspacePath?: string; envPin?: string | null }) => {
+        if (ctl.signal.aborted) return;
+        if (j.workspacePath) setPath(j.workspacePath);
+        setEnvPin(j.envPin ?? null);
       })
       .catch(() => {});
     return () => ctl.abort();
   }, []);
 
-  const browse = async () => {
+  const choose = async (dir: string) => {
+    setPickerOpen(false);
+    setSaving(true);
+    setOpenError("");
+    try {
+      const res = await fetch("/api/config/workspace-path", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ dir }),
+      });
+      const body = (await res.json()) as { ok?: boolean; workspacePath?: string; error?: string };
+      if (!res.ok || !body.ok || !body.workspacePath) {
+        const message = body.error ?? "Couldn't save the workspace path.";
+        setOpenError(message);
+        announce(message, "assertive");
+        return;
+      }
+      setPath(body.workspacePath);
+      announce("Workspace path saved.");
+    } catch {
+      setOpenError("Couldn't save the workspace path.");
+      announce("Couldn't save the workspace path.", "assertive");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const reveal = async () => {
     if (!desktop || !path) return;
     setOpenError("");
     try {
@@ -974,17 +1021,43 @@ function WorkspacePathField() {
         aria-label="Workspace path"
         className="settings-workspace-path focus-ring"
       />
-      <Button
-        variant="secondary"
-        size="sm"
-        leadingIcon="ph:folder-open"
-        disabled={!desktop || !path}
-        title={desktop ? "Open workspace folder" : "Available in the desktop app"}
-        onClick={() => void browse()}
-      >
-        Browse
-      </Button>
+      <div className="settings-workspace-actions">
+        <Button
+          variant="secondary"
+          size="sm"
+          leadingIcon="ph:folder-open"
+          disabled={Boolean(envPin) || saving}
+          title={
+            envPin
+              ? `Pinned by ${envPin}`
+              : "Choose where Coven stores familiar workspaces"
+          }
+          onClick={() => setPickerOpen(true)}
+        >
+          {saving ? "Saving…" : "Browse"}
+        </Button>
+        {desktop ? (
+          <IconButton
+            icon="ph:arrow-square-out"
+            aria-label="Open workspace folder in file manager"
+            title="Open workspace folder in file manager"
+            size="sm"
+            disabled={!path}
+            onClick={() => void reveal()}
+          />
+        ) : null}
+      </div>
+      {envPin ? (
+        <p className="settings-workspace-hint">
+          Pinned by the {envPin} environment variable.
+        </p>
+      ) : null}
       {openError ? <p role="alert" className="settings-workspace-error">{openError}</p> : null}
+      <DirectoryPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(dir) => void choose(dir)}
+      />
     </div>
   );
 }

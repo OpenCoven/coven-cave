@@ -165,13 +165,23 @@ assert.match(
 );
 assert.match(
   chatView,
-  /const stagedInitialModelOverride = initialModelOverride !== undefined[\s\S]{0,900}?const initialSendOptions = stagedInitialModelOverride !== undefined[\s\S]{0,350}?sendRaw\([\s\S]{0,180}initialSendOptions,[\s\S]{0,220}runtimeHost: initialControls\?\.runtimeHost \}/,
+  /const stagedInitialModelOverride = initialModelOverride !== undefined[\s\S]{0,900}?const initialSendOptions = stagedInitialModelOverride !== undefined[\s\S]{0,700}?sendRaw\([\s\S]{0,180}initialSendOptions,[\s\S]{0,220}runtimeHost: initialControls\?\.runtimeHost \}/,
   "an auto-sent Board prompt passes its model through ChatSendOptions, not the typed controls payload",
 );
 assert.match(
   chatView,
-  /case "done":[\s\S]{0,6000}startNewConversation && ev\.sessionId\) liveGeneration\.reconcileCanonicalSessions\(\);/,
-  "A completed Board bridge refreshes sessions through the settlement tracker so failed terminals do not double-refresh",
+  /const shouldRefreshSessions = shouldCreationRefresh \|\| shouldReplacementRefresh \|\| \(startNewConversation && !!ev\.sessionId && !ev\.isError\)/,
+  "Board condition requires !ev.isError so a successful first reply refreshes the sidebar but an errored one does not",
+);
+assert.doesNotMatch(
+  chatView,
+  /startNewConversation && !!ev\.sessionId(?! && !ev\.isError)/,
+  "Board condition must not fire on a failed first reply — !ev.isError guard is required",
+);
+assert.match(
+  chatView,
+  /if \(shouldRefreshSessions\) onSessionsChangedRef\.current\?\.\(\)/,
+  "The consolidated shouldRefreshSessions boolean causes exactly one onSessionsChangedRef.current() call at done completion",
 );
 assert.match(
   taskWorkCockpit,

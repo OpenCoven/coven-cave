@@ -277,7 +277,7 @@ function loginShellPath(discovery: DiscoveryOptions): string | null {
   const timeout = remainingDiscoveryTimeout(4000, discovery.deadline, discovery.now);
   if (timeout <= 0) return null;
   try {
-    const out = execFileSync(shell, ["-ilc", "echo $PATH"], {
+    const out = execFileSync(/* turbopackIgnore: true */ shell, ["-ilc", "echo $PATH"], {
       encoding: "utf-8",
       timeout,
       env: discovery.env,

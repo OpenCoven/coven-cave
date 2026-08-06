@@ -20,7 +20,7 @@ assert.match(chatView, /function splitSegmentsForGitHub\(/, "has the segments→
 assert.match(chatView, /<GitHubCard descriptor=/, "renders GitHubCard as a block segment");
 assert.match(
   chatView,
-  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(splitSegmentsForImages\(\[\{ kind: "text", text: visibleWithGh \}\]\), artifactCtx\),\s*onOpenUrl,\s*ghFamiliar,\s*\)/,
+  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\]\)/,
   "settled path keeps GitHub splitting after artifacts while image groups remain intact across both boundaries",
 );
 assert.match(

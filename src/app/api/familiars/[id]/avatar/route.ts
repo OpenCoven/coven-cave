@@ -20,6 +20,21 @@ const MAX_AVATAR_BYTES = 48 * 1024 * 1024;
 // supported desktop WebView can decode.
 const AVATAR_MAX_DIM = 256;
 
+// …except on the familiar's card, where the same portrait is the full-bleed
+// art of something that fills most of the viewport, and a 256px source is
+// visibly soft. `?size=` opts into a larger render; it is a CEILING, not an
+// enlargement (`withoutEnlargement` still applies), and it is clamped so the
+// query string can never ask the server to rasterise something enormous.
+const AVATAR_MAX_REQUESTED_DIM = 1024;
+
+function requestedDim(req: Request): number {
+  const raw = new URL(req.url).searchParams.get("size");
+  if (!raw) return AVATAR_MAX_DIM;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return AVATAR_MAX_DIM;
+  return Math.min(AVATAR_MAX_REQUESTED_DIM, Math.max(AVATAR_MAX_DIM, parsed));
+}
+
 type RenderedAvatar = { body: Uint8Array<ArrayBuffer>; contentType: string };
 
 // Process-lifetime cache keyed by file path + mtime, so the expensive resize
@@ -60,7 +75,7 @@ function cacheSet(key: string, value: RenderedAvatar): void {
  * — so this can't read outside the avatars dir. 404 when the familiar has no
  * avatar; the UI then falls back to the glyph.
  */
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   if (!id || !isValidFamiliarId(id)) {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
@@ -71,7 +86,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: false, error: "no avatar" }, { status: 404 });
   }
 
-  const cacheKey = `${avatar.absPath}\0${avatar.mtimeMs}`;
+  const dim = requestedDim(req);
+  const cacheKey = `${avatar.absPath}\0${avatar.mtimeMs}\0${dim}`;
   const cached = cacheGet(cacheKey);
   if (cached) {
     return imageResponse(cached);
@@ -99,7 +115,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     const png = await sharp(bytes)
       .rotate() // honor EXIF orientation before resizing
-      .resize(AVATAR_MAX_DIM, AVATAR_MAX_DIM, { fit: "inside", withoutEnlargement: true })
+      .resize(dim, dim, { fit: "inside", withoutEnlargement: true })
       .png({ compressionLevel: 9, adaptiveFiltering: true })
       .toBuffer();
     rendered = { body: new Uint8Array(png), contentType: "image/png" };

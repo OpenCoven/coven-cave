@@ -62,6 +62,9 @@ const shim = [
   "if (mode === 'attention-reasoning') {",
   "  process.stdout.write(JSON.stringify({ payloads: [{ text: 'Visible answer.\\n<thinking>private <coven:attention reason=\"approval\" /></thinking>' }] })); process.exit(0);",
   "}",
+  "if (mode === 'attention-both') {",
+  "  process.stdout.write(JSON.stringify({ payloads: [{ text: 'Visible answer.\\n<coven:attention reason=\"approval\" />\\n<thinking>private plan</thinking>' }] })); process.exit(0);",
+  "}",
   "if (mode === 'attention-visible') {",
   "  process.stdout.write(JSON.stringify({ payloads: [{ text: '<reasoning>private notes</reasoning>\\nVisible question.\\n<coven:attention reason=\"decision\" />' }] })); process.exit(0);",
   "}",
@@ -194,12 +197,25 @@ try {
   const reasoningOnlyConversation = await loadConversation(reasoningOnlySessionId);
   const reasoningOnlyTurn = reasoningOnlyConversation?.turns.at(-1);
   assert.equal(reasoningOnlyTurn?.text, "Visible answer.");
+  assert.equal(reasoningOnlyTurn?.reasoning, "private", "reload keeps the reasoning content without its control marker");
   assert.equal(
     reasoningOnlyTurn?.responseMetadata?.attentionRequest,
     undefined,
     "a marker inside hidden reasoning is not persisted as an attention request",
   );
   assert.doesNotMatch(reasoningOnlyTurn?.text ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
+  assert.doesNotMatch(reasoningOnlyTurn?.reasoning ?? "", /<coven:attention/);
+
+  process.env.OPENCLAW_TEST_MODE = "attention-both";
+  const visibleAndReasoningEvents = await readSse(await send("keep reasoning on reload while honoring visible attention"));
+  const visibleAndReasoningSessionId = visibleAndReasoningEvents.findLast((event) => event.kind === "done")?.sessionId;
+  const visibleAndReasoningConversation = await loadConversation(visibleAndReasoningSessionId);
+  const visibleAndReasoningTurn = visibleAndReasoningConversation?.turns.at(-1);
+  assert.equal(visibleAndReasoningTurn?.text, "Visible answer.");
+  assert.equal(visibleAndReasoningTurn?.reasoning, "private plan");
+  assert.equal(visibleAndReasoningTurn?.responseMetadata?.attentionRequest?.reason, "approval");
+  assert.doesNotMatch(visibleAndReasoningTurn?.text ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
+  assert.doesNotMatch(visibleAndReasoningTurn?.reasoning ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
 
   process.env.OPENCLAW_TEST_MODE = "attention-visible";
   const visibleMarkerEvents = await readSse(await send("request a visible decision"));
@@ -207,12 +223,14 @@ try {
   const visibleMarkerConversation = await loadConversation(visibleMarkerSessionId);
   const visibleMarkerTurn = visibleMarkerConversation?.turns.at(-1);
   assert.equal(visibleMarkerTurn?.text, "Visible question.");
+  assert.equal(visibleMarkerTurn?.reasoning, "private notes", "visible-marker turns still persist reloadable reasoning");
   assert.equal(
     visibleMarkerTurn?.responseMetadata?.attentionRequest?.reason,
     "decision",
     "visible-body attention behavior remains intact after reasoning is removed",
   );
   assert.doesNotMatch(visibleMarkerTurn?.text ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
+  assert.doesNotMatch(visibleMarkerTurn?.reasoning ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
 
   process.env.OPENCLAW_TEST_MODE = "malformed";
   await clearCalls();

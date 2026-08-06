@@ -19,8 +19,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const contextualNav = mode === "chat" \? chatSidebar : sidebar;/,
-  "workspace should select Chats as the primary nav only in chat mode",
+  /const contextualNav = navSection === "code" \? chatSidebar : sidebar;/,
+  "workspace should select the session-list rail for the whole Code section",
 );
 assert.doesNotMatch(workspace, /const list = mode === "chat" \? chatSidebar : undefined;/);
 assert.match(
@@ -167,7 +167,7 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /<ChatView\s*\n\s*ref=\{viewHandle\}[\s\S]*?activeFamiliarId=\{activeFamiliarId\}/,
+  /<ChatView\s*\n\s*key=\{`chat-compose-\$\{composeInstance\}`\}\s*\n\s*ref=\{viewHandle\}[\s\S]*?activeFamiliarId=\{activeFamiliarId\}/,
   "the primary ChatView mount should receive Workspace's active list scope",
 );
 assert.match(
@@ -279,12 +279,12 @@ assert.match(
 );
 assert.match(
   chatView,
-  /if \(startNewConversation && ev\.sessionId\) liveGeneration\.reconcileCanonicalSessions\(\);/,
-  "chat-view should route startNewConversation refreshes through the settlement tracker so failed terminals only reconcile once",
+  /const shouldRefreshSessions = shouldCreationRefresh \|\| shouldReplacementRefresh \|\| \(startNewConversation && !!ev\.sessionId && !ev\.isError\);[\s\S]*?if \(shouldRefreshSessions\) onSessionsChangedRef\.current\?\.\(\);/,
+  "chat-view should fold successful startNewConversation refreshes into the upstream consolidated refresh while failed terminals remain tracker-owned",
 );
 assert.match(
   chatView,
-  /finally \{[\s\S]*?attentionSettlement\.reconcileIfNeeded\(\);[\s\S]*?clearLiveChatGeneration\(liveGeneration\.sessionId, runId\)/,
+  /finally \{[\s\S]*?attentionSettlement\.reconcileIfNeeded\(\);[\s\S]*?clearLiveChatGenerationAliases\(liveGeneration\.sessionAliases, runId\)/,
   "chat-view should reconcile canonical sessions exactly once at settlement before retiring the live snapshot",
 );
 

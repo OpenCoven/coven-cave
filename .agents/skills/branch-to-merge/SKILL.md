@@ -261,8 +261,22 @@ gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t
 **Confirmation required.** Then:
 
 ```bash
-gh pr merge <#> --squash --delete-branch
+set -euo pipefail
+expected_head=$(git rev-parse HEAD)
+actual_head=$(gh pr view <#> --json headRefOid --jq .headRefOid)
+test "$actual_head" = "$expected_head"
+gh pr checks <#> --required
+gh pr merge <#> --squash --match-head-commit "$expected_head"
 ```
+
+Repeat the exact-head and required-check verification in the merge command's
+shell: shell variables from Phase 5 may not persist between tool calls.
+`--match-head-commit` then makes GitHub reject the merge if the PR head changes
+between that final check and the merge.
+
+Do not pass `--delete-branch`. That flag asks `gh` to delete both local and
+remote branches immediately after merging. Local retirement belongs to the
+Phase 7 lifecycle patrol, and remote deletion remains proposal-only.
 
 The squash message summarizes the whole branch, not the last commit, and
 carries any human `Co-authored-by:` trailers.

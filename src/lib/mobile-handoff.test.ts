@@ -13,6 +13,7 @@ import {
   OFFICIAL_IOS_INSTALL_URL,
   resolveIosInstallUrl,
   resolveTailscaleBin,
+  shouldAllowMagicDnsFallback,
   tailnetDiscoveryProof,
   tailscaleIpHost,
 } from "./mobile-handoff.ts";
@@ -36,6 +37,32 @@ const status = {
   },
 };
 const signingKey = ["handoff", "mobile", "key"].join("-");
+
+{
+  assert.equal(
+    shouldAllowMagicDnsFallback({
+      serveOk: false,
+      serveError: "sending serve config: Access denied: serve config denied",
+      statusOk: false,
+    }),
+    false,
+    "permission denial must not become a MagicDNS success when Serve status is also unreadable",
+  );
+  assert.equal(
+    shouldAllowMagicDnsFallback({
+      serveOk: false,
+      serveError: "GUI failed to start (CLIError 3)",
+      statusOk: false,
+    }),
+    true,
+    "non-permission CLI failures may still use MagicDNS when daemon status is unreadable",
+  );
+  assert.equal(
+    shouldAllowMagicDnsFallback({ serveOk: true, serveError: "", statusOk: true }),
+    false,
+    "a readable Serve status remains authoritative",
+  );
+}
 
 {
   const url = findServeUrl(status, "http://127.0.0.1:3000");
@@ -172,6 +199,34 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       serveUrl,
       source: "magicdns-self-status",
     },
+  );
+  assert.deepEqual(
+    tailnetDiscoveryProof({
+      selfStatus: self,
+      serveStatus: {},
+      backendUrl: "http://127.0.0.1:3000",
+      allowMagicDnsFallback: false,
+    }),
+    {
+      ok: false,
+      reason: "tailscale serve route not found for http://127.0.0.1:3000",
+    },
+    "a readable empty Serve status must not promote a bare MagicDNS name to a live route",
+  );
+  assert.deepEqual(
+    nativeAppDiscoveryProof({
+      selfStatus: { Self: { DNSName: "cave.tailnet.example.ts.net.", TailscaleIPs: ["100.101.102.103"] } },
+      serveStatus: {},
+      backendUrl: "http://127.0.0.1:3000",
+      allowMagicDnsFallback: false,
+    }),
+    {
+      ok: true,
+      host: "100.101.102.103:3000",
+      serveUrl: "http://100.101.102.103:3000/",
+      source: "tailscale-ip-http",
+    },
+    "the explicit HTTP fallback must use the Tailscale IP even when MagicDNS exists",
   );
   assert.deepEqual(
     tailnetDiscoveryProof({ selfStatus: {}, serveStatus: {}, backendUrl: "http://127.0.0.1:3000" }),

@@ -160,22 +160,24 @@
   color: var(--text-primary);
 }
 
-/* "New chat" is the top CTA — a filled accent button: solid --accent-presence
-   with its paired on-accent ink (--accent-presence-foreground, not
-   --text-primary — monochrome palettes vanish the label otherwise), so the
-   panel's one primary action stands out. Hover shifts through
-   --accent-presence-hover, the direction-aware WCAG-AA pair (cave-c7hy). */
+/* "New chat" is the top CTA — a quiet button rather than a solid accent fill:
+   full width, bordered, on its own tinted surface, so it still reads as the
+   panel's one primary action without shouting. The tint derives from
+   --accent-presence to keep the brand hue present; ink stays --text-primary,
+   which holds on a near-transparent surface in every palette (the old solid
+   fill needed --accent-presence-foreground for exactly that reason). Matches
+   .cnav__new on the Chat rail. */
 .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row {
-  background: var(--accent-presence);
-  color: var(--accent-presence-foreground);
-  border: 2px solid var(--accent-presence);
-  font-weight: 600;
+  background: color-mix(in oklch, var(--accent-presence) 9%, transparent);
+  color: var(--text-primary);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 24%, var(--border-hairline));
+  font-weight: 560;
 }
 
 .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row:hover {
-  background: var(--accent-presence-hover);
-  color: var(--accent-presence-foreground);
-  border-color: var(--accent-presence-hover);
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+  color: var(--text-primary);
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
 }
 
 .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row .sidebar-action-icon {

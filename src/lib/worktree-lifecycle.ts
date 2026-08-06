@@ -140,7 +140,24 @@ export type WorktreeLifecycleRenderOptions = {
 // For the patrol the number is advisory, which is what "warning" names. For
 // creation it is a hard refusal, so the refusal text in
 // {@link assessManagedWorktreeCreation} deliberately does not call it a warning.
-export const WORKTREE_WARNING_BUDGET = 12;
+//
+// 2026-08-04 (cave-qpwx0): 12 -> 20, at the repository owner's direction. The
+// count is repo-wide, so 12 stopped describing this checkout some time ago —
+// over a single session it moved 22 -> 17 -> 22 -> 34 -> 13 -> 17 while six
+// worktrees were retired and roughly twenty were created. A gate that refuses
+// on every invocation is not a budget, it is an outage: it taught sessions to
+// reach for the unmanaged `git worktree add` fallback, whose units carry no
+// lifecycle metadata and can therefore never be retired (cave-l52dt) — the
+// exact sprawl this number exists to bound.
+//
+// 20 is chosen to sit above the observed working set rather than above the
+// peak. Bursts past it are expected and are what the attributed, expiring
+// `--exception-*` path is for; the refusal prints that invocation (cave-no5nr).
+// If this needs raising again, check first whether the concurrent-session count
+// has genuinely grown or whether units are simply not being retired on merge —
+// the second is the failure this number is meant to surface, and raising it
+// would hide exactly the signal worth having.
+export const WORKTREE_WARNING_BUDGET = 20;
 export const BRANCH_WARNING_BUDGET = 30;
 
 export type WorktreeLifecycleBudgets = {
@@ -296,10 +313,6 @@ function applicableManagedCreationException({
     : null;
 }
 
-function managedCreationExceptionReasons(exception: ManagedCreationException): string[] {
-  return [`owner exception active until ${exception.expiresAt}: ${exception.owner} — ${exception.reason}`];
-}
-
 function recoveryDispositionReasons(
   metadata: WorktreeLifecycleMetadata,
   nowMs: number,
@@ -404,14 +417,18 @@ function classifyLifecycleUnitInternal(
     ]);
   }
 
-  const activeException = applicableManagedCreationException({
-    exception: observation.metadata.exception,
-    requestedPath: observation.path,
-    nowMs,
-  });
-  if (activeException) {
-    return withReasons(observation, "active", managedCreationExceptionReasons(activeException));
-  }
+  // A managed creation exception is admission authority only: it lifts the
+  // budget refusal in `assessManagedWorktreeCreation` so the unit can be
+  // created. It deliberately does NOT survive into retirement. Control only
+  // reaches here once `landed` is true, so honoring the exception at this point
+  // pinned merged, clean worktrees as `active` until a calendar expiry that
+  // outlived the work by days. That is the ratchet cave-8dpxq removes: every
+  // exception granted to escape a full budget went on to hold the budget full,
+  // forcing the next session to request another one.
+  //
+  // Retirement stays gated by the 8-hour cooldown, the repository-wide
+  // maintenance gate, and the deletion proof below, so dropping the exception
+  // here reclassifies landed work without authorizing any new deletion.
 
   if (observation.remoteRef && observation.remoteRef.oid !== observation.head) {
     return withReasons(observation, "recovery", [

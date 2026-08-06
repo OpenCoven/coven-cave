@@ -362,8 +362,36 @@ function legacyObservation(overrides = {}) {
     }),
     NOW,
   );
-  assert.equal(item.lane, "active", "a live exception keeps an equivalent normalized worktree path active");
-  assert.match(item.reasons.join("\n"), /Primary checkout is conflicted and user-owned/);
+  assert.equal(
+    item.lane,
+    "retire-after-gate",
+    "a creation exception is admission authority only and never blocks retirement of landed work",
+  );
+  assert.doesNotMatch(item.reasons.join("\n"), /exception active/i);
+}
+
+{
+  const item = classifyLifecycleUnit(
+    observation({
+      metadata: metadata({
+        exception: {
+          owner: "Kitty",
+          reason: "Budget was full when this unit was created",
+          expiresAt: "2026-08-30T00:00:00Z",
+          additionalPaths: ["/repo/.worktrees/feat-x"],
+        },
+      }),
+      headOnDefaultBranch: false,
+      mergedPr: null,
+    }),
+    NOW,
+  );
+  assert.equal(
+    item.lane,
+    "recovery",
+    "an unlanded unit is still held by the landed check, not by its creation exception",
+  );
+  assert.match(item.reasons.join("\n"), /not proven landed/i);
 }
 
 {
@@ -511,7 +539,7 @@ function legacyObservation(overrides = {}) {
     activeExceptions: 1,
     expiredExceptions: 2,
   });
-  assert.equal(budgets.worktrees.warning, 12);
+  assert.equal(budgets.worktrees.warning, 20);
   assert.equal(budgets.branches.warning, 30);
   assert.deepEqual(budgets.exceptions, { active: 1, expired: 2 });
   assert.equal(budgets.worktrees.exceeded, false, "threshold itself is not exceeded");
@@ -557,7 +585,7 @@ function legacyObservation(overrides = {}) {
     allowed: false,
     reasons: [
       "active Bead cave-ox3ky already owns a registered worktree",
-      "creating a worktree would exceed the 12-worktree budget",
+      "creating a worktree would exceed the 20-worktree budget",
       "creating a branch would exceed the 30-local-branch budget",
     ],
   });

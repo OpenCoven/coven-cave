@@ -10,12 +10,11 @@ import {
   type DragEvent,
 } from "react";
 
-import { AccessGroupsSection } from "@/components/access-groups-section";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { FamiliarCardOverlay } from "@/components/familiar-card-overlay";
 import { FamiliarStudioBrainTab } from "@/components/familiar-studio-brain-tab";
 import { FamiliarStudioIdentityTab } from "@/components/familiar-studio-identity-tab";
 import { FamiliarStudioMemoryTab } from "@/components/familiar-studio-memory-tab";
-import { FamiliarStudioProjectsTab } from "@/components/familiar-studio-projects-tab";
 import { SettingsFamiliarPicker } from "@/components/settings-familiar-picker";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -59,11 +58,13 @@ type FamiliarMemoryCountState =
   | { state: "ready"; count: number }
   | { state: "unavailable" };
 
+// Projects is deliberately absent: Chat → Projects owns the grant matrix,
+// access groups, and access history in one place. The stat chip below still
+// reports the familiar's project count — that is a read, not a second editor.
 const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
   { id: "identity", label: "Identity", icon: "ph:user" },
   { id: "brain", label: "Brain", icon: "ph:brain" },
   { id: "memory", label: "Memory", icon: "ph:archive" },
-  { id: "projects", label: "Projects", icon: "ph:folder" },
   { id: "vault", label: "Vault", icon: "ph:vault" },
 ];
 
@@ -101,7 +102,12 @@ export function FamiliarStudioInlinePanel({
     enabled: Boolean(familiar),
   });
   const memoryCount = useFamiliarMemoryCount(familiar?.id ?? null);
-  const displayedTab = activeTab === "contract" ? "identity" : activeTab;
+  // "contract" and "projects" are both absent from TABS — contract folds into
+  // Identity, and project access moved wholesale to Chat → Projects. Either
+  // stored value must still resolve to a real tab or the tablist would carry a
+  // value matching no item.
+  const displayedTab =
+    activeTab === "contract" || activeTab === "projects" ? "identity" : activeTab;
 
   // Auto-select a familiar so the detail pane is never empty on entry, and
   // recover if the current selection vanishes after archive/removal. Prefer
@@ -232,12 +238,6 @@ export function FamiliarStudioInlinePanel({
                   localDaemonReady={localDaemonReady}
                 />
               ) : null}
-              {activeTab === "projects" ? (
-                <div className="familiar-studio-control__projects">
-                  <FamiliarStudioProjectsTab familiar={familiar} />
-                  <AccessGroupsSection familiars={resolved} />
-                </div>
-              ) : null}
               {activeTab === "vault" ? (
                 <VaultPanel familiarId={familiar.id} />
               ) : null}
@@ -293,6 +293,7 @@ function FamiliarStudioHero({
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [cardOpen, setCardOpen] = useState(false);
   const { onFile, toast } = useFamiliarImageUpload(familiar.id);
   const types = resolveFamiliarTypes(familiar.familiarType);
   const visibleTypes = types.length > 0 ? types : [FAMILIAR_TYPES[0]];
@@ -340,14 +341,23 @@ function FamiliarStudioHero({
 
   return (
     <header className="familiar-studio-control__hero">
+      {/* View and edit both live on this avatar, and they are split the same
+          way as everywhere else in the app: the primary click VIEWS — it opens
+          the familiar's card — and replacing the portrait is its own labelled
+          control. It used to be the click, which meant there was no way to look
+          at a familiar's own portrait without being one gesture away from
+          overwriting it. Dropping an image on the avatar still replaces it,
+          exactly as before: a drop can only ever have meant "use this one". */}
       <div className="familiar-studio-control__avatar-wrap">
         <button
           type="button"
           className="familiar-studio-control__avatar focus-ring"
           data-dragging={dragging || undefined}
-          aria-label={`Replace ${familiar.display_name}'s portrait`}
-          title="Click or drop an image to replace the portrait"
-          onClick={() => inputRef.current?.click()}
+          aria-label={`Open ${familiar.display_name}'s card`}
+          aria-haspopup="dialog"
+          aria-expanded={cardOpen}
+          title="Click to open the card · drop an image to replace the portrait"
+          onClick={() => setCardOpen(true)}
           onDragOver={(event) => {
             event.preventDefault();
             setDragging(true);
@@ -360,6 +370,15 @@ function FamiliarStudioHero({
             size="xl"
             className="familiar-studio-control__avatar-image"
           />
+        </button>
+        <button
+          type="button"
+          className="familiar-studio-control__avatar-edit focus-ring"
+          aria-label={`Replace ${familiar.display_name}'s portrait`}
+          title="Replace the portrait"
+          onClick={() => inputRef.current?.click()}
+        >
+          <Icon name="ph:camera" width={12} height={12} aria-hidden />
         </button>
         <input
           ref={inputRef}
@@ -376,6 +395,11 @@ function FamiliarStudioHero({
             {toast}
           </span>
         ) : null}
+        <FamiliarCardOverlay
+          familiar={familiar}
+          open={cardOpen}
+          onClose={() => setCardOpen(false)}
+        />
       </div>
 
       <div className="familiar-studio-control__identity">

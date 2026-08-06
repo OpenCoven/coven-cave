@@ -51,7 +51,7 @@ const shim = [
   "const { appendFileSync } = require('node:fs');",
   "appendFileSync(process.env.COVEN_TEST_LOG, `${JSON.stringify(process.argv.slice(2))}\\n`);",
   "if (process.argv[2] === 'adapter' && process.argv[3] === 'list' && process.argv[4] === '--json') {",
-  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'assistant-envelope', 'assistant-envelope-exit-1', 'cancel', 'cancel-partial-attention'].includes(process.env.COVEN_TEST_MODE) }]));",
+  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'assistant-envelope', 'assistant-envelope-exit-1', 'assistant-envelope-reasoning', 'cancel', 'cancel-partial-attention'].includes(process.env.COVEN_TEST_MODE) }]));",
   "  process.exit(0);",
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === '--help') {",
@@ -82,6 +82,15 @@ const shim = [
   "    ];",
   "    process.stdout.write(events.map((event) => JSON.stringify(event)).join('\\n') + '\\n');",
   "    process.exit(cleanupExit ? 1 : 0);",
+  "  }",
+  "  if (process.env.COVEN_TEST_MODE === 'assistant-envelope-reasoning') {",
+  "    const events = [",
+  "      { type: 'system', subtype: 'init', model: 'gpt-5.6-sol', session_id: 'coven-envelope-reasoning-session' },",
+  "      { type: 'assistant', message: { content: [{ type: 'text', text: '<reasoning>private notes <coven:attention reason=\"decision\" /></reasoning>\\nVisible answer.\\n<coven:attention reason=\"approval\" />' }] }, session_id: 'coven-envelope-reasoning-session' },",
+  "      { type: 'result', subtype: 'success', is_error: false, session_id: 'coven-envelope-reasoning-session' },",
+  "    ];",
+  "    process.stdout.write(events.map((event) => JSON.stringify(event)).join('\\n') + '\\n');",
+  "    process.exit(0);",
   "  }",
   "  process.stdout.write('unsupported harness `codex`');",
   "  process.exit(1);",
@@ -244,6 +253,33 @@ try {
   // JSONL. That is neither an adapter-discovery failure nor evidence that
   // Codex is signed out. It must remain a structured runtime-process error
   // instead of fabricating the completed-but-empty authentication hint.
+  process.env.COVEN_TEST_MODE = "assistant-envelope-reasoning";
+  {
+    const { events } = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        familiarId: "opal",
+        prompt: "preserve reasoning on reload",
+        projectRoot: familiarWorkspace,
+        sessionId: "coven-envelope-reasoning-session",
+        runId: "coven-envelope-reasoning-run",
+      }),
+    })));
+    assert.equal(events.findLast((event) => event.kind === "done")?.isError, false);
+    const reasoningConversation = await loadConversation("coven-envelope-reasoning-session");
+    const reasoningTurn = reasoningConversation?.turns.at(-1);
+    assert.equal(reasoningTurn?.text.trim(), "Visible answer.");
+    assert.equal(reasoningTurn?.reasoning, "private notes", "reasoning survives reload without control markers");
+    assert.equal(
+      reasoningTurn?.responseMetadata?.attentionRequest?.reason,
+      "approval",
+      "only the visible attention marker should create a human attention request",
+    );
+    assert.doesNotMatch(reasoningTurn?.text ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
+    assert.doesNotMatch(reasoningTurn?.reasoning ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
+  }
+
   process.env.COVEN_TEST_MODE = "silent-exit";
   const silentExitSessionId = "silent-codex-session";
   const silentExitResponse = await POST(new Request("http://localhost/api/chat/send", {

@@ -56,13 +56,13 @@ test("exactly one shared prepareAttentionRequest helper is defined", () => {
   );
   assert.match(
     route,
-    /function prepareAttentionRequest\(args: \{\s*text: string;\s*sessionId: string;\s*turnId: string;\s*requestedAt: string;\s*incomplete\?: boolean;\s*\}\): \{ text: string; request: ChatResponseMetadata\["attentionRequest"\] \| null \} \{/,
-    "the helper accepts text/sessionId/turnId/requestedAt plus optional incomplete mode and returns cleaned text plus a nullable stamped request",
+    /function prepareAttentionRequest\(args: \{\s*text: string;\s*sessionId: string;\s*turnId: string;\s*requestedAt: string;\s*incomplete\?: boolean;\s*\}\): \{\s*text: string;\s*reasoning\?: string;\s*request: ChatResponseMetadata\["attentionRequest"\] \| null;\s*\} \{/,
+    "the helper accepts text/sessionId/turnId/requestedAt plus optional incomplete mode and returns cleaned visible text, optional persisted reasoning, and a nullable stamped request",
   );
   assert.match(
     route,
-    /function prepareAttentionRequest\([\s\S]{0,400}splitReasoning\(args\.text\)\.visible;[\s\S]{0,220}args\.incomplete\s*\?\s*extractIncompleteChatAttentionMarker\(visibleBody\)\s*:\s*extractChatAttentionMarker\(visibleBody\)/,
-    "the helper strips hidden reasoning before it parses the visible body, and incomplete mode must use the shared pending-tail sanitizer",
+    /function prepareAttentionRequest\([\s\S]{0,400}const \{ visible: visibleBody, reasoning: reasoningBody \} = splitReasoning\(args\.text\);[\s\S]{0,220}args\.incomplete\s*\?\s*extractIncompleteChatAttentionMarker\(visibleBody\)\s*:\s*extractChatAttentionMarker\(visibleBody\);[\s\S]{0,320}args\.incomplete\s*\?\s*extractIncompleteChatAttentionMarker\(reasoningBody\)\s*:\s*extractChatAttentionMarker\(reasoningBody\)/,
+    "the helper must parse markers only from visible text while separately scrubbing reasoning for persisted reloads; incomplete mode uses the shared pending-tail sanitizer in both places",
   );
 });
 
@@ -107,8 +107,8 @@ test("the OpenClaw gateway persistence path prepares and persists the attention 
   );
   assert.match(
     route,
-    /const gatewayAttention = prepareAttentionRequest\(\{[\s\S]{0,900}text: gatewayAttention\.text\.trim\(\),\s*createdAt: assistantCreatedAt,[\s\S]{0,300}responseMetadata: gatewayAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: gatewayAttention\.request \}\s*:\s*responseMetadata,/,
-    "the gateway persisted turn should use the cleaned text, the single stamped createdAt, and a conditionally cloned responseMetadata",
+    /const gatewayAttention = prepareAttentionRequest\(\{[\s\S]{0,900}text: gatewayAttention\.text\.trim\(\),[\s\S]{0,200}\.\.\.\(gatewayAttention\.reasoning \? \{ reasoning: gatewayAttention\.reasoning \} : \{\}\),\s*createdAt: assistantCreatedAt,[\s\S]{0,300}responseMetadata: gatewayAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: gatewayAttention\.request \}\s*:\s*responseMetadata,/,
+    "the gateway persisted turn should use the cleaned text, carry persisted reasoning when present, use one stamped createdAt, and conditionally clone responseMetadata",
   );
 });
 
@@ -120,8 +120,8 @@ test("the native OpenClaw stub/direct persistence path prepares and persists the
   );
   assert.match(
     route,
-    /const nativeAttention = prepareAttentionRequest\(\{[\s\S]{0,900}text: nativeAttention\.text\.trim\(\),\s*createdAt: assistantCreatedAt,[\s\S]{0,300}responseMetadata: nativeAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: nativeAttention\.request \}\s*:\s*responseMetadata,/,
-    "the native persisted turn should use the cleaned text, the single stamped createdAt, and a conditionally cloned responseMetadata",
+    /const nativeAttention = prepareAttentionRequest\(\{[\s\S]{0,900}text: nativeAttention\.text\.trim\(\),[\s\S]{0,200}\.\.\.\(nativeAttention\.reasoning \? \{ reasoning: nativeAttention\.reasoning \} : \{\}\),\s*createdAt: assistantCreatedAt,[\s\S]{0,300}responseMetadata: nativeAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: nativeAttention\.request \}\s*:\s*responseMetadata,/,
+    "the native persisted turn should use the cleaned text, carry persisted reasoning when present, use one stamped createdAt, and conditionally clone responseMetadata",
   );
 });
 
@@ -133,8 +133,8 @@ test("the general Coven transport persistence path prepares and persists the att
   );
   assert.match(
     route,
-    /const covenAttention = prepareAttentionRequest\(\{[\s\S]{0,600}text: covenAttention\.text,[\s\S]{0,300}createdAt: assistantCreatedAt,[\s\S]{0,900}responseMetadata: covenAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: covenAttention\.request \}\s*:\s*responseMetadata,/,
-    "the coven-transport persisted turn should use the cleaned text, the single stamped createdAt, and a conditionally cloned responseMetadata",
+    /const covenAttention = prepareAttentionRequest\(\{[\s\S]{0,600}text: covenAttention\.text,[\s\S]{0,200}\.\.\.\(covenAttention\.reasoning \? \{ reasoning: covenAttention\.reasoning \} : \{\}\),[\s\S]{0,300}createdAt: assistantCreatedAt,[\s\S]{0,900}responseMetadata: covenAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: covenAttention\.request \}\s*:\s*responseMetadata,/,
+    "the coven transport persisted turn should use the cleaned text, carry persisted reasoning when present, use one stamped createdAt, and conditionally clone responseMetadata",
   );
 });
 
@@ -166,6 +166,11 @@ test("ChatView renders through the shared attention-aware text projection", () =
     chatView,
     /extractChatAttentionMarker\(/,
     "ChatView must not drift into a duplicate attention pipeline",
+  );
+  assert.match(
+    chatView,
+    /const reasoning = turn\.reasoning\?\.trim\(\) \|\| inlineReasoning;/,
+    "reload should prefer persisted reasoning when present so Show thinking survives marker stripping from turn.text",
   );
 });
 

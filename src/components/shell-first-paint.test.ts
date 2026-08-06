@@ -43,8 +43,14 @@ assert.match(
 
 assert.match(
   shell,
-  /const defaultNavSize = chatContextual\s*\? "260px"\s*: mounted\s*\? `\$\{NAV_OPEN_PX\}px`\s*: `\$\{NAV_RAIL_PX\}px`/,
-  "the first non-contextual panel paint must use the collapsed rail width",
+  /const defaultNavSize =\s*chatContextual \|\| mounted \? `\$\{NAV_OPEN_PX\}px` : `\$\{NAV_RAIL_PX\}px`/,
+  "Chat and restored desktop nav first paint at the shared expanded width while fresh nav starts at the rail",
+);
+
+assert.match(
+  shell,
+  /const NAV_OPEN_PX = SHELL_NAV_DEFAULT_PX;/,
+  "the shared first-paint expanded width is the 240px shell-nav default",
 );
 
 assert.match(
@@ -61,8 +67,8 @@ assert.match(
 
 assert.match(
   homeComposer,
-  /useLayoutEffect\(\(\) => \{\s*setText\(readComposerDraft\(HOME_DRAFT_KEY\)\);\s*setDraftRestored\(true\);\s*\}, \[\]\)/,
-  "HomeComposer must restore a persisted draft before paint without hydrating mismatched controls",
+  /useLayoutEffect\(\(\) => \{\s*const restored = readComposerDraft\(HOME_DRAFT_KEY\);\s*setText\(restored\);\s*setComposerCaret\(restored\.length\);\s*setDraftRestored\(true\);\s*\}, \[\]\)/,
+  "HomeComposer must restore a persisted draft and its caret before paint without hydrating mismatched controls",
 );
 
 console.log("shell-first-paint.test.ts OK");

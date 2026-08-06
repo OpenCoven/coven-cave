@@ -76,6 +76,16 @@ async function base(
       },
     }),
   );
+  await page.route("**/api/daemon/connection**", (route) =>
+    route.fulfill({
+      json: {
+        running: true,
+        availability: "online",
+        checkedAt: new Date().toISOString(),
+        target: { mode: "local", label: "Local daemon", socket: "/tmp/coven.sock" },
+      },
+    }),
+  );
   await page.route("**/api/onboarding/status**", (route) =>
     route.fulfill({ json: { ok: true, complete: true, steps: {}, tools: [] } }),
   );
@@ -301,7 +311,6 @@ test.describe("code surface (Coding familiar's room)", () => {
     isMobile,
   }) => {
     test.skip(!!isMobile, "desktop project supplies the narrow viewport explicitly");
-    await page.setViewportSize({ width: 320, height: 700 });
     await base(page);
     let releaseMemberships = () => {};
     const membershipsReady = new Promise<void>((resolve) => {
@@ -321,21 +330,36 @@ test.describe("code surface (Coding familiar's room)", () => {
     });
     await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
 
-    const sessionsTab = page.getByRole("tab", { name: "Sessions" });
+    const sessionsTab = page
+      .getByRole("tablist", { name: "Code surface" })
+      .getByRole("tab", { name: "Sessions" });
+    // Establish keyboard modality before programmatically selecting the exact
+    // tab under test so Chromium applies the :focus-visible inset ring.
+    await page.keyboard.press("Tab");
     await sessionsTab.focus();
     await expect(sessionsTab).toBeFocused();
+    // Report the real computed values rather than a collapsed boolean: a bare
+    // `outlineMatchesToken: false` hides which half mismatched. The tab carries
+    // `focus-ring-inset`, so the ring is drawn inside the box — width
+    // `--ring-width` (2px) at the negated offset, not the outset `--ring-offset`.
     await expect
-      .poll(() =>
-        sessionsTab.evaluate((element) => {
-          const style = getComputedStyle(element);
-          return {
-            outlineOffset: style.outlineOffset,
-            outlineWidth: style.outlineWidth,
-          };
-        }),
+      .poll(
+        () =>
+          sessionsTab.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return {
+              focusVisible: element.matches(":focus-visible"),
+              outlineWidth: style.outlineWidth,
+              outlineOffset: style.outlineOffset,
+            };
+          }),
+        { timeout: 30_000 },
       )
-      .toEqual({ outlineOffset: "-2px", outlineWidth: "2px" });
+      .toEqual({ focusVisible: true, outlineWidth: "2px", outlineOffset: "-2px" });
 
+    // Resize only after the desktop Code surface has mounted. Starting at a
+    // phone width intentionally routes to the mobile workshop fallback.
+    await page.setViewportSize({ width: 320, height: 700 });
     await page.getByRole("button", { name: "GitHub organization settings" }).click();
     const popover = page.getByRole("dialog", { name: "GitHub organization settings" });
     await expect(popover).toBeVisible({ timeout: 30_000 });

@@ -42,7 +42,7 @@ test.describe("mobile command center pages", () => {
   });
 
   test("Chat index and new chat detail keep stable mobile geometry", async ({ page }) => {
-    await page.getByRole("tab", { name: "Chat" }).click();
+    await page.getByRole("tab", { name: "Chat", exact: true }).click();
     await page.waitForSelector(".chat-surface");
 
     await expectNoHorizontalOverflow(page, "Chat index");
@@ -52,7 +52,9 @@ test.describe("mobile command center pages", () => {
     // there's no toggle-row geometry to assert here.
     const topBar = await box(page, ".top-bar");
 
-    await page.locator(".chat-surface").getByRole("button", { name: "Session", exact: true }).first().click();
+    // cave-n3jg2: the two conditional "+ Session" CTAs (identity row, filter
+    // row) collapsed into one "New session" button in the surface title row.
+    await page.locator(".chat-surface").getByRole("button", { name: "New session", exact: true }).first().click();
     await page.waitForSelector(".cave-chat-linear");
 
     await expectNoHorizontalOverflow(page, "Chat detail");

@@ -58,6 +58,7 @@ const contracts: RouteContract[] = [
   { route: "/codex-automations/[id]/runs/[runId]/log", methods: ["GET"], kind: "json" },
   { route: "/codex-automations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/config", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/config/workspace-path", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/coven-memory", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
   { route: "/coven-memory/[id]", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
   { route: "/coven-memory/overview", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
@@ -223,6 +224,10 @@ const contracts: RouteContract[] = [
   { route: "/salem", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/salem/pathfinder", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/salem/pathfinder/feedback", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  // cave-3rz.3: the image scry. Spawns a local harness with caller-supplied
+  // content, so it carries the same local-origin guard as the other
+  // process-spawning routes.
+  { route: "/scry", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/sessions/[id]/events", methods: ["GET"], kind: "json" },
   { route: "/sessions/[id]/input", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/sessions/[id]/kill", methods: ["POST"], kind: "json" },

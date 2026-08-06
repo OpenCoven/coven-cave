@@ -482,11 +482,13 @@ struct ChatView: View {
                 recentRoots: app.recentProjectRoots,
                 selectedRoot: $thread.projectRoot,
                 isResolved: $projectResolved,
-                requiresExplicitSelection: thread.needsProjectSelection
-            ) {
-                thread.needsProjectSelection = false
-                app.touch(thread)
-            }
+                refreshToken: 0,
+                requiresExplicitSelection: thread.needsProjectSelection,
+                onResolved: {
+                    thread.needsProjectSelection = false
+                    app.touch(thread)
+                }
+            )
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(chrome.bgRaised)

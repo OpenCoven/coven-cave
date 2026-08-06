@@ -27,11 +27,13 @@ try {
     timeoutMs?: number;
   } | undefined;
   const exactEnv = { PATH: "" };
+  let readyClock = 1_000;
   const ready = await resolveCopilotRuntimeLaunch(process.execPath, {
     platform: "linux",
-    now: () => 1_000,
+    now: () => readyClock,
     spawnEnv: (deadline: number) => {
       capturedDeadline = deadline;
+      readyClock = 4_000;
       return exactEnv;
     },
     resolveLaunchCommand: async (_executable: string, options: typeof capturedResolveOptions) => {
@@ -45,9 +47,17 @@ try {
     }),
   });
   assert.equal(capturedDeadline, 3_500, "environment discovery receives one absolute deadline");
-  assert.equal(ready.deadline, capturedDeadline, "the launch plan owns that same absolute deadline");
+  assert.equal(
+    ready.deadline,
+    6_500,
+    "launcher and identity discovery receive a fresh deadline after slow environment discovery",
+  );
   assert.equal(capturedResolveOptions?.env, exactEnv, "launcher resolution uses the plan's exact env");
-  assert.equal(capturedResolveOptions?.timeoutMs, 2_500, "launcher resolution receives only remaining time");
+  assert.equal(
+    capturedResolveOptions?.timeoutMs,
+    2_500,
+    "slow environment discovery cannot consume the launcher-resolution budget",
+  );
   assert.equal(ready.availability.state, "ready");
 
   let timeAfterAvailability = 1_000;
@@ -89,7 +99,7 @@ try {
     "a timed-out plan retains the exact resolved fixed arguments",
   );
 
-  const deadlineSamples = [1_000, 3_499, 3_501];
+  const deadlineSamples = [1_000, 3_499, 6_001];
   let exhaustedResolutionCalls = 0;
   let nonPositiveTimeout: number | undefined;
   const exhaustedBeforeResolution = await resolveCopilotRuntimeLaunch("copilot", {
@@ -225,7 +235,7 @@ try {
   );
   assert.match(
     source,
-    /canonicalProbeSpawnEnv\(\{ discoveryDeadline, now \}\)/,
+    /canonicalProbeSpawnEnv\(\{ discoveryDeadline: environmentDeadline, now \}\)/,
     "the default launch plan uses Task 2's credential-free canonical env",
   );
   assert.doesNotMatch(

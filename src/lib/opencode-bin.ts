@@ -66,7 +66,7 @@ function resolveOpenCodeWindowsLaunch(
   options: OpenCodeLaunchOptions,
 ): OpenCodeWindowsResolution {
   const statFile = options.statFile
-    ?? ((candidate: string) => statSync(candidate).isFile());
+    ?? ((candidate: string) => statSync(/* turbopackIgnore: true */ candidate).isFile());
   const resolveWindowsShim =
     options.resolveWindowsShim ?? windowsShimLaunchCommandForBinary;
   const exists = (candidate: string): boolean => {
@@ -81,7 +81,7 @@ function resolveOpenCodeWindowsLaunch(
   try {
     for (const directory of windowsPathEntries(env)) {
       for (const name of windowsCandidateNames(env)) {
-        const candidate = path.win32.join(directory, name);
+        const candidate = path.win32.join(/* turbopackIgnore: true */ directory, name);
         if (!exists(candidate)) continue;
         if (/\.(?:exe|com)$/i.test(candidate)) {
           return { command: candidate, fixedArgs: [] };
@@ -100,7 +100,7 @@ function resolveOpenCodeWindowsLaunch(
       // extensionless POSIX shim or a PowerShell shim remains, do not skip to a
       // lower-priority PATH entry and silently launch a different install.
       for (const unsafeName of ["opencode.ps1", "opencode"]) {
-        const candidate = path.win32.join(directory, unsafeName);
+        const candidate = path.win32.join(/* turbopackIgnore: true */ directory, unsafeName);
         if (exists(candidate)) {
           return {
             command: candidate,

@@ -42,9 +42,11 @@ import {
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
+import { NavSectionTabs } from "@/components/nav-section-tabs";
+import type { NavSection } from "@/lib/nav-section";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
-type WorkspaceSidebarMode = "home" | "inbox" | "marketplace";
+type WorkspaceSidebarMode = "home";
 
 type Props = {
   sessions: SessionRow[];
@@ -61,9 +63,13 @@ type Props = {
   /** ⌥↵ / ⌥-click / drag on a thread row: open it in a split pane beside the
    *  current chat (the chat surface falls back to a plain open on mobile). */
   onOpenSessionInSplit?: (session: SessionRow) => void;
-  /** Home / Scheduled / Plugins shortcuts route through Workspace so it can
-   *  coordinate mode changes with mobile drawer dismissal. */
+  /** The Home shortcut routes through Workspace so it can coordinate the mode
+   *  change with mobile drawer dismissal. Only rendered for standalone hosts
+   *  that mount this rail without the Home | Chat section tabs. */
   onNavigate: (mode: WorkspaceSidebarMode) => void;
+  /** Global section switcher (Home | Chat). This sidebar hosts the Code room,
+   *  so the tabs ride at its top too — leaving Code returns to the Home rail. */
+  onSectionChange?: (section: NavSection) => void;
   onNewChat: (projectRoot: string | null) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
   /** Refresh the workspace sessions poll after an archive/unarchive PATCH so
@@ -72,8 +78,6 @@ type Props = {
   /** Opens the thread's pull request in the in-app browser (PR badge click);
    *  without it the badge falls back to a new tab. Same chain as chat-list. */
   onOpenUrl?: (url: string) => void;
-  /** Badge count for the Scheduled shortcut (from code-sidebar). */
-  scheduledCount?: number;
   /** Opens Settings — powers the shared footer so Chat keeps the same
    *  Dashboard/Settings footer as every other surface. */
   onOpenSettings: () => void;
@@ -494,11 +498,11 @@ export function WorkspaceSidebar({
   onOpenSession,
   onOpenSessionInSplit,
   onNavigate,
+  onSectionChange,
   onNewChat,
   onDeleteSession,
   onSessionsChanged,
   onOpenUrl,
-  scheduledCount,
   onOpenSettings,
 }: Props) {
   const { projects, createProject, createProjectOrThrow, reload } = useProjects({ familiarId: activeFamiliarId });
@@ -732,6 +736,10 @@ export function WorkspaceSidebar({
   return (
     <div className="workspace-sidebar chat-sidebar flex h-full min-h-0 flex-col">
       <div className="workspace-sidebar__full chat-sidebar__full cnav">
+        {/* Global section switcher — Home | Chat (cave-24d2r). This sidebar IS
+            the Code room, so switching to Home hands the rail back to the
+            standard destination list. */}
+        {onSectionChange ? <NavSectionTabs section="code" onSectionChange={onSectionChange} /> : null}
         {/* Header — the labeled familiar switcher (#2747). WorkspaceSidebar owns
             the primary Shell nav during Chat; Home exits Chat and restores the
             normal navigation. This scope control was restored by cave-l3ay
@@ -748,15 +756,44 @@ export function WorkspaceSidebar({
               labeled
             />
           </div>
-          <button
-            type="button"
-            aria-label="Go to Home"
-            title="Home"
-            onClick={() => onNavigate("home")}
-            className="cnav__back focus-ring ml-auto"
-          >
-            <Icon name="ph:house-bold" width={15} aria-hidden />
+        </header>
+
+        <div className="cnav__quick">
+          <button type="button" title="New chat (⌘N)" onClick={() => onNewChat(null)} className="cnav__new focus-ring">
+            <Icon name="ph:pencil-simple" width={15} className="cnav__new-icon" aria-hidden />
+            <span className="cnav__new-label">New chat</span>
+            <kbd className="cnav__new-kbd">⌘N</kbd>
           </button>
+        </div>
+
+        {/* Grouping tabs share their row with the overflow menu. The standalone
+            utilities band (Scheduled / Plugins icon chips) is retired — both
+            destinations live in the Home rail's list, and dropping the band
+            gives Chat the same tabs → switcher → New chat rhythm as Home. */}
+        <div className="cnav__tabs-row">
+          <Tabs<ChatSidebarView>
+            items={CHAT_SIDEBAR_TABS}
+            value={view}
+            onChange={selectView}
+            ariaLabel="Group chats"
+            className="cnav__tabs"
+            size="sm"
+            idPrefix="chat-sidebar-group"
+            fill
+          />
+          {/* The Home tab above owns the exit now; the icon button only remains
+              when the section switcher is not mounted (standalone hosts). */}
+          {onSectionChange ? null : (
+            <button
+              type="button"
+              aria-label="Go to Home"
+              title="Home"
+              onClick={() => onNavigate("home")}
+              className="cnav__back focus-ring"
+            >
+              <Icon name="ph:house-bold" width={15} aria-hidden />
+            </button>
+          )}
           <button
             ref={menuAnchorRef}
             type="button"
@@ -793,50 +830,7 @@ export function WorkspaceSidebar({
               </PopoverBody>
             </div>
           </Popover>
-        </header>
-
-        {/* One-row quick actions: New chat takes the slack; the Scheduled and
-            Plugins shortcuts ride along as icon chips (labels live in
-            title/aria — the badge still shows the scheduled count). */}
-        <div className="cnav__quick">
-          <button type="button" title="New chat (⌘N)" onClick={() => onNewChat(null)} className="cnav__new focus-ring">
-            <Icon name="ph:pencil-simple" width={15} className="cnav__new-icon" aria-hidden />
-            <span className="cnav__new-label">New chat</span>
-            <kbd className="cnav__new-kbd">⌘N</kbd>
-          </button>
-          <button
-            type="button"
-            title="Scheduled"
-            aria-label={scheduledCount ? `Scheduled (${scheduledCount})` : "Scheduled"}
-            onClick={() => onNavigate("inbox")}
-            className="cnav__mini focus-ring"
-          >
-            <Icon name="ph:clock" width={14} className="cnav__mini-icon" aria-hidden />
-            {typeof scheduledCount === "number" && scheduledCount > 0 ? (
-              <span className="cnav__mini-count">{scheduledCount}</span>
-            ) : null}
-          </button>
-          <button
-            type="button"
-            title="Plugins"
-            aria-label="Plugins"
-            onClick={() => onNavigate("marketplace")}
-            className="cnav__mini focus-ring"
-          >
-            <Icon name="ph:plugs" width={14} className="cnav__mini-icon" aria-hidden />
-          </button>
         </div>
-
-        <Tabs<ChatSidebarView>
-          items={CHAT_SIDEBAR_TABS}
-          value={view}
-          onChange={selectView}
-          ariaLabel="Group chats"
-          className="cnav__tabs"
-          size="sm"
-          idPrefix="chat-sidebar-group"
-          fill
-        />
 
         <div className="cnav__search-wrap">
           <label className="cnav__search">
@@ -1138,16 +1132,16 @@ export function WorkspaceSidebar({
                               >
                                 Show {group.sessions.length - THREADS_PREVIEW} more
                               </button>
-                            </li>
-                          ) : null}
-                        </ul>
-                      )
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                              </li>
+                            ) : null}
+                          </ul>
+                        )
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </nav>
         </div>
 

@@ -1427,16 +1427,6 @@ fn daemon_port() -> Result<u16, String> {
     find_free_port().ok_or_else(|| "no free loopback port is available".to_string())
 }
 
-#[cfg(desktop)]
-fn create_fresh_log_file(path: &Path) -> Result<std::fs::File, String> {
-    std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(path)
-        .map_err(|error| format!("could not create {}: {error}", path.display()))
-}
-
 #[cfg(all(desktop, target_os = "macos"))]
 fn daemon_shutdown_requested() -> bool {
     DAEMON_SHUTDOWN_REQUESTED.load(Ordering::Acquire)
@@ -1565,19 +1555,7 @@ fn run_sidecar_daemon() -> Result<i32, String> {
     let auth_token = sidecar_auth_token();
     let mobile_access_token =
         load_or_create_mobile_access_token(&app_data_dir.join(MOBILE_ACCESS_TOKEN_FILE));
-    let log_dir = std::env::var("HOME")
-        .map(PathBuf::from)
-        .map_err(|_| "HOME is unavailable".to_string())?
-        .join("Library")
-        .join("Logs")
-        .join("CovenCave");
-    std::fs::create_dir_all(&log_dir)
-        .map_err(|error| format!("could not create {}: {error}", log_dir.display()))?;
-    let server_log = log_dir.join("sidecar-daemon-server.log");
-    let stdout = create_fresh_log_file(&server_log)?;
-    let stderr = stdout
-        .try_clone()
-        .map_err(|error| format!("could not duplicate {}: {error}", server_log.display()))?;
+    let sidecar_output = Arc::new(Mutex::new(SidecarOutputTail::default()));
 
     let mut command = Command::new(&node);
     command
@@ -1592,9 +1570,9 @@ fn run_sidecar_daemon() -> Result<i32, String> {
         .env("COVEN_KOKORO_BIN", &kokoro)
         .env("COVEN_CAVE_AUTH_TOKEN", &auth_token)
         .env("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token)
-        .stdin(Stdio::null());
-    command.stdout(Stdio::from(stdout));
-    command.stderr(Stdio::from(stderr));
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     // Take the same lease as GUI startup immediately before creating the
     // child. A GUI that wins this lease writes its marker first; a daemon that
     // wins records its child before releasing it, so the GUI can stop it
@@ -1609,6 +1587,24 @@ fn run_sidecar_daemon() -> Result<i32, String> {
     let mut child = command
         .spawn()
         .map_err(|error| format!("could not start background sidecar: {error}"))?;
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("background sidecar stdout pipe was unavailable".to_string());
+        }
+    };
+    let stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("background sidecar stderr pipe was unavailable".to_string());
+        }
+    };
+    capture_sidecar_output(stdout, Arc::clone(&sidecar_output));
+    capture_sidecar_output(stderr, Arc::clone(&sidecar_output));
     let child_pid = child.id();
     let identity = match process_identity(child_pid) {
         Some(identity) => identity,
@@ -1631,9 +1627,13 @@ fn run_sidecar_daemon() -> Result<i32, String> {
     }
     drop(ownership);
 
-    match wait_for_sidecar_ready(port, &server_log, Duration::from_secs(30), || {
-        gui_is_active(&app_data_dir) || daemon_shutdown_requested()
-    }) {
+    match wait_for_sidecar_ready(
+        port,
+        &sidecar_output,
+        Duration::from_secs(30),
+        || gui_is_active(&app_data_dir) || daemon_shutdown_requested(),
+        || child.try_wait().ok().flatten().is_some(),
+    ) {
         PortWaitResult::Ready => {}
         PortWaitResult::Cancelled => {
             let _ = child.kill();
@@ -1641,12 +1641,21 @@ fn run_sidecar_daemon() -> Result<i32, String> {
             let _ = std::fs::remove_file(&state_path);
             return Ok(0);
         }
+        PortWaitResult::Exited => {
+            let _ = child.wait();
+            let _ = std::fs::remove_file(&state_path);
+            return Err(format!(
+                "background sidecar exited before becoming ready on port {port}. Bounded sidecar output tail:\n{}",
+                sidecar_output_text(&sidecar_output)
+            ));
+        }
         PortWaitResult::TimedOut => {
             let _ = child.kill();
             let _ = child.wait();
             let _ = std::fs::remove_file(&state_path);
             return Err(format!(
-                "background sidecar did not become ready on port {port}"
+                "background sidecar did not become ready on port {port}. Bounded sidecar output tail:\n{}",
+                sidecar_output_text(&sidecar_output)
             ));
         }
     }
@@ -1901,24 +1910,5 @@ mod tests {
         )
         .expect("GUI ownership state deserializes");
         assert_eq!(restored.sidecar.expect("sidecar is retained").port, 3007);
-    }
-
-    #[test]
-    fn daemon_readiness_log_is_empty_for_each_launch() {
-        let path = std::env::temp_dir().join(format!(
-            "coven-daemon-ready-test-{}-{:?}.log",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        std::fs::write(&path, "> Ready on http://127.0.0.1:3000\n").expect("seed stale log");
-        let mut fresh = create_fresh_log_file(&path).expect("truncate daemon log");
-        fresh
-            .write_all(b"> Ready on http://127.0.0.1:3007\n")
-            .expect("write new readiness");
-        fresh.sync_all().expect("flush readiness");
-        let log = std::fs::read_to_string(&path).expect("read fresh daemon log");
-        assert!(!log.contains("3000"));
-        assert!(log.contains("3007"));
-        let _ = std::fs::remove_file(path);
     }
 }

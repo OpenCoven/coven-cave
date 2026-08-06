@@ -83,6 +83,8 @@ export type SessionRow = {
   model?: string | null;
   runtime?: string | null;
   title: string;
+  /** Cave title ownership revision observed alongside title. */
+  titleRevision?: number;
   status: string;
   exit_code: number | null;
   archived_at: string | null;

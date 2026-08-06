@@ -1,0 +1,836 @@
+/* The summoning rite — card left, one question right (cave-3rz.3). */
+
+/* The bare `/rite` route's scroll port.
+ *
+ * `body { overflow: hidden }` is app chrome: every surface in the shell scrolls
+ * inside its own panel and the window never does. The rite's shipped home is
+ * the overlay, whose `.rite-dialog__body` is exactly that panel — but the
+ * chrome-less route had none, so anything past the fold was CLIPPED rather than
+ * scrolled and the seal's Summon button was simply unreachable below ~900px of
+ * viewport. This gives that route the panel it was missing, and it is also the
+ * scrolling ancestor the sticky card sticks to there. */
+.rite-page {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.rite {
+  display: grid;
+  grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+  gap: clamp(var(--space-6), 5vw, var(--space-10));
+  align-items: center;
+  padding: clamp(var(--space-6), 5vw, var(--space-10));
+  min-height: 100%;
+  /* The scry-glitch canvas spans both columns and is positioned against this. */
+  position: relative;
+}
+
+@media (max-width: 60rem) {
+  .rite { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+}
+
+/* The stage is the COLUMN, and it stretches to the full height of the row —
+   that stretch is the travel the sticky card slides along. It holds nothing
+   itself; `.rite__float` below is the card. */
+.rite__stage {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  /* Centred while there is room to centre it, which is every step before the
+     seal. The sticky child takes over the moment the column is taller than the
+     scroll port. */
+  justify-content: center;
+}
+
+/* The card follows the scroll instead of leaving with it.
+ *
+ * `top` is a hair of clearance rather than 0: in the overlay the scroll port
+ * starts directly under `.rite-chrome`, and a card flush against that edge
+ * reads as if it is under the header rather than beside the questions. The
+ * header itself can never be overlapped — it is a SIBLING of the scrolling
+ * element (`.rite-dialog__body`), not an ancestor, so the sticky rect stops at
+ * the port's top edge.
+ *
+ * WHEN THE CARD IS TALLER THAN THE PORT the stickiness is switched off
+ * (see the `max-height` query below) and the card scrolls with the page again.
+ * A top-anchored sticky element taller than its port pins its head and puts its
+ * feet permanently out of reach — for this card that is the seal and the stat
+ * plate, i.e. exactly the half worth looking at. Scrolling it away is the
+ * lesser harm, and it is also what the rite did before any of this. */
+.rite__float {
+  position: sticky;
+  top: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  /* The card floats rather than sitting in a panel — it should read as the
+     object being made, not as a preview pane. */
+  animation: rite-float 7s ease-in-out infinite;
+}
+
+/* Short viewport: the card cannot both stick and stay whole, so it scrolls.
+   40rem is measured, not guessed — the card is 20rem wide at 5/7, so 28rem
+   tall, and the overlay spends roughly 5rem of the viewport on the backdrop
+   padding and the chrome above the scroll port. Below 40rem the two do not
+   both fit and pinning would clip the card's foot.
+
+   NOTE both queries below must stay AFTER `.rite__float`'s own declaration:
+   equal specificity, so source order is the whole of the cascade here. */
+@media (max-height: 40rem) {
+  .rite__float { position: static; }
+}
+
+/* One column (matching the stack at the top of this file). The card is no
+   longer BESIDE the questions, it is ABOVE them, so sticking it would park it
+   on top of the fields it is meant to accompany. The stack is the fallback and
+   the card scrolls away with everything else. */
+@media (max-width: 60rem) {
+  .rite__stage { align-self: auto; }
+  .rite__float { position: static; }
+}
+
+@keyframes rite-float {
+  0%, 100% { transform: translateY(calc(var(--space-1) * -1)); }
+  50% { transform: translateY(var(--space-1)); }
+}
+
+.rite__telemetry {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 20rem;
+}
+
+.rite__ask {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 34rem;
+}
+
+/* Progress reads as beads on a thread, not a stepper bar. */
+.rite__track { display: flex; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
+
+.rite__bead {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-pill);
+  border: 0;
+  display: grid;
+  place-items: center;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--border-hairline);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
+}
+
+.rite__bead--done { color: var(--text-primary); }
+
+/* A held step reads as WAITING, not as broken: it keeps its accent, dimmed, and
+   breathes at the same rate as the scry rail's live pip. It stays clickable —
+   the step explains itself when you get there. */
+.rite__bead--held {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent-presence) 45%, transparent);
+  animation: rite-held 2.4s var(--ease-standard) infinite;
+}
+
+@keyframes rite-held {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.rite__bead--now {
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent-presence);
+  color: var(--text-primary);
+}
+
+/* The question IS the label — there is no caption above a field anywhere. */
+.rite__question {
+  font-size: var(--text-display);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+.rite__aside { font-size: var(--text-base); color: var(--text-secondary); margin: 0; max-width: 42ch; }
+
+/* ── Likeness ─────────────────────────────────────────────────────────────
+   Two paths at step I. The scry is the default and takes the wider column; the
+   manual rite sits beside it as a real choice rather than a link underneath.
+   Same level, not same weight. */
+.rite__paths {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: stretch;
+}
+
+@media (max-width: 48rem) {
+  .rite__paths { grid-template-columns: minmax(0, 1fr); }
+}
+
+.rite__path {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--border-hairline);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.rite__path:hover {
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 1px var(--accent-presence);
+}
+
+.rite__path-label { font-size: var(--text-base); font-weight: 600; }
+.rite__path-note { font-size: var(--text-2xs); color: var(--text-muted); line-height: 1.45; }
+
+/* A manual rite says so on every step. Muted, one line, never an alert — this
+   is a mode the user is in, not a problem they have. */
+.rite__manual {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--border-hairline);
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* Takes the row so the "use the scry after all" button sits beside the
+   explanation rather than orphaned under it. */
+.rite__manual-line { flex: 1 1 24rem; min-width: 0; }
+
+/* ── The held office step ─────────────────────────────────────────────────
+   Shown INSTEAD of the sigils while the scry is still reading the likeness.
+   It must read as waiting on something real — never as disabled, never as an
+   error — and it must always offer a way onward, so the seal is one click from
+   here. */
+.rite__held {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 40%, var(--border-strong));
+  background: color-mix(in oklch, var(--accent-presence) 6%, var(--bg-subtle));
+}
+
+.rite__held-mark {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  color: var(--accent-presence);
+  animation: rite-held 2.4s var(--ease-standard) infinite;
+}
+
+.rite__held-line { margin: 0; font-size: var(--text-md); font-weight: 600; color: var(--text-primary); }
+.rite__held-note { margin: 0; font-size: var(--text-base); color: var(--text-secondary); max-width: 46ch; line-height: 1.5; }
+.rite__held-outs { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
+
+.rite__well {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-6);
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--border-strong);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+
+.rite__well--live {
+  border-color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+}
+
+.rite__well-line { margin: 0; font-size: var(--text-base); }
+.rite__well kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: inset 0 0 0 1px var(--border-hairline);
+}
+.rite__file { display: none; }
+
+/* ── The scry ─────────────────────────────────────────────────────────────
+   Status, never a gate — the rite advances without it. The panel below is
+   what replaced the single "Scrying the likeness…" line, which at 12–18s of
+   real wall clock read as a hang. See src/components/scry-panel.tsx for which
+   parts of it are observed and which one second of it is choreographed. */
+
+/* The glitch is drawn on ONE canvas over the whole rite: the card's artwork
+   tears in place in the left column and the shards it sheds travel to the slots
+   in the right one, which only works if both are the same drawing surface.
+   Above both columns, never in the way of a pointer. */
+.scry-glitch {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+  /* Its own compositing layer, with `isolation: isolate` on `.famcard` as the
+     other half of the pair. The card carries two blend layers (the foil screens,
+     the glare overlays); a full-viewport canvas repainting at 60 Hz on top of
+     them made the browser re-composite that blended stack every frame. MEASURED
+     on this machine at devicePixelRatio 2: 27 fps with a 33 ms median frame gap
+     — the page running at half refresh — against 55 fps and 16.7 ms with the
+     card's blend layers hidden. Either half of the pair alone recovers ~45 fps;
+     both together restore the full 55 fps / 16.7 ms, matching a page with the
+     glitch switched off entirely. The canvas drawing itself was never the cost:
+     the JS stayed at 0.6-1.1 ms a frame throughout. */
+  will-change: transform;
+}
+
+.scry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--border-hairline);
+}
+
+/* Folded. Once the scry has landed the panel stops being a second, read-only
+   copy of the eight values and becomes provenance: who looked, how long it
+   took, and that none of it is fixed. The values themselves live in the fields
+   at the seal, which is the only place they can be changed — printing them
+   twice cost a whole screen of scrolling and made the step read as a form with
+   a receipt stapled to it. */
+.scry--settled {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+
+.scry--settled svg { color: var(--accent-presence); flex: none; }
+
+.scry__provenance { min-width: 0; }
+.scry__sep { color: var(--text-muted); }
+
+.scry__head { display: flex; align-items: center; gap: var(--space-2); }
+
+/* One pip per stage the endpoint can prove it reached. Not a percentage — a
+   scry has no honest percentage, only a position in a known sequence. */
+.scry__rail { display: flex; gap: var(--space-1); list-style: none; margin: 0; padding: 0; }
+
+.scry__pip {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.scry__pip--lit { background: var(--accent-presence); }
+.scry__pip--now { animation: scry-pip 1.4s var(--ease-standard) infinite; }
+
+@keyframes scry-pip {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.scry__line {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+
+.scry--failed .scry__line { color: var(--text-muted); }
+
+/* A readout, not an animation: the one thing that proves a quiet stage is
+   still alive, and the reason reduced motion keeps it. */
+.scry__elapsed {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+/* The harness's own words, forwarded verbatim mid-run. */
+.scry__murmur {
+  margin: 0;
+  font-size: var(--text-2xs);
+  font-style: italic;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.scry__slots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.scry-slot {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.scry-slot__label {
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.scry-slot__value {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  min-height: 1.1rem;
+  line-height: 1.4;
+}
+
+.scry-slot--landed .scry-slot__value { animation: scry-land var(--duration-normal, 220ms) var(--ease-standard); }
+
+@keyframes scry-land {
+  from { opacity: 0; transform: translateY(0.2rem); }
+  to { opacity: 1; transform: none; }
+}
+
+.scry-slot__none { color: var(--text-muted); font-style: italic; }
+
+/* The waiting placeholder. Widths differ per field so the empty state reads as
+   the shape of the thing that is coming, not as four identical bars. */
+.scry-slot__bar {
+  display: block;
+  height: 0.6rem;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--bg-raised) 0%,
+    color-mix(in oklch, var(--accent-presence) 26%, var(--bg-raised)) 45%,
+    var(--bg-raised) 90%
+  );
+  background-size: 220% 100%;
+  animation: scry-shimmer 1.8s var(--ease-standard) infinite;
+}
+
+.scry-slot--short .scry-slot__bar { width: 34%; }
+.scry-slot--medium .scry-slot__bar { width: 58%; }
+.scry-slot--long .scry-slot__bar { width: 92%; }
+
+@keyframes scry-shimmer {
+  from { background-position: 160% 0; }
+  to { background-position: -60% 0; }
+}
+
+.scry__fallback {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── Vessels ──────────────────────────────────────────────────────────── */
+.rite__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: var(--space-2);
+}
+
+.rite__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--border-hairline);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.rite__tile:hover { background: var(--bg-hover); }
+.rite__tile--on { box-shadow: inset 0 0 0 1px var(--accent-presence); background: var(--bg-hover); }
+.rite__tile-label { font-size: var(--text-base); font-weight: 600; }
+.rite__tile-note { font-size: var(--text-2xs); color: var(--text-muted); line-height: 1.4; }
+
+/* ── Stones ───────────────────────────────────────────────────────────── */
+.rite__stones { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-4); }
+
+.rite__stone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.rite__stone:hover { background: var(--bg-subtle); }
+.rite__stone--on { background: color-mix(in oklch, var(--accent-presence) 14%, transparent); }
+
+/* Height is driven by the model's real context window — a bigger stone holds
+   more, which is a true statement, unlike a power rating. */
+.rite__crystal { display: block; height: calc(4.5rem * var(--stone-scale, 1)); }
+.rite__crystal svg { height: 100%; width: auto; overflow: visible; }
+.rite__crystal polygon {
+  fill: color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  stroke: var(--accent-presence);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.rite__crystal-facet { fill: color-mix(in oklch, var(--accent-presence) 46%, transparent); stroke: none; }
+.rite__stone--on .rite__crystal polygon { fill: color-mix(in oklch, var(--accent-presence) 52%, transparent); }
+
+.rite__stone-ctx { font-family: var(--font-mono); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+.rite__stone-id { font-size: var(--text-2xs); color: var(--text-muted); }
+
+/* ── Sigils ───────────────────────────────────────────────────────────── */
+.rite__sigils { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-2); }
+
+.rite__sigil {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--border-hairline);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.rite__sigil:hover { background: var(--bg-hover); }
+.rite__sigil--on {
+  box-shadow: inset 0 0 0 1px var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+.rite__sigil-label { font-size: var(--text-base); font-weight: 600; display: flex; align-items: baseline; gap: var(--space-2); }
+
+/* Marks a value the scry guessed, so a pre-filled choice never passes for one
+   the user made. Worn by a sigil at the office step and by every seal field
+   still holding what the scry offered — with the read-only panel gone, this is
+   the only thing left that tells a guess from a decision. */
+.rite__guess {
+  font-size: var(--text-2xs);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-presence);
+  white-space: nowrap;
+}
+.rite__sigil-note { font-size: var(--text-2xs); color: var(--text-muted); line-height: 1.4; }
+
+/* ── Seal ─────────────────────────────────────────────────────────────── */
+.rite__seal { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); }
+.rite__name { display: flex; flex-direction: column; gap: var(--space-1); width: 100%; max-width: 22rem; }
+.rite__name-hint {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.rite__name-input {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  padding: var(--space-1) 0;
+}
+.rite__name-input:focus { outline: none; border-bottom-color: var(--accent-presence); }
+
+/* The scried fields — ONE table, not seven stacks.
+ *
+ * Label, value, provenance across three columns, so a field costs one line
+ * rather than a hint stacked over an input. Every row of the seal lives in this
+ * single grid (the manner qualities included, under their heading) so the
+ * labels align down the whole step and it reads as one object. That, plus the
+ * scry panel folding to a line once it lands, is what took the seal step from
+ * ~350px past a laptop screen to inside one.
+ *
+ * Same treatment as the name — a line to type on, not a boxed form control, so
+ * a suggestion still reads as a starting point rather than a filled-in form. */
+.rite__guesses {
+  display: grid;
+  /* 7rem is the width of the longest label — "How it reasons", which SOUL.md
+     owns the wording of. A label column narrow enough to wrap it would cost the
+     line this layout just saved. */
+  grid-template-columns: 7rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  row-gap: var(--space-2);
+  /* A value long enough to overflow its input is clipped hard at the column
+     edge, so the gutter is doing the work a text ellipsis would: without it the
+     last word runs straight into the `scried` mark. */
+  column-gap: var(--space-4);
+  width: 100%;
+  max-width: 34rem;
+}
+
+/* The row is three cells of the grid above, not a box of its own. */
+.rite__field { display: contents; }
+
+.rite__field-hint { font-size: var(--text-2xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+
+.rite__field-input {
+  font-size: var(--text-base);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--text-primary);
+  padding: var(--space-1) 0;
+  min-width: 0;
+}
+.rite__field-input:focus { outline: none; border-bottom-color: var(--accent-presence); }
+
+/* Notes sit under the value they explain, never under the label — they belong
+   to the field, and starting them in the label column would read as a row of
+   their own. */
+.rite__note {
+  grid-column: 2 / -1;
+  margin: calc(var(--space-1) * -1) 0 0;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  line-height: 1.4;
+  /* No `ch` cap. The grid column is the measure now, and a second cap on top of
+     it was wrapping one-line notes into two — which is the whole thing these
+     were shortened to avoid. */
+}
+
+/* The manner group — voice, temperament, reasoning. A heading rather than a
+   fourth unlabelled field, because these three are a different KIND of thing
+   from the name and the office: they are what the familiar's SOUL.md is
+   written from. It spans the table and carries its own gloss inline, so the
+   group costs one line instead of a heading plus a three-line paragraph. */
+.rite__manner-head {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* The gloss is prose, not a label — it drops the tracking and the caps. */
+.rite__manner-note {
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-muted);
+}
+
+/* A failed summoning. Never a blocking dialog — the rite is still standing and
+   the seal can be struck again once the reason is dealt with. */
+.rite__error {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--danger-text);
+  max-width: 46ch;
+}
+
+/* Struck. The card carries the real mark now; this column only says so and
+   hands over. */
+.rite__struck {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.rite__struck-line {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.rite__struck-outs { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
+
+.rite__id {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+}
+
+/* The way out to the summoning circle. Same object as the step-I paths, but it
+   sits alone under the tiles rather than in the two-path grid. */
+.rite__path--aside { width: 100%; }
+
+/* ── The rite as an overlay ────────────────────────────────────────────────
+   Mirrors the summoning circle's dialog so the two rituals read as the same
+   kind of surface. No backdrop click handler on purpose: the rite holds a
+   dropped File that nothing can restore. */
+.rite-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: var(--backdrop-scrim);
+}
+
+.rite-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(1040px, 100%);
+  max-height: min(820px, calc(100vh - 2 * var(--space-4)));
+  overflow: hidden;
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .rite-dialog { background: var(--bg-raised); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .rite-dialog { background: var(--bg-raised); backdrop-filter: none; }
+}
+
+.rite-dialog__body { flex: 1; min-height: 0; overflow: auto; }
+
+.rite-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.rite-chrome__crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.rite-chrome__sep { color: var(--text-muted); }
+.rite-chrome__acts { display: flex; align-items: center; gap: var(--space-2); }
+
+.rite-chrome__close {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.rite-chrome__close:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+/* Leaving is the only other irreversible act in the rite, so it asks. */
+.rite-leave {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+}
+
+.rite-leave__line { margin: 0; font-size: var(--text-md); font-weight: 600; color: var(--text-primary); }
+.rite-leave__note { margin: 0; font-size: var(--text-2xs); color: var(--text-muted); max-width: 60ch; }
+.rite-leave__acts { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
+
+@media (prefers-reduced-motion: reduce) {
+  /* The float is the animation; `position: sticky` is not motion in this sense
+     — it is where the element IS, the same way a fixed header is, and it moves
+     only in response to the user's own scrolling. It stays. */
+  .rite__float { animation: none; }
+
+  /* Datamoshing is a strong vestibular trigger — tearing, channel separation
+     and stepped motion are close to the worst case for it — so the whole canvas
+     goes. There is no "gentle glitch" worth shipping here. The component also
+     refuses to start its loop, so nothing is merely hidden while still burning
+     frames. What remains still communicates stage and completion: the pip rail
+     fills, the stage line names where the scry is, the elapsed readout keeps
+     counting, and each slot still lights up when its value lands (all four at
+     once rather than staggered — see scry-panel.tsx). */
+  .scry-glitch { display: none; }
+  .scry__pip--now { animation: none; }
+
+  /* The held step keeps its accent ring and its words; only the breathing
+     goes. Nothing about the hold is communicated by the pulse alone. */
+  .rite__bead--held,
+  .rite__held-mark { animation: none; }
+  .scry-slot--landed .scry-slot__value { animation: none; }
+
+  /* The placeholder keeps its identity as an unfilled slot without pulsing. */
+  .scry-slot__bar {
+    animation: none;
+    background: var(--bg-raised);
+    box-shadow: inset 0 0 0 1px var(--border-hairline);
+  }
+}

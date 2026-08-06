@@ -107,10 +107,10 @@ assert.doesNotMatch(
   /hc-footer-band/,
   "the legacy hc- footer band stays retired — the shared cave-composer-footer-band carries the context pill",
 );
-assert.doesNotMatch(
+assert.match(
   source,
-  /HomeSelect|Choose chat agent/,
-  "the home familiar selector is removed (selection lives in the side panel)",
+  /<FamiliarQuickSwitch[\s\S]*labeled[\s\S]*singleRequired/,
+  "the home familiar selector is labeled and constrained to one launch target",
 );
 assert.doesNotMatch(
   source,
@@ -131,8 +131,8 @@ assert.match(
 assert.doesNotMatch(css, /\.hc-action-bar\b/, "the bespoke action-bar CSS is gone (chat composer footer styles apply)");
 assert.doesNotMatch(
   css,
-  /\.hc-familiar-selector|\.hc-home-select/,
-  "the familiar-selector / home-select CSS is removed with the selector",
+  /\.hc-home-select/,
+  "home reuses the shared familiar picker instead of custom select CSS",
 );
 assert.doesNotMatch(
   css,
