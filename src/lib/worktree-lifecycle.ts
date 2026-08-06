@@ -313,10 +313,6 @@ function applicableManagedCreationException({
     : null;
 }
 
-function managedCreationExceptionReasons(exception: ManagedCreationException): string[] {
-  return [`owner exception active until ${exception.expiresAt}: ${exception.owner} — ${exception.reason}`];
-}
-
 function recoveryDispositionReasons(
   metadata: WorktreeLifecycleMetadata,
   nowMs: number,
@@ -421,14 +417,18 @@ function classifyLifecycleUnitInternal(
     ]);
   }
 
-  const activeException = applicableManagedCreationException({
-    exception: observation.metadata.exception,
-    requestedPath: observation.path,
-    nowMs,
-  });
-  if (activeException) {
-    return withReasons(observation, "active", managedCreationExceptionReasons(activeException));
-  }
+  // A managed creation exception is admission authority only: it lifts the
+  // budget refusal in `assessManagedWorktreeCreation` so the unit can be
+  // created. It deliberately does NOT survive into retirement. Control only
+  // reaches here once `landed` is true, so honoring the exception at this point
+  // pinned merged, clean worktrees as `active` until a calendar expiry that
+  // outlived the work by days. That is the ratchet cave-8dpxq removes: every
+  // exception granted to escape a full budget went on to hold the budget full,
+  // forcing the next session to request another one.
+  //
+  // Retirement stays gated by the 8-hour cooldown, the repository-wide
+  // maintenance gate, and the deletion proof below, so dropping the exception
+  // here reclassifies landed work without authorizing any new deletion.
 
   if (observation.remoteRef && observation.remoteRef.oid !== observation.head) {
     return withReasons(observation, "recovery", [

@@ -48,6 +48,16 @@ export type LiveGenerationRegistry<
     updater: (prev: T[]) => T[],
     nextActiveLeafId: string,
   ): S | null;
+  /** Re-key one snapshot while preserving its run metadata. `canMove` guards
+   * both the source and any existing target so stale runs cannot overwrite a
+   * newer registration. */
+  move(
+    fromSessionId: string,
+    toSessionId: string,
+    canMove: (source: S, target: S | null) => boolean,
+  ): S | null;
+  /** Clear only when the current snapshot still belongs to the caller. */
+  clearIf(sessionId: string, canClear: (snapshot: S) => boolean): boolean;
   clear(sessionId: string | null | undefined): void;
   /** Listen for snapshot updates (record/advance) and settle (clear → null).
    *  Notifications are delivered on a microtask. Returns an unsubscriber. */
@@ -98,6 +108,24 @@ export function createLiveGenerationRegistry<
         activeLeafId: nextActiveLeafId,
         updatedAt: Date.now(),
       } as S);
+    },
+    move(fromSessionId, toSessionId, canMove) {
+      const source = snapshots.get(fromSessionId);
+      if (!source) return null;
+      const target = snapshots.get(toSessionId) ?? null;
+      if (!canMove(source, target)) return null;
+      if (fromSessionId === toSessionId) return source;
+      const moved = record({ ...source, sessionId: toSessionId } as S);
+      snapshots.delete(fromSessionId);
+      queueMicrotask(() => notify(fromSessionId, null));
+      return moved;
+    },
+    clearIf(sessionId, canClear) {
+      const snapshot = snapshots.get(sessionId);
+      if (!snapshot || !canClear(snapshot)) return false;
+      snapshots.delete(sessionId);
+      queueMicrotask(() => notify(sessionId, null));
+      return true;
     },
     clear(sessionId) {
       if (!sessionId) return;

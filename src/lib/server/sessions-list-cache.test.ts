@@ -88,6 +88,7 @@ function fnBlock(source, name) {
     "setSessionKeepLocal",
     "extendSessionAutoArchiveLocal",
     "sacrificeSessionLocal",
+    "autoArchiveReflectedSessionLocal",
   ]) {
     assert.match(
       fnBlock(config, mutator),

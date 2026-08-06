@@ -144,6 +144,7 @@ function readPalette(el: HTMLElement): Palette {
 export function GrimoireGraphView({
   graph,
   meta,
+  scopeLabel,
   scanning,
   scanError,
   onOpen,
@@ -152,6 +153,9 @@ export function GrimoireGraphView({
    *  client-built knowledge graph (so something always paints instantly). */
   graph: DocGraph;
   meta?: GrimoireGraphMeta | null;
+  /** Who the shell's familiar multiselect has narrowed memory to, if anyone —
+   *  the graph arrives already scoped, this only makes that visible. */
+  scopeLabel?: string | null;
   /** True while the full-corpus scan is still in flight. */
   scanning?: boolean;
   /** Set when the full scan failed — the local graph stays up. */
@@ -751,11 +755,15 @@ export function GrimoireGraphView({
       <div className="grid h-full min-h-0 place-items-center p-8">
         <EmptyState
           icon="ph:graph"
-          headline={scanning ? "Weaving the graph…" : "Nothing to graph yet"}
+          headline={
+            scanning ? "Weaving the graph…" : scopeLabel ? `No relations for ${scopeLabel}` : "Nothing to graph yet"
+          }
           subtitle={
             scanning
               ? "Scanning your knowledge, memory, and journal for connections."
-              : "Create a knowledge entry, memory file, or journal day and it appears here — [[wiki-links]], tags, and mentions weave them together."
+              : scopeLabel
+                ? "Nothing in this scope has anything to weave together. Widen the familiar selection to see the whole coven's relations."
+                : "Create a knowledge entry, memory file, or journal day and it appears here — [[wiki-links]], tags, and mentions weave them together."
           }
         />
       </div>
@@ -951,9 +959,15 @@ export function GrimoireGraphView({
                 />
               </label>
             </div>
+            {scopeLabel ? (
+              <p className="text-[length:var(--text-sm)] leading-snug text-[var(--text-muted)]">
+                Memory is scoped to {scopeLabel}. Stitches and journal days stay coven-wide.
+              </p>
+            ) : null}
             {memoryTruncated && meta ? (
               <p className="text-[length:var(--text-sm)] leading-snug text-[var(--text-muted)]">
-                Scanned the {meta.memory.scanned} most recent of {meta.memory.total} memory files.
+                Scanned the {meta.memory.scanned} most recent of {meta.memory.total} memory files
+                {scopeLabel ? " across the coven" : ""}.
               </p>
             ) : null}
             {scanError ? (

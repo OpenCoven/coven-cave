@@ -653,8 +653,8 @@ assert.match(
 );
 assert.match(
   source,
-  /clearLiveChatGeneration\(liveGeneration\.sessionId, runId\)/,
-  "A settling older run must not clear a newer run's registry snapshot",
+  /clearLiveChatGenerationAliases\(liveGeneration\.sessionAliases, runId\)/,
+  "A settling older run clears all of its aliases without clearing a newer run's registry snapshot",
 );
 
 assert.match(

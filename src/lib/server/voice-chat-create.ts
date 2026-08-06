@@ -12,7 +12,7 @@ export type VoiceChatCreateDeps = {
   loadFamiliarBinding(familiarId: string): Promise<{ harness: string } | null>;
   saveConversation(conv: ConversationFile): Promise<void>;
   recordSessionFamiliar(sessionId: string, familiarId: string): Promise<void>;
-  setSessionTitle(sessionId: string, title: string): Promise<void>;
+  initializeSessionTitleOwnership(sessionId: string, title: string): Promise<void>;
   defaultTitle(sessionId: string): string;
   /** Override for tests; defaults to crypto.randomUUID. */
   mintSessionId?: () => string;
@@ -47,7 +47,7 @@ export async function createVoiceChatSession(
   try {
     await deps.saveConversation(conv);
     await deps.recordSessionFamiliar(sessionId, input.familiarId);
-    await deps.setSessionTitle(sessionId, deps.defaultTitle(sessionId));
+    await deps.initializeSessionTitleOwnership(sessionId, deps.defaultTitle(sessionId));
   } catch {
     return { ok: false, error: "save_failed" };
   }

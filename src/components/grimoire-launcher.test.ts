@@ -23,7 +23,11 @@ assert.match(
   /onShowJournal=\{\(\) => setView\("journal"\)\}[\s\S]{0,80}onShowGraph=\{\(\) => setView\("graph"\)\}/,
   "the journal and graph tiles switch tabs",
 );
-assert.match(view, /graph=\{graph\}/, "the launcher sees the same scan-or-local graph as the canvas");
+assert.match(
+  view,
+  /graph=\{scopedGraph\}/,
+  "the launcher sees the same scan-or-local graph as the canvas, narrowed by the same familiar scope",
+);
 
 // ── Header: centered segmented tabs + contextual dashed New stitch pill ─────
 

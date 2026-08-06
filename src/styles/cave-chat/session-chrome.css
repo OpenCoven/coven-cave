@@ -452,3 +452,32 @@
   letter-spacing: 0.04em;
   color: var(--text-secondary);
 }
+
+/* ── Transcript gap divider ("Chat Session - Prototype.dc.html", cave-n3jg2) ─
+   A named rule across the reading column wherever the conversation paused for
+   long enough to be a separate sitting. The transcript already revealed the
+   turn's timestamp at the same threshold; this says what that timestamp only
+   implies. Decorative by construction — the label is aria-hidden, because the
+   timestamp below it carries the same fact to a screen reader once. */
+.cave-chat-turn-gap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-5) 0;
+}
+.cave-chat-turn-gap__rule {
+  flex: 1;
+  min-width: var(--space-2);
+  height: 1px;
+  background: var(--border-hairline);
+}
+.cave-chat-turn-gap__label {
+  flex: none;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}

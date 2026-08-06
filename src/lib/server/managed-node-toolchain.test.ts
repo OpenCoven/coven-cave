@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { access, lstat, mkdtemp, readFile, readlink, rm } from "node:fs/promises";
+import { access, lstat, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 import { gzipSync } from "node:zlib";
+import { MANAGED_NODE_VERSION } from "../onboarding-prerequisites.ts";
 import { safeArchiveDestination, extractSafeTarGz, extractSafeZip } from "./managed-node-archive.ts";
 import { managedNodePaths, managedNodeRoot, managedNodeSpawnEnv, probeManagedNodeToolchain } from "./managed-node-toolchain.ts";
 
@@ -167,4 +168,40 @@ test("managed Node paths are user-scoped and never point at a system installatio
 test("managed Node probe distinguishes an absent toolchain from an unusable one", async () => {
   const missing = await probeManagedNodeToolchain({ platform: "linux", architecture: "x64", home: path.join(tmpdir(), "missing-coven-node") });
   assert.equal(missing.status, "missing");
+});
+
+test("managed Node probe gives npm a cold-start budget without slowing the Node check", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "coven-managed-node-probe-"));
+  const env = { NODE_ENV: "test" } satisfies NodeJS.ProcessEnv;
+  const paths = managedNodePaths("linux", "x64", env, home);
+  assert.ok(paths);
+  await mkdir(path.dirname(paths.node), { recursive: true });
+  await mkdir(path.dirname(paths.npmCli), { recursive: true });
+  await writeFile(paths.node, "");
+  await writeFile(paths.npmCli, "");
+
+  const calls: Array<{ args: readonly string[]; timeout: number | undefined }> = [];
+  try {
+    const probe = await probeManagedNodeToolchain({
+      platform: "linux",
+      architecture: "x64",
+      env,
+      home,
+      exec: async (_command, args, options) => {
+        calls.push({ args, timeout: options?.timeout });
+        return {
+          stdout: args[0] === "--version" ? `v${MANAGED_NODE_VERSION}\n` : "11.0.0\n",
+          stderr: "",
+        };
+      },
+    });
+
+    assert.equal(probe.status, "ready");
+    assert.deepEqual(calls.map(({ args, timeout }) => ({ args, timeout })), [
+      { args: ["--version"], timeout: 1_500 },
+      { args: [paths.npmCli, "--version"], timeout: 10_000 },
+    ]);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
 });

@@ -66,9 +66,11 @@ import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   advanceLiveChatGeneration,
   clearLiveChatGeneration,
+  clearLiveChatGenerationAliases,
   mapConversationHistoryTurns,
   publishLiveChatGenerationMetadata,
   readLiveChatGeneration,
+  reconcileLiveChatGenerationSession,
   recordLiveChatGeneration,
   retryTurnModelRequest,
   stageLiveChatGenerationMetadata,
@@ -83,6 +85,7 @@ import {
 } from "@/lib/chat-turn-state";
 import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat-transcript-groups";
 import { generateChatTitle } from "@/lib/chat-title-generation";
+import { chatTurnGapLabel } from "@/lib/chat-turn-gap";
 import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
 import {
   newSessionDefaults,
@@ -197,6 +200,7 @@ import { FollowUpCards } from "@/components/chat-follow-up-cards";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { imageCarouselKey, sliceImageBlocks, stripImageMarkers } from "@/lib/image-blocks";
+import { sliceSpecBlocks } from "@/lib/spec-blocks";
 import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
 import { extractAutoStatusMarkers } from "@/lib/auto-status-blocks";
 import {
@@ -212,6 +216,7 @@ import {
 import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
 import { GitHubCard } from "@/components/github-card";
 import { ImageCarousel } from "@/components/image-carousel";
+import { ChatSpecCard } from "@/components/chat-spec-card";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillStageCard } from "@/components/skill-stage-card";
 import { AutoStatusCard } from "@/components/auto-status-card";
@@ -279,6 +284,16 @@ import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 import { AttachmentList, AttachmentThumb, InlineImageAttachments, formatAttachmentBytes, isInlineImageAttachment } from "./chat-attachment-cards";
 import { preloadMarkdownPreview } from "@/lib/markdown-preview";
+import {
+  type CreationRefreshState,
+  onSendStart,
+  onCreationSessionIdentified,
+  onDoneCreationRefresh,
+  onCreationRunTerminated,
+  shouldReplacementRefreshOnDone,
+} from "@/lib/chat-creation-refresh";
+import { canPromoteDisplayedSession, ownsDisplayedView } from "@/lib/chat-session-ownership";
+import type { ChatSessionPromotionRequest } from "@/lib/chat-router-promotion";
 
 // Chat history commonly arrives before syntax highlighting is needed. Warm the
 // lightweight browser-only serializer while that request is in flight so
@@ -341,7 +356,8 @@ type Props = {
   /** Workspace-owned session list; the starting page's "Continue" row reads it
    *  so no extra fetch rides on every new chat. */
   sessions?: SessionRow[];
-  onSessionStarted?: (sessionId: string) => void;
+  composeInstance?: number;
+  onSessionStarted?: (request: ChatSessionPromotionRequest) => void;
   /** Pre-session voice call: ChatView created a conversation for the call;
    *  the router promotes it and re-enters via openVoiceNonce. */
   onVoiceSessionCreated?: (sessionId: string) => void;
@@ -434,6 +450,7 @@ type QueuedChatMessage = {
 type LiveStreamGeneration = {
   sessionId: string | null;
   originSessionId: string | null;
+  sessionAliases: Set<string>;
   controller: AbortController;
   runId: string;
   streamHealth: () => ChatStreamClientHealth;
@@ -1810,7 +1827,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, familiars = [], sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, familiars = [], sessions, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -2477,6 +2494,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [activeProjectRoot, onProjectRootChange]);
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
+  const creationRefreshStateRef = useRef<CreationRefreshState>({ pendingRuns: {} });
+  // Tracks which generation run currently owns the displayed view. Cleared on
+  // thread switch, adoption, and unmount. See ownsDisplayedView for the guard.
+  const displayedCreationRunIdRef = useRef<string | null>(null);
+  const onSessionsChangedRef = useRef(onSessionsChanged);
+  onSessionsChangedRef.current = onSessionsChanged;
+  useLayoutEffect(() => {
+    return () => {
+      displayedCreationRunIdRef.current = null;
+    };
+  }, []);
   const streamHealthSessionRef = useRef(sessionId);
   const currentStreamHealthRunIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -3786,6 +3814,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // A queued follow-up belongs to the conversation that was visible when it
     // was composed. Never let a thread switch dispatch it into another chat.
     if (isThreadSwitch) {
+      // Clearing display ownership on any thread switch means an in-flight
+      // generation from the previous view can no longer adopt.
+      displayedCreationRunIdRef.current = null;
       queuedMessagesRef.current = [];
       setQueuedMessages([]);
     }
@@ -4861,6 +4892,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setProjectRootRequired(false);
     const initialLiveSessionId = currentSessionRef.current;
     liveSessionIdRef.current = initialLiveSessionId;
+    const runId = crypto.randomUUID();
+    creationRefreshStateRef.current = onSendStart(creationRefreshStateRef.current, runId, initialLiveSessionId);
+    // Register this run as the displayed owner for both new and resumed chats.
+    // Unmount/thread-switch cleanup clears the slot before a late replacement
+    // can promote into a different compose.
+    displayedCreationRunIdRef.current = runId;
     setHistoryState("loaded");
 
     // Explicit parentTurnId (including null = root) wins; only fall back to the
@@ -4899,7 +4936,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ],
     };
     const controller = new AbortController();
-    const runId = crypto.randomUUID();
     currentStreamHealthRunIdRef.current = runId;
     let generationStreamHealth = applyStreamHealthAction({
       type: "connect",
@@ -4913,6 +4949,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const liveGeneration: LiveStreamGeneration = {
       sessionId: initialLiveSessionId,
       originSessionId: initialLiveSessionId,
+      sessionAliases: new Set(initialLiveSessionId ? [initialLiveSessionId] : []),
       controller,
       runId,
       streamHealth: () => generationStreamHealth,
@@ -5280,8 +5317,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         });
       }
     } finally {
+      // All terminal exits — HTTP rejection, missing body, exhausted recovery,
+      // abort, and stream exceptions — reach here. Calling
+      // onCreationRunTerminated unconditionally is safe: it removes only
+      // unbound pending entries and preserves bound session retry ones.
+      creationRefreshStateRef.current = onCreationRunTerminated(creationRefreshStateRef.current, liveGeneration.runId);
       // Always retire THIS generation's registry entry (keyed by session).
-      clearLiveChatGeneration(liveGeneration.sessionId, runId);
+      clearLiveChatGenerationAliases(liveGeneration.sessionAliases, runId);
       if (needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
         setHistoryRetryKey((k) => k + 1);
       }
@@ -5961,22 +6003,52 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ) => {
     switch (ev.kind) {
       case "session": {
-        liveGeneration.sessionId = ev.sessionId;
+        reconcileLiveChatGenerationSession(
+          liveGeneration,
+          ev.sessionId,
+          liveGeneration.runId,
+        );
+        // Bind creation-refresh OUTSIDE the ownership guard. The provenance
+        // gate is now encoded in the helper: only a sessionless generation
+        // (originSessionId === null) may bind an unbound pending creation state;
+        // an existing-session generation is rejected internally.
+        creationRefreshStateRef.current = onCreationSessionIdentified(
+          creationRefreshStateRef.current, liveGeneration.runId, liveGeneration.originSessionId, ev.sessionId,
+        );
         if (ev.sessionId !== currentSessionRef.current) {
-          // Only adopt the new session id into THIS view's refs when the view is
-          // still on the thread this generation started from. If the user
-          // switched to another conversation before the id arrived (a new chat's
-          // first-token latency), this is a *background* generation: adopting its
-          // id would splice its chunks into the displayed thread and mis-address
-          // the next send (sendRaw reads currentSessionRef as initialLiveSessionId).
-          // Still notify onSessionStarted — the router promotes a still-open new
-          // chat but leaves an already-switched view alone (chat-router.tsx).
-          if (currentSessionRef.current === liveGeneration.originSessionId) {
+          // Only adopt the new session id into THIS view's refs when this run
+          // still owns the displayed thread. The run slot blocks both overlapping
+          // sessionless sends and resumed replacements arriving after switch/unmount.
+          const owned = ownsDisplayedView({
+            currentSessionId: currentSessionRef.current,
+            originSessionId: liveGeneration.originSessionId,
+            runId: liveGeneration.runId,
+            displayedCreationRunId: displayedCreationRunIdRef.current,
+          });
+          const shouldPromote = canPromoteDisplayedSession({
+            currentSessionId: currentSessionRef.current,
+            originSessionId: liveGeneration.originSessionId,
+            runId: liveGeneration.runId,
+            displayedCreationRunId: displayedCreationRunIdRef.current,
+          });
+          if (owned) {
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
+            // Clear display ownership after adoption so no late event may
+            // re-adopt via the done stable-ID fallback.
+            displayedCreationRunIdRef.current = null;
           }
-          onSessionStarted?.(ev.sessionId);
+          // Router promotion: pass originSessionId so ChatRouter can match the
+          // specific thread this generation started from (null for sessionless
+          // new-chat; non-null for replacement/fork on an existing session).
+          if (shouldPromote) {
+            onSessionStarted?.({
+              newSessionId: ev.sessionId,
+              expectedSessionId: liveGeneration.originSessionId,
+              composeInstance,
+            });
+          }
         }
         if (taskArmedRef.current) {
           // One-shot: clear before the async create so a second session event
@@ -6139,24 +6211,81 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           stampFirstReplyOnce();
         }
         void refreshUsagePlan(ev.responseMetadata?.confirmedModel ?? ev.responseMetadata?.model ?? null);
+        if (ev.sessionId) {
+          reconcileLiveChatGenerationSession(
+            liveGeneration,
+            ev.sessionId,
+            liveGeneration.runId,
+          );
+        }
         if (ev.sessionId && ev.sessionId !== currentSessionRef.current) {
-          liveGeneration.sessionId = ev.sessionId;
-          // Same ownership guard as the "session" event: a background generation
-          // (user switched threads before this settled) must not overwrite the
-          // displayed thread's currentSessionRef. Still let the router register it.
-          if (currentSessionRef.current === liveGeneration.originSessionId) {
+          // Same run-and-thread ownership predicate as the "session" event.
+          const owned = ownsDisplayedView({
+            currentSessionId: currentSessionRef.current,
+            originSessionId: liveGeneration.originSessionId,
+            runId: liveGeneration.runId,
+            displayedCreationRunId: displayedCreationRunIdRef.current,
+          });
+          const shouldPromote = canPromoteDisplayedSession({
+            currentSessionId: currentSessionRef.current,
+            originSessionId: liveGeneration.originSessionId,
+            runId: liveGeneration.runId,
+            displayedCreationRunId: displayedCreationRunIdRef.current,
+          });
+          if (owned) {
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
+            // Clear display ownership after adoption (same as session event path).
+            displayedCreationRunIdRef.current = null;
           }
-          onSessionStarted?.(ev.sessionId);
+          // Router promotion: pass originSessionId so ChatRouter can match the
+          // specific thread this generation started from (mirrors the session event path).
+          if (shouldPromote) {
+            onSessionStarted?.({
+              newSessionId: ev.sessionId,
+              expectedSessionId: liveGeneration.originSessionId,
+              composeInstance,
+            });
+          }
         }
-        // A Board native-chat handoff already owns the stable conversation id,
-        // so its "session" event does not promote the router and therefore
-        // cannot refresh the task's session list. Refresh after the server has
-        // saved the first transcript; otherwise the cockpit stays in its
-        // one-shot bridge mode and never restores the normal work/rail view.
-        if (startNewConversation && ev.sessionId) onSessionsChanged?.();
+        const completedSessionId = ev.sessionId ?? liveGeneration.sessionId;
+        // Bind creation-refresh to this generation's session ID before the done
+        // decision. Covers: (a) the race where done arrives before the "session"
+        // event (no prior binding), and (b) background generations where the user
+        // switched away — session event already bound the state, this is idempotent.
+        // The provenance gate is encoded in the helper: only a sessionless
+        // generation (originSessionId === null) may bind; a retry participates
+        // only when its origin matches the already-bound creation session; an
+        // unrelated existing-session generation is rejected internally.
+        if (completedSessionId) {
+          creationRefreshStateRef.current = onCreationSessionIdentified(
+            creationRefreshStateRef.current, liveGeneration.runId, liveGeneration.originSessionId, completedSessionId,
+          );
+        }
+        const { shouldRefresh: shouldCreationRefresh, nextState: nextCreationRefreshState } =
+          onDoneCreationRefresh(creationRefreshStateRef.current, liveGeneration.runId, completedSessionId, ev.isError);
+        creationRefreshStateRef.current = nextCreationRefreshState;
+        // Replacement refresh: a resumed session (non-null origin) whose server-
+        // assigned stable ID differs from the origin (replacement/fork, e.g.
+        // OpenCode resume) needs a sidebar refresh so the new row appears.
+        // Background replacements refresh the sidebar but must not adopt the
+        // display — ownership is guarded upstream in the "session" and "done" event
+        // handlers via ownsDisplayedView.
+        const shouldReplacementRefresh = shouldReplacementRefreshOnDone(
+          liveGeneration.originSessionId,
+          completedSessionId,
+          ev.isError,
+        );
+        // Consolidate creation, replacement, and board refresh sources to a single
+        // call so no double-invocation is possible regardless of which path fires.
+        // A Board native-chat handoff already owns the stable conversation id, so
+        // its "session" event does not promote the router; refreshing here after
+        // persistence restores the normal work/rail view from the one-shot bridge mode.
+        const shouldRefreshSessions = shouldCreationRefresh || shouldReplacementRefresh || (startNewConversation && !!ev.sessionId && !ev.isError);
+        // Use the latest callback while mounted; stale runs may not refresh a
+        // replacement compose after layout cleanup revokes display ownership.
+        if (shouldRefreshSessions) onSessionsChangedRef.current?.();
         persistLiveTurns(
           turnsRef.current,
           assistantId,
@@ -7892,6 +8021,31 @@ function splitSegmentsForGitHub(
 }
 
 /**
+ * Replace complete familiar-authored spec fences with document cards. This is
+ * settled-turn only: while a familiar is still writing, the ordinary Markdown
+ * path keeps the unfinished fence legible until its closing delimiter arrives.
+ */
+function splitSegmentsForSpecs(
+  segments: MessageBubbleSegment[],
+): MessageBubbleSegment[] {
+  return segments.flatMap<MessageBubbleSegment>((segment, segmentIndex) => {
+    if (segment.kind !== "text") return [segment];
+    return sliceSpecBlocks(segment.text).flatMap<MessageBubbleSegment>((piece, pieceIndex) => {
+      if (piece.kind === "text") {
+        return piece.text.trim()
+          ? [{ kind: "text" as const, text: piece.text }]
+          : [];
+      }
+      return [{
+        kind: "block" as const,
+        key: `spec-${segmentIndex}-${pieceIndex}-${piece.spec.title}`,
+        node: <ChatSpecCard spec={piece.spec} />,
+      }];
+    });
+  });
+}
+
+/**
  * Split prose segments again on `<coven:image …>` markers, mounting one
  * ImageCarousel per deck at the marker's position (src/lib/image-blocks.ts).
  * This runs before the GitHub/artifact splits so a grouped deck can span either
@@ -8014,6 +8168,11 @@ const TranscriptRows = memo(function TranscriptRows({
       const t = g.turn;
       const i = turnIndexMap.get(t.id) ?? -1;
       const prev = allTurns[i - 1];
+      // "Chat Session - Prototype.dc.html" (cave-n3jg2): a long pause gets a
+      // named rule across the column. The transcript already revealed a
+      // timestamp here; the divider says what the timestamp only implies —
+      // that the turns above and below are separate sittings.
+      const gapLabel = chatTurnGapLabel(prev?.createdAt, t.createdAt);
       const showTimestamp = (() => {
         if (!t.createdAt) return false;
         if (!prev?.createdAt) return true;
@@ -8032,7 +8191,7 @@ const TranscriptRows = memo(function TranscriptRows({
           onNext: () => void handlers().switchBranch(t.id, 1),
         };
       })();
-      return (
+      const row = (
         <TurnRow
           key={t.id}
           turn={t}
@@ -8054,6 +8213,20 @@ const TranscriptRows = memo(function TranscriptRows({
           branchNav={singleBranchNav}
           suppressSuggestions={t.id === followUpTurnId}
         />
+      );
+      if (!gapLabel) return row;
+      return (
+        <Fragment key={t.id}>
+          {/* Decorative: the pause is already legible from the timestamp the
+              same condition reveals on the turn below, so a screen reader
+              hearing this twice would be noise. */}
+          <div className="cave-chat-turn-gap" aria-hidden="true">
+            <span className="cave-chat-turn-gap__rule" />
+            <span className="cave-chat-turn-gap__label">{gapLabel}</span>
+            <span className="cave-chat-turn-gap__rule" />
+          </div>
+          {row}
+        </Fragment>
       );
     }
     const mm = String(Math.floor(g.durationSec / 60)).padStart(2, "0");
@@ -8373,7 +8546,12 @@ function TurnRowImpl({
     // artifact or GitHub card. The later splitters refine only the remaining
     // prose; the `visible` fallback/content path is marker-free either way.
     const split = splitSegmentsForGitHub(
-      splitSegmentsForArtifacts(splitSegmentsForImages([{ kind: "text", text: visibleWithGh }]), artifactCtx),
+      splitSegmentsForArtifacts(
+        splitSegmentsForImages(
+          splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }]),
+        ),
+        artifactCtx,
+      ),
       onOpenUrl,
       ghFamiliar,
     );

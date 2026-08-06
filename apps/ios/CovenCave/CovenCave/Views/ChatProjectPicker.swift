@@ -10,10 +10,23 @@ struct ChatProjectPicker: View {
     let recentRoots: [String]
     @Binding var selectedRoot: String?
     @Binding var isResolved: Bool
+<<<<<<< Updated upstream
+    // Declaration order IS the memberwise initializer's argument order, so it
+    // has to match how the call sites read: the required `refreshToken` ahead
+    // of the defaulted flag and callbacks.
+    let refreshToken: Int
     var requiresExplicitSelection = false
     var onResolved: (() -> Void)?
+=======
+    // Declaration order IS the memberwise-init argument order, so it has to
+    // match how the call sites read: refreshToken, then the optional knobs,
+    // with onResolved last. Both callers pass refreshToken before onResolved,
+    // and Swift rejects the reverse.
     let refreshToken: Int
+    var requiresExplicitSelection = false
+>>>>>>> Stashed changes
     var onManageAccess: (() -> Void)?
+    var onResolved: (() -> Void)?
 
     @State private var projects: [ProjectInfo] = []
     @State private var isLoading = false

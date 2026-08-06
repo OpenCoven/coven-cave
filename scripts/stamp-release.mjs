@@ -9,7 +9,9 @@
 // locations by hand. This script:
 //   1. REFUSES when another stamp PR is already open (the collision guard);
 //   2. bumps the five version locations (package.json, tauri.conf.json,
-//      Cargo.toml, Cargo.lock's `app` package, apps/ios/CovenCave/project.yml);
+//      Cargo.toml, Cargo.lock's `app` package, apps/ios/CovenCave/project.yml —
+//      whose iOS entry carries BOTH the marketing version and the
+//      CURRENT_PROJECT_VERSION build stamp, see nextIosBuildStamp);
 //   3. drafts the CHANGELOG section from `git log v<prev>..HEAD` subjects —
 //      a starting point to edit in the PR, not prose to trust blindly;
 //   4. branches, commits SIGNED (-S), pushes, and opens the PR via the REST
@@ -22,10 +24,14 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { replaceCanonicalYamlStringSetting } from "./release-yaml-settings.mjs";
+import {
+  readCanonicalYamlStringSetting,
+  replaceCanonicalYamlStringSetting,
+} from "./release-yaml-settings.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const IOS_MARKETING_VERSION_PATH = ["settings", "base", "MARKETING_VERSION"];
+const IOS_BUILD_VERSION_PATH = ["settings", "base", "CURRENT_PROJECT_VERSION"];
 
 // ── pure helpers (exported for scripts/stamp-release.test.mjs) ───────────────
 
@@ -39,13 +45,53 @@ export function bumpVersion(current, level = "patch") {
   throw new Error(`unknown bump level: "${level}"`);
 }
 
+/** The iOS CFBundleVersion stamp: a YYYYMMDDHH instant in UTC.
+ *
+ * App Store Connect requires CFBundleVersion to be unique and strictly
+ * increasing per app, and a stamp left at its previous value rejects the
+ * upload — which is exactly what happened to v0.2.3 on 2026-08-03, because the
+ * release stamp bumped MARKETING_VERSION and left this one behind. The date
+ * shape is monotonic without anyone tracking the last uploaded value; the
+ * `current` guard covers the one case it isn't (two cuts in the same UTC hour,
+ * or a clock that went backwards), by stepping one past what the file holds.
+ */
+export function nextIosBuildStamp(current, date = new Date()) {
+  const format = (utcMs) => {
+    const d = new Date(utcMs);
+    const pad = (n, width) => String(n).padStart(width, "0");
+    return (
+      `${pad(d.getUTCFullYear(), 4)}${pad(d.getUTCMonth() + 1, 2)}` +
+      `${pad(d.getUTCDate(), 2)}${pad(d.getUTCHours(), 2)}`
+    );
+  };
+  const nowMs = date.getTime();
+  if (!Number.isFinite(nowMs)) throw new Error("iOS build stamp needs a valid date");
+  const stamp = format(nowMs);
+  if (!/^\d{10}$/.test(stamp)) {
+    throw new Error(`unusable iOS build stamp for ${date.toISOString()}: "${stamp}"`);
+  }
+  // Same-hour re-cut (or a clock that stepped backwards): advance a whole UTC
+  // hour off the recorded stamp rather than adding 1 to the integer, so the
+  // result stays a well-formed YYYYMMDDHH instant instead of an hour "24".
+  if (typeof current === "string" && /^\d{10}$/.test(current) && current >= stamp) {
+    const [y, m, d, h] = [
+      Number(current.slice(0, 4)),
+      Number(current.slice(4, 6)),
+      Number(current.slice(6, 8)),
+      Number(current.slice(8, 10)),
+    ];
+    return format(Date.UTC(y, m - 1, d, h + 1));
+  }
+  return stamp;
+}
+
 /** The five stamp locations and how each encodes the version. */
 export const STAMP_FILES = [
   { path: "package.json", kind: "json-version" },
   { path: "src-tauri/tauri.conf.json", kind: "json-version" },
   { path: "src-tauri/Cargo.toml", kind: "toml-version" },
   { path: "src-tauri/Cargo.lock", kind: "cargo-lock-app" },
-  { path: "apps/ios/CovenCave/project.yml", kind: "yaml-marketing-version" },
+  { path: "apps/ios/CovenCave/project.yml", kind: "yaml-ios-versions" },
 ];
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -80,12 +126,29 @@ export function stampContent(kind, content, oldVersion, newVersion) {
   return { content, replaced };
 }
 
-export function applyReplacement(kind, contents, nextVersion, relativePath = "<unknown>") {
-  if (kind === "yaml-marketing-version") {
-    return replaceCanonicalYamlStringSetting(
+export function applyReplacement(
+  kind,
+  contents,
+  nextVersion,
+  relativePath = "<unknown>",
+  now = new Date(),
+) {
+  if (kind === "yaml-ios-versions") {
+    const stamped = replaceCanonicalYamlStringSetting(
       contents,
       IOS_MARKETING_VERSION_PATH,
       nextVersion,
+      relativePath,
+    );
+    const currentBuild = readCanonicalYamlStringSetting(
+      stamped,
+      IOS_BUILD_VERSION_PATH,
+      relativePath,
+    );
+    return replaceCanonicalYamlStringSetting(
+      stamped,
+      IOS_BUILD_VERSION_PATH,
+      nextIosBuildStamp(currentBuild, now),
       relativePath,
     );
   }
@@ -173,7 +236,11 @@ function main() {
   const subjects = run("git", ["log", `${prevTag}..HEAD`, "--no-merges", "--pretty=%s"])
     .split("\n")
     .filter(Boolean);
-  const dateIso = new Date().toISOString().slice(0, 10);
+  // One instant for the whole cut: the CHANGELOG date and the iOS build stamp
+  // both derive from it, and two `new Date()` calls either side of a boundary
+  // would date the release one day and stamp the build the next.
+  const now = new Date();
+  const dateIso = now.toISOString().slice(0, 10);
   const section = buildChangelogSection({ version: next, prevVersion: current, dateIso, subjects });
 
   console.log(`stamp: v${current} → v${next} (${subjects.length} commits since ${prevTag})`);
@@ -184,9 +251,11 @@ function main() {
     const before = readFileSync(abs, "utf8");
     let content;
     let replaced;
-    if (kind === "yaml-marketing-version") {
-      content = applyReplacement(kind, before, next, relativePath);
-      replaced = 1;
+    if (kind === "yaml-ios-versions") {
+      content = applyReplacement(kind, before, next, relativePath, now);
+      // MARKETING_VERSION + CURRENT_PROJECT_VERSION — App Store Connect
+      // rejects an upload whose build stamp did not move.
+      replaced = 2;
     } else {
       ({ content, replaced } = stampContent(kind, before, current, next));
       if (replaced === 0) {

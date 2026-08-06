@@ -105,4 +105,32 @@ assert.doesNotMatch(workspace, /lastNonChatMode/, "workspace should not track an
 assert.match(chatView, /setProjectAccessRoot/, "chat-view should capture failing project root on 403");
 assert.match(chatView, /async function handleAddProject/, "chat-view should implement add-project recovery");
 
+// ChatView uses the stable Workspace callback directly without introducing a
+// second global refresh mechanism.
+assert.doesNotMatch(
+  chatView,
+  /cave:sessions-refresh/,
+  "ChatView does not introduce a second global sessions-refresh mechanism",
+);
+assert.doesNotMatch(
+  workspace,
+  /cave:sessions-refresh/,
+  "Workspace keeps the callback chain as the single explicit refresh mechanism",
+);
+assert.match(
+  workspace,
+  /const currentActiveId = activeIdRef\.current;\s*\n\s*const scope = currentActiveId/,
+  "loadSessions reads the current familiar scope from activeIdRef",
+);
+assert.match(
+  workspace,
+  /const loadSessions = useCallback\(\(\) => \{[\s\S]*?\n\s*\}, \[\]\);/,
+  "loadSessions has stable empty callback dependencies",
+);
+assert.match(
+  workspace,
+  /useEffect\(\(\) => \{\s*\n\s*void loadSessions\(\);\s*\n\s*\}, \[activeId, loadSessions\]\);/,
+  "mount and each active familiar scope change explicitly reload sessions once",
+);
+
 console.log("workspace-sidebar-wiring.test.ts passed");

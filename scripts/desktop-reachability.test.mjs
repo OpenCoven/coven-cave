@@ -13,6 +13,7 @@ const [
   mobileScript,
   uninstall,
   docs,
+  server,
 ] = await Promise.all([
   read("../src-tauri/src/desktop_reachability.rs"),
   read("../src-tauri/src/tauri_setup.rs"),
@@ -23,6 +24,7 @@ const [
   read("./mobile-tailscale.sh"),
   read("./uninstall-app.sh"),
   read("../docs/mobile-tailscale.md"),
+  read("../server.ts"),
 ]);
 
 assert.match(
@@ -58,8 +60,13 @@ assert.match(
 );
 assert.match(
   reachability,
-  /create_fresh_log_file[\s\S]*\.truncate\(true\)/,
-  "each daemon launch must discard stale readiness output before repairing Serve",
+  /let sidecar_output = Arc::new\(Mutex::new\(SidecarOutputTail::default\(\)\)\)[\s\S]*stdout\(Stdio::piped\(\)\)[\s\S]*stderr\(Stdio::piped\(\)\)[\s\S]*capture_sidecar_output/,
+  "background sidecars must drain readiness output into a bounded in-memory tail",
+);
+assert.doesNotMatch(
+  reachability,
+  /sidecar-daemon-server\.log|create_fresh_log_file/,
+  "background sidecars must not accumulate persistent launch logs",
 );
 assert.match(
   reachability,
@@ -146,6 +153,11 @@ assert.match(
   "window teardown must hand off to launchd only after stopping the owned sidecar",
 );
 assert.match(
+  setup,
+  /stop_after_startup_error\(error\)[\s\S]*fatal_exit\(&error\)/,
+  "Non-Windows startup failure should reap the owned sidecar before fatal exit",
+);
+assert.match(
   lifecycle,
   /pub\(super\) fn id\(&self\) -> u32/,
   "power assertions must bind to the exact owned sidecar process",
@@ -155,6 +167,31 @@ assert.match(
   startup,
   /wait_for_sidecar_ready[\s\S]*sidecar_reachability_ready\(app, port, sidecar_pid\)/,
   "Serve repair and the power monitor must start only after the selected port is ready",
+);
+assert.match(
+  startup,
+  /configure_unix_sidecar_parent_watchdog\(&mut command\)/,
+  "packaged Unix sidecars must inherit an exact parent-death lease",
+);
+assert.match(
+  lifecycle,
+  /stdin\(Stdio::piped\(\)\)[\s\S]*COVEN_CAVE_PARENT_WATCHDOG[\s\S]*stdin-eof[\s\S]*process_group\(0\)/,
+  "the Unix parent lease must be an inherited pipe and the child must own its process group",
+);
+assert.match(
+  lifecycle,
+  /child\.stdin\.take\(\)[\s\S]*Duration::from_secs\(2\)[\s\S]*could not inspect watched sidecar/,
+  "normal Unix cleanup must close the same parent lease with a bounded fallback",
+);
+assert.match(
+  server,
+  /COVEN_CAVE_PARENT_WATCHDOG === "stdin-eof"[\s\S]*process\.stdin\.once\("end"[\s\S]*process\.stdin\.once\("error"[\s\S]*process\.stdin\.resume\(\)/,
+  "the packaged server must attach exact-parent EOF handlers before starting stdin flow",
+);
+assert.match(
+  server,
+  /function terminatePackagedUnixSidecarTree[\s\S]*process\.kill\(-process\.pid, "SIGKILL"\)/,
+  "parent EOF must kill the packaged server's owned Unix process group",
 );
 assert.match(
   reachability,
