@@ -100,7 +100,9 @@ import {
   unregisterActiveGroupReplyRun,
   updateActiveGroupReplyRunSession,
   type ActiveGroupReplyRun,
+  type GroupChatStopRequest,
 } from "@/lib/group-chat-stop";
+import { requestChatStopRun } from "@/lib/chat-stop";
 import { useGroupProjects } from "@/lib/use-group-projects";
 
 type Props = {
@@ -602,38 +604,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     });
   }, []);
 
-  async function stopServerRun(entry: { runId: string }) {
-    const response = await fetch("/api/chat/stop", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ runId: entry.runId }),
-    });
-    let payload: {
-      ok?: boolean;
-      stopped?: boolean;
-      state?: "accepted" | "transport-settled" | "not-found";
-      terminalOutcome?: "completed" | "error" | "cancelled";
-      error?: string;
-    } | null = null;
-    try {
-      payload = await response.json() as {
-        ok?: boolean;
-        stopped?: boolean;
-        state?: "accepted" | "transport-settled" | "not-found";
-        terminalOutcome?: "completed" | "error" | "cancelled";
-        error?: string;
-      };
-    } catch {
-      payload = null;
-    }
-    return {
-      ok: response.ok,
-      stopped: payload?.stopped ?? false,
-      status: response.status,
-      state: payload?.state ?? null,
-      terminalOutcome: payload?.terminalOutcome ?? null,
-      error: payload?.error ?? (response.ok ? undefined : `stop failed (${response.status})`),
-    };
+  function stopServerRun(entry: GroupChatStopRequest) {
+    return requestChatStopRun(entry);
   }
 
   async function stopScopeRuns(

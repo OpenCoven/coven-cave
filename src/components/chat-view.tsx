@@ -295,6 +295,7 @@ import {
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
 import { streamFamiliarText } from "@/lib/familiar-stream";
+import { requestChatStopRun, stopChatRunWithRetry } from "@/lib/chat-stop";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 import { AttachmentList, AttachmentThumb, InlineImageAttachments, formatAttachmentBytes, isInlineImageAttachment } from "./chat-attachment-cards";
@@ -3006,6 +3007,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     runId: null,
     sessionId: null,
   });
+  const stopDispatchRunIdRef = useRef<string | null>(null);
   const initialPromptSentRef = useRef(false);
   /** True while THIS instance's sendRaw reader loop is running. The owner
    *  applies stream events itself (handleEvent), so it never needs the
@@ -5272,7 +5274,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         }
         if (ev.kind === "done") {
           sawDone = true;
-          streamFailed = Boolean(ev.isError);
+          streamFailed = Boolean(ev.isError || ev.cancelled);
         } else if (ev.kind === "error") {
           streamFailed = true;
         }
@@ -5439,23 +5441,38 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     );
 
   const cancelSend = () => {
-    const { runId, sessionId } = stopKeysRef.current;
-    if (runId || sessionId) {
-      // Deliberate Stop is an explicit server call (kills the harness and
-      // persists the honest cancelled record); the abort below only tears
-      // down this client's stream.
-      void fetch("/api/chat/stop", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          ...(runId ? { runId } : {}),
-          ...(sessionId ? { sessionId } : {}),
-        }),
-      }).catch(() => {
-        /* best-effort — the server's detach cap still bounds the run */
-      });
+    const runId = stopKeysRef.current.runId;
+    const controller = abortRef.current;
+    if (!runId || !controller) {
+      controller?.abort();
+      return;
     }
-    abortRef.current?.abort();
+    if (stopDispatchRunIdRef.current === runId) return;
+    stopDispatchRunIdRef.current = runId;
+    void stopChatRunWithRetry({
+      runId,
+      controller,
+      stopRun: requestChatStopRun,
+      isActive: () =>
+        abortRef.current === controller &&
+        stopKeysRef.current.runId === runId,
+    }).then((result) => {
+      if (result.error && result.status !== 404 && result.state !== "transport-settled") {
+        console.warn("[chat-view] stop failed", {
+          runId,
+          status: result.status,
+          error: result.error,
+        });
+      }
+    }).catch((error) => {
+      console.warn("[chat-view] stop failed", {
+        runId,
+        error: error instanceof Error ? error.message : "stop failed",
+      });
+      controller.abort();
+    }).finally(() => {
+      if (stopDispatchRunIdRef.current === runId) stopDispatchRunIdRef.current = null;
+    });
   };
 
   function retryFailedSend(optionOverrides?: Partial<ChatSendOptions>) {
@@ -6265,19 +6282,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
       case "done": {
+        const cancelled = ev.cancelled === true;
         updateLiveTurns((prev) =>
           prev.map((t) =>
             t.id === assistantId
               ? {
                   ...t,
                   pending: false,
-                  error: ev.isError ?? false,
-                  lifecycle: ev.isError ? "failed" : "complete",
+                  error: cancelled ? false : ev.isError ?? false,
+                  lifecycle: cancelled ? "cancelled" : ev.isError ? "failed" : "complete",
                   durationMs: ev.durationMs,
                   usage: ev.usage,
                   costUsd: ev.costUsd,
                   responseMetadata: ev.responseMetadata,
-                  progress: settleRunningProgress(t.progress, ev.isError ? "error" : "done"),
+                  progress: settleRunningProgress(t.progress, cancelled || ev.isError ? "error" : "done"),
                 }
               : t,
           ),
@@ -6293,7 +6311,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // message from the turn's errored step when the stream gave none.
           setError((prev) => prev ?? "The agent run ended with an error.");
           raiseDebugError({ turnId: assistantId });
-        } else {
+        } else if (!cancelled) {
           liveGeneration.markPersistenceConfirmed();
           // cave-fy1q phase 3: first completed reply ever — no-op unless the
           // first-open anchor exists (fresh installs only).
@@ -6364,14 +6382,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         const shouldReplacementRefresh = shouldReplacementRefreshOnDone(
           liveGeneration.originSessionId,
           completedSessionId,
-          ev.isError,
+          ev.isError || cancelled,
+        );
+        const shouldAttentionRefresh = Boolean(
+          completedSessionId &&
+          !ev.isError &&
+          !cancelled &&
+          ev.responseMetadata?.attentionRequest,
         );
         // Consolidate creation, replacement, and board refresh sources to a single
         // call so no double-invocation is possible regardless of which path fires.
         // A Board native-chat handoff already owns the stable conversation id, so
         // its "session" event does not promote the router; refreshing here after
         // persistence restores the normal work/rail view from the one-shot bridge mode.
-        const shouldRefreshSessions = shouldCreationRefresh || shouldReplacementRefresh || (startNewConversation && !!ev.sessionId && !ev.isError);
+        const shouldRefreshSessions = shouldCreationRefresh ||
+          shouldReplacementRefresh ||
+          shouldAttentionRefresh ||
+          (startNewConversation && !!ev.sessionId && !ev.isError && !cancelled);
         // Use the latest callback while mounted; stale runs may not refresh a
         // replacement compose after layout cleanup revokes display ownership.
         if (shouldRefreshSessions) onSessionsChangedRef.current?.();

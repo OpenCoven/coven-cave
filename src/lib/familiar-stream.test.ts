@@ -200,6 +200,28 @@ describe("streamFamiliarText", () => {
     assert.equal(sessionId, "sess-tail", "the unterminated done frame is still processed");
   });
 
+  it("treats a cancelled done event as cancelled instead of a valid reply", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: "(cancelled)" }),
+      frame({ kind: "done", cancelled: true }),
+    ])) as typeof fetch;
+
+    const { text, error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
+    assert.equal(text, "");
+    assert.equal(error, "cancelled");
+  });
+
+  it("preserves partial text when a cancelled done event arrives after streamed output", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: "Partial answer" }),
+      frame({ kind: "done", cancelled: true }),
+    ])) as typeof fetch;
+
+    const { text, error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
+    assert.equal(text, "Partial answer");
+    assert.equal(error, "cancelled");
+  });
+
   it("decodes multi-byte characters split across stream chunks", async () => {
     const bytes = new TextEncoder().encode(frame({ kind: "assistant_chunk", text: "héllo" }) + frame({ kind: "done" }));
     // Split exactly between the two bytes of "é" (0xC3 0xA9).

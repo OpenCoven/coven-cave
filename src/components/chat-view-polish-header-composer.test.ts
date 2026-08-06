@@ -560,7 +560,7 @@ assert.doesNotMatch(
 );
 assert.match(
   applyStreamEventSection,
-  /if \(ev\.kind === "done"\) \{[\s\S]*?sawDone = true;[\s\S]*?streamFailed = Boolean\(ev\.isError\);[\s\S]*?if \(ev\.kind === "assistant_chunk"\)/,
+  /if \(ev\.kind === "done"\) \{[\s\S]*?sawDone = true;[\s\S]*?streamFailed = Boolean\(ev\.isError \|\| ev\.cancelled\);[\s\S]*?if \(ev\.kind === "assistant_chunk"\)/,
   "A parsed done event is observed immediately before any later reader failure",
 );
 assert.match(

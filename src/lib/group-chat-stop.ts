@@ -1,3 +1,11 @@
+import {
+  stopChatRunWithRetry,
+  type ChatStopRequest,
+  type ChatStopResult,
+  type ChatStopState,
+  type ChatStopTerminalOutcome,
+} from "./chat-stop.ts";
+
 export type ActiveGroupReplyRun = {
   runId: string;
   replyId: string;
@@ -9,23 +17,10 @@ export type ActiveGroupReplyRun = {
   terminalOutcome: GroupChatTerminalOutcome | null;
 };
 
-export type GroupChatStopRequest = {
-  runId: string;
-};
-
-export type GroupChatStopState = "accepted" | "transport-settled" | "not-found";
-
-export type GroupChatTerminalOutcome = "completed" | "error" | "cancelled";
-
-export type GroupChatStopResult = {
-  runId: string;
-  ok: boolean;
-  stopped: boolean;
-  status: number | null;
-  state: GroupChatStopState | null;
-  terminalOutcome: GroupChatTerminalOutcome | null;
-  error?: string;
-};
+export type GroupChatStopRequest = ChatStopRequest;
+export type GroupChatStopState = ChatStopState;
+export type GroupChatTerminalOutcome = ChatStopTerminalOutcome;
+export type GroupChatStopResult = ChatStopResult;
 
 export function newGroupReplyRunId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `group-reply-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -73,15 +68,6 @@ function isAcceptableStopResult(result: GroupChatStopResult): boolean {
   return result.stopped || result.state === "transport-settled" || result.status === 404;
 }
 
-const GROUP_CHAT_STOP_RETRY_DELAY_MS = 50;
-const GROUP_CHAT_STOP_TIMEOUT_MS = 400;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    globalThis.setTimeout(resolve, ms);
-  });
-}
-
 export async function stopActiveGroupReplyRuns(args: {
   entries: readonly ActiveGroupReplyRun[];
   stopRun: (request: GroupChatStopRequest) => Promise<Omit<GroupChatStopResult, "runId">>;
@@ -94,70 +80,25 @@ export async function stopActiveGroupReplyRuns(args: {
   sleep?: (ms: number) => Promise<void>;
 }): Promise<GroupChatStopResult[]> {
   const isEntryActive = args.isEntryActive ?? (() => true);
-  const now = args.now ?? (() => Date.now());
-  const pause = args.sleep ?? sleep;
-  const retryDelayMs = args.retryDelayMs ?? GROUP_CHAT_STOP_RETRY_DELAY_MS;
-  const timeoutMs = args.timeoutMs ?? GROUP_CHAT_STOP_TIMEOUT_MS;
   const settled = await Promise.all(
     args.entries.map(async (entry) => {
-      const deadline = now() + timeoutMs;
-      let acceptable = false;
-      let shouldAbortLocal = false;
-      let result: GroupChatStopResult = {
+      const result = await stopChatRunWithRetry({
         runId: entry.runId,
-        ok: false,
-        stopped: false,
-        status: null,
-        state: null,
-        terminalOutcome: null,
-      };
-      for (;;) {
-        if (!isEntryActive(entry)) {
-          acceptable = true;
-          break;
-        }
-        try {
-          const response = await args.stopRun({ runId: entry.runId });
-          result = { runId: entry.runId, ...response };
-        } catch (error) {
-          result = {
-            runId: entry.runId,
-            ok: false,
-            stopped: false,
-            status: null,
-            state: null,
-            terminalOutcome: null,
-            error: error instanceof Error ? error.message : "stop failed",
-          };
-        }
-        if (result.stopped) {
-          acceptable = true;
-          shouldAbortLocal = true;
-          break;
-        }
-        if (result.state === "transport-settled") {
-          acceptable = true;
-          entry.terminalOutcome = result.terminalOutcome;
-          shouldAbortLocal = args.abortLocalOnTransportSettled ?? false;
-          break;
-        }
-        if (!isEntryActive(entry)) {
-          acceptable = true;
-          break;
-        }
-        const retryable = now() < deadline;
-        if (!retryable) {
-          if (!result.error && isEntryActive(entry)) {
-            result = {
-              ...result,
-              error: now() >= deadline ? "stop timed out" : "stop failed",
-            };
-          }
-          shouldAbortLocal = isEntryActive(entry);
-          break;
-        }
-        await pause(retryDelayMs);
-      }
+        stopRun: args.stopRun,
+        isActive: () => isEntryActive(entry),
+        abortLocalOnTransportSettled: args.abortLocalOnTransportSettled,
+        retryDelayMs: args.retryDelayMs,
+        timeoutMs: args.timeoutMs,
+        now: args.now,
+        sleep: args.sleep,
+      });
+      const acceptable = result.stopped || result.state === "transport-settled" || result.status === 404 || !isEntryActive(entry);
+      if (result.state === "transport-settled") entry.terminalOutcome = result.terminalOutcome;
+      const shouldAbortLocal = result.stopped ||
+        result.status === 404 ||
+        (result.state === "transport-settled"
+          ? args.abortLocalOnTransportSettled ?? false
+          : !acceptable && isEntryActive(entry));
       return { entry, result, acceptable, shouldAbortLocal };
     }),
   );

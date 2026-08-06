@@ -12,6 +12,7 @@ export type SketchStreamEvent = {
   text?: string;
   sessionId?: string;
   isError?: boolean;
+  cancelled?: boolean;
   message?: string;
   responseMetadata?: ChatResponseMetadata;
 };

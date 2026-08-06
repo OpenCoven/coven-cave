@@ -390,7 +390,9 @@ try {
     undefined,
     `an explicit stop never creates failed progress state: ${JSON.stringify(cancelledEvents)}`,
   );
-  assert.equal(cancelledEvents.findLast((event) => event.kind === "done")?.isError, false);
+  const cancelledDone = cancelledEvents.findLast((event) => event.kind === "done");
+  assert.equal(cancelledDone?.isError, false);
+  assert.equal(cancelledDone?.cancelled, true);
   const cancelledConversation = await loadConversation(cancelledSessionId);
   const cancelledTurn = cancelledConversation?.turns.at(-1);
   assert.equal(cancelledTurn?.role, "assistant");
@@ -418,7 +420,9 @@ try {
   await waitForText(cancelReady);
   assert.deepEqual(requestChatStop(cancelledPartialRunId), { state: "accepted", terminalOutcome: null });
   const { events: cancelledPartialEvents } = await readSse(cancelPartialResponse);
-  assert.equal(cancelledPartialEvents.findLast((event) => event.kind === "done")?.isError, false);
+  const cancelledPartialDone = cancelledPartialEvents.findLast((event) => event.kind === "done");
+  assert.equal(cancelledPartialDone?.isError, false);
+  assert.equal(cancelledPartialDone?.cancelled, true);
   const cancelledPartialConversation = await loadConversation("cancelled-partial-attention-session");
   const cancelledPartialTurn = cancelledPartialConversation?.turns.at(-1);
   assert.equal(cancelledPartialTurn?.text, "Visible answer.\n");

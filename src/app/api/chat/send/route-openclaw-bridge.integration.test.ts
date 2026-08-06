@@ -335,7 +335,9 @@ try {
       undefined,
       `${mode} stop must not fabricate an invalid-response diagnostic`,
     );
-    assert.equal(events.findLast((event) => event.kind === "done")?.isError, false, `${mode} stop completes as success`);
+    const done = events.findLast((event) => event.kind === "done");
+    assert.equal(done?.isError, false, `${mode} stop completes as success`);
+    assert.equal(done?.cancelled, true, `${mode} stop surfaces cancellation on the terminal done event`);
     const conversation = await loadConversation(sessionId);
     const turn = conversation?.turns.at(-1);
     assert.equal(turn?.text, "(cancelled)", `${mode} stop persists the canonical cancelled text`);

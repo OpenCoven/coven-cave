@@ -36,6 +36,7 @@ export type StreamEvent =
       kind: "done";
       durationMs?: number;
       isError?: boolean;
+      cancelled?: boolean;
       sessionId?: string;
       usage?: TurnUsage;
       costUsd?: number;

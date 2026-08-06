@@ -105,7 +105,7 @@ export type GroupStreamEvent =
   | { kind: "assistant_replace"; text: string }
   | { kind: "progress"; label?: string; status?: "running" | "done" | "notice" | "error" }
   | { kind: "tool_use"; name?: string; status?: "running" | "ok" | "error" }
-  | { kind: "done"; durationMs?: number; isError?: boolean; sessionId?: string; costUsd?: number }
+  | { kind: "done"; durationMs?: number; isError?: boolean; cancelled?: boolean; sessionId?: string; costUsd?: number }
   | { kind: "error"; message: string; code?: string };
 
 // ---------------------------------------------------------------------------
@@ -141,12 +141,12 @@ export function applyGroupEvent(reply: GroupReply, ev: GroupStreamEvent): GroupR
     case "done":
       return {
         ...reply,
-        status: ev.isError ? "error" : "done",
+        status: ev.isError || ev.cancelled ? "error" : "done",
         sessionId: ev.sessionId ?? reply.sessionId,
         durationMs: ev.durationMs ?? reply.durationMs,
         costUsd: ev.costUsd ?? reply.costUsd,
         activity: undefined,
-        error: ev.isError ? reply.error ?? "request failed" : reply.error,
+        error: ev.isError ? reply.error ?? "request failed" : ev.cancelled ? reply.error ?? "cancelled" : reply.error,
       };
     case "error":
       return { ...reply, status: "error", error: ev.message, activity: undefined };

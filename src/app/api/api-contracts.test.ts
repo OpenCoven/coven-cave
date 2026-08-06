@@ -572,7 +572,7 @@ for (const contract of contracts) {
   ];
   assert.equal(
     cancelledFlags.length,
-    4,
+    6,
     "/chat/send: every adapter path must mark both its assistant turn and terminal event as cancelled",
   );
   assert.match(

@@ -15,7 +15,7 @@ const streamEvents = await readFile(new URL("../lib/stream-events.ts", import.me
 
 assert.match(
   streamEvents,
-  /type StreamEvent =[\s\S]*kind: "done";[\s\S]*responseMetadata\?: ChatResponseMetadata/,
+  /type StreamEvent =[\s\S]*kind: "done";[\s\S]*cancelled\?: boolean;[\s\S]*responseMetadata\?: ChatResponseMetadata/,
   "Chat send done events should carry explicit response metadata",
 );
 
@@ -27,13 +27,13 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /kind: "done",[\s\S]*responseMetadata,/,
-  "Final done events should include response metadata in the SSE payload",
+  /kind: "done",[\s\S]*responseMetadata: terminalResponseMetadata,/,
+  "Final done events should include the persisted response metadata in the SSE payload",
 );
 
 assert.match(
   chatRoute,
-  /const assistantTurn: ChatTurn = \{[\s\S]*responseMetadata,/,
+  /(?:const assistantTurn: ChatTurn = \{[\s\S]*responseMetadata: terminalResponseMetadata,|conv\.turns\.push\([\s\S]{0,800}responseMetadata: terminalResponseMetadata,)/,
   "Persisted assistant turns should store the response metadata that produced them",
 );
 
@@ -98,7 +98,7 @@ assert.doesNotMatch(
 
 assert.match(
   streamEvents,
-  /type StreamEvent =[\s\S]*kind: "done";[\s\S]*responseMetadata\?: ChatResponseMetadata/,
+  /type StreamEvent =[\s\S]*kind: "done";[\s\S]*cancelled\?: boolean;[\s\S]*responseMetadata\?: ChatResponseMetadata/,
   "ChatView should accept response metadata from done events",
 );
 

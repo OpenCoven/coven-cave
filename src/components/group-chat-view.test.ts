@@ -336,8 +336,8 @@ test("Group chat stop cleanup targets only the retired scope on switch and unmou
   assert.match(view, /registerActiveGroupReplyRun\(/, "each reply registers itself when its stream starts");
   assert.match(view, /updateActiveGroupReplyRunSession\(/, "session announcements update the active stop payload");
   assert.match(view, /unregisterActiveGroupReplyRun\(/, "active replies leave the registry only in terminal cleanup");
-  assert.match(view, /body: JSON\.stringify\(\{ runId: entry\.runId \}\)/, "group stop posts only the exact runId");
-  assert.doesNotMatch(view, /body: JSON\.stringify\(\{[\s\S]{0,120}sessionId: entry\.sessionId/, "group stop never falls back to a reusable session key");
+  assert.match(view, /import \{ requestChatStopRun \} from "@\/lib\/chat-stop";/, "group stop shares the exact-run stop request helper");
+  assert.match(view, /return requestChatStopRun\(entry\);/, "group stop posts only the exact runId");
   assert.match(view, /isEntryActive: \(entry\) => activeRunsRef\.current\.get\(entry\.runId\) === entry/, "retry only continues while the same active run is still registered");
   assert.doesNotMatch(view, /isStopScopeCurrent/, "retired-scope cleanup no longer wedges retries behind the newest scope token");
   assert.match(view, /console\.warn\("\[group-chat\] stop failed"/, "stop endpoint failures are explicitly logged");
@@ -347,8 +347,8 @@ test("Group chat stop cleanup targets only the retired scope on switch and unmou
 test("Group chat stop preserves completed transports through slow persistence", () => {
   assert.match(
     view,
-    /payload\?\.state \?\? null[\s\S]{0,120}payload\?\.terminalOutcome \?\? null/,
-    "group stop reads explicit run state and terminal outcome from /api/chat/stop",
+    /import \{ requestChatStopRun \} from "@\/lib\/chat-stop";[\s\S]*?function stopServerRun\(entry: GroupChatStopRequest\) \{\s*return requestChatStopRun\(entry\);\s*\}/,
+    "group stop reuses the shared exact-run stop client that preserves transport state and terminal outcome",
   );
   assert.match(
     view,

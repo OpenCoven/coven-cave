@@ -9,6 +9,7 @@ const streamEvents = readFileSync(new URL("../lib/stream-events.ts", import.meta
 const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat", "cave-chat/activity"]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
+const cancelSendSection = source.match(/const cancelSend = \(\) => \{[\s\S]*?\n  \};/m)?.[0] ?? "";
 
 assert.match(
   turnStateSource,
@@ -147,8 +148,8 @@ assert.match(
 
 assert.match(
   source,
-  /case "done":[\s\S]*lifecycle: ev\.isError \?\s*"failed"\s*:\s*"complete"/,
-  "Done events should close the turn as failed or complete",
+  /case "done":[\s\S]*const cancelled = ev\.cancelled === true;[\s\S]*lifecycle: cancelled \?\s*"cancelled"\s*:\s*ev\.isError \?\s*"failed"\s*:\s*"complete"/,
+  "Done events should close the turn as cancelled, failed, or complete",
 );
 
 assert.match(
@@ -491,7 +492,7 @@ assert.match(
 
 assert.match(
   streamEvents,
-  /kind: "done";\s*durationMs\?: number;\s*isError\?: boolean;\s*sessionId\?: string;\s*usage\?: TurnUsage;\s*costUsd\?: number/,
+  /kind: "done";\s*durationMs\?: number;\s*isError\?: boolean;\s*cancelled\?: boolean;\s*sessionId\?: string;\s*usage\?: TurnUsage;\s*costUsd\?: number/,
   "The done StreamEvent must carry optional usage and cost fields (CHAT-D12-02)",
 );
 
@@ -750,6 +751,17 @@ assert.match(
   "sendRaw's finally only tears down the shared stream wiring when it still owns the active controller",
 );
 
+assert.match(
+  source,
+  /const cancelSend = \(\) => \{[\s\S]*?const runId = stopKeysRef\.current\.runId;[\s\S]*?const controller = abortRef\.current;[\s\S]*?void stopChatRunWithRetry\(\{[\s\S]*?runId,[\s\S]*?controller,[\s\S]*?stopRun: requestChatStopRun,[\s\S]*?isActive: \(\) =>[\s\S]*?stopKeysRef\.current\.runId === runId,[\s\S]*?\}\)/,
+  "cancelSend should use the bounded exact-run stop helper instead of a one-shot stop+abort fallback",
+);
+assert.doesNotMatch(
+  cancelSendSection,
+  /sessionId:/,
+  "cancelSend must not fall back to sessionId when an exact runId exists",
+);
+
 // IME composition safety: the Enter that confirms a CJK/kana candidate must not send.
 assert.match(
   source,
@@ -839,8 +851,8 @@ assert.match(
 );
 assert.match(
   source,
-  /shouldCreationRefresh \|\| shouldReplacementRefresh[\s\S]{0,400}onSessionsChangedRef\.current\?\.\(\)/,
-  "creation, replacement, and Board refresh flags feed one consolidated refresh invocation",
+  /const shouldAttentionRefresh = Boolean\([\s\S]*?ev\.responseMetadata\?\.attentionRequest[\s\S]*?\);[\s\S]*?const shouldRefreshSessions = shouldCreationRefresh \|\|[\s\S]*?shouldReplacementRefresh \|\|[\s\S]*?shouldAttentionRefresh[\s\S]{0,400}onSessionsChangedRef\.current\?\.\(\)/,
+  "creation, replacement, and persisted attention-request refreshes feed one consolidated refresh invocation",
 );
 assert.doesNotMatch(
   source,
@@ -987,8 +999,8 @@ assert.match(
 );
 assert.match(
   source,
-  /shouldReplacementRefreshOnDone\(\s*liveGeneration\.originSessionId,\s*completedSessionId,\s*ev\.isError,?\s*\)/,
-  "done handler invokes shouldReplacementRefreshOnDone with originSessionId, completedSessionId, and ev.isError",
+  /shouldReplacementRefreshOnDone\(\s*liveGeneration\.originSessionId,\s*completedSessionId,\s*ev\.isError \|\| cancelled,?\s*\)/,
+  "done handler invokes shouldReplacementRefreshOnDone with originSessionId, completedSessionId, and final error-or-cancel state",
 );
 // Consolidation: exactly one onSessionsChangedRef call gated on the combined boolean;
 // no separate pre-bind startNewConversation-only call remains.
@@ -1000,8 +1012,8 @@ assert.doesNotMatch(
 // The consolidated boolean carries all three sources: creation, replacement, board.
 assert.match(
   source,
-  /const shouldRefreshSessions = shouldCreationRefresh \|\| shouldReplacementRefresh \|\|[\s\S]{0,80}startNewConversation/,
-  "shouldRefreshSessions consolidates creation, replacement, and board conditions before the single ref call",
+  /const shouldRefreshSessions = shouldCreationRefresh \|\|[\s\S]{0,120}shouldReplacementRefresh \|\|[\s\S]{0,120}shouldAttentionRefresh \|\|[\s\S]{0,120}startNewConversation/,
+  "shouldRefreshSessions consolidates creation, replacement, attention, and board conditions before the single ref call",
 );
 assert.match(
   source,

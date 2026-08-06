@@ -1053,6 +1053,7 @@ function openClawChatResponse(args: {
         markChatRunTransportSettled(runHandle, cancelledByUser ? "cancelled" : isError ? "error" : "completed");
         push({ kind: "session", sessionId: conversationId });
         if (!gatewayAssistantTextEmitted) push({ kind: "assistant_chunk", text: gatewayAssistantText });
+        let terminalResponseMetadata = responseMetadata;
         try {
           pushProgress("save-transcript", "Saving transcript", "running");
           await recordSessionFamiliar(conversationId, args.body.familiarId);
@@ -1107,6 +1108,9 @@ function openClawChatResponse(args: {
             requestedAt: assistantCreatedAt,
             incomplete: cancelledByUser || isError,
           });
+          terminalResponseMetadata = gatewayAttention.request
+            ? { ...responseMetadata, attentionRequest: gatewayAttention.request }
+            : responseMetadata;
           conv.turns.push(
             {
               id: pendingUserTurnId,
@@ -1127,9 +1131,7 @@ function openClawChatResponse(args: {
               durationMs,
               isError,
               parentId: pendingUserTurnId,
-              responseMetadata: gatewayAttention.request
-                ? { ...responseMetadata, attentionRequest: gatewayAttention.request }
-                : responseMetadata,
+              responseMetadata: terminalResponseMetadata,
               ...(persistedGatewayTools ? { tools: persistedGatewayTools } : {}),
               ...(cancelledByUser ? { cancelled: true } : {}),
             },
@@ -1152,7 +1154,7 @@ function openClawChatResponse(args: {
           isError,
           sessionId: conversationId,
           ...(cancelledByUser ? { cancelled: true } : {}),
-          responseMetadata,
+          responseMetadata: terminalResponseMetadata,
         });
         gatewayDispatch.close();
         runBuffer?.finish();
@@ -1410,6 +1412,7 @@ function openClawChatResponse(args: {
         if (sessionId) push({ kind: "session", sessionId });
         push({ kind: "assistant_chunk", text: assistantText });
 
+        let terminalResponseMetadata = responseMetadata;
         if (sessionId) {
           try {
             pushProgress("save-transcript", "Saving transcript", "running");
@@ -1469,6 +1472,9 @@ function openClawChatResponse(args: {
                 requestedAt: assistantCreatedAt,
                 incomplete: cancelledByUser || isError,
               });
+              terminalResponseMetadata = nativeAttention.request
+                ? { ...responseMetadata, attentionRequest: nativeAttention.request }
+                : responseMetadata;
               conv.turns.push(
                 {
                   id: userTurnId,
@@ -1489,9 +1495,7 @@ function openClawChatResponse(args: {
                   durationMs,
                   isError,
                   parentId: userTurnId,
-                  responseMetadata: nativeAttention.request
-                    ? { ...responseMetadata, attentionRequest: nativeAttention.request }
-                    : responseMetadata,
+                  responseMetadata: terminalResponseMetadata,
                   ...(cancelledByUser ? { cancelled: true } : {}),
                 },
               );
@@ -1518,7 +1522,8 @@ function openClawChatResponse(args: {
           durationMs,
           isError,
           sessionId: sessionId ?? undefined,
-          responseMetadata,
+          ...(cancelledByUser ? { cancelled: true } : {}),
+          responseMetadata: terminalResponseMetadata,
         });
         runBuffer?.finish();
         await sleep(20);
@@ -5403,6 +5408,7 @@ export async function POST(req: Request) {
       const persistCovenProcessFailure = Boolean(
         finalSessionId && launchFailure && covenBackedProcessFailed,
       );
+      let terminalResponseMetadata = responseMetadata;
       if (finalSessionId && (!launchFailure || persistCovenProcessFailure)) {
         try {
           pushProgress("save-transcript", "Saving transcript", "running");
@@ -5464,6 +5470,9 @@ export async function POST(req: Request) {
             requestedAt: assistantCreatedAt,
             incomplete: cancelledByUser || result.is_error,
           });
+          terminalResponseMetadata = covenAttention.request
+            ? { ...responseMetadata, attentionRequest: covenAttention.request }
+            : responseMetadata;
           const assistantTurn: ChatTurn = {
             id: assistantTurnId,
             role: "assistant",
@@ -5481,9 +5490,7 @@ export async function POST(req: Request) {
               ? { progress: persistedCompatibilityDiagnostics }
               : {}),
             parentId: userTurnId,
-            responseMetadata: covenAttention.request
-              ? { ...responseMetadata, attentionRequest: covenAttention.request }
-              : responseMetadata,
+            responseMetadata: terminalResponseMetadata,
           };
           const conv = existing ?? {
             sessionId: finalSessionId,
@@ -5547,10 +5554,11 @@ export async function POST(req: Request) {
         kind: "done",
         durationMs: result.duration_ms,
         isError: result.is_error,
+        ...(cancelledByUser ? { cancelled: true } : {}),
         sessionId: finalSessionId ?? undefined,
         ...(result.usage ? { usage: result.usage } : {}),
         ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
-        responseMetadata,
+        responseMetadata: terminalResponseMetadata,
       });
       // Best-effort temp cleanup: the harness child process has already
       // exited (including any resume retry), so nothing can still be reading

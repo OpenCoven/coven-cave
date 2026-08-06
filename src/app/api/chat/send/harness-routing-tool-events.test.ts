@@ -1156,13 +1156,13 @@ assert.match(
 
 assert.match(
   streamEvents,
-  /kind: "done";[\s\S]*?usage\?: TurnUsage;[\s\S]*?costUsd\?: number;/,
+  /kind: "done";[\s\S]*?cancelled\?: boolean;[\s\S]*?usage\?: TurnUsage;[\s\S]*?costUsd\?: number;/,
   "The done StreamEvent must carry optional usage and costUsd fields (CHAT-D12-02)",
 );
 
 assert.match(
   chatRoute,
-  /kind: "done",\s*\n\s*durationMs: result\.duration_ms,\s*\n\s*isError: result\.is_error,\s*\n\s*sessionId: finalSessionId \?\? undefined,\s*\n\s*\.\.\.\(result\.usage \? \{ usage: result\.usage \} : \{\}\),\s*\n\s*\.\.\.\(result\.costUsd !== undefined \? \{ costUsd: result\.costUsd \} : \{\}\),/,
+  /kind: "done",\s*\n\s*durationMs: result\.duration_ms,\s*\n\s*isError: result\.is_error,\s*\n\s*\.\.\.\(cancelledByUser \? \{ cancelled: true \} : \{\}\),\s*\n\s*sessionId: finalSessionId \?\? undefined,\s*\n\s*\.\.\.\(result\.usage \? \{ usage: result\.usage \} : \{\}\),\s*\n\s*\.\.\.\(result\.costUsd !== undefined \? \{ costUsd: result\.costUsd \} : \{\}\),/,
   "The final done event must forward captured usage and cost, omitting them when the harness emitted none (CHAT-D12-02)",
 );
 

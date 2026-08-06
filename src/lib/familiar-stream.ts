@@ -123,7 +123,8 @@ export async function streamFamiliarText(opts: {
         responseMetadata = ev.responseMetadata;
         opts.onResponseMetadata?.(ev.responseMetadata);
       }
-      if (ev.isError) error = error ?? "the familiar reported an error";
+      if (ev.cancelled) error = error ?? "cancelled";
+      else if (ev.isError) error = error ?? "the familiar reported an error";
     } else if (ev.kind === "error") error = ev.message ?? "generation error";
   };
 
@@ -141,5 +142,11 @@ export async function streamFamiliarText(opts: {
   // and process a last frame that arrived without its trailing blank line.
   buffer += decoder.decode();
   if (buffer.trim()) handleFrame(buffer);
-  return { text: error === "cancelled" ? attentionText.cancelled() : attentionText.settled(), error, sessionId, responseMetadata };
+  const finalText = error === "cancelled" ? attentionText.cancelled() : attentionText.settled();
+  return {
+    text: error === "cancelled" && finalText.trim() === "(cancelled)" ? "" : finalText,
+    error,
+    sessionId,
+    responseMetadata,
+  };
 }

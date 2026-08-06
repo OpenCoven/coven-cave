@@ -107,8 +107,8 @@ test("the OpenClaw gateway persistence path prepares and persists the attention 
   );
   assert.match(
     route,
-    /const gatewayAttention = prepareAttentionRequest\(\{[\s\S]{0,900}text: gatewayAttention\.text\.trim\(\),[\s\S]{0,200}\.\.\.\(gatewayAttention\.reasoning \? \{ reasoning: gatewayAttention\.reasoning \} : \{\}\),\s*createdAt: assistantCreatedAt,[\s\S]{0,300}responseMetadata: gatewayAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: gatewayAttention\.request \}\s*:\s*responseMetadata,/,
-    "the gateway persisted turn should use the cleaned text, carry persisted reasoning when present, use one stamped createdAt, and conditionally clone responseMetadata",
+    /const gatewayAttention = prepareAttentionRequest\(\{[\s\S]{0,900}terminalResponseMetadata = gatewayAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: gatewayAttention\.request \}\s*:\s*responseMetadata;[\s\S]{0,900}text: gatewayAttention\.text\.trim\(\),[\s\S]{0,260}\.\.\.\(gatewayAttention\.reasoning \? \{ reasoning: gatewayAttention\.reasoning \} : \{\}\),[\s\S]{0,260}createdAt: assistantCreatedAt,[\s\S]{0,320}responseMetadata: terminalResponseMetadata,/,
+    "the gateway persisted turn should use the cleaned text, carry persisted reasoning when present, use one stamped createdAt, and reuse the cloned responseMetadata",
   );
 });
 
@@ -120,8 +120,8 @@ test("the native OpenClaw stub/direct persistence path prepares and persists the
   );
   assert.match(
     route,
-    /const nativeAttention = prepareAttentionRequest\(\{[\s\S]{0,900}text: nativeAttention\.text\.trim\(\),[\s\S]{0,200}\.\.\.\(nativeAttention\.reasoning \? \{ reasoning: nativeAttention\.reasoning \} : \{\}\),\s*createdAt: assistantCreatedAt,[\s\S]{0,300}responseMetadata: nativeAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: nativeAttention\.request \}\s*:\s*responseMetadata,/,
-    "the native persisted turn should use the cleaned text, carry persisted reasoning when present, use one stamped createdAt, and conditionally clone responseMetadata",
+    /const nativeAttention = prepareAttentionRequest\(\{[\s\S]{0,900}terminalResponseMetadata = nativeAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: nativeAttention\.request \}\s*:\s*responseMetadata;[\s\S]{0,900}text: nativeAttention\.text\.trim\(\),[\s\S]{0,260}\.\.\.\(nativeAttention\.reasoning \? \{ reasoning: nativeAttention\.reasoning \} : \{\}\),[\s\S]{0,260}createdAt: assistantCreatedAt,[\s\S]{0,320}responseMetadata: terminalResponseMetadata,/,
+    "the native persisted turn should use the cleaned text, carry persisted reasoning when present, use one stamped createdAt, and reuse the cloned responseMetadata",
   );
 });
 
@@ -133,8 +133,8 @@ test("the general Coven transport persistence path prepares and persists the att
   );
   assert.match(
     route,
-    /const covenAttention = prepareAttentionRequest\(\{[\s\S]{0,600}text: covenAttention\.text,[\s\S]{0,200}\.\.\.\(covenAttention\.reasoning \? \{ reasoning: covenAttention\.reasoning \} : \{\}\),[\s\S]{0,300}createdAt: assistantCreatedAt,[\s\S]{0,900}responseMetadata: covenAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: covenAttention\.request \}\s*:\s*responseMetadata,/,
-    "the coven transport persisted turn should use the cleaned text, carry persisted reasoning when present, use one stamped createdAt, and conditionally clone responseMetadata",
+    /const covenAttention = prepareAttentionRequest\(\{[\s\S]{0,600}terminalResponseMetadata = covenAttention\.request\s*\?\s*\{ \.\.\.responseMetadata, attentionRequest: covenAttention\.request \}\s*:\s*responseMetadata;[\s\S]{0,900}text: covenAttention\.text,[\s\S]{0,260}\.\.\.\(covenAttention\.reasoning \? \{ reasoning: covenAttention\.reasoning \} : \{\}\),[\s\S]{0,300}createdAt: assistantCreatedAt,[\s\S]{0,900}responseMetadata: terminalResponseMetadata,/,
+    "the coven transport persisted turn should use the cleaned text, carry persisted reasoning when present, use one stamped createdAt, and reuse the cloned responseMetadata",
   );
 });
 
@@ -149,6 +149,24 @@ test("existing response metadata fields are preserved through the conditional cl
       `${varName}'s clone must spread the existing responseMetadata before adding attentionRequest`,
     );
   }
+});
+
+test("successful done events reuse the persisted attention-aware response metadata", () => {
+  assert.match(
+    route,
+    /terminalResponseMetadata = gatewayAttention\.request[\s\S]{0,220}\? \{ \.\.\.responseMetadata, attentionRequest: gatewayAttention\.request \}[\s\S]{0,80}: responseMetadata;/,
+    "gatewayAttention should define the shared terminalResponseMetadata clone for the final done event",
+  );
+  assert.match(
+    route,
+    /terminalResponseMetadata = nativeAttention\.request[\s\S]{0,220}\? \{ \.\.\.responseMetadata, attentionRequest: nativeAttention\.request \}[\s\S]{0,80}: responseMetadata;/,
+    "nativeAttention should define the shared terminalResponseMetadata clone for the final done event",
+  );
+  assert.match(
+    route,
+    /terminalResponseMetadata = covenAttention\.request[\s\S]{0,220}\? \{ \.\.\.responseMetadata, attentionRequest: covenAttention\.request \}[\s\S]{0,80}: responseMetadata;/,
+    "covenAttention should define the shared terminalResponseMetadata clone for the final done event",
+  );
 });
 
 test("ChatView renders through the shared attention-aware text projection", () => {
@@ -252,8 +270,8 @@ test("ChatView does not render an inline attention card yet", () => {
   // inline per-turn card should consume the parsed request here.
   assert.doesNotMatch(
     chatView,
-    /attentionRequest/,
-    "the parsed request must not be consumed for rendering in this task — only the marker-stripped visible text is used",
+    /responseMetadata\?\.attentionRequest[\s\S]{0,240}<ThreadSignalCard|attentionRequest[\s\S]{0,240}<MessageBubble/,
+    "the parsed request must not be consumed as inline turn UI — only marker-stripped text renders in-thread",
   );
 });
 
