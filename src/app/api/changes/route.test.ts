@@ -269,13 +269,18 @@ assert.match(
 );
 assert.match(
   source,
-  /reserveCheckpointPath[\s\S]*?randomBytes\(6\)[\s\S]*?O_EXCL[\s\S]*?publishCheckpoint/,
-  "checkpoint publication reserves names exclusively and retries collisions randomly",
+  /recoverCheckpointStore\(await checkpointDirOf\(repoRoot\)\)[\s\S]*?return await operation\(\)/,
+  "every locked operation recovers orphan publication artifacts before work",
 );
 assert.match(
   source,
-  /writeDurableExclusiveFile\(patchTemp, patch\)[\s\S]{0,180}?writeDurableExclusiveFile\(metadataTemp, metadata\)[\s\S]*?fs\.linkSync\([\s\S]{0,180}?metadataPath[\s\S]*?fs\.linkSync\([\s\S]{0,180}?reservation\.checkpointPath/,
-  "durable temporary metadata publishes before the patch marker without replacing an existing file",
+  /writeDurableExclusiveFile\(patchTemp, patch\)[\s\S]{0,180}?writeDurableExclusiveFile\(metadataTemp, metadata\)[\s\S]{0,100}?fsyncDirectoryIfSupported\(tempDirectory\)[\s\S]*?randomBytes\(6\)[\s\S]*?fs\.renameSync\([\s\S]*?fsyncDirectoryIfSupported\(checkpointDir\)/,
+  "fsynced patch and metadata publish together by collision-retried directory rename",
+);
+assert.doesNotMatch(
+  source,
+  /fs\.linkSync\(/,
+  "checkpoint publication and deletion do not depend on hard links",
 );
 
 // remote=1 — read-only origin probe powering the project-setup modal's GitHub

@@ -371,7 +371,10 @@ try {
   assert.equal(await readFile(parentFile, "utf8"), "parent edited\n", "Undo leaves the parent project untouched");
   assert.equal(await readFile(siblingFile, "utf8"), "sibling edited\n", "Undo leaves sibling projects untouched");
 
-  const checkpoint = await readFile(revertedBody.checkpointPath, "utf8");
+  const checkpoint = await readFile(
+    path.join(revertedBody.checkpointPath, "checkpoint.patch"),
+    "utf8",
+  );
   assert.match(
     checkpoint,
     /diff --git a\/packages\/app\/src\/a\.ts b\/packages\/app\/src\/a\.ts/,
@@ -511,11 +514,17 @@ try {
     "checkpoint not authorized for project",
   );
   await access(revertedBody.checkpointPath);
-  await access(`${revertedBody.checkpointPath}.scope.json`);
+  await access(
+    path.join(revertedBody.checkpointPath, "metadata.scope.json"),
+  );
 
   const checkpointDir = path.dirname(revertedBody.checkpointPath);
-  const checkpointContents = await readFile(revertedBody.checkpointPath);
-  const metadataContents = await readFile(`${revertedBody.checkpointPath}.scope.json`);
+  const checkpointContents = await readFile(
+    path.join(revertedBody.checkpointPath, "checkpoint.patch"),
+  );
+  const metadataContents = await readFile(
+    path.join(revertedBody.checkpointPath, "metadata.scope.json"),
+  );
   const cloneCheckpoint = async (name: string, includeMetadata = true) => {
     const checkpointPath = path.join(checkpointDir, name);
     const metadataPath = `${checkpointPath}.scope.json`;
@@ -717,7 +726,10 @@ try {
     "an authorized delete removes the checkpoint",
   );
   await assert.rejects(
-    () => access(`${revertedBody.checkpointPath}.scope.json`),
+    () =>
+      access(
+        path.join(revertedBody.checkpointPath, "metadata.scope.json"),
+      ),
     "an authorized delete removes its scope metadata",
   );
   const repeatedDelete = await POST(
