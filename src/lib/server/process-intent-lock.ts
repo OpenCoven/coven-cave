@@ -21,10 +21,11 @@ const INTENT_STATE_NAME = /^\.current-(\d{24})\.intent$/;
 const PREVIOUS_INTENT_STATE_NAME =
   /^\.published-(\d{24}-\d+-[a-f0-9]{16}-[a-f0-9]+\.lock)\.intent$/;
 const RELEASED_INTENT_NAME = /^\.released-/;
+const QUIESCENCE_PROBE_NAME =
+  /^\.quiescence-(\d+)-([a-f0-9]{16})-([a-f0-9]+)\.probe$/;
 const INTENT_OWNER_FILE = "owner.json";
 const INTENT_GATE_FILE = "gate.json";
 const MALFORMED_INTENT_GRACE_MS = 30_000;
-const LEGACY_QUIESCENCE_NS = BigInt(50_000_000);
 const execFileAsync = promisify(execFile);
 const pendingIntentRemovals = new Map<
   string,
@@ -197,10 +198,19 @@ export type ProcessIntentLockOptions = {
     stage:
       | "owner-file-synced"
       | "draft-directory-synced"
+      | "quiescence-probe-published"
+      | "quiescence-probe-retired"
       | "gate-name-selected"
       | "gate-parent-synced"
       | "state-renamed"
       | "state-parent-synced",
+  ) => Promise<void>;
+  /** Deterministic acquisition boundaries used by compatibility conformance. */
+  acquisitionStage?: (
+    stage:
+      | "waiting-for-pre-barrier-legacy"
+      | "waiting-for-current"
+      | "acquired",
   ) => Promise<void>;
 };
 
@@ -278,6 +288,7 @@ type CurrentPublication = {
   gateName: string;
   order: bigint;
   owner: IntentOwner;
+  preBarrierLegacyNames: ReadonlySet<string>;
   statePath: string;
 };
 
@@ -312,26 +323,67 @@ async function readCurrentPublication(
       ),
     ]);
     const owner = JSON.parse(ownerRaw) as Partial<IntentOwner>;
-    const gate = JSON.parse(gateRaw) as { gateName?: unknown };
+    const gate = JSON.parse(gateRaw) as {
+      gateName?: unknown;
+      preBarrierLegacyNames?: unknown;
+      protocol?: unknown;
+    };
     if (
       !Number.isSafeInteger(owner.pid) ||
       Number(owner.pid) <= 0 ||
       typeof owner.startIdentityHash !== "string" ||
       !/^[a-f0-9]{16}$/.test(owner.startIdentityHash) ||
-      typeof gate.gateName !== "string"
+      typeof gate.gateName !== "string" ||
+      gate.protocol !== 2 ||
+      !Array.isArray(gate.preBarrierLegacyNames) ||
+      gate.preBarrierLegacyNames.some(
+        (entry) =>
+          typeof entry !== "string" ||
+          intentOrder(entry) === null,
+      ) ||
+      new Set(gate.preBarrierLegacyNames).size !==
+        gate.preBarrierLegacyNames.length
     ) {
       return null;
     }
+    const preBarrierLegacyNames = gate.preBarrierLegacyNames as string[];
     const gateOwner = legacyIntentOwner(gate.gateName);
     const publicationOwner = {
       pid: Number(owner.pid),
       startIdentityHash: owner.startIdentityHash,
     };
     if (!gateOwner || !sameOwner(gateOwner, publicationOwner)) return null;
+    const barrier = JSON.parse(
+      await readFile(
+        /* turbopackIgnore: true */ path.join(
+          intentsDirectory,
+          gate.gateName,
+        ),
+        "utf8",
+      ),
+    ) as Partial<IntentOwner> & {
+      protocol?: unknown;
+      preBarrierLegacyNames?: unknown;
+    };
+    if (
+      barrier.protocol !== 2 ||
+      !Number.isSafeInteger(barrier.pid) ||
+      Number(barrier.pid) !== publicationOwner.pid ||
+      barrier.startIdentityHash !== publicationOwner.startIdentityHash ||
+      !Array.isArray(barrier.preBarrierLegacyNames) ||
+      barrier.preBarrierLegacyNames.length !==
+        preBarrierLegacyNames.length ||
+      barrier.preBarrierLegacyNames.some(
+        (entry, index) => entry !== preBarrierLegacyNames[index],
+      )
+    ) {
+      return null;
+    }
     return {
       gateName: gate.gateName,
       order: BigInt(match[1]),
       owner: publicationOwner,
+      preBarrierLegacyNames: new Set(preBarrierLegacyNames),
       statePath,
     };
   } catch {
@@ -503,6 +555,20 @@ async function removeStaleIntentArtifacts(
         /* turbopackIgnore: true */ intentsDirectory,
         name,
       );
+      const quiescenceProbe = QUIESCENCE_PROBE_NAME.exec(name);
+      if (quiescenceProbe) {
+        const pid = Number(quiescenceProbe[1]);
+        if (!Number.isSafeInteger(pid) || pid <= 0) return;
+        const identity = await processStartIdentity(pid);
+        if (
+          identity !== null &&
+          identityHash(identity) === quiescenceProbe[2]
+        ) {
+          return;
+        }
+        await removeIntent(pathname);
+        return;
+      }
       if (RELEASED_INTENT_NAME.test(name)) {
         await removeIntent(pathname);
         return;
@@ -543,6 +609,20 @@ async function removeStaleIntentArtifacts(
       // and is retired last. With no gate, the state is never authoritative.
       await removeIntent(pathname);
     }),
+  );
+}
+
+function legacySnapshot(entries: IntentEntry[]): string[] {
+  return entries
+    .filter((entry) => entry.currentOrder === null)
+    .map((entry) => entry.name)
+    .sort();
+}
+
+function sameSnapshot(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((entry, index) => entry === right[index])
   );
 }
 
@@ -647,6 +727,75 @@ async function waitAtPublicationBoundary(
   assertCanContinue(deadline, options.label, options.signal);
 }
 
+async function establishLegacyQuiescence(
+  options: ProcessIntentLockOptions,
+  owner: IntentOwner,
+  deadline: number,
+): Promise<string[]> {
+  let stableSnapshot: string[] | null = null;
+  let stableProbeCount = 0;
+  while (stableProbeCount < 2) {
+    assertCanContinue(deadline, options.label, options.signal);
+    const before = legacySnapshot(
+      await listIntentEntries(options.intentsDirectory),
+    );
+    const probeName =
+      `.quiescence-${owner.pid}-${owner.startIdentityHash}-` +
+      `${randomBytes(8).toString("hex")}.probe`;
+    const probePath = path.join(
+      /* turbopackIgnore: true */ options.intentsDirectory,
+      probeName,
+    );
+    if (!QUIESCENCE_PROBE_NAME.test(probeName)) {
+      throw new Error("invalid compatibility quiescence probe");
+    }
+    const probe = await open(
+      /* turbopackIgnore: true */ probePath,
+      "wx",
+      0o600,
+    );
+    try {
+      await probe.writeFile(`${JSON.stringify(owner)}\n`);
+      await probe.sync();
+    } finally {
+      await probe.close();
+    }
+    await fsyncDirectoryIfSupported(options.intentsDirectory);
+    await options.publicationStage?.("quiescence-probe-published");
+    const during = legacySnapshot(
+      await listIntentEntries(options.intentsDirectory),
+    );
+    await retireIntent(probePath);
+    await fsyncDirectoryIfSupported(options.intentsDirectory);
+    await options.publicationStage?.("quiescence-probe-retired");
+    const after = legacySnapshot(
+      await listIntentEntries(options.intentsDirectory),
+    );
+
+    if (
+      sameSnapshot(before, during) &&
+      sameSnapshot(during, after) &&
+      stableSnapshot !== null &&
+      sameSnapshot(stableSnapshot, after)
+    ) {
+      stableProbeCount += 1;
+    } else if (
+      sameSnapshot(before, during) &&
+      sameSnapshot(during, after)
+    ) {
+      stableSnapshot = after;
+      stableProbeCount = 1;
+    } else {
+      stableSnapshot = null;
+      stableProbeCount = 0;
+    }
+    if (stableProbeCount < 2) {
+      await waitBeforeRetry(deadline, options.label, options.signal);
+    }
+  }
+  return stableSnapshot ?? [];
+}
+
 async function prepareIntentDraft(
   options: ProcessIntentLockOptions,
   owner: IntentOwner,
@@ -694,13 +843,19 @@ async function publishCompatibilityGate(
   intentsDirectory: string,
   owner: IntentOwner,
   options: ProcessIntentLockOptions,
-): Promise<{ name: string; path: string }> {
+  deadline: number,
+): Promise<{ name: string; path: string; preBarrierLegacyNames: string[] }> {
   for (;;) {
     const order = "000000000000000000000000";
     const name =
       `${order}-${owner.pid}-${owner.startIdentityHash}-` +
       `${randomBytes(8).toString("hex")}.lock`;
     await options.publicationStage?.("gate-name-selected");
+    const preBarrierLegacyNames = await establishLegacyQuiescence(
+      options,
+      owner,
+      deadline,
+    );
     const pathname = path.join(
       /* turbopackIgnore: true */ intentsDirectory,
       name,
@@ -714,14 +869,20 @@ async function publishCompatibilityGate(
       );
       created = true;
       try {
-        await handle.writeFile(`${JSON.stringify(owner)}\n`);
+        await handle.writeFile(
+          `${JSON.stringify({
+            ...owner,
+            protocol: 2,
+            preBarrierLegacyNames,
+          })}\n`,
+        );
         await handle.sync();
       } finally {
         await handle.close();
       }
       await fsyncDirectoryIfSupported(intentsDirectory);
       await options.publicationStage?.("gate-parent-synced");
-      return { name, path: pathname };
+      return { name, path: pathname, preBarrierLegacyNames };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
       if (created) await removeIntent(pathname);
@@ -749,6 +910,7 @@ async function publishCurrentState(
   intentsDirectory: string,
   draftPath: string,
   gateName: string,
+  preBarrierLegacyNames: string[],
   options: ProcessIntentLockOptions,
 ): Promise<{ order: bigint; path: string }> {
     const gateHandle = await open(
@@ -757,7 +919,13 @@ async function publishCurrentState(
       0o600,
     );
     try {
-      await gateHandle.writeFile(`${JSON.stringify({ gateName })}\n`);
+      await gateHandle.writeFile(
+        `${JSON.stringify({
+          protocol: 2,
+          gateName,
+          preBarrierLegacyNames,
+        })}\n`,
+      );
       await gateHandle.sync();
     } finally {
       await gateHandle.close();
@@ -798,14 +966,13 @@ async function publishCurrentState(
 /**
  * Cross-version safety invariant:
  *
- * Every current contender publishes an order-zero, base-visible barrier before
- * joining the separately sequenced current queue, and retains that barrier
- * through release. Base and legacy publishers can never backdate ahead of an
- * order-zero barrier. Before the first current owner enters, it also observes a
- * full quiet interval with no live gate lacking a valid current queue state.
- * That catches an old owner paused after its final scan; an old contender
- * paused before publication will publish behind the retained barrier. Unknown
- * or unverifiable version state blocks rather than granting compatibility.
+ * A current contender first obtains two identical snapshots across complete,
+ * durable probe publication/retirement cycles. It records that pre-barrier
+ * legacy set in an order-zero compatibility barrier, then joins the current
+ * queue. Recorded owners block it; later legacy publishers sort behind the
+ * retained barrier and are safe to ignore while they naturally wait. A legacy
+ * publisher paused before publication is therefore fenced without creating a
+ * current/legacy wait cycle.
  */
 export async function acquireProcessIntentLock(
   options: ProcessIntentLockOptions,
@@ -832,7 +999,7 @@ export async function acquireProcessIntentLock(
   let ownPath: string | null = null;
   let ownStatePath: string | null = null;
   let ownCurrentOrder: bigint | null = null;
-  let legacyClearSince: bigint | null = null;
+  let preBarrierLegacyNames = new Set<string>();
   try {
     assertCanContinue(deadline, options.label, options.signal);
     await waitAtPublicationBoundary(options, deadline);
@@ -840,13 +1007,17 @@ export async function acquireProcessIntentLock(
       options.intentsDirectory,
       owner,
       options,
+      deadline,
     );
+    const quiescentLegacyNames = gate.preBarrierLegacyNames;
+    preBarrierLegacyNames = new Set(quiescentLegacyNames);
     ownName = gate.name;
     ownPath = gate.path;
     const currentState = await publishCurrentState(
       options.intentsDirectory,
       draftPath,
       ownName,
+      quiescentLegacyNames,
       options,
     );
     ownStatePath = currentState.path;
@@ -869,7 +1040,6 @@ export async function acquireProcessIntentLock(
             entry.currentOrder === ownCurrentOrder,
         );
         if (!ownEntry) {
-          legacyClearSince = null;
           await waitBeforeRetry(deadline, options.label, options.signal);
           continue;
         }
@@ -879,11 +1049,13 @@ export async function acquireProcessIntentLock(
         let currentQueueBlocked = false;
         for (const entry of entries) {
           if (entry.name === ownName) continue;
-          const isLegacy = entry.currentOrder === null;
+          const isPreBarrierLegacy =
+            entry.currentOrder === null &&
+            preBarrierLegacyNames.has(entry.name);
           const isEarlierCurrent =
             entry.currentOrder !== null &&
             entry.currentOrder < ownCurrentOrder!;
-          if (!isLegacy && !isEarlierCurrent) continue;
+          if (!isPreBarrierLegacy && !isEarlierCurrent) continue;
 
           if (!entry.owner) {
             if (
@@ -901,7 +1073,7 @@ export async function acquireProcessIntentLock(
                 continue;
               }
             }
-            if (isLegacy) legacyBlocked = true;
+            if (isPreBarrierLegacy) legacyBlocked = true;
             else currentQueueBlocked = true;
             continue;
           }
@@ -934,26 +1106,25 @@ export async function acquireProcessIntentLock(
               continue;
             }
           }
-          if (isLegacy) legacyBlocked = true;
+          if (isPreBarrierLegacy) legacyBlocked = true;
           else currentQueueBlocked = true;
         }
 
         if (removedBlocker) continue;
         if (legacyBlocked) {
-          legacyClearSince = null;
-        } else if (legacyClearSince === null) {
-          legacyClearSince = process.hrtime.bigint();
+          await options.acquisitionStage?.(
+            "waiting-for-pre-barrier-legacy",
+          );
         }
-        if (
-          legacyBlocked ||
-          currentQueueBlocked ||
-          legacyClearSince === null ||
-          process.hrtime.bigint() - legacyClearSince < LEGACY_QUIESCENCE_NS
-        ) {
+        if (currentQueueBlocked) {
+          await options.acquisitionStage?.("waiting-for-current");
+        }
+        if (legacyBlocked || currentQueueBlocked) {
           await waitBeforeRetry(deadline, options.label, options.signal);
           continue;
         }
 
+        await options.acquisitionStage?.("acquired");
         let released = false;
         return async () => {
           if (released) return;

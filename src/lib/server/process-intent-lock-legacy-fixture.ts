@@ -186,6 +186,7 @@ export type ProcessIntentLockOptions = {
   beforePublish?: () => Promise<void>;
   pauseAfterName?: () => Promise<void>;
   pauseAfterScan?: () => Promise<void>;
+  onWait?: () => Promise<void>;
 };
 
 function timeoutError(label: string): Error {
@@ -545,6 +546,7 @@ export async function acquireLegacyProcessIntentLock(
             continue;
           }
         }
+        await options.onWait?.();
         await waitBeforeRetry(deadline, options.label, options.signal);
       } catch (error) {
         if (
