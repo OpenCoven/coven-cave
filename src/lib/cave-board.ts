@@ -12,6 +12,8 @@ import {
   type CardLifecycle,
   type CardPriority,
   type CardStatus,
+  type TaskDependency,
+  type TaskNextStep,
 } from "@/lib/cave-board-types";
 import {
   mergeLinksWithGitHub,
@@ -33,6 +35,10 @@ import {
 } from "@/lib/chat-attachments";
 import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
+import {
+  assertValidOrchestration,
+  OrchestrationValidationError,
+} from "@/lib/task-orchestration";
 
 export {
   DEFAULT_MAX_RETRIES,
@@ -47,7 +53,10 @@ export {
   type CardLifecycle,
   type CardPriority,
   type CardStatus,
+  type TaskDependency,
+  type TaskNextStep,
 } from "@/lib/cave-board-types";
+export { OrchestrationValidationError } from "@/lib/task-orchestration";
 
 const BOARD_PATH = path.join(caveHome(), "board.json");
 
@@ -203,6 +212,7 @@ function backfillCard(c: Card | LegacyCard): Card {
     retryCount: c.retryCount ?? 0,
     maxRetries: c.maxRetries ?? DEFAULT_MAX_RETRIES,
     steps: c.steps ?? [],
+    dependencies: c.dependencies ?? [],
   } as Card;
 }
 
@@ -300,6 +310,10 @@ export type NewCardInput = {
   steps?: { text: string }[];
   /** Files staged in the composer, carried onto the card at creation time. */
   attachments?: ChatAttachment[];
+  dependencies?: TaskDependency[];
+  primaryBlockerId?: string | null;
+  primaryBlockerPinned?: boolean;
+  nextStep?: TaskNextStep | null;
 };
 
 /** Store attachments lean: normalize (bounds text + validates image payloads),
@@ -347,9 +361,15 @@ export async function createCard(input: NewCardInput): Promise<Card> {
       .map((s) => (s?.text ?? "").trim())
       .filter(Boolean)
       .map((text) => ({ id: crypto.randomUUID(), text, done: false, addedAt: now })),
+    dependencies: input.dependencies ?? [],
+    primaryBlockerId: input.primaryBlockerId ?? null,
+    primaryBlockerPinned: input.primaryBlockerPinned ?? false,
+    nextStep: input.nextStep ?? null,
   };
+  if (card.nextStep?.requiresApproval) card.needsHuman = true;
   const attachments = boardAttachments(input.attachments);
   if (attachments) card.attachments = attachments;
+  assertValidOrchestration(card, { cards: board.cards });
   board.cards.push(card);
   await saveBoard(board);
   return card;
@@ -359,6 +379,7 @@ export async function createCard(input: NewCardInput): Promise<Card> {
 export async function updateCard(
   id: string,
   patchWithOps: CardPatch,
+  options: { automated?: boolean } = {},
 ): Promise<Card | null> {
   return withBoardLock(async () => {
   const board = await loadBoard();
@@ -428,12 +449,26 @@ export async function updateCard(
     attachments: "attachments" in patch
       ? boardAttachments(patch.attachments ?? undefined)
       : current.attachments,
+    dependencies: "dependencies" in patch ? patch.dependencies ?? [] : current.dependencies ?? [],
+    primaryBlockerId: "primaryBlockerId" in patch
+      ? patch.primaryBlockerId ?? null
+      : current.primaryBlockerId ?? null,
+    primaryBlockerPinned: "primaryBlockerPinned" in patch
+      ? patch.primaryBlockerPinned ?? false
+      : current.primaryBlockerPinned ?? false,
+    nextStep: "nextStep" in patch ? patch.nextStep ?? null : current.nextStep ?? null,
   };
+  if (next.nextStep?.requiresApproval) next.needsHuman = true;
   if (next.lifecycle === "running" && !next.runningSince) {
     next.runningSince = next.updatedAt;
   } else if (next.lifecycle !== "running") {
     delete next.runningSince;
   }
+  assertValidOrchestration(next, {
+    cards: board.cards,
+    previous: current,
+    automated: options.automated,
+  });
   board.cards[idx] = next;
   await saveBoard(board);
   return next;
@@ -472,6 +507,31 @@ export type TransitionInput = {
   reason?: string;
   retry?: boolean;
 };
+
+function executionDependency(
+  to: "failed" | "cancelled",
+  reason: string | undefined,
+  now: string,
+): TaskDependency {
+  const outcome = to === "failed" ? "Run failed" : "Run was cancelled";
+  return {
+    id: crypto.randomUUID(),
+    kind: "execution",
+    label: reason?.trim() ? `${outcome}: ${reason.trim()}` : outcome,
+    state: "unresolved",
+    origin: "system",
+    createdAt: now,
+  };
+}
+
+function failureNextStep(now: string): TaskNextStep {
+  return {
+    summary: "Review the failed run and choose retry or repair",
+    requiresApproval: true,
+    origin: "system",
+    updatedAt: now,
+  };
+}
 
 export async function transitionCard(
   id: string,
@@ -512,6 +572,10 @@ export async function transitionCard(
     next.needsHuman = false;
   } else if (to === "failed") {
     const exhausted = current.retryCount >= current.maxRetries;
+    const blocker = executionDependency(to, reason, now);
+    next.dependencies = [...(current.dependencies ?? []), blocker];
+    next.primaryBlockerId = blocker.id;
+    next.nextStep = current.nextStep?.origin === "human" ? current.nextStep : failureNextStep(now);
     if (exhausted) {
       // Auto-rollback: failed without remaining retries → Blocked with
       // `needs human` flag. Spec section 3 (rollback behavior).
@@ -519,6 +583,7 @@ export async function transitionCard(
       next.needsHuman = true;
     } else {
       next.status = "blocked";
+      next.needsHuman = true;
     }
   } else if (to === "queued") {
     if (retry) {
@@ -527,10 +592,19 @@ export async function transitionCard(
     next.status = "backlog";
     next.needsHuman = false;
   } else if (to === "cancelled") {
+    const blocker = executionDependency(to, reason, now);
+    next.dependencies = [...(current.dependencies ?? []), blocker];
+    next.primaryBlockerId = blocker.id;
+    next.nextStep = current.nextStep?.origin === "human" ? current.nextStep : failureNextStep(now);
     next.status = "blocked";
-    next.needsHuman = false;
+    next.needsHuman = true;
   }
 
+  assertValidOrchestration(next, {
+    cards: board.cards,
+    previous: current,
+    automated: true,
+  });
   board.cards[idx] = next;
   await saveBoard(board);
   return next;

@@ -548,7 +548,7 @@ export async function POST(req: Request) {
             needsHuman: normalized.needsHuman,
             lifecycleReason: normalized.lifecycleReason,
             lifecycleAt: normalized.lifecycleAt,
-          });
+          }, { automated: true });
           if (!updated) {
             push({ kind: "skip", cardId: card.id, reason: "card_missing" });
             continue;
@@ -572,7 +572,7 @@ export async function POST(req: Request) {
           needsHuman: normalized.needsHuman,
           lifecycleReason: normalized.lifecycleReason,
           lifecycleAt: normalized.lifecycleAt,
-        });
+        }, { automated: true });
         if (!updated) {
           push({ kind: "skip", cardId: card.id, reason: "card_missing" });
           continue;

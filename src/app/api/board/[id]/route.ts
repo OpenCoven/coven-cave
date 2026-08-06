@@ -2,18 +2,27 @@ import { NextResponse } from "next/server";
 import {
   deleteCard,
   loadBoard,
+  OrchestrationValidationError,
   updateCard,
   type CardLifecycle,
   type CardPriority,
   type CardStatus,
 } from "@/lib/cave-board";
-import type { CardStep } from "@/lib/cave-board-types";
+import type { CardStep, TaskDependency, TaskNextStep } from "@/lib/cave-board-types";
 import type { CardAsanaLink, CardGitHubLink } from "@/lib/cave-board-types";
 import type { ChatAttachment } from "@/lib/chat-attachments";
-import type { CardOps } from "@/lib/board-card-ops";
+import type { CardOps, CardPatch } from "@/lib/board-card-ops";
 import { trustedProjectCwd } from "@/lib/cave-projects";
 
 export const dynamic = "force-dynamic";
+
+const PATCH_FIELDS = [
+  "title", "notes", "status", "lifecycle", "lifecycleReason", "priority",
+  "familiarId", "modelOverride", "modelOverrideHarness", "sessionId", "cwd",
+  "projectId", "links", "github", "asana", "labels", "startDate", "endDate",
+  "needsHuman", "runningSince", "steps", "attachments", "dependencies",
+  "primaryBlockerId", "primaryBlockerPinned", "nextStep", "ops",
+] as const satisfies readonly (keyof CardPatch)[];
 
 export async function PATCH(
   req: Request,
@@ -43,6 +52,10 @@ export async function PATCH(
     runningSince: string | undefined;
     steps: CardStep[];
     attachments: ChatAttachment[];
+    dependencies: TaskDependency[];
+    primaryBlockerId: string | null;
+    primaryBlockerPinned: boolean;
+    nextStep: TaskNextStep | null;
     /** Intent ops for array fields — applied against the current card under
      * the board lock so concurrent element edits don't clobber each other. */
     ops: CardOps;
@@ -71,7 +84,22 @@ export async function PATCH(
       if (resolved.ok) body = { ...body, cwd: resolved.root };
     }
   }
-  const card = await updateCard(id, body);
+  const patch = Object.fromEntries(
+    PATCH_FIELDS.filter((field) => Object.prototype.hasOwnProperty.call(body, field))
+      .map((field) => [field, body[field]]),
+  ) as CardPatch;
+  let card;
+  try {
+    card = await updateCard(id, patch);
+  } catch (error) {
+    if (error instanceof OrchestrationValidationError) {
+      return NextResponse.json(
+        { ok: false, error: "orchestration_invalid", errors: error.errors },
+        { status: 422 },
+      );
+    }
+    throw error;
+  }
   if (!card) {
     return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   }
