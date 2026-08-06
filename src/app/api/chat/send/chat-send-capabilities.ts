@@ -264,19 +264,6 @@ function probeHelp(
     .then((outcome) => outcome.ok && outcome.matched);
 }
 
-function probeHelp(
-  command: string,
-  args: string[],
-  matches: (help: string) => boolean,
-  env = harnessSpawnEnv(),
-  input?: string,
-  acceptNonZeroExit = true,
-  cwd?: string,
-): Promise<boolean> {
-  return probeHelpOutcome(command, args, matches, env, input, acceptNonZeroExit, cwd)
-    .then((outcome) => outcome.ok && outcome.matched);
-}
-
 type ProbeOutput = { output: string; complete: boolean };
 
 function probeOutput(
