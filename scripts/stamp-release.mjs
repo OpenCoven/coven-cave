@@ -236,7 +236,11 @@ function main() {
   const subjects = run("git", ["log", `${prevTag}..HEAD`, "--no-merges", "--pretty=%s"])
     .split("\n")
     .filter(Boolean);
-  const dateIso = new Date().toISOString().slice(0, 10);
+  // One instant for the whole cut: the CHANGELOG date and the iOS build stamp
+  // both derive from it, and two `new Date()` calls either side of a boundary
+  // would date the release one day and stamp the build the next.
+  const now = new Date();
+  const dateIso = now.toISOString().slice(0, 10);
   const section = buildChangelogSection({ version: next, prevVersion: current, dateIso, subjects });
 
   console.log(`stamp: v${current} → v${next} (${subjects.length} commits since ${prevTag})`);
@@ -248,7 +252,7 @@ function main() {
     let content;
     let replaced;
     if (kind === "yaml-ios-versions") {
-      content = applyReplacement(kind, before, next, relativePath);
+      content = applyReplacement(kind, before, next, relativePath, now);
       // MARKETING_VERSION + CURRENT_PROJECT_VERSION — App Store Connect
       // rejects an upload whose build stamp did not move.
       replaced = 2;
