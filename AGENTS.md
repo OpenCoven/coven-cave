@@ -56,8 +56,9 @@
 
     So the order is **check quota → rerun → only then fall back**. Genuinely
     structural failures name the repository itself (`canonical repository
-    identity mismatch`, `canonical repository identity changed`); those do not
-    improve with a retry. Reach for the fallback only after a retry failed:
+    identity mismatch`, `canonical repository identity changed between pages`);
+    those do not improve with a retry. Reach for the fallback only after a
+    retry failed:
 
     ```bash
     git worktree add -b <branch> .worktrees/<branch> origin/main   # last resort

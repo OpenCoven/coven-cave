@@ -325,10 +325,10 @@ any repository change:
   after the reset rather than working around it.
 - **A commit's PR association came back malformed or absent** — `commit
   association connection is unavailable`, or `malformed fields or a mismatched
-  head OID`. This reads structural but usually is not: the inventory raises the
-  first message whenever GitHub simply returns no commit object
-  (`worktree-lifecycle-inventory.ts:858`), which is what a degraded or throttled
-  response looks like. Observed 2026-08-06 — a `pnpm beads:worktrees` run
+  head OID`. This reads structural but usually is not: the inventory throws
+  `commit association connection is unavailable` whenever GitHub simply returns
+  no commit object, which is what a degraded or throttled response looks like.
+  Observed 2026-08-06 — a `pnpm beads:worktrees` run
   emitted exactly that warning, and a rerun minutes later, after quota recovered
   from ~1k to ~2.9k remaining, reported `probe warnings: 0` and `ok: true` with
   nothing else changed.
