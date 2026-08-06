@@ -37,7 +37,8 @@ async function listenHub(port = 0): Promise<number> {
     if (req.method === "POST" && req.url === "/api/v1/sessions") {
       sessionRequests.push(await readJson(req));
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ id: `hub-session-${nextSession++}`, status: "running" }));
+      const id = `hub-session-${nextSession++}`;
+      res.end(JSON.stringify({ id, status: "running", conversation_id: "codex-thread-offline-1" }));
       return;
     }
     if (req.method === "GET" && req.url === "/api/v1/health") {
@@ -109,6 +110,7 @@ try {
     title: "Existing offline chat",
     createdAt: "2026-06-30T11:58:00.000Z",
     updatedAt: "2026-06-30T11:59:00.000Z",
+    harnessSessionId: "codex-thread-offline-1",
     turns: [
       {
         id: "existing-user",
@@ -236,6 +238,7 @@ try {
     /^queued during travel mode[\s\S]*queue-context\.txt[\s\S]*queue proof/,
   );
   assert.equal(sessionRequests[0]?.harness, "claude");
+  assert.equal(sessionRequests[0]?.launchMode, "nonInteractive");
 
   const syncedState = await config.loadState();
   const syncedItem = syncedState.travel.offlineQueue.find((item) => item.id === replayItem.id);
@@ -245,9 +248,24 @@ try {
     "hub-session-1",
     "successful replay should durably record the daemon session id for retries",
   );
+  assert.equal(
+    syncedItem?.payload?.replayConversationId,
+    "codex-thread-offline-1",
+    "successful replay stores the daemon/native conversation id separately when available",
+  );
 
   const replayedConversation = await conversations.loadConversation("offline-chat-1");
-  assert.equal(replayedConversation?.harnessSessionId, "hub-session-1");
+  assert.equal(replayedConversation?.harnessSessionId, "codex-thread-offline-1");
+  assert.deepEqual(replayedConversation?.replaySessions, [
+    {
+      sessionId: "hub-session-1",
+      conversationId: "codex-thread-offline-1",
+      title: "Queued during travel mode",
+      status: "completed",
+      createdAt: syncedItem?.payload?.replaySessionCreatedAt,
+      updatedAt: syncedItem?.payload?.replaySessionCreatedAt,
+    },
+  ]);
   assert.equal(
     replayedConversation?.turns.length,
     3,
@@ -326,6 +344,21 @@ try {
   );
   const retriedConversation = await conversations.loadConversation("offline-chat-1");
   assert.equal(retriedConversation?.turns.length, 3);
+  assert.equal(retriedConversation?.harnessSessionId, "codex-thread-offline-1");
+  assert.deepEqual(
+    retriedConversation?.replaySessions,
+    [
+      {
+        sessionId: "hub-session-1",
+        conversationId: "codex-thread-offline-1",
+        title: "Queued during travel mode",
+        status: "completed",
+        createdAt: syncedItem?.payload?.replaySessionCreatedAt,
+        updatedAt: retriedConversation?.replaySessions?.[0]?.updatedAt,
+      },
+    ],
+    "retry reuse updates the same replay-session record instead of duplicating aliases",
+  );
   assert.equal(
     retriedConversation?.turns.filter((turn) => turn.id === queuedUserTurnId).length,
     1,

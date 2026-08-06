@@ -141,5 +141,5 @@ export async function streamFamiliarText(opts: {
   // and process a last frame that arrived without its trailing blank line.
   buffer += decoder.decode();
   if (buffer.trim()) handleFrame(buffer);
-  return { text: attentionText.settled(), error, sessionId, responseMetadata };
+  return { text: error === "cancelled" ? attentionText.cancelled() : attentionText.settled(), error, sessionId, responseMetadata };
 }

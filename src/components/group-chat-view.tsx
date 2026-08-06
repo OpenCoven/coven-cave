@@ -647,12 +647,18 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
             }
           }
         }
+        apply((r) => applyGroupEvent(r, {
+          kind: "assistant_replace", text: attentionText.settled(),
+        }));
         // Stream closed without an explicit `done` — settle anything still live.
         apply((r) =>
           r.status === "streaming" || r.status === "queued" ? { ...r, status: "done", activity: undefined } : r,
         );
       } catch (err) {
         const aborted = (err as Error)?.name === "AbortError";
+        apply((r) => applyGroupEvent(r, {
+          kind: "assistant_replace", text: aborted ? attentionText.cancelled() : attentionText.settled(),
+        }));
         apply((r) =>
           aborted
             ? { ...r, status: "error", error: "cancelled", activity: undefined }

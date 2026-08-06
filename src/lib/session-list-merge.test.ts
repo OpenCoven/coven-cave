@@ -1297,7 +1297,7 @@ const harnessMatchedReplay = mergeSessionRows({
   localConversations: [
     {
       sessionId: "offline-chat-1",
-      harnessSessionId: "hub-session-offline-1",
+      harnessSessionId: "codex-thread-offline-1",
       familiarId: "charm",
       harness: "codex",
       title: "Offline chat",
@@ -1308,6 +1308,14 @@ const harnessMatchedReplay = mergeSessionRows({
         attentionAfterOperationId: "run-offline-1",
         request: null,
       },
+      replaySessions: [
+        {
+          sessionId: "hub-session-offline-1",
+          conversationId: "codex-thread-offline-1",
+          createdAt: "2026-06-25T04:23:34.393Z",
+          updatedAt: "2026-06-25T04:29:00.000Z",
+        },
+      ],
     },
   ],
   state: { sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {} },

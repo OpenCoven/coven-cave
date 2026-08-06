@@ -43,8 +43,8 @@ import { buildReflectionPrompt, generateReflection } from "./journal-generate.ts
   );
   assert.match(
     source,
-    /const trimmed = extractNextPaths\(attentionText\.settled\(\)\)\.visible\.trim\(\);/,
-    "the directive block is stripped after attention markers are hidden from the final reflection text",
+    /const trimmed = extractNextPaths\(error === "cancelled" \? attentionText\.cancelled\(\) : attentionText\.settled\(\)\)\.visible\.trim\(\);/,
+    "the directive block is stripped after attention markers are hidden from the final reflection text, including cancelled partial tails",
   );
 }
 
@@ -296,8 +296,40 @@ import { buildReflectionPrompt, generateReflection } from "./journal-generate.ts
       onText: (value) => seen.push(value),
     });
     assert.equal(result.error, null);
-    assert.equal(result.text, "A useful reflection.", "an unterminated marker cannot enter stored Journal text");
+    assert.equal(
+      result.text,
+      "A useful reflection.\n<coven:attention rea",
+      "settled Journal text preserves an incomplete marker that never became valid",
+    );
     assert.ok(seen.every((value) => !value.includes("<cov")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          const frames = [
+            { kind: "assistant_chunk", text: '<coven:attention" reason="decision">' },
+            { kind: "assistant_chunk", text: "AFTER" },
+            { kind: "done", sessionId: "j7", isError: false },
+          ];
+          frames.forEach((frame, index) => {
+            controller.enqueue(encoder.encode(`id: ${index + 1}\ndata: ${JSON.stringify(frame)}\n\n`));
+          });
+          controller.close();
+        },
+      }),
+      { status: 200 },
+    );
+    const result = await generateReflection({ familiarId: "nova", context: "ctx" });
+    assert.equal(result.error, null);
+    assert.equal(result.text, "AFTER", "malformed quoted markup cannot truncate following Journal prose");
   } finally {
     globalThis.fetch = originalFetch;
   }

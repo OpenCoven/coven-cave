@@ -159,7 +159,7 @@ export async function generateArtifactCode(opts: {
       : (err as Error)?.message ?? "the connection dropped mid-generation";
   }
 
-  const visible = attentionText.settled();
+  const visible = error === "cancelled" ? attentionText.cancelled() : attentionText.settled();
   const extracted = extractArtifact(visible);
   const failure = error ? "transport" : extracted ? null : "format";
   return {

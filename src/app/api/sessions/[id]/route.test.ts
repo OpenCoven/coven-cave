@@ -20,7 +20,7 @@ try {
 
   const { saveConversation } = await import("@/lib/cave-conversations");
   const { loadState } = await import("@/lib/cave-config");
-  const { DELETE } = await import("./route.ts");
+  const { DELETE, PATCH } = await import("./route.ts");
 
   await saveConversation({
     sessionId: "stable-delete-root",
@@ -65,6 +65,56 @@ try {
       `general session delete sacrifices linked id ${id}`,
     );
   }
+
+  await saveConversation({
+    sessionId: "stable-archive-root",
+    harnessSessionId: "codex-thread-archive",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Archive linked replay",
+    createdAt: "2026-08-05T20:10:00.000Z",
+    updatedAt: "2026-08-05T20:11:00.000Z",
+    replaySessions: [
+      {
+        sessionId: "daemon-archive-old",
+        conversationId: "codex-thread-archive",
+        createdAt: "2026-08-05T20:10:00.000Z",
+        updatedAt: "2026-08-05T20:10:30.000Z",
+      },
+      {
+        sessionId: "daemon-archive-new",
+        conversationId: "codex-thread-archive",
+        createdAt: "2026-08-05T20:10:30.000Z",
+        updatedAt: "2026-08-05T20:11:00.000Z",
+      },
+    ],
+    turns: [],
+  });
+
+  const archiveResponse = await PATCH(
+    new Request("http://localhost/api/sessions/daemon-archive-old", {
+      method: "PATCH",
+      headers: { host: "localhost", "content-type": "application/json" },
+      body: JSON.stringify({ archived: true }),
+    }),
+    { params: Promise.resolve({ id: "daemon-archive-old" }) },
+  );
+  assert.equal(archiveResponse.status, 200);
+  const archiveJson = await archiveResponse.json();
+  assert.equal(archiveJson.ok, true);
+  assert.equal(typeof archiveJson.archivedAt, "string");
+
+  const archivedState = await loadState();
+  assert.equal(
+    archivedState.sessionArchived["stable-archive-root"],
+    archiveJson.archivedAt,
+    "archiving through an older replay alias canonicalizes onto the stable conversation id",
+  );
+  assert.equal(
+    archivedState.sessionArchived["daemon-archive-old"],
+    undefined,
+    "archive state is keyed only by the canonical conversation id",
+  );
 
   console.log("sessions/[id]/route.test.ts: ok");
 } finally {

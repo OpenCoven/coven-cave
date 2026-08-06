@@ -18,7 +18,11 @@ import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 import { cleanModelId } from "@/lib/chat-model-state";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
-import { persistQueuedOfflineConversation } from "@/lib/cave-conversations";
+import {
+  normalizeDaemonConversationId,
+  persistQueuedOfflineConversation,
+  upsertConversationReplaySession,
+} from "@/lib/cave-conversations";
 import { flowExecutionOrder, flowPartialExecutionOrder, compileFlowPrompt } from "@/lib/flow/flow-compile";
 import type { FlowExecutionMode } from "@/lib/flow/flow-compile";
 import type { FlowDoc } from "@/lib/flow/flow-doc";
@@ -43,7 +47,12 @@ export type TravelOfflineReplayResult = {
   errors: Array<{ id: string; error: string }>;
 };
 
-type DaemonSessionResponse = { id?: string; status?: string };
+type DaemonSessionResponse = {
+  id?: string;
+  status?: string;
+  conversation_id?: string | null;
+  conversationId?: string | null;
+};
 type WorkflowEngineResponse = { ok?: boolean; runId?: string; status?: string; error?: string };
 
 function queuedModelOverride(payload: Record<string, unknown>): string | null | undefined {
@@ -131,7 +140,7 @@ async function spawnHubSession(args: {
   modelControls?: Record<string, unknown>;
   projectRoot?: string | null;
   title: string;
-}): Promise<string> {
+}): Promise<{ sessionId: string; conversationId: string | null }> {
   const harness = canonicalHarnessId(args.harness);
   if (!isAllowedHarness(harness)) {
     throw new Error(`harness '${harness}' can't run as an agent session`);
@@ -146,6 +155,7 @@ async function spawnHubSession(args: {
       projectRoot,
       harness,
       prompt: args.prompt,
+      launchMode: "nonInteractive",
       ...(args.model ? { model: args.model } : {}),
       ...(args.modelOverrideScope ? { modelOverrideScope: args.modelOverrideScope } : {}),
       ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}),
@@ -164,7 +174,10 @@ async function spawnHubSession(args: {
     args.familiarId ? recordSessionFamiliar(res.data.id, args.familiarId) : Promise.resolve(),
     setSessionTitle(res.data.id, args.title),
   ]);
-  return res.data.id;
+  return {
+    sessionId: res.data.id,
+    conversationId: normalizeDaemonConversationId(res.data.conversation_id ?? res.data.conversationId),
+  };
 }
 
 async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promise<void> {
@@ -212,9 +225,12 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const queuedPayloadModelOverride = stringValue(payload.modelOverride);
   const queuedRunId = stringValue(payload.runId);
   const replayPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });
-  let harnessSessionId = stringValue(payload.harnessSessionId);
-  if (!harnessSessionId) {
-    harnessSessionId = await spawnHubSession({
+  let replaySessionId = stringValue(payload.harnessSessionId);
+  let replayConversationId = normalizeDaemonConversationId(payload.replayConversationId);
+  let replaySessionCreatedAt = stringValue(payload.replaySessionCreatedAt);
+  const replaySessionUpdatedAt = new Date().toISOString();
+  if (!replaySessionId) {
+    const spawned = await spawnHubSession({
       config,
       familiarId,
       harness: binding.harness,
@@ -233,7 +249,15 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
       projectRoot,
       title: chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(stringValue(payload.sessionId) ?? item.id),
     });
-    await updateOfflineTravelItemPayload(item.id, { ...payload, harnessSessionId });
+    replaySessionId = spawned.sessionId;
+    replayConversationId = spawned.conversationId;
+    replaySessionCreatedAt = replaySessionUpdatedAt;
+    await updateOfflineTravelItemPayload(item.id, {
+      ...payload,
+      harnessSessionId: replaySessionId,
+      ...(replayConversationId ? { replayConversationId } : {}),
+      replaySessionCreatedAt,
+    });
   }
   const sessionId = stringValue(payload.sessionId) ?? item.id;
   await persistQueuedOfflineConversation({
@@ -248,7 +272,7 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
       : {}),
     title: chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(sessionId),
     createdAt: item.createdAt,
-    harnessSessionId,
+    preserveExistingHarnessSessionId: true,
     userTurn: {
       id: stringValue(payload.userTurnId) ?? item.id,
       text: prompt,
@@ -272,8 +296,19 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
         : {}),
     },
   });
-  if (sessionId !== harnessSessionId) {
-    await setSessionTitle(harnessSessionId, chatTitleFromPrompt(prompt) ?? `Travel replay: ${item.summary}`);
+  if (replaySessionId) {
+    await upsertConversationReplaySession({
+      sessionId,
+      replaySessionId,
+      conversationId: replayConversationId,
+      title: chatTitleFromPrompt(prompt) ?? `Travel replay: ${item.summary}`,
+      status: "completed",
+      createdAt: replaySessionCreatedAt ?? replaySessionUpdatedAt,
+      updatedAt: replaySessionUpdatedAt,
+    });
+  }
+  if (replaySessionId && sessionId !== replaySessionId) {
+    await setSessionTitle(replaySessionId, chatTitleFromPrompt(prompt) ?? `Travel replay: ${item.summary}`);
   }
 }
 
@@ -317,7 +352,7 @@ async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Pr
   const profileBlock = hermesProfileDaemonLaunchBlockReason(binding);
   if (profileBlock) throw new Error(profileBlock);
   const prompt = buildWorkflowRunPrompt(workflow, record(body.inputs));
-  const sessionId = await spawnHubSession({
+  const session = await spawnHubSession({
     config,
     familiarId,
     harness: binding.harness,
@@ -332,9 +367,9 @@ async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Pr
     status: "running",
     startedAt: new Date().toISOString(),
     steps: (workflow.steps ?? []).map((step) => ({ id: step.id, kind: step.kind, status: "ready" as const })),
-    summary: `replayed agent session ${sessionId.slice(0, 8)}`,
+    summary: `replayed agent session ${session.sessionId.slice(0, 8)}`,
     source: "cave",
-    sessionId,
+    sessionId: session.sessionId,
   });
 }
 
@@ -381,7 +416,7 @@ async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promis
     triggerInput: options.triggerInput as never,
     mode: options.mode as never,
   });
-  const sessionId = await spawnHubSession({
+  const session = await spawnHubSession({
     config,
     familiarId,
     harness: binding.harness,
@@ -408,9 +443,9 @@ async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promis
       type: byId.get(stepId)?.type ?? "unknown",
       status: initialFlowRunStepStatus(flow, stepId, seenActiveAgentStep),
     })),
-    summary: `replayed agent session ${sessionId.slice(0, 8)}`,
+    summary: `replayed agent session ${session.sessionId.slice(0, 8)}`,
     source: "cave" as const,
-    sessionId,
+    sessionId: session.sessionId,
     flowSnapshot: flow,
   };
   // The queued placeholder run's id rides in the payload — update that run in
