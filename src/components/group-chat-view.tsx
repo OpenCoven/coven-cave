@@ -51,6 +51,7 @@ import {
   MAX_COVEN_DELEGATION_DEPTH,
   MAX_COVEN_DELEGATIONS_PER_TURN,
   applyGroupEvent,
+  replaceGroupReplyText,
   parseSseBuffer,
   defaultGroupName,
   makeGroup,
@@ -647,18 +648,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
             }
           }
         }
-        apply((r) => applyGroupEvent(r, {
-          kind: "assistant_text", text: attentionText.settled(),
-        }));
+        apply((r) => replaceGroupReplyText(r, attentionText.terminal()));
         // Stream closed without an explicit `done` — settle anything still live.
         apply((r) =>
           r.status === "streaming" || r.status === "queued" ? { ...r, status: "done", activity: undefined } : r,
         );
       } catch (err) {
         const aborted = (err as Error)?.name === "AbortError";
-        apply((r) => applyGroupEvent(r, {
-          kind: "assistant_text", text: aborted ? attentionText.cancelled() : attentionText.settled(),
-        }));
+        apply((r) => replaceGroupReplyText(r, attentionText.terminal()));
         apply((r) =>
           aborted
             ? { ...r, status: "error", error: "cancelled", activity: undefined }

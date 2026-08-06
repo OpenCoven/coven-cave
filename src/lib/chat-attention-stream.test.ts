@@ -23,11 +23,12 @@ test("fragmented valid markers stay hidden while streaming and strip once comple
   assert.equal(accumulator.settled(), "AFTER");
 });
 
-test("settled preserves a truly partial marker prefix while cancelled strips it", () => {
+test("terminal and cancelled output strip a truly partial marker prefix", () => {
   const accumulator = createAttentionSafeTextAccumulator();
   accumulator.append("Before <coven:atten");
   assert.equal(accumulator.visible(), "Before ");
   assert.equal(accumulator.settled(), "Before <coven:atten");
+  assert.equal(accumulator.terminal(), "Before ");
   assert.equal(accumulator.cancelled(), "Before ");
 });
 

@@ -8,6 +8,7 @@ export type AttentionSafeTextAccumulator = {
   replace(text: string): string;
   visible(): string;
   settled(): string;
+  terminal(): string;
   cancelled(): string;
 };
 
@@ -19,6 +20,7 @@ export function createAttentionSafeTextAccumulator(): AttentionSafeTextAccumulat
   let rawText = "";
   const pendingText = () => extractChatAttentionMarker(rawText, { pending: true }).visible;
   const settledText = () => extractChatAttentionMarker(rawText, { pending: false }).visible;
+  const terminalText = () => extractIncompleteChatAttentionMarker(rawText).visible;
 
   return {
     append(chunk) {
@@ -31,8 +33,7 @@ export function createAttentionSafeTextAccumulator(): AttentionSafeTextAccumulat
     },
     visible: pendingText,
     settled: settledText,
-    cancelled() {
-      return extractIncompleteChatAttentionMarker(rawText).visible;
-    },
+    terminal: terminalText,
+    cancelled: terminalText,
   };
 }

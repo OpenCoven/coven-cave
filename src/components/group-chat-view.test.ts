@@ -562,13 +562,13 @@ test("coven bubbles strip attention markers before next-paths/delegations/Messag
   );
   assert.match(
     view,
-    /kind: "assistant_text", text: attentionText\.settled\(\)/,
-    "the final group reply settles markers without re-entering the streaming state",
+    /replaceGroupReplyText\(r, attentionText\.terminal\(\)\)/,
+    "the final group reply strips complete and partial marker tails through a text-only helper",
   );
   assert.match(
     view,
-    /kind: "assistant_text", text: aborted \? attentionText\.cancelled\(\) : attentionText\.settled\(\)/,
-    "terminal sanitization preserves explicit error/cancel handling while stripping raw markers",
+    /catch \(err\)[\s\S]{0,220}replaceGroupReplyText\(r, attentionText\.terminal\(\)\)[\s\S]{0,260}status: "error"/,
+    "error sanitization preserves the terminal error path and its Retry state",
   );
   // The transcript is already attention-safe before render; next-paths then
   // feed delegation extraction and MessageBubble.

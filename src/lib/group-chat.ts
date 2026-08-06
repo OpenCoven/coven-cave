@@ -103,7 +103,6 @@ export type GroupStreamEvent =
   | { kind: "user"; text: string }
   | { kind: "assistant_chunk"; text: string }
   | { kind: "assistant_replace"; text: string }
-  | { kind: "assistant_text"; text: string }
   | { kind: "progress"; label?: string; status?: "running" | "done" | "notice" | "error" }
   | { kind: "tool_use"; name?: string; status?: "running" | "ok" | "error" }
   | { kind: "done"; durationMs?: number; isError?: boolean; sessionId?: string; costUsd?: number }
@@ -112,6 +111,11 @@ export type GroupStreamEvent =
 // ---------------------------------------------------------------------------
 // Streaming reducers (pure)
 // ---------------------------------------------------------------------------
+
+/** Replace rendered text without changing terminal status, errors, or activity. */
+export function replaceGroupReplyText(reply: GroupReply, text: string): GroupReply {
+  return { ...reply, text };
+}
 
 /** Apply one stream event to a reply, returning the next immutable state. */
 export function applyGroupEvent(reply: GroupReply, ev: GroupStreamEvent): GroupReply {
@@ -122,8 +126,6 @@ export function applyGroupEvent(reply: GroupReply, ev: GroupStreamEvent): GroupR
       return { ...reply, status: "streaming", activity: undefined, text: reply.text + ev.text };
     case "assistant_replace":
       return { ...reply, status: "streaming", activity: undefined, text: ev.text };
-    case "assistant_text":
-      return { ...reply, activity: undefined, text: ev.text };
     case "progress":
       return {
         ...reply,
