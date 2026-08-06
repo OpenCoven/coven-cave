@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import { promisify } from "node:util";
 import fs from "node:fs";
 import os from "node:os";
@@ -12,6 +11,19 @@ import { isSafeBranchName } from "@/lib/issue-worktree";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
 import { acquireProcessIntentLock } from "@/lib/server/process-intent-lock";
+import {
+  CHECKPOINT_METADATA_FILE,
+  CHECKPOINT_PATCH_FILE,
+  assertCheckpointStore,
+  checkpointDeleteQuarantinePath,
+  fsyncDirectoryIfSupported,
+  openCheckpointStore,
+  publishCheckpointUnit,
+  recoverCheckpointStore as recoverCheckpointStoreArtifacts,
+  restoreCheckpointDirectoryQuarantineNoReplace,
+  restoreQuarantinedRegularFileNoReplace,
+  type CheckpointStore,
+} from "@/lib/server/checkpoint-store";
 import {
   nativeGitRelativePathIdentityKey,
   nativeGitRelativePathsEqual,
@@ -145,7 +157,13 @@ async function withRepositoryChangesLock<T>(
     label: "repository changes",
   });
   try {
-    recoverCheckpointStore(await checkpointDirOf(repoRoot));
+    const checkpointStore = openCheckpointStore(await checkpointDirOf(repoRoot));
+    if (checkpointStore) {
+      recoverCheckpointStoreArtifacts(
+        checkpointStore,
+        (raw) => parseCheckpointMetadata(raw) !== "invalid",
+      );
+    }
     return await operation();
   } finally {
     await release();
@@ -617,10 +635,7 @@ export async function GET(req: NextRequest) {
         }
         let patch: string;
         try {
-          patch = fs.readFileSync(
-            /* turbopackIgnore: true */ checkpoint.patchPath,
-            "utf8",
-          );
+          patch = readPinnedCheckpointFile(checkpoint, checkpoint.patchPath);
         } catch {
           return NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
         }
@@ -672,12 +687,10 @@ async function checkpointDirOf(repoRoot: string): Promise<string> {
   return path.join(/* turbopackIgnore: true */ gitDir, "coven-cave", "checkpoints");
 }
 
-const CHECKPOINT_PATCH_FILE = "checkpoint.patch";
-const CHECKPOINT_METADATA_FILE = "metadata.scope.json";
-
 type CheckpointUnit = {
   format: "directory" | "legacy";
   name: string;
+  store: CheckpointStore;
   publishedPath: string;
   patchPath: string;
   metadataPath: string | null;
@@ -694,10 +707,13 @@ async function resolveCheckpoint(
   const base = path.basename(name);
   if (base !== name) return null;
   const dir = await checkpointDirOf(repoRoot);
+  const store = openCheckpointStore(dir);
+  if (!store) return null;
+  assertCheckpointStore(store);
   const abs = path.join(/* turbopackIgnore: true */ dir, base);
   // Belt-and-braces: verify the join stayed inside the checkpoint dir.
   if (!abs.startsWith(dir + path.sep)) return null;
-  return resolveCheckpointInDirectory(dir, base);
+  return resolveCheckpointInDirectory(store, base);
 }
 
 type RevertCheckpointScope = {
@@ -730,13 +746,26 @@ function readCheckpointMetadata(
   if (!metadataPath) return null;
   let metadataFile: ReturnType<typeof openCheckpointFileIdentity>;
   try {
+    assertCheckpointStore(checkpoint.store);
     metadataFile = openCheckpointFileIdentity(metadataPath);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    if (
+      (error as NodeJS.ErrnoException).code === "ENOENT" &&
+      checkpoint.format === "legacy"
+    ) {
+      return null;
+    }
     return "invalid";
   }
   try {
-    return parseCheckpointMetadata(fs.readFileSync(metadataFile.fd, "utf8"));
+    const raw = fs.readFileSync(metadataFile.fd, "utf8");
+    assertCheckpointStore(checkpoint.store);
+    if (
+      !sameCheckpointFileIdentity(metadataPath, metadataFile.identity)
+    ) {
+      return "invalid";
+    }
+    return parseCheckpointMetadata(raw);
   } finally {
     fs.closeSync(metadataFile.fd);
   }
@@ -886,6 +915,24 @@ function closeCheckpointFile(file: OpenCheckpointFile | null): void {
   file.closed = true;
 }
 
+function readPinnedCheckpointFile(
+  checkpoint: CheckpointUnit,
+  file: string,
+): string {
+  assertCheckpointStore(checkpoint.store);
+  const opened = openCheckpointFileIdentity(file);
+  try {
+    const contents = fs.readFileSync(opened.fd, "utf8");
+    assertCheckpointStore(checkpoint.store);
+    if (!sameCheckpointFileIdentity(file, opened.identity)) {
+      throw new Error("checkpoint changed while being read");
+    }
+    return contents;
+  } finally {
+    closeCheckpointFile(opened);
+  }
+}
+
 function sameCheckpointFileIdentity(
   file: string,
   expected: CheckpointFileIdentity,
@@ -904,10 +951,12 @@ function sameCheckpointFileIdentity(
 }
 
 function resolveCheckpointInDirectory(
-  checkpointDir: string,
+  store: CheckpointStore,
   name: string,
 ): CheckpointUnit | null {
   if (!isCheckpointName(name) || path.basename(name) !== name) return null;
+  assertCheckpointStore(store);
+  const checkpointDir = store.directory;
   const publishedPath = path.join(
     /* turbopackIgnore: true */ checkpointDir,
     name,
@@ -939,9 +988,11 @@ function resolveCheckpointInDirectory(
       ) {
         return null;
       }
+      assertCheckpointStore(store);
       return {
         format: "directory",
         name,
+        store,
         publishedPath,
         patchPath,
         metadataPath,
@@ -964,9 +1015,11 @@ function resolveCheckpointInDirectory(
     closeCheckpointFile(patchFile);
   }
   const metadataPath = legacyCheckpointMetadataPath(publishedPath);
+  assertCheckpointStore(store);
   return {
     format: "legacy",
     name,
+    store,
     publishedPath,
     patchPath: publishedPath,
     metadataPath: fileExists(metadataPath) ? metadataPath : null,
@@ -979,14 +1032,17 @@ type CheckpointQuarantine = {
   metadataPath: string;
 };
 
-function createCheckpointQuarantine(checkpointPath: string): CheckpointQuarantine {
-  const checkpointDir = path.dirname(checkpointPath);
-  const directory = fs.mkdtempSync(
-    /* turbopackIgnore: true */ path.join(checkpointDir, ".delete-"),
+function createCheckpointQuarantine(
+  checkpoint: CheckpointUnit,
+): CheckpointQuarantine {
+  assertCheckpointStore(checkpoint.store);
+  const directory = checkpointDeleteQuarantinePath(
+    checkpoint.store,
+    checkpoint.name,
+    "legacy",
   );
-  if (path.dirname(directory) !== checkpointDir) {
-    throw new Error("checkpoint quarantine escaped checkpoint directory");
-  }
+  fs.mkdirSync(/* turbopackIgnore: true */ directory, { mode: 0o700 });
+  fsyncDirectoryIfSupported(checkpoint.store.directory);
   const quarantinedCheckpoint = path.join(directory, "checkpoint.patch");
   const quarantinedMetadata = path.join(directory, "metadata.scope.json");
   if (
@@ -1010,48 +1066,13 @@ function removeEmptyCheckpointQuarantine(quarantine: CheckpointQuarantine): void
   }
 }
 
-function restoreQuarantinedRegularFile(
-  quarantinedPath: string,
-  originalPath: string,
-): boolean {
-  let quarantinedStat: fs.Stats;
-  try {
-    quarantinedStat = fs.lstatSync(/* turbopackIgnore: true */ quarantinedPath);
-  } catch {
-    return false;
-  }
-  if (!quarantinedStat.isFile() || quarantinedStat.nlink !== 1) return false;
-  const quarantinedIdentity = checkpointFileIdentity(quarantinedStat);
-  if (fileExists(originalPath)) return false;
-  try {
-    fs.renameSync(
-      /* turbopackIgnore: true */ quarantinedPath,
-      /* turbopackIgnore: true */ originalPath,
-    );
-  } catch {
-    return false;
-  }
-  try {
-    const originalStat = fs.lstatSync(/* turbopackIgnore: true */ originalPath);
-    if (
-      !originalStat.isFile() ||
-      originalStat.dev !== quarantinedIdentity.dev ||
-      originalStat.ino !== quarantinedIdentity.ino
-    ) {
-      return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 type DeleteCheckpointResult = "deleted" | "not-found" | "unauthorized";
 
 function deleteDirectoryCheckpoint(
   root: ResolvedRepoRoot,
   checkpoint: CheckpointUnit,
 ): DeleteCheckpointResult {
+  assertCheckpointStore(checkpoint.store);
   const directoryStat = fs.lstatSync(
     /* turbopackIgnore: true */ checkpoint.publishedPath,
   );
@@ -1068,19 +1089,22 @@ function deleteDirectoryCheckpoint(
     closeCheckpointFile(metadataFile);
     return "unauthorized";
   }
-  const quarantine = path.join(
-    /* turbopackIgnore: true */ path.dirname(checkpoint.publishedPath),
-    `.delete-${randomBytes(12).toString("hex")}.tmp`,
+  const quarantine = checkpointDeleteQuarantinePath(
+    checkpoint.store,
+    checkpoint.name,
+    "directory",
   );
   let moved = false;
   try {
     closeCheckpointFile(patch);
     closeCheckpointFile(metadataFile);
+    assertCheckpointStore(checkpoint.store);
     fs.renameSync(
       /* turbopackIgnore: true */ checkpoint.publishedPath,
       /* turbopackIgnore: true */ quarantine,
     );
     moved = true;
+    fsyncDirectoryIfSupported(checkpoint.store.directory);
     const movedDirectory = fs.lstatSync(
       /* turbopackIgnore: true */ quarantine,
     );
@@ -1107,21 +1131,26 @@ function deleteDirectoryCheckpoint(
       closeCheckpointFile(movedPatch);
       closeCheckpointFile(movedMetadata);
     }
+    assertCheckpointStore(checkpoint.store);
     fs.rmSync(
       /* turbopackIgnore: true */ quarantine,
       { recursive: true, force: true },
     );
     moved = false;
-    fsyncDirectoryIfSupported(path.dirname(checkpoint.publishedPath));
+    fsyncDirectoryIfSupported(checkpoint.store.directory);
     return "deleted";
   } catch (error) {
     if (moved && !fileExists(checkpoint.publishedPath)) {
       try {
-        fs.renameSync(
-          /* turbopackIgnore: true */ quarantine,
-          /* turbopackIgnore: true */ checkpoint.publishedPath,
-        );
-        moved = false;
+        if (
+          restoreCheckpointDirectoryQuarantineNoReplace(
+            checkpoint.store,
+            quarantine,
+            checkpoint.publishedPath,
+          )
+        ) {
+          moved = false;
+        }
       } catch {
         // A complete unit remains quarantined for the next locked recovery.
       }
@@ -1137,6 +1166,7 @@ function deleteAuthorizedCheckpoint(
   root: ResolvedRepoRoot,
   checkpointUnit: CheckpointUnit,
 ): DeleteCheckpointResult {
+  assertCheckpointStore(checkpointUnit.store);
   if (checkpointUnit.format === "directory") {
     return deleteDirectoryCheckpoint(root, checkpointUnit);
   }
@@ -1171,19 +1201,22 @@ function deleteAuthorizedCheckpoint(
     }
     if (!checkpointAuthorizedForProject(root, metadata)) return "unauthorized";
 
-    const quarantine = createCheckpointQuarantine(checkpointPath);
+    const quarantine = createCheckpointQuarantine(checkpointUnit);
     let checkpointMoved = false;
     let metadataMoved = false;
     let quarantinedCheckpoint: OpenCheckpointFile | null = null;
     let quarantinedMetadata: OpenCheckpointFile | null = null;
     try {
+      assertCheckpointStore(checkpointUnit.store);
       fs.renameSync(
         /* turbopackIgnore: true */ checkpointPath,
         /* turbopackIgnore: true */ quarantine.checkpointPath,
       );
       checkpointMoved = true;
+      fsyncDirectoryIfSupported(checkpointUnit.store.directory);
 
       try {
+        assertCheckpointStore(checkpointUnit.store);
         fs.renameSync(
           /* turbopackIgnore: true */ metadataPath,
           /* turbopackIgnore: true */ quarantine.metadataPath,
@@ -1254,6 +1287,7 @@ function deleteAuthorizedCheckpoint(
       closeCheckpointFile(quarantinedMetadata);
       closeCheckpointFile(checkpoint);
       closeCheckpointFile(metadataFile);
+      assertCheckpointStore(checkpointUnit.store);
       if (
         !sameCheckpointFileIdentity(
           quarantine.checkpointPath,
@@ -1279,23 +1313,30 @@ function deleteAuthorizedCheckpoint(
         metadataMoved = false;
       }
       removeEmptyCheckpointQuarantine(quarantine);
+      fsyncDirectoryIfSupported(checkpointUnit.store.directory);
       return "deleted";
     } catch (error) {
       closeCheckpointFile(quarantinedCheckpoint);
       closeCheckpointFile(quarantinedMetadata);
-      if (checkpointMoved) {
+      let storeIsPinned = true;
+      try {
+        assertCheckpointStore(checkpointUnit.store);
+      } catch {
+        storeIsPinned = false;
+      }
+      if (checkpointMoved && storeIsPinned) {
         if (metadataMoved) {
-          restoreQuarantinedRegularFile(
+          restoreQuarantinedRegularFileNoReplace(
             quarantine.metadataPath,
             metadataPath,
           );
         }
-        restoreQuarantinedRegularFile(
+        restoreQuarantinedRegularFileNoReplace(
           quarantine.checkpointPath,
           checkpointPath,
         );
       }
-      removeEmptyCheckpointQuarantine(quarantine);
+      if (storeIsPinned) removeEmptyCheckpointQuarantine(quarantine);
       throw error;
     }
   } finally {
@@ -1370,11 +1411,12 @@ async function checkpointChanges(
   }
 
   const checkpointDir = await checkpointDirOf(repoRoot);
-  fs.mkdirSync(/* turbopackIgnore: true */ checkpointDir, { recursive: true, mode: 0o700 });
+  const checkpointStore = openCheckpointStore(checkpointDir, { create: true });
+  if (!checkpointStore) throw new Error("could not create checkpoint store");
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  return publishCheckpoint(
-    checkpointDir,
-    stamp,
+  return publishCheckpointUnit(
+    checkpointStore,
+    `${stamp}.patch`,
     patch,
     JSON.stringify({
       version: 1,
@@ -1393,199 +1435,20 @@ function fileExists(file: string): boolean {
   }
 }
 
-function writeDurableExclusiveFile(file: string, contents: string): void {
-  const fd = fs.openSync(
-    /* turbopackIgnore: true */ file,
-    fs.constants.O_WRONLY |
-      fs.constants.O_CREAT |
-      fs.constants.O_EXCL |
-      (fs.constants.O_NOFOLLOW ?? 0),
-    0o600,
-  );
-  try {
-    fs.writeFileSync(fd, contents);
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
-}
-
-const UNSUPPORTED_DIRECTORY_SYNC_CODES = new Set([
-  "EACCES",
-  "EBADF",
-  "EISDIR",
-  "EINVAL",
-  "ENOSYS",
-  "ENOTSUP",
-  "EPERM",
-]);
-
-/**
- * POSIX persists directory entries with fsync. Windows and some network/FAT
- * filesystems reject directory handles or directory fsync; there the atomic
- * rename is still the publication boundary and the next locked operation
- * removes any hidden pre-rename directory left by a crash.
- */
-function fsyncDirectoryIfSupported(directory: string): void {
-  let fd: number;
-  try {
-    fd = fs.openSync(
-      /* turbopackIgnore: true */ directory,
-      fs.constants.O_RDONLY,
-    );
-  } catch (error) {
-    if (
-      UNSUPPORTED_DIRECTORY_SYNC_CODES.has(
-        (error as NodeJS.ErrnoException).code ?? "",
-      )
-    ) {
-      return;
-    }
-    throw error;
-  }
-  try {
-    try {
-      fs.fsyncSync(fd);
-    } catch (error) {
-      if (
-        !UNSUPPORTED_DIRECTORY_SYNC_CODES.has(
-          (error as NodeJS.ErrnoException).code ?? "",
-        )
-      ) {
-        throw error;
-      }
-    }
-  } finally {
-    fs.closeSync(fd);
-  }
-}
-
-function recoverCheckpointStore(checkpointDir: string): void {
-  let names: string[];
-  try {
-    names = fs.readdirSync(/* turbopackIgnore: true */ checkpointDir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-    throw error;
-  }
-  for (const name of names) {
-    const internalArtifact =
-      /^\.publish-[a-f0-9]+\.tmp$/.test(name) ||
-      /^\.publish-[a-f0-9]+\.(?:patch|scope)\.tmp$/.test(name) ||
-      /^\.delete-[a-f0-9]+\.tmp$/.test(name) ||
-      (isCheckpointName(name.replace(/\.reserve$/, "")) &&
-        name.endsWith(".reserve"));
-    if (internalArtifact) {
-      fs.rmSync(
-        /* turbopackIgnore: true */ path.join(checkpointDir, name),
-        { force: true, recursive: true },
-      );
-      continue;
-    }
-    if (name.endsWith(".patch.scope.json")) {
-      const patchName = name.slice(0, -".scope.json".length);
-      if (!fileExists(path.join(checkpointDir, patchName))) {
-        fs.rmSync(
-          /* turbopackIgnore: true */ path.join(checkpointDir, name),
-          { force: true },
-        );
-      }
-    }
-  }
-  fsyncDirectoryIfSupported(checkpointDir);
-}
-
-function createCheckpointTempDirectory(checkpointDir: string): string {
-  for (let attempt = 0; attempt < 32; attempt += 1) {
-    const tempDirectory = path.join(
-      /* turbopackIgnore: true */ checkpointDir,
-      `.publish-${randomBytes(12).toString("hex")}.tmp`,
-    );
-    try {
-      fs.mkdirSync(/* turbopackIgnore: true */ tempDirectory, {
-        mode: 0o700,
-      });
-      return tempDirectory;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
-      throw error;
-    }
-  }
-  throw new Error("could not create checkpoint publication directory");
-}
-
-function isCheckpointRenameCollision(
-  error: unknown,
-  destination: string,
-): boolean {
-  const code = (error as NodeJS.ErrnoException).code ?? "";
-  if (code === "EEXIST" || code === "ENOTEMPTY") return true;
-  return (code === "EACCES" || code === "EPERM") && fileExists(destination);
-}
-
-function publishCheckpoint(
-  checkpointDir: string,
-  stamp: string,
-  patch: string,
-  metadata: string,
-): string {
-  const tempDirectory = createCheckpointTempDirectory(checkpointDir);
-  const patchTemp = path.join(tempDirectory, CHECKPOINT_PATCH_FILE);
-  const metadataTemp = path.join(tempDirectory, CHECKPOINT_METADATA_FILE);
-  let published = false;
-  try {
-    writeDurableExclusiveFile(patchTemp, patch);
-    writeDurableExclusiveFile(metadataTemp, metadata);
-    fsyncDirectoryIfSupported(tempDirectory);
-
-    for (let attempt = 0; attempt < 32; attempt += 1) {
-      const suffix =
-        attempt === 0 ? "" : `-${randomBytes(6).toString("hex")}`;
-      const checkpointPath = path.join(
-        /* turbopackIgnore: true */ checkpointDir,
-        `${stamp}${suffix}.patch`,
-      );
-      if (fileExists(checkpointPath)) continue;
-      try {
-        fs.renameSync(
-          /* turbopackIgnore: true */ tempDirectory,
-          /* turbopackIgnore: true */ checkpointPath,
-        );
-        published = true;
-        fsyncDirectoryIfSupported(checkpointDir);
-        return checkpointPath;
-      } catch (error) {
-        if (isCheckpointRenameCollision(error, checkpointPath)) continue;
-        throw error;
-      }
-    }
-    throw new Error("could not publish a unique checkpoint name");
-  } finally {
-    if (!published) {
-      fs.rmSync(
-        /* turbopackIgnore: true */ tempDirectory,
-        { force: true, recursive: true },
-      );
-    }
-  }
-}
-
 type CheckpointMeta = { name: string; savedAt: string; bytes: number };
 
 /** List saved checkpoints, newest first. The stamp name sorts chronologically. */
 async function listCheckpoints(root: ResolvedRepoRoot): Promise<CheckpointMeta[]> {
   const dir = await checkpointDirOf(root.repoRoot);
-  let names: string[];
-  try {
-    names = fs.readdirSync(/* turbopackIgnore: true */ dir);
-  } catch {
-    return []; // no checkpoints taken yet
-  }
+  const store = openCheckpointStore(dir);
+  if (!store) return [];
+  assertCheckpointStore(store);
+  const names = fs.readdirSync(/* turbopackIgnore: true */ dir);
   const metas: CheckpointMeta[] = [];
   for (const name of names) {
     if (!isCheckpointName(name)) continue;
     try {
-      const checkpoint = resolveCheckpointInDirectory(dir, name);
+      const checkpoint = resolveCheckpointInDirectory(store, name);
       if (!checkpoint) continue;
       if (
         !checkpointAuthorizedForProject(
@@ -1655,10 +1518,8 @@ async function restoreCheckpoint(
   checkpoint: CheckpointUnit,
   metadata: CheckpointMetadata | null,
 ): Promise<void> {
-  const patch = fs.readFileSync(
-    /* turbopackIgnore: true */ checkpoint.patchPath,
-    "utf8",
-  );
+  assertCheckpointStore(checkpoint.store);
+  const patch = readPinnedCheckpointFile(checkpoint, checkpoint.patchPath);
   if (!patch.trim()) return; // empty snapshot — nothing to apply
   if (metadata) {
     const { stdout } = await gitWithInput(

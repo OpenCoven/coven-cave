@@ -1,0 +1,426 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import {
+  access,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
+import path from "node:path";
+import { after, test } from "node:test";
+
+import {
+  checkpointDeleteQuarantinePath,
+  openCheckpointStore,
+  publishCheckpointUnit,
+  recoverCheckpointStore,
+  restoreCheckpointDirectoryQuarantineNoReplace,
+  restoreQuarantinedRegularFileNoReplace,
+} from "./checkpoint-store.ts";
+
+const temporary = await mkdtemp(
+  path.join(process.cwd(), ".checkpoint-store-test-"),
+);
+const validMetadata = JSON.stringify({
+  version: 1,
+  kind: "project-scope",
+  projectRoot: temporary,
+  projectPathspec: ".",
+});
+
+after(async () => {
+  await rm(temporary, { recursive: true, force: true });
+});
+
+function metadataIsValid(raw: string): boolean {
+  try {
+    const parsed = JSON.parse(raw) as { version?: unknown; kind?: unknown };
+    return parsed.version === 1 && parsed.kind === "project-scope";
+  } catch {
+    return false;
+  }
+}
+
+test("creating the first store fsyncs each new hierarchy parent", async () => {
+  const gitDirectory = path.join(temporary, "first-store", ".git");
+  const storePath = path.join(gitDirectory, "coven-cave", "checkpoints");
+  await mkdir(gitDirectory, { recursive: true });
+  const originalOpenSync = fs.openSync;
+  const originalCloseSync = fs.closeSync;
+  const originalFsyncSync = fs.fsyncSync;
+  const descriptors = new Map<number, string>();
+  const synced: string[] = [];
+  fs.openSync = ((file, flags, ...args) => {
+    const descriptor = originalOpenSync(file, flags, ...args);
+    descriptors.set(descriptor, String(file));
+    return descriptor;
+  }) as typeof fs.openSync;
+  fs.fsyncSync = ((descriptor) => {
+    const file = descriptors.get(descriptor);
+    if (file) synced.push(file);
+    return originalFsyncSync(descriptor);
+  }) as typeof fs.fsyncSync;
+  fs.closeSync = ((descriptor) => {
+    descriptors.delete(descriptor);
+    return originalCloseSync(descriptor);
+  }) as typeof fs.closeSync;
+  try {
+    openCheckpointStore(storePath, { create: true });
+  } finally {
+    fs.openSync = originalOpenSync;
+    fs.fsyncSync = originalFsyncSync;
+    fs.closeSync = originalCloseSync;
+  }
+  assert.ok(synced.includes(gitDirectory), "creating coven-cave syncs .git");
+  assert.ok(
+    synced.includes(path.join(gitDirectory, "coven-cave")),
+    "creating checkpoints syncs coven-cave",
+  );
+});
+
+test("a symlink or Windows junction cannot be used as the checkpoint store", async () => {
+  const caseRoot = path.join(temporary, "linked-store");
+  const target = path.join(caseRoot, "outside");
+  const storePath = path.join(caseRoot, "checkpoints");
+  await mkdir(target, { recursive: true });
+  await symlink(target, storePath, process.platform === "win32" ? "junction" : "dir");
+  assert.throws(
+    () => openCheckpointStore(storePath),
+    /checkpoint store must be a real directory/,
+  );
+});
+
+test("recovery republishes complete drafts and restores complete quarantines", async () => {
+  const storePath = path.join(temporary, "recovery", ".git", "coven-cave", "checkpoints");
+  await mkdir(path.join(temporary, "recovery", ".git"), { recursive: true });
+  const store = openCheckpointStore(storePath, { create: true })!;
+  const checkpointName = "2026-08-05T20-00-00-000Z.patch";
+  const published = publishCheckpointUnit(
+    store,
+    checkpointName,
+    "complete patch\n",
+    validMetadata,
+  );
+  const quarantine = checkpointDeleteQuarantinePath(
+    store,
+    checkpointName,
+    "directory",
+  );
+  await rename(published, quarantine);
+  recoverCheckpointStore(store, metadataIsValid);
+  assert.equal(
+    await readFile(path.join(published, "checkpoint.patch"), "utf8"),
+    "complete patch\n",
+  );
+  await assert.rejects(() => access(quarantine));
+
+  const completeDraft = path.join(storePath, ".publish-deadbeef.tmp");
+  await mkdir(completeDraft);
+  await Promise.all([
+    writeFile(path.join(completeDraft, "checkpoint.patch"), "draft patch\n"),
+    writeFile(path.join(completeDraft, "metadata.scope.json"), validMetadata),
+  ]);
+  recoverCheckpointStore(store, metadataIsValid);
+  await assert.rejects(() => access(completeDraft));
+  const recovered = (await readdir(storePath)).filter(
+    (name) => name.endsWith(".patch") && name !== checkpointName,
+  );
+  assert.equal(recovered.length, 1);
+  assert.equal(
+    await readFile(path.join(storePath, recovered[0], "checkpoint.patch"), "utf8"),
+    "draft patch\n",
+  );
+});
+
+test("recovery collision-retries a complete named publication draft", async () => {
+  const storePath = path.join(temporary, "draft-collision", ".git", "coven-cave", "checkpoints");
+  await mkdir(path.join(temporary, "draft-collision", ".git"), { recursive: true });
+  const store = openCheckpointStore(storePath, { create: true })!;
+  const checkpointName = "2026-08-05T20-00-00-010Z.patch";
+  publishCheckpointUnit(store, checkpointName, "existing patch\n", validMetadata);
+  const draft = path.join(
+    storePath,
+    `.publish-${checkpointName}-${"a".repeat(24)}.tmp`,
+  );
+  await mkdir(draft);
+  await Promise.all([
+    writeFile(path.join(draft, "checkpoint.patch"), "recovered patch\n"),
+    writeFile(path.join(draft, "metadata.scope.json"), validMetadata),
+  ]);
+
+  recoverCheckpointStore(store, metadataIsValid);
+
+  await assert.rejects(() => access(draft));
+  const checkpoints = (await readdir(storePath)).filter((name) =>
+    name.endsWith(".patch"),
+  );
+  assert.equal(checkpoints.length, 2);
+  const recovered = checkpoints.find((name) => name !== checkpointName)!;
+  assert.equal(
+    await readFile(path.join(storePath, recovered, "checkpoint.patch"), "utf8"),
+    "recovered patch\n",
+  );
+});
+
+test("incomplete and unverified quarantines remain available for retry", async () => {
+  const storePath = path.join(temporary, "incomplete", ".git", "coven-cave", "checkpoints");
+  await mkdir(path.join(temporary, "incomplete", ".git"), { recursive: true });
+  const store = openCheckpointStore(storePath, { create: true })!;
+  const incomplete = checkpointDeleteQuarantinePath(
+    store,
+    "2026-08-05T20-00-00-001Z.patch",
+    "directory",
+  );
+  await mkdir(incomplete);
+  await writeFile(path.join(incomplete, "checkpoint.patch"), "only half\n");
+  const legacyUnknown = path.join(storePath, ".delete-deadbeef.tmp");
+  await mkdir(legacyUnknown);
+  await Promise.all([
+    writeFile(path.join(legacyUnknown, "checkpoint.patch"), "legacy patch\n"),
+    writeFile(path.join(legacyUnknown, "metadata.scope.json"), validMetadata),
+  ]);
+  const unverified = checkpointDeleteQuarantinePath(
+    store,
+    "2026-08-05T20-00-00-013Z.patch",
+    "directory",
+  );
+  await mkdir(unverified);
+  await Promise.all([
+    writeFile(path.join(unverified, "checkpoint.patch"), "unverified\n"),
+    writeFile(path.join(unverified, "metadata.scope.json"), validMetadata),
+    writeFile(path.join(unverified, "unexpected-entry"), "must not publish\n"),
+  ]);
+
+  recoverCheckpointStore(store, metadataIsValid);
+  assert.equal((await lstat(incomplete)).isDirectory(), true);
+  assert.equal((await lstat(legacyUnknown)).isDirectory(), true);
+  assert.equal((await lstat(unverified)).isDirectory(), true);
+  await assert.rejects(() =>
+    access(path.join(storePath, "2026-08-05T20-00-00-013Z.patch")),
+  );
+});
+
+test("legacy publish files and reservations recover as one directory unit", async () => {
+  const storePath = path.join(temporary, "legacy-publish", ".git", "coven-cave", "checkpoints");
+  await mkdir(path.join(temporary, "legacy-publish", ".git"), { recursive: true });
+  const store = openCheckpointStore(storePath, { create: true })!;
+  const targetName = "2026-08-05T20-00-00-002Z.patch";
+  const patchTemp = path.join(storePath, ".publish-deadbeef.patch.tmp");
+  const metadataTemp = path.join(storePath, ".publish-deadbeef.scope.tmp");
+  const reservation = path.join(storePath, `${targetName}.reserve`);
+  await Promise.all([
+    writeFile(patchTemp, "legacy durable patch\n"),
+    writeFile(metadataTemp, validMetadata),
+    writeFile(reservation, "legacy reservation\n"),
+  ]);
+
+  recoverCheckpointStore(store, metadataIsValid);
+  assert.equal(
+    await readFile(path.join(storePath, targetName, "checkpoint.patch"), "utf8"),
+    "legacy durable patch\n",
+  );
+  await Promise.all([
+    assert.rejects(() => access(patchTemp)),
+    assert.rejects(() => access(metadataTemp)),
+    assert.rejects(() => access(reservation)),
+  ]);
+});
+
+test("legacy recovery preserves source artifacts when staging is interrupted", async () => {
+  const storePath = path.join(temporary, "legacy-staging-failure", ".git", "coven-cave", "checkpoints");
+  await mkdir(path.join(temporary, "legacy-staging-failure", ".git"), {
+    recursive: true,
+  });
+  const store = openCheckpointStore(storePath, { create: true })!;
+  const targetName = "2026-08-05T20-00-00-011Z.patch";
+  const patchTemp = path.join(storePath, ".publish-cafebabe.patch.tmp");
+  const metadataTemp = path.join(storePath, ".publish-cafebabe.scope.tmp");
+  const reservation = path.join(storePath, `${targetName}.reserve`);
+  await Promise.all([
+    writeFile(patchTemp, "legacy staged patch\n"),
+    writeFile(metadataTemp, validMetadata),
+    writeFile(reservation, "legacy reservation\n"),
+  ]);
+  const originalOpenSync = fs.openSync;
+  fs.openSync = ((file, flags, ...args) => {
+    if (
+      String(file).endsWith(`${path.sep}metadata.scope.json`) &&
+      String(file).includes(`${path.sep}.publish-${targetName}-`)
+    ) {
+      throw new Error("injected staging interruption");
+    }
+    return originalOpenSync(file, flags, ...args);
+  }) as typeof fs.openSync;
+  try {
+    recoverCheckpointStore(store, metadataIsValid);
+  } finally {
+    fs.openSync = originalOpenSync;
+  }
+
+  assert.equal(await readFile(patchTemp, "utf8"), "legacy staged patch\n");
+  assert.equal(await readFile(metadataTemp, "utf8"), validMetadata);
+  assert.equal(await readFile(reservation, "utf8"), "legacy reservation\n");
+});
+
+test("a pinned store identity rejects replacement before publication", async () => {
+  const caseRoot = path.join(temporary, "store-replacement");
+  const storePath = path.join(caseRoot, ".git", "coven-cave", "checkpoints");
+  await mkdir(path.join(caseRoot, ".git"), { recursive: true });
+  const store = openCheckpointStore(storePath, { create: true })!;
+  const displaced = `${storePath}.displaced`;
+  await rename(storePath, displaced);
+  await mkdir(storePath);
+
+  assert.throws(
+    () =>
+      publishCheckpointUnit(
+        store,
+        "2026-08-05T20-00-00-003Z.patch",
+        "must not publish\n",
+        validMetadata,
+      ),
+    /checkpoint store changed during operation/,
+  );
+  assert.deepEqual(await readdir(storePath), []);
+});
+
+test("rollback cannot overwrite a replacement created at the no-replace boundary", async () => {
+  const caseRoot = path.join(temporary, "rollback-race");
+  const source = path.join(caseRoot, "quarantined.patch");
+  const destination = path.join(caseRoot, "checkpoint.patch");
+  await mkdir(caseRoot, { recursive: true });
+  await writeFile(source, "verified checkpoint\n");
+  const operationName = process.platform === "win32" ? "openSync" : "linkSync";
+  const original = fs[operationName] as (...args: unknown[]) => unknown;
+  let injected = false;
+  (fs[operationName] as typeof fs.linkSync) = ((from, to, ...args: unknown[]) => {
+    const windowsDestinationOpen =
+      process.platform === "win32" &&
+      String(from) === destination &&
+      typeof to === "number" &&
+      (to & fs.constants.O_EXCL) !== 0;
+    const posixLink =
+      process.platform !== "win32" &&
+      String(from) === source &&
+      String(to) === destination;
+    if (!injected && (windowsDestinationOpen || posixLink)) {
+      injected = true;
+      fs.writeFileSync(destination, "concurrent replacement\n", { flag: "wx" });
+    }
+    return original(from, to, ...args);
+  }) as typeof fs.linkSync;
+  try {
+    assert.equal(
+      restoreQuarantinedRegularFileNoReplace(source, destination),
+      false,
+    );
+  } finally {
+    (fs[operationName] as typeof fs.linkSync) = original;
+  }
+  assert.equal(await readFile(destination, "utf8"), "concurrent replacement\n");
+  assert.equal(await readFile(source, "utf8"), "verified checkpoint\n");
+});
+
+test("the real host rollback path restores without replacement semantics", async () => {
+  const caseRoot = path.join(temporary, `host-${process.platform}`);
+  const source = path.join(caseRoot, "quarantined.patch");
+  const destination = path.join(caseRoot, "checkpoint.patch");
+  await mkdir(caseRoot, { recursive: true });
+  await writeFile(source, "host checkpoint\n");
+  assert.equal(
+    restoreQuarantinedRegularFileNoReplace(source, destination),
+    true,
+  );
+  assert.equal(await readFile(destination, "utf8"), "host checkpoint\n");
+  await assert.rejects(() => access(source));
+
+  const secondSource = path.join(caseRoot, "second.patch");
+  await writeFile(secondSource, "must remain\n");
+  assert.equal(
+    restoreQuarantinedRegularFileNoReplace(secondSource, destination),
+    false,
+  );
+  assert.equal(await readFile(destination, "utf8"), "host checkpoint\n");
+  assert.equal(await readFile(secondSource, "utf8"), "must remain\n");
+});
+
+test("directory rollback keeps a durable replacement when quarantine cleanup fails", async () => {
+  const storePath = path.join(temporary, "rollback-cleanup", ".git", "coven-cave", "checkpoints");
+  await mkdir(path.join(temporary, "rollback-cleanup", ".git"), { recursive: true });
+  const store = openCheckpointStore(storePath, { create: true })!;
+  const checkpointName = "2026-08-05T20-00-00-012Z.patch";
+  const quarantine = checkpointDeleteQuarantinePath(
+    store,
+    checkpointName,
+    "directory",
+  );
+  const destination = path.join(storePath, checkpointName);
+  await mkdir(quarantine);
+  await Promise.all([
+    writeFile(path.join(quarantine, "checkpoint.patch"), "durable rollback\n"),
+    writeFile(path.join(quarantine, "metadata.scope.json"), validMetadata),
+  ]);
+  const metadataSource = path.join(quarantine, "metadata.scope.json");
+  const originalUnlinkSync = fs.unlinkSync;
+  fs.unlinkSync = ((file) => {
+    if (String(file) === metadataSource) {
+      throw new Error("injected quarantine cleanup interruption");
+    }
+    return originalUnlinkSync(file);
+  }) as typeof fs.unlinkSync;
+  try {
+    assert.equal(
+      restoreCheckpointDirectoryQuarantineNoReplace(
+        store,
+        quarantine,
+        destination,
+      ),
+      true,
+    );
+  } finally {
+    fs.unlinkSync = originalUnlinkSync;
+  }
+
+  assert.equal(
+    await readFile(path.join(destination, "checkpoint.patch"), "utf8"),
+    "durable rollback\n",
+  );
+  assert.equal(
+    await readFile(path.join(destination, "metadata.scope.json"), "utf8"),
+    validMetadata,
+  );
+});
+
+test("POSIX preserves quarantine when hard links are unsupported", async (context) => {
+  if (process.platform === "win32") {
+    context.skip("Windows exercises the exclusive-copy fallback on its matrix host");
+    return;
+  }
+  const caseRoot = path.join(temporary, "unsupported-link");
+  const source = path.join(caseRoot, "quarantined.patch");
+  const destination = path.join(caseRoot, "checkpoint.patch");
+  await mkdir(caseRoot, { recursive: true });
+  await writeFile(source, "preserve me\n");
+  const originalLinkSync = fs.linkSync;
+  fs.linkSync = (() => {
+    const error = new Error("hard links unsupported") as NodeJS.ErrnoException;
+    error.code = "ENOTSUP";
+    throw error;
+  }) as typeof fs.linkSync;
+  try {
+    assert.equal(
+      restoreQuarantinedRegularFileNoReplace(source, destination),
+      false,
+    );
+  } finally {
+    fs.linkSync = originalLinkSync;
+  }
+  assert.equal(await readFile(source, "utf8"), "preserve me\n");
+  await assert.rejects(() => access(destination));
+});

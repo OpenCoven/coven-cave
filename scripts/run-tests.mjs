@@ -376,7 +376,10 @@ export const SUITES = {
     "src/lib/server/research-mission-store.test.ts",
     "src/lib/server/research-mission-lifecycle.test.ts",
     "src/lib/server/research-links.test.ts",
+    "src/lib/server/checkpoint-store.test.ts",
+    "src/lib/server/checkpoint-store-crash.test.ts",
     "src/lib/server/process-intent-lock.test.ts",
+    "src/lib/server/process-intent-lock-compatibility.test.ts",
     "src/lib/server/research-generations.test.ts",
     "src/lib/server/research-media-store.test.ts",
     "src/lib/server/chat-attachment-store.test.ts",
@@ -1722,6 +1725,9 @@ export const SUITES = {
     "scripts/daemon-connectivity-faults.test.ts",
     "scripts/windows-native-browser-regression.test.mjs",
     "scripts/cave-home-migration-windows.test.ts",
+    "src/lib/server/checkpoint-store.test.ts",
+    "src/lib/server/checkpoint-store-crash.test.ts",
+    "src/lib/server/process-intent-lock-compatibility.test.ts",
   ],
 };
 
