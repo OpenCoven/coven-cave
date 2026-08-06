@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { classifyPortOwner, parseArgs } from "./dev-port-owner.mjs";
 
 // The dedicated port turns "something is already listening" from a non-question
@@ -81,5 +85,21 @@ assert.equal(
 const args = parseArgs(["--port", "3020", "--timeout-ms", "500"]);
 assert.equal(args.get("port"), "3020");
 assert.equal(args.get("timeout-ms"), "500");
+
+{
+  const fixtureDir = mkdtempSync(path.join(tmpdir(), "coven cave dev-port-owner-"));
+  try {
+    const fixtureScript = path.join(fixtureDir, "dev-port-owner.mjs");
+    copyFileSync(new URL("./dev-port-owner.mjs", import.meta.url), fixtureScript);
+    const result = spawnSync(process.execPath, [fixtureScript, "--port", "0"], {
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 2, "direct invocation still runs when the script path contains spaces");
+    assert.match(result.stderr, /--port must be a valid TCP port/);
+    assert.equal(result.stdout, "");
+  } finally {
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }
+}
 
 console.log("dev-port-owner.test.mjs: ok");

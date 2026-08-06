@@ -1,3 +1,6 @@
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 /**
  * Who owns the dedicated dev port?
  *
@@ -70,10 +73,17 @@ export async function classifyPortOwner({
   }
 }
 
-const invokedDirectly =
-  process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;
+function isDirectRun() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
 
-if (invokedDirectly) {
+if (isDirectRun()) {
   const args = parseArgs(process.argv.slice(2));
   const port = Number(args.get("port"));
   if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
