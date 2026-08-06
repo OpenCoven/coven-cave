@@ -1676,7 +1676,8 @@ exit 0
     "the stable direct landing becomes eligible after 8 hours",
   );
   assert.deepEqual(report.budgets, {
-    worktrees: { count: 8, warning: 20, exceeded: false },
+    // cave-oenag: 8 registered, one of them detached, so 7 are assessed.
+    worktrees: { count: 7, registered: 8, detached: 1, warning: 20, exceeded: false },
 
     branches: { count: 11, warning: 30, exceeded: false },
     exceptions: { active: 0, expired: 0 },
