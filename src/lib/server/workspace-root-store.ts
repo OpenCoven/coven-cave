@@ -8,7 +8,7 @@ import {
   workspaceRootEnvPin,
   workspaceRootOverrideFile,
 } from "@/lib/coven-paths";
-import { resolveBrowsableDir } from "@/lib/server/home-browse";
+import { homeRoot, resolveBrowsableDir } from "@/lib/server/home-browse";
 import { writeJsonAtomic } from "@/lib/server/atomic-write";
 
 /**
@@ -48,7 +48,7 @@ export function validateWorkspaceRoot(requested: string): SaveWorkspaceRootResul
   if (!raw || !path.isAbsolute(raw)) return { ok: false, reason: "invalid-path" };
   const resolved = resolveBrowsableDir(raw);
   if (!resolved) return { ok: false, reason: "invalid-path" };
-  if (isVolumeRoot(resolved)) return { ok: false, reason: "unbounded" };
+  if (isVolumeRoot(resolved) || resolved === homeRoot()) return { ok: false, reason: "unbounded" };
   return { ok: true, workspacePath: resolved };
 }
 
@@ -66,7 +66,6 @@ export async function saveWorkspaceRoot(requested: string): Promise<SaveWorkspac
     await mkdir(/* turbopackIgnore: true */ caveHome(), { recursive: true });
     await writeJsonAtomic(workspaceRootOverrideFile(), {
       workspacePath: validated.workspacePath,
-      savedAt: new Date().toISOString(),
     });
   } catch {
     return { ok: false, reason: "write-failed" };
