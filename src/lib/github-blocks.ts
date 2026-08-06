@@ -332,7 +332,7 @@ function rendererFenceRanges(text: string): Array<[number, number]> {
         const nextLine = lines[index + 1];
         const canReopen = nextLine !== undefined
           && leadingWhitespaceLength(nextLine) >= closing[1].length;
-        if ((openedFromList || interiorLines === 0) && canReopen) {
+        if (openedFromList && canReopen) {
           start = offset;
           character = closing[2][0];
           openedFromList = false;
@@ -425,7 +425,7 @@ export function fencedRanges(text: string): Array<[number, number]> {
           canReopen = nextQuoteDepth === quoteDepth
             && leadingWhitespaceLength(nextLine.slice(nextContentOffset)) >= closing[1].length;
         }
-        if ((openedFromList || interiorLines === 0) && canReopen) {
+        if ((openedFromList || (interiorLines === 0 && quoteDepth > 0)) && canReopen) {
           fenceStart = offset;
           fenceCharacter = closing[2][0];
           fenceLength = closing[2].length;
