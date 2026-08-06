@@ -159,8 +159,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const projectTarget = resolveNativeProjectPathForGitRoot\([\s\S]{0,160}?root\.projectRoot,[\s\S]{0,80}?root\.repoRoot,[\s\S]{0,80}?body\.path,[\s\S]{0,160}?resolveContainedFile\(root\.projectRoot, projectTarget\.projectRelativePath\)/,
-  "revert resolves the requested target under the captured project before using the enclosing git root",
+  /const repoTarget = resolveNativePathWithinRoot\(root\.repoRoot, body\.repoRelativePath\)[\s\S]{0,240}?const projectTarget = resolveNativeProjectPathForGitRoot\([\s\S]{0,160}?root\.projectRoot,[\s\S]{0,80}?root\.repoRoot,[\s\S]{0,80}?candidatePath,[\s\S]{0,160}?resolveContainedFile\(root\.projectRoot, projectTarget\.projectRelativePath\)/,
+  "revert distinguishes repo-relative list paths, then authorizes the resolved target under the captured project",
 );
 assert.match(
   source,

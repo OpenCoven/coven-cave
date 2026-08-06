@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import { access, chmod, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const originalCwd = process.cwd();
@@ -29,6 +29,7 @@ const trimmedProjectFile = path.join(trimmedProjectRoot, "src", "same.ts");
 const deletedFile = path.join(projectRoot, "src", "deleted.ts");
 const renamedFromFile = path.join(projectRoot, "src", "renamed-from.ts");
 const renamedToFile = path.join(projectRoot, "src", "renamed-to.ts");
+const escapedSymlink = path.join(projectRoot, "src", "outside-link.ts");
 const envKeys = [
   "CAVE_PROJECTS_PATH_OVERRIDE",
   "COVEN_HOME",
@@ -65,6 +66,23 @@ function revertRequest(
       action: "revert",
       projectRoot: root,
       path: targetPath,
+      confirmUntracked,
+    }),
+  });
+}
+
+function repoRelativeRevertRequest(
+  repoRelativePath: string,
+  confirmUntracked = false,
+  root = projectRoot,
+): Request {
+  return new Request("http://127.0.0.1/api/changes", {
+    method: "POST",
+    headers: { "content-type": "application/json", host: "127.0.0.1" },
+    body: JSON.stringify({
+      action: "revert",
+      projectRoot: root,
+      repoRelativePath,
       confirmUntracked,
     }),
   });
@@ -126,6 +144,7 @@ try {
       "packages/app/src/a.ts filter=cave-malicious\n",
     ),
   ]);
+  if (process.platform !== "win32") await symlink(parentFile, escapedSymlink);
   execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repoRoot });
   execFileSync("git", ["add", "-A"], { cwd: repoRoot });
   execFileSync(
@@ -183,6 +202,10 @@ try {
       writeFile(unrelatedUntrackedFile, "keep me\n")
     ),
   ]);
+  if (process.platform !== "win32") {
+    await rm(escapedSymlink);
+    await symlink(siblingFile, escapedSymlink);
+  }
   await rm(deletedFile);
   execFileSync(
     "git",
@@ -283,7 +306,40 @@ try {
     }),
   );
 
-  const reverted = await POST(revertRequest(path.join(canonicalProjectRoot, "src", "a.ts")));
+  const nestedChanges = await GET({
+    nextUrl: new URL(
+      `http://127.0.0.1/api/changes?projectRoot=${encodeURIComponent(projectRoot)}`,
+    ),
+  });
+  assert.equal(nestedChanges.status, 200);
+  const nestedChangesBody = await nestedChanges.json();
+  assert.equal(nestedChangesBody.repoRoot, canonicalRepoRoot);
+  const listedAppFile = nestedChangesBody.files.find(
+    (file: { path: string }) => file.path === "packages/app/src/a.ts",
+  );
+  assert.equal(
+    listedAppFile?.path,
+    "packages/app/src/a.ts",
+    "GET exposes the changed file relative to the enclosing repository",
+  );
+  for (const repoRelativePath of [
+    "../outside.ts",
+    "packages/sibling/src/a.ts",
+    canonicalProjectRoot,
+  ]) {
+    const rejected = await POST(repoRelativeRevertRequest(repoRelativePath));
+    assert.equal(rejected.status, 403, `${repoRelativePath} cannot escape the nested project`);
+  }
+  if (process.platform !== "win32") {
+    const listedSymlink = nestedChangesBody.files.find(
+      (file: { path: string }) => file.path === "packages/app/src/outside-link.ts",
+    );
+    assert.equal(listedSymlink?.path, "packages/app/src/outside-link.ts");
+    const symlinkEscape = await POST(repoRelativeRevertRequest(listedSymlink.path));
+    assert.equal(symlinkEscape.status, 403, "a changed symlink resolving outside the project is rejected");
+  }
+
+  const reverted = await POST(repoRelativeRevertRequest(listedAppFile.path));
   assert.equal(reverted.status, 200, await reverted.clone().text());
   const revertedBody = await reverted.json();
   assert.equal(revertedBody.path, "packages/app/src/a.ts");

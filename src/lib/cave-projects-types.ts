@@ -18,20 +18,17 @@ export type CaveProject = {
   /** Canonical GitHub repository link (https://github.com/owner/repo), when tied to one. */
   repoUrl?: string;
   /**
-   * The root string as it was persisted, present whenever the server had to
-   * re-normalize it to return {@link CaveProject.root} (cave-2x1em).
+   * A prior canonical client key, present whenever the server must re-key local
+   * data to return {@link CaveProject.root} (cave-2x1em).
    *
    * Usually that is a leading `~` being expanded, but native/cross-platform
    * canonicalization can also move a key (for example a trailing separator or
    * a Windows separator spelling). The field is attached for every move.
    *
    * Roots are the KEYS of client-side stores — IDB projectAvatars,
-   * cave:chat:project-overrides, comux pins and order — so a record written
-   * before the server started expanding (`~/code/app`) keys differently from
-   * the same folder added today (`/Users/me/code/app`). Serving one consistent
-   * form fixes the split, but it also moves the key out from under whatever
-   * was already stored. This field carries the old key so the client can
-   * re-key its stores.
+   * cave:chat:project-overrides, and project frecency. The old server expanded
+   * `~` before returning a root, so aliases use that expanded spelling rather
+   * than exposing a raw `~/...` value clients never persisted.
    *
    * Persisted retry metadata: the server removes it only after the client
    * acknowledges that every root-keyed store migrated successfully.
@@ -68,7 +65,8 @@ export function normalizeProjectRoot(root: string | null | undefined): string {
 /**
  * The canonical key emitted by the pre-POSIX-safe normalizer. Existing browser
  * stores can still be keyed by this spelling after project roots start
- * preserving backslashes and edge whitespace.
+ * preserving backslashes and edge whitespace. Server callers must expand a
+ * leading `~` first, matching the old normalize-after-expansion pipeline.
  */
 export function legacyProjectRootKey(
   root: string | null | undefined,

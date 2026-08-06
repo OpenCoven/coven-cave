@@ -318,8 +318,8 @@ try {
   );
   assert.deepEqual(
     dedupedLoad.find((entry) => entry.id === "abs-row")?.legacyRoots,
-    ["~/dupe-home", `${homeAbs}/`],
-    "canonical dedupe retains every original root alias for client migrations",
+    [`${homeAbs}/`],
+    "canonical dedupe retains persisted client keys without exposing raw tilde roots",
   );
   assert.deepEqual(
     dedupedLoad.find((entry) => entry.id === "abs-row")?.legacyProjectIds,
@@ -339,7 +339,7 @@ try {
   );
   assert.deepEqual(
     pendingMigration.projects.find((entry) => entry.id === "abs-row")?.legacyRoots,
-    ["~/dupe-home", `${homeAbs}/`],
+    [`${homeAbs}/`],
     "an unrelated project mutation cannot erase pending root aliases",
   );
   assert.deepEqual(
@@ -349,7 +349,7 @@ try {
   );
 
   await acknowledgeProjectRootMigrations([
-    { projectId: "abs-row", legacyRoots: ["~/dupe-home", `${homeAbs}/`] },
+    { projectId: "abs-row", legacyRoots: [`${homeAbs}/`] },
     { projectId: "disk-new", legacyRoots: ["/tmp/dupe/"] },
   ]);
   const acknowledged = JSON.parse(
@@ -378,6 +378,11 @@ try {
   assert.deepEqual(await loadProjects(), []);
 
   if (process.platform !== "win32") {
+    const tildeBackslashCurrent = path.posix.join(
+      os.homedir(),
+      String.raw`upgrade/tilde\name`,
+    );
+    const tildeSpaceCurrent = path.posix.join(os.homedir(), "upgrade/tilde-edge ");
     const upgradeProjects = [
       {
         id: "safe-backslash",
@@ -390,6 +395,20 @@ try {
         id: "safe-whitespace",
         name: "Safe whitespace",
         root: "/upgrade/edge ",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "tilde-backslash",
+        name: "Tilde backslash",
+        root: String.raw`~/upgrade/tilde\name`,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "tilde-space",
+        name: "Tilde space",
+        root: "~/upgrade/tilde-edge ",
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
       },
@@ -424,7 +443,11 @@ try {
     ];
     await writeFile(
       process.env.CAVE_PROJECTS_PATH_OVERRIDE,
-      JSON.stringify({ version: 1, projects: upgradeProjects }),
+      JSON.stringify({
+        version: 1,
+        rootKeyNormalizerVersion: 2,
+        projects: upgradeProjects,
+      }),
       "utf8",
     );
     const upgraded = await loadProjects();
@@ -438,6 +461,33 @@ try {
       upgraded.find((project) => project.id === "safe-whitespace")?.legacyRoots,
       ["/upgrade/edge"],
       "a preserved POSIX edge-space root advertises the prior trimmed client key",
+    );
+    assert.deepEqual(
+      upgraded.find((project) => project.id === "tilde-backslash"),
+      {
+        ...upgradeProjects.find((project) => project.id === "tilde-backslash"),
+        root: tildeBackslashCurrent,
+        legacyRoot: tildeBackslashCurrent.replace("\\", "/"),
+        legacyRoots: [tildeBackslashCurrent.replace("\\", "/")],
+      },
+      "tilde expands before the prior normalizer computes the backslash alias",
+    );
+    assert.deepEqual(
+      upgraded.find((project) => project.id === "tilde-space"),
+      {
+        ...upgradeProjects.find((project) => project.id === "tilde-space"),
+        root: tildeSpaceCurrent,
+        legacyRoot: tildeSpaceCurrent.trimEnd(),
+        legacyRoots: [tildeSpaceCurrent.trimEnd()],
+      },
+      "tilde expands before the prior normalizer computes the edge-space alias",
+    );
+    assert.equal(
+      upgraded.some((project) =>
+        project.legacyRoots?.some((root) => root.trim().startsWith("~")),
+      ),
+      false,
+      "migration metadata never exposes raw tilde aliases that clients did not persist",
     );
     assert.equal(
       upgraded.find((project) => project.id === "collision-backslash")?.legacyRoots,
@@ -458,13 +508,21 @@ try {
     await acknowledgeProjectRootMigrations([
       { projectId: "safe-backslash", legacyRoots: ["/upgrade/safe/name"] },
       { projectId: "safe-whitespace", legacyRoots: ["/upgrade/edge"] },
+      {
+        projectId: "tilde-backslash",
+        legacyRoots: [tildeBackslashCurrent.replace("\\", "/")],
+      },
+      {
+        projectId: "tilde-space",
+        legacyRoots: [tildeSpaceCurrent.trimEnd()],
+      },
     ]);
     const upgradedDisk = JSON.parse(
       await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8"),
     );
     assert.equal(
       upgradedDisk.rootKeyNormalizerVersion,
-      2,
+      3,
       "the projects file records that prior canonical aliases were materialized",
     );
     assert.equal(

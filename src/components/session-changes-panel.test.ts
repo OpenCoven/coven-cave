@@ -146,8 +146,13 @@ assert.match(
 // action from one panel must therefore carry the same projectRoot.
 assert.match(
   src,
-  /const json = await mutateSessionChanges<\{[\s\S]*?\}>\(fetch, projectRoot, "revert", \{/,
+  /const json = await mutateSessionChanges<\{[\s\S]*?\}>\(fetch, projectRoot, "revert", \{\s*\n\s*repoRelativePath: file\.path,/,
   "revert uses the same nested project identity as checkpoint list/restore/delete",
+);
+assert.doesNotMatch(
+  src,
+  /"revert", \{\s*\n\s*path: file\.path,/,
+  "repo-relative GET paths are identified explicitly instead of being resolved under a nested project",
 );
 assert.doesNotMatch(
   src,
