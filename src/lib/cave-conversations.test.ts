@@ -204,6 +204,33 @@ assert.deepEqual(
 );
 
 await saveConversation({
+  sessionId: "stable-self-alias",
+  harnessSessionId: "stable-self-alias",
+  familiarId: "charm",
+  harness: "claude",
+  title: "Self alias replay root",
+  createdAt: "2026-06-10T00:00:00.000Z",
+  updatedAt: "2026-06-10T00:00:00.000Z",
+  replaySessions: [{
+    sessionId: "hub-self-alias",
+    conversationId: "stable-self-alias",
+    createdAt: "2026-06-10T00:00:00.000Z",
+    updatedAt: "2026-06-10T00:00:01.000Z",
+  }],
+  turns: [],
+});
+assert.deepEqual(
+  await resolveConversationSessionId("stable-self-alias"),
+  { sessionId: "stable-self-alias", canonicalized: false },
+  "a replay owner naming its stable Cave id as its harness/conversation id stays canonical",
+);
+assert.deepEqual(
+  await resolveConversationSessionId("hub-self-alias"),
+  { sessionId: "stable-self-alias", canonicalized: true },
+  "a replay daemon id still resolves through an owner self-alias",
+);
+
+await saveConversation({
   sessionId: "cycle-replay-root",
   familiarId: "charm",
   harness: "codex",
@@ -240,6 +267,7 @@ assert.deepEqual(
 );
 await deleteConversation("stable-replay-root");
 await deleteConversation("hub-replay-root");
+await deleteConversation("stable-self-alias");
 await deleteConversation("cycle-replay-root");
 await deleteConversation("hub-replay-cycle");
 

@@ -325,9 +325,13 @@ function resolveReplayAliasOwner(
 ): ConversationSessionResolution {
   const owners = [...(aliasOwners.get(sessionId) ?? [])];
   if (owners.length === 0) return { sessionId, canonicalized: false };
-  if (owners.length !== 1) return { sessionId: null, error: "ambiguous-replay-history" };
-  const owner = owners[0];
-  if (owner === sessionId || visited.has(sessionId) || visited.has(owner)) {
+  const distinctOwners = owners.filter((owner) => owner !== sessionId);
+  if (distinctOwners.length === 0) return { sessionId, canonicalized: false };
+  if (owners.length !== 1 || distinctOwners.length !== 1) {
+    return { sessionId: null, error: "ambiguous-replay-history" };
+  }
+  const owner = distinctOwners[0];
+  if (visited.has(sessionId) || visited.has(owner)) {
     return { sessionId: null, error: "cyclic-replay-history" };
   }
   visited.add(sessionId);

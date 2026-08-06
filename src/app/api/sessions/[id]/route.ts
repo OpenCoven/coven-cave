@@ -11,7 +11,11 @@ import {
   summonSessionLocal,
 } from "@/lib/cave-config";
 import { clampExtendDays, extendUntilIso } from "@/lib/chat-auto-archive";
-import { resolveConversationSessionId } from "@/lib/cave-conversations";
+import {
+  linkedReplaySessionIds,
+  loadConversation,
+  resolveConversationSessionId,
+} from "@/lib/cave-conversations";
 import { resolveArchiveNudges } from "@/lib/task-archive-nudge-emit";
 
 export const dynamic = "force-dynamic";
@@ -138,6 +142,10 @@ export async function DELETE(
   if (!id || !isValidSessionId(id)) {
     return NextResponse.json({ ok: false, error: "invalid session id" }, { status: 400 });
   }
+  const linkedReplayIds = linkedReplaySessionIds(await loadConversation(id));
   const sacrificedAt = await sacrificeSessionLocal(id);
+  for (const replaySessionId of linkedReplayIds) {
+    await sacrificeSessionLocal(replaySessionId);
+  }
   return NextResponse.json({ ok: true, sacrificedAt });
 }

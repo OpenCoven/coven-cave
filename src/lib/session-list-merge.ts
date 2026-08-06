@@ -167,18 +167,6 @@ function localConversationToSession(
   };
 }
 
-function linkedReplayTitle(
-  local: LocalConversationSummary,
-  replay: ConversationReplaySession,
-  ordinal: number,
-): string {
-  const base =
-    replay.title
-    ?? sanitizeSessionTitle(local.title)
-    ?? defaultChatTitleForSession(local.sessionId);
-  return `${base} · Replay ${ordinal}`;
-}
-
 function visibleSession(row: SessionRow, state: CaveState, includeArchived: boolean): boolean {
   if (state.sessionSacrificed[row.id]) return false;
   return includeArchived || !row.archived_at;
@@ -220,68 +208,122 @@ export function mergeSessionRows({
   const localByHarnessSessionId = new Map<string, LocalConversationSummary>();
   const localByReplaySessionId = new Map<string, { local: LocalConversationSummary; replayIndex: number }>();
   const localByReplayConversationId = new Map<string, { local: LocalConversationSummary; replayIndex: number }>();
+  const retainLocal = <T extends { local: LocalConversationSummary; replayIndex?: number }>(
+    mappings: Map<string, T>,
+    key: string,
+    candidate: T,
+  ) => {
+    const existing = mappings.get(key);
+    if (!existing) {
+      mappings.set(key, candidate);
+      return;
+    }
+    const candidateReplayIndex = candidate.replayIndex ?? -1;
+    const existingReplayIndex = existing.replayIndex ?? -1;
+    if (
+      candidateReplayIndex > existingReplayIndex
+      || (
+        candidateReplayIndex === existingReplayIndex
+        && (
+          candidate.local.updatedAt > existing.local.updatedAt
+          || (
+            candidate.local.updatedAt === existing.local.updatedAt
+            && candidate.local.sessionId > existing.local.sessionId
+          )
+        )
+      )
+    ) {
+      mappings.set(key, candidate);
+    }
+  };
   for (const conv of localConversations) {
     if (conv.updatedAt) {
       localUpdatedById.set(conv.sessionId, conv.updatedAt);
       localById.set(conv.sessionId, conv);
     }
     if (conv.harnessSessionId) {
-      localByHarnessSessionId.set(conv.harnessSessionId, conv);
+      const existing = localByHarnessSessionId.get(conv.harnessSessionId);
+      if (
+        !existing
+        || conv.updatedAt > existing.updatedAt
+        || (conv.updatedAt === existing.updatedAt && conv.sessionId > existing.sessionId)
+      ) {
+        localByHarnessSessionId.set(conv.harnessSessionId, conv);
+      }
     }
     for (const [replayIndex, replay] of conversationReplaySessions(conv).entries()) {
-      localByReplaySessionId.set(replay.sessionId, { local: conv, replayIndex });
+      retainLocal(localByReplaySessionId, replay.sessionId, { local: conv, replayIndex });
       if (replay.conversationId) {
-        localByReplayConversationId.set(replay.conversationId, { local: conv, replayIndex });
+        retainLocal(localByReplayConversationId, replay.conversationId, { local: conv, replayIndex });
       }
     }
   }
 
+  type DaemonMatchKind = "none" | "direct" | "replay-conversation" | "replay-session" | "harness";
   type MappedDaemonSession = {
     session: DaemonSessionRow;
     local: LocalConversationSummary | undefined;
     stateSessionId: string;
-    harnessMatched: boolean;
-    replayMatched: boolean;
+    matchKind: DaemonMatchKind;
     replayIndex: number | null;
+  };
+  const matchRank: Record<DaemonMatchKind, number> = {
+    none: 0,
+    direct: 1,
+    "replay-conversation": 2,
+    "replay-session": 3,
+    harness: 4,
+  };
+  const preferMappedDaemon = (
+    candidate: MappedDaemonSession,
+    existing: MappedDaemonSession,
+  ): boolean => {
+    const rankDelta = matchRank[candidate.matchKind] - matchRank[existing.matchKind];
+    if (rankDelta !== 0) return rankDelta > 0;
+    const replayDelta = (candidate.replayIndex ?? -1) - (existing.replayIndex ?? -1);
+    if (replayDelta !== 0) return replayDelta > 0;
+    if (candidate.session.updated_at !== existing.session.updated_at) {
+      return candidate.session.updated_at > existing.session.updated_at;
+    }
+    if (candidate.session.created_at !== existing.session.created_at) {
+      return candidate.session.created_at > existing.session.created_at;
+    }
+    return candidate.session.id > existing.session.id;
   };
   const daemonByMappedId = new Map<string, MappedDaemonSession>();
   for (const session of daemonSessions) {
     const directLocal = localById.get(session.id);
     const harnessLocal = directLocal ? undefined : localByHarnessSessionId.get(session.id);
-    const replayMatch = directLocal || harnessLocal
+    const replaySessionMatch = directLocal || harnessLocal
       ? undefined
-      : localByReplaySessionId.get(session.id)
-        ?? (session.conversation_id ? localByReplayConversationId.get(session.conversation_id) : undefined);
+      : localByReplaySessionId.get(session.id);
+    const replayConversationMatch = directLocal || harnessLocal || replaySessionMatch
+      ? undefined
+      : session.conversation_id
+        ? localByReplayConversationId.get(session.conversation_id)
+        : undefined;
+    const replayMatch = replaySessionMatch ?? replayConversationMatch;
     const local = directLocal ?? harnessLocal ?? replayMatch?.local;
     const stateSessionId = local?.sessionId ?? session.id;
     const candidate = {
       session,
       local,
       stateSessionId,
-      harnessMatched: Boolean(harnessLocal),
-      replayMatched: Boolean(replayMatch),
+      matchKind: directLocal
+        ? "direct"
+        : harnessLocal
+          ? "harness"
+          : replaySessionMatch
+            ? "replay-session"
+            : replayConversationMatch
+              ? "replay-conversation"
+              : "none",
       replayIndex: replayMatch?.replayIndex ?? null,
-    };
+    } satisfies MappedDaemonSession;
     const existing = daemonByMappedId.get(stateSessionId);
-    const candidateScore = candidate.harnessMatched ? 3 : candidate.replayMatched ? 2 : 1;
-    const existingScore = existing ? (existing.harnessMatched ? 3 : existing.replayMatched ? 2 : 1) : 0;
-    if (
-      !existing
-      || candidateScore > existingScore
-      || (candidateScore === existingScore && session.updated_at > existing.session.updated_at)
-      || (
-        candidateScore === existingScore
-        && candidate.replayMatched
-        && existing.replayMatched
-        && (candidate.replayIndex ?? -1) > (existing.replayIndex ?? -1)
-      )
-    ) {
+    if (!existing || preferMappedDaemon(candidate, existing)) {
       daemonByMappedId.set(stateSessionId, candidate);
     }
-  }
-  const primaryDaemonSessionIdByLocalId = new Map<string, string>();
-  for (const mapped of daemonByMappedId.values()) {
-    if (mapped.local) primaryDaemonSessionIdByLocalId.set(mapped.stateSessionId, mapped.session.id);
   }
 
   for (const { session, local, stateSessionId } of daemonByMappedId.values()) {
@@ -331,7 +373,13 @@ export function mergeSessionRows({
       Number.isFinite(Date.parse(localUpdatedAt)) &&
       Number.isFinite(Date.parse(session.updated_at)) &&
       Date.parse(localUpdatedAt) > Date.parse(session.updated_at);
-    const daemonStatusIsAuthoritative = isDaemonAuthoritativeStatus(session.status);
+    const mappedDaemonTerminalStatusIsAuthoritative =
+      Boolean(local)
+      && session.id !== stateSessionId
+      && !ACTIVE_SESSION_STATUSES.has(session.status.toLowerCase());
+    const daemonStatusIsAuthoritative =
+      isDaemonAuthoritativeStatus(session.status)
+      || mappedDaemonTerminalStatusIsAuthoritative;
     const mergedStatus =
       localIsNewer && !daemonStatusIsAuthoritative && local?.status
         ? local.status
@@ -366,7 +414,7 @@ export function mergeSessionRows({
       title:
         titleOverride ??
         sanitizeSessionTitle(session.title) ??
-        defaultChatTitleForSession(session.id),
+        defaultChatTitleForSession(stateSessionId),
       archived_at,
       attention,
       attentionAfterOperationId: attentionAfterOperationId(local?.attentionEvidence),
@@ -394,33 +442,6 @@ export function mergeSessionRows({
     if (visibleSession(row, state, includeArchived)) rows.push(row);
   }
 
-  for (const local of localConversations) {
-    const primarySessionId = primaryDaemonSessionIdByLocalId.get(local.sessionId);
-    const parentRow = localConversationToSession(local, state, projectRootForCwd, now);
-    const archivedAt = parentRow.archived_at;
-    for (const [replayIndex, replay] of conversationReplaySessions(local).entries()) {
-      if (replay.sessionId === primarySessionId) continue;
-      const daemon = daemonSessions.find((session) => session.id === replay.sessionId);
-      if (!daemon) continue;
-      const title = linkedReplayTitle(local, replay, replayIndex + 1);
-      const row: SessionRow = {
-        ...parentRow,
-        id: replay.sessionId,
-        daemonSessionId: daemon.id,
-        project_root: daemon.project_root,
-        harness: daemon.harness,
-        title,
-        status: daemon.status,
-        exit_code: daemon.exit_code,
-        archived_at: archivedAt,
-        created_at: daemon.created_at,
-        updated_at: daemon.updated_at,
-        attention: NO_CHAT_ATTENTION,
-      };
-      if (visibleSession(row, state, includeArchived)) rows.push(row);
-    }
-  }
-
   for (const row of localConversations
     .map((conv) => localConversationToSession(conv, state, projectRootForCwd, now))
     .filter((session) => visibleSession(session, state, includeArchived))
@@ -429,5 +450,8 @@ export function mergeSessionRows({
     rows.push(row);
   }
 
-  return rows.sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+  return rows.sort((a, b) => {
+    if (a.updated_at !== b.updated_at) return a.updated_at < b.updated_at ? 1 : -1;
+    return a.id.localeCompare(b.id);
+  });
 }

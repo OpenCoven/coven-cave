@@ -1391,27 +1391,15 @@ assert.equal(
     includeArchived: false,
   });
 
-  assert.ok(
-    replayHistoryRows.some((row) => row.id === "offline-chat-2"),
-    "the stable Cave conversation remains the primary row",
+  assert.deepEqual(
+    replayHistoryRows.map((row) => row.id),
+    ["offline-chat-2"],
+    "native and replay daemon rows collapse to one stable Cave conversation row",
   );
   assert.equal(
     replayHistoryRows.find((row) => row.id === "offline-chat-2")?.daemonSessionId,
     "hub-session-offline-2",
     "the newest replay daemon row rides the canonical conversation as an explicit daemon trace id",
-  );
-  const linkedReplayRow = replayHistoryRows.find((row) => row.id === "hub-session-offline-1");
-  assert.equal(linkedReplayRow?.hasLocalConversation, true);
-  assert.match(String(linkedReplayRow?.title), /Replay 1/);
-  assert.equal(
-    linkedReplayRow?.daemonSessionId,
-    "hub-session-offline-1",
-    "historical replay rows keep their own daemon ids so older traces remain reachable",
-  );
-  assert.equal(
-    filterVisibleChatSessions(replayHistoryRows, null).some((row) => row.id === "hub-session-offline-1"),
-    true,
-    "historical replay rows should stay visible instead of being filtered as generated daemon sessions",
   );
 }
 
@@ -1468,6 +1456,79 @@ assert.equal(
     "the harness-id match is the authoritative daemon row when both ids are present",
   );
   assert.equal(duplicateMappedRows[0]?.title, "Canonical Cave title");
+}
+
+{
+  const caveId = "mapped-cave-deterministic";
+  const conversationId = "mapped-conversation-deterministic";
+  const archivedAt = "2026-06-25T04:25:00.000Z";
+  const olderDaemon = {
+    id: "mapped-daemon-older",
+    project_root: "/repo",
+    harness: "claude",
+    title: "Older daemon row",
+    status: "completed",
+    exit_code: 0,
+    archived_at: null,
+    created_at: "2026-06-25T04:20:00.000Z",
+    updated_at: "2026-06-25T04:22:00.000Z",
+    conversation_id: conversationId,
+  };
+  const selectedTerminalDaemon = {
+    ...olderDaemon,
+    id: "mapped-daemon-terminal",
+    title: "Selected terminal daemon row",
+    status: "failed",
+    exit_code: 1,
+    created_at: "2026-06-25T04:21:00.000Z",
+  };
+  const localConversations = [{
+    sessionId: caveId,
+    harnessSessionId: conversationId,
+    familiarId: "charm",
+    harness: "claude",
+    title: "Mapped Cave conversation",
+    status: "completed",
+    exitCode: 0,
+    updatedAt: "2026-06-25T04:30:00.000Z",
+    replaySessions: [{
+      sessionId: "recorded-replay-run",
+      conversationId,
+      createdAt: "2026-06-25T04:19:00.000Z",
+      updatedAt: "2026-06-25T04:22:00.000Z",
+    }],
+  }];
+  const state = {
+    sessionFamiliar: { [caveId]: "charm" },
+    sessionTitles: { [caveId]: "Canonical mapped title" },
+    sessionArchived: { [caveId]: archivedAt },
+    sessionSacrificed: {},
+  };
+  const merge = (daemonSessions: DaemonSessionRow[]) => mergeSessionRows({
+    daemonSessions,
+    localConversations,
+    state,
+    includeArchived: true,
+  });
+
+  const forward = merge([olderDaemon, selectedTerminalDaemon]);
+  const reverse = merge([selectedTerminalDaemon, olderDaemon]);
+  assert.deepEqual(reverse, forward, "mapped daemon selection must not depend on input order");
+  assert.equal(forward.length, 1, "all daemon aliases dedupe by mapped Cave id");
+  assert.equal(forward[0]?.id, caveId);
+  assert.equal(forward[0]?.daemonSessionId, "mapped-daemon-terminal");
+  assert.equal(
+    forward[0]?.status,
+    "failed",
+    "the deterministically selected daemon terminal status survives a newer local timestamp",
+  );
+  assert.equal(forward[0]?.exit_code, 1);
+  assert.equal(forward[0]?.title, "Canonical mapped title");
+  assert.equal(
+    forward[0]?.archived_at,
+    archivedAt,
+    "archive and local overrides key off the mapped Cave id",
+  );
 }
 
 {

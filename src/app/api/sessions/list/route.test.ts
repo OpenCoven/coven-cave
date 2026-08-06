@@ -458,9 +458,9 @@ try {
       "the list serializes the newest replay daemon id on the canonical conversation row",
     );
     assert.equal(
-      healthyById.get("route-replay-old")?.daemonSessionId,
-      "route-replay-old",
-      "older replay history rows keep their own daemon trace ids",
+      healthyById.has("route-replay-old"),
+      false,
+      "older replay daemon aliases dedupe into the canonical Cave conversation",
     );
     assert.equal(
       "daemonSessionId" in (healthyById.get("route-malformed") ?? {}),
