@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -68,9 +68,13 @@ await writeFile(fixtureCachePath, JSON.stringify({ checkedAt: Date.now(), bundle
 await writeFile(`${fixtureCachePath}.anchor.journal/${fixtureBundle.sequence}-${fixtureHash}.json`, JSON.stringify({ sequence: fixtureBundle.sequence, payloadHash: fixtureHash }));
 
 const executable = process.platform === "win32" ? "grok.cmd" : "grok";
+const grokLog = path.join(home, "grok-calls.log");
 const windowsShimTarget = path.join(bin, "grok-launcher.js");
 const windowsShimProgram = [
-  "const [command] = process.argv.slice(2);",
+  "const { appendFileSync } = require('node:fs');",
+  "const args = process.argv.slice(2);",
+  `appendFileSync(${JSON.stringify(grokLog)}, JSON.stringify(args) + "\\n");`,
+  "const [command] = args;",
   "if (command === '--help') { if (process.env.XAI_API_KEY) process.exit(12); console.log(['plain', 'plain-structured', 'plain-structured-array', 'plain-bracketed-text'].includes(process.env.GROK_TEST_MODE ?? '') ? '  --output-format <format>  Output format: text' : '  --output-format <format>  Output format: text, streaming-json'); process.exit(0); }",
   "if (command === '--version') { if (process.env.XAI_API_KEY) process.exit(12); console.log('1.0.0'); process.exit(0); }",
   "if (process.env.GROK_TEST_MODE === 'plain') console.log('plain fallback reply');",
@@ -89,6 +93,7 @@ const launcher = process.platform === "win32"
     ].join("\r\n")
   : [
       "#!/bin/sh",
+      `printf '%s\\n' "$*" >> "${grokLog}"`,
       "if [ \"$1\" = \"--help\" ]; then",
       "  [ -z \"$XAI_API_KEY\" ] || exit 12",
        "  if [ \"$GROK_TEST_MODE\" = \"plain\" ] || [ \"$GROK_TEST_MODE\" = \"plain-structured\" ] || [ \"$GROK_TEST_MODE\" = \"plain-structured-array\" ] || [ \"$GROK_TEST_MODE\" = \"plain-bracketed-text\" ]; then printf '%s\\n' '  --output-format <format>  Output format: text'; else printf '%s\\n' '  --output-format <format>  Output format: text, streaming-json'; fi",
@@ -120,7 +125,10 @@ async function readSse(response: Response) {
 
 try {
   const { saveConfig } = await import("@/lib/cave-config");
-  const { loadConversation } = await import("@/lib/cave-conversations");
+  const {
+    loadConversation,
+    persistQueuedOfflineConversation,
+  } = await import("@/lib/cave-conversations");
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { POST } = await import("./route.ts");
@@ -137,6 +145,48 @@ try {
   assert.equal(typeof structuredDone?.sessionId, "string");
   const conversation = await loadConversation(structuredDone.sessionId);
   assert.equal(conversation?.harnessSessionId, "native_grok_session", "the route persists Grok's native resume id separately from Cave's id");
+
+  await persistQueuedOfflineConversation({
+    sessionId: structuredDone.sessionId,
+    familiarId: "opal",
+    harness: "grok",
+    createdAt: "2026-08-05T18:02:00.000Z",
+    replaySessionId: "daemon-grok-execution-row",
+    conversationId: "daemon-grok-conversation-alias",
+    userTurn: {
+      id: "offline-grok-user",
+      text: "queued Grok turn",
+    },
+  });
+  assert.equal(
+    (await loadConversation(structuredDone.sessionId))?.harnessSessionId,
+    "native_grok_session",
+    "offline replay metadata preserves Grok's validated native session id",
+  );
+  await writeFile(grokLog, "");
+  const followUp = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "opal",
+      prompt: "Grok follow-up after offline replay",
+      projectRoot: familiarWorkspace,
+      sessionId: structuredDone.sessionId,
+    }),
+  })));
+  assert.equal(followUp.events.findLast((event) => event.kind === "done")?.isError, false);
+  const followUpCalls = await readFile(grokLog, "utf8");
+  assert.match(followUpCalls, /--resume/, "Grok follow-up uses its native resume option");
+  assert.match(
+    followUpCalls,
+    /native_grok_session/,
+    "Grok follow-up resumes the native session retained by the conversation",
+  );
+  assert.doesNotMatch(
+    followUpCalls,
+    /daemon-grok-execution-row/,
+    "Grok never receives the daemon execution row as a resume token",
+  );
 
   const guardedModel = await POST(new Request("http://localhost/api/chat/send", {
     method: "POST", headers: { "content-type": "application/json" },

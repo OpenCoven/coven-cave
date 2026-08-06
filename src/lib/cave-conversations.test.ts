@@ -283,8 +283,8 @@ await persistQueuedOfflineConversation({
 const queuedReplayNull = await loadConversation("queued-replay-null");
 assert.equal(
   queuedReplayNull?.harnessSessionId,
-  "hub-replay-null",
-  "a replay without a distinct conversation id falls back to the replay session id for resume",
+  undefined,
+  "a daemon replay row id is not a native harness resume token",
 );
 assert.deepEqual(
   queuedReplayNull?.replaySessions,
@@ -307,17 +307,31 @@ await persistQueuedOfflineConversation({
 const queuedReplayEqual = await loadConversation("queued-replay-equal");
 assert.equal(
   queuedReplayEqual?.harnessSessionId,
-  "hub-replay-equal",
-  "a non-distinct conversation id should not replace the replay session id",
+  undefined,
+  "a daemon conversation id equal to its execution row id is not a native resume token",
 );
 
+await saveConversation({
+  sessionId: "queued-replay-distinct",
+  harnessSessionId: "native-thread-distinct",
+  familiarId: "charm",
+  harness: "claude",
+  createdAt: "2026-06-10T00:00:00.000Z",
+  updatedAt: "2026-06-10T00:00:00.000Z",
+  replaySessions: [{
+    sessionId: "hub-replay-prior",
+    createdAt: "2026-06-10T00:01:00.000Z",
+    updatedAt: "2026-06-10T00:01:00.000Z",
+  }],
+  turns: [],
+});
 await persistQueuedOfflineConversation({
   sessionId: "queued-replay-distinct",
   familiarId: "charm",
   harness: "claude",
   createdAt: "2026-06-10T00:03:00.000Z",
   replaySessionId: "hub-replay-distinct",
-  conversationId: "native-thread-distinct",
+  conversationId: "daemon-conversation-alias",
   userTurn: { id: "queued-distinct-user", text: "queued replay distinct" },
 });
 await persistQueuedOfflineConversation({
@@ -338,8 +352,13 @@ assert.deepEqual(
   queuedReplayDistinct?.replaySessions,
   [
     {
+      sessionId: "hub-replay-prior",
+      createdAt: "2026-06-10T00:01:00.000Z",
+      updatedAt: "2026-06-10T00:01:00.000Z",
+    },
+    {
       sessionId: "hub-replay-distinct",
-      conversationId: "native-thread-distinct",
+      conversationId: "daemon-conversation-alias",
       createdAt: "2026-06-10T00:03:00.000Z",
       updatedAt: "2026-06-10T00:03:00.000Z",
     },
@@ -350,6 +369,20 @@ assert.deepEqual(
     },
   ],
   "replay aliases remain recorded separately for canonical mapping",
+);
+
+await persistQueuedOfflineConversation({
+  sessionId: "queued-replay-distinct",
+  familiarId: "charm",
+  harness: "claude",
+  createdAt: "2026-06-10T00:04:00.000Z",
+  validatedNativeConversationId: "native-thread-revalidated",
+  userTurn: { id: "queued-revalidated-user", text: "queued replay revalidated" },
+});
+assert.equal(
+  (await loadConversation("queued-replay-distinct"))?.harnessSessionId,
+  "native-thread-revalidated",
+  "only a separately validated native conversation id may replace the native resume token",
 );
 await deleteConversation("queued-replay-null");
 await deleteConversation("queued-replay-equal");

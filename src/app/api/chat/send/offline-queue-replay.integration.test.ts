@@ -103,6 +103,7 @@ try {
   await grantProjectToFamiliar({ familiarId: "sage", projectId: project.id, source: "human", access: "write" });
   await conversations.saveConversation({
     sessionId: "offline-chat-1",
+    harnessSessionId: "native-claude-session",
     familiarId: "sage",
     harness: "claude",
     model: "anthropic/claude-sonnet-4-6",
@@ -110,6 +111,11 @@ try {
     title: "Existing offline chat",
     createdAt: "2026-06-30T11:58:00.000Z",
     updatedAt: "2026-06-30T11:59:00.000Z",
+    replaySessions: [{
+      sessionId: "older-daemon-replay",
+      createdAt: "2026-06-30T11:57:00.000Z",
+      updatedAt: "2026-06-30T11:57:00.000Z",
+    }],
     turns: [
       {
         id: "existing-user",
@@ -198,6 +204,11 @@ try {
   assert.deepEqual(queuedUserTurns[0]?.modelControls, { reasoning: "medium" });
   assert.equal(queuedConversation?.activeLeafId, queuedUserTurnId);
   assert.equal(
+    queuedConversation?.harnessSessionId,
+    "native-claude-session",
+    "queue-time persistence preserves the validated native resume id even when replay metadata already exists",
+  );
+  assert.equal(
     queuedConversation?.pendingUserTurnId,
     undefined,
     "queued offline chats are accepted, not left as pending first-turn stubs",
@@ -242,13 +253,22 @@ try {
   const syncedItem = syncedState.travel.offlineQueue.find((item) => item.id === replayItem.id);
   assert.equal(syncedItem?.status, "synced");
   assert.equal(
-    syncedItem?.payload?.harnessSessionId,
+    syncedItem?.payload?.replaySessionId,
     "hub-session-1",
-    "successful replay should durably record the daemon session id for retries",
+    "successful replay durably records the daemon execution row only as replay metadata",
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(syncedItem?.payload ?? {}, "harnessSessionId"),
+    false,
+    "the daemon execution row is never written into native-session payload metadata",
   );
 
   const replayedConversation = await conversations.loadConversation("offline-chat-1");
-  assert.equal(replayedConversation?.harnessSessionId, "hub-session-1");
+  assert.equal(
+    replayedConversation?.harnessSessionId,
+    "native-claude-session",
+    "replay persistence cannot replace an existing native resume id with the daemon execution row",
+  );
   assert.equal(
     replayedConversation?.turns.length,
     3,
@@ -338,7 +358,6 @@ try {
       sessionId: "offline-chat-equal",
       createdAt: "2026-06-30T12:03:00.000Z",
       response: { id: "hub-session-2", status: "running", conversation_id: "hub-session-2" },
-      expectedHarnessSessionId: "hub-session-2",
       expectedReplaySession: {
         sessionId: "hub-session-2",
         conversationId: "hub-session-2",
@@ -349,11 +368,10 @@ try {
     {
       sessionId: "offline-chat-distinct",
       createdAt: "2026-06-30T12:04:00.000Z",
-      response: { id: "hub-session-3", status: "running", conversationId: "native-thread-3" },
-      expectedHarnessSessionId: "native-thread-3",
+      response: { id: "hub-session-3", status: "running", conversationId: "daemon-conversation-3" },
       expectedReplaySession: {
         sessionId: "hub-session-3",
-        conversationId: "native-thread-3",
+        conversationId: "daemon-conversation-3",
         createdAt: "2026-06-30T12:04:00.000Z",
         updatedAt: "2026-06-30T12:04:00.000Z",
       },
@@ -386,9 +404,18 @@ try {
     assert.deepEqual(extraReplayResult, { attempted: 1, synced: 1, failed: 0, errors: [] });
     const extraState = await config.loadState();
     const extraSynced = extraState.travel.offlineQueue.find((item) => item.id === extraItem.id);
-    assert.equal(extraSynced?.payload?.harnessSessionId, replayCase.expectedHarnessSessionId);
+    assert.equal(extraSynced?.payload?.replaySessionId, replayCase.expectedReplaySession.sessionId);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(extraSynced?.payload ?? {}, "harnessSessionId"),
+      false,
+      "new replay payloads do not mislabel daemon ids as native harness ids",
+    );
     const extraConversation = await conversations.loadConversation(replayCase.sessionId);
-    assert.equal(extraConversation?.harnessSessionId, replayCase.expectedHarnessSessionId);
+    assert.equal(
+      extraConversation?.harnessSessionId,
+      undefined,
+      "new offline conversations leave the native resume id unset",
+    );
     assert.equal(extraConversation?.replaySessions?.length, 1);
     assert.equal(extraConversation?.replaySessions?.[0]?.sessionId, replayCase.expectedReplaySession.sessionId);
     assert.equal(

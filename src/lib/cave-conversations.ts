@@ -713,9 +713,13 @@ export type QueuedOfflineConversationSeed = {
   origin?: SessionOrigin;
   modelIntent?: ConversationModelIntent;
   createdAt: string;
-  harnessSessionId?: string;
   replaySessionId?: string;
   conversationId?: string | null;
+  /**
+   * A harness-native id obtained from that harness's own protocol. Daemon
+   * session responses are execution-row metadata and must never use this field.
+   */
+  validatedNativeConversationId?: string;
   userTurn: {
     id: string;
     text: string;
@@ -835,14 +839,11 @@ export async function persistQueuedOfflineConversation(
         conv.replaySessions = [...existingReplays, replay];
       }
     }
-    const latestReplay = latestConversationReplaySession(conv);
-    if (latestReplay) {
-      conv.harnessSessionId =
-        latestReplay.conversationId && latestReplay.conversationId !== latestReplay.sessionId
-          ? latestReplay.conversationId
-          : latestReplay.sessionId;
-    } else if (seed.harnessSessionId) {
-      conv.harnessSessionId = seed.harnessSessionId;
+    const validatedNativeConversationId = normalizeDaemonConversationId(
+      seed.validatedNativeConversationId,
+    );
+    if (validatedNativeConversationId) {
+      conv.harnessSessionId = validatedNativeConversationId;
     }
 
     const existingTurn = conv.turns.find((turn) => turn.id === seed.userTurn.id);
@@ -875,41 +876,6 @@ export async function persistQueuedOfflineConversation(
       conv.updatedAt = seed.createdAt;
     }
     await saveConversation(conv);
-  });
-}
-
-export async function upsertConversationReplaySession(args: {
-  sessionId: string;
-  replaySessionId: string;
-  conversationId?: string | null;
-  title?: string | null;
-  status?: string | null;
-  createdAt: string;
-  updatedAt?: string | null;
-}): Promise<ConversationFile | null> {
-  return withConversationLock(args.sessionId, async () => {
-    const conv = await loadConversation(args.sessionId);
-    if (!conv) return null;
-    const replay = normalizeConversationReplaySession({
-      sessionId: args.replaySessionId,
-      conversationId: args.conversationId ?? undefined,
-      title: args.title ?? undefined,
-      status: args.status ?? undefined,
-      createdAt: args.createdAt,
-      updatedAt: args.updatedAt ?? args.createdAt,
-    });
-    if (!replay) return conv;
-    const existing = conversationReplaySessions(conv).filter((entry) => entry.sessionId !== replay.sessionId);
-    conv.replaySessions = [...existing, replay];
-    const latestReplay = latestConversationReplaySession(conv);
-    if (latestReplay) {
-      conv.harnessSessionId =
-        latestReplay.conversationId && latestReplay.conversationId !== latestReplay.sessionId
-          ? latestReplay.conversationId
-          : latestReplay.sessionId;
-    }
-    await saveConversation(conv);
-    return conv;
   });
 }
 

@@ -243,19 +243,12 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     });
     replaySessionId = spawned.replaySessionId;
     conversationId = spawned.conversationId;
-    const persistedHarnessSessionId =
-      conversationId && conversationId !== replaySessionId ? conversationId : replaySessionId;
     await updateOfflineTravelItemPayload(item.id, {
       ...payload,
       replaySessionId,
       ...(conversationId ? { conversationId } : {}),
-      harnessSessionId: persistedHarnessSessionId,
     });
   }
-  const harnessSessionId =
-    conversationId && replaySessionId && conversationId !== replaySessionId
-      ? conversationId
-      : stringValue(payload.harnessSessionId) ?? replaySessionId;
   const sessionId = stringValue(payload.sessionId) ?? item.id;
   await persistQueuedOfflineConversation({
     sessionId,
@@ -269,7 +262,6 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
       : {}),
     title: chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(sessionId),
     createdAt: item.createdAt,
-    harnessSessionId,
     replaySessionId: replaySessionId ?? undefined,
     conversationId,
     userTurn: {
