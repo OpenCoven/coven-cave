@@ -9,100 +9,51 @@ breaking config changes; patch releases stay additive.
 
 ## [0.2.4] - 2026-08-06
 
-> _One-line teaser — edit before merge._
+> A tabbed sidebar, the Coding Room rebuilt as a three-zone workbench, image
+> carousels familiars can drive, and a release stamp that finally moves the iOS
+> build number.
 
 Patch release on top of v0.2.3.
 
-### Changes
-- fix(release): refresh the iOS build stamp on every release cut
-- fix(onboarding): allow cold managed npm startup on Windows (#4359)
-- fix(chat): harden capability help probes (#4363)
-- fix: reap Unix sidecars on parent exit (#4374)
-- fix: bound desktop sidecar output (#4373)
-- Update interactions.jsonl
-- perf(pty): bound streaming and add replay cursors (#4362)
-- fix: restore Canvas and focus-ring contracts (#4367)
-- WIP: activity lattice (cave-yd3qu) (#4335)
-- Improve chat discovery, titles, and reflection archiving (#4357)
-- Stop creation exceptions from blocking worktree retirement (#4366)
-- Add the orchestration task validator and readiness derivation (#4343)
-- test: close sidebar test gaps (#4358)
-- fix: make sidecar reap test portable (#4368)
-- Update interactions.jsonl
-- fix(ios): keep the ⌘1–4 tab shortcuts out of the accessibility tree (#4360)
-- wip: preserve uncommitted work before worktree cleanup
-- Update navigation E2E contracts
-- Update iOS familiar chat contract tests
-- Remove Play mode from canvas editor
-- Register workspace path API contract
-- Finish sidebar section contract cleanup
-- Update sidebar CSS module order contract
-- Update familiar switcher contract test
-- Update Code sidebar contract test
-- Update sidebar keyboard navigation contract
-- Improve adaptive chat context controls (#4356)
-- Update sidebar section contract test
-- Fix Canvas editor merge remnants
-- fix(attachments): parse image data URLs without a regex over the payload (#4340)
-- Restructure sidebar nav from sections to tabbed layout
-- Update interactions.jsonl
-- feat(picker): give the web folder picker Explorer's Quick access and This PC rails (#4352)
-- Update sidebar-minimal.tsx
-- fix(budgets): report thin headroom everywhere, reseat the caps by rate (#4353)
-- feat(settings): make Workspace path's Browse actually choose a folder
-- Update interactions.jsonl
-- fix: contain async polling failures (#4349)
-- Update interactions.jsonl
-- chore(worktrees): raise the admission budget from 12 to 20 (#4348)
-- Update interactions.jsonl
-- fix(ios): generate the web bundles before xcodegen scans (#4345)
-- Update interactions.jsonl
-- Group sidepanel destinations into collapsible sections (#4347)
-- Harden exact-head branch merges (#4346)
-- feat: add mission catalog with renown bonuses
-- wip(global-home-code-sections): snapshot uncommitted work in progress
-- Fix Home slash command handoff and discovery (#4342)
-- Restore accessible solo-to-coven promotion (#4295)
-- fix(chat): inject familiar contract (SOUL.md/IDENTITY.md) into chat prompt assembly (#4344)
-- Update interactions.jsonl
-- wip(fix-cave-l4ttp-analytics-followup): snapshot uncommitted work in progress
-- wip(cave-y0blo-ios-familiar-new-chat): snapshot uncommitted work in progress
-- wip(cave-4mqfl-chat-spec-reader): snapshot uncommitted work in progress
-- wip(cave-2tmly-projects-consolidation): snapshot uncommitted work in progress
-- fix(daemon): keep automatic recovery fail-closed when restart is set
-- wip: preserve supervisor-safe daemon recovery
-- fix(runtime): supervise daemon startup coherence (#4329)
-- docs(sidecar): record that the file-count budget is a rate problem (#4332)
-- wip: preserve copilot launch timeout fix
-- docs: define the orchestration-ready task contract (#4306)
-- docs(sidecar): make the MAX_FILE_COUNT comment match the const (#4333)
-- Ignore Psyche temp files
-- chore(sidecar): raise the file-count budget to 5,926 for the image carousel (#4331)
-- Lift notification dropdown above content (#4273)
-- feat(chat): share images through one carousel familiars can drive (#4315)
-- Add a Cave-safe branch-to-merge skill for every familiar (#4307)
-- fix(analytics): align scoped workbench evidence (#4283)
-- test(ios): verify the session switch with a real tap in the simulator (#4326)
-- test(ios): make the session-stickiness test actually assert stickiness (#4325)
-- test(ios): make the stickiness test actually exercise the switch
-- Complete the Coding Room's approved design (cave-uod42) (#4319)
-- fix(ios): make the session picker actually switch conversations (#4322)
-- fix(ios): keep the zoom anchored on the thread row itself
-- docs: correct the signature guidance CLAUDE.md still asserts (#4321)
-- fix(ios): make the session picker actually switch conversations
-- fix(worktrees): make the budget refusal name the exception it would admit (#4308)
-- wip: preserve canvas artifact interaction
-- wip: preserve iOS familiar new chat
-- Add fast local worktree status dashboard (#4313)
-- fix(voice): snap the call overlay's spacing to the scale, bank the highlight's 2px (#4303)
-- feat(code): rebuild the Coding Room as a three-zone workbench (#4311)
-- feat(canvas,voice): playable sketches, a waiting-room arcade, and iOS voice calls (#4314)
-- test(api): drop the duplicate /auto-mode/feedback contract entry
-- docs(worktrees): cover recency wording in policy scan
-- snapshot(onboarding): commit the recovered cave-d8i6p working tree
-- snapshot(onboarding): preserve uncommitted cave-d8i6p work in progress
-- fix(analytics): align scoped workbench evidence
+### Added
 
+- Rebuilt the Coding Room as a three-zone workbench and landed its approved design (#4311, #4319).
+- Added a shared chat image carousel that familiars can drive (#4315).
+- Added playable canvas sketches, a waiting-room arcade, and iOS voice calls (#4314).
+- Restructured sidebar navigation from stacked sections into a tabbed layout, with collapsible side-panel destination groups (#4347).
+- Gave the web folder picker Explorer's Quick access and This PC rails, and made Settings > Workspace path's Browse actually choose a folder (#4352).
+- Added a mission catalog with renown bonuses, and the first cut of the activity lattice (#4335).
+- Added the orchestration task validator with readiness derivation, and wrote down the orchestration-ready task contract (#4343, #4306).
+- Added a Cave-safe branch-to-merge skill available to every familiar (#4307).
+- Added a fast local worktree status dashboard (#4313).
+
+### Changed
+
+- Bounded PTY streaming and added replay cursors, so a busy terminal no longer floods its client (#4362).
+- Bounded desktop sidecar output (#4373).
+- Improved chat discovery, titles, and reflection archiving (#4357), and the adaptive chat context controls (#4356).
+- Injected the familiar contract (`SOUL.md` / `IDENTITY.md`) into chat prompt assembly (#4344).
+- Raised the worktree admission budget from 12 to 20 (#4348) and the sidecar file-count budget to 5,926 for the image carousel, recording that the budget is a rate problem rather than a count problem (#4331, #4332, #4333).
+- Hardened exact-head branch merges (#4346), stopped creation exceptions from blocking worktree retirement (#4366), and made a budget refusal name the exception that would admit it (#4308).
+- Lifted the notification dropdown above page content (#4273).
+- Removed Play mode from the canvas editor.
+
+### Fixed
+
+- **`scripts/stamp-release.mjs` now refreshes the iOS `CURRENT_PROJECT_VERSION` build stamp alongside `MARKETING_VERSION`.** A stamped release used to carry the previous cut's build number, which App Store Connect rejects as a duplicate — that is what blocked the v0.2.3 TestFlight upload.
+- Fixed the iOS session picker not switching conversations, kept the thread-row zoom anchored to the row itself, and kept the ⌘1–4 tab shortcuts out of the accessibility tree (#4322, #4360).
+- Fixed the iOS build generating its web bundles after xcodegen had already scanned for them (#4345).
+- Fixed cold managed npm startup on Windows during onboarding (#4359).
+- Hardened chat capability help probes (#4363).
+- Reaped Unix sidecars on parent exit (#4374), with a portable test for it (#4368).
+- Restored the Canvas and focus-ring contracts and cleared the Canvas editor merge remnants (#4367).
+- Parsed image data URLs without running a regex over the whole payload (#4340).
+- Reported thin budget headroom everywhere and reseated the caps by rate (#4353).
+- Contained async polling failures (#4349).
+- Fixed the Home slash-command handoff and discovery (#4342), and restored accessible solo-to-coven promotion (#4295).
+- Kept automatic daemon recovery fail-closed when restart is set, and supervised daemon startup coherence (#4329).
+- Aligned scoped analytics workbench evidence (#4283).
+- Snapped the voice call overlay's spacing to the scale (#4303).
 
 ## [0.2.3] - 2026-08-03
 
