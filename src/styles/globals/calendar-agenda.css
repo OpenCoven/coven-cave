@@ -1,8 +1,10 @@
 /* ── Session list card polish ──────────────────────────────────────────────
-   Each row reads as a tappable card: a faint leading-edge accent on hover, a
-   refined model pill, and running sessions feel LIVE (pulsing status dot +
-   accent-tinted "Active now…" preview). Purely additive over the row's inline
-   Tailwind background/active states. */
+   Each row reads as a tappable card: a faint leading-edge accent on hover and
+   a refined model pill. Purely additive over the row's inline Tailwind
+   background/active states. (The "live" half of this block — a pulsing status
+   dot and an accent-tinted "Active now…" preview — retired in cave-n3jg2 when
+   the dot became the familiar's avatar with a breathing ring and the preview
+   stopped restating the status.) */
 .chat-list-row {
   transition:
     background var(--duration-fast, 120ms) var(--ease-standard, ease),
