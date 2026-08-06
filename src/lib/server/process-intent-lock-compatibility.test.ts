@@ -53,29 +53,45 @@ async function runWorker(mode: "base" | "legacy" | "current"): Promise<void> {
   const directory = process.env.PROCESS_INTENT_COMPAT_DIRECTORY!;
   const markerDirectory = process.env.PROCESS_INTENT_COMPAT_MARKERS!;
   const workerId = process.env.PROCESS_INTENT_COMPAT_WORKER_ID!;
-  const acquire = mode === "base"
-    ? acquireBaseProcessIntentLock
-    : mode === "legacy"
-      ? acquireLegacyProcessIntentLock
-      : acquireProcessIntentLock;
   const crashStage = process.env.PROCESS_INTENT_CRASH_STAGE;
-  const release = await acquire({
+  const waiting = async () => {
+    await writeFile(
+      path.join(markerDirectory, `waiting-${workerId}`),
+      "waiting\n",
+    );
+  };
+  const common = {
     intentsDirectory: directory,
     label: `${mode} compatibility worker`,
     timeoutMs: 10_000,
-    ...(mode === "current" && crashStage
-      ? {
-          publicationStage: async (stage: string) => {
-            if (stage !== crashStage) return;
-            await writeFile(
-              path.join(markerDirectory, `crash-${stage}`),
-              "reached\n",
-            );
-            await new Promise<void>(() => {});
-          },
-        }
-      : {}),
-  });
+  };
+  const release = mode === "current"
+    ? await acquireProcessIntentLock({
+        ...common,
+        acquisitionStage: async (stage) => {
+          if (
+            stage === "waiting-for-pre-barrier-legacy" ||
+            stage === "waiting-for-current"
+          ) {
+            await waiting();
+          }
+        },
+        ...(crashStage
+          ? {
+              publicationStage: async (stage: string) => {
+                if (stage !== crashStage) return;
+                await writeFile(
+                  path.join(markerDirectory, `crash-${stage}`),
+                  "reached\n",
+                );
+                await new Promise<void>(() => {});
+              },
+            }
+          : {}),
+      })
+    : mode === "base"
+      ? await acquireBaseProcessIntentLock({ ...common, onWait: waiting })
+      : await acquireLegacyProcessIntentLock({ ...common, onWait: waiting });
   const criticalSection = path.join(markerDirectory, "critical-section");
   try {
     try {
@@ -187,7 +203,7 @@ if (workerMode) {
         markers,
         "contender",
       );
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await waitFor(path.join(markers, "waiting-contender"));
       assert.equal(await exists(path.join(markers, "overlap")), false);
       assert.equal(
         await exists(path.join(markers, "entered-contender")),
@@ -215,6 +231,7 @@ if (workerMode) {
     const resumeCurrent = deferred();
     let pauseOnce = false;
     let currentEntered = false;
+    const currentWaiting = deferred();
     const current = acquireProcessIntentLock({
       intentsDirectory: directory,
       label: "paused current compatibility contender",
@@ -223,6 +240,11 @@ if (workerMode) {
         pauseOnce = true;
         currentPaused.resolve();
         await resumeCurrent.promise;
+      },
+      acquisitionStage: async (stage) => {
+        if (stage === "waiting-for-pre-barrier-legacy") {
+          currentWaiting.resolve();
+        }
       },
     }).then((release) => {
       currentEntered = true;
@@ -234,7 +256,7 @@ if (workerMode) {
       label: "live legacy compatibility owner",
     });
     resumeCurrent.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await currentWaiting.promise;
     assert.equal(
       currentEntered,
       false,
@@ -249,6 +271,105 @@ if (workerMode) {
     ["base", acquireBaseProcessIntentLock],
     ["legacy", acquireLegacyProcessIntentLock],
   ] as const) {
+    test(`current ignores ${fixtureName} contenders published behind its barrier`, async () => {
+      const directory = path.join(
+        temporary,
+        `current-before-post-barrier-${fixtureName}`,
+      );
+      const currentBarrierPublished = deferred();
+      const resumeCurrent = deferred();
+      const frozenWaiting = deferred();
+      let frozenEntered = false;
+      const current = acquireProcessIntentLock({
+        intentsDirectory: directory,
+        label: `current before post-barrier ${fixtureName}`,
+        timeoutMs: 1_000,
+        publicationStage: async (stage) => {
+          if (stage !== "gate-parent-synced") return;
+          currentBarrierPublished.resolve();
+          await resumeCurrent.promise;
+        },
+      });
+      await currentBarrierPublished.promise;
+      const frozen = acquireFrozen({
+        intentsDirectory: directory,
+        label: `${fixtureName} published behind current barrier`,
+        timeoutMs: 1_000,
+        onWait: async () => {
+          frozenWaiting.resolve();
+        },
+      }).then((release) => {
+        frozenEntered = true;
+        return release;
+      });
+      await frozenWaiting.promise;
+      resumeCurrent.resolve();
+
+      const releaseCurrent = await current;
+      assert.equal(
+        frozenEntered,
+        false,
+        `${fixtureName} remains queued behind the current barrier`,
+      );
+      await releaseCurrent();
+      const releaseFrozen = await frozen;
+      await releaseFrozen();
+    });
+  }
+
+  for (const [fixtureName, acquireFrozen] of [
+    ["base", acquireBaseProcessIntentLock],
+    ["legacy", acquireLegacyProcessIntentLock],
+  ] as const) {
+    test(`the quiescence probe catches an in-flight backdated ${fixtureName} publisher`, async () => {
+      const directory = path.join(
+        temporary,
+        `quiescence-probe-backdated-${fixtureName}`,
+      );
+      const frozenNamed = deferred();
+      const resumeFrozen = deferred();
+      const frozenEntered = deferred();
+      const currentWaiting = deferred();
+      const frozen = acquireFrozen({
+        intentsDirectory: directory,
+        label: `backdated ${fixtureName} publisher`,
+        pauseAfterName: async () => {
+          frozenNamed.resolve();
+          await resumeFrozen.promise;
+        },
+      }).then((release) => {
+        frozenEntered.resolve();
+        return release;
+      });
+      await frozenNamed.promise;
+      let resumed = false;
+      const current = acquireProcessIntentLock({
+        intentsDirectory: directory,
+        label: `current probing backdated ${fixtureName}`,
+        publicationStage: async (stage) => {
+          if (stage !== "quiescence-probe-published" || resumed) return;
+          resumed = true;
+          resumeFrozen.resolve();
+          await frozenEntered.promise;
+        },
+        acquisitionStage: async (stage) => {
+          if (stage === "waiting-for-pre-barrier-legacy") {
+            currentWaiting.resolve();
+          }
+        },
+      });
+      await currentWaiting.promise;
+      const releaseFrozen = await frozen;
+      await releaseFrozen();
+      const releaseCurrent = await current;
+      await releaseCurrent();
+    });
+  }
+
+  for (const [fixtureName, acquireFrozen] of [
+    ["base", acquireBaseProcessIntentLock],
+    ["legacy", acquireLegacyProcessIntentLock],
+  ] as const) {
     test(`${fixtureName} paused after choosing a name cannot publish into a current holder`, async () => {
       const directory = path.join(
         temporary,
@@ -256,6 +377,7 @@ if (workerMode) {
       );
       const frozenPaused = deferred();
       const resumeFrozen = deferred();
+      const frozenWaiting = deferred();
       let frozenEntered = false;
       const frozen = acquireFrozen({
         intentsDirectory: directory,
@@ -263,6 +385,9 @@ if (workerMode) {
         pauseAfterName: async () => {
           frozenPaused.resolve();
           await resumeFrozen.promise;
+        },
+        onWait: async () => {
+          frozenWaiting.resolve();
         },
       }).then((release) => {
         frozenEntered = true;
@@ -274,7 +399,7 @@ if (workerMode) {
         label: `current holder before late ${fixtureName} publication`,
       });
       resumeFrozen.resolve();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await frozenWaiting.promise;
       assert.equal(
         frozenEntered,
         false,
@@ -296,6 +421,7 @@ if (workerMode) {
       });
       const frozenPaused = deferred();
       const resumeFrozen = deferred();
+      const frozenWaiting = deferred();
       let frozenEntered = false;
       const frozen = acquireFrozen({
         intentsDirectory: directory,
@@ -304,13 +430,16 @@ if (workerMode) {
           frozenPaused.resolve();
           await resumeFrozen.promise;
         },
+        onWait: async () => {
+          frozenWaiting.resolve();
+        },
       }).then((release) => {
         frozenEntered = true;
         return release;
       });
       await frozenPaused.promise;
       resumeFrozen.resolve();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await frozenWaiting.promise;
       assert.equal(frozenEntered, false);
       await releaseCurrent();
       const releaseFrozen = await frozen;
@@ -328,6 +457,7 @@ if (workerMode) {
       });
       const frozenPaused = deferred();
       const resumeFrozen = deferred();
+      const frozenWaiting = deferred();
       let frozenEntered = false;
       const frozen = acquireFrozen({
         intentsDirectory: directory,
@@ -336,13 +466,16 @@ if (workerMode) {
           frozenPaused.resolve();
           await resumeFrozen.promise;
         },
+        onWait: async () => {
+          frozenWaiting.resolve();
+        },
       }).then((release) => {
         frozenEntered = true;
         return release;
       });
       await frozenPaused.promise;
       resumeFrozen.resolve();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await frozenWaiting.promise;
       assert.equal(
         frozenEntered,
         false,
@@ -360,6 +493,7 @@ if (workerMode) {
       );
       const frozenPaused = deferred();
       const resumeFrozen = deferred();
+      const currentWaiting = deferred();
       let currentEntered = false;
       const frozen = acquireFrozen({
         intentsDirectory: directory,
@@ -373,11 +507,16 @@ if (workerMode) {
       const current = acquireProcessIntentLock({
         intentsDirectory: directory,
         label: `current after scanned ${fixtureName}`,
+        acquisitionStage: async (stage) => {
+          if (stage === "waiting-for-pre-barrier-legacy") {
+            currentWaiting.resolve();
+          }
+        },
       }).then((release) => {
         currentEntered = true;
         return release;
       });
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await currentWaiting.promise;
       assert.equal(
         currentEntered,
         false,
@@ -385,8 +524,6 @@ if (workerMode) {
       );
       resumeFrozen.resolve();
       const releaseFrozen = await frozen;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      assert.equal(currentEntered, false);
       await releaseFrozen();
       const releaseCurrent = await current;
       await releaseCurrent();
@@ -396,6 +533,8 @@ if (workerMode) {
   for (const stage of [
     "owner-file-synced",
     "draft-directory-synced",
+    "quiescence-probe-published",
+    "quiescence-probe-retired",
     "gate-name-selected",
     "gate-parent-synced",
     "state-renamed",
@@ -434,6 +573,7 @@ if (workerMode) {
       assert.equal(
         artifacts.some((name) =>
           name.startsWith(".intent-") ||
+          name.startsWith(".quiescence-") ||
           name.startsWith(".published-") ||
           /^\d{24}-\d+-[a-f0-9]{16}-[a-f0-9]+\.lock$/.test(name)
         ),

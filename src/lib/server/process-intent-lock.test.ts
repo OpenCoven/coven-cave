@@ -38,6 +38,7 @@ test("a contender paused before publication cannot preempt a published owner", a
   const intentsDirectory = path.join(temporary, "publish-order");
   const firstPaused = deferred();
   const resumeFirst = deferred();
+  const firstWaiting = deferred();
   let firstEntered = false;
   let pausedOnce = false;
 
@@ -50,27 +51,21 @@ test("a contender paused before publication cannot preempt a published owner", a
       firstPaused.resolve();
       await resumeFirst.promise;
     },
+    acquisitionStage: async (stage) => {
+      if (stage === "waiting-for-current") firstWaiting.resolve();
+    },
   }).then((release) => {
     firstEntered = true;
     return release;
   });
 
-  const paused = await Promise.race([
-    firstPaused.promise.then(() => true),
-    new Promise<false>((resolve) => setTimeout(() => resolve(false), 100)),
-  ]);
-  if (!paused) {
-    const release = await first;
-    await release();
-    assert.fail("the contender never reached the pre-publication boundary");
-  }
+  await firstPaused.promise;
   const releaseSecond = await acquireProcessIntentLock({
     intentsDirectory,
     label: "test-published-successor",
   });
   resumeFirst.resolve();
-
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  await firstWaiting.promise;
   assert.equal(
     firstEntered,
     false,
@@ -112,9 +107,6 @@ test("simultaneous current contenders do not livelock while yielding stale prior
   const winner = await Promise.race([
     first.then((release) => ({ name: "first" as const, release })),
     second.then((release) => ({ name: "second" as const, release })),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("simultaneous contenders livelocked")), 500),
-    ),
   ]);
   await winner.release();
   const loserRelease = await (winner.name === "first" ? second : first);

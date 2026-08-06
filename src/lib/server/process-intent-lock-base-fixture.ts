@@ -94,6 +94,7 @@ export async function acquireBaseProcessIntentLock(options: {
   timeoutMs?: number;
   pauseAfterName?: () => Promise<void>;
   pauseAfterScan?: () => Promise<void>;
+  onWait?: () => Promise<void>;
 }): Promise<() => Promise<void>> {
   const deadline = Date.now() + (options.timeoutMs ?? 10_000);
   await mkdir(options.intentsDirectory, { recursive: true });
@@ -137,6 +138,7 @@ export async function acquireBaseProcessIntentLock(options: {
           continue;
         }
       }
+      await options.onWait?.();
       await wait();
     }
   } catch (error) {
