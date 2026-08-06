@@ -5,6 +5,7 @@ import {
 } from "./cave-chat-titles.ts";
 import {
   conversationReplaySessions,
+  latestConversationReplaySession,
   type ConversationReplaySession,
 } from "./cave-conversations.ts";
 import {
@@ -17,6 +18,7 @@ import {
 import { ACTIVE_SESSION_STATUSES } from "./chat-auto-archive.ts";
 import { initiatorFromSessionKey } from "./session-initiator.ts";
 import { inferOrigin } from "./session-origin.ts";
+import { isValidSessionId } from "./server/session-id.ts";
 import type { SessionInitiator, SessionOrigin, SessionRow } from "./types.ts";
 
 export type DaemonSessionRow = Omit<
@@ -113,6 +115,19 @@ function isDaemonAuthoritativeStatus(status: string): boolean {
   return isDaemonAuthoritativeTerminalStatus(status) || isDaemonAuthoritativeActiveStatus(status);
 }
 
+function looksLikeProviderNativeSessionLink(value: string): boolean {
+  return /thread/i.test(value) || /^resp[-_]/i.test(value) || /^native[-_]/i.test(value);
+}
+
+function localConversationDaemonSessionId(conv: LocalConversationSummary): string | null {
+  const latestReplay = latestConversationReplaySession(conv);
+  if (latestReplay?.sessionId) return latestReplay.sessionId;
+  const harnessSessionId = conv.harnessSessionId?.trim() ?? "";
+  if (!harnessSessionId || harnessSessionId === conv.sessionId) return null;
+  if (!isValidSessionId(harnessSessionId)) return null;
+  return looksLikeProviderNativeSessionLink(harnessSessionId) ? null : harnessSessionId;
+}
+
 function localConversationToSession(
   conv: LocalConversationSummary,
   state: CaveState,
@@ -135,8 +150,10 @@ function localConversationToSession(
   // design (see resolveChatProjectSelection in chat-projects.ts).
   const cwd = conversationLocalCwd(conv.runtime);
   const projectRoot = (cwd ? projectRootForCwd?.(cwd) : null) ?? "";
+  const daemonSessionId = localConversationDaemonSessionId(conv);
   return {
     id: conv.sessionId,
+    ...(daemonSessionId ? { daemonSessionId } : {}),
     project_root: projectRoot,
     harness: conv.harness ?? "chat",
     ...(conv.model ? { model: conv.model } : {}),

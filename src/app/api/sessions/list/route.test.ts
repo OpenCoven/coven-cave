@@ -523,6 +523,11 @@ try {
       since: null,
       reason: null,
     });
+    assert.equal(
+      degradedById.get("route-replay-primary")?.daemonSessionId,
+      "route-replay-new",
+      "daemon-degraded rows keep the newest replay daemon id so trace/debug routes still hit the right event log",
+    );
 
     await writeHubConfig(daemonBaseUrl, {
       enabled: true,

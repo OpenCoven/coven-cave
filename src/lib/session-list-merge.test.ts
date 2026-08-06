@@ -1711,6 +1711,85 @@ assert.equal(analyticsRows[0].origin, "chat", "analytics discussion origin maps 
   assert.equal(byId.get("local-branched")?.chatPrUrl, "https://github.com/OpenCoven/coven-cave/pull/3344", "local-only rows carry their reported PR URL too");
 }
 
+// Local-only daemon links (cave-zs85n): when the live daemon row is gone, the
+// row still needs the newest daemon-backed trace id without mistaking provider
+// thread/response ids for daemon session ids.
+{
+  const bareState = { sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {} };
+  const rows = localConversationSessionRows(
+    [
+      {
+        sessionId: "replay-latest-local",
+        harnessSessionId: "codex-thread-replay-latest",
+        familiarId: "nova",
+        harness: "codex",
+        title: "Replay latest local",
+        updatedAt: "2026-08-05T20:00:00.000Z",
+        replaySessions: [
+          {
+            sessionId: "daemon-replay-older",
+            conversationId: "codex-thread-replay-latest",
+            createdAt: "2026-08-05T19:00:00.000Z",
+            updatedAt: "2026-08-05T19:05:00.000Z",
+          },
+          {
+            sessionId: "daemon-replay-newest",
+            conversationId: "codex-thread-replay-latest",
+            createdAt: "2026-08-05T19:10:00.000Z",
+            updatedAt: "2026-08-05T19:15:00.000Z",
+          },
+        ],
+      },
+      {
+        sessionId: "daemon-harness-local",
+        harnessSessionId: "hub-session-harness-local",
+        familiarId: "nova",
+        harness: "claude",
+        title: "Daemon harness local",
+        updatedAt: "2026-08-05T20:01:00.000Z",
+      },
+      {
+        sessionId: "provider-thread-local",
+        harnessSessionId: "native-thread-local",
+        familiarId: "nova",
+        harness: "claude",
+        title: "Provider thread local",
+        updatedAt: "2026-08-05T20:02:00.000Z",
+      },
+      {
+        sessionId: "fallback-stable-local",
+        familiarId: "nova",
+        harness: "claude",
+        title: "Fallback stable local",
+        updatedAt: "2026-08-05T20:03:00.000Z",
+      },
+    ],
+    bareState,
+    false,
+  );
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  assert.equal(
+    byId.get("replay-latest-local")?.daemonSessionId,
+    "daemon-replay-newest",
+    "local-only rows keep the newest replay daemon id for trace/debug routes after the live row disappears",
+  );
+  assert.equal(
+    byId.get("daemon-harness-local")?.daemonSessionId,
+    "hub-session-harness-local",
+    "a harnessSessionId that is already a daemon session id remains a usable local-only trace link",
+  );
+  assert.equal(
+    "daemonSessionId" in (byId.get("provider-thread-local") ?? {}),
+    false,
+    "provider-native thread ids must not be misreported as daemon trace ids on local-only rows",
+  );
+  assert.equal(
+    "daemonSessionId" in (byId.get("fallback-stable-local") ?? {}),
+    false,
+    "local-only rows with no daemon-backed link fall back to the stable Cave conversation id",
+  );
+}
+
 // Project backfill (cave-9nj1): sidebar/rail project groups key on
 // project_root, and UI chats exist only as local conversations — so a row's
 // project_root must be backfilled from the conversation's recorded runtime
