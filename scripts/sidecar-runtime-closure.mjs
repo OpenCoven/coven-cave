@@ -1,7 +1,42 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile, chmod } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+/** The one place the file-count budget is written down. */
+export const SIDECAR_RUNTIME_BUDGET_FILE = fileURLToPath(
+  new URL("./sidecar-runtime-budget.json", import.meta.url),
+);
+
+/**
+ * Read the budget from its single source, or refuse to run.
+ *
+ * Validation is not ceremony here. The gate compares a measured count against
+ * this number, so a missing key or a malformed file yielding `undefined`/`NaN`
+ * would make every comparison false and the gate would PASS silently — worse
+ * than the six hand-synced copies this replaced, because nothing would ever go
+ * red to reveal it. Fail loudly instead.
+ */
+function readSidecarFileCountBudget() {
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(SIDECAR_RUNTIME_BUDGET_FILE, "utf8"));
+  } catch (cause) {
+    throw new Error(
+      `sidecar runtime budget is unreadable at ${SIDECAR_RUNTIME_BUDGET_FILE}: ${cause.message}`,
+      { cause },
+    );
+  }
+  const fileCount = parsed?.fileCount;
+  if (!Number.isSafeInteger(fileCount) || fileCount <= 0) {
+    throw new Error(
+      `sidecar runtime budget "fileCount" must be a positive integer, received ${JSON.stringify(fileCount)} ` +
+        `from ${SIDECAR_RUNTIME_BUDGET_FILE}`,
+    );
+  }
+  return fileCount;
+}
 
 export const SIDECAR_RUNTIME_ROOTS = Object.freeze([
   ".agents/skills",
@@ -218,8 +253,22 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // still catches is a single change dragging a whole subtree in, which is
   // hundreds of files at once and the failure worth having a gate for. If this
   // needs to detect drift again, the fix is to stop the closure growing, not a
-  // smaller number here. Tracked by cave-0ia8h.
-  fileCount: 6_109,
+  // smaller number here.
+  //
+  // 2026-08-06 (cave-0ia8h): the VALUE now lives in sidecar-runtime-budget.json
+  // and is read from there. It used to be hand-copied into six places — this
+  // file, sidecar-runtime-smoke.mjs, the Rust MAX_FILE_COUNT const, and three
+  // test pins — so every raise was a six-file sync performed under a red CI,
+  // and one of them was reverted independently once (#4249). The history above
+  // is kept here because it is the reasoning; the number is data.
+  //
+  // Investigation for that bead also settled where the growth comes from: over
+  // the two days that added 43 closure files, the first-party runtime roots
+  // above grew by ONE file and no runtime dependency was added. The rest is
+  // Next's traced output following new routes, at roughly two to four files
+  // each. There is no subtree to prune — the closure grows because the app
+  // does — which is why this is a tracked budget rather than a fixed one.
+  fileCount: readSidecarFileCountBudget(),
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
