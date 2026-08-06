@@ -39,12 +39,17 @@ async function ensureChatSurface(page: Page) {
       const openNav = page.getByRole("button", { name: "Open navigation (⌘B)" });
       if (await openNav.isVisible().catch(() => false)) await openNav.click();
     }
-    // The Chat row lives in the Code section of the rail (cave-24d2r); when the
-    // Home section is open, the Code tab is the way in.
+    // The Chat row lives in the rail's second section (cave-24d2r); when the
+    // Home section is open, that section's tab is the way in. Its LABEL is
+    // "Chat" while its id stays "code" (NAV_SECTIONS) — the label was flipped
+    // from "Code" by fix/cave-vqh94-home-chat-tabs, which left this helper
+    // waiting 60s for a tab name that no longer exists. Keyed off the label the
+    // rail actually renders, and scoped to the sidebar so it cannot collide
+    // with the mobile bottom tab of the same name.
     if (await chatDestination.isVisible().catch(() => false)) {
       await chatDestination.click();
     } else {
-      await nav.getByRole("tab", { name: "Code", exact: true }).first().click();
+      await nav.getByRole("tab", { name: "Chat", exact: true }).first().click();
     }
     await surface.waitFor({ state: "visible", timeout: 30_000 });
   }
