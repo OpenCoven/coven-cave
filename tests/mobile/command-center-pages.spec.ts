@@ -42,7 +42,12 @@ test.describe("mobile command center pages", () => {
   });
 
   test("Chat index and new chat detail keep stable mobile geometry", async ({ page }) => {
-    await page.getByRole("tab", { name: "Chat", exact: true }).click();
+    // Scoped to the bottom tabs: the siderail's NavSectionTabs now renders a
+    // second role="tab" named "Chat" (NAV_SECTIONS id "code"), so the bare
+    // name matches two elements. This spec is about phone geometry and its
+    // beforeEach already waits for .mobile-bottom-tabs — that is the tab it
+    // has always meant.
+    await page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "Chat", exact: true }).click();
     await page.waitForSelector(".chat-surface");
 
     await expectNoHorizontalOverflow(page, "Chat index");
