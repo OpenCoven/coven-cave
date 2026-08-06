@@ -38,6 +38,8 @@ type DaemonSessionRecord = DaemonSessionRow & {
   updated_at?: string | null;
 };
 
+const SETTLED_REPLAY_SESSION_STATUSES = new Set(["idle", "completed", "complete", "done"]);
+
 /**
  * Resume-cwd fallback for sessions the Cave conversation store has no local
  * runtime for — e.g. threads opened from Familiar analytics (`/#chat-<id>`)
@@ -86,16 +88,6 @@ export async function resolveReplayBackedResumeSessionId(
       ? { ok: true, resumeSessionId: validatedNativeId, replayBound: false }
       : { ok: true, resumeSessionId: null, replayBound: false };
   }
-  if (recordedReplayConversationId) {
-    const persisted = await persistResolvedReplayConversationId({
-      sessionId,
-      replaySessionId: latestReplay.sessionId,
-      conversationId: recordedReplayConversationId,
-      status: latestReplay.status ?? null,
-      updatedAt: latestReplay.updatedAt ?? null,
-    });
-    return { ok: true, resumeSessionId: persisted ?? recordedReplayConversationId, replayBound: true };
-  }
   const res = await callDaemon<DaemonSessionRecord>({
     path: `/api/v1/sessions/${encodeURIComponent(latestReplay.sessionId)}`,
   });
@@ -119,10 +111,33 @@ export async function resolveReplayBackedResumeSessionId(
     };
   }
   const status = typeof res.data.status === "string" ? res.data.status.trim().toLowerCase() : "";
-  const conversationId =
+  if (ACTIVE_SESSION_STATUSES.has(status) || status === "created") {
+    return {
+      ok: false,
+      retryable: true,
+      code: "conversation_continuity_syncing",
+      error:
+        `Daemon session ${latestReplay.sessionId} is still ${status} and has not settled yet. Retry in a moment so Cave can resume the same provider conversation instead of forking a new one.`,
+      retryAfter: "2",
+    };
+  }
+  if (!SETTLED_REPLAY_SESSION_STATUSES.has(status)) {
+    return {
+      ok: false,
+      retryable: false,
+      code: "conversation_continuity_unavailable",
+      error:
+        `Daemon session ${latestReplay.sessionId} ended ${status || "in an unknown state"}, so Cave cannot safely resume this replayed conversation.`,
+    };
+  }
+  const daemonConversationId =
     normalizeDaemonConversationId(res.data.conversationId)
     ?? normalizeDaemonConversationId(res.data.conversation_id);
-  if (conversationId && conversationId !== latestReplay.sessionId) {
+  const conversationId = [
+    daemonConversationId,
+    recordedReplayConversationId,
+  ].find((candidate) => candidate && candidate !== latestReplay.sessionId) ?? null;
+  if (conversationId) {
     const persisted = await persistResolvedReplayConversationId({
       sessionId,
       replaySessionId: latestReplay.sessionId,
@@ -132,33 +147,14 @@ export async function resolveReplayBackedResumeSessionId(
     });
     return { ok: true, resumeSessionId: persisted ?? conversationId, replayBound: true };
   }
-  if (ACTIVE_SESSION_STATUSES.has(status) || status === "created") {
-    return {
-      ok: false,
-      retryable: true,
-      code: "conversation_continuity_syncing",
-      error:
-        `Daemon session ${latestReplay.sessionId} is still ${status} and has not exposed a native conversation id yet. Retry in a moment so Cave can resume the same provider conversation instead of forking a new one.`,
-      retryAfter: "2",
-    };
-  }
-  if (status === "idle") {
-    return {
-      ok: false,
-      retryable: false,
-      code: "conversation_continuity_unavailable",
-      error:
-        `Daemon session ${latestReplay.sessionId} is idle without a resumable native conversation id. Cave will not guess and risk forking this replayed conversation.`,
-    };
-  }
   return {
     ok: false,
     retryable: false,
     code: "conversation_continuity_unavailable",
     error:
       validatedNativeId
-        ? `Daemon session ${latestReplay.sessionId} finished without a resumable native conversation id, so Cave will not fall back to the older stored provider token and fork this newer replayed chat.`
-        : `Daemon session ${latestReplay.sessionId} finished without a resumable native conversation id. Cave will not fall back to the stable chat id and fork this replayed conversation.`,
+        ? `Daemon session ${latestReplay.sessionId} is ${status} without a resumable native conversation id, so Cave will not fall back to the older stored provider token and fork this newer replayed chat.`
+        : `Daemon session ${latestReplay.sessionId} is ${status} without a resumable native conversation id. Cave will not fall back to the stable chat id and fork this replayed conversation.`,
   };
 }
 

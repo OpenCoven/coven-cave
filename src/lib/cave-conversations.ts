@@ -97,8 +97,7 @@ export type ConversationModelIntent = {
 export type ConversationReplaySession = {
   sessionId: string;
   conversationId?: string;
-  baseConversationId?: string;
-  expectedHarnessSessionId?: string;
+  predecessorConversationId?: string;
   title?: string;
   status?: string;
   createdAt: string;
@@ -273,15 +272,13 @@ function normalizeConversationReplaySession(value: unknown): ConversationReplayS
   const updatedAt = isCanonicalIsoInstant(item.updatedAt) ? item.updatedAt : createdAt;
   if (!createdAt || !updatedAt) return null;
   const conversationId = normalizeDaemonConversationId(item.conversationId);
-  const baseConversationId = normalizeDaemonConversationId(item.baseConversationId);
-  const expectedHarnessSessionId = normalizeDaemonConversationId(item.expectedHarnessSessionId);
+  const predecessorConversationId = normalizeDaemonConversationId(item.predecessorConversationId);
   const title = normalizeReplayTitle(item.title);
   const status = normalizeReplayStatus(item.status);
   return {
     sessionId,
     ...(conversationId ? { conversationId } : {}),
-    ...(baseConversationId ? { baseConversationId } : {}),
-    ...(expectedHarnessSessionId ? { expectedHarnessSessionId } : {}),
+    ...(predecessorConversationId ? { predecessorConversationId } : {}),
     ...(title ? { title } : {}),
     ...(status ? { status } : {}),
     createdAt,
@@ -851,8 +848,7 @@ export type QueuedOfflineConversationSeed = {
   createdAt: string;
   replaySessionId?: string;
   conversationId?: string | null;
-  baseConversationId?: string | null;
-  expectedHarnessSessionId?: string | null;
+  predecessorConversationId?: string | null;
   /**
    * A harness-native id obtained from that harness's own protocol. Daemon
    * session responses are execution-row metadata and must never use this field.
@@ -966,17 +962,26 @@ export async function persistQueuedOfflineConversation(
     if (!conv.origin && seed.origin) conv.origin = seed.origin;
     if (!conv.modelIntent && seed.modelIntent) conv.modelIntent = seed.modelIntent;
     if (seed.replaySessionId) {
+      const existingReplays = conversationReplaySessions(conv);
+      const existingReplay = existingReplays.find(
+        (entry) => entry.sessionId === seed.replaySessionId,
+      );
       const replay = normalizeConversationReplaySession({
+        ...existingReplay,
         sessionId: seed.replaySessionId,
-        conversationId: seed.conversationId ?? undefined,
-        baseConversationId: seed.baseConversationId ?? undefined,
-        expectedHarnessSessionId: seed.expectedHarnessSessionId ?? undefined,
-        createdAt: seed.createdAt,
-        updatedAt: seed.createdAt,
+        conversationId: seed.conversationId ?? existingReplay?.conversationId,
+        predecessorConversationId:
+          existingReplay?.predecessorConversationId
+          ?? seed.predecessorConversationId
+          ?? undefined,
+        createdAt: existingReplay?.createdAt ?? seed.createdAt,
+        updatedAt: existingReplay?.updatedAt ?? seed.createdAt,
       });
       if (replay) {
-        const existingReplays = conversationReplaySessions(conv).filter((entry) => entry.sessionId !== replay.sessionId);
-        conv.replaySessions = [...existingReplays, replay];
+        conv.replaySessions = [
+          ...existingReplays.filter((entry) => entry.sessionId !== replay.sessionId),
+          replay,
+        ];
       }
     }
     const validatedNativeConversationId = normalizeDaemonConversationId(
@@ -1027,14 +1032,13 @@ export async function persistResolvedReplayConversationId(args: {
   updatedAt?: string | null;
 }): Promise<string | null> {
   const conversationId = normalizeDaemonConversationId(args.conversationId);
-  if (!conversationId) return null;
+  if (!conversationId || conversationId === args.replaySessionId) return null;
   return withConversationLock(args.sessionId, async () => {
     const conv = await loadConversation(args.sessionId);
     if (!conv) return null;
     let changed = false;
     const replayUpdatedAt = isCanonicalIsoInstant(args.updatedAt) ? args.updatedAt : null;
     const replayStatus = normalizeReplayStatus(args.status);
-    let targetReplay: ConversationReplaySession | null = null;
     const replaySessions = conversationReplaySessions(conv).map((replay) => {
       if (replay.sessionId !== args.replaySessionId) return replay;
       const next = {
@@ -1050,34 +1054,30 @@ export async function persistResolvedReplayConversationId(args: {
       ) {
         changed = true;
       }
-      targetReplay = next;
       return next;
     });
+    const targetReplay =
+      replaySessions.find((replay) => replay.sessionId === args.replaySessionId) ?? null;
     if (changed) conv.replaySessions = replaySessions;
-    targetReplay ??= conversationReplaySessions(changed ? conv : { ...conv, replaySessions }).find((replay) =>
-      replay.sessionId === args.replaySessionId
-    ) ?? null;
     const latestReplaySessionId = latestConversationReplaySession({
-      replaySessions: changed ? replaySessions : conv.replaySessions,
+      replaySessions,
     })?.sessionId ?? null;
-    const currentHarnessSessionId =
-      typeof conv.harnessSessionId === "string" ? conv.harnessSessionId.trim() : "";
-    const replayPlaceholder = replaySessions.some((replay) => replay.sessionId === currentHarnessSessionId);
-    const baseConversationId = targetReplay?.baseConversationId ?? targetReplay?.expectedHarnessSessionId ?? null;
-    const shouldPromoteLatestReplay = latestReplaySessionId === args.replaySessionId;
-    const canPromoteCurrent =
-      !currentHarnessSessionId
-      || currentHarnessSessionId === baseConversationId
-      || replayPlaceholder;
-    if (shouldPromoteLatestReplay && canPromoteCurrent && conv.harnessSessionId !== conversationId) {
+    const currentValidated = validatedConversationHarnessSessionId(conv);
+    const predecessorConversationId = targetReplay?.predecessorConversationId ?? null;
+    const shouldPromoteLatestReplay =
+      targetReplay !== null && latestReplaySessionId === args.replaySessionId;
+    const canCompareAndSwap =
+      currentValidated === null || currentValidated === predecessorConversationId;
+    if (
+      shouldPromoteLatestReplay
+      && canCompareAndSwap
+      && conv.harnessSessionId !== conversationId
+    ) {
       conv.harnessSessionId = conversationId;
       changed = true;
     }
-    const effectiveCurrentId =
-      validatedConversationHarnessSessionId(conv)
-      ?? (normalizeDaemonConversationId(conv.harnessSessionId) ?? null);
     if (changed) await saveConversation(conv);
-    return effectiveCurrentId;
+    return validatedConversationHarnessSessionId(conv);
   });
 }
 

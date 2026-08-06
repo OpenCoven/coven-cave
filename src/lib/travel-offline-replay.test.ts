@@ -111,26 +111,20 @@ assert.match(
 );
 assert.match(
   replay,
-  /body:\s*\{[\s\S]*launchMode: "nonInteractive"[\s\S]*args\.conversationMode && args\.conversationId[\s\S]*conversation: \{ mode: args\.conversationMode, id: args\.conversationId \}[\s\S]*conversationId: args\.conversationId/,
-  "replayed chats launch through the daemon's non-interactive contract and mirror explicit new\/resume conversation ids into daemon continuity metadata",
+  /body:\s*\{[\s\S]*launchMode: "nonInteractive"[\s\S]*args\.conversationId[\s\S]*conversation: \{ mode: "resume", id: args\.conversationId \}[\s\S]*conversationId: args\.conversationId/,
+  "replayed chats launch through the daemon's non-interactive contract and mirror a known native conversation id into daemon continuity metadata",
 );
 
 assert.match(
   replay,
-  /const continuityBlock = blockedReplayContinuityReason\(binding\.harness\);[\s\S]*if \(continuityBlock\) throw new Error\(continuityBlock\);/,
-  "travel replay must fail closed when a harness lacks the daemon's explicit conversation-id contract",
+  /if \(status === "idle"\) \{[\s\S]*if \(!daemonConversationId\)[\s\S]*persistResolvedReplayConversationId\(/,
+  "the daemon's real idle terminal status only syncs after its row exposes a valid native conversation id",
 );
 
 assert.match(
   replay,
-  /const launchConversationId = nativeConversationId \?\? preallocateReplayConversationId\(item, payload\);[\s\S]*const launchConversationMode = nativeConversationId \? "resume" as const : "new" as const;/,
-  "fresh replays preallocate a stable daemon-safe conversation id while validated chats resume their existing provider thread",
-);
-
-assert.match(
-  replay,
-  /status === "idle"[\s\S]*resolvedConversationId[\s\S]*persistResolvedReplayConversationId\(/,
-  "idle daemon sessions with a valid continuity id should sync immediately without waiting for terminal output",
+  /persistQueuedOfflineConversation\(\{[\s\S]*predecessorConversationId: nativeConversationId/,
+  "replay metadata captures the native predecessor used for atomic continuity promotion",
 );
 
 assert.match(

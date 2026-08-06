@@ -489,8 +489,13 @@ assert.match(
 );
 assert.match(
   sendRuntimeHelpers,
-  /export async function resolveReplayBackedResumeSessionId\([\s\S]*?callDaemon<DaemonSessionRecord>\([\s\S]*?`\/api\/v1\/sessions\/\$\{encodeURIComponent\(latestReplay\.sessionId\)\}`[\s\S]*?if \(conversationId && conversationId !== latestReplay\.sessionId\) \{[\s\S]*?persistResolvedReplayConversationId\(/,
-  "live resume should persist only a distinct native conversation id, never the daemon replay execution id",
+  /export async function resolveReplayBackedResumeSessionId\([\s\S]*?callDaemon<DaemonSessionRecord>\([\s\S]*?`\/api\/v1\/sessions\/\$\{encodeURIComponent\(latestReplay\.sessionId\)\}`[\s\S]*?ACTIVE_SESSION_STATUSES\.has\(status\)[\s\S]*?!SETTLED_REPLAY_SESSION_STATUSES\.has\(status\)[\s\S]*?const conversationId = \[[\s\S]*?recordedReplayConversationId[\s\S]*?candidate !== latestReplay\.sessionId[\s\S]*?if \(conversationId\) \{[\s\S]*?persistResolvedReplayConversationId\(/,
+  "live resume waits for the latest replay row to settle before persisting a distinct native conversation id",
+);
+assert.doesNotMatch(
+  sendRuntimeHelpers,
+  /if \(recordedReplayConversationId\) \{[\s\S]{0,500}persistResolvedReplayConversationId\(/,
+  "recorded replay metadata must not bypass daemon settlement polling",
 );
 assert.match(
   chatRoute,
