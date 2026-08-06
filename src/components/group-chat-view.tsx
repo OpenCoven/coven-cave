@@ -92,6 +92,7 @@ import {
 } from "@/lib/group-chat";
 import { newId, nowIso } from "@/lib/group-chat-ids";
 import { groupChatTranscriptThreads } from "@/lib/group-chat-transcript";
+import { createGroupRetiredTranscriptStore } from "@/lib/group-chat-retired-transcript";
 import {
   listActiveGroupReplyRuns,
   newGroupReplyRunId,
@@ -211,6 +212,9 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   const draftsByGroupRef = useRef(new Map<string, string>());
   const completedMentionsByGroupRef = useRef(
     new Map<string, MentionCompletion[]>(),
+  );
+  const retiredTranscriptStoreRef = useRef(
+    createGroupRetiredTranscriptStore({ loadTranscript, saveTranscript }),
   );
   const draftOwnerRef = useRef<string | null>(null);
   // Which group the in-memory transcript belongs to (set by the swap effect).
@@ -639,6 +643,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   const streamOne = useCallback(
     async (
       group: CovenGroup,
+      userTurn: GroupUserTurn,
       reply: GroupReply,
       prompt: string,
       projectRoot: string,
@@ -652,9 +657,17 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       const attentionText = createAttentionSafeTextAccumulator();
       const apply = (fn: (r: GroupReply) => GroupReply) => {
         settled = fn(settled);
+        retiredTranscriptStoreRef.current.updateRunReply(replyRunId, fn);
         if (scopeId !== runScopeRef.current) return;
         updateReply(reply.id, fn);
       };
+      retiredTranscriptStoreRef.current.registerRun({
+        groupId: group.id,
+        scopeId,
+        runId: replyRunId,
+        userTurn,
+        reply,
+      });
       registerActiveGroupReplyRun(activeRunsRef.current, {
         runId: replyRunId,
         replyId: reply.id,
@@ -741,7 +754,11 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
             : applyGroupEvent(r, { kind: "error", message: (err as Error)?.message ?? "send failed" }),
         );
       } finally {
+        if (scopeId !== runScopeRef.current) {
+          retiredTranscriptStoreRef.current.persistRetiredRun(replyRunId);
+        }
         unregisterActiveGroupReplyRun(activeRunsRef.current, replyRunId);
+        retiredTranscriptStoreRef.current.finishRun(replyRunId);
       }
       return settled;
     },
@@ -858,7 +875,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                 userText: text,
                 targeted,
               });
-          return streamOne(group, reply, prompt, projectRoot, scopeId, controller.signal);
+          return streamOne(group, userTurn, reply, prompt, projectRoot, scopeId, controller.signal);
         },
       });
       // A familiar can perform an explicit human-requested handoff by emitting
@@ -926,6 +943,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
             const delegatedBy = byId.get(source.familiarId)?.display_name ?? source.familiarId;
             const child = await streamOne(
               group,
+              delegatedTurn,
               delegatedReply,
               renderCovenRoundtablePrompt({
                 participants: rosterParticipants,
@@ -1037,6 +1055,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       abortRef.current = controller;
       const settled = await streamOne(
         group,
+        userTurn,
         fresh,
         (userTurn.responseMode ?? "broadcast") === "round-robin"
           ? renderCovenRoundRobinPrompt({

@@ -269,7 +269,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /case "done": \{[\s\S]*?if \(ev\.isError\) \{[\s\S]*?\} else \{[\s\S]*?liveGeneration\.markPersistenceConfirmed\(\);[\s\S]*?stampFirstReplyOnce\(\);/,
+  /case "done": \{[\s\S]*?const cancelled = ev\.cancelled === true;[\s\S]*?if \(ev\.isError\) \{[\s\S]*?\} else if \(!cancelled\) \{[\s\S]*?liveGeneration\.markPersistenceConfirmed\(\);[\s\S]*?stampFirstReplyOnce\(\);/,
   "only a successful terminal done event should confirm persistence",
 );
 assert.match(
@@ -279,7 +279,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /const shouldRefreshSessions = shouldCreationRefresh \|\| shouldReplacementRefresh \|\| \(startNewConversation && !!ev\.sessionId && !ev\.isError\);[\s\S]*?if \(shouldRefreshSessions\) onSessionsChangedRef\.current\?\.\(\);/,
+  /const shouldAttentionRefresh = Boolean\([\s\S]*?!ev\.isError &&[\s\S]*?!cancelled &&[\s\S]*?ev\.responseMetadata\?\.attentionRequest[\s\S]*?\);[\s\S]*?const shouldRefreshSessions = shouldCreationRefresh \|\|\s*shouldReplacementRefresh \|\|\s*shouldAttentionRefresh \|\|\s*\(startNewConversation && !!ev\.sessionId && !ev\.isError && !cancelled\);[\s\S]*?if \(shouldRefreshSessions\) onSessionsChangedRef\.current\?\.\(\);/,
   "chat-view should fold successful startNewConversation refreshes into the upstream consolidated refresh while failed terminals remain tracker-owned",
 );
 assert.match(

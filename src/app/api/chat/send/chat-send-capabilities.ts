@@ -251,7 +251,7 @@ function probeHelpOutcome(
   });
 }
 
-function probeHelp(
+export function probeHelp(
   command: string,
   args: string[],
   matches: (help: string) => boolean,
