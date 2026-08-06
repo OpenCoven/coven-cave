@@ -307,18 +307,37 @@ the patrol reports `exceeded` as `count > 20`, while creation refuses at
 the patrol is quiet and creation is refused; that is "*would* exceed", not an
 off-by-one.
 
-**Exit 1 — the command could not run. Fallback is the only option.**
+**Exit 1 — the command could not run. Retry first; the fallback is a last resort.**
 
 ```text
 worktree-lifecycle-create: lifecycle inventory is incomplete: …
 ```
 
 It builds a *complete* lifecycle inventory first, which needs live GitHub
-queries, so it fails when the GraphQL quota is exhausted and when any commit's PR
-association returns `malformed fields or a mismatched head OID` — the latter is
-repo state, not a transient, so waiting does not clear it. Both were hit on
-2026-08-03. An exception cannot rescue this: the inventory throws *before*
+queries. An exception cannot rescue this: the inventory throws *before*
 admission is assessed, so the exception is never consulted.
+
+**Almost every exit 1 is transient.** The two common causes both clear without
+any repository change:
+
+- **GraphQL quota exhausted.** That pool is separate from REST and refills
+  hourly. Check it with `gh api rate_limit --jq .resources.graphql` and retry
+  after the reset rather than working around it.
+- **A commit's PR association came back malformed or absent** — `commit
+  association connection is unavailable`, or `malformed fields or a mismatched
+  head OID`. This reads structural but usually is not: the inventory throws
+  `commit association connection is unavailable` whenever GitHub simply returns
+  no commit object, which is what a degraded or throttled response looks like.
+  Observed 2026-08-06 — a `pnpm beads:worktrees` run
+  emitted exactly that warning, and a rerun minutes later, after quota recovered
+  from ~1k to ~2.9k remaining, reported `probe warnings: 0` and `ok: true` with
+  nothing else changed.
+
+Failures that really are structural name the repository identity instead —
+`canonical repository identity mismatch`, `canonical repository identity
+changed between pages` — and a retry will not help those.
+
+So: **check quota, rerun, and only then** consider
 
 ```bash
 git worktree add -b <branch> .worktrees/<branch> origin/main   # last resort
