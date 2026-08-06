@@ -198,8 +198,10 @@ export type ProcessIntentLockOptions = {
       | "draft-directory-synced"
       | "quiescence-probe-published"
       | "quiescence-probe-retired"
+      | "legacy-quiescence-established"
       | "gate-name-selected"
       | "gate-parent-synced"
+      | "gate-legacy-rescanned"
       | "state-renamed"
       | "state-parent-synced",
   ) => Promise<void>;
@@ -794,6 +796,69 @@ async function establishLegacyQuiescence(
   return stableSnapshot ?? [];
 }
 
+async function removeStaleLegacyIntents(
+  options: ProcessIntentLockOptions,
+  deadline: number,
+): Promise<boolean> {
+  let removed = false;
+  const entries = await listIntentEntries(options.intentsDirectory);
+  for (const entry of entries) {
+    if (entry.currentOrder !== null) continue;
+    assertCanContinue(deadline, options.label, options.signal);
+    if (!entry.owner) {
+      if (
+        Date.now() - entry.modifiedAtMs >=
+        MALFORMED_INTENT_GRACE_MS
+      ) {
+        removed =
+          (await removeIntent(
+            path.join(
+              /* turbopackIgnore: true */ options.intentsDirectory,
+              entry.name,
+            ),
+          )) || removed;
+      }
+      continue;
+    }
+    const currentIdentity = await processStartIdentity(entry.owner.pid);
+    assertCanContinue(deadline, options.label, options.signal);
+    if (
+      currentIdentity !== null &&
+      identityHash(currentIdentity) === entry.owner.startIdentityHash
+    ) {
+      continue;
+    }
+    removed =
+      (await removeIntent(
+        path.join(
+          /* turbopackIgnore: true */ options.intentsDirectory,
+          entry.name,
+        ),
+      )) || removed;
+  }
+  return removed;
+}
+
+async function retireGateBeforeRestart(
+  pathname: string,
+  options: ProcessIntentLockOptions,
+  deadline: number,
+): Promise<void> {
+  await retireIntent(pathname);
+  for (;;) {
+    assertCanContinue(deadline, options.label, options.signal);
+    try {
+      await lstat(/* turbopackIgnore: true */ pathname);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        await fsyncDirectoryIfSupported(options.intentsDirectory);
+        return;
+      }
+    }
+    await waitBeforeRetry(deadline, options.label, options.signal);
+  }
+}
+
 async function prepareIntentDraft(
   options: ProcessIntentLockOptions,
   owner: IntentOwner,
@@ -854,6 +919,15 @@ async function publishCompatibilityGate(
       owner,
       deadline,
     );
+    if (preBarrierLegacyNames.length > 0) {
+      await options.acquisitionStage?.("waiting-for-pre-barrier-legacy");
+      const removed = await removeStaleLegacyIntents(options, deadline);
+      if (!removed) {
+        await waitBeforeRetry(deadline, options.label, options.signal);
+      }
+      continue;
+    }
+    await options.publicationStage?.("legacy-quiescence-established");
     const pathname = path.join(
       /* turbopackIgnore: true */ intentsDirectory,
       name,
@@ -880,6 +954,18 @@ async function publishCompatibilityGate(
       }
       await fsyncDirectoryIfSupported(intentsDirectory);
       await options.publicationStage?.("gate-parent-synced");
+      const afterGateLegacyNames = legacySnapshot(
+        (await listIntentEntries(intentsDirectory)).filter(
+          (entry) => entry.name !== name,
+        ),
+      );
+      await options.publicationStage?.("gate-legacy-rescanned");
+      if (!sameSnapshot(preBarrierLegacyNames, afterGateLegacyNames)) {
+        await retireGateBeforeRestart(pathname, options, deadline);
+        await options.acquisitionStage?.("waiting-for-pre-barrier-legacy");
+        await waitBeforeRetry(deadline, options.label, options.signal);
+        continue;
+      }
       return { name, path: pathname, preBarrierLegacyNames };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
@@ -964,13 +1050,13 @@ async function publishCurrentState(
 /**
  * Cross-version safety invariant:
  *
- * A current contender first obtains two identical snapshots across complete,
- * durable probe publication/retirement cycles. It records that pre-barrier
- * legacy set in an order-zero compatibility barrier, then joins the current
- * queue. Recorded owners block it; later legacy publishers sort behind the
- * retained barrier and are safe to ignore while they naturally wait. A legacy
- * publisher paused before publication is therefore fenced without creating a
- * current/legacy wait cycle.
+ * A current contender first drains every legacy intent, then obtains two empty
+ * snapshots across complete, durable probe publication/retirement cycles. It
+ * publishes an order-zero compatibility barrier and rescans. Any legacy intent
+ * visible in that publication window forces durable barrier retirement and a
+ * fresh drain, because an unmodified legacy publisher cannot prove whether it
+ * scanned before or after the barrier. Once the post-gate rescan is empty, any
+ * later legacy publication is ordered behind the already-durable barrier.
  */
 export async function acquireProcessIntentLock(
   options: ProcessIntentLockOptions,
