@@ -170,8 +170,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /const shouldRefreshSessions = shouldCreationRefresh \|\| shouldReplacementRefresh \|\| \(startNewConversation && !!ev\.sessionId && !ev\.isError\)/,
-  "Board condition requires !ev.isError so a successful first reply refreshes the sidebar but an errored one does not",
+  /const shouldRefreshSessions = shouldCreationRefresh \|\|[\s\S]{0,180}?shouldReplacementRefresh \|\|[\s\S]{0,180}?shouldAttentionRefresh \|\|[\s\S]{0,180}?\(startNewConversation && !!ev\.sessionId && !ev\.isError && !cancelled\)/,
+  "Board condition refreshes only after a successful, non-cancelled first reply while sharing the consolidated attention refresh path",
 );
 assert.doesNotMatch(
   chatView,
