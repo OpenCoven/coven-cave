@@ -19,13 +19,6 @@ import { isSshRuntime } from "@/lib/familiar-runtime";
 import { cleanModelId } from "@/lib/chat-model-state";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import { persistQueuedOfflineConversation } from "@/lib/cave-conversations";
-import {
-  latestConversationReplaySession,
-  loadConversation,
-  normalizeDaemonConversationId,
-  resolveConversationSessionId,
-  upsertConversationReplaySession,
-} from "@/lib/cave-conversations";
 import { flowExecutionOrder, flowPartialExecutionOrder, compileFlowPrompt } from "@/lib/flow/flow-compile";
 import type { FlowExecutionMode } from "@/lib/flow/flow-compile";
 import type { FlowDoc } from "@/lib/flow/flow-doc";
@@ -42,7 +35,6 @@ import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
 import { recordRun } from "@/lib/workflow-runs";
 import { loadLocalWorkflowList } from "@/lib/workflow-source";
 import type { WorkflowSummary } from "@/lib/workflows";
-import { ACTIVE_SESSION_STATUSES } from "@/lib/chat-auto-archive";
 
 export type TravelOfflineReplayResult = {
   attempted: number;
@@ -51,28 +43,8 @@ export type TravelOfflineReplayResult = {
   errors: Array<{ id: string; error: string }>;
 };
 
-type DaemonSessionResponse = {
-  id?: string;
-  status?: string;
-  title?: string;
-  updated_at?: string;
-  conversation_id?: string | null;
-};
+type DaemonSessionResponse = { id?: string; status?: string };
 type WorkflowEngineResponse = { ok?: boolean; runId?: string; status?: string; error?: string };
-
-type HubSessionLaunchArgs = {
-  harness: string;
-  prompt: string;
-  model?: string | null;
-  modelOverrideScope?: "runtime-default";
-  reasoningEffort?: string | null;
-  responseSpeed?: string | null;
-  modelControls?: Record<string, unknown>;
-  projectRoot: string;
-  familiarId?: string | null;
-  conversation?: { mode: "resume"; id: string } | null;
-  conversationId?: string | null;
-};
 
 function queuedModelOverride(payload: Record<string, unknown>): string | null | undefined {
   const hasModelOverride = Object.prototype.hasOwnProperty.call(payload, "modelOverride");
@@ -147,35 +119,6 @@ function daemonError(res: { status: number; error?: string; data: unknown }): st
     `daemon http ${res.status}`;
 }
 
-export function buildHubSessionLaunchBody(args: HubSessionLaunchArgs): Record<string, unknown> {
-  const harness = canonicalHarnessId(args.harness);
-  // Source contract (verified against the daemon's POST /api/v1/sessions):
-  // request fields are camelCase `projectRoot` / `harness` / `prompt`, and
-  // replayed chat/workflow launches must opt into `launchMode:
-  // "nonInteractive"` so the daemon emits plain session output instead of an
-  // interactive harness TUI. Keep the prompt as one JSON string field — never
-  // split or shell-encode it.
-  return {
-    projectRoot: args.projectRoot,
-    harness,
-    prompt: args.prompt,
-    launchMode: "nonInteractive",
-    ...(args.model ? { model: args.model } : {}),
-    ...(args.modelOverrideScope ? { modelOverrideScope: args.modelOverrideScope } : {}),
-    ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}),
-    ...(args.responseSpeed ? { responseSpeed: args.responseSpeed } : {}),
-    ...(Object.keys(args.modelControls ?? {}).length ? { modelControls: args.modelControls } : {}),
-    ...(args.familiarId ? { familiarId: args.familiarId } : {}),
-    ...(args.conversation ? { conversation: args.conversation } : {}),
-    ...(args.conversationId ? { conversationId: args.conversationId } : {}),
-  };
-}
-
-function isTerminalReplayStatus(status: string | null | undefined): boolean {
-  const trimmed = status?.trim().toLowerCase() ?? "";
-  return Boolean(trimmed) && !ACTIVE_SESSION_STATUSES.has(trimmed);
-}
-
 async function spawnHubSession(args: {
   config: CaveConfig;
   familiarId: string | null;
@@ -188,8 +131,6 @@ async function spawnHubSession(args: {
   modelControls?: Record<string, unknown>;
   projectRoot?: string | null;
   title: string;
-  conversation?: { mode: "resume"; id: string } | null;
-  conversationId?: string | null;
 }): Promise<string> {
   const harness = canonicalHarnessId(args.harness);
   if (!isAllowedHarness(harness)) {
@@ -201,19 +142,17 @@ async function spawnHubSession(args: {
   const res = await callDaemon<DaemonSessionResponse>({
     method: "POST",
     path: "/api/v1/sessions",
-    body: buildHubSessionLaunchBody({
+    body: {
       projectRoot,
       harness,
       prompt: args.prompt,
-      model: args.model,
-      modelOverrideScope: args.modelOverrideScope,
-      reasoningEffort: args.reasoningEffort,
-      responseSpeed: args.responseSpeed,
-      modelControls: args.modelControls,
-      familiarId: args.familiarId,
-      conversation: args.conversation,
-      conversationId: args.conversationId,
-    }),
+      ...(args.model ? { model: args.model } : {}),
+      ...(args.modelOverrideScope ? { modelOverrideScope: args.modelOverrideScope } : {}),
+      ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}),
+      ...(args.responseSpeed ? { responseSpeed: args.responseSpeed } : {}),
+      ...(Object.keys(args.modelControls ?? {}).length ? { modelControls: args.modelControls } : {}),
+      ...(args.familiarId ? { familiarId: args.familiarId } : {}),
+    },
     timeoutMs: 8000,
   });
 
@@ -228,19 +167,7 @@ async function spawnHubSession(args: {
   return res.data.id;
 }
 
-async function loadDaemonSessionRecord(sessionId: string): Promise<DaemonSessionResponse> {
-  const res = await callDaemon<DaemonSessionResponse>({
-    path: `/api/v1/sessions/${encodeURIComponent(sessionId)}`,
-    timeoutMs: 4000,
-    retryTransportFailure: false,
-  });
-  if (!res.ok || !res.data?.id) {
-    throw new Error(daemonError(res));
-  }
-  return res.data;
-}
-
-async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promise<boolean> {
+async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promise<void> {
   const payload = record(item.payload);
   const familiarId = stringValue(payload.familiarId);
   const prompt = stringValue(payload.prompt);
@@ -285,51 +212,17 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const queuedPayloadModelOverride = stringValue(payload.modelOverride);
   const queuedRunId = stringValue(payload.runId);
   const replayPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });
-  const payloadSessionId = stringValue(payload.sessionId) ?? item.id;
-  const resolvedSession = await resolveConversationSessionId(payloadSessionId);
-  if (resolvedSession.sessionId === null) {
-    throw new Error(
-      resolvedSession.error === "ambiguous-replay-history"
-        ? "queued chat replay history is ambiguous for this session id"
-        : "queued chat replay history contains a cycle for this session id",
-    );
-  }
-  const sessionId = resolvedSession.sessionId;
-  const chatTitle = chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(sessionId);
-  const existingConversation = await loadConversation(sessionId);
-  const latestReplay = latestConversationReplaySession(existingConversation);
-  let latestReplayConversationId = normalizeDaemonConversationId(
-    latestReplay?.conversationId ?? existingConversation?.harnessSessionId,
-  );
-  const replaySessionId =
-    stringValue(payload.replaySessionId)
-    ?? stringValue(payload.harnessSessionId)
-    ?? null;
-
-  if (!replaySessionId && latestReplay && !isTerminalReplayStatus(latestReplay.status)) {
-    const prior = await loadDaemonSessionRecord(latestReplay.sessionId);
-    latestReplayConversationId = normalizeDaemonConversationId(
-      prior.conversation_id ?? latestReplay.conversationId ?? existingConversation?.harnessSessionId,
-    );
-    await upsertConversationReplaySession({
-      sessionId,
-      replaySessionId: prior.id ?? latestReplay.sessionId,
-      ...(latestReplayConversationId ? { conversationId: latestReplayConversationId } : {}),
-      title: stringValue(prior.title) ?? latestReplay.title ?? chatTitle,
-      status: prior.status ?? latestReplay.status ?? null,
-      createdAt: latestReplay.createdAt,
-      updatedAt: prior.updated_at ?? latestReplay.updatedAt,
-    });
-    if (!isTerminalReplayStatus(prior.status)) return false;
-  }
-
-  if (!replaySessionId) {
-    const resumeConversationId = latestReplayConversationId;
-    const spawnedSessionId = await spawnHubSession({
+  let harnessSessionId = stringValue(payload.harnessSessionId);
+  if (!harnessSessionId) {
+    harnessSessionId = await spawnHubSession({
       config,
       familiarId,
       harness: binding.harness,
       prompt: replayPrompt,
+      // Preserve the distinction between an omitted model and an explicit
+      // runtime-default request. The daemon receives no model argument in both
+      // cases, while the scope marker prevents this replay path from treating a
+      // cleared model as an accidental static/catalog fallback.
       model: modelOverride,
       ...(payload.modelOverrideScope === "runtime-default"
         ? { modelOverrideScope: "runtime-default" as const }
@@ -338,56 +231,11 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
       responseSpeed: stringValue(payload.responseSpeed),
       modelControls: record(payload.modelControls),
       projectRoot,
-      title: chatTitle,
-      ...(resumeConversationId
-        ? {
-            conversation: { mode: "resume" as const, id: resumeConversationId },
-            conversationId: resumeConversationId,
-          }
-        : {}),
+      title: chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(stringValue(payload.sessionId) ?? item.id),
     });
-    await updateOfflineTravelItemPayload(item.id, {
-      ...payload,
-      replaySessionId: spawnedSessionId,
-      harnessSessionId: spawnedSessionId,
-      ...(resumeConversationId ? { replayConversationId: resumeConversationId } : {}),
-    });
-    await upsertConversationReplaySession({
-      sessionId,
-      replaySessionId: spawnedSessionId,
-      ...(resumeConversationId ? { conversationId: resumeConversationId } : {}),
-      title: chatTitle,
-      status: "starting",
-      createdAt: item.createdAt,
-      updatedAt: item.createdAt,
-    });
-    return false;
+    await updateOfflineTravelItemPayload(item.id, { ...payload, harnessSessionId });
   }
-
-  const replayRecord = await loadDaemonSessionRecord(replaySessionId);
-  const replayConversationId = normalizeDaemonConversationId(
-    replayRecord.conversation_id
-    ?? payload.replayConversationId
-    ?? latestReplay?.conversationId
-    ?? existingConversation?.harnessSessionId,
-  );
-  await updateOfflineTravelItemPayload(item.id, {
-    ...payload,
-    replaySessionId,
-    harnessSessionId: replaySessionId,
-    ...(replayConversationId ? { replayConversationId: replayConversationId } : {}),
-  });
-  await upsertConversationReplaySession({
-    sessionId,
-    replaySessionId,
-    ...(replayConversationId ? { conversationId: replayConversationId } : {}),
-    title: stringValue(replayRecord.title) ?? chatTitle,
-    status: replayRecord.status ?? null,
-    createdAt: item.createdAt,
-    updatedAt: replayRecord.updated_at ?? item.createdAt,
-  });
-  if (!isTerminalReplayStatus(replayRecord.status)) return false;
-
+  const sessionId = stringValue(payload.sessionId) ?? item.id;
   await persistQueuedOfflineConversation({
     sessionId,
     familiarId,
@@ -398,9 +246,9 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     ...(Object.prototype.hasOwnProperty.call(queuedMetadata, "runtime")
       ? { runtime: stringValue(queuedMetadata.runtime) ?? undefined }
       : {}),
-    title: chatTitle,
+    title: chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(sessionId),
     createdAt: item.createdAt,
-    ...(replayConversationId ? { harnessSessionId: replayConversationId } : {}),
+    harnessSessionId,
     userTurn: {
       id: stringValue(payload.userTurnId) ?? item.id,
       text: prompt,
@@ -424,10 +272,9 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
         : {}),
     },
   });
-  if (sessionId !== replaySessionId) {
-    await setSessionTitle(replaySessionId, chatTitleFromPrompt(prompt) ?? `Travel replay: ${item.summary}`);
+  if (sessionId !== harnessSessionId) {
+    await setSessionTitle(harnessSessionId, chatTitleFromPrompt(prompt) ?? `Travel replay: ${item.summary}`);
   }
-  return true;
 }
 
 async function workflowForPayload(payload: Record<string, unknown>, body: Record<string, unknown>): Promise<WorkflowSummary | null> {
@@ -602,21 +449,12 @@ async function replayJob(item: CaveTravelQueueItem): Promise<void> {
   });
 }
 
-async function replayTravelQueueItem(item: CaveTravelQueueItem, config: CaveConfig): Promise<boolean> {
+async function replayTravelQueueItem(item: CaveTravelQueueItem, config: CaveConfig): Promise<void> {
   const route = stringValue(record(item.payload).route);
   if (item.kind === "chat") return replayChat(item, config);
-  if (item.kind === "workflow" && route === "flow-session") {
-    await replayFlow(item, config);
-    return true;
-  }
-  if (item.kind === "workflow") {
-    await replayWorkflow(item, config);
-    return true;
-  }
-  if (item.kind === "job") {
-    await replayJob(item);
-    return true;
-  }
+  if (item.kind === "workflow" && route === "flow-session") return replayFlow(item, config);
+  if (item.kind === "workflow") return replayWorkflow(item, config);
+  if (item.kind === "job") return replayJob(item);
   throw new Error(`unsupported travel queue item kind: ${item.kind}`);
 }
 
@@ -647,10 +485,9 @@ async function syncOfflineTravelQueueInner(
     if (!item) continue;
     result.attempted += 1;
     try {
-      if (await replayTravelQueueItem(item, config)) {
-        await completeOfflineTravelItem(item.id);
-        result.synced += 1;
-      }
+      await replayTravelQueueItem(item, config);
+      await completeOfflineTravelItem(item.id);
+      result.synced += 1;
     } catch (err) {
       const error = replayError(err);
       await failOfflineTravelItem(item.id, error);
