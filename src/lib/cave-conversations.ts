@@ -205,6 +205,13 @@ type ConversationSummaryCacheEntry = {
   summary: ConversationSummary | null;
 };
 const conversationSummaryCache = new Map<string, ConversationSummaryCacheEntry>();
+type ConversationAliasIndex = {
+  aliasesBySessionId: Map<string, Set<string>>;
+  ownersByAlias: Map<string, Set<string>>;
+};
+let conversationAliasIndex: ConversationAliasIndex | null = null;
+let conversationAliasIndexBuild: Promise<ConversationAliasIndex> | null = null;
+let conversationAliasIndexEpoch = 0;
 let conversationListScanCount = 0;
 let conversationListMetrics: ConversationListMetrics = {
   scanCount: 0,
@@ -224,6 +231,12 @@ export function getConversationListMetrics(): ConversationListMetrics {
 
 export function clearConversationListMetadataCache(): void {
   conversationSummaryCache.clear();
+}
+
+export function clearConversationAliasIndexForTests(): void {
+  conversationAliasIndexEpoch += 1;
+  conversationAliasIndex = null;
+  conversationAliasIndexBuild = null;
 }
 
 export function normalizeDaemonConversationId(value: unknown): string | null {
@@ -312,6 +325,97 @@ export function linkedReplayAliases(
     if (replay.conversationId) aliases.add(replay.conversationId);
   }
   return [...aliases];
+}
+
+type ConversationAliasSource = Pick<
+  ConversationFile | ConversationSummary,
+  "sessionId" | "harnessSessionId" | "replaySessions"
+>;
+
+function conversationAliases(conv: ConversationAliasSource): Set<string> {
+  const aliases = new Set(linkedReplayAliases(conv));
+  const harnessSessionId =
+    typeof conv.harnessSessionId === "string" ? conv.harnessSessionId.trim() : "";
+  if (isSafeConversationSessionId(harnessSessionId)) aliases.add(harnessSessionId);
+  return aliases;
+}
+
+function removeConversationAliasIndexEntry(
+  index: ConversationAliasIndex,
+  sessionId: string,
+): void {
+  const previousAliases = index.aliasesBySessionId.get(sessionId);
+  if (!previousAliases) return;
+  index.aliasesBySessionId.delete(sessionId);
+  for (const alias of previousAliases) {
+    const owners = index.ownersByAlias.get(alias);
+    if (!owners) continue;
+    owners.delete(sessionId);
+    if (owners.size === 0) index.ownersByAlias.delete(alias);
+  }
+}
+
+function updateConversationAliasIndexEntry(
+  index: ConversationAliasIndex,
+  conv: ConversationAliasSource,
+): void {
+  removeConversationAliasIndexEntry(index, conv.sessionId);
+  const aliases = conversationAliases(conv);
+  index.aliasesBySessionId.set(conv.sessionId, aliases);
+  for (const alias of aliases) {
+    const owners = index.ownersByAlias.get(alias) ?? new Set<string>();
+    owners.add(conv.sessionId);
+    index.ownersByAlias.set(alias, owners);
+  }
+}
+
+function buildConversationAliasIndex(
+  summaries: ConversationSummary[],
+): ConversationAliasIndex {
+  const index: ConversationAliasIndex = {
+    aliasesBySessionId: new Map(),
+    ownersByAlias: new Map(),
+  };
+  for (const summary of summaries) updateConversationAliasIndexEntry(index, summary);
+  return index;
+}
+
+async function getConversationAliasIndex(): Promise<ConversationAliasIndex> {
+  if (conversationAliasIndex) return conversationAliasIndex;
+  const epoch = conversationAliasIndexEpoch;
+  if (!conversationAliasIndexBuild) {
+    const build = listConversations().then((summaries) => {
+      const index = buildConversationAliasIndex(summaries);
+      if (conversationAliasIndexEpoch === epoch) conversationAliasIndex = index;
+      return index;
+    });
+    conversationAliasIndexBuild = build;
+    const clearBuild = () => {
+      if (conversationAliasIndexBuild === build) conversationAliasIndexBuild = null;
+    };
+    void build.then(clearBuild, clearBuild);
+  }
+  const index = await conversationAliasIndexBuild;
+  if (conversationAliasIndexEpoch !== epoch) return getConversationAliasIndex();
+  return conversationAliasIndex ?? index;
+}
+
+async function updateBuiltConversationAliasIndex(
+  conv: ConversationAliasSource | null,
+  sessionId: string,
+): Promise<void> {
+  const epoch = conversationAliasIndexEpoch;
+  const pendingBuild = conversationAliasIndexBuild;
+  if (!conversationAliasIndex && pendingBuild) {
+    try {
+      await pendingBuild;
+    } catch {
+      return;
+    }
+  }
+  if (conversationAliasIndexEpoch !== epoch || !conversationAliasIndex) return;
+  if (conv) updateConversationAliasIndexEntry(conversationAliasIndex, conv);
+  else removeConversationAliasIndexEntry(conversationAliasIndex, sessionId);
 }
 
 export type ConversationSessionResolution =
@@ -665,6 +769,7 @@ export async function saveConversation(conv: ConversationFile): Promise<void> {
   // torn half-JSON that loadConversation silently drops.
   await writeJsonAtomic(pathFor(conv.sessionId), conv);
   conversationSummaryCache.delete(pathFor(conv.sessionId));
+  await updateBuiltConversationAliasIndex(conv, conv.sessionId);
   // Bust the sessions-list SWR cache (cave-53yx): a new or updated
   // conversation must be visible to the event-driven list refresh that fires
   // right after the save, not 1-2 polls later.
@@ -880,17 +985,9 @@ export async function persistQueuedOfflineConversation(
 }
 
 export async function resolveConversationSessionId(sessionId: string): Promise<ConversationSessionResolution> {
-  const aliasOwners = new Map<string, Set<string>>();
-  for (const summary of await listConversations()) {
-    for (const alias of linkedReplayAliases(summary)) {
-      const owners = aliasOwners.get(alias) ?? new Set<string>();
-      owners.add(summary.sessionId);
-      aliasOwners.set(alias, owners);
-    }
-  }
-  const replayResolved = resolveReplayAliasOwner(sessionId, aliasOwners);
+  const aliases = await getConversationAliasIndex();
+  const replayResolved = resolveReplayAliasOwner(sessionId, aliases.ownersByAlias);
   if (replayResolved.sessionId === null || replayResolved.canonicalized) return replayResolved;
-  if (await loadConversation(sessionId)) return replayResolved;
   return { sessionId, canonicalized: false };
 }
 
@@ -936,6 +1033,7 @@ export async function deleteConversation(sessionId: string): Promise<boolean> {
     const file = pathFor(sessionId);
     await unlink(file);
     conversationSummaryCache.delete(file);
+    await updateBuiltConversationAliasIndex(null, sessionId);
     invalidateSessionsListCache();
     return true;
   } catch {

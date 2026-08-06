@@ -11,7 +11,10 @@ process.env.HOME = home;
 process.env.COVEN_HOME = path.join(home, ".coven");
 
 const {
+  clearConversationAliasIndexForTests,
+  clearConversationListMetadataCache,
   deleteConversation,
+  getConversationListMetrics,
   isSafeConversationSessionId,
   listConversations,
   loadConversation,
@@ -271,6 +274,129 @@ await deleteConversation("hub-replay-root");
 await deleteConversation("stable-self-alias");
 await deleteConversation("cycle-replay-root");
 await deleteConversation("hub-replay-cycle");
+
+await saveConversation({
+  sessionId: "alias-perf-root",
+  harnessSessionId: "native-alias-perf",
+  familiarId: "charm",
+  harness: "codex",
+  title: "Alias performance root",
+  createdAt: "2026-06-10T00:00:00.000Z",
+  updatedAt: "2026-06-10T00:00:00.000Z",
+  replaySessions: [{
+    sessionId: "daemon-alias-perf",
+    conversationId: "daemon-conversation-perf",
+    createdAt: "2026-06-10T00:00:00.000Z",
+    updatedAt: "2026-06-10T00:00:01.000Z",
+  }],
+  turns: [],
+});
+await saveConversation({
+  sessionId: "alias-perf-delete",
+  familiarId: "charm",
+  harness: "codex",
+  title: "Alias performance delete",
+  createdAt: "2026-06-10T00:00:00.000Z",
+  updatedAt: "2026-06-10T00:00:00.000Z",
+  replaySessions: [{
+    sessionId: "daemon-alias-delete",
+    createdAt: "2026-06-10T00:00:00.000Z",
+    updatedAt: "2026-06-10T00:00:01.000Z",
+  }],
+  turns: [],
+});
+
+clearConversationAliasIndexForTests();
+clearConversationListMetadataCache();
+const aliasScanCountBefore = getConversationListMetrics().scanCount;
+const coldAliasInputs = [
+  "alias-perf-root",
+  "native-alias-perf",
+  "daemon-alias-perf",
+  "daemon-conversation-perf",
+];
+const coldAliasResults = await Promise.all(
+  Array.from({ length: 32 }, (_, index) =>
+    resolveConversationSessionId(coldAliasInputs[index % coldAliasInputs.length])),
+);
+assert.ok(
+  coldAliasResults.every((result, index) =>
+    result.sessionId === "alias-perf-root"
+    && result.canonicalized === (coldAliasInputs[index % coldAliasInputs.length] !== "alias-perf-root")),
+  "stable ids and native/replay aliases share one canonical index",
+);
+const coldAliasMetrics = getConversationListMetrics();
+assert.equal(
+  coldAliasMetrics.scanCount,
+  aliasScanCountBefore + 1,
+  "concurrent cold alias callers share one compact-summary list scan",
+);
+assert.equal(
+  coldAliasMetrics.cacheMisses,
+  coldAliasMetrics.filesSeen,
+  "the one cold scan stats and parses each compact summary only once",
+);
+
+for (const alias of coldAliasInputs) {
+  await resolveConversationSessionId(alias);
+}
+assert.deepEqual(
+  getConversationListMetrics(),
+  coldAliasMetrics,
+  "warm alias lookups perform no additional list, stat, or parse work",
+);
+
+const updatedAliasRoot = await loadConversation("alias-perf-root");
+assert.ok(updatedAliasRoot);
+updatedAliasRoot.title = "Normal save updates one indexed entry";
+await saveConversation(updatedAliasRoot);
+assert.deepEqual(
+  await resolveConversationSessionId("native-alias-perf"),
+  { sessionId: "alias-perf-root", canonicalized: true },
+  "a normal save retains the affected native alias without rebuilding the index",
+);
+assert.deepEqual(
+  getConversationListMetrics(),
+  coldAliasMetrics,
+  "normal saves update the affected alias entry without another store scan",
+);
+
+updatedAliasRoot.replaySessions = [{
+  sessionId: "daemon-alias-updated",
+  createdAt: "2026-06-10T00:02:00.000Z",
+  updatedAt: "2026-06-10T00:02:00.000Z",
+}];
+await saveConversation(updatedAliasRoot);
+assert.deepEqual(
+  await resolveConversationSessionId("daemon-alias-perf"),
+  { sessionId: "daemon-alias-perf", canonicalized: false },
+  "saving changed replay mappings removes the old alias incrementally",
+);
+assert.deepEqual(
+  await resolveConversationSessionId("daemon-alias-updated"),
+  { sessionId: "alias-perf-root", canonicalized: true },
+  "saving changed replay mappings installs the new alias incrementally",
+);
+assert.deepEqual(getConversationListMetrics(), coldAliasMetrics);
+
+assert.equal(await deleteConversation("alias-perf-root"), true);
+assert.deepEqual(
+  await resolveConversationSessionId("native-alias-perf"),
+  { sessionId: "native-alias-perf", canonicalized: false },
+  "delete removes native aliases from the in-memory index",
+);
+assert.deepEqual(
+  await resolveConversationSessionId("daemon-alias-updated"),
+  { sessionId: "daemon-alias-updated", canonicalized: false },
+  "delete removes replay aliases from the in-memory index",
+);
+assert.equal(await deleteConversation("alias-perf-delete"), true);
+assert.deepEqual(
+  await resolveConversationSessionId("daemon-alias-delete"),
+  { sessionId: "daemon-alias-delete", canonicalized: false },
+  "delete updates the index without rescanning the conversation store",
+);
+assert.deepEqual(getConversationListMetrics(), coldAliasMetrics);
 
 await persistQueuedOfflineConversation({
   sessionId: "queued-replay-null",

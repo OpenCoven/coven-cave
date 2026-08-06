@@ -29,6 +29,7 @@ process.env.COVEN_HOME = TMP_COVEN;
 const CONV_DIR = join(TMP, "conversations");
 const STATE_PATH = join(TMP, "state.json");
 const BOARD_PATH = join(TMP, "board.json");
+const { clearConversationAliasIndexForTests } = await import("@/lib/cave-conversations");
 
 function writeConversation(id: string, turns: unknown[] = [], extra: Record<string, unknown> = {}) {
   mkdirSync(CONV_DIR, { recursive: true });
@@ -45,6 +46,7 @@ function writeConversation(id: string, turns: unknown[] = [], extra: Record<stri
       ...extra,
     }),
   );
+  clearConversationAliasIndexForTests();
 }
 
 function conversationPath(id: string) {
