@@ -40,6 +40,7 @@ tests), so when a project gains or loses a frame, update this table by hand.
 | `Chat.dc.html` (session, list) | chat session chrome | `59527634e7` (#3983) |
 | `Chat.dc.html` 2a (spine, minimap) | thread instruments | `6cc5fcb913` (#4046) |
 | `Chat.dc.html` 2b (bands) | new-session launcher | `3e5b9c450d` (`cave-iwopz`) |
+| `Chat Session - Prototype.dc.html` | Sessions list (`src/components/chat-list.tsx`, `src/lib/chat-session-status.ts`, `src/lib/chat-session-activity.ts`, `src/lib/chat-session-sort.ts`, `src/styles/chat-list.css`), the new-session hero (`src/styles/home-dashboard.css`) and the transcript gap divider (`src/lib/chat-turn-gap.ts`). The frame's session chrome — serif title row, slim mono context row, spine, reader — had already landed through `Chat.dc.html` (session/2a) and `Reader.dc.html` 3a, so this import is the list, the hero treatment and the gap rule. **Not adopted:** the frame's per-row step counts, tool-call counts and last-message previews — the daemon's `SessionRow` carries none of them, and inventing them would be a row that lies. **Outstanding:** the "N earlier turns" fold above the transcript. | `cave-n3jg2` |
 | `Reader.dc.html` frame 3a | chat Expand reader | `ecd8c52f6a` (#4255) |
 | `Canvas.dc.html` | Canvas page | `d6b14b3e53` (#3988) |
 | `Projects.dc.html` | Project access page | `3ffeea6be6` (#3994) |
