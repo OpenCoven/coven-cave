@@ -218,6 +218,11 @@ assert.match(
   /Pairing secret unavailable/,
   "the access-rung failure explains the self-provisioned pairing secret instead of quoting pnpm incantations",
 );
+assert.match(
+  settings,
+  /Tailscale Serve needs permission[\s\S]{0,300}sudo tailscale set --operator=\$USER/,
+  "Linux Serve permission failures show the one-time operator fix instead of generic restart advice",
+);
 assert.match(settings, /Technical details/, "the raw handoff error stays available behind a disclosure");
 
 // ── Guided pairing checklist (cave-jr4r.1) ───────────────────────────────────
@@ -331,24 +336,25 @@ assert.match(
 assert.doesNotMatch(tauriConfig, /"deep-link"[\s\S]*"scheme": \["opencoven"\]/, "iOS app should not register a custom app connect URL scheme");
 assert.doesNotMatch(tauriLib, /tauri_plugin_deep_link::init/, "iOS shell should not install the deep-link plugin");
 
-// Resilient handoff: when `tailscale serve --bg` fails (e.g. macOS "GUI failed
-// to start, CLIError 3"), the route must NOT hard-fail. It should fall back to
-// the MagicDNS host so the invite link + QR still generate, returning the serve
-// error as a non-fatal warning instead.
+// Resilient handoff: when `tailscale serve --bg` fails but Serve status is
+// unreadable (e.g. macOS "GUI failed to start, CLIError 3"), the route may use
+// MagicDNS because a daemon-owned route can still be live. A readable empty
+// status is different: it proves no route exists and must not become a false
+// success merely because the node has a MagicDNS name.
 assert.doesNotMatch(
   handoffRoute,
   /error: "failed to start tailscale serve"/,
-  "serve --bg failure must not short-circuit the whole handoff",
+  "serve --bg failure must not short-circuit a handoff when status cannot be read",
 );
 assert.match(
   handoffRoute,
-  /tailnetDiscoveryProof\(\{\s*selfStatus,\s*serveStatus,\s*backendUrl: backend\s*\}\)/,
-  "route falls back through the shared Tailscale discovery proof when the serve config can't be read",
+  /tailnetDiscoveryProof\(\{[\s\S]{0,400}allowMagicDnsFallback: shouldAllowMagicDnsFallback\(\{[\s\S]{0,180}serveError: serveWarning \?\? ""[\s\S]{0,100}statusOk: status\.ok/,
+  "MagicDNS fallback is blocked by permission-denied Serve mutations even when Serve status is unreadable",
 );
 assert.match(
   handoffRoute,
-  /nativeAppDiscoveryProof\(\{\s*selfStatus,\s*serveStatus,\s*backendUrl: backend\s*\}\)/,
-  "native mobile mode should use a native-specific fallback when MagicDNS is unavailable",
+  /nativeAppDiscoveryProof\(\{[\s\S]{0,300}allowMagicDnsFallback: false/,
+  "the explicit native HTTP fallback must use its Tailscale IP instead of an unproven HTTPS hostname",
 );
 assert.match(
   handoffRoute,
