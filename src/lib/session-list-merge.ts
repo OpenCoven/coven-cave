@@ -318,12 +318,14 @@ export function mergeSessionRows({
     matchKind: DaemonMatchKind;
     replayIndex: number | null;
   };
+  // Recorded replay matches carry durable chronology; conversation_id/native
+  // matches are only generic aliases and must not eclipse that history.
   const matchRank: Record<DaemonMatchKind, number> = {
     none: 0,
     direct: 1,
-    "replay-conversation": 2,
-    "replay-session": 2,
-    "native-conversation": 3,
+    "native-conversation": 2,
+    "replay-conversation": 3,
+    "replay-session": 3,
     harness: 4,
   };
   const preferMappedDaemon = (

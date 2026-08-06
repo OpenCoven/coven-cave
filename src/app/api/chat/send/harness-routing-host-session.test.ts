@@ -433,8 +433,8 @@ assert.match(
 // Native (coven) path: same stable-identity contract.
 assert.match(
   chatRoute,
-  /const replayResumeResolution = body\.sessionId && existingConversation[\s\S]*?await resolveReplayBackedResumeSessionId\(body\.sessionId\)[\s\S]*?if \(!replayResumeResolution\.ok\) \{[\s\S]*?status: 409/,
-  "live sends refuse replay-backed continuity gaps before argv fallback can fork the chat",
+  /const replayResumeResolution = !offlineTravelStatus && body\.sessionId && existingConversation[\s\S]*?await resolveReplayBackedResumeSessionId\(body\.sessionId\)[\s\S]*?if \(!replayResumeResolution\.ok\) \{[\s\S]*?status: 409/,
+  "live non-travel sends refuse replay-backed continuity gaps before argv fallback can fork the chat",
 );
 assert.match(
   chatRoute,
@@ -470,8 +470,8 @@ assert.match(
 // (never cross an ssh: runtime onto a local root).
 assert.match(
   chatRoute,
-  /const resumeCwd =\s*conversationResumeCwd \?\?\s*\(!sshRuntime && !body\.projectRoot && existingConversation\?\.runtime == null\s*\? await daemonSessionCwd\(body\.sessionId\)\s*: undefined\);/,
-  "Rootless sessions without a conversation-recorded runtime resume in the daemon session's project_root",
+  /const resumeCwd =\s*conversationResumeCwd \?\?\s*\(!offlineTravelStatus && !sshRuntime && !body\.projectRoot && existingConversation\?\.runtime == null\s*\? await daemonSessionCwd\(body\.sessionId\)\s*: undefined\);/,
+  "Live non-travel rootless sessions without a recorded runtime resume in the daemon session's project_root",
 );
 assert.match(
   chatRoute,

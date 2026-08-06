@@ -427,6 +427,7 @@ type OfflineChatQueuePayload = Pick<
   attachments: ChatAttachment[];
   responseMetadata: ChatResponseMetadata;
 };
+type OfflineTravelStatus = ReturnType<typeof deriveTravelClientStatus>;
 
 
 // Hook-line shapes emitted by codex/claude harnesses while a tool runs.
@@ -566,21 +567,27 @@ async function maybeAutoRenameFromContext(
   }
 }
 
+async function offlineTravelStatusForChat(config: CaveConfig): Promise<OfflineTravelStatus | null> {
+  const state = await loadState();
+  const travelStatus = deriveTravelClientStatus({
+    multiHost: config.multiHost,
+    travel: state.travel,
+    hubReachable: state.travel.hubUnreachableSince ? false : null,
+  });
+  if (travelStatus.authority !== "travel-local") return null;
+  return travelStatus;
+}
+
 async function maybeQueueOfflineChat(args: {
   body: SendBody;
   config: CaveConfig;
   promptText: string;
   persistedAttachments: ChatAttachment[];
   responseMetadata: ChatResponseMetadata;
+  travelStatus: OfflineTravelStatus | null;
 }): Promise<Response | null> {
-  const state = await loadState();
-  const travelStatus = deriveTravelClientStatus({
-    multiHost: args.config.multiHost,
-    travel: state.travel,
-    hubReachable: state.travel.hubUnreachableSince ? false : null,
-  });
-  if (travelStatus.authority !== "travel-local") return null;
-
+  const travelStatus = args.travelStatus;
+  if (!travelStatus) return null;
   const sessionId = args.body.sessionId ?? crypto.randomUUID();
   const queuedUserTurnId = crypto.randomUUID();
   const queuedModelIntent = offlineQueuedModelIntent({
@@ -1614,6 +1621,9 @@ export async function POST(req: Request) {
   );
 
   const config = await loadConfig();
+  // Freeze travel-local authority before any daemon continuity lookup. The
+  // remaining local validation still runs before the queued turn is accepted.
+  const offlineTravelStatus = await offlineTravelStatusForChat(config);
   const binding = bindingFor(config, body.familiarId);
   let existingConversation = body.sessionId
     ? await loadConversation(body.sessionId).catch(() => null)
@@ -1637,7 +1647,7 @@ export async function POST(req: Request) {
   if (existingConversation) {
     binding.harness = canonicalHarnessId(existingConversation.harness);
   }
-  const replayResumeResolution = body.sessionId && existingConversation
+  const replayResumeResolution = !offlineTravelStatus && body.sessionId && existingConversation
     ? await resolveReplayBackedResumeSessionId(body.sessionId)
     : { ok: true as const, resumeSessionId: null, replayBound: false };
   if (!replayResumeResolution.ok) {
@@ -1999,7 +2009,7 @@ export async function POST(req: Request) {
   // onto a local root).
   const resumeCwd =
     conversationResumeCwd ??
-    (!sshRuntime && !body.projectRoot && existingConversation?.runtime == null
+    (!offlineTravelStatus && !sshRuntime && !body.projectRoot && existingConversation?.runtime == null
       ? await daemonSessionCwd(body.sessionId)
       : undefined);
   const projectRootForLaunch = body.projectRoot ?? resumeCwd;
@@ -2332,6 +2342,7 @@ export async function POST(req: Request) {
     promptText,
     persistedAttachments,
     responseMetadata,
+    travelStatus: offlineTravelStatus,
   });
   if (offlineChatResponse) return offlineChatResponse;
 

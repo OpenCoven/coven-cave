@@ -1505,12 +1505,92 @@ assert.equal(
   ]);
   assert.equal(
     terminalRows[0]?.daemonSessionId,
-    "hub-session-native-current",
-    "when every candidate is terminal, the current native harness row wins before older replay rows",
+    "hub-session-offline-older",
+    "when every candidate is terminal, explicit replay history wins before a generic conversation_id/native match",
   );
-  assert.equal(terminalRows[0]?.status, "paused");
+  assert.equal(terminalRows[0]?.status, "completed");
   assert.equal(terminalRows[0]?.attention.reason, "approval");
   assert.equal(terminalRows[0]?.attention.state, "overdue-human");
+}
+
+{
+  const caveId = "replay-rank-cave";
+  const nativeConversationId = "native-thread-replay-rank";
+  const genericOlderFailure: DaemonSessionRow = {
+    id: "daemon-generic-older-failure",
+    project_root: "/repo",
+    harness: "codex",
+    title: "Older generic native match",
+    status: "failed",
+    exit_code: 1,
+    archived_at: null,
+    created_at: "2026-06-25T04:20:00.000Z",
+    updated_at: "2026-06-25T04:21:00.000Z",
+    conversation_id: nativeConversationId,
+  };
+  const recordedOlderReplay: DaemonSessionRow = {
+    ...genericOlderFailure,
+    id: "daemon-recorded-older-replay",
+    title: "Older recorded replay",
+  };
+  const recordedNewerReplay: DaemonSessionRow = {
+    id: "daemon-recorded-newer-replay",
+    project_root: "/repo",
+    harness: "codex",
+    title: "Newer recorded replay",
+    status: "completed",
+    exit_code: 0,
+    archived_at: null,
+    created_at: "2026-06-25T04:22:00.000Z",
+    updated_at: "2026-06-25T04:23:00.000Z",
+    conversation_id: nativeConversationId,
+  };
+  const merge = (daemonSessions: DaemonSessionRow[]) => mergeSessionRows({
+    daemonSessions,
+    localConversations: [{
+      sessionId: caveId,
+      harnessSessionId: nativeConversationId,
+      familiarId: "charm",
+      harness: "codex",
+      title: "Replay-ranked conversation",
+      status: "failed",
+      exitCode: 1,
+      updatedAt: "2026-06-25T04:24:00.000Z",
+      replaySessions: [
+        {
+          sessionId: "daemon-recorded-older-replay",
+          conversationId: nativeConversationId,
+          createdAt: "2026-06-25T04:18:00.000Z",
+          updatedAt: "2026-06-25T04:19:00.000Z",
+        },
+        {
+          sessionId: recordedNewerReplay.id,
+          conversationId: nativeConversationId,
+          createdAt: recordedNewerReplay.created_at,
+          updatedAt: recordedNewerReplay.updated_at,
+        },
+      ],
+    }],
+    state: { sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {} },
+    includeArchived: false,
+  });
+
+  const forward = merge([genericOlderFailure, recordedOlderReplay, recordedNewerReplay]);
+  const reverse = merge([recordedNewerReplay, recordedOlderReplay, genericOlderFailure]);
+  assert.deepEqual(reverse, forward, "replay ranking must not depend on daemon input order");
+  assert.equal(forward.length, 1);
+  assert.equal(forward[0]?.id, caveId);
+  assert.equal(
+    forward[0]?.daemonSessionId,
+    recordedNewerReplay.id,
+    "the newest explicitly recorded replay outranks a generic conversation_id/native match",
+  );
+  assert.equal(
+    forward[0]?.status,
+    "completed",
+    "the selected replay daemon's terminal status remains authoritative over newer local state",
+  );
+  assert.equal(forward[0]?.exit_code, 0);
 }
 
 {

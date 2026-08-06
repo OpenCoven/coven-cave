@@ -22,6 +22,7 @@ delete process.env.COVEN_SOCKET;
 delete process.env.CAVE_PROJECTS_PATH_OVERRIDE;
 
 const sessionRequests: Array<Record<string, unknown>> = [];
+const sessionLookupRequests: string[] = [];
 let nextSession = 1;
 let server: http.Server | null = null;
 const sessionResponses: Array<Record<string, unknown>> = [];
@@ -46,6 +47,7 @@ async function listenHub(port = 0): Promise<number> {
     }
     if (req.method === "GET" && req.url?.startsWith("/api/v1/sessions/")) {
       const sessionId = decodeURIComponent(req.url.slice("/api/v1/sessions/".length));
+      sessionLookupRequests.push(sessionId);
       const response = sessionRecords.get(sessionId);
       if (response) {
         res.writeHead(200, { "content-type": "application/json" });
@@ -243,6 +245,67 @@ try {
     false,
     "queued summaries must keep only the selected path's causal clear ancestry",
   );
+
+  await conversations.saveConversation({
+    sessionId: "offline-chat-requeue-without-native",
+    familiarId: "sage",
+    harness: "claude",
+    model: "anthropic/claude-sonnet-4-6",
+    runtime: `local:${projectRoot}`,
+    title: "Replay-backed offline chat",
+    createdAt: "2026-06-30T12:00:30.000Z",
+    updatedAt: "2026-06-30T12:00:30.000Z",
+    replaySessions: [{
+      sessionId: "hub-session-unrecovered-native",
+      createdAt: "2026-06-30T12:00:30.000Z",
+      updatedAt: "2026-06-30T12:00:30.000Z",
+    }],
+    turns: [{
+      id: "offline-chat-requeue-existing-user",
+      role: "user",
+      text: "Earlier queued turn",
+      createdAt: "2026-06-30T12:00:30.000Z",
+      parentId: null,
+    }],
+    activeLeafId: "offline-chat-requeue-existing-user",
+  });
+  const lookupCountBeforeOfflineRequeue = sessionLookupRequests.length;
+  const requeueResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "sage",
+      prompt: "queue another turn without native continuity",
+      projectRoot,
+      sessionId: "offline-chat-requeue-without-native",
+      parentTurnId: "offline-chat-requeue-existing-user",
+    }),
+  }));
+  const requeuedEvents = await readSse(requeueResponse);
+  assert.equal(
+    requeuedEvents.find((event) => event.kind === "session")?.sessionId,
+    "offline-chat-requeue-without-native",
+  );
+  assert.equal(requeuedEvents.findLast((event) => event.kind === "done")?.isError, false);
+  assert.equal(
+    sessionLookupRequests.length,
+    lookupCountBeforeOfflineRequeue,
+    "travel-local queueing must not probe an unreachable hub for replay/native continuity",
+  );
+  const requeuedConversation = await conversations.loadConversation("offline-chat-requeue-without-native");
+  assert.equal(requeuedConversation?.harnessSessionId, undefined);
+  assert.equal(requeuedConversation?.turns.length, 2);
+  assert.equal(
+    requeuedConversation?.turns.at(-1)?.text,
+    "queue another turn without native continuity",
+    "queue acceptance persists the local user turn before reporting success",
+  );
+  const requeuedState = await config.loadState();
+  const requeuedItem = requeuedState.travel.offlineQueue.find(
+    (item) => item.payload?.sessionId === "offline-chat-requeue-without-native",
+  );
+  assert.ok(requeuedItem);
+  await config.completeOfflineTravelItem(requeuedItem.id);
 
   await config.completeOfflineTravelItem(queuedItem.id);
   const replayItem = await config.enqueueOfflineTravelItem({
