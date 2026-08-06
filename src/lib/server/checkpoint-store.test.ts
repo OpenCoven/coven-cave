@@ -955,7 +955,7 @@ test("directory restoration collision preserves destination and quarantine", asy
   );
 });
 
-test("directory restoration preserves an empty destination inserted at the reservation boundary", async () => {
+test("directory restoration quarantines an injected destination collision from later recovery", async () => {
   const storePath = path.join(
     temporary,
     "directory-restore-boundary",
@@ -1016,6 +1016,28 @@ test("directory restoration preserves an empty destination inserted at the reser
   assert.equal(
     await readFile(path.join(quarantine, "checkpoint.patch"), "utf8"),
     "quarantined at boundary\n",
+  );
+  const conflict = JSON.parse(
+    await readFile(path.join(quarantine, ".conflict.json"), "utf8"),
+  ) as {
+    recoverable: boolean;
+    targetName: string;
+  };
+  assert.equal(conflict.recoverable, false);
+  assert.equal(conflict.targetName, checkpointName);
+
+  recoverCheckpointStore(store, metadataIsValid);
+
+  assert.deepEqual(await readdir(destination), []);
+  assert.equal(
+    await readFile(path.join(quarantine, "checkpoint.patch"), "utf8"),
+    "quarantined at boundary\n",
+  );
+  assert.equal(
+    JSON.parse(
+      await readFile(path.join(quarantine, ".conflict.json"), "utf8"),
+    ).recoverable,
+    false,
   );
 });
 
