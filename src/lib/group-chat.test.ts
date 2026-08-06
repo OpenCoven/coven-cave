@@ -27,6 +27,8 @@ import {
   runCovenReplySchedule,
   loadGroups,
   saveGroups,
+  loadTranscript,
+  saveTranscript,
   findActiveMention,
   reconcileMentionCompletions,
   matchMentions,
@@ -811,7 +813,8 @@ const reply = (
   replyTo: string,
   text: string,
   status: GroupReply["status"] = "done",
-): GroupTurn => ({ id, role: "assistant", familiarId, replyTo, sessionId: null, text, status, createdAt: "t" });
+  patch: Partial<GroupReply> = {},
+): GroupTurn => ({ id, role: "assistant", familiarId, replyTo, sessionId: null, text, status, createdAt: "t", ...patch });
 
 function roundTranscript(): GroupTurn[] {
   return [
@@ -1050,4 +1053,30 @@ test("capTranscript: an all-reply tail (no user turn survives) collapses to empt
     reply("r2", "charm", "u1", "b"),
   ];
   assert.deepEqual(capTranscript(turns, 2), []);
+});
+
+test("saveTranscript merges with stored settled replies instead of erasing a late retired completion", () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const store = new Map<string, string>();
+  store.set(
+    "cave:group-chat:transcript:g1",
+    JSON.stringify([
+      user("u1", "hello"),
+      reply("r1", "nova", "u1", "late saved", "done", { slotIndex: 0 }),
+    ]),
+  );
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+    },
+  });
+  try {
+    saveTranscript("g1", [user("u1", "hello")]);
+    assert.deepEqual(loadTranscript("g1").map((turn) => turn.id), ["u1", "r1"]);
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  }
 });

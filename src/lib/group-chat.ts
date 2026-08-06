@@ -80,6 +80,8 @@ export type GroupReply = {
   familiarId: string;
   /** Id of the {@link GroupUserTurn} this answers. */
   replyTo: string;
+  /** Stable sibling slot captured when this turn fan-out was dispatched. */
+  slotIndex?: number;
   /** Resolved once the stream emits its `session` event. */
   sessionId: string | null;
   text: string;
@@ -939,6 +941,53 @@ export function capTranscript(turns: GroupTurn[], max: number): GroupTurn[] {
   return tail.slice(firstUser);
 }
 
+function sameTranscriptReply(left: GroupReply, right: GroupReply): boolean {
+  return left.id === right.id && left.replyTo === right.replyTo;
+}
+
+function shouldInsertReplyBefore(candidate: GroupReply, sibling: GroupReply): boolean {
+  if (candidate.slotIndex != null && sibling.slotIndex != null && candidate.slotIndex !== sibling.slotIndex) {
+    return candidate.slotIndex < sibling.slotIndex;
+  }
+  if (candidate.slotIndex != null && sibling.slotIndex == null) return true;
+  if (candidate.slotIndex == null && sibling.slotIndex != null) return false;
+  return false;
+}
+
+function upsertTranscriptReply(turns: GroupTurn[], reply: GroupReply): GroupTurn[] {
+  const next = [...turns];
+  const existingReplyIndex = next.findIndex(
+    (turn) => turn.role === "assistant" && sameTranscriptReply(turn as GroupReply, reply),
+  );
+  if (existingReplyIndex >= 0) next.splice(existingReplyIndex, 1);
+  const userTurnIndex = next.findIndex((turn) => turn.role === "user" && turn.id === reply.replyTo);
+  if (userTurnIndex < 0) return [...next, reply];
+  let insertIndex = userTurnIndex + 1;
+  for (let index = userTurnIndex + 1; index < next.length; index += 1) {
+    const turn = next[index];
+    if (turn.role === "user") break;
+    if (turn.replyTo !== reply.replyTo) continue;
+    if (shouldInsertReplyBefore(reply, turn as GroupReply)) break;
+    insertIndex = index + 1;
+  }
+  next.splice(insertIndex, 0, reply);
+  return next;
+}
+
+function mergeTranscriptTurns(current: GroupTurn[], incoming: GroupTurn[]): GroupTurn[] {
+  let merged = [...current];
+  for (const turn of incoming) {
+    if (turn.role === "user") {
+      const existingIndex = merged.findIndex((item) => item.role === "user" && item.id === turn.id);
+      if (existingIndex >= 0) merged[existingIndex] = turn;
+      else merged.push(turn);
+      continue;
+    }
+    merged = upsertTranscriptReply(merged, turn);
+  }
+  return merged;
+}
+
 export function saveTranscript(groupId: string, turns: GroupTurn[]): void {
   if (typeof localStorage === "undefined") return;
   try {
@@ -947,9 +996,10 @@ export function saveTranscript(groupId: string, turns: GroupTurn[]): void {
     const settled = turns.filter(
       (t) => t.role === "user" || (t as GroupReply).status === "done" || (t as GroupReply).status === "error",
     );
+    const existing = loadTranscript(groupId);
     localStorage.setItem(
       TRANSCRIPTS_KEY_PREFIX + groupId,
-      JSON.stringify(capTranscript(settled, TRANSCRIPT_CAP)),
+      JSON.stringify(capTranscript(mergeTranscriptTurns(existing, settled), TRANSCRIPT_CAP)),
     );
   } catch {
     /* ignore */

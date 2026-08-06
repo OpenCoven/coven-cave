@@ -323,3 +323,75 @@ test("a late retired-scope persistence failure is swallowed and leaves the activ
   expect(transcriptText(renderer)).not.toContain("late final");
   expect(announcer.announce).not.toHaveBeenCalledWith("All 1 familiar replied.");
 });
+
+test("returning to the original coven before a retired reply settles reconciles the live transcript without duplicates", async () => {
+  const { data, storage } = installStorage();
+  vi.stubGlobal("window", {
+    localStorage: storage,
+    setTimeout,
+    clearTimeout,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    dispatchEvent: () => true,
+  });
+  vi.stubGlobal("localStorage", storage);
+
+  const streams: ReadableStreamDefaultController<Uint8Array>[] = [];
+  const encoder = new TextEncoder();
+  vi.stubGlobal("fetch", vi.fn(async () => ({
+    ok: true,
+    body: new ReadableStream({
+      start(controller) {
+        streams.push(controller);
+      },
+    }),
+  } as Response)));
+
+  let renderer!: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(createElement(GroupChatView, {
+      familiars: [{ id: "nova", display_name: "Nova", role: "Scout" }],
+    }));
+    await Promise.resolve();
+  });
+
+  await act(async () => {
+    findTextarea(renderer, "Message the Alpha Coven coven").props.onChange({ target: { value: "Hello again" } });
+    await Promise.resolve();
+  });
+  await act(async () => {
+    findButton(renderer, "Send").props.onClick();
+    await Promise.resolve();
+  });
+  await act(async () => {
+    streams[0].enqueue(encoder.encode(`data: ${JSON.stringify({ kind: "assistant_chunk", text: "partial" })}\n\n`));
+    await Promise.resolve();
+  });
+
+  await act(async () => {
+    findCovenRowButton(renderer, "Beta Coven").props.onClick();
+    await Promise.resolve();
+  });
+  await act(async () => {
+    findCovenRowButton(renderer, "Alpha Coven").props.onClick();
+    await Promise.resolve();
+  });
+
+  expect(transcriptText(renderer)).not.toContain("final reconciled reply");
+
+  await act(async () => {
+    streams[0].enqueue(encoder.encode(`data: ${JSON.stringify({ kind: "assistant_replace", text: "final reconciled reply" })}\n\n`));
+    streams[0].enqueue(encoder.encode(`data: ${JSON.stringify({ kind: "done", sessionId: "session-a" })}\n\n`));
+    streams[0].close();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(transcriptText(renderer)).toContain("final reconciled reply");
+  expect(transcriptText(renderer).match(/final reconciled reply/g)?.length ?? 0).toBe(1);
+  expect(announcer.announce).not.toHaveBeenCalledWith("All 1 familiar replied.");
+  expect(JSON.parse(data.get("cave:group-chat:transcript:group-a") ?? "[]")).toEqual([
+    expect.objectContaining({ role: "user", text: "Hello again" }),
+    expect.objectContaining({ role: "assistant", status: "done", text: "final reconciled reply" }),
+  ]);
+});

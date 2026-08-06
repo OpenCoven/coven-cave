@@ -4,8 +4,8 @@ import test from "node:test";
 import {
   createGroupRetiredTranscriptStore,
   mergeRetiredRunIntoTranscript,
-} from "./group-chat-retired-transcript";
-import type { GroupReply, GroupUserTurn } from "./group-chat";
+} from "./group-chat-retired-transcript.ts";
+import type { GroupReply, GroupUserTurn } from "./group-chat.ts";
 
 function makeUserTurn(id: string, text: string): GroupUserTurn {
   return {
@@ -68,4 +68,59 @@ test("retired transcript persistence skips a stale terminal from an older retry 
   assert.equal(saved.length, 0);
   assert.equal(store.persistRetiredRun("run-new"), true);
   assert.deepEqual(saved, [{ groupId: "g-1", turns: [userTurn.id, newReply.id] }]);
+});
+
+test("mergeRetiredRunIntoTranscript preserves original sibling order when replies settle in reverse", () => {
+  const userTurn = makeUserTurn("u-1", "Order please");
+  const firstReply = makeReply("r-1", userTurn.id, {
+    familiarId: "nova",
+    status: "done",
+    text: "first",
+    slotIndex: 0,
+  });
+  const secondReply = makeReply("r-2", userTurn.id, {
+    familiarId: "sage",
+    status: "done",
+    text: "second",
+    slotIndex: 1,
+  });
+
+  const completedSecond = mergeRetiredRunIntoTranscript([userTurn], userTurn, secondReply);
+  const merged = mergeRetiredRunIntoTranscript(completedSecond, userTurn, firstReply);
+
+  assert.deepEqual(
+    merged.map((turn) => turn.id),
+    [userTurn.id, firstReply.id, secondReply.id],
+  );
+});
+
+test("mergeRetiredRunIntoTranscript preserves slot order across mixed terminal outcomes", () => {
+  const userTurn = makeUserTurn("u-1", "Mixed outcomes");
+  const firstReply = makeReply("r-1", userTurn.id, {
+    familiarId: "nova",
+    status: "done",
+    text: "complete",
+    slotIndex: 0,
+  });
+  const secondReply = makeReply("r-2", userTurn.id, {
+    familiarId: "sage",
+    status: "error",
+    text: "failed",
+    error: "boom",
+    slotIndex: 1,
+  });
+
+  const completedSecond = mergeRetiredRunIntoTranscript([userTurn], userTurn, secondReply);
+  const merged = mergeRetiredRunIntoTranscript(completedSecond, userTurn, firstReply);
+
+  assert.deepEqual(
+    merged.map((turn) =>
+      turn.role === "assistant" ? { id: turn.id, status: turn.status } : { id: turn.id },
+    ),
+    [
+      { id: userTurn.id },
+      { id: firstReply.id, status: "done" },
+      { id: secondReply.id, status: "error" },
+    ],
+  );
 });

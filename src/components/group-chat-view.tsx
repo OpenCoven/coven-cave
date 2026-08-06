@@ -92,7 +92,10 @@ import {
 } from "@/lib/group-chat";
 import { newId, nowIso } from "@/lib/group-chat-ids";
 import { groupChatTranscriptThreads } from "@/lib/group-chat-transcript";
-import { createGroupRetiredTranscriptStore } from "@/lib/group-chat-retired-transcript";
+import {
+  createGroupRetiredTranscriptStore,
+  mergeRetiredRunIntoTranscript,
+} from "@/lib/group-chat-retired-transcript";
 import {
   listActiveGroupReplyRuns,
   newGroupReplyRunId,
@@ -214,7 +217,18 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     new Map<string, MentionCompletion[]>(),
   );
   const retiredTranscriptStoreRef = useRef(
-    createGroupRetiredTranscriptStore({ loadTranscript, saveTranscript }),
+    createGroupRetiredTranscriptStore({
+      loadTranscript,
+      saveTranscript,
+      reconcileLiveTranscript: (groupId, userTurn, reply) => {
+        if (activeGroupRef.current?.id !== groupId) return;
+        setTranscript((prev) => (
+          activeGroupRef.current?.id === groupId
+            ? mergeRetiredRunIntoTranscript(prev, userTurn, reply)
+            : prev
+        ));
+      },
+    }),
   );
   const draftOwnerRef = useRef<string | null>(null);
   // Which group the in-memory transcript belongs to (set by the swap effect).

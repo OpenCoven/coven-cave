@@ -3,6 +3,7 @@ import type { GroupReply, GroupTurn, GroupUserTurn } from "./group-chat";
 type TranscriptIo = {
   loadTranscript: (groupId: string) => GroupTurn[];
   saveTranscript: (groupId: string, turns: GroupTurn[]) => void;
+  reconcileLiveTranscript?: (groupId: string, userTurn: GroupUserTurn, reply: GroupReply) => void;
 };
 
 type RetiredRunRecord = {
@@ -19,17 +20,28 @@ function insertReplyAfterThreadTurns(
   reply: GroupReply,
 ): GroupTurn[] {
   const next = [...turns];
-  const existingReplyIndex = next.findIndex((turn) => turn.role === "assistant" && turn.id === reply.id);
-  if (existingReplyIndex >= 0) {
-    next[existingReplyIndex] = reply;
-    return next;
-  }
-  const lastThreadTurnIndex = next.reduce((last, turn, index) => {
-    if (turn.role === "user") return turn.id === userTurnId ? index : last;
-    return turn.replyTo === userTurnId ? index : last;
-  }, -1);
-  if (lastThreadTurnIndex >= 0) {
-    next.splice(lastThreadTurnIndex + 1, 0, reply);
+  const existingReplyIndex = next.findIndex(
+    (turn) => turn.role === "assistant" && turn.id === reply.id && turn.replyTo === userTurnId,
+  );
+  if (existingReplyIndex >= 0) next.splice(existingReplyIndex, 1);
+  const userTurnIndex = next.findIndex((turn) => turn.role === "user" && turn.id === userTurnId);
+  if (userTurnIndex >= 0) {
+    let insertIndex = userTurnIndex + 1;
+    for (let index = userTurnIndex + 1; index < next.length; index += 1) {
+      const turn = next[index];
+      if (turn.role === "user") break;
+      if (turn.replyTo !== userTurnId) continue;
+      if (
+        reply.slotIndex != null &&
+        (turn as GroupReply).slotIndex != null &&
+        reply.slotIndex < (turn as GroupReply).slotIndex!
+      ) {
+        break;
+      }
+      if (reply.slotIndex != null && (turn as GroupReply).slotIndex == null) break;
+      insertIndex = index + 1;
+    }
+    next.splice(insertIndex, 0, reply);
     return next;
   }
   return [...next, reply];
@@ -72,6 +84,7 @@ export function createGroupRetiredTranscriptStore(io: TranscriptIo) {
         record.groupId,
         mergeRetiredRunIntoTranscript(current, record.userTurn, record.reply),
       );
+      io.reconcileLiveTranscript?.(record.groupId, record.userTurn, record.reply);
       return true;
     },
     finishRun(runId: string) {
