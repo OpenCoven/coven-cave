@@ -320,7 +320,7 @@ try {
   });
   await config.recordTravelHubReachability(true, new Date("2026-06-30T12:02:00.000Z"));
   const replayResult = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
-  assert.deepEqual(replayResult, { attempted: 1, synced: 1, failed: 0, errors: [] });
+  assert.deepEqual(replayResult, { attempted: 1, synced: 0, failed: 0, errors: [] });
   assert.equal(sessionRequests.length, 1, "the first replay should spawn exactly one daemon session");
   assert.match(
     String(sessionRequests[0]?.prompt),
@@ -332,10 +332,15 @@ try {
     mode: "resume",
     id: "native-claude-session",
   });
+  assert.equal(
+    sessionRequests[0]?.conversationId,
+    "native-claude-session",
+    "resumed daemon launches must mirror the native provider id into conversationId metadata",
+  );
 
   const syncedState = await config.loadState();
   const syncedItem = syncedState.travel.offlineQueue.find((item) => item.id === replayItem.id);
-  assert.equal(syncedItem?.status, "synced");
+  assert.equal(syncedItem?.status, "syncing");
   assert.equal(
     syncedItem?.payload?.replaySessionId,
     "hub-session-1",
@@ -351,7 +356,7 @@ try {
   assert.equal(
     replayedConversation?.harnessSessionId,
     "native-claude-session",
-    "replay persistence cannot replace an existing native resume id with the daemon execution row",
+    "a launched replay stays on the proven native resume id until terminal daemon status confirms continuity",
   );
   assert.equal(
     replayedConversation?.turns.length,
@@ -373,6 +378,19 @@ try {
     queuedSummary?.attentionEvidence,
     "status-only replay must not fabricate assistant attention or mutate queued causal evidence",
   );
+
+  sessionRecords.set("hub-session-1", {
+    id: "hub-session-1",
+    status: "completed",
+    conversation_id: "native-claude-session",
+    updated_at: "2026-06-30T12:02:05.000Z",
+  });
+  await config.updateOfflineTravelItemPayload(replayItem.id, {
+    ...(syncedItem?.payload ?? {}),
+    retryAfterUntil: "2026-06-30T12:02:00.000Z",
+  });
+  const replayCompleted = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+  assert.deepEqual(replayCompleted, { attempted: 1, synced: 1, failed: 0, errors: [] });
 
   const merged = mergeSessionRows({
     daemonSessions: [
@@ -437,151 +455,138 @@ try {
     "duplicate/retry persistence remains idempotent by stable user-turn id",
   );
 
-  const replayCases = [
-    {
-      sessionId: "offline-chat-equal",
-      createdAt: "2026-06-30T12:03:00.000Z",
-      response: { id: "hub-session-2", status: "running", conversation_id: "hub-session-2" },
-      expectedReplaySession: {
-        sessionId: "hub-session-2",
-        conversationId: "hub-session-2",
-        createdAt: "2026-06-30T12:03:00.000Z",
-        updatedAt: "2026-06-30T12:03:00.000Z",
-      },
-    },
-    {
-      sessionId: "offline-chat-distinct",
-      createdAt: "2026-06-30T12:04:00.000Z",
-      response: { id: "hub-session-3", status: "running", conversationId: "daemon-conversation-3" },
-      expectedReplaySession: {
-        sessionId: "hub-session-3",
-        conversationId: "daemon-conversation-3",
-        createdAt: "2026-06-30T12:04:00.000Z",
-        updatedAt: "2026-06-30T12:04:00.000Z",
-      },
-    },
-  ] as const;
-  for (const replayCase of replayCases) {
-    await conversations.persistQueuedOfflineConversation({
-      sessionId: replayCase.sessionId,
-      familiarId: "sage",
-      harness: "claude",
-      createdAt: replayCase.createdAt,
-      userTurn: {
-        id: `${replayCase.sessionId}-user`,
-        text: `queued ${replayCase.sessionId}`,
-      },
-    });
-    const extraItem = await config.enqueueOfflineTravelItem({
-      kind: "chat",
-      summary: replayCase.sessionId,
-      payload: {
-        familiarId: "sage",
-        prompt: `queued ${replayCase.sessionId}`,
-        sessionId: replayCase.sessionId,
-        userTurnId: `${replayCase.sessionId}-user`,
-        projectRoot,
-      },
-    });
-    sessionResponses.push(replayCase.response);
-    const extraReplayResult = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
-    assert.deepEqual(extraReplayResult, { attempted: 1, synced: 1, failed: 0, errors: [] });
-    const extraState = await config.loadState();
-    const extraSynced = extraState.travel.offlineQueue.find((item) => item.id === extraItem.id);
-    assert.equal(extraSynced?.payload?.replaySessionId, replayCase.expectedReplaySession.sessionId);
-    assert.equal(
-      Object.prototype.hasOwnProperty.call(extraSynced?.payload ?? {}, "harnessSessionId"),
-      false,
-      "new replay payloads do not mislabel daemon ids as native harness ids",
-    );
-    const extraConversation = await conversations.loadConversation(replayCase.sessionId);
-    assert.equal(
-      extraConversation?.harnessSessionId,
-      replayCase.expectedReplaySession.conversationId === replayCase.expectedReplaySession.sessionId
-        ? undefined
-        : replayCase.expectedReplaySession.conversationId,
-      "offline replay promotes only distinct daemon-returned native conversation ids onto the stable transcript",
-    );
-    assert.equal(extraConversation?.replaySessions?.length, 1);
-    assert.equal(extraConversation?.replaySessions?.[0]?.sessionId, replayCase.expectedReplaySession.sessionId);
-    assert.equal(
-      extraConversation?.replaySessions?.[0]?.conversationId,
-      replayCase.expectedReplaySession.conversationId,
-    );
-  }
-
   await conversations.persistQueuedOfflineConversation({
-    sessionId: "offline-chat-resolve-live",
+    sessionId: "offline-chat-fifo",
     familiarId: "sage",
     harness: "claude",
-    createdAt: "2026-06-30T12:05:00.000Z",
+    createdAt: "2026-06-30T12:03:00.000Z",
     userTurn: {
-      id: "offline-chat-resolve-live-user",
-      text: "queued offline-chat-resolve-live",
+      id: "offline-chat-fifo-user-1",
+      text: "queued offline-chat-fifo turn 1",
     },
   });
-  await config.enqueueOfflineTravelItem({
+  const fifoFirst = await config.enqueueOfflineTravelItem({
     kind: "chat",
-    summary: "offline-chat-resolve-live",
+    summary: "offline-chat-fifo-1",
     payload: {
       familiarId: "sage",
-      prompt: "queued offline-chat-resolve-live",
-      sessionId: "offline-chat-resolve-live",
-      userTurnId: "offline-chat-resolve-live-user",
+      prompt: "queued offline-chat-fifo turn 1",
+      sessionId: "offline-chat-fifo",
+      userTurnId: "offline-chat-fifo-user-1",
       projectRoot,
     },
   });
-  sessionResponses.push({ id: "hub-session-resolve-live", status: "completed" });
+  await conversations.persistQueuedOfflineConversation({
+    sessionId: "offline-chat-fifo",
+    familiarId: "sage",
+    harness: "claude",
+    createdAt: "2026-06-30T12:04:00.000Z",
+    userTurn: {
+      id: "offline-chat-fifo-user-2",
+      text: "queued offline-chat-fifo turn 2",
+      parentId: "offline-chat-fifo-user-1",
+    },
+  });
+  const fifoSecond = await config.enqueueOfflineTravelItem({
+    kind: "chat",
+    summary: "offline-chat-fifo-2",
+    payload: {
+      familiarId: "sage",
+      prompt: "queued offline-chat-fifo turn 2",
+      sessionId: "offline-chat-fifo",
+      userTurnId: "offline-chat-fifo-user-2",
+      parentTurnId: "offline-chat-fifo-user-1",
+      projectRoot,
+    },
+  });
+  const requestCountBeforeFifo = sessionRequests.length;
+  sessionResponses.push({ id: "hub-fifo-1", status: "running" });
+  assert.deepEqual(
+    await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 2 }),
+    { attempted: 1, synced: 0, failed: 0, errors: [] },
+  );
+  const fifoRequests = sessionRequests.slice(requestCountBeforeFifo);
+  assert.equal(fifoRequests.length, 1);
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(fifoRequests[0] ?? {}, "conversation"),
+    false,
+    "fresh daemon launches must not invent continuity metadata before the daemon knows it",
+  );
+  let fifoState = await config.loadState();
+  assert.equal(fifoState.travel.offlineQueue.find((item) => item.id === fifoFirst.id)?.status, "syncing");
+  assert.equal(fifoState.travel.offlineQueue.find((item) => item.id === fifoSecond.id)?.status, "pending");
+  sessionRecords.set("hub-fifo-1", {
+    id: "hub-fifo-1",
+    status: "completed",
+    conversationId: "native-thread-fifo-1",
+    updated_at: "2026-06-30T12:04:30.000Z",
+  });
+  await config.updateOfflineTravelItemPayload(fifoFirst.id, {
+    ...(fifoState.travel.offlineQueue.find((item) => item.id === fifoFirst.id)?.payload ?? {}),
+    retryAfterUntil: "2026-06-30T12:04:00.000Z",
+  });
+  sessionResponses.push({ id: "hub-fifo-2", status: "running" });
+  assert.deepEqual(
+    await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 2 }),
+    { attempted: 2, synced: 1, failed: 0, errors: [] },
+  );
+  const fifoLaunchRequests = sessionRequests.slice(requestCountBeforeFifo);
+  assert.equal(fifoLaunchRequests.length, 2, "the second same-chat launch waits for the first replay to finish");
+  assert.deepEqual(fifoLaunchRequests[1]?.conversation, {
+    mode: "resume",
+    id: "native-thread-fifo-1",
+  });
+  assert.equal(fifoLaunchRequests[1]?.conversationId, "native-thread-fifo-1");
+  fifoState = await config.loadState();
+  sessionRecords.set("hub-fifo-2", {
+    id: "hub-fifo-2",
+    status: "completed",
+    conversationId: "native-thread-fifo-2",
+    updated_at: "2026-06-30T12:05:00.000Z",
+  });
+  await config.updateOfflineTravelItemPayload(fifoSecond.id, {
+    ...(fifoState.travel.offlineQueue.find((item) => item.id === fifoSecond.id)?.payload ?? {}),
+    retryAfterUntil: "2026-06-30T12:04:00.000Z",
+  });
   assert.deepEqual(
     await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 }),
     { attempted: 1, synced: 1, failed: 0, errors: [] },
-  );
-  sessionRecords.set("hub-session-resolve-live", {
-    id: "hub-session-resolve-live",
-    status: "completed",
-    conversation_id: "native-thread-resolved-live",
-    updated_at: "2026-06-30T12:05:30.000Z",
-  });
-  assert.deepEqual(
-    await sendRuntime.resolveReplayBackedResumeSessionId("offline-chat-resolve-live"),
-    { ok: true, resumeSessionId: "native-thread-resolved-live", replayBound: true },
-    "the next live resume resolves the canonical daemon conversation id instead of forking from the stable Cave id",
   );
   assert.equal(
-    (await conversations.loadConversation("offline-chat-resolve-live"))?.harnessSessionId,
-    "native-thread-resolved-live",
+    (await conversations.loadConversation("offline-chat-fifo"))?.harnessSessionId,
+    "native-thread-fifo-2",
+    "completed daemon replays promote the recovered provider id before later queued turns launch",
   );
 
-  await conversations.persistQueuedOfflineConversation({
+  await conversations.saveConversation({
     sessionId: "offline-chat-running-wait",
+    harnessSessionId: "native-thread-older",
     familiarId: "sage",
     harness: "claude",
+    model: "anthropic/claude-sonnet-4-6",
+    runtime: `local:${projectRoot}`,
+    title: "Replay-backed resume wait",
     createdAt: "2026-06-30T12:06:00.000Z",
-    userTurn: {
+    updatedAt: "2026-06-30T12:06:00.000Z",
+    replaySessions: [{
+      sessionId: "hub-session-running-wait",
+      createdAt: "2026-06-30T12:06:00.000Z",
+      updatedAt: "2026-06-30T12:06:00.000Z",
+    }],
+    turns: [{
       id: "offline-chat-running-wait-user",
+      role: "user",
       text: "queued offline-chat-running-wait",
-    },
+      createdAt: "2026-06-30T12:06:00.000Z",
+      parentId: null,
+    }],
+    activeLeafId: "offline-chat-running-wait-user",
   });
-  await config.enqueueOfflineTravelItem({
-    kind: "chat",
-    summary: "offline-chat-running-wait",
-    payload: {
-      familiarId: "sage",
-      prompt: "queued offline-chat-running-wait",
-      sessionId: "offline-chat-running-wait",
-      userTurnId: "offline-chat-running-wait-user",
-      projectRoot,
-    },
-  });
-  sessionResponses.push({
+  sessionRecords.set("hub-session-running-wait", {
     id: "hub-session-running-wait",
     status: "running",
-    conversationId: "hub-session-running-wait",
+    updated_at: "2026-06-30T12:06:15.000Z",
   });
-  assert.deepEqual(
-    await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 }),
-    { attempted: 1, synced: 1, failed: 0, errors: [] },
-  );
   const runningResolution = await sendRuntime.resolveReplayBackedResumeSessionId("offline-chat-running-wait");
   assert.equal(runningResolution.ok, false);
   assert.equal(runningResolution.code, "conversation_continuity_syncing");
@@ -589,8 +594,8 @@ try {
   assert.match(runningResolution.error, /Retry in a moment/i);
   assert.equal(
     (await conversations.loadConversation("offline-chat-running-wait"))?.harnessSessionId,
-    undefined,
-    "a still-running daemon replay must refuse fallback instead of stamping the stable Cave id as native continuity",
+    "native-thread-older",
+    "a newer unresolved replay must block resume instead of falling back to the older stored provider token",
   );
   sessionRecords.set("hub-session-running-wait", {
     id: "hub-session-running-wait",
@@ -605,67 +610,92 @@ try {
   );
 
   await conversations.persistQueuedOfflineConversation({
-    sessionId: "offline-chat-terminal-missing",
+    sessionId: "offline-chat-failed-fifo",
     familiarId: "sage",
     harness: "claude",
     createdAt: "2026-06-30T12:07:00.000Z",
     userTurn: {
-      id: "offline-chat-terminal-missing-user",
-      text: "queued offline-chat-terminal-missing",
+      id: "offline-chat-failed-fifo-user-1",
+      text: "queued offline-chat-failed-fifo turn 1",
     },
   });
-  await config.enqueueOfflineTravelItem({
+  const failedFifoFirst = await config.enqueueOfflineTravelItem({
     kind: "chat",
-    summary: "offline-chat-terminal-missing",
+    summary: "offline-chat-failed-fifo-1",
     payload: {
       familiarId: "sage",
-      prompt: "queued offline-chat-terminal-missing",
-      sessionId: "offline-chat-terminal-missing",
-      userTurnId: "offline-chat-terminal-missing-user",
+      prompt: "queued offline-chat-failed-fifo turn 1",
+      sessionId: "offline-chat-failed-fifo",
+      userTurnId: "offline-chat-failed-fifo-user-1",
       projectRoot,
     },
   });
-  sessionResponses.push({
-    id: "hub-session-terminal-missing",
-    status: "failed",
-    conversation_id: "hub-session-terminal-missing",
-  });
-  assert.deepEqual(
-    await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 }),
-    { attempted: 1, synced: 1, failed: 0, errors: [] },
-  );
-  const terminalResolution = await sendRuntime.resolveReplayBackedResumeSessionId("offline-chat-terminal-missing");
-  assert.equal(terminalResolution.ok, false);
-  assert.equal(terminalResolution.code, "conversation_continuity_unavailable");
-  assert.equal(terminalResolution.retryable, false);
-  assert.match(terminalResolution.error, /will not fall back/i);
-
   await conversations.persistQueuedOfflineConversation({
+    sessionId: "offline-chat-failed-fifo",
+    familiarId: "sage",
+    harness: "claude",
+    createdAt: "2026-06-30T12:07:30.000Z",
+    userTurn: {
+      id: "offline-chat-failed-fifo-user-2",
+      text: "queued offline-chat-failed-fifo turn 2",
+      parentId: "offline-chat-failed-fifo-user-1",
+    },
+  });
+  const failedFifoSecond = await config.enqueueOfflineTravelItem({
+    kind: "chat",
+    summary: "offline-chat-failed-fifo-2",
+    payload: {
+      familiarId: "sage",
+      prompt: "queued offline-chat-failed-fifo turn 2",
+      sessionId: "offline-chat-failed-fifo",
+      userTurnId: "offline-chat-failed-fifo-user-2",
+      parentTurnId: "offline-chat-failed-fifo-user-1",
+      projectRoot,
+    },
+  });
+  const requestCountBeforeFailedFifo = sessionRequests.length;
+  sessionResponses.push({ id: "hub-failed-fifo-1", status: "failed" });
+  assert.deepEqual(
+    await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 2 }),
+    {
+      attempted: 1,
+      synced: 0,
+      failed: 1,
+      errors: [{
+        id: failedFifoFirst.id,
+        error: "daemon replay session hub-failed-fifo-1 ended failed; queued chat replay needs attention before later turns can launch",
+      }],
+    },
+  );
+  assert.equal(
+    sessionRequests.length,
+    requestCountBeforeFailedFifo + 1,
+    "a failed replay blocks later same-session launches until the head item is repaired",
+  );
+  const failedFifoState = await config.loadState();
+  assert.equal(failedFifoState.travel.offlineQueue.find((item) => item.id === failedFifoFirst.id)?.status, "failed");
+  assert.equal(failedFifoState.travel.offlineQueue.find((item) => item.id === failedFifoSecond.id)?.status, "pending");
+
+  await conversations.saveConversation({
     sessionId: "offline-chat-malicious-id",
     familiarId: "sage",
     harness: "claude",
     createdAt: "2026-06-30T12:08:00.000Z",
-    userTurn: {
+    updatedAt: "2026-06-30T12:08:00.000Z",
+    replaySessions: [{
+      sessionId: "hub-session-malicious-id",
+      createdAt: "2026-06-30T12:08:00.000Z",
+      updatedAt: "2026-06-30T12:08:00.000Z",
+    }],
+    turns: [{
       id: "offline-chat-malicious-id-user",
+      role: "user",
       text: "queued offline-chat-malicious-id",
-    },
+      createdAt: "2026-06-30T12:08:00.000Z",
+      parentId: null,
+    }],
+    activeLeafId: "offline-chat-malicious-id-user",
   });
-  await config.enqueueOfflineTravelItem({
-    kind: "chat",
-    summary: "offline-chat-malicious-id",
-    payload: {
-      familiarId: "sage",
-      prompt: "queued offline-chat-malicious-id",
-      sessionId: "offline-chat-malicious-id",
-      userTurnId: "offline-chat-malicious-id-user",
-      projectRoot,
-    },
-  });
-  sessionResponses.push({ id: "hub-session-malicious-id", status: "completed" });
-  assert.deepEqual(
-    await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 }),
-    { attempted: 1, synced: 1, failed: 0, errors: [] },
-  );
   sessionRecords.set("hub-session-malicious-id", {
     id: "hub-session-malicious-id",
     status: "completed",
@@ -678,107 +708,6 @@ try {
     (await conversations.loadConversation("offline-chat-malicious-id"))?.harnessSessionId,
     undefined,
     "malicious daemon conversation ids are rejected instead of being cached as native continuity",
-  );
-
-  await conversations.saveConversation({
-    sessionId: "offline-chat-consecutive",
-    familiarId: "sage",
-    harness: "claude",
-    model: "anthropic/claude-sonnet-4-6",
-    runtime: `local:${projectRoot}`,
-    title: "Consecutive offline chat",
-    createdAt: "2026-06-30T12:09:00.000Z",
-    updatedAt: "2026-06-30T12:09:00.000Z",
-    replaySessions: [
-      {
-        sessionId: "hub-history-valid",
-        conversationId: "native-thread-history",
-        createdAt: "2026-06-30T12:08:00.000Z",
-        updatedAt: "2026-06-30T12:08:00.000Z",
-      },
-      {
-        sessionId: "hub-history-equal",
-        conversationId: "hub-history-equal",
-        createdAt: "2026-06-30T12:08:30.000Z",
-        updatedAt: "2026-06-30T12:08:30.000Z",
-      },
-      {
-        sessionId: "hub-history-malicious",
-        createdAt: "2026-06-30T12:08:45.000Z",
-        updatedAt: "2026-06-30T12:08:45.000Z",
-      },
-    ],
-    turns: [{
-      id: "offline-chat-consecutive-root",
-      role: "user",
-      text: "root",
-      createdAt: "2026-06-30T12:09:00.000Z",
-      parentId: null,
-    }],
-    activeLeafId: "offline-chat-consecutive-root",
-  });
-  for (const [index, createdAt] of [
-    "2026-06-30T12:10:00.000Z",
-    "2026-06-30T12:11:00.000Z",
-    "2026-06-30T12:12:00.000Z",
-  ].entries()) {
-    const turnNumber = index + 1;
-    const userTurnId = `offline-chat-consecutive-user-${turnNumber}`;
-    const parentId = turnNumber === 1
-      ? "offline-chat-consecutive-root"
-      : `offline-chat-consecutive-user-${turnNumber - 1}`;
-    await conversations.persistQueuedOfflineConversation({
-      sessionId: "offline-chat-consecutive",
-      familiarId: "sage",
-      harness: "claude",
-      createdAt,
-      userTurn: {
-        id: userTurnId,
-        text: `queued consecutive turn ${turnNumber}`,
-        parentId,
-      },
-    });
-    await config.enqueueOfflineTravelItem({
-      kind: "chat",
-      summary: `offline-chat-consecutive-${turnNumber}`,
-      payload: {
-        familiarId: "sage",
-        prompt: `queued consecutive turn ${turnNumber}`,
-        sessionId: "offline-chat-consecutive",
-        userTurnId,
-        parentTurnId: parentId,
-        projectRoot,
-      },
-    });
-  }
-  const requestCountBeforeConsecutive = sessionRequests.length;
-  sessionResponses.push(
-    { id: "hub-consecutive-1", status: "running", conversationId: "native-thread-1" },
-    { id: "hub-consecutive-2", status: "running", conversationId: "native-thread-2" },
-    { id: "hub-consecutive-3", status: "running", conversationId: "native-thread-3" },
-  );
-  assert.deepEqual(
-    await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 3 }),
-    { attempted: 3, synced: 3, failed: 0, errors: [] },
-  );
-  const consecutiveRequests = sessionRequests.slice(requestCountBeforeConsecutive);
-  assert.equal(consecutiveRequests.length, 3);
-  assert.deepEqual(consecutiveRequests[0]?.conversation, {
-    mode: "resume",
-    id: "native-thread-history",
-  }, "first replay falls back to the newest valid recorded native replay conversation id");
-  assert.deepEqual(consecutiveRequests[1]?.conversation, {
-    mode: "resume",
-    id: "native-thread-1",
-  }, "second replay promotes the daemon-returned native conversation id instead of reusing the daemon session id");
-  assert.deepEqual(consecutiveRequests[2]?.conversation, {
-    mode: "resume",
-    id: "native-thread-2",
-  }, "third replay reuses the latest promoted native conversation id after consecutive fresh offline turns");
-  assert.equal(
-    (await conversations.loadConversation("offline-chat-consecutive"))?.harnessSessionId,
-    "native-thread-3",
-    "consecutive replays promote each recovered native conversation id onto the stable transcript",
   );
 
   await conversations.persistQueuedOfflineConversation({
@@ -805,6 +734,12 @@ try {
     },
   });
   const requestCountBeforeCrashRetry = sessionRequests.length;
+  sessionRecords.set("hub-crash-retry-1", {
+    id: "hub-crash-retry-1",
+    status: "completed",
+    conversationId: "native-thread-crash",
+    updated_at: "2026-06-30T12:13:30.000Z",
+  });
   assert.deepEqual(
     await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 }),
     { attempted: 1, synced: 1, failed: 0, errors: [] },
@@ -842,20 +777,36 @@ try {
       projectRoot,
     },
   });
-  sessionResponses.push({ id: "hub-crash-retry-2", status: "running", conversationId: "native-thread-crash-2" });
+  sessionResponses.push({ id: "hub-crash-retry-2", status: "running" });
   assert.deepEqual(
     await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 }),
-    { attempted: 1, synced: 1, failed: 0, errors: [] },
+    { attempted: 1, synced: 0, failed: 0, errors: [] },
   );
   assert.deepEqual(
     sessionRequests.at(-1)?.conversation,
     { mode: "resume", id: "native-thread-crash" },
     "the first launch after a crash retry resumes the promoted native thread rather than the daemon replay session id",
   );
+  assert.equal(sessionRequests.at(-1)?.conversationId, "native-thread-crash");
   const crashRetryState = await config.loadState();
   assert.equal(
     crashRetryState.travel.offlineQueue.find((item) => item.id === crashRetryItem.id)?.status,
     "synced",
+  );
+  const crashRetrySecond = crashRetryState.travel.offlineQueue.find((item) => item.summary === "offline-chat-crash-retry-2");
+  sessionRecords.set("hub-crash-retry-2", {
+    id: "hub-crash-retry-2",
+    status: "completed",
+    conversationId: "native-thread-crash-2",
+    updated_at: "2026-06-30T12:14:30.000Z",
+  });
+  await config.updateOfflineTravelItemPayload(
+    crashRetrySecond?.id ?? "",
+    { ...(crashRetrySecond?.payload ?? {}), retryAfterUntil: "2026-06-30T12:14:00.000Z" },
+  );
+  assert.deepEqual(
+    await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 }),
+    { attempted: 1, synced: 1, failed: 0, errors: [] },
   );
 
   await config.saveConfig({

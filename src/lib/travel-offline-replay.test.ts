@@ -111,8 +111,8 @@ assert.match(
 );
 assert.match(
   replay,
-  /body:\s*\{[\s\S]*launchMode: "nonInteractive"[\s\S]*\.\.\.\(args\.conversationId \? \{ conversation: \{ mode: "resume", id: args\.conversationId \} \} : \{\}\)/,
-  "replayed chats launch through the daemon's non-interactive contract and reuse validated native conversation ids when available",
+  /body:\s*\{[\s\S]*launchMode: "nonInteractive"[\s\S]*args\.conversationId[\s\S]*conversation: \{ mode: "resume", id: args\.conversationId \}[\s\S]*conversationId: args\.conversationId/,
+  "replayed chats launch through the daemon's non-interactive contract and mirror a known native conversation id into daemon continuity metadata",
 );
 
 assert.match(

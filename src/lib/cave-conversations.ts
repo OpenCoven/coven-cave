@@ -1021,7 +1021,6 @@ export async function persistResolvedReplayConversationId(args: {
   return withConversationLock(args.sessionId, async () => {
     const conv = await loadConversation(args.sessionId);
     if (!conv) return null;
-    const existingValidated = validatedConversationHarnessSessionId(conv);
     let changed = false;
     const replayUpdatedAt = isCanonicalIsoInstant(args.updatedAt) ? args.updatedAt : null;
     const replayStatus = normalizeReplayStatus(args.status);
@@ -1043,11 +1042,21 @@ export async function persistResolvedReplayConversationId(args: {
       return next;
     });
     if (changed) conv.replaySessions = replaySessions;
+    const latestReplaySessionId = latestConversationReplaySession({
+      replaySessions: changed ? replaySessions : conv.replaySessions,
+    })?.sessionId ?? null;
+    const existingValidated = validatedConversationHarnessSessionId(conv);
+    const shouldPromoteLatestReplay = latestReplaySessionId === args.replaySessionId;
     if (existingValidated) {
-      if (changed) await saveConversation(conv);
-      return existingValidated;
-    }
-    if (conv.harnessSessionId !== conversationId) {
+      if (!shouldPromoteLatestReplay) {
+        if (changed) await saveConversation(conv);
+        return existingValidated;
+      }
+      if (existingValidated !== conversationId) {
+        conv.harnessSessionId = conversationId;
+        changed = true;
+      }
+    } else if (conv.harnessSessionId !== conversationId) {
       conv.harnessSessionId = conversationId;
       changed = true;
     }

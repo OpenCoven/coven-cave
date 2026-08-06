@@ -79,12 +79,22 @@ export async function resolveReplayBackedResumeSessionId(
   const conversation = await loadConversation(sessionId).catch(() => null);
   if (!conversation) return { ok: true, resumeSessionId: null, replayBound: false };
   const validatedNativeId = validatedConversationHarnessSessionId(conversation);
-  if (validatedNativeId) {
-    return { ok: true, resumeSessionId: validatedNativeId, replayBound: false };
-  }
   const latestReplay = latestConversationReplaySession(conversation);
+  const recordedReplayConversationId = normalizeDaemonConversationId(latestReplay?.conversationId);
   if (!latestReplay?.sessionId) {
-    return { ok: true, resumeSessionId: null, replayBound: false };
+    return validatedNativeId
+      ? { ok: true, resumeSessionId: validatedNativeId, replayBound: false }
+      : { ok: true, resumeSessionId: null, replayBound: false };
+  }
+  if (recordedReplayConversationId) {
+    const persisted = await persistResolvedReplayConversationId({
+      sessionId,
+      replaySessionId: latestReplay.sessionId,
+      conversationId: recordedReplayConversationId,
+      status: latestReplay.status ?? null,
+      updatedAt: latestReplay.updatedAt ?? null,
+    });
+    return { ok: true, resumeSessionId: persisted ?? recordedReplayConversationId, replayBound: true };
   }
   const res = await callDaemon<DaemonSessionRecord>({
     path: `/api/v1/sessions/${encodeURIComponent(latestReplay.sessionId)}`,
@@ -122,7 +132,7 @@ export async function resolveReplayBackedResumeSessionId(
     });
     return { ok: true, resumeSessionId: persisted ?? conversationId, replayBound: true };
   }
-  if (ACTIVE_SESSION_STATUSES.has(status)) {
+  if (ACTIVE_SESSION_STATUSES.has(status) || status === "created" || status === "idle") {
     return {
       ok: false,
       retryable: true,
@@ -137,7 +147,9 @@ export async function resolveReplayBackedResumeSessionId(
     retryable: false,
     code: "conversation_continuity_unavailable",
     error:
-      `Daemon session ${latestReplay.sessionId} finished without a resumable native conversation id. Cave will not fall back to the stable chat id and fork this replayed conversation.`,
+      validatedNativeId
+        ? `Daemon session ${latestReplay.sessionId} finished without a resumable native conversation id, so Cave will not fall back to the older stored provider token and fork this newer replayed chat.`
+        : `Daemon session ${latestReplay.sessionId} finished without a resumable native conversation id. Cave will not fall back to the stable chat id and fork this replayed conversation.`,
   };
 }
 
