@@ -35,8 +35,18 @@ assert.match(
 
 assert.match(
   src,
-  /const rows = renderGroups\.map\(\(g\) =>/,
+  /const rows = renderGroups\.map\(\(g, groupIndex\) =>/,
   "the render loop maps the capped renderGroups (not the full groupedTurns)",
+);
+
+// The first rendered row's `prev` turn is by definition one the reader cannot
+// see — folded away, or below the cap — so a time-gap rule there measures a
+// pause against nothing, and under a fold it stacks a second hairline directly
+// beneath the pill.
+assert.match(
+  src,
+  /const gapLabel = groupIndex === 0 \? null : chatTurnGapLabel\(prev\?\.createdAt, t\.createdAt\);/,
+  "no time-gap divider on the first rendered row",
 );
 
 // Leaving the bottom (updateFollowing(false)) must mount the full transcript so

@@ -98,7 +98,7 @@ assert.match(
 // is unchanged.
 assert.match(
   transcriptRowsBody,
-  /const rows = renderGroups\.map\(\(g\) => \{/,
+  /const rows = renderGroups\.map\(\(g, groupIndex\) => \{/,
   "the row loop lives inside the memo component",
 );
 // The pre-extraction inline IIFE form must not come back to ChatView's JSX.
