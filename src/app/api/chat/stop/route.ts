@@ -17,8 +17,10 @@ export const runtime = "nodejs";
  * Body: `{ runId?, sessionId? }` — runId is the per-send client token (works
  * before the server has assigned a conversation id) and, when present, MUST
  * resolve the exact run only. sessionId remains a legacy fallback for callers
- * that have no runId. `stopped: false` means nothing was in flight under the
- * chosen lookup key (already finished — not an error).
+ * that have no runId. `stopped: false` plus `state: "transport-settled"`
+ * means the run already finished transport and is only persisting/finalizing;
+ * `state: "not-found"` means nothing is currently registered under the chosen
+ * lookup key (already finished or not registered yet — not an error).
  */
 export async function POST(req: Request) {
   let body: { runId?: string; sessionId?: string } = {};
@@ -34,6 +36,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "runId or sessionId required" }, { status: 400 });
   }
 
-  const stopped = runId ? requestChatStop(runId) : requestChatStop(sessionId!);
-  return NextResponse.json({ ok: true, stopped });
+  const stop = runId ? requestChatStop(runId) : requestChatStop(sessionId!);
+  return NextResponse.json({
+    ok: true,
+    stopped: stop.state === "accepted",
+    state: stop.state,
+    ...(stop.terminalOutcome ? { terminalOutcome: stop.terminalOutcome } : {}),
+  });
 }

@@ -19,10 +19,21 @@ export type ChatRunHandle = {
   stopRequested: boolean;
   /** Monotonic: false once the transport produced its definitive outcome. */
   acceptingStop: boolean;
+  /** Transport outcome once Stop is no longer accepted. */
+  terminalOutcome: ChatRunTerminalOutcome | null;
   /** True while sessions/list should still treat the run as live. */
   projectionActive: boolean;
   /** Registry keys this run is reachable under (runId, conversation id). */
   keys: string[];
+};
+
+export type ChatRunTerminalOutcome = "completed" | "error" | "cancelled";
+
+export type ChatStopState = "accepted" | "transport-settled" | "not-found";
+
+export type ChatStopResult = {
+  state: ChatStopState;
+  terminalOutcome: ChatRunTerminalOutcome | null;
 };
 
 const active = new Map<string, ChatRunEntry>();
@@ -36,6 +47,7 @@ export function registerChatRun(
   const handle: ChatRunHandle = {
     stopRequested: false,
     acceptingStop: true,
+    terminalOutcome: null,
     projectionActive: true,
     keys: [],
   };
@@ -104,23 +116,34 @@ export function hasActiveChatRun(key: string): boolean {
 }
 
 /** Deliberate user stop: mark the run cancelled and SIGTERM its child.
- *  Returns false when nothing is in flight under the key. */
-export function requestChatStop(key: string): boolean {
+ *  Returns whether the stop was accepted, the run had already finished
+ *  transport, or nothing is currently registered under that key. */
+export function requestChatStop(key: string): ChatStopResult {
   const entry = active.get(key);
-  if (!entry || !entry.handle.acceptingStop) return false;
+  if (!entry) return { state: "not-found", terminalOutcome: null };
+  if (!entry.handle.acceptingStop) {
+    return {
+      state: "transport-settled",
+      terminalOutcome: entry.handle.terminalOutcome,
+    };
+  }
   entry.handle.stopRequested = true;
   try {
     entry.kill();
   } catch {
     /* child already gone */
   }
-  return true;
+  return { state: "accepted", terminalOutcome: null };
 }
 
 /** Freeze cancellation semantics as soon as the transport reaches a
  * definitive outcome. Projection stays live until persistence/final cleanup. */
-export function markChatRunTransportSettled(handle: ChatRunHandle): void {
+export function markChatRunTransportSettled(
+  handle: ChatRunHandle,
+  terminalOutcome: ChatRunTerminalOutcome,
+): void {
   handle.acceptingStop = false;
+  handle.terminalOutcome = terminalOutcome;
 }
 
 /** Sessions/list should stop presenting the run as live once persistence/final

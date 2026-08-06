@@ -33,7 +33,7 @@ test("stops a live run by either key", async () => {
       body: JSON.stringify({ runId: "stop-route-run" }),
     }));
     assert.equal(response.status, 200);
-    assert.deepEqual(await readJson(response), { ok: true, stopped: true });
+    assert.deepEqual(await readJson(response), { ok: true, stopped: true, state: "accepted" });
     assert.equal(handle.stopRequested, true, "route stop flips the shared handle");
     assert.equal(kills, 1, "route stop kills through the registry");
   } finally {
@@ -53,7 +53,7 @@ test("valid runId stops only that exact run and never falls through to sessionId
       body: JSON.stringify({ runId: "retired-route-run", sessionId: "shared-route-session" }),
     }));
     assert.equal(response.status, 200);
-    assert.deepEqual(await readJson(response), { ok: true, stopped: false });
+    assert.deepEqual(await readJson(response), { ok: true, stopped: false, state: "not-found" });
     assert.equal(live.stopRequested, false, "an old runId must not cancel a newer run that reused the session");
     assert.equal(kills, 0, "exact-run stop does not fall through to the session key");
   } finally {
@@ -73,7 +73,7 @@ test("falls back to sessionId only when runId is absent", async () => {
       body: JSON.stringify({ sessionId: "legacy-route-session" }),
     }));
     assert.equal(response.status, 200);
-    assert.deepEqual(await readJson(response), { ok: true, stopped: true });
+    assert.deepEqual(await readJson(response), { ok: true, stopped: true, state: "accepted" });
     assert.equal(live.stopRequested, true, "legacy session-only stops still work when no runId is available");
     assert.equal(kills, 1);
   } finally {
@@ -86,7 +86,7 @@ test("returns stopped:false once a run has already settled", async () => {
   const handle = registerChatRun(["settled-route-run"], () => {
     kills += 1;
   });
-  markChatRunTransportSettled(handle);
+  markChatRunTransportSettled(handle, "completed");
   try {
     const response = await POST(new Request("http://127.0.0.1/api/chat/stop", {
       method: "POST",
@@ -94,7 +94,10 @@ test("returns stopped:false once a run has already settled", async () => {
       body: JSON.stringify({ runId: "settled-route-run" }),
     }));
     assert.equal(response.status, 200);
-    assert.deepEqual(await readJson(response), { ok: true, stopped: false });
+    assert.deepEqual(
+      await readJson(response),
+      { ok: true, stopped: false, state: "transport-settled", terminalOutcome: "completed" },
+    );
     assert.equal(handle.stopRequested, false, "late stop must not rewrite the settled outcome");
     assert.equal(kills, 0, "late stop must not kill after settlement");
   } finally {

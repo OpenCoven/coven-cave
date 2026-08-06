@@ -22,6 +22,7 @@ function makeEntry(
     sessionId: overrides.sessionId ?? null,
     scopeId,
     controller: overrides.controller ?? new AbortController(),
+    terminalOutcome: overrides.terminalOutcome ?? null,
   } satisfies ActiveGroupReplyRun;
 }
 
@@ -42,7 +43,7 @@ test("stopActiveGroupReplyRuns stops every concurrent run and aborts only after 
     stopRun: ({ runId }) =>
       new Promise((resolve) => {
         seen.push(runId);
-        releases.push(() => resolve({ ok: true, stopped: true, status: 200 }));
+        releases.push(() => resolve({ ok: true, stopped: true, status: 200, state: "accepted", terminalOutcome: null }));
       }),
   });
 
@@ -57,10 +58,17 @@ test("stopActiveGroupReplyRuns stops every concurrent run and aborts only after 
   const results = await pending;
   assert.deepEqual(aborts.sort(), ["run-a", "run-b"]);
   assert.deepEqual(
-    results.map(({ runId, ok, stopped, status }) => ({ runId, ok, stopped, status })),
+    results.map(({ runId, ok, stopped, status, state, terminalOutcome }) => ({
+      runId,
+      ok,
+      stopped,
+      status,
+      state,
+      terminalOutcome,
+    })),
     [
-      { runId: "run-a", ok: true, stopped: true, status: 200 },
-      { runId: "run-b", ok: true, stopped: true, status: 200 },
+      { runId: "run-a", ok: true, stopped: true, status: 200, state: "accepted", terminalOutcome: null },
+      { runId: "run-b", ok: true, stopped: true, status: 200, state: "accepted", terminalOutcome: null },
     ],
   );
 });
@@ -78,8 +86,8 @@ test("stopActiveGroupReplyRuns retries a registration race until the server acce
       attempts += 1;
       assert.equal(runId, "run-retry");
       return attempts === 1
-        ? { ok: true, stopped: false, status: 200 }
-        : { ok: true, stopped: true, status: 200 };
+        ? { ok: true, stopped: false, status: 200, state: "not-found", terminalOutcome: null }
+        : { ok: true, stopped: true, status: 200, state: "accepted", terminalOutcome: null };
     },
     isEntryActive: (candidate) => registry.get(candidate.runId) === candidate,
     sleep: async () => {},
@@ -87,7 +95,9 @@ test("stopActiveGroupReplyRuns retries a registration race until the server acce
 
   assert.equal(attempts, 2, "a 200 stopped:false is not success while the run is still active");
   assert.equal(sharedController.signal.aborted, true, "local teardown waits until the accepted stop arrives");
-  assert.deepEqual(results, [{ runId: "run-retry", ok: true, stopped: true, status: 200 }]);
+  assert.deepEqual(results, [{
+    runId: "run-retry", ok: true, stopped: true, status: 200, state: "accepted", terminalOutcome: null,
+  }]);
 });
 
 test("stopActiveGroupReplyRuns stops retrying once the terminal stream already removed the run", async () => {
@@ -99,7 +109,7 @@ test("stopActiveGroupReplyRuns stops retrying once the terminal stream already r
 
   const results = await stopActiveGroupReplyRuns({
     entries: [entry],
-    stopRun: async () => ({ ok: true, stopped: false, status: 200 }),
+    stopRun: async () => ({ ok: true, stopped: false, status: 200, state: "not-found", terminalOutcome: null }),
     isEntryActive: (candidate) => registry.get(candidate.runId) === candidate,
     sleep: async () => {
       sleeps += 1;
@@ -109,7 +119,9 @@ test("stopActiveGroupReplyRuns stops retrying once the terminal stream already r
   });
 
   assert.equal(sleeps, 1, "one bounded retry window lets the terminal cleanup win the race");
-  assert.deepEqual(results, [{ runId: "run-terminal", ok: true, stopped: false, status: 200 }]);
+  assert.deepEqual(results, [{
+    runId: "run-terminal", ok: true, stopped: false, status: 200, state: "not-found", terminalOutcome: null,
+  }]);
   assert.deepEqual(errors, [], "terminal cleanup is not reported as a stop failure");
 });
 
@@ -122,13 +134,15 @@ test("stopActiveGroupReplyRuns retries network errors before surfacing a final s
     stopRun: async () => {
       attempts += 1;
       if (attempts === 1) throw new Error("gateway down");
-      return { ok: true, stopped: true, status: 200 };
+      return { ok: true, stopped: true, status: 200, state: "accepted", terminalOutcome: null };
     },
     sleep: async () => {},
   });
 
   assert.equal(attempts, 2, "transient stop transport failures retry within the bounded window");
-  assert.deepEqual(results, [{ runId: "run-network", ok: true, stopped: true, status: 200 }]);
+  assert.deepEqual(results, [{
+    runId: "run-network", ok: true, stopped: true, status: 200, state: "accepted", terminalOutcome: null,
+  }]);
 });
 
 test("stopActiveGroupReplyRuns times out a still-live run and reports the final failure", async () => {
@@ -138,7 +152,7 @@ test("stopActiveGroupReplyRuns times out a still-live run and reports the final 
 
   const results = await stopActiveGroupReplyRuns({
     entries: [entry],
-    stopRun: async () => ({ ok: true, stopped: false, status: 200 }),
+    stopRun: async () => ({ ok: true, stopped: false, status: 200, state: "not-found", terminalOutcome: null }),
     now: () => clock,
     sleep: async () => {
       clock += 50;
@@ -151,8 +165,73 @@ test("stopActiveGroupReplyRuns times out a still-live run and reports the final 
   });
 
   assert.equal(entry.controller.signal.aborted, true, "timeout policy explicitly tears down the local stream");
-  assert.deepEqual(results, [{ runId: "run-timeout", ok: true, stopped: false, status: 200, error: "stop timed out" }]);
+  assert.deepEqual(results, [{
+    runId: "run-timeout", ok: true, stopped: false, status: 200, state: "not-found", terminalOutcome: null, error: "stop timed out",
+  }]);
   assert.deepEqual(errors, [{ runId: "run-timeout", error: "stop timed out", status: 200 }]);
+});
+
+test("stopActiveGroupReplyRuns keeps retrying a retired scope until an exact run is finally accepted", async () => {
+  const entry = makeEntry("run-retired-scope", 12);
+  let attempts = 0;
+
+  const results = await stopActiveGroupReplyRuns({
+    entries: [entry],
+    stopRun: async () => {
+      attempts += 1;
+      return attempts === 1
+        ? { ok: true, stopped: false, status: 200, state: "not-found", terminalOutcome: null }
+        : { ok: true, stopped: true, status: 200, state: "accepted", terminalOutcome: null };
+    },
+    sleep: async () => {},
+  });
+
+  assert.equal(attempts, 2, "retired-scope cleanup still gets one bounded retry window");
+  assert.equal(entry.controller.signal.aborted, true, "accepted stop still tears down the local stream");
+  assert.deepEqual(results, [{
+    runId: "run-retired-scope", ok: true, stopped: true, status: 200, state: "accepted", terminalOutcome: null,
+  }]);
+});
+
+test("stopActiveGroupReplyRuns preserves completed transports through slow persistence", async () => {
+  const sharedController = new AbortController();
+  const completed = makeEntry("run-completed-save", 13, { controller: sharedController });
+  const active = makeEntry("run-active-save", 13, { controller: sharedController });
+
+  const results = await stopActiveGroupReplyRuns({
+    entries: [completed, active],
+    stopRun: async ({ runId }) =>
+      runId === completed.runId
+        ? {
+            ok: true,
+            stopped: false,
+            status: 200,
+            state: "transport-settled",
+            terminalOutcome: "completed",
+          }
+        : { ok: true, stopped: true, status: 200, state: "accepted", terminalOutcome: null },
+  });
+
+  assert.equal(sharedController.signal.aborted, true, "the still-live sibling stop tears down the shared scope");
+  assert.equal(completed.terminalOutcome, "completed", "terminal evidence is retained for aborted completed transports");
+  assert.deepEqual(results, [
+    {
+      runId: "run-completed-save",
+      ok: true,
+      stopped: false,
+      status: 200,
+      state: "transport-settled",
+      terminalOutcome: "completed",
+    },
+    {
+      runId: "run-active-save",
+      ok: true,
+      stopped: true,
+      status: 200,
+      state: "accepted",
+      terminalOutcome: null,
+    },
+  ]);
 });
 
 test("active scope snapshots exclude completed runs and another coven's newer scope", () => {
@@ -200,7 +279,7 @@ test("idempotent stop outcomes are accepted while endpoint failures still abort 
     entries: listActiveGroupReplyRuns(registry, 5),
     stopRun: async ({ runId }) =>
       runId === "run-not-found"
-        ? { ok: false, stopped: false, status: 404, error: "not found" }
+        ? { ok: false, stopped: false, status: 404, state: "not-found", terminalOutcome: null, error: "not found" }
         : Promise.reject(new Error("gateway down")),
     onError: (result) => {
       errors.push({ runId: result.runId, error: result.error, status: result.status });
@@ -213,10 +292,34 @@ test("idempotent stop outcomes are accepted while endpoint failures still abort 
   assert.equal(notFound.controller.signal.aborted, true, "404 stop still tears down the local stream");
   assert.equal(throwing.controller.signal.aborted, true, "endpoint failures do not strand the local UI");
   assert.deepEqual(
-    results.map(({ runId, ok, stopped, status, error }) => ({ runId, ok, stopped, status, error })),
+    results.map(({ runId, ok, stopped, status, state, terminalOutcome, error }) => ({
+      runId,
+      ok,
+      stopped,
+      status,
+      state,
+      terminalOutcome,
+      error,
+    })),
     [
-      { runId: "run-not-found", ok: false, stopped: false, status: 404, error: "not found" },
-      { runId: "run-throw", ok: false, stopped: false, status: null, error: "gateway down" },
+      {
+       runId: "run-not-found",
+       ok: false,
+       stopped: false,
+       status: 404,
+       state: "not-found",
+       terminalOutcome: null,
+       error: "not found",
+      },
+      {
+       runId: "run-throw",
+       ok: false,
+       stopped: false,
+       status: null,
+       state: null,
+       terminalOutcome: null,
+       error: "gateway down",
+      },
     ],
   );
   assert.deepEqual(

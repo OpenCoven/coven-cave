@@ -46,7 +46,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /markChatRunTransportSettled\(runHandle\);[\s\S]*?const cancelledByUser = runHandle\.stopRequested;[\s\S]*?if \(finalSessionId && \(!launchFailure \|\| persistCovenProcessFailure\)\) \{\s*try \{\s*pushProgress\("save-transcript", "Saving transcript", "running"/,
+  /const cancelledByUser = runHandle\.stopRequested;[\s\S]*?markChatRunTransportSettled\(runHandle,\s*cancelledByUser \? "cancelled" : result\.is_error \? "error" : "completed"\);[\s\S]*?if \(finalSessionId && \(!launchFailure \|\| persistCovenProcessFailure\)\) \{\s*try \{\s*pushProgress\("save-transcript", "Saving transcript", "running"/,
   "general Coven transports must freeze Stop only after transport completion and before persistence starts",
 );
 assert.match(
@@ -136,7 +136,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /markChatRunTransportSettled\(runHandle\);[\s\S]*?if \(sessionId\) \{\s*try \{\s*pushProgress\("save-transcript", "Saving transcript", "running"/,
+  /markChatRunTransportSettled\(runHandle,\s*cancelledByUser \? "cancelled" : isError \? "error" : "completed"\);[\s\S]*?if \(sessionId\) \{\s*try \{\s*pushProgress\("save-transcript", "Saving transcript", "running"/,
   "OpenClaw transport settlement must freeze Stop before transcript persistence begins",
 );
 assert.match(

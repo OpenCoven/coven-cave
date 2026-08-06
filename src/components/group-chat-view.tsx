@@ -603,9 +603,21 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ runId: entry.runId }),
     });
-    let payload: { ok?: boolean; stopped?: boolean; error?: string } | null = null;
+    let payload: {
+      ok?: boolean;
+      stopped?: boolean;
+      state?: "accepted" | "transport-settled" | "not-found";
+      terminalOutcome?: "completed" | "error" | "cancelled";
+      error?: string;
+    } | null = null;
     try {
-      payload = await response.json() as { ok?: boolean; stopped?: boolean; error?: string };
+      payload = await response.json() as {
+        ok?: boolean;
+        stopped?: boolean;
+        state?: "accepted" | "transport-settled" | "not-found";
+        terminalOutcome?: "completed" | "error" | "cancelled";
+        error?: string;
+      };
     } catch {
       payload = null;
     }
@@ -613,6 +625,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       ok: response.ok,
       stopped: payload?.stopped ?? false,
       status: response.status,
+      state: payload?.state ?? null,
+      terminalOutcome: payload?.terminalOutcome ?? null,
       error: payload?.error ?? (response.ok ? undefined : `stop failed (${response.status})`),
     };
   }
@@ -628,7 +642,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       entries,
       stopRun: stopServerRun,
       isEntryActive: (entry) => activeRunsRef.current.get(entry.runId) === entry,
-      isStopScopeCurrent: () => scopeId === runScopeRef.current,
       onError: (result, entry) => {
         console.warn("[group-chat] stop failed", {
           runId: result.runId,
@@ -672,6 +685,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
         sessionId: reply.sessionId,
         scopeId,
         controller: abortRef.current ?? new AbortController(),
+        terminalOutcome: null,
       });
       if (!projectRoot) {
         apply((current) =>
@@ -737,10 +751,15 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
         );
       } catch (err) {
         const aborted = (err as Error)?.name === "AbortError";
+        const terminalOutcome = activeRunsRef.current.get(replyRunId)?.terminalOutcome;
         apply((r) => replaceGroupReplyText(r, attentionText.terminal()));
         apply((r) =>
           aborted
-            ? { ...r, status: "error", error: "cancelled", activity: undefined }
+            ? terminalOutcome === "completed"
+              ? { ...r, status: "done", activity: undefined }
+              : terminalOutcome === "error"
+                ? { ...r, status: "error", error: r.error ?? "request failed", activity: undefined }
+                : { ...r, status: "error", error: "cancelled", activity: undefined }
             : applyGroupEvent(r, { kind: "error", message: (err as Error)?.message ?? "send failed" }),
         );
       } finally {

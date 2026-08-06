@@ -374,7 +374,11 @@ try {
     }),
   }));
   await waitForText(cancelReady);
-  assert.equal(requestChatStop(cancelledRunId), true, "the explicit Stop registry signal reaches the live run");
+  assert.deepEqual(
+    requestChatStop(cancelledRunId),
+    { state: "accepted", terminalOutcome: null },
+    "the explicit Stop registry signal reaches the live run",
+  );
   const { events: cancelledEvents } = await readSse(cancelResponse);
   assert.equal(
     cancelledEvents.find((event) => event.kind === "error"),
@@ -412,7 +416,7 @@ try {
     }),
   }));
   await waitForText(cancelReady);
-  assert.equal(requestChatStop(cancelledPartialRunId), true);
+  assert.deepEqual(requestChatStop(cancelledPartialRunId), { state: "accepted", terminalOutcome: null });
   const { events: cancelledPartialEvents } = await readSse(cancelPartialResponse);
   assert.equal(cancelledPartialEvents.findLast((event) => event.kind === "done")?.isError, false);
   const cancelledPartialConversation = await loadConversation("cancelled-partial-attention-session");

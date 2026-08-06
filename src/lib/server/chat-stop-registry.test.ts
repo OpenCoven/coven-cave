@@ -23,17 +23,17 @@ const {
   assert.equal(handle.stopRequested, false, "fresh runs are not stop-flagged");
   assert.equal(handle.acceptingStop, true, "fresh runs accept Stop");
   assert.equal(handle.projectionActive, true, "fresh runs project as live");
-  assert.equal(requestChatStop("run-1"), true, "stop resolves by runId");
+  assert.deepEqual(requestChatStop("run-1"), { state: "accepted", terminalOutcome: null }, "stop resolves by runId");
   assert.equal(kills, 1, "stop SIGTERMs through the registered kill");
   assert.equal(handle.stopRequested, true, "the handle records the deliberate stop");
-  assert.equal(requestChatStop("session-1"), true, "stop also resolves by session key");
+  assert.deepEqual(requestChatStop("session-1"), { state: "accepted", terminalOutcome: null }, "stop also resolves by session key");
   assert.equal(kills, 2, "kill is safe to invoke repeatedly");
   unregisterChatRun(handle);
 }
 
 // Nothing in flight → stopped: false (an already-finished run is not an error).
-assert.equal(requestChatStop("run-1"), false, "unregistered keys report nothing to stop");
-assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
+assert.deepEqual(requestChatStop("run-1"), { state: "not-found", terminalOutcome: null }, "unregistered keys report nothing to stop");
+assert.deepEqual(requestChatStop("session-1"), { state: "not-found", terminalOutcome: null }, "unregister drops every key");
 
 // Once a run has definitively finished, late stops must be ignored even before
 // the async persistence/finalization path unregisters it.
@@ -43,12 +43,20 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
     kills += 1;
   });
   assert.equal(hasActiveChatRun("run-settled"), true, "fresh unsettled run is active");
-  markChatRunTransportSettled(handle);
+  markChatRunTransportSettled(handle, "completed");
   assert.equal(handle.acceptingStop, false, "transport settlement closes the Stop window");
   assert.equal(handle.projectionActive, true, "projection stays live through persistence");
   assert.equal(hasActiveChatRun("run-settled"), true, "transport-settled runs remain active until projection cleanup");
-  assert.equal(requestChatStop("run-settled"), false, "late stops are ignored once transport is settled");
-  assert.equal(requestChatStop("session-settled"), false, "every transport-settled key becomes a no-op");
+  assert.deepEqual(
+    requestChatStop("run-settled"),
+    { state: "transport-settled", terminalOutcome: "completed" },
+    "late stops expose completed transport settlement during persistence",
+  );
+  assert.deepEqual(
+    requestChatStop("session-settled"),
+    { state: "transport-settled", terminalOutcome: "completed" },
+    "every transport-settled key exposes the same completed outcome",
+  );
   assert.equal(handle.stopRequested, false, "late stop must not retroactively mark the run cancelled");
   assert.equal(kills, 0, "late stop must not re-kill an already settled run");
   markChatRunProjectionSettled(handle);
@@ -64,8 +72,8 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
   const handle = registerChatRun(["run-cancel-first"], () => {
     kills += 1;
   });
-  assert.equal(requestChatStop("run-cancel-first"), true, "pre-settlement stop still lands");
-  markChatRunTransportSettled(handle);
+  assert.deepEqual(requestChatStop("run-cancel-first"), { state: "accepted", terminalOutcome: null }, "pre-settlement stop still lands");
+  markChatRunTransportSettled(handle, "cancelled");
   assert.equal(handle.stopRequested, true, "settlement must preserve an earlier stop");
   assert.equal(handle.acceptingStop, false, "the handle still stops accepting Stop");
   assert.equal(kills, 1, "the registered kill only fires for the pre-settlement stop");
@@ -85,9 +93,9 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
   const first = registerChatRun(["session-3"], () => {});
   const second = registerChatRun(["session-3"], () => {});
   unregisterChatRun(first);
-  assert.equal(
+  assert.deepEqual(
     requestChatStop("session-3"),
-    true,
+    { state: "accepted", terminalOutcome: null },
     "newer registration survives the older run's cleanup",
   );
   assert.equal(second.stopRequested, true, "the stop lands on the newer run");
@@ -99,7 +107,7 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
   const handle = registerChatRun(["run-4"], () => {
     throw new Error("ESRCH");
   });
-  assert.equal(requestChatStop("run-4"), true, "stop succeeds when the child is already gone");
+  assert.deepEqual(requestChatStop("run-4"), { state: "accepted", terminalOutcome: null }, "stop succeeds when the child is already gone");
   assert.equal(handle.stopRequested, true, "the cancel flag still lands");
   unregisterChatRun(handle);
 }
@@ -116,7 +124,7 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
   addChatRunKeys(handle, ["conv-5", null, undefined, "run-5"]);
   assert.deepEqual(handle.keys, ["run-5", "conv-5"], "late keys skip falsy and duplicate entries");
   assert.equal(hasActiveChatRun("conv-5"), true, "the run is live under the announced id");
-  assert.equal(requestChatStop("conv-5"), true, "stop resolves by the late-added conversation id");
+  assert.deepEqual(requestChatStop("conv-5"), { state: "accepted", terminalOutcome: null }, "stop resolves by the late-added conversation id");
   assert.equal(kills, 1, "the late key kills the same run");
   unregisterChatRun(handle);
   assert.equal(hasActiveChatRun("conv-5"), false, "unregister drops late-added keys too");
@@ -127,11 +135,11 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
 // announce callback ran.
 {
   const handle = registerChatRun(["run-6"], () => {});
-  markChatRunTransportSettled(handle);
+  markChatRunTransportSettled(handle, "completed");
   unregisterChatRun(handle);
   addChatRunKeys(handle, ["conv-6"]);
   assert.equal(hasActiveChatRun("conv-6"), false, "no resurrection after unregister");
-  assert.equal(requestChatStop("conv-6"), false, "the late key never registers");
+  assert.deepEqual(requestChatStop("conv-6"), { state: "not-found", terminalOutcome: null }, "the late key never registers");
 }
 
 console.log("chat-stop-registry.test.ts: ok");

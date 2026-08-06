@@ -1027,7 +1027,6 @@ function openClawChatResponse(args: {
         args.req.signal.addEventListener("abort", onAbort, { once: true });
         pushProgress("openclaw-response", "Waiting for OpenClaw Gateway response", "running");
         const gatewayResult = await gatewayDispatch.done;
-        markChatRunTransportSettled(runHandle);
         settleOpenGatewayTools(
           gatewayResult.state === "aborted"
             ? "[tool cancelled by user]"
@@ -1038,6 +1037,7 @@ function openClawChatResponse(args: {
         const durationMs = Date.now() - startedAt;
         const cancelledByUser = runHandle.stopRequested || gatewayResult.state === "aborted";
         let isError = gatewayResult.state === "error";
+        markChatRunTransportSettled(runHandle, cancelledByUser ? "cancelled" : isError ? "error" : "completed");
         if (!gatewayAssistantText.trim()) {
           gatewayAssistantText = cancelledByUser
             ? "(cancelled)"
@@ -1274,7 +1274,7 @@ function openClawChatResponse(args: {
       const failChild = (err: NodeJS.ErrnoException) => {
         if (terminal) return;
         terminal = true;
-        markChatRunTransportSettled(runHandle);
+        markChatRunTransportSettled(runHandle, "error");
         const failure = localRuntimeLaunchError("openclaw", err.code);
         pushProgress("openclaw-response", "OpenClaw bridge failed", "error", failure.message);
         push({ kind: "error", code: failure.code, message: failure.message });
@@ -1333,7 +1333,6 @@ function openClawChatResponse(args: {
           return;
         }
         terminal = true;
-        markChatRunTransportSettled(runHandle);
         args.req.signal.removeEventListener("abort", onAbort);
         if (detachKillTimer != null) clearTimeout(detachKillTimer);
         const durationMs = Date.now() - startedAt;
@@ -1384,6 +1383,7 @@ function openClawChatResponse(args: {
             );
           }
         }
+        markChatRunTransportSettled(runHandle, cancelledByUser ? "cancelled" : isError ? "error" : "completed");
         if (gatewaySessionId) {
           pushProgress(
             "openclaw-session",
@@ -5111,7 +5111,8 @@ export async function POST(req: Request) {
       }
       }
 
-      markChatRunTransportSettled(runHandle);
+      const cancelledByUser = runHandle.stopRequested;
+      markChatRunTransportSettled(runHandle, cancelledByUser ? "cancelled" : result.is_error ? "error" : "completed");
       // Unknown direct-Codex protocol events surface as ONE safe diagnostic
       // per turn: a count plus up to three shape fingerprints. The payloads
       // themselves were never rendered, persisted, or logged.
@@ -5188,7 +5189,6 @@ export async function POST(req: Request) {
       // own cancelled state and is gone. A bare transport abort (signal loss,
       // closed tab) is NOT a cancel: the turn ran to completion and persists
       // as a normal reply the client recovers on resync.
-      const cancelledByUser = runHandle.stopRequested;
       if (cancelledByUser) {
         if (!assistantText.trim()) assistantText = "(cancelled)";
         result.is_error = false;

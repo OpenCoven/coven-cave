@@ -258,7 +258,11 @@ try {
       body: JSON.stringify({ familiarId: "wren", prompt: `stop ${mode}`, projectRoot: workspace, sessionId, runId }),
     }));
     await waitForText(cancelReady);
-    assert.equal(requestChatStop(runId), true, `${mode} should register with the shared stop registry`);
+    assert.deepEqual(
+      requestChatStop(runId),
+      { state: "accepted", terminalOutcome: null },
+      `${mode} should register with the shared stop registry`,
+    );
     const events = await readSse(response);
     assert.equal(events.find((event) => event.kind === "error"), undefined, `${mode} stop never emits an error event`);
     assert.equal(

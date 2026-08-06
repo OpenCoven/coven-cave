@@ -449,10 +449,10 @@ try {
       },
     });
     const deferredHandle = registerChatRun(["route-deferred", "route-deferred-run"], () => {});
-    markChatRunTransportSettled(deferredHandle);
-    assert.equal(
+    markChatRunTransportSettled(deferredHandle, "completed");
+    assert.deepEqual(
       requestChatStop("route-deferred-run"),
-      false,
+      { state: "transport-settled", terminalOutcome: "completed" },
       "late stop is ignored once transport settlement starts the persistence window",
     );
     clearConversationListMetadataCache();
@@ -524,7 +524,7 @@ try {
       },
     });
     const failedHandle = registerChatRun(["route-save-failed"], () => {});
-    markChatRunTransportSettled(failedHandle);
+    markChatRunTransportSettled(failedHandle, "error");
     unregisterChatRun(failedHandle);
     clearConversationListMetadataCache();
     sessionsListCache.clear();
