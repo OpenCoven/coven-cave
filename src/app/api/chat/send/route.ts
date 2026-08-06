@@ -1093,7 +1093,7 @@ function openClawChatResponse(args: {
       let localRecoveryAttempted = false;
       const spawnChild = (mode: "gateway" | "local") => {
         const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, mode);
-        return spawn(openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
+        return spawn(/* turbopackIgnore: true */ openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
           cwd,
           stdio: ["ignore", "pipe", "pipe"],
           env: openclawEnv,
@@ -4493,7 +4493,7 @@ export async function POST(req: Request) {
                     shell: false,
                   } as const;
                   if (openCodeDirect) {
-                    const child = spawn(command.command, command.args, {
+                    const child = spawn(/* turbopackIgnore: true */ command.command, command.args, {
                       ...spawnOptions,
                       stdio: ["pipe", "pipe", "pipe"],
                     });
@@ -4508,7 +4508,7 @@ export async function POST(req: Request) {
                     child.stdin.end(apiPrompt, "utf8");
                     return child;
                   }
-                  return spawn(command.command, command.args, {
+                  return spawn(/* turbopackIgnore: true */ command.command, command.args, {
                     ...spawnOptions,
                     stdio: ["ignore", "pipe", "pipe"],
                   });

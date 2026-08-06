@@ -184,7 +184,13 @@ function sleep(ms: number) {
 function npmBesideDetectedCoven(detected: string): { npmPath: string; prefix: string } | null {
   const binDir = path.dirname(detected);
   const names = process.platform === "win32" ? ["npm.cmd", "npm.exe", "npm"] : ["npm"];
-  const npmPath = names.map((name) => path.join(binDir, name)).find((candidate) => existsSync(candidate));
+  // `binDir` is the global npm bin on the HOST machine, discovered at runtime.
+  // Without the ignore, Turbopack reads `path.join(binDir, "npm")` as a module
+  // specifier it must resolve, globs the checkout root for it, and drags the
+  // whole project into the standalone NFT bundle.
+  const npmPath = names
+    .map((name) => path.join(/* turbopackIgnore: true */ binDir, name))
+    .find((candidate) => existsSync(/* turbopackIgnore: true */ candidate));
   if (!npmPath) return null;
   return {
     npmPath,

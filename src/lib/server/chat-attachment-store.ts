@@ -90,10 +90,10 @@ function isContained(root: string, candidate: string): boolean {
 /** Resolve the store root, refusing a symlinked root outright. */
 async function resolvedRoot(create: boolean): Promise<string> {
   const root = chatAttachmentRoot();
-  if (create) await mkdir(root, { recursive: true, mode: 0o700 });
+  if (create) await mkdir(/* turbopackIgnore: true */ root, { recursive: true, mode: 0o700 });
   let meta;
   try {
-    meta = await lstat(root);
+    meta = await lstat(/* turbopackIgnore: true */ root);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       throw new ChatAttachmentStoreError("missing", "attachment store not found");
@@ -106,7 +106,8 @@ async function resolvedRoot(create: boolean): Promise<string> {
   if (!meta.isDirectory()) {
     throw new ChatAttachmentStoreError("symlink", "attachment store root is not a directory");
   }
-  return realpath(root);
+  // `root` is the caveHome()-derived attachment store, resolved at runtime.
+  return realpath(/* turbopackIgnore: true */ root);
 }
 
 /**
@@ -127,10 +128,10 @@ export async function saveChatImageAttachment(
     const root = await resolvedRoot(true);
     const storedId = `${randomUUID()}.${extensionFor(mimeType)}`;
     if (!SAFE_STORED_ID.test(storedId)) return null;
-    const target = path.join(root, storedId);
+    const target = path.join(/* turbopackIgnore: true */ root, storedId);
     if (!isContained(root, target)) return null;
     // `wx` refuses to follow an existing symlink planted at the target.
-    await writeFile(target, payload, { mode: 0o600, flag: "wx" });
+    await writeFile(/* turbopackIgnore: true */ target, payload, { mode: 0o600, flag: "wx" });
     return storedId;
   } catch {
     // Best effort: the turn still sends, the transcript just keeps metadata.
@@ -151,13 +152,13 @@ export async function readChatImageAttachment(
     throw new ChatAttachmentStoreError("invalid-id", "unsupported attachment type");
   }
   const root = await resolvedRoot(false);
-  const target = path.join(root, storedId);
+  const target = path.join(/* turbopackIgnore: true */ root, storedId);
   if (!isContained(root, target)) {
     throw new ChatAttachmentStoreError("invalid-id", "attachment escapes the store root");
   }
   let meta;
   try {
-    meta = await lstat(target);
+    meta = await lstat(/* turbopackIgnore: true */ target);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       throw new ChatAttachmentStoreError("missing", "attachment not found");
@@ -173,7 +174,7 @@ export async function readChatImageAttachment(
   if (meta.size > MAX_ATTACHMENT_IMAGE_BYTES) {
     throw new ChatAttachmentStoreError("too-large", "attachment exceeds the size limit");
   }
-  const handle = await open(target, "r");
+  const handle = await open(/* turbopackIgnore: true */ target, "r");
   try {
     // Re-check through the open descriptor: the path could have been swapped
     // between lstat and open.
@@ -197,16 +198,16 @@ export async function sweepChatImageAttachments(now = Date.now()): Promise<numbe
   let removed = 0;
   try {
     const root = await resolvedRoot(false);
-    const entries = await readdir(root, { withFileTypes: true });
+    const entries = await readdir(/* turbopackIgnore: true */ root, { withFileTypes: true });
     for (const entry of entries.slice(0, SWEEP_SCAN_LIMIT)) {
       if (!entry.isFile() || !isValidChatAttachmentId(entry.name)) continue;
-      const target = path.join(root, entry.name);
+      const target = path.join(/* turbopackIgnore: true */ root, entry.name);
       if (!isContained(root, target)) continue;
       try {
-        const meta = await lstat(target);
+        const meta = await lstat(/* turbopackIgnore: true */ target);
         if (meta.isSymbolicLink()) continue;
         if (now - meta.mtimeMs <= CHAT_ATTACHMENT_MAX_AGE_MS) continue;
-        await rm(target, { force: true });
+        await rm(/* turbopackIgnore: true */ target, { force: true });
         removed += 1;
       } catch {
         // Skip anything that races us.

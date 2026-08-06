@@ -147,7 +147,10 @@ function terminateProbeProcessTree(child: OpenCodeProbeChild): Promise<void> {
       finish();
     }, openCodeProbeCleanupGraceMs());
     try {
-      killer = spawn(treeKill.command, treeKill.args, { stdio: "ignore", windowsHide: true });
+      // `treeKill.command` is a host binary (`taskkill.exe` / `kill`) resolved
+      // at runtime, never a bundled module. The ignore stops Turbopack from
+      // treating it as a traceable specifier and globbing the checkout.
+      killer = spawn(/* turbopackIgnore: true */ treeKill.command, treeKill.args, { stdio: "ignore", windowsHide: true });
       killer.once("error", () => {
         try { child.kill("SIGTERM"); } catch { /* Best-effort fallback. */ }
         finish();
@@ -190,7 +193,7 @@ function probeHelpOutcome(
       resolve(value);
     };
     try {
-      const child = spawn(command, args, {
+      const child = spawn(/* turbopackIgnore: true */ command, args, {
         env,
         cwd,
         stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
@@ -279,7 +282,7 @@ function probeOutput(
       resolve({ output, complete });
     };
     try {
-      const child = spawn(command, args, {
+      const child = spawn(/* turbopackIgnore: true */ command, args, {
         env,
         stdio: ["ignore", "pipe", "pipe"],
         ...openCodeProbeSpawnOptions(),
@@ -485,7 +488,7 @@ function rememberOpenCodeFileIdentity(key: string, identity: string): void {
 async function hashFile(file: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = createHash("sha256");
-    const stream = createReadStream(file);
+    const stream = createReadStream(/* turbopackIgnore: true */ file);
     stream.on("data", (chunk: string | Buffer) => { hash.update(chunk); });
     stream.once("error", reject);
     stream.once("end", () => resolve(hash.digest("hex")));
@@ -496,8 +499,8 @@ async function fileIdentity(file: string, platform: NodeJS.Platform): Promise<st
   try {
     // Resolve a symlink before reading it so changing its target changes the
     // identity even when the link itself keeps its old metadata.
-    const resolved = await realpath(file);
-    const entry = await stat(resolved);
+    const resolved = await realpath(/* turbopackIgnore: true */ file);
+    const entry = await stat(/* turbopackIgnore: true */ resolved);
     if (!entry.isFile() || entry.size > MAX_OPENCODE_IDENTITY_FILE_BYTES) return null;
     const stablePath = platform === "win32" ? resolved.toLowerCase() : resolved;
     // ctime and inode invalidate a retained digest for ordinary in-place
@@ -509,7 +512,7 @@ async function fileIdentity(file: string, platform: NodeJS.Platform): Promise<st
       return cached;
     }
     const digest = await hashFile(resolved);
-    const after = await stat(resolved);
+    const after = await stat(/* turbopackIgnore: true */ resolved);
     const afterKey = `${stablePath}\0${after.size}\0${after.mtimeMs}\0${after.ctimeMs}\0${after.ino}`;
     // An update racing the stream makes the hash ambiguous. Do not cache or
     // reuse it; the caller will safely fall back to plain mode for this turn.
