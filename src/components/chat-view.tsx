@@ -86,6 +86,11 @@ import {
 import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat-transcript-groups";
 import { generateChatTitle } from "@/lib/chat-title-generation";
 import { chatTurnGapLabel } from "@/lib/chat-turn-gap";
+import {
+  chatFoldAriaLabel,
+  chatFoldLabel,
+  chatTranscriptFold,
+} from "@/lib/chat-transcript-fold";
 import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
 import {
   newSessionDefaults,
@@ -2545,6 +2550,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const historyExpandedRef = useRef(false);
   historyExpandedRef.current = historyExpanded;
+  // "Chat Session - Prototype.dc.html" (cave-u5lq7): a long thread opens on the
+  // recent exchange with everything older behind one pill. Separate concern
+  // from historyExpanded above — that is a mounting budget, this is a reading
+  // affordance — but opening the fold lifts the cap too, because a pill that
+  // says "hide earlier turns" has promised every earlier turn.
+  const [foldOpen, setFoldOpen] = useState(false);
+  const foldOpenRef = useRef(false);
+  foldOpenRef.current = foldOpen;
   // Distance-from-bottom captured at the instant of expansion so the prepended
   // older rows don't visually shove the viewport (restored in a layout effect).
   const expandAnchorRef = useRef<number | null>(null);
@@ -2620,8 +2633,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // Restore the pre-expansion distance-from-bottom once the full transcript has
   // mounted, so revealing the older rows doesn't jump the reader's viewport.
+  // Either reveal prepends rows above the viewport, so both have to restore the
+  // anchor. Keying on historyExpanded alone missed the case where the reader
+  // had already scrolled up (cap lifted) and then opened the fold — the rows
+  // arrived with no effect left to fire, and the viewport jumped.
   useLayoutEffect(() => {
-    if (!historyExpanded) return;
+    if (!historyExpanded && !foldOpen) return;
     const anchor = expandAnchorRef.current;
     expandAnchorRef.current = null;
     if (anchor == null) return;
@@ -2630,7 +2647,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       el.scrollTop = Math.max(0, el.scrollHeight - anchor);
       captureReleasedScrollAnchor();
     }
-  }, [captureReleasedScrollAnchor, historyExpanded]);
+  }, [captureReleasedScrollAnchor, historyExpanded, foldOpen]);
+
+  // Opening the fold lifts the render cap with it and anchors the scroll, so
+  // the earlier turns slide in ABOVE the reader rather than shoving them down.
+  // Stable identity: TranscriptRows is memoized on its props.
+  const toggleFold = useCallback(() => {
+    if (foldOpenRef.current) {
+      setFoldOpen(false);
+      return;
+    }
+    const el = scrollRef.current;
+    expandAnchorRef.current = el ? el.scrollHeight - el.scrollTop : null;
+    captureReleasedScrollAnchor();
+    setHistoryExpanded(true);
+    setFoldOpen(true);
+  }, [captureReleasedScrollAnchor]);
 
   // `shouldApply` lets a caller (the effect below) veto the setState after the
   // await — a fetch that resolves after a thread switch must not overwrite the
@@ -3219,9 +3251,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // Find searches the whole transcript, so opening it mounts every turn — a
   // jump (jumpToFindMatch) resolves its target via querySelector and must find
-  // the row in the DOM regardless of the render cap.
+  // the row in the DOM regardless of the render cap OR the fold. Without the
+  // fold half, searching a long thread reports hits in folded turns and then
+  // jumps nowhere, because the row it looks for was never rendered.
   useEffect(() => {
-    if (findOpen) setHistoryExpanded(true);
+    if (findOpen) {
+      setHistoryExpanded(true);
+      setFoldOpen(true);
+    }
   }, [findOpen]);
 
   // Keep the active pointer in bounds when the match set shrinks.
@@ -4075,6 +4112,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   useEffect(() => {
     updateFollowing(true);
     setHistoryExpanded(false);
+    // The fold is per-thread: arriving in a new chat should land on its recent
+    // exchange, not inherit the last thread's expansion.
+    setFoldOpen(false);
     expandAnchorRef.current = null;
     releasedScrollAnchorRef.current = null;
   }, [sessionId, updateFollowing]);
@@ -7655,6 +7695,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             turnIndexMap={turnIndexMap}
             allTurns={activePath}
             historyExpanded={historyExpanded}
+            foldOpen={foldOpen}
+            onToggleFold={toggleFold}
             familiar={familiar}
             busy={busy}
             foundTurnId={foundTurnId}
@@ -8126,6 +8168,8 @@ const TranscriptRows = memo(function TranscriptRows({
   turnIndexMap,
   allTurns,
   historyExpanded,
+  foldOpen,
+  onToggleFold,
   familiar,
   // Presence input for regenerateFor (see doc comment); unused directly.
   busy: _busy,
@@ -8141,6 +8185,10 @@ const TranscriptRows = memo(function TranscriptRows({
   turnIndexMap: Map<string, number>;
   allTurns: Turn[];
   historyExpanded: boolean;
+  /** Earlier-turns fold (cave-u5lq7): closed hides everything but the recent
+   *  exchange. Distinct from historyExpanded — see chat-transcript-fold.ts. */
+  foldOpen: boolean;
+  onToggleFold: () => void;
   familiar: Familiar;
   busy: boolean;
   foundTurnId: string | null;
@@ -8154,16 +8202,24 @@ const TranscriptRows = memo(function TranscriptRows({
   followUpTurnId: string | null;
 }) {
   const handlers = () => handlersRef.current;
+  // Earlier-turns fold ("Chat Session - Prototype.dc.html", cave-u5lq7). The
+  // fold's count is computed over the WHOLE transcript, never over the capped
+  // slice — a pill reading "54 earlier turns" on a 200-turn thread would be
+  // reporting the render cap, not the conversation.
+  const fold = chatTranscriptFold(groupedTurns);
+  const folded = fold.hiddenTurns > 0 && !foldOpen;
   // Render cap (TRANSCRIPT_RENDER_CAP): while pinned to the bottom, only
   // mount the newest groups. The per-row prev-turn lookup still reads
   // the full `allTurns`/`turnIndexMap`, so the first visible row's
   // timestamp gap stays correct. Expands to the whole transcript the
   // moment the reader scrolls up or opens find (see historyExpanded).
-  const renderGroups =
-    historyExpanded || groupedTurns.length <= TRANSCRIPT_RENDER_CAP
+  // A closed fold mounts even less than the cap would, so it wins outright.
+  const renderGroups = folded
+    ? groupedTurns.slice(fold.startIndex)
+    : historyExpanded || groupedTurns.length <= TRANSCRIPT_RENDER_CAP
       ? groupedTurns
       : groupedTurns.slice(-TRANSCRIPT_RENDER_CAP);
-  return renderGroups.map((g) => {
+  const rows = renderGroups.map((g) => {
     if (g.kind === "single") {
       const t = g.turn;
       const i = turnIndexMap.get(t.id) ?? -1;
@@ -8285,6 +8341,33 @@ const TranscriptRows = memo(function TranscriptRows({
       </div>
     );
   });
+  if (fold.hiddenTurns === 0) return rows;
+  // The pill leads the transcript in both states: closed it names what is
+  // hidden, open it names the way back. The two rules make it read as a seam
+  // in the conversation rather than as a toolbar.
+  return [
+    <div key="__chat-fold" className="cave-chat-fold">
+      <span aria-hidden className="cave-chat-fold__rule" />
+      <button
+        type="button"
+        className="cave-chat-fold__pill focus-ring"
+        aria-expanded={foldOpen}
+        aria-label={chatFoldAriaLabel(fold.hiddenTurns, foldOpen)}
+        onClick={onToggleFold}
+      >
+        <Icon
+          name="ph:caret-up"
+          width={9}
+          className="cave-chat-fold__caret"
+          data-open={foldOpen ? "true" : undefined}
+          aria-hidden
+        />
+        {chatFoldLabel(fold.hiddenTurns, foldOpen)}
+      </button>
+      <span aria-hidden className="cave-chat-fold__rule" />
+    </div>,
+    ...rows,
+  ];
 });
 
 // CHAT-D3-07 perf: the implementation is memoized as `TurnRow` below, so a

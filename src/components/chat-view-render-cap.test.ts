@@ -12,15 +12,30 @@ const src = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
 assert.match(src, /const TRANSCRIPT_RENDER_CAP = \d+;/, "a numeric render cap constant exists");
 
+// cave-u5lq7 put the earlier-turns fold ahead of the cap: a CLOSED fold mounts
+// even less than the cap would, so it wins outright and the cap decision below
+// is what runs whenever the fold is open or absent.
+assert.match(
+  src,
+  /const renderGroups = folded\s*\n\s*\? groupedTurns\.slice\(fold\.startIndex\)/,
+  "a closed fold mounts its tail instead of the capped tail",
+);
 assert.match(
   src,
   /historyExpanded \|\| groupedTurns\.length <= TRANSCRIPT_RENDER_CAP\s*\?\s*groupedTurns\s*:\s*groupedTurns\.slice\(-TRANSCRIPT_RENDER_CAP\)/,
   "the transcript renders the capped tail unless expanded or already short",
 );
+// The fold's own count must never be computed off the capped slice, or a long
+// thread's pill reports the render budget instead of the conversation.
+assert.match(
+  src,
+  /const fold = chatTranscriptFold\(groupedTurns\);/,
+  "the fold measures the whole transcript, not the capped slice",
+);
 
 assert.match(
   src,
-  /return renderGroups\.map\(\(g\) =>/,
+  /const rows = renderGroups\.map\(\(g\) =>/,
   "the render loop maps the capped renderGroups (not the full groupedTurns)",
 );
 
@@ -32,9 +47,13 @@ assert.match(
   "updateFollowing(false) expands the transcript (covers wheel/touch/keys/find-jump)",
 );
 
+// Find must clear BOTH limiters (cave-u5lq7). Clearing only the cap left a
+// long thread reporting hits inside folded turns and then jumping nowhere,
+// because jumpToFindMatch resolves its target through querySelector and the
+// row it looks for was never rendered.
 assert.match(
   src,
-  /if \(findOpen\) setHistoryExpanded\(true\)/,
+  /if \(findOpen\) \{\s*\n\s*setHistoryExpanded\(true\);\s*\n\s*setFoldOpen\(true\);/,
   "opening find mounts the whole transcript so jumps resolve via data-turn-id",
 );
 
