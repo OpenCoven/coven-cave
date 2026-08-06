@@ -242,6 +242,41 @@ assert.match(
   /if \(!isPostAction\(requestedAction\)\) \{[\s\S]{0,180}?unsupported action/,
   "unknown aggregate actions cannot fall through to the revert path",
 );
+assert.match(
+  source,
+  /acquireProcessIntentLock\(\{[\s\S]{0,180}?repositoryChangesLockDir\(repoRoot\)[\s\S]{0,180}?label: "repository changes"/,
+  "changes transactions reuse the stale-owner-aware cross-process intent lock",
+);
+assert.match(
+  source,
+  /\["rev-parse", "--git-common-dir"\][\s\S]{0,500}?"changes-transactions\.locks"/,
+  "the transaction lock is shared by every worktree of one repository",
+);
+assert.match(
+  source,
+  /withRepositoryChangesLock\(\s*root\.repoRoot,\s*\(\) => performPostAction\(root, action, body\)/,
+  "the complete resolved POST action runs under one repository transaction lock",
+);
+assert.match(
+  source,
+  /wantCheckpoints !== null \|\| checkpointName !== null[\s\S]{0,180}?withRepositoryChangesLock\(root\.repoRoot/,
+  "checkpoint list and read operations share the publication lock",
+);
+assert.match(
+  source,
+  /repository is busy with another changes request; retry shortly[\s\S]{0,120}?status: 409[\s\S]{0,100}?"Retry-After": "1"/,
+  "lock acquisition timeout returns a retryable conflict",
+);
+assert.match(
+  source,
+  /reserveCheckpointPath[\s\S]*?randomBytes\(6\)[\s\S]*?O_EXCL[\s\S]*?publishCheckpoint/,
+  "checkpoint publication reserves names exclusively and retries collisions randomly",
+);
+assert.match(
+  source,
+  /writeDurableExclusiveFile\(patchTemp, patch\)[\s\S]{0,180}?writeDurableExclusiveFile\(metadataTemp, metadata\)[\s\S]*?fs\.linkSync\([\s\S]{0,180}?metadataPath[\s\S]*?fs\.linkSync\([\s\S]{0,180}?reservation\.checkpointPath/,
+  "durable temporary metadata publishes before the patch marker without replacing an existing file",
+);
 
 // remote=1 — read-only origin probe powering the project-setup modal's GitHub
 // prefill. Must ride the same resolveRepoRoot containment as every other GET

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { promisify } from "node:util";
-import fs, { writeFileSync } from "node:fs";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
@@ -10,6 +11,7 @@ import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert } from "@/
 import { isSafeBranchName } from "@/lib/issue-worktree";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
+import { acquireProcessIntentLock } from "@/lib/server/process-intent-lock";
 import {
   nativeGitRelativePathIdentityKey,
   nativeGitRelativePathsEqual,
@@ -55,6 +57,7 @@ const execFileAsync = promisify(execFile);
 
 const GIT_TIMEOUT_MS = 10_000;
 const MAX_GIT_BUFFER = 64 * 1024 * 1024;
+const REPOSITORY_CHANGES_LOCK_TIMEOUT_MS = 5_000;
 /** Diff payload cap (~200KB) so one giant lockfile diff can't flood the panel. */
 const DIFF_CAP_CHARS = 200 * 1024;
 
@@ -108,6 +111,57 @@ function gitDiff(cwd: string, args: string[]): Promise<{ stdout: string; stderr:
 /** Run `git status` without repository-configured fsmonitor commands. */
 function gitStatus(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return git(cwd, ["-c", "core.fsmonitor=false", "status", ...args]);
+}
+
+async function repositoryChangesLockDir(repoRoot: string): Promise<string> {
+  const { stdout } = await git(repoRoot, ["rev-parse", "--git-common-dir"]);
+  const raw = stripGitLineEnding(stdout);
+  if (!raw) throw new Error("could not resolve repository lock directory");
+  const commonDir = path.isAbsolute(raw)
+    ? raw
+    : path.resolve(/* turbopackIgnore: true */ repoRoot, raw);
+  return path.join(
+    /* turbopackIgnore: true */ commonDir,
+    "coven-cave",
+    "changes-transactions.locks",
+  );
+}
+
+async function withRepositoryChangesLock<T>(
+  repoRoot: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const configuredTimeout = Number(
+    process.env.COVEN_CAVE_CHANGES_LOCK_TIMEOUT_MS,
+  );
+  const timeoutMs =
+    Number.isSafeInteger(configuredTimeout) && configuredTimeout > 0
+      ? configuredTimeout
+      : REPOSITORY_CHANGES_LOCK_TIMEOUT_MS;
+  const release = await acquireProcessIntentLock({
+    intentsDirectory: await repositoryChangesLockDir(repoRoot),
+    timeoutMs,
+    label: "repository changes",
+  });
+  try {
+    return await operation();
+  } finally {
+    await release();
+  }
+}
+
+function isRepositoryChangesLockTimeout(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message === "timed out waiting for repository changes lock"
+  );
+}
+
+function repositoryBusyResponse(): NextResponse {
+  return NextResponse.json(
+    { ok: false, error: "repository is busy with another changes request; retry shortly" },
+    { status: 409, headers: { "Retry-After": "1" } },
+  );
 }
 
 /** Network git (push) and `gh` can take longer than the read-only 10s budget. */
@@ -545,30 +599,32 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    if (wantCheckpoints !== null) {
-      return NextResponse.json({ ok: true, checkpoints: await listCheckpoints(root) });
-    }
-    if (checkpointName !== null) {
-      const abs = await resolveCheckpointPath(root.repoRoot, checkpointName);
-      if (!abs) return NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
-      const metadata = readCheckpointMetadata(abs);
-      if (!checkpointAuthorizedForProject(root, metadata)) {
-        return NextResponse.json(
-          { ok: false, error: "checkpoint not authorized for project" },
-          { status: 403 },
-        );
-      }
-      let patch: string;
-      try {
-        patch = fs.readFileSync(/* turbopackIgnore: true */ abs, "utf8");
-      } catch {
-        return NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
-      }
-      const truncated = patch.length > DIFF_CAP_CHARS;
-      return NextResponse.json({
-        ok: true,
-        patch: truncated ? patch.slice(0, DIFF_CAP_CHARS) : patch,
-        truncated,
+    if (wantCheckpoints !== null || checkpointName !== null) {
+      return await withRepositoryChangesLock(root.repoRoot, async () => {
+        if (wantCheckpoints !== null) {
+          return NextResponse.json({ ok: true, checkpoints: await listCheckpoints(root) });
+        }
+        const abs = await resolveCheckpointPath(root.repoRoot, checkpointName!);
+        if (!abs) return NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
+        const metadata = readCheckpointMetadata(abs);
+        if (!checkpointAuthorizedForProject(root, metadata)) {
+          return NextResponse.json(
+            { ok: false, error: "checkpoint not authorized for project" },
+            { status: 403 },
+          );
+        }
+        let patch: string;
+        try {
+          patch = fs.readFileSync(/* turbopackIgnore: true */ abs, "utf8");
+        } catch {
+          return NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
+        }
+        const truncated = patch.length > DIFF_CAP_CHARS;
+        return NextResponse.json({
+          ok: true,
+          patch: truncated ? patch.slice(0, DIFF_CAP_CHARS) : patch,
+          truncated,
+        });
       });
     }
     if (wantPr !== null) return await branchPr(root.repoRoot);
@@ -580,6 +636,7 @@ export async function GET(req: NextRequest) {
     if (!(await isChangedFile(root.repoRoot, filePath))) return pathNotAllowed();
     return await diffFile(root.repoRoot, filePath, abs);
   } catch (err) {
+    if (isRepositoryChangesLockTimeout(err)) return repositoryBusyResponse();
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
@@ -1145,22 +1202,175 @@ async function checkpointChanges(
   const checkpointDir = await checkpointDirOf(repoRoot);
   fs.mkdirSync(/* turbopackIgnore: true */ checkpointDir, { recursive: true, mode: 0o700 });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const checkpointPath = path.join(/* turbopackIgnore: true */ checkpointDir, `${stamp}.patch`);
-  writeFileSync(checkpointPath, patch, { mode: 0o600 });
+  return publishCheckpoint(
+    checkpointDir,
+    stamp,
+    patch,
+    JSON.stringify({
+      version: 1,
+      ...scope,
+    } satisfies CheckpointMetadata),
+  );
+}
+
+type CheckpointReservation = {
+  checkpointPath: string;
+  reservationPath: string;
+};
+
+function fileExists(file: string): boolean {
   try {
-    writeFileSync(
-      checkpointMetadataPath(checkpointPath),
-      JSON.stringify({
-        version: 1,
-        ...scope,
-      } satisfies CheckpointMetadata),
-      { mode: 0o600 },
-    );
+    fs.lstatSync(/* turbopackIgnore: true */ file);
+    return true;
   } catch (error) {
-    fs.rmSync(/* turbopackIgnore: true */ checkpointPath, { force: true });
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
   }
-  return checkpointPath;
+}
+
+function reserveCheckpointPath(
+  checkpointDir: string,
+  stamp: string,
+): CheckpointReservation {
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const suffix = attempt === 0 ? "" : `-${randomBytes(6).toString("hex")}`;
+    const checkpointPath = path.join(
+      /* turbopackIgnore: true */ checkpointDir,
+      `${stamp}${suffix}.patch`,
+    );
+    const reservationPath = `${checkpointPath}.reserve`;
+    let reservationFd: number;
+    try {
+      reservationFd = fs.openSync(
+        /* turbopackIgnore: true */ reservationPath,
+        fs.constants.O_WRONLY |
+          fs.constants.O_CREAT |
+          fs.constants.O_EXCL |
+          (fs.constants.O_NOFOLLOW ?? 0),
+        0o600,
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
+      throw error;
+    }
+    try {
+      try {
+        fs.writeFileSync(
+          reservationFd,
+          `${process.pid} ${new Date().toISOString()}\n`,
+        );
+        fs.fsyncSync(reservationFd);
+      } finally {
+        fs.closeSync(reservationFd);
+      }
+    } catch (error) {
+      fs.rmSync(/* turbopackIgnore: true */ reservationPath, { force: true });
+      throw error;
+    }
+    let candidateExists: boolean;
+    try {
+      candidateExists =
+        fileExists(checkpointPath) ||
+        fileExists(checkpointMetadataPath(checkpointPath));
+    } catch (error) {
+      fs.rmSync(/* turbopackIgnore: true */ reservationPath, { force: true });
+      throw error;
+    }
+    if (candidateExists) {
+      fs.rmSync(/* turbopackIgnore: true */ reservationPath, { force: true });
+      continue;
+    }
+    return { checkpointPath, reservationPath };
+  }
+  throw new Error("could not reserve a unique checkpoint name");
+}
+
+function writeDurableExclusiveFile(file: string, contents: string): void {
+  const fd = fs.openSync(
+    /* turbopackIgnore: true */ file,
+    fs.constants.O_WRONLY |
+      fs.constants.O_CREAT |
+      fs.constants.O_EXCL |
+      (fs.constants.O_NOFOLLOW ?? 0),
+    0o600,
+  );
+  try {
+    fs.writeFileSync(fd, contents);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function fsyncCheckpointDirectory(checkpointDir: string): void {
+  if (process.platform === "win32") return;
+  const fd = fs.openSync(/* turbopackIgnore: true */ checkpointDir, fs.constants.O_RDONLY);
+  try {
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function publishCheckpoint(
+  checkpointDir: string,
+  stamp: string,
+  patch: string,
+  metadata: string,
+): string {
+  const reservation = reserveCheckpointPath(checkpointDir, stamp);
+  const token = randomBytes(12).toString("hex");
+  const patchTemp = path.join(
+    /* turbopackIgnore: true */ checkpointDir,
+    `.publish-${token}.patch.tmp`,
+  );
+  const metadataTemp = path.join(
+    /* turbopackIgnore: true */ checkpointDir,
+    `.publish-${token}.scope.tmp`,
+  );
+  const metadataPath = checkpointMetadataPath(reservation.checkpointPath);
+  let patchPublished = false;
+  let metadataPublished = false;
+  try {
+    writeDurableExclusiveFile(patchTemp, patch);
+    writeDurableExclusiveFile(metadataTemp, metadata);
+
+    fs.linkSync(
+      /* turbopackIgnore: true */ metadataTemp,
+      /* turbopackIgnore: true */ metadataPath,
+    );
+    metadataPublished = true;
+    fs.unlinkSync(/* turbopackIgnore: true */ metadataTemp);
+
+    // The patch name is the pair's publication marker. Route readers take the
+    // repository lock, so they can only observe both durable files or neither.
+    fs.linkSync(
+      /* turbopackIgnore: true */ patchTemp,
+      /* turbopackIgnore: true */ reservation.checkpointPath,
+    );
+    patchPublished = true;
+    fs.unlinkSync(/* turbopackIgnore: true */ patchTemp);
+    fsyncCheckpointDirectory(checkpointDir);
+    return reservation.checkpointPath;
+  } catch (error) {
+    if (patchPublished) {
+      fs.rmSync(
+        /* turbopackIgnore: true */ reservation.checkpointPath,
+        { force: true },
+      );
+    }
+    if (metadataPublished) {
+      fs.rmSync(/* turbopackIgnore: true */ metadataPath, { force: true });
+    }
+    throw error;
+  } finally {
+    fs.rmSync(/* turbopackIgnore: true */ patchTemp, { force: true });
+    fs.rmSync(/* turbopackIgnore: true */ metadataTemp, { force: true });
+    fs.rmSync(
+      /* turbopackIgnore: true */ reservation.reservationPath,
+      { force: true },
+    );
+  }
 }
 
 type CheckpointMeta = { name: string; savedAt: string; bytes: number };
@@ -1286,20 +1496,22 @@ function isPostAction(value: unknown): value is PostAction {
   return typeof value === "string" && POST_ACTIONS.has(value as PostAction);
 }
 
+type PostBody = {
+  projectRoot?: string;
+  path?: string;
+  repoRelativePath?: string;
+  confirmUntracked?: boolean;
+  action?: unknown;
+  checkpoint?: string;
+  message?: string;
+  title?: string;
+  prBody?: string;
+  branch?: string;
+  baseRef?: string;
+};
+
 export async function POST(req: NextRequest) {
-  let body: {
-    projectRoot?: string;
-    path?: string;
-    repoRelativePath?: string;
-    confirmUntracked?: boolean;
-    action?: unknown;
-    checkpoint?: string;
-    message?: string;
-    title?: string;
-    prBody?: string;
-    branch?: string;
-    baseRef?: string;
-  };
+  let body: PostBody;
   try {
     body = await req.json();
   } catch {
@@ -1324,6 +1536,25 @@ export async function POST(req: NextRequest) {
   if (!root.ok) {
     return NextResponse.json({ ok: false, error: root.error }, { status: root.status });
   }
+  try {
+    return await withRepositoryChangesLock(
+      root.repoRoot,
+      () => performPostAction(root, action, body),
+    );
+  } catch (error) {
+    if (isRepositoryChangesLockTimeout(error)) return repositoryBusyResponse();
+    return NextResponse.json(
+      { ok: false, error: stderrOf(error) },
+      { status: 500 },
+    );
+  }
+}
+
+async function performPostAction(
+  root: ResolvedRepoRoot,
+  action: PostAction,
+  body: PostBody,
+): Promise<NextResponse> {
   if (action === "checkpoint") {
     try {
       const checkpointPath = await checkpointChanges(root.repoRoot, {

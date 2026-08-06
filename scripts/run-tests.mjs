@@ -1426,6 +1426,7 @@ export const SUITES = {
     "src/app/api/changes/route.test.ts",
     "src/app/api/changes/route-aggregate.test.ts",
     "src/app/api/changes/route-revert.test.ts",
+    "src/app/api/changes/route-concurrency.test.ts",
     "src/app/api/project-grants/route.test.ts",
     "src/lib/server/trusted-grant-mutation.test.ts",
     "src/app/api/flows/runs/route.test.ts",
@@ -1745,6 +1746,7 @@ const ALIAS_LOADER = new Set([
   // imports the Changes route, whose graph resolves "@/lib/…" aliases.
   "src/app/api/changes/route-aggregate.test.ts",
   "src/app/api/changes/route-revert.test.ts",
+  "src/app/api/changes/route-concurrency.test.ts",
   "src/app/api/chat/send/chat-send-image-persistence.test.ts",
   "src/components/thread-signal-card.test.ts",
   "src/components/thread-signals-section.test.ts",

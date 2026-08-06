@@ -88,6 +88,16 @@ const { statusOf, parsePorcelainZ, parseNumstatZ, planRevert, isCheckpointName }
 {
   // The exact stamp shape checkpointChanges writes.
   assert.equal(isCheckpointName("2026-06-13T07-00-33-123Z.patch"), true);
+  assert.equal(
+    isCheckpointName("2026-06-13T07-00-33-123Z-a1b2c3d4e5f6.patch"),
+    true,
+    "collision-safe checkpoint suffixes remain valid checkpoint names",
+  );
+  assert.equal(
+    isCheckpointName("2026-06-13T07-00-33-123Z-not-hex.patch"),
+    false,
+    "checkpoint collision suffixes use the exact random-hex shape",
+  );
   // Wrong extension / arbitrary file.
   assert.equal(isCheckpointName("notes.txt"), false);
   assert.equal(isCheckpointName("2026-06-13T07-00-33-123Z.patch.txt"), false);
