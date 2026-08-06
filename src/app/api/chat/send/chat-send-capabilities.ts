@@ -20,7 +20,7 @@ import {
 import type { OpenCodeRunCapabilities } from "@/lib/opencode-compatibility";
 import { evaluateRuntimeAvailability } from "@/lib/runtime-availability";
 
-let modelFlagProbe: Promise<boolean> | null = null;
+let modelFlagProbe: Promise<HelpProbeOutcome> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
 let openCodeModelFlagProbe: Promise<boolean> | null = null;
@@ -160,7 +160,18 @@ function terminateProbeProcessTree(child: OpenCodeProbeChild): Promise<void> {
   });
 }
 
-export function probeHelp(
+/**
+ * A help probe that could not be completed is NOT the same as a CLI that does
+ * not advertise the flag. `matched: false` means "asked, and the help text has
+ * no such option"; `ok: false` means "never got an answer". Collapsing the two
+ * makes a spawn failure or a timeout read as an unsupported capability, which
+ * is how a broken probe ends up telling a user their model is unsupported.
+ */
+export type HelpProbeOutcome =
+  | { ok: true; matched: boolean }
+  | { ok: false; reason: string };
+
+function probeHelpOutcome(
   command: string,
   args: string[],
   matches: (help: string) => boolean,
@@ -168,12 +179,12 @@ export function probeHelp(
   input?: string,
   acceptNonZeroExit = true,
   cwd?: string,
-): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
+): Promise<HelpProbeOutcome> {
+  return new Promise<HelpProbeOutcome>((resolve) => {
     let output = "";
     let settled = false;
     const timeoutMs = openCodeCapabilityProbeTimeoutMs();
-    const done = (value: boolean) => {
+    const done = (value: HelpProbeOutcome) => {
       if (settled) return;
       settled = true;
       resolve(value);
@@ -192,30 +203,62 @@ export function probeHelp(
         try {
           child.kill("SIGTERM");
         } catch {
-          // The capability is unsupported when the probe cannot complete.
+          // The probe is already being abandoned; the timeout is the report.
         }
-        done(false);
+        done({
+          ok: false,
+          reason: `\`${command} ${args.join(" ")}\` did not respond within ${timeoutMs}ms.`,
+        });
       }, timeoutMs);
       child.on("close", (code) => {
         clearTimeout(timeout);
         if (code === null) {
-          done(false);
+          done({
+            ok: false,
+            reason: `\`${command} ${args.join(" ")}\` exited with code null.`,
+          });
+          return;
+        }
+        if (!acceptNonZeroExit && code !== 0) {
+          done({
+            ok: false,
+            reason: `\`${command} ${args.join(" ")}\` exited with code ${code}.`,
+          });
           return;
         }
         try {
-          done((acceptNonZeroExit || code === 0) && matches(output));
+          done({ ok: true, matched: matches(output) });
         } catch {
-          done(false);
+          done({
+            ok: false,
+            reason: `\`${command} ${args.join(" ")}\` help output could not be matched.`,
+          });
         }
       });
-      child.on("error", () => {
+      child.on("error", (error: Error) => {
         clearTimeout(timeout);
-        done(false);
+        done({ ok: false, reason: `\`${command}\` could not be started: ${error.message}` });
       });
-    } catch {
-      done(false);
+    } catch (error) {
+      done({
+        ok: false,
+        reason: `\`${command}\` could not be started: ${error instanceof Error ? error.message : String(error)}`,
+      });
     }
   });
+}
+
+function probeHelp(
+  command: string,
+  args: string[],
+  matches: (help: string) => boolean,
+  env = harnessSpawnEnv(),
+  input?: string,
+  acceptNonZeroExit = true,
+  cwd?: string,
+): Promise<boolean> {
+  return probeHelpOutcome(command, args, matches, env, input, acceptNonZeroExit, cwd)
+    .then((outcome) => outcome.ok && outcome.matched);
 }
 
 type ProbeOutput = { output: string; complete: boolean };
@@ -587,14 +630,40 @@ export function parseOpenCodeRunCapabilitiesHelp(help: string, version: string |
   };
 }
 
-/** Capability probes are cached because old Coven CLIs reject unknown flags. */
-export function covenRunSupportsModel(): Promise<boolean> {
+/** Capability probes are cached because old Coven CLIs reject unknown flags.
+ * Only ANSWERS are cached: a probe that never completed says nothing about the
+ * installed CLI, and caching that failure would pin a transient spawn error to
+ * the process for its whole lifetime. */
+function cachedHelpOutcome(
+  read: () => Promise<HelpProbeOutcome> | null,
+  write: (probe: Promise<HelpProbeOutcome> | null) => void,
+  start: () => Promise<HelpProbeOutcome>,
+): Promise<HelpProbeOutcome> {
+  const cached = read();
+  if (cached) return cached;
+  const probe = start().then((outcome) => {
+    if (!outcome.ok) write(null);
+    return outcome;
+  }, (error: unknown) => {
+    write(null);
+    throw error;
+  });
+  write(probe);
+  return probe;
+}
+
+/** The `coven run --model` capability with its probe failures intact. */
+export function covenRunModelFlagOutcome(): Promise<HelpProbeOutcome> {
   const { command, fixedArgs } = covenLaunchCommand();
-  return (modelFlagProbe ??= probeHelp(
-    command,
-    [...fixedArgs, "run", "--help"],
-    covenRunSupportsModelFlag,
-  ));
+  return cachedHelpOutcome(
+    () => modelFlagProbe,
+    (probe) => { modelFlagProbe = probe; },
+    () => probeHelpOutcome(command, [...fixedArgs, "run", "--help"], covenRunSupportsModelFlag),
+  );
+}
+
+export function covenRunSupportsModel(): Promise<boolean> {
+  return covenRunModelFlagOutcome().then((outcome) => outcome.ok && outcome.matched);
 }
 
 export function covenRunSupportsPermission(): Promise<boolean> {

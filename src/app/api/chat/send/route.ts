@@ -97,6 +97,7 @@ import {
   runtimeProcessFailure,
   type DirectRunnerId,
   type RuntimeAvailability,
+  type RuntimeRunnerId,
 } from "@/lib/runtime-availability";
 import {
   isModelAllowedByRuntime,
@@ -157,6 +158,7 @@ import { probeCopilotCapability } from "@/lib/server/copilot-capability-probe";
 import { resolveCopilotRuntimeLaunch } from "@/lib/server/copilot-runtime-launch";
 import {
   probeReadyLocalRuntimeCapability,
+  probeReadyLocalRuntimeCapabilityOutcome,
   type LocalRuntimeCapabilityPlan,
 } from "@/lib/server/local-runtime-capability-gate";
 import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
@@ -256,7 +258,7 @@ import {
 } from "./chat-send-attachments";
 import {
   covenRunSupportsAddDir,
-  covenRunSupportsModel,
+  covenRunModelFlagOutcome,
   hermesChatSupportsModel,
   covenRunSupportsPermission,
   openCodeRunCapabilities,
@@ -313,6 +315,9 @@ function createLocalRuntimePlan(input: {
   };
   env: NodeJS.ProcessEnv;
   availability?: RuntimeAvailability;
+  /** Names the runner a supplied Coven-backed availability was tagged for, so
+   * the capability gate can tell a wrapper launch from a drifted plan. */
+  availabilityRunner?: RuntimeRunnerId;
   cwd?: string;
 }): LocalRuntimePlan {
   const availability = input.availability ?? evaluateRuntimeAvailability({
@@ -331,6 +336,7 @@ function createLocalRuntimePlan(input: {
     env: input.env,
     ...(input.cwd ? { cwd: input.cwd } : {}),
     availability,
+    ...(input.availabilityRunner ? { availabilityRunner: input.availabilityRunner } : {}),
     ...(input.launch.unresolvedWindowsShim
       ? { unresolvedWindowsShim: true as const }
       : {}),
@@ -1792,6 +1798,15 @@ export async function POST(req: Request) {
                   launch.unresolvedWindowsShim === true,
               })
             : undefined,
+        // The Coven-backed check verifies the outer `coven` AND the Claude it
+        // resolves, and tags its record with the backed runner. Declare that
+        // so the capability gate reads it as a wrapper launch rather than as a
+        // plan whose readiness belongs to some other runner — the latter
+        // silently skipped every `coven run` probe on a Claude turn, which
+        // then surfaced to users as "the saved model cannot be applied".
+        ...(binding.harness === "claude"
+          ? { availabilityRunner: "claude" as const }
+          : {}),
       });
     }
   }
@@ -2031,6 +2046,47 @@ export async function POST(req: Request) {
       probe,
       allowWithoutLocalPlan: Boolean(sshRuntime),
     });
+  const probeCovenCapabilityOutcome = <T,>(probe: () => Promise<T>) =>
+    probeReadyLocalRuntimeCapabilityOutcome({
+      plan: localRuntimePlan,
+      runner: "coven",
+      probe,
+      allowWithoutLocalPlan: Boolean(sshRuntime),
+    });
+  // The Coven probe decides model forwarding only when no direct transport
+  // owns this turn. Running it unconditionally would let an unrelated runtime's
+  // turn report a Coven probe failure it never depended on.
+  const covenModelProbeDecides =
+    !hermesDirect &&
+    !openCodeDirect &&
+    !copilotStream &&
+    !codexDirect &&
+    binding.harness !== "grok" &&
+    binding.harness !== "openclaw";
+  const covenModelForwarding = covenModelProbeDecides
+    ? await probeCovenCapabilityOutcome(covenRunModelFlagOutcome)
+    : null;
+  // Three outcomes, kept apart on purpose: the CLI answered and advertises
+  // `--model`; the CLI answered and does not; or we never got an answer. Only
+  // the middle one is a statement about the runtime's capabilities. Folding
+  // the third into it is what told users their model was unsupported when the
+  // probe had simply not run.
+  const modelForwardingProbeFailure: { code: string; reason: string } | null =
+    covenModelForwarding === null
+      ? null
+      : covenModelForwarding.ran === false
+        ? { code: covenModelForwarding.code, reason: covenModelForwarding.reason }
+        : covenModelForwarding.value.ok === false
+          ? {
+              code: RUNTIME_AVAILABILITY_ERROR_CODES.probe_failed,
+              reason: covenModelForwarding.value.reason,
+            }
+          : null;
+  const covenModelForwardingSupported =
+    covenModelForwarding !== null &&
+    covenModelForwarding.ran === true &&
+    covenModelForwarding.value.ok === true &&
+    covenModelForwarding.value.matched === true;
   const modelForwardingEnabled =
     hermesDirect
       ? hermesApi !== null || (hermesModelCapability ?? false)
@@ -2040,8 +2096,7 @@ export async function POST(req: Request) {
           ? true
           : codexDirect
             ? codexDirectCapabilities?.model === true
-            : binding.harness === "grok" ||
-              (binding.harness !== "openclaw" && ((await probeCovenCapability(covenRunSupportsModel)) ?? false));
+            : binding.harness === "grok" || covenModelForwardingSupported;
   const explicitModelSelection = body.modelOverride !== undefined && body.modelOverride !== "";
   if (explicitModelSelection && (!requestedModel || !isModelAllowedByRuntime(binding.harness, requestedModel))) {
     return new Response(
@@ -2057,6 +2112,20 @@ export async function POST(req: Request) {
     );
   }
   if (explicitModelSelection && !modelForwardingEnabled) {
+    if (modelForwardingProbeFailure) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          code: "model_forwarding_probe_failed",
+          error: "Could not check whether this runtime accepts a model override, so the turn was not run.",
+          requestedModel,
+          modelApplicationState: "rejected",
+          modelApplicationReason: modelForwardingProbeFailure.reason,
+          probeFailureCode: modelForwardingProbeFailure.code,
+        }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    }
     return new Response(
       JSON.stringify({
         ok: false,
@@ -2117,6 +2186,21 @@ export async function POST(req: Request) {
     }, { status: 400 });
   }
   if (savedModelRejection === "forwarding") {
+    // A probe that never ran, or that failed to run, is not evidence about the
+    // saved model. Say what actually went wrong instead of blaming the model —
+    // "unsupported model" sends people editing a setting that was never the
+    // problem.
+    if (modelForwardingProbeFailure) {
+      return NextResponse.json({
+        ok: false,
+        code: "model_forwarding_probe_failed",
+        error: "Could not check whether this runtime accepts the saved model, so the turn was not run.",
+        desiredModel,
+        modelApplicationState: "rejected",
+        modelApplicationReason: modelForwardingProbeFailure.reason,
+        probeFailureCode: modelForwardingProbeFailure.code,
+      }, { status: 400 });
+    }
     return NextResponse.json({
       ok: false,
       code: "unsupported_saved_model",
