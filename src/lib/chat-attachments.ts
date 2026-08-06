@@ -103,18 +103,19 @@ function cleanSize(size: unknown): number | undefined {
  * characters of base64 inside one `String.prototype.match` call. That blew V8's
  * stack — `RangeError: Maximum call stack size exceeded at String.match` — on a
  * ~6 MB data URL. Thrown from a streaming route handler, that took the whole
- * response down with it rather than rejecting one attachment.
+ * response down with it; in the scry route's stream `start` it died after the
+ * `staged` event with no terminal frame at all.
  *
  * The length gate below is NOT the fix and must not be lowered to become one.
  * It admits 5 MB of image on purpose, which is a legitimate photo; a cap tight
  * enough to keep the old pattern safe would have rejected real images and hidden
  * the defect rather than removed it.
  *
- * Every image-attachment path shares this parse. `POST /api/chat/send` runs
- * user-pasted images through `normalizeChatAttachments` -> `cleanImageDataUrl`
- * on exactly these multi-megabyte strings (`fileToAttachment` inlines any image
- * up to MAX_ATTACHMENT_IMAGE_BYTES with no downscale), as do the board and the
- * agent attachment reader.
+ * This was never scry-specific. `POST /api/chat/send` runs user-pasted images
+ * through `normalizeChatAttachments` -> `cleanImageDataUrl` on exactly the same
+ * multi-megabyte strings (`fileToAttachment` inlines any image up to
+ * MAX_ATTACHMENT_IMAGE_BYTES with no downscale), as do the board and the agent
+ * attachment reader. The scry only got there first.
  */
 const IMAGE_DATA_URL_HEADER_RE = /^data:(image\/[a-z0-9.+-]{1,60});base64$/i;
 

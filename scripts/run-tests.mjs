@@ -73,6 +73,13 @@ export const SUITES = {
     "src/lib/role-surfaces.test.ts",
     "src/lib/use-role-surfaces-loader.test.ts",
     "src/lib/familiar-types.test.ts",
+    "src/lib/scry.test.ts",
+    "src/lib/familiar-soul.test.ts",
+    "src/lib/scry-stream.test.ts",
+    "src/lib/rite-flow.test.ts",
+    "src/lib/glitch-source.test.ts",
+    "src/lib/server/harness-report-cache.test.ts",
+    "src/lib/foil/plate.test.ts",
     "src/lib/research-missions.test.ts",
     "src/lib/research-autoloop.test.ts",
     "src/lib/research-mission-client.test.ts",
@@ -553,6 +560,8 @@ export const SUITES = {
     "src/components/familiar-studio-look-tab.test.ts",
     "src/components/familiars-view.test.ts",
     "src/components/familiar-summoning-circle.test.ts",
+    "src/components/familiar-rite.test.ts",
+    "src/components/familiar-card-overlay.test.ts",
     "src/components/workspace-familiars-landing.test.ts",
     "src/components/board-kanban-keyboard.test.ts",
     "src/components/board-inspector-a11y.test.ts",
@@ -884,6 +893,7 @@ export const SUITES = {
     "src/components/workspace-sessions-navigation.test.ts",
     "src/lib/cave-familiar-archive.test.ts",
     "src/lib/cave-familiar-images.test.ts",
+    "src/lib/cave-familiar-foil.test.ts",
     "src/lib/cave-familiar-overrides.test.ts",
     "src/lib/cave-project-images.test.ts",
     "src/lib/chat-assistant-filter.test.ts",
@@ -1585,6 +1595,8 @@ const STRIP_TYPES_MJS = new Set([
 const ALIAS_LOADER = new Set([
   "src/lib/chat-live-generation-identity.test.ts",
   "src/lib/podcast-script.test.ts",
+  // the foil-plate store resolves "@/lib/avatar-idb" for its IndexedDB driver
+  "src/lib/cave-familiar-foil.test.ts",
   // resolves "@/lib/tool-visual" for the batch band's tint
   "src/lib/chat-tool-batches.test.ts",
   // the reader's footer views resolve "@/lib/tool-visual" for the same tints
@@ -1781,6 +1793,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/voice/registry.test.ts",
   "src/lib/voice/elevenlabs.test.ts",
   "src/lib/project-root-migration.test.ts",
+  // the foil plate resolves "@/lib/foil/plate" through its own barrel.
+  "src/lib/foil/plate.test.ts",
 ]);
 
 // These gates inspect physical source files. The CSS facade expander would

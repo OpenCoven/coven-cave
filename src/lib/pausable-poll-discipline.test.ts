@@ -37,6 +37,8 @@ const RAW_INTERVAL_ALLOWLIST = new Map([
   ["components/home/home-feed.tsx", "minute ticker for relative timestamps; no network"],
   ["components/calendar-view-primitives.tsx", "wall-clock minute ticker for the now-line; no network"],
   ["components/chat-view.tsx", "1s elapsed ticker on the streaming meta line; no network"],
+  ["components/scry-panel.tsx", "250ms elapsed ticker while a scry is in flight; reads performance.now() only, issues no request, and stops the moment the stream reports done. It is also the reduced-motion fallback's proof that a quiet 13s stage is still alive, so pausing it while hidden would leave a returning user staring at a frozen number"],
+  ["components/familiar-card-preview.tsx", "3.6s office-badge crossfade when a familiar holds several offices; advances a local index only, issues no request, and already stops on hover and under prefers-reduced-motion. A hidden-tab guard would buy nothing — the browser throttles it, and the card is not showing anyway"],
   ["components/familiar-studio-projects-tab.tsx", "30s grant-undo countdown while an accepting row is visible; no network"],
   ["components/update-available.tsx", "6-hour recheck cadence; a hidden-tab skip would defer updates for days"],
   ["components/onboarding-overlay.tsx", "modal-scoped 2s install polls; only run while the overlay is open mid-setup"],

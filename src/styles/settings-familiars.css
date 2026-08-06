@@ -322,6 +322,31 @@
     0 0 0 var(--space-1) color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 28%, transparent);
 }
 
+/* Replace-portrait, split off the avatar's primary click (which now opens the
+   card). Small and cornered rather than hidden behind a hover: an editing
+   affordance that only exists on hover is unreachable by touch and invisible to
+   anyone who never happens to point at it. */
+.familiar-studio-control__avatar-edit {
+  position: absolute;
+  right: calc(var(--space-1) * -1);
+  bottom: calc(var(--space-1) * -1);
+  display: grid;
+  place-items: center;
+  width: var(--space-6);
+  height: var(--space-6);
+  padding: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.familiar-studio-control__avatar-edit:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
 .familiar-studio-control__avatar-image {
   width: 100%;
   height: 100%;
