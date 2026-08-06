@@ -3,10 +3,9 @@
  * cave-2x1em: when the server starts serving one root form, the client's
  * root-keyed data must come with it.
  *
- * The server computes legacy aliases after expanding `~`, matching the
- * pre-POSIX-safe normalizer that produced persisted client keys. Serving the
- * POSIX-safe form moves that key; `legacyRoot` carries the old expanded key so
- * this migration can follow it.
+ * The server carries both the historical literal `~/...` key and the alias
+ * computed after expansion. Serving the POSIX-safe form moves either key;
+ * `legacyRoots` carries both spellings so this migration can follow them.
  *
  * SCOPE, corrected against the code rather than the bead:
  *   - IDB projectAvatars    keyed BY root      -> re-key
@@ -249,6 +248,98 @@ const PROJECTS = [
   assert.equal(idb.projectAvatars.has(canonical), true);
   assert.equal(readProjectOverrides()["session-multi"], canonical);
   assert.equal(moved, 2, "every retained legacy alias is migrated");
+}
+
+{
+  const rawTilde = "~/legacy/raw-tilde";
+  const expandedCanonical = "/home/dev/legacy/raw-tilde";
+  const rawImage = {
+    dataUrl: "data:image/png;base64,RAW-TILDE",
+    mime: "image/png",
+  };
+  await images.setProjectImage(rawTilde, rawImage);
+  store.set(
+    CHAT_PROJECT_OVERRIDES_KEY,
+    JSON.stringify({ "session-raw-tilde": rawTilde }),
+  );
+  store.set(
+    "cave:project-frecency:v1",
+    JSON.stringify({
+      [rawTilde]: { picks: 4, lastPickedAt: 40 },
+    }),
+  );
+
+  const moved = await migrateProjectRootKeys([
+    {
+      id: "raw-tilde",
+      root: expandedCanonical,
+      legacyRoots: [rawTilde, "/home/dev/legacy/raw-tilde/"],
+    },
+  ]);
+
+  assert.equal(idb.projectAvatars.has(rawTilde), false);
+  assert.equal(idb.projectAvatars.get(expandedCanonical)?.dataUrl, rawImage.dataUrl);
+  assert.equal(idb.projectAvatars.get(expandedCanonical)?.mime, rawImage.mime);
+  assert.equal(readProjectOverrides()["session-raw-tilde"], expandedCanonical);
+  assert.deepEqual(
+    JSON.parse(store.get("cave:project-frecency:v1")),
+    {
+      [expandedCanonical]: { picks: 4, lastPickedAt: 40 },
+    },
+  );
+  assert.equal(moved, 1, "literal tilde state is followed once across shared consumers");
+}
+
+{
+  const ambiguousRawTilde = "~/legacy/ambiguous";
+  const ambiguousImage = {
+    dataUrl: "data:image/png;base64,AMBIGUOUS-TILDE",
+    mime: "image/png",
+  };
+  await images.setProjectImage(ambiguousRawTilde, ambiguousImage);
+  store.set(
+    CHAT_PROJECT_OVERRIDES_KEY,
+    JSON.stringify({ "session-ambiguous-tilde": ambiguousRawTilde }),
+  );
+  store.set(
+    "cave:project-frecency:v1",
+    JSON.stringify({
+      [ambiguousRawTilde]: { picks: 5, lastPickedAt: 50 },
+    }),
+  );
+
+  const moved = await migrateProjectRootKeys([
+    {
+      id: "ambiguous-a",
+      root: "/canonical/ambiguous-a",
+      legacyRoots: [ambiguousRawTilde],
+    },
+    {
+      id: "ambiguous-b",
+      root: "/canonical/ambiguous-b",
+      legacyRoots: [ambiguousRawTilde],
+    },
+  ]);
+
+  assert.equal(moved, 0, "a literal tilde alias claimed by two projects is never migrated");
+  assert.equal(
+    idb.projectAvatars.get(ambiguousRawTilde)?.dataUrl,
+    ambiguousImage.dataUrl,
+  );
+  assert.equal(
+    idb.projectAvatars.get(ambiguousRawTilde)?.mime,
+    ambiguousImage.mime,
+  );
+  assert.equal(
+    readProjectOverrides()["session-ambiguous-tilde"],
+    ambiguousRawTilde,
+  );
+  assert.deepEqual(
+    JSON.parse(store.get("cave:project-frecency:v1")),
+    {
+      [ambiguousRawTilde]: { picks: 5, lastPickedAt: 50 },
+    },
+  );
 }
 
 {

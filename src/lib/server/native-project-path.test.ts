@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   nativeProjectPathsEqual,
+  resolveNativeRepoRelativePathWithinProject,
   resolveNativePathWithinRoot,
   resolveNativeProjectPathForGitRoot,
 } from "./native-project-path.ts";
@@ -109,5 +110,63 @@ test("Windows authorization normalizes separators and case with segment boundari
       "win32",
     ),
     null,
+  );
+});
+
+test("repo-relative project eligibility rejects parent and sibling boundaries cross-platform", () => {
+  assert.deepEqual(
+    resolveNativeRepoRelativePathWithinProject(
+      "C:\\Repo\\Packages\\App",
+      "c:\\repo",
+      "packages/app/src/File.ts",
+      "win32",
+    ),
+    {
+      absolutePath: "C:\\Repo\\Packages\\App\\src\\File.ts",
+      projectRelativePath: "src\\File.ts",
+      gitRelativePath: "Packages/App/src/File.ts",
+    },
+  );
+  for (const outside of [
+    "src/parent.ts",
+    "packages/sibling/src/File.ts",
+    "packages/application/src/File.ts",
+    "../outside.ts",
+    "C:\\Repo\\Packages\\App\\src\\absolute.ts",
+  ]) {
+    assert.equal(
+      resolveNativeRepoRelativePathWithinProject(
+        "C:\\Repo\\Packages\\App",
+        "c:\\repo",
+        outside,
+        "win32",
+      ),
+      null,
+      `${outside} is not an eligible repo-relative nested-project path`,
+    );
+  }
+
+  assert.deepEqual(
+    resolveNativeRepoRelativePathWithinProject(
+      "/repo/packages/app",
+      "/repo",
+      "packages/app/src/file.ts",
+      "linux",
+    ),
+    {
+      absolutePath: "/repo/packages/app/src/file.ts",
+      projectRelativePath: "src/file.ts",
+      gitRelativePath: "packages/app/src/file.ts",
+    },
+  );
+  assert.equal(
+    resolveNativeRepoRelativePathWithinProject(
+      "/repo/packages/app",
+      "/repo",
+      "packages/app-other/src/file.ts",
+      "linux",
+    ),
+    null,
+    "a shared string prefix is not a project path boundary",
   );
 });

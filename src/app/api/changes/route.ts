@@ -14,6 +14,7 @@ import {
   nativeProjectPathsEqual,
   resolveNativePathWithinRoot,
   resolveNativeProjectPathForGitRoot,
+  resolveNativeRepoRelativePathWithinProject,
 } from "@/lib/server/native-project-path";
 
 export const dynamic = "force-dynamic";
@@ -361,14 +362,32 @@ async function isChangedFile(
 
 // ── GET: change list / single-file diff ───────────────────────────────────────
 
-async function listChanges(repoRoot: string): Promise<NextResponse> {
-  const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
-  const files = parsePorcelainZ(stdout);
+function isRepoRelativeFileRevertible(
+  root: ResolvedRepoRoot,
+  repoRelativePath: string,
+): boolean {
+  const target = resolveNativeRepoRelativePathWithinProject(
+    root.projectRoot,
+    root.repoRoot,
+    repoRelativePath,
+  );
+  return (
+    target !== null &&
+    resolveContainedFile(root.projectRoot, target.projectRelativePath) !== null
+  );
+}
+
+async function listChanges(root: ResolvedRepoRoot): Promise<NextResponse> {
+  const { stdout } = await gitStatus(root.repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
+  const files = parsePorcelainZ(stdout).map((file) => ({
+    ...file,
+    revertible: isRepoRelativeFileRevertible(root, file.path),
+  }));
 
   // Best-effort ins/del counts vs HEAD (covers staged + unstaged). Repos
   // without a first commit have no HEAD — skip counts rather than fail.
   try {
-    const { stdout: numstat } = await gitDiff(repoRoot, ["--numstat", "-z", "HEAD", "--"]);
+    const { stdout: numstat } = await gitDiff(root.repoRoot, ["--numstat", "-z", "HEAD", "--"]);
     const counts = parseNumstatZ(numstat);
     for (const file of files) {
       const c = counts.get(file.path);
@@ -385,16 +404,16 @@ async function listChanges(repoRoot: string): Promise<NextResponse> {
   // don't need a second git endpoint. Unborn repos have no HEAD — omit.
   let branch: string | null = null;
   try {
-    branch = await currentBranch(repoRoot);
+    branch = await currentBranch(root.repoRoot);
   } catch {
     /* no HEAD yet */
   }
 
   // Linked-worktree name rides along too (composer git chip) — null in the
   // primary checkout, the checkout dir's basename in a `git worktree`.
-  const worktree = await worktreeName(repoRoot);
+  const worktree = await worktreeName(root.repoRoot);
 
-  return NextResponse.json({ ok: true, repo: true, repoRoot, branch, worktree, files });
+  return NextResponse.json({ ok: true, repo: true, repoRoot: root.repoRoot, branch, worktree, files });
 }
 
 /** PR context for the current branch (composer git chip): the open/merged pull
@@ -517,7 +536,7 @@ export async function GET(req: NextRequest) {
     if (wantPr !== null) return await branchPr(root.repoRoot);
     if (wantRemote !== null) return await originRemoteUrl(root.repoRoot);
     if (wantBranches !== null) return await listBranches(root.repoRoot);
-    if (filePath === null) return await listChanges(root.repoRoot);
+    if (filePath === null) return await listChanges(root);
     const abs = resolveContainedFile(root.repoRoot, filePath);
     if (!abs) return pathNotAllowed();
     if (!(await isChangedFile(root.repoRoot, filePath))) return pathNotAllowed();
@@ -1387,18 +1406,17 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-  let candidatePath = body.path!;
-  if (hasRepoRelativePath) {
-    if (path.isAbsolute(body.repoRelativePath!)) return pathNotAllowed();
-    const repoTarget = resolveNativePathWithinRoot(root.repoRoot, body.repoRelativePath);
-    if (!repoTarget) return pathNotAllowed();
-    candidatePath = repoTarget.absolutePath;
-  }
-  const projectTarget = resolveNativeProjectPathForGitRoot(
-    root.projectRoot,
-    root.repoRoot,
-    candidatePath,
-  );
+  const projectTarget = hasProjectPath
+    ? resolveNativeProjectPathForGitRoot(
+        root.projectRoot,
+        root.repoRoot,
+        body.path!,
+      )
+    : resolveNativeRepoRelativePathWithinProject(
+        root.projectRoot,
+        root.repoRoot,
+        body.repoRelativePath!,
+      );
   if (!projectTarget) return pathNotAllowed();
   const abs = resolveContainedFile(root.projectRoot, projectTarget.projectRelativePath);
   if (!abs) return pathNotAllowed();

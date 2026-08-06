@@ -103,6 +103,31 @@ export type NativeGitRelativeProjectTarget = {
   gitRelativePath: string;
 };
 
+/**
+ * Resolve a Git-repository-relative path only when it belongs to the captured
+ * project. This is the shared boundary for repo-wide status rows and their
+ * project-scoped mutations.
+ */
+export function resolveNativeRepoRelativePathWithinProject(
+  projectRoot: string | null | undefined,
+  gitRoot: string | null | undefined,
+  repoRelativePath: string | null | undefined,
+  platform: NativeProjectPathPlatform = process.platform,
+): NativeGitRelativeProjectTarget | null {
+  const input = nativePathInput(repoRelativePath, platform);
+  if (input === null) return null;
+  const api = pathApi(platform);
+  if (api.isAbsolute(input)) return null;
+  const repoTarget = resolveNativePathWithinRoot(gitRoot, input, platform);
+  if (!repoTarget) return null;
+  return resolveNativeProjectPathForGitRoot(
+    projectRoot,
+    gitRoot,
+    repoTarget.absolutePath,
+    platform,
+  );
+}
+
 export function resolveNativeProjectPathForGitRoot(
   projectRoot: string | null | undefined,
   gitRoot: string | null | undefined,

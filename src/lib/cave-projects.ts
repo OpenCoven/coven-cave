@@ -23,8 +23,8 @@ import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
 
 type ProjectsFile = {
   version: 1;
-  /** Persisted once pre-POSIX-safe root keys have been materialized as aliases. */
-  rootKeyNormalizerVersion?: 3;
+  /** Persisted once raw-tilde and pre-POSIX-safe keys are migration aliases. */
+  rootKeyNormalizerVersion?: 4;
   projects: CaveProject[];
 };
 
@@ -138,9 +138,9 @@ async function loadProjectsUnlocked(): Promise<CaveProject[]> {
     // the next mutation persists the deduped list, self-healing the file.
     // Serve ONE root form (cave-2x1em). createProject has persisted the
     // expanded root since cave-psp8, but records written before that can still
-    // hold a literal `~/...`. Expansion has always happened before roots reach
-    // client stores, so migration aliases must reproduce the canonical form
-    // after expansion rather than advertise the raw persisted spelling.
+    // hold a literal `~/...`. Some historical clients persisted that literal
+    // spelling while others saw the expanded root, so both are migration
+    // aliases. The literal tilde never becomes the served/authorized root.
     //
     // The display normalizer deliberately does NOT expand `~`: it runs in the
     // browser, which has no home directory. So the split is closed here, on
@@ -149,7 +149,7 @@ async function loadProjectsUnlocked(): Promise<CaveProject[]> {
     // re-key what it already stored. Aliases stay durable until the client
     // explicitly acknowledges that every local migration succeeded.
     const addPreviousCanonicalAliases =
-      parsed.rootKeyNormalizerVersion !== 3;
+      parsed.rootKeyNormalizerVersion !== 4;
     const normalizedProjects = parsed.projects.map((project) => {
       const expandedRoot = expandHomeRoot(project.root);
       const expanded = normalizeRootExpandingHome(expandedRoot);
@@ -157,10 +157,9 @@ async function loadProjectsUnlocked(): Promise<CaveProject[]> {
         ? legacyProjectRootKey(expandedRoot)
         : null;
       const aliases = new Set([
-        ...(project.legacyRoots ?? []).filter((root) => !isUnexpandedHomeRoot(root)),
-        ...(project.legacyRoot && !isUnexpandedHomeRoot(project.legacyRoot)
-          ? [project.legacyRoot]
-          : []),
+        ...(project.legacyRoots ?? []),
+        ...(project.legacyRoot ? [project.legacyRoot] : []),
+        ...(isUnexpandedHomeRoot(project.root) ? [project.root] : []),
         ...(expanded === expandedRoot ? [] : [expandedRoot]),
         ...(previousCanonical && previousCanonical !== expanded
           ? [previousCanonical]
@@ -228,7 +227,7 @@ export function withProjectRegistryLock<T>(
 async function saveProjects(projects: CaveProject[]): Promise<void> {
   const file: ProjectsFile = {
     version: 1,
-    rootKeyNormalizerVersion: 3,
+    rootKeyNormalizerVersion: 4,
     projects,
   };
   await writeProjectsFile(projectsFilePath(), JSON.stringify(file, null, 2));

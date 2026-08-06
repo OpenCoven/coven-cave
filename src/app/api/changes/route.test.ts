@@ -24,7 +24,7 @@ assert.match(
 
 assert.match(
   source,
-  /gitStatus\(repoRoot, \["--porcelain=v1", "-z", "--untracked-files=all"\]\)/,
+  /gitStatus\(root\.repoRoot, \["--porcelain=v1", "-z", "--untracked-files=all"\]\)/,
   "change-list status polling must use the hardened gitStatus helper",
 );
 
@@ -38,8 +38,18 @@ assert.match(
 );
 assert.match(
   source,
-  /NextResponse\.json\(\{ ok: true, repo: true, repoRoot, branch, worktree, files \}\)/,
+  /NextResponse\.json\(\{ ok: true, repo: true, repoRoot: root\.repoRoot, branch, worktree, files \}\)/,
   "the change-list response includes the branch and worktree fields",
+);
+assert.match(
+  source,
+  /files = parsePorcelainZ\(stdout\)\.map\(\(file\) => \(\{[\s\S]{0,180}?revertible: isRepoRelativeFileRevertible\(root, file\.path\),/,
+  "the GET list derives per-file revert eligibility at the server authorization boundary",
+);
+assert.match(
+  source,
+  /resolveNativeRepoRelativePathWithinProject\([\s\S]{0,160}?root\.projectRoot,[\s\S]{0,80}?root\.repoRoot,[\s\S]{0,80}?repoRelativePath,/,
+  "GET eligibility uses the same native path containment semantics as revert",
 );
 
 // Linked-worktree detection compares --git-dir with --git-common-dir (they
@@ -159,8 +169,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const repoTarget = resolveNativePathWithinRoot\(root\.repoRoot, body\.repoRelativePath\)[\s\S]{0,240}?const projectTarget = resolveNativeProjectPathForGitRoot\([\s\S]{0,160}?root\.projectRoot,[\s\S]{0,80}?root\.repoRoot,[\s\S]{0,80}?candidatePath,[\s\S]{0,160}?resolveContainedFile\(root\.projectRoot, projectTarget\.projectRelativePath\)/,
-  "revert distinguishes repo-relative list paths, then authorizes the resolved target under the captured project",
+  /resolveNativeRepoRelativePathWithinProject\(\s*root\.projectRoot,\s*root\.repoRoot,\s*body\.repoRelativePath!,\s*\)[\s\S]{0,160}?resolveContainedFile\(root\.projectRoot, projectTarget\.projectRelativePath\)/,
+  "revert authorizes repo-relative list paths through the shared captured-project boundary",
 );
 assert.match(
   source,

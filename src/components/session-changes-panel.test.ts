@@ -132,8 +132,8 @@ assert.match(
 );
 assert.match(
   src,
-  /leadingIcon="ph:git-diff"[\s\S]{0,240}?onClick=\{startReviewSession\}\s*\n\s*disabled=\{!canCommit\}[\s\S]{0,200}?aria-label="Review changes in a new session"/,
-  "the Review button is labeled for AT and disabled when there is nothing to review",
+  /leadingIcon="ph:git-diff"[\s\S]{0,240}?onClick=\{startReviewSession\}\s*\n\s*disabled=\{!canReview\}[\s\S]{0,200}?aria-label="Review changes in a new session"/,
+  "the Review button is labeled for AT and remains available for read-only repo context",
 );
 assert.match(
   src,
@@ -158,6 +158,37 @@ assert.doesNotMatch(
   src,
   /const json = await mutateSessionChanges<\{[\s\S]*?\}>\(fetch, repoRoot \?\? projectRoot, "revert", \{/,
   "the enclosing repo root must never replace the panel's checkpoint identity",
+);
+
+assert.match(
+  rows,
+  /\{confirmRevert \? null : file\.revertible \? \(\s*\n\s*<IconButton/,
+  "only server-authorized rows enter the destructive revert-control branch",
+);
+assert.match(
+  rows,
+  /\) : \(\s*\n\s*<span[\s\S]{0,240}?title="Outside this project"[\s\S]{0,120}?Read only/,
+  "outside rows display visible read-only status",
+);
+assert.match(
+  src,
+  /const projectFiles = files\.filter\(\(file\) => file\.revertible\);/,
+  "aggregate project actions derive from revert-eligible rows",
+);
+assert.match(
+  src,
+  /const canMutateAllFiles = canReadChanges && projectFiles\.length === files\.length;/,
+  "aggregate destructive controls fail closed while any visible repo file is outside project scope",
+);
+assert.match(
+  src,
+  /disabled=\{!canReview\}/,
+  "the read-only Review action remains available for useful enclosing-repository context",
+);
+assert.match(
+  src,
+  /disabled=\{checkpointing \|\| !canMutateAllFiles\}/,
+  "Save checkpoint cannot imply outside-project files are mutable",
 );
 
 console.log("session-changes-panel.test.ts: cave-4op footer + icon-button control primitives ok");
