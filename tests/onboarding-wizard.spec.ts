@@ -335,7 +335,7 @@ test.describe("onboarding wizard", () => {
     await expect(strip.locator('[aria-current="step"]')).toHaveText(/Set up Cave/);
   });
 
-  test("completed setup surfaces an above-the-fold banner whose CTA opens the Summoning Circle", async ({ page }) => {
+  test("completed setup surfaces an above-the-fold banner whose CTA opens the summoning rite", async ({ page }) => {
     // Complete machines never auto-open; drive the wizard via the manual-open
     // event every setup entry point dispatches.
     await gotoApp(page, COMPLETE_NO_FAMILIARS_STATUS);
@@ -345,11 +345,13 @@ test.describe("onboarding wizard", () => {
     // The banner renders at the top — reachable without scrolling a long page.
     await expect(wizard(page).getByText("Setup complete — Cave is ready.")).toBeVisible();
 
-    // Its CTA keeps the promise: the Summoning Circle itself opens (not just
-    // the Familiars roster with a second button to find).
+    // Its CTA keeps the promise: familiar creation itself opens (not just the
+    // Familiars roster with a second button to find). cave-3rz.3 moved that
+    // destination from the Summoning Circle to the Summoning Rite; the promise
+    // the banner makes is unchanged, so this asserts the rite dialog.
     await wizard(page).getByRole("button", { name: "Summon your familiar", exact: true }).click();
     await expect(wizard(page)).toHaveCount(0);
-    await expect(page.getByRole("dialog", { name: "Summoning circle" })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("dialog", { name: "Summoning rite" })).toBeVisible({ timeout: 15_000 });
   });
 
   test("a failed CLI install (managed Node missing) shows the hint and stays retryable", async ({ page }) => {

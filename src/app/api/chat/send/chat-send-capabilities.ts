@@ -174,7 +174,7 @@ export type HelpProbeOutcome =
   | { ok: true; matched: boolean }
   | { ok: false; reason: string };
 
-function probeHelpOutcome(
+export function probeHelpOutcome(
   command: string,
   args: string[],
   matches: (help: string) => boolean,
@@ -251,6 +251,11 @@ function probeHelpOutcome(
   });
 }
 
+/** Exported for chat-send-capabilities.test.ts, which drives it against real
+ *  child processes — a timeout, a spawn failure and a non-zero exit each have
+ *  to be exercised for real, not simulated. The boolean face of
+ *  probeHelpOutcome; prefer the outcome form in product code so a failed probe
+ *  stays distinguishable from an unmatched flag. */
 export function probeHelp(
   command: string,
   args: string[],
