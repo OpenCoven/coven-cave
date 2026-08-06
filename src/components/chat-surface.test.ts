@@ -1,12 +1,12 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 
-const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
-const railController = await readFile(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
-const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url), "utf8");
-const agentsMemoryView = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
-const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
+const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const railController = readFileSync(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
+const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
+const agentsMemoryView = readFileSync(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
+const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 assert.match(
   chatSurface,
@@ -108,13 +108,22 @@ assert.match(
   /scope === "coven" \?[\s\S]*<GroupChatView[\s\S]*familiars=\{resolvedFamiliars\}/,
   "ChatSurface should render GroupChatView for the coven scope",
 );
-// Familiar selection now lives in the global top menu bar (and the sidebar /
-// mobile top-bar switcher), so the chat header carries only its scope tabs —
-// no duplicate switcher here.
-assert.doesNotMatch(
-  chatSurface,
-  /<FamiliarSwitcher/,
-  "ChatSurface should not duplicate the global familiar switcher in its header",
+// Chat keeps the shared familiar selector in its dedicated header block above
+// the minimal scope tabs.
+const familiarContextCount = chatSurface.match(/className="chat-familiar-context"/g)?.length ?? 0;
+assert.equal(
+  familiarContextCount,
+  1,
+  'ChatSurface should contain exactly one className="chat-familiar-context" occurrence',
+);
+const familiarContext = chatSurface.match(
+  /<div className="chat-familiar-context">([\s\S]*?)<\/div>\s*<div className="chat-scope-tabs chat-scope-tabs--minimal/g,
+);
+assert.ok(familiarContext, "ChatSurface should expose the sole .chat-familiar-context block before the minimal scope tabs");
+assert.match(
+  familiarContext[1],
+  /<FamiliarQuickSwitch\b[\s\S]*?activeFamiliarId=\{activeFamiliarId\}[\s\S]*?onSelectFamiliar=\{\(id\) => \{\s*if \(id\) onSetActiveFamiliar\(id\);\s*\}\}[\s\S]*?labeled[\s\S]*?singleRequired[\s\S]*?$/,
+  "ChatSurface should keep FamiliarQuickSwitch inside the sole .chat-familiar-context block before the minimal scope tabs",
 );
 assert.match(
   chatSurface,

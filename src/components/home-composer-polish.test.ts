@@ -1,9 +1,9 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 
-const source = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
-const destinations = await readFile(new URL("./home/home-destinations.ts", import.meta.url), "utf8");
+const source = readFileSync(new URL("./home-composer.tsx", import.meta.url), "utf8");
+const destinations = readFileSync(new URL("./home/home-destinations.ts", import.meta.url), "utf8");
 
 // ───────── Task 1: Destination-aware placeholder + drop subtitle ─────────
 assert.match(
@@ -52,7 +52,7 @@ const css = (
       "../styles/home-composer/landing-composer.css",
       "../styles/home-composer/feed-menus.css",
       "../styles/home-composer/hearth-continuations.css",
-    ].map((sheet) => readFile(new URL(sheet, import.meta.url), "utf8")),
+    ].map((sheet) => readFileSync(new URL(sheet, import.meta.url), "utf8")),
   )
 ).join("\n");
 assert.doesNotMatch(css, /\.hc-keyboard-hint\b/, "unused .hc-keyboard-hint CSS is removed");
@@ -74,13 +74,13 @@ assert.match(
 // ───────── Command-bar hierarchy ─────────
 // Chat revamp 1d + 2026-07-21 home parity pass: one "+" menu (attach ·
 // dictation · call · enhance · Model & tuning) leads the utility row, then the
-// Chat/Task pills; the circular send hugs the right. The context chips
+// destination popover; the circular send hugs the right. The context chips
 // (Project · Model) anchor the footer band beneath — matching the chat
 // composer's grammar.
 assert.match(
   source,
-  /cave-composer-utility-row[\s\S]*?<ComposerPlusMenu[\s\S]*?hc-dest-pills hc-dest-pills--inline[\s\S]*?role="radiogroup"[\s\S]*?aria-label="Send to"/,
-  "the utility row leads with the + menu, then the Chat/Task pill toggle",
+  /<Popover[\s\S]*ariaLabel="Choose destination"[\s\S]*?<PopoverItem[\s\S]*?onSelect=\{\(\) => \{[\s\S]*?setDestination\(item\.id\);[\s\S]*?setDestinationMenuOpen\(false\);[\s\S]*?\}\}/,
+  "the utility row should use the shared Popover destination menu and close it from each item select callback",
 );
 assert.match(
   source,
@@ -107,17 +107,44 @@ assert.doesNotMatch(
   /hc-footer-band/,
   "the legacy hc- footer band stays retired — the shared cave-composer-footer-band carries the context pill",
 );
+const familiarQuickSwitchMatches = source.match(/<FamiliarQuickSwitch\b/g) ?? [];
+assert.equal(
+  familiarQuickSwitchMatches.length,
+  1,
+  "the source should contain exactly one JSX FamiliarQuickSwitch occurrence",
+);
 assert.match(
   source,
-  /<FamiliarQuickSwitch[\s\S]*labeled[\s\S]*singleRequired/,
-  "the home familiar selector is labeled and constrained to one launch target",
+  /<div className="home-composer-familiar-context">([\s\S]*?)<\/div>\s*<div className="home-composer-reference-shell">/,
+  "the familiar selector should live in the dedicated context block before the reference shell",
+);
+const homeFamiliarContext = source.match(
+  /<div className="home-composer-familiar-context">([\s\S]*?)<\/div>\s*<div className="home-composer-reference-shell">/,
+);
+assert.ok(homeFamiliarContext, "home-composer-familiar-context should sit directly before the reference shell");
+assert.match(
+  homeFamiliarContext[1],
+  /<FamiliarQuickSwitch\b[\s\S]*?labeled[\s\S]*?singleRequired[\s\S]*/,
+  "the immediate home-composer-familiar-context block should contain a labeled, singleRequired FamiliarQuickSwitch",
+);
+const homeToolbarLeft = source.match(
+  /<div className="home-composer-toolbar__left">([\s\S]*?)<\/div>/,
+);
+assert.ok(homeToolbarLeft, "home-composer-toolbar__left should be present");
+assert.match(homeToolbarLeft[1], /<ComposerContextChips\b/, "the footer left cluster keeps the context chips contract");
+assert.ok(
+  source.indexOf('aria-label="Choose destination"') >= 0 &&
+    source.indexOf('aria-label="Send"') >= 0 &&
+    source.indexOf('aria-label="Choose destination"') < source.indexOf('aria-label="Send"'),
+  'the destination control should appear before the Send button in the source',
 );
 assert.doesNotMatch(
   source,
   /className="hc-run-rail"/,
   "the secondary run-settings rail is removed from the home composer",
 );
-assert.doesNotMatch(source, /PopoverBody|PopoverItem|PopoverLabel/, "home composer should not maintain a local dropdown implementation");
+assert.match(source, /<Popover[\s\S]*ariaLabel="Choose destination"/, "home composer should use the shared Popover for destination selection");
+assert.doesNotMatch(source, /PopoverBody|PopoverLabel/, "home composer should not maintain a local dropdown implementation");
 assert.match(
   source,
   /className=\{`home-composer-card cave-composer-panel\$\{dropActive \? " is-drop-active" : ""\}`\}/,
@@ -158,32 +185,24 @@ assert.match(
 );
 assert.match(
   css,
-  /@container \(max-width: 620px\)\s*\{[\s\S]*?\.hc-dest-pill\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);/,
-  "phone composer keeps thumb-sized home-only controls (destination tabs)",
-);
-
-// ── Chat/Task destinations render as flat inline field tabs ──
-// The boxed segmented pill treatment (bordered container, solid accent-filled
-// active pill) was retired for quiet inline tabs with an accent underline.
-assert.match(
-  css,
-  /\.hc-dest-pill \{[^}]*border-bottom: 2px solid transparent;/,
-  "every destination tab reserves the 2px underline slot so activation can't shift the row",
+  /\.home-composer-reference-shell\b/,
+  "home composer should expose a reference-shell hook for the destination control area",
 );
 assert.match(
   css,
-  /\.hc-dest-pill\.active \{[^}]*border-bottom-color: var\(--accent-presence\);/,
-  "the active destination tab is marked by an accent underline, not a solid fill",
+  /\.home-composer-familiar-context\b/,
+  "home composer should expose a familiar-context hook above the reference shell",
 );
-assert.doesNotMatch(
+assert.match(
   css,
-  /\.hc-dest-pills \{[^}]*border: 1px solid/,
-  "the destination tab group is flat — no boxed segmented container",
+  /@container \(max-width: 620px\)\s*\{[\s\S]*?\.home-composer-reference-shell\s+\.home-composer-reference-action\s*\{[^}]*?min-height:\s*var\(--touch-target\);[^}]*\}/s,
+  "reference edge controls should stay thumb-sized within the narrow .home-composer-reference-shell .home-composer-reference-action rule block",
 );
-assert.doesNotMatch(
-  css,
-  /\.hc-dest-pill\.active \{[^}]*background: var\(--accent-presence\)/,
-  "the solid accent-filled active pill treatment is retired",
+const referenceActionMatches = source.match(/home-composer-reference-action/g) ?? [];
+assert.equal(
+  referenceActionMatches.length,
+  5,
+  "the planned .home-composer-reference-action class should apply to tools, destination, enhance, dictation, and send controls",
 );
 
 // ── Below-composer stack REMOVED (ultra-minimal home) ──

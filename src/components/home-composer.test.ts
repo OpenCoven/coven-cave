@@ -263,6 +263,11 @@ assert.match(
 );
 assert.match(
   source,
+  /<div className="home-composer-familiar-context">[\s\S]*?<FamiliarQuickSwitch[\s\S]*?<\/div>\s*<div className="home-composer-reference-shell">/,
+  "HomeComposer should place the familiar selector in .home-composer-familiar-context before the reference shell",
+);
+assert.match(
+  source,
   /<FamiliarQuickSwitch[\s\S]*activeFamiliarId=\{selectedFamiliarId \|\| null\}[\s\S]*singleRequired/,
   "HomeComposer shows a labeled, single-familiar picker beside launch context",
 );
@@ -449,39 +454,28 @@ assert.match(
   "A hinted skill autofills /skill <id> for argument editing instead of starting a chat",
 );
 
-// ── Destination pills are an accessible single-select radiogroup ─────────────
+// ── Destination popover is a single-select launcher ─────────────────────────
 assert.match(
   source,
-  /className="hc-dest-pills hc-dest-pills--inline"\s+role="radiogroup"\s+aria-label="Send to"\s+ref=\{destGroupRef\}\s+onKeyDown=\{handleDestKeyDown\}/,
-  "Destination pills form a labelled radiogroup with keyboard navigation",
-);
-// Reference layout: the Chat/Task pills sit INSIDE the card's control row,
-// next to the + attach trigger — not above the card, not in the footer band.
-assert.match(
-  source,
-  /cave-composer-utility-row[\s\S]*?<ComposerPlusMenu[\s\S]*?hc-dest-pills hc-dest-pills--inline/,
-  "Destination pills render inside the utility row, after the + trigger",
-);
-assert.doesNotMatch(
-  source,
-  /hc-dest-pills--above/,
-  "The above-card pill placement is retired",
+  /<ComposerPlusMenu[\s\S]*triggerLabel="Tools"/,
+  "ComposerPlusMenu should expose the Tools trigger label",
 );
 assert.match(
   source,
-  /role="radio"\s+aria-checked=\{destination === d\.id\}\s+tabIndex=\{destination === d\.id \? 0 : -1\}/,
-  "Each destination pill is a radio that announces its checked state and roves the tab stop",
+  /<Popover[\s\S]*ariaLabel="Choose destination"[\s\S]*DESTINATIONS\.map\(\(item\) =>/s,
+  "The destination chooser should render as a Popover-backed menu over the existing DESTINATIONS",
 );
 assert.match(
   source,
-  /const nav = \["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"\];/,
-  "The radiogroup supports arrow/Home/End keyboard selection per the ARIA radio pattern",
+  /<PopoverItem[\s\S]*?onSelect=\{\(\) => \{[\s\S]*?setDestination\(item\.id\);[\s\S]*?setDestinationMenuOpen\(false\);[\s\S]*?\}\}/,
+  "Selecting a destination should set the destination and close the Popover in the same PopoverItem onSelect callback",
 );
 
 // ── Single-row toolbar replaces mode strip + run rail ───────────────────────
 // The top mode strip and the separate run rail were removed. The footer is the
-// chat composer's: attach + Chat/Task pills left, voice/enhance/send right; the
-// footer band beneath carries the context pill (project · runtime + model).
+// chat composer's: attach + tools left, voice/enhance/send right; the footer
+// band beneath carries the reference-style destination Popover and context pill
+// (project · runtime + model).
 assert.doesNotMatch(
   source,
   /className="hc-mode-strip"/,
@@ -492,15 +486,24 @@ assert.doesNotMatch(
   /className="hc-run-rail"/,
   "The secondary run-settings rail is removed from the composer card",
 );
+assert.doesNotMatch(
+  source,
+  /hc-dest-pills\s+hc-dest-pills--inline/,
+  "the legacy visible tabs are replaced by the reference-style destination Popover",
+);
 assert.match(
   source,
-  /cave-composer-utility-row[\s\S]*?<ComposerPlusMenu[\s\S]*?hc-dest-pills--inline[\s\S]*?cave-composer-submit-row[\s\S]*?aria-label="Send"[\s\S]*?<ComposerOptionsMenu[\s\S]*?className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextChips/,
-  "Control row: the + menu and Chat/Task pills lead; the circular send hugs the right; the context pill anchors the footer band beneath (2026-07-21 home parity pass)",
+  /cave-composer-utility-row[\s\S]*?<ComposerPlusMenu[\s\S]*?triggerLabel="Tools"[\s\S]*?cave-composer-submit-row[\s\S]*?aria-label="Send"[\s\S]*?<ComposerOptionsMenu[\s\S]*?className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextChips/,
+  "Control row: the Tools menu leads; the circular send hugs the right; the footer band context pill anchors beneath the row",
 );
+const utilityRow = source.match(
+  /<div className="cave-composer-utility-row">([\s\S]*?)<\/div>\s*<div className="cave-composer-submit-row">/,
+);
+assert.ok(utilityRow, "the utility row should stay separately scoped from the submit row");
 assert.doesNotMatch(
-  source.match(/className="cave-composer-utility-row">[\s\S]*?hc-dest-pills hc-dest-pills--inline/)?.[0] ?? "",
+  utilityRow[1],
   /<ComposerContextChips/,
-  "the utility row stays pill-free — context moved down to the footer band",
+  "the utility row should stay free of footer context chips",
 );
 // The "↵ send · ⇧↵ newline" typing hint is gone (2026-07-21 parity with the
 // chat composer): the tinted send button already signals sendability.
