@@ -271,7 +271,7 @@ if (workerMode) {
     ["base", acquireBaseProcessIntentLock],
     ["legacy", acquireLegacyProcessIntentLock],
   ] as const) {
-    test(`current ignores ${fixtureName} contenders published behind its barrier`, async () => {
+    test(`current restarts rather than cyclically waiting on a queued ${fixtureName} contender`, async () => {
       const directory = path.join(
         temporary,
         `current-before-post-barrier-${fixtureName}`,
@@ -280,21 +280,27 @@ if (workerMode) {
       const resumeCurrent = deferred();
       const frozenWaiting = deferred();
       let frozenEntered = false;
+      let currentEntered = false;
+      let pauseOnce = false;
       const current = acquireProcessIntentLock({
         intentsDirectory: directory,
         label: `current before post-barrier ${fixtureName}`,
-        timeoutMs: 1_000,
+        timeoutMs: 5_000,
         publicationStage: async (stage) => {
-          if (stage !== "gate-parent-synced") return;
+          if (stage !== "gate-parent-synced" || pauseOnce) return;
+          pauseOnce = true;
           currentBarrierPublished.resolve();
           await resumeCurrent.promise;
         },
+      }).then((release) => {
+        currentEntered = true;
+        return release;
       });
       await currentBarrierPublished.promise;
       const frozen = acquireFrozen({
         intentsDirectory: directory,
         label: `${fixtureName} published behind current barrier`,
-        timeoutMs: 1_000,
+        timeoutMs: 5_000,
         onWait: async () => {
           frozenWaiting.resolve();
         },
@@ -305,16 +311,106 @@ if (workerMode) {
       await frozenWaiting.promise;
       resumeCurrent.resolve();
 
-      const releaseCurrent = await current;
+      const first = await Promise.race([
+        current.then((release) => ({ owner: "current" as const, release })),
+        frozen.then((release) => ({ owner: fixtureName, release })),
+      ]);
+      if (first.owner === "current") {
+        await first.release();
+        const releaseFrozen = await frozen;
+        await releaseFrozen();
+      } else {
+        assert.equal(
+          currentEntered,
+          false,
+          "current must retire its gate before the queued legacy contender drains",
+        );
+        await first.release();
+        const releaseCurrent = await current;
+        await releaseCurrent();
+      }
       assert.equal(
-        frozenEntered,
-        false,
-        `${fixtureName} remains queued behind the current barrier`,
+        first.owner,
+        fixtureName,
+        `${fixtureName} must drain before current reacquires its barrier`,
       );
-      await releaseCurrent();
-      const releaseFrozen = await frozen;
-      await releaseFrozen();
+      assert.equal(frozenEntered, true);
     });
+  }
+
+  for (const [fixtureName, acquireFrozen] of [
+    ["base", acquireBaseProcessIntentLock],
+    ["legacy", acquireLegacyProcessIntentLock],
+  ] as const) {
+    test(
+      `current rescans a backdated ${fixtureName} publication at the final quiescence boundary`,
+      { timeout: 10_000 },
+      async () => {
+        const directory = path.join(
+          temporary,
+          `final-quiescence-backdated-${fixtureName}`,
+        );
+        const frozenNamed = deferred();
+        const resumeFrozen = deferred();
+        const currentQuiescent = deferred();
+        const resumeCurrent = deferred();
+        const currentWaiting = deferred();
+        let pauseOnce = false;
+        let currentEntered = false;
+        const frozen = acquireFrozen({
+          intentsDirectory: directory,
+          label: `final-boundary ${fixtureName} publisher`,
+          pauseAfterName: async () => {
+            frozenNamed.resolve();
+            await resumeFrozen.promise;
+          },
+        });
+        await frozenNamed.promise;
+        const current = acquireProcessIntentLock({
+          intentsDirectory: directory,
+          label: `current final-boundary ${fixtureName} contender`,
+          timeoutMs: 5_000,
+          publicationStage: async (stage) => {
+            if (stage !== "legacy-quiescence-established" || pauseOnce) return;
+            pauseOnce = true;
+            currentQuiescent.resolve();
+            await resumeCurrent.promise;
+          },
+          acquisitionStage: async (stage) => {
+            if (stage === "waiting-for-pre-barrier-legacy") {
+              currentWaiting.resolve();
+            }
+          },
+        }).then((release) => {
+          currentEntered = true;
+          return release;
+        });
+        await currentQuiescent.promise;
+        resumeFrozen.resolve();
+        const releaseFrozen = await frozen;
+        resumeCurrent.resolve();
+        const outcome = await Promise.race([
+          currentWaiting.promise.then(() => "waiting" as const),
+          current.then(() => "acquired" as const),
+        ]);
+        const overlapped = currentEntered;
+        if (outcome === "acquired") {
+          const releaseCurrent = await current;
+          await releaseCurrent();
+        }
+        await releaseFrozen();
+        if (outcome === "waiting") {
+          const releaseCurrent = await current;
+          await releaseCurrent();
+        }
+        assert.equal(
+          outcome,
+          "waiting",
+          "a publisher that could scan before the gate must force gate restart",
+        );
+        assert.equal(overlapped, false);
+      },
+    );
   }
 
   for (const [fixtureName, acquireFrozen] of [
@@ -535,8 +631,10 @@ if (workerMode) {
     "draft-directory-synced",
     "quiescence-probe-published",
     "quiescence-probe-retired",
+    "legacy-quiescence-established",
     "gate-name-selected",
     "gate-parent-synced",
+    "gate-legacy-rescanned",
     "state-renamed",
     "state-parent-synced",
   ]) {
