@@ -323,7 +323,7 @@ export function SessionChangesInner({
           error?: string;
           checkpointPath?: string;
         }>(fetch, projectRoot, "revert", {
-          path: file.path,
+          repoRelativePath: file.path,
           // New files (untracked or staged-new) are deleted on revert; the
           // confirm step the user just clicked through is the explicit
           // consent for that.

@@ -29,7 +29,7 @@ const DEV_NULL = os.devNull;
  * GET  ?projectRoot=<abs>&checkpoints=1    → list saved checkpoints
  * GET  ?projectRoot=<abs>&checkpoint=<name>→ one checkpoint's patch text (capped)
  * GET  ?projectRoot=<abs>&branches=1       → local branches (current/worktree marked)
- * POST { projectRoot, path, confirmUntracked? } → revert ONE file (auto-checkpoints first)
+ * POST { projectRoot, path | repoRelativePath, confirmUntracked? } → revert ONE file
  * POST { projectRoot, action: "checkpoint" } → save a patch snapshot
  * POST { projectRoot, action: "restore-checkpoint", checkpoint } → git apply a snapshot
  * POST { projectRoot, action: "delete-checkpoint", checkpoint } → remove a snapshot
@@ -40,10 +40,11 @@ const DEV_NULL = os.devNull;
  * argument array — no shell, so paths are never string-interpolated into a
  * command. Diff commands additionally disable Git external diff helpers and
  * textconv filters so repository-controlled config cannot spawn commands.
- * Revert paths resolve under the captured project first (absolute or
- * project-relative), then become Git-root-relative only after that containment
- * succeeds. Reverting an untracked file deletes it, so that path is gated behind
- * an explicit confirmUntracked flag; the blast radius of POST is one file.
+ * Revert paths either resolve under the captured project (path) or under the
+ * enclosing Git root (repoRelativePath, as returned by GET), then must pass
+ * captured-project containment before mutation. Reverting an untracked file
+ * deletes it, so that path is gated behind an explicit confirmUntracked flag;
+ * the blast radius of POST is one file.
  */
 
 const execFileAsync = promisify(execFile);
@@ -1154,6 +1155,7 @@ export async function POST(req: NextRequest) {
   let body: {
     projectRoot?: string;
     path?: string;
+    repoRelativePath?: string;
     confirmUntracked?: boolean;
     action?: "revert" | "checkpoint" | "restore-checkpoint" | "delete-checkpoint" | "commit" | "create-pr" | "switch-branch" | "create-worktree";
     checkpoint?: string;
@@ -1372,16 +1374,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: message }, { status: 500 });
     }
   }
-  if (typeof body.path !== "string") {
+  const hasProjectPath = typeof body.path === "string";
+  const hasRepoRelativePath = typeof body.repoRelativePath === "string";
+  if (
+    (!hasProjectPath && !hasRepoRelativePath) ||
+    (hasProjectPath && hasRepoRelativePath) ||
+    (body.path !== undefined && !hasProjectPath) ||
+    (body.repoRelativePath !== undefined && !hasRepoRelativePath)
+  ) {
     return NextResponse.json(
-      { ok: false, error: "projectRoot and path are required" },
+      { ok: false, error: "provide exactly one of path or repoRelativePath" },
       { status: 400 },
     );
+  }
+  let candidatePath = body.path!;
+  if (hasRepoRelativePath) {
+    if (path.isAbsolute(body.repoRelativePath!)) return pathNotAllowed();
+    const repoTarget = resolveNativePathWithinRoot(root.repoRoot, body.repoRelativePath);
+    if (!repoTarget) return pathNotAllowed();
+    candidatePath = repoTarget.absolutePath;
   }
   const projectTarget = resolveNativeProjectPathForGitRoot(
     root.projectRoot,
     root.repoRoot,
-    body.path,
+    candidatePath,
   );
   if (!projectTarget) return pathNotAllowed();
   const abs = resolveContainedFile(root.projectRoot, projectTarget.projectRelativePath);

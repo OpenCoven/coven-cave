@@ -24,7 +24,7 @@ import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
 type ProjectsFile = {
   version: 1;
   /** Persisted once pre-POSIX-safe root keys have been materialized as aliases. */
-  rootKeyNormalizerVersion?: 2;
+  rootKeyNormalizerVersion?: 3;
   projects: CaveProject[];
 };
 
@@ -43,6 +43,23 @@ function isPortableWindowsRoot(root: string): boolean {
   );
 }
 
+function expandHomeRoot(root: string): string {
+  if (root === "~") return homedir();
+  if (root.startsWith("~/") || root.startsWith("~\\")) {
+    return path.join(homedir(), root.slice(2));
+  }
+  return root;
+}
+
+function isUnexpandedHomeRoot(root: string): boolean {
+  const trimmed = root.trim();
+  return (
+    trimmed === "~" ||
+    trimmed.startsWith("~/") ||
+    trimmed.startsWith("~\\")
+  );
+}
+
 /**
  * Normalize persisted server roots without applying cross-platform display
  * parsing to a native POSIX path. On POSIX, `\` and edge whitespace are valid
@@ -52,18 +69,12 @@ function isPortableWindowsRoot(root: string): boolean {
  * re-key every persisted root consumer.
  */
 function normalizeRootExpandingHome(root: string): string {
-  if (process.platform === "win32" || isPortableWindowsRoot(root)) {
-    let portable = root.trim();
-    if (portable === "~") portable = homedir();
-    else if (portable.startsWith("~/") || portable.startsWith("~\\")) {
-      portable = path.join(homedir(), portable.slice(2));
-    }
-    return normalizeSharedProjectRoot(portable);
+  const expanded = expandHomeRoot(root);
+  if (process.platform === "win32" || isPortableWindowsRoot(expanded)) {
+    return normalizeSharedProjectRoot(expanded);
   }
 
-  let native = root;
-  if (native === "~") native = homedir();
-  else if (native.startsWith("~/")) native = path.posix.join(homedir(), native.slice(2));
+  let native = expanded;
   native = path.posix.normalize(native);
   while (native.length > 1 && native.endsWith("/")) native = native.slice(0, -1);
   return native;
@@ -126,10 +137,10 @@ async function loadProjectsUnlocked(): Promise<CaveProject[]> {
     // dedupeProjectsByRoot — a client/server divergence. Newest record wins;
     // the next mutation persists the deduped list, self-healing the file.
     // Serve ONE root form (cave-2x1em). createProject has persisted the
-    // expanded root since cave-psp8, but records written before that still
-    // hold a literal `~/...`, so the same folder reaches clients as two
-    // different strings depending on when it was added — and roots are the
-    // keys of the client's avatar and chat-override stores.
+    // expanded root since cave-psp8, but records written before that can still
+    // hold a literal `~/...`. Expansion has always happened before roots reach
+    // client stores, so migration aliases must reproduce the canonical form
+    // after expansion rather than advertise the raw persisted spelling.
     //
     // The display normalizer deliberately does NOT expand `~`: it runs in the
     // browser, which has no home directory. So the split is closed here, on
@@ -138,16 +149,19 @@ async function loadProjectsUnlocked(): Promise<CaveProject[]> {
     // re-key what it already stored. Aliases stay durable until the client
     // explicitly acknowledges that every local migration succeeded.
     const addPreviousCanonicalAliases =
-      parsed.rootKeyNormalizerVersion !== 2;
+      parsed.rootKeyNormalizerVersion !== 3;
     const normalizedProjects = parsed.projects.map((project) => {
-      const expanded = normalizeRootExpandingHome(project.root);
+      const expandedRoot = expandHomeRoot(project.root);
+      const expanded = normalizeRootExpandingHome(expandedRoot);
       const previousCanonical = addPreviousCanonicalAliases
-        ? legacyProjectRootKey(project.root)
+        ? legacyProjectRootKey(expandedRoot)
         : null;
       const aliases = new Set([
-        ...(project.legacyRoots ?? []),
-        ...(project.legacyRoot ? [project.legacyRoot] : []),
-        ...(expanded === project.root ? [] : [project.root]),
+        ...(project.legacyRoots ?? []).filter((root) => !isUnexpandedHomeRoot(root)),
+        ...(project.legacyRoot && !isUnexpandedHomeRoot(project.legacyRoot)
+          ? [project.legacyRoot]
+          : []),
+        ...(expanded === expandedRoot ? [] : [expandedRoot]),
         ...(previousCanonical && previousCanonical !== expanded
           ? [previousCanonical]
           : []),
@@ -214,7 +228,7 @@ export function withProjectRegistryLock<T>(
 async function saveProjects(projects: CaveProject[]): Promise<void> {
   const file: ProjectsFile = {
     version: 1,
-    rootKeyNormalizerVersion: 2,
+    rootKeyNormalizerVersion: 3,
     projects,
   };
   await writeProjectsFile(projectsFilePath(), JSON.stringify(file, null, 2));

@@ -3,11 +3,10 @@
  * cave-2x1em: when the server starts serving one root form, the client's
  * root-keyed data must come with it.
  *
- * createProject has persisted an expanded root since cave-psp8, so the same
- * folder reaches the client as `~/code/app` or `/home/dev/code/app` depending
- * on when it was added. Serving one form fixes that split — and moves the key
- * out from under whatever the client already stored. `legacyRoot` carries the
- * old key so this migration can follow it.
+ * The server computes legacy aliases after expanding `~`, matching the
+ * pre-POSIX-safe normalizer that produced persisted client keys. Serving the
+ * POSIX-safe form moves that key; `legacyRoot` carries the old expanded key so
+ * this migration can follow it.
  *
  * SCOPE, corrected against the code rather than the bead:
  *   - IDB projectAvatars    keyed BY root      -> re-key
@@ -183,8 +182,8 @@ const {
   projectRootMigrationAcknowledgements,
 } = await import("./project-root-migration.ts");
 
-const LEGACY = "~/code/app";
-const EXPANDED = "/home/dev/code/app";
+const LEGACY = "/home/dev/code/app/name";
+const EXPANDED = String.raw`/home/dev/code/app\name `;
 const IMAGE = { dataUrl: "data:image/png;base64,AAAA", mime: "image/png" };
 
 // Seed through the PUBLIC api, not by writing into the fake driver. The image
@@ -202,7 +201,7 @@ async function seed() {
   );
 }
 
-// The projects the server now serves: one that moved, one that never had a ~.
+// The projects the server now serves: one POSIX-safe root and one unchanged root.
 const PROJECTS = [
   { id: "p1", root: EXPANDED, legacyRoot: LEGACY },
   { id: "p2", root: "/already/absolute" },
