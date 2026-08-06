@@ -7,14 +7,19 @@ pub(super) const ARCHIVE_FORMAT: &str = "tar.zst";
 pub(super) const MAX_ARCHIVE_BYTES: u64 = 80 * 1024 * 1024;
 pub(super) const MAX_UNPACKED_BYTES: u64 = 200 * 1024 * 1024 - 1;
 // Keep this in sync with scripts/sidecar-runtime-closure.mjs. The current
-// cross-platform closure peaks at 5,916 files (Windows, 2026-08-04, after the
-// image carousel landed in #4315); preserve ten-file headroom. The two legs
-// differ — Ubuntu measured 5,913 the same day — so this must always be set
-// from the HIGHER leg, which is why a budget derived from an Ubuntu-only
-// figure has reddened windows-latest more than once.
+// cross-platform closure measured 5,959 files (Windows, 2026-08-06) against
+// 5,957 on Ubuntu. The two legs differ, so this must always be set from the
+// HIGHER leg, which is why a budget derived from an Ubuntu-only figure has
+// reddened windows-latest more than once.
 // Reverted to 5_841 once by a local merge citing the older 5,831 peak — see
 // #4249. It must not move DOWN while those routes exist.
-pub(super) const MAX_FILE_COUNT: u64 = 5_926;
+// 2026-08-06 (cave-oqawv): headroom is no longer ten files. The closure grew
+// +43 in the two days after the 5,926 entry, ~21/day, so ten files bought
+// about eleven hours and this gate reddened again immediately. Now Windows
+// plus 150 — roughly a week of that drift. Reasoning and the trade-off live in
+// scripts/sidecar-runtime-closure.mjs beside SIDECAR_RUNTIME_BUDGETS; keep the
+// two in step. cave-0ia8h tracks stopping the growth instead.
+pub(super) const MAX_FILE_COUNT: u64 = 6_109;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
