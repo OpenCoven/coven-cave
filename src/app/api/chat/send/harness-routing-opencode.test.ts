@@ -106,7 +106,7 @@ assert.match(
   for (const capabilityCall of [
     "openCodeRunCapabilities(body.familiarId, undefined, localRuntimePlan?.env)",
     "probe: () => hermesChatSupportsModel",
-    "probeCovenCapability(covenRunSupportsModel)",
+    "probeCovenCapabilityOutcome(covenRunModelFlagOutcome)",
     "probeCovenCapability(covenRunSupportsPermission)",
     "probeCovenCapability(covenRunSupportsAddDir)",
   ]) {
