@@ -2,6 +2,9 @@
 
 This runs CovenCave's browser surface on your development machine and exposes it privately to your phone through Tailscale Serve with a short-lived mobile invite.
 
+For a device you own, you can skip the invite entirely — see
+[Tokenless access by tailnet device identity](#tokenless-access-by-tailnet-device-identity).
+
 ## Requirements
 
 - Tailscale installed and signed in on the development machine.
@@ -139,6 +142,62 @@ Do not run CovenCave with `-H 0.0.0.0` for mobile access. Binding to all interfa
 ```bash
 pnpm mobile:tailscale:stop
 ```
+
+## Tokenless access by tailnet device identity
+
+The invite flow authorizes a phone with a **shared bearer secret** that you copy,
+deep-link, or scan. It works, but the secret is transferable: anything that
+learns it is you. For a device you own, you can authorize the *device itself*
+instead and stop minting invites.
+
+Find the stable node ID of the devices you want to admit:
+
+```bash
+node scripts/tailnet-allowlist.mjs                  # list every visible device
+node scripts/tailnet-allowlist.mjs my-phone        # emit the env line for one
+```
+
+Then start the server with that allowlist:
+
+```bash
+COVEN_CAVE_TAILNET_ALLOWED_NODES=nEXAMPLE0000011CNTRL pnpm dev
+```
+
+That device now reaches the app over Tailscale Serve with no token at all. Every
+other tailnet node is refused, so this is *not* the old "anyone on the tailnet"
+behavior — tailnet membership alone has never been authorization here, and still
+isn't.
+
+**How it is enforced.** `server.ts` is the only component that sees the raw TCP
+socket. It resolves the forwarded tailnet address against a `tailscale status`
+poll (refreshed every 30s), checks the resulting stable node ID against the
+allowlist, and stamps a header signed with a per-boot secret that never leaves
+the process. `proxy.ts` verifies that stamp in constant time. Any client-supplied
+copy of the header is deleted before Next ever sees the request, so the stamp
+cannot be forged from outside.
+
+**Why the forwarded address is trusted here.** The TCP peer must already be
+loopback, because Tailscale Serve terminates TLS and forwards to `127.0.0.1`. A
+local process able to forge the forwarded-for header could instead connect
+straight to loopback, which grants strictly *more* authority. So reading it adds
+no new exposure while upgrading remote auth from a shared secret to WireGuard
+device identity.
+
+**Fail-closed behavior.** No allowlist means no tailnet access. An unreadable
+`tailscale status` clears the allowlist rather than leaving stale entries, so a
+revoked device loses access instead of coasting on a cached mapping. Revoking a
+device takes at most one refresh interval.
+
+**Notes and limits.**
+
+- Stable node IDs are used deliberately: hostnames and tailnet IPs both move,
+  node IDs survive renames, IP changes, and re-authentication.
+- Local-only surfaces (Codex automation runs) stay off this path exactly as they
+  stay off the invite path — a forwarded Host cannot prove a loopback origin.
+- This authorizes a **device**, not a person. Anyone holding an unlocked
+  allowlisted phone is that device. Pair it with the device's own biometric lock,
+  and see `cave-brksh` for making that lock a fact the server can verify rather
+  than a client-side claim.
 
 ## Troubleshooting
 

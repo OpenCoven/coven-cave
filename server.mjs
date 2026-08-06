@@ -1,14 +1,17 @@
+import { execFile } from "node:child_process";
 import { createHmac, randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 import next from "next";
 import { WebSocket, WebSocketServer } from "ws";
 const require2 = createRequire(import.meta.url);
 const pty = require2("node-pty");
+const execFileAsync = promisify(execFile);
 if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDALONE_CONFIG) {
   try {
     const requiredServerFiles = JSON.parse(
@@ -185,6 +188,77 @@ function isLoopbackAddress(value) {
   if (value === "::1" || value === "127.0.0.1") return true;
   if (value.startsWith("::ffff:")) return value.slice("::ffff:".length) === "127.0.0.1";
   return false;
+}
+function isTailscaleAddress(value) {
+  const address = value.startsWith("::ffff:") ? value.slice("::ffff:".length) : value;
+  if (address.includes(".")) {
+    const parts = address.split(".").map((part) => Number(part));
+    return parts.length === 4 && parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) && parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127;
+  }
+  return address.toLowerCase().startsWith("fd7a:115c:a1e0:");
+}
+function normalizeForwardedAddress(value) {
+  let address = value.trim();
+  if (address.startsWith("[")) {
+    const close = address.indexOf("]");
+    if (close > 0) return address.slice(1, close).toLowerCase();
+  }
+  if ((address.match(/:/g) ?? []).length === 1) address = address.split(":")[0];
+  if (address.startsWith("::ffff:")) address = address.slice("::ffff:".length);
+  return address.toLowerCase();
+}
+const TAILNET_PEER_HEADER = "x-coven-cave-tailnet-peer";
+const TAILNET_PEER_SECRET = randomUUID();
+process.env.COVEN_CAVE_TAILNET_PEER_SECRET = TAILNET_PEER_SECRET;
+const TAILNET_STATUS_REFRESH_MS = 3e4;
+function allowedTailnetNodeIds() {
+  const raw = process.env.COVEN_CAVE_TAILNET_ALLOWED_NODES ?? "";
+  return new Set(
+    raw.split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0)
+  );
+}
+let tailnetPeerAddresses = /* @__PURE__ */ new Map();
+let tailnetRefreshInFlight = false;
+async function refreshTailnetPeers() {
+  const allowed = allowedTailnetNodeIds();
+  if (allowed.size === 0) {
+    tailnetPeerAddresses = /* @__PURE__ */ new Map();
+    return;
+  }
+  if (tailnetRefreshInFlight) return;
+  tailnetRefreshInFlight = true;
+  try {
+    const { stdout } = await execFileAsync(
+      process.env.COVEN_CAVE_TAILSCALE_BIN ?? "tailscale",
+      ["status", "--json"],
+      { timeout: 1e4, maxBuffer: 16 * 1024 * 1024 }
+    );
+    const status = JSON.parse(stdout);
+    const next2 = /* @__PURE__ */ new Map();
+    for (const peer of Object.values(status.Peer ?? {})) {
+      const nodeId = peer.ID;
+      if (!nodeId || !allowed.has(nodeId)) continue;
+      for (const ip of peer.TailscaleIPs ?? []) {
+        next2.set(normalizeForwardedAddress(ip), nodeId);
+      }
+    }
+    tailnetPeerAddresses = next2;
+  } catch (err) {
+    tailnetPeerAddresses = /* @__PURE__ */ new Map();
+    console.warn("[cave] tailnet peer refresh failed:", err?.message ?? err);
+  } finally {
+    tailnetRefreshInFlight = false;
+  }
+}
+function resolveTailnetPeer(req) {
+  if (tailnetPeerAddresses.size === 0) return null;
+  if (!isLoopbackAddress(req.socket.remoteAddress)) return null;
+  const forwarded = req.headers["x-forwarded-for"];
+  const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(",")[0];
+  if (!first) return null;
+  const address = normalizeForwardedAddress(first);
+  if (!isTailscaleAddress(address)) return null;
+  return tailnetPeerAddresses.get(address) ?? null;
 }
 function isDirectLoopbackRequest(req) {
   if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
@@ -590,8 +664,13 @@ await app.prepare();
 const nextUpgradeHandler = app.getUpgradeHandler();
 const server = createServer((req, res) => {
   delete req.headers[LOCAL_PEER_HEADER];
+  delete req.headers[TAILNET_PEER_HEADER];
   if (isDirectLoopbackRequest(req)) {
     req.headers[LOCAL_PEER_HEADER] = LOCAL_PEER_SECRET;
+  }
+  const tailnetNodeId = resolveTailnetPeer(req);
+  if (tailnetNodeId) {
+    req.headers[TAILNET_PEER_HEADER] = `${TAILNET_PEER_SECRET}:${tailnetNodeId}`;
   }
   void handle(req, res);
 });
@@ -612,7 +691,8 @@ server.on("upgrade", (req, socket, head) => {
     });
     return;
   }
-  const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
+  const tailnetAuthenticated = resolveTailnetPeer(req) !== null;
+  const tokenAuthenticated = tailnetAuthenticated || (isPtyAuthRequired() ? isAuthorized(req, query) : false);
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     socket.destroy();
@@ -654,6 +734,10 @@ server.headersTimeout = 8e4;
 server.listen(port, hostname, () => {
   console.log(`> Ready on http://${hostname}:${port}`);
 });
+if (allowedTailnetNodeIds().size > 0) {
+  void refreshTailnetPeers();
+  setInterval(() => void refreshTailnetPeers(), TAILNET_STATUS_REFRESH_MS).unref();
+}
 server.once("error", (err) => {
   console.error(err);
   process.exit(1);
