@@ -448,8 +448,8 @@ assert.match(
 );
 assert.match(
   source,
-  /\{traceTarget \? \(\s*<SessionTraceOverlay target=\{traceTarget\} onClose=\{\(\) => setTraceTarget\(null\)\} \/>\s*\) : null\}/,
-  "the overlay renders from panel state and closes cleanly",
+  /\{traceTarget \? \(\s*<SessionTraceOverlay target=\{traceTarget\} onClose=\{closeTrace\} \/>\s*\) : null\}/,
+  "the overlay renders from panel state and closes through the history-aware closer",
 );
 
 // ── cave-ibvl: the summon-event listener consumes the latch ──────────────────
