@@ -18,6 +18,7 @@ import {
   type WorkspaceMode as WorkspaceModeFromDaemon,
 } from "@/lib/workspace-mode";
 import { navSectionForMode, type NavSection } from "@/lib/nav-section";
+import { useIsMobile } from "@/lib/use-viewport";
 import { clearChatHash, clearModeParam, readChatHash, readModeParam } from "@/lib/workspace-url-state";
 import {
   canMoveWorkspaceNavigation,
@@ -2994,6 +2995,8 @@ export function Workspace() {
   // nav hosts when collapsed — see contextualNav below. Starts open to match
   // the Shell's own pre-hydration assumption for the Code room.
   const [navOpen, setNavOpen] = useState(true);
+  // Same breakpoint the Shell uses; on mobile the nav is a drawer, not a rail.
+  const isMobile = useIsMobile();
   const handleSectionChange = useCallback(
     (next: NavSection) => {
       if (navSectionForMode(modeRef.current) === next) return;
@@ -3124,7 +3127,14 @@ export function Workspace() {
   // Deliberately keyed on navOpen and NOT on hover-peek: peek is an overlay
   // that leaves the collapse state alone, so keying on it would remount this
   // subtree on every mouse pass.
-  const contextualNav = navSection === "code" && navOpen ? chatSidebar : sidebar;
+  //
+  // Mobile is exempt: there is no rail there — the nav is a full-width overlay
+  // drawer — so the session list is always the right content, and navOpen
+  // tracks the desktop panel rather than the drawer (it reads false while the
+  // drawer is open). Without this the mobile Chat drawer rendered the
+  // destination sidebar and lost its search field.
+  const contextualNav =
+    navSection === "code" && (navOpen || isMobile) ? chatSidebar : sidebar;
 
   // renderSurface maps a workspace mode to its surface element. Extracted so the
   // same machinery renders both the primary detail and a dragged-in split

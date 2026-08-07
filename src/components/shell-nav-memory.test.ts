@@ -651,7 +651,7 @@ assert.match(
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 assert.match(
   workspace,
-  /const contextualNav = navSection === "code" && navOpen \? chatSidebar : sidebar;/,
+  /const contextualNav =\s*\n\s*navSection === "code" && \(navOpen \|\| isMobile\) \? chatSidebar : sidebar;/,
   "the collapsed Code room renders the destination rail, not the session list",
 );
 assert.match(

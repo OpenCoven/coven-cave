@@ -71,7 +71,7 @@ assert.doesNotMatch(workspaceSidebar, /workspace-sidebar__rail|chat-sidebar__rai
 // "Search projects or threads…" clipped); the aria-label keeps the full scope.
 assert.match(workspaceSidebar, /placeholder="Search chats…"/, "search placeholder fits the narrow panel");
 assert.match(workspaceSidebar, /aria-label="Search projects and threads"/, "search keeps its descriptive accessible name");
-assert.match(workspace, /const contextualNav = navSection === "code" && navOpen \? chatSidebar : sidebar;/, "workspace keeps the session rail across the expanded Code section");
+assert.match(workspace, /const contextualNav =\s*\n\s*navSection === "code" && \(navOpen \|\| isMobile\) \? chatSidebar : sidebar;/, "workspace keeps the session rail across the expanded Code section");
 assert.doesNotMatch(workspace, /const list = mode === "chat" \? chatSidebar : undefined;/, "workspace should not mount Chats in the list slot");
 assert.match(workspace, /navPolicy=\{mode === "chat" \? "chat-contextual" : "remembered"\}/, "chat mode activates the contextual nav policy");
 assert.doesNotMatch(workspace, /navPolicy=\{mode === "chat" \? "visit-collapsed" : "remembered"\}/, "chat mode should not use the obsolete visit-collapsed policy");

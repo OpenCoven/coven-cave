@@ -34,7 +34,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const contextualNav = navSection === "code" && navOpen \? chatSidebar : sidebar;[\s\S]*nav=\{contextualNav\}\s*list=\{undefined\}/,
+  /const contextualNav =\s*\n\s*navSection === "code" && \(navOpen \|\| isMobile\) \? chatSidebar : sidebar;[\s\S]*nav=\{contextualNav\}\s*list=\{undefined\}/,
   "WorkspaceSidebar replaces the normal sidenav in an expanded Code room; SidebarMinimal returns outside it and when collapsed",
 );
 
