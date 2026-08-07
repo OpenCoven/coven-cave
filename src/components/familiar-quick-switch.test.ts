@@ -34,8 +34,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const contextualNav = navSection === "code" \? chatSidebar : sidebar;[\s\S]*nav=\{contextualNav\}\s*list=\{undefined\}/,
-  "WorkspaceSidebar replaces the normal sidenav in Code and SidebarMinimal returns outside it",
+  /const contextualNav = navSection === "code" && navOpen \? chatSidebar : sidebar;[\s\S]*nav=\{contextualNav\}\s*list=\{undefined\}/,
+  "WorkspaceSidebar replaces the normal sidenav in an expanded Code room; SidebarMinimal returns outside it and when collapsed",
 );
 
 console.log("familiar-quick-switch component: all assertions passed");
