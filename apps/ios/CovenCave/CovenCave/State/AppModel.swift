@@ -393,6 +393,12 @@ final class AppModel {
             return
         }
 
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-design-closeout") {
+            configureDesignCloseoutPreview()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
         // Deterministic native screenshot fixture for the canonical empty-chat
         // surface. Launch with `--ui-preview-empty-chat` and
         // `CAVE_OPEN_THREAD=ui-preview-empty-chat`; release builds never carry
@@ -525,6 +531,57 @@ final class AppModel {
             ),
         ]
         connectionState = .connected
+    }
+
+    /// Screenshot fixture for the remaining compatible Claude Design affordances:
+    /// app-wide search, real project activity metadata, and paired GitHub/task
+    /// context. It builds on the canonical preview so all values stay consistent.
+    private func configureDesignCloseoutPreview() {
+        configureEmptyChatPreview()
+        let projectRoot = "/Users/buns/Code/coven-cave"
+        projects = [
+            ProjectInfo(
+                id: "coven-app",
+                name: "Coven Cave",
+                root: projectRoot,
+                color: nil,
+                updatedAt: "2026-08-06T09:00:00Z"
+            ),
+        ]
+        projectsLoaded = true
+        serverSessions = [
+            SessionRow(
+                id: "ui-preview-server-only",
+                title: "Desktop handoff",
+                harness: nil,
+                model: nil,
+                runtime: nil,
+                status: "idle",
+                familiarId: "nyx",
+                createdAt: "2026-08-06T03:30:00Z",
+                updatedAt: "2026-08-06T04:45:00Z",
+                archivedAt: nil,
+                projectRoot: projectRoot,
+                origin: nil,
+                generated: false
+            ),
+        ]
+        sessionsLoaded = true
+
+        if let thread = threads.first {
+            thread.projectRoot = projectRoot
+            thread.messages = [
+                DisplayMessage(
+                    role: .assistant,
+                    familiarId: "nyx",
+                    text: "The iOS design closeout is ready for review."
+                ),
+            ]
+        }
+        cardThreadLinks["cold-launch"] = "ui-preview-empty-chat"
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-light") {
+            chrome.colorScheme = .light
+        }
     }
 
     /// Deterministic native screenshot fixture for the agent-activity trail.
@@ -1715,7 +1772,7 @@ final class AppModel {
 
     /// How long a freshly-loaded session list is considered good enough to
     /// reuse when a view re-appears (cave-ioswipe.5).
-    private static let sessionsStaleAfter: TimeInterval = 30
+    nonisolated private static let sessionsStaleAfter: TimeInterval = 30
 
     /// Load sessions unless they were fetched moments ago.
     ///

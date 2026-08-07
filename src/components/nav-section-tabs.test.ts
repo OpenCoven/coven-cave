@@ -20,6 +20,7 @@ const workspace = read("./workspace.tsx");
 const navSection = read("../lib/nav-section.ts");
 const styles = read("../styles/sidebar-minimal/section-tabs.css");
 const homeChrome = read("../styles/sidebar-minimal/shell-chrome.css");
+const railHeader = read("../styles/globals/rail-header.css");
 const chatChrome = read("../styles/globals/shell-navigation.css");
 
 assert.match(
@@ -37,8 +38,8 @@ assert.match(tabs, /focus-ring/, "tabs carry the shared focus ring");
 assert.match(sidebar, /<NavSectionTabs section=\{section\} onSectionChange=\{onSectionChange\}/, "the Home rail hosts the switcher");
 assert.match(
   sidebar,
-  /<NavSectionTabs section=\{section\} onSectionChange=\{onSectionChange\}[\s\S]*?<div className="sidebar-familiar-switch">[\s\S]*?<FamiliarQuickSwitch[\s\S]*?<\/div>[\s\S]*?<div className="sidebar-actions">[\s\S]*?<button type="button" className="sidebar-action-row focus-ring" onClick=\{onNewChat\} title="New chat">/,
-  "the Home rail keeps section tabs, the familiar selector, and New chat in order",
+  /<NavSectionTabs section=\{section\} onSectionChange=\{onSectionChange\}[\s\S]*?<SidebarRailHeader[\s\S]*?onNewChat=\{onNewChat\}/,
+  "the Home rail keeps section tabs and the shared scope + New chat header in order",
 );
 assert.match(sidebar, /role="tabpanel"/, "the destination list is the switcher's panel");
 assert.match(
@@ -52,17 +53,17 @@ assert.match(
   "the session list belongs to the Chat section",
 );
 assert.match(
-  homeChrome,
-  /\.sidebar-action-row\s*\{[\s\S]*?\bwidth:\s*100%;/,
-  "the Home New chat action remains full width",
+  railHeader,
+  /\.rail-header__new \{[\s\S]*?\bwidth:\s*100%;/,
+  "the shared New chat action remains full width",
 );
 // Quiet primary: New chat keeps its button chrome (full width, border, own
 // surface) but no longer takes a solid accent fill on either rail. The tint
 // still derives from --accent-presence so the brand hue is present.
 assert.match(
-  homeChrome,
-  /\.sidebar-actions:not\(\.sidebar-actions--footer\) \.sidebar-action-row \{[\s\S]*?background: color-mix\(in oklch, var\(--accent-presence\) 9%, transparent\);[\s\S]*?color: var\(--text-primary\);/,
-  "the Home New chat action is a tinted quiet button, not a solid accent fill",
+  railHeader,
+  /\.rail-header__new \{[\s\S]*?background: color-mix\(in oklch, var\(--accent-presence\) 9%, transparent\);[\s\S]*?color: var\(--text-primary\);/,
+  "the shared New chat action is a tinted quiet button, not a solid accent fill",
 );
 
 assert.match(
@@ -72,12 +73,12 @@ assert.match(
 );
 assert.match(
   chatSidebar,
-  /<NavSectionTabs section="code" onSectionChange=\{onSectionChange\}[\s\S]*?<div className="cnav__switcher">[\s\S]*?<FamiliarSwitcher[\s\S]*?<\/header>[\s\S]*?<div className="cnav__quick">[\s\S]*?<button type="button" title="New chat \(⌘N\)" onClick=\{\(\) => onNewChat\(null\)\} className="cnav__new focus-ring">/,
-  "the Chat rail keeps section tabs, the familiar selector, and the full-width New chat action in order",
+  /<NavSectionTabs section="code" onSectionChange=\{onSectionChange\}[\s\S]*?<SidebarRailHeader[\s\S]*?onNewChat=\{\(\) => onNewChat\(null\)\}[\s\S]*?newChatTitle="New chat \(⌘N\)"/,
+  "the Chat rail keeps section tabs and the same shared scope + New chat header in order",
 );
 assert.doesNotMatch(
   chatSidebar,
-  /<div className="cnav__switcher">[\s\S]*?Sidebar options[\s\S]*?<\/header>/,
+  /<SidebarRailHeader[\s\S]{0,600}?Sidebar options/,
   "the Chat selector row has no trailing Sidebar options button",
 );
 // The Scheduled/Plugins icon chips and the band that carried them are retired:
@@ -88,23 +89,20 @@ assert.doesNotMatch(chatSidebar, /cnav__utilities|cnav__mini/, "the Scheduled/Pl
 assert.doesNotMatch(chatChrome, /\.cnav__utilities|\.cnav__mini/, "the utilities band styles are retired with it");
 assert.match(
   chatSidebar,
-  /<div className="cnav__quick">[\s\S]*?New chat[\s\S]*?<div className="cnav__tabs-row">[\s\S]*?<Tabs<ChatSidebarView>[\s\S]*?Sidebar options/,
+  /<SidebarRailHeader[\s\S]*?<div className="cnav__tabs-row">[\s\S]*?<Tabs<ChatSidebarView>[\s\S]*?Sidebar options/,
   "Sidebar options rides at the end of the grouping-tabs row, below the primary action",
 );
 assert.match(
-  chatChrome,
-  /\.cnav__switcher\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-width:\s*0;[\s\S]*?display:\s*flex;/,
-  "the Chat familiar switcher fills its available header width",
+  railHeader,
+  /\.rail-header__scope \.familiar-switcher__trigger--labeled \{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?width:\s*100%;/,
+  "the shared familiar switcher fills its available header width",
 );
-assert.match(
+// The Chat rail no longer declares any of that chrome: it renders the same
+// SidebarRailHeader, so there is nothing left here to drift from Home.
+assert.doesNotMatch(
   chatChrome,
-  /\.cnav__new\s*\{[\s\S]*?\bwidth:\s*100%;/,
-  "the Chat New chat action remains full width",
-);
-assert.match(
-  chatChrome,
-  /\.cnav__new\s*\{[\s\S]*?background: color-mix\(in oklch, var\(--accent-presence\) 9%, transparent\);[\s\S]*?color: var\(--text-primary\);/,
-  "the Chat New chat action is a tinted quiet button, not a solid accent fill",
+  /^[^\r\n]*(\.cnav__new\b|\.cnav__switcher\b|\.cnav__quick\b)[^\r\n]*\{/m,
+  "the Chat rail's forked header styles are retired in favour of the shared header",
 );
 assert.match(
   chatSidebar,

@@ -32,6 +32,9 @@ const terminal = await read("apps/ios/CovenCave/CovenCave/Views/TerminalView.swi
 const settings = await read("apps/ios/CovenCave/CovenCave/Views/SettingsView.swift");
 const glass = await read("apps/ios/CovenCave/CovenCave/Theme/Glass.swift");
 const zoom = await read("apps/ios/CovenCave/CovenCave/Views/ContentZoom.swift");
+const globalSearch = await read(
+  "apps/ios/CovenCave/CovenCave/Views/GlobalSearchView.swift",
+).catch(() => "");
 
 // Supplied device reference: this is the canonical first empty conversation.
 assert.match(chat, /Text\("Start a new session"\)/, "empty chat keeps the authored serif heading");
@@ -198,13 +201,17 @@ assert.match(
   /Color\.black\.opacity\(isOpen \? 0\.46 : 0\)/,
   "the closed drawer does not leave its dimming scrim over the app",
 );
-assert.match(root, /case \.projects:\s*ProjectsPanel/, "Projects is a real drawer destination");
+assert.match(
+  root,
+  /case \.projects\(let project\):\s*ProjectsPanel\(initialProject: project\)/,
+  "Projects carries its selected project atomically into the drawer destination",
+);
 assert.match(root, /case \.familiars: FamiliarsListView/, "Familiars is a real drawer destination");
 assert.match(drawer, /openProjects\(project\)/, "drawer project shortcuts preserve the selected project");
 assert.match(projects, /NavigationLink\(value: project\)/, "project rows navigate instead of rendering inertly");
 assert.match(
   projects,
-  /initialProject\.map \{ \[\$0\] \} \?\? \[\]/,
+  /if let initialProject \{[\s\S]{0,120}path\.append\(initialProject\)/,
   "a drawer project shortcut opens that project directly",
 );
 assert.match(familiars, /struct FamiliarDetailView: View/, "familiar rows open a real detail surface");
@@ -656,5 +663,137 @@ assert.match(
   "fresh installs default Tasks to the authored familiar grouping",
 );
 assert.match(zoom, /Rotate for width/, "full-screen rich content explains the landscape affordance");
+
+// The newer Claude Design shell promotes the drawer search affordance into a
+// loaded-data search across every navigable mobile collection.
+assert.match(
+  drawer,
+  /var openSearch: \(\) -> Void/,
+  "the global drawer exposes app-wide search instead of a chat-only request",
+);
+assert.match(drawer, /openSearch\(\)/, "the drawer search control opens global search");
+assert.match(root, /case \.search:\s*GlobalSearchView\(/, "the root presents global search");
+assert.match(
+  globalSearch,
+  /\.searchable\(text: \$query, prompt: "Search everything…"\)/,
+  "global search uses the canonical app-wide placeholder",
+);
+assert.match(
+  globalSearch,
+  /if let trailing \{[\s\S]*?Text\(trailing\)[\s\S]*?\.foregroundStyle\(chrome\.textSecondary\)/,
+  "global search recency metadata remains legible in dark mode",
+);
+for (const label of ["Chats", "Projects", "Familiars", "Tasks"]) {
+  assert.match(
+    globalSearch,
+    new RegExp(`Section\\("${label}"\\)`),
+    `global search includes truthful ${label.toLowerCase()} results`,
+  );
+}
+assert.match(
+  globalSearch,
+  /app\.serverOnlySessions\(for:/,
+  "global search includes conversations that only exist on the server",
+);
+assert.match(
+  globalSearch,
+  /app\.openServerSession\(/,
+  "selecting a server-only search result materializes and opens it",
+);
+assert.match(
+  projects,
+  /threadsByProjectRoot/,
+  "project summaries derive chat activity from real project-root threads",
+);
+assert.match(
+  projects,
+  /Set\([\s\S]{0,180}threads\.flatMap\(\\\.familiarIds\) \+ serverSessions\.compactMap\(\\\.familiarId\)[\s\S]{0,40}\)\.count/,
+  "project summaries count distinct familiars from those chats",
+);
+assert.ok(projects.includes('"\\(chats) chat'), "project summaries label real chat counts");
+assert.ok(
+  projects.includes('"\\(familiars) familiar'),
+  "project summaries label real familiar counts",
+);
+assert.match(
+  projects,
+  /serverSessionsByProjectRoot/,
+  "project summaries include eligible server-only conversations",
+);
+assert.match(
+  projects,
+  /if !app\.sessionsLoaded \{ await app\.loadSessions\(\) \}/,
+  "projects load server sessions before reporting activity",
+);
+assert.match(
+  projects,
+  /Text\(updated, format: \.relative\(presentation: \.numeric\)\)[\s\S]*?\.font\(\.caption\)\.foregroundStyle\(chrome\.textSecondary\)/,
+  "project recency metadata remains legible in dark mode",
+);
+assert.match(
+  chat,
+  /private func validGitHubURL\(for link: CardGitHubLink\) -> URL\?/,
+  "linked chat context validates a real GitHub PR or issue URL",
+);
+assert.match(chat, /url\.host\?\.lowercased\(\) == "github\.com"/, "linked GitHub context stays on GitHub");
+assert.match(chat, /Link\(destination: context\.url\)/, "linked GitHub context opens its validated URL");
+assert.match(chat, /githubContextLabel/, "linked GitHub context has a concise visible label");
+assert.match(
+  chat,
+  /dynamicTypeSize\.isAccessibilitySize[\s\S]*?AnyLayout\(VStackLayout/,
+  "linked GitHub and task context stacks at accessibility text sizes",
+);
+assert.match(
+  chat,
+  /\.lineLimit\(dynamicTypeSize\.isAccessibilitySize \? nil : 1\)/,
+  "linked task titles can fully wrap at accessibility text sizes",
+);
+assert.match(
+  chat,
+  /Text\(cards\.count == 1 \? "Linked task"[\s\S]{0,260}\.fixedSize\(horizontal: false, vertical: true\)/,
+  "linked task context labels can wrap at accessibility text sizes",
+);
+assert.match(
+  chat,
+  /\.padding\(\.top, dynamicTypeSize\.isAccessibilitySize \? 16 : 0\)/,
+  "accessibility-sized linked context clears the navigation bar",
+);
+assert.match(
+  chat,
+  /\.padding\(\.bottom, dynamicTypeSize\.isAccessibilitySize \? 16 : 0\)/,
+  "accessibility-sized linked task text clears the context divider",
+);
+assert.match(
+  chat,
+  /private var linkedContextStrip:[\s\S]{0,2200}showTasks = true/,
+  "the GitHub affordance remains paired with the linked-task action",
+);
+assert.match(
+  appModel,
+  /--ui-preview-design-closeout/,
+  "the remaining Claude Design affordances have a deterministic simulator fixture",
+);
+assert.match(
+  appModel,
+  /configureDesignCloseoutPreview[\s\S]{0,1800}projects = \[/,
+  "the design closeout fixture includes a real project result",
+);
+assert.match(
+  appModel,
+  /configureDesignCloseoutPreview[\s\S]{0,2200}cardThreadLinks\["cold-launch"\] = "ui-preview-empty-chat"/,
+  "the design closeout fixture exposes linked task and GitHub context",
+);
+assert.match(root, /--ui-open-search/, "simulator validation can launch directly into global search");
+assert.match(root, /--ui-open-projects/, "simulator validation can launch directly into projects");
+assert.match(
+  globalSearch,
+  /--ui-search-query/,
+  "simulator validation can seed a deterministic global-search query",
+);
+assert.match(
+  appModel,
+  /--ui-preview-light/,
+  "the design closeout fixture can be verified in the light appearance",
+);
 
 console.log("ios-claude-design-fidelity.test.mjs: ok");

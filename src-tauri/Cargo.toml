@@ -17,6 +17,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.6.2", features = [] }
+# build.rs generates MAX_FILE_COUNT from scripts/sidecar-runtime-budget.json.
+serde_json = "1.0"
 
 [dependencies]
 serde_json = "1.0"

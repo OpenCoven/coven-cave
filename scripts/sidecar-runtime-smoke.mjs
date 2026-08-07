@@ -7,6 +7,9 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
+// The file-count ceiling is read from sidecar-runtime-budget.json through this
+// module rather than repeated here — see cave-0ia8h.
+import { SIDECAR_RUNTIME_BUDGETS } from "./sidecar-runtime-closure.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const stagedSidecarRoot = path.join(root, "src-tauri", "resources", "server");
@@ -256,7 +259,7 @@ async function main() {
     assert.match(manifest.payloadSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.treeSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.archiveSha256, /^[a-f0-9]{64}$/);
-    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 6_109);
+    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= SIDECAR_RUNTIME_BUDGETS.fileCount);
     assert.ok(manifest.archiveBytes > 0 && manifest.archiveBytes <= 80 * 1024 * 1024);
     assert.ok(manifest.unpackedBytes > 0 && manifest.unpackedBytes < 200 * 1024 * 1024);
     extractedSidecarRoot = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-archive-"));

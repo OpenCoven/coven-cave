@@ -37,7 +37,22 @@ origin_is_ready() {
 }
 
 # The dedicated dev port, honouring COVEN_CAVE_PORT then PORT.
-dev_port="$(node -e "import('./scripts/ports.mjs').then((m) => console.log(m.resolvePort('dev', process.env)))")"
+#
+# Write the digits directly instead of console.log'ing the Number: console.log
+# renders a Number through util.inspect, which wraps it in ANSI colour codes
+# whenever FORCE_COLOR is set. Agent harnesses and many CI runners set it, and
+# those escapes survive command substitution — the contaminated value then
+# reaches --port, fails dev-app-origin-health's /^\d+$/ check, and the launcher
+# dies instantly while reporting a readiness timeout it never actually waited
+# for. Strings are not colourised; Numbers are.
+dev_port="$(node -e "import('./scripts/ports.mjs').then((m) => process.stdout.write(String(m.resolvePort('dev', process.env))))")"
+case "$dev_port" in
+  ''|*[!0-9]*)
+    echo "[dev:app] ERROR: resolved dev port is not numeric: $(printf '%q' "$dev_port")" >&2
+    echo "[dev:app]        Something is decorating this command's stdout (FORCE_COLOR, a shell wrapper, a Node loader)." >&2
+    exit 1
+    ;;
+esac
 if [ -n "${COVEN_CAVE_PORT:-}" ] || [ -n "${PORT:-}" ]; then
   echo "[dev:app] using overridden port ${dev_port}"
 else
