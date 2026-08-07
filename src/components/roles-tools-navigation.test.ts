@@ -263,7 +263,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /e\.key === "\/"[\s\S]{0,200}setShortcutsOpen/,
+  /e\.key === "\/"[\s\S]{0,200}(openShortcuts|closeShortcuts)/,
   "⌘/ (Ctrl+/ off-Mac) should toggle the shortcuts sheet from anywhere",
 );
 
@@ -275,7 +275,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /case "\/shortcuts":[\s\S]{0,80}setShortcutsOpen\(true\)/,
+  /case "\/shortcuts":[\s\S]{0,80}openShortcuts\(\)/,
   "/shortcuts slash command should open the sheet via handleSlashIntent",
 );
 

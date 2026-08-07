@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { Icon, type IconName } from "@/lib/icon";
+import { useSurfaceHistory } from "@/lib/use-surface-history";
 import type { Familiar } from "@/lib/types";
 import {
   buildPreviewSrcDoc,
@@ -89,7 +90,11 @@ export function CanvasAddTile({
   const [chosenFamiliar, setChosenFamiliar] = useState<string | null>(null);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const [refineText, setRefineText] = useState("");
-  const [resultTab, setResultTab] = useState<ResultTab>("canvas");
+  const { value: resultTab, select: selectResultTab, show: setResultTab } = useSurfaceHistory<ResultTab>({
+    id: "canvas-add:result",
+    initial: "canvas",
+    coalesceMs: 700,
+  });
   const [codeMenuOpen, setCodeMenuOpen] = useState(false);
   const [familiarMenuOpen, setFamiliarMenuOpen] = useState(false);
   const [codeSaving, setCodeSaving] = useState(false);
@@ -606,7 +611,7 @@ export function CanvasAddTile({
                 size="sm"
                 ariaLabel="Preview result"
                 value={resultTab}
-                onChange={setResultTab}
+                onChange={selectResultTab}
                 items={[
                   { id: "canvas", label: "Preview", icon: "ph:squares-four" },
                   { id: "code", label: "Code", icon: "ph:code" },

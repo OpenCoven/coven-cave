@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
@@ -28,6 +28,14 @@ import {
   replaceWorkspaceNavigation,
   restoreWorkspaceNavigation,
 } from "@/lib/workspace-navigation-history";
+import {
+  CHAT_SESSION_LEVEL,
+  canMoveSurfaceHistory,
+  moveSurfaceHistory,
+  subscribeSurfaceHistory,
+  surfaceHistoryGateOpen,
+} from "@/lib/surface-history";
+import { useOverlayHistory, useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import type { PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface, so JournalView is gone; Grimoire is
 // a new in-shell surface from main.
@@ -374,6 +382,23 @@ export function Workspace() {
     setRosterSettledPendingCanonicalMemorySelection,
   ] = useState<PendingCanonicalMemorySelection | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // Back closes an overlay before it navigates. Opening records an entry;
+  // Escape or the close button consumes it, so Back never reopens what the
+  // user just dismissed.
+  const { openOverlay: openPalette, closeOverlay: closePalette } = useOverlayHistory({
+    id: "overlay:palette",
+    open: paletteOpen,
+    setOpen: setPaletteOpen,
+  });
+  const { openOverlay: openShortcuts, closeOverlay: closeShortcuts } = useOverlayHistory({
+    id: "overlay:shortcuts",
+    open: shortcutsOpen,
+    setOpen: setShortcutsOpen,
+  });
+  // The ? shortcut toggles from inside a keydown listener that does not
+  // resubscribe per render, so it reads the ref rather than a stale capture.
+  const shortcutsOpenRef = useRef(shortcutsOpen);
+  shortcutsOpenRef.current = shortcutsOpen;
   // Home-first boot: every fresh launch (desktop app window or web tab)
   // opens on the Home surface — the daily overview with the universal
   // composer — per operator direction (this reverses cave-hsa6's chat-first
@@ -497,18 +522,56 @@ export function Workspace() {
     setMode(updated.entries[updated.index]);
     navigationRestoreRef.current = false;
   }, [setMode]);
+  const selectGrimoireViewTracked = useTrackedSurfaceValue<"docs" | "graph" | "journal">({
+    id: "grimoire:view",
+    value: grimoireView,
+    onRestore: setGrimoireView,
+  });
   const selectGrimoireView = useCallback((next: "docs" | "graph" | "journal") => {
     // Docs and Journal are navigation destinations, not merely transient
     // presentation. Record them through the same alias funnel so the active
     // tab is restored when history returns to Memories.
+    //
+    // That funnel only records when the destination differs from the current
+    // mode entry, and Graph has no alias at all — so switching Docs↔Graph
+    // inside the surface used to record nothing. Record on the view level
+    // exactly when the mode funnel will not, or one click costs two Back
+    // presses.
+    const history = navigationHistoryRef.current;
+    const entry = history.entries[history.index];
+    const modeWillRecord =
+      next === "journal" ? entry !== "journal" : next === "docs" ? entry !== "grimoire" : false;
     if (next === "journal") {
+      if (!modeWillRecord) selectGrimoireViewTracked("journal");
       setMode("journal");
       return;
     }
-    setGrimoireView(next);
+    if (modeWillRecord) setGrimoireView(next);
+    else selectGrimoireViewTracked(next);
     if (next === "docs") setMode("grimoire");
-  }, [setMode, setGrimoireView]);
+  }, [setMode, setGrimoireView, selectGrimoireViewTracked]);
+  // Surfaces register their own levels, so whether Back is available depends on
+  // state the Workspace does not hold. Subscribe rather than derive, and fall
+  // back to false on the server where no surface has mounted.
+  const surfaceCanGoBack = useSyncExternalStore(
+    subscribeSurfaceHistory,
+    () => canMoveSurfaceHistory(-1),
+    () => false,
+  );
+  const surfaceCanGoForward = useSyncExternalStore(
+    subscribeSurfaceHistory,
+    () => canMoveSurfaceHistory(1),
+    () => false,
+  );
+  const chatSessionLevelOpen = useSyncExternalStore(
+    subscribeSurfaceHistory,
+    () => surfaceHistoryGateOpen(CHAT_SESSION_LEVEL),
+    () => true,
+  );
   const moveChatNavigation = useCallback((direction: -1 | 1) => {
+    // Chat's scope strip gates this: the session trail is only what the user
+    // sees on the Sessions tab.
+    if (!surfaceHistoryGateOpen(CHAT_SESSION_LEVEL)) return false;
     if (modeRef.current !== "chat" || !canMoveWorkspaceNavigation(chatNavigationHistoryRef.current, direction)) return false;
     const current = chatNavigationHistoryRef.current;
     const updated = moveWorkspaceNavigation(current, direction);
@@ -518,14 +581,20 @@ export function Workspace() {
     window.history.go(offset);
     return true;
   }, []);
+  // Back steps up exactly one level, deepest first: the chat session stack,
+  // then any in-surface level a surface registered (Chat's scope strip), then
+  // the mode. Without the middle step, Back from a chat sub-tab left the whole
+  // surface instead of returning to the previous tab.
   const goBack = useCallback(() => {
     // The chat stack is browser-backed for shareable hashes, but never lets a
     // direct deep link (which has no app-owned predecessor) escape the app.
     if (moveChatNavigation(-1)) return;
+    if (moveSurfaceHistory(-1)) return;
     navigateWorkspaceHistory(-1);
   }, [moveChatNavigation, navigateWorkspaceHistory]);
   const goForward = useCallback(() => {
     if (moveChatNavigation(1)) return;
+    if (moveSurfaceHistory(1)) return;
     navigateWorkspaceHistory(1);
   }, [moveChatNavigation, navigateWorkspaceHistory]);
   useEffect(() => {
@@ -680,6 +749,16 @@ export function Workspace() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
   const [mobileHandoffOpen, setMobileHandoffOpen] = useState(false);
+  const { openOverlay: showReminderOverlay, closeOverlay: closeReminderModal } = useOverlayHistory({
+    id: "overlay:reminder",
+    open: reminderModalOpen,
+    setOpen: setReminderModalOpen,
+  });
+  const { openOverlay: openMobileHandoff, closeOverlay: closeMobileHandoff } = useOverlayHistory({
+    id: "overlay:mobile-handoff",
+    open: mobileHandoffOpen,
+    setOpen: setMobileHandoffOpen,
+  });
   // Continue-on-phone (cave-i74f): the chat id riding the next handoff QR.
   const [mobileHandoffChatId, setMobileHandoffChatId] = useState<string | null>(null);
   const [mobileModeEnabled, setMobileModeEnabledState] = useState(readMobileModeEnabled);
@@ -1384,7 +1463,7 @@ export function Workspace() {
         unlistenOpen = await listen("tray:open-inbox", () => setMode("inbox"));
         unlistenNew = await listen("tray:new-reminder", () => {
           setReminderModalDefaults({ fireAt: "", title: "", whenText: "" });
-          setReminderModalOpen(true);
+          showReminderOverlay();
         });
       } catch {
         /* harmless in browser dev */
@@ -1704,7 +1783,7 @@ export function Workspace() {
         const k = e.key.toLowerCase();
         if (k === "k") {
           e.preventDefault();
-          setPaletteOpen(true);
+          openPalette();
           return;
         }
         // ⌘J (Ctrl+J off-Mac) → jump straight into a fresh chat with the active
@@ -1720,7 +1799,7 @@ export function Workspace() {
         // ⌘/ (Ctrl+/ off-Mac) → keyboard shortcuts sheet, from anywhere.
         if (e.key === "/") {
           e.preventDefault();
-          setShortcutsOpen((open) => !open);
+          if (shortcutsOpenRef.current) closeShortcuts(); else openShortcuts();
         }
         return;
       }
@@ -1728,7 +1807,7 @@ export function Workspace() {
       // input/textarea/contentEditable — typing "?" must stay typing.
       if (e.key === "?" && !isEditableTarget(e.target)) {
         e.preventDefault();
-        setShortcutsOpen(true);
+        openShortcuts();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -1962,8 +2041,8 @@ export function Workspace() {
 
   const openReminderModal = useCallback((title = "", whenText = "", fireAt = "") => {
     setReminderModalDefaults({ fireAt, title, whenText });
-    setReminderModalOpen(true);
-  }, []);
+    showReminderOverlay();
+  }, [showReminderOverlay]);
 
   // Acknowledge a real inbox item: stamps readAt so the bell badge quiets, but
   // the notification stays listed until dismissed/done. No-ops server-side on
@@ -2170,7 +2249,7 @@ export function Workspace() {
     const onContinueOnPhone = (event: Event) => {
       const detail = (event as CustomEvent<{ chatId?: string }>).detail;
       setMobileHandoffChatId(detail?.chatId ?? null);
-      setMobileHandoffOpen(true);
+      openMobileHandoff();
     };
     window.addEventListener("cave:continue-on-phone", onContinueOnPhone as EventListener);
     return () => {
@@ -2658,10 +2737,10 @@ export function Workspace() {
         return true;
       }
       case "/palette":
-        setPaletteOpen(true);
+        openPalette();
         return true;
       case "/shortcuts":
-        setShortcutsOpen(true);
+        openShortcuts();
         return true;
       case "/projects":
         markProjectsTabPending(); // latch beats the fresh-mount race (cave-c2zf)
@@ -2687,13 +2766,13 @@ export function Workspace() {
             return true;
           }
         }
-        setPaletteOpen(true);
+        openPalette();
         return true;
       }
       case "/attach": {
         const sid = args.trim();
         if (!sid) {
-          setPaletteOpen(true);
+          openPalette();
           return true;
         }
         // Find which familiar this session belongs to so we surface the right rail row
@@ -3253,7 +3332,7 @@ export function Workspace() {
         onNewReminder={() => openReminderModal()}
         onEditReminder={(item) => {
           setEditingReminder(item);
-          setReminderModalOpen(true);
+          showReminderOverlay();
         }}
         onOpenLink={openReminderLink}
         calendarSlot={
@@ -3453,8 +3532,16 @@ export function Workspace() {
       <Shell
         ref={shellRef}
         historyNavigation={{
-          canGoBack: canMoveWorkspaceNavigation(chatNavigationHistory, -1) || canMoveWorkspaceNavigation(navigationHistory, -1),
-          canGoForward: canMoveWorkspaceNavigation(chatNavigationHistory, 1) || canMoveWorkspaceNavigation(navigationHistory, 1),
+          // Mirror goBack/goForward exactly, gate included — a button enabled
+          // for a stack the traversal then refuses reads as a dead control.
+          canGoBack:
+            (chatSessionLevelOpen && canMoveWorkspaceNavigation(chatNavigationHistory, -1)) ||
+            surfaceCanGoBack ||
+            canMoveWorkspaceNavigation(navigationHistory, -1),
+          canGoForward:
+            (chatSessionLevelOpen && canMoveWorkspaceNavigation(chatNavigationHistory, 1)) ||
+            surfaceCanGoForward ||
+            canMoveWorkspaceNavigation(navigationHistory, 1),
           goBack,
           goForward,
         }}
@@ -3501,11 +3588,11 @@ export function Workspace() {
               }
               taskCount={boardTaskCount}
               scheduleNeedsCount={scheduleNeedsCount}
-              onOpenSearch={() => setPaletteOpen(true)}
+              onOpenSearch={() => openPalette()}
               searchQuery={topSearchQuery}
               onSearchQueryChange={(query) => {
                 setTopSearchQuery(query);
-                setPaletteOpen(true);
+                openPalette();
               }}
               onViewTasks={() => setMode("board")}
               onEnrichTasks={handleEnrichTasks}
@@ -3515,15 +3602,15 @@ export function Workspace() {
               onOpenQuickChat={() => startFamiliarChat(activeId)}
             />
             <TopBar
-              onOpenPalette={() => setPaletteOpen(true)}
+              onOpenPalette={() => openPalette()}
               searchQuery={topSearchQuery}
               onSearchQueryChange={(query) => {
                 setTopSearchQuery(query);
-                setPaletteOpen(true);
+                openPalette();
               }}
               onOpenInbox={() => setMode("inbox")}
               onOpenSettings={() => nextRouter.push("/settings")}
-              onOpenMobileHandoff={() => setMobileHandoffOpen(true)}
+              onOpenMobileHandoff={() => openMobileHandoff()}
               onOpenQuickChat={() => startFamiliarChat(activeId)}
               inboxItems={inboxItemsWithEphemeral}
               familiars={familiars}
@@ -3564,7 +3651,7 @@ export function Workspace() {
       {paletteOpen && (
         <CommandPalette
           open
-          onClose={() => setPaletteOpen(false)}
+          onClose={closePalette}
           familiars={familiars}
           sessions={sessions}
           activeFamiliarId={activeId}
@@ -3582,7 +3669,7 @@ export function Workspace() {
         />
       )}
 
-      {shortcutsOpen && <ShortcutsSheet open onClose={() => setShortcutsOpen(false)} />}
+      {shortcutsOpen && <ShortcutsSheet open onClose={closeShortcuts} />}
 
       {(onboardingOpen || onboardingMounted) && (
         <OnboardingOverlay
@@ -3600,7 +3687,7 @@ export function Workspace() {
         <NewReminderModal
           open
           onClose={() => {
-            setReminderModalOpen(false);
+            closeReminderModal();
             setEditingReminder(null);
           }}
           familiars={familiars}
@@ -3678,7 +3765,7 @@ export function Workspace() {
           open
           chatId={mobileHandoffChatId}
           onClose={() => {
-            setMobileHandoffOpen(false);
+            closeMobileHandoff();
             setMobileHandoffChatId(null);
           }}
           mobileModeEnabled={mobileModeEnabled}

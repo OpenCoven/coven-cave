@@ -66,13 +66,13 @@ assert.match(
 
 assert.match(
   source,
-  /const \[section, setSection\] = useState<Section>\("general"\)/,
+  /useSurfaceHistory<Section>\(\{\s*id:\s*"settings:section",\s*initial:\s*"general"\s*\}\)/,
   "SettingsShell should render the same initial section on server and client",
 );
 
 assert.doesNotMatch(
   source,
-  /useState<Section>\(initialSection\)/,
+  /useState<Section>\(initialSection\)|initial:\s*initialSection/,
   "SettingsShell must not read window.location.hash during the first client render",
 );
 

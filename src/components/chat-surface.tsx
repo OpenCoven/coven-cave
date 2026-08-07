@@ -4,9 +4,11 @@ import "@/styles/cave-chat.css";
 import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
 
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, type RefObject } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
+import { useSurfaceHistory } from "@/lib/use-surface-history";
+import { CHAT_SESSION_LEVEL, registerSurfaceHistoryGate } from "@/lib/surface-history";
 import {
   ChatCanvasView,
   ChatFamiliarView,
@@ -135,7 +137,31 @@ export function ChatSurface({
   // The in-surface project/thread rail is dropped when the outer WorkspaceSidebar
   // already owns chats beside the surface.
   const compactRail = hideThreadRail;
-  const [scope, setScope] = useState<FamiliarsScope>("conversation");
+  // The scope strip is a navigation level, not view state: Back from Canvas
+  // should land on Projects, not leave Chat entirely. `select` records an
+  // entry (the tab strip itself); `show` lands without one, which is what
+  // every cross-surface handoff below wants — those already push an entry on
+  // a level the Workspace tracks, so recording a second here would cost the
+  // user two Back presses for one action.
+  const {
+    value: scope,
+    select: selectScope,
+    show: showScope,
+  } = useSurfaceHistory<FamiliarsScope>({
+    id: "chat:scope",
+    initial: "conversation",
+  });
+  const setScope = showScope;
+  // The Workspace traverses its chat-session stack before any registered level.
+  // That ordering is right on the Sessions tab, where the session is what the
+  // user sees, and wrong everywhere else: from Projects or Familiar the Back
+  // press would walk an invisible session trail and leave the strip alone.
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  useEffect(
+    () => registerSurfaceHistoryGate(CHAT_SESSION_LEVEL, () => scopeRef.current === "conversation"),
+    [],
+  );
   const surfaceRef = useRef<HTMLElement | null>(null);
   const consumedPendingActionNonce = useRef<number | null>(null);
   const snapshot = useChatDebugSnapshot();
@@ -242,12 +268,14 @@ export function ChatSurface({
   // surfaces: Inspect opens the Familiar chat tab; Git/Changes opens the code
   // rail's Changes tab. (cave:debug-open is owned by ChatView's debug modal.)
   useEffect(() => {
-    const onInspectorOpen = () => setScope("familiar");
+    // Inspect only moves this level, so it records an entry of its own —
+    // unlike the handoffs below, which ride a mode or session change.
+    const onInspectorOpen = () => selectScope("familiar");
     window.addEventListener("cave:inspector-open", onInspectorOpen);
     return () => {
       window.removeEventListener("cave:inspector-open", onInspectorOpen);
     };
-  }, []);
+  }, [selectScope]);
 
   useEffect(() => {
     const open = () => setScope("conversation");
@@ -361,7 +389,7 @@ export function ChatSurface({
             className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             value={scope}
             onChange={(s) => {
-              setScope(s);
+              selectScope(s);
               if (s === "conversation") {
                 window.setTimeout(() => routerRef.current?.goToList(), 0);
               }

@@ -5,6 +5,7 @@ import "@/styles/dashboard.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
+import { useSurfaceHistory } from "@/lib/use-surface-history";
 import { relativeTime } from "@/lib/relative-time";
 import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
 import { Button } from "@/components/ui/button";
@@ -86,7 +87,14 @@ export function SettingsShell() {
   const router = useRouter();
   const isMobile = useIsMobile();
 
-  const [section, setSection] = useState<Section>("general");
+  // Sections are navigation, not view state: Back from Appearance should land
+  // on the section you came from rather than popping the whole route.
+  const {
+    value: section,
+    select: selectSection,
+    show: showSection,
+  } = useSurfaceHistory<Section>({ id: "settings:section", initial: "general" });
+  const setSection = showSection;
   const [suggestedHubUrl, setSuggestedHubUrl] = useState<string | null>(null);
   // Mobile drill-down: when true, render the section list full-screen
   // (no section content) — iOS-Settings-style. Tap a section → false,
@@ -96,7 +104,11 @@ export function SettingsShell() {
   const showPicker = isMobile && pickerView;
 
   // ── Search across settings ────────────────────────────────────────────────
-  const [query, setQuery] = useState("");
+  const { value: query, select: selectQuery, show: setQuery } = useSurfaceHistory<string>({
+    id: "settings:search",
+    initial: "",
+    coalesceMs: 1200,
+  });
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -134,12 +146,10 @@ export function SettingsShell() {
     return () => cancelAnimationFrame(raf);
   }, [scrollTarget, section]);
 
+  /** A user picking a section — from the rail, the search results, or ⌘↓. */
   function openSection(id: Section) {
-    setSection(id);
+    selectSection(id);
     setPickerView(false);
-    if (typeof window !== "undefined") {
-      window.history.replaceState(null, "", `#${id}`);
-    }
   }
   function backToPicker() {
     setPickerView(true);
@@ -147,6 +157,20 @@ export function SettingsShell() {
       window.history.replaceState(null, "", window.location.pathname);
     }
   }
+
+  // Keep the deep-link hash on whatever section is showing, including one the
+  // history controls restored — openSection is no longer the only way to move.
+  //
+  // It must not run before the incoming hash has been read. On mount `section`
+  // is still the "general" default while the URL already says `#about`, so an
+  // ungated write rewrites the deep link to `#general` and the reader below
+  // then honours the value this effect just clobbered.
+  const hashHydratedRef = useRef(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !hashHydratedRef.current || pickerView) return;
+    if (window.location.hash === `#${section}`) return;
+    window.history.replaceState(null, "", `#${section}`);
+  }, [section, pickerView]);
 
   // Support hash-based deep-linking. Read it after hydration so SSR and the
   // first client render both start on General.
@@ -164,6 +188,7 @@ export function SettingsShell() {
       setPickerView(true);
     };
     applyHashSection();
+    hashHydratedRef.current = true;
     window.addEventListener("hashchange", applyHashSection);
     return () => window.removeEventListener("hashchange", applyHashSection);
   }, []);
@@ -243,7 +268,7 @@ export function SettingsShell() {
           <div className={`mb-2 ${showPicker ? "px-3" : "px-2"}`}>
             <SearchInput
               value={query}
-              onValueChange={setQuery}
+              onValueChange={selectQuery}
               onClear={() => setQuery("")}
               placeholder="Search settings…"
               aria-label="Search settings"

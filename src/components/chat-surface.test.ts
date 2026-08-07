@@ -135,8 +135,20 @@ assert.doesNotMatch(
 
 assert.match(
   chatSurface,
-  /useState<FamiliarsScope>\("conversation"\)/,
+  /useSurfaceHistory<FamiliarsScope>\(\{[\s\S]*?initial:\s*"conversation"/,
   "ChatSurface should default the scope to conversation so the ChatList shows when Chat is selected",
+);
+
+assert.match(
+  chatSurface,
+  /id:\s*"chat:scope"/,
+  "ChatSurface should register its scope strip as a navigation level so Back steps between tabs instead of leaving Chat",
+);
+
+assert.match(
+  chatSurface,
+  /onChange=\{\(s\) => \{\s*selectScope\(s\)/,
+  "The scope tab strip is user-initiated navigation, so it must record a history entry (selectScope, not showScope)",
 );
 
 assert.doesNotMatch(
@@ -275,8 +287,8 @@ assert.doesNotMatch(
 // the Familiar chat tab; Git/Changes → the code rail's Changes tab.
 assert.match(
   chatSurface,
-  /const onInspectorOpen = \(\) => setScope\("familiar"\)/,
-  "cave:inspector-open routes to the promoted Familiar tab",
+  /const onInspectorOpen = \(\) => selectScope\("familiar"\)/,
+  "cave:inspector-open routes to the promoted Familiar tab, recording a history entry because it moves only this level",
 );
 assert.match(
   railController,

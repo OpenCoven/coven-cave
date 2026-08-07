@@ -76,6 +76,7 @@ import {
   surfaceWarmupRetryAfterSeconds,
 } from "@/lib/surface-warmup-registry";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { GitHubStream } from "@/components/github-stream";
 import {
   deriveStage,
@@ -2827,6 +2828,14 @@ export function GitHubView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useSurfacePreference(surfacePreferenceSpecs.github.filter);
+  // A filter is an axis, not a destination: a burst of chip taps collapses into
+  // one entry so Back does not become a per-tap undo.
+  const selectFilter = useTrackedSurfaceValue({
+    id: "github:filter",
+    value: filter,
+    onRestore: setFilter,
+    coalesceMs: 700,
+  });
   // Host-driven filter (Code Workshop's PRs/Issues/Reviews tabs): follow the
   // prop whenever it changes so switching tabs re-filters the same mounted view.
   useEffect(() => {
@@ -3352,7 +3361,7 @@ export function GitHubView({
             size="sm"
             ariaLabel="Filter GitHub activity"
             value={filter}
-            onChange={setFilter}
+            onChange={selectFilter}
             items={(["all", "pr", "review_request", "issue"] as Filter[]).map((f) => ({
               id: f,
               label: ({ all: "All", pr: "PRs", review_request: "Reviews", issue: "Issues" } as Record<Filter, string>)[f],

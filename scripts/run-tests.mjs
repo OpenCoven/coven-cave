@@ -47,6 +47,8 @@ export const SUITES = {
     "src/lib/pending-code-navigation.test.ts",
     "src/lib/workspace-navigation.test.ts",
     "src/lib/workspace-navigation-history.test.ts",
+    "src/lib/surface-history.test.ts",
+    "src/lib/use-surface-history.test.tsx",
     "src/lib/surface-preferences.test.ts",
     "src/lib/surface-warm-cache.test.ts",
     "src/lib/canonical-memory-client.test.ts",
@@ -1831,6 +1833,10 @@ const VITEST_TESTS = new Set([
   "src/components/voice-provider-settings.integration.test.tsx",
   "src/components/use-openai-voice-preview.test.tsx",
   "src/components/chat-title-sparkle-behavior.test.tsx",
+  // vi.fn() for the subscriber assertions
+  "src/lib/surface-history.test.ts",
+  // renders the hook through react-test-renderer
+  "src/lib/use-surface-history.test.tsx",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */

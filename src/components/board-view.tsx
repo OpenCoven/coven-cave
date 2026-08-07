@@ -41,6 +41,7 @@ import { modelForRuntimeSwitch } from "@/lib/runtime-models";
 import { BoardKanbanSkeleton } from "@/components/board-view-display";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 
 
@@ -93,6 +94,13 @@ export function BoardView({
     setDeepLinkTab(null);
     setStoredActiveTab(tab);
   }, [setStoredActiveTab]);
+  // Tasks/Queue is a destination — an alias deep link can land straight on
+  // Queue, and Back should return to Tasks rather than leaving the surface.
+  const selectActiveTab = useTrackedSurfaceValue<"tasks" | "queue">({
+    id: "board:tab",
+    value: activeTab,
+    onRestore: setActiveTab,
+  });
   const [cards, setCards] = useState<Card[]>([]);
   // Deferred + undoable task deletion: cards hide immediately, the DELETEs fire
   // only after the undo window, and Undo restores them (mirrors chat/projects).
@@ -1030,7 +1038,7 @@ export function BoardView({
             ariaLabel="Tasks tabs"
             idPrefix="tasks"
             value={activeTab}
-            onChange={setActiveTab}
+            onChange={selectActiveTab}
             items={[
               { id: "tasks" as const, label: "Tasks" },
               { id: "queue" as const, label: "Queue" },

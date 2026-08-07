@@ -25,6 +25,7 @@ import "@/styles/globals/surface-research-studio.css";
 import "@/styles/globals/surface-research-resources.css";
 import { useCallback, useEffect, useState } from "react";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
+import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import type { ResearchMissionMode } from "@/lib/research-missions";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
@@ -132,6 +133,14 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
     }
   }, []);
 
+  // The desk's five tabs are destinations; the stored tab restores on mount
+  // through setTab, which records nothing.
+  const selectTabTracked = useTrackedSurfaceValue<ResearchDeskTab>({
+    id: "research:desk-tab",
+    value: activeTab,
+    onRestore: selectTab,
+  });
+
   const select = research.select;
   const onNavigate = useCallback<ResearchTabNavigate>((next, opts) => {
     if (opts?.missionId) select(opts.missionId);
@@ -167,7 +176,7 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
         <Tabs<ResearchDeskTab>
           items={tabItems}
           value={activeTab}
-          onChange={selectTab}
+          onChange={selectTabTracked}
           ariaLabel="Research desk views"
           idPrefix="research-desk"
           size="sm"
