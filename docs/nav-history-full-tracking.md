@@ -64,6 +64,22 @@ intervening navigation on another axis, occurring within `HISTORY_COALESCE_MS`
 spaced-out filter changes still each get an entry. Expose the window as a
 per-axis option (`coalesceMs: 0` disables) so an axis can opt out.
 
+> **Implementation status.** Phases 1–4, 6, 8, and 9 shipped; §3's model was
+> superseded in one respect, described below. What remains: Grimoire
+> (view + selection), the Browser pane's two levels, Marketplace/GitHub/Board
+> detail drill-downs, the craft-create drawer, the Rituals overview pane, the
+> Settings mobile drill-down, and Submissions. See §5.
+>
+> **What replaced §3.1.** The shipped model is not a `WorkspaceLocation` stack
+> but a single ordered *journal* of transitions (`src/lib/surface-history.ts`).
+> The reason is §3.1's own weakness: a stack per level cannot answer "what did
+> the user do last". Change a filter, switch tab, press Back — a per-level
+> design undoes whichever level the traversal consults first. One journal always
+> steps back the most recent move, which is the property that matters, and it
+> arrived without needing the location/URL serialization in §3.2. That
+> serialization is still the right move when a level must be addressable by URL;
+> Settings keeps its `#section` hash today through a plain effect.
+
 ## 3. The model to build
 
 ### 3.1 Location entry
@@ -241,15 +257,33 @@ and `CodeQL` green.
    lands without one, which is what every `CHAT_OPEN_*` handoff and
    pending-action latch uses, since those already push on a level the Workspace
    tracks.
-3. **Settings** — section, sub-tabs, studio tabs, mobile drill-down.
-4. **Board, Inbox/Rituals, Marketplace** — the three surfaces reachable by alias
-   deep link, so users currently arrive with no way back.
-5. **Grimoire** (view + selection + MRU strip).
-6. **Familiar capabilities, Familiars view sections, Researcher desk,
-   Submissions, Inspector, GitHub detail.**
-7. **Browser pane** — pane-first Back with fall-through.
-8. **Axes** (filters, toggles, search) with coalescing.
-9. **Overlays.**
+3. ✅ **Settings** — section and sub-tabs shipped. `DesktopHistoryNav` steps the
+   journal before falling through to the browser, which is what gives the
+   standalone shells working Back/Forward at all; they have no Workspace above
+   them to own a mode stack. **Remaining:** the familiar studio tabs and the
+   mobile drill-down (`pickerView`).
+4. ✅ **Board, Inbox/Rituals, Marketplace** — the three surfaces reachable by
+   alias deep link, so users arrived with no way back. Tasks/Queue,
+   Overview/Calendar/Crons, and the Marketplace sections all record.
+   **Remaining:** the card/plugin/craft detail drill-downs and the Rituals
+   overview pane.
+5. ⬜ **Grimoire** (view + selection + MRU strip). `writeGrimoireHash` still only
+   replaces; docs/journal reach the journal indirectly through the mode aliases,
+   and `graph` is untracked.
+6. ✅ **Familiar capabilities, Familiars view sections, Researcher desk,
+   Inspector** shipped. **Remaining:** Submissions and the GitHub item detail.
+7. ⬜ **Browser pane** — pane-first Back with fall-through. Untouched; it owns a
+   second history stack (`browser-navigation-queue.ts`) that needs its own
+   ordering decision against the journal.
+8. ✅ **Axes** — GitHub activity and the Board card stack coalesce at 700 ms, so
+   a burst of chip taps costs one Back press. **Remaining:** the Marketplace
+   topic filter, the artifact viewer, canvas add-tile, and the Settings search.
+9. ✅ **Overlays** — the command palette and shortcuts sheet. Dismissing consumes
+   the entry rather than stepping the cursor, so Forward cannot resurrect a
+   closed modal. Deliberately excluded: onboarding (owns its own stepper), the
+   voice-call overlay (Back must not drop a live call), and the confirm dialog.
+   **Remaining:** the other 14 modals and drawers, each a two-line
+   `useOverlayHistory` call.
 
 ## 6. Tests
 
