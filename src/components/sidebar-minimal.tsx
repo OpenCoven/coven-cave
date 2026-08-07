@@ -10,7 +10,7 @@
  */
 
 import React from "react";
-import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
+import { SidebarRailHeader } from "@/components/sidebar-rail-header";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import {
@@ -218,35 +218,20 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           button — it just leaves room for the float. */}
       {onSectionChange ? <NavSectionTabs section={section} onSectionChange={onSectionChange} /> : null}
 
-      {/* Familiar scope lives HERE, on every page (cave-vtk9) — the sidenav
-          header carries the labeled dropdown switcher; the collapsed rail
-          keeps the avatar-only trigger. The mobile top bar keeps its own
-          (the drawer hides this one). */}
-      <div className="sidebar-familiar-switch">
-        <FamiliarQuickSwitch
-          familiars={familiars}
-          activeFamiliarId={activeFamiliarId ?? null}
-          selectedFamiliarIds={selectedFamiliarIds}
-          sessions={sessions}
-          responseNeeded={responseNeeded}
-          onSelectFamiliar={onFamiliarScopeChange}
-          placement="bottom-start"
-          labeled
-        />
-      </div>
-
-      <div className="sidebar-actions">
-        <button type="button" className="sidebar-action-row focus-ring" onClick={onNewChat} title="New chat">
-          <Icon
-            name="ph:note-pencil"
-            className="sidebar-action-icon"
-            width={CAVE_ICON_SIZE.sidePanelAction}
-            height={CAVE_ICON_SIZE.sidePanelAction}
-            aria-hidden
-          />
-          <span>New chat</span>
-        </button>
-      </div>
+      {/* Familiar scope + New chat (cave-vtk9) — SHARED with the Chat section
+          via SidebarRailHeader, so the two controls cannot drift apart across
+          the Home/Chat toggle the way the forked copies did. The collapsed rail
+          keeps the avatar-only trigger; the mobile top bar keeps its own
+          switcher (the drawer hides this one). */}
+      <SidebarRailHeader
+        familiars={familiars}
+        activeFamiliarId={activeFamiliarId ?? null}
+        selectedFamiliarIds={selectedFamiliarIds}
+        sessions={sessions}
+        responseNeeded={responseNeeded}
+        onSelectFamiliar={onFamiliarScopeChange}
+        onNewChat={onNewChat}
+      />
 
       <div
         className="sidebar-nav-scroll"

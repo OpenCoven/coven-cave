@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useMinuteTick } from "@/lib/use-minute-tick";
-import { FamiliarSwitcher } from "@/components/familiar-switcher";
+import { SidebarRailHeader } from "@/components/sidebar-rail-header";
 import { Icon, type IconName } from "@/lib/icon";
 import { SidebarFooter } from "@/components/sidebar-footer";
 import { ProjectAvatar } from "@/components/project-avatar";
@@ -571,31 +571,23 @@ export function WorkspaceSidebar({
             the Code room, so switching to Home hands the rail back to the
             standard destination list. */}
         {onSectionChange ? <NavSectionTabs section="code" onSectionChange={onSectionChange} /> : null}
-        {/* Header — the labeled familiar switcher (#2747). WorkspaceSidebar owns
-            the primary Shell nav during Chat; Home exits Chat and restores the
-            normal navigation. This scope control was restored by cave-l3ay
-            after #2750 removed it as a supposed duplicate. */}
-        <header className="cnav__header">
-          <div className="cnav__switcher">
-            <FamiliarSwitcher
-              familiars={familiars}
-              activeFamiliarId={activeFamiliarId}
-              sessions={sessions}
-              responseNeeded={responseNeeded}
-              onSelectFamiliar={onSelectFamiliar}
-              placement="bottom-start"
-              labeled
-            />
-          </div>
-        </header>
-
-        <div className="cnav__quick">
-          <button type="button" title="New chat (⌘N)" onClick={() => onNewChat(null)} className="cnav__new focus-ring">
-            <Icon name="ph:pencil-simple" width={15} className="cnav__new-icon" aria-hidden />
-            <span className="cnav__new-label">New chat</span>
-            <kbd className="cnav__new-kbd">⌘N</kbd>
-          </button>
-        </div>
+        {/* Header — the labeled familiar switcher (#2747) and New chat, SHARED
+            with the Home section via SidebarRailHeader so the two controls
+            cannot drift apart across the Home/Chat toggle. WorkspaceSidebar
+            owns the primary Shell nav during Chat; Home exits Chat and restores
+            the normal navigation. This scope control was restored by cave-l3ay
+            after #2750 removed it as a supposed duplicate. The ⌘N hint rides
+            the shared button's trailing slot rather than forking it. */}
+        <SidebarRailHeader
+          familiars={familiars}
+          activeFamiliarId={activeFamiliarId}
+          sessions={sessions}
+          responseNeeded={responseNeeded}
+          onSelectFamiliar={onSelectFamiliar}
+          onNewChat={() => onNewChat(null)}
+          newChatTitle="New chat (⌘N)"
+          newChatTrailing={<kbd className="rail-header__new-kbd">⌘N</kbd>}
+        />
 
         {/* Grouping tabs share their row with the overflow menu. The standalone
             utilities band (Scheduled / Plugins icon chips) is retired — both

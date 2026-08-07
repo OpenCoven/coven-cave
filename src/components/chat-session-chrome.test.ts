@@ -259,7 +259,7 @@ test("rail — rows carry a state tick and groups carry a count and a rule", () 
     /\.cnav__tick\.cnav__dot--running \{[\s\S]*?animation: none;/,
     "ticks borrow the running colour but never the pulse — a rail of breathing bars is noise",
   );
-  assert.match(sidebar, /<kbd className="cnav__new-kbd">⌘N<\/kbd>/, "the primary action shows its shortcut");
+  assert.match(sidebar, /<kbd className="rail-header__new-kbd">⌘N<\/kbd>/, "the primary action shows its shortcut");
 });
 
 test("rail — the selected chat is a raised card with one accent rail", () => {
