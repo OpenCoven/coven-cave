@@ -65,69 +65,19 @@ const base = {
   assert.equal(r.avatarImageFallback, undefined, "no upload → no fallback source");
 }
 
-// BOTH a workspace avatar AND a Cave-local upload: the MOST RECENTLY WRITTEN
-// one is the primary and the other is kept as the fallback, so a failed primary
-// degrades to the alternate image (never straight to the glyph).
-//
-// Ranking by kind instead of by recency was the bug behind the stale profile
-// header: Identity → Look's dropzone only writes the Cave-local store, so a
-// familiar summoned with a portrait (workspace avatar on disk) could never have
-// that portrait changed from the dropzone — no reload cleared it, because
-// nothing was stale, the resolve just kept computing the same answer.
-const UPLOAD = "data:image/png;base64,AAA";
-const upload = (updatedAt) => ({ dataUrl: UPLOAD, mime: "image/png", updatedAt });
-
-// The upload is newer (the dropzone case) → the upload wins.
+// BOTH a workspace avatar AND a Cave-local upload: the workspace avatar is the
+// primary and the upload is kept as the fallback so a failed workspace image
+// degrades to the upload (never straight to the glyph).
 {
   const r = resolveFamiliar(
     { ...base, avatarUrl: "/api/familiars/x/avatar?v=1" },
-    { image: upload("2026-06-08T00:00:00Z"), archived: false },
+    {
+      image: { dataUrl: "data:image/png;base64,AAA", mime: "image/png", updatedAt: "2026-06-08T00:00:00Z" },
+      archived: false,
+    },
   );
-  assert.equal(r.avatarImage, UPLOAD, "a newer Cave-local upload is the primary");
-  assert.equal(r.avatarImageFallback, "/api/familiars/x/avatar?v=1");
-}
-
-// The workspace avatar is newer (a portrait POSTed after an older upload) → the
-// workspace avatar wins, so the OTHER writer stays live too.
-{
-  const v = String(Date.parse("2026-07-01T00:00:00Z"));
-  const r = resolveFamiliar(
-    { ...base, avatarUrl: `/api/familiars/x/avatar?v=${v}&format=png` },
-    { image: upload("2026-06-08T00:00:00Z"), archived: false },
-  );
-  assert.equal(r.avatarImage, `/api/familiars/x/avatar?v=${v}&format=png`);
-  assert.equal(r.avatarImageFallback, UPLOAD);
-}
-
-// An undatable upload never displaces a datable workspace avatar.
-{
-  const r = resolveFamiliar(
-    { ...base, avatarUrl: "/api/familiars/x/avatar?v=999" },
-    { image: upload("not a date"), archived: false },
-  );
-  assert.equal(r.avatarImage, "/api/familiars/x/avatar?v=999");
-  assert.equal(r.avatarImageFallback, UPLOAD);
-}
-
-// An undatable workspace avatar (no `?v=` stamp) loses to a datable upload —
-// otherwise the dropzone would be silently ignored all over again.
-{
-  const r = resolveFamiliar(
-    { ...base, avatarUrl: "/api/familiars/x/avatar" },
-    { image: upload("2026-06-08T00:00:00Z"), archived: false },
-  );
-  assert.equal(r.avatarImage, UPLOAD);
-  assert.equal(r.avatarImageFallback, "/api/familiars/x/avatar");
-}
-
-// Neither datable → the historic workspace-first order stands.
-{
-  const r = resolveFamiliar(
-    { ...base, avatarUrl: "/api/familiars/x/avatar" },
-    { image: upload("nonsense"), archived: false },
-  );
-  assert.equal(r.avatarImage, "/api/familiars/x/avatar");
-  assert.equal(r.avatarImageFallback, UPLOAD);
+  assert.equal(r.avatarImage, "/api/familiars/x/avatar?v=1");
+  assert.equal(r.avatarImageFallback, "data:image/png;base64,AAA");
 }
 
 // Glyph override wins

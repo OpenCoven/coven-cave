@@ -13,20 +13,9 @@
  * `setAvatarStorageForTests`.
  */
 
-export type AvatarRecord = {
-  dataUrl: string;
-  mime: string;
-  updatedAt: string;
-  /**
-   * Which source image this record was DERIVED from, when it is a derivative
-   * rather than an original (see `familiarFoil`). Absent on originals, and
-   * absent on a derivative whose source identity was not knowable at write time
-   * — `cave-familiar-foil.ts` documents how that case is resolved.
-   */
-  sourceKey?: string;
-};
+export type AvatarRecord = { dataUrl: string; mime: string; updatedAt: string };
 
-export type AvatarStore = "familiarImages" | "projectAvatars" | "familiarFoil";
+export type AvatarStore = "familiarImages" | "projectAvatars";
 
 export type AvatarStorageDriver = {
   getAll(store: AvatarStore): Promise<Record<string, AvatarRecord>>;
@@ -35,8 +24,8 @@ export type AvatarStorageDriver = {
 };
 
 const DB_NAME = "cave-avatars";
-const DB_VERSION = 3; // v2: + projectAvatars; v3: + familiarFoil
-const STORES: readonly AvatarStore[] = ["familiarImages", "projectAvatars", "familiarFoil"];
+const DB_VERSION = 2; // v2: + projectAvatars
+const STORES: readonly AvatarStore[] = ["familiarImages", "projectAvatars"];
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 

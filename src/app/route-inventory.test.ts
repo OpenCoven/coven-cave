@@ -95,10 +95,6 @@ const ROUTE_INVENTORY = {
   "/familiars/[id]/analytics": { kind: "redirect", target: "/dashboard/familiars/", leaf: "/analytics" },
   "/familiars/[id]/profile": { kind: "redirect", target: "/dashboard/familiars/", leaf: "/profile" },
   "/aesthetic": { kind: "dev-only" },
-  // The image-first summoning rite (cave-3rz.3), hosted standalone while it is
-  // being designed. Deliberately off every nav host: the shipped Summoning
-  // Circle stays the supported path until this replaces it.
-  "/rite": { kind: "dev-only" },
 };
 
 // ── Discover every page.tsx under src/app ────────────────────────────────────

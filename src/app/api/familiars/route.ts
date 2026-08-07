@@ -293,15 +293,8 @@ export async function POST(req: Request) {
       id: draft.id,
       displayName: draft.displayName,
       role: draft.role,
-      // What the familiar is FOR, not what it looks like. `description` is
-      // deliberately NOT passed: the rite's scry writes it by describing the
-      // portrait, and printing it into "My purpose is to …" is what gave
-      // familiars a caption for a job (cave-3rz). Absent → the generic purpose.
-      purpose: draft.purpose,
+      description: draft.description,
       glyph: draft.glyph,
-      // Voice / temperament / reasoning, read from the likeness by the scry and
-      // edited in the rite before the seal. Absent → the generic template.
-      soul: draft.soul,
     });
   } catch {
     /* non-fatal — identity files can be authored later via the Contract tab */
