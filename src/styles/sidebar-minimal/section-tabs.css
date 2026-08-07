@@ -13,7 +13,9 @@
   grid-auto-columns: 1fr;
   gap: var(--space-1);
   flex-shrink: 0;
-  margin: 0 var(--space-2) var(--space-1);
+  /* The rail's one inset — these tabs sit directly above the shared header, so
+     an inset of their own reads as a misalignment rather than a choice. */
+  margin: 0 var(--rail-pad) var(--space-1);
   padding: var(--space-1);
   border-radius: var(--radius-control);
   background: var(--bg-sunken);
