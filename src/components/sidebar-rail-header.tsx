@@ -14,7 +14,7 @@
  * The design gates could not catch it: every drifted value was token-legal, and
  * nothing checks that two components which must look identical picked the SAME
  * token. One component with one namespace is the fix — see
- * docs/specs/2026-08-06-sidebar-home-chat-parity-prompt.md.
+ * docs/specs/2026-08-06-sidebar-rail-parity-design.md.
  *
  * Presentational only: no data fetching, no mode knowledge. Section-specific
  * chrome (Chat's Organize menu, Home's brand mark) stays with its own sidebar.

@@ -10,7 +10,7 @@
 
    Rule for this file: both sections read these rules and neither overrides
    them. Section-specific chrome belongs in that section's sheet.
-   See docs/specs/2026-08-06-sidebar-home-chat-parity-prompt.md. */
+   See docs/specs/2026-08-06-sidebar-rail-parity-design.md. */
 
 .rail-header {
   display: flex;

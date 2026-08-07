@@ -16,7 +16,7 @@
 // component, one namespace, one panel surface) rather than the numbers, so it
 // keeps holding as the design evolves.
 //
-// See docs/specs/2026-08-06-sidebar-home-chat-parity-prompt.md.
+// See docs/specs/2026-08-06-sidebar-rail-parity-design.md.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 

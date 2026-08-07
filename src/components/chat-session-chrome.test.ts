@@ -265,8 +265,22 @@ test("rail — rows carry a state tick and groups carry a count and a rule", () 
 test("rail — the selected chat is a raised card with one accent rail", () => {
   const activeRow = shellNav.match(/\.cnav__thread\.is-active \{[\s\S]*?\n\}/)?.[0] ?? "";
   const activeRail = shellNav.match(/\.cnav__thread\.is-active::before \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const scroll = shellNav.match(/\.cnav__scroll \{[\s\S]*?\n\}/)?.[0] ?? "";
 
-  assert.match(activeRow, /margin: 0 var\(--space-2\);/, "the selection is inset from the list edge");
+  // The inset is still there, but it is no longer private to the selected row:
+  // the scroll region carries the rail's one inset (--rail-pad), so the card
+  // lines up with the header and search above it instead of with nothing.
+  // Asserting the row's own margin would pin the old mechanism, not the intent.
+  assert.match(
+    scroll,
+    /padding-inline: var\(--rail-pad\);/,
+    "the selection is inset from the list edge, on the rail's shared inset",
+  );
+  assert.doesNotMatch(
+    activeRow,
+    /\n\s*margin:/,
+    "the selected row takes no inset of its own — it would double the container's",
+  );
   assert.match(activeRow, /border-radius: var\(--radius-card\)/, "the selection reads as a rounded raised card");
   assert.match(activeRow, /background: var\(--bg-raised\)/, "the selection uses the raised surface rather than a second accent tint");
   assert.match(activeRail, /background: var\(--accent-presence\)/, "the selection keeps one lavender identity rail");
