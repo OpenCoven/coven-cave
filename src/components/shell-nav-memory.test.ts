@@ -22,6 +22,8 @@ const resolveShellLayoutPersistence =
 const resolveShellNavOpenPreference =
   shellLayout.resolveShellNavOpenPreference ??
   (() => ({ open: true, shouldPersist: false }));
+const resolveShellNavPolicyHandoff =
+  shellLayout.resolveShellNavPolicyHandoff ?? (() => null);
 
 assert.equal(resolveShellNavWidth("300"), 300, "a valid persisted nav width is retained");
 assert.equal(resolveShellNavWidth("999"), 420, "nav width is clamped to the desktop maximum");
@@ -41,6 +43,80 @@ assert.deepEqual(
   resolveShellNavOpenPreference(true, false),
   { open: true, shouldPersist: false },
   "first-run minimization never overwrites an existing user preference",
+);
+
+// Leaving Chat for a remembered destination (Home, Tasks, Rituals, …) must not
+// collapse the sidebar the user is looking at. Chat never maintains
+// cave:shell:nav-open, and first-run minimization seeds it false, so the
+// remembered path would otherwise read a `false` nobody chose.
+const chatToHome = {
+  fromPolicy: "chat-contextual",
+  toPolicy: "remembered",
+  visibleNavOpen: true,
+  persistedOpen: false,
+  persistedFromUser: false,
+};
+
+assert.deepEqual(
+  resolveShellNavPolicyHandoff(chatToHome),
+  { open: true, persist: true },
+  "leaving Chat carries the visible sidebar forward over a seeded collapse",
+);
+
+assert.equal(
+  resolveShellNavPolicyHandoff({ ...chatToHome, persistedFromUser: true }),
+  null,
+  "a sidebar the user collapsed themselves stays collapsed when leaving Chat",
+);
+
+assert.equal(
+  resolveShellNavPolicyHandoff({ ...chatToHome, visibleNavOpen: false }),
+  null,
+  "leaving Chat with the nav already closed has nothing to carry",
+);
+
+assert.equal(
+  resolveShellNavPolicyHandoff({ ...chatToHome, persistedOpen: true }),
+  null,
+  "an already-open preference needs no handoff",
+);
+
+assert.deepEqual(
+  resolveShellNavPolicyHandoff({ ...chatToHome, persistedOpen: null }),
+  { open: true, persist: true },
+  "an unwritten preference is carried like a seeded one",
+);
+
+assert.equal(
+  resolveShellNavPolicyHandoff({ ...chatToHome, fromPolicy: "remembered" }),
+  null,
+  "remembered-to-remembered navigation keeps using the stored preference",
+);
+
+assert.equal(
+  resolveShellNavPolicyHandoff({ ...chatToHome, toPolicy: "visit-collapsed" }),
+  null,
+  "policies that collapse on purpose are never overridden by the handoff",
+);
+
+assert.equal(
+  resolveShellNavPolicyHandoff({ ...chatToHome, fromPolicy: null }),
+  null,
+  "the first settled render is not a policy transition",
+);
+
+// The handoff has to run BEFORE the destination-layout effect reads the
+// preference, and useLayoutEffect order is declaration order.
+assert.ok(
+  shell.indexOf("resolveShellNavPolicyHandoff") <
+    shell.indexOf("const navPrefArmedGroupRef"),
+  "the policy handoff effect is declared above the destination-layout restore",
+);
+
+// Only the user-driven resize may claim authorship of the preference.
+assert.ok(
+  compactWhitespace(shell).includes('writeNavOpenPref(open, "user")'),
+  "the user-driven resize records itself as the authoritative preference",
 );
 
 assert.equal(
@@ -512,7 +588,7 @@ assert.match(
 // churn is programmatic) and the code-rail auto-collapse must not be active.
 assert.match(
   shell,
-  /navPolicy === "remembered" &&\s*\n\s*navPrefArmedGroupRef\.current === groupId &&\s*\n\s*!railAutoCollapsedNavRef\.current\s*\n?\s*\) \{\s*\n\s*writeNavOpenPref\(open\);/,
+  /navPolicy === "remembered" &&\s*\n\s*navPrefArmedGroupRef\.current === groupId &&\s*\n\s*!railAutoCollapsedNavRef\.current\s*\n?\s*\) \{[\s\S]*?writeNavOpenPref\(open, "user"\);/,
   "onResize persists the state only for user-driven changes on the armed group",
 );
 // The code-rail coupling raises its flag BEFORE collapsing, so the resulting

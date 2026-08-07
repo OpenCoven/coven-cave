@@ -33,6 +33,7 @@ import {
   resolveShellDestinationLayout,
   resolveShellLayoutPersistence,
   resolveShellNavOpenPreference,
+  resolveShellNavPolicyHandoff,
   SHELL_NAV_DEFAULT_PX,
   SHELL_NAV_MAX_PX,
   SHELL_NAV_MIN_PX,
@@ -158,6 +159,13 @@ function markShellMinimizeApplied(id: string): void {
 // collapse/restore coupling and programmatic group-swap layout churn don't).
 const NAV_OPEN_PREF_KEY = "cave:shell:nav-open";
 const NAV_WIDTH_PREF_KEY = "cave:shell:nav-width";
+// Who wrote NAV_OPEN_PREF_KEY. The key alone can't distinguish "the user
+// collapsed the sidebar" from "first-run minimization guessed collapsed", and
+// those must be treated differently on a policy handoff — only the former is a
+// choice worth preserving. A missing value reads as "seed", which is the safe
+// direction for installs that predate this key (worst case a sidebar stays
+// open).
+const NAV_OPEN_SOURCE_KEY = "cave:shell:nav-open:source";
 function readNavOpenPref(): boolean | null {
   if (typeof window === "undefined") return null;
   try {
@@ -167,17 +175,26 @@ function readNavOpenPref(): boolean | null {
     return null;
   }
 }
-function writeNavOpenPref(open: boolean): void {
+function readNavOpenFromUser(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(NAV_OPEN_SOURCE_KEY) === "user";
+  } catch {
+    return false;
+  }
+}
+function writeNavOpenPref(open: boolean, source: "user" | "seed" = "seed"): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(NAV_OPEN_PREF_KEY, open ? "1" : "0");
+    window.localStorage.setItem(NAV_OPEN_SOURCE_KEY, source);
   } catch {
     /* ignore — strict privacy mode or quota */
   }
 }
 function seedNavOpenPref(defaultOpen: boolean): boolean {
   const resolved = resolveShellNavOpenPreference(readNavOpenPref(), defaultOpen);
-  if (resolved.shouldPersist) writeNavOpenPref(resolved.open);
+  if (resolved.shouldPersist) writeNavOpenPref(resolved.open, "seed");
   return resolved.open;
 }
 function readNavWidthPref(): string | null {
@@ -422,6 +439,11 @@ function ShellInner({
   // match the Cave's minimized default. The mounted layout effects restore a
   // remembered open panel before the first post-hydration paint.
   const [navOpen, setNavOpen] = useState(chatContextual);
+  // Mirror of navOpen for effects that need the CURRENT visible state without
+  // taking navOpen as a dependency (the policy handoff must fire on the policy
+  // change, not on every sidebar toggle).
+  const navOpenRef = useRef(navOpen);
+  navOpenRef.current = navOpen;
   const defaultNavSize =
     chatContextual || mounted ? `${NAV_OPEN_PX}px` : `${NAV_RAIL_PX}px`;
 
@@ -570,6 +592,36 @@ function ShellInner({
     markShellMinimizeApplied(groupId);
     group.setLayout({ ...cur, nav: railPct, detail: cur.detail + (nav - railPct) });
   }, [settled, isMobile, groupId, chatContextual, preferredNavWidth]);
+
+  // Policy handoff — MUST stay declared above the destination-layout effect
+  // below, because useLayoutEffects run in declaration order and that one reads
+  // the preference this one repairs.
+  //
+  // Leaving Chat swaps `chat-contextual` for `remembered` AND changes groupId,
+  // so the restore effect re-reads `cave:shell:nav-open`. Chat never maintains
+  // that key (its persistence branch is gated on the remembered policy) while
+  // first-run minimization seeds it to `false` — so the sidebar the user was
+  // looking at, and had just clicked "Home" inside, collapsed to the rail. Carry
+  // the visible state across instead. An explicit user collapse still wins; see
+  // resolveShellNavPolicyHandoff.
+  const navHandoffPolicyRef = useRef<ShellNavPolicy | null>(null);
+  useLayoutEffect(() => {
+    if (!mounted) return;
+    const fromPolicy = navHandoffPolicyRef.current;
+    navHandoffPolicyRef.current = navPolicy;
+    if (isMobile) return;
+    const handoff = resolveShellNavPolicyHandoff({
+      fromPolicy,
+      toPolicy: navPolicy,
+      visibleNavOpen: navOpenRef.current,
+      persistedOpen: readNavOpenPref(),
+      persistedFromUser: readNavOpenFromUser(),
+    });
+    if (!handoff) return;
+    // Seed, not "user": carrying state forward is not the user expressing a
+    // preference, so a later genuine toggle still outranks it.
+    if (handoff.persist) writeNavOpenPref(handoff.open, "seed");
+  }, [mounted, isMobile, navPolicy]);
 
   // The library retains an in-memory layout by panel-id set when Group's id
   // changes. Restore the destination group's complete saved/default layout
@@ -911,7 +963,10 @@ function ShellInner({
             navPrefArmedGroupRef.current === groupId &&
             !railAutoCollapsedNavRef.current
           ) {
-            writeNavOpenPref(open);
+            // The ONE user-authored write — everything else that touches this
+            // key is seeding, and the policy handoff must be able to tell them
+            // apart.
+            writeNavOpenPref(open, "user");
           }
         }}
       >
