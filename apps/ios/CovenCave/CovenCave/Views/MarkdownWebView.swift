@@ -250,8 +250,9 @@ struct MarkdownWebView: UIViewRepresentable {
         }
 
         nonisolated func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
             Task { @MainActor in
+                guard let body = message.body as? [String: Any],
+                      let type = body["type"] as? String else { return }
                 switch type {
                 case "height":
                     if let h = body["height"] as? Double { self.onHeight?(CGFloat(h)) }

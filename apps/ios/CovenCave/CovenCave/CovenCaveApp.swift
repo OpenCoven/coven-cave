@@ -99,7 +99,7 @@ struct CovenCaveApp: App {
                             // normal and cancelled paths. `release()` is
                             // idempotent because both can fire.
                             var assertion: UIBackgroundTaskIdentifier = .invalid
-                            func release() {
+                            @MainActor func release() {
                                 guard assertion != .invalid else { return }
                                 UIApplication.shared.endBackgroundTask(assertion)
                                 assertion = .invalid

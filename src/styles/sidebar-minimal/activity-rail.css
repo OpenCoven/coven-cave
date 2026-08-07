@@ -103,29 +103,8 @@
   color: var(--text-primary);
 }
 
-/* The header familiar switcher survives the rail as the avatar-only trigger:
-   the trigger label drops, the 28px avatar stays reachable. */
-.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger-label {
-  display: none;
-}
-.shell-nav--rail .sidebar-familiar-switch {
-  padding: 0;
-  justify-content: center;
-}
-.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger,
-.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger--labeled {
-  flex: 0 0 auto;
-  width: 28px;
-  min-width: 28px;
-  min-height: 28px;
-  padding: 0;
-  justify-content: center;
-  border-width: 1px;
-}
-/* The dropdown caret is expanded-state chrome — drop it on the rail. */
-.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger-caret {
-  display: none;
-}
+/* The header's rail behaviour (avatar-only trigger, filled compose square)
+   lives with the header itself in styles/globals/rail-header.css. */
 
 /* Labels and count pills collapse away; the icon is all that stays per row.
    (Footer icons live in `.sidebar-foot-icon-cell`, which is preserved.) */
@@ -218,21 +197,6 @@
   background: color-mix(in oklch, var(--text-primary) 8%, transparent);
   border-color: var(--border-hairline);
   color: var(--text-primary);
-}
-
-/* Compose ("new chat") is the rail's one FILLED control: a solid accent
-   square with on-accent glyph, so the primary action stands out from the
-   otherwise quiet icon family while keeping the shared 36px geometry. */
-.shell-nav--rail .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row {
-  border: 1px solid var(--accent-presence);
-  background: var(--accent-presence);
-  color: var(--accent-presence-foreground);
-  font-weight: 500;
-}
-.shell-nav--rail .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row:hover {
-  background: var(--accent-presence-hover);
-  border-color: var(--accent-presence-hover);
-  color: var(--accent-presence-foreground);
 }
 
 /* The active destination keeps its own persistent fill: a single accent-tinted

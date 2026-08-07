@@ -54,7 +54,7 @@ assert.doesNotMatch(workspaceSidebar, /cave:navigate-mode/, "workspace-sidebar s
 // The Chats primary-nav header keeps a labeled familiar switcher near thread
 // navigation (#2747, restored by cave-l3ay after #2750 briefly removed it as a
 // supposed duplicate).
-assert.match(workspaceSidebar, /<header className="cnav__header">[\s\S]*?<FamiliarSwitcher/, "the chat sidebar header hosts the familiar switcher");
+assert.match(workspaceSidebar, /<SidebarRailHeader[\s\S]*?familiars=\{familiars\}/, "the chat sidebar header hosts the shared familiar switcher");
 assert.doesNotMatch(workspaceSidebar, /cnav__eyebrow/, "the old Recent eyebrow stays retired");
 assert.match(workspaceSidebar, /ph:git-pull-request/, "should support PR glyph on thread rows");
 // Hover row-actions order: bookmark (pin) → archive → delete, so archive sits
@@ -79,7 +79,7 @@ assert.doesNotMatch(workspaceSidebar, /workspace-sidebar__rail|chat-sidebar__rai
 // "Search projects or threads…" clipped); the aria-label keeps the full scope.
 assert.match(workspaceSidebar, /placeholder="Search chats…"/, "search placeholder fits the narrow panel");
 assert.match(workspaceSidebar, /aria-label="Search projects and threads"/, "search keeps its descriptive accessible name");
-assert.match(workspace, /const contextualNav = navSection === "code" \? chatSidebar : sidebar;/, "workspace keeps the session rail across the Code section");
+assert.match(workspace, /const contextualNav =\s*\n\s*navSection === "code" && \(navOpen \|\| isMobile\) \? chatSidebar : sidebar;/, "workspace keeps the session rail across the expanded Code section");
 assert.doesNotMatch(workspace, /const list = mode === "chat" \? chatSidebar : undefined;/, "workspace should not mount Chats in the list slot");
 assert.match(workspace, /navPolicy=\{mode === "chat" \? "chat-contextual" : "remembered"\}/, "chat mode activates the contextual nav policy");
 assert.doesNotMatch(workspace, /navPolicy=\{mode === "chat" \? "visit-collapsed" : "remembered"\}/, "chat mode should not use the obsolete visit-collapsed policy");
