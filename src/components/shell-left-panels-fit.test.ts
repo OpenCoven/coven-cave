@@ -100,8 +100,8 @@ assert.match(
 // Collapse-to-rail must survive the px conversion.
 assert.match(
   shell,
-  /collapsedSize=\{isMobile \|\| chatContextual \? 0 : NAV_RAIL_PX\}/,
-  "Chat and mobile nav collapse fully while normal desktop nav keeps the icon rail",
+  /collapsedSize=\{isMobile \? 0 : NAV_RAIL_PX\}/,
+  "only mobile nav collapses fully; every desktop surface keeps the icon rail",
 );
 assert.match(
   shell,

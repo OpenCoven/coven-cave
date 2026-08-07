@@ -451,7 +451,10 @@ function ShellInner({
   // floats it open as an overlay (navPeeking) without changing the collapse
   // state. Reset whenever the rail goes away (expanded or mobile).
   const [navPeeking, setNavPeeking] = useState(false);
-  const navPeekEnabled = navPolicy === "remembered" && !isMobile && !navOpen;
+  // Every desktop policy now collapses to the rail, so peek applies to all of
+  // them. It used to be remembered-only because Chat collapsed to zero width,
+  // leaving nothing to hover.
+  const navPeekEnabled = !isMobile && !navOpen;
   const navPeekVisible = navPeekEnabled && navPeeking;
   useEffect(() => {
     if (!navPeekEnabled) setNavPeeking(false);
@@ -658,6 +661,10 @@ function ShellInner({
           : 0),
       0,
     );
+    // Still gated on !chatContextual: Chat must never write the REMEMBERED
+    // preference (cave:shell:nav-open). Chat collapsing to a rail changes what
+    // the panel looks like, not who owns that preference — the handoff added in
+    // #4404 depends on Chat leaving it alone.
     if (
       !chatContextual &&
       isShellNavCollapsedLayout({
@@ -677,7 +684,9 @@ function ShellInner({
       groupSize,
       defaultPanelPixels: { ...(!twoPane && { list: 260 }) },
       preferredNavPixels: preferredNavWidth,
-      collapsedNavPixels: chatContextual ? 0 : NAV_RAIL_PX,
+      // Matches the Panel's collapsedSize below — Chat collapses to the rail
+      // now, not to zero, so the restored layout must describe the same width.
+      collapsedNavPixels: isMobile ? 0 : NAV_RAIL_PX,
       isMobile,
     });
     if (!destinationLayout) return;
@@ -948,7 +957,12 @@ function ShellInner({
         collapsible
         // Contextual Chat and mobile drawers close fully; normal desktop
         // navigation collapses to its icons-only rail.
-        collapsedSize={isMobile || chatContextual ? 0 : NAV_RAIL_PX}
+        // Mobile drawers close fully (they overlay the content). Every desktop
+        // surface — Chat included — collapses to the icons-only rail instead,
+        // so the destinations stay reachable. Chat used to collapse to zero,
+        // which left no rail, no peek target, and no visible way to reach any
+        // other surface.
+        collapsedSize={isMobile ? 0 : NAV_RAIL_PX}
         panelRef={navRef}
         onResize={(size) => {
           const open = (size.inPixels ?? 0) > NAV_OPEN_THRESHOLD_PX;
@@ -973,7 +987,7 @@ function ShellInner({
         {/* CHAT-D13-05: every complementary landmark carries a distinct
             accessible name (axe landmark-unique). */}
         <aside
-          className={`shell-nav${!isMobile && !chatContextual && !navOpen ? (navPeekVisible ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
+          className={`shell-nav${!isMobile && !navOpen ? (navPeekVisible ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
           aria-label="Sidebar"
           onMouseEnter={navPeekEnabled ? () => setNavPeeking(true) : undefined}
           onMouseLeave={navPeekEnabled ? () => setNavPeeking(false) : undefined}
