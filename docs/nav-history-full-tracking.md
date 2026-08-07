@@ -64,11 +64,11 @@ intervening navigation on another axis, occurring within `HISTORY_COALESCE_MS`
 spaced-out filter changes still each get an entry. Expose the window as a
 per-axis option (`coalesceMs: 0` disables) so an axis can opt out.
 
-> **Implementation status.** Phases 1–4, 6, 8, and 9 shipped; §3's model was
-> superseded in one respect, described below. What remains: Grimoire
-> (view + selection), the Browser pane's two levels, Marketplace/GitHub/Board
-> detail drill-downs, the craft-create drawer, the Rituals overview pane, the
-> Settings mobile drill-down, and Submissions. See §5.
+> **Implementation status.** Every phase has shipped except the Browser pane
+> (phase 7), which is deliberately deferred — see §5. Detail drill-downs
+> (Board card, Marketplace item, GitHub item) and the remaining modals are
+> listed there too: the primitives exist, so each is a call site rather than a
+> design question.
 >
 > **What replaced §3.1.** The shipped model is not a `WorkspaceLocation` stack
 > but a single ordered *journal* of transitions (`src/lib/surface-history.ts`).
@@ -267,23 +267,31 @@ and `CodeQL` green.
    Overview/Calendar/Crons, and the Marketplace sections all record.
    **Remaining:** the card/plugin/craft detail drill-downs and the Rituals
    overview pane.
-5. ⬜ **Grimoire** (view + selection + MRU strip). `writeGrimoireHash` still only
-   replaces; docs/journal reach the journal indirectly through the mode aliases,
-   and `graph` is untracked.
+5. ✅ **Grimoire view.** The subtlety worth keeping: the alias funnel records a
+   mode entry only when the destination differs from the current one, and Graph
+   has no alias at all, so Docs↔Graph inside the surface recorded nothing.
+   `selectGrimoireView` now reads `navigationHistoryRef` and records on the view
+   level exactly when the funnel will not — otherwise one click would cost two
+   Back presses. **Remaining:** the document/memory/journal-date selection and
+   its MRU strip, whose `writeGrimoireHash` still only replaces.
 6. ✅ **Familiar capabilities, Familiars view sections, Researcher desk,
-   Inspector** shipped. **Remaining:** Submissions and the GitHub item detail.
+   Inspector, Submissions** shipped. **Remaining:** the GitHub item detail and
+   the Board/Marketplace detail drill-downs.
 7. ⬜ **Browser pane** — pane-first Back with fall-through. Untouched; it owns a
    second history stack (`browser-navigation-queue.ts`) that needs its own
    ordering decision against the journal.
-8. ✅ **Axes** — GitHub activity and the Board card stack coalesce at 700 ms, so
-   a burst of chip taps costs one Back press. **Remaining:** the Marketplace
-   topic filter, the artifact viewer, canvas add-tile, and the Settings search.
+8. ✅ **Axes** — GitHub activity, the Board card stack, the artifact viewer's
+   Canvas/Code, and canvas add-tile all coalesce at 700 ms, so a burst costs one
+   Back press. The artifact viewer shows the split cleanly: its strip and the
+   "View code" affordance record, while the resets after a refine or a close do
+   not. **Remaining:** the Marketplace topic filter and the Settings search.
 9. ✅ **Overlays** — the command palette and shortcuts sheet. Dismissing consumes
    the entry rather than stepping the cursor, so Forward cannot resurrect a
    closed modal. Deliberately excluded: onboarding (owns its own stepper), the
    voice-call overlay (Back must not drop a live call), and the confirm dialog.
-   **Remaining:** the other 14 modals and drawers, each a two-line
-   `useOverlayHistory` call.
+   Also wired: the reminder modal and the mobile-handoff modal. **Remaining:**
+   the other twelve modals and drawers, each a two-line `useOverlayHistory`
+   call.
 
 ## 6. Tests
 

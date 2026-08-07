@@ -35,7 +35,7 @@ import {
   subscribeSurfaceHistory,
   surfaceHistoryGateOpen,
 } from "@/lib/surface-history";
-import { useOverlayHistory } from "@/lib/use-surface-history";
+import { useOverlayHistory, useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import type { PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface, so JournalView is gone; Grimoire is
 // a new in-shell surface from main.
@@ -522,17 +522,34 @@ export function Workspace() {
     setMode(updated.entries[updated.index]);
     navigationRestoreRef.current = false;
   }, [setMode]);
+  const selectGrimoireViewTracked = useTrackedSurfaceValue<"docs" | "graph" | "journal">({
+    id: "grimoire:view",
+    value: grimoireView,
+    onRestore: setGrimoireView,
+  });
   const selectGrimoireView = useCallback((next: "docs" | "graph" | "journal") => {
     // Docs and Journal are navigation destinations, not merely transient
     // presentation. Record them through the same alias funnel so the active
     // tab is restored when history returns to Memories.
+    //
+    // That funnel only records when the destination differs from the current
+    // mode entry, and Graph has no alias at all — so switching Docs↔Graph
+    // inside the surface used to record nothing. Record on the view level
+    // exactly when the mode funnel will not, or one click costs two Back
+    // presses.
+    const history = navigationHistoryRef.current;
+    const entry = history.entries[history.index];
+    const modeWillRecord =
+      next === "journal" ? entry !== "journal" : next === "docs" ? entry !== "grimoire" : false;
     if (next === "journal") {
+      if (!modeWillRecord) selectGrimoireViewTracked("journal");
       setMode("journal");
       return;
     }
-    setGrimoireView(next);
+    if (modeWillRecord) setGrimoireView(next);
+    else selectGrimoireViewTracked(next);
     if (next === "docs") setMode("grimoire");
-  }, [setMode, setGrimoireView]);
+  }, [setMode, setGrimoireView, selectGrimoireViewTracked]);
   // Surfaces register their own levels, so whether Back is available depends on
   // state the Workspace does not hold. Subscribe rather than derive, and fall
   // back to false on the server where no surface has mounted.
@@ -732,6 +749,16 @@ export function Workspace() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
   const [mobileHandoffOpen, setMobileHandoffOpen] = useState(false);
+  const { openOverlay: showReminderOverlay, closeOverlay: closeReminderModal } = useOverlayHistory({
+    id: "overlay:reminder",
+    open: reminderModalOpen,
+    setOpen: setReminderModalOpen,
+  });
+  const { openOverlay: openMobileHandoff, closeOverlay: closeMobileHandoff } = useOverlayHistory({
+    id: "overlay:mobile-handoff",
+    open: mobileHandoffOpen,
+    setOpen: setMobileHandoffOpen,
+  });
   // Continue-on-phone (cave-i74f): the chat id riding the next handoff QR.
   const [mobileHandoffChatId, setMobileHandoffChatId] = useState<string | null>(null);
   const [mobileModeEnabled, setMobileModeEnabledState] = useState(readMobileModeEnabled);
@@ -1436,7 +1463,7 @@ export function Workspace() {
         unlistenOpen = await listen("tray:open-inbox", () => setMode("inbox"));
         unlistenNew = await listen("tray:new-reminder", () => {
           setReminderModalDefaults({ fireAt: "", title: "", whenText: "" });
-          setReminderModalOpen(true);
+          showReminderOverlay();
         });
       } catch {
         /* harmless in browser dev */
@@ -2014,8 +2041,8 @@ export function Workspace() {
 
   const openReminderModal = useCallback((title = "", whenText = "", fireAt = "") => {
     setReminderModalDefaults({ fireAt, title, whenText });
-    setReminderModalOpen(true);
-  }, []);
+    showReminderOverlay();
+  }, [showReminderOverlay]);
 
   // Acknowledge a real inbox item: stamps readAt so the bell badge quiets, but
   // the notification stays listed until dismissed/done. No-ops server-side on
@@ -2222,7 +2249,7 @@ export function Workspace() {
     const onContinueOnPhone = (event: Event) => {
       const detail = (event as CustomEvent<{ chatId?: string }>).detail;
       setMobileHandoffChatId(detail?.chatId ?? null);
-      setMobileHandoffOpen(true);
+      openMobileHandoff();
     };
     window.addEventListener("cave:continue-on-phone", onContinueOnPhone as EventListener);
     return () => {
@@ -3305,7 +3332,7 @@ export function Workspace() {
         onNewReminder={() => openReminderModal()}
         onEditReminder={(item) => {
           setEditingReminder(item);
-          setReminderModalOpen(true);
+          showReminderOverlay();
         }}
         onOpenLink={openReminderLink}
         calendarSlot={
@@ -3583,7 +3610,7 @@ export function Workspace() {
               }}
               onOpenInbox={() => setMode("inbox")}
               onOpenSettings={() => nextRouter.push("/settings")}
-              onOpenMobileHandoff={() => setMobileHandoffOpen(true)}
+              onOpenMobileHandoff={() => openMobileHandoff()}
               onOpenQuickChat={() => startFamiliarChat(activeId)}
               inboxItems={inboxItemsWithEphemeral}
               familiars={familiars}
@@ -3660,7 +3687,7 @@ export function Workspace() {
         <NewReminderModal
           open
           onClose={() => {
-            setReminderModalOpen(false);
+            closeReminderModal();
             setEditingReminder(null);
           }}
           familiars={familiars}
@@ -3738,7 +3765,7 @@ export function Workspace() {
           open
           chatId={mobileHandoffChatId}
           onClose={() => {
-            setMobileHandoffOpen(false);
+            closeMobileHandoff();
             setMobileHandoffChatId(null);
           }}
           mobileModeEnabled={mobileModeEnabled}
