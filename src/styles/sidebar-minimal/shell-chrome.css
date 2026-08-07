@@ -250,7 +250,6 @@
 /* Middle nav region scrolls if the user has lots of sections */
 .sidebar-nav-scroll {
   flex: 1;
-  padding-inline: var(--rail-pad);
   min-height: 0;
   overflow-y: auto;
   display: flex;
@@ -260,7 +259,11 @@
   /* Sections are separated by whitespace alone (no rules) for a calmer,
      Codex-style nav. */
   gap: var(--space-1);
-  padding: 2px 0 2px;
+  /* The rail's one inset, same as .rail-header above and .sidebar-foot below —
+     the nav rows must line up with the scope switcher and New chat, not sit a
+     step outside them. Kept in the shorthand deliberately: a separate
+     padding-inline earlier in this block is silently overridden by this line. */
+  padding: 2px var(--rail-pad);
 }
 
 /* ── Bottom: Notifications + Settings ─────────────────────────────────────── */
