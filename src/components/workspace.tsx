@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
@@ -27,6 +27,11 @@ import {
   replaceWorkspaceNavigation,
   restoreWorkspaceNavigation,
 } from "@/lib/workspace-navigation-history";
+import {
+  canMoveSurfaceHistory,
+  moveSurfaceHistory,
+  subscribeSurfaceHistory,
+} from "@/lib/surface-history";
 import type { PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface, so JournalView is gone; Grimoire is
 // a new in-shell surface from main.
@@ -507,6 +512,19 @@ export function Workspace() {
     setGrimoireView(next);
     if (next === "docs") setMode("grimoire");
   }, [setMode, setGrimoireView]);
+  // Surfaces register their own levels, so whether Back is available depends on
+  // state the Workspace does not hold. Subscribe rather than derive, and fall
+  // back to false on the server where no surface has mounted.
+  const surfaceCanGoBack = useSyncExternalStore(
+    subscribeSurfaceHistory,
+    () => canMoveSurfaceHistory(-1),
+    () => false,
+  );
+  const surfaceCanGoForward = useSyncExternalStore(
+    subscribeSurfaceHistory,
+    () => canMoveSurfaceHistory(1),
+    () => false,
+  );
   const moveChatNavigation = useCallback((direction: -1 | 1) => {
     if (modeRef.current !== "chat" || !canMoveWorkspaceNavigation(chatNavigationHistoryRef.current, direction)) return false;
     const current = chatNavigationHistoryRef.current;
@@ -517,14 +535,20 @@ export function Workspace() {
     window.history.go(offset);
     return true;
   }, []);
+  // Back steps up exactly one level, deepest first: the chat session stack,
+  // then any in-surface level a surface registered (Chat's scope strip), then
+  // the mode. Without the middle step, Back from a chat sub-tab left the whole
+  // surface instead of returning to the previous tab.
   const goBack = useCallback(() => {
     // The chat stack is browser-backed for shareable hashes, but never lets a
     // direct deep link (which has no app-owned predecessor) escape the app.
     if (moveChatNavigation(-1)) return;
+    if (moveSurfaceHistory(-1)) return;
     navigateWorkspaceHistory(-1);
   }, [moveChatNavigation, navigateWorkspaceHistory]);
   const goForward = useCallback(() => {
     if (moveChatNavigation(1)) return;
+    if (moveSurfaceHistory(1)) return;
     navigateWorkspaceHistory(1);
   }, [moveChatNavigation, navigateWorkspaceHistory]);
   useEffect(() => {
@@ -3427,8 +3451,14 @@ export function Workspace() {
       <Shell
         ref={shellRef}
         historyNavigation={{
-          canGoBack: canMoveWorkspaceNavigation(chatNavigationHistory, -1) || canMoveWorkspaceNavigation(navigationHistory, -1),
-          canGoForward: canMoveWorkspaceNavigation(chatNavigationHistory, 1) || canMoveWorkspaceNavigation(navigationHistory, 1),
+          canGoBack:
+            canMoveWorkspaceNavigation(chatNavigationHistory, -1) ||
+            surfaceCanGoBack ||
+            canMoveWorkspaceNavigation(navigationHistory, -1),
+          canGoForward:
+            canMoveWorkspaceNavigation(chatNavigationHistory, 1) ||
+            surfaceCanGoForward ||
+            canMoveWorkspaceNavigation(navigationHistory, 1),
           goBack,
           goForward,
         }}
