@@ -147,6 +147,56 @@ assert.match(
   "the Chat section paints no panel background of its own",
 );
 
+// ── One vertical rhythm ─────────────────────────────────────────────────────
+// Matching horizontal insets are not enough: the rail also has to START at the
+// same offset and space its bands the same way in both rooms, or it jumps
+// vertically on every Home/Chat toggle. Two separate regressions came from
+// exactly this — .sidebar-minimal carried `gap: 10px` (a blanket column gap
+// between every band, which .cnav has no equivalent of) and `padding: 10px 0`
+// (which pushed Home's whole column down). Neither container may reintroduce
+// either; vertical spacing belongs to the SHARED bands.
+const homeContainer = homeCss.match(/^\.sidebar-minimal \{[\s\S]*?\n\}/m)?.[0] ?? "";
+const chatContainer = chatCss.match(/^\.cnav \{[\s\S]*?\n\}/m)?.[0] ?? "";
+assert.notEqual(homeContainer, "", "the Home rail container rule exists");
+assert.notEqual(chatContainer, "", "the Chat rail container rule exists");
+
+// Parse the declared values rather than pattern-matching them — a lookahead
+// after `\s*` backtracks and quietly passes.
+function declared(rule, prop) {
+  const m = rule.match(new RegExp(`\\n\\s*${prop}:([^;]*);`));
+  return m ? m[1].trim() : null;
+}
+const ZERO = /^0(px)?$/;
+
+for (const [name, rule] of [
+  ["Home", homeContainer],
+  ["Chat", chatContainer],
+]) {
+  const gap = declared(rule, "gap");
+  assert.ok(
+    gap === null || ZERO.test(gap),
+    `the ${name} rail container declares no column gap (found "${gap}") — the shared bands own their spacing`,
+  );
+  // Block padding shifts the whole column; a horizontal-only shorthand is fine.
+  const pad = declared(rule, "padding");
+  const blockPad = pad === null ? "0" : pad.split(/\s+/)[0];
+  assert.ok(
+    ZERO.test(blockPad),
+    `the ${name} rail container declares no block padding (found "${pad}") — both rails start at the same offset`,
+  );
+  for (const prop of ["padding-block", "padding-top", "padding-bottom"]) {
+    const v = declared(rule, prop);
+    assert.ok(v === null || ZERO.test(v), `the ${name} rail container sets no ${prop} (found "${v}")`);
+  }
+}
+
+// The spacing under the header is declared once, on the shared header itself.
+assert.match(
+  railHeaderCss,
+  /\.rail-header \{[\s\S]*?margin-bottom: var\(--space-2\);/,
+  "the shared header owns the gap beneath it in both rooms",
+);
+
 // ── Design-system hygiene ───────────────────────────────────────────────────
 assert.doesNotMatch(railHeaderCss, /#[0-9a-fA-F]{3,8}\b/, "no hardcoded colors in the shared header styles");
 assert.match(railHeaderCss, /\.shell-nav--rail \.rail-header/, "the shared header has a collapsed-rail story");

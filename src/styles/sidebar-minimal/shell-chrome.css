@@ -8,7 +8,11 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  padding: 10px 0;
+  /* No padding of its own. .cnav declares none either, so both rails start at
+     the same offset inside the shared .shell-nav — a 10px block padding here
+     pushed Home's entire column down relative to Chat's, which read as the rail
+     jumping on every toggle. Horizontal insets come from --rail-pad per band. */
+  padding: 0;
   font-size: var(--text-base);
   color: var(--text-secondary);
   /* No blanket column gap. It applied between EVERY top-level band, which the
