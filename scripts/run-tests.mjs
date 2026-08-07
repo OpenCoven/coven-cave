@@ -536,6 +536,7 @@ export const SUITES = {
     "src/components/chat-usage-plan-ui.test.ts",
     "src/components/nav-section-tabs.test.ts",
     "src/components/sidebar-minimal.test.ts",
+    "src/components/sidebar-rail-header.test.ts",
     "src/components/nav-section-tabs.test.ts",
     "src/components/shell-chrome-revamp.test.ts",
     "src/components/shell-inset-layout.test.ts",

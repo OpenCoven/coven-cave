@@ -46,7 +46,7 @@ assert.doesNotMatch(workspaceSidebar, /cave:navigate-mode/, "workspace-sidebar s
 // The Chats primary-nav header keeps a labeled familiar switcher near thread
 // navigation (#2747, restored by cave-l3ay after #2750 briefly removed it as a
 // supposed duplicate).
-assert.match(workspaceSidebar, /<header className="cnav__header">[\s\S]*?<FamiliarSwitcher/, "the chat sidebar header hosts the familiar switcher");
+assert.match(workspaceSidebar, /<SidebarRailHeader[\s\S]*?familiars=\{familiars\}/, "the chat sidebar header hosts the shared familiar switcher");
 assert.doesNotMatch(workspaceSidebar, /cnav__eyebrow/, "the old Recent eyebrow stays retired");
 assert.match(workspaceSidebar, /ph:git-pull-request/, "should support PR glyph on thread rows");
 // Hover row-actions order: bookmark (pin) → archive → delete, so archive sits
