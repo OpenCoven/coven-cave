@@ -37,5 +37,7 @@ export function requestSummonFamiliar(): void {
   if (typeof window === "undefined") return;
   markSummonPending();
   window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "agents" } }));
-  window.dispatchEvent(new CustomEvent(SUMMON_FAMILIAR_EVENT));
+  // Let navigation commit before notifying an already-mounted FamiliarsView.
+  // If the lazy surface mounts later, the retained latch still opens it.
+  window.setTimeout(() => window.dispatchEvent(new CustomEvent(SUMMON_FAMILIAR_EVENT)), 0);
 }
