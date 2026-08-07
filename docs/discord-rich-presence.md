@@ -11,7 +11,7 @@ any user content.
 2. Use [`assets/brand/cave-icon.png`](../assets/brand/cave-icon.png) as both
    its application icon and a Rich Presence Art Asset named `covencave`.
    Discord lowercases asset keys; keep this key stable.
-3. Set the application website to `https://covencave.ai` and repository to
+3. Set the application website to `https://opencoven.ai` and repository to
    `https://github.com/OpenCoven/coven-cave`.
 4. Provide its public Application ID as `COVENCAVE_DISCORD_APPLICATION_ID` at
    build time. The ID is not a secret. Never add a client secret, bot token,
