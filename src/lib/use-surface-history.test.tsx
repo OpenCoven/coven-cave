@@ -16,10 +16,10 @@ afterEach(() => resetSurfaceHistoryForTest());
 type Scope = "conversation" | "projects" | "canvas" | "familiar";
 
 /** Mount the hook and expose its latest return value to the test. */
-function mount(initial: Scope = "conversation") {
+function mount(initial: Scope = "conversation", coalesceMs = 0) {
   const latest = { current: null as SurfaceHistory<Scope> | null };
   function Probe() {
-    latest.current = useSurfaceHistory<Scope>({ id: "chat:scope", depth: 10, initial });
+    latest.current = useSurfaceHistory<Scope>({ id: "chat:scope", initial, coalesceMs });
     return null;
   }
   let renderer: ReactTestRenderer;
@@ -106,6 +106,18 @@ describe("useSurfaceHistory", () => {
     expect(surface.value).toBe("projects");
     surface.back();
     expect(surface.value).toBe("conversation");
+  });
+
+  it("collapses a burst when the level opts into coalescing", () => {
+    const surface = mount("conversation", 700);
+    surface.select("projects");
+    surface.select("canvas");
+    surface.select("familiar");
+    expect(surface.value).toBe("familiar");
+
+    surface.back();
+    expect(surface.value).toBe("conversation");
+    expect(canMoveSurfaceHistory(-1)).toBe(false);
   });
 
   it("unregisters its level on unmount", () => {

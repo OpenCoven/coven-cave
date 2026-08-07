@@ -16,6 +16,7 @@ import type { Familiar } from "@/lib/types";
 import { SyntaxBlock, MarkdownBlock } from "@/components/message-bubble";
 import { Icon, type IconName } from "@/lib/icon";
 import { Tabs } from "@/components/ui/tabs";
+import { useSurfaceHistory } from "@/lib/use-surface-history";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
 import type { CanonicalMemoryRequestError } from "@/lib/canonical-memory-client";
 import {
@@ -309,7 +310,10 @@ function MemoryTab({
   localDaemonReady: boolean;
   onOpenFullView?: () => void;
 }) {
-  const [mode, setMode] = useState<"coven" | "files">("coven");
+  const { value: mode, select: selectMode } = useSurfaceHistory<"coven" | "files">({
+    id: "inspector:mode",
+    initial: "coven",
+  });
   const [storedCanonicalState, setStoredCanonicalState] =
     useState<CanonicalListState>(EMPTY_CANONICAL_LIST_STATE);
   const canonicalState = localDaemonReady
@@ -567,7 +571,7 @@ function MemoryTab({
           value={mode}
           onChange={(m) => {
             setQuery("");
-            setMode(m);
+            selectMode(m);
           }}
           items={[
             { id: "coven", label: "Coven" },

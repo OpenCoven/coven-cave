@@ -57,6 +57,7 @@ import {
 } from "@/components/marketplace/marketplace-view-model";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { caveCrafts } from "@/lib/feature-flags";
 
@@ -282,6 +283,14 @@ export function MarketplaceViewSurface({
     setStoredSection(next === "roles" || next === "capabilities" ? "browse" : next);
     setQuery("");
   }, [setStoredSection]);
+
+  // Sections are destinations — the `roles` and `capabilities` aliases land
+  // straight on one, so Back has to have somewhere to return to.
+  const selectSectionTracked = useTrackedSurfaceValue<MarketplaceSection>({
+    id: "marketplace:section",
+    value: section,
+    onRestore: selectSection,
+  });
 
   const viewOwnedSkills = useCallback(() => {
     setDeepLinkSection(null);
@@ -606,7 +615,7 @@ export function MarketplaceViewSurface({
         <Tabs
           items={sectionTabs}
           value={section}
-          onChange={selectSection}
+          onChange={selectSectionTracked}
           ariaLabel="Marketplace sections"
           idPrefix="marketplace"
           variant="segment"

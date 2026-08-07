@@ -5,6 +5,7 @@ import "@/styles/dashboard.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
+import { useSurfaceHistory } from "@/lib/use-surface-history";
 import { relativeTime } from "@/lib/relative-time";
 import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
 import { Button } from "@/components/ui/button";
@@ -86,7 +87,14 @@ export function SettingsShell() {
   const router = useRouter();
   const isMobile = useIsMobile();
 
-  const [section, setSection] = useState<Section>("general");
+  // Sections are navigation, not view state: Back from Appearance should land
+  // on the section you came from rather than popping the whole route.
+  const {
+    value: section,
+    select: selectSection,
+    show: showSection,
+  } = useSurfaceHistory<Section>({ id: "settings:section", initial: "general" });
+  const setSection = showSection;
   const [suggestedHubUrl, setSuggestedHubUrl] = useState<string | null>(null);
   // Mobile drill-down: when true, render the section list full-screen
   // (no section content) — iOS-Settings-style. Tap a section → false,
@@ -134,12 +142,10 @@ export function SettingsShell() {
     return () => cancelAnimationFrame(raf);
   }, [scrollTarget, section]);
 
+  /** A user picking a section — from the rail, the search results, or ⌘↓. */
   function openSection(id: Section) {
-    setSection(id);
+    selectSection(id);
     setPickerView(false);
-    if (typeof window !== "undefined") {
-      window.history.replaceState(null, "", `#${id}`);
-    }
   }
   function backToPicker() {
     setPickerView(true);
@@ -147,6 +153,14 @@ export function SettingsShell() {
       window.history.replaceState(null, "", window.location.pathname);
     }
   }
+
+  // Keep the deep-link hash on whatever section is showing, including one the
+  // history controls restored — openSection is no longer the only way to move.
+  useEffect(() => {
+    if (typeof window === "undefined" || pickerView) return;
+    if (window.location.hash === `#${section}`) return;
+    window.history.replaceState(null, "", `#${section}`);
+  }, [section, pickerView]);
 
   // Support hash-based deep-linking. Read it after hydration so SSR and the
   // first client render both start on General.

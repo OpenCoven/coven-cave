@@ -32,6 +32,7 @@ import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
 import { useSurfacePreference } from "@/lib/surface-preferences";
+import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import type { PendingCanonicalMemorySelection } from "@/lib/canonical-memory";
 
@@ -492,6 +493,13 @@ export function FamiliarDetailPanel({
   onOpenUrl,
 }: AgentDetailPanelProps) {
   const [tab, setTab] = useSurfacePreference(surfacePreferenceSpecs.familiars.detailTab);
+  // Memory / Daily Notes / Files / Sessions / Feed are destinations inside the
+  // familiar detail, not a view toggle.
+  const selectTab = useTrackedSurfaceValue({
+    id: "familiars:detail-tab",
+    value: tab,
+    onRestore: setTab,
+  });
   // Session trace overlay — the daemon event timeline behind one session.
   const [traceTarget, setTraceTarget] = useState<TraceTarget | null>(null);
   const familiarSessions = useMemo(
@@ -566,7 +574,7 @@ export function FamiliarDetailPanel({
       <Tabs
         items={DETAIL_TABS}
         value={tab}
-        onChange={setTab}
+        onChange={selectTab}
         ariaLabel="Familiar details"
         idPrefix="familiar-detail"
         className="shrink-0 px-3"

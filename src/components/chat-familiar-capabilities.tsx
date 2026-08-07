@@ -22,6 +22,7 @@ import { Icon } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { Tabs } from "@/components/ui/tabs";
+import { useSurfaceHistory } from "@/lib/use-surface-history";
 import { Button } from "@/components/ui/button";
 import { StandardSelect, type StandardSelectOption } from "@/components/ui/select";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -492,7 +493,13 @@ function FamiliarCapabilityPanel({
   const harnessId = familiar.harness ?? "codex";
   const snapshot = useCapabilitySnapshot(harnessId);
   // Skills is the section this handoff is named for — it opens first.
-  const [section, setSection] = useState<FamiliarSectionId>("skills");
+  // Identity / Skills / MCP / Analytics / Memory are a level below the chat
+  // scope strip, and the composer's "Manage skills" lands straight on one.
+  const {
+    value: section,
+    select: selectSection,
+    show: setSection,
+  } = useSurfaceHistory<FamiliarSectionId>({ id: "familiar:capability", initial: "skills" });
   const [settingsTab, setSettingsTab] = useState<FamiliarSettingsTab | undefined>();
 
   useEffect(() => {
@@ -554,7 +561,7 @@ function FamiliarCapabilityPanel({
             { id: "settings", label: "Settings" },
           ]}
           value={section}
-          onChange={setSection}
+          onChange={selectSection}
           idPrefix="familiar-section"
           bordered={false}
           ariaLabel="Familiar sections"

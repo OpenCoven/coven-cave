@@ -149,9 +149,6 @@ export function ChatSurface({
     show: showScope,
   } = useSurfaceHistory<FamiliarsScope>({
     id: "chat:scope",
-    // Deeper than the mode, shallower than the chat session stack, which the
-    // Workspace traverses first.
-    depth: 10,
     initial: "conversation",
   });
   const setScope = showScope;
