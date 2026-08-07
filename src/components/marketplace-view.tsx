@@ -57,7 +57,7 @@ import {
 } from "@/components/marketplace/marketplace-view-model";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
-import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
+import { useSurfaceHistory, useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { caveCrafts } from "@/lib/feature-flags";
 
@@ -123,7 +123,12 @@ export function MarketplaceViewSurface({
   useEffect(() => {
     if (status === "installed") setStatus("all");
   }, [status, setStatus]);
-  const [selected, setSelected] = useState<string | null>(null);
+  // Opening a catalog entry is a drill-down, so Back returns to the list.
+  const {
+    value: selected,
+    select: selectEntry,
+    show: setSelected,
+  } = useSurfaceHistory<string | null>({ id: "marketplace:item", initial: null });
   const [creatingCraft, setCreatingCraft] = useState(false);
   // Editing an existing draft reopens the create drawer pre-seeded (F5).
   const [craftSeed, setCraftSeed] = useState<CraftDrawerSeed | null>(null);
@@ -797,7 +802,7 @@ export function MarketplaceViewSurface({
                           key={plugin.id}
                           plugin={plugin}
                           busy={busyIds.has(plugin.id)}
-                          onOpen={setSelected}
+                          onOpen={selectEntry}
                           onAdd={add}
                           onRemove={remove}
                           onConfigure={setConfiguringId}
@@ -920,7 +925,7 @@ export function MarketplaceViewSurface({
                         key={plugin.id}
                         plugin={plugin}
                         busy={busyIds.has(plugin.id)}
-                        onOpen={setSelected}
+                        onOpen={selectEntry}
                         onAdd={add}
                         onRemove={remove}
                         onConfigure={setConfiguringId}
@@ -943,7 +948,7 @@ export function MarketplaceViewSurface({
                         key={plugin.id}
                         plugin={plugin}
                         busy={busyIds.has(plugin.id)}
-                        onOpen={setSelected}
+                        onOpen={selectEntry}
                         onAdd={add}
                         onRemove={remove}
                         onConfigure={setConfiguringId}

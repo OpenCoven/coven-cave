@@ -35,7 +35,23 @@ export type SurfaceHistoryLevel = {
 
 type Transition = { levelId: string; prev: unknown; next: unknown; at: number };
 
+/**
+ * A level that owns a real stack of its own rather than a value the journal can
+ * replay — today, the browser pane's per-tab page history.
+ *
+ * Delegates are consulted BEFORE the journal. Inside the browser surface, Back
+ * means "the page I was just on"; the embedded pages are their own axis, the
+ * way an iframe's history is, so they take precedence and the press falls
+ * through to the journal only once the pane sits at the root of its stack.
+ */
+export type SurfaceHistoryDelegate = {
+  id: string;
+  canMove: (direction: -1 | 1) => boolean;
+  move: (direction: -1 | 1) => boolean;
+};
+
 const levels = new Map<string, SurfaceHistoryLevel>();
+const delegates = new Map<string, SurfaceHistoryDelegate>();
 const gates = new Map<string, () => boolean>();
 const listeners = new Set<() => void>();
 
@@ -111,13 +127,36 @@ export function recordSurfaceHistory(
   notify();
 }
 
+export function registerSurfaceHistoryDelegate(delegate: SurfaceHistoryDelegate): () => void {
+  delegates.set(delegate.id, delegate);
+  notify();
+  return () => {
+    if (delegates.get(delegate.id) !== delegate) return;
+    delegates.delete(delegate.id);
+    notify();
+  };
+}
+
+function delegateThatCanMove(direction: -1 | 1): SurfaceHistoryDelegate | null {
+  for (const delegate of delegates.values()) {
+    if (delegate.canMove(direction)) return delegate;
+  }
+  return null;
+}
+
 export function canMoveSurfaceHistory(direction: -1 | 1): boolean {
+  if (delegateThatCanMove(direction)) return true;
   return direction === -1 ? cursor > 0 : cursor < journal.length;
 }
 
 /** Step one recorded move. Returns false when there is nothing left. */
 export function moveSurfaceHistory(direction: -1 | 1): boolean {
-  if (!canMoveSurfaceHistory(direction)) return false;
+  const delegate = delegateThatCanMove(direction);
+  if (delegate && delegate.move(direction)) {
+    notify();
+    return true;
+  }
+  if (direction === -1 ? cursor === 0 : cursor >= journal.length) return false;
   const entry = direction === -1 ? journal[cursor - 1] : journal[cursor];
   const level = levels.get(entry.levelId);
   if (!level) {
@@ -197,6 +236,7 @@ export function subscribeSurfaceHistory(listener: () => void): () => void {
 /** Test seam — drops every registration and the journal. */
 export function resetSurfaceHistoryForTest() {
   levels.clear();
+  delegates.clear();
   gates.clear();
   journal = [];
   cursor = 0;

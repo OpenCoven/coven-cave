@@ -32,7 +32,7 @@ import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
 import { useSurfacePreference } from "@/lib/surface-preferences";
-import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
+import { useDetailOverlayHistory, useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import type { PendingCanonicalMemorySelection } from "@/lib/canonical-memory";
 
@@ -502,6 +502,12 @@ export function FamiliarDetailPanel({
   });
   // Session trace overlay — the daemon event timeline behind one session.
   const [traceTarget, setTraceTarget] = useState<TraceTarget | null>(null);
+  // Back closes the trace overlay before it leaves the section.
+  const { openDetail: openTrace, closeDetail: closeTrace } = useDetailOverlayHistory<TraceTarget>({
+    id: "overlay:session-trace",
+    value: traceTarget,
+    setValue: setTraceTarget,
+  });
   const familiarSessions = useMemo(
     () =>
       sessions
@@ -662,7 +668,7 @@ export function FamiliarDetailPanel({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setTraceTarget({ id: s.id, title: s.title })}
+                      onClick={() => openTrace({ id: s.id, title: s.title })}
                       className="focus-ring-inset flex shrink-0 items-center gap-1 border-l border-[var(--border-hairline)] px-2 text-[length:var(--text-2xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
                       title="Trace this session's daemon events"
                       aria-label={`Trace ${s.title || s.id}`}
@@ -679,7 +685,7 @@ export function FamiliarDetailPanel({
       </div>
 
       {traceTarget ? (
-        <SessionTraceOverlay target={traceTarget} onClose={() => setTraceTarget(null)} />
+        <SessionTraceOverlay target={traceTarget} onClose={closeTrace} />
       ) : null}
     </section>
   );

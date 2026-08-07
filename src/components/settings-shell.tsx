@@ -104,7 +104,11 @@ export function SettingsShell() {
   const showPicker = isMobile && pickerView;
 
   // ── Search across settings ────────────────────────────────────────────────
-  const [query, setQuery] = useState("");
+  const { value: query, select: selectQuery, show: setQuery } = useSurfaceHistory<string>({
+    id: "settings:search",
+    initial: "",
+    coalesceMs: 1200,
+  });
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -257,7 +261,7 @@ export function SettingsShell() {
           <div className={`mb-2 ${showPicker ? "px-3" : "px-2"}`}>
             <SearchInput
               value={query}
-              onValueChange={setQuery}
+              onValueChange={selectQuery}
               onClear={() => setQuery("")}
               placeholder="Search settings…"
               aria-label="Search settings"

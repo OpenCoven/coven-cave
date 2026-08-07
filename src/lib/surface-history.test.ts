@@ -4,6 +4,7 @@ import {
   canMoveSurfaceHistory,
   moveSurfaceHistory,
   recordSurfaceHistory,
+  registerSurfaceHistoryDelegate,
   registerSurfaceHistoryGate,
   registerSurfaceHistoryLevel,
   resetSurfaceHistoryForTest,
@@ -140,6 +141,59 @@ describe("surface history journal", () => {
       recordSurfaceHistory("chat:scope", "conversation", "projects");
       recordSurfaceHistory("chat:scope", "projects", "canvas");
       expect(surfaceHistoryJournalForTest().entries).toHaveLength(2);
+    });
+  });
+
+  describe("delegates", () => {
+    /** A stack-owning level, like the browser pane's per-tab page history. */
+    function delegate(id: string, depth: number) {
+      const state = { idx: depth, moves: [] as number[] };
+      registerSurfaceHistoryDelegate({
+        id,
+        canMove: (d) => (d === -1 ? state.idx > 0 : false),
+        move: (d) => {
+          if (d === -1 && state.idx > 0) {
+            state.idx -= 1;
+            state.moves.push(d);
+            return true;
+          }
+          return false;
+        },
+      });
+      return state;
+    }
+
+    it("takes the press before the journal, then falls through at its root", () => {
+      const pane = delegate("browser:page", 1);
+      const tabs = level("browser:tab");
+      recordSurfaceHistory("browser:tab", "a", "b");
+
+      // Pane-first: the embedded page is what Back means in this surface.
+      expect(moveSurfaceHistory(-1)).toBe(true);
+      expect(pane.moves).toEqual([-1]);
+      expect(tabs.applied).toEqual([]);
+
+      // Root of the pane stack — now the press reaches the journal.
+      expect(moveSurfaceHistory(-1)).toBe(true);
+      expect(tabs.applied).toEqual(["a"]);
+    });
+
+    it("reports canMove through the delegate", () => {
+      const pane = delegate("browser:page", 1);
+      expect(canMoveSurfaceHistory(-1)).toBe(true);
+      pane.idx = 0;
+      expect(canMoveSurfaceHistory(-1)).toBe(false);
+    });
+
+    it("unregisters on cleanup", () => {
+      const unregister = registerSurfaceHistoryDelegate({
+        id: "browser:page",
+        canMove: () => true,
+        move: () => true,
+      });
+      expect(canMoveSurfaceHistory(-1)).toBe(true);
+      unregister();
+      expect(canMoveSurfaceHistory(-1)).toBe(false);
     });
   });
 

@@ -88,6 +88,50 @@ export function useTrackedSurfaceValue<T>({
  * or a destructive confirmation should stay off the journal, where a stray
  * Back cannot dismiss it.
  */
+/**
+ * The same contract for an overlay whose state is the thing it is showing
+ * rather than a boolean — `null` is closed.
+ */
+export function useDetailOverlayHistory<T>({
+  id,
+  value,
+  setValue,
+}: {
+  id: string;
+  value: T | null;
+  setValue: (value: T | null) => void;
+}): { openDetail: (next: T) => void; closeDetail: () => void } {
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const setValueRef = useRef(setValue);
+  setValueRef.current = setValue;
+
+  useEffect(() => {
+    return registerSurfaceHistoryLevel({
+      id,
+      apply: (restored) => setValueRef.current((restored ?? null) as T | null),
+    });
+  }, [id]);
+
+  const openDetail = useCallback(
+    (next: T) => {
+      const prev = valueRef.current;
+      if (Object.is(prev, next)) return;
+      setValueRef.current(next);
+      recordSurfaceHistory(id, prev, next);
+    },
+    [id],
+  );
+
+  const closeDetail = useCallback(() => {
+    if (valueRef.current === null) return;
+    if (consumeSurfaceHistoryTop(id)) return;
+    setValueRef.current(null);
+  }, [id]);
+
+  return { openDetail, closeDetail };
+}
+
 export function useOverlayHistory({
   id,
   open,
