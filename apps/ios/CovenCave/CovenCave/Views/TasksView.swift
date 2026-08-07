@@ -233,7 +233,11 @@ struct TasksView: View {
     /// Consume a cross-destination "open this task" intent set by `requestOpenTask`.
     private func openRequestedCard() {
         guard let card = app.cardToOpen else { return }
-        if selection?.id != card.id { selection = card }
+        if horizontalSizeClass == .regular {
+            if selection?.id != card.id { selection = card }
+        } else {
+            boardDetail = card
+        }
         app.cardToOpen = nil
     }
 
