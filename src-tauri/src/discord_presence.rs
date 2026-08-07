@@ -32,10 +32,10 @@ fn build_activity(started_at: i64) -> activity::Activity<'static> {
             activity::Assets::new()
                 .large_image(ASSET_KEY)
                 .large_text("CovenCave")
-                .large_url("https://covencave.ai"),
+                .large_url("https://opencoven.ai"),
         )
         .buttons(vec![
-            activity::Button::new("Open CovenCave", "https://covencave.ai"),
+            activity::Button::new("Open CovenCave", "https://opencoven.ai"),
             activity::Button::new("View on GitHub", "https://github.com/OpenCoven/coven-cave"),
         ])
 }
@@ -196,7 +196,7 @@ mod tests {
         assert_eq!(serialized["state"], "Working with familiars");
         assert_eq!(serialized["assets"]["large_image"], ASSET_KEY);
         assert_eq!(serialized["timestamps"]["start"], 1_700_000_000);
-        assert_eq!(serialized["buttons"][0]["url"], "https://covencave.ai");
+        assert_eq!(serialized["buttons"][0]["url"], "https://opencoven.ai");
         assert_eq!(
             serialized["buttons"][1]["url"],
             "https://github.com/OpenCoven/coven-cave"
