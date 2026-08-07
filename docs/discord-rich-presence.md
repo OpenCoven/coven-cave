@@ -24,8 +24,14 @@ For a local desktop build, set the variable before launching the app:
 COVENCAVE_DISCORD_APPLICATION_ID=<public-application-id> pnpm dev:app
 ```
 
-Release builds must receive the same public variable. Without it, CovenCave
-continues normally and logs that Discord activity is disabled.
+Release builds receive the same public variable from the
+`COVENCAVE_DISCORD_APPLICATION_ID` repository variable, wired into the `build`
+job in [`.github/workflows/release.yml`](../.github/workflows/release.yml).
+**That repository variable must be set, or every shipped binary silently ships
+with Rich Presence disabled** — `option_env!` resolves at compile time, so an
+unset variable is baked into the artifact and cannot be fixed at runtime.
+Without it CovenCave continues normally and logs that Discord activity is
+disabled.
 
 ## Verify
 
@@ -40,3 +46,23 @@ continues normally and logs that Discord activity is disabled.
 
 The worker retries while Discord is closed and reconnects after Discord
 restarts. The native app icon and Discord art asset are managed separately.
+
+## What Rich Presence does not control
+
+Discord shows CovenCave in several places, and only the profile activity card
+comes from this code. The others are not configurable from this repository:
+
+- **Go Live / stream picker.** While connected to a voice channel, Discord
+  scans running processes and lists them as streamable sources, labelled from
+  the executable's `ProductName` (`CovenCave`, set by `productName` in
+  `src-tauri/tauri.conf.json`). Its icon is resolved against Discord's own
+  verified-games database, not the Rich Presence art assets. An unrecognised
+  application renders a generic placeholder there, and no asset upload,
+  application rename, or embedded executable icon changes it. The row is
+  visible only to the local user and only while in voice.
+- **Detected-activity entries.** These also come from process scanning and are
+  managed under Discord's Settings → Registered Games, independent of the
+  application ID used here.
+
+A placeholder icon in either surface is not a Rich Presence defect. Verify
+presence from the profile card, per the steps above.
