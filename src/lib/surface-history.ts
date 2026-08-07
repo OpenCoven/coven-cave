@@ -20,7 +20,18 @@ export type SurfaceHistoryLevel = {
   move: (direction: -1 | 1) => boolean;
 };
 
+/**
+ * The Workspace's own chat-session stack, named here so a surface can gate it.
+ *
+ * The session level is deeper than the chat scope strip only while the strip is
+ * showing the conversation. On Projects or Familiar there is no visible session
+ * to step back through, so traversing it there would swallow the Back press and
+ * leave the strip where it was.
+ */
+export const CHAT_SESSION_LEVEL = "chat:session";
+
 const levels = new Map<string, SurfaceHistoryLevel>();
+const gates = new Map<string, () => boolean>();
 const listeners = new Set<() => void>();
 
 function notify() {
@@ -53,9 +64,37 @@ export function canMoveSurfaceHistory(direction: -1 | 1): boolean {
 /** Move the deepest level that can move. Returns false if none could. */
 export function moveSurfaceHistory(direction: -1 | 1): boolean {
   for (const level of ordered()) {
-    if (level.canMove(direction) && level.move(direction)) return true;
+    if (level.canMove(direction) && level.move(direction)) {
+      // A traversal changes what Back and Forward can reach next, and the
+      // shell disables both buttons off those flags. Without this the Forward
+      // button stays dead after the first Back.
+      notify();
+      return true;
+    }
   }
   return false;
+}
+
+/**
+ * Gate a level the Workspace owns on state only a surface knows.
+ *
+ * Returns the unregister function for effect cleanup. A level with no gate is
+ * always reachable.
+ */
+export function registerSurfaceHistoryGate(id: string, isOpen: () => boolean): () => void {
+  gates.set(id, isOpen);
+  notify();
+  return () => {
+    if (gates.get(id) === isOpen) {
+      gates.delete(id);
+      notify();
+    }
+  };
+}
+
+export function surfaceHistoryGateOpen(id: string): boolean {
+  const gate = gates.get(id);
+  return gate ? gate() : true;
 }
 
 /** Subscribe to registration changes so derived can-go-back state re-renders. */
@@ -74,5 +113,6 @@ export function notifySurfaceHistoryChanged() {
 /** Test seam — drops every registration. */
 export function resetSurfaceHistoryForTest() {
   levels.clear();
+  gates.clear();
   notify();
 }

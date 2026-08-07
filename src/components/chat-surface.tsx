@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, type RefObject } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { useSurfaceHistory } from "@/lib/use-surface-history";
+import { CHAT_SESSION_LEVEL, registerSurfaceHistoryGate } from "@/lib/surface-history";
 import {
   ChatCanvasView,
   ChatFamiliarView,
@@ -154,6 +155,16 @@ export function ChatSurface({
     initial: "conversation",
   });
   const setScope = showScope;
+  // The Workspace traverses its chat-session stack before any registered level.
+  // That ordering is right on the Sessions tab, where the session is what the
+  // user sees, and wrong everywhere else: from Projects or Familiar the Back
+  // press would walk an invisible session trail and leave the strip alone.
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  useEffect(
+    () => registerSurfaceHistoryGate(CHAT_SESSION_LEVEL, () => scopeRef.current === "conversation"),
+    [],
+  );
   const surfaceRef = useRef<HTMLElement | null>(null);
   const consumedPendingActionNonce = useRef<number | null>(null);
   const snapshot = useChatDebugSnapshot();

@@ -28,9 +28,11 @@ import {
   restoreWorkspaceNavigation,
 } from "@/lib/workspace-navigation-history";
 import {
+  CHAT_SESSION_LEVEL,
   canMoveSurfaceHistory,
   moveSurfaceHistory,
   subscribeSurfaceHistory,
+  surfaceHistoryGateOpen,
 } from "@/lib/surface-history";
 import type { PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface, so JournalView is gone; Grimoire is
@@ -525,7 +527,15 @@ export function Workspace() {
     () => canMoveSurfaceHistory(1),
     () => false,
   );
+  const chatSessionLevelOpen = useSyncExternalStore(
+    subscribeSurfaceHistory,
+    () => surfaceHistoryGateOpen(CHAT_SESSION_LEVEL),
+    () => true,
+  );
   const moveChatNavigation = useCallback((direction: -1 | 1) => {
+    // Chat's scope strip gates this: the session trail is only what the user
+    // sees on the Sessions tab.
+    if (!surfaceHistoryGateOpen(CHAT_SESSION_LEVEL)) return false;
     if (modeRef.current !== "chat" || !canMoveWorkspaceNavigation(chatNavigationHistoryRef.current, direction)) return false;
     const current = chatNavigationHistoryRef.current;
     const updated = moveWorkspaceNavigation(current, direction);
@@ -3451,12 +3461,14 @@ export function Workspace() {
       <Shell
         ref={shellRef}
         historyNavigation={{
+          // Mirror goBack/goForward exactly, gate included — a button enabled
+          // for a stack the traversal then refuses reads as a dead control.
           canGoBack:
-            canMoveWorkspaceNavigation(chatNavigationHistory, -1) ||
+            (chatSessionLevelOpen && canMoveWorkspaceNavigation(chatNavigationHistory, -1)) ||
             surfaceCanGoBack ||
             canMoveWorkspaceNavigation(navigationHistory, -1),
           canGoForward:
-            canMoveWorkspaceNavigation(chatNavigationHistory, 1) ||
+            (chatSessionLevelOpen && canMoveWorkspaceNavigation(chatNavigationHistory, 1)) ||
             surfaceCanGoForward ||
             canMoveWorkspaceNavigation(navigationHistory, 1),
           goBack,

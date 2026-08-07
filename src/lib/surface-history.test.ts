@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  CHAT_SESSION_LEVEL,
   canMoveSurfaceHistory,
   moveSurfaceHistory,
   notifySurfaceHistoryChanged,
+  registerSurfaceHistoryGate,
   registerSurfaceHistoryLevel,
   resetSurfaceHistoryForTest,
   subscribeSurfaceHistory,
+  surfaceHistoryGateOpen,
   type SurfaceHistoryLevel,
 } from "./surface-history";
 
@@ -71,6 +74,41 @@ describe("surface history registry", () => {
     unregisterFirst();
 
     expect(canMoveSurfaceHistory(-1)).toBe(true);
+  });
+
+  it("notifies subscribers after a traversal", () => {
+    // The shell disables Back/Forward off these flags. Without a notify here
+    // the Forward button stayed dead after the first Back.
+    registerSurfaceHistoryLevel(level("only", 1, true));
+    const listener = vi.fn();
+    subscribeSurfaceHistory(listener);
+    moveSurfaceHistory(-1);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not notify when nothing moved", () => {
+    registerSurfaceHistoryLevel(level("stuck", 1, false));
+    const listener = vi.fn();
+    subscribeSurfaceHistory(listener);
+    expect(moveSurfaceHistory(-1)).toBe(false);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("treats an ungated level as reachable", () => {
+    expect(surfaceHistoryGateOpen(CHAT_SESSION_LEVEL)).toBe(true);
+  });
+
+  it("honours a registered gate, and forgets it on cleanup", () => {
+    let scope = "projects";
+    const unregister = registerSurfaceHistoryGate(
+      CHAT_SESSION_LEVEL,
+      () => scope === "conversation",
+    );
+    expect(surfaceHistoryGateOpen(CHAT_SESSION_LEVEL)).toBe(false);
+    scope = "conversation";
+    expect(surfaceHistoryGateOpen(CHAT_SESSION_LEVEL)).toBe(true);
+    unregister();
+    expect(surfaceHistoryGateOpen(CHAT_SESSION_LEVEL)).toBe(true);
   });
 
   it("notifies subscribers on registration and on explicit change", () => {
