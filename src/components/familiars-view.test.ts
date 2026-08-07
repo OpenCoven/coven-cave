@@ -438,8 +438,8 @@ assert.match(
 );
 assert.match(
   source,
-  /onClick=\{\(\) => setTraceTarget\(\{ id: s\.id, title: s\.title \}\)\}/,
-  "each session row can open its trace",
+  /onClick=\{\(\) => openTrace\(\{ id: s\.id, title: s\.title \}\)\}/,
+  "each session row can open its trace, through the history-aware opener so Back closes it",
 );
 assert.match(
   source,
