@@ -11,7 +11,11 @@
   padding: 10px 0;
   font-size: var(--text-base);
   color: var(--text-secondary);
-  gap: 10px;
+  /* No blanket column gap. It applied between EVERY top-level band, which the
+     Chat rail (.cnav) has no equivalent of — so the section tabs and the shared
+     header sat 10px lower in Home than in Chat and the rail jumped vertically
+     on every toggle. The shared bands carry their own margins instead. */
+  gap: 0;
   /* The panel surface belongs to .shell-nav — one background for both
      sections, so toggling Home <-> Chat cannot change the rail's shade. */
   background: transparent;
@@ -263,7 +267,7 @@
      the nav rows must line up with the scope switcher and New chat, not sit a
      step outside them. Kept in the shorthand deliberately: a separate
      padding-inline earlier in this block is silently overridden by this line. */
-  padding: 2px var(--rail-pad);
+  padding: 0 var(--rail-pad) 2px;
 }
 
 /* ── Bottom: Notifications + Settings ─────────────────────────────────────── */

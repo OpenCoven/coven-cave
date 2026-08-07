@@ -20,6 +20,10 @@
   /* Both sections inherit the rail's one inset. --rail-pad is declared on the
      shared nav panel so neither sidebar can set its own. */
   padding: 0 var(--rail-pad);
+  /* The header owns the space beneath it in BOTH rooms. Leaving it to each
+     container's own column gap is what made the rail shift vertically on the
+     Home/Chat toggle. */
+  margin-bottom: var(--space-2);
 }
 
 .rail-header__scope {

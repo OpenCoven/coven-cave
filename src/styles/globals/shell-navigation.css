@@ -398,6 +398,11 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  /* The rail's one inset (see rail-header.css). Thread rows, group heads and
+     section labels inherit it here rather than each carrying its own, so the
+     whole scroll region lines up with the header above it. Children that used
+     to supply their own horizontal inset were zeroed in the same change. */
+  padding-inline: var(--rail-pad);
   padding-bottom: var(--space-2);
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklch, var(--foreground) 13%, transparent) transparent;
@@ -423,7 +428,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 10px var(--cnav-pad) 3px;
+  padding: 10px 0 3px;
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   font-weight: 650;
@@ -474,7 +479,7 @@
   align-items: center;
   width: 100%;
   min-height: 40px;
-  padding: var(--space-1) 6px var(--space-1) var(--space-2);
+  padding: var(--space-1) 6px var(--space-1) 0;
   background: color-mix(in oklch, var(--bg-raised) 96%, var(--foreground) 4%);
   backdrop-filter: blur(8px);
   color: var(--text-secondary);
@@ -625,7 +630,6 @@
   color: var(--text-primary);
 }
 .cnav__thread.is-active {
-  margin: 0 var(--space-2);
   border-radius: var(--radius-card);
   background: var(--bg-raised);
   color: var(--text-primary);
@@ -633,7 +637,7 @@
 .cnav__thread.is-active::before {
   content: "";
   position: absolute;
-  left: var(--space-2);
+  left: 0;
   top: 7px;
   bottom: 7px;
   width: 2.5px;
