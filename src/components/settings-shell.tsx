@@ -160,8 +160,14 @@ export function SettingsShell() {
 
   // Keep the deep-link hash on whatever section is showing, including one the
   // history controls restored — openSection is no longer the only way to move.
+  //
+  // It must not run before the incoming hash has been read. On mount `section`
+  // is still the "general" default while the URL already says `#about`, so an
+  // ungated write rewrites the deep link to `#general` and the reader below
+  // then honours the value this effect just clobbered.
+  const hashHydratedRef = useRef(false);
   useEffect(() => {
-    if (typeof window === "undefined" || pickerView) return;
+    if (typeof window === "undefined" || !hashHydratedRef.current || pickerView) return;
     if (window.location.hash === `#${section}`) return;
     window.history.replaceState(null, "", `#${section}`);
   }, [section, pickerView]);
@@ -182,6 +188,7 @@ export function SettingsShell() {
       setPickerView(true);
     };
     applyHashSection();
+    hashHydratedRef.current = true;
     window.addEventListener("hashchange", applyHashSection);
     return () => window.removeEventListener("hashchange", applyHashSection);
   }, []);
