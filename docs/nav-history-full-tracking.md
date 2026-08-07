@@ -64,11 +64,13 @@ intervening navigation on another axis, occurring within `HISTORY_COALESCE_MS`
 spaced-out filter changes still each get an entry. Expose the window as a
 per-axis option (`coalesceMs: 0` disables) so an axis can opt out.
 
-> **Implementation status.** Every phase has shipped except the Browser pane
-> (phase 7), which is deliberately deferred — see §5. Detail drill-downs
-> (Board card, Marketplace item, GitHub item) and the remaining modals are
-> listed there too: the primitives exist, so each is a call site rather than a
-> design question.
+> **Implementation status.** All nine phases have shipped. The levels left
+> unconverted are the ones that should be: `onboarding-overlay` owns its own
+> gated stepper, `voice-call-overlay` would drop a live call, and
+> `ui/confirm-dialog` must not be dismissable by a stray Back. `glyphPickerFor`
+> was skipped for a different reason — nothing in the tree ever sets it to a
+> familiar, so the picker cannot open; adding a level to unreachable state would
+> be noise, and the dead state is worth a separate look.
 >
 > **What replaced §3.1.** The shipped model is not a `WorkspaceLocation` stack
 > but a single ordered *journal* of transitions (`src/lib/surface-history.ts`).
@@ -275,23 +277,31 @@ and `CodeQL` green.
    Back presses. **Remaining:** the document/memory/journal-date selection and
    its MRU strip, whose `writeGrimoireHash` still only replaces.
 6. ✅ **Familiar capabilities, Familiars view sections, Researcher desk,
-   Inspector, Submissions** shipped. **Remaining:** the GitHub item detail and
-   the Board/Marketplace detail drill-downs.
-7. ⬜ **Browser pane** — pane-first Back with fall-through. Untouched; it owns a
-   second history stack (`browser-navigation-queue.ts`) that needs its own
-   ordering decision against the journal.
+   Inspector, Submissions** shipped, plus the Marketplace catalog-entry
+   drill-down: opening a card records, while the arrival and close paths stay
+   programmatic. **Remaining:** the GitHub item detail and the Board card.
+7. ✅ **Browser pane** — pane-first Back with fall-through. It owns a real
+   per-tab page stack rather than a value the journal can replay, so
+   `surface-history` grew a *delegate*: a level that answers `canMove`/`move`
+   itself and is consulted **before** the journal. Inside this surface Back
+   means "the page I was just on" — embedded pages are their own axis, the way
+   an iframe's history is — and the press reaches the journal only once the pane
+   sits at the root of its stack.
 8. ✅ **Axes** — GitHub activity, the Board card stack, the artifact viewer's
    Canvas/Code, and canvas add-tile all coalesce at 700 ms, so a burst costs one
    Back press. The artifact viewer shows the split cleanly: its strip and the
    "View code" affordance record, while the resets after a refine or a close do
-   not. **Remaining:** the Marketplace topic filter and the Settings search.
+   not. Settings search coalesces on a longer 1200 ms
+   window so a typed query leaves one entry rather than one per keystroke.
+   **Remaining:** the Marketplace topic filter.
 9. ✅ **Overlays** — the command palette and shortcuts sheet. Dismissing consumes
    the entry rather than stepping the cursor, so Forward cannot resurrect a
    closed modal. Deliberately excluded: onboarding (owns its own stepper), the
    voice-call overlay (Back must not drop a live call), and the confirm dialog.
-   Also wired: the reminder modal and the mobile-handoff modal. **Remaining:**
-   the other twelve modals and drawers, each a two-line `useOverlayHistory`
-   call.
+   Also wired: the reminder modal, the mobile-handoff modal, and the session
+   trace overlay. `useDetailOverlayHistory` covers overlays whose state is the
+   thing being shown rather than a boolean, with `null` as closed — the
+   remaining modals are that same call, one line each.
 
 ## 6. Tests
 
