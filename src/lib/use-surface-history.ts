@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { recordSurfaceHistory, registerSurfaceHistoryLevel } from "./surface-history";
+import {
+  consumeSurfaceHistoryTop,
+  recordSurfaceHistory,
+  registerSurfaceHistoryLevel,
+} from "./surface-history";
 
 export type SurfaceHistoryOptions<T> = {
   /** Stable identity for the level, e.g. "chat:scope". */
@@ -30,15 +34,6 @@ export type SurfaceHistory<T> = {
   show: (next: T) => void;
 };
 
-/**
- * Give a surface's tab strip, section picker, filter, or overlay its own
- * navigation level.
- *
- * The distinction that matters is `select` vs `show`. A handoff that also moves
- * a level the Workspace already tracks — opening a session, following a
- * `?mode=` alias onto a specific tab — must `show`, or one user action costs
- * two Back presses.
- */
 /**
  * Track a level whose value already lives somewhere else — a persisted
  * surface preference, a store, a parent's state.
@@ -81,6 +76,65 @@ export function useTrackedSurfaceValue<T>({
   );
 }
 
+/**
+ * Make Back close an overlay instead of navigating.
+ *
+ * Opening records an entry. Dismissing — Escape, the close button, a backdrop
+ * click — consumes that entry when it is still the most recent move, so Back
+ * does not reopen what the user just shut. If they navigated in between, the
+ * entry is no longer on top and the close simply happens.
+ *
+ * Not for every overlay: a gated flow that owns its own stepper, a live call,
+ * or a destructive confirmation should stay off the journal, where a stray
+ * Back cannot dismiss it.
+ */
+export function useOverlayHistory({
+  id,
+  open,
+  setOpen,
+}: {
+  id: string;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}): { openOverlay: () => void; closeOverlay: () => void } {
+  const openRef = useRef(open);
+  openRef.current = open;
+  const setOpenRef = useRef(setOpen);
+  setOpenRef.current = setOpen;
+
+  useEffect(() => {
+    return registerSurfaceHistoryLevel({
+      id,
+      apply: (restored) => setOpenRef.current(Boolean(restored)),
+    });
+  }, [id]);
+
+  const openOverlay = useCallback(() => {
+    if (openRef.current) return;
+    setOpenRef.current(true);
+    recordSurfaceHistory(id, false, true);
+  }, [id]);
+
+  const closeOverlay = useCallback(() => {
+    if (!openRef.current) return;
+    // Our own entry on top means they dismissed us rather than navigating
+    // past us — drop it, so Forward cannot resurrect a closed modal.
+    if (consumeSurfaceHistoryTop(id)) return;
+    setOpenRef.current(false);
+  }, [id]);
+
+  return { openOverlay, closeOverlay };
+}
+
+/**
+ * Give a surface's tab strip, section picker, or filter its own navigation
+ * level.
+ *
+ * The distinction that matters is `select` vs `show`. A handoff that also moves
+ * a level the Workspace already tracks — opening a session, following a
+ * `?mode=` alias onto a specific tab — must `show`, or one user action costs
+ * two Back presses.
+ */
 export function useSurfaceHistory<T>({
   id,
   initial,

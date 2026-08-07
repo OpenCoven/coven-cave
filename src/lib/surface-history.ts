@@ -155,6 +155,37 @@ export function surfaceHistoryGateOpen(id: string): boolean {
   return gate ? gate() : true;
 }
 
+/**
+ * The level whose move Back would undo next, or null.
+ *
+ * An overlay uses this to tell "the user dismissed me with Escape or the close
+ * button" from "the user navigated past me": in the first case its own entry is
+ * still on top and must be consumed, or Back would reopen what they just shut.
+ */
+export function surfaceHistoryTopLevel(): string | null {
+  return cursor > 0 ? journal[cursor - 1].levelId : null;
+}
+
+/**
+ * Undo the top entry and forget it, if it belongs to `levelId`.
+ *
+ * This is a dismissal, not a traversal: the entry is removed rather than left
+ * on the forward trail, so Forward cannot resurrect a modal the user closed.
+ * Returns false when the top entry belongs to someone else.
+ */
+export function consumeSurfaceHistoryTop(levelId: string): boolean {
+  if (cursor === 0 || journal[cursor - 1].levelId !== levelId) return false;
+  const entry = journal[cursor - 1];
+  const level = levels.get(levelId);
+  // Everything after the cursor was already abandoned; dropping it with the
+  // dismissed entry keeps the trail consistent.
+  journal = journal.slice(0, cursor - 1);
+  cursor = journal.length;
+  level?.apply(entry.prev);
+  notify();
+  return true;
+}
+
 /** Subscribe to journal and registration changes so derived flags re-render. */
 export function subscribeSurfaceHistory(listener: () => void): () => void {
   listeners.add(listener);

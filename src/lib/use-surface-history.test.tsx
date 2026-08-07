@@ -1,11 +1,13 @@
 // @ts-nocheck — react-test-renderer ships no types; matches the convention in
 // workspace-canonical-memory-navigation-behavior.test.tsx.
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { useSurfaceHistory, type SurfaceHistory } from "./use-surface-history";
+import { useOverlayHistory, useSurfaceHistory, type SurfaceHistory } from "./use-surface-history";
 import {
   canMoveSurfaceHistory,
   moveSurfaceHistory,
+  recordSurfaceHistory,
   resetSurfaceHistoryForTest,
 } from "./surface-history";
 
@@ -118,6 +120,72 @@ describe("useSurfaceHistory", () => {
     surface.back();
     expect(surface.value).toBe("conversation");
     expect(canMoveSurfaceHistory(-1)).toBe(false);
+  });
+
+  describe("overlays", () => {
+    function mountOverlay() {
+      const state = { open: false };
+      const api = { current: null as ReturnType<typeof useOverlayHistory> | null };
+      function Probe() {
+        const [open, setOpen] = useState(false);
+        state.open = open;
+        api.current = useOverlayHistory({ id: "overlay:palette", open, setOpen });
+        return null;
+      }
+      act(() => {
+        create(<Probe />);
+      });
+      return {
+        get open() {
+          return state.open;
+        },
+        openOverlay: () => act(() => api.current!.openOverlay()),
+        closeOverlay: () => act(() => api.current!.closeOverlay()),
+        back: () => act(() => void moveSurfaceHistory(-1)),
+      };
+    }
+
+    it("closes on Back instead of navigating", () => {
+      const overlay = mountOverlay();
+      overlay.openOverlay();
+      expect(overlay.open).toBe(true);
+
+      overlay.back();
+      expect(overlay.open).toBe(false);
+      expect(canMoveSurfaceHistory(-1)).toBe(false);
+    });
+
+    it("consumes its entry when dismissed, so Back does not reopen it", () => {
+      const overlay = mountOverlay();
+      overlay.openOverlay();
+      overlay.closeOverlay();
+      expect(overlay.open).toBe(false);
+      // The entry is gone rather than sitting there waiting to reopen.
+      expect(canMoveSurfaceHistory(-1)).toBe(false);
+      expect(canMoveSurfaceHistory(1)).toBe(false);
+    });
+
+    it("leaves the journal alone when a move landed on top of it", () => {
+      const overlay = mountOverlay();
+      overlay.openOverlay();
+      // Something else navigated while the overlay was open — its entry is no
+      // longer on top, so closing must not swallow that unrelated move.
+      recordSurfaceHistory("chat:scope", "conversation", "projects");
+      overlay.closeOverlay();
+      expect(overlay.open).toBe(false);
+      expect(canMoveSurfaceHistory(-1)).toBe(true);
+    });
+
+    it("ignores a redundant open or close", () => {
+      const overlay = mountOverlay();
+      overlay.closeOverlay();
+      expect(canMoveSurfaceHistory(-1)).toBe(false);
+      overlay.openOverlay();
+      overlay.openOverlay();
+      overlay.back();
+      expect(overlay.open).toBe(false);
+      expect(canMoveSurfaceHistory(-1)).toBe(false);
+    });
   });
 
   it("unregisters its level on unmount", () => {

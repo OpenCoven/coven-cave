@@ -34,6 +34,7 @@ import {
   subscribeSurfaceHistory,
   surfaceHistoryGateOpen,
 } from "@/lib/surface-history";
+import { useOverlayHistory } from "@/lib/use-surface-history";
 import type { PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface, so JournalView is gone; Grimoire is
 // a new in-shell surface from main.
@@ -380,6 +381,23 @@ export function Workspace() {
     setRosterSettledPendingCanonicalMemorySelection,
   ] = useState<PendingCanonicalMemorySelection | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // Back closes an overlay before it navigates. Opening records an entry;
+  // Escape or the close button consumes it, so Back never reopens what the
+  // user just dismissed.
+  const { openOverlay: openPalette, closeOverlay: closePalette } = useOverlayHistory({
+    id: "overlay:palette",
+    open: paletteOpen,
+    setOpen: setPaletteOpen,
+  });
+  const { openOverlay: openShortcuts, closeOverlay: closeShortcuts } = useOverlayHistory({
+    id: "overlay:shortcuts",
+    open: shortcutsOpen,
+    setOpen: setShortcutsOpen,
+  });
+  // The ? shortcut toggles from inside a keydown listener that does not
+  // resubscribe per render, so it reads the ref rather than a stale capture.
+  const shortcutsOpenRef = useRef(shortcutsOpen);
+  shortcutsOpenRef.current = shortcutsOpen;
   // Home-first boot: every fresh launch (desktop app window or web tab)
   // opens on the Home surface — the daily overview with the universal
   // composer — per operator direction (this reverses cave-hsa6's chat-first
@@ -1737,7 +1755,7 @@ export function Workspace() {
         const k = e.key.toLowerCase();
         if (k === "k") {
           e.preventDefault();
-          setPaletteOpen(true);
+          openPalette();
           return;
         }
         // ⌘J (Ctrl+J off-Mac) → jump straight into a fresh chat with the active
@@ -1753,7 +1771,7 @@ export function Workspace() {
         // ⌘/ (Ctrl+/ off-Mac) → keyboard shortcuts sheet, from anywhere.
         if (e.key === "/") {
           e.preventDefault();
-          setShortcutsOpen((open) => !open);
+          if (shortcutsOpenRef.current) closeShortcuts(); else openShortcuts();
         }
         return;
       }
@@ -1761,7 +1779,7 @@ export function Workspace() {
       // input/textarea/contentEditable — typing "?" must stay typing.
       if (e.key === "?" && !isEditableTarget(e.target)) {
         e.preventDefault();
-        setShortcutsOpen(true);
+        openShortcuts();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -2691,10 +2709,10 @@ export function Workspace() {
         return true;
       }
       case "/palette":
-        setPaletteOpen(true);
+        openPalette();
         return true;
       case "/shortcuts":
-        setShortcutsOpen(true);
+        openShortcuts();
         return true;
       case "/projects":
         markProjectsTabPending(); // latch beats the fresh-mount race (cave-c2zf)
@@ -2720,13 +2738,13 @@ export function Workspace() {
             return true;
           }
         }
-        setPaletteOpen(true);
+        openPalette();
         return true;
       }
       case "/attach": {
         const sid = args.trim();
         if (!sid) {
-          setPaletteOpen(true);
+          openPalette();
           return true;
         }
         // Find which familiar this session belongs to so we surface the right rail row
@@ -3516,11 +3534,11 @@ export function Workspace() {
               }
               taskCount={boardTaskCount}
               scheduleNeedsCount={scheduleNeedsCount}
-              onOpenSearch={() => setPaletteOpen(true)}
+              onOpenSearch={() => openPalette()}
               searchQuery={topSearchQuery}
               onSearchQueryChange={(query) => {
                 setTopSearchQuery(query);
-                setPaletteOpen(true);
+                openPalette();
               }}
               onViewTasks={() => setMode("board")}
               onEnrichTasks={handleEnrichTasks}
@@ -3530,11 +3548,11 @@ export function Workspace() {
               onOpenQuickChat={() => startFamiliarChat(activeId)}
             />
             <TopBar
-              onOpenPalette={() => setPaletteOpen(true)}
+              onOpenPalette={() => openPalette()}
               searchQuery={topSearchQuery}
               onSearchQueryChange={(query) => {
                 setTopSearchQuery(query);
-                setPaletteOpen(true);
+                openPalette();
               }}
               onOpenInbox={() => setMode("inbox")}
               onOpenSettings={() => nextRouter.push("/settings")}
@@ -3579,7 +3597,7 @@ export function Workspace() {
       {paletteOpen && (
         <CommandPalette
           open
-          onClose={() => setPaletteOpen(false)}
+          onClose={closePalette}
           familiars={familiars}
           sessions={sessions}
           activeFamiliarId={activeId}
@@ -3597,7 +3615,7 @@ export function Workspace() {
         />
       )}
 
-      {shortcutsOpen && <ShortcutsSheet open onClose={() => setShortcutsOpen(false)} />}
+      {shortcutsOpen && <ShortcutsSheet open onClose={closeShortcuts} />}
 
       {(onboardingOpen || onboardingMounted) && (
         <OnboardingOverlay
