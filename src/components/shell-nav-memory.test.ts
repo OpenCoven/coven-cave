@@ -458,7 +458,7 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{ \.\.\.\(!twoPane && \{ list: 260 \}\) \},[\s\S]*?preferredNavPixels: preferredNavWidth,[\s\S]*?collapsedNavPixels: chatContextual \? 0 : NAV_RAIL_PX,[\s\S]*?isMobile,/,
+  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{ \.\.\.\(!twoPane && \{ list: 260 \}\) \},[\s\S]*?preferredNavPixels: preferredNavWidth,[\s\S]*?collapsedNavPixels: isMobile \? 0 : NAV_RAIL_PX,[\s\S]*?isMobile,/,
   "every desktop group transition resolves its own saved/default layout with the active shared nav width",
 );
 assert.match(
@@ -601,8 +601,8 @@ assert.match(
 
 assert.match(
   shell,
-  /const navPeekEnabled = navPolicy === "remembered" && !isMobile && !navOpen;/,
-  "hover-to-peek is disabled for visit-collapsed and chat-contextual routes",
+  /const navPeekEnabled = !isMobile && !navOpen;/,
+  "hover-to-peek covers every desktop policy now that they all collapse to a rail",
 );
 assert.match(
   shell,
@@ -611,18 +611,53 @@ assert.match(
 );
 assert.match(
   shell,
-  /className=\{`shell-nav\$\{!isMobile && !chatContextual && !navOpen \? \(navPeekVisible \? " shell-nav--peek" : " shell-nav--rail"\) : ""\}`\}/,
-  "Chat's zero-width collapsed sidebar never receives remembered navigation rail or peek styling",
+  /className=\{`shell-nav\$\{!isMobile && !navOpen \? \(navPeekVisible \? " shell-nav--peek" : " shell-nav--rail"\) : ""\}`\}/,
+  "every collapsed desktop sidebar, Chat included, gets rail or peek styling",
 );
 assert.match(
   shell,
   /onMouseEnter=\{navPeekEnabled \? \(\) => setNavPeeking\(true\) : undefined\}/,
-  "hover enter only peeks when the remembered nav policy allows it",
+  "hover enter peeks whenever a desktop rail is showing",
 );
 assert.match(
   shell,
   /onMouseLeave=\{navPeekEnabled \? \(\) => setNavPeeking\(false\) : undefined\}/,
-  "hover leave only peeks when the remembered nav policy allows it",
+  "hover leave peeks whenever a desktop rail is showing",
+);
+
+// The reported bug: collapsing in Chat made the sidebar vanish outright. Only
+// mobile — where the nav is an overlay drawer over the content — still closes
+// to zero.
+assert.match(
+  shell,
+  /collapsedSize=\{isMobile \? 0 : NAV_RAIL_PX\}/,
+  "only mobile drawers close fully; every desktop surface collapses to the icon rail",
+);
+assert.match(
+  shell,
+  /collapsedNavPixels: isMobile \? 0 : NAV_RAIL_PX,/,
+  "the restored destination layout describes the same collapsed width as the panel",
+);
+// Chat collapsing to a rail changes what the panel LOOKS like, not who owns the
+// remembered preference — the #4404 handoff depends on Chat never writing it.
+assert.match(
+  shell,
+  /!chatContextual &&\s*\n\s*isShellNavCollapsedLayout\(\{/,
+  "Chat still never seeds the remembered nav-open preference",
+);
+
+// The session list has no rail form, so the collapsed Code room falls back to
+// the destination rail rather than rendering a squeezed session list.
+const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+assert.match(
+  workspace,
+  /const contextualNav =\s*\n\s*navSection === "code" && \(navOpen \|\| isMobile\) \? chatSidebar : sidebar;/,
+  "the collapsed Code room renders the destination rail, not the session list",
+);
+assert.match(
+  workspace,
+  /onNavOpenChange=\{setNavOpen\}/,
+  "workspace tracks the shell's nav open state to drive that fallback",
 );
 
 assert.match(
