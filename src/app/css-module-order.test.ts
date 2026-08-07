@@ -11,6 +11,10 @@ const FACADES: Record<string, string[]> = {
     "../styles/status-bar.css",
     "../styles/globals/foundations.css",
     "../styles/globals/shell-navigation.css",
+    // The siderail's shared header (scope switcher + New chat). Sits directly
+    // after shell-navigation so it lands beside the rail chrome it replaced;
+    // its trigger overrides beat desktop-chrome.css by specificity, not order.
+    "../styles/globals/rail-header.css",
     "../styles/globals/primitives.css",
     "../styles/globals/themes.css",
     "../styles/globals/desktop-chrome.css",
