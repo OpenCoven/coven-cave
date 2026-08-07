@@ -168,6 +168,11 @@ jobs:
     needs: daemon-package
     env:
       COVEN_CAVE_X_PRODUCTION_CLIENT_ID: ${{ vars.COVEN_CAVE_X_PRODUCTION_CLIENT_ID }}
+      # Public Discord application ID, read by option_env! at compile time in
+      # src-tauri/src/discord_presence.rs. Without it every shipped binary
+      # compiles with DISCORD_APPLICATION_ID = None and Rich Presence is
+      # permanently disabled. Not a secret, so a repository variable is enough.
+      COVENCAVE_DISCORD_APPLICATION_ID: ${{ vars.COVENCAVE_DISCORD_APPLICATION_ID }}
     permissions:
       contents: write
       id-token: write

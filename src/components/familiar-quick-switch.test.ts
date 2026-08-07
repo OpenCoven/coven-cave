@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+const railHeader = readFileSync(new URL("./sidebar-rail-header.tsx", import.meta.url), "utf8");
 const source = readFileSync(new URL("./familiar-quick-switch.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 const menuBar = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
@@ -25,17 +26,20 @@ assert.match(familiarStyles, /\.familiar-quickswitch \{/, "wrapper CSS remains f
 // Code section. Each host keeps a labeled switcher for the section where it is
 // active, and SidebarMinimal returns outside Code.
 assert.doesNotMatch(menuBar, /FamiliarQuickSwitch|FamiliarSwitcher/, "the menu bar no longer hosts familiar selection");
-assert.match(sidebar, /<FamiliarSwitcher[\s\S]*?labeled/, "the Chats list header keeps a labeled familiar switcher beside thread navigation");
+// Chat reaches the labeled switcher through the SHARED SidebarRailHeader (which
+// passes `labeled`), so the two rails cannot drift — see sidebar-rail-header.test.ts.
+assert.match(sidebar, /<SidebarRailHeader[\s\S]*?familiars=\{familiars\}/, "the Chats list header keeps a labeled familiar switcher beside thread navigation");
+assert.match(railHeader, /<FamiliarSwitcher[\s\S]*?labeled/, "the shared header mounts the switcher in its labeled form");
 const sidenav = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 assert.match(
   sidenav,
-  /<div className="sidebar-familiar-switch">[\s\S]*?<FamiliarQuickSwitch[\s\S]*?onSelectFamiliar=\{onFamiliarScopeChange\}[\s\S]*?labeled/,
+  /<SidebarRailHeader[\s\S]*?onSelectFamiliar=\{onFamiliarScopeChange\}/,
   "the normal sidenav header keeps the labeled familiar switcher when Chat is inactive",
 );
 assert.match(
   workspace,
-  /const contextualNav = navSection === "code" \? chatSidebar : sidebar;[\s\S]*nav=\{contextualNav\}\s*list=\{undefined\}/,
-  "WorkspaceSidebar replaces the normal sidenav in Code and SidebarMinimal returns outside it",
+  /const contextualNav =\s*\n\s*navSection === "code" && \(navOpen \|\| isMobile\) \? chatSidebar : sidebar;[\s\S]*nav=\{contextualNav\}\s*list=\{undefined\}/,
+  "WorkspaceSidebar replaces the normal sidenav in an expanded Code room; SidebarMinimal returns outside it and when collapsed",
 );
 
 console.log("familiar-quick-switch component: all assertions passed");

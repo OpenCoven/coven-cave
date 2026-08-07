@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const source = readFileSync(
-  fileURLToPath(new URL("./dev-app.sh", import.meta.url)),
-  "utf8",
-);
+const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
+const source = readFileSync(path.join(scriptsDir, "dev-app.sh"), "utf8");
 
 assert.match(
   source,
@@ -24,6 +24,36 @@ assert.doesNotMatch(
   source,
   /for candidate in \$\(seq 3000 3010\)/,
   "the free-port scan is retired — a dedicated port that relocates is not dedicated",
+);
+
+// The captured port must be bare digits under FORCE_COLOR. `console.log` on a
+// Number renders through util.inspect, which colourises it; the ANSI escapes
+// survive command substitution, fail dev-app-origin-health's /^\d+$/ port
+// check, and make the launcher exit instantly while blaming a readiness
+// timeout it never waited for. Agent harnesses and CI runners set FORCE_COLOR
+// routinely, so run the launcher's own capture rather than trusting its shape.
+const portCapture = source.match(/^dev_port="\$\((node -e "[\s\S]*?")\)"$/m);
+assert.ok(portCapture, "the launcher must capture its dev port from a node one-liner");
+const capturedPort = execFileSync("bash", ["-c", portCapture[1]], {
+  cwd: path.dirname(scriptsDir),
+  encoding: "utf8",
+  env: { ...process.env, FORCE_COLOR: "3", COVEN_CAVE_PORT: "", PORT: "" },
+});
+// Trailing newlines are what command substitution itself strips, so trim to
+// assert the contract the launcher actually depends on rather than pinning
+// whether the one-liner happens to terminate its line.
+assert.match(
+  capturedPort.trim(),
+  /^\d+$/,
+  "the resolved dev port must be bare digits even when FORCE_COLOR decorates Node's output",
+);
+
+// A port that does arrive decorated has to say so. Silently handing it to the
+// readiness probe is what disguised this as an intermittent bind timeout.
+assert.match(
+  source,
+  /dev_port="\$\([\s\S]*?\)"\s*case "\$dev_port" in[\s\S]*?\|\*\[!0-9\]\*\)[\s\S]*?exit 1/,
+  "a non-numeric resolved port must fail loudly at capture, not downstream",
 );
 // Busy is answered by identity, not by moving: attach to our own dev server,
 // refuse anything else by name.

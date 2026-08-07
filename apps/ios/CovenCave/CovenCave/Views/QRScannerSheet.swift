@@ -24,7 +24,7 @@ struct QRScannerSheet: UIViewControllerRepresentable {
     }
 
     static func dismantleUIViewController(_ controller: DataScannerViewController, coordinator: Coordinator) {
-        try? controller.stopScanning()
+        controller.stopScanning()
         controller.delegate = nil
     }
 
@@ -47,7 +47,7 @@ struct QRScannerSheet: UIViewControllerRepresentable {
             for item in addedItems {
                 if case .barcode(let barcode) = item, let payload = barcode.payloadStringValue {
                     delivered = true
-                    try? dataScanner.stopScanning()
+                    dataScanner.stopScanning()
                     onScan(payload)
                     return
                 }

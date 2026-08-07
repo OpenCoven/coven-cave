@@ -87,8 +87,8 @@ assert.match(
 );
 assert.match(
   src,
-  /delete req\.headers\[LOCAL_PEER_HEADER\];\s*if \(isDirectLoopbackRequest\(req\)\) \{\s*req\.headers\[LOCAL_PEER_HEADER\] = LOCAL_PEER_SECRET;/,
-  "client-supplied local-peer headers are stripped before the server stamps its own",
+  /delete req\.headers\[LOCAL_PEER_HEADER\];\s*delete req\.headers\[TAILNET_PEER_HEADER\];\s*if \(isDirectLoopbackRequest\(req\)\) \{\s*req\.headers\[LOCAL_PEER_HEADER\] = LOCAL_PEER_SECRET;/,
+  "client-supplied local-peer and tailnet-peer headers are both stripped before the server stamps its own",
 );
 assert.match(src, /SIDECAR_QUERY_PARAM = "covenCaveToken"/, "PTY WebSocket auth accepts the sidecar token query param used by native WebSockets");
 // Credentials are verified BEFORE the source gate: a paired device over
@@ -99,8 +99,16 @@ assert.match(src, /SIDECAR_QUERY_PARAM = "covenCaveToken"/, "PTY WebSocket auth 
 // tab never connects" bug (cave-iz1j).
 assert.match(
   src,
-  /const tokenAuthenticated = isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false;/,
-  "PTY upgrade verifies the access or sidecar token before the source gate",
+  /const tokenAuthenticated =\s*tailnetAuthenticated \|\| \(isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false\);/,
+  "PTY upgrade verifies the access/sidecar token, or an allowlisted tailnet device, before the source gate",
+);
+// An allowlisted tailnet device is a credential in its own right (cave-zm6pn):
+// resolved off the raw socket, it is stronger evidence than the shared bearer
+// token, so the terminal must not 403 a device the REST surface already admits.
+assert.match(
+  src,
+  /const tailnetAuthenticated = resolveTailnetPeer\(req\) !== null;/,
+  "PTY upgrade treats an allowlisted tailnet device as authenticated",
 );
 assert.match(
   src,
@@ -217,7 +225,7 @@ assert.match(src, /isLoopbackAddress\(req\.socket\.remoteAddress\)/, "server ver
 // Tailscale Serve forwards the <host>.ts.net Host. The iOS terminal may use
 // that host only after the mobile access token authenticates the upgrade;
 // tailnet membership alone must not relax the host gate.
-assert.match(src, /const tokenAuthenticated = isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false/, "the upgrade credential is verified before the host gate");
+assert.match(src, /const tokenAuthenticated =\s*tailnetAuthenticated \|\| \(isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false\)/, "the upgrade credential — token or allowlisted tailnet device — is verified before the host gate");
 assert.match(
   src,
   /if \(tokenAuthenticated\) return sameOrigin\(req\.headers\.origin, `http:\/\/\$\{host\}`\);\s*\n\s*return false;/,

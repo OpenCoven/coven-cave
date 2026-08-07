@@ -171,8 +171,18 @@ private struct ReconnectPill: View {
 struct MainShellView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
-    @State private var presentedOverlay: MainOverlay?
-    @State private var projectToOpen: ProjectInfo?
+    @State private var presentedOverlay: MainOverlay? = {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-open-search") {
+            return .search
+        }
+        if ProcessInfo.processInfo.arguments.contains("--ui-open-projects") {
+            return .projects(nil)
+        }
+        #endif
+        return nil
+    }()
+    @State private var overlayDismissalAction: (() -> Void)?
     @State private var terminal = PtyTerminal()
     @State private var terminalCwd: String?
 
@@ -186,8 +196,7 @@ struct MainShellView: View {
                     set: { app.navigationDrawerOpen = $0 }
                 ),
                 openProjects: { project in
-                    projectToOpen = project
-                    presentedOverlay = .projects
+                    presentedOverlay = .projects(project)
                 },
                 openFamiliars: { presentedOverlay = .familiars },
                 openThread: { app.requestOpen($0) },
@@ -195,24 +204,39 @@ struct MainShellView: View {
                     app.selectedTab = .chats
                     app.newChatRequested = true
                 },
-                searchChats: {
-                    app.selectedTab = .chats
-                    app.chatSearchRequested = true
-                }
+                openSearch: { presentedOverlay = .search }
             )
             .zIndex(100)
         }
-        .fullScreenCover(item: $presentedOverlay) { overlay in
+        .fullScreenCover(item: $presentedOverlay, onDismiss: runOverlayDismissalAction) { overlay in
             switch overlay {
-            case .projects:
-                ProjectsPanel(initialProject: projectToOpen) {
+            case .projects(let project):
+                ProjectsPanel(initialProject: project) {
                     presentedOverlay = nil
-                    projectToOpen = nil
                 }
             case .familiars: FamiliarsListView { familiar in
-                presentedOverlay = nil
-                app.requestOpen(app.directThread(for: familiar.id))
+                dismissOverlay {
+                    app.requestOpen(app.directThread(for: familiar.id))
+                }
             }
+            case .search:
+                GlobalSearchView(
+                    dismiss: { presentedOverlay = nil },
+                    openThread: { thread in
+                        dismissOverlay { app.requestOpen(thread) }
+                    },
+                    openProject: { project in
+                        presentedOverlay = .projects(project)
+                    },
+                    openFamiliar: { familiar in
+                        dismissOverlay {
+                            app.requestOpen(app.directThread(for: familiar.id))
+                        }
+                    },
+                    openTask: { card in
+                        dismissOverlay { app.requestOpenTask(card) }
+                    }
+                )
             }
         }
         // Command confirmations float above the whole shell so they're visible
@@ -250,6 +274,20 @@ struct MainShellView: View {
         }
     }
 
+    private func dismissOverlay(then action: @escaping () -> Void) {
+        overlayDismissalAction = action
+        presentedOverlay = nil
+    }
+
+    private func runOverlayDismissalAction() {
+        let action = overlayDismissalAction
+        overlayDismissalAction = nil
+        Task { @MainActor in
+            await Task.yield()
+            action?()
+        }
+    }
+
     @ViewBuilder
     private var selectedDestination: some View {
         switch app.selectedTab {
@@ -265,10 +303,18 @@ struct MainShellView: View {
     }
 }
 
-private enum MainOverlay: String, Identifiable {
-    case projects
+private enum MainOverlay: Identifiable {
+    case projects(ProjectInfo?)
     case familiars
-    var id: String { rawValue }
+    case search
+
+    var id: String {
+        switch self {
+        case .projects(let project): "projects:\(project?.id ?? "root")"
+        case .familiars: "familiars"
+        case .search: "search"
+        }
+    }
 }
 
 struct ConnectingView: View {
