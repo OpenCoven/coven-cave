@@ -220,14 +220,27 @@ Ship one PR per phase; each must keep `Frontend build`, `Rust check`,
 `E2E (Playwright)`, `Cross-environment required`, `Sidecar runtime required`,
 and `CodeQL` green.
 
-1. **Foundation.** `workspace-location.ts`, `keyOf` on
-   `workspace-navigation-history.ts`, `use-surface-history.ts`, unified
-   `popstate` handling in `workspace.tsx`, `canGoBack`/`canGoForward` from the
-   single stack. Migrate the two existing levels (mode, chat session) onto it
-   with **no behaviour change** — this phase is a refactor and its test suite
-   should prove equivalence.
-2. **Chat scope** (`chat-surface.tsx`) — the reference conversion, and the
-   originally reported bug.
+1. ✅ **Foundation.** *Shipped in this PR.* `keyOf` on
+   `workspace-navigation-history.ts` (default returns the entry, so the
+   comparison stays `===` and no existing call site changes),
+   `src/lib/surface-history.ts` as the registry of in-surface levels, and
+   `src/lib/use-surface-history.ts` as the hook a strip registers through.
+   `goBack`/`goForward` traverse deepest-first — chat session, then registered
+   levels, then mode — and `canGoBack`/`canGoForward` subscribe to the registry
+   via `useSyncExternalStore` rather than deriving from Workspace state.
+
+   The `WorkspaceLocation` entry model and URL serialization described in §3.1
+   and §3.2 are **not** built yet: the registry reaches the levels the
+   Workspace could not otherwise see, which is what phases 2–9 need. Adopt the
+   location model when a level first has to be addressable by URL — Settings
+   (phase 3) is the natural forcing function, since its sections already carry
+   a hash.
+2. ✅ **Chat scope** (`chat-surface.tsx`) — *shipped in this PR.* The reference
+   conversion, and the originally reported bug. `select` records an entry (the
+   tab strip, and `cave:inspector-open`, which moves only this level); `show`
+   lands without one, which is what every `CHAT_OPEN_*` handoff and
+   pending-action latch uses, since those already push on a level the Workspace
+   tracks.
 3. **Settings** — section, sub-tabs, studio tabs, mobile drill-down.
 4. **Board, Inbox/Rituals, Marketplace** — the three surfaces reachable by alias
    deep link, so users currently arrive with no way back.
