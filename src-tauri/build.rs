@@ -4,8 +4,44 @@ use std::path::{Path, PathBuf};
 
 fn main() {
   emit_sidecar_file_count_budget();
+  emit_discord_application_id();
   tauri_build::build()
 }
+
+/// Supply `COVENCAVE_DISCORD_APPLICATION_ID` so local builds get Rich Presence.
+///
+/// `discord_presence.rs` reads this through `option_env!`, which resolves at
+/// compile time. A build that does not see the variable bakes in
+/// `DISCORD_APPLICATION_ID = None` and can never publish activity, and nothing
+/// at runtime can repair it. Until now only `release.yml` passed the variable,
+/// so every local `cargo build` / `pnpm dev:app` / `tauri build` produced a
+/// presence-less binary that is indistinguishable from a working one — the sole
+/// signal is one log line, and on Windows release builds
+/// `windows_subsystem = "windows"` means there is no console to print it to.
+///
+/// Defaulting here removes that trap. The ID is public: it ships inside every
+/// binary, Discord serves it from an unauthenticated endpoint, and
+/// `release.yml` already carries it in a comment.
+///
+/// An explicit variable still wins, so CI and forks pointing at their own
+/// application are unaffected. Setting it to the empty string is an explicit
+/// opt-out and keeps the "not configured" branch reachable.
+///
+/// Unlike the budget above, a missing value here is not a correctness hazard —
+/// it degrades one cosmetic integration — so this defaults rather than panics.
+fn emit_discord_application_id() {
+  const DEFAULT_APPLICATION_ID: &str = "1529254721091801180";
+
+  // `option_env!` alone never triggers a rebuild when the variable changes;
+  // only a build script declaring the dependency does.
+  println!("cargo:rerun-if-env-changed={DISCORD_APPLICATION_ID_VAR}");
+
+  let application_id = env::var(DISCORD_APPLICATION_ID_VAR)
+    .unwrap_or_else(|_| DEFAULT_APPLICATION_ID.to_string());
+  println!("cargo:rustc-env={DISCORD_APPLICATION_ID_VAR}={application_id}");
+}
+
+const DISCORD_APPLICATION_ID_VAR: &str = "COVENCAVE_DISCORD_APPLICATION_ID";
 
 /// Generate `MAX_FILE_COUNT` from `scripts/sidecar-runtime-budget.json`.
 ///
