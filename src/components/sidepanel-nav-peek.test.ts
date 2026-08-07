@@ -7,7 +7,7 @@ const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "ut
 
 // Hover-to-peek state + handlers on the collapsed nav rail.
 assert.match(shell, /const \[navPeeking, setNavPeeking\] = useState\(false\)/, "shell tracks a nav peek state");
-assert.match(shell, /const navPeekEnabled = navPolicy === "remembered" && !isMobile && !navOpen;/, "shell derives whether peek is allowed from nav policy and breakpoint");
+assert.match(shell, /const navPeekEnabled = !isMobile && !navOpen;/, "peek is allowed on every desktop surface with a collapsed rail, Chat included");
 assert.match(shell, /const navPeekVisible = navPeekEnabled && navPeeking;/, "shell derives visible peek state synchronously from the policy-gated flag");
 assert.match(shell, /navPeekVisible \? " shell-nav--peek" : " shell-nav--rail"/, "only a policy-allowed peek renders the overlay class");
 assert.match(shell, /onMouseEnter=\{navPeekEnabled \? \(\) => setNavPeeking\(true\) : undefined\}/, "hovering starts the peek only when the gated handler is armed");
