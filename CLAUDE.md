@@ -384,11 +384,47 @@ out. See `cave-l52dt`.
 - `git worktree remove --force` when status is dirty — investigate first; uncommitted edits may belong to another live session.
 
 **After an exact-head squash merge:** normal completion uses the lifecycle patrol.
-Run `pnpm beads:worktrees`; when the full maintenance
-transaction is available, `pnpm beads:worktrees:apply` retires proven-safe
-local state. If it reports active, recovery, cooldown, uncertain, or
-gate-incomplete, preserve the unit and record its owner/reason. Never bypass
+Run `pnpm beads:worktrees`. If it reports active, recovery, cooldown, uncertain,
+or gate-incomplete, preserve the unit and record its owner/reason. Never bypass
 the worktree guard to force completion.
+
+⚠️ **`pnpm beads:worktrees:apply` does not work today, and this is not a local
+fault.** It exits 2 before assessing a single unit:
+
+```text
+worktree-lifecycle-patrol: --apply unavailable; missing maintenance planes: coven, beads, github
+```
+
+`scripts/maintenance-gate.mjs` hard-codes three of the four planes to
+`enforced: false`, each pointing at unbuilt work — `coven` → `cave-wqa0b.2`,
+`beads` → `cave-wqa0b.3`, `github` → `cave-wqa0b.4`. All three are **BLOCKED**,
+so `--apply` is unreachable for the foreseeable future and no retry, credential
+or daemon will change that. Tracked by `cave-3aqvr`.
+
+**So hand-retirement is the norm right now, not the exception.** For a unit the
+patrol already classified `cleanup-ready`, use the archive-tag route in the
+worktree-guard section below.
+
+⚠️ **Prove retention before removing anything — a merged PR is NOT retention.**
+A squash-merge leaves the branch's own commits on no remote ref, so
+`git branch -r --contains <head>` comes back empty even though the work shipped.
+Check for an existing archive tag first, and create one if there is none:
+
+```bash
+git ls-remote --tags origin | grep <branch-slug>          # already archived?
+gh pr list --head <branch> --state all --json number,state,mergedAt
+git tag -s archive/<branch-with-slashes-as-dashes>-<date> <exact-head> -m "…"
+git push origin archive/<…>                               # a LOCAL-only tag does not count
+git worktree unlock <path> && git worktree remove <path>
+git branch -D <branch>
+```
+
+Verified 2026-08-08 retiring `cave-93jz1` / `cave-g8n5v` / `cave-na7oc`: two
+already had pushed archive tags, and `cave-g8n5v` had none — its two commits
+existed only inside GitHub's PR record for #4426, so removing it without tagging
+first would have been lossy. Also note `git log @{u}..HEAD` is worthless as an
+"is it pushed" check on these branches: the upstream ref is gone, so the command
+errors and a naive `| wc -l` reports a reassuring `0`.
 
 ## Starting the Tauri desktop app
 
