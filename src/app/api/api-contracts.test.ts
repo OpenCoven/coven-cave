@@ -618,6 +618,10 @@ for (const contract of contracts) {
 
 {
   const sessionsListSource = readFileSync(
+    path.join(apiRoot, "..", "..", "lib", "server", "sessions-list.ts"),
+    "utf8",
+  );
+  const sessionsListRouteSource = readFileSync(
     path.join(apiRoot, "sessions", "list", "route.ts"),
     "utf8",
   );
@@ -647,7 +651,7 @@ for (const contract of contracts) {
     "/sessions/list: git enrichment should be awaited (async), not run synchronously",
   );
   assert.match(
-    sessionsListSource,
+    sessionsListRouteSource,
     /import \{\s*sessionsListCache,[\s\S]{0,80}\} from "@\/lib\/server\/sessions-list-cache"/,
     "/sessions/list: repeated callers should share the invalidatable stale-while-revalidate cache (cave-53yx)",
   );

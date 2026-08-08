@@ -60,19 +60,23 @@ function fnBlock(source, name) {
   return next === -1 ? source.slice(start) : source.slice(start, next);
 }
 
-// The list route consumes the SHARED cache; a locally re-created cache would
-// silently detach it from the invalidation hook.
+// The list route consumes the shared cache and delegates the cached compute.
 {
   const route = read("../../app/api/sessions/list/route.ts");
   assert.match(
     route,
-    /import \{\s*sessionsListCache,[\s\S]{0,120}\} from "@\/lib\/server\/sessions-list-cache"/,
-    "the list route imports the shared sessions-list cache",
+    /sessionsListCache/,
+    "the list route imports the shared cache",
   );
   assert.doesNotMatch(
     route,
     /createSwrCache/,
-    "the list route does not create a private cache instance",
+    "the route does not create a private cache",
+  );
+  assert.match(
+    route,
+    /computeSessionsList/,
+    "the cached callback delegates to the shared compute helper",
   );
 }
 
