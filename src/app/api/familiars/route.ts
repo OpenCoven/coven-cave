@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { callDaemon } from "@/lib/coven-daemon";
-import { bindingFor, saveConfig } from "@/lib/cave-config";
+import { saveConfig } from "@/lib/cave-config";
 import { covenHome } from "@/lib/coven-paths";
-import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
+import { enrichFamiliar } from "@/lib/server/familiar-enrichment";
 import { loadVisibleFamiliarRoster } from "@/lib/server/familiar-roster";
 import { filterFamiliarsForProject, loadProjectPermissions } from "@/lib/project-permissions";
 import {
@@ -83,50 +83,9 @@ export async function GET(req: Request) {
       : [...new Map(
           [...rostersByProject.values()].flat().map((familiar) => [familiar.id, familiar]),
         ).values()];
-  // Pass `emoji` through — it's the daemon-provided default glyph the
-  // glyph picker uses as the starting value. The Cave-local override store
-  // (`cave-glyph-overrides.ts`) wins on render when the user picks something.
-  //
-  // `avatarUrl` points at the workspace avatar (.../familiars/<id>/avatars/<img>)
-  // when one exists, cache-busted by file mtime plus renderer format so both
-  // content changes and server-side encoding changes refetch in desktop
-  // WebViews. Familiars with no on-disk avatar omit it and render the glyph.
-  const enrichFamiliar = async (f: (typeof rosterResult.roster)[number]) => {
-    const configEntry = config.familiars[f.id] ?? {};
-    const binding = bindingFor(config, f.id);
-    const avatar = await resolveFamiliarAvatar(f.id);
-    return {
-      ...f,
-      display_name: binding.display_name ?? f.display_name,
-      role: binding.role ?? f.role,
-      familiarType: binding.familiarType,
-      pronouns: binding.pronouns ?? f.pronouns,
-      description: binding.description ?? f.description,
-      color: binding.color,
-      harness: binding.harness,
-      defaultHarness: config.defaults.harness,
-      harnessOverride: configEntry.harness ?? null,
-      model: binding.model,
-      note: binding.note,
-      voiceProvider: binding.voiceProvider,
-      voiceModel: binding.voiceModel,
-      voiceName: binding.voiceName,
-      imageProvider: binding.imageProvider,
-      imageModel: binding.imageModel,
-      imageSize: binding.imageSize,
-      imageQuality: binding.imageQuality,
-      autoSelfReport: configEntry.autoSelfReport ?? false,
-      asanaEnabled: configEntry.asanaEnabled,
-      asanaWorkspaceGid: configEntry.asanaWorkspaceGid,
-      xResearchEnabled: configEntry.xResearchEnabled === true,
-      xPublishEnabled: configEntry.xPublishEnabled === true,
-      ...(binding.omnigent ? { omnigent: binding.omnigent } : {}),
-      avatarUrl: avatar
-        ? `/api/familiars/${encodeURIComponent(f.id)}/avatar?v=${Math.round(avatar.mtimeMs)}&format=png`
-        : undefined,
-    };
-  };
-  const familiars = await Promise.all(roster.map(enrichFamiliar));
+  const familiars = await Promise.all(
+    roster.map((familiar) => enrichFamiliar(familiar, config)),
+  );
 
   // The table can show cards from many projects at once. Fetching the daemon
   // roster once per project is especially expensive for hub and remote-host

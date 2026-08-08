@@ -9,25 +9,29 @@ import { after, test } from "node:test";
 import { createDefaultPreferences } from "../../../lib/preferences-schema.ts";
 
 const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+const enrichmentSource = readFileSync(
+  new URL("../../../lib/server/familiar-enrichment.ts", import.meta.url),
+  "utf8",
+);
 const rosterHelper = readFileSync(new URL("../../../lib/server/familiar-roster.ts", import.meta.url), "utf8");
 
 assert.match(
-  source,
+  enrichmentSource,
   /const configEntry = config\.familiars\[f\.id\] \?\? \{\}/,
   "Familiars API should inspect the raw familiar config entry before resolving defaults",
 );
 assert.match(
-  source,
+  enrichmentSource,
   /defaultHarness: config\.defaults\.harness/,
   "Familiars API should expose the workspace default harness for UI copy",
 );
 assert.match(
-  source,
+  enrichmentSource,
   /harnessOverride: configEntry\.harness \?\? null/,
   "Familiars API should expose whether the familiar has an explicit harness override",
 );
 assert.match(
-  source,
+  enrichmentSource,
   /autoSelfReport: configEntry\.autoSelfReport \?\? false/,
   "Familiars API should expose per-familiar auto self-report config with a false default",
 );
@@ -78,6 +82,11 @@ assert.match(
   source,
   /roster\.map\(/,
   "daemon roster and declared-only familiars still flow through the same enrichment path",
+);
+assert.match(
+  source,
+  /roster\.map\(\(familiar\) => enrichFamiliar\(familiar, config\)\)/,
+  "Familiars API delegates enrichment to the shared server helper",
 );
 assert.match(
   rosterHelper,
