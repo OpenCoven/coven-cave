@@ -29,6 +29,8 @@ assert.match(daemonStart, /sanitizeDaemonStartDiagnostic\(stderr\)/, "launcher s
 assert.match(daemonStart, /assessDaemonStartupCompatibility/, "readiness must validate runtime coherence, not only socket reachability");
 assert.match(daemonStart, /code: "runtime_incompatible"/, "a stale or incompatible runtime has a stable actionable outcome");
 assert.match(daemonStart, /RuntimeStartupThrottle/, "repeated failed starts must be bounded to prevent a restart storm");
+assert.match(daemonStart, /code: "address_in_use"/, "an address someone else holds has its own actionable outcome");
+assert.match(daemonStart, /inspectDaemonAddress/, "occupancy is proven by connecting, not inferred from a failed health probe");
 assert.match(daemonStart, /activeDaemonStart/, "concurrent start requests must share one owned launch");
 
 for (const [payload, expected] of [
@@ -164,6 +166,10 @@ test("automatic recovery still starts after lifecycle proves stopped", async () 
     automatic: true,
     probe: async () => ({ ok: ++probes >= 2 }),
     inspectLifecycle: async () => ({ status: "stopped" }),
+    // Declared, not defaulted: the real probe would connect to this machine's
+    // own daemon socket and refuse, making the result depend on whether the
+    // developer running the suite happens to have a daemon up.
+    inspectAddress: async () => "free",
     spawnImpl: () => {
       spawnCalls += 1;
       return child;
@@ -264,6 +270,119 @@ test("an exited but unhealthy launcher is cleaned up before it is reported", asy
   assert.equal(result.ok, false);
   assert.equal(result.code, "runner_exited");
   assert.deepEqual(result.cleanup, { attempted: true, completed: true, mode: "windows-tree" });
+});
+
+test("an occupied-address launcher failure is named, not reported as a bare early exit", async () => {
+  const child = fakeChild();
+  let cleanupCalls = 0;
+  const result = await startLocalDaemon({
+    restart: true,
+    startTimeoutMs: 1,
+    probe: async () => ({ ok: false }),
+    spawnImpl: () => {
+      queueMicrotask(() => {
+        child.stderr.write("listen EADDRINUSE: address already in use");
+        child.emit("close", 1);
+      });
+      return child;
+    },
+    terminateLaunchTree: async () => {
+      cleanupCalls += 1;
+      return { attempted: true, completed: true, mode: "windows-tree" };
+    },
+    platform: "win32",
+  });
+
+  assert.equal(cleanupCalls, 1);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "address_in_use", "the launcher's own bind failure outranks the exit it caused");
+  assert.equal(result.status, 409);
+  assert.match(result.error, /already using the local Coven daemon address/i);
+  assert.match(result.error, /then try again/i, "the diagnostic carries one next step");
+  assert.match(result.stderr, /EADDRINUSE|address already in use/, "the raw launcher output stays diagnosable");
+  assert.deepEqual(result.cleanup, { attempted: true, completed: true, mode: "windows-tree" });
+});
+
+test("an already-bound address is refused by name instead of spawning a doomed launcher", async () => {
+  let spawnCalls = 0;
+  const result = await startLocalDaemon({
+    probe: async () => ({ ok: false }),
+    inspectAddress: async () => "occupied",
+    spawnImpl: () => {
+      spawnCalls += 1;
+      return fakeChild();
+    },
+  });
+
+  assert.equal(spawnCalls, 0, "a launcher that cannot win its own bind must never be started");
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "address_in_use");
+  assert.equal(result.status, 409);
+  assert.equal(result.launchMode, "none");
+  assert.match(result.error, /already using the local Coven daemon address/i);
+  assert.doesNotMatch(result.error, /[\\/]/, "the diagnostic never carries a socket path across the API boundary");
+});
+
+for (const occupancy of ["free", "unknown"]) {
+  test(`a ${occupancy} address still launches`, async () => {
+    let spawnCalls = 0;
+    let probes = 0;
+    const child = fakeChild();
+    const result = await startLocalDaemon({
+      probe: async () => ({ ok: ++probes >= 2 }),
+      inspectAddress: async () => occupancy,
+      spawnImpl: () => {
+        spawnCalls += 1;
+        return child;
+      },
+    });
+
+    assert.equal(spawnCalls, 1, "only proven occupancy refuses; an unreadable address must not strand a start");
+    assert.equal(result.ok, true);
+  });
+}
+
+test("restart never consults occupancy, because the occupant is what it replaces", async () => {
+  let inspections = 0;
+  let probes = 0;
+  const child = fakeChild();
+  const result = await startLocalDaemon({
+    restart: true,
+    probe: async () => ({ ok: ++probes >= 2 }),
+    inspectAddress: async () => {
+      inspections += 1;
+      return "occupied";
+    },
+    spawnImpl: () => child,
+  });
+
+  assert.equal(inspections, 0, "a restart that refused its own daemon's address could never restart anything");
+  assert.equal(result.ok, true);
+});
+
+test("automatic recovery checks lifecycle ownership before it checks the address", async () => {
+  const order = [];
+  let spawnCalls = 0;
+  const result = await startLocalDaemon({
+    automatic: true,
+    probe: async () => ({ ok: false }),
+    inspectLifecycle: async () => {
+      order.push("lifecycle");
+      return { status: "stopped" };
+    },
+    inspectAddress: async () => {
+      order.push("address");
+      return "occupied";
+    },
+    spawnImpl: () => {
+      spawnCalls += 1;
+      return fakeChild();
+    },
+  });
+
+  assert.deepEqual(order, ["lifecycle", "address"], "a live owner is the more specific answer and reports first");
+  assert.equal(spawnCalls, 0);
+  assert.equal(result.code, "address_in_use");
 });
 
 test("Windows cleanup delegates the complete owned tree to taskkill", async () => {

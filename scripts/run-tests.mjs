@@ -1245,6 +1245,7 @@ export const SUITES = {
     "src/app/api/travel/offline-work-queue.test.ts",
     "src/lib/executor-status.test.ts",
     "src/lib/daemon-start.test.ts",
+    "src/lib/daemon-socket-occupancy.test.ts",
     "src/lib/daemon-startup-contract.test.ts",
     "src/lib/runtime-startup-throttle.test.ts",
     "src/lib/daemon-update-lifecycle.test.ts",
