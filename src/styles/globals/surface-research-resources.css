@@ -431,9 +431,14 @@
 
 /* ── Item cards: grid and rows variants. ── */
 .research-res__items { margin-top: 10px; }
+/* auto-FIT, not auto-fill: auto-fill keeps the empty tracks it created, so a
+   group holding fewer links than the row fits left its cards stranded at the
+   minimum width beside dead space (cave-93jz1). auto-fit collapses those
+   tracks — paired with the card cap below, which stops the collapse turning a
+   single saved link into one 1300px-wide card. */
 .research-res__items[data-view="grid"] {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 10px;
 }
 .research-res__items[data-view="rows"] {
@@ -460,6 +465,12 @@
   transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
   --res-kind: var(--research-accent);
 }
+/* Grid only — rows view is a flex column whose cards must span the full width,
+   and a cap there would shrink every row to a third of the surface.
+   The cap sits just above the widest track a packed row produces, so a lone
+   card reads as the same component as one in a full group rather than as a
+   banner. */
+.research-res-card[data-view="grid"] { max-width: 360px; }
 .research-res-card[data-category="github"] { --res-kind: var(--text-secondary); }
 .research-res-card[data-category="docs"] { --res-kind: var(--color-info); }
 .research-res-card[data-category="paper"] { --res-kind: var(--color-danger); }
@@ -879,6 +890,8 @@
   }
   .research-res__intake-footer .ui-btn { width: 100%; }
   .research-res__items[data-view="grid"] { grid-template-columns: 1fr; }
+  /* Single column already: capping here would re-create the gap this fixes. */
+  .research-res-card[data-view="grid"] { max-width: none; }
   .research-res-card[data-view="rows"] { flex-wrap: wrap; }
   .research-res-card[data-view="rows"] .research-res-card__sub { flex-basis: 100%; order: 3; }
   .research-res-card[data-view="rows"] .research-res-card__footer {
