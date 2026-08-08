@@ -30,7 +30,7 @@ test("published limits match the v1 contract", () => {
   });
 });
 
-test("Overview prefers the newest active non-generated session for Now", () => {
+test("Overview selects the newest running non-generated session for Now", () => {
   const overview = buildFamiliarOverview({
     familiarId: "sage",
     familiar: { id: "sage", display_name: "Sage", role: "Researcher" },
@@ -63,12 +63,74 @@ test("Overview prefers the newest active non-generated session for Now", () => {
 
   assert.deepEqual(overview.now, {
     kind: "session",
-    id: "chat-2",
-    title: "Await approval",
-    updatedAt: "2026-08-07T19:58:30.000Z",
+    id: "chat-1",
+    title: "Investigate regression",
+    updatedAt: "2026-08-07T19:58:00.000Z",
   });
   assert.equal(overview.sessions.activeTotal, 2);
   assert.equal(overview.sessions.totalNonGenerated, 2);
+});
+
+test("Overview falls back to the next active task when no running session exists", () => {
+  const overview = buildFamiliarOverview({
+    familiarId: "sage",
+    familiar: { id: "sage", display_name: "Sage", role: "Researcher" },
+    tasks: [
+      modelTask(1, {
+        id: "task-1",
+        title: "Investigate queue drift",
+        updatedAt: "2026-08-07T19:57:30.000Z",
+        nextStep: {
+          summary: "Open the queue drift trace",
+          requiresApproval: false,
+          origin: "human",
+          updatedAt: "2026-08-07T19:57:00.000Z",
+        },
+      }),
+    ],
+    sessions: [
+      modelSession(1, {
+        id: "chat-1",
+        status: "working",
+        title: "Processing backlog",
+        updated_at: "2026-08-07T19:59:00.000Z",
+      }),
+    ],
+    reminders: [],
+    healRequests: [],
+    now: NOW,
+  });
+
+  assert.deepEqual(overview.now, {
+    kind: "task",
+    id: "task-1",
+    title: "Investigate queue drift",
+    nextStep: "Open the queue drift trace",
+    updatedAt: "2026-08-07T19:57:30.000Z",
+  });
+  assert.equal(overview.sessions.activeTotal, 1);
+});
+
+test("Overview falls back to idle when no running session or active task exists", () => {
+  const overview = buildFamiliarOverview({
+    familiarId: "sage",
+    familiar: { id: "sage", display_name: "Sage", role: "Researcher" },
+    tasks: [modelTask(1, { id: "task-1", title: "Triage notes", nextStep: null })],
+    sessions: [
+      modelSession(1, {
+        id: "chat-1",
+        status: "waiting",
+        title: "Await approval",
+        updated_at: "2026-08-07T19:59:00.000Z",
+      }),
+    ],
+    reminders: [],
+    healRequests: [],
+    now: NOW,
+  });
+
+  assert.deepEqual(overview.now, { kind: "idle", label: "No active work" });
+  assert.equal(overview.sessions.activeTotal, 1);
 });
 
 test("blocked task rows preserve dependencies, primary blocker, and next step", () => {
@@ -398,6 +460,67 @@ test("Analytics bounds evidence, reports, and the trailing metric window", () =>
   assert.equal(analytics.trends.sampleCount, 100);
   assert.equal(analytics.trends.period, "last 30 days");
   assert.equal(analytics.feedback.state, "stable");
+});
+
+test("Analytics trends derive only from the bounded 100 newest in-window snapshots", () => {
+  const snapshots = [
+    ...Array.from({ length: 100 }, (_, index) => ({
+      id: `kept-${index}`,
+      sessionId: `session-${index}`,
+      reportedAt: new Date(NOW - index * 60_000).toISOString(),
+      confidence: 100,
+      toolReliability: 80,
+      memoryRecall: 60,
+      fileLocatability: 90,
+      contextPressure: "adequate",
+    })),
+    {
+      id: "dropped-oldest-in-window",
+      sessionId: "session-oldest-in-window",
+      reportedAt: new Date(NOW - 100 * 60_000).toISOString(),
+      confidence: 0,
+      toolReliability: 0,
+      memoryRecall: 0,
+      fileLocatability: 0,
+      contextPressure: "adequate",
+    },
+    {
+      id: "outside-window",
+      sessionId: "session-outside-window",
+      reportedAt: new Date(NOW - 31 * 24 * 60 * 60_000).toISOString(),
+      confidence: 0,
+      toolReliability: 0,
+      memoryRecall: 0,
+      fileLocatability: 0,
+      contextPressure: "adequate",
+    },
+  ];
+  const analytics = buildFamiliarAnalyticsDigest({
+    familiarId: "sage",
+    familiar: { id: "sage", display_name: "Sage", role: "Researcher" },
+    sessions: [],
+    reports: [],
+    reportTotal: 0,
+    snapshots,
+    snapshotTotal: snapshots.length,
+    memories: [],
+    memoryAvailability: "ready",
+    retroState: null,
+    contractReport: null,
+    feedback: { up: 0, down: 0, total: 0, models: [], runtimes: [] },
+    now: NOW,
+  });
+
+  assert.equal(analytics.trends.period, "last 30 days");
+  assert.equal(analytics.trends.sampleCount, 100);
+  assert.equal(
+    analytics.trends.buckets.reduce((sum, bucket) => sum + bucket.count, 0),
+    100,
+  );
+  assert.equal(
+    analytics.trends.metrics.find((metric) => metric.key === "confidence")?.latest,
+    100,
+  );
 });
 
 test("Analytics pulse counts every in-window day even when evidence rows cap at 100", () => {

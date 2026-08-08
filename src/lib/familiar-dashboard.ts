@@ -350,6 +350,10 @@ function isActiveSessionStatus(status: string | null | undefined): boolean {
   return ACTIVE_SESSION_STATUSES.has(normalizedSessionStatus(status));
 }
 
+function isRunningSessionStatus(status: string | null | undefined): boolean {
+  return normalizedSessionStatus(status) === "running";
+}
+
 function timestampValue(value: string | null | undefined): number {
   const parsed = value ? Date.parse(value) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
@@ -501,7 +505,8 @@ export function buildFamiliarOverview({
       if (firedDelta !== 0) return firedDelta;
       return newestFirst(left, right, (item) => item.updatedAt, (item) => item.id);
     });
-  const currentSession = activeSessions[0] ?? null;
+  const currentSession =
+    visibleSessions.find((session) => isRunningSessionStatus(session.status)) ?? null;
   const nextTask = assignedTasks.find(
     (card) => Boolean(card.nextStep?.summary.trim()),
   );
