@@ -393,6 +393,46 @@ test("Analytics bounds evidence, reports, and the trailing metric window", () =>
   assert.equal(analytics.feedback.state, "stable");
 });
 
+test("Analytics pulse counts every in-window day even when evidence rows cap at 100", () => {
+  const sessions = Array.from({ length: 14 * 10 }, (_, index) => {
+    const dayOffset = Math.floor(index / 10);
+    const sessionIndex = index % 10;
+    const updatedAt = new Date(
+      NOW - dayOffset * 24 * 60 * 60_000 - sessionIndex * 60_000,
+    ).toISOString();
+    return modelSession(index, {
+      id: `pulse-${dayOffset}-${sessionIndex}`,
+      created_at: updatedAt,
+      updated_at: updatedAt,
+    });
+  });
+  const analytics = buildFamiliarAnalyticsDigest({
+    familiarId: "sage",
+    familiar: { id: "sage", display_name: "Sage", role: "Researcher" },
+    sessions,
+    reports: [],
+    reportTotal: 0,
+    snapshots: [],
+    snapshotTotal: 0,
+    memories: [],
+    memoryAvailability: "ready",
+    retroState: null,
+    contractReport: null,
+    feedback: { up: 0, down: 0, total: 0, models: [], runtimes: [] },
+    now: NOW,
+  });
+
+  assert.equal(analytics.activity.sampleCount, 100);
+  assert.equal(analytics.activity.evidenceCount, 100);
+  assert.equal(analytics.activity.totalSessions, 140);
+  assert.equal(analytics.activity.pulse.length, 14);
+  assert.equal(
+    analytics.activity.pulse.reduce((sum, day) => sum + day.count, 0),
+    140,
+  );
+  assert.ok(analytics.activity.pulse.every((day) => day.count === 10));
+});
+
 test("Analytics activity pulse buckets by UTC day across midnight and the 14-day boundary", () => {
   const boundaryNow = Date.parse("2026-08-07T00:30:00.000Z");
   const analytics = buildFamiliarAnalyticsDigest({

@@ -787,7 +787,7 @@ export function buildFamiliarAnalyticsDigest({
   const reportAggregate = aggregateThreadSignals(boundedReports);
   const confidence = deriveThreadConfidence(boundedReports);
   const pulse = buildSessionPulse(
-    evidenceSessions,
+    nonGeneratedSessions,
     familiarId,
     now,
     FAMILIAR_DASHBOARD_LIMITS.sessionPulseDays,

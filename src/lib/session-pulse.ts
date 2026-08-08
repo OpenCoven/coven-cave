@@ -3,6 +3,11 @@ import type { SessionRow } from "@/lib/types";
 export type PulseDay = { key: string; label: string; count: number };
 
 const DAY_MS = 24 * 60 * 60_000;
+const PULSE_DAY_LABEL = new Intl.DateTimeFormat(undefined, {
+  timeZone: "UTC",
+  month: "short",
+  day: "numeric",
+});
 
 /**
  * UTC day key (YYYY-MM-DD) for an ISO timestamp — the same bucketing
@@ -27,20 +32,26 @@ export function buildSessionPulse(
   now: number,
   days = 14,
 ): PulseDay[] {
+  const window = Array.from({ length: days }, (_, index) => {
+    const daysBack = days - 1 - index;
+    const day = new Date(now - daysBack * DAY_MS);
+    return {
+      day,
+      key: day.toISOString().slice(0, 10),
+    };
+  });
+  const windowKeys = new Set(window.map((day) => day.key));
   const counts = new Map<string, number>();
   for (const session of sessions) {
     if (session.familiarId !== familiarId) continue;
     const key = sessionDayKey(session.updated_at);
-    if (!key) continue;
+    if (!key || !windowKeys.has(key)) continue;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  return Array.from({ length: days }, (_, index) => {
-    const daysBack = days - 1 - index;
-    const day = new Date(now - daysBack * DAY_MS);
-    const key = day.toISOString().slice(0, 10);
+  return window.map(({ day, key }) => {
     return {
       key,
-      label: day.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+      label: PULSE_DAY_LABEL.format(day),
       count: counts.get(key) ?? 0,
     };
   });

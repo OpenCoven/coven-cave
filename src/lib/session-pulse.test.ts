@@ -20,6 +20,14 @@ function session(updatedAt: string, familiarId = "cody"): SessionRow {
   } as SessionRow;
 }
 
+function utcLabel(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 describe("buildSessionPulse", () => {
   it("buckets sessions into UTC days, oldest first, today last", () => {
     const pulse = buildSessionPulse(
@@ -50,6 +58,20 @@ describe("buildSessionPulse", () => {
   it("drops sessions outside the window", () => {
     const pulse = buildSessionPulse([session("2026-06-01T09:00:00.000Z")], "cody", NOW);
     assert.equal(pulseTotal(pulse), 0);
+  });
+
+  it("formats pulse labels in UTC so keys and labels stay aligned across midnight", () => {
+    const nearMidnightNow = Date.parse("2026-07-06T00:30:00.000Z");
+    const pulse = buildSessionPulse(
+      [session("2026-07-06T00:15:00.000Z")],
+      "cody",
+      nearMidnightNow,
+      1,
+    );
+
+    assert.equal(pulse[0]?.key, "2026-07-06");
+    assert.equal(pulse[0]?.label, utcLabel("2026-07-06T12:00:00.000Z"));
+    assert.equal(pulse[0]?.count, 1);
   });
 });
 
