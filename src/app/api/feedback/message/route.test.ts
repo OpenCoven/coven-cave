@@ -6,7 +6,7 @@ const route = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(route, /export async function POST/, "POST handler");
 assert.match(route, /export async function GET/, "GET serves the analytics rollup");
-assert.match(route, /rollup: rollupMessageFeedback\(entries/, "GET returns aggregate counts via the pure rollup");
+assert.match(route, /rollup: await loadMessageFeedbackRollup\(\{ familiarId \}\)/, "GET returns the bounded store rollup");
 assert.doesNotMatch(route, /entries\s*:/, "the response payload never carries raw traces (message ids, timestamps)");
 assert.match(route, /NextResponse\.json/, "returns JSON");
 assert.match(route, /recordMessageFeedback\(/, "records via the local store");

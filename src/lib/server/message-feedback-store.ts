@@ -7,9 +7,18 @@
 // leak in. These local traces can later seed a sanitized analytics set after
 // review.
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
 import path from "node:path";
+import { createInterface } from "node:readline";
+import { FAMILIAR_DASHBOARD_LIMITS } from "@/lib/familiar-dashboard";
 import { caveHome } from "@/lib/coven-paths";
+import {
+  applyMessageFeedbackEntry,
+  EMPTY_FEEDBACK_ROLLUP,
+  finalizeMessageFeedbackRollup,
+  type MessageFeedbackRollup,
+} from "@/lib/message-feedback-rollup";
 
 export const MESSAGE_FEEDBACK_PATH = path.join(caveHome(), "message-feedback.json");
 
@@ -72,6 +81,92 @@ export async function loadMessageFeedback(): Promise<MessageFeedback[]> {
   } catch {
     return [];
   }
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
+}
+
+function invalidFeedbackStore(reason: string): Error {
+  return new Error(`invalid message feedback store: ${reason}`);
+}
+
+function parseFeedbackEntryBlock(lines: string[]): MessageFeedback {
+  const raw = lines.join("\n").replace(/,\s*$/, "");
+  return JSON.parse(raw) as MessageFeedback;
+}
+
+export async function loadMessageFeedbackRollup(args?: {
+  familiarId?: string;
+  bucketLimit?: number;
+}): Promise<MessageFeedbackRollup> {
+  try {
+    await access(MESSAGE_FEEDBACK_PATH);
+  } catch (error) {
+    if (isMissingFileError(error)) return EMPTY_FEEDBACK_ROLLUP;
+    throw error;
+  }
+
+  const finalVotes = new Map<string, MessageFeedback>();
+  const reader = createInterface({
+    input: createReadStream(MESSAGE_FEEDBACK_PATH, { encoding: "utf8" }),
+    crlfDelay: Infinity,
+  });
+
+  let sawEntriesArray = false;
+  let collectingEntry = false;
+  const entryLines: string[] = [];
+
+  try {
+    for await (const line of reader) {
+      const trimmed = line.trim();
+      if (!sawEntriesArray) {
+        if (trimmed === '"entries": []') {
+          sawEntriesArray = true;
+          break;
+        }
+        if (trimmed === '"entries": [' || trimmed.startsWith('"entries": [')) {
+          sawEntriesArray = true;
+        }
+        continue;
+      }
+
+      if (!collectingEntry) {
+        if (!trimmed || trimmed === "]" || trimmed === "]," || trimmed === "}") continue;
+        if (trimmed === "{") {
+          collectingEntry = true;
+          entryLines.push(trimmed);
+          continue;
+        }
+        throw invalidFeedbackStore(`unexpected token ${trimmed}`);
+      }
+
+      entryLines.push(trimmed);
+      if (trimmed === "}" || trimmed === "},") {
+        applyMessageFeedbackEntry(
+          finalVotes,
+          parseFeedbackEntryBlock(entryLines),
+          { familiarId: args?.familiarId },
+        );
+        entryLines.length = 0;
+        collectingEntry = false;
+      }
+    }
+  } finally {
+    reader.close();
+  }
+
+  if (!sawEntriesArray) throw invalidFeedbackStore('missing "entries" array');
+  if (collectingEntry) throw invalidFeedbackStore("unterminated feedback entry");
+
+  return finalizeMessageFeedbackRollup(finalVotes.values(), {
+    bucketLimit: args?.bucketLimit ?? FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets,
+  });
 }
 
 let feedbackTmpCounter = 0;

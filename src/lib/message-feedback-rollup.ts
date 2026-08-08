@@ -50,14 +50,28 @@ export const EMPTY_FEEDBACK_ROLLUP: MessageFeedbackRollup = {
   runtimes: [],
 };
 
+export type MessageFeedbackRollupOptions = {
+  familiarId?: string;
+  bucketLimit?: number;
+};
+
 function bump(map: Map<string, { up: number; down: number }>, key: string, vote: "up" | "down") {
   const stat = map.get(key) ?? { up: 0, down: 0 };
   stat[vote] += 1;
   map.set(key, stat);
 }
 
-function toSlices(map: Map<string, { up: number; down: number }>): FeedbackSliceStat[] {
-  return Array.from(map.entries())
+function clampBucketLimit(limit: number | undefined): number | null {
+  if (limit === undefined) return null;
+  if (!Number.isFinite(limit)) return 0;
+  return Math.max(0, Math.floor(limit));
+}
+
+function toSlices(
+  map: Map<string, { up: number; down: number }>,
+  bucketLimit?: number,
+): FeedbackSliceStat[] {
+  const slices = Array.from(map.entries())
     .map(([key, { up, down }]) => ({
       key,
       up,
@@ -66,28 +80,34 @@ function toSlices(map: Map<string, { up: number; down: number }>): FeedbackSlice
       approval: up + down > 0 ? up / (up + down) : 0,
     }))
     .sort((a, b) => b.total - a.total || a.key.localeCompare(b.key));
+  const limit = clampBucketLimit(bucketLimit);
+  return limit === null ? slices : slices.slice(0, limit);
 }
 
-export function rollupMessageFeedback(
-  entries: FeedbackRollupEntry[],
-  opts?: { familiarId?: string },
-): MessageFeedbackRollup {
-  // Replay the append-only log: the newest entry per message wins, and a
-  // toggle-off (cleared) withdraws the vote entirely.
-  const finalVotes = new Map<string, FeedbackRollupEntry>();
-  for (const entry of entries) {
-    if (!entry || typeof entry.messageId !== "string" || !entry.messageId) continue;
-    if (entry.vote !== "up" && entry.vote !== "down") continue;
-    if (opts?.familiarId && entry.familiarId !== opts.familiarId) continue;
-    if (entry.cleared) finalVotes.delete(entry.messageId);
-    else finalVotes.set(entry.messageId, entry);
-  }
+export function applyMessageFeedbackEntry(
+  finalVotes: Map<string, FeedbackRollupEntry>,
+  entry: unknown,
+  opts?: Pick<MessageFeedbackRollupOptions, "familiarId">,
+): void {
+  if (!entry || typeof entry !== "object") return;
+  const candidate = entry as FeedbackRollupEntry;
+  if (typeof candidate.messageId !== "string" || !candidate.messageId) return;
+  if (candidate.vote !== "up" && candidate.vote !== "down") return;
+  if (opts?.familiarId && candidate.familiarId !== opts.familiarId) return;
+  if (candidate.cleared) finalVotes.delete(candidate.messageId);
+  else finalVotes.set(candidate.messageId, candidate);
+}
 
+export function finalizeMessageFeedbackRollup(
+  finalVotes: Iterable<FeedbackRollupEntry>,
+  opts?: Pick<MessageFeedbackRollupOptions, "bucketLimit">,
+): MessageFeedbackRollup {
+  const bucketLimit = opts?.bucketLimit;
   let up = 0;
   let down = 0;
   const models = new Map<string, { up: number; down: number }>();
   const runtimes = new Map<string, { up: number; down: number }>();
-  for (const entry of finalVotes.values()) {
+  for (const entry of finalVotes) {
     if (entry.vote === "up") up += 1;
     else down += 1;
     if (entry.model) bump(models, entry.model, entry.vote);
@@ -98,7 +118,20 @@ export function rollupMessageFeedback(
     up,
     down,
     total: up + down,
-    models: toSlices(models),
-    runtimes: toSlices(runtimes),
+    models: toSlices(models, bucketLimit),
+    runtimes: toSlices(runtimes, bucketLimit),
   };
+}
+
+export function rollupMessageFeedback(
+  entries: FeedbackRollupEntry[],
+  opts?: MessageFeedbackRollupOptions,
+): MessageFeedbackRollup {
+  // Replay the append-only log: the newest entry per message wins, and a
+  // toggle-off (cleared) withdraws the vote entirely.
+  const finalVotes = new Map<string, FeedbackRollupEntry>();
+  for (const entry of entries) {
+    applyMessageFeedbackEntry(finalVotes, entry, opts);
+  }
+  return finalizeMessageFeedbackRollup(finalVotes.values(), opts);
 }

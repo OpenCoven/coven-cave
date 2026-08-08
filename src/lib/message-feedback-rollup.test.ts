@@ -44,6 +44,29 @@ assert.equal(runtimes.codex.total, 1);
 // No familiar filter → imp's vote joins the totals.
 assert.equal(rollupMessageFeedback(entries).total, 6);
 
+const bounded = rollupMessageFeedback(
+  Array.from({ length: 40 }, (_, index) => ({
+    messageId: `bucket-${index}`,
+    vote: "up",
+    cleared: false,
+    familiarId: "sage",
+    model: `model-${String(39 - index).padStart(2, "0")}`,
+    runtime: `runtime-${String(39 - index).padStart(2, "0")}`,
+  })),
+  { bucketLimit: 5 },
+);
+assert.equal(bounded.total, 40, "bucket limits do not cap overall totals");
+assert.deepEqual(
+  bounded.models.map((slice) => slice.key),
+  ["model-00", "model-01", "model-02", "model-03", "model-04"],
+  "equal-count model buckets sort by stable key before truncation",
+);
+assert.deepEqual(
+  bounded.runtimes.map((slice) => slice.key),
+  ["runtime-00", "runtime-01", "runtime-02", "runtime-03", "runtime-04"],
+  "equal-count runtime buckets sort by stable key before truncation",
+);
+
 // Malformed entries never throw and never count.
 assert.equal(
   rollupMessageFeedback([null, {}, { messageId: "", vote: "up" }, { messageId: "x", vote: "sideways" }]).total,

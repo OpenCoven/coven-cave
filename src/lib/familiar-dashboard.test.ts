@@ -22,6 +22,7 @@ test("published limits match the v1 contract", () => {
     recentSessions: 5,
     attention: 6,
     reminders: 5,
+    feedbackBuckets: 25,
     accessProjects: 50,
     reports: 30,
     metricSnapshots: 100,
@@ -277,10 +278,15 @@ test("Overview keeps a critical heal item represented ahead of newer warning att
     ],
     healRequests: [{
       id: "sage:contract:0:SOUL.md:purpose",
+      familiarId: "sage",
+      source: "contract",
       severity: "crit",
       title: "SOUL.md contract violation",
       detail: "Purpose is missing.",
-      updatedAt: null,
+      suggestedAction: "Fix purpose in SOUL.md.",
+      actionKind: "fix-contract",
+      createdAt: "2026-08-07T19:59:45.000Z",
+      resolved: false,
     }],
     now: NOW,
   });
@@ -288,7 +294,7 @@ test("Overview keeps a critical heal item represented ahead of newer warning att
   assert.equal(overview.attention.total, 7);
   assert.equal(overview.attention.items.length, 6);
   assert.equal(overview.attention.items[0].id, "heal:sage:contract:0:SOUL.md:purpose");
-  assert.equal(overview.attention.items[0].updatedAt, null);
+  assert.equal(overview.attention.items[0].updatedAt, "2026-08-07T19:59:45.000Z");
   assert.equal(
     overview.attention.items.some((item) => item.id === "heal:sage:contract:0:SOUL.md:purpose"),
     true,

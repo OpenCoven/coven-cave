@@ -145,6 +145,23 @@ describe("deriveHealRequests", () => {
       ["1970-01-01T00:00:00.000Z"],
     );
   });
+
+  it("uses explicit createdAt overrides when provided", () => {
+    const requests = deriveHealRequests({
+      familiarId: "cody",
+      contractReport: contractReport(),
+      growthReport: growthReport(),
+      contractCreatedAt: "2026-08-07T20:00:00.000Z",
+      growthSignalCreatedAt: (signal, index) =>
+        `2026-08-07T19:${signal.kind === "session-gap" ? "59" : `5${index}`}:00.000Z`,
+    });
+
+    assert.equal(requests[0].createdAt, "2026-08-07T20:00:00.000Z");
+    assert.equal(
+      requests.find((request) => request.source === "growth-signal" && request.severity === "crit")?.createdAt,
+      "2026-08-07T19:59:00.000Z",
+    );
+  });
 });
 
 describe("escalateBlockers", () => {

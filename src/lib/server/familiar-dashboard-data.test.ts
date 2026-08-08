@@ -33,6 +33,10 @@ const CONFIG = {
   remoteHosts: [],
 };
 
+function emptyFeedbackRollup() {
+  return { up: 0, down: 0, total: 0, models: [], runtimes: [] };
+}
+
 function makeDependencies(
   overrides: Partial<FamiliarDashboardDependencies> = {},
 ): FamiliarDashboardDependencies {
@@ -122,7 +126,7 @@ function makeDependencies(
     }),
     loadReports: async () => ({ reports: [], total: 0 }),
     loadMetricSnapshots: async () => ({ snapshots: [], total: 0 }),
-    loadFeedback: async () => [],
+    loadFeedback: async () => emptyFeedbackRollup(),
     ...overrides,
   };
 }
@@ -420,10 +424,76 @@ test("production bounds are applied before serialization", async () => {
   assert.ok(result.response.sections.analytics.data.trends.sampleCount <= 100);
 });
 
+test("overview heal attention keeps the derived request timestamp non-null", async () => {
+  const result = await loadFamiliarDashboard("sage", makeDependencies({
+    loadContract: async () => ({
+      files: { soul: null, identity: null, ward: null, memory: null },
+      report: {
+        specVersion: "0.1.0",
+        pass: false,
+        properties: [],
+        violations: [{
+          file: "SOUL.md",
+          field: "purpose",
+          message: "Purpose is missing.",
+        }],
+        warnings: [],
+      },
+    }),
+  }));
+
+  assert.equal(result.kind, "ok");
+  assert.equal(
+    result.response.sections.overview.data.attention.items[0]?.updatedAt,
+    new Date(NOW).toISOString(),
+  );
+});
+
 test("default dashboard dependencies use the bounded metric snapshot query", () => {
   assert.equal(
     DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES.loadMetricSnapshots,
     listDashboardMetricSnapshots,
+  );
+});
+
+test("response stays within budget with thousands of distinct feedback buckets", async () => {
+  const hugeBucketCount = 5000;
+  const result = await loadFamiliarDashboard("sage", makeDependencies({
+    loadFeedback: async () => ({
+      up: hugeBucketCount * 2,
+      down: hugeBucketCount,
+      total: hugeBucketCount * 3,
+      models: Array.from({ length: hugeBucketCount }, (_, index) => ({
+        key: `model-${String(hugeBucketCount - index - 1).padStart(4, "0")}`,
+        up: 2,
+        down: 1,
+        total: 3,
+        approval: 2 / 3,
+      })),
+      runtimes: Array.from({ length: hugeBucketCount }, (_, index) => ({
+        key: `runtime-${String(hugeBucketCount - index - 1).padStart(4, "0")}`,
+        up: 2,
+        down: 1,
+        total: 3,
+        approval: 2 / 3,
+      })),
+    }),
+  }));
+
+  assert.equal(result.kind, "ok");
+  const feedback = result.response.sections.analytics.data.feedback;
+  assert.deepEqual(
+    { up: feedback.up, down: feedback.down, total: feedback.total },
+    { up: hugeBucketCount * 2, down: hugeBucketCount, total: hugeBucketCount * 3 },
+  );
+  assert.equal(feedback.models.length, FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets);
+  assert.equal(feedback.runtimes.length, FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets);
+  assert.deepEqual(
+    feedback.models.slice(0, 3).map((slice) => slice.key),
+    ["model-0000", "model-0001", "model-0002"],
+  );
+  assert.ok(
+    serializedDashboardBytes(result.response) <= FAMILIAR_DASHBOARD_LIMITS.responseBytes,
   );
 });
 

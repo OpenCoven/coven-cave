@@ -33,6 +33,7 @@ export const FAMILIAR_DASHBOARD_LIMITS = {
   recentSessions: 5,
   attention: 6,
   reminders: 5,
+  feedbackBuckets: 25,
   accessProjects: 50,
   reports: 30,
   metricSnapshots: 100,
@@ -140,7 +141,7 @@ export type FamiliarDashboardAttention = {
     kind: "task" | "analytics" | "reminder";
     id: string;
   };
-  updatedAt: string | null;
+  updatedAt: string;
 };
 
 export type FamiliarDashboardTask = {
@@ -438,12 +439,121 @@ const ATTENTION_SEVERITY_RANK: Record<FamiliarDashboardAttention["severity"], nu
   info: 2,
 };
 
-type FamiliarOverviewHealAttention = Pick<
-  FamiliarDashboardHealRequest,
-  "id" | "severity" | "title" | "detail"
-> & {
-  updatedAt: string | null;
+type DashboardHealRequestArgs = {
+  familiarId: string;
+  familiar: Familiar;
+  sessions: SessionRow[];
+  memories: CanonicalMemorySummary[];
+  memoryAvailability: CanonicalMemoryAvailability;
+  retroState: RetroFamiliarState | null;
+  contractReport: ContractReport | null;
+  now: number;
 };
+
+function latestTimestamp(
+  values: Array<string | null | undefined>,
+  fallback: string,
+): string {
+  const sorted = values
+    .map((value) => ({ value: value ?? null, time: timestampValue(value) }))
+    .filter((entry) => Number.isFinite(entry.time))
+    .sort((left, right) => right.time - left.time);
+  return sorted[0]?.value ?? fallback;
+}
+
+function latestMemoryTimestamp(memories: CanonicalMemorySummary[]): string | null {
+  return [...memories]
+    .sort((left, right) => newestFirst(left, right, (memory) => memory.updatedAt, (memory) => memory.id))[0]
+    ?.updatedAt ?? null;
+}
+
+function latestRetroTimestamp(retroState: RetroFamiliarState | null): string | null {
+  return [...(retroState?.runs ?? [])]
+    .sort((left, right) => newestFirst(left, right, (run) => run.timestamp, (run) => `${run.id}:${run.track}`))[0]
+    ?.timestamp ?? null;
+}
+
+function boundedFeedbackSlices(
+  slices: MessageFeedbackRollup["models"],
+): MessageFeedbackRollup["models"] {
+  return [...slices]
+    .sort((left, right) => right.total - left.total || compareStrings(left.key, right.key))
+    .slice(0, FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets);
+}
+
+function growthSignalTimestamp(
+  signal: NonNullable<ReturnType<typeof deriveGrowthReport>>["signals"][number],
+  args: {
+    generatedAt: string;
+    growthReport: ReturnType<typeof deriveGrowthReport>;
+    latestMemoryAt: string | null;
+    latestRetroAt: string | null;
+  },
+): string {
+  switch (signal.kind) {
+    case "session-gap":
+      return args.growthReport.lastActiveAt ?? args.generatedAt;
+    case "no-memory":
+    case "stale-memory":
+      return args.latestMemoryAt ?? args.generatedAt;
+    case "low-accept-rate":
+      return latestTimestamp(
+        args.growthReport.recentRuns
+          .filter((run) => signal.track === undefined || run.track === signal.track)
+          .map((run) => run.timestamp),
+        args.latestRetroAt ?? args.generatedAt,
+      );
+    case "low-retro-volume":
+      return args.latestRetroAt ?? args.generatedAt;
+    case "healthy":
+      return args.generatedAt;
+  }
+}
+
+export function deriveDashboardHealRequests({
+  familiarId,
+  familiar,
+  sessions,
+  memories,
+  memoryAvailability,
+  retroState,
+  contractReport,
+  now,
+}: DashboardHealRequestArgs): SelfHealRequest[] {
+  const scopedMemories = memories.filter((memory) => memory.familiarId === familiarId);
+  const nonGeneratedSessions = sessions
+    .filter((session) => isVisibleNonGeneratedFamiliarSession(session, familiarId))
+    .sort((left, right) => newestFirst(left, right, (session) => session.updated_at, (session) => session.id));
+  const stats = buildFamiliarCardStats({
+    familiars: [familiar],
+    sessions: nonGeneratedSessions,
+    covenEntries: scopedMemories,
+    memoryAvailability,
+    now,
+  }).get(familiarId)!;
+  const growthReport = deriveGrowthReport({ familiar, stats, retroState, now });
+  const hasGrowthEvidence =
+    stats.sessionsTotal > 0 ||
+    stats.memoryCount > 0 ||
+    (retroState?.runs.length ?? 0) > 0;
+  const generatedAt = new Date(now).toISOString();
+  const latestMemoryAt = latestMemoryTimestamp(scopedMemories);
+  const latestRetroAt = latestRetroTimestamp(retroState);
+
+  return deriveHealRequests({
+    familiarId,
+    contractReport,
+    growthReport: hasGrowthEvidence ? growthReport : null,
+    contractCreatedAt: generatedAt,
+    growthSignalCreatedAt: (signal) =>
+      growthSignalTimestamp(signal, {
+        generatedAt,
+        growthReport,
+        latestMemoryAt,
+        latestRetroAt,
+      }),
+  });
+}
 
 export function buildDashboardSection<T>({
   generatedAt,
@@ -495,7 +605,7 @@ export function buildFamiliarOverview({
   tasks: Card[];
   sessions: SessionRow[];
   reminders: InboxItem[];
-  healRequests: FamiliarOverviewHealAttention[];
+  healRequests: SelfHealRequest[];
   now: number;
 }): FamiliarOverview {
   const generatedAt = new Date(now).toISOString();
@@ -554,7 +664,7 @@ export function buildFamiliarOverview({
       title: request.title,
       detail: request.detail,
       target: { kind: "analytics", id: request.id },
-      updatedAt: request.updatedAt,
+      updatedAt: request.createdAt,
     }));
   const reminderAttention: FamiliarDashboardAttention[] = scopedReminders
     .filter((item) => item.status === "fired")
@@ -795,6 +905,7 @@ export function buildFamiliarAnalyticsDigest({
   retroState,
   contractReport,
   feedback,
+  healRequests,
   now,
 }: {
   familiarId: string;
@@ -809,6 +920,7 @@ export function buildFamiliarAnalyticsDigest({
   retroState: RetroFamiliarState | null;
   contractReport: ContractReport | null;
   feedback: MessageFeedbackRollup;
+  healRequests?: SelfHealRequest[];
   now: number;
 }): FamiliarAnalyticsDigest {
   const nonGeneratedSessions = sessions
@@ -850,28 +962,22 @@ export function buildFamiliarAnalyticsDigest({
     { days: 30, label: "last 30 days" },
   );
   const scopedMemories = memories.filter((memory) => memory.familiarId === familiarId);
-  const stats = buildFamiliarCardStats({
-    familiars: [familiar],
-    sessions: nonGeneratedSessions,
-    covenEntries: scopedMemories,
-    memoryAvailability,
-    now,
-  }).get(familiarId)!;
-  const growth = deriveGrowthReport({ familiar, stats, retroState, now });
-  const hasGrowthEvidence =
-    stats.sessionsTotal > 0 ||
-    stats.memoryCount > 0 ||
-    (retroState?.runs.length ?? 0) > 0;
-  const healRequests = deriveHealRequests({
+  const rawHealRequests = healRequests ?? deriveDashboardHealRequests({
     familiarId,
+    familiar,
+    sessions: nonGeneratedSessions,
+    memories: scopedMemories,
+    memoryAvailability,
+    retroState,
     contractReport,
-    growthReport: hasGrowthEvidence ? growth : null,
+    now,
   });
   const latestReportAt = boundedReports[0]?.reportedAt ?? null;
-  const latestMemoryAt = [...scopedMemories]
-    .sort((left, right) => newestFirst(left, right, (memory) => memory.updatedAt, (memory) => memory.id))[0]?.updatedAt ?? null;
+  const latestMemoryAt = latestMemoryTimestamp(scopedMemories);
   const boundedReportCount = boundedReports.length;
   const boundedSnapshotCount = boundedSnapshots.length;
+  const feedbackModels = boundedFeedbackSlices(feedback.models);
+  const feedbackRuntimes = boundedFeedbackSlices(feedback.runtimes);
   const feedbackState =
     feedback.total < 5
       ? "insufficient"
@@ -935,7 +1041,7 @@ export function buildFamiliarAnalyticsDigest({
       lacking: reportAggregate.capabilitiesLacking,
       vital: reportAggregate.capabilitiesVital,
     },
-    healRequests: healRequests.map((request) => ({
+    healRequests: rawHealRequests.map((request) => ({
       id: request.id,
       severity: request.severity,
       title: request.title,
@@ -952,8 +1058,8 @@ export function buildFamiliarAnalyticsDigest({
       up: feedback.up,
       down: feedback.down,
       total: feedback.total,
-      models: feedback.models,
-      runtimes: feedback.runtimes,
+      models: feedbackModels,
+      runtimes: feedbackRuntimes,
     },
   };
 }

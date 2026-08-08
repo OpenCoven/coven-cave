@@ -1,24 +1,25 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { FAMILIAR_DASHBOARD_LIMITS } from "../familiar-dashboard.ts";
 
-// Local feedback store — isolated to a temp COVEN_HOME so it never touches the
-// real ~/.coven/cave/message-feedback.json.
-const tmpHome = await mkdtemp(path.join(tmpdir(), "msg-fb-"));
-process.env.HOME = tmpHome;
-process.env.COVEN_HOME = path.join(tmpHome, ".coven");
+const scratchRoot = path.join(
+  process.cwd(),
+  ".scratch-tests",
+  `message-feedback-store-${process.pid}-${Date.now()}`,
+);
+await mkdir(scratchRoot, { recursive: true });
+process.env.HOME = scratchRoot;
+process.env.COVEN_HOME = path.join(scratchRoot, ".coven");
 
 const fb = await import("./message-feedback-store.ts");
 
-// SAFETY GATE — never write outside the temp home.
 assert.ok(
-  fb.MESSAGE_FEEDBACK_PATH.startsWith(tmpHome),
-  `refusing: MESSAGE_FEEDBACK_PATH ${fb.MESSAGE_FEEDBACK_PATH} not under temp home`,
+  fb.MESSAGE_FEEDBACK_PATH.startsWith(scratchRoot),
+  `refusing: MESSAGE_FEEDBACK_PATH ${fb.MESSAGE_FEEDBACK_PATH} not under scratch root`,
 );
 
-// sanitizeMessageFeedback: whitelist only; drops arbitrary keys; stamps `at`.
 {
   const dirty = {
     messageId: "  turn-42  ",
@@ -47,7 +48,6 @@ assert.equal(fb.sanitizeMessageFeedback({ messageId: "x" }, "t"), null, "no vote
 assert.equal(fb.sanitizeMessageFeedback({ vote: "up" }, "t"), null, "no messageId → rejected");
 assert.equal(fb.sanitizeMessageFeedback({ messageId: "x", vote: "sideways" }, "t"), null, "bad vote → rejected");
 
-// recordMessageFeedback persists; familiarId only when provided; cleared flag survives.
 const a = await fb.recordMessageFeedback({ messageId: "m1", vote: "down", familiarId: "sage" });
 assert.equal(a.vote, "down");
 assert.equal(a.familiarId, "sage");
@@ -64,5 +64,52 @@ assert.equal(all[1].messageId, "m2");
 
 assert.equal(await fb.recordMessageFeedback({ messageId: "m3" }), null, "invalid input is not recorded");
 
-await rm(tmpHome, { recursive: true, force: true });
+const HUGE_BUCKET_COUNT = 3000;
+const hugeEntries = Array.from({ length: HUGE_BUCKET_COUNT }, (_, index) => {
+  const label = String(HUGE_BUCKET_COUNT - index - 1).padStart(4, "0");
+  return {
+    messageId: `sage-${label}`,
+    vote: index % 3 === 0 ? "down" : "up",
+    cleared: false,
+    familiarId: "sage",
+    model: `model-${label}`,
+    runtime: `runtime-${label}`,
+    at: `2026-08-07T20:${String(index % 60).padStart(2, "0")}:00.000Z`,
+  };
+});
+await mkdir(path.dirname(fb.MESSAGE_FEEDBACK_PATH), { recursive: true });
+await writeFile(
+  fb.MESSAGE_FEEDBACK_PATH,
+  JSON.stringify({ entries: hugeEntries }, null, 2),
+  "utf8",
+);
+
+const rollup = await fb.loadMessageFeedbackRollup({
+  familiarId: "sage",
+  bucketLimit: FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets,
+});
+assert.equal(rollup.total, HUGE_BUCKET_COUNT, "overall totals stay uncapped");
+assert.equal(rollup.up, HUGE_BUCKET_COUNT - Math.ceil(HUGE_BUCKET_COUNT / 3));
+assert.equal(rollup.down, Math.ceil(HUGE_BUCKET_COUNT / 3));
+assert.equal(rollup.models.length, FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets);
+assert.equal(rollup.runtimes.length, FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets);
+assert.deepEqual(
+  rollup.models.slice(0, 3).map((slice) => slice.key),
+  ["model-0000", "model-0001", "model-0002"],
+  "equal-count model buckets sort by stable key before truncation",
+);
+assert.deepEqual(
+  rollup.runtimes.slice(0, 3).map((slice) => slice.key),
+  ["runtime-0000", "runtime-0001", "runtime-0002"],
+  "equal-count runtime buckets sort by stable key before truncation",
+);
+
+await writeFile(fb.MESSAGE_FEEDBACK_PATH, "{\n  \"entries\": [\n    {\n", "utf8");
+await assert.rejects(
+  fb.loadMessageFeedbackRollup({ familiarId: "sage" }),
+  /invalid message feedback store: unterminated feedback entry/,
+  "bounded rollup surfaces malformed-file errors instead of silently degrading",
+);
+
+await rm(scratchRoot, { recursive: true, force: true });
 console.log("message-feedback-store.test.ts OK");

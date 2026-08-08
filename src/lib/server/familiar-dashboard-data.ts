@@ -18,6 +18,7 @@ import {
 import {
   buildDashboardSection,
   buildFamiliarAnalyticsDigest,
+  deriveDashboardHealRequests,
   buildFamiliarOverview,
   buildFamiliarProfile,
   FAMILIAR_DASHBOARD_LIMITS,
@@ -27,7 +28,7 @@ import {
   type FamiliarDashboardResponse,
   type FamiliarDashboardSource,
 } from "@/lib/familiar-dashboard";
-import { rollupMessageFeedback } from "@/lib/message-feedback-rollup";
+import type { MessageFeedbackRollup } from "@/lib/message-feedback-rollup";
 import {
   listAccessibleProjects,
   type ProjectAccessLevel,
@@ -40,7 +41,7 @@ import {
   listMetricSnapshots,
   listSelfReports,
 } from "@/lib/server/familiar-self-reports";
-import { loadMessageFeedback } from "@/lib/server/message-feedback-store";
+import { loadMessageFeedbackRollup } from "@/lib/server/message-feedback-store";
 import {
   loadRetroRunsSnapshot,
   type RetroRunsSnapshotResult,
@@ -74,7 +75,7 @@ export type FamiliarDashboardDependencies = {
   loadRetro: (args: { familiarId: string }) => Promise<RetroRunsSnapshotResult>;
   loadReports: (id: string) => ReturnType<typeof listSelfReports>;
   loadMetricSnapshots: (id: string) => ReturnType<typeof listMetricSnapshots>;
-  loadFeedback: typeof loadMessageFeedback;
+  loadFeedback: (args: { familiarId: string }) => Promise<MessageFeedbackRollup>;
 };
 
 async function capture<T>(
@@ -121,7 +122,11 @@ export const DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES: FamiliarDashboardDependenc
   loadReports: (id) =>
     listSelfReports(id, { limit: FAMILIAR_DASHBOARD_LIMITS.reports }),
   loadMetricSnapshots: listDashboardMetricSnapshots,
-  loadFeedback: loadMessageFeedback,
+  loadFeedback: ({ familiarId }) =>
+    loadMessageFeedbackRollup({
+      familiarId,
+      bucketLimit: FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets,
+    }),
 };
 
 export type FamiliarDashboardLoadResult =
@@ -199,7 +204,11 @@ export async function loadFamiliarDashboard(
       "metric_snapshots_unavailable",
       () => dependencies.loadMetricSnapshots(familiarId),
     ),
-    capture("feedback", "feedback_unavailable", dependencies.loadFeedback),
+    capture(
+      "feedback",
+      "feedback_unavailable",
+      () => dependencies.loadFeedback({ familiarId }),
+    ),
   ]);
 
   const sessionsSource: DashboardSourceResult<
@@ -245,12 +254,10 @@ export async function loadFamiliarDashboard(
         code: "retro_state_unavailable",
       };
 
-  const feedbackSource: DashboardSourceResult<
-    ReturnType<typeof rollupMessageFeedback>
-  > = feedbackEntriesSource.ok
+  const feedbackSource: DashboardSourceResult<MessageFeedbackRollup> = feedbackEntriesSource.ok
     ? {
         ok: true,
-        data: rollupMessageFeedback(feedbackEntriesSource.data, { familiarId }),
+        data: feedbackEntriesSource.data,
       }
     : {
         ok: false,
@@ -344,6 +351,20 @@ export async function loadFamiliarDashboard(
   const analyticsOptional = [contractSource, retroSource, feedbackSource];
   const overviewAvailable = overviewRequired.some((source) => source.ok);
   const analyticsAvailable = analyticsRequired.some((source) => source.ok);
+  const familiarRetroState =
+    retroSnapshot.familiars.find(
+      (state) => state.familiarId === familiarId,
+    ) ?? null;
+  const rawHealRequests = deriveDashboardHealRequests({
+    familiarId,
+    familiar,
+    sessions: scopedSessions,
+    memories: memory.entries,
+    memoryAvailability: memorySource.ok ? "ready" : "unavailable",
+    retroState: familiarRetroState,
+    contractReport: contract.report,
+    now,
+  });
   const builtAnalytics = buildFamiliarAnalyticsDigest({
     familiarId,
     familiar,
@@ -357,21 +378,12 @@ export async function loadFamiliarDashboard(
     ).total,
     memories: memory.entries,
     memoryAvailability: memorySource.ok ? "ready" : "unavailable",
-    retroState:
-      retroSnapshot.familiars.find(
-        (state) => state.familiarId === familiarId,
-      ) ?? null,
+    retroState: familiarRetroState,
     contractReport: contract.report,
     feedback,
+    healRequests: rawHealRequests,
     now,
   });
-  const overviewHealRequests = builtAnalytics.healRequests.map((request) => ({
-    id: request.id,
-    severity: request.severity,
-    title: request.title,
-    detail: request.detail,
-    updatedAt: null,
-  }));
   const analyticsData = analyticsAvailable ? builtAnalytics : null;
   const overviewData = overviewAvailable
     ? buildFamiliarOverview({
@@ -380,7 +392,7 @@ export async function loadFamiliarDashboard(
         tasks: board.cards,
         sessions: scopedSessions,
         reminders: inbox.items,
-        healRequests: overviewHealRequests,
+        healRequests: rawHealRequests,
         now,
       })
     : null;

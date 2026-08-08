@@ -48,6 +48,7 @@ function fromContractViolation(
   familiarId: string,
   violation: ContractViolation,
   index: number,
+  createdAt: string,
 ): SelfHealRequest {
   return {
     id: `${familiarId}:contract:${index}:${violation.file}:${violation.field}`,
@@ -58,7 +59,7 @@ function fromContractViolation(
     detail: violation.message,
     suggestedAction: `Fix ${violation.field} in ${violation.file}.`,
     actionKind: "fix-contract",
-    createdAt: STATIC_CREATED_AT,
+    createdAt,
     resolved: false,
   };
 }
@@ -76,7 +77,12 @@ function actionKindForBlockerCategory(category: BlockerCategory): HealActionKind
   return "manual";
 }
 
-function fromGrowthSignal(familiarId: string, signal: GrowthSignal, index: number): SelfHealRequest | null {
+function fromGrowthSignal(
+  familiarId: string,
+  signal: GrowthSignal,
+  index: number,
+  createdAt: string,
+): SelfHealRequest | null {
   if (signal.severity !== "crit" && signal.severity !== "warn") return null;
   const actionKind = actionKindForGrowthSignal(signal);
   return {
@@ -90,7 +96,7 @@ function fromGrowthSignal(familiarId: string, signal: GrowthSignal, index: numbe
       ? "Write or refresh memory for this familiar."
       : "Review the growth signal and choose the next manual intervention.",
     actionKind,
-    createdAt: STATIC_CREATED_AT,
+    createdAt,
     resolved: false,
   };
 }
@@ -107,15 +113,29 @@ export function deriveHealRequests(args: {
   familiarId: string;
   contractReport: ContractReport | null;
   growthReport: FamiliarGrowthReport | null;
+  contractCreatedAt?: string;
+  growthSignalCreatedAt?: (signal: GrowthSignal, index: number) => string;
 }): SelfHealRequest[] {
   const requests: SelfHealRequest[] = [];
 
   for (const [index, violation] of (args.contractReport?.violations ?? []).entries()) {
-    requests.push(fromContractViolation(args.familiarId, violation, index));
+    requests.push(
+      fromContractViolation(
+        args.familiarId,
+        violation,
+        index,
+        args.contractCreatedAt ?? STATIC_CREATED_AT,
+      ),
+    );
   }
 
   for (const [index, signal] of (args.growthReport?.signals ?? []).entries()) {
-    const request = fromGrowthSignal(args.familiarId, signal, index);
+    const request = fromGrowthSignal(
+      args.familiarId,
+      signal,
+      index,
+      args.growthSignalCreatedAt?.(signal, index) ?? STATIC_CREATED_AT,
+    );
     if (request) requests.push(request);
   }
 
