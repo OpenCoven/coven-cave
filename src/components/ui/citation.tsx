@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -235,80 +236,101 @@ export function InlineCitationPreviews({
     [preview],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const container = containerRef.current;
-    if (!container || citationsById.size === 0) return;
+    if (!container) return;
     anchorRef.current = null;
     setActiveCitation(null);
     preview.dismiss();
+    if (citationsById.size === 0) return;
 
-    const cleanups: Array<() => void> = [];
-    for (const link of container.querySelectorAll<HTMLAnchorElement>('a[href^="#cite-"]')) {
-      const href = link.getAttribute("href");
-      const citation = href ? citationsById.get(href.slice(1)) : undefined;
-      if (!citation) continue;
-      const presentation = citationSourcePresentation(citation);
-
-      link.classList.add("cave-citation-chip");
-      link.dataset.sourceKind = presentation.kind;
-      link.setAttribute("aria-label", `Open source: ${citation.title}. ${presentation.provider}.`);
-      link.setAttribute("aria-haspopup", "dialog");
-      link.setAttribute("aria-expanded", "false");
-
-      const onMouseEnter = () => activate(link, citation, "row-hover");
-      const onMouseLeave = () => preview.leave("row-hover");
-      const onFocus = () => activate(link, citation, "row-focus");
-      const onBlur = () => preview.leave("row-focus");
-      const onClick = (event: MouseEvent) => {
-        event.stopImmediatePropagation();
-        if (!citation.url || window.matchMedia("(hover: none)").matches) {
-          event.preventDefault();
-          activate(link, citation, "row-focus");
-          return;
+    const wiredLinks = new Map<HTMLAnchorElement, () => void>();
+    const reconcileCitationLinks = () => {
+      for (const [link, cleanup] of wiredLinks) {
+        if (container.contains(link)) continue;
+        if (anchorRef.current === link) {
+          anchorRef.current = null;
+          setActiveCitation(null);
+          preview.dismiss();
         }
-        if (
-          onOpenUrl &&
-          event.button === 0 &&
-          !event.metaKey &&
-          !event.ctrlKey &&
-          !event.shiftKey &&
-          !event.altKey
-        ) {
-          event.preventDefault();
-          onOpenUrl(citation.url);
-        }
-      };
-
-      if (citation.url) {
-        link.href = citation.url;
-        link.target = "_blank";
-        link.rel = "noreferrer";
+        cleanup();
+        wiredLinks.delete(link);
       }
-      link.addEventListener("mouseenter", onMouseEnter);
-      link.addEventListener("mouseleave", onMouseLeave);
-      link.addEventListener("focus", onFocus);
-      link.addEventListener("blur", onBlur);
-      link.addEventListener("click", onClick);
 
-      cleanups.push(() => {
-        link.removeEventListener("mouseenter", onMouseEnter);
-        link.removeEventListener("mouseleave", onMouseLeave);
-        link.removeEventListener("focus", onFocus);
-        link.removeEventListener("blur", onBlur);
-        link.removeEventListener("click", onClick);
-        link.classList.remove("cave-citation-chip");
-        delete link.dataset.sourceKind;
-        link.removeAttribute("aria-label");
-        link.removeAttribute("aria-haspopup");
-        link.removeAttribute("aria-expanded");
-        link.removeAttribute("target");
-        link.removeAttribute("rel");
-        if (href) link.setAttribute("href", href);
-      });
-    }
+      for (const link of container.querySelectorAll<HTMLAnchorElement>('a[href^="#cite-"]')) {
+        if (wiredLinks.has(link)) continue;
+        const href = link.getAttribute("href");
+        const citation = href ? citationsById.get(href.slice(1)) : undefined;
+        if (!citation) continue;
+        const presentation = citationSourcePresentation(citation);
+
+        link.classList.add("cave-citation-chip");
+        link.dataset.sourceKind = presentation.kind;
+        link.setAttribute("aria-label", `Open source: ${citation.title}. ${presentation.provider}.`);
+        link.setAttribute("aria-haspopup", "dialog");
+        link.setAttribute("aria-expanded", "false");
+
+        const onMouseEnter = () => activate(link, citation, "row-hover");
+        const onMouseLeave = () => preview.leave("row-hover");
+        const onFocus = () => activate(link, citation, "row-focus");
+        const onBlur = () => preview.leave("row-focus");
+        const onClick = (event: MouseEvent) => {
+          event.stopImmediatePropagation();
+          if (!citation.url || window.matchMedia("(hover: none)").matches) {
+            event.preventDefault();
+            activate(link, citation, "row-focus");
+            return;
+          }
+          if (
+            onOpenUrl &&
+            event.button === 0 &&
+            !event.metaKey &&
+            !event.ctrlKey &&
+            !event.shiftKey &&
+            !event.altKey
+          ) {
+            event.preventDefault();
+            onOpenUrl(citation.url);
+          }
+        };
+
+        if (citation.url) {
+          link.href = citation.url;
+          link.target = "_blank";
+          link.rel = "noreferrer";
+        }
+        link.addEventListener("mouseenter", onMouseEnter);
+        link.addEventListener("mouseleave", onMouseLeave);
+        link.addEventListener("focus", onFocus);
+        link.addEventListener("blur", onBlur);
+        link.addEventListener("click", onClick);
+
+        wiredLinks.set(link, () => {
+          link.removeEventListener("mouseenter", onMouseEnter);
+          link.removeEventListener("mouseleave", onMouseLeave);
+          link.removeEventListener("focus", onFocus);
+          link.removeEventListener("blur", onBlur);
+          link.removeEventListener("click", onClick);
+          link.classList.remove("cave-citation-chip");
+          delete link.dataset.sourceKind;
+          link.removeAttribute("aria-label");
+          link.removeAttribute("aria-haspopup");
+          link.removeAttribute("aria-expanded");
+          link.removeAttribute("target");
+          link.removeAttribute("rel");
+          if (href) link.setAttribute("href", href);
+        });
+      }
+    };
+
+    reconcileCitationLinks();
+    const observer = new MutationObserver(reconcileCitationLinks);
+    observer.observe(container, { childList: true, subtree: true });
 
     return () => {
-      for (const cleanup of cleanups) cleanup();
+      observer.disconnect();
+      for (const cleanup of wiredLinks.values()) cleanup();
+      wiredLinks.clear();
     };
   }, [activate, citationsById, containerRef, onOpenUrl, preview, renderedHtml]);
 

@@ -45,6 +45,10 @@ Patch release on top of v0.2.4.
 - Made Grimoire Relations counts explicitly scope-aware and expanded the
   bounded graph window while preserving the renderer's measured performance
   ceiling (#4431).
+- Kept unfinished Role Surface rooms out of production builds while preserving
+  them for development, with an explicit build allowlist and honest
+  under-construction messaging; Research Desk and Chart Room remain available
+  in production (#4440).
 
 ### Fixed
 
@@ -59,6 +63,9 @@ Patch release on top of v0.2.4.
   launch (#4401, #4426).
 - Closed spoken-text normalization edge cases from the reader and voice paths
   (#4399).
+- Made reader citation chips reliably reconcile anchors added or replaced after
+  rendering, without making unrelated reader behavior depend on citation
+  enhancement timing (#4441).
 
 ### Security
 
@@ -80,6 +87,9 @@ Patch release on top of v0.2.4.
   citation-chip waits, restored two Windows source guards, and added
   repository-wide protection against committed merge-conflict markers
   (#4420, #4421, #4422, #4427, #4430, #4434, #4436).
+- Added fail-closed recovery for same-repository pull requests whose CI event
+  never arrived, with explicit apply mode, cooldowns, and shared head-SHA
+  concurrency (#4435).
 - Excluded detached worktrees from managed-creation admission and documented
   the current gate-blocked retirement path (#4414, #4432).
 
