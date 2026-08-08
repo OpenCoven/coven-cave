@@ -122,13 +122,33 @@ jobs:
       # deliberately cfg(desktop) rather than macOS-only to be executable here.
       - run: cargo test --locked --lib desktop_reachability::tests::gui_conflict -- --nocapture
 
-  e2e:
-    name: E2E (Playwright)
+  # Sharded across THREE runners (cave-5pa). This was one job running the whole
+  # suite serially, and it was the CI critical path: 14m09s total, of which
+  # 12m56s was the single `playwright test` call. Each shard pays the fixed
+  # ~72s setup (install + browser download) and the dev server's first compile
+  # again, so the win is sublinear — expect roughly half, not a third.
+  #
+  # Shard assignment is Playwright's own (`--shard=i/N`), which splits by test
+  # rather than by file. Project `dependencies` are re-run inside every shard,
+  # so the serial `preferences-*` chain that mutates process-wide scale still
+  # runs to completion ahead of the parallel projects in each shard, against
+  # that shard's own dev server. That chain is what makes it safe to shard at
+  # all; if you add another order-dependent project, give it dependencies too
+  # rather than assuming shard boundaries will separate it.
+  e2e-shard:
+    name: E2E shard ${{ matrix.shard }}/3
     runs-on: ubuntu-latest
     env:
       NEXT_PUBLIC_CAVE_CRAFTS: "1"
-    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~5-15min; the job this bead exists for).
+    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95
+    # (observed ~5-15min unsharded; kept at 25 until sharded p95 is measured).
     timeout-minutes: 25
+    strategy:
+      # One shard failing must not cancel the others — a half-reported suite
+      # cannot tell you whether the failure is isolated or systemic.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -148,7 +168,30 @@ jobs:
       # The Playwright config self-starts `next dev` on :3100 (COVEN_CAVE_E2E=1)
       # and runs the three viewport projects. CI=true makes the config use
       # workers:2 + retries:1; per-test timeout is 60s for dev-server compile.
-      - run: pnpm exec playwright test
+      # Each shard starts its own dev server; they are separate runners, so the
+      # fixed e2e port in scripts/ports.mjs cannot collide between them.
+      - run: pnpm exec playwright test --shard=${{ matrix.shard }}/3
+
+  # `E2E (Playwright)` is a REQUIRED status check on main. Branch protection
+  # matches contexts by name, and a required context that never reports leaves
+  # every PR stuck BLOCKED with nothing visibly failing (see CLAUDE.md). So the
+  # name stays on this aggregation job rather than moving to the shards, and
+  # protection needs no edit to land this change.
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (aggregation no-op).
+    timeout-minutes: 5
+    needs: e2e-shard
+    if: always()
+    steps:
+      - name: Require every E2E shard
+        run: |
+          if [ "${{ needs.e2e-shard.result }}" != "success" ]; then
+            echo "::error::E2E shard matrix result: ${{ needs.e2e-shard.result }}"
+            exit 1
+          fi
+          echo "E2E passed on all 3 shards."
 
   # Cross-environment conformance (#1990). The SAME conformance suite runs on
   # all three target OSes, so "it works here" is verified per-platform — not
