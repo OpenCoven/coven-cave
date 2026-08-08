@@ -32,6 +32,7 @@ import {
   chatAttentionDescription,
   chatAttentionLabel,
   compareChatAttention,
+  NO_CHAT_ATTENTION,
   type ChatAttentionState,
 } from "@/lib/chat-attention";
 import {
@@ -98,6 +99,10 @@ const CHAT_SIDEBAR_TABS: ReadonlyArray<TabItem<ChatSidebarView>> = [
     controlsId: "chat-sidebar-group-panel",
   },
 ];
+
+function normalizeSessionAttention(session: SessionRow): SessionRow {
+  return session.attention ? session : { ...session, attention: NO_CHAT_ATTENTION };
+}
 
 function bareTimeAt(iso: string, now: number): string {
   return relativeTime(iso, now, "bare");
@@ -532,6 +537,10 @@ export function WorkspaceSidebar({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchorRef = useRef<HTMLButtonElement>(null);
   const menuBodyRef = useRef<HTMLDivElement>(null);
+  const normalizedSessions = useMemo(
+    () => sessions.map(normalizeSessionAttention),
+    [sessions],
+  );
   // One clock snapshot per minute tick, not one per render: recency buckets,
   // row bare times, and attention descriptions all read this SAME `now` so
   // they can never split into two different instants inside one render pass
@@ -568,7 +577,11 @@ export function WorkspaceSidebar({
         const res = await fetch(`/api/sessions/list?includeArchived=1${scope}`, { cache: "no-store" });
         const json = await res.json().catch(() => ({ ok: false }));
         if (cancelled || !json.ok || !Array.isArray(json.sessions)) return;
-        setArchivedRows((json.sessions as SessionRow[]).filter((s) => s.archived_at));
+        setArchivedRows(
+          (json.sessions as SessionRow[])
+            .filter((session) => session.archived_at)
+            .map(normalizeSessionAttention),
+        );
       } catch {
         // keep whatever archived rows we already have
       }
@@ -579,13 +592,13 @@ export function WorkspaceSidebar({
   }, [showArchived, archiveNonce, activeFamiliarId]);
 
   const visibleSessions = useMemo(() => {
-    let rows: SessionRow[] = sessions;
+    let rows: SessionRow[] = normalizedSessions;
     if (showArchived && archivedRows.length > 0) {
-      const seen = new Set(sessions.map((s) => s.id));
-      rows = [...sessions, ...archivedRows.filter((s) => !seen.has(s.id))];
+      const seen = new Set(normalizedSessions.map((session) => session.id));
+      rows = [...normalizedSessions, ...archivedRows.filter((session) => !seen.has(session.id))];
     }
     return filterVisibleChatSessions(rows, activeFamiliarId ?? null, { includeArchived: showArchived });
-  }, [sessions, showArchived, archivedRows, activeFamiliarId]);
+  }, [normalizedSessions, showArchived, archivedRows, activeFamiliarId]);
 
   const groups = useMemo(
     () => deriveChatProjectGroups(applyProjectOverrides(visibleSessions, overrides), projects),

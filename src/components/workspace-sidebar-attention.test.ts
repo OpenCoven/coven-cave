@@ -409,6 +409,38 @@ afterEach(() => {
   sidebarPrefs.view = null;
 });
 
+test("legacy sessions without attention render as neutral rows", async () => {
+  let renderer!: ReactTestRenderer;
+  const session = makeSession({ title: "Legacy chat" });
+  delete session.attention;
+
+  await act(async () => {
+    renderer = create(
+      createElement(WorkspaceSidebar, {
+        sessions: [session],
+        familiars: [],
+        responseNeeded: new Set(),
+        onSelectFamiliar: () => undefined,
+        onOpenSession: () => undefined,
+        onNavigate: () => undefined,
+        onNewChat: () => undefined,
+        onDeleteSession: async () => undefined,
+        onOpenSettings: () => undefined,
+      }),
+    );
+    await Promise.resolve();
+  });
+
+  expect(
+    renderer.root.findAll(
+      (node) => typeof node.type === "string" && node.props.className === "cnav__thread-title" && textContent(node.children) === "Legacy chat",
+    ),
+  ).toHaveLength(1);
+  expect(sectionsByLabel(renderer).some((section) => section.props["aria-label"] === "Awaiting you")).toBe(false);
+
+  await act(async () => renderer.unmount());
+});
+
 test("attention rows keep the visible state in the button name and move the detailed description outside the button subtree", async () => {
   let renderer!: ReactTestRenderer;
   const session = makeSession();
