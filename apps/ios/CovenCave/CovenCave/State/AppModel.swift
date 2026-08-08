@@ -371,6 +371,35 @@ final class AppModel {
         return CaveClient(connection: connection)
     }
 
+    #if DEBUG
+    @ObservationIgnored private var previewChatProjects: [ProjectInfo]?
+    #endif
+
+    var canLoadChatProjects: Bool {
+        #if DEBUG
+        if previewChatProjects != nil { return true }
+        #endif
+        return client != nil
+    }
+
+    var canRecoverChatProjectConnection: Bool {
+        #if DEBUG
+        if previewChatProjects != nil { return false }
+        #endif
+        return connection != nil
+    }
+
+    func loadChatProjects(familiarIds: [String]) async throws -> [ProjectInfo] {
+        #if DEBUG
+        if let previewChatProjects {
+            return previewChatProjects
+        }
+        #endif
+
+        guard let client else { throw CaveError.notConfigured }
+        return try await client.projects(familiarIds: familiarIds)
+    }
+
     /// familiarId → when its chats were last viewed. A familiar reads as
     /// "unread" when its latest activity is newer than this. Persisted.
     var familiarViews: [String: Date] = [:]
@@ -524,6 +553,22 @@ final class AppModel {
                 familiarIds: ["nyx"]
             ),
         ]
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--ui-preview-new-chat-projects")
+            || arguments.contains("--ui-preview-new-chat-project-retry")
+            || arguments.contains("--ui-preview-new-chat-project-empty-retry") {
+            threads.first?.projectRoot = "/repos/coven-cave"
+            previewChatProjects = [
+                ProjectInfo(
+                    id: "coven-cave",
+                    name: "Coven Cave",
+                    root: "/repos/coven-cave",
+                    color: nil,
+                    updatedAt: nil,
+                    access: .write
+                ),
+            ]
+        }
         connectionState = .connected
     }
 

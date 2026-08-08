@@ -11,6 +11,7 @@ const [
   connection,
   thread,
   appModel,
+  devClient,
   newChat,
   chat,
   picker,
@@ -18,6 +19,9 @@ const [
   familiarThreads,
   nativeContractTests,
   nativeSelectionTests,
+  nativeClientTests,
+  nativeContextTests,
+  uiTests,
   snapshotTests,
   runner,
 ] = await Promise.all([
@@ -27,6 +31,7 @@ const [
   read(`${iosRoot}/Networking/CaveConnection.swift`),
   read(`${iosRoot}/State/ChatThread.swift`),
   read(`${iosRoot}/State/AppModel.swift`),
+  read(`${iosRoot}/Networking/CaveClient+Dev.swift`),
   read(`${iosRoot}/Views/NewChatView.swift`),
   read(`${iosRoot}/Views/ChatView.swift`),
   read(`${iosRoot}/Views/ChatProjectPicker.swift`),
@@ -34,6 +39,9 @@ const [
   read(`${iosRoot}/Views/FamiliarThreadsView.swift`),
   read("apps/ios/CovenCave/CovenCaveTests/ChatProjectContractTests.swift"),
   read("apps/ios/CovenCave/CovenCaveTests/ChatProjectSelectionTests.swift"),
+  read("apps/ios/CovenCave/CovenCaveTests/ChatProjectClientTests.swift"),
+  read("apps/ios/CovenCave/CovenCaveTests/ChatNewConversationContextTests.swift"),
+  read("apps/ios/CovenCave/CovenCaveUITests/NewChatUITests.swift"),
   read("apps/ios/CovenCave/CovenCaveTests/ThreadSnapshotStoreTests.swift"),
   read("scripts/run-tests.mjs"),
 ]);
@@ -80,8 +88,18 @@ assert.match(
 );
 assert.match(
   picker,
-  /currentClient\.projects\(familiarIds: familiarKey\)/,
+  /app\.loadChatProjects\(familiarIds: familiarKey\)/,
   "the picker must request projects scoped to every selected familiar",
+);
+assert.match(
+  devClient,
+  /let \(data, response\) = try await data\(for: request\)/,
+  "project discovery must use the client's injected, retrying request boundary",
+);
+assert.doesNotMatch(
+  devClient,
+  /devSharedSession/,
+  "project discovery must not bypass the client request boundary with a private session",
 );
 assert.match(
   picker,
@@ -144,6 +162,11 @@ assert.match(
   picker,
   /else if projects\.isEmpty \{[\s\S]*(?:if\s+let\s+onManageAccess\s*\{\s*Button\(\s*"Project access"\s*,\s*action:\s*onManageAccess\s*\)\s*\}|guard\s+let\s+onManageAccess\s*=\s*onManageAccess\s*else\s*\{[\s\S]*?\}\s*Button\(\s*"Project access"\s*,\s*action:\s*onManageAccess\s*\))/,
   "the empty project list must guard the Project access button behind a non-nil manage-access action",
+);
+assert.match(
+  picker,
+  /else if projects\.isEmpty \{[\s\S]*Button\("Retry"\) \{ reloadToken \+= 1 \}[\s\S]*if let onManageAccess/,
+  "the empty project list must support an immediate retry before optional access repair",
 );
 assert.match(
   picker,
@@ -308,6 +331,26 @@ assert.match(
   "home familiar shortcuts must open fixed-familiar New Chat from familiar rows",
 );
 assert.match(
+  home,
+  /enum ChatNewConversationContext[\s\S]*static func fixedFamiliarId\([\s\S]*detailPath\.last \?\? selection/,
+  "Chats must resolve New Chat context from the visible detail route before the sidebar selection",
+);
+assert.match(
+  home,
+  /private func presentContextualNewChat\(\)[\s\S]*ChatNewConversationContext\.fixedFamiliarId\([\s\S]*selection: selection,[\s\S]*detailPath: detailPath/,
+  "contextual compose must derive its fixed familiar from the visible Chats route",
+);
+assert.match(
+  home,
+  /label: "New chat"\) \{\s*presentContextualNewChat\(\)/,
+  "Chats compose controls must use contextual New Chat",
+);
+assert.match(
+  home,
+  /Button\("New chat"\) \{ presentGeneralNewChat\(\) \}/,
+  "the no-context empty action must preserve explicit general New Chat",
+);
+assert.match(
   familiarThreads,
   /NewChatView\([\s\S]*fixedFamiliarId: familiar\.id/,
   "familiar history shortcuts must enter fixed-familiar New Chat",
@@ -336,6 +379,21 @@ assert.match(
   nativeSelectionTests,
   /testSharedProjectsRequireEveryParticipantScope[\s\S]*testResolvedRootUsesFirstAccessibleRecentRoot[\s\S]*testExplicitImportParticipantsCannotExpandProjectSendScope/,
   "native tests must cover group intersection, deterministic resolution, and import scope",
+);
+assert.match(
+  nativeContextTests,
+  /testSelectedDirectThreadUsesItsFamiliar[\s\S]*testVisibleGroupThreadKeepsGeneralMode[\s\S]*testMissingContextKeepsGeneralMode/,
+  "native tests must cover direct, group, and absent New Chat context",
+);
+assert.match(
+  nativeClientTests,
+  /testProjectRequestUsesInjectedSessionAndRetriesTransientFailure/,
+  "native tests must prove project discovery uses the retrying injected transport",
+);
+assert.match(
+  uiTests,
+  /testContextualNewChatRetriesProjectFailureWithoutFamiliarReselection[\s\S]*testEmptyProjectStateRetriesWithoutFamiliarReselection/,
+  "simulator tests must cover transport and empty-project retry-to-success",
 );
 assert.match(
   snapshotTests,
