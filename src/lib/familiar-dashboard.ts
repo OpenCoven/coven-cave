@@ -33,6 +33,7 @@ export const FAMILIAR_DASHBOARD_LIMITS = {
   recentSessions: 5,
   attention: 6,
   reminders: 5,
+  accessProjects: 50,
   reports: 30,
   metricSnapshots: 100,
   metricTrailingDays: 30,
@@ -139,7 +140,7 @@ export type FamiliarDashboardAttention = {
     kind: "task" | "analytics" | "reminder";
     id: string;
   };
-  updatedAt: string;
+  updatedAt: string | null;
 };
 
 export type FamiliarDashboardTask = {
@@ -431,6 +432,19 @@ const TASK_PRIORITY_RANK: Record<Card["priority"], number> = {
   low: 3,
 };
 
+const ATTENTION_SEVERITY_RANK: Record<FamiliarDashboardAttention["severity"], number> = {
+  crit: 0,
+  warn: 1,
+  info: 2,
+};
+
+type FamiliarOverviewHealAttention = Pick<
+  FamiliarDashboardHealRequest,
+  "id" | "severity" | "title" | "detail"
+> & {
+  updatedAt: string | null;
+};
+
 export function buildDashboardSection<T>({
   generatedAt,
   required,
@@ -481,7 +495,7 @@ export function buildFamiliarOverview({
   tasks: Card[];
   sessions: SessionRow[];
   reminders: InboxItem[];
-  healRequests: SelfHealRequest[];
+  healRequests: FamiliarOverviewHealAttention[];
   now: number;
 }): FamiliarOverview {
   const generatedAt = new Date(now).toISOString();
@@ -540,7 +554,7 @@ export function buildFamiliarOverview({
       title: request.title,
       detail: request.detail,
       target: { kind: "analytics", id: request.id },
-      updatedAt: request.createdAt,
+      updatedAt: request.updatedAt,
     }));
   const reminderAttention: FamiliarDashboardAttention[] = scopedReminders
     .filter((item) => item.status === "fired")
@@ -557,7 +571,17 @@ export function buildFamiliarOverview({
     ...taskAttention,
     ...healAttention,
     ...reminderAttention,
-  ].sort((left, right) => newestFirst(left, right, (item) => item.updatedAt, (item) => item.id));
+  ]
+    .map((item, index) => ({ ...item, attentionIndex: index }))
+    .sort((left, right) => {
+      const severityDelta =
+        ATTENTION_SEVERITY_RANK[left.severity] - ATTENTION_SEVERITY_RANK[right.severity];
+      if (severityDelta !== 0) return severityDelta;
+      const timestampDelta = timestampValue(right.updatedAt) - timestampValue(left.updatedAt);
+      if (timestampDelta !== 0) return timestampDelta;
+      return left.attentionIndex - right.attentionIndex;
+    })
+    .map(({ attentionIndex: _attentionIndex, ...item }) => item);
 
   return {
     live: {
@@ -727,7 +751,7 @@ export function buildFamiliarProfile({
       : null,
     access: {
       projects: {
-        items: sortedProjects.map(({ project, access }) => ({
+        items: sortedProjects.slice(0, FAMILIAR_DASHBOARD_LIMITS.accessProjects).map(({ project, access }) => ({
           id: project.id,
           name: project.name,
           access,

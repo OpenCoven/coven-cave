@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ThreadSelfReport } from "@/lib/thread-self-report";
 import {
   appendSelfReport,
+  listDashboardMetricSnapshots,
   findSelfReport,
   listMetricSnapshots,
   listSelfReports,
@@ -184,5 +185,70 @@ describe("familiar self-report storage", () => {
 
   it("listMetricSnapshots returns an empty result for a missing directory", async () => {
     assert.deepEqual(await listMetricSnapshots("cody"), { snapshots: [], total: 0 });
+  });
+
+  it("listDashboardMetricSnapshots returns only the trailing 30-day newest 100 snapshots", async () => {
+    const now = Date.parse("2026-08-07T20:00:00.000Z");
+    for (let index = 0; index < 140; index++) {
+      await appendSelfReport("cody", report({
+        id: `recent-${index}`,
+        sessionId: `session-${index}`,
+        reportedAt: new Date(now - index * 6 * 60 * 60_000).toISOString(),
+        overallConfidence: 80 - (index % 10),
+      }));
+    }
+    await appendSelfReport("cody", report({
+      id: "outside-window",
+      sessionId: "old-session",
+      reportedAt: "2026-06-01T09:00:00.000Z",
+      overallConfidence: 42,
+    }));
+
+    const listed = await listDashboardMetricSnapshots("cody", now);
+    assert.equal(listed.total, 121, "only the trailing 30-day window contributes to the total");
+    assert.equal(listed.snapshots.length, 100, "dashboard responses cap the visible snapshot ledger");
+    assert.equal(listed.snapshots[0].id, "recent-99", "the bounded window keeps the newest 100 items");
+    assert.equal(listed.snapshots.at(-1)?.id, "recent-0");
+    assert.equal(listed.snapshots.some((snapshot) => snapshot.id === "outside-window"), false);
+  });
+
+  it("listDashboardMetricSnapshots backfills missing in-window snapshots without loading older history", async () => {
+    const now = Date.parse("2026-08-07T20:00:00.000Z");
+    const legacyDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports");
+    await mkdir(legacyDir, { recursive: true });
+    await writeFile(
+      path.join(legacyDir, "2026-08-06.jsonl"),
+      `${JSON.stringify(report({
+        id: "legacy-window",
+        sessionId: "legacy-window-session",
+        reportedAt: "2026-08-06T18:00:00.000Z",
+        overallConfidence: 61,
+      }))}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(legacyDir, "2026-06-01.jsonl"),
+      `${JSON.stringify(report({
+        id: "legacy-old",
+        sessionId: "legacy-old-session",
+        reportedAt: "2026-06-01T18:00:00.000Z",
+        overallConfidence: 17,
+      }))}\n`,
+      "utf8",
+    );
+    await appendSelfReport("cody", report({
+      id: "persisted-window",
+      sessionId: "persisted-window-session",
+      reportedAt: "2026-08-07T19:00:00.000Z",
+      overallConfidence: 88,
+    }));
+
+    const listed = await listDashboardMetricSnapshots("cody", now);
+    assert.equal(listed.total, 2);
+    assert.deepEqual(
+      listed.snapshots.map((snapshot) => snapshot.id),
+      ["legacy-window", "persisted-window"],
+    );
+    assert.equal(listed.snapshots.some((snapshot) => snapshot.id === "legacy-old"), false);
   });
 });

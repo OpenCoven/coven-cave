@@ -7,12 +7,14 @@ import {
   snapshotFromReport,
   type ThreadMetricSnapshot,
 } from "@/lib/signal-trends";
+import { FAMILIAR_DASHBOARD_LIMITS } from "@/lib/familiar-dashboard";
 import {
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
 import { isValidFamiliarId } from "./familiar-id";
 
 export const SELF_REPORT_SESSION_ID_RE = /^[a-z0-9_-]+$/i;
+const DAY_MS = 24 * 60 * 60_000;
 
 function assertFamiliarId(familiarId: string) {
   if (!isValidFamiliarId(familiarId)) throw new Error("path not allowed");
@@ -38,7 +40,59 @@ function sortNewestFirst(a: ThreadSelfReport, b: ThreadSelfReport): number {
   return new Date(b.reportedAt).getTime() - new Date(a.reportedAt).getTime();
 }
 
-async function readAllReports(familiarId: string): Promise<ThreadSelfReport[]> {
+type TimestampWindow = {
+  sinceMs: number | null;
+  untilMs: number | null;
+};
+
+function normalizeWindow(args?: {
+  since?: string;
+  until?: string;
+}): TimestampWindow {
+  const sinceMs = args?.since ? Date.parse(args.since) : Number.NaN;
+  const untilMs = args?.until ? Date.parse(args.until) : Number.NaN;
+  return {
+    sinceMs: Number.isFinite(sinceMs) ? sinceMs : null,
+    untilMs: Number.isFinite(untilMs) ? untilMs : null,
+  };
+}
+
+function withinWindow(
+  reportedAt: string,
+  window: TimestampWindow,
+): boolean {
+  const reportedMs = Date.parse(reportedAt);
+  if (!Number.isFinite(reportedMs)) return false;
+  if (window.sinceMs !== null && reportedMs < window.sinceMs) return false;
+  if (window.untilMs !== null && reportedMs > window.untilMs) return false;
+  return true;
+}
+
+function filterWindowFiles(files: string[], window: TimestampWindow): string[] {
+  const sinceDate =
+    window.sinceMs === null
+      ? null
+      : new Date(window.sinceMs).toISOString().slice(0, 10);
+  const untilDate =
+    window.untilMs === null
+      ? null
+      : new Date(window.untilMs).toISOString().slice(0, 10);
+
+  return files.filter((name) => {
+    if (!name.endsWith(".jsonl")) return false;
+    const match = /^(\d{4}-\d{2}-\d{2})\.jsonl$/.exec(name);
+    if (!match) return true;
+    const fileDate = match[1];
+    if (sinceDate !== null && fileDate < sinceDate) return false;
+    if (untilDate !== null && fileDate > untilDate) return false;
+    return true;
+  });
+}
+
+async function readAllReports(
+  familiarId: string,
+  window: TimestampWindow = normalizeWindow(),
+): Promise<ThreadSelfReport[]> {
   const dir = await reportsDir(familiarId);
   let files: string[];
   try {
@@ -49,7 +103,7 @@ async function readAllReports(familiarId: string): Promise<ThreadSelfReport[]> {
   }
 
   const reports: ThreadSelfReport[] = [];
-  for (const file of files.filter((name) => name.endsWith(".jsonl")).sort()) {
+  for (const file of filterWindowFiles(files, window).sort()) {
     const fullPath = path.join(dir, file);
     let raw = "";
     try {
@@ -61,7 +115,8 @@ async function readAllReports(familiarId: string): Promise<ThreadSelfReport[]> {
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
-        reports.push(redactReport(JSON.parse(trimmed) as ThreadSelfReport));
+        const parsed = redactReport(JSON.parse(trimmed) as ThreadSelfReport);
+        if (withinWindow(parsed.reportedAt, window)) reports.push(parsed);
       } catch {
         /* Ignore malformed historical lines; append-only storage should keep listing usable. */
       }
@@ -116,7 +171,10 @@ export async function appendSelfReport(familiarId: string, report: ThreadSelfRep
   }
 }
 
-async function readPersistedMetricSnapshots(familiarId: string): Promise<ThreadMetricSnapshot[]> {
+async function readPersistedMetricSnapshots(
+  familiarId: string,
+  window: TimestampWindow = normalizeWindow(),
+): Promise<ThreadMetricSnapshot[]> {
   const dir = await metricSnapshotsDir(familiarId);
   let files: string[];
   try {
@@ -127,7 +185,7 @@ async function readPersistedMetricSnapshots(familiarId: string): Promise<ThreadM
   }
 
   const snapshots: ThreadMetricSnapshot[] = [];
-  for (const file of files.filter((name) => name.endsWith(".jsonl")).sort()) {
+  for (const file of filterWindowFiles(files, window).sort()) {
     let raw = "";
     try {
       raw = await readFile(path.join(dir, file), "utf8");
@@ -139,13 +197,41 @@ async function readPersistedMetricSnapshots(familiarId: string): Promise<ThreadM
       if (!trimmed) continue;
       try {
         const parsed: unknown = JSON.parse(trimmed);
-        if (isThreadMetricSnapshot(parsed)) snapshots.push(parsed);
+        if (isThreadMetricSnapshot(parsed) && withinWindow(parsed.reportedAt, window)) {
+          snapshots.push(parsed);
+        }
       } catch {
         /* Ignore malformed historical lines; append-only storage should keep listing usable. */
       }
     }
   }
   return snapshots;
+}
+
+function finalizeSnapshots(
+  persisted: ThreadMetricSnapshot[],
+  reports: ThreadSelfReport[],
+  limit: number | "all",
+): { snapshots: ThreadMetricSnapshot[]; total: number } {
+  const byId = new Map<string, ThreadMetricSnapshot>();
+  // Append-only store: later lines are newer — on duplicate report ids
+  // (replays, repairs, partial writes) the newest persisted line wins.
+  for (const snapshot of persisted) {
+    byId.set(snapshot.id, snapshot);
+  }
+  for (const report of reports) {
+    if (!byId.has(report.id)) byId.set(report.id, snapshotFromReport(report));
+  }
+  const snapshots = [...byId.values()].sort(
+    (a, b) => new Date(a.reportedAt).getTime() - new Date(b.reportedAt).getTime(),
+  );
+  if (limit === "all" || snapshots.length <= limit) {
+    return { snapshots, total: snapshots.length };
+  }
+  return {
+    snapshots: snapshots.slice(-limit),
+    total: snapshots.length,
+  };
 }
 
 /**
@@ -160,19 +246,28 @@ export async function listMetricSnapshots(
     readPersistedMetricSnapshots(familiarId),
     readAllReports(familiarId),
   ]);
-  const byId = new Map<string, ThreadMetricSnapshot>();
-  // Append-only store: later lines are newer — on duplicate report ids
-  // (replays, repairs, partial writes) the newest persisted line wins.
-  for (const snapshot of persisted) {
-    byId.set(snapshot.id, snapshot);
-  }
-  for (const report of reports) {
-    if (!byId.has(report.id)) byId.set(report.id, snapshotFromReport(report));
-  }
-  const snapshots = [...byId.values()].sort(
-    (a, b) => new Date(a.reportedAt).getTime() - new Date(b.reportedAt).getTime(),
+  return finalizeSnapshots(persisted, reports, "all");
+}
+
+export async function listDashboardMetricSnapshots(
+  familiarId: string,
+  now: number = Date.now(),
+): Promise<{ snapshots: ThreadMetricSnapshot[]; total: number }> {
+  const window = normalizeWindow({
+    since: new Date(
+      now - FAMILIAR_DASHBOARD_LIMITS.metricTrailingDays * DAY_MS,
+    ).toISOString(),
+    until: new Date(now).toISOString(),
+  });
+  const [persisted, reports] = await Promise.all([
+    readPersistedMetricSnapshots(familiarId, window),
+    readAllReports(familiarId, window),
+  ]);
+  return finalizeSnapshots(
+    persisted,
+    reports,
+    FAMILIAR_DASHBOARD_LIMITS.metricSnapshots,
   );
-  return { snapshots, total: snapshots.length };
 }
 
 export async function listSelfReports(

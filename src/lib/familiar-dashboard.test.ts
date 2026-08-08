@@ -22,6 +22,7 @@ test("published limits match the v1 contract", () => {
     recentSessions: 5,
     attention: 6,
     reminders: 5,
+    accessProjects: 50,
     reports: 30,
     metricSnapshots: 100,
     metricTrailingDays: 30,
@@ -252,6 +253,46 @@ test("Overview bounds lists while retaining totals and scopes reminders", () => 
   assert.equal(overview.reminders.items.length, 5);
   assert.equal(overview.reminders.items.some((item) => item.familiarId === "moss"), false);
   assert.ok(overview.attention.items.every((item) => item.source !== ""));
+});
+
+test("Overview keeps a critical heal item represented ahead of newer warning attention", () => {
+  const overview = buildFamiliarOverview({
+    familiarId: "sage",
+    familiar: { id: "sage", display_name: "Sage", role: "Researcher" },
+    tasks: Array.from({ length: 5 }, (_, index) => modelTask(index, {
+      id: `review-${index}`,
+      title: `Review ${index}`,
+      status: "review",
+      priority: "medium",
+      updatedAt: `2026-08-07T19:5${index}:00.000Z`,
+    })),
+    sessions: [],
+    reminders: [
+      modelReminder(0, {
+        id: "fired-0",
+        title: "Reminder 0",
+        status: "fired",
+        updatedAt: "2026-08-07T19:59:30.000Z",
+      }),
+    ],
+    healRequests: [{
+      id: "sage:contract:0:SOUL.md:purpose",
+      severity: "crit",
+      title: "SOUL.md contract violation",
+      detail: "Purpose is missing.",
+      updatedAt: null,
+    }],
+    now: NOW,
+  });
+
+  assert.equal(overview.attention.total, 7);
+  assert.equal(overview.attention.items.length, 6);
+  assert.equal(overview.attention.items[0].id, "heal:sage:contract:0:SOUL.md:purpose");
+  assert.equal(overview.attention.items[0].updatedAt, null);
+  assert.equal(
+    overview.attention.items.some((item) => item.id === "heal:sage:contract:0:SOUL.md:purpose"),
+    true,
+  );
 });
 
 test("section state is deterministic and server builders never emit stale", () => {
@@ -875,6 +916,59 @@ test("Profile projects every approved identity and access field", () => {
   assert.deepEqual(
     profile.access.tools.map((tool) => [tool.id, tool.enabled]),
     [["asana", false], ["x-research", true], ["x-publish", false]],
+  );
+});
+
+test("Profile caps project access rows deterministically while preserving total", () => {
+  const projects = [
+    {
+      project: { id: "alpha-b", name: "Alpha", root: "/repo/alpha-b" },
+      access: "write" as const,
+    },
+    {
+      project: { id: "alpha-a", name: "Alpha", root: "/repo/alpha-a" },
+      access: "read" as const,
+    },
+    ...Array.from({ length: 55 }, (_, index) => ({
+      project: {
+        id: `project-${String(55 - index).padStart(2, "0")}`,
+        name: `Project ${String(55 - index).padStart(2, "0")}`,
+        root: `/repo/${index}`,
+      },
+      access: "write" as const,
+    })),
+  ];
+  const profile = buildFamiliarProfile({
+    familiar: {
+      id: "sage",
+      display_name: "Sage",
+      role: "Researcher",
+      harness: "claude",
+      defaultHarness: "claude",
+      harnessOverride: null,
+      model: "claude-sonnet",
+    },
+    config: {
+      defaults: { harness: "claude", model: "claude-sonnet" },
+      familiars: { sage: {} },
+    },
+    files: { soul: null, identity: null, ward: null, memory: null },
+    contractReport: null,
+    projects,
+  });
+
+  assert.equal(profile.access.projects.total, 57);
+  assert.equal(
+    profile.access.projects.items.length,
+    FAMILIAR_DASHBOARD_LIMITS.accessProjects,
+  );
+  assert.deepEqual(profile.access.projects.items.slice(0, 2), [
+    { id: "alpha-a", name: "Alpha", access: "read" },
+    { id: "alpha-b", name: "Alpha", access: "write" },
+  ]);
+  assert.deepEqual(
+    profile.access.projects.items.at(-1),
+    { id: "project-48", name: "Project 48", access: "write" },
   );
 });
 

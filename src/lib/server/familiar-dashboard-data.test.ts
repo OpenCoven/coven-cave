@@ -6,9 +6,11 @@ import {
   serializedDashboardBytes,
 } from "../familiar-dashboard.ts";
 import {
+  DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES,
   loadFamiliarDashboard,
   type FamiliarDashboardDependencies,
 } from "./familiar-dashboard-data.ts";
+import { listDashboardMetricSnapshots } from "./familiar-self-reports.ts";
 
 const NOW = Date.parse("2026-08-07T20:00:00.000Z");
 const CONFIG = {
@@ -416,4 +418,41 @@ test("production bounds are applied before serialization", async () => {
   );
   assert.equal(result.response.sections.analytics.data.confidence.sampleCount, 30);
   assert.ok(result.response.sections.analytics.data.trends.sampleCount <= 100);
+});
+
+test("default dashboard dependencies use the bounded metric snapshot query", () => {
+  assert.equal(
+    DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES.loadMetricSnapshots,
+    listDashboardMetricSnapshots,
+  );
+});
+
+test("response stays within budget with 5000 accessible projects", async () => {
+  const result = await loadFamiliarDashboard("sage", makeDependencies({
+    loadAccess: async () => ({
+      projects: Array.from({ length: 5000 }, (_, index) => {
+        const label = String(5000 - index).padStart(4, "0");
+        return {
+          project: {
+            id: `project-${label}`,
+            name: `Project ${label}`,
+            root: `/repo/${index}`,
+          },
+          access: index % 2 === 0 ? "write" : "read",
+        };
+      }),
+    }),
+  }));
+  assert.equal(result.kind, "ok");
+  const projects = result.response.sections.profile.data.access.projects;
+  assert.equal(projects.total, 5000);
+  assert.equal(projects.items.length, FAMILIAR_DASHBOARD_LIMITS.accessProjects);
+  assert.deepEqual(projects.items.slice(0, 3), [
+    { id: "project-0001", name: "Project 0001", access: "read" },
+    { id: "project-0002", name: "Project 0002", access: "write" },
+    { id: "project-0003", name: "Project 0003", access: "read" },
+  ]);
+  assert.ok(
+    serializedDashboardBytes(result.response) <= FAMILIAR_DASHBOARD_LIMITS.responseBytes,
+  );
 });

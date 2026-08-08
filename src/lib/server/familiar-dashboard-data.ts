@@ -27,7 +27,6 @@ import {
   type FamiliarDashboardResponse,
   type FamiliarDashboardSource,
 } from "@/lib/familiar-dashboard";
-import type { SelfHealRequest } from "@/lib/familiar-heal-requests";
 import { rollupMessageFeedback } from "@/lib/message-feedback-rollup";
 import {
   listAccessibleProjects,
@@ -37,6 +36,7 @@ import { enrichFamiliar } from "@/lib/server/familiar-enrichment";
 import { readFamiliarContractFiles } from "@/lib/server/familiar-contract-files";
 import { loadVisibleFamiliarRoster } from "@/lib/server/familiar-roster";
 import {
+  listDashboardMetricSnapshots,
   listMetricSnapshots,
   listSelfReports,
 } from "@/lib/server/familiar-self-reports";
@@ -96,7 +96,7 @@ function sourceData<T>(
   return result.ok ? result.data : result.data ?? fallback;
 }
 
-const DEFAULT_DEPENDENCIES: FamiliarDashboardDependencies = {
+export const DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES: FamiliarDashboardDependencies = {
   now: Date.now,
   loadRoster: loadVisibleFamiliarRoster,
   enrichFamiliar,
@@ -120,7 +120,7 @@ const DEFAULT_DEPENDENCIES: FamiliarDashboardDependencies = {
   loadRetro: ({ familiarId }) => loadRetroRunsSnapshot({ familiarId }),
   loadReports: (id) =>
     listSelfReports(id, { limit: FAMILIAR_DASHBOARD_LIMITS.reports }),
-  loadMetricSnapshots: listMetricSnapshots,
+  loadMetricSnapshots: listDashboardMetricSnapshots,
   loadFeedback: loadMessageFeedback,
 };
 
@@ -131,7 +131,7 @@ export type FamiliarDashboardLoadResult =
 
 export async function loadFamiliarDashboard(
   familiarId: string,
-  dependencies: FamiliarDashboardDependencies = DEFAULT_DEPENDENCIES,
+  dependencies: FamiliarDashboardDependencies = DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES,
 ): Promise<FamiliarDashboardLoadResult> {
   let rosterResult: Awaited<ReturnType<typeof dependencies.loadRoster>>;
   try {
@@ -365,24 +365,13 @@ export async function loadFamiliarDashboard(
     feedback,
     now,
   });
-  const overviewHealRequests: SelfHealRequest[] = builtAnalytics.healRequests.map(
-    (request) => ({
-      id: request.id,
-      familiarId,
-      source: request.id.includes(":contract:")
-        ? "contract"
-        : request.id.includes(":growth-signal:")
-          ? "growth-signal"
-          : "self-report-aggregate",
-      severity: request.severity,
-      title: request.title,
-      detail: request.detail,
-      suggestedAction: request.suggestedAction,
-      actionKind: request.actionKind,
-      createdAt: "1970-01-01T00:00:00.000Z",
-      resolved: false,
-    }),
-  );
+  const overviewHealRequests = builtAnalytics.healRequests.map((request) => ({
+    id: request.id,
+    severity: request.severity,
+    title: request.title,
+    detail: request.detail,
+    updatedAt: null,
+  }));
   const analyticsData = analyticsAvailable ? builtAnalytics : null;
   const overviewData = overviewAvailable
     ? buildFamiliarOverview({
