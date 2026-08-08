@@ -20,15 +20,19 @@ function jsonResponse(value, status = 200) {
 function pull({
   number = 42,
   createdAt = new Date(NOW - RECOVERY_GRACE_MS - 1).toISOString(),
+  updatedAt = createdAt,
   sha = "a".repeat(40),
   branch = "fix/cave-unit",
   repository = REPOSITORY,
   draft = false,
+  state = "open",
 } = {}) {
   return {
     number,
     draft,
+    state,
     created_at: createdAt,
+    updated_at: updatedAt,
     html_url: `https://github.com/${REPOSITORY}/pull/${number}`,
     head: {
       ref: branch,
@@ -65,6 +69,10 @@ function githubFixture({ pulls, runsBySha = {}, jobsByRun = {} }) {
     requests.push(request);
 
     if (parsed.pathname.endsWith("/pulls")) return jsonResponse(pulls);
+    const pullDetail = parsed.pathname.match(/\/pulls\/(\d+)$/);
+    if (pullDetail) {
+      return jsonResponse(pulls.find((candidate) => candidate.number === Number(pullDetail[1])));
+    }
     if (parsed.pathname.endsWith("/actions/workflows/ci.yml/runs")) {
       const sha = parsed.searchParams.get("head_sha");
       return jsonResponse({ workflow_runs: runsBySha[sha] ?? [] });
@@ -140,7 +148,7 @@ test("apply dispatches one fresh CI run for a qualifying same-repository head", 
       {
         method: "POST",
         path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: { ref: pr.head.ref },
+        body: { ref: pr.head.ref, inputs: { expected_sha: pr.head.sha } },
       },
     ],
   );
@@ -174,6 +182,20 @@ test("existing CI, young PRs, drafts, and fork heads are never dispatched", asyn
       { number: 4, reason: "fork_head" },
     ],
   );
+  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
+});
+
+test("an old PR with a freshly updated head remains inside the grace period", async () => {
+  const freshHead = pull({
+    createdAt: new Date(NOW - RECOVERY_GRACE_MS * 10).toISOString(),
+    updatedAt: new Date(NOW - RECOVERY_GRACE_MS + 1).toISOString(),
+  });
+  const fixture = githubFixture({ pulls: [freshHead] });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+  assert.deepEqual(result.recoveries, []);
+  assert.deepEqual(result.skipped, [{ number: freshHead.number, reason: "grace_period" }]);
   assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
 });
 
@@ -224,6 +246,61 @@ test("GitHub REST failures fail closed and never dispatch", async () => {
     runCiRecovery(options(fetchImpl, true)),
     /failed to list open pull requests \(HTTP 503\)/,
   );
+  assert.equal(requests.some((request) => request.method === "POST"), false);
+});
+
+test("apply completes every candidate read before dispatching any recovery", async () => {
+  const first = pull({ number: 1, sha: "1".repeat(40), branch: "fix/first" });
+  const second = pull({ number: 2, sha: "2".repeat(40), branch: "fix/second" });
+  const requests = [];
+  const fetchImpl = async (url, init = {}) => {
+    const parsed = new URL(url);
+    requests.push({ method: init.method ?? "GET", path: parsed.pathname });
+    if (parsed.pathname.endsWith("/pulls")) return jsonResponse([first, second]);
+    if (parsed.pathname.endsWith("/actions/workflows/ci.yml/runs")) {
+      if (parsed.searchParams.get("head_sha") === first.head.sha) {
+        return jsonResponse({ workflow_runs: [] });
+      }
+      return jsonResponse({ message: "service unavailable" }, 503);
+    }
+    if (parsed.pathname.endsWith("/actions/workflows/ci.yml/dispatches")) {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`unexpected request: ${parsed.pathname}`);
+  };
+
+  await assert.rejects(
+    runCiRecovery(options(fetchImpl, true)),
+    /failed to list CI runs for a pull request head \(HTTP 503\)/,
+  );
+  assert.equal(requests.some((request) => request.method === "POST"), false);
+});
+
+test("apply skips a recovery when the pull request head moves before dispatch", async () => {
+  const original = pull();
+  const moved = pull({
+    updatedAt: new Date(NOW - 1).toISOString(),
+    sha: "b".repeat(40),
+  });
+  const requests = [];
+  const fetchImpl = async (url, init = {}) => {
+    const parsed = new URL(url);
+    requests.push({ method: init.method ?? "GET", path: parsed.pathname });
+    if (parsed.pathname.endsWith("/pulls")) return jsonResponse([original]);
+    if (parsed.pathname.endsWith("/actions/workflows/ci.yml/runs")) {
+      return jsonResponse({ workflow_runs: [] });
+    }
+    if (parsed.pathname.endsWith(`/pulls/${original.number}`)) return jsonResponse(moved);
+    if (parsed.pathname.endsWith("/actions/workflows/ci.yml/dispatches")) {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`unexpected request: ${parsed.pathname}`);
+  };
+
+  const result = await runCiRecovery(options(fetchImpl, true));
+
+  assert.deepEqual(result.recoveries, []);
+  assert.deepEqual(result.skipped, [{ number: original.number, reason: "head_changed" }]);
   assert.equal(requests.some((request) => request.method === "POST"), false);
 });
 

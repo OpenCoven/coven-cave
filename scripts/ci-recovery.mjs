@@ -30,7 +30,7 @@ export async function runCiRecovery({
   };
   const context = { apiUrl, repositoryPath, headers, fetchImpl };
   const pulls = await listOpenPulls(context);
-  const recoveries = [];
+  const eligible = [];
   const skipped = [];
 
   for (const rawPull of pulls) {
@@ -48,19 +48,34 @@ export async function runCiRecovery({
       continue;
     }
 
-    let dispatched = false;
-    if (apply) {
-      await dispatchWorkflow(context, pull.ref);
-      dispatched = true;
-    }
-    recoveries.push({
+    eligible.push({
       number: pull.number,
       reason: decision.reason,
       ref: pull.ref,
       sha: pull.sha,
       url: pull.url,
-      dispatched,
     });
+  }
+
+  const dispatchable = [];
+  if (apply) {
+    // Complete every candidate read before the first mutation. A later REST
+    // failure must never leave the repository with a partially applied scan.
+    for (const recovery of eligible) {
+      const current = await getPull(context, recovery.number);
+      const drift = dispatchSkipReason(current, recovery, repository, now);
+      if (drift) {
+        skipped.push({ number: recovery.number, reason: drift });
+        continue;
+      }
+      dispatchable.push(recovery);
+    }
+  }
+
+  const recoveries = apply ? [] : eligible.map((recovery) => ({ ...recovery, dispatched: false }));
+  for (const recovery of dispatchable) {
+    await dispatchWorkflow(context, recovery.ref, recovery.sha);
+    recoveries.push({ ...recovery, dispatched: true });
   }
 
   const result = {
@@ -118,6 +133,15 @@ async function listWorkflowRuns(context, sha) {
   return payload.workflow_runs.map(parseRun).sort((left, right) => right.createdAt - left.createdAt);
 }
 
+async function getPull(context, number) {
+  const url = `${context.apiUrl}/repos/${context.repositoryPath}/pulls/${number}`;
+  const response = await context.fetchImpl(url, { headers: context.headers });
+  if (!response.ok) {
+    throw new Error(`failed to revalidate a pull request head (HTTP ${response.status})`);
+  }
+  return parsePull(await response.json());
+}
+
 async function decideRecovery(context, runs, now) {
   if (runs.length === 0) return { recover: true, reason: "missing_ci_run" };
 
@@ -156,12 +180,12 @@ async function workflowJobCount(context, runId) {
   return payload.total_count;
 }
 
-async function dispatchWorkflow(context, ref) {
+async function dispatchWorkflow(context, ref, expectedSha) {
   const url = `${context.apiUrl}/repos/${context.repositoryPath}/actions/workflows/${WORKFLOW_FILE}/dispatches`;
   const response = await context.fetchImpl(url, {
     method: "POST",
     headers: { ...context.headers, "content-type": "application/json" },
-    body: JSON.stringify({ ref }),
+    body: JSON.stringify({ ref, inputs: { expected_sha: expectedSha } }),
   });
   if (!response.ok) {
     throw new Error(`failed to dispatch CI recovery (HTTP ${response.status})`);
@@ -171,7 +195,9 @@ async function dispatchWorkflow(context, ref) {
 function parsePull(value) {
   const number = value?.number;
   const createdAt = Date.parse(value?.created_at);
+  const updatedAt = Date.parse(value?.updated_at);
   const draft = value?.draft;
+  const state = value?.state;
   const url = value?.html_url;
   const ref = value?.head?.ref;
   const sha = value?.head?.sha;
@@ -180,7 +206,9 @@ function parsePull(value) {
     !Number.isInteger(number) ||
     number <= 0 ||
     !Number.isFinite(createdAt) ||
+    !Number.isFinite(updatedAt) ||
     typeof draft !== "boolean" ||
+    typeof state !== "string" ||
     typeof url !== "string" ||
     url.length === 0 ||
     typeof ref !== "string" ||
@@ -191,7 +219,7 @@ function parsePull(value) {
   ) {
     throw new Error("open pull request response contained a malformed entry");
   }
-  return { number, createdAt, draft, url, ref, sha, headRepository };
+  return { number, createdAt, updatedAt, draft, state, url, ref, sha, headRepository };
 }
 
 function parseRun(value) {
@@ -214,10 +242,25 @@ function parseRun(value) {
 }
 
 function baseSkipReason(pull, repository, now) {
+  if (pull.state !== "open") return "pull_closed";
   if (pull.draft) return "draft";
   if (pull.headRepository.toLowerCase() !== repository.toLowerCase()) return "fork_head";
-  if (pull.createdAt > now - RECOVERY_GRACE_MS) return "grace_period";
+  if (Math.max(pull.createdAt, pull.updatedAt) > now - RECOVERY_GRACE_MS) {
+    return "grace_period";
+  }
   return null;
+}
+
+function dispatchSkipReason(current, expected, repository, now) {
+  if (current.state !== "open") return "pull_closed";
+  if (
+    current.sha !== expected.sha ||
+    current.ref !== expected.ref ||
+    current.headRepository.toLowerCase() !== repository.toLowerCase()
+  ) {
+    return "head_changed";
+  }
+  return baseSkipReason(current, repository, now);
 }
 
 function nextLink(header) {

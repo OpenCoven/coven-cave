@@ -2,6 +2,11 @@ name: CI
 
 on:
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Expected pull request head SHA
+        required: true
+        type: string
   push:
     branches: [main]
   pull_request:
@@ -10,7 +15,7 @@ on:
 concurrency:
   # A recovered workflow_dispatch and a late pull_request delivery for the
   # same commit must supersede one another instead of running two full suites.
-  group: ci-${{ github.event.pull_request.head.sha || github.sha }}
+  group: ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -28,6 +33,7 @@ jobs:
   # install, which is the ~25s price of the parallelism.
   frontend-static:
     name: Frontend lint & types
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     runs-on: ubuntu-latest
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~1min).
     timeout-minutes: 10
@@ -57,6 +63,7 @@ jobs:
 
   frontend-tests:
     name: Frontend tests (${{ matrix.suite }})
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     runs-on: ubuntu-latest
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~5min for the app suite).
     timeout-minutes: 20
@@ -87,6 +94,7 @@ jobs:
 
   frontend-bundle:
     name: Frontend bundle
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     runs-on: ubuntu-latest
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~2min, up to 3 attempts).
     timeout-minutes: 15
@@ -156,6 +164,7 @@ jobs:
 
   cargo-check:
     name: Rust check
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     runs-on: ubuntu-latest
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~1-5min (cold cargo cache)).
     timeout-minutes: 15
@@ -231,6 +240,7 @@ jobs:
   # rather than assuming shard boundaries will separate it.
   e2e-shard:
     name: E2E shard ${{ matrix.shard }}/3
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     runs-on: ubuntu-latest
     env:
       NEXT_PUBLIC_CAVE_CRAFTS: "1"
@@ -295,6 +305,7 @@ jobs:
   # others. Neutral defaults + per-OS deltas: docs/cross-environment.md.
   conformance:
     name: Cross-environment (${{ matrix.os }})
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~0.5-2min).
     timeout-minutes: 15
     strategy:
@@ -340,6 +351,7 @@ jobs:
 
   sidecar-runtime:
     name: Sidecar runtime (${{ matrix.os }})
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (windows runner is the flaky/slow one).
     timeout-minutes: 40
     strategy:
@@ -402,6 +414,7 @@ jobs:
   # edit for this job to be able to fail a PR.
   windows-native:
     name: Windows native tests
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     runs-on: windows-latest
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~2.5min incl. cold cargo build).
     timeout-minutes: 20
