@@ -61,7 +61,15 @@ function workflowRun({
   };
 }
 
-function githubFixture({ pulls, runsBySha = {}, jobsByRun = {} }) {
+const GUARDED_CI_WORKFLOW = `name: CI
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        required: true
+`;
+
+function githubFixture({ pulls, runsBySha = {}, jobsByRun = {}, workflowsBySha = {} }) {
   const requests = [];
   const fetchImpl = async (url, init = {}) => {
     const parsed = new URL(url);
@@ -80,6 +88,11 @@ function githubFixture({ pulls, runsBySha = {}, jobsByRun = {} }) {
     if (parsed.pathname.endsWith("/actions/workflows/ci.yml/runs")) {
       const sha = parsed.searchParams.get("head_sha");
       return jsonResponse({ workflow_runs: runsBySha[sha] ?? [] });
+    }
+    if (parsed.pathname.endsWith("/contents/.github/workflows/ci.yml")) {
+      const sha = parsed.searchParams.get("ref");
+      const source = workflowsBySha[sha] ?? GUARDED_CI_WORKFLOW;
+      return jsonResponse({ encoding: "base64", content: Buffer.from(source).toString("base64") });
     }
     const jobs = parsed.pathname.match(/\/actions\/runs\/(\d+)\/jobs$/);
     if (jobs) {
@@ -155,6 +168,38 @@ test("apply dispatches one fresh CI run for a qualifying same-repository head", 
         body: { ref: pr.head.ref, inputs: { expected_sha: pr.head.sha } },
       },
     ],
+  );
+});
+
+test("apply omits expected_sha only for a legacy head workflow without that input", async () => {
+  const pr = pull();
+  const fixture = githubFixture({
+    pulls: [pr],
+    workflowsBySha: {
+      [pr.head.sha]: "name: CI\non:\n  workflow_dispatch:\n",
+    },
+  });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+  assert.equal(result.recoveries[0].dispatched, true);
+  assert.deepEqual(
+    fixture.requests.filter((request) => request.method === "POST"),
+    [
+      {
+        method: "POST",
+        path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
+        body: { ref: pr.head.ref },
+      },
+    ],
+  );
+  assert.equal(
+    fixture.requests.some(
+      (request) =>
+        request.method === "GET" &&
+        request.path.endsWith(`/contents/.github/workflows/ci.yml?ref=${pr.head.sha}`),
+    ),
+    true,
   );
 });
 
@@ -280,6 +325,41 @@ test("apply completes every candidate read before dispatching any recovery", asy
   assert.equal(requests.some((request) => request.method === "POST"), false);
 });
 
+test("apply inspects every exact-head workflow contract before dispatching any recovery", async () => {
+  const first = pull({ number: 1, sha: "1".repeat(40), branch: "fix/first" });
+  const second = pull({ number: 2, sha: "2".repeat(40), branch: "fix/second" });
+  const requests = [];
+  const fetchImpl = async (url, init = {}) => {
+    const parsed = new URL(url);
+    requests.push({ method: init.method ?? "GET", path: parsed.pathname });
+    if (parsed.pathname.endsWith("/pulls")) return jsonResponse([first, second]);
+    if (parsed.pathname.endsWith("/actions/workflows/ci.yml/runs")) {
+      return jsonResponse({ workflow_runs: [] });
+    }
+    if (parsed.pathname.endsWith(`/pulls/${first.number}`)) return jsonResponse(first);
+    if (parsed.pathname.endsWith(`/pulls/${second.number}`)) return jsonResponse(second);
+    if (parsed.pathname.endsWith("/contents/.github/workflows/ci.yml")) {
+      if (parsed.searchParams.get("ref") === first.head.sha) {
+        return jsonResponse({
+          encoding: "base64",
+          content: Buffer.from(GUARDED_CI_WORKFLOW).toString("base64"),
+        });
+      }
+      return jsonResponse({ message: "service unavailable" }, 503);
+    }
+    if (parsed.pathname.endsWith("/actions/workflows/ci.yml/dispatches")) {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`unexpected request: ${parsed.pathname}`);
+  };
+
+  await assert.rejects(
+    runCiRecovery(options(fetchImpl, true)),
+    /failed to inspect the CI workflow contract \(HTTP 503\)/,
+  );
+  assert.equal(requests.some((request) => request.method === "POST"), false);
+});
+
 test("apply skips a recovery when the pull request head moves before dispatch", async () => {
   const original = pull();
   const moved = pull({
@@ -342,6 +422,41 @@ test("a completed dispatch for a different expected SHA does not cover the curre
       },
     ],
   );
+});
+
+test("a dispatch with a malformed stamped expected SHA does not cover the current head", async () => {
+  const current = pull({ sha: "b".repeat(40) });
+  const malformed = workflowRun({
+    event: "workflow_dispatch",
+    headSha: current.head.sha,
+    displayTitle: "CI workflow_dispatch deadbeef",
+  });
+  const fixture = githubFixture({
+    pulls: [current],
+    runsBySha: { [current.head.sha]: [malformed] },
+  });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, false));
+
+  assert.equal(result.recoveries[0].reason, "missing_ci_run");
+});
+
+test("an unstamped legacy dispatch remains valid CI coverage", async () => {
+  const current = pull();
+  const legacy = workflowRun({
+    event: "workflow_dispatch",
+    headSha: current.head.sha,
+    displayTitle: "Legacy recovery run",
+  });
+  const fixture = githubFixture({
+    pulls: [current],
+    runsBySha: { [current.head.sha]: [legacy] },
+  });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, false));
+
+  assert.deepEqual(result.recoveries, []);
+  assert.equal(result.skipped[0].reason, "recovery_cooldown");
 });
 
 test("pull pagination never forwards the token to a cross-origin Link URL", async () => {

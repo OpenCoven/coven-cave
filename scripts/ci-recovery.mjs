@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { parse } from "yaml";
 
 export const RECOVERY_GRACE_MS = 15 * 60 * 1000;
 export const RECOVERY_COOLDOWN_MS = 60 * 60 * 1000;
@@ -68,13 +69,16 @@ export async function runCiRecovery({
         skipped.push({ number: recovery.number, reason: drift });
         continue;
       }
-      dispatchable.push(recovery);
+      dispatchable.push({
+        recovery,
+        supportsExpectedSha: await workflowSupportsExpectedSha(context, recovery.sha),
+      });
     }
   }
 
   const recoveries = apply ? [] : eligible.map((recovery) => ({ ...recovery, dispatched: false }));
-  for (const recovery of dispatchable) {
-    await dispatchWorkflow(context, recovery.ref, recovery.sha);
+  for (const { recovery, supportsExpectedSha } of dispatchable) {
+    await dispatchWorkflow(context, recovery.ref, recovery.sha, supportsExpectedSha);
     recoveries.push({ ...recovery, dispatched: true });
   }
 
@@ -134,8 +138,9 @@ async function listWorkflowRuns(context, sha) {
     .map(parseRun)
     .filter(
       (run) =>
-        run.expectedSha === null ||
-        run.expectedSha.toLowerCase() === run.headSha.toLowerCase(),
+        !run.hasInvalidExpectedShaStamp &&
+        (run.expectedSha === null ||
+          run.expectedSha.toLowerCase() === run.headSha.toLowerCase()),
     )
     .sort((left, right) => right.createdAt - left.createdAt);
 }
@@ -187,12 +192,45 @@ async function workflowJobCount(context, runId) {
   return payload.total_count;
 }
 
-async function dispatchWorkflow(context, ref, expectedSha) {
+async function workflowSupportsExpectedSha(context, sha) {
+  const url =
+    `${context.apiUrl}/repos/${context.repositoryPath}/contents/.github/workflows/${WORKFLOW_FILE}` +
+    `?ref=${encodeURIComponent(sha)}`;
+  const response = await context.fetchImpl(url, { headers: context.headers });
+  if (!response.ok) {
+    throw new Error(`failed to inspect the CI workflow contract (HTTP ${response.status})`);
+  }
+  const payload = await response.json();
+  if (
+    payload?.encoding !== "base64" ||
+    typeof payload.content !== "string" ||
+    payload.content.length === 0
+  ) {
+    throw new Error("CI workflow content response was malformed");
+  }
+  let workflow;
+  try {
+    workflow = parse(Buffer.from(payload.content, "base64").toString("utf8"));
+  } catch {
+    throw new Error("CI workflow content was not valid YAML");
+  }
+  const inputs = workflow?.on?.workflow_dispatch?.inputs;
+  return (
+    inputs !== null &&
+    typeof inputs === "object" &&
+    Object.hasOwn(inputs, "expected_sha")
+  );
+}
+
+async function dispatchWorkflow(context, ref, expectedSha, supportsExpectedSha) {
   const url = `${context.apiUrl}/repos/${context.repositoryPath}/actions/workflows/${WORKFLOW_FILE}/dispatches`;
+  const body = supportsExpectedSha
+    ? { ref, inputs: { expected_sha: expectedSha } }
+    : { ref };
   const response = await context.fetchImpl(url, {
     method: "POST",
     headers: { ...context.headers, "content-type": "application/json" },
-    body: JSON.stringify({ ref, inputs: { expected_sha: expectedSha } }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) {
     throw new Error(`failed to dispatch CI recovery (HTTP ${response.status})`);
@@ -255,6 +293,10 @@ function parseRun(value) {
     event === "workflow_dispatch"
       ? displayTitle.match(/^CI workflow_dispatch ([0-9a-f]{40})$/i)
       : null;
+  const hasInvalidExpectedShaStamp =
+    event === "workflow_dispatch" &&
+    displayTitle.startsWith("CI workflow_dispatch ") &&
+    expectedShaMatch === null;
   return {
     id,
     status,
@@ -262,6 +304,7 @@ function parseRun(value) {
     createdAt,
     headSha,
     expectedSha: expectedShaMatch?.[1] ?? null,
+    hasInvalidExpectedShaStamp,
   };
 }
 

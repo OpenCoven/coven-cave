@@ -31,9 +31,13 @@ yours. Use a PR.
   `ci.yml` run for an open, same-repository PR head only when that SHA has no CI
   run, or when its queued run has remained jobless. Apply mode completes its
   read-only scan and revalidates every candidate head before the first
-  dispatch; `ci.yml` also refuses a recovered run if the branch no longer
-  resolves to the expected SHA. A recent recovery enforces a one-hour
-  cooldown; drafts and fork heads are skipped. Diagnose without mutation first:
+  dispatch. It inspects the workflow at each exact head: current definitions
+  receive the expected SHA guard, while legacy definitions receive a no-input
+  dispatch so older PR branches remain recoverable. `ci.yml` refuses a guarded
+  run if the branch no longer resolves to the expected SHA, and mismatched or
+  malformed guarded runs do not count as CI coverage. A recent recovery
+  enforces a one-hour cooldown; drafts and fork heads are skipped. Diagnose
+  without mutation first:
 
   ```bash
   GITHUB_TOKEN="$(gh auth token)" GITHUB_REPOSITORY=OpenCoven/coven-cave pnpm ci:recovery
