@@ -168,7 +168,7 @@ async function openReader(page: Page, turn: TurnSpec) {
 
   // ...and finally for the CITATION CHIPS, which the prose wait does not reach.
   //
-  // Two separate steps produce them, and the prose wait only covers neither:
+  // Two separate steps produce them, and the prose wait covers neither:
   // the footnote pipeline rewrites `[^mdn]` into an `a[href^="#cite-"]`, and
   // then a useEffect in ui/citation.tsx walks those anchors and adds
   // `cave-citation-chip`. Measured on a cold server, at the instant the prose
