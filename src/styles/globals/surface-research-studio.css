@@ -73,7 +73,7 @@
 }
 .research-studio__chips {
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
   flex-wrap: wrap;
   min-width: 0;
 }
@@ -148,26 +148,64 @@
 }
 
 /* ── Generation type grid (design 320–329) ── */
+/* Media mosaic: a 6-column bed so the headline kinds can take a wider tile
+   than the rest. Every card still fills whole columns, so the row never leaves
+   an orphan gap. */
 .research-studio__grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: var(--space-3);
 }
 .research-studio-card {
+  position: relative;
+  overflow: hidden;
+  grid-column: span 2;
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
-  padding: var(--space-3) 14px;
+  padding: var(--space-4);
   border: 1px solid var(--border-hairline, var(--border));
-  border-radius: var(--radius-control);
-  background: var(--bg-raised);
+  border-radius: var(--radius-card);
+  /* The kind's own hue washes in from the top-left and fades to the raised
+     surface — a tint, not a fill, so the label keeps its contrast. */
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--studio-kind, var(--research-accent)) 9%, transparent),
+    color-mix(in oklch, var(--bg-raised) 70%, transparent) 62%
+  );
   text-align: left;
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+}
+/* The two long-form kinds anchor the mosaic; the rest keep the base span. */
+.research-studio-card[data-kind="podcast"] { grid-column: span 3; }
+.research-studio-card[data-kind="long-video"] { grid-column: span 3; }
+/* Oversized ghost of the kind glyph, bled off the corner. Decorative only —
+   the real glyph and label still carry the meaning. */
+.research-studio-card::before {
+  content: "";
+  position: absolute;
+  right: -8px;
+  bottom: -18px;
+  width: 74px;
+  height: 74px;
+  border-radius: var(--radius-panel);
+  background: color-mix(in oklch, var(--studio-kind, var(--research-accent)) 7%, transparent);
+  pointer-events: none;
+  transition: transform 300ms cubic-bezier(0.2, 0.8, 0.3, 1.2);
 }
 .research-studio-card:hover:not(:disabled):not([aria-disabled="true"]) {
-  border-color: color-mix(in oklch, var(--studio-kind, var(--research-accent)) 45%, transparent);
+  border-color: color-mix(in oklch, var(--studio-kind, var(--research-accent)) 50%, transparent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg, 0 12px 30px oklch(0 0 0 / 0.32));
 }
+.research-studio-card:hover:not(:disabled):not([aria-disabled="true"])::before {
+  transform: rotate(-8deg) scale(1.14) translateY(-4px);
+}
+/* A card that cannot be used does not animate — the lift would promise a
+   click that does nothing. */
+.research-studio-card:disabled::before,
+.research-studio-card[aria-disabled="true"]::before { display: none; }
 .research-studio-card:disabled {
   cursor: default;
 }
@@ -272,7 +310,7 @@
   flex-wrap: wrap;
 }
 .research-studio__chip--filter {
-  padding: 3px 10px;
+  padding: 3px var(--space-3);
   font-size: var(--text-2xs);
 }
 
@@ -352,7 +390,7 @@
 .research-studio-row__acts {
   flex: none;
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
   flex-wrap: wrap;
   justify-content: flex-end;
   max-width: 280px;
@@ -360,14 +398,14 @@
 .research-studio-row__confirm {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   font-size: var(--text-xs);
   color: var(--text-secondary);
 }
 
 /* ── Action buttons (design genAct; flash = label swap + tint) ── */
 .research-studio-act {
-  padding: 3px 10px;
+  padding: 3px var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background: transparent;
@@ -728,7 +766,7 @@
 .research-studio-viewer__thumbs {
   flex: 1;
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
   overflow-x: auto;
   padding: 2px 0;
   cursor: grab;
@@ -798,7 +836,7 @@
 .research-studio-viewer__diagram {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
 }
 /* Collapsible mermaid source under the rendered diagram. */
 .research-studio-viewer__code-details summary {
@@ -968,7 +1006,12 @@
 
 /* ── Responsive: follow the desk's container breakpoints ── */
 @container research-desk (max-width: 900px) {
-  .research-studio__grid { grid-template-columns: repeat(2, 1fr); }
+  /* Below 900px every kind is equal width — a 3-of-6 span would be a full
+     row on its own and read as a heading, not a card. */
+  .research-studio__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .research-studio-card,
+  .research-studio-card[data-kind="podcast"],
+  .research-studio-card[data-kind="long-video"] { grid-column: auto; }
   .research-studio-config__media { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .research-studio { padding: var(--space-4) 18px 24px; }
   .research-studio-row { flex-wrap: wrap; }
@@ -980,7 +1023,10 @@
   }
 }
 @container research-desk (max-width: 560px) {
-  .research-studio__grid { grid-template-columns: 1fr; }
+  .research-studio__grid { grid-template-columns: minmax(0, 1fr); }
+  .research-studio-card,
+  .research-studio-card[data-kind="podcast"],
+  .research-studio-card[data-kind="long-video"] { grid-column: auto; }
   .research-studio-config__media,
   .research-studio-review__config { grid-template-columns: 1fr; }
   .research-studio { padding: var(--space-4) 12px 20px; }
@@ -1123,3 +1169,46 @@
 }
 .podcast-transcript--compact .podcast-transcript__script { gap: var(--space-2); }
 .podcast-transcript--compact .podcast-transcript__line { line-height: var(--leading-normal); }
+
+/* ── Provider strip: readiness, stated. Colour rides on a dot, the state name
+   rides in the tooltip and an sr-only tail, so it never reads by hue alone. ── */
+.research-studio__providers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.research-studio__provider {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px var(--space-3);
+  font-size: var(--text-2xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--bg-raised) 60%, transparent);
+  color: var(--text-secondary);
+}
+.research-studio__provider i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+}
+.research-studio__provider[data-state="ready"] i { background: var(--color-success); }
+.research-studio__provider[data-state="blocked"] i { background: var(--color-warning); }
+.research-studio__provider[data-state="blocked"] {
+  border-color: color-mix(in oklch, var(--color-warning) 35%, transparent);
+  color: var(--color-warning);
+}
+/* Unknown is deliberately quiet: "still checking" must not read as a fault. */
+.research-studio__provider[data-state="unknown"] { opacity: 0.7; }
+
+@media (prefers-reduced-motion: reduce) {
+  .research-studio-card,
+  .research-studio-card::before { transition: none; }
+  .research-studio-card:hover:not(:disabled):not([aria-disabled="true"]) { transform: none; }
+  .research-studio-card:hover:not(:disabled):not([aria-disabled="true"])::before { transform: none; }
+}

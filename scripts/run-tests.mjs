@@ -103,6 +103,8 @@ export const SUITES = {
     "src/components/role-surfaces/research-tab-prompt.test.ts",
     "src/components/role-surfaces/research-desk-view.test.ts",
     "src/components/role-surfaces/research-quick-saves.test.ts",
+    "src/components/role-surfaces/research-library-view.test.ts",
+    "src/components/role-surfaces/research-studio-providers.test.ts",
     "src/components/role-surfaces/research-tab-desk.test.ts",
     "src/components/ui/clamped-text.test.ts",
     "src/components/role-surfaces/research-tab-library.test.ts",
@@ -1608,6 +1610,8 @@ const ALIAS_LOADER = new Set([
   // "@/lib/research-missions" and "@/lib/link-organizer"
   "src/lib/research-prompt-brief.test.ts",
   "src/components/role-surfaces/research-quick-saves.test.ts",
+  "src/components/role-surfaces/research-library-view.test.ts",
+  "src/components/role-surfaces/research-studio-providers.test.ts",
   "src/lib/daemon-desktop-auto-start.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
   "src/lib/podcast-script.test.ts",
