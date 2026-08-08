@@ -201,7 +201,10 @@ function reminderFixture(index: number) {
   };
 }
 
-function reportFixture(index: number) {
+function reportFixture(
+  index: number,
+  overrides: Record<string, unknown> = {},
+) {
   const reportedAt = new Date(NOW - index * 60_000).toISOString();
   return {
     id: `report-${index}`,
@@ -228,6 +231,7 @@ function reportFixture(index: number) {
     memoryRecallScore: 60,
     fileLocatabilityScore: 90,
     persistentBlockers: [],
+    ...overrides,
   };
 }
 
@@ -477,6 +481,95 @@ test("production bounds are applied before serialization", async () => {
   );
   assert.equal(result.response.sections.analytics.data.confidence.sampleCount, 30);
   assert.ok(result.response.sections.analytics.data.trends.sampleCount <= 100);
+});
+
+test("response stays within budget with oversized self-report capabilities and other bounded previews", async () => {
+  const result = await loadFamiliarDashboard("sage", makeDependencies({
+    loadBoard: async () => ({
+      version: 1,
+      cards: [{
+        ...taskFixture(0),
+        status: "blocked",
+        dependencies: Array.from({ length: 30 }, (_, index) => ({
+          id: `dep-${index}`,
+          kind: "task",
+          label: `Dependency ${index}`,
+          taskId: `task-${index}`,
+          state: "unresolved",
+          origin: "human",
+          createdAt: new Date(NOW - index * 60_000).toISOString(),
+        })),
+        primaryBlockerId: "dep-29",
+      }],
+    }),
+    loadContract: async () => ({
+      files: { soul: null, identity: null, ward: null, memory: null },
+      report: {
+        specVersion: "0.1.0",
+        pass: false,
+        properties: [],
+        violations: Array.from({ length: 20 }, (_, index) => ({
+          file: "SOUL.md",
+          field: `field-${index}`,
+          message: `Violation ${index}`,
+        })),
+        warnings: [],
+      },
+    }),
+    loadReports: async () => ({
+      reports: [reportFixture(0, {
+        skillsUsed: Array.from(
+          { length: 400 },
+          (_, index) => `skill-${String(399 - index).padStart(3, "0")}`,
+        ),
+        capabilitiesLacking: Array.from({ length: 400 }, (_, index) => ({
+          name: `lacking-${String(399 - index).padStart(3, "0")}`,
+          importance: "blocking",
+          detail: `Missing capability ${index}`,
+        })),
+        capabilitiesVital: Array.from({ length: 400 }, (_, index) => ({
+          name: `vital-${String(399 - index).padStart(3, "0")}`,
+          currentState: "missing",
+          notes: `Vital note ${index}`,
+        })),
+      }), reportFixture(1)],
+      total: 2,
+    }),
+  }));
+
+  assert.equal(result.kind, "ok");
+  const overviewTask = result.response.sections.overview.data.tasks.items[0];
+  const analytics = result.response.sections.analytics.data;
+  assert.equal(
+    overviewTask.dependencies.length,
+    FAMILIAR_DASHBOARD_LIMITS.taskDependencies,
+  );
+  assert.equal(
+    analytics.capabilities.used.length,
+    FAMILIAR_DASHBOARD_LIMITS.capabilityUsed,
+  );
+  assert.deepEqual(analytics.capabilities.used.map((entry) => entry.name), [
+    "skill-000",
+    "skill-001",
+    "skill-002",
+    "skill-003",
+    "skill-004",
+  ]);
+  assert.equal(
+    analytics.capabilities.lacking.length,
+    FAMILIAR_DASHBOARD_LIMITS.capabilityLacking,
+  );
+  assert.equal(
+    analytics.capabilities.vital.length,
+    FAMILIAR_DASHBOARD_LIMITS.capabilityVital,
+  );
+  assert.equal(
+    analytics.healRequests.length,
+    FAMILIAR_DASHBOARD_LIMITS.healRequests,
+  );
+  assert.ok(
+    serializedDashboardBytes(result.response) <= FAMILIAR_DASHBOARD_LIMITS.responseBytes,
+  );
 });
 
 test("overview heal attention keeps the derived request timestamp non-null", async () => {

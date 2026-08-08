@@ -18,6 +18,7 @@ test("published limits match the v1 contract", () => {
   assert.deepEqual(FAMILIAR_DASHBOARD_LIMITS, {
     responseBytes: 131072,
     assignedTasks: 6,
+    taskDependencies: 6,
     activeSessions: 3,
     recentSessions: 5,
     attention: 6,
@@ -29,6 +30,10 @@ test("published limits match the v1 contract", () => {
     metricTrailingDays: 30,
     sessionEvidence: 100,
     sessionPulseDays: 14,
+    capabilityUsed: 5,
+    capabilityLacking: 12,
+    capabilityVital: 12,
+    healRequests: 8,
   });
 });
 
@@ -223,6 +228,50 @@ test("blocked task rows preserve dependencies, primary blocker, and next step", 
   assert.deepEqual(overview.tasks.items[0].dependencies, [dependency]);
   assert.deepEqual(overview.tasks.items[0].primaryBlocker, dependency);
   assert.deepEqual(overview.tasks.items[0].nextStep, nextStep);
+});
+
+test("blocked task rows cap dependency previews without losing the primary blocker", () => {
+  const dependencies = Array.from(
+    { length: FAMILIAR_DASHBOARD_LIMITS.taskDependencies + 2 },
+    (_, index) => ({
+      id: `dep-${index}`,
+      kind: "task",
+      label: `Dependency ${index}`,
+      taskId: `task-${index}`,
+      state: "unresolved",
+      origin: "human",
+      createdAt: `2026-08-07T18:${String(index).padStart(2, "0")}:00.000Z`,
+    }),
+  );
+  const primaryBlocker = dependencies.at(-1)!;
+  const overview = buildFamiliarOverview({
+    familiarId: "sage",
+    familiar: { id: "sage", display_name: "Sage", role: "Researcher" },
+    tasks: [modelTask(1, {
+      id: "task-1",
+      title: "Deploy service",
+      status: "blocked",
+      priority: "urgent",
+      dependencies,
+      primaryBlockerId: primaryBlocker.id,
+    })],
+    sessions: [],
+    reminders: [],
+    healRequests: [],
+    now: NOW,
+  });
+
+  assert.equal(
+    overview.tasks.items[0].dependencies.length,
+    FAMILIAR_DASHBOARD_LIMITS.taskDependencies,
+  );
+  assert.deepEqual(
+    overview.tasks.items[0].dependencies.map((dependency) => dependency.id),
+    dependencies
+      .slice(0, FAMILIAR_DASHBOARD_LIMITS.taskDependencies)
+      .map((dependency) => dependency.id),
+  );
+  assert.deepEqual(overview.tasks.items[0].primaryBlocker, primaryBlocker);
 });
 
 test("Overview bounds lists while retaining totals and scopes reminders", () => {
@@ -836,6 +885,106 @@ test("Analytics exposes used, lacking, vital, heal, and regression evidence", ()
   assert.equal(analytics.capabilities.vital[0].name, "shell");
   assert.equal(analytics.healRequests.length, 1);
   assert.equal(analytics.feedback.state, "regressing");
+});
+
+test("Analytics caps capabilities and heal requests deterministically", () => {
+  const lacking = [
+    { name: "zeta", importance: "nice-to-have", detail: "Need zeta." },
+    { name: "beta", importance: "blocking", detail: "Need beta." },
+    { name: "alpha", importance: "blocking", detail: "Need alpha." },
+    { name: "eta", importance: "important", detail: "Need eta." },
+    { name: "delta", importance: "important", detail: "Need delta." },
+    { name: "gamma", importance: "important", detail: "Need gamma." },
+    ...Array.from({ length: 12 }, (_, index) => ({
+      name: `extra-${String(index).padStart(2, "0")}`,
+      importance: index % 2 === 0 ? "important" : "nice-to-have",
+      detail: `Need extra ${index}.`,
+    })),
+  ];
+  const vital = [
+    { name: "shell", currentState: "available" },
+    { name: "browser", currentState: "missing" },
+    { name: "docs", currentState: "degraded" },
+    { name: "agent", currentState: "missing" },
+    ...Array.from({ length: 12 }, (_, index) => ({
+      name: `vital-${String(index).padStart(2, "0")}`,
+      currentState: index % 3 === 0 ? "missing" : index % 3 === 1 ? "degraded" : "available",
+      notes: `State ${index}`,
+    })),
+  ];
+  const healRequests = Array.from({ length: 10 }, (_, index) => ({
+    id: `heal-${index}`,
+    familiarId: "sage",
+    source: "self-report-aggregate",
+    severity: index < 3 ? "warn" : index < 6 ? "crit" : "info",
+    title: `Heal ${index}`,
+    detail: `Detail ${index}`,
+    suggestedAction: `Action ${index}`,
+    actionKind: "manual",
+    createdAt: new Date(NOW - index * 60_000).toISOString(),
+    resolved: false,
+  }));
+  const analytics = buildFamiliarAnalyticsDigest({
+    familiarId: "sage",
+    familiar: { id: "sage", display_name: "Sage", role: "Researcher" },
+    sessions: [],
+    reports: [
+      modelReport(0, {
+        skillsUsed: ["zeta", "delta", "eta", "epsilon", "beta", "alpha"],
+        capabilitiesLacking: lacking,
+        capabilitiesVital: vital,
+      }),
+      modelReport(1, {
+        skillsUsed: ["alpha", "beta", "gamma", "omega"],
+        capabilitiesLacking: lacking,
+        capabilitiesVital: vital,
+      }),
+      modelReport(2, {
+        skillsUsed: ["alpha", "beta", "gamma"],
+        capabilitiesLacking: lacking,
+        capabilitiesVital: vital,
+      }),
+    ],
+    reportTotal: 3,
+    snapshots: [],
+    snapshotTotal: 0,
+    memories: [],
+    memoryAvailability: "ready",
+    retroState: null,
+    contractReport: null,
+    feedback: { up: 0, down: 0, total: 0, models: [], runtimes: [] },
+    healRequests,
+    now: NOW,
+  });
+
+  assert.deepEqual(analytics.capabilities.used, [
+    { name: "alpha", count: 3 },
+    { name: "beta", count: 3 },
+    { name: "gamma", count: 2 },
+    { name: "delta", count: 1 },
+    { name: "epsilon", count: 1 },
+  ]);
+  assert.equal(
+    analytics.capabilities.lacking.length,
+    FAMILIAR_DASHBOARD_LIMITS.capabilityLacking,
+  );
+  assert.deepEqual(
+    analytics.capabilities.lacking.slice(0, 5).map((capability) => capability.name),
+    ["alpha", "beta", "delta", "eta", "extra-00"],
+  );
+  assert.equal(
+    analytics.capabilities.vital.length,
+    FAMILIAR_DASHBOARD_LIMITS.capabilityVital,
+  );
+  assert.deepEqual(
+    analytics.capabilities.vital.slice(0, 5).map((capability) => capability.name),
+    ["agent", "browser", "vital-00", "vital-03", "vital-06"],
+  );
+  assert.equal(analytics.healRequests.length, FAMILIAR_DASHBOARD_LIMITS.healRequests);
+  assert.deepEqual(
+    analytics.healRequests.slice(0, 5).map((request) => request.id),
+    ["heal-3", "heal-4", "heal-5", "heal-0", "heal-1"],
+  );
 });
 
 test("Profile projects every approved identity and access field", () => {

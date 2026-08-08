@@ -29,6 +29,7 @@ export const FAMILIAR_DASHBOARD_VERSION = 1 as const;
 export const FAMILIAR_DASHBOARD_LIMITS = {
   responseBytes: 128 * 1024,
   assignedTasks: 6,
+  taskDependencies: 6,
   activeSessions: 3,
   recentSessions: 5,
   attention: 6,
@@ -40,6 +41,10 @@ export const FAMILIAR_DASHBOARD_LIMITS = {
   metricTrailingDays: 30,
   sessionEvidence: 100,
   sessionPulseDays: 14,
+  capabilityUsed: 5,
+  capabilityLacking: 12,
+  capabilityVital: 12,
+  healRequests: 8,
 } as const;
 
 export type ServerDashboardSectionState =
@@ -376,6 +381,86 @@ function compareStrings(left: string, right: string): number {
   return left.localeCompare(right);
 }
 
+const CAPABILITY_IMPORTANCE_RANK: Record<ThreadSelfReport["capabilitiesLacking"][number]["importance"], number> = {
+  blocking: 0,
+  important: 1,
+  "nice-to-have": 2,
+};
+
+const CAPABILITY_STATE_RANK: Record<ThreadSelfReport["capabilitiesVital"][number]["currentState"], number> = {
+  missing: 0,
+  degraded: 1,
+  available: 2,
+};
+
+const HEAL_SEVERITY_RANK: Record<SelfHealRequest["severity"], number> = {
+  crit: 0,
+  warn: 1,
+  info: 2,
+};
+
+function boundedTaskDependencies(dependencies: TaskDependency[]): TaskDependency[] {
+  return dependencies.slice(0, FAMILIAR_DASHBOARD_LIMITS.taskDependencies);
+}
+
+function boundedCapabilityUsage(
+  reports: ThreadSelfReport[],
+): FamiliarCapabilityDigest["used"] {
+  const counts = new Map<string, number>();
+  for (const report of reports) {
+    for (const skillId of report.skillsUsed) {
+      counts.set(skillId, (counts.get(skillId) ?? 0) + 1);
+    }
+  }
+
+  return [...counts.entries()]
+    .map(([skillId, count]) => ({ skillId, count }))
+    .sort((left, right) => right.count - left.count || compareStrings(left.skillId, right.skillId))
+    .slice(0, FAMILIAR_DASHBOARD_LIMITS.capabilityUsed)
+    .map(({ skillId, count }) => ({ name: skillId, count }));
+}
+
+function boundedCapabilityLacking(
+  capabilitiesLacking: ReturnType<typeof aggregateThreadSignals>["capabilitiesLacking"],
+): ReturnType<typeof aggregateThreadSignals>["capabilitiesLacking"] {
+  return [...capabilitiesLacking]
+    .sort((left, right) =>
+      CAPABILITY_IMPORTANCE_RANK[left.importance] - CAPABILITY_IMPORTANCE_RANK[right.importance] ||
+      compareStrings(left.name, right.name) ||
+      compareStrings(left.detail, right.detail))
+    .slice(0, FAMILIAR_DASHBOARD_LIMITS.capabilityLacking);
+}
+
+function boundedCapabilityVital(
+  capabilitiesVital: ReturnType<typeof aggregateThreadSignals>["capabilitiesVital"],
+): ReturnType<typeof aggregateThreadSignals>["capabilitiesVital"] {
+  return [...capabilitiesVital]
+    .sort((left, right) =>
+      CAPABILITY_STATE_RANK[left.currentState] - CAPABILITY_STATE_RANK[right.currentState] ||
+      compareStrings(left.name, right.name) ||
+      compareStrings(left.notes ?? "", right.notes ?? ""))
+    .slice(0, FAMILIAR_DASHBOARD_LIMITS.capabilityVital);
+}
+
+function boundedHealRequests(
+  requests: SelfHealRequest[],
+): FamiliarAnalyticsDigest["healRequests"] {
+  return [...requests]
+    .sort((left, right) =>
+      HEAL_SEVERITY_RANK[left.severity] - HEAL_SEVERITY_RANK[right.severity] ||
+      timestampValue(right.createdAt) - timestampValue(left.createdAt) ||
+      compareStrings(left.id, right.id))
+    .slice(0, FAMILIAR_DASHBOARD_LIMITS.healRequests)
+    .map((request) => ({
+      id: request.id,
+      severity: request.severity,
+      title: request.title,
+      detail: request.detail,
+      suggestedAction: request.suggestedAction,
+      actionKind: request.actionKind,
+    }));
+}
+
 function newestFirst<T>(
   left: T,
   right: T,
@@ -396,7 +481,7 @@ function dashboardTask(card: Card): FamiliarDashboardTask {
     priority: card.priority,
     sessionId: card.sessionId,
     updatedAt: card.updatedAt,
-    dependencies,
+    dependencies: boundedTaskDependencies(dependencies),
     primaryBlocker:
       dependencies.find((dependency) => dependency.id === card.primaryBlockerId) ?? null,
     nextStep: card.nextStep ?? null,
@@ -978,6 +1063,10 @@ export function buildFamiliarAnalyticsDigest({
   const boundedSnapshotCount = boundedSnapshots.length;
   const feedbackModels = boundedFeedbackSlices(feedback.models);
   const feedbackRuntimes = boundedFeedbackSlices(feedback.runtimes);
+  const capabilityUsage = boundedCapabilityUsage(boundedReports);
+  const capabilitiesLacking = boundedCapabilityLacking(reportAggregate.capabilitiesLacking);
+  const capabilitiesVital = boundedCapabilityVital(reportAggregate.capabilitiesVital);
+  const dashboardHealRequests = boundedHealRequests(rawHealRequests);
   const feedbackState =
     feedback.total < 5
       ? "insufficient"
@@ -1034,21 +1123,11 @@ export function buildFamiliarAnalyticsDigest({
       period: "latest 30 reports",
       sampleCount: boundedReportCount,
       freshness: latestReportAt,
-      used: reportAggregate.skillsUsedMost.map(({ skillId, count }) => ({
-        name: skillId,
-        count,
-      })),
-      lacking: reportAggregate.capabilitiesLacking,
-      vital: reportAggregate.capabilitiesVital,
+      used: capabilityUsage,
+      lacking: capabilitiesLacking,
+      vital: capabilitiesVital,
     },
-    healRequests: rawHealRequests.map((request) => ({
-      id: request.id,
-      severity: request.severity,
-      title: request.title,
-      detail: request.detail,
-      suggestedAction: request.suggestedAction,
-      actionKind: request.actionKind,
-    })),
+    healRequests: dashboardHealRequests,
     feedback: {
       definition: "Final thumbs verdicts for messages attributed to this Familiar.",
       period: "all retained feedback",
