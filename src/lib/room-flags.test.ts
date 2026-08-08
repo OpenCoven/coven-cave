@@ -12,8 +12,9 @@ import {
   type RoomVisibilityEnv,
 } from "./room-flags.ts";
 import { FAMILIAR_TYPES } from "./familiar-types.ts";
+import { CODE_SURFACE_ID } from "../components/role-surfaces/ids.ts";
 
-const CODE = "code";
+const CODE = CODE_SURFACE_ID;
 const RESEARCH = "researcher-desk";
 const CHART = "navigator-chart-room";
 
@@ -136,9 +137,17 @@ test("the Coding familiar's room is registered for the coder role", () => {
   assert.match(
     register,
     /id: CODE_SURFACE_ID,\s*role: "coder",/,
-    "the Code room is registered under the coder role",
+    "the Coding Desk is registered under the coder role",
   );
   assert.match(register, /render: \(context\) => <CodeRoom context=\{context\} \/>/);
+  // The room answers to one name (cave-smaji) — it has carried three.
+  assert.match(
+    register,
+    /id: CODE_SURFACE_ID,[\s\S]{0,200}?title: "Coding Desk",/,
+    "the room is titled Coding Desk",
+  );
+  // …while its id stays the persisted `surface:code` mode the aliases resolve into.
+  assert.equal(CODE_SURFACE_ID, "code", "renaming the room must not rename its stored mode");
 
   const types = repoFile("src/lib/familiar-types.ts");
   assert.match(

@@ -47,7 +47,7 @@ A production build ships `PRODUCTION_ROOM_IDS`:
 | --- | --- |
 | Research Desk (`researcher-desk`) | ✅ |
 | Chart Room (`navigator-chart-room`) | ✅ |
-| Code Workshop (`code`) | dev only — under construction |
+| Coding Desk (`code`) | dev only — under construction |
 | Review Deck (`reviewer-review-deck`) | dev only — under construction |
 | Writing Desk (`scribe-writing-desk`) | dev only — under construction |
 | Watchtower (`sentinel-watchtower`) | dev only — under construction |

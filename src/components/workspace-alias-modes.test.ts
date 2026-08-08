@@ -73,7 +73,7 @@ assert.equal(MODE_ALIASES.github, "surface:code");
 assert.match(
   workspace,
   /if \(next === "github"\) \{[\s\S]{0,500}?enqueuePendingCodeNavigation\(\{\s*kind: "tab",\s*topTab: "activity",\s*nonce: Date\.now\(\),?\s*\}\);[\s\S]{0,300}?commitMode\(roleSurfaceMode\(CODE_SURFACE_ID\), "github"\)/,
-  'setMode migrates legacy "github" requests to Code Workshop Activity',
+  'setMode migrates legacy "github" requests to Coding Desk Activity',
 );
 assert.doesNotMatch(
   workspace,

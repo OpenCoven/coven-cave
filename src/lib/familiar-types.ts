@@ -69,7 +69,7 @@ export type FamiliarTypeSpec = {
 
 export const FAMILIAR_TYPES: readonly FamiliarTypeSpec[] = [
   { id: "general", label: "General", roleToken: null, roomId: null, description: "No dedicated room — every shared surface, nothing extra.", iconName: "ph:sparkle" },
-  { id: "coding", label: "Coding", roleToken: "coder", roomId: CODE_SURFACE_ID, description: "Unlocks the Code room — multi-session coding with diffs, files, branches, worktrees, and GitHub.", iconName: "ph:code" },
+  { id: "coding", label: "Coding", roleToken: "coder", roomId: CODE_SURFACE_ID, description: "Unlocks the Coding Desk — multi-session coding with diffs, files, branches, worktrees, and GitHub.", iconName: "ph:code" },
   { id: "research", label: "Research", roleToken: "researcher", roomId: RESEARCHER_SURFACE_ID, description: "Unlocks the Research Desk — bounded missions, evidence, and durable knowledge artifacts.", iconName: "ph:detective" },
   { id: "review", label: "Review", roleToken: "reviewer", roomId: REVIEWER_SURFACE_ID, description: "Unlocks the Review Deck — queued change reviews with verdicts and notes.", iconName: "ph:git-branch" },
   { id: "comms", label: "Comms", roleToken: "messenger", roomId: MESSENGER_SURFACE_ID, description: "Unlocks Comms Operations — outbound and inbound communication across channels.", iconName: "ph:paper-plane-tilt" },

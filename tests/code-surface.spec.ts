@@ -301,7 +301,7 @@ test.describe("code surface (Coding familiar's room)", () => {
     await expect(page.getByRole("heading", { name: "Release alert" })).toBeVisible({ timeout: 30_000 });
   });
 
-  test("a non-coding familiar sees the closed Code Workshop door", async ({ page }) => {
+  test("a non-coding familiar sees the closed Coding Desk door", async ({ page }) => {
     await base(page, [NEWEST, OLDER], "general");
     await page.goto("/?mode=github", { waitUntil: "domcontentloaded" });
 
