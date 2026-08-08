@@ -179,6 +179,8 @@ type StartLocalDaemonOptions = {
   readinessPollMs?: number;
   /** Test seams keep launch ownership and timeout cleanup executable. */
   probe?: () => Promise<{ ok: boolean }>;
+  /** Injectable health document that still exercises compatibility assessment. */
+  readHealthDocument?: () => Promise<DaemonStartupHealth | null>;
   /** Injectable installed-version seam for deterministic startup coherence tests. */
   installedVersion?: () => Promise<string | null>;
   /** Injectable address-occupancy seam for deterministic already-bound tests. */
@@ -232,6 +234,7 @@ let activeDaemonStart: Promise<DaemonStartResult> | null = null;
 function hasTestSeam(options: StartLocalDaemonOptions): boolean {
   return Boolean(
     options.probe
+    || options.readHealthDocument
     || options.spawnImpl
     || options.terminateLaunchTree
     || options.installedVersion
@@ -289,6 +292,7 @@ async function runLocalDaemonStart({
   startTimeoutMs = 8000,
   readinessPollMs = 250,
   probe: probeOverride,
+  readHealthDocument: readHealthDocumentOverride,
   installedVersion,
   inspectAddress = () => inspectDaemonAddress({ socketPath: socketPath() }),
   spawnImpl = spawn,
@@ -304,14 +308,18 @@ async function runLocalDaemonStart({
   const compatibilityState: { current: DaemonStartupCompatibility | null } = { current: null };
   const currentCompatibility = (): DaemonStartupCompatibility | null => compatibilityState.current;
   const expectedVersion = probeOverride ? null : await (installedVersion ?? installedCovenVersion)();
-  const probe = probeOverride ?? (async () => {
+  const readHealthDocument = readHealthDocumentOverride ?? (async () => {
     const response = await callDaemonTarget<DaemonStartupHealth>(localDaemonTarget(), {
       path: "/api/v1/health",
       timeoutMs: healthTimeoutMs,
       retryTransportFailure: false,
     });
-    if (!response.ok || !response.data) return { ok: false };
-    compatibilityState.current = assessDaemonStartupCompatibility(response.data, expectedVersion);
+    return response.ok && response.data ? response.data : null;
+  });
+  const probe = probeOverride ?? (async () => {
+    const health = await readHealthDocument();
+    if (!health) return { ok: false };
+    compatibilityState.current = assessDaemonStartupCompatibility(health, expectedVersion);
     return { ok: compatibilityState.current.ok };
   });
   const startedAt = Date.now();
