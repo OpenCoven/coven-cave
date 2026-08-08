@@ -6,6 +6,21 @@ export const RECOVERY_COOLDOWN_MS = 60 * 60 * 1000;
 
 const WORKFLOW_FILE = "ci.yml";
 const MAX_PULL_PAGES = 10;
+const EXPECTED_RUN_NAME = "CI ${{ github.event_name }} ${{ inputs.expected_sha || github.sha }}";
+const EXPECTED_CONCURRENCY_GROUP =
+  "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
+const EXPECTED_JOB_GUARD =
+  "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
+const GUARDED_JOB_NAMES = [
+  "frontend-static",
+  "frontend-tests",
+  "frontend-bundle",
+  "cargo-check",
+  "e2e-shard",
+  "conformance",
+  "sidecar-runtime",
+  "windows-native",
+];
 
 export async function runCiRecovery({
   apply = false,
@@ -214,12 +229,40 @@ async function workflowSupportsExpectedSha(context, sha) {
   } catch {
     throw new Error("CI workflow content was not valid YAML");
   }
+  const triggers = workflow?.on;
+  if (
+    triggers === null ||
+    typeof triggers !== "object" ||
+    !Object.hasOwn(triggers, "workflow_dispatch")
+  ) {
+    throw new Error("CI workflow does not support recovery dispatches");
+  }
   const inputs = workflow?.on?.workflow_dispatch?.inputs;
-  return (
+  const expectedInput =
     inputs !== null &&
     typeof inputs === "object" &&
     Object.hasOwn(inputs, "expected_sha")
-  );
+      ? inputs.expected_sha
+      : null;
+  const hasExpectedInput = expectedInput !== null;
+  const hasCompleteExpectedInput =
+    expectedInput !== null &&
+    typeof expectedInput === "object" &&
+    expectedInput.required === true &&
+    expectedInput.type === "string";
+  const hasCompleteGuardedContract =
+    hasCompleteExpectedInput &&
+    workflow["run-name"] === EXPECTED_RUN_NAME &&
+    workflow?.concurrency?.group === EXPECTED_CONCURRENCY_GROUP &&
+    GUARDED_JOB_NAMES.every((name) => workflow?.jobs?.[name]?.if === EXPECTED_JOB_GUARD);
+  if (hasCompleteGuardedContract) return true;
+
+  const hasGuardedProtocolMarker =
+    hasExpectedInput || JSON.stringify(workflow).includes("inputs.expected_sha");
+  if (hasGuardedProtocolMarker) {
+    throw new Error("CI workflow recovery contract was partially configured");
+  }
+  return false;
 }
 
 async function dispatchWorkflow(context, ref, expectedSha, supportsExpectedSha) {

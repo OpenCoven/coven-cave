@@ -33,9 +33,12 @@ yours. Use a PR.
   read-only scan and revalidates every candidate head before the first
   dispatch. It inspects the workflow at each exact head: current definitions
   receive the expected SHA guard, while legacy definitions receive a no-input
-  dispatch so older PR branches remain recoverable. `ci.yml` refuses a guarded
-  run if the branch no longer resolves to the expected SHA, and mismatched or
-  malformed guarded runs do not count as CI coverage. A recent recovery
+  dispatch so older PR branches remain recoverable. A partial guard contract
+  aborts the whole apply before mutation. A legacy dispatch resolves its mutable
+  branch ref and may test a newer head; only the complete guarded contract
+  promises exact-SHA refusal. `ci.yml` refuses a guarded run if the branch no
+  longer resolves to the expected SHA, and mismatched or malformed guarded runs
+  do not count as CI coverage. A recent recovery
   enforces a one-hour cooldown; drafts and fork heads are skipped. Diagnose
   without mutation first:
 

@@ -61,13 +61,39 @@ function workflowRun({
   };
 }
 
-const GUARDED_CI_WORKFLOW = `name: CI
-on:
-  workflow_dispatch:
-    inputs:
-      expected_sha:
-        required: true
-`;
+const GUARDED_RUN_NAME = "CI ${{ github.event_name }} ${{ inputs.expected_sha || github.sha }}";
+const GUARDED_CONCURRENCY =
+  "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
+const GUARDED_JOB_IF =
+  "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
+const GUARDED_JOB_NAMES = [
+  "frontend-static",
+  "frontend-tests",
+  "frontend-bundle",
+  "cargo-check",
+  "e2e-shard",
+  "conformance",
+  "sidecar-runtime",
+  "windows-native",
+];
+const GUARDED_CI_WORKFLOW = [
+  "name: CI",
+  `run-name: ${GUARDED_RUN_NAME}`,
+  "on:",
+  "  workflow_dispatch:",
+  "    inputs:",
+  "      expected_sha:",
+  "        required: true",
+  "        type: string",
+  "concurrency:",
+  `  group: ${GUARDED_CONCURRENCY}`,
+  "jobs:",
+  ...GUARDED_JOB_NAMES.flatMap((name) => [
+    `  ${name}:`,
+    `    if: ${GUARDED_JOB_IF}`,
+  ]),
+  "",
+].join("\n");
 
 function githubFixture({ pulls, runsBySha = {}, jobsByRun = {}, workflowsBySha = {} }) {
   const requests = [];
@@ -201,6 +227,41 @@ test("apply omits expected_sha only for a legacy head workflow without that inpu
     ),
     true,
   );
+});
+
+test("apply fails closed when expected_sha exists without the REST-visible run stamp", async () => {
+  const pr = pull();
+  const fixture = githubFixture({
+    pulls: [pr],
+    workflowsBySha: {
+      [pr.head.sha]: GUARDED_CI_WORKFLOW.replace(`run-name: ${GUARDED_RUN_NAME}\n`, ""),
+    },
+  });
+
+  await assert.rejects(
+    runCiRecovery(options(fixture.fetchImpl, true)),
+    /CI workflow recovery contract was partially configured/,
+  );
+  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
+});
+
+test("apply fails closed when one recovery leaf job lacks the expected SHA guard", async () => {
+  const pr = pull();
+  const fixture = githubFixture({
+    pulls: [pr],
+    workflowsBySha: {
+      [pr.head.sha]: GUARDED_CI_WORKFLOW.replace(
+        `  windows-native:\n    if: ${GUARDED_JOB_IF}`,
+        "  windows-native:\n    if: success()",
+      ),
+    },
+  });
+
+  await assert.rejects(
+    runCiRecovery(options(fixture.fetchImpl, true)),
+    /CI workflow recovery contract was partially configured/,
+  );
+  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
 });
 
 test("existing CI, young PRs, drafts, and fork heads are never dispatched", async () => {
