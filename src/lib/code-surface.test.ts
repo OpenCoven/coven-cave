@@ -17,6 +17,15 @@ import {
   CODE_DOCK_SIZES,
   normalizeCodeTopTab,
   parseCodeDeepLink,
+  CODE_ROOM_RAIL_WIDTH_PX,
+  CODE_ROOM_MIN_TERMINAL_WIDTH_PX,
+  CODE_ROOM_MIN_DOCK_WIDTH_PX,
+  CODE_ROOM_SPLIT_MIN_WIDTH_PX,
+  CODE_ROOM_RAIL_MIN_WIDTH_PX,
+  CODE_WORKBENCH_STEPS,
+  codeRoomFits,
+  codeRoomFitsRail,
+  codeWorkbenchFitsSplit,
 } from "./code-surface.ts";
 import type { SessionRow } from "./types.ts";
 
@@ -199,4 +208,74 @@ test("only the wide tabs force the dock open expanded", () => {
   for (const tab of ["changes", "files", "pr", "inspector"] as const) {
     assert.ok(!codeDockTabWantsExpanded(tab), `${tab} reads fine at normal width`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Room layout model (cave-k3a9u)
+//
+// The shipped Room tried to stack itself with a CSS media query that
+// `react-resizable-panels` overrode with an inline `flex-direction`, so the
+// narrow layout never rendered at all. The replacement decides in JS from a
+// measured width, which is what these cover.
+// ---------------------------------------------------------------------------
+
+test("the rail breakpoint is derived from the split breakpoint, not written twice", () => {
+  assert.equal(
+    CODE_ROOM_SPLIT_MIN_WIDTH_PX,
+    CODE_ROOM_MIN_TERMINAL_WIDTH_PX + CODE_ROOM_MIN_DOCK_WIDTH_PX,
+    "the split needs exactly the two zones it contains",
+  );
+  assert.equal(
+    CODE_ROOM_RAIL_MIN_WIDTH_PX,
+    CODE_ROOM_RAIL_WIDTH_PX + CODE_ROOM_SPLIT_MIN_WIDTH_PX,
+    "the rail breakpoint must move with the split one — the old 768px/900px " +
+      "pair disagreed, leaving 768-900px specified as neither shape",
+  );
+  assert.ok(
+    CODE_ROOM_RAIL_MIN_WIDTH_PX > CODE_ROOM_SPLIT_MIN_WIDTH_PX,
+    "the rail must give up its column before the dock gives up its own",
+  );
+});
+
+test("an unmeasured width falls back to the caller's guess rather than reading as narrow", () => {
+  // null/undefined mean "no measurement yet" (SSR, first paint, or no
+  // ResizeObserver). Treating that as 0 would render the narrow layout on
+  // every desktop first paint and flash.
+  for (const width of [null, undefined, 0, -1, Number.NaN]) {
+    assert.equal(
+      codeRoomFits(width, 500, true),
+      false,
+      `unmeasured ${String(width)} on a phone stays narrow`,
+    );
+    assert.equal(
+      codeRoomFits(width, 500, false),
+      true,
+      `unmeasured ${String(width)} on a desktop stays wide`,
+    );
+  }
+});
+
+test("a measured width beats the fallback in both directions", () => {
+  // The whole point of measuring: a wide viewport holding a narrow Room must
+  // resolve narrow, and vice versa.
+  assert.equal(codeRoomFits(400, 500, false), false, "a narrow Room in a wide window");
+  assert.equal(codeRoomFits(600, 500, true), true, "a wide Room reported by a mobile UA");
+  assert.equal(codeRoomFits(500, 500, true), true, "exactly the minimum still fits");
+  assert.equal(codeRoomFits(499, 500, false), false, "one pixel under does not");
+});
+
+test("the two Room breakpoints apply their own constants", () => {
+  assert.ok(codeWorkbenchFitsSplit(CODE_ROOM_SPLIT_MIN_WIDTH_PX, true));
+  assert.ok(!codeWorkbenchFitsSplit(CODE_ROOM_SPLIT_MIN_WIDTH_PX - 1, false));
+  assert.ok(codeRoomFitsRail(CODE_ROOM_RAIL_MIN_WIDTH_PX, true));
+  assert.ok(!codeRoomFitsRail(CODE_ROOM_RAIL_MIN_WIDTH_PX - 1, false));
+  // A 390px phone is the case that was broken: two columns whose minimums
+  // already sum past the whole screen.
+  assert.ok(!codeWorkbenchFitsSplit(390, true), "a phone drills in");
+  assert.ok(!codeRoomFitsRail(390, true), "a phone lands on the rail");
+});
+
+test("the narrow workbench lands on the terminal", () => {
+  assert.deepEqual([...CODE_WORKBENCH_STEPS], ["terminal", "context"]);
+  assert.equal(CODE_WORKBENCH_STEPS[0], "terminal", "the shell is the Room's priority surface");
 });
