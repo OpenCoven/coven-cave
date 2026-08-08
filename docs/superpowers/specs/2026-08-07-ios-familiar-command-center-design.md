@@ -1,7 +1,7 @@
 # iOS Familiar command center
 
-**Status:** Approved design  
-**Bead:** `cave-9rwd`  
+**Status:** Approved design
+**Bead:** `cave-9rwd`
 **Goal:** `ios-familiar-profile-dashboard`
 
 ## Summary

@@ -79,6 +79,7 @@ not to `ALIAS_LOADER`.
 - Create: `src/lib/server/familiar-enrichment.test.ts`
 - Modify: `src/app/api/familiars/route.ts:1-132`
 - Modify: `src/app/api/familiars/route.test.ts:1-95`
+- Modify: `src/app/api/familiars/avatar-route.test.ts`
 - Modify: `scripts/run-tests.mjs:1214-1216,1631-1633`
 
 - [ ] **Step 1: Write the failing enrichment test**
@@ -405,8 +406,10 @@ git commit -m "refactor: share familiar enrichment"
 - Create: `src/lib/server/retro-runs-snapshot.test.ts`
 - Modify: `src/app/api/sessions/list/route.ts:1-241`
 - Modify: `src/app/api/sessions/list/route.test.ts:1-55`
+- Modify: `src/lib/server/sessions-list-cache.ts`
 - Modify: `src/lib/server/sessions-list-cache.test.ts:55-79`
 - Modify: `src/app/api/retro-runs/route.ts:1-70`
+- Modify: `src/app/api/retro-runs/route.test.ts`
 - Modify: `src/app/api/api-contracts.test.ts:620-690`
 - Modify: `scripts/run-tests.mjs:1278-1281,1631-1634`
 
@@ -967,6 +970,8 @@ git commit -m "refactor: share dashboard source loaders"
 **Files:**
 - Create: `src/lib/familiar-dashboard.ts`
 - Create: `src/lib/familiar-dashboard.test.ts`
+- Modify: `src/lib/session-pulse.ts`
+- Modify: `src/lib/session-pulse.test.ts`
 - Modify: `scripts/run-tests.mjs:1363-1364,1766-1768`
 
 - [ ] **Step 1: Write failing DTO and builder tests**
@@ -2562,6 +2567,16 @@ git commit -m "feat: define familiar dashboard contract"
 **Files:**
 - Create: `src/lib/server/familiar-dashboard-data.ts`
 - Create: `src/lib/server/familiar-dashboard-data.test.ts`
+- Modify: `src/lib/familiar-heal-requests.ts`
+- Modify: `src/lib/familiar-heal-requests.test.ts`
+- Modify: `src/lib/message-feedback-rollup.ts`
+- Modify: `src/lib/message-feedback-rollup.test.ts`
+- Modify: `src/lib/server/canonical-memory-gateway.ts`
+- Modify: `src/lib/server/canonical-memory-gateway.test.ts`
+- Modify: `src/lib/server/familiar-self-reports.ts`
+- Modify: `src/lib/server/familiar-self-reports.test.ts`
+- Modify: `src/lib/server/message-feedback-store.ts`
+- Modify: `src/lib/server/message-feedback-store.test.ts`
 - Modify: `scripts/run-tests.mjs:1363-1364,1766-1768`
 
 - [ ] **Step 1: Write failing aggregate-loader tests**

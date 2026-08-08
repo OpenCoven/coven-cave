@@ -25,9 +25,11 @@
  * contain the session is the same work the compute itself does, and there are
  * only a handful of keys.
  */
-import { computeSessionsList } from "./sessions-list.ts";
 import { createSwrCache } from "../swr-cache.ts";
 import type { SessionRow } from "../types.ts";
+
+type ComputeSessionsList =
+  typeof import("./sessions-list.ts").computeSessionsList;
 
 export type SessionsListPayload =
   | {
@@ -74,23 +76,26 @@ export async function loadCachedSessionsList(
   collapseFamiliarWorkspace: boolean,
   dependencies: {
     cache?: Pick<typeof sessionsListCache, "get">;
-    compute?: typeof computeSessionsList;
+    compute?: ComputeSessionsList;
   } = {},
 ): Promise<SessionsListResult> {
   const cache = dependencies.cache ?? sessionsListCache;
-  const compute = dependencies.compute ?? computeSessionsList;
   return cache.get(
     sessionsListCacheKey(
       includeArchived,
       familiarId,
       collapseFamiliarWorkspace,
     ),
-    () =>
-      compute(
+    async () => {
+      const compute =
+        dependencies.compute ??
+        (await import("./sessions-list.ts")).computeSessionsList;
+      return compute(
         includeArchived,
         familiarId,
         collapseFamiliarWorkspace,
-      ),
+      );
+    },
   );
 }
 
