@@ -17,6 +17,7 @@ import {
   applyMessageFeedbackEntry,
   EMPTY_FEEDBACK_ROLLUP,
   finalizeMessageFeedbackRollup,
+  rollupMessageFeedback,
   type MessageFeedbackRollup,
 } from "@/lib/message-feedback-rollup";
 
@@ -73,16 +74,6 @@ export function sanitizeMessageFeedback(input: MessageFeedbackInput, at: string)
   return fb;
 }
 
-export async function loadMessageFeedback(): Promise<MessageFeedback[]> {
-  try {
-    const raw = await readFile(MESSAGE_FEEDBACK_PATH, "utf8");
-    const parsed = JSON.parse(raw) as FeedbackFile;
-    return Array.isArray(parsed.entries) ? parsed.entries : [];
-  } catch {
-    return [];
-  }
-}
-
 function isMissingFileError(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -96,54 +87,82 @@ function invalidFeedbackStore(reason: string): Error {
   return new Error(`invalid message feedback store: ${reason}`);
 }
 
+function parseMessageFeedbackFileStrict(raw: string): MessageFeedback[] {
+  const parsed = JSON.parse(raw) as FeedbackFile;
+  if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.entries)) {
+    throw invalidFeedbackStore('missing "entries" array');
+  }
+  return parsed.entries;
+}
+
+async function loadMessageFeedbackStrict(): Promise<MessageFeedback[]> {
+  return parseMessageFeedbackFileStrict(await readFile(MESSAGE_FEEDBACK_PATH, "utf8"));
+}
+
+export async function loadMessageFeedback(): Promise<MessageFeedback[]> {
+  try {
+    return await loadMessageFeedbackStrict();
+  } catch {
+    return [];
+  }
+}
+
 function parseFeedbackEntryBlock(lines: string[]): MessageFeedback {
   const raw = lines.join("\n").replace(/,\s*$/, "");
   return JSON.parse(raw) as MessageFeedback;
 }
 
-export async function loadMessageFeedbackRollup(args?: {
+const FALL_BACK_TO_FULL_PARSE = Symbol("message-feedback-rollup-fallback");
+
+async function loadMessageFeedbackRollupFromPrettyStore(args?: {
   familiarId?: string;
   bucketLimit?: number;
-}): Promise<MessageFeedbackRollup> {
-  try {
-    await access(MESSAGE_FEEDBACK_PATH);
-  } catch (error) {
-    if (isMissingFileError(error)) return EMPTY_FEEDBACK_ROLLUP;
-    throw error;
-  }
-
+}): Promise<MessageFeedbackRollup | typeof FALL_BACK_TO_FULL_PARSE> {
   const finalVotes = new Map<string, MessageFeedback>();
   const reader = createInterface({
     input: createReadStream(MESSAGE_FEEDBACK_PATH, { encoding: "utf8" }),
     crlfDelay: Infinity,
   });
 
+  let sawObjectStart = false;
   let sawEntriesArray = false;
+  let sawObjectEnd = false;
   let collectingEntry = false;
   const entryLines: string[] = [];
 
   try {
     for await (const line of reader) {
       const trimmed = line.trim();
-      if (!sawEntriesArray) {
-        if (trimmed === '"entries": []') {
-          sawEntriesArray = true;
-          break;
-        }
-        if (trimmed === '"entries": [' || trimmed.startsWith('"entries": [')) {
-          sawEntriesArray = true;
-        }
+      if (!trimmed) continue;
+
+      if (!sawObjectStart) {
+        if (trimmed !== "{") return FALL_BACK_TO_FULL_PARSE;
+        sawObjectStart = true;
         continue;
       }
 
-      if (!collectingEntry) {
-        if (!trimmed || trimmed === "]" || trimmed === "]," || trimmed === "}") continue;
-        if (trimmed === "{") {
-          collectingEntry = true;
-          entryLines.push(trimmed);
+      if (!sawEntriesArray) {
+        if (trimmed === '"entries": []') {
+          sawEntriesArray = true;
           continue;
         }
-        throw invalidFeedbackStore(`unexpected token ${trimmed}`);
+        if (trimmed === '"entries": [') {
+          sawEntriesArray = true;
+          continue;
+        }
+        return FALL_BACK_TO_FULL_PARSE;
+      }
+
+      if (!collectingEntry) {
+        if (trimmed === "}") {
+          sawObjectEnd = true;
+          continue;
+        }
+        if (trimmed === "]" || trimmed === "],") continue;
+        if (trimmed !== "{") return FALL_BACK_TO_FULL_PARSE;
+        collectingEntry = true;
+        entryLines.push(trimmed);
+        continue;
       }
 
       entryLines.push(trimmed);
@@ -161,10 +180,32 @@ export async function loadMessageFeedbackRollup(args?: {
     reader.close();
   }
 
+  if (!sawObjectStart) return FALL_BACK_TO_FULL_PARSE;
   if (!sawEntriesArray) throw invalidFeedbackStore('missing "entries" array');
   if (collectingEntry) throw invalidFeedbackStore("unterminated feedback entry");
+  if (!sawObjectEnd) throw invalidFeedbackStore('missing closing "}"');
 
   return finalizeMessageFeedbackRollup(finalVotes.values(), {
+    bucketLimit: args?.bucketLimit ?? FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets,
+  });
+}
+
+export async function loadMessageFeedbackRollup(args?: {
+  familiarId?: string;
+  bucketLimit?: number;
+}): Promise<MessageFeedbackRollup> {
+  try {
+    await access(MESSAGE_FEEDBACK_PATH);
+  } catch (error) {
+    if (isMissingFileError(error)) return EMPTY_FEEDBACK_ROLLUP;
+    throw error;
+  }
+
+  const fastPath = await loadMessageFeedbackRollupFromPrettyStore(args);
+  if (fastPath !== FALL_BACK_TO_FULL_PARSE) return fastPath;
+
+  return rollupMessageFeedback(await loadMessageFeedbackStrict(), {
+    familiarId: args?.familiarId,
     bucketLimit: args?.bucketLimit ?? FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets,
   });
 }

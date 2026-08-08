@@ -104,7 +104,33 @@ assert.deepEqual(
   "equal-count runtime buckets sort by stable key before truncation",
 );
 
+await writeFile(
+  fb.MESSAGE_FEEDBACK_PATH,
+  JSON.stringify({ entries: hugeEntries }),
+  "utf8",
+);
+const compactRollup = await fb.loadMessageFeedbackRollup({
+  familiarId: "sage",
+  bucketLimit: 2,
+});
+assert.equal(compactRollup.total, HUGE_BUCKET_COUNT, "compact valid JSON still rolls up correctly");
+assert.deepEqual(
+  compactRollup.models.map((slice) => slice.key),
+  ["model-0000", "model-0001"],
+  "compact fallback preserves bounded stable ordering",
+);
+assert.deepEqual(
+  compactRollup.runtimes.map((slice) => slice.key),
+  ["runtime-0000", "runtime-0001"],
+  "compact fallback preserves bounded runtime ordering",
+);
+
 await writeFile(fb.MESSAGE_FEEDBACK_PATH, "{\n  \"entries\": [\n    {\n", "utf8");
+assert.deepEqual(
+  await fb.loadMessageFeedback(),
+  [],
+  "legacy loader preserves malformed-store empty degradation",
+);
 await assert.rejects(
   fb.loadMessageFeedbackRollup({ familiarId: "sage" }),
   /invalid message feedback store: unterminated feedback entry/,

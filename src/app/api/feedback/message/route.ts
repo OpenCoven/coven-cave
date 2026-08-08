@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { loadMessageFeedbackRollup, recordMessageFeedback } from "@/lib/server/message-feedback-store";
+import { loadMessageFeedback, recordMessageFeedback } from "@/lib/server/message-feedback-store";
+import { rollupMessageFeedback } from "@/lib/message-feedback-rollup";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +27,9 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
   const familiarId = new URL(req.url).searchParams.get("familiarId")?.trim() || undefined;
+  const entries = await loadMessageFeedback();
   return NextResponse.json({
     ok: true,
-    rollup: await loadMessageFeedbackRollup({ familiarId }),
+    rollup: rollupMessageFeedback(entries, { familiarId }),
   });
 }
