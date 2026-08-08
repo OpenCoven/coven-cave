@@ -238,3 +238,27 @@ test("manual zero-result announcements suppress duplicate EmptyState live output
   assert.match(emptyState, /live = true/);
   assert.match(emptyState, /role=\{live \? "status" : undefined\}/);
 });
+
+test("the grid collapses empty tracks, and the card cap is grid-only (cave-93jz1)", () => {
+  // auto-FILL keeps the empty tracks it created, so a group holding fewer links
+  // than the row fits left its cards stranded at the 250px minimum beside dead
+  // space. auto-fit collapses them.
+  assert.match(styles, /\.research-res__items\[data-view="grid"\] \{[\s\S]*?repeat\(auto-fit, minmax\(250px, 1fr\)\)/);
+  assert.doesNotMatch(
+    styles,
+    /\.research-res__items\[data-view="grid"\] \{[\s\S]*?repeat\(auto-fill/,
+    "auto-fill strands single-item groups — see cave-93jz1",
+  );
+  // …but collapsing alone would stretch ONE saved link across the whole row,
+  // so the card carries a cap. Measured: a lone card renders 360px against
+  // 255px in a packed row — recognisably the same component.
+  assert.match(styles, /\.research-res-card\[data-view="grid"\] \{ max-width: 360px; \}/);
+  // The cap must NOT reach the rows view, whose cards span the full surface
+  // (measured 1314px at 1440), nor the phone breakpoint's single column
+  // (measured 496px at 520) — capping either re-creates the gap it fixes.
+  assert.doesNotMatch(styles, /\.research-res-card \{[^}]*max-width: 360px/);
+  assert.match(
+    styles,
+    /@container research-desk \(max-width: 560px\) \{[\s\S]*?\.research-res-card\[data-view="grid"\] \{ max-width: none; \}/,
+  );
+});
