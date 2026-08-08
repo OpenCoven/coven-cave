@@ -223,8 +223,8 @@ test.describe("code surface (Coding familiar's room)", () => {
 
     // cave-0rcku: review docks BESIDE the source as a rail whose default tab is
     // Changes — never a workbench tab you have to leave the file to reach.
-    const rail = page.getByRole("tablist", { name: "Review surface" });
-    await expect(rail.getByRole("tab", { name: /Changes/ })).toHaveAttribute("aria-selected", "true");
+    const reviewTabs = page.getByRole("tablist", { name: "Review surface" });
+    await expect(reviewTabs.getByRole("tab", { name: /Changes/ })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("tablist", { name: "Session workbench" })).toHaveCount(0);
     await expect(page.getByRole("tablist", { name: "Session context" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "modified flux.ts src" })).toBeVisible({ timeout: 15_000 });

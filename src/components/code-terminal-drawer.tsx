@@ -107,6 +107,11 @@ export function CodeTerminalDrawer({
         className="focus-ring code-term__bar"
         aria-expanded={open}
         aria-controls={`code-term-drawer-${sessionId}`}
+        // The bar's visible content is a status readout — shell state, cwd,
+        // pane count — which makes a terrible accessible name for the control
+        // that opens the drawer. Naming it explicitly keeps the visible word
+        // "Terminal" inside the name (WCAG 2.5.3) while saying what it does.
+        aria-label={open ? "Close the terminal drawer" : "Open the terminal drawer"}
         onClick={toggle}
         title={open ? "Close the terminal drawer" : "Open the terminal drawer"}
       >
