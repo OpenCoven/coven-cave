@@ -32,6 +32,7 @@
 
 import { memo } from "react";
 import { Icon } from "@/lib/icon";
+import { Sparkline } from "@/components/ui/sparkline";
 import {
   densityStep,
   type ActivityLattice,
@@ -72,9 +73,15 @@ export const FamiliarActivityLattice = memo(function FamiliarActivityLattice({
 }) {
   const yearDays = lattice.year.flatMap((week) => week.days);
   const yearPeak = busiestDay(yearDays);
-  const quarterMax = Math.max(1, ...lattice.quarter.map((week) => week.total));
   const fortnightMax = Math.max(1, ...lattice.fortnight.map((day) => day.count));
   const quarterTotal = lattice.quarter.reduce((sum, week) => sum + week.total, 0);
+  // The shared Sparkline owns the hover readout, so a week reports its own span
+  // and total the same way the day cells report theirs — and reusing it keeps
+  // one trend rendering in the app instead of a second hand-rolled bar chart.
+  const quarterPoints = lattice.quarter.map((week) => ({
+    label: weekLabel(week),
+    value: week.total,
+  }));
   const fortnightTotal = lattice.fortnight.reduce((sum, day) => sum + day.count, 0);
   const silent = lattice.total === 0;
 
@@ -106,21 +113,17 @@ export const FamiliarActivityLattice = memo(function FamiliarActivityLattice({
               : `Year density: ${sessionCount(lattice.total)} over ${lattice.year.length} weeks, busiest ${yearPeak?.label ?? "—"} with ${sessionCount(yearPeak?.count ?? 0)}.`
           }
         >
-          {lattice.year.map((week) => (
-            <div className="fa-lattice__week" key={week.key}>
-              {week.days.map((day) => (
-                <span
-                  key={day.key}
-                  className="fa-lattice__day"
-                  data-step={densityStep(day.count, lattice.peak)}
-                  data-selected={day.key === selectedDayKey ? "true" : undefined}
-                  // Hover reports the day itself — the frame's "every cell and
-                  // point reports its own day".
-                  title={`${day.label} · ${sessionCount(day.count)}`}
-                  aria-hidden
-                />
-              ))}
-            </div>
+          {yearDays.map((day) => (
+            <span
+              key={day.key}
+              className="fa-lattice__day"
+              data-step={densityStep(day.count, lattice.peak)}
+              data-selected={day.key === selectedDayKey ? "true" : undefined}
+              // Hover reports the day itself — the frame's "every cell and
+              // point reports its own day".
+              title={`${day.label} · ${sessionCount(day.count)}`}
+              aria-hidden
+            />
           ))}
         </div>
       </section>
@@ -135,25 +138,12 @@ export const FamiliarActivityLattice = memo(function FamiliarActivityLattice({
             {sessionCount(quarterTotal)} over {lattice.quarter.length} weeks
           </span>
         </header>
-        <div
-          className="fa-lattice__trend"
-          role="img"
-          aria-label={`Quarter trend: ${sessionCount(quarterTotal)} across the last ${lattice.quarter.length} weeks.`}
-        >
-          {lattice.quarter.map((week) => (
-            <span
-              className="fa-lattice__week-bar"
-              key={week.key}
-              title={`${weekLabel(week)} · ${sessionCount(week.total)}`}
-              aria-hidden
-            >
-              <i
-                style={{ height: `${week.total === 0 ? 3 : Math.max(8, (week.total / quarterMax) * 100)}%` }}
-                data-empty={week.total === 0 ? "true" : undefined}
-              />
-            </span>
-          ))}
-        </div>
+        <figure className="fa-lattice__trend">
+          <Sparkline points={quarterPoints} color="var(--accent-presence)" height={72} />
+          <figcaption aria-hidden>
+            Sessions per week, oldest to newest · hover for values
+          </figcaption>
+        </figure>
       </section>
 
       {/* Fortnight — the existing pulse, now beside its own year rather than

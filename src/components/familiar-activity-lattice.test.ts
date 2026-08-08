@@ -67,10 +67,18 @@ assert.match(
   /title=\{`\$\{day\.label\} · \$\{sessionCount\(day\.count\)\}`\}/,
   "day cells report their own day and count on hover",
 );
+// The quarter reuses the shared Sparkline rather than a second hand-rolled bar
+// chart; the primitive owns the hover readout, so the week's own span is what
+// it reports. This also keeps one trend rendering in the app instead of two.
 assert.match(
   lattice,
-  /title=\{`\$\{weekLabel\(week\)\} · \$\{sessionCount\(week\.total\)\}`\}/,
-  "quarter bars report their own week span and total on hover",
+  /<Sparkline points=\{quarterPoints\}/,
+  "the quarter trend reuses the shared Sparkline primitive",
+);
+assert.match(
+  lattice,
+  /label: weekLabel\(week\),\s*\n\s*value: week\.total,/,
+  "each trend point is labelled with the week's own span and carries its total",
 );
 
 // ── Only days select, because only days can be filtered ──────────────────────
