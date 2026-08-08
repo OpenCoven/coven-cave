@@ -72,6 +72,45 @@ assert.equal(
   "freshness tracks the newest surviving familiar-scoped vote after re-votes and clears",
 );
 
+const clearedScopedSnapshot = rollupMessageFeedbackSnapshot([
+  { messageId: "m8", vote: "up", cleared: false, familiarId: "sage", at: "2026-08-07T20:06:00.000Z" },
+  { messageId: "m8", vote: "up", cleared: true, at: "2026-08-07T20:07:00.000Z" },
+  { messageId: "m9", vote: "down", cleared: false, familiarId: "imp", at: "2026-08-07T20:08:00.000Z" },
+], { familiarId: "sage" });
+assert.deepEqual(
+  clearedScopedSnapshot.rollup,
+  EMPTY_FEEDBACK_ROLLUP,
+  "a clear without familiarId removes the previously attributed Familiar vote while unrelated Familiar votes stay excluded",
+);
+assert.equal(
+  clearedScopedSnapshot.freshness,
+  null,
+  "clearing the last scoped vote resets scoped freshness to null",
+);
+
+const revoteAfterClearSnapshot = rollupMessageFeedbackSnapshot([
+  { messageId: "m8", vote: "up", cleared: false, familiarId: "sage", at: "2026-08-07T20:06:00.000Z" },
+  { messageId: "m8", vote: "up", cleared: true, at: "2026-08-07T20:07:00.000Z" },
+  { messageId: "m9", vote: "down", cleared: false, familiarId: "imp", at: "2026-08-07T20:08:00.000Z" },
+  { messageId: "m8", vote: "down", cleared: false, familiarId: "sage", at: "2026-08-07T20:09:00.000Z" },
+], { familiarId: "sage" });
+assert.deepEqual(
+  revoteAfterClearSnapshot.rollup,
+  {
+    up: 0,
+    down: 1,
+    total: 1,
+    models: [],
+    runtimes: [],
+  },
+  "a re-vote after a clear restores the scoped Familiar tally",
+);
+assert.equal(
+  revoteAfterClearSnapshot.freshness,
+  "2026-08-07T20:09:00.000Z",
+  "a re-vote after clear restores the retained Familiar timestamp",
+);
+
 // No familiar filter → imp's vote joins the totals.
 assert.equal(rollupMessageFeedback(entries).total, 6);
 assert.equal(

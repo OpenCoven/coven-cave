@@ -2572,6 +2572,8 @@ git commit -m "feat: define familiar dashboard contract"
 - Modify: `src/lib/familiar-heal-requests.test.ts`
 - Modify: `src/lib/message-feedback-rollup.ts`
 - Modify: `src/lib/message-feedback-rollup.test.ts`
+- Modify: `src/lib/cave-config.ts` — persist config changes and invalidate the shared sessions cache that the dashboard loader reuses.
+- Modify: `src/lib/cave-config.test.ts` — pin the post-persistence sessions-cache invalidation contract that keeps dashboard reads fresh.
 - Modify: `src/lib/server/canonical-memory-gateway.ts`
 - Modify: `src/lib/server/canonical-memory-gateway.test.ts`
 - Modify: `src/lib/server/familiar-self-reports.ts`

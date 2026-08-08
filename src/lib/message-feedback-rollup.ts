@@ -119,9 +119,12 @@ export function applyMessageFeedbackEntry(
   const candidate = entry as FeedbackRollupEntry;
   if (typeof candidate.messageId !== "string" || !candidate.messageId) return;
   if (candidate.vote !== "up" && candidate.vote !== "down") return;
+  if (candidate.cleared) {
+    finalVotes.delete(candidate.messageId);
+    return;
+  }
   if (opts?.familiarId && candidate.familiarId !== opts.familiarId) return;
-  if (candidate.cleared) finalVotes.delete(candidate.messageId);
-  else finalVotes.set(candidate.messageId, candidate);
+  finalVotes.set(candidate.messageId, candidate);
 }
 
 export function finalizeMessageFeedbackRollup(

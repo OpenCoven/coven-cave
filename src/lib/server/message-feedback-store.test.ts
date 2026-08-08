@@ -203,6 +203,121 @@ assert.equal(
 
 await writeFile(
   fb.MESSAGE_FEEDBACK_PATH,
+  JSON.stringify({
+    entries: [
+      {
+        messageId: "sage-clear",
+        vote: "up",
+        cleared: false,
+        familiarId: "sage",
+        model: "model-clear",
+        runtime: "runtime-clear",
+        at: "2026-08-07T20:10:00.000Z",
+      },
+      {
+        messageId: "sage-clear",
+        vote: "up",
+        cleared: true,
+        at: "2026-08-07T20:11:00.000Z",
+      },
+      {
+        messageId: "imp-clear",
+        vote: "down",
+        cleared: false,
+        familiarId: "imp",
+        model: "model-imp",
+        runtime: "runtime-imp",
+        at: "2026-08-07T20:12:00.000Z",
+      },
+    ],
+  }, null, 2),
+  "utf8",
+);
+assert.deepEqual(
+  await fb.loadDashboardMessageFeedback({
+    familiarId: "sage",
+    bucketLimit: FEEDBACK_BUCKET_LIMIT,
+  }),
+  { rollup: { up: 0, down: 0, total: 0, models: [], runtimes: [] }, freshness: null },
+  "streaming dashboard rollup clears a scoped Familiar vote even when the clear entry has no familiarId",
+);
+
+await writeFile(
+  fb.MESSAGE_FEEDBACK_PATH,
+  JSON.stringify({
+    entries: [
+      {
+        messageId: "sage-clear",
+        vote: "up",
+        cleared: false,
+        familiarId: "sage",
+        model: "model-clear",
+        runtime: "runtime-clear",
+        at: "2026-08-07T20:10:00.000Z",
+      },
+      {
+        messageId: "sage-clear",
+        vote: "up",
+        cleared: true,
+        at: "2026-08-07T20:11:00.000Z",
+      },
+      {
+        messageId: "imp-clear",
+        vote: "down",
+        cleared: false,
+        familiarId: "imp",
+        model: "model-imp",
+        runtime: "runtime-imp",
+        at: "2026-08-07T20:12:00.000Z",
+      },
+      {
+        messageId: "sage-clear",
+        vote: "down",
+        cleared: false,
+        familiarId: "sage",
+        model: "model-clear",
+        runtime: "runtime-clear",
+        at: "2026-08-07T20:13:00.000Z",
+      },
+    ],
+  }, null, 2),
+  "utf8",
+);
+const restoredDashboardFeedback = await fb.loadDashboardMessageFeedback({
+  familiarId: "sage",
+  bucketLimit: FEEDBACK_BUCKET_LIMIT,
+});
+assert.deepEqual(
+  restoredDashboardFeedback.rollup,
+  {
+    up: 0,
+    down: 1,
+    total: 1,
+    models: [{
+      key: "model-clear",
+      up: 0,
+      down: 1,
+      total: 1,
+      approval: 0,
+    }],
+    runtimes: [{
+      key: "runtime-clear",
+      up: 0,
+      down: 1,
+      total: 1,
+      approval: 0,
+    }],
+  },
+  "streaming dashboard rollup restores scoped counts and buckets after a re-vote",
+);
+assert.equal(
+  restoredDashboardFeedback.freshness,
+  "2026-08-07T20:13:00.000Z",
+  "streaming dashboard rollup restores scoped freshness after a re-vote",
+);
+
+await writeFile(
+  fb.MESSAGE_FEEDBACK_PATH,
   JSON.stringify({ entries: [] }, null, 2),
   "utf8",
 );
