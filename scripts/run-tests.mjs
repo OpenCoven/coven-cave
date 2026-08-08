@@ -692,6 +692,11 @@ export const SUITES = {
     "src/components/code-editor.test.ts",
     "src/components/code-surface-mode.test.ts",
     "src/lib/code-surface.test.ts",
+    "src/lib/code-session-picker.test.ts",
+    "src/lib/code-outline.test.ts",
+    "src/lib/code-side-rail.test.ts",
+    "src/lib/code-shortcuts.test.ts",
+    "src/lib/github-pr-reader.test.ts",
     "src/lib/code-room-shortcuts.test.ts",
     "src/lib/code-terminal-tree.test.ts",
     "src/lib/code-reading.test.ts",
@@ -1622,6 +1627,9 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  // the picker imports the module under test, which resolves
+  // "@/lib/code-surface" for the shared session-visibility rule.
+  "src/lib/code-session-picker.test.ts",
   // the prompt-brief + quick-saves tests type their fixtures against
   // "@/lib/research-missions" and "@/lib/link-organizer"
   "src/lib/research-prompt-brief.test.ts",

@@ -11,19 +11,17 @@ import {
   isCodeRailSession,
   isCodeTopTab,
   isCodeWorkbenchTab,
-  isCodeDockTab,
-  codeDockTabForWorkbenchTab,
-  CODE_DOCK_TABS,
-  codeDockTabWantsExpanded,
-  CODE_DOCK_SIZES,
+  codeRailTabForWorkbenchTab,
   normalizeCodeTopTab,
   parseCodeDeepLink,
   CODE_ROOM_RAIL_WIDTH_PX,
-  CODE_ROOM_MIN_TERMINAL_WIDTH_PX,
-  CODE_ROOM_MIN_DOCK_WIDTH_PX,
+  CODE_ROOM_TREE_WIDTH_PX,
+  CODE_ROOM_MIN_VIEWER_WIDTH_PX,
+  CODE_ROOM_MIN_REVIEW_WIDTH_PX,
   CODE_ROOM_SPLIT_MIN_WIDTH_PX,
   CODE_ROOM_RAIL_MIN_WIDTH_PX,
   CODE_WORKBENCH_STEPS,
+  CODE_STEP_ANNOUNCEMENT,
   codeRoomFits,
   codeRoomFitsRail,
   codeWorkbenchFitsSplit,
@@ -164,52 +162,30 @@ test("normalizeCodeTopTab maps legacy + unknown values", () => {
   assert.equal(normalizeCodeTopTab(null), "sessions");
 });
 
-// ── Context dock vocabulary (cave-98o51) ────────────────────────────────────
-// The Room replaced the tabbed workbench with a persistent terminal center and
-// a dock on the right. Legacy `?wtab=` links predate that split, so they must
-// keep resolving — a `terminal` link now names the center, which is always on
-// screen, and therefore selects no dock tab at all.
+// ── Review-rail vocabulary (cave-98o51, rebuilt cave-0rcku) ────────────────
+// The Room replaced the tabbed workbench first with a terminal centre and a
+// dock, and then — from the `Cody Code Reading v2` frame — with three columns
+// and a terminal drawer. Legacy `?wtab=` links predate both, so they must keep
+// resolving. `terminal` and `files` now name parts of the room that are always
+// on screen, so neither selects a rail tab at all.
 
-test("dock tabs are a fixed vocabulary distinct from the retired workbench tabs", () => {
-  for (const tab of CODE_DOCK_TABS) assert.ok(isCodeDockTab(tab));
-  assert.deepEqual(
-    [...CODE_DOCK_TABS],
-    ["changes", "files", "pr", "inspector", "github", "browser"],
-    "the approved dock, in tab order",
-  );
-  assert.ok(!isCodeDockTab("terminal"), "the terminal is the center zone, never a dock tab");
-  assert.ok(!isCodeDockTab("diff"), "diff was renamed to changes in the Room");
-  assert.ok(!isCodeDockTab(null));
-  assert.ok(!isCodeDockTab("bogus"));
-});
-
-test("legacy ?wtab= deep links resolve onto the dock", () => {
-  assert.equal(codeDockTabForWorkbenchTab("diff"), "changes");
-  assert.equal(codeDockTabForWorkbenchTab("files"), "files");
-  assert.equal(codeDockTabForWorkbenchTab("pr"), "pr");
+test("legacy ?wtab= deep links resolve onto the review rail", () => {
+  assert.equal(codeRailTabForWorkbenchTab("diff"), "changes");
+  assert.equal(codeRailTabForWorkbenchTab("pr"), "pr");
   assert.equal(
-    codeDockTabForWorkbenchTab("terminal"),
+    codeRailTabForWorkbenchTab("terminal"),
     null,
-    "the terminal is always visible, so its link opens no dock tab",
+    "the terminal is the drawer, present at every width — it opens no rail tab",
+  );
+  assert.equal(
+    codeRailTabForWorkbenchTab("files"),
+    null,
+    "the tree is a column, not a tab — the link lands on a room already showing it",
   );
   // A stale/hand-edited ?wtab= value is untyped at runtime, so the guard must
   // survive one even though the signature forbids it at compile time.
-  assert.equal(codeDockTabForWorkbenchTab("bogus" as never), null);
-  assert.equal(codeDockTabForWorkbenchTab(null), null);
-});
-
-test("dock sizes are ordered widest-last so collapse/expand steps through them", () => {
-  assert.deepEqual([...CODE_DOCK_SIZES], ["collapsed", "normal", "expanded"]);
-});
-
-// Some dock tabs are illegible at sidebar width, so selecting one has to widen
-// the dock rather than render something nobody can use.
-test("only the wide tabs force the dock open expanded", () => {
-  assert.ok(codeDockTabWantsExpanded("browser"), "a native webview needs the room");
-  assert.ok(codeDockTabWantsExpanded("github"), "a list/detail split needs the room");
-  for (const tab of ["changes", "files", "pr", "inspector"] as const) {
-    assert.ok(!codeDockTabWantsExpanded(tab), `${tab} reads fine at normal width`);
-  }
+  assert.equal(codeRailTabForWorkbenchTab("bogus" as never), null);
+  assert.equal(codeRailTabForWorkbenchTab(null), null);
 });
 
 // ---------------------------------------------------------------------------
@@ -224,8 +200,8 @@ test("only the wide tabs force the dock open expanded", () => {
 test("the rail breakpoint is derived from the split breakpoint, not written twice", () => {
   assert.equal(
     CODE_ROOM_SPLIT_MIN_WIDTH_PX,
-    CODE_ROOM_MIN_TERMINAL_WIDTH_PX + CODE_ROOM_MIN_DOCK_WIDTH_PX,
-    "the split needs exactly the two zones it contains",
+    CODE_ROOM_TREE_WIDTH_PX + CODE_ROOM_MIN_VIEWER_WIDTH_PX + CODE_ROOM_MIN_REVIEW_WIDTH_PX,
+    "the split needs exactly the three columns it contains",
   );
   assert.equal(
     CODE_ROOM_RAIL_MIN_WIDTH_PX,
@@ -235,7 +211,7 @@ test("the rail breakpoint is derived from the split breakpoint, not written twic
   );
   assert.ok(
     CODE_ROOM_RAIL_MIN_WIDTH_PX > CODE_ROOM_SPLIT_MIN_WIDTH_PX,
-    "the rail must give up its column before the dock gives up its own",
+    "the session rail must give up its column before the workbench columns do",
   );
 });
 
@@ -277,7 +253,23 @@ test("the two Room breakpoints apply their own constants", () => {
   assert.ok(!codeRoomFitsRail(390, true), "a phone lands on the rail");
 });
 
-test("the narrow workbench lands on the terminal", () => {
-  assert.deepEqual([...CODE_WORKBENCH_STEPS], ["terminal", "context"]);
-  assert.equal(CODE_WORKBENCH_STEPS[0], "terminal", "the shell is the Room's priority surface");
+test("the narrow workbench lands on the source, and the shell is not a step", () => {
+  assert.deepEqual([...CODE_WORKBENCH_STEPS], ["files", "source", "review"]);
+  assert.equal(
+    CODE_WORKBENCH_STEPS[1],
+    "source",
+    "the landing step is the file you opened — this is a reading surface",
+  );
+  // The terminal deliberately is NOT a step (cave-0rcku). It is the drawer,
+  // docked at every width, so narrowing the room can never take the shell
+  // away — the same commitment the terminal-centre room made, paid for in
+  // height instead of width.
+  assert.ok(
+    !(CODE_WORKBENCH_STEPS as readonly string[]).includes("terminal"),
+    "the shell is the drawer, present at every width, never a step you can lose",
+  );
+  // Every step must have live-region copy, or a drill-in announces nothing.
+  for (const step of CODE_WORKBENCH_STEPS) {
+    assert.ok(CODE_STEP_ANNOUNCEMENT[step], `${step} announces itself`);
+  }
 });

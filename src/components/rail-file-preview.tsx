@@ -2,13 +2,14 @@
 
 import "@/styles/cave-chat.css";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownBlock, SyntaxBlock } from "@/components/message-bubble";
 import { CodeEditor } from "@/components/code-editor";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { copyText } from "@/lib/clipboard";
+import { codeOutline } from "@/lib/code-outline";
 
 // ─── API response shape (mirrors src/app/api/project-file/route.ts) ───────────
 
@@ -60,6 +61,9 @@ export function RailFilePreview({
   projectRoot,
   familiarId,
   onOpenPath,
+  variant = "rail",
+  rangeLabel,
+  initialLine,
 }: {
   path: string | null;
   projectRoot: string | null;
@@ -67,6 +71,17 @@ export function RailFilePreview({
   /** Open a file from the empty state's changed-file launchpad (repo-relative
    *  paths are resolved by the owner, same as focusPath events). */
   onOpenPath?: (path: string) => void;
+  /**
+   * `workbench` adds the Coding Room's fuller chrome (cave-0rcku): directory,
+   * language, a "working tree" provenance chip, an unsaved marker while
+   * editing, and the symbol outline. The chat rail keeps the compact `rail`
+   * header — the same file, read in a much narrower column.
+   */
+  variant?: "rail" | "workbench";
+  /** Provenance chip for a range handed over from chat, e.g. "L14–19 from chat". */
+  rangeLabel?: string | null;
+  /** Line to reveal when the file opens (a chat handoff's start line). */
+  initialLine?: number | null;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -203,6 +218,27 @@ export function RailFilePreview({
     return () => window.clearTimeout(t);
   }, [justSaved]);
 
+  // ── Outline (workbench chrome only) ────────────────────────────────────────
+  // Derived from the text already on screen, so it can never describe a version
+  // the reader is not looking at. Hidden entirely when the language yields no
+  // symbols — an empty outline control reads as a broken feature.
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [activeLine, setActiveLine] = useState<number | null>(null);
+  const outline = useMemo(
+    () =>
+      variant === "workbench" && file?.kind === "text" && path
+        ? codeOutline(file.content, fileName(path))
+        : [],
+    [file, path, variant],
+  );
+  // A new file starts from the handoff's line (if any) and a closed outline;
+  // carrying the previous file's open outline over would announce symbols that
+  // belong to something else.
+  useEffect(() => {
+    setActiveLine(initialLine ?? null);
+    setOutlineOpen(false);
+  }, [initialLine, path]);
+
   const copyPreview = useCallback(() => {
     if (!file || file.kind !== "text") return;
     void copyText(file.content).then((ok) => {
@@ -250,9 +286,11 @@ export function RailFilePreview({
   }
 
   const name = fileName(path);
+  const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+  const workbench = variant === "workbench";
 
   return (
-    <div className="workspace-rail__preview">
+    <div className="workspace-rail__preview" data-variant={variant}>
       <header className="workspace-rail__preview-head">
         <Icon
           name={file?.kind === "image" ? "ph:file-image" : isMarkdownPath(path) ? "ph:file-text" : "ph:file-code"}
@@ -260,6 +298,41 @@ export function RailFilePreview({
           aria-hidden
         />
         <span className="workspace-rail__preview-name" title={path}>{name}</span>
+        {workbench ? (
+          <>
+            {dir ? (
+              <span className="workspace-rail__preview-dir" title={path}>
+                {dir}
+              </span>
+            ) : null}
+            {/* Provenance, always on: this pane reads the working tree, not a
+                transcript snapshot, and that distinction is the whole point of
+                opening a file here rather than reading the chat block. */}
+            <span className="workspace-rail__preview-chip">working tree</span>
+            {rangeLabel ? (
+              <span className="workspace-rail__preview-chip workspace-rail__preview-chip--accent">
+                {rangeLabel}
+              </span>
+            ) : null}
+            {editing ? (
+              <span className="workspace-rail__preview-chip workspace-rail__preview-chip--warn">
+                editing · unsaved
+              </span>
+            ) : null}
+            {outline.length > 0 && !editing ? (
+              <button
+                type="button"
+                className="focus-ring workspace-rail__preview-action"
+                aria-expanded={outlineOpen}
+                onClick={() => setOutlineOpen((open) => !open)}
+              >
+                <Icon name="ph:list-bullets" width={11} aria-hidden />
+                Outline
+                <span className="workspace-rail__preview-outline-count">{outline.length}</span>
+              </button>
+            ) : null}
+          </>
+        ) : null}
         {(file?.kind === "text" || editing) && (
           <div className="workspace-rail__preview-actions">
             {editing ? (
@@ -315,6 +388,23 @@ export function RailFilePreview({
           </div>
         )}
       </header>
+      {workbench && outlineOpen && outline.length > 0 && !editing ? (
+        <div className="workspace-rail__outline" role="group" aria-label="File outline">
+          {outline.map((symbol) => (
+            <button
+              key={`${symbol.kind}:${symbol.name}:${symbol.line}`}
+              type="button"
+              className="focus-ring workspace-rail__outline-chip"
+              aria-current={activeLine === symbol.line ? "true" : undefined}
+              onClick={() => setActiveLine(symbol.line)}
+            >
+              <span className="workspace-rail__outline-kind">{symbol.kind}</span>
+              <span className="workspace-rail__outline-name">{symbol.name}</span>
+              <span className="workspace-rail__outline-line">L{symbol.line}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div
         className={`workspace-rail__preview-body${editing ? " workspace-rail__preview-body--edit" : ""}${
           // Reading a highlighted code file: let the pane own the height so the
@@ -359,7 +449,12 @@ export function RailFilePreview({
           // column; clamping left a dead band to the right of wide panes.
           <MarkdownBlock text={file.content} className="comux-md" />
         ) : file?.kind === "text" ? (
-          <SyntaxBlock text={file.content} lang={path.split(".").pop()} className="leading-relaxed" />
+          <SyntaxBlock
+            text={file.content}
+            lang={path.split(".").pop()}
+            className="leading-relaxed"
+            highlightLine={activeLine ?? undefined}
+          />
         ) : null}
       </div>
     </div>

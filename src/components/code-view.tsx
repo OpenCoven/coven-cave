@@ -154,6 +154,11 @@ export function CodeView({
     deepLink?.sessionId ?? undefined,
   );
   const [newSessionOpen, setNewSessionOpen] = useState(false);
+  // The workbench picker offers "start a new session about <query>" when the
+  // filter matches nothing. There is no title field to set — a session's title
+  // is the daemon's, derived from the conversation — so the typed text seeds
+  // the kickoff prompt instead of being silently dropped.
+  const [newSessionSeed, setNewSessionSeed] = useState("");
   // A session created HERE isn't in the polled list yet; hold its selection
   // until /api/sessions/list catches up instead of auto-picking the newest.
   const pendingNewIdRef = useRef<string | null>(null);
@@ -327,7 +332,10 @@ export function CodeView({
                 setWorkbenchTarget(null);
                 setSelectedId(id);
               }}
-              onNewSession={() => setNewSessionOpen(true)}
+              onNewSession={() => {
+                setNewSessionSeed("");
+                setNewSessionOpen(true);
+              }}
             />
           </div>
           <div
@@ -364,6 +372,17 @@ export function CodeView({
                   <CodeWorkbench
                     key={selected.id}
                     row={selected}
+                    // The workbench header carries its own session picker
+                    // (cave-0rcku), so it needs the same list the rail shows.
+                    sessions={sessions}
+                    onSelectSession={(id) => {
+                      setWorkbenchTarget(null);
+                      setSelectedId(id);
+                    }}
+                    onNewSession={(seed) => {
+                      setNewSessionSeed(seed);
+                      setNewSessionOpen(true);
+                    }}
                     initialTab={deepLink?.sessionId === selected.id ? deepLink?.workbenchTab : undefined}
                     openTarget={
                       workbenchTarget && (workbenchTarget.sessionId ?? selected.id) === selected.id
@@ -385,6 +404,7 @@ export function CodeView({
       )}
       <CodeNewSession
         open={newSessionOpen}
+        initialPrompt={newSessionSeed}
         onClose={() => setNewSessionOpen(false)}
         onCreated={(sessionId) => {
           pendingNewIdRef.current = sessionId;

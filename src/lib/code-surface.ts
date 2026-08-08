@@ -17,51 +17,19 @@ export function isCodeWorkbenchTab(value: string | null | undefined): value is C
 }
 
 /**
- * Context dock tabs in the three-zone Coding Room (cave-98o51). The terminal is
- * no longer one of these — it is the Room's persistent center, which is the
- * whole point of the redesign: diffs and files sit BESIDE a running shell
- * instead of competing with it for one canvas.
+ * Map a legacy `?wtab=` deep link onto the review rail (cave-0rcku).
+ *
+ * `diff` was renamed `changes` to match the panel it mounts. `files` and
+ * `terminal` resolve to null: both are now permanent parts of the room — a
+ * column and a drawer — rather than tabs, so those links land on a room that
+ * already shows them and the rail keeps whatever it was going to show.
  */
-export const CODE_DOCK_TABS = [
-  "changes",
-  "files",
-  "pr",
-  "inspector",
-  "github",
-  "browser",
-] as const;
-export type CodeDockTab = (typeof CODE_DOCK_TABS)[number];
-
-export function isCodeDockTab(value: string | null | undefined): value is CodeDockTab {
-  return (CODE_DOCK_TABS as readonly string[]).includes(value ?? "");
-}
-
-/**
- * Map a legacy `?wtab=` workbench tab onto the dock. `diff` was renamed
- * `changes` to match the panel it mounts, and `terminal` resolves to null —
- * that deep link now lands on the always-present center, so the dock keeps
- * whatever it was showing rather than being forced somewhere arbitrary.
- */
-export function codeDockTabForWorkbenchTab(
+export function codeRailTabForWorkbenchTab(
   tab: CodeWorkbenchTab | null | undefined,
-): CodeDockTab | null {
+): "changes" | "pr" | null {
   if (tab === "diff") return "changes";
-  if (tab === "files") return "files";
   if (tab === "pr") return "pr";
   return null;
-}
-
-/** How much room the context dock takes beside the terminal center. Browser and
- *  GitHub open `expanded` because a native webview — or a list/detail split —
- *  squeezed into a sidebar renders a column of wrapped text nobody can use. */
-export const CODE_DOCK_SIZES = ["collapsed", "normal", "expanded"] as const;
-export type CodeDockSize = (typeof CODE_DOCK_SIZES)[number];
-
-/** Dock tabs that need the expanded width to be legible at all. Selecting one
- *  from a normal or collapsed dock widens it rather than rendering something
- *  unusable. */
-export function codeDockTabWantsExpanded(tab: CodeDockTab): boolean {
-  return tab === "browser" || tab === "github";
 }
 
 /**
@@ -80,14 +48,16 @@ export function codeDockTabWantsExpanded(tab: CodeDockTab): boolean {
  * overstates the width the Room actually got.
  */
 export const CODE_ROOM_RAIL_WIDTH_PX = 256;
-export const CODE_ROOM_MIN_TERMINAL_WIDTH_PX = 320;
-export const CODE_ROOM_MIN_DOCK_WIDTH_PX = 300;
 
-/** Below this the terminal and the dock cannot both be legible, so the
- *  workbench drills in (Terminal <-> Context) instead of showing two crushed
- *  columns. */
+/** The workbench's three columns (cave-0rcku): file tree, source, review rail. */
+export const CODE_ROOM_TREE_WIDTH_PX = 272;
+export const CODE_ROOM_MIN_VIEWER_WIDTH_PX = 380;
+export const CODE_ROOM_MIN_REVIEW_WIDTH_PX = 280;
+
+/** Below this the three columns cannot all be legible, so the workbench drills
+ *  in (Files / Source / Review) instead of showing three crushed columns. */
 export const CODE_ROOM_SPLIT_MIN_WIDTH_PX =
-  CODE_ROOM_MIN_TERMINAL_WIDTH_PX + CODE_ROOM_MIN_DOCK_WIDTH_PX;
+  CODE_ROOM_TREE_WIDTH_PX + CODE_ROOM_MIN_VIEWER_WIDTH_PX + CODE_ROOM_MIN_REVIEW_WIDTH_PX;
 
 /** Below this the session rail cannot sit beside a workbench that still fits
  *  its split, so the rail becomes the landing step. Derived from the two
@@ -96,10 +66,21 @@ export const CODE_ROOM_SPLIT_MIN_WIDTH_PX =
 export const CODE_ROOM_RAIL_MIN_WIDTH_PX =
   CODE_ROOM_RAIL_WIDTH_PX + CODE_ROOM_SPLIT_MIN_WIDTH_PX;
 
-/** The narrow workbench's two steps. Terminal is the landing step — the shell
- *  is the Room's priority surface — and Context is reached explicitly. */
-export const CODE_WORKBENCH_STEPS = ["terminal", "context"] as const;
+/**
+ * The narrow workbench's three steps (cave-0rcku). `source` is the landing
+ * step: this is a reading surface, and the file you opened is what you came
+ * for. The terminal is NOT a step — it is the drawer, present at every width,
+ * so narrowing the room never takes the shell away.
+ */
+export const CODE_WORKBENCH_STEPS = ["files", "source", "review"] as const;
 export type CodeWorkbenchStep = (typeof CODE_WORKBENCH_STEPS)[number];
+
+/** Live-region copy per step, so the announcement can't drift from the label. */
+export const CODE_STEP_ANNOUNCEMENT: Record<CodeWorkbenchStep, string> = {
+  files: "Files shown.",
+  source: "Source shown.",
+  review: "Review shown.",
+};
 
 /**
  * Does a measured box have room for a zone that needs `minWidth`?
@@ -129,7 +110,7 @@ export function codeRoomFitsRail(
   return codeRoomFits(width, CODE_ROOM_RAIL_MIN_WIDTH_PX, fallbackNarrow);
 }
 
-/** Can the workbench show the terminal center and the context dock at once? */
+/** Can the workbench show tree, source and review side by side? */
 export function codeWorkbenchFitsSplit(
   width: number | null | undefined,
   fallbackNarrow: boolean,
