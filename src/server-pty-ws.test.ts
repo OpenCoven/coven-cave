@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const src = readFileSync(new URL("../server.ts", import.meta.url), "utf8");
 const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -627,7 +628,13 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
   const { buildSync } = await import("esbuild");
   const serverTsUrl = new URL("../server.ts", import.meta.url);
   const out = buildSync({
-    entryPoints: [serverTsUrl.pathname],
+    // fileURLToPath, never .pathname: on Windows a file:// pathname is
+    // `/C:/…`, and esbuild resolves that leading slash as an absolute path
+    // from the drive root, so the entry point does not exist. That threw
+    // before any assertion in this file could run, which meant the whole
+    // suite — every parity and security check below — was silently absent on
+    // Windows rather than failing loudly.
+    entryPoints: [fileURLToPath(serverTsUrl)],
     bundle: false,
     platform: "node",
     target: "node24",
