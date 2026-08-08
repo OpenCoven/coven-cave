@@ -14,21 +14,34 @@
  * fire-and-forget event can race its listener subscription. Same shape as
  * `markCovenTabPending` in chat-tab-events.ts: a retained latch set
  * synchronously before the mode flips, consumed on mount; the event covers
- * the already-mounted case.
+ * the already-mounted case. The latch lives on `window` so lazy chunk loading
+ * cannot isolate or reset the request.
  */
 
 /** Window event asking a mounted Familiars surface to open the Circle. */
 export const SUMMON_FAMILIAR_EVENT = "cave:summon-familiar";
 
-let summonPending = false;
+const SUMMON_PENDING_KEY = "__caveSummonPending";
+
+type SummonWindow = Window & {
+  [SUMMON_PENDING_KEY]?: boolean;
+};
 
 export function markSummonPending(): void {
-  summonPending = true;
+  if (typeof window === "undefined") return;
+  (window as SummonWindow)[SUMMON_PENDING_KEY] = true;
+}
+
+export function hasSummonPending(): boolean {
+  return typeof window !== "undefined"
+    && (window as SummonWindow)[SUMMON_PENDING_KEY] === true;
 }
 
 export function consumeSummonPending(): boolean {
-  const pending = summonPending;
-  summonPending = false;
+  if (typeof window === "undefined") return false;
+  const target = window as SummonWindow;
+  const pending = target[SUMMON_PENDING_KEY] === true;
+  delete target[SUMMON_PENDING_KEY];
   return pending;
 }
 
@@ -37,7 +50,5 @@ export function requestSummonFamiliar(): void {
   if (typeof window === "undefined") return;
   markSummonPending();
   window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "agents" } }));
-  // Let navigation commit before notifying an already-mounted FamiliarsView.
-  // If the lazy surface mounts later, the retained latch still opens it.
-  window.setTimeout(() => window.dispatchEvent(new CustomEvent(SUMMON_FAMILIAR_EVENT)), 0);
+  window.dispatchEvent(new CustomEvent(SUMMON_FAMILIAR_EVENT));
 }
