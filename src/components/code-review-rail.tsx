@@ -100,23 +100,27 @@ export function CodeReviewRail({
   const onPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
-      dragRef.current = { startX: event.clientX, startWidth: widthPx };
+      const controller = new AbortController();
+      dragRef.current = { startX: event.clientX, startWidth: widthPx, controller } as any;
       const move = (moveEvent: PointerEvent) => {
-        const drag = dragRef.current;
+        const drag = dragRef.current as any;
         if (!drag) return;
         // The rail is on the right, so dragging left widens it.
         onWidthChange(clampCodeRailWidth(drag.startWidth - (moveEvent.clientX - drag.startX), roomWidthPx));
       };
       const up = () => {
+        controller.abort();
         dragRef.current = null;
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", up);
       };
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", up);
+      window.addEventListener("pointermove", move, { signal: controller.signal });
+      window.addEventListener("pointerup", up, { signal: controller.signal });
     },
     [onWidthChange, roomWidthPx, widthPx],
   );
+
+  useEffect(() => {
+    return () => (dragRef.current as any)?.controller?.abort();
+  }, []);
 
   // Keyboard resize: a pointer-only divider is not a control, it is a hazard.
   const onSeparatorKeyDown = useCallback(
