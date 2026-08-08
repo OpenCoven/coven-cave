@@ -146,6 +146,7 @@ async function commandPath(
   const result = await withinDeadline(async (signal) => {
     try {
       const { stdout } = await execFileAsync(command, [binary], {
+        windowsHide: true,
         env,
         signal,
         timeout: remainingTimeout(1500, deadline),
@@ -262,6 +263,7 @@ async function loadCovenAdapterSummaries(
       command,
       [...fixedArgs, "--help"],
       {
+        windowsHide: true,
         env,
         signal,
         timeout: remainingTimeout(1500, deadline),
@@ -275,6 +277,7 @@ async function loadCovenAdapterSummaries(
       command,
       [...fixedArgs, "adapter", "list", "--json"],
       {
+        windowsHide: true,
         env,
         signal,
         timeout: remainingTimeout(3000, deadline),

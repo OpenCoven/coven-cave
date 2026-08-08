@@ -87,6 +87,7 @@ function loginShellPath(): string | null {
   const shell = env["SHELL"] ?? ["/bin", "zsh"].join("/");
   try {
     const out = execFileSync(shell, ["-ilc", "echo $PATH"], {
+      windowsHide: true,
       encoding: "utf-8",
       timeout: 4000,
     });

@@ -33,6 +33,7 @@ export async function POST(req: Request) {
   return new Promise<Response>((resolve) => {
     const { command, fixedArgs } = covenLaunchCommand();
     const child = spawn(command, [...fixedArgs, ...args], {
+      windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: covenSpawnEnv(),
     });

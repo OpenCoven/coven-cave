@@ -141,6 +141,7 @@ type SpawnProcess = (
   options: {
     cwd: string;
     stdio: ["ignore", "pipe", "pipe"];
+    windowsHide: true;
   },
 ) => SpawnedProcess;
 
@@ -186,6 +187,7 @@ export function runResearchVideoCommand(
   const child = spawnProcess(command, args, {
     cwd: options.cwd,
     stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
   });
   const killGraceMs = options.killGraceMs ?? 2_000;
   const escalateKill = options.escalateKill ?? true;

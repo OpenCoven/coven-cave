@@ -20,6 +20,20 @@ a routine settings or session write from replacing migrated data with empty
 defaults. Restore a backup for malformed data, or update Cave for a newer
 configuration version.
 
+An address someone else already holds is its own outcome rather than a generic
+early exit. Once the health probe has failed, Cave connects to the daemon
+address to learn whether anything is accepting there; a completed connection
+means the occupant is something Cave cannot adopt, so the start is refused with
+`address_in_use` and no launcher is spawned. Only a proven connection refuses —
+a refused or absent socket launches, and an address that cannot be read at all
+stays unknown and launches too, because a false refusal strands a user whose
+socket is merely unreadable. A restart skips the check entirely: the occupant it
+would find is the daemon the caller asked to replace. The launcher's own bind
+failure is classified the same way, which closes the window between the check
+and the bind. Cave never deletes a socket file to clear the address; removing
+one a live owner still holds is how two daemons come to believe they own the
+same home.
+
 The daemon starter retains its bounded health deadline and owned-process-tree
 cleanup. A launcher exit alone never means ready; the final readiness probe must
 pass the runtime contract before Cave reports success.

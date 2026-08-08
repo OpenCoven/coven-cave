@@ -164,6 +164,26 @@ function response(ok, payload) {
   assert.deepEqual(refreshes, [undefined], "deferral immediately rechecks ordinary connection state");
 }
 
+{
+  const errors = [];
+  const refreshes = [];
+  const outcome = await runWorkspaceDaemonStart({
+    automatic: true,
+    fetchImpl: async () => response(false, {
+      ok: false,
+      code: "address_in_use",
+      error: "Another process is already using the local Coven daemon address.",
+    }),
+    dismissError: () => assert.fail("deferred recovery has no prior error to dismiss"),
+    reportError: (message) => errors.push(message),
+    refreshStatus: async (opts) => { refreshes.push(opts); },
+  });
+
+  assert.equal(outcome, "deferred", "an address another process holds is not ours to retry against");
+  assert.deepEqual(errors, [], "automatic address deferral stays out of the error banner");
+  assert.deepEqual(refreshes, [undefined]);
+}
+
 
 // ── Opt-in auto-restart (cave-bqywj) ────────────────────────────────────────
 // Boot auto-start has always been one-shot: the coordinator consumes its

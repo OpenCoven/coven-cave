@@ -17,7 +17,6 @@ import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { openCodeAvailabilityProbe, openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
 import { listOpenClawAgents } from "@/lib/openclaw-bridge";
-import { writeHarnessReports } from "@/lib/server/harness-report-cache";
 import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
 import {
   resolveCopilotRuntimeLaunch,
@@ -150,7 +149,7 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
 function whichWith(binary: string, env: NodeJS.ProcessEnv): Promise<string | null> {
   return new Promise((resolve) => {
     const command = process.platform === "win32" ? "where" : "which";
-    const child = spawn(command, [binary], { env, stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawn(command, [binary], { windowsHide: true, env, stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     child.stdout.on("data", (d) => (out += d.toString()));
     child.on("close", (code) => {
@@ -185,7 +184,7 @@ function probeVersion(
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(binary, [...fixedArgs, ...args], { env, stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn(binary, [...fixedArgs, ...args], { windowsHide: true, env, stdio: ["ignore", "pipe", "pipe"] });
     } catch {
       resolve(null);
       return;
@@ -215,7 +214,7 @@ function probeGrokModels(
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(launch.command, [...launch.fixedArgs, "--no-auto-update", "models"], { env, stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn(launch.command, [...launch.fixedArgs, "--no-auto-update", "models"], { windowsHide: true, env, stdio: ["ignore", "pipe", "pipe"] });
     } catch {
       resolve({ models: [], defaultModel: null });
       return;
@@ -241,7 +240,7 @@ function probeGrokModels(
 function covenSupportsAdapterList(): Promise<boolean> {
   return new Promise((resolve) => {
     const { command, fixedArgs } = covenLaunchCommand();
-    const child = spawn(command, [...fixedArgs, "--help"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, [...fixedArgs, "--help"], { windowsHide: true, env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     child.stdout.on("data", (d) => (out += d.toString()));
     child.stderr.on("data", (d) => (out += d.toString()));
@@ -263,7 +262,7 @@ function covenSupportsAdapterList(): Promise<boolean> {
 function loadCovenAdapterSummaries(): Promise<CovenAdapterSummary[]> {
   return new Promise((resolve) => {
     const { command, fixedArgs } = covenLaunchCommand();
-    const child = spawn(command, [...fixedArgs, "adapter", "list", "--json"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawn(command, [...fixedArgs, "adapter", "list", "--json"], { windowsHide: true, env: covenSpawnEnv(), stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     const t = setTimeout(() => {
       child.kill("SIGTERM");
@@ -353,10 +352,5 @@ export async function GET() {
   );
   const covenReports = (await covenSupportsAdapterList()) ? await loadCovenAdapterSummaries() : [];
   const harnesses: AdapterReport[] = mergeAdapterReports(reports, covenReports);
-  // Write-through only. This endpoint never READS the cache: onboarding polls
-  // it every 2s while a runtime installs and must see that install land. What
-  // the cache buys is a warm answer for `/api/scry`, which would otherwise pay
-  // this full ~3.4s probe inside a user's wait. See harness-report-cache.ts.
-  writeHarnessReports(harnesses);
   return NextResponse.json({ ok: true, runtimeHost: hostname(), harnesses });
 }

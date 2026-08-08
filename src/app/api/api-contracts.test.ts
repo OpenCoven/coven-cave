@@ -181,6 +181,10 @@ const contracts: RouteContract[] = [
   { route: "/opencoven/submissions", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/openclaw-agents", methods: ["GET"], kind: "json" },
   { route: "/opencoven-tools/status", methods: ["GET"], kind: "json" },
+  { route: "/passkey/challenge", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/passkey/register", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/passkey/assert", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/passkey/enrolled", methods: ["GET", "DELETE"], kind: "json" },
   { route: "/preferences/backdrop", methods: ["GET", "PUT", "DELETE"], kind: "stream", localOriginGuard: true },
   { route: "/preferences", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/mobile-permissions", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
@@ -224,10 +228,6 @@ const contracts: RouteContract[] = [
   { route: "/salem", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/salem/pathfinder", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/salem/pathfinder/feedback", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  // cave-3rz.3: the image scry. Spawns a local harness with caller-supplied
-  // content, so it carries the same local-origin guard as the other
-  // process-spawning routes.
-  { route: "/scry", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/sessions/[id]/events", methods: ["GET"], kind: "json" },
   { route: "/sessions/[id]/input", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/sessions/[id]/kill", methods: ["POST"], kind: "json" },
@@ -529,7 +529,7 @@ for (const contract of contracts) {
   );
   const guardedDiagnostics = [
     ...sendSource.matchAll(
-      /if \(cancelledByUser\) \{[\s\S]{0,200}?\} else if \(!assistantText\.trim\(\)(?: && !launchFailure)?\) \{/g,
+      /(?:if \(cancelledByUser\) \{[\s\S]{0,200}?\} else if \(!assistantText\.trim\(\)(?: && !launchFailure)?\) \{|if \(!cancelledByUser && !assistantText\.trim\(\)\) \{)/g,
     ),
   ];
   assert.equal(
@@ -582,8 +582,8 @@ for (const contract of contracts) {
   );
   assert.match(
     sendSource,
-    /if \(cancelledByUser\) \{\s*\n\s*if \(!assistantText\.trim\(\)\) assistantText = "\(cancelled\)";\s*\n\s*isError = false;/,
-    "/chat/send: a user cancel must never be recorded as a harness error (openclaw path)",
+    /if \(cancelledByUser\) \{\s*\n\s*assistantText = "\(cancelled\)";\s*\n\s*isError = false;\s*\n\s*\} else if \(stdout\.trim\(\)\) \{/,
+    "/chat/send: an explicit OpenClaw stop must take precedence over malformed or truncated bridge stdout",
   );
 
   // SSE heartbeats: a long tool run can stream nothing for minutes, and a

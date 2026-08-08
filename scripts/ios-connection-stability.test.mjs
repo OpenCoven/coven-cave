@@ -31,8 +31,13 @@ assert.match(
 );
 assert.match(
   devClient,
-  /private static let devSharedSession: URLSession = \{/,
-  "dev-tab calls should share one session too",
+  /data\(for: request\)/,
+  "dev-tab calls should reuse the core shared REST session",
+);
+assert.doesNotMatch(
+  devClient,
+  /URLSessionConfiguration|URLSession\(/,
+  "dev-tab calls should not allocate a separate session",
 );
 assert.match(
   terminal,

@@ -23,7 +23,7 @@ const execFileAsync = promisify(execFile);
 type NpmPrefixExecFile = (
   command: string,
   args: readonly string[],
-  options: { env: NodeJS.ProcessEnv; timeout: number },
+  options: { env: NodeJS.ProcessEnv; timeout: number; windowsHide: true },
 ) => Promise<{ stdout: string; stderr: string }>;
 
 const defaultNpmPrefixExecFile: NpmPrefixExecFile = async (command, args, options) => {
@@ -126,7 +126,7 @@ export async function npmGlobalPrefixFromNpmPath(
     const { stdout } = await (dependencies.execFile ?? defaultNpmPrefixExecFile)(
       launch.command,
       [...launch.fixedArgs, "prefix", "-g"],
-      { env, timeout: 5000 },
+      { windowsHide: true, env, timeout: 5000 },
     );
     const prefix = stdout.trim();
     return prefix || null;
@@ -138,7 +138,7 @@ export async function npmGlobalPrefixFromNpmPath(
 async function defaultNpmGlobalPrefix(env: NodeJS.ProcessEnv): Promise<string | null> {
   const finder = process.platform === "win32" ? "where" : "which";
   try {
-    const { stdout: npmOut } = await execFileAsync(finder, ["npm"], { env, timeout: 1500 });
+    const { stdout: npmOut } = await execFileAsync(finder, ["npm"], { windowsHide: true, env, timeout: 1500 });
     const npm =
       process.platform === "win32"
         ? pickWindowsLauncher(npmOut.split(/\r?\n/))

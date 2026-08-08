@@ -13,6 +13,7 @@ import type { SessionOrigin } from "./types";
 // user's saved conversations — useful for meta tasks like thread reflection.
 
 import { parseSseFrame } from "@/lib/canvas-generate";
+import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
 
 export async function streamFamiliarText(opts: {
   familiarId: string;
@@ -40,7 +41,15 @@ export async function streamFamiliarText(opts: {
   origin?: SessionOrigin;
   signal?: AbortSignal;
   /** Called with the accumulated assistant text after each streamed chunk,
-   *  so callers can render the reply incrementally as it arrives. */
+   *  so callers can render the reply incrementally as it arrives. The
+   *  human-attention directive (chat sidebar attention task) applies to every
+   *  chat send, so this is the one place every direct caller — quick chat,
+   *  prompt enhance, reply recommendation, the review-draft generator, and
+   *  true-voice (familiar-brain) — gets `<coven:attention …>` stripped for
+   *  free, complete or partial-tail-hidden mid-stream, without each consumer
+   *  re-implementing the marker protocol. This is display stripping only:
+   *  the server route (`/api/chat/send`) owns parsing and persisting the
+   *  actual `attentionRequest` metadata; nothing here fabricates it. */
   onText?: (text: string) => void;
   /** Called the moment the bridge announces the backing session id — before
    *  the stream completes — so callers can keep the thread resumable even if
@@ -88,7 +97,7 @@ export async function streamFamiliarText(opts: {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let text = "";
+  const attentionText = createAttentionSafeTextAccumulator();
   let error: string | null = null;
   let sessionId: string | undefined;
   let responseMetadata: ChatResponseMetadata | undefined;
@@ -102,11 +111,11 @@ export async function streamFamiliarText(opts: {
     const ev = parseSseFrame(frame);
     if (!ev) return;
     if (ev.kind === "assistant_chunk") {
-      text += ev.text ?? "";
-      opts.onText?.(text);
+      const visible = attentionText.append(ev.text ?? "");
+      opts.onText?.(visible);
     } else if (ev.kind === "assistant_replace") {
-      text = ev.text ?? "";
-      opts.onText?.(text);
+      const visible = attentionText.replace(ev.text ?? "");
+      opts.onText?.(visible);
     } else if (ev.kind === "session") noteSession(ev.sessionId);
     else if (ev.kind === "done") {
       noteSession(ev.sessionId);
@@ -118,19 +127,30 @@ export async function streamFamiliarText(opts: {
     } else if (ev.kind === "error") error = ev.message ?? "generation error";
   };
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let idx;
-    while ((idx = buffer.indexOf("\n\n")) >= 0) {
-      handleFrame(buffer.slice(0, idx));
-      buffer = buffer.slice(idx + 2);
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf("\n\n")) >= 0) {
+        handleFrame(buffer.slice(0, idx));
+        buffer = buffer.slice(idx + 2);
+      }
     }
+    // Flush the decoder (a multi-byte character can straddle the final chunk)
+    // and process a last frame that arrived without its trailing blank line.
+    buffer += decoder.decode();
+    if (buffer.trim()) handleFrame(buffer);
+  } catch (err) {
+    error = opts.signal?.aborted
+      ? "cancelled"
+      : error ?? (err as Error)?.message ?? "the connection dropped mid-generation";
   }
-  // Flush the decoder (a multi-byte character can straddle the final chunk)
-  // and process a last frame that arrived without its trailing blank line.
-  buffer += decoder.decode();
-  if (buffer.trim()) handleFrame(buffer);
-  return { text, error, sessionId, responseMetadata };
+  return {
+    text: error !== null ? attentionText.terminal() : attentionText.settled(),
+    error,
+    sessionId,
+    responseMetadata,
+  };
 }

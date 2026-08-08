@@ -61,6 +61,7 @@ export async function POST(req: Request) {
 
   return new Promise<Response>((resolve) => {
     const child = spawn("ssh", args, {
+      windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: covenSpawnEnv(),
     });

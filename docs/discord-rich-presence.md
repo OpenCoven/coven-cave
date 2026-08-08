@@ -65,9 +65,18 @@ means that build shipped without it.
 2. Run `cargo check --manifest-path src-tauri/Cargo.toml`.
 3. Launch CovenCave with `pnpm dev:app` and inspect its Discord profile card.
    It should show the Cave icon, generic status, and elapsed time.
-4. From a second Discord account, confirm the two public buttons point to
-   CovenCave and its GitHub repository. Discord does not show the publisher
-   its own Rich Presence buttons.
+4. From a second Discord account, confirm the two public buttons — **Join the
+   Coven** (`https://discord.gg/opencoven`) and **Enter the Cave**
+   (`https://opencoven.ai`) — and that clicking the Cave art asset opens the
+   GitHub repository. Discord does not show the publisher its own Rich Presence
+   buttons.
+
+Discord caps an activity at **two** buttons and rejects a third, which is why
+the repository link lives on the art asset's `large_url` rather than in a third
+button. A button can only open a URL, so presence cannot offer a screen-share
+action; Discord's equivalent is the Spectate flow, which needs `Secrets` and a
+`Party` on the payload plus an `ACTIVITY_SPECTATE` handler, none of which this
+worker implements.
 
 The worker retries while Discord is closed and reconnects after Discord
 restarts. The native app icon and Discord art asset are managed separately.

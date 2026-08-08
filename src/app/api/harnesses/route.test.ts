@@ -87,7 +87,9 @@ assert.match(
 );
 assert.match(
   source,
-  /function probeVersion\([\s\S]*?env: NodeJS\.ProcessEnv = covenSpawnEnv\(\)[\s\S]*?spawn\(binary,[\s\S]*?\{ env,/,
+  // The options object also carries `windowsHide: true` (see
+  // src/lib/child-spawn-window.test.ts); match `env` wherever it sits in it.
+  /function probeVersion\([\s\S]*?env: NodeJS\.ProcessEnv = covenSpawnEnv\(\)[\s\S]*?spawn\(binary,[\s\S]*?\{[^{}]*\benv,/,
   "version probing accepts the exact launch environment instead of always rebuilding one",
 );
 assert.doesNotMatch(

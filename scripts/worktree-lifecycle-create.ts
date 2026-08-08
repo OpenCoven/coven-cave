@@ -6,9 +6,8 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
   assessManagedWorktreeCreation,
-  BRANCH_WARNING_BUDGET,
+  calculateLifecycleBudgets,
   isDisposableIgnoredPath,
-  WORKTREE_WARNING_BUDGET,
   type LifecycleDisposition,
   type ManagedCreationException,
   type WorktreeLifecycleBudgets,
@@ -971,22 +970,20 @@ function assessLocalRefusalPreflight(
       requestedPath,
       nowMs,
       existingPaths: structuredPaths,
-      budgets: {
-        worktrees: {
-          count: registrations.length,
-          warning: WORKTREE_WARNING_BUDGET,
-          exceeded: registrations.length > WORKTREE_WARNING_BUDGET,
-        },
-        branches: {
-          count: branchCount,
-          warning: BRANCH_WARNING_BUDGET,
-          exceeded: branchCount > BRANCH_WARNING_BUDGET,
-        },
-        exceptions: {
-          active: 0,
-          expired: 0,
-        },
-      },
+      // Routed through the shared calculation rather than repeating the
+      // arithmetic here. This preflight is the surface that actually issues the
+      // refusal, so a second copy of the rule is a second place for it to drift
+      // — which is how the detached-unit exclusion (cave-oenag) could have
+      // landed in the report while the refusal kept the old count.
+      budgets: calculateLifecycleBudgets({
+        worktreeCount: registrations.length,
+        detachedWorktreeCount: registrations.filter(
+          (registration) => registration.branch === null,
+        ).length,
+        branchCount,
+        activeExceptions: 0,
+        expiredExceptions: 0,
+      }),
       exception: exceptionForAssessment(exception),
     }),
     registeredPaths,

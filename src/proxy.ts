@@ -23,8 +23,10 @@ import {
   accessGatePage,
   TAILNET_PEER_HEADER,
   verifiedTailnetNode,
+  requiresPasskeyPresence,
 } from "./proxy-helpers";
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
+import { PRESENCE_COOKIE, verifyPresenceToken } from "./lib/passkey-presence.ts";
 
 // Re-exported here so existing call sites (and tests) that imported these
 // from "./proxy" keep working.
@@ -249,6 +251,35 @@ export async function proxy(req: NextRequest) {
   const remoteIngress = mobileAccessAuthenticated || tailnetPeerVerified;
   if (!isAllowedApiHost(requestHost, remoteIngress)) {
     return jsonError(403, "forbidden host");
+  }
+
+  // Passkey presence (cave-brksh). Tailnet identity proves WHICH DEVICE; a
+  // WebAuthn assertion proves A HUMAN JUST AUTHENTICATED ON IT. When the
+  // requirement is armed, remote ingress needs both.
+  //
+  // A mobile-invite-authenticated caller can never satisfy this, and that is
+  // the intended reading rather than an oversight: the presence token is bound
+  // to a device identity, and a shared bearer secret does not carry one. Arming
+  // the requirement means remote access is by tailnet device identity plus
+  // biometrics, full stop.
+  if (
+    requiresPasskeyPresence(
+      req.nextUrl.pathname,
+      remoteIngress,
+      process.env.COVEN_CAVE_PASSKEY_REQUIRED === "1",
+    )
+  ) {
+    const presenceSecret = process.env.COVEN_CAVE_PASSKEY_SESSION_SECRET;
+    const presenceCookie = req.cookies.get(PRESENCE_COOKIE)?.value;
+    const presence =
+      tailnetNodeId && presenceSecret && presenceCookie
+        ? await verifyPresenceToken(presenceCookie, presenceSecret)
+        : null;
+    // Re-check the binding even though it is inside the MAC: the MAC proves we
+    // issued the token, not that we issued it to THIS device.
+    if (!presence?.ok || presence.tailnetNodeId !== tailnetNodeId) {
+      return jsonError(401, "passkey presence required");
+    }
   }
 
   // Running a Codex automation launches the local `codex` binary with the

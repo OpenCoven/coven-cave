@@ -78,6 +78,8 @@ export function FileRow({
   reverting,
   onToggle,
   onRevert,
+  viewed,
+  onToggleViewed,
 }: {
   file: ChangedFile;
   expanded: boolean;
@@ -85,7 +87,16 @@ export function FileRow({
   reverting: boolean;
   onToggle: () => void;
   onRevert: () => void;
+  /**
+   * Review bookkeeping for the Coding Room's rail (cave-0rcku). Undefined
+   * everywhere else, which keeps the column — and the row's shape — exactly as
+   * it was for the chat panel.
+   */
+  viewed?: boolean;
+  onToggleViewed?: () => void;
 }) {
+  const reviewable = typeof viewed === "boolean" && Boolean(onToggleViewed);
+  const columns = reviewable ? 4 : 3;
   // Two-step revert: first click arms an inline Cancel/Revert confirm that
   // replaces the row action; only the explicit confirm commits. "New" files
   // (untracked, or staged-but-never-committed) get delete copy because
@@ -129,6 +140,24 @@ export function FileRow({
           </button>
         </td>
         <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[length:var(--text-2xs)] tabular-nums">{diffCounts}</td>
+        {reviewable ? (
+          <td className="px-1 py-1.5 text-right">
+            {/* "Viewed" is per-VERSION: the rail clears the tick when the file
+                changes again, so this can never certify unreviewed code. */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={viewed}
+              onClick={onToggleViewed}
+              title={viewed ? `Mark ${file.path} unviewed` : `Mark ${file.path} viewed`}
+              aria-label={viewed ? `Mark ${file.path} unviewed` : `Mark ${file.path} viewed`}
+              className="focus-ring session-changes__viewed"
+              data-on={viewed ? "true" : undefined}
+            >
+              <Icon name={viewed ? "ph:check" : "ph:circle-dashed"} width={10} aria-hidden />
+            </button>
+          </td>
+        ) : null}
         <td className="px-2 py-1.5 text-right">
           {confirmRevert ? null : (
             <IconButton
@@ -145,7 +174,7 @@ export function FileRow({
       </tr>
       {confirmRevert ? (
         <tr className="bg-[color-mix(in_oklch,var(--color-danger)_7%,transparent)]">
-          <td colSpan={3} className="px-2 py-1.5">
+          <td colSpan={columns} className="px-2 py-1.5">
             <span
               className="flex min-w-0 items-center justify-end gap-1.5"
               role="group"
@@ -180,7 +209,7 @@ export function FileRow({
       ) : null}
       {expanded ? (
         <tr>
-          <td colSpan={3} className="border-t border-[var(--border-hairline)] p-2">
+          <td colSpan={columns} className="border-t border-[var(--border-hairline)] p-2">
           {!diffState || diffState.loading ? (
             <div className="py-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">Loading diff…</div>
           ) : diffState.error ? (

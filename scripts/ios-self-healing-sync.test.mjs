@@ -80,8 +80,13 @@ assert.match(
 );
 assert.match(
   devClient,
-  /config\.waitsForConnectivity = true/,
-  "developer API requests should wait briefly for connectivity too",
+  /data\(for: request\)/,
+  "developer API requests should inherit the core client's connectivity wait and retry policy",
+);
+assert.doesNotMatch(
+  devClient,
+  /URLSessionConfiguration|URLSession\(/,
+  "developer API requests should not bypass the resilient client with a private session",
 );
 assert.match(client, /func data\(for req: URLRequest\) async throws -> \(Data, URLResponse\)/, "CaveClient should centralize resilient request data loading");
 assert.match(

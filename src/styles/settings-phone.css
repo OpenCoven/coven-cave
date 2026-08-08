@@ -830,3 +830,57 @@
     min-height: var(--touch-target);
   }
 }
+
+/* Passkey enrollment (cave-brksh). Tailnet identity proves which device; this
+   card is where the operator adds the proof of which human. */
+.settings-phone-passkeys h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+}
+
+.settings-phone-passkeys p {
+  margin: var(--space-1) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.settings-phone-passkeys__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-phone-passkeys__list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.settings-phone-passkeys__list li small {
+  margin-inline-end: auto;
+  color: var(--text-muted);
+}
+
+.settings-phone-passkeys__empty {
+  color: var(--text-muted);
+}
+
+.settings-phone-passkeys__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.settings-phone-passkeys__note {
+  margin-top: var(--space-2);
+}

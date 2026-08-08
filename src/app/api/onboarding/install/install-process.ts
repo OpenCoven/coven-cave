@@ -17,6 +17,7 @@ export function runInstallProcess(
 ): Promise<InstallProcessResult> {
   return new Promise((resolve) => {
     const child = spawn(command, args, {
+      windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: covenSpawnEnv(),
       shell: options.shell,

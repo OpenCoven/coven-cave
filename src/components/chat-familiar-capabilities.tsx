@@ -172,12 +172,7 @@ function FamiliarIdentityHero({
     <header className="familiar-tab__hero">
       {resolved ? (
         <span className="familiar-tab__avatar">
-          {/* This is the familiar's own profile, so its avatar opens its CARD.
-              `expandable` stays as the fallback for a familiar with no portrait
-              — see the note on FamiliarAvatar. Changing a portrait lives where
-              it always has, on the Settings sub-tab's Look dropzone; the click
-              here has never edited anything. */}
-          <FamiliarAvatar familiar={resolved} size="xl" expandable asCard />
+          <FamiliarAvatar familiar={resolved} size="xl" expandable />
         </span>
       ) : null}
       <div className="min-w-0 flex-1">
