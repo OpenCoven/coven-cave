@@ -363,6 +363,7 @@
   background: transparent;
   transition: background 0.15s ease;
 }
+.research-desk-handle--rail { margin-left: -4px; }
 .research-desk-handle:hover,
 .research-desk-handle:focus-visible {
   background: color-mix(in oklch, var(--research-accent) 35%, transparent);
@@ -416,12 +417,17 @@
 /* ── Detail: center column + 312px evidence rail. ── */
 .research-desk-tab .research-mission-detail { padding: 0; }
 .research-desk-tab .research-mission-detail__body {
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) 0 var(--research-rail-width, 320px);
   gap: 0;
   flex: 1;
 }
 .research-desk-tab .research-mission-detail__body[data-evidence-open="false"] {
   grid-template-columns: minmax(0, 1fr);
+}
+/* No separator when the rail cannot be resized (focus mode, narrow desks). */
+.research-desk-tab .research-mission-detail__body[data-evidence-open="false"] > .research-desk-handle {
+  display: none;
 }
 /* Collapsed but present: the rail keeps a 36px spine so reopening it is one
    click away and the run never loses its right edge. */
@@ -919,6 +925,7 @@
   .research-desk-tab .research-mission-detail__body[data-evidence-spine="true"] {
     grid-template-columns: 1fr;
   }
+  .research-desk-handle--rail { display: none; }
   .research-desk-spine--rail {
     flex-direction: row;
     justify-content: center;

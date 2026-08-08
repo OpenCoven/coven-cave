@@ -55,6 +55,10 @@ type Props = {
   onCollapseEvidence?(): void;
   /** Reopen from the spine; rendered in the rail's grid slot when collapsed. */
   onOpenEvidence?(): void;
+  /** Current evidence-rail width in px (owned by the Desk tab's pane state). */
+  railWidth?: number;
+  /** Drag/keyboard separator bindings; absent means the rail is not resizable. */
+  railSeparatorProps?: Record<string, unknown>;
   onOpenSession(sessionId: string): void;
   onOpenUrl(url: string): void;
   /** Quick link to the Resources tab (Saved resources). */
@@ -104,6 +108,8 @@ export function ResearchMissionDetail({
   showEvidence,
   onCollapseEvidence,
   onOpenEvidence,
+  railWidth,
+  railSeparatorProps,
   onOpenSession,
   onOpenUrl,
   onShowResources,
@@ -396,6 +402,9 @@ export function ResearchMissionDetail({
         className="research-mission-detail__body"
         data-evidence-open={showEvidence}
         data-evidence-spine={!showEvidence && Boolean(onOpenEvidence)}
+        style={railWidth === undefined
+          ? undefined
+          : ({ "--research-rail-width": `${railWidth}px` } as CSSProperties)}
       >
         <div className="research-desk-center">
           <header className="research-mission-detail__header">
@@ -796,6 +805,14 @@ export function ResearchMissionDetail({
               spans the rail, plus pinned quick links. The pane is the full
               evidence ledger — the rail no longer stacks a partial state panel
               above a collapsed copy of the same data. ── */}
+        {showEvidence && railSeparatorProps ? (
+          <div
+            {...railSeparatorProps}
+            className="research-desk-handle research-desk-handle--rail"
+            aria-label="Resize the evidence inspector"
+            title="Drag, or use arrow keys, to resize the evidence inspector"
+          />
+        ) : null}
         {showEvidence ? (
           <aside className="research-desk-rail" aria-label="Run evidence and links">
             {onCollapseEvidence ? (

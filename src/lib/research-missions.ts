@@ -767,7 +767,12 @@ export function researchPhaseMeta(
       return status === "succeeded" ? "bounds set" : status === "running" ? "framing…" : "—";
     }
     if (phase === "gather") {
-      return status === "pending" ? "—" : `${mission.sources.length}/${mission.bounds.sourceTarget} src`;
+      if (status === "pending") return "—";
+      // A zero target is a real (if legacy) bound. "3/0 src" reads as a broken
+      // divide, so report the count alone when there is nothing to divide by.
+      return mission.bounds.sourceTarget > 0
+        ? `${mission.sources.length}/${mission.bounds.sourceTarget} src`
+        : `${mission.sources.length} src`;
     }
     if (phase === "challenge") {
       if (status === "failed") return "stopped here";

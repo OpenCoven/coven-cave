@@ -241,7 +241,14 @@ test("both desk rails resize, persist and collapse to a labelled spine", () => {
   assert.match(pane, /tabIndex: 0/);
   assert.match(pane, /ArrowLeft/);
   assert.match(deskTab, /useResearchPane\(QUEUE_PANE\)/);
+  assert.match(deskTab, /useResearchPane\(RAIL_PANE\)/);
   assert.match(deskTab, /queue\.separatorProps/);
+  // The evidence rail grows leftward, so its drag direction is inverted —
+  // sharing the queue's +1 would move it the wrong way under the cursor.
+  assert.match(deskTab, /RAIL_PANE = \{[\s\S]*?direction: -1/);
+  assert.match(deskTab, /railSeparatorProps=\{focusMode \? undefined : rail\.separatorProps\}/);
+  assert.match(detail, /research-desk-handle--rail/);
+  assert.match(css, /grid-template-columns: minmax\(0, 1fr\) 0 var\(--research-rail-width, 320px\)/);
   // A collapsed rail still says what it holds, in words and in a count.
   assert.match(deskTab, /research-desk-spine__badge/);
   assert.match(deskTab, /aria-label=\{`Open the run queue/);

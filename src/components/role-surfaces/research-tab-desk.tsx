@@ -70,6 +70,15 @@ const QUEUE_PANE = {
   direction: 1,
 } as const;
 
+/** The evidence rail grows leftward, so its drag direction is inverted. */
+const RAIL_PANE = {
+  storageKey: "cave:research:desk-rail-width",
+  min: 290,
+  max: 520,
+  initial: 320,
+  direction: -1,
+} as const;
+
 function readFocusMode(familiarId: string): boolean {
   if (typeof window === "undefined") return false;
   try {
@@ -91,6 +100,7 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
   // The evidence rail collapses independently of focus mode: focus hides both
   // rails for reading, this keeps the queue while widening the run.
   const [evidenceOpen, setEvidenceOpen] = useState(true);
+  const rail = useResearchPane(RAIL_PANE);
   const queryInputRef = useRef<HTMLInputElement>(null);
   const { announce } = useAnnouncer();
 
@@ -345,6 +355,8 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
             showEvidence={!focusMode && evidenceOpen}
             onCollapseEvidence={focusMode ? undefined : () => setEvidenceOpen(false)}
             onOpenEvidence={focusMode ? undefined : () => setEvidenceOpen(true)}
+            railWidth={rail.width}
+            railSeparatorProps={focusMode ? undefined : rail.separatorProps}
             onOpenSession={(sessionId) => {
               context.openSession(sessionId, context.activeFamiliar.id);
             }}

@@ -964,3 +964,18 @@ test("a failed challenge says where the run stopped", () => {
   }];
   assert.equal(researchPhaseMeta(mission, PHASE_IDS)[2], "stopped here");
 });
+
+test("a zero source target reports the count alone, never \"N/0 src\"", () => {
+  const mission = validMission();
+  mission.status = "running";
+  mission.bounds = { ...mission.bounds, sourceTarget: 0 };
+  mission.sources = [
+    { id: "s1", title: "One", sourceType: "web", status: "used" },
+  ] as ResearchMission["sources"];
+  mission.iterations = [{
+    number: 1,
+    status: "running",
+    steps: [{ id: "gather", type: "gather", status: "running" }],
+  }];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[1], "1 src");
+});
