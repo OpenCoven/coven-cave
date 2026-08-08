@@ -48,6 +48,7 @@ export function GrimoireLauncher({
   memory,
   journal,
   graph,
+  scopeLabel,
   journalTitle,
   onOpen,
   onNewStitch,
@@ -59,6 +60,10 @@ export function GrimoireLauncher({
   memory: LauncherMemoryInput[];
   journal: LauncherJournalInput[];
   graph: DocGraph | null;
+  /** Who the shell's familiar multiselect has narrowed memory to, if anyone.
+   *  `graph` arrives ALREADY scoped, so every stat derived from it is
+   *  scope-relative; this is what lets the copy say so (cave-c4pzv). */
+  scopeLabel?: string | null;
   /** Prefs-formatted journal day label (grimoire-view's journalDayLabel). */
   journalTitle: (date: string) => string;
   onOpen: (ref: LauncherDocRef) => void;
@@ -234,9 +239,19 @@ export function GrimoireLauncher({
               </button>
             ))}
 
+            {/* The count comes off the SCOPED graph, same as the nodes/edges
+                stats beside it, and clicking through lands in the scoped graph
+                where exactly these nodes are visible. So under a familiar scope
+                the number is scope-relative and the old flat "with no links"
+                claim was false: a doc linked coven-wide, but only to memory
+                owned by a non-selected familiar, drops to degree 0 here
+                (cave-c4pzv). Keep the number consistent with its neighbours and
+                its own click-through; qualify the sentence instead. */}
             <button type="button" className="gl-card gl-detached" onClick={onShowGraph}>
               <span className="gl-stat">{graphCounts.detached}</span>
-              <span className="gl-card-sub">detached docs with no links</span>
+              <span className="gl-card-sub">
+                {scopeLabel ? "detached docs with no links in this scope" : "detached docs with no links"}
+              </span>
               <span className="gl-arrow">weave them in →</span>
             </button>
 

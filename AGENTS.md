@@ -70,10 +70,16 @@
     never retire it. Retire it by hand through the archive-tag route in
     [`CLAUDE.md`](CLAUDE.md), and never hand-write the missing metadata onto the
     Bead — that record is the evidence the retirement gate checks.
-- After a PR merges, run `pnpm beads:worktrees`, record the merged unit's
-  disposition, and use `pnpm beads:worktrees:apply` only when it reports a
-  complete repository maintenance transaction. Local cleanup is bounded and
-  exact-OID guarded; remote deletion remains proposal-only.
+- After a PR merges, run `pnpm beads:worktrees` and record the merged unit's
+  disposition. **`pnpm beads:worktrees:apply` cannot retire anything today** — it
+  exits 2 with `missing maintenance planes: coven, beads, github`, which
+  `scripts/maintenance-gate.mjs` hard-codes off pending `cave-wqa0b.2/.3/.4`
+  (all BLOCKED). That is not a local fault and a retry will not clear it, so
+  hand-retirement through the archive-tag route in [`CLAUDE.md`](CLAUDE.md) is
+  the expected path until those land (`cave-3aqvr`). Prove retention first: a
+  squash-merge leaves the branch commits on no remote ref, so a merged PR is not
+  retention and a pushed archive tag is. Local cleanup is bounded and exact-OID
+  guarded; remote deletion remains proposal-only.
 - Run `pnpm beads:worktrees` before closing PR-backed work. Record each local
   worktree as removed and verified or intentionally preserved with an owner and
   reason; `retire-after-gate` is a classification, not automatic deletion
