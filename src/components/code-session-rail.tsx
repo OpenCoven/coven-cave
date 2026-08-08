@@ -122,7 +122,7 @@ export function CodeSessionRail({
                       onSelect(row.id);
                     }}
                     aria-current={selected ? "true" : undefined}
-                    aria-label={open ? undefined : `Open ${title}, ${activity}`}
+                    aria-label={open ? undefined : `Open ${title} in ${group.label}, ${activity}`}
                     title={open ? undefined : title}
                     className={
                       open
