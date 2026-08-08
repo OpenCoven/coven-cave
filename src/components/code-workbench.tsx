@@ -190,7 +190,13 @@ export function CodeWorkbench({
     <CodeContextDock
       row={row}
       tab={dockTab}
-      size={dockSize}
+      // A narrow dock is a full-width STEP, so it renders at `normal` whatever
+      // the split was left at. Passing `collapsed` through would render no body
+      // and — since the narrow dock offers Back instead of collapse/expand — no
+      // control to undo it: collapse the dock on a wide Room, narrow the Room,
+      // step to Context, and you land on a blank surface. The state itself is
+      // left alone so returning to the split restores the width you chose.
+      size={fitsSplit ? dockSize : "normal"}
       running={running}
       openTarget={openTarget}
       visible={visible}

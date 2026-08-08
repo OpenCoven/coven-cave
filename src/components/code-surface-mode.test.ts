@@ -687,6 +687,17 @@ assert.match(
   "a routed open drills into Context so the target is actually visible",
 );
 
+// A dock collapsed while the Room was wide must not survive into the narrow
+// step. The narrow dock renders no body when collapsed AND offers Back instead
+// of collapse/expand, so the Context step would be a blank surface with no
+// control to recover it: collapse on desktop, narrow the Room, step to Context.
+// Found in review on #4418 — every check was green.
+assert.match(
+  workbench,
+  /size=\{fitsSplit \? dockSize : "normal"\}/,
+  "the narrow dock renders at normal size so the Context step can never be blank",
+);
+
 // A mounted-but-hidden dock cannot keep the browser active: BrowserPane draws a
 // NATIVE webview positioned over its container's box, which `display:none` does
 // not clip — it would paint straight over the terminal.
