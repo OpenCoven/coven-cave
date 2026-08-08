@@ -626,6 +626,11 @@ pub fn run() {
                 }
             }
 
+            // Last statement in the closure on purpose: every `?` above has
+            // already succeeded, so the marker only ever vouches for a startup
+            // that actually finished. See announce_startup_completed.
+            announce_startup_completed();
+
             Ok(())
         })
         .on_window_event(|window, event| {

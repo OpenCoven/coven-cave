@@ -3,6 +3,52 @@ use super::*;
 #[cfg(target_os = "windows")]
 use std::process::Command;
 
+// The dev launcher cannot read a signal death out of `tauri dev`, which
+// returns 0 for one. It reads this marker instead, so an unwritten or empty
+// marker has to mean "startup never finished" and nothing else. cave-g8n5v.
+#[test]
+fn dev_startup_marker_is_skipped_when_no_launcher_is_watching() {
+    assert_eq!(dev_startup_marker_path(None), None, "unset means nobody asked");
+    assert_eq!(
+        dev_startup_marker_path(Some(String::new())),
+        None,
+        "an empty variable is not a path to write"
+    );
+    assert_eq!(
+        dev_startup_marker_path(Some("   ".to_string())),
+        None,
+        "a blank variable is not a path to write"
+    );
+    assert_eq!(
+        dev_startup_marker_path(Some("/tmp/cave-marker".to_string())),
+        Some(std::path::PathBuf::from("/tmp/cave-marker")),
+        "a named path is the launcher watching"
+    );
+}
+
+#[test]
+fn dev_startup_marker_is_non_empty_so_the_launcher_can_test_it() {
+    let dir = std::env::temp_dir().join(format!(
+        "cave-startup-marker-test-{}-{}",
+        std::process::id(),
+        sidecar_auth_token()
+    ));
+    std::fs::create_dir_all(&dir).expect("marker test dir");
+    let path = dir.join("startup-marker");
+
+    write_dev_startup_marker(&path).expect("marker written");
+
+    let written = std::fs::read_to_string(&path).expect("marker readable");
+    // `[ -s "$DEV_STARTUP_MARKER" ]` in scripts/dev-app.sh is the consumer:
+    // an empty file is indistinguishable from the crash this detects.
+    assert!(
+        !written.is_empty(),
+        "an empty marker reads exactly like a GUI that never finished startup"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn sidecar_auth_token_is_256_bit_hex() {
     let token = sidecar_auth_token();

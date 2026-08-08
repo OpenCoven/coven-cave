@@ -120,6 +120,51 @@ pub(super) fn report_existing_gui_owner(pid: u32) -> ! {
     std::process::exit(1);
 }
 
+/// The variable `scripts/dev-app.sh` sets to the file this GUI touches once
+/// startup finishes. Nothing else sets it, so an app started any other way
+/// never writes a marker.
+#[cfg(desktop)]
+pub(super) const DEV_STARTUP_MARKER_ENV: &str = "COVEN_CAVE_DEV_STARTUP_MARKER";
+
+/// The launcher is only watching when the variable names an actual path.
+#[cfg(desktop)]
+pub(super) fn dev_startup_marker_path(value: Option<String>) -> Option<std::path::PathBuf> {
+    let value = value?;
+    if value.trim().is_empty() {
+        return None;
+    }
+    Some(std::path::PathBuf::from(value))
+}
+
+/// Non-empty on purpose: the launcher tests the file with `[ -s ]`, so an
+/// empty write would read exactly like a GUI that never got here.
+#[cfg(desktop)]
+pub(super) fn write_dev_startup_marker(path: &std::path::Path) -> std::io::Result<()> {
+    std::fs::write(path, "startup-completed\n")
+}
+
+/// Tell `scripts/dev-app.sh` that setup finished and a window exists.
+///
+/// `tauri dev` forwards a clean non-zero exit but returns 0 when the app dies
+/// from a signal, so its status alone cannot separate a crash during startup
+/// from an ordinary quit — the launcher reported success having opened no
+/// window (cave-g8n5v). This marker is the missing evidence. Call it at the
+/// very end of the setup closure, after everything that can fail with `?` has
+/// already succeeded; written any earlier it would vouch for a startup that
+/// had not finished.
+#[cfg(desktop)]
+pub(super) fn announce_startup_completed() {
+    let Some(path) = dev_startup_marker_path(std::env::var(DEV_STARTUP_MARKER_ENV).ok()) else {
+        return;
+    };
+    if let Err(error) = write_dev_startup_marker(&path) {
+        log::warn!(
+            "[cave] could not write the dev startup marker at {}: {error}",
+            path.display()
+        );
+    }
+}
+
 // This hook sits below Tao/Tauri's event dispatch. WRY waits for WebView2
 // environment/controller creation inside a nested Windows message pump. A
 // WM_CLOSE received there is otherwise buffered by Tao until the active event
