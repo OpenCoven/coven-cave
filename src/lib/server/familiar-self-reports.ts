@@ -196,23 +196,22 @@ async function readNewestPersistedMetricSnapshotsBounded(
   return snapshots;
 }
 
-async function backfillNewestMetricSnapshotsFromReports(
+async function readNewestReportDerivedMetricSnapshotsBounded(
   familiarId: string,
-  snapshots: Map<string, ThreadMetricSnapshot>,
   limit: number,
   window: TimestampWindow,
   dependencies: SelfReportReadDependencies = DEFAULT_READ_DEPENDENCIES,
 ): Promise<Map<string, ThreadMetricSnapshot>> {
-  if (snapshots.size >= limit) return snapshots;
   const dir = await reportsDir(familiarId);
   let files: string[];
   try {
     files = await dependencies.readdir(dir);
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return snapshots;
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return new Map();
     throw err;
   }
 
+  const snapshots = new Map<string, ThreadMetricSnapshot>();
   const orderedFiles = filterWindowFiles(files, window).sort().reverse();
   for (const file of orderedFiles) {
     const fullPath = path.join(dir, file);
@@ -236,6 +235,39 @@ async function backfillNewestMetricSnapshotsFromReports(
     }
   }
   return snapshots;
+}
+
+function sortSnapshotsOldestFirst(
+  left: ThreadMetricSnapshot,
+  right: ThreadMetricSnapshot,
+): number {
+  const timeDiff =
+    new Date(left.reportedAt).getTime() - new Date(right.reportedAt).getTime();
+  return timeDiff !== 0 ? timeDiff : left.id.localeCompare(right.id);
+}
+
+function sortSnapshotsNewestFirst(
+  left: ThreadMetricSnapshot,
+  right: ThreadMetricSnapshot,
+): number {
+  const timeDiff =
+    new Date(right.reportedAt).getTime() - new Date(left.reportedAt).getTime();
+  return timeDiff !== 0 ? timeDiff : left.id.localeCompare(right.id);
+}
+
+function mergeBoundedMetricSnapshotCandidates(
+  persisted: Map<string, ThreadMetricSnapshot>,
+  reportDerived: Map<string, ThreadMetricSnapshot>,
+  limit: number,
+): ThreadMetricSnapshot[] {
+  const byId = new Map(reportDerived);
+  for (const [id, snapshot] of persisted) {
+    byId.set(id, snapshot);
+  }
+  return [...byId.values()]
+    .sort(sortSnapshotsNewestFirst)
+    .slice(0, limit)
+    .sort(sortSnapshotsOldestFirst);
 }
 
 async function readAllReports(
@@ -371,9 +403,7 @@ function finalizeSnapshots(
   for (const report of reports) {
     if (!byId.has(report.id)) byId.set(report.id, snapshotFromReport(report));
   }
-  const snapshots = [...byId.values()].sort(
-    (a, b) => new Date(a.reportedAt).getTime() - new Date(b.reportedAt).getTime(),
-  );
+  const snapshots = [...byId.values()].sort(sortSnapshotsOldestFirst);
   if (limit === "all" || snapshots.length <= limit) {
     return { snapshots, total: snapshots.length };
   }
@@ -422,20 +452,24 @@ export async function listDashboardMetricSnapshots(
     ).toISOString(),
     until: new Date(now).toISOString(),
   });
-  const snapshots = await backfillNewestMetricSnapshotsFromReports(
-    familiarId,
-    await readNewestPersistedMetricSnapshotsBounded(
+  const [persistedCandidates, reportDerivedCandidates] = await Promise.all([
+    readNewestPersistedMetricSnapshotsBounded(
       familiarId,
       FAMILIAR_DASHBOARD_LIMITS.metricSnapshots,
       window,
       dependencies,
     ),
+    readNewestReportDerivedMetricSnapshotsBounded(
+      familiarId,
+      FAMILIAR_DASHBOARD_LIMITS.metricSnapshots,
+      window,
+      dependencies,
+    ),
+  ]);
+  const boundedSnapshots = mergeBoundedMetricSnapshotCandidates(
+    persistedCandidates,
+    reportDerivedCandidates,
     FAMILIAR_DASHBOARD_LIMITS.metricSnapshots,
-    window,
-    dependencies,
-  );
-  const boundedSnapshots = [...snapshots.values()].sort(
-    (a, b) => new Date(a.reportedAt).getTime() - new Date(b.reportedAt).getTime(),
   );
   return { snapshots: boundedSnapshots, total: boundedSnapshots.length };
 }

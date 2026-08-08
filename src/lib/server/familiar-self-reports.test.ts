@@ -266,18 +266,96 @@ describe("familiar self-report storage", () => {
     assert.equal(listed.snapshots.at(-1)?.id, "recent-0");
     assert.equal(listed.snapshots.some((snapshot) => snapshot.id === "outside-window"), false);
     assert.equal(
-      tracker.files.every((file) => file.includes("metric-snapshots/")),
+      tracker.files.some((file) => file.includes("metric-snapshots/")),
       true,
-      "persisted coverage should satisfy the dashboard read without backfilling from report history",
+      "the bounded union still includes persisted candidates",
     );
     assert.equal(
-      tracker.files.some((file) => file.endsWith("metric-snapshots/2026-07-08.jsonl")),
+      tracker.files.some((file) => file.includes("self-reports/") && !file.includes("metric-snapshots/")),
+      true,
+      "the bounded union must also sample report-derived candidates",
+    );
+    assert.equal(
+      tracker.files.some((file) => file.endsWith("2026-07-08.jsonl")),
       false,
-      "older in-window files stay unread once the newest 100 snapshots are satisfied",
+      "older in-window files stay unread once the bounded newest candidates are satisfied",
     );
   });
 
-  it("listDashboardMetricSnapshots backfills only enough newest report rows to reach the cap", async () => {
+  it("listDashboardMetricSnapshots unions bounded persisted and report-derived candidates before capping", async () => {
+    const now = Date.parse("2026-08-07T20:00:00.000Z");
+    const legacyDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports");
+    const snapshotDir = path.join(legacyDir, "metric-snapshots");
+    await mkdir(legacyDir, { recursive: true });
+    await mkdir(snapshotDir, { recursive: true });
+
+    let reportRaw = "";
+    for (let index = 0; index < 110; index++) {
+      reportRaw += `${JSON.stringify(report({
+        id: `report-${index}`,
+        sessionId: `report-session-${index}`,
+        reportedAt: new Date(now - (109 - index) * 60_000).toISOString(),
+        overallConfidence: 80,
+      }))}\n`;
+    }
+    await writeFile(path.join(legacyDir, "2026-08-07.jsonl"), reportRaw, "utf8");
+
+    let persistedRaw = "";
+    for (let index = 0; index < 100; index++) {
+      persistedRaw += `${JSON.stringify({
+        id: `report-${index}`,
+        sessionId: `report-session-${index}`,
+        reportedAt: new Date(now - (109 - index) * 60_000).toISOString(),
+        confidence: 61,
+        toolReliability: 75,
+        memoryRecall: 70,
+        fileLocatability: 65,
+        contextPressure: "adequate",
+      })}\n`;
+    }
+    await writeFile(path.join(snapshotDir, "2026-08-07.jsonl"), persistedRaw, "utf8");
+
+    const tracker = trackedReads();
+    const listed = await listDashboardMetricSnapshots("cody", now, tracker.deps);
+
+    assert.equal(listed.total, 100);
+    assert.equal(listed.snapshots.length, 100);
+    assert.deepEqual(
+      listed.snapshots.slice(0, 5).map((snapshot) => snapshot.id),
+      ["report-10", "report-11", "report-12", "report-13", "report-14"],
+      "the oldest 10 in-window rows should drop when newer report-only rows exist",
+    );
+    assert.deepEqual(
+      listed.snapshots.slice(-10).map((snapshot) => snapshot.id),
+      Array.from({ length: 10 }, (_, offset) => `report-${100 + offset}`),
+      "the newest report-only rows must survive older persisted saturation",
+    );
+    assert.equal(
+      listed.snapshots.some((snapshot) => snapshot.id === "report-9"),
+      false,
+      "the oldest 10 in-window rows should be trimmed from the bounded union",
+    );
+    assert.equal(
+      listed.snapshots.find((snapshot) => snapshot.id === "report-99")?.confidence,
+      61,
+      "persisted rows continue to win representation when both sources carry the same id",
+    );
+    assert.deepEqual(
+      [...tracker.files].sort(),
+      [
+        "workspaces/familiars/cody/self-reports/2026-08-07.jsonl",
+        "workspaces/familiars/cody/self-reports/metric-snapshots/2026-08-07.jsonl",
+      ],
+      "the bounded union should read only the newest snapshot and report files in-window",
+    );
+    assert.equal(
+      tracker.lines.length,
+      200,
+      "the reader stays bounded at 100 newest persisted candidates plus 100 newest report-derived candidates",
+    );
+  });
+
+  it("listDashboardMetricSnapshots keeps report-derived reads bounded even when persisted snapshots run short", async () => {
     const now = Date.parse("2026-08-07T20:00:00.000Z");
     const legacyDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports");
     const snapshotDir = path.join(legacyDir, "metric-snapshots");
@@ -329,19 +407,20 @@ describe("familiar self-report storage", () => {
     assert.equal(listed.snapshots.length, 100);
     assert.equal(listed.snapshots.at(-1)?.id, "backfill-0");
     assert.deepEqual(
-      tracker.files,
+      [...tracker.files].sort(),
       [
-        "workspaces/familiars/cody/self-reports/metric-snapshots/2026-08-07.jsonl",
+        "workspaces/familiars/cody/self-reports/2026-07-10.jsonl",
         "workspaces/familiars/cody/self-reports/2026-08-07.jsonl",
+        "workspaces/familiars/cody/self-reports/metric-snapshots/2026-08-07.jsonl",
       ],
-      "report backfill starts only after persisted snapshots run short, and older files stay unread",
+      "report-derived candidates stay newest-first and bounded, but may read the next in-window file to fill their own 100-row cap",
     );
     assert.equal(
       tracker.lines.length,
-      100,
-      "the reader stops after 40 persisted rows plus the 60 newest report backfills needed to satisfy the cap",
+      121,
+      "the reader stops after 40 persisted rows plus the 81 newest report-derived candidates available in-window",
     );
-    assert.equal(tracker.lines.includes("backfill-60"), false);
+    assert.equal(tracker.lines.includes("older-file"), true);
     assert.equal(listed.snapshots.some((snapshot) => snapshot.id === "older-file"), false);
   });
 });
