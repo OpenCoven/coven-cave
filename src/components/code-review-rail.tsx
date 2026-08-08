@@ -21,7 +21,6 @@ import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { SessionChangesInner } from "@/components/session-changes-panel";
 import {
-  CODE_RAIL_SPINE_WIDTH_PX,
   clampCodeRailWidth,
   codeRailDiffBar,
   countCodeRailViewed,
@@ -54,6 +53,8 @@ export type CodeReviewRailProps = {
   roomWidthPx: number;
   focusPath?: string | null;
   focusNonce?: number;
+  /** Open the full-width PR reader. Absent when the session has no PR. */
+  onOpenFullPr?: () => void;
 };
 
 export function CodeReviewRail({
@@ -69,6 +70,7 @@ export function CodeReviewRail({
   roomWidthPx,
   focusPath,
   focusNonce,
+  onOpenFullPr,
 }: CodeReviewRailProps) {
   const { announce } = useAnnouncer();
   const [files, setFiles] = useState<ChangedFile[]>([]);
@@ -149,7 +151,6 @@ export function CodeReviewRail({
       <button
         type="button"
         className="focus-ring code-rail__spine"
-        style={{ width: CODE_RAIL_SPINE_WIDTH_PX }}
         aria-label="Show the review rail"
         title="Show the review rail"
         onClick={() => {
@@ -214,6 +215,13 @@ export function CodeReviewRail({
           </button>
         </div>
         <span className="code-rail__spacer" />
+        {/* The rail is a sidebar; a conversation, a commit list and a unified
+            diff are not sidebar shapes. This is the frame's "Full PR view". */}
+        {tab === "pr" && onOpenFullPr ? (
+          <button type="button" className="focus-ring code-rail__full" onClick={onOpenFullPr}>
+            Full PR view
+          </button>
+        ) : null}
         <button
           type="button"
           className="focus-ring code-rail__action"

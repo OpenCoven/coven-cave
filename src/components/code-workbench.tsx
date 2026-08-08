@@ -39,6 +39,7 @@ import { CodeSessionPicker } from "@/components/code-session-picker";
 import { CodeShortcutsDialog } from "@/components/code-shortcuts-dialog";
 import { CodeTerminalDrawer } from "@/components/code-terminal-drawer";
 import { CodeWorkbenchTree } from "@/components/code-workbench-tree";
+import dynamic from "next/dynamic";
 import { CodeInspector } from "@/components/code-inspector";
 import { RailFilePreview } from "@/components/rail-file-preview";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -74,8 +75,12 @@ import { useWorktreeChanges } from "@/lib/use-worktree-changes";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
 import type { SessionRow } from "@/lib/types";
 
-/** Fixed width of the file tree, matching the frame. */
-const TREE_WIDTH_PX = 272;
+// The reader pulls a markdown renderer and a diff highlighter; the room opens
+// far more often than the full PR view, so it stays out of the first chunk.
+const LazyPrReader = dynamic(
+  () => import("@/components/github-pr-reader").then((m) => m.GitHubPrReader),
+  { ssr: false },
+);
 
 const STEP_LABEL: Record<CodeWorkbenchStep, string> = {
   files: "Files",
@@ -111,6 +116,8 @@ export function CodeWorkbench({
   const branch = codeSessionBranch(row);
   const diffstat = codeSessionDiffstat(row);
   const pr = row.pullRequest;
+  const prRepo = pr?.repo ?? null;
+  const prNumber = pr?.number ?? null;
   const running = codeSessionActivity(row) === "running";
 
   // ── Layout state ───────────────────────────────────────────────────────────
@@ -132,6 +139,9 @@ export function CodeWorkbench({
   const [treeChangedOnly, setTreeChangedOnly] = useState(false);
   const [termOpen, setTermOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  // The frame's `prFull`: the reader replaces the columns, and the room keeps
+  // your file, your rail width and your step for the trip back.
+  const [prFull, setPrFull] = useState(false);
   const [keysOpen, setKeysOpen] = useState(false);
   const inspectorAnchor = useRef<HTMLButtonElement | null>(null);
 
@@ -169,6 +179,7 @@ export function CodeWorkbench({
     setFocusLine(null);
     setRangeLabel(null);
     setTreeChangedOnly(false);
+    setPrFull(false);
   }, [row.id]);
 
   const openPath = useCallback(
@@ -333,7 +344,7 @@ export function CodeWorkbench({
           only control that can bring a hidden column back, so it renders
           BEFORE the body — reachable by tab from the header, not after a
           full-height file list. */}
-      {fitsSplit ? null : (
+      {fitsSplit || prFull ? null : (
         <div role="tablist" aria-label="Workbench step" className="code-room__steps">
           {CODE_WORKBENCH_STEPS.map((id) => (
             <button
@@ -352,8 +363,11 @@ export function CodeWorkbench({
       )}
 
       <div className="code-room__body" ref={roomRef} data-split={fitsSplit ? "true" : undefined}>
-        {fitsSplit || step === "files" ? (
-          <div className="code-room__tree" style={fitsSplit ? { width: TREE_WIDTH_PX } : undefined}>
+        {prFull && prRepo && prNumber != null ? (
+          <LazyPrReader repo={prRepo} number={prNumber} onBack={() => setPrFull(false)} />
+        ) : null}
+        {prFull ? null : fitsSplit || step === "files" ? (
+          <div className="code-room__tree">
             <CodeWorkbenchTree
               projectRoot={workRoot}
               familiarId={row.familiarId}
@@ -371,7 +385,7 @@ export function CodeWorkbench({
             />
           </div>
         ) : null}
-        {fitsSplit || step === "source" ? (
+        {prFull ? null : fitsSplit || step === "source" ? (
           <div className="code-room__viewer">
             <RailFilePreview
               path={selectedPath}
@@ -384,7 +398,7 @@ export function CodeWorkbench({
             />
           </div>
         ) : null}
-        {fitsSplit || step === "review" ? (
+        {prFull ? null : fitsSplit || step === "review" ? (
           <CodeReviewRail
             row={row}
             projectRoot={workRoot}
@@ -402,6 +416,7 @@ export function CodeWorkbench({
             roomWidthPx={roomWidth}
             focusPath={openTarget?.kind === "changes" ? openTarget.path : undefined}
             focusNonce={openTarget?.kind === "changes" ? openTarget.nonce : undefined}
+            onOpenFullPr={prRepo && prNumber != null ? () => setPrFull(true) : undefined}
           />
         ) : null}
       </div>

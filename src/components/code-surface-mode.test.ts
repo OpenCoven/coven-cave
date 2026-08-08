@@ -389,6 +389,61 @@ assert.match(
 );
 
 
+// ── Full PR reader (cave-l82dm) ─────────────────────────────────────────────
+//
+// `Coven Pr.dc.html`: the rail links to it as "Full PR view" because a
+// conversation, a commit list and a unified diff are not sidebar shapes.
+
+const prReader = await readFile(new URL("./github-pr-reader.tsx", import.meta.url), "utf8");
+
+assert.match(
+  workbench,
+  /const LazyPrReader = dynamic\(/,
+  "the reader is dynamic() — it pulls a markdown renderer and a diff highlighter, and the room opens far more often than the full PR view",
+);
+// A reader with no PR to read would render a permanent error. The affordance
+// and the surface are both gated on the session actually having one.
+assert.match(
+  workbench,
+  /\{prFull && prRepo && prNumber != null \? \(/,
+  "the reader only mounts when the session has a repo AND a number",
+);
+assert.match(
+  workbench,
+  /onOpenFullPr=\{prRepo && prNumber != null \? \(\) => setPrFull\(true\) : undefined\}/,
+  "the Full PR view affordance is absent when there is no PR, rather than opening an error",
+);
+assert.match(
+  reviewRail,
+  /\{tab === "pr" && onOpenFullPr \?/,
+  "the affordance belongs to the PR tab, not the Changes tab",
+);
+// THE HONESTY RULE. Gate state and the merge verdict come from the shared
+// model, which returns `unknown` when GitHub is still computing mergeability
+// or reported no checks — and refuses to merge on anything short of a pass.
+// A local boolean here would be free to say "clear" when nothing verified it.
+assert.match(
+  prReader,
+  /const gates = prLandingGates\(\{ counts, reviews, mergeable, mergeableState \}\);\s*\n\s*const verdict = prMergeVerdict\(gates\);/,
+  "gates and the merge verdict come from the shared model, never a local boolean",
+);
+// Skipped runs are named, never folded into the passing count — a rollup that
+// counts skips as passes is a green wall that means nothing.
+assert.match(
+  prReader,
+  /counts\.neutral \? ` · \$\{counts\.neutral\} skipped` : ""/,
+  "skipped checks are reported separately from passes",
+);
+// Every gate prints its state as a WORD beside the bar.
+assert.match(
+  prReader,
+  /className="pr-reader__gate-state"> — \{gate\.state\}/,
+  "gate state is carried by a word, not by the bar's colour alone",
+);
+// A capped diff and a capped commit list both say so.
+assert.match(prReader, /files\.truncated \? \(/, "a truncated diff is disclosed");
+assert.match(prReader, /commits\.truncated \? \(/, "a truncated commit list is disclosed");
+
 // ── PR tab (stage pipeline + checks + review + merge) ────────────────────────
 
 const prPanel = await readFile(new URL("./code-session-pr-panel.tsx", import.meta.url), "utf8");

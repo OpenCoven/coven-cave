@@ -685,6 +685,7 @@ export const SUITES = {
     "src/lib/code-outline.test.ts",
     "src/lib/code-side-rail.test.ts",
     "src/lib/code-shortcuts.test.ts",
+    "src/lib/github-pr-reader.test.ts",
     "src/lib/code-room-shortcuts.test.ts",
     "src/lib/code-terminal-tree.test.ts",
     "src/lib/code-reading.test.ts",

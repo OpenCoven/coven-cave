@@ -66,35 +66,53 @@ test.describe("code surface mobile drill-in", () => {
     const railRow = rail.getByText("Refactor auth flow");
     await expect(railRow).toBeVisible();
     await expect(page.getByRole("button", { name: "Back to sessions" })).toHaveCount(0);
-    await expect(page.getByRole("tablist", { name: "Session context" })).toHaveCount(0);
+    await expect(page.getByRole("tablist", { name: "Workbench step" })).toHaveCount(0);
 
-    // Drill in (step 2): the workbench replaces the list, landing on the
-    // TERMINAL — the shell is the Room's priority surface. The dock is mounted
-    // but hidden, so its tablist must not be visible.
+    // Drill in: the workbench replaces the list, landing on SOURCE — this is a
+    // reading surface, and the file you opened is what you came for
+    // (cave-0rcku; the previous room landed on the terminal because the
+    // terminal was a column).
     await railRow.click();
-    await expect(page.getByRole("heading", { name: "Refactor auth flow" })).toBeVisible({ timeout: 15_000 });
+    const header = page.getByTestId("code-workbench-header");
+    await expect(header.getByRole("button", { name: /Refactor auth flow/ })).toBeVisible({ timeout: 15_000 });
     await expect(railRow).toBeHidden();
-    const dockTabs = page.getByRole("tablist", { name: "Session context" });
-    await expect(dockTabs).toBeHidden();
 
-    // Step 3: Context is reached explicitly and the terminal steps aside.
-    const contextButton = page.getByRole("button", { name: "Show context" });
-    await expect(contextButton).toBeVisible();
-    await contextButton.click();
-    await expect(dockTabs).toBeVisible();
+    const steps = page.getByRole("tablist", { name: "Workbench step" });
+    await expect(steps).toBeVisible();
+    await expect(steps.getByRole("tab", { name: "Source" })).toHaveAttribute("aria-selected", "true");
+    // Only one column shows at this width — three would each be ~130px.
+    await expect(page.getByTestId("code-workbench-tree")).toHaveCount(0);
+    await expect(page.getByTestId("code-review-rail")).toHaveCount(0);
 
-    // ...and the dock's own Back returns to the terminal. Collapse/expand are
-    // meaningless at full width, so Back is the only action offered here.
-    await expect(page.getByRole("button", { name: "Collapse context" })).toHaveCount(0);
-    await page.getByRole("button", { name: "Back to terminal" }).click();
-    await expect(dockTabs).toBeHidden();
-    await expect(contextButton).toBeVisible();
+    // THE COMMITMENT: the shell is a drawer, not a step, so narrowing the room
+    // never takes it away. Its bar is present on every step.
+    const drawerBar = page.getByRole("button", { name: /the terminal drawer/ });
+    await expect(drawerBar).toBeVisible();
+
+    // Files and Review are reached explicitly, and each replaces the source.
+    await steps.getByRole("tab", { name: "Files" }).click();
+    await expect(page.getByTestId("code-workbench-tree")).toBeVisible();
+    await expect(drawerBar).toBeVisible();
+
+    await steps.getByRole("tab", { name: "Review" }).click();
+    const reviewRail = page.getByTestId("code-review-rail");
+    await expect(reviewRail).toBeVisible();
+    // A rail closed while the room was wide must not survive into this step:
+    // it would be a 28px sliver with no control to recover it. The narrow step
+    // always renders it open, so the hide control is what shows here.
+    await expect(page.getByRole("button", { name: "Show the review rail" })).toHaveCount(0);
+    await expect(drawerBar).toBeVisible();
+
+    // Hiding the rail on a narrow room steps back to the source rather than
+    // leaving the step empty.
+    await page.getByRole("button", { name: "Hide the review rail" }).click();
+    await expect(steps.getByRole("tab", { name: "Source" })).toHaveAttribute("aria-selected", "true");
 
     // Back: the list returns and stays (no auto-pick re-selects the session).
     await page.getByRole("button", { name: "Back to sessions" }).click();
     await expect(railRow).toBeVisible();
-    await expect(dockTabs).toHaveCount(0);
+    await expect(steps).toHaveCount(0);
     await page.waitForTimeout(600);
-    await expect(dockTabs).toHaveCount(0);
+    await expect(steps).toHaveCount(0);
   });
 });
