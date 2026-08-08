@@ -501,8 +501,8 @@ assert.match(
 );
 assert.match(
   rail,
-  /aria-label=\{open \? undefined : `Open \$\{title\}, \$\{activity\}`\}/,
-  "collapsed session buttons identify the session and expose activity without relying on color",
+  /aria-label=\{open \? undefined : `Open \$\{title\} in \$\{group\.label\}, \$\{activity\}`\}/,
+  "collapsed session buttons identify the session, project, and activity without relying on color",
 );
 assert.match(
   rail,
