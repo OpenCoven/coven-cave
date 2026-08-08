@@ -44,7 +44,7 @@ for (const exempt of [
   "/api/passkey/challenge",
   "/api/passkey/assert",
   "/api/passkey/register",
-  "/api/passkey/credentials",
+  "/api/passkey/enrolled",
 ]) {
   assert.equal(
     requiresPasskeyPresence(exempt, true, true),

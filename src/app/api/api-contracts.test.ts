@@ -184,7 +184,7 @@ const contracts: RouteContract[] = [
   { route: "/passkey/challenge", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/passkey/register", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/passkey/assert", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/passkey/credentials", methods: ["GET", "DELETE"], kind: "json" },
+  { route: "/passkey/enrolled", methods: ["GET", "DELETE"], kind: "json" },
   { route: "/preferences/backdrop", methods: ["GET", "PUT", "DELETE"], kind: "stream", localOriginGuard: true },
   { route: "/preferences", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/mobile-permissions", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },

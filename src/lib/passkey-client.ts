@@ -189,7 +189,7 @@ export async function provePasskeyPresence(
 }
 
 export async function listPasskeys(): Promise<PasskeyCredentialSummary[]> {
-  const res = await fetch("/api/passkey/credentials", { credentials: "same-origin" });
+  const res = await fetch("/api/passkey/enrolled", { credentials: "same-origin" });
   if (!res.ok) return [];
   const payload = (await res.json().catch(() => null)) as
     | { credentials?: PasskeyCredentialSummary[] }
@@ -199,7 +199,7 @@ export async function listPasskeys(): Promise<PasskeyCredentialSummary[]> {
 
 export async function deletePasskey(credentialId: string): Promise<boolean> {
   const res = await fetch(
-    `/api/passkey/credentials?credentialId=${encodeURIComponent(credentialId)}`,
+    `/api/passkey/enrolled?credentialId=${encodeURIComponent(credentialId)}`,
     { method: "DELETE", credentials: "same-origin" },
   );
   return res.ok;
