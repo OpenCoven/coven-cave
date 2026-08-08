@@ -211,6 +211,7 @@ const TAILNET_PEER_HEADER = "x-coven-cave-tailnet-peer";
 const TAILNET_PEER_SECRET = randomUUID();
 process.env.COVEN_CAVE_TAILNET_PEER_SECRET = TAILNET_PEER_SECRET;
 const TAILNET_STATUS_REFRESH_MS = 3e4;
+process.env.COVEN_CAVE_PASSKEY_SESSION_SECRET = randomUUID();
 function allowedTailnetNodeIds() {
   const raw = process.env.COVEN_CAVE_TAILNET_ALLOWED_NODES ?? "";
   return new Set(
