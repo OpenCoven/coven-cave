@@ -1029,6 +1029,7 @@ export function buildFamiliarAnalyticsDigest({
   retroState,
   contractReport,
   feedback,
+  feedbackFreshness,
   healRequests,
   now,
 }: {
@@ -1044,6 +1045,7 @@ export function buildFamiliarAnalyticsDigest({
   retroState: RetroFamiliarState | null;
   contractReport: ContractReport | null;
   feedback: MessageFeedbackRollup;
+  feedbackFreshness?: string | null;
   healRequests?: SelfHealRequest[];
   now: number;
 }): FamiliarAnalyticsDigest {
@@ -1171,7 +1173,7 @@ export function buildFamiliarAnalyticsDigest({
       definition: "Final thumbs verdicts for messages attributed to this Familiar.",
       period: "all retained feedback",
       sampleCount: feedback.total,
-      freshness: null,
+      freshness: feedback.total > 0 ? feedbackFreshness ?? null : null,
       state: feedbackState,
       up: feedback.up,
       down: feedback.down,

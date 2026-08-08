@@ -459,6 +459,48 @@ test("analytics emptiness tracks all user-visible signals", () => {
   assert.equal(isFamiliarAnalyticsDigestEmpty(feedbackAnalytics), false);
 });
 
+test("Analytics feedback freshness reflects retained feedback and clears to null when empty", () => {
+  const fresh = buildFamiliarAnalyticsDigest({
+    familiarId: "sage",
+    familiar: { id: "sage", display_name: "Sage", role: "Researcher" },
+    sessions: [],
+    reports: [],
+    reportTotal: 0,
+    snapshots: [],
+    snapshotTotal: 0,
+    memories: [],
+    memoryAvailability: "ready",
+    retroState: null,
+    contractReport: null,
+    feedback: { up: 2, down: 1, total: 3, models: [], runtimes: [] },
+    feedbackFreshness: "2026-08-07T19:58:00.000Z",
+    now: NOW,
+  });
+  assert.equal(
+    fresh.feedback.freshness,
+    "2026-08-07T19:58:00.000Z",
+    "dashboard analytics surface the newest retained feedback timestamp",
+  );
+
+  const empty = buildFamiliarAnalyticsDigest({
+    familiarId: "sage",
+    familiar: { id: "sage", display_name: "Sage", role: "Researcher" },
+    sessions: [],
+    reports: [],
+    reportTotal: 0,
+    snapshots: [],
+    snapshotTotal: 0,
+    memories: [],
+    memoryAvailability: "ready",
+    retroState: null,
+    contractReport: null,
+    feedback: { up: 0, down: 0, total: 0, models: [], runtimes: [] },
+    feedbackFreshness: "2026-08-07T19:58:00.000Z",
+    now: NOW,
+  });
+  assert.equal(empty.feedback.freshness, null, "empty feedback never invents freshness");
+});
+
 test("Analytics excludes archived sessions from totals, evidence, and pulse", () => {
   const analytics = buildFamiliarAnalyticsDigest({
     familiarId: "sage",

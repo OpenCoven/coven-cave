@@ -126,6 +126,92 @@ assert.deepEqual(
   "compact fallback preserves bounded runtime ordering",
 );
 
+await writeFile(
+  fb.MESSAGE_FEEDBACK_PATH,
+  JSON.stringify({
+    entries: [
+      {
+        messageId: "sage-1",
+        vote: "up",
+        cleared: false,
+        familiarId: "sage",
+        model: "model-a",
+        runtime: "runtime-a",
+        at: "2026-08-07T20:00:00.000Z",
+      },
+      {
+        messageId: "sage-1",
+        vote: "down",
+        cleared: false,
+        familiarId: "sage",
+        model: "model-a",
+        runtime: "runtime-a",
+        at: "2026-08-07T20:03:00.000Z",
+      },
+      {
+        messageId: "sage-2",
+        vote: "up",
+        cleared: false,
+        familiarId: "sage",
+        model: "model-b",
+        runtime: "runtime-b",
+        at: "2026-08-07T20:01:00.000Z",
+      },
+      {
+        messageId: "sage-3",
+        vote: "up",
+        cleared: false,
+        familiarId: "sage",
+        model: "model-c",
+        runtime: "runtime-c",
+        at: "2026-08-07T20:04:00.000Z",
+      },
+      {
+        messageId: "sage-3",
+        vote: "up",
+        cleared: true,
+        familiarId: "sage",
+        model: "model-c",
+        runtime: "runtime-c",
+        at: "2026-08-07T20:05:00.000Z",
+      },
+      {
+        messageId: "imp-1",
+        vote: "up",
+        cleared: false,
+        familiarId: "imp",
+        model: "model-z",
+        runtime: "runtime-z",
+        at: "2026-08-07T20:06:00.000Z",
+      },
+    ],
+  }, null, 2),
+  "utf8",
+);
+const dashboardFeedback = await fb.loadDashboardMessageFeedback({
+  familiarId: "sage",
+  bucketLimit: FEEDBACK_BUCKET_LIMIT,
+});
+assert.equal(dashboardFeedback.rollup.total, 2);
+assert.equal(dashboardFeedback.rollup.up, 1);
+assert.equal(dashboardFeedback.rollup.down, 1);
+assert.equal(
+  dashboardFeedback.freshness,
+  "2026-08-07T20:03:00.000Z",
+  "dashboard freshness uses the newest surviving familiar-scoped vote after re-votes and clears",
+);
+
+await writeFile(
+  fb.MESSAGE_FEEDBACK_PATH,
+  JSON.stringify({ entries: [] }, null, 2),
+  "utf8",
+);
+assert.deepEqual(
+  await fb.loadDashboardMessageFeedback({ familiarId: "sage" }),
+  { rollup: { up: 0, down: 0, total: 0, models: [], runtimes: [] }, freshness: null },
+  "empty dashboard feedback keeps null freshness",
+);
+
 await writeFile(fb.MESSAGE_FEEDBACK_PATH, "{\n  \"entries\": [\n    {\n", "utf8");
 assert.deepEqual(
   await fb.loadMessageFeedback(),

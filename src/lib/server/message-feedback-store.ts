@@ -15,9 +15,10 @@ import { caveHome } from "@/lib/coven-paths";
 import {
   applyMessageFeedbackEntry,
   EMPTY_FEEDBACK_ROLLUP,
-  finalizeMessageFeedbackRollup,
-  rollupMessageFeedback,
+  finalizeMessageFeedbackRollupSnapshot,
+  rollupMessageFeedbackSnapshot,
   type MessageFeedbackRollup,
+  type MessageFeedbackRollupSnapshot,
 } from "@/lib/message-feedback-rollup";
 
 export const MESSAGE_FEEDBACK_PATH = path.join(caveHome(), "message-feedback.json");
@@ -37,6 +38,8 @@ export type MessageFeedback = {
   runtime?: string;
   at: string;
 };
+
+export type { MessageFeedbackRollupSnapshot };
 
 /** Client-supplied fields. The store stamps `at` itself. */
 export type MessageFeedbackInput = {
@@ -118,7 +121,7 @@ const FALL_BACK_TO_FULL_PARSE = Symbol("message-feedback-rollup-fallback");
 async function loadMessageFeedbackRollupFromPrettyStore(args?: {
   familiarId?: string;
   bucketLimit?: number;
-}): Promise<MessageFeedbackRollup | typeof FALL_BACK_TO_FULL_PARSE> {
+}): Promise<MessageFeedbackRollupSnapshot | typeof FALL_BACK_TO_FULL_PARSE> {
   const finalVotes = new Map<string, MessageFeedback>();
   const reader = createInterface({
     input: createReadStream(MESSAGE_FEEDBACK_PATH, { encoding: "utf8" }),
@@ -186,7 +189,29 @@ async function loadMessageFeedbackRollupFromPrettyStore(args?: {
   if (collectingEntry) throw invalidFeedbackStore("unterminated feedback entry");
   if (!sawObjectEnd) throw invalidFeedbackStore('missing closing "}"');
 
-  return finalizeMessageFeedbackRollup(finalVotes.values(), {
+  return finalizeMessageFeedbackRollupSnapshot(finalVotes.values(), {
+    bucketLimit: args?.bucketLimit ?? DEFAULT_MESSAGE_FEEDBACK_BUCKET_LIMIT,
+  });
+}
+
+export async function loadDashboardMessageFeedback(args?: {
+  familiarId?: string;
+  bucketLimit?: number;
+}): Promise<MessageFeedbackRollupSnapshot> {
+  try {
+    await access(MESSAGE_FEEDBACK_PATH);
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return { rollup: EMPTY_FEEDBACK_ROLLUP, freshness: null };
+    }
+    throw error;
+  }
+
+  const fastPath = await loadMessageFeedbackRollupFromPrettyStore(args);
+  if (fastPath !== FALL_BACK_TO_FULL_PARSE) return fastPath;
+
+  return rollupMessageFeedbackSnapshot(await loadMessageFeedbackStrict(), {
+    familiarId: args?.familiarId,
     bucketLimit: args?.bucketLimit ?? DEFAULT_MESSAGE_FEEDBACK_BUCKET_LIMIT,
   });
 }
@@ -195,20 +220,7 @@ export async function loadMessageFeedbackRollup(args?: {
   familiarId?: string;
   bucketLimit?: number;
 }): Promise<MessageFeedbackRollup> {
-  try {
-    await access(MESSAGE_FEEDBACK_PATH);
-  } catch (error) {
-    if (isMissingFileError(error)) return EMPTY_FEEDBACK_ROLLUP;
-    throw error;
-  }
-
-  const fastPath = await loadMessageFeedbackRollupFromPrettyStore(args);
-  if (fastPath !== FALL_BACK_TO_FULL_PARSE) return fastPath;
-
-  return rollupMessageFeedback(await loadMessageFeedbackStrict(), {
-    familiarId: args?.familiarId,
-    bucketLimit: args?.bucketLimit ?? DEFAULT_MESSAGE_FEEDBACK_BUCKET_LIMIT,
-  });
+  return (await loadDashboardMessageFeedback(args)).rollup;
 }
 
 let feedbackTmpCounter = 0;

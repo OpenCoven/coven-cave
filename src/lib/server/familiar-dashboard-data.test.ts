@@ -46,7 +46,10 @@ const CONFIG = {
 };
 
 function emptyFeedbackRollup() {
-  return { up: 0, down: 0, total: 0, models: [], runtimes: [] };
+  return {
+    rollup: { up: 0, down: 0, total: 0, models: [], runtimes: [] },
+    freshness: null,
+  };
 }
 
 function makeDependencies(
@@ -343,25 +346,46 @@ test("analytics stays non-empty when heal requests are actionable", async () => 
 });
 
 test("analytics stays non-empty when feedback exists", async () => {
+  const feedbackFreshness = "2026-08-07T19:57:00.000Z";
   const result = await loadFamiliarDashboard("sage", makeDependencies({
     loadFeedback: async () => ({
-      up: 1,
-      down: 0,
-      total: 1,
-      models: [{
-        key: "claude-sonnet",
+      rollup: {
         up: 1,
         down: 0,
         total: 1,
-        approval: 1,
-      }],
-      runtimes: [],
+        models: [{
+          key: "claude-sonnet",
+          up: 1,
+          down: 0,
+          total: 1,
+          approval: 1,
+        }],
+        runtimes: [],
+      },
+      freshness: feedbackFreshness,
     }),
   }));
 
   assert.equal(result.kind, "ok");
   assert.equal(result.response.sections.analytics.state, "fresh");
   assert.equal(result.response.sections.analytics.data.feedback.total, 1);
+  assert.equal(
+    result.response.sections.analytics.data.feedback.freshness,
+    feedbackFreshness,
+  );
+});
+
+test("empty dashboard feedback keeps null freshness", async () => {
+  const result = await loadFamiliarDashboard("sage", makeDependencies({
+    loadFeedback: async () => ({
+      rollup: { up: 0, down: 0, total: 0, models: [], runtimes: [] },
+      freshness: "2026-08-07T19:57:00.000Z",
+    }),
+  }));
+
+  assert.equal(result.kind, "ok");
+  assert.equal(result.response.sections.analytics.data.feedback.total, 0);
+  assert.equal(result.response.sections.analytics.data.feedback.freshness, null);
 });
 
 test("analytics is empty only when every visible signal is zero or absent", async () => {
@@ -776,23 +800,26 @@ test("response stays within budget with thousands of distinct feedback buckets",
   const hugeBucketCount = 5000;
   const result = await loadFamiliarDashboard("sage", makeDependencies({
     loadFeedback: async () => ({
-      up: hugeBucketCount * 2,
-      down: hugeBucketCount,
-      total: hugeBucketCount * 3,
-      models: Array.from({ length: hugeBucketCount }, (_, index) => ({
-        key: `model-${String(hugeBucketCount - index - 1).padStart(4, "0")}`,
-        up: 2,
-        down: 1,
-        total: 3,
-        approval: 2 / 3,
-      })),
-      runtimes: Array.from({ length: hugeBucketCount }, (_, index) => ({
-        key: `runtime-${String(hugeBucketCount - index - 1).padStart(4, "0")}`,
-        up: 2,
-        down: 1,
-        total: 3,
-        approval: 2 / 3,
-      })),
+      rollup: {
+        up: hugeBucketCount * 2,
+        down: hugeBucketCount,
+        total: hugeBucketCount * 3,
+        models: Array.from({ length: hugeBucketCount }, (_, index) => ({
+          key: `model-${String(hugeBucketCount - index - 1).padStart(4, "0")}`,
+          up: 2,
+          down: 1,
+          total: 3,
+          approval: 2 / 3,
+        })),
+        runtimes: Array.from({ length: hugeBucketCount }, (_, index) => ({
+          key: `runtime-${String(hugeBucketCount - index - 1).padStart(4, "0")}`,
+          up: 2,
+          down: 1,
+          total: 3,
+          approval: 2 / 3,
+        })),
+      },
+      freshness: "2026-08-07T19:59:00.000Z",
     }),
   }));
 

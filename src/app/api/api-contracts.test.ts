@@ -823,7 +823,7 @@ for (const contract of contracts) {
   assert.match(dashboardData, /evaluateFamiliarContract/);
   assert.match(dashboardData, /listDashboardSelfReports/);
   assert.match(dashboardData, /listDashboardMetricSnapshots/);
-  assert.match(dashboardData, /loadMessageFeedbackRollup/);
+  assert.match(dashboardData, /loadDashboardMessageFeedback/);
   assert.match(dashboardModel, /responseBytes: 128 \* 1024/);
   assert.match(dashboardModel, /"dashboard_unauthorized"/);
   assert.doesNotMatch(

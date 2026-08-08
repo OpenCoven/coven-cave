@@ -20,6 +20,7 @@ export type FeedbackRollupEntry = {
   familiarId?: string;
   model?: string;
   runtime?: string;
+  at?: string;
 };
 
 /** Up/down counts for one model or runtime bucket. */
@@ -40,6 +41,11 @@ export type MessageFeedbackRollup = {
   models: FeedbackSliceStat[];
   /** Per-runtime buckets, most-voted first. Votes without a runtime stamp are omitted. */
   runtimes: FeedbackSliceStat[];
+};
+
+export type MessageFeedbackRollupSnapshot = {
+  rollup: MessageFeedbackRollup;
+  freshness: string | null;
 };
 
 export const EMPTY_FEEDBACK_ROLLUP: MessageFeedbackRollup = {
@@ -65,6 +71,26 @@ function clampBucketLimit(limit: number | undefined): number | null {
   if (limit === undefined) return null;
   if (!Number.isFinite(limit)) return 0;
   return Math.max(0, Math.floor(limit));
+}
+
+function newestRetainedFeedbackAt(
+  finalVotes: Iterable<FeedbackRollupEntry>,
+): string | null {
+  let newestAt: string | null = null;
+  let newestTime = Number.NEGATIVE_INFINITY;
+  for (const entry of finalVotes) {
+    const at = typeof entry.at === "string" ? entry.at : null;
+    const time = at ? Date.parse(at) : Number.NaN;
+    if (!Number.isFinite(time)) continue;
+    if (
+      time > newestTime ||
+      (time === newestTime && newestAt !== null && at! > newestAt)
+    ) {
+      newestTime = time;
+      newestAt = at;
+    }
+  }
+  return newestAt;
 }
 
 function toSlices(
@@ -123,6 +149,18 @@ export function finalizeMessageFeedbackRollup(
   };
 }
 
+export function finalizeMessageFeedbackRollupSnapshot(
+  finalVotes: Iterable<FeedbackRollupEntry>,
+  opts?: Pick<MessageFeedbackRollupOptions, "bucketLimit">,
+): MessageFeedbackRollupSnapshot {
+  const retainedVotes = [...finalVotes];
+  const rollup = finalizeMessageFeedbackRollup(retainedVotes, opts);
+  return {
+    rollup,
+    freshness: rollup.total > 0 ? newestRetainedFeedbackAt(retainedVotes) : null,
+  };
+}
+
 export function rollupMessageFeedback(
   entries: FeedbackRollupEntry[],
   opts?: MessageFeedbackRollupOptions,
@@ -134,4 +172,15 @@ export function rollupMessageFeedback(
     applyMessageFeedbackEntry(finalVotes, entry, opts);
   }
   return finalizeMessageFeedbackRollup(finalVotes.values(), opts);
+}
+
+export function rollupMessageFeedbackSnapshot(
+  entries: FeedbackRollupEntry[],
+  opts?: MessageFeedbackRollupOptions,
+): MessageFeedbackRollupSnapshot {
+  const finalVotes = new Map<string, FeedbackRollupEntry>();
+  for (const entry of entries) {
+    applyMessageFeedbackEntry(finalVotes, entry, opts);
+  }
+  return finalizeMessageFeedbackRollupSnapshot(finalVotes.values(), opts);
 }

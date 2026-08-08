@@ -25,7 +25,9 @@ import {
   type FamiliarDashboardResponse,
   type FamiliarDashboardSource,
 } from "@/lib/familiar-dashboard";
-import type { MessageFeedbackRollup } from "@/lib/message-feedback-rollup";
+import {
+  EMPTY_FEEDBACK_ROLLUP,
+} from "@/lib/message-feedback-rollup";
 import {
   listAccessibleProjects,
   type ProjectAccessLevel,
@@ -39,7 +41,10 @@ import {
   listMetricSnapshots,
   listSelfReports,
 } from "@/lib/server/familiar-self-reports";
-import { loadMessageFeedbackRollup } from "@/lib/server/message-feedback-store";
+import {
+  loadDashboardMessageFeedback,
+  type MessageFeedbackRollupSnapshot,
+} from "@/lib/server/message-feedback-store";
 import {
   loadCachedSessionsList,
   type SessionsListResult,
@@ -72,7 +77,9 @@ export type FamiliarDashboardDependencies = {
   loadRetro: (args: { familiarId: string }) => Promise<RetroRunsSnapshotResult>;
   loadReports: (id: string) => ReturnType<typeof listSelfReports>;
   loadMetricSnapshots: (id: string) => ReturnType<typeof listMetricSnapshots>;
-  loadFeedback: (args: { familiarId: string }) => Promise<MessageFeedbackRollup>;
+  loadFeedback: (
+    args: { familiarId: string },
+  ) => Promise<MessageFeedbackRollupSnapshot>;
 };
 
 async function capture<T>(
@@ -118,8 +125,7 @@ export const DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES: FamiliarDashboardDependenc
   loadRetro: ({ familiarId }) => loadRetroRunsSnapshot({ familiarId }),
   loadReports: listDashboardSelfReports,
   loadMetricSnapshots: listDashboardMetricSnapshots,
-  loadFeedback: ({ familiarId }) =>
-    loadMessageFeedbackRollup({ familiarId }),
+  loadFeedback: ({ familiarId }) => loadDashboardMessageFeedback({ familiarId }),
 };
 
 export type FamiliarDashboardLoadResult =
@@ -253,7 +259,7 @@ export async function loadFamiliarDashboard(
         code: "retro_state_unavailable",
       };
 
-  const feedbackSource: DashboardSourceResult<MessageFeedbackRollup> = feedbackEntriesSource.ok
+  const feedbackSource: DashboardSourceResult<MessageFeedbackRollupSnapshot> = feedbackEntriesSource.ok
     ? {
         ok: true,
         data: feedbackEntriesSource.data,
@@ -316,11 +322,8 @@ export async function loadFamiliarDashboard(
   });
   const reports = sourceData(reportsSource, { reports: [], total: 0 });
   const feedback = sourceData(feedbackSource, {
-    up: 0,
-    down: 0,
-    total: 0,
-    models: [],
-    runtimes: [],
+    rollup: EMPTY_FEEDBACK_ROLLUP,
+    freshness: null,
   });
   const familiar: Familiar = enrichmentSource.ok
     ? enrichmentSource.data
@@ -372,7 +375,8 @@ export async function loadFamiliarDashboard(
     memoryAvailability: memorySource.ok ? "ready" : "unavailable",
     retroState: familiarRetroState,
     contractReport: contract.report,
-    feedback,
+    feedback: feedback.rollup,
+    feedbackFreshness: feedback.rollup.total > 0 ? feedback.freshness : null,
     healRequests: rawHealRequests,
     now,
   });

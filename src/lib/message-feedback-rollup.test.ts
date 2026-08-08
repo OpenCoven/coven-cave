@@ -1,6 +1,10 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { EMPTY_FEEDBACK_ROLLUP, rollupMessageFeedback } from "./message-feedback-rollup.ts";
+import {
+  EMPTY_FEEDBACK_ROLLUP,
+  rollupMessageFeedback,
+  rollupMessageFeedbackSnapshot,
+} from "./message-feedback-rollup.ts";
 
 // Empty input → the empty rollup shape.
 assert.deepEqual(rollupMessageFeedback([]), EMPTY_FEEDBACK_ROLLUP);
@@ -22,9 +26,15 @@ const entries = [
 ];
 
 const rollup = rollupMessageFeedback(entries, { familiarId: "sage" });
+const snapshot = rollupMessageFeedbackSnapshot(entries, { familiarId: "sage" });
 assert.equal(rollup.up, 4, "final ups: m1, m3, m5(switched), m7");
 assert.equal(rollup.down, 1, "final downs: m2 only (m4 cleared, m5 switched)");
 assert.equal(rollup.total, 5);
+assert.equal(
+  snapshot.freshness,
+  null,
+  "entries without timestamps degrade freshness to null without affecting counts",
+);
 
 const claude = rollup.models.find((m) => m.key === "claude-sonnet-4");
 assert.deepEqual(
@@ -41,8 +51,34 @@ const runtimes = Object.fromEntries(rollup.runtimes.map((r) => [r.key, r]));
 assert.equal(runtimes.claude.total, 3);
 assert.equal(runtimes.codex.total, 1);
 
+const freshnessSnapshot = rollupMessageFeedbackSnapshot([
+  { messageId: "m1", vote: "up", cleared: false, familiarId: "sage", at: "2026-08-07T20:00:00.000Z" },
+  { messageId: "m1", vote: "down", cleared: false, familiarId: "sage", at: "2026-08-07T20:02:00.000Z" },
+  { messageId: "m2", vote: "up", cleared: false, familiarId: "sage", at: "2026-08-07T20:01:00.000Z" },
+  { messageId: "m3", vote: "up", cleared: false, familiarId: "imp", at: "2026-08-07T20:03:00.000Z" },
+  { messageId: "m4", vote: "up", cleared: false, familiarId: "sage", at: "2026-08-07T20:04:00.000Z" },
+  { messageId: "m4", vote: "up", cleared: true, familiarId: "sage", at: "2026-08-07T20:05:00.000Z" },
+], { familiarId: "sage" });
+assert.deepEqual(freshnessSnapshot.rollup, {
+  up: 1,
+  down: 1,
+  total: 2,
+  models: [],
+  runtimes: [],
+});
+assert.equal(
+  freshnessSnapshot.freshness,
+  "2026-08-07T20:02:00.000Z",
+  "freshness tracks the newest surviving familiar-scoped vote after re-votes and clears",
+);
+
 // No familiar filter → imp's vote joins the totals.
 assert.equal(rollupMessageFeedback(entries).total, 6);
+assert.equal(
+  rollupMessageFeedbackSnapshot([], { familiarId: "sage" }).freshness,
+  null,
+  "empty feedback reports null freshness",
+);
 
 const bounded = rollupMessageFeedback(
   Array.from({ length: 40 }, (_, index) => ({

@@ -3134,14 +3134,13 @@ export type FamiliarDashboardDependencies = {
   loadAccess: (id: string) => Promise<{
     projects: { project: CaveProject; access: ProjectAccessLevel }[];
   }>;
-  loadMemory: () => Promise<{
-    entries: CanonicalMemorySummary[];
-    overview: CanonicalMemoryOverview;
-  }>;
+  loadMemory: (familiarId: string) => Promise<CanonicalMemorySummary[]>;
   loadRetro: (args: { familiarId: string }) => Promise<RetroRunsSnapshotResult>;
-  loadReports: (id: string) => ReturnType<typeof listSelfReports>;
-  loadMetricSnapshots: (id: string) => ReturnType<typeof listMetricSnapshots>;
-  loadFeedback: typeof loadMessageFeedback;
+  loadReports: (id: string) => ReturnType<typeof listDashboardSelfReports>;
+  loadMetricSnapshots: (id: string) => ReturnType<typeof listDashboardMetricSnapshots>;
+  loadFeedback: (args: {
+    familiarId: string;
+  }) => Promise<MessageFeedbackRollupSnapshot>;
 };
 
 async function capture<T>(
@@ -3171,12 +3170,12 @@ Do not retain an exception object, message, stack, filesystem path, daemon statu
 Keep the production defaults in the same module:
 
 ```ts
-const DEFAULT_DEPENDENCIES: FamiliarDashboardDependencies = {
+const DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES: FamiliarDashboardDependencies = {
   now: Date.now,
   loadRoster: loadVisibleFamiliarRoster,
   enrichFamiliar,
   loadBoard,
-  loadSessions: computeSessionsList,
+  loadSessions: loadCachedSessionsList,
   loadInbox,
   loadContract: async (id) => {
     const { files } = await readFamiliarContractFiles(id);
@@ -3185,22 +3184,24 @@ const DEFAULT_DEPENDENCIES: FamiliarDashboardDependencies = {
   loadAccess: async (id) => ({
     projects: await listAccessibleProjects(await loadProjects(), id),
   }),
-  loadMemory: async () => {
-    const [entries, overview] = await Promise.all([
-      canonicalMemoryList(),
-      canonicalMemoryOverview(),
-    ]);
-    return { entries, overview };
-  },
+  loadMemory: loadCachedCanonicalMemorySummariesForFamiliar,
   loadRetro: ({ familiarId }) => loadRetroRunsSnapshot({ familiarId }),
-  loadReports: (id) =>
-    listSelfReports(id, { limit: FAMILIAR_DASHBOARD_LIMITS.reports }),
-  loadMetricSnapshots: listMetricSnapshots,
-  loadFeedback: loadMessageFeedback,
+  loadReports: listDashboardSelfReports,
+  loadMetricSnapshots: listDashboardMetricSnapshots,
+  loadFeedback: ({ familiarId }) => loadDashboardMessageFeedback({ familiarId }),
 };
 ```
 
-Do not create another memory store or read canonical-memory files directly.
+Use the existing shared sessions source cache here on purpose: `loadCachedSessionsList`
+is the authoritative 2s-fresh / 30s stale-while-revalidate cache for the
+side-effecting session computation, so the dashboard does not duplicate daemon
+and git recomputes. That cache is a **source cache** beneath the aggregate
+loader — it is not the dashboard snapshot cache and it is not the client
+section `stale` state. Likewise, memory reads stay on the familiar-scoped
+cached canonical-memory summaries loader, report/snapshot reads stay on the
+dashboard-bounded readers, and feedback stays on the dashboard-specific
+bounded snapshot/rollup helper. The server section-state contract above remains
+unchanged.
 
 - [ ] **Step 5: Implement roster-first identity resolution and parallel source loading**
 
