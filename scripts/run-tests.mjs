@@ -1452,6 +1452,7 @@ export const SUITES = {
     "src/lib/server/passkey-ceremony.test.ts",
     "src/lib/passkey-presence.test.ts",
     "src/passkey-proxy-gate.test.ts",
+    "src/lib/passkey-client.test.ts",
     "src/lib/server/backdrop-store.test.ts",
     "src/lib/server/beads-cli.test.ts",
     "src/lib/server/beads-workspace.test.ts",

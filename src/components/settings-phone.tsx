@@ -20,6 +20,15 @@ import type { PairingStep } from "@/lib/mobile-handoff";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
 import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
 import { openExternalUrl } from "@/lib/open-external";
+import {
+  PasskeyError,
+  deletePasskey,
+  listPasskeys,
+  passkeySupport,
+  provePasskeyPresence,
+  registerPasskey,
+  type PasskeyCredentialSummary,
+} from "@/lib/passkey-client";
 import { relativeTime } from "@/lib/relative-time";
 import { classifyTailscaleFailureKind } from "@/lib/tailscale-failure";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
@@ -528,6 +537,137 @@ function MobileWriteAccessCard() {
   );
 }
 
+function PasskeyCard() {
+  const [credentials, setCredentials] = useState<PasskeyCredentialSummary[] | null>(null);
+  const [busy, setBusy] = useState<"enroll" | "prove" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [provenUntil, setProvenUntil] = useState<number | null>(null);
+  const { announce } = useAnnouncer();
+  const support = passkeySupport();
+
+  const refresh = useCallback(async () => {
+    setCredentials(await listPasskeys());
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const run = useCallback(
+    async (kind: "enroll" | "prove", action: () => Promise<string>) => {
+      setBusy(kind);
+      setError(null);
+      try {
+        announce(await action());
+      } catch (err) {
+        // A cancelled Face ID prompt is not a failure worth shouting about;
+        // everything else is something the operator has to see.
+        if (err instanceof PasskeyError && err.kind === "cancelled") return;
+        setError(err instanceof Error ? err.message : "Passkey step failed");
+      } finally {
+        setBusy(null);
+        void refresh();
+      }
+    },
+    [announce, refresh],
+  );
+
+  const enroll = useCallback(
+    () =>
+      run("enroll", async () => {
+        const created = await registerPasskey(
+          typeof navigator === "undefined" ? "Device" : navigator.platform || "Device",
+        );
+        return `Passkey enrolled: ${created.label}`;
+      }),
+    [run],
+  );
+
+  const prove = useCallback(
+    () =>
+      run("prove", async () => {
+        const { expiresAt } = await provePasskeyPresence();
+        setProvenUntil(expiresAt);
+        return "Biometric check verified";
+      }),
+    [run],
+  );
+
+  return (
+    <section
+      id={settingsGroupId("Passkey")}
+      data-settings-group
+      className="settings-phone-card settings-phone-passkeys"
+    >
+      <p className="settings-phone-card__kicker">Passkey</p>
+      <h3>Prove it&rsquo;s you, not just your phone</h3>
+      <p>
+        Tailnet identity proves <em>which device</em>. A passkey adds <em>which human</em> — the key
+        lives in the Secure Enclave and cannot sign without Face ID, so the server can check the
+        biometric rather than take the app&rsquo;s word for it.
+      </p>
+
+      {support !== "supported" ? (
+        <p className="settings-phone-passkeys__note">
+          {support === "insecure-context"
+            ? "Passkeys need a secure origin. Open Cave over the Tailscale HTTPS address."
+            : "This browser doesn’t support passkeys."}
+        </p>
+      ) : (
+        <>
+          <ul className="settings-phone-passkeys__list">
+            {credentials === null ? (
+              <li className="settings-phone-passkeys__empty">Checking…</li>
+            ) : credentials.length === 0 ? (
+              <li className="settings-phone-passkeys__empty">No passkey enrolled on this device.</li>
+            ) : (
+              credentials.map((credential) => (
+                <li key={credential.credentialId}>
+                  <span>{credential.label}</span>
+                  <small>
+                    {credential.lastUsedAt
+                      ? `used ${relativeTime(new Date(credential.lastUsedAt).toISOString())}`
+                      : "never used"}
+                  </small>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={async () => {
+                      await deletePasskey(credential.credentialId);
+                      void refresh();
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </li>
+              ))
+            )}
+          </ul>
+
+          <div className="settings-phone-passkeys__actions">
+            <Button size="xs" onClick={enroll} disabled={busy !== null}>
+              {busy === "enroll" ? "Waiting for Face ID…" : "Add a passkey"}
+            </Button>
+            {credentials && credentials.length > 0 ? (
+              <Button size="xs" variant="ghost" onClick={prove} disabled={busy !== null}>
+                {busy === "prove" ? "Waiting for Face ID…" : "Verify now"}
+              </Button>
+            ) : null}
+          </div>
+
+          {provenUntil ? (
+            <p className="settings-phone-passkeys__note">
+              Verified until {new Date(provenUntil).toLocaleTimeString()}.
+            </p>
+          ) : null}
+        </>
+      )}
+
+      {error ? <ErrorState compact headline="Passkey step failed" subtitle={error} /> : null}
+    </section>
+  );
+}
+
 export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void }) {
   const [mobileModeEnabled, setMobileModeEnabled] = useState(readMobileModeEnabled);
   const [handoff, setHandoff] = useState<MobileHandoffCardState | null>(null);
@@ -920,10 +1060,12 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
             <div>
               <h3>Why there’s no password</h3>
               <p>
-                Being on your tailnet <em>is</em> the credential — the mobile API never leaves it, so there’s no token to copy.
+                Your device <em>is</em> the credential — an allowlisted tailnet device, not merely
+                anything on the tailnet. The mobile API never leaves it, so there’s no token to copy.
               </p>
             </div>
           </section>
+          <PasskeyCard />
         </div>
       </div>
 
