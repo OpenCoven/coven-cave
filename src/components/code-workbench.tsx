@@ -2,321 +2,426 @@
 
 /**
  * CodeWorkbench — the Coding Room's per-session workbench (cave-k0ua,
- * recomposed for cave-98o51).
+ * recomposed for cave-98o51, rebuilt from the design frame for cave-0rcku).
  *
- * The approved three-zone shape: a compact session header over a persistent
- * terminal center beside a resizable context dock, with the follow-up composer
- * underneath both.
+ * The `Cody Code Reading v2` frame's shape:
  *
- *   header
- *   CodeTerminalWorkspace | CodeContextDock
- *   CodeComposer
+ *   header            session picker · branch · diffstat · PR · inspector
+ *   [source-context]  the handoff card, when you arrived from a chat block
+ *   tree | viewer | review rail
+ *   terminal bar      always present, expands into a drawer over the room
+ *   composer
  *
- * What changed and why: terminals used to be one tab among Diff/Files/PR, so
- * reading a diff meant losing sight of a running shell. Now the shell is the
- * center and never unmounts, and context docks beside it. The composer sits
- * below both so a follow-up prompt stays available while reading any tab.
+ * What changed from the previous three-zone room, and why. The terminal used to
+ * be the centre column, which was the right answer to "don't hide the shell"
+ * but the wrong one for a surface whose name is *reading*: two columns of the
+ * room went to a shell and a dock, and the source itself never got a column at
+ * all. The frame keeps the same commitment — the shell is permanently present,
+ * never a tab — and pays for it in height instead of width. The drawer never
+ * unmounts (`CodeTerminalDrawer`), so the `cave.rail.<id>` PTY started from
+ * Chat is still the same shell here, scrollback intact.
  *
- * Reuse posture is unchanged — every context tab still mounts its proven panel
- * (SessionChangesInner, CodeWorkbenchFiles, CodeSessionPrPanel, CodeInspector),
- * and the primary terminal still rides `cave.rail.<id>`, so a shell started
- * from Chat's rail is the SAME shell here.
+ * Nothing was dropped in the move. The old dock's Inspector is the header's
+ * popover; its GitHub and Browser tabs are the surface's own top-level tabs and
+ * the Browser surface, both of which already existed and neither of which ever
+ * wanted a sidebar-width column.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Group, Panel, Separator } from "react-resizable-panels";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "@/styles/globals/surface-code-room.css";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
-import { SeparatorHandle } from "@/components/ui/separator-handle";
+import { Popover } from "@/components/ui/popover";
 import { relativeTime } from "@/lib/relative-time";
+import { CodeComposer } from "@/components/code-composer";
+import { CodeReviewRail } from "@/components/code-review-rail";
+import { CodeSessionPicker } from "@/components/code-session-picker";
+import { CodeShortcutsDialog } from "@/components/code-shortcuts-dialog";
+import { CodeTerminalDrawer } from "@/components/code-terminal-drawer";
+import { CodeWorkbenchTree } from "@/components/code-workbench-tree";
+import { CodeInspector } from "@/components/code-inspector";
+import { RailFilePreview } from "@/components/rail-file-preview";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useMeasuredWidth } from "@/lib/use-measured-width";
-import { CodeComposer } from "@/components/code-composer";
-import { CodeContextDock } from "@/components/code-context-dock";
-import { CodeTerminalWorkspace } from "@/components/code-terminal-workspace";
 import {
-  codeDockTabForWorkbenchTab,
+  CODE_STEP_ANNOUNCEMENT,
+  CODE_WORKBENCH_STEPS,
+  codeRailTabForWorkbenchTab,
   codeSessionActivity,
   codeSessionBranch,
   codeSessionDiffstat,
   codeSessionWorkRoot,
   codeWorkbenchFitsSplit,
-  CODE_ROOM_MIN_DOCK_WIDTH_PX,
-  CODE_ROOM_MIN_TERMINAL_WIDTH_PX,
-  type CodeDockSize,
-  type CodeDockTab,
   type CodeWorkbenchStep,
   type CodeWorkbenchTab,
 } from "@/lib/code-surface";
 import {
-  closeTerminalPane,
-  createTerminalLayout,
-  resolveFocusedPane,
-  splitTerminalPane,
-  type TerminalLayoutNode,
-  type TerminalSplitDirection,
-} from "@/lib/code-terminal-tree";
+  CODE_RAIL_DEFAULT_WIDTH_PX,
+  clampCodeRailWidth,
+  type CodeRailTab,
+} from "@/lib/code-side-rail";
+import {
+  CODE_SHORTCUT_STORAGE_KEY,
+  codeComboFromEvent,
+  codeShortcutForCombo,
+  defaultCodeKeymap,
+  mergeCodeKeymap,
+  type CodeShortcutId,
+} from "@/lib/code-shortcuts";
+import { isCodeRoomTypingTarget } from "@/lib/code-room-shortcuts";
+import { useWorktreeChanges } from "@/lib/use-worktree-changes";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
 import type { SessionRow } from "@/lib/types";
 
-/** The terminal keeps this much room whatever the dock does — the center is
- *  the priority surface, so dragging the divider can starve context but never
- *  the shell. Both derive from the pure model so the constraint and the
- *  breakpoint that decides whether to apply it can never drift apart. */
-const MIN_TERMINAL_WIDTH = `${CODE_ROOM_MIN_TERMINAL_WIDTH_PX}px`;
-const DOCK_MIN_WIDTH: Record<CodeDockSize, string> = {
-  collapsed: "44px",
-  normal: `${CODE_ROOM_MIN_DOCK_WIDTH_PX}px`,
-  expanded: "460px",
+/** Fixed width of the file tree, matching the frame. */
+const TREE_WIDTH_PX = 272;
+
+const STEP_LABEL: Record<CodeWorkbenchStep, string> = {
+  files: "Files",
+  source: "Source",
+  review: "Review",
 };
 
 export function CodeWorkbench({
   row,
+  sessions,
   initialTab,
   openTarget,
+  onSelectSession,
+  onNewSession,
   onJumpToSession,
   onRefresh,
 }: {
   row: SessionRow;
-  /** Deep-linked context tab (?wtab=), mapped through the dock vocabulary. */
+  /** Every code session, for the header picker. */
+  sessions: SessionRow[];
+  /** Deep-linked review tab (?wtab=), mapped through the rail vocabulary. */
   initialTab?: CodeWorkbenchTab;
-  /** A routed file/diff open (cave-ohcj): lands on the Files or Changes tab
+  /** A routed file/diff open (cave-ohcj): lands on the file or the review rail
    *  with that path focused. `nonce` re-triggers the jump for a repeat path. */
   openTarget?: PendingCodeOpen;
+  onSelectSession?: (sessionId: string) => void;
+  onNewSession?: (title: string) => void;
   onJumpToSession: (sessionId: string, familiarId?: string | null) => void;
   /** Re-poll the enriched session list (branch/worktree chips) after inspector mutations. */
   onRefresh?: () => void;
 }) {
-  const [dockTab, setDockTab] = useState<CodeDockTab>(
-    () => codeDockTabForWorkbenchTab(initialTab) ?? "changes",
-  );
-  const [dockSize, setDockSize] = useState<CodeDockSize>("normal");
-  const { announce } = useAnnouncer();
-
-  // Narrow layout (cave-k3a9u). Measured against the workbench's OWN body, not
-  // the viewport: this component renders inside the role-surface host beside
-  // the app sidebar and can be placed in a split, so the viewport says nothing
-  // useful about the width these two zones actually got. `useIsMobile` is only
-  // the stand-in for the frames before the first measurement lands.
-  const bodyRef = useRef<HTMLDivElement | null>(null);
-  const bodyWidth = useMeasuredWidth(bodyRef);
-  const isMobile = useIsMobile();
-  const fitsSplit = codeWorkbenchFitsSplit(bodyWidth, isMobile);
-  // Terminal is the landing step — the shell is the Room's priority surface.
-  const [step, setStep] = useState<CodeWorkbenchStep>("terminal");
-  const showTerminal = fitsSplit || step === "terminal";
-  const showDock = fitsSplit || step === "context";
-
-  const goToStep = useCallback((next: CodeWorkbenchStep) => {
-    setStep(next);
-  }, []);
-
-  // Announce the step from an effect, never from inside the setState updater.
-  // React re-invokes updaters during the render phase, so announcing there
-  // called setState on the live region mid-render ("Cannot update a component
-  // while rendering a different component"). Doing it here also covers the
-  // steps taken by routing and session switches, not just the buttons.
-  // Silent while the split is showing both zones — the step means nothing then.
-  const announcedStepRef = useRef<CodeWorkbenchStep>("terminal");
-  useEffect(() => {
-    if (announcedStepRef.current === step) return;
-    announcedStepRef.current = step;
-    if (fitsSplit) return;
-    announce(step === "context" ? "Context shown." : "Terminal shown.");
-  }, [step, fitsSplit, announce]);
-
-  // A routed open outranks the resting/deep-linked tab — a diff jump shows
-  // Changes, a file open shows Files (re-applied per nonce), and either one
-  // reopens a collapsed dock so the routed target is actually visible. On a
-  // narrow Room "visible" also means the context STEP: pointing a hidden dock
-  // at the right tab would look like the jump silently did nothing.
-  useEffect(() => {
-    if (!openTarget) return;
-    setDockTab(openTarget.kind === "changes" ? "changes" : "files");
-    setDockSize((size) => (size === "collapsed" ? "normal" : size));
-    setStep("context");
-  }, [openTarget]);
-
-  // Terminal center. The layout is per-session: switching sessions resets to a
-  // single primary pane rather than carrying another session's splits over.
-  const [layout, setLayout] = useState<TerminalLayoutNode>(createTerminalLayout);
-  const [focusedPaneId, setFocusedPaneId] = useState<string>(() =>
-    resolveFocusedPane(createTerminalLayout(), null),
-  );
-  const [broadcast, setBroadcast] = useState(false);
-  useEffect(() => {
-    const fresh = createTerminalLayout();
-    setLayout(fresh);
-    setFocusedPaneId(resolveFocusedPane(fresh, null));
-    setBroadcast(false);
-    setStep("terminal");
-  }, [row.id]);
-
-  const handleSplit = useCallback((paneId: string, direction: TerminalSplitDirection) => {
-    setLayout((current) => {
-      const { layout: next, createdPaneId } = splitTerminalPane(current, paneId, direction);
-      if (createdPaneId) setFocusedPaneId(createdPaneId);
-      return next;
-    });
-  }, []);
-
-  const handleClosePane = useCallback((paneId: string) => {
-    setLayout((current) => {
-      const { layout: next, nextFocusPaneId, closed } = closeTerminalPane(current, paneId);
-      if (!closed) return current;
-      setFocusedPaneId((focused) =>
-        focused === paneId ? nextFocusPaneId ?? resolveFocusedPane(next, null) : focused,
-      );
-      // One pane left means broadcast has no targets; leaving it on would show
-      // a pressed toggle that does nothing.
-      if (next.kind === "pane") setBroadcast(false);
-      return next;
-    });
-  }, []);
-
   const workRoot = codeSessionWorkRoot(row);
   const branch = codeSessionBranch(row);
   const diffstat = codeSessionDiffstat(row);
   const pr = row.pullRequest;
   const running = codeSessionActivity(row) === "running";
 
-  // One dock definition for both layouts. It renders in two different tree
-  // slots (inside the split Panel, or as the narrow step), so it remounts when
-  // the Room crosses the breakpoint — a resize or a rotation, not a step
-  // change, which is the transition worth keeping cheap.
-  const renderDock = ({ visible, onBack }: { visible: boolean; onBack?: () => void }) => (
-    <CodeContextDock
-      row={row}
-      tab={dockTab}
-      // A narrow dock is a full-width STEP, so it renders at `normal` whatever
-      // the split was left at. Passing `collapsed` through would render no body
-      // and — since the narrow dock offers Back instead of collapse/expand — no
-      // control to undo it: collapse the dock on a wide Room, narrow the Room,
-      // step to Context, and you land on a blank surface. The state itself is
-      // left alone so returning to the split restores the width you chose.
-      size={fitsSplit ? dockSize : "normal"}
-      running={running}
-      openTarget={openTarget}
-      visible={visible}
-      onBack={onBack}
-      onTabChange={setDockTab}
-      onSizeChange={setDockSize}
-      onRefresh={onRefresh}
-      onJumpToSession={onJumpToSession}
-    />
+  // ── Layout state ───────────────────────────────────────────────────────────
+  // Measured against the workbench's OWN body, not the viewport: this renders
+  // inside the role-surface host beside the app sidebar and can be placed in a
+  // split, so the viewport says nothing useful about the width the three
+  // columns actually got. `useIsMobile` only stands in for the frames before
+  // the first measurement lands.
+  const roomRef = useRef<HTMLDivElement | null>(null);
+  const measuredWidth = useMeasuredWidth(roomRef);
+  const isMobile = useIsMobile();
+  const roomWidth = measuredWidth ?? (isMobile ? 390 : 1200);
+
+  const [railTab, setRailTab] = useState<CodeRailTab>(() =>
+    codeRailTabForWorkbenchTab(initialTab) ?? "changes",
+  );
+  const [railOpen, setRailOpen] = useState(true);
+  const [railWidth, setRailWidth] = useState(CODE_RAIL_DEFAULT_WIDTH_PX);
+  const [treeChangedOnly, setTreeChangedOnly] = useState(false);
+  const [termOpen, setTermOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [keysOpen, setKeysOpen] = useState(false);
+  const inspectorAnchor = useRef<HTMLButtonElement | null>(null);
+
+  // Keep the rail inside the room when the room itself is resized.
+  useEffect(() => {
+    setRailWidth((width) => clampCodeRailWidth(width, roomWidth));
+  }, [roomWidth]);
+
+  // ── Narrow rooms drill in (cave-k3a9u, kept) ───────────────────────────────
+  // Measured against the room's own box, never the viewport: the Room renders
+  // inside the role-surface host beside the app sidebar and can be placed in a
+  // split, so viewport width systematically overstates what it actually got.
+  // Three crushed columns is the failure this prevents.
+  const fitsSplit = codeWorkbenchFitsSplit(measuredWidth, isMobile);
+  const [step, setStep] = useState<CodeWorkbenchStep>("source");
+  const { announce } = useAnnouncer();
+  const announcedStepRef = useRef<CodeWorkbenchStep | null>(null);
+  // Announced from an effect, never from inside a setState updater — React
+  // re-invokes updaters while rendering, and writing to the live region there
+  // is a render-phase setState on another component.
+  useEffect(() => {
+    if (announcedStepRef.current === step) return;
+    announcedStepRef.current = step;
+    // Silent while all three columns are showing — the step means nothing then.
+    if (fitsSplit) return;
+    announce(CODE_STEP_ANNOUNCEMENT[step]);
+  }, [announce, fitsSplit, step]);
+
+  // ── Selected file ──────────────────────────────────────────────────────────
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [focusLine, setFocusLine] = useState<number | null>(null);
+  const [rangeLabel, setRangeLabel] = useState<string | null>(null);
+  useEffect(() => {
+    setSelectedPath(null);
+    setFocusLine(null);
+    setRangeLabel(null);
+    setTreeChangedOnly(false);
+  }, [row.id]);
+
+  const openPath = useCallback(
+    (path: string) => {
+      setSelectedPath(
+        path.startsWith("/") ? path : `${workRoot.replace(/\/$/, "")}/${path.replace(/^\.?\//, "")}`,
+      );
+    },
+    [workRoot],
   );
 
+  // A routed open outranks whatever the room was showing: a diff jump selects
+  // the review rail, a file open selects the file — and either one reopens a
+  // closed rail (and drills the narrow room to the right step) so the routed
+  // target is actually visible rather than silently correct behind something.
+  useEffect(() => {
+    if (!openTarget) return;
+    setRangeLabel(openTarget.origin?.selectionLabel ?? null);
+    if (openTarget.kind === "changes") {
+      setRailTab("changes");
+      setRailOpen(true);
+      setStep("review");
+    } else if (openTarget.path) {
+      openPath(openTarget.path);
+      setFocusLine(openTarget.line ?? null);
+      setStep("source");
+    }
+  }, [openPath, openTarget]);
+
+  const changes = useWorktreeChanges(workRoot, running);
+
+  // ── Shortcuts ──────────────────────────────────────────────────────────────
+  const [keymap, setKeymap] = useState<Record<CodeShortcutId, string>>(defaultCodeKeymap);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(CODE_SHORTCUT_STORAGE_KEY);
+      if (raw) setKeymap(mergeCodeKeymap(JSON.parse(raw)));
+    } catch {
+      /* a corrupt keymap falls back to defaults rather than blocking the room */
+    }
+  }, []);
+  const updateKeymap = useCallback((next: Record<CodeShortcutId, string>) => {
+    setKeymap(next);
+    try {
+      window.localStorage.setItem(CODE_SHORTCUT_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      /* private mode / quota — the binding still applies for this session */
+    }
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      // Never steal a keystroke from a field. The room is full of them — the
+      // composer, the picker's filter, the editor — and a global "?" that ate a
+      // question mark mid-sentence would be indefensible. Shared with the
+      // terminal shortcuts so both agree about xterm's hidden textarea, which a
+      // naive tag test would treat as prose.
+      if (isCodeRoomTypingTarget(event.target)) return;
+      const action = codeShortcutForCombo(keymap, codeComboFromEvent(event));
+      if (!action) return;
+      event.preventDefault();
+      if (action === "help") setKeysOpen((open) => !open);
+      else if (action === "terminal") setTermOpen((open) => !open);
+      else if (action === "changes") {
+        setRailTab("changes");
+        setRailOpen(true);
+      } else if (action === "pr") {
+        setRailTab("pr");
+        setRailOpen(true);
+      } else if (action === "files") {
+        roomRef.current?.querySelector<HTMLElement>('[role="tree"]')?.focus();
+      } else if (action === "outline") {
+        roomRef.current
+          ?.querySelector<HTMLElement>('.workspace-rail__preview-action[aria-expanded]')
+          ?.click();
+      } else if (action === "prompt") {
+        roomRef.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+      } else if (action === "picker") {
+        roomRef.current?.querySelector<HTMLElement>(".code-picker__trigger")?.click();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [keymap]);
+
+  const changedFiles = useMemo(() => changes.files, [changes.files]);
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-2" data-testid="code-workbench-header">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="truncate text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">
-              {row.title || row.id}
-            </h2>
-            <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-              {branch ? (
-                <span className="inline-flex min-w-0 items-center gap-1">
-                  <Icon name="ph:git-branch" width={10} height={10} />
-                  <span className="min-w-0 truncate font-mono" title={branch}>
-                    {branch}
-                  </span>
-                  {row.git?.isWorktree ? <span title={workRoot}>(worktree)</span> : null}
-                </span>
-              ) : null}
-              {diffstat ? <span className="shrink-0 font-mono">{diffstat}</span> : null}
-              {pr?.url ? (
-                <a
-                  className="focus-ring inline-flex shrink-0 items-center gap-1 underline decoration-dotted underline-offset-2"
-                  href={pr.url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <Icon name="ph:git-pull-request" width={10} height={10} />
-                  {pr.number != null ? `#${pr.number}` : "PR"}
-                  {pr.state ? ` (${pr.state})` : ""}
-                </a>
-              ) : null}
-              <span className="shrink-0">Updated {relativeTime(row.updated_at)}</span>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {fitsSplit ? null : (
-              // Narrow Room: the third drill-in step. Sessions -> Terminal ->
-              // Context, with the dock's own Back returning here.
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-label="Show context"
-                onClick={() => goToStep("context")}
-              >
-                <Icon name="ph:sidebar-simple" width={12} height={12} />
-                Context
-              </Button>
-            )}
-            <Button size="sm" onClick={() => onJumpToSession(row.id, row.familiarId)}>
-              Open in Chat
-            </Button>
-          </div>
-        </div>
-      </div>
-      <div className="flex min-h-0 flex-1" ref={bodyRef}>
-        {/* The terminal Panel holds the SAME tree slot in both layouts, so the
-            shell never unmounts — not when the dock leaves the split, and not
-            when the narrow Room steps to Context. It goes `visible={false}`
-            there, which is BottomTerminal's hidden-keepalive state: output
-            keeps buffering and the refit waits until it is on screen again. */}
-        <div className={showTerminal ? "flex min-h-0 min-w-0 flex-1" : "hidden"}>
-          <Group className="code-room__group" orientation="horizontal">
-            <Panel
-              id={`code-room-terminal-${row.id}`}
-              className="code-room__panel"
-              // Narrow: the terminal is the whole width, so a 320px floor would
-              // be a constraint against nothing.
-              minSize={fitsSplit ? MIN_TERMINAL_WIDTH : "0px"}
+    <div className="code-room" data-testid="code-workbench">
+      <div className="code-room__header" data-testid="code-workbench-header">
+        <CodeSessionPicker
+          sessions={sessions}
+          selected={row}
+          onSelect={(id) => onSelectSession?.(id)}
+          onCreate={onNewSession}
+        />
+        <div className="code-room__facts">
+          {branch ? (
+            <span className="code-room__fact" title={workRoot}>
+              <Icon name="ph:git-branch" width={10} height={10} aria-hidden />
+              <span className="code-room__fact-value">{branch}</span>
+              {row.git?.isWorktree ? <span className="code-room__fact-note">worktree</span> : null}
+            </span>
+          ) : null}
+          {diffstat ? <span className="code-room__fact">{diffstat}</span> : null}
+          {pr?.url ? (
+            <a
+              className="focus-ring code-room__fact code-room__fact--link"
+              href={pr.url}
+              target="_blank"
+              rel="noreferrer"
             >
-              <CodeTerminalWorkspace
-                sessionId={row.id}
-                projectRoot={workRoot}
-                layout={layout}
-                focusedPaneId={focusedPaneId}
-                visible={showTerminal}
-                broadcast={broadcast}
-                onFocusPane={setFocusedPaneId}
-                onSplit={handleSplit}
-                onClosePane={handleClosePane}
-                onToggleBroadcast={() => setBroadcast((on) => !on)}
-              />
-            </Panel>
-            {fitsSplit ? (
-              <>
-                <Separator className="shell-separator code-room__sep">
-                  <SeparatorHandle orientation="col" />
-                </Separator>
-                <Panel
-                  id={`code-room-dock-${row.id}`}
-                  className="code-room__panel"
-                  minSize={DOCK_MIN_WIDTH[dockSize]}
-                >
-                  {renderDock({ visible: true })}
-                </Panel>
-              </>
-            ) : null}
-          </Group>
+              <Icon name="ph:git-pull-request" width={10} height={10} aria-hidden />
+              {pr.number != null ? `#${pr.number}` : "PR"}
+              {pr.state ? <span className="code-room__fact-note">{pr.state}</span> : null}
+            </a>
+          ) : null}
+          <span className="code-room__fact code-room__fact--muted">
+            {relativeTime(row.updated_at)}
+          </span>
         </div>
-        {fitsSplit ? null : (
-          // Narrow: the dock stays MOUNTED across step changes (tab choice and
-          // the Browser keepalive would otherwise reset on every trip), so it
-          // is hidden rather than unmounted — and told it is hidden, because a
-          // native webview left active would paint over the terminal.
-          <div className={showDock ? "flex min-h-0 min-w-0 flex-1" : "hidden"}>
-            {renderDock({ visible: showDock, onBack: () => goToStep("terminal") })}
+        <span className="code-room__spacer" />
+        <button
+          ref={inspectorAnchor}
+          type="button"
+          className="focus-ring code-room__action"
+          aria-expanded={inspectorOpen}
+          aria-label="Session inspector — branch, worktree, environment"
+          title="Session inspector — branch, worktree, environment"
+          onClick={() => setInspectorOpen((open) => !open)}
+        >
+          <Icon name="ph:sliders-bold" width={12} height={12} aria-hidden />
+        </button>
+        <button
+          type="button"
+          className="focus-ring code-room__action"
+          aria-label="Keyboard shortcuts"
+          title="Keyboard shortcuts"
+          onClick={() => setKeysOpen(true)}
+        >
+          <Icon name="ph:key-bold" width={12} height={12} aria-hidden />
+        </button>
+        <Button size="sm" onClick={() => onJumpToSession(row.id, row.familiarId)}>
+          Open in Chat
+        </Button>
+        <Popover
+          open={inspectorOpen}
+          onOpenChange={setInspectorOpen}
+          anchorRef={inspectorAnchor}
+          placement="bottom-end"
+          minWidth={320}
+          scrollStrategy="content"
+          ariaLabel="Session inspector"
+        >
+          <div className="code-room__inspector">
+            <CodeInspector row={row} onChanged={onRefresh} />
           </div>
-        )}
+        </Popover>
       </div>
+
+      {/* Narrow: a step switcher stands in for the three columns. It is the
+          only control that can bring a hidden column back, so it renders
+          BEFORE the body — reachable by tab from the header, not after a
+          full-height file list. */}
+      {fitsSplit ? null : (
+        <div role="tablist" aria-label="Workbench step" className="code-room__steps">
+          {CODE_WORKBENCH_STEPS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={step === id}
+              data-selected={step === id ? "true" : undefined}
+              className="focus-ring code-room__step"
+              onClick={() => setStep(id)}
+            >
+              {STEP_LABEL[id]}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="code-room__body" ref={roomRef} data-split={fitsSplit ? "true" : undefined}>
+        {fitsSplit || step === "files" ? (
+          <div className="code-room__tree" style={fitsSplit ? { width: TREE_WIDTH_PX } : undefined}>
+            <CodeWorkbenchTree
+              projectRoot={workRoot}
+              familiarId={row.familiarId}
+              selectedPath={selectedPath}
+              onSelect={(path) => {
+                openPath(path);
+                // Picking a file on a narrow room is a request to READ it —
+                // staying on the tree would look like the click did nothing.
+                if (!fitsSplit) setStep("source");
+              }}
+              changes={changedFiles}
+              repoRoot={changes.repoRoot}
+              changedOnly={treeChangedOnly}
+              onChangedOnlyChange={setTreeChangedOnly}
+            />
+          </div>
+        ) : null}
+        {fitsSplit || step === "source" ? (
+          <div className="code-room__viewer">
+            <RailFilePreview
+              path={selectedPath}
+              projectRoot={workRoot}
+              familiarId={row.familiarId}
+              onOpenPath={openPath}
+              variant="workbench"
+              rangeLabel={rangeLabel}
+              initialLine={focusLine}
+            />
+          </div>
+        ) : null}
+        {fitsSplit || step === "review" ? (
+          <CodeReviewRail
+            row={row}
+            projectRoot={workRoot}
+            running={running}
+            tab={railTab}
+            onTabChange={setRailTab}
+            // A rail closed to its spine while the room was wide must not
+            // survive into the narrow step — the Review step would render a
+            // 28px sliver with no control to recover it. The state itself is
+            // left alone so returning to the split restores what you chose.
+            open={fitsSplit ? railOpen : true}
+            onOpenChange={fitsSplit ? setRailOpen : () => setStep("source")}
+            widthPx={fitsSplit ? railWidth : roomWidth}
+            onWidthChange={setRailWidth}
+            roomWidthPx={roomWidth}
+            focusPath={openTarget?.kind === "changes" ? openTarget.path : undefined}
+            focusNonce={openTarget?.kind === "changes" ? openTarget.nonce : undefined}
+          />
+        ) : null}
+      </div>
+
+      <CodeTerminalDrawer
+        sessionId={row.id}
+        projectRoot={workRoot}
+        running={running}
+        open={termOpen}
+        onOpenChange={setTermOpen}
+      />
+
       <CodeComposer row={row} onJumpToSession={onJumpToSession} />
+
+      <CodeShortcutsDialog
+        open={keysOpen}
+        onClose={() => setKeysOpen(false)}
+        keymap={keymap}
+        onChange={updateKeymap}
+      />
     </div>
   );
 }

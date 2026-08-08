@@ -364,6 +364,14 @@ export function CodeView({
                   <CodeWorkbench
                     key={selected.id}
                     row={selected}
+                    // The workbench header carries its own session picker
+                    // (cave-0rcku), so it needs the same list the rail shows.
+                    sessions={sessions}
+                    onSelectSession={(id) => {
+                      setWorkbenchTarget(null);
+                      setSelectedId(id);
+                    }}
+                    onNewSession={() => setNewSessionOpen(true)}
                     initialTab={deepLink?.sessionId === selected.id ? deepLink?.workbenchTab : undefined}
                     openTarget={
                       workbenchTarget && (workbenchTarget.sessionId ?? selected.id) === selected.id
