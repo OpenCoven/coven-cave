@@ -23,13 +23,16 @@
  * from Chat's rail is the SAME shell here.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import "@/styles/globals/surface-code-room.css";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { relativeTime } from "@/lib/relative-time";
+import { useAnnouncer } from "@/components/ui/live-region";
+import { useIsMobile } from "@/lib/use-viewport";
+import { useMeasuredWidth } from "@/lib/use-measured-width";
 import { CodeComposer } from "@/components/code-composer";
 import { CodeContextDock } from "@/components/code-context-dock";
 import { CodeTerminalWorkspace } from "@/components/code-terminal-workspace";
@@ -39,8 +42,12 @@ import {
   codeSessionBranch,
   codeSessionDiffstat,
   codeSessionWorkRoot,
+  codeWorkbenchFitsSplit,
+  CODE_ROOM_MIN_DOCK_WIDTH_PX,
+  CODE_ROOM_MIN_TERMINAL_WIDTH_PX,
   type CodeDockSize,
   type CodeDockTab,
+  type CodeWorkbenchStep,
   type CodeWorkbenchTab,
 } from "@/lib/code-surface";
 import {
@@ -56,11 +63,12 @@ import type { SessionRow } from "@/lib/types";
 
 /** The terminal keeps this much room whatever the dock does — the center is
  *  the priority surface, so dragging the divider can starve context but never
- *  the shell. */
-const MIN_TERMINAL_WIDTH = "320px";
+ *  the shell. Both derive from the pure model so the constraint and the
+ *  breakpoint that decides whether to apply it can never drift apart. */
+const MIN_TERMINAL_WIDTH = `${CODE_ROOM_MIN_TERMINAL_WIDTH_PX}px`;
 const DOCK_MIN_WIDTH: Record<CodeDockSize, string> = {
   collapsed: "44px",
-  normal: "300px",
+  normal: `${CODE_ROOM_MIN_DOCK_WIDTH_PX}px`,
   expanded: "460px",
 };
 
@@ -85,13 +93,50 @@ export function CodeWorkbench({
     () => codeDockTabForWorkbenchTab(initialTab) ?? "changes",
   );
   const [dockSize, setDockSize] = useState<CodeDockSize>("normal");
+  const { announce } = useAnnouncer();
+
+  // Narrow layout (cave-k3a9u). Measured against the workbench's OWN body, not
+  // the viewport: this component renders inside the role-surface host beside
+  // the app sidebar and can be placed in a split, so the viewport says nothing
+  // useful about the width these two zones actually got. `useIsMobile` is only
+  // the stand-in for the frames before the first measurement lands.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const bodyWidth = useMeasuredWidth(bodyRef);
+  const isMobile = useIsMobile();
+  const fitsSplit = codeWorkbenchFitsSplit(bodyWidth, isMobile);
+  // Terminal is the landing step — the shell is the Room's priority surface.
+  const [step, setStep] = useState<CodeWorkbenchStep>("terminal");
+  const showTerminal = fitsSplit || step === "terminal";
+  const showDock = fitsSplit || step === "context";
+
+  const goToStep = useCallback((next: CodeWorkbenchStep) => {
+    setStep(next);
+  }, []);
+
+  // Announce the step from an effect, never from inside the setState updater.
+  // React re-invokes updaters during the render phase, so announcing there
+  // called setState on the live region mid-render ("Cannot update a component
+  // while rendering a different component"). Doing it here also covers the
+  // steps taken by routing and session switches, not just the buttons.
+  // Silent while the split is showing both zones — the step means nothing then.
+  const announcedStepRef = useRef<CodeWorkbenchStep>("terminal");
+  useEffect(() => {
+    if (announcedStepRef.current === step) return;
+    announcedStepRef.current = step;
+    if (fitsSplit) return;
+    announce(step === "context" ? "Context shown." : "Terminal shown.");
+  }, [step, fitsSplit, announce]);
+
   // A routed open outranks the resting/deep-linked tab — a diff jump shows
   // Changes, a file open shows Files (re-applied per nonce), and either one
-  // reopens a collapsed dock so the routed target is actually visible.
+  // reopens a collapsed dock so the routed target is actually visible. On a
+  // narrow Room "visible" also means the context STEP: pointing a hidden dock
+  // at the right tab would look like the jump silently did nothing.
   useEffect(() => {
     if (!openTarget) return;
     setDockTab(openTarget.kind === "changes" ? "changes" : "files");
     setDockSize((size) => (size === "collapsed" ? "normal" : size));
+    setStep("context");
   }, [openTarget]);
 
   // Terminal center. The layout is per-session: switching sessions resets to a
@@ -106,6 +151,7 @@ export function CodeWorkbench({
     setLayout(fresh);
     setFocusedPaneId(resolveFocusedPane(fresh, null));
     setBroadcast(false);
+    setStep("terminal");
   }, [row.id]);
 
   const handleSplit = useCallback((paneId: string, direction: TerminalSplitDirection) => {
@@ -135,6 +181,32 @@ export function CodeWorkbench({
   const diffstat = codeSessionDiffstat(row);
   const pr = row.pullRequest;
   const running = codeSessionActivity(row) === "running";
+
+  // One dock definition for both layouts. It renders in two different tree
+  // slots (inside the split Panel, or as the narrow step), so it remounts when
+  // the Room crosses the breakpoint — a resize or a rotation, not a step
+  // change, which is the transition worth keeping cheap.
+  const renderDock = ({ visible, onBack }: { visible: boolean; onBack?: () => void }) => (
+    <CodeContextDock
+      row={row}
+      tab={dockTab}
+      // A narrow dock is a full-width STEP, so it renders at `normal` whatever
+      // the split was left at. Passing `collapsed` through would render no body
+      // and — since the narrow dock offers Back instead of collapse/expand — no
+      // control to undo it: collapse the dock on a wide Room, narrow the Room,
+      // step to Context, and you land on a blank surface. The state itself is
+      // left alone so returning to the split restores the width you chose.
+      size={fitsSplit ? dockSize : "normal"}
+      running={running}
+      openTarget={openTarget}
+      visible={visible}
+      onBack={onBack}
+      onTabChange={setDockTab}
+      onSizeChange={setDockSize}
+      onRefresh={onRefresh}
+      onJumpToSession={onJumpToSession}
+    />
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -171,49 +243,78 @@ export function CodeWorkbench({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
+            {fitsSplit ? null : (
+              // Narrow Room: the third drill-in step. Sessions -> Terminal ->
+              // Context, with the dock's own Back returning here.
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Show context"
+                onClick={() => goToStep("context")}
+              >
+                <Icon name="ph:sidebar-simple" width={12} height={12} />
+                Context
+              </Button>
+            )}
             <Button size="sm" onClick={() => onJumpToSession(row.id, row.familiarId)}>
               Open in Chat
             </Button>
           </div>
         </div>
       </div>
-      <div className="flex min-h-0 flex-1">
-        <Group className="code-room__group" orientation="horizontal">
-          <Panel id={`code-room-terminal-${row.id}`} className="code-room__panel" minSize={MIN_TERMINAL_WIDTH}>
-            <CodeTerminalWorkspace
-              sessionId={row.id}
-              projectRoot={workRoot}
-              layout={layout}
-              focusedPaneId={focusedPaneId}
-              visible
-              broadcast={broadcast}
-              onFocusPane={setFocusedPaneId}
-              onSplit={handleSplit}
-              onClosePane={handleClosePane}
-              onToggleBroadcast={() => setBroadcast((on) => !on)}
-            />
-          </Panel>
-          <Separator className="shell-separator code-room__sep">
-            <SeparatorHandle orientation="col" />
-          </Separator>
-          <Panel
-            id={`code-room-dock-${row.id}`}
-            className="code-room__panel"
-            minSize={DOCK_MIN_WIDTH[dockSize]}
-          >
-            <CodeContextDock
-              row={row}
-              tab={dockTab}
-              size={dockSize}
-              running={running}
-              openTarget={openTarget}
-              onTabChange={setDockTab}
-              onSizeChange={setDockSize}
-              onRefresh={onRefresh}
-              onJumpToSession={onJumpToSession}
-            />
-          </Panel>
-        </Group>
+      <div className="flex min-h-0 flex-1" ref={bodyRef}>
+        {/* The terminal Panel holds the SAME tree slot in both layouts, so the
+            shell never unmounts — not when the dock leaves the split, and not
+            when the narrow Room steps to Context. It goes `visible={false}`
+            there, which is BottomTerminal's hidden-keepalive state: output
+            keeps buffering and the refit waits until it is on screen again. */}
+        <div className={showTerminal ? "flex min-h-0 min-w-0 flex-1" : "hidden"}>
+          <Group className="code-room__group" orientation="horizontal">
+            <Panel
+              id={`code-room-terminal-${row.id}`}
+              className="code-room__panel"
+              // Narrow: the terminal is the whole width, so a 320px floor would
+              // be a constraint against nothing.
+              minSize={fitsSplit ? MIN_TERMINAL_WIDTH : "0px"}
+            >
+              <CodeTerminalWorkspace
+                sessionId={row.id}
+                projectRoot={workRoot}
+                layout={layout}
+                focusedPaneId={focusedPaneId}
+                visible={showTerminal}
+                broadcast={broadcast}
+                onFocusPane={setFocusedPaneId}
+                onSplit={handleSplit}
+                onClosePane={handleClosePane}
+                onToggleBroadcast={() => setBroadcast((on) => !on)}
+              />
+            </Panel>
+            {fitsSplit ? (
+              <>
+                <Separator className="shell-separator code-room__sep">
+                  <SeparatorHandle orientation="col" />
+                </Separator>
+                <Panel
+                  id={`code-room-dock-${row.id}`}
+                  className="code-room__panel"
+                  minSize={DOCK_MIN_WIDTH[dockSize]}
+                >
+                  {renderDock({ visible: true })}
+                </Panel>
+              </>
+            ) : null}
+          </Group>
+        </div>
+        {fitsSplit ? null : (
+          // Narrow: the dock stays MOUNTED across step changes (tab choice and
+          // the Browser keepalive would otherwise reset on every trip), so it
+          // is hidden rather than unmounted — and told it is hidden, because a
+          // native webview left active would paint over the terminal.
+          <div className={showDock ? "flex min-h-0 min-w-0 flex-1" : "hidden"}>
+            {renderDock({ visible: showDock, onBack: () => goToStep("terminal") })}
+          </div>
+        )}
       </div>
       <CodeComposer row={row} onJumpToSession={onJumpToSession} />
     </div>

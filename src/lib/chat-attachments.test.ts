@@ -149,14 +149,13 @@ assert.deepEqual(
 // URL, which put a backtracking regex engine across several million characters
 // of base64 inside a single `String.prototype.match`. That threw
 // `RangeError: Maximum call stack size exceeded at String.match` on a ~6 MB
-// payload — and because it threw inside a streaming route handler, the stream
-// ended after its `staged` event with no terminal frame at all instead of
-// rejecting one attachment.
+// payload — and thrown from a streaming route handler it took the whole
+// response down rather than rejecting one attachment.
 //
-// This is NOT scry-specific. `POST /api/chat/send` runs pasted images through
-// `normalizeChatAttachments` on exactly the same strings: `fileToAttachment`
-// inlines any image up to MAX_ATTACHMENT_IMAGE_BYTES with no downscale. The
-// sizes below are the sizes that path actually produces.
+// `POST /api/chat/send` runs pasted images through `normalizeChatAttachments`
+// on exactly these strings: `fileToAttachment` inlines any image up to
+// MAX_ATTACHMENT_IMAGE_BYTES with no downscale. The sizes below are the sizes
+// that path actually produces.
 //
 // The cap is not the fix and must not become one: a 5 MB photo is a legitimate
 // attachment and has to keep working.
@@ -202,8 +201,7 @@ for (const mb of [1, 3, 4.9]) {
   assert.equal(oversized.dataUrl, undefined, "an image past the 5MB cap is dropped");
 }
 
-// And the whole prompt builder — the call every send path makes, including the
-// scry route — must get
+// And the whole prompt builder — the call every send path makes — must get
 // through a payload of that size without throwing.
 {
   const url = bigImageDataUrl(4.9);
