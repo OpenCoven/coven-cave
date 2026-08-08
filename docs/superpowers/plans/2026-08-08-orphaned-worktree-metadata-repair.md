@@ -4,16 +4,16 @@
 
 **Goal:** Make lifecycle patrol discover and safely repair non-closed Beads whose structured worktree record points at a missing local branch and missing path.
 
-**Architecture:** Keep metadata-only orphan records outside `WorktreeLifecycleItem`, because they have no trustworthy ref or OID. Inventory reports them separately; a focused repair module performs bounded, gate- and writer-intent-protected Bead metadata mutations; patrol composes those repairs with existing Git retirement and reports both outcomes.
+**Architecture:** Keep metadata-only orphan records outside `WorktreeLifecycleItem`, because they have no trustworthy ref or OID. Inventory reports them separately; a focused repair module performs bounded Bead metadata mutations under the held repository maintenance gate; patrol composes those repairs with existing Git retirement and reports both outcomes.
 
-**Tech Stack:** Node.js 24 TypeScript strip-types scripts, Beads CLI JSON metadata, Git porcelain, repository maintenance gate, writer intents, Node assertion fixtures.
+**Tech Stack:** Node.js 24 TypeScript strip-types scripts, Beads CLI JSON metadata, Git porcelain, repository maintenance gate, Node assertion fixtures.
 
 ---
 
 ## File map
 
 - Modify `scripts/worktree-lifecycle-inventory.ts`: export orphan record types, detect missing branch/path records on non-closed Beads, and include them in inventory output.
-- Create `scripts/worktree-lifecycle-metadata-repair.ts`: plan and execute exact-record Bead metadata repairs with injected operations and production gate/writer-intent adapters.
+- Create `scripts/worktree-lifecycle-metadata-repair.ts`: plan and execute exact-record Bead metadata repairs with injected operations and production maintenance-gate adapters.
 - Modify `scripts/worktree-lifecycle-patrol.ts`: render orphan discovery, run bounded repairs before Git retirement, and include repair outcomes in apply status.
 - Modify `scripts/worktree-lifecycle-patrol.test.mjs`: fixture and integration coverage for discovery, blocked evidence, metadata preservation, races, failures, and batch limits.
 - Modify `scripts/worktree-lifecycle-create.test.mjs`: end-to-end proof that apply clears the stale record and managed creation then succeeds.
@@ -170,7 +170,7 @@ assert.deepEqual(report.repaired.map((item) => item.beadId), ["cave-orphan"]);
 assert.deepEqual(report.blocked, []);
 ```
 
-Add cases for primary promotion, additional removal, changed reread, new local branch, new registered path, present filesystem path, update failure, verification failure, writer-intent failure, and a one-item batch cap.
+Add cases for primary promotion, additional removal, changed reread, new local branch, new registered path, present filesystem path, update failure, verification failure, maintenance-gate heartbeat/ownership failure, and a one-item batch cap.
 
 - [ ] **Step 2: Run the test and verify it fails because the module does not exist**
 
@@ -199,16 +199,13 @@ export type MetadataRepairReport = {
 
 export interface MetadataRepairOperations {
   heartbeatAndVerifyGate(): { ok: true } | { ok: false; reason: string };
-  acquireWriterIntents(beadId: string): WriterIntentResult;
-  heartbeatWriterIntents(leases: WriterLease[]): OperationResult;
-  releaseWriterIntents(leases: WriterLease[]): OperationResult;
   readBead(beadId: string): ExactBeadResult;
   probeLocal(record: OrphanedWorktreeMetadataRecord): LocalProbeResult;
   persistCoven(beadId: string, coven: JsonRecord): OperationResult;
 }
 ```
 
-The exported orchestrator selects `candidates.filter(candidate => candidate.repairable).slice(0, maxRepairs)`, processes them serially, and never throws away a release failure.
+The exported orchestrator selects `candidates.filter(candidate => candidate.repairable).slice(0, maxRepairs)` and processes them serially. It heartbeats and verifies the held maintenance gate before the fresh Bead read, immediately before persistence, and before post-persistence verification.
 
 - [ ] **Step 4: Implement pure metadata transformation**
 
@@ -232,7 +229,10 @@ Return an explicit error for a missing, moved, or changed record.
 
 - [ ] **Step 5: Implement production operations**
 
-Use `registerWriterIntent`, `heartbeatWriterIntent`, and `releaseWriterIntent` from `scripts/maintenance-gate.mjs`. Acquire `worktree-create` and `worktree-create:<beadId>` intents, matching managed creation. Use:
+Use `heartbeatMaintenanceGate` and `verifyMaintenanceGateOwnership` from
+`scripts/maintenance-gate.mjs`. Do not acquire writer intents: they are the
+pre-maintenance protocol and are deliberately rejected while a gate is held.
+Use:
 
 ```bash
 bd show <bead> --json

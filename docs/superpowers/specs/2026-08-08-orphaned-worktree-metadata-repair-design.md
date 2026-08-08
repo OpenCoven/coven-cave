@@ -70,13 +70,15 @@ existing `pnpm beads:worktrees:apply` suggestion actionable and diagnosable.
 ### Gated repair
 
 `--apply` repairs orphaned metadata within the existing repository maintenance
-gate. Before each Bead mutation, the repair path also acquires the same global
-and Bead-specific writer intents used by managed creation so creation and
-repair cannot persist competing snapshots.
+gate. The held gate is the exclusive writer boundary: managed creation must
+register writer intents before mutation, and maintenance acquisition drains
+those intents before entering its held phase. New intents are rejected while
+the gate is held, so repair must not attempt to acquire an intent underneath
+the gate.
 
 For every selected orphan:
 
-1. Heartbeat and verify the maintenance gate and writer intents.
+1. Heartbeat and verify the maintenance gate.
 2. Reread the exact Bead.
 3. Parse its current structured metadata.
 4. Verify the target record is deeply equal to the inventoried structured
@@ -95,7 +97,7 @@ preserve any unrelated `coven` keys, leaving an empty `coven` object when there
 are none.
 
 Any changed record, new branch, registered worktree, present path, lost gate,
-lost writer intent, malformed reread, failed update, or failed verification
+malformed reread, failed update, or failed verification
 produces a blocked repair. It never reports success-shaped output.
 
 Metadata repairs count against the existing `--max-retire` batch limit so one
@@ -120,7 +122,8 @@ worktree creation, and metadata persistence path.
   Bead update.
 - Persistence verification distinguishes blocked, partial, and repaired
   outcomes.
-- Writer intents are always released, including failure paths.
+- The maintenance gate is heartbeated and ownership-verified before reread,
+  persistence, and post-persistence verification.
 - Remote state is observational only and is never mutated.
 
 ## Tests
