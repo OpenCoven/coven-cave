@@ -218,14 +218,21 @@ test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-com
   assert.doesNotMatch(stripStep, /TAURI_SIGNING_PRIVATE_KEY/);
 });
 
-test("manual release retries build from the release tag before publishing", () => {
+test("manual release verifies the tag once and pins publication to its commit", () => {
   assert.doesNotMatch(releaseWorkflow, /source_ref:/);
   assert.doesNotMatch(releaseWorkflow, /github\.event\.inputs\.source_ref/);
   assert.match(
     releaseWorkflow,
-    /ref: \$\{\{ github\.event\.inputs\.tag \|\| github\.ref \}\}/,
-    "release checkouts must use the same tag/ref whose release receives assets",
+    /release-commit: \$\{\{ steps\.tag\.outputs\.commit \}\}/,
+    "the source gate must expose the commit peeled from the verified release tag",
   );
+  for (const jobName of ["build", "checksums", "updater-manifest"]) {
+    assert.match(
+      getWorkflowJob(jobName),
+      /ref: \$\{\{ needs\.source-version\.outputs\.release-commit \}\}/,
+      `${jobName} must use the immutable commit verified by the source-version gate`,
+    );
+  }
   assert.match(
     releaseWorkflow,
     /RAW_RELEASE_TAG: \$\{\{ github\.event\.inputs\.tag \|\| github\.ref_name \}\}/,
