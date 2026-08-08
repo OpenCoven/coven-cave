@@ -136,6 +136,22 @@ pub(super) fn dev_startup_marker_path(value: Option<String>) -> Option<std::path
     Some(std::path::PathBuf::from(value))
 }
 
+/// Only ever fill in the empty file the launcher already created.
+///
+/// `mktemp` makes the marker before exporting it, so a zero-length file is
+/// what this is meant to find. Refusing to create or truncate anything else
+/// means a stale `COVEN_CAVE_DEV_STARTUP_MARKER` left in a shell profile
+/// cannot clobber a real file on every launch — and truncating a file that is
+/// already empty destroys nothing. Checking the *content* rather than the
+/// directory keeps this honest on Windows, where the launcher hands over a
+/// `cygpath -w` spelling that need not match `temp_dir()` textually.
+#[cfg(desktop)]
+pub(super) fn marker_is_the_launchers_placeholder(path: &std::path::Path) -> bool {
+    std::fs::metadata(path)
+        .map(|meta| meta.is_file() && meta.len() == 0)
+        .unwrap_or(false)
+}
+
 /// Non-empty on purpose: the launcher tests the file with `[ -s ]`, so an
 /// empty write would read exactly like a GUI that never got here.
 #[cfg(desktop)]
@@ -157,6 +173,9 @@ pub(super) fn announce_startup_completed() {
     let Some(path) = dev_startup_marker_path(std::env::var(DEV_STARTUP_MARKER_ENV).ok()) else {
         return;
     };
+    if !marker_is_the_launchers_placeholder(&path) {
+        return;
+    }
     if let Err(error) = write_dev_startup_marker(&path) {
         log::warn!(
             "[cave] could not write the dev startup marker at {}: {error}",

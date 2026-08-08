@@ -220,7 +220,18 @@ watch_dev_server() {
 # opened no window at all (cave-g8n5v). The desktop shell writes this marker as
 # the last statement of its setup closure; its absence is the only evidence a
 # signal death leaves behind.
-export COVEN_CAVE_DEV_STARTUP_MARKER="$DEV_STARTUP_MARKER"
+#
+# Git Bash's mktemp hands back a POSIX path (/tmp/…), but the desktop shell is
+# a native Windows process: it would resolve that against the current drive as
+# C:\tmp\…, fail to write, and leave this launcher reporting a startup failure
+# on every Windows run. cygpath is MSYS's own converter; where it does not
+# exist the path is already native. Bash keeps testing the POSIX name below —
+# both spellings name the same file.
+if command -v cygpath >/dev/null 2>&1; then
+  export COVEN_CAVE_DEV_STARTUP_MARKER="$(cygpath -w "$DEV_STARTUP_MARKER")"
+else
+  export COVEN_CAVE_DEV_STARTUP_MARKER="$DEV_STARTUP_MARKER"
+fi
 
 pnpm exec tauri dev --config "$TAURI_OVERRIDE_CONFIG" "$@" &
 tauri_pid=$!

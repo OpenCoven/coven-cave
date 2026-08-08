@@ -27,6 +27,43 @@ fn dev_startup_marker_is_skipped_when_no_launcher_is_watching() {
 }
 
 #[test]
+fn dev_startup_marker_only_fills_in_the_launchers_own_placeholder() {
+    let dir = std::env::temp_dir().join(format!(
+        "cave-startup-marker-guard-{}-{}",
+        std::process::id(),
+        sidecar_auth_token()
+    ));
+    std::fs::create_dir_all(&dir).expect("marker test dir");
+
+    let placeholder = dir.join("mktemp-placeholder");
+    std::fs::write(&placeholder, "").expect("empty placeholder");
+    assert!(
+        marker_is_the_launchers_placeholder(&placeholder),
+        "the empty file mktemp created is exactly what the launcher hands over"
+    );
+
+    // A stale COVEN_CAVE_DEV_STARTUP_MARKER in someone's shell profile must
+    // not turn every launch into a truncation of whatever it names.
+    let real_file = dir.join("someones-real-file");
+    std::fs::write(&real_file, "please do not clobber me\n").expect("real file");
+    assert!(
+        !marker_is_the_launchers_placeholder(&real_file),
+        "a file with content is not a marker placeholder"
+    );
+
+    assert!(
+        !marker_is_the_launchers_placeholder(&dir),
+        "a directory is not a marker placeholder"
+    );
+    assert!(
+        !marker_is_the_launchers_placeholder(&dir.join("nothing-here")),
+        "the app must never create the marker, only fill one in"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn dev_startup_marker_is_non_empty_so_the_launcher_can_test_it() {
     let dir = std::env::temp_dir().join(format!(
         "cave-startup-marker-test-{}-{}",

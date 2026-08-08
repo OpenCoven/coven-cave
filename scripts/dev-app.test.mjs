@@ -142,8 +142,16 @@ assert.match(
 // evidence of startup rather than trusting that status.
 assert.match(
   source,
-  /export COVEN_CAVE_DEV_STARTUP_MARKER="\$DEV_STARTUP_MARKER"[\s\S]*?pnpm exec tauri dev/,
+  /export COVEN_CAVE_DEV_STARTUP_MARKER=[\s\S]*?pnpm exec tauri dev/,
   "the launcher must hand the desktop app a startup marker before starting it",
+);
+// Git Bash's mktemp yields /tmp/…, which the native Windows shell would
+// resolve against the current drive and fail to write — reporting a false
+// startup failure on every Windows run.
+assert.match(
+  source,
+  /cygpath -w "\$DEV_STARTUP_MARKER"/,
+  "the exported marker path must be native where Bash paths are not",
 );
 assert.match(
   source,
