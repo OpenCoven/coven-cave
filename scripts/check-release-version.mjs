@@ -16,6 +16,24 @@ export const RELEASE_SOURCE_PATHS = [
 
 const stableVersion = (value) => /^\d+\.\d+\.\d+$/.test(value);
 
+function validIosBuildStamp(value) {
+  if (!/^\d{10}$/.test(value)) return false;
+  const [year, month, day, hour] = [
+    Number(value.slice(0, 4)),
+    Number(value.slice(4, 6)),
+    Number(value.slice(6, 8)),
+    Number(value.slice(8, 10)),
+  ];
+  if (year < 2026 || year > 2100) return false;
+  const instant = new Date(Date.UTC(year, month - 1, day, hour));
+  return (
+    instant.getUTCFullYear() === year &&
+    instant.getUTCMonth() + 1 === month &&
+    instant.getUTCDate() === day &&
+    instant.getUTCHours() === hour
+  );
+}
+
 function tomlPackageVersionValues(source) {
   let section = null;
   const values = [];
@@ -158,10 +176,10 @@ export function releaseSourceErrors({
 
   if (
     snapshot.iosBuildVersions.length !== 1 ||
-    !/^\d{10}$/.test(snapshot.iosBuildVersions[0] ?? "")
+    !validIosBuildStamp(snapshot.iosBuildVersions[0] ?? "")
   ) {
     errors.push(
-      `apps/ios/CovenCave/project.yml: expected one 10-digit CURRENT_PROJECT_VERSION, found ${JSON.stringify(snapshot.iosBuildVersions)}`,
+      `apps/ios/CovenCave/project.yml: expected one valid YYYYMMDDHH CURRENT_PROJECT_VERSION, found ${JSON.stringify(snapshot.iosBuildVersions)}`,
     );
   }
 
