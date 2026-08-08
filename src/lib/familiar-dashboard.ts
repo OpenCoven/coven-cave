@@ -309,6 +309,41 @@ export type FamiliarAnalyticsDigest = {
   feedback: FamiliarFeedbackDigest;
 };
 
+export function isFamiliarAnalyticsDigestEmpty(
+  analytics: FamiliarAnalyticsDigest,
+): boolean {
+  const hasActivity = analytics.activity.totalSessions > 0;
+  const hasConfidence =
+    analytics.confidence.sampleCount > 0 ||
+    analytics.confidence.band !== null;
+  const hasTrends = analytics.trends.sampleCount > 0;
+  const hasMemory =
+    analytics.memory.sampleCount > 0 ||
+    (analytics.memory.count ?? 0) > 0 ||
+    analytics.memory.averageRecall !== null ||
+    analytics.memory.averageFileLocatability !== null;
+  const hasCapabilities =
+    analytics.capabilities.sampleCount > 0 ||
+    analytics.capabilities.used.length > 0 ||
+    analytics.capabilities.lacking.length > 0 ||
+    analytics.capabilities.vital.length > 0;
+  const hasHealRequests = analytics.healRequests.length > 0;
+  const hasFeedback =
+    analytics.feedback.total > 0 ||
+    analytics.feedback.models.length > 0 ||
+    analytics.feedback.runtimes.length > 0;
+
+  return !(
+    hasActivity ||
+    hasConfidence ||
+    hasTrends ||
+    hasMemory ||
+    hasCapabilities ||
+    hasHealRequests ||
+    hasFeedback
+  );
+}
+
 export type FamiliarDashboardResponse =
   | {
       ok: true;

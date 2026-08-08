@@ -19,6 +19,7 @@ import {
   buildFamiliarProfile,
   FAMILIAR_DASHBOARD_LIMITS,
   FAMILIAR_DASHBOARD_VERSION,
+  isFamiliarAnalyticsDigestEmpty,
   type DashboardSourceResult,
   type FamiliarDashboardIssueCode,
   type FamiliarDashboardResponse,
@@ -419,10 +420,7 @@ export async function loadFamiliarDashboard(
     data: analyticsData,
     empty:
       analyticsData !== null &&
-      analyticsData.activity.totalSessions === 0 &&
-      analyticsData.confidence.sampleCount === 0 &&
-      analyticsData.trends.sampleCount === 0 &&
-      analyticsData.memory.count === 0,
+      isFamiliarAnalyticsDigestEmpty(analyticsData),
   });
 
   const avatarUrl = familiar.avatarUrl ?? null;

@@ -8,6 +8,7 @@ import {
   buildFamiliarOverview,
   buildFamiliarProfile,
   buildDashboardSection,
+  isFamiliarAnalyticsDigestEmpty,
   serializedDashboardBytes,
 } from "./familiar-dashboard.ts";
 
@@ -410,6 +411,54 @@ test("Analytics publishes bands and samples without a composite score", () => {
   assert.equal("overallScore" in analytics, false);
   assert.equal(analytics.memory.count, 0);
   assert.equal(analytics.memory.availability, "ready");
+});
+
+test("analytics emptiness tracks all user-visible signals", () => {
+  const emptyAnalytics = buildFamiliarAnalyticsDigest({
+    familiarId: "sage",
+    familiar: { id: "sage", display_name: "Sage", role: "Researcher" },
+    sessions: [],
+    reports: [],
+    reportTotal: 0,
+    snapshots: [],
+    snapshotTotal: 0,
+    memories: [],
+    memoryAvailability: "ready",
+    retroState: null,
+    contractReport: null,
+    feedback: { up: 0, down: 0, total: 0, models: [], runtimes: [] },
+    now: NOW,
+  });
+  const healAnalytics = {
+    ...emptyAnalytics,
+    healRequests: [{
+      id: "heal-1",
+      severity: "warn",
+      title: "Follow up",
+      detail: "Needs attention.",
+      suggestedAction: "Check it.",
+      actionKind: "manual",
+    }],
+  };
+  const feedbackAnalytics = {
+    ...emptyAnalytics,
+    feedback: {
+      ...emptyAnalytics.feedback,
+      up: 1,
+      total: 1,
+      models: [{
+        key: "claude-sonnet",
+        up: 1,
+        down: 0,
+        total: 1,
+        approval: 1,
+      }],
+    },
+  };
+
+  assert.equal(isFamiliarAnalyticsDigestEmpty(emptyAnalytics), true);
+  assert.equal(isFamiliarAnalyticsDigestEmpty(healAnalytics), false);
+  assert.equal(isFamiliarAnalyticsDigestEmpty(feedbackAnalytics), false);
 });
 
 test("Analytics excludes archived sessions from totals, evidence, and pulse", () => {

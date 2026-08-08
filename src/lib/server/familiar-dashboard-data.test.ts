@@ -292,6 +292,67 @@ test("successful empty stores produce truthful empty data states", async () => {
   assert.equal(result.response.sections.profile.state, "fresh");
 });
 
+test("analytics stays non-empty when heal requests are actionable", async () => {
+  const result = await loadFamiliarDashboard("sage", makeDependencies({
+    loadContract: async () => ({
+      files: { soul: null, identity: null, ward: null, memory: null },
+      report: {
+        specVersion: "0.1.0",
+        pass: false,
+        properties: [],
+        violations: [{
+          file: "SOUL.md",
+          field: "purpose",
+          message: "Purpose is missing.",
+        }],
+        warnings: [],
+      },
+    }),
+  }));
+
+  assert.equal(result.kind, "ok");
+  assert.equal(result.response.sections.analytics.state, "fresh");
+  assert.equal(result.response.sections.analytics.data.healRequests.length, 1);
+});
+
+test("analytics stays non-empty when feedback exists", async () => {
+  const result = await loadFamiliarDashboard("sage", makeDependencies({
+    loadFeedback: async () => ({
+      up: 1,
+      down: 0,
+      total: 1,
+      models: [{
+        key: "claude-sonnet",
+        up: 1,
+        down: 0,
+        total: 1,
+        approval: 1,
+      }],
+      runtimes: [],
+    }),
+  }));
+
+  assert.equal(result.kind, "ok");
+  assert.equal(result.response.sections.analytics.state, "fresh");
+  assert.equal(result.response.sections.analytics.data.feedback.total, 1);
+});
+
+test("analytics is empty only when every visible signal is zero or absent", async () => {
+  const result = await loadFamiliarDashboard("sage", makeDependencies());
+
+  assert.equal(result.kind, "ok");
+  assert.equal(result.response.sections.analytics.state, "empty");
+  assert.equal(result.response.sections.analytics.data.activity.totalSessions, 0);
+  assert.equal(result.response.sections.analytics.data.confidence.sampleCount, 0);
+  assert.equal(result.response.sections.analytics.data.trends.sampleCount, 0);
+  assert.equal(result.response.sections.analytics.data.memory.count, 0);
+  assert.equal(result.response.sections.analytics.data.capabilities.used.length, 0);
+  assert.equal(result.response.sections.analytics.data.capabilities.lacking.length, 0);
+  assert.equal(result.response.sections.analytics.data.capabilities.vital.length, 0);
+  assert.equal(result.response.sections.analytics.data.healRequests.length, 0);
+  assert.equal(result.response.sections.analytics.data.feedback.total, 0);
+});
+
 test("memory analytics depend only on canonical list entries", async () => {
   const updatedAt = "2026-08-07T19:59:00.000Z";
   const result = await loadFamiliarDashboard("sage", makeDependencies({
