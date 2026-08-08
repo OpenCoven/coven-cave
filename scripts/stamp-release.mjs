@@ -172,6 +172,18 @@ function canonicalTomlVersionMatch(content, relativePath) {
   return matches[0];
 }
 
+function canonicalCargoLockAppVersion(content, relativePath) {
+  const matches = [
+    ...content.matchAll(
+      /(?:^|\n)\[\[package\]\]\r?\nname = "app"\r?\nversion = "([^"]+)"(?:\r?\n|$)/g,
+    ),
+  ];
+  if (matches.length !== 1) {
+    throw new Error(`${relativePath}: expected exactly one app package version in Cargo.lock`);
+  }
+  return matches[0][1];
+}
+
 /** Read the version currently encoded by one stamp location. */
 export function readStampedVersion(kind, content, relativePath = "<unknown>") {
   let version;
@@ -184,9 +196,7 @@ export function readStampedVersion(kind, content, relativePath = "<unknown>") {
       version = canonicalTomlVersionMatch(content, relativePath).value;
       break;
     case "cargo-lock-app":
-      version = content.match(
-        /(?:^|\n)\[\[package\]\]\r?\nname = "app"\r?\nversion = "([^"]+)"(?:\r?\n|$)/,
-      )?.[1];
+      version = canonicalCargoLockAppVersion(content, relativePath);
       break;
     case "yaml-ios-versions":
       version = readCanonicalYamlStringSetting(
@@ -240,7 +250,9 @@ export function stampContent(kind, content, oldVersion, newVersion) {
       }
       break;
     case "cargo-lock-app":
-      sub(new RegExp(`(name = "app"\\nversion = ")${old}(")`));
+      if (canonicalCargoLockAppVersion(content, "Cargo.lock") === oldVersion) {
+        sub(new RegExp(`(name = "app"\\nversion = ")${old}(")`));
+      }
       break;
     default:
       throw new Error(`unknown stamp kind: "${kind}"`);
