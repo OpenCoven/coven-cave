@@ -126,7 +126,7 @@ describe("familiar self-report storage", () => {
     assert.deepEqual(listed.reports.map((item) => item.id), ["mid", "old"]);
   });
 
-  it("listDashboardSelfReports stops after the newest 30 rows without reading older files or rows", async () => {
+  it("listDashboardSelfReports stops after the newest relevant file dates once older files cannot outrank the cutoff", async () => {
     const base = Date.parse("2026-06-25T00:00:00.000Z");
     for (let index = 0; index < 35; index++) {
       await appendSelfReport("cody", report({
@@ -155,8 +155,52 @@ describe("familiar self-report storage", () => {
     );
     assert.deepEqual(
       tracker.lines,
-      Array.from({ length: 30 }, (_, offset) => `recent-${34 - offset}`),
+      Array.from({ length: 35 }, (_, index) => `recent-${index}`),
     );
+  });
+
+  it("listDashboardSelfReports keeps same-day appended backfills from displacing newer rows and breaks ties by id", async () => {
+    const reportsDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports");
+    await mkdir(reportsDir, { recursive: true });
+
+    const raw = [
+      ...Array.from({ length: 30 }, (_, offset) => report({
+        id: `recent-${offset + 1}`,
+        sessionId: `recent-session-${offset + 1}`,
+        reportedAt: `2026-06-25T12:${String(offset + 1).padStart(2, "0")}:00.000Z`,
+      })),
+      report({
+        id: "tie-b",
+        sessionId: "tie-session-b",
+        reportedAt: "2026-06-25T12:31:00.000Z",
+      }),
+      report({
+        id: "tie-a",
+        sessionId: "tie-session-a",
+        reportedAt: "2026-06-25T12:31:00.000Z",
+      }),
+      report({
+        id: "older-appended-last",
+        sessionId: "older-session",
+        reportedAt: "2026-06-25T11:00:00.000Z",
+      }),
+    ].map((entry) => JSON.stringify(entry)).join("\n");
+    await writeFile(path.join(reportsDir, "2026-06-25.jsonl"), `${raw}\n`, "utf8");
+
+    const listed = await listDashboardSelfReports("cody");
+
+    assert.equal(listed.total, 30);
+    assert.equal(
+      listed.reports.some((item) => item.id === "older-appended-last"),
+      false,
+      "an older same-day backfill appended later must not displace a newer report",
+    );
+    assert.deepEqual(
+      listed.reports.slice(0, 4).map((item) => item.id),
+      ["tie-a", "tie-b", "recent-30", "recent-29"],
+      "same-timestamp reports sort deterministically by id after reportedAt",
+    );
+    assert.equal(listed.reports.at(-1)?.id, "recent-3");
   });
 
   it("findSelfReport returns null for missing sessions and the matching report for existing ones", async () => {
@@ -350,9 +394,86 @@ describe("familiar self-report storage", () => {
     );
     assert.equal(
       tracker.lines.length,
-      200,
-      "the reader stays bounded at 100 newest persisted candidates plus 100 newest report-derived candidates",
+      210,
+      "the reader stays bounded to the newest relevant persisted/report files while fully inspecting same-day candidates",
     );
+  });
+
+  it("listDashboardMetricSnapshots ignores same-day appended older backfills, breaks ties by id, and still prefers persisted duplicates", async () => {
+    const now = Date.parse("2026-08-07T23:59:59.000Z");
+    const reportsDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports");
+    const snapshotDir = path.join(reportsDir, "metric-snapshots");
+    await mkdir(reportsDir, { recursive: true });
+    await mkdir(snapshotDir, { recursive: true });
+
+    const reportsRaw = [
+      ...Array.from({ length: 100 }, (_, offset) => report({
+        id: `recent-${offset + 1}`,
+        sessionId: `recent-session-${offset + 1}`,
+        reportedAt: new Date(Date.parse("2026-08-07T10:00:00.000Z") + offset * 60_000).toISOString(),
+        overallConfidence: 50 + (offset % 10),
+      })),
+      report({
+        id: "tie-b",
+        sessionId: "tie-session-b",
+        reportedAt: "2026-08-07T11:40:00.000Z",
+        overallConfidence: 61,
+      }),
+      report({
+        id: "tie-a",
+        sessionId: "tie-session-a",
+        reportedAt: "2026-08-07T11:40:00.000Z",
+        overallConfidence: 62,
+      }),
+      report({
+        id: "older-appended-last",
+        sessionId: "older-session",
+        reportedAt: "2026-08-07T09:00:00.000Z",
+        overallConfidence: 10,
+      }),
+    ].map((entry) => JSON.stringify(entry)).join("\n");
+    await writeFile(path.join(reportsDir, "2026-08-07.jsonl"), `${reportsRaw}\n`, "utf8");
+
+    const snapshotsRaw = [
+      {
+        id: "recent-50",
+        sessionId: "recent-session-50",
+        reportedAt: "2026-08-07T10:49:00.000Z",
+        confidence: 77,
+        toolReliability: 75,
+        memoryRecall: 70,
+        fileLocatability: 65,
+        contextPressure: "adequate",
+      },
+      {
+        id: "tie-b",
+        sessionId: "tie-session-b",
+        reportedAt: "2026-08-07T11:40:00.000Z",
+        confidence: 91,
+        toolReliability: 75,
+        memoryRecall: 70,
+        fileLocatability: 65,
+        contextPressure: "adequate",
+      },
+    ].map((entry) => JSON.stringify(entry)).join("\n");
+    await writeFile(path.join(snapshotDir, "2026-08-07.jsonl"), `${snapshotsRaw}\n`, "utf8");
+
+    const listed = await listDashboardMetricSnapshots("cody", now);
+
+    assert.equal(listed.total, 100);
+    assert.equal(listed.snapshots[0].id, "recent-3");
+    assert.equal(
+      listed.snapshots.some((snapshot) => snapshot.id === "older-appended-last"),
+      false,
+      "an older same-day backfill appended later must not displace a newer snapshot candidate",
+    );
+    assert.deepEqual(
+      listed.snapshots.slice(-3).map((snapshot) => snapshot.id),
+      ["recent-100", "tie-a", "tie-b"],
+      "same-timestamp snapshots sort deterministically by id after reportedAt",
+    );
+    assert.equal(listed.snapshots.find((snapshot) => snapshot.id === "tie-b")?.confidence, 91);
+    assert.equal(listed.snapshots.find((snapshot) => snapshot.id === "recent-50")?.confidence, 77);
   });
 
   it("listDashboardMetricSnapshots keeps report-derived reads bounded even when persisted snapshots run short", async () => {

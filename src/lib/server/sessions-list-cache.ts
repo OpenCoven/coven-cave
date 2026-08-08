@@ -55,7 +55,7 @@ const SESSIONS_LIST_STALE_SERVE_MS = 30_000;
 export const sessionsListCache = createSwrCache<SessionsListResult>({
   ttlMs: SESSIONS_LIST_CACHE_MS,
   staleServeMs: SESSIONS_LIST_STALE_SERVE_MS,
-  canServeStale: (result) => result.payload.ok,
+  canServeStale: (result) => result.payload.ok && result.payload.degraded !== true,
 });
 
 export function sessionsListCacheKey(

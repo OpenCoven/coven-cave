@@ -59,7 +59,7 @@ import {
   const cache = createSwrCache({
     ttlMs: 2_000,
     staleServeMs: 30_000,
-    canServeStale: (result) => result.payload.ok,
+    canServeStale: (result) => result.payload.ok && result.payload.degraded !== true,
     now: () => now,
   });
   const compute = async (
@@ -110,6 +110,62 @@ import {
   assert.equal(computes, 4, "collapse mode remains part of the shared cache key");
 }
 
+// ── degraded local-only payloads never stale-serve after the fresh TTL ──────
+{
+  let now = 0;
+  let computes = 0;
+  let nextTag = "degraded";
+  const cache = createSwrCache({
+    ttlMs: 2_000,
+    staleServeMs: 30_000,
+    canServeStale: (result) => result.payload.ok && result.payload.degraded !== true,
+    now: () => now,
+  });
+  const compute = async () => ({
+    payload: {
+      ok: true,
+      degraded: nextTag === "degraded" ? true : undefined,
+      sessions: [],
+      error: nextTag,
+    },
+  });
+
+  const degraded = await cache.get("test:degraded-stale", async () => {
+    computes++;
+    return compute();
+  });
+  assert.equal(degraded.payload.error, "degraded");
+  assert.equal(degraded.payload.degraded, true);
+  assert.equal(computes, 1);
+
+  now = 2_001;
+  nextTag = "healthy";
+  const recovered = await cache.get("test:degraded-stale", async () => {
+    computes++;
+    return compute();
+  });
+  assert.equal(
+    recovered.payload.error,
+    "healthy",
+    "once the fresh TTL expires, degraded payloads synchronously recompute instead of stale-serving",
+  );
+  assert.equal(recovered.payload.degraded, undefined);
+  assert.equal(computes, 2);
+
+  now = 4_002;
+  nextTag = "healthy-refresh";
+  const staleHealthy = await cache.get("test:degraded-stale", async () => {
+    computes++;
+    return compute();
+  });
+  assert.equal(
+    staleHealthy.payload.error,
+    "healthy",
+    "healthy payloads still stale-serve while a background refresh updates the cache",
+  );
+  assert.equal(computes, 3, "healthy stale-serve still kicks one background recompute");
+}
+
 // ── keying: unscoped null and the valid Familiar id "all" never alias ──────
 {
   assert.notEqual(
@@ -122,7 +178,7 @@ import {
   const cache = createSwrCache({
     ttlMs: 2_000,
     staleServeMs: 30_000,
-    canServeStale: (result) => result.payload.ok,
+    canServeStale: (result) => result.payload.ok && result.payload.degraded !== true,
   });
   const compute = async (
     includeArchived,

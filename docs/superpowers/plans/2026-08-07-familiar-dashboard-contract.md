@@ -13,6 +13,7 @@
 ## Phase boundary
 
 This plan implements only the shared server contract and model described in phase 1 of `docs/superpowers/specs/2026-08-07-ios-familiar-command-center-design.md`. It does not add Swift models, the native hub, reminder mutation routes, avatar editing, web UI changes, design-spec edits, goal edits, or Beads mutations.
+Existing web Familiar analytics loaders are intentionally not migrated in phase 1; this shared/iOS-first contract is the new read path here, and any web-loader migration is separate follow-up work.
 
 ## File map
 

@@ -694,8 +694,8 @@ for (const contract of contracts) {
   );
   assert.match(
     sessionsListCacheSource,
-    /canServeStale: \(result\) => result\.payload\.ok/,
-    "sessions-list-cache: error payloads must never be served stale (no pinned 503s)",
+    /canServeStale: \(result\) => result\.payload\.ok && result\.payload\.degraded !== true/,
+    "sessions-list-cache: only healthy payloads may be served stale (errors and degraded local-only fallbacks must recompute)",
   );
   assert.match(
     sessionsListCacheSource,
