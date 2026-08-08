@@ -12,6 +12,7 @@ import { deriveHealRequests, type SelfHealRequest } from "@/lib/familiar-heal-re
 import type { MessageFeedbackRollup } from "@/lib/message-feedback-rollup";
 import type { ProjectAccessLevel } from "@/lib/project-permissions";
 import type { RetroFamiliarState } from "@/lib/retro-runs";
+import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
 import { buildSessionPulse } from "@/lib/session-pulse";
 import {
   deriveSignalTrends,
@@ -341,6 +342,14 @@ function stringOrNull(value: string | null | undefined): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
+function normalizedSessionStatus(status: string | null | undefined): string {
+  return status?.trim().toLowerCase() ?? "";
+}
+
+function isActiveSessionStatus(status: string | null | undefined): boolean {
+  return ACTIVE_SESSION_STATUSES.has(normalizedSessionStatus(status));
+}
+
 function timestampValue(value: string | null | undefined): number {
   const parsed = value ? Date.parse(value) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
@@ -476,10 +485,10 @@ export function buildFamiliarOverview({
     )
     .sort((left, right) => newestFirst(left, right, (session) => session.updated_at, (session) => session.id));
   const activeSessions = visibleSessions.filter((session) =>
-    ACTIVE_SESSION_STATUSES.has((session.status ?? "").toLowerCase()),
+    isActiveSessionStatus(session.status),
   );
   const recentSessions = visibleSessions.filter(
-    (session) => !ACTIVE_SESSION_STATUSES.has((session.status ?? "").toLowerCase()),
+    (session) => !isActiveSessionStatus(session.status),
   );
   const scopedReminders = reminders
     .filter(
@@ -492,9 +501,7 @@ export function buildFamiliarOverview({
       if (firedDelta !== 0) return firedDelta;
       return newestFirst(left, right, (item) => item.updatedAt, (item) => item.id);
     });
-  const runningSession = activeSessions.find(
-    (session) => session.status.toLowerCase() === "running",
-  );
+  const currentSession = activeSessions[0] ?? null;
   const nextTask = assignedTasks.find(
     (card) => Boolean(card.nextStep?.summary.trim()),
   );
@@ -549,12 +556,12 @@ export function buildFamiliarOverview({
       memoryFreshness: stringOrNull(familiar.memory_freshness),
       generatedAt,
     },
-    now: runningSession
+    now: currentSession
       ? {
           kind: "session",
-          id: runningSession.id,
-          title: runningSession.title,
-          updatedAt: runningSession.updated_at,
+          id: currentSession.id,
+          title: currentSession.title,
+          updatedAt: currentSession.updated_at,
         }
       : nextTask
         ? {
@@ -611,14 +618,26 @@ function purposeFromSoul(soul: string | null): string | null {
 }
 
 function modelProvenance(
+  familiar: Pick<Familiar, "defaultHarness" | "harness" | "harnessOverride" | "model">,
   familiarId: string,
   config: {
-    defaults: Pick<FamiliarBinding, "model">;
+    defaults: Pick<FamiliarBinding, "harness" | "model">;
     familiars: Record<string, Partial<FamiliarBinding>>;
   },
 ): FamiliarProfile["runtime"]["modelProvenance"] {
   if (config.familiars[familiarId]?.model?.trim()) return "familiar";
-  if (config.defaults.model?.trim()) return "coven_default";
+  if (!familiar.model?.trim()) return "unconfigured";
+
+  const effectiveHarness =
+    familiar.harnessOverride ??
+    familiar.harness ??
+    familiar.defaultHarness ??
+    config.defaults.harness;
+
+  if (runtimeOwnsModelDefault(effectiveHarness)) return "unconfigured";
+  if (config.defaults.model?.trim() && familiar.model.trim() === config.defaults.model.trim()) {
+    return "coven_default";
+  }
   return "unconfigured";
 }
 
@@ -631,7 +650,7 @@ export function buildFamiliarProfile({
 }: {
   familiar: Familiar;
   config: {
-    defaults: Pick<FamiliarBinding, "model">;
+    defaults: Pick<FamiliarBinding, "harness" | "model">;
     familiars: Record<string, Partial<FamiliarBinding>>;
   };
   files: ContractFiles;
@@ -659,7 +678,7 @@ export function buildFamiliarProfile({
       defaultHarness: stringOrNull(familiar.defaultHarness),
       harnessOverride: stringOrNull(familiar.harnessOverride),
       model: stringOrNull(familiar.model),
-      modelProvenance: modelProvenance(familiar.id, config),
+      modelProvenance: modelProvenance(familiar, familiar.id, config),
     },
     memoryFreshness: stringOrNull(familiar.memory_freshness),
     voice: {
@@ -836,7 +855,7 @@ export function buildFamiliarAnalyticsDigest({
       freshness: evidenceSessions[0]?.updated_at ?? null,
       pulse,
       activeSessions: nonGeneratedSessions.filter((session) =>
-        ACTIVE_SESSION_STATUSES.has((session.status ?? "").toLowerCase()),
+        isActiveSessionStatus(session.status),
       ).length,
       totalSessions: nonGeneratedSessions.length,
       lastActiveAt: evidenceSessions[0]?.updated_at ?? null,

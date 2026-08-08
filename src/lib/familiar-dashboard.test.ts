@@ -30,7 +30,7 @@ test("published limits match the v1 contract", () => {
   });
 });
 
-test("Overview prefers a running non-generated session for Now", () => {
+test("Overview prefers the newest active non-generated session for Now", () => {
   const overview = buildFamiliarOverview({
     familiarId: "sage",
     familiar: { id: "sage", display_name: "Sage", role: "Researcher" },
@@ -44,6 +44,12 @@ test("Overview prefers a running non-generated session for Now", () => {
         updated_at: "2026-08-07T19:59:00.000Z",
       }),
       modelSession(2, {
+        id: "chat-2",
+        status: " Waiting ",
+        title: "Await approval",
+        updated_at: "2026-08-07T19:58:30.000Z",
+      }),
+      modelSession(3, {
         id: "chat-1",
         status: "running",
         title: "Investigate regression",
@@ -57,11 +63,12 @@ test("Overview prefers a running non-generated session for Now", () => {
 
   assert.deepEqual(overview.now, {
     kind: "session",
-    id: "chat-1",
-    title: "Investigate regression",
-    updatedAt: "2026-08-07T19:58:00.000Z",
+    id: "chat-2",
+    title: "Await approval",
+    updatedAt: "2026-08-07T19:58:30.000Z",
   });
-  assert.equal(overview.sessions.totalNonGenerated, 1);
+  assert.equal(overview.sessions.activeTotal, 2);
+  assert.equal(overview.sessions.totalNonGenerated, 2);
 });
 
 test("blocked task rows preserve dependencies, primary blocker, and next step", () => {
@@ -642,4 +649,50 @@ test("Profile projects every approved identity and access field", () => {
     profile.access.tools.map((tool) => [tool.id, tool.enabled]),
     [["asana", false], ["x-research", true], ["x-publish", false]],
   );
+});
+
+test("Profile preserves inherited Coven default model provenance", () => {
+  const profile = buildFamiliarProfile({
+    familiar: {
+      id: "sage",
+      display_name: "Sage",
+      role: "Researcher",
+      harness: "claude",
+      defaultHarness: "claude",
+      harnessOverride: null,
+      model: "claude-sonnet",
+    },
+    config: {
+      defaults: { harness: "claude", model: "claude-sonnet" },
+      familiars: { sage: {} },
+    },
+    files: { soul: null, identity: null, ward: null, memory: null },
+    contractReport: null,
+    projects: [],
+  });
+
+  assert.equal(profile.runtime.modelProvenance, "coven_default");
+});
+
+test("Profile reports runtime-owned empty bindings as unconfigured even with a Cave default model", () => {
+  const profile = buildFamiliarProfile({
+    familiar: {
+      id: "sage",
+      display_name: "Sage",
+      role: "Researcher",
+      harness: "grok",
+      defaultHarness: "claude",
+      harnessOverride: "grok",
+      model: "",
+    },
+    config: {
+      defaults: { harness: "claude", model: "claude-sonnet" },
+      familiars: { sage: { harness: "grok" } },
+    },
+    files: { soul: null, identity: null, ward: null, memory: null },
+    contractReport: null,
+    projects: [],
+  });
+
+  assert.equal(profile.runtime.modelProvenance, "unconfigured");
 });
