@@ -87,9 +87,7 @@ export async function loadRetroRunsSnapshot({
               total_accepted: 0,
               total_reverted: 0,
               running: false,
-              unavailable: redactSecretText(
-                stateRes.error ?? `daemon http ${stateRes.status}`,
-              ),
+              unavailable: "retro_state_unavailable",
             },
           });
         }

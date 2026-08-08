@@ -87,3 +87,41 @@ test("retro loader fetches only the requested familiar state", async () => {
   assert.equal(result.snapshot.familiars.length, 1);
   assert.equal(result.snapshot.familiars[0].familiarId, "sage");
 });
+
+test("retro loader normalizes unavailable familiar state to a stable code", async () => {
+  const result = await loadRetroRunsSnapshot({
+    familiarId: "sage",
+    dependencies: {
+      loadConfig: async () => RETRO_CONFIG,
+      callDaemon: async ({ path }) =>
+        path === "/api/v1/familiars"
+          ? {
+              ok: true,
+              status: 200,
+              data: [{ id: "sage", display_name: "Sage", role: "Researcher" }],
+            }
+          : {
+              ok: false,
+              status: 503,
+              error: "daemon refused token=/secret/path",
+            },
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "retro_state_unavailable");
+  assert.equal(result.error, "One or more retro states are unavailable.");
+  assert.equal(result.snapshot.familiars.length, 1);
+  assert.deepEqual(result.snapshot.familiars[0].raw, {
+    familiar_id: "sage",
+    last_run: null,
+    iterations: [],
+    track_counts: { synthesis: 0, prompt: 0, memory: 0 },
+    total_accepted: 0,
+    total_reverted: 0,
+    running: false,
+    unavailable: "retro_state_unavailable",
+  });
+  assert.equal(JSON.stringify(result).includes("secret"), false);
+  assert.equal(JSON.stringify(result).includes("/secret/path"), false);
+});
