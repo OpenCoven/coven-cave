@@ -57,7 +57,6 @@
     "wt:status:json": "node scripts/worktree-status.mjs --json",
     "wt:prune": "node scripts/worktree-status.mjs --prune",
     "beads:worktrees": "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave",
-    "repair:familiar-purpose": "node --experimental-strip-types scripts/repair-familiar-purpose.ts",
     "beads:worktrees:json": "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave --json",
     "beads:worktrees:create": "node --experimental-strip-types scripts/worktree-lifecycle-create.ts",
     "beads:worktrees:apply": "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave --apply",

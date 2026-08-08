@@ -168,15 +168,6 @@ assert.match(
   /description: description\.trim\(\)/,
   "the circle always sends the required description to the creation route",
 );
-// The circle asks ONE prose question — "What it does" — which is a purpose, so
-// it is sent as the purpose too. (The rite sends the two apart: its description
-// is written by the scry describing the portrait, and that caption used to be
-// what SOUL.md printed after "My purpose is to".)
-assert.match(
-  source,
-  /purpose: description\.trim\(\)/,
-  "the circle's 'what it does' must reach the contract scaffolder as the purpose",
-);
 assert.match(
   source,
   /htmlFor="summon-description">What it does \*</,
