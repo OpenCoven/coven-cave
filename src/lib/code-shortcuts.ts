@@ -109,7 +109,10 @@ export function codeComboFromEvent(event: {
   let printable = key.length === 1 ? key.toUpperCase() : key;
   if (printable === " ") printable = "Space";
   const parts: string[] = [];
-  if (event.metaKey || event.ctrlKey) parts.push("Mod");
+  const apple =
+    typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent);
+  const modDown = apple ? event.metaKey : event.metaKey || event.ctrlKey;
+  if (modDown) parts.push("Mod");
   if (event.altKey) parts.push("Alt");
   if (event.shiftKey && !(key.length === 1 && !/[A-Z0-9]/i.test(key))) parts.push("Shift");
   parts.push(printable);
