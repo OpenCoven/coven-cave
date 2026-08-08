@@ -170,7 +170,12 @@ Builds a read-only lifecycle report for every registered worktree and direct
 local branch. The patrol correlates local state with claims, Beads, Coven
 sessions, pull requests, workflow runs, and live process cwd ownership. It never
 removes worktrees or branches unless --apply becomes available after all
-maintenance planes are enforced.`);
+maintenance planes are enforced.
+
+--apply is currently unusable: the coven, beads and github planes are hard-coded
+off in scripts/maintenance-gate.mjs pending unbuilt work, so it refuses with
+exit 2 before assessing any unit. Retire cleanup-ready units by hand through the
+archive-tag route in CLAUDE.md until that changes (cave-3aqvr).`);
 }
 
 function errorMessage(error: unknown): string {
@@ -224,8 +229,32 @@ function renderApplyUnavailable(
       }),
     );
   } else {
+    // Name the blocking work and the route that does function. Bare
+    // "missing maintenance planes" reads as a local fault, so sessions retry
+    // it, then reach for `git worktree add` -- the unmanaged fallback whose
+    // worktrees carry no lifecycle metadata and can never be retired at all
+    // (cave-l52dt). The planes are unimplemented, not unavailable (cave-3aqvr).
+    // The blocking Bead per plane is read from the capability's own `source`
+    // rather than a second map here, so this cannot drift from the gate.
     console.error(
-      `worktree-lifecycle-patrol: --apply unavailable; missing maintenance planes: ${missingPlanes.join(", ")}`,
+      [
+        `worktree-lifecycle-patrol: --apply unavailable; missing maintenance planes: ${missingPlanes.join(", ")}`,
+        "",
+        "This is not a local fault and a retry will not clear it. These planes are",
+        "hard-coded off in scripts/maintenance-gate.mjs pending unbuilt work:",
+        ...missingPlanes.map(
+          (plane) => `  ${plane.padEnd(7)} blocked on ${capabilities[plane].source || "an unfiled Bead"}`,
+        ),
+        "",
+        "Until those land, automated retirement is unavailable and hand-retirement",
+        "is the expected path -- NOT a workaround. Retire a cleanup-ready unit via",
+        "the archive-tag route in CLAUDE.md (worktree-guard section), and prove",
+        "retention BEFORE removing anything: a merged PR is not retention, because",
+        "a squash-merge leaves the branch commits on no remote ref. Tag the exact",
+        "head, push the tag, confirm it is on the REMOTE, then remove.",
+        "",
+        "Tracked by cave-3aqvr.",
+      ].join("\n"),
     );
   }
   return 2;
