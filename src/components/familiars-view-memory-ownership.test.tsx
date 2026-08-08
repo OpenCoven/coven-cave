@@ -66,6 +66,7 @@ vi.mock("@/lib/surface-preferences", () => ({
 
 vi.mock("@/lib/summon-events", () => ({
   SUMMON_FAMILIAR_EVENT: "test:summon",
+  hasSummonPending: () => false,
   consumeSummonPending: () => false,
 }));
 
