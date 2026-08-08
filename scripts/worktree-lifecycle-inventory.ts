@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, realpathSync, type Stats } from "node:fs";
+import { lstatSync, readFileSync, realpathSync, type Stats } from "node:fs";
 import { devNull } from "node:os";
 
 import path from "node:path";
@@ -2348,6 +2348,29 @@ function metadataFor(
   return { metadata: record.metadata, errors: [] };
 }
 
+export function probeRecordedPathAbsence(
+  recordedPath: string,
+  probe: (candidate: string) => Stats = lstatSync,
+): { absent: boolean; reason: string | null } {
+  try {
+    probe(recordedPath);
+    return {
+      absent: false,
+      reason: `recorded path exists on disk: ${recordedPath}`,
+    };
+  } catch (error) {
+    const code = isRecord(error) && typeof error.code === "string" ? error.code : "UNKNOWN";
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return { absent: true, reason: null };
+    }
+    const detail = error instanceof Error ? error.message : "unknown filesystem error";
+    return {
+      absent: false,
+      reason: `could not establish recorded path absence for ${recordedPath} (${code}): ${detail}`,
+    };
+  }
+}
+
 function collectOrphanedMetadata(
   tasks: BeadTask[],
   localRefs: LocalBranchRef[],
@@ -2396,7 +2419,7 @@ function collectOrphanedMetadata(
           if (localBranches.has(record.branch) || registeredPaths.has(normalizedRecordPath)) {
             return [];
           }
-          const pathPresent = existsSync(record.path);
+          const pathProbe = probeRecordedPathAbsence(record.path);
           return [
             {
               beadId: task.id,
@@ -2417,8 +2440,8 @@ function collectOrphanedMetadata(
                   : {}),
                 ...(record.metadata.exception ? { exception: record.metadata.exception } : {}),
               },
-              repairable: !pathPresent,
-              reasons: pathPresent ? [`recorded path exists on disk: ${record.path}`] : [],
+              repairable: pathProbe.absent,
+              reasons: pathProbe.reason === null ? [] : [pathProbe.reason],
             },
           ];
         }),

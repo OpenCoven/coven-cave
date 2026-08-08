@@ -21,6 +21,7 @@ import {
   renderApplyReport,
   runRetirementApply,
 } from "./worktree-lifecycle-patrol.ts";
+import { probeRecordedPathAbsence } from "./worktree-lifecycle-inventory.ts";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(sourceRoot, "scripts", "worktree-lifecycle-patrol.ts");
@@ -38,6 +39,7 @@ const metadataAlias = path.join(fixtureRoot, "old-alias");
 const orphanedMissingPath = path.join(fixtureRoot, "missing-orphan");
 const orphanedClosedPath = path.join(fixtureRoot, "missing-closed");
 const orphanedPresentPath = path.join(repo, ".worktrees", "orphaned-present");
+const orphanedDanglingPath = path.join(repo, ".worktrees", "orphaned-dangling");
 
 // No child of this test should ever run unbounded. `execFileSync` without a
 // timeout waits forever, so a wedged git or a stub that never exits used to
@@ -112,6 +114,14 @@ try {
   assert.doesNotMatch(
     claude,
     /Manually `git worktree remove .*` then `git branch -D/,
+  );
+  const deniedPathProbe = probeRecordedPathAbsence("/fixture/denied", () => {
+    throw Object.assign(new Error("fixture denied"), { code: "EACCES" });
+  });
+  assert.equal(deniedPathProbe.absent, false);
+  assert.match(
+    deniedPathProbe.reason,
+    /could not establish recorded path absence for \/fixture\/denied.*EACCES.*fixture denied/i,
   );
 
   mkdirSync(repo);
@@ -307,6 +317,11 @@ try {
   const defaultHead = git(["rev-parse", "refs/remotes/origin/main"], repo).trim();
   git(["update-ref", "refs/remotes/origin/trunk", defaultHead], repo);
   mkdirSync(orphanedPresentPath, { recursive: true });
+  symlinkSync(
+    path.join(fixtureRoot, "missing-dangling-target"),
+    orphanedDanglingPath,
+    process.platform === "win32" ? "junction" : "dir",
+  );
   const worktreeInventory = git(["worktree", "list", "--porcelain", "-z"], repo);
   writeFileSync(
     duplicateWorktreeInventory,
@@ -1320,7 +1335,7 @@ elif [ "\${LIFECYCLE_MULTI_WORKTREE_METADATA:-0}" = "1" ]; then
 elif [ "\${LIFECYCLE_ORPHANED_METADATA_AMBIGUOUS:-0}" = "1" ]; then
 printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-orphan-malformed-sibling","status":"open","title":"Malformed sibling orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-malformed","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Malformed sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-malformed-sibling","path":"relative/orphaned","owner":"Kitty","purpose":"Malformed sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}},{"id":"cave-orphan-duplicate-branch","status":"open","title":"Duplicate branch orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-duplicate-branch","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Duplicate branch fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-duplicate-branch","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Duplicate branch fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}},{"id":"cave-orphan-duplicate-path","status":"open","title":"Duplicate path orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-duplicate-path","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Duplicate path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-duplicate-path-sibling","path":"${orphanedMissingPath}/","owner":"Kitty","purpose":"Duplicate path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_ORPHANED_METADATA:-0}" = "1" ]; then
-printf '%s\n' '[{"id":"cave-orphan","status":"open","title":"Orphaned metadata fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/orphaned","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-present-path","status":"open","title":"Present path fixture","metadata":{"coven":{"worktree":{"branch":"feat/present-path","path":"${orphanedPresentPath}","owner":"Kitty","purpose":"Present path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-closed-orphan","status":"closed","title":"Closed orphaned metadata fixture","metadata":{"coven":{"worktree":{"branch":"feat/closed-orphan","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Closed orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+printf '%s\n' '[{"id":"cave-orphan","status":"open","title":"Orphaned metadata fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/orphaned","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-present-path","status":"open","title":"Present path fixture","metadata":{"coven":{"worktree":{"branch":"feat/present-path","path":"${orphanedPresentPath}","owner":"Kitty","purpose":"Present path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-dangling-path","status":"open","title":"Dangling path fixture","metadata":{"coven":{"worktree":{"branch":"feat/dangling-path","path":"${orphanedDanglingPath}","owner":"Kitty","purpose":"Dangling path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-closed-orphan","status":"closed","title":"Closed orphaned metadata fixture","metadata":{"coven":{"worktree":{"branch":"feat/closed-orphan","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Closed orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_MALFORMED_WORKTREES:-0}" = "1" ]; then
 printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Malformed array","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":{}}}}]'
 elif [ "\${LIFECYCLE_DUPLICATE_WORKTREE_BRANCH:-0}" = "1" ]; then
@@ -1633,8 +1648,8 @@ exit 0
   const orphanedMetadataReport = JSON.parse(
     patrol(["--json"], { LIFECYCLE_ORPHANED_METADATA: "1" }),
   );
-  assert.equal(orphanedMetadataReport.orphanedMetadata.length, 2);
-  assert.equal(orphanedMetadataReport.orphanedMetadataCount, 2);
+  assert.equal(orphanedMetadataReport.orphanedMetadata.length, 3);
+  assert.equal(orphanedMetadataReport.orphanedMetadataCount, 3);
   const orphanedByBead = new Map(
     orphanedMetadataReport.orphanedMetadata.map((entry) => [entry.beadId, entry]),
   );
@@ -1645,6 +1660,11 @@ exit 0
   assert.match(
     orphanedByBead.get("cave-present-path").reasons.join("\n"),
     /path/i,
+  );
+  assert.equal(orphanedByBead.get("cave-dangling-path").repairable, false);
+  assert.match(
+    orphanedByBead.get("cave-dangling-path").reasons.join("\n"),
+    /exists on disk/i,
   );
   assert.equal(orphanedByBead.has("cave-closed-orphan"), false);
   const ambiguousOrphanedMetadataReport = JSON.parse(
