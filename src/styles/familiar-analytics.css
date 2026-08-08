@@ -3114,7 +3114,7 @@
   gap: var(--space-1);
   height: 72px;
 }
-.fa-lattice__week-bar,
+/* Only the fortnight draws bars; the quarter is a Sparkline. */
 .fa-lattice__pulse-day {
   display: flex;
   flex: 1;
@@ -3126,14 +3126,12 @@
   border: 0;
   background: transparent;
 }
-.fa-lattice__week-bar i,
 .fa-lattice__pulse-day i {
   display: block;
   width: 100%;
   border-radius: var(--radius-sm);
   background: var(--accent-presence);
 }
-.fa-lattice__week-bar i[data-empty="true"],
 .fa-lattice__pulse-day[data-empty="true"] i {
   background: var(--bg-hover);
 }

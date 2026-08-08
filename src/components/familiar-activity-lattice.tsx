@@ -78,6 +78,11 @@ export const FamiliarActivityLattice = memo(function FamiliarActivityLattice({
   // The shared Sparkline owns the hover readout, so a week reports its own span
   // and total the same way the day cells report theirs — and reusing it keeps
   // one trend rendering in the app instead of a second hand-rolled bar chart.
+  const busiestWeek = lattice.quarter.reduce(
+    (best, week) => (best === null || week.total > best.total ? week : best),
+    null as (typeof lattice.quarter)[number] | null,
+  );
+  const busiestWeekLabel = busiestWeek ? `${weekLabel(busiestWeek)} with ${sessionCount(busiestWeek.total)}` : "—";
   const quarterPoints = lattice.quarter.map((week) => ({
     label: weekLabel(week),
     value: week.total,
@@ -138,7 +143,18 @@ export const FamiliarActivityLattice = memo(function FamiliarActivityLattice({
             {sessionCount(quarterTotal)} over {lattice.quarter.length} weeks
           </span>
         </header>
-        <figure className="fa-lattice__trend">
+        <figure
+          className="fa-lattice__trend"
+          // The Sparkline is a graphic: without a role and a label a screen
+          // reader gets nothing for the quarter, since the caption below is
+          // aria-hidden. Same treatment the thread-score trend already uses.
+          role="img"
+          aria-label={
+            silent
+              ? `Quarter trend: no sessions in the last ${lattice.quarter.length} weeks.`
+              : `Quarter trend: ${sessionCount(quarterTotal)} across the last ${lattice.quarter.length} weeks, busiest week ${busiestWeekLabel}.`
+          }
+        >
           <Sparkline points={quarterPoints} color="var(--accent-presence)" height={72} />
           <figcaption aria-hidden>
             Sessions per week, oldest to newest · hover for values

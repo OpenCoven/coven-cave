@@ -95,6 +95,16 @@ assert.doesNotMatch(
   "weeks are not selectable — there is no week filter to select into",
 );
 
+// Every graphic in the lattice needs a text alternative, not just the grid.
+// The quarter's caption is aria-hidden, so without a label on the figure a
+// screen reader gets nothing at all for that view — found in review on #4425,
+// with all 18 checks green.
+assert.match(
+  lattice,
+  /className="fa-lattice__trend"[\s\S]{0,400}role="img"[\s\S]{0,200}aria-label=\{/,
+  "the quarter trend figure carries a role and a summarising label",
+);
+
 // ── The year grid is summarised, not 364 tab stops ───────────────────────────
 assert.match(
   lattice,
@@ -150,6 +160,14 @@ assert.match(
   lattice,
   /className="fa-lattice"[\s\S]{0,200}className="fa-lattice__views"/,
   "the host wraps the grid, matching what the container query targets",
+);
+
+// Swapping the quarter to the Sparkline made the bar rules dead; leaving them
+// would be the same inert-CSS problem this PR removed elsewhere.
+assert.doesNotMatch(
+  css,
+  /fa-lattice__week-bar/,
+  "no stylesheet rules survive for a DOM shape the lattice no longer renders",
 );
 
 // ── No hand-copied colour ────────────────────────────────────────────────────
