@@ -732,9 +732,9 @@ export function buildFamiliarAnalyticsDigest({
   familiar,
   sessions,
   reports,
-  reportTotal,
+  reportTotal: _reportTotal,
   snapshots,
-  snapshotTotal,
+  snapshotTotal: _snapshotTotal,
   memories,
   memoryAvailability,
   retroState,
@@ -819,8 +819,8 @@ export function buildFamiliarAnalyticsDigest({
   const latestReportAt = boundedReports[0]?.reportedAt ?? null;
   const latestMemoryAt = [...scopedMemories]
     .sort((left, right) => newestFirst(left, right, (memory) => memory.updatedAt, (memory) => memory.id))[0]?.updatedAt ?? null;
-  const boundedReportCount = Math.min(reportTotal, boundedReports.length);
-  const boundedSnapshotCount = Math.min(snapshotTotal, trends.snapshotCount);
+  const boundedReportCount = boundedReports.length;
+  const boundedSnapshotCount = boundedSnapshots.length;
   const feedbackState =
     feedback.total < 5
       ? "insufficient"

@@ -375,9 +375,9 @@ test("Analytics bounds evidence, reports, and the trailing metric window", () =>
     familiar: { id: "sage", display_name: "Sage", role: "Researcher" },
     sessions,
     reports,
-    reportTotal: 40,
+    reportTotal: 1,
     snapshots,
-    snapshotTotal: 121,
+    snapshotTotal: 2,
     memories: [],
     memoryAvailability: "ready",
     retroState: null,
@@ -391,6 +391,57 @@ test("Analytics bounds evidence, reports, and the trailing metric window", () =>
   assert.equal(analytics.trends.sampleCount, 100);
   assert.equal(analytics.trends.period, "last 30 days");
   assert.equal(analytics.feedback.state, "stable");
+});
+
+test("Analytics activity pulse buckets by UTC day across midnight and the 14-day boundary", () => {
+  const boundaryNow = Date.parse("2026-08-07T00:30:00.000Z");
+  const analytics = buildFamiliarAnalyticsDigest({
+    familiarId: "sage",
+    familiar: { id: "sage", display_name: "Sage", role: "Researcher" },
+    sessions: [
+      modelSession(1, {
+        id: "window-start",
+        updated_at: "2026-07-25T00:00:00.000Z",
+      }),
+      modelSession(2, {
+        id: "before-window",
+        updated_at: "2026-07-24T23:59:59.999Z",
+      }),
+      modelSession(3, {
+        id: "before-midnight",
+        updated_at: "2026-08-05T23:59:59.999Z",
+      }),
+      modelSession(4, {
+        id: "after-midnight",
+        updated_at: "2026-08-06T00:00:00.000Z",
+      }),
+    ],
+    reports: [],
+    reportTotal: 0,
+    snapshots: [],
+    snapshotTotal: 0,
+    memories: [],
+    memoryAvailability: "ready",
+    retroState: null,
+    contractReport: null,
+    feedback: { up: 0, down: 0, total: 0, models: [], runtimes: [] },
+    now: boundaryNow,
+  });
+
+  const pulseCounts = new Map(
+    analytics.activity.pulse.map((day) => [day.key, day.count]),
+  );
+  assert.equal(analytics.activity.pulse.length, 14);
+  assert.equal(analytics.activity.pulse[0]?.key, "2026-07-25");
+  assert.equal(analytics.activity.pulse.at(-1)?.key, "2026-08-07");
+  assert.equal(
+    analytics.activity.pulse.reduce((sum, day) => sum + day.count, 0),
+    3,
+  );
+  assert.equal(pulseCounts.get("2026-07-25"), 1);
+  assert.equal(pulseCounts.get("2026-08-05"), 1);
+  assert.equal(pulseCounts.get("2026-08-06"), 1);
+  assert.equal(pulseCounts.has("2026-07-24"), false);
 });
 
 test("Analytics distinguishes unavailable memory from ready-empty memory", () => {
