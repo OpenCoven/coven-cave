@@ -14,6 +14,8 @@ type RouteContract = {
   invalidJson?: "guarded" | "fallback-empty" | "legacy-unhandled";
   optionalJsonBody?: boolean;
   pathGuard?: boolean;
+  pathGuardPattern?: RegExp;
+  pathGuardStatusPattern?: RegExp;
   localOriginGuard?: boolean;
 };
 
@@ -74,6 +76,14 @@ const contracts: RouteContract[] = [
   { route: "/familiars/[id]/avatar", methods: ["GET", "POST"], kind: "stream", pathGuard: true },
   { route: "/familiars/[id]/backdrop", methods: ["GET", "PUT", "DELETE"], kind: "stream", localOriginGuard: true },
   { route: "/familiars/[id]/contract", methods: ["GET"], kind: "json", pathGuard: true },
+  {
+    route: "/familiars/[id]/dashboard",
+    methods: ["GET"],
+    kind: "json",
+    pathGuard: true,
+    pathGuardPattern: /invalid_familiar_id/,
+    pathGuardStatusPattern: /dashboardError\(403,\s*"invalid_familiar_id"\)|status:\s*403/,
+  },
   { route: "/familiars/[id]/icon", methods: ["PUT"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/familiars/[id]/notes", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/familiars/[id]/self-report", methods: ["POST", "GET"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
@@ -384,8 +394,16 @@ for (const contract of contracts) {
     assert.match(effectiveSource, /rawBody\.trim\(\)/, `${contract.route} must accept a missing request body`);
   }
   if (contract.pathGuard) {
-    assert.match(source, /path not allowed|collection path not allowed/, `${contract.route} must preserve path-deny errors`);
-    assert.match(source, /status:\s*403/, `${contract.route} path guard must preserve 403 response`);
+    assert.match(
+      source,
+      contract.pathGuardPattern ?? /path not allowed|collection path not allowed/,
+      `${contract.route} must preserve path-deny errors`,
+    );
+    assert.match(
+      source,
+      contract.pathGuardStatusPattern ?? /status:\s*403/,
+      `${contract.route} path guard must preserve 403 response`,
+    );
   }
   if (contract.localOriginGuard) {
     // effectiveSource, not source — matching the readsJson/invalidJson checks
@@ -756,6 +774,84 @@ for (const contract of contracts) {
     /forceGitHubTasksRefresh\(endpoint\)[\s\S]*getGitHubTasks\(endpoint\)/,
     "/github/tasks: both forced and automatic reads use the shared process cache",
   );
+}
+
+{
+  const dashboardRoute = readFileSync(
+    path.join(apiRoot, "familiars", "[id]", "dashboard", "route.ts"),
+    "utf8",
+  );
+  const dashboardModel = readFileSync(
+    path.join(apiRoot, "..", "..", "lib", "familiar-dashboard.ts"),
+    "utf8",
+  );
+  const dashboardData = readFileSync(
+    path.join(
+      apiRoot,
+      "..",
+      "..",
+      "lib",
+      "server",
+      "familiar-dashboard-data.ts",
+    ),
+    "utf8",
+  );
+  const proxySource = readFileSync(
+    path.join(apiRoot, "..", "..", "proxy.ts"),
+    "utf8",
+  );
+  const testRunnerSource = readFileSync(
+    path.join(root, "scripts", "run-tests.mjs"),
+    "utf8",
+  );
+
+  assert.match(dashboardRoute, /isValidFamiliarId\(id\)/);
+  assert.match(dashboardRoute, /dashboardError\(403,\s*"invalid_familiar_id"\)|status: 403/);
+  assert.match(dashboardRoute, /dashboardError\(404,\s*"familiar_not_found"\)|status: 404/);
+  assert.match(dashboardRoute, /dashboardError\(500,\s*"dashboard_unavailable"\)|status: 500/);
+  assert.match(dashboardRoute, /serializedDashboardBytes/);
+  assert.match(dashboardRoute, /"cache-control": "no-store"/);
+  assert.doesNotMatch(dashboardRoute, /fetch\(/);
+  assert.doesNotMatch(dashboardData, /fetch\(/);
+  assert.match(dashboardData, /loadBoard/);
+  assert.match(dashboardData, /loadCachedSessionsList/);
+  assert.match(dashboardData, /loadInbox/);
+  assert.match(dashboardData, /canonicalMemoryList/);
+  assert.match(dashboardData, /readFamiliarContractFiles/);
+  assert.match(dashboardData, /evaluateFamiliarContract/);
+  assert.match(dashboardData, /listDashboardSelfReports/);
+  assert.match(dashboardData, /listDashboardMetricSnapshots/);
+  assert.match(dashboardData, /loadMessageFeedbackRollup/);
+  assert.match(dashboardModel, /responseBytes: 128 \* 1024/);
+  assert.doesNotMatch(
+    dashboardData,
+    /error:\s*(err|error)\.(message|stack)/,
+    "dashboard source failures never serialize raw errors",
+  );
+  assert.match(
+    proxySource,
+    /if \(!req\.nextUrl\.pathname\.startsWith\("\/api\/"\)\)/,
+    "the dashboard remains inside the existing authenticated API boundary",
+  );
+  assert.doesNotMatch(
+    proxySource,
+    /HEADER_CSRF_TRUSTED_API_PATHS[\s\S]*dashboard/,
+    "the dashboard does not gain a route-specific auth or CSRF exemption",
+  );
+  for (const testPath of [
+    "src/lib/server/familiar-enrichment.test.ts",
+    "src/lib/server/sessions-list.test.ts",
+    "src/lib/server/retro-runs-snapshot.test.ts",
+    "src/lib/familiar-dashboard.test.ts",
+    "src/lib/server/familiar-dashboard-data.test.ts",
+    "src/app/api/familiars/[id]/dashboard/route.test.ts",
+  ]) {
+    assert.match(
+      testRunnerSource,
+      new RegExp(testPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+      `${testPath} is wired into scripts/run-tests.mjs`,
+    );
+  }
 }
 
 {

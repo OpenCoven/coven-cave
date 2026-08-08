@@ -1214,6 +1214,7 @@ export const SUITES = {
     "src/app/api/opencoven-submissions-route.test.ts",
     "src/app/api/familiars/route.test.ts",
     "src/lib/server/familiar-enrichment.test.ts",
+    "src/app/api/familiars/[id]/dashboard/route.test.ts",
     "src/app/api/familiars/[id]/avatar/route.test.ts",
     "src/app/api/familiars/avatar-route.test.ts",
     "src/app/api/familiars/[id]/notes/route.test.ts",
@@ -1643,8 +1644,49 @@ const ALIAS_LOADER = new Set([
   "src/app/api/sessions/[id]/route.test.ts",
   "src/app/api/familiars/route.test.ts",
   "src/lib/server/familiar-enrichment.test.ts",
+  "src/app/api/familiars/[id]/dashboard/route.test.ts",
+  "src/lib/server/daemon-connection-snapshot.test.ts",
   "src/lib/server/sessions-list-cache.test.ts",
   "src/lib/server/retro-runs-snapshot.test.ts",
+  "src/lib/server/canonical-memory-gateway.test.ts",
+  "src/lib/server/claude-models.test.ts",
+  "src/lib/server/copilot-models.test.ts",
+  "src/lib/server/hermes-models.test.ts",
+  "src/lib/server/global-npm-install-lane.test.ts",
+  "src/lib/server/voice-chat-create.test.ts",
+  "src/lib/server/chat-project-launch.test.ts",
+  "src/lib/server/x-oauth.test.ts",
+  "src/lib/server/openclaw-device-credentials.test.ts",
+  "src/lib/server/claude-runtime-compatibility.test.ts",
+  "src/lib/server/copilot-runtime-launch.test.ts",
+  "src/lib/server/copilot-capability-probe.test.ts",
+  "src/lib/server/local-runtime-capability-gate.test.ts",
+  "src/lib/server/runtime-compatibility-registry.test.ts",
+  "src/lib/server/sessions-list.test.ts",
+  "src/lib/server/chat-work-branch.test.ts",
+  "src/lib/server/memory-file-sources.test.ts",
+  "src/lib/server/familiar-startup-context.test.ts",
+  "src/lib/server/operator-profile-context.test.ts",
+  "src/lib/server/knowledge-vault.test.ts",
+  "src/lib/server/knowledge-vault-collections.test.ts",
+  "src/lib/server/knowledge-packs.test.ts",
+  "src/lib/server/skill-package-install.test.ts",
+  "src/lib/server/stitch-threads.test.ts",
+  "src/lib/server/pin-sources.test.ts",
+  "src/lib/server/stitch-sew.test.ts",
+  "src/lib/server/assist-runner.test.ts",
+  "src/lib/server/memory-file-paths.test.ts",
+  "src/lib/server/user-avatar-file.test.ts",
+  "src/lib/server/memory-file-sources-coven-familiar.test.ts",
+  "src/lib/server/memory-trash.test.ts",
+  "src/lib/server/memory-file-write.test.ts",
+  "src/lib/server/webauthn-verify.test.ts",
+  "src/lib/server/project-grant-targets.test.ts",
+  "src/lib/server/canonical-path.test.ts",
+  "src/lib/server/home-browse.test.ts",
+  "src/lib/server/skill-scan.test.ts",
+  "src/lib/server/adapter-conflict-heal.test.ts",
+  "src/lib/server/mobile-access-provision.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
   "src/lib/opencode-models.test.ts",
   "src/lib/opencode-compatibility.test.ts",
@@ -1869,7 +1911,11 @@ export function nodeArgsFor(file) {
   if (file.endsWith(".ts") || STRIP_TYPES_MJS.has(file)) {
     args.push("--experimental-strip-types");
   }
-  if (ALIAS_LOADER.has(file)) {
+  if (
+    ALIAS_LOADER.has(file) ||
+    file.startsWith("src/app/api/") ||
+    file.startsWith("src/lib/")
+  ) {
     args.push("--import", "./scripts/test-alias-register.mjs");
   }
   args.push(file);
