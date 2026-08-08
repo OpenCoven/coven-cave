@@ -74,11 +74,14 @@
   font-size: var(--text-2xs);
   color: var(--text-muted);
 }
-.research-library__sort {
+/* Search + sort push the layout segment to the right edge of the toolbar. */
+.research-library__search {
+  flex: 1 1 200px;
+  min-width: 160px;
+  max-width: 260px;
   margin-left: auto;
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
 }
+.research-library__sort { flex: none; }
 
 /* ── Sage autoresearch receipts: collapsed, source-backed, read-only. ── */
 .research-library-autoloop {
@@ -231,14 +234,14 @@
 /* ── Filter chips + cards/rows segmented toggle (design 277–284). ── */
 .research-library__toolbar {
   display: flex;
-  gap: 6px 10px;
+  gap: var(--space-2) var(--space-3);
   margin-top: 14px;
   flex-wrap: wrap;
   align-items: center;
 }
 .research-library__filters {
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
   flex-wrap: wrap;
   align-items: center;
 }
@@ -261,7 +264,7 @@
 .research-library__chip-count { opacity: 0.6; }
 .research-library__seg {
   display: inline-flex;
-  margin-left: auto;
+  flex: none;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -298,7 +301,7 @@
 .research-library__grid[data-view="rows"] {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 /* ── Card (design 287–303). Progress drafts tint amber; failed runs red —
@@ -379,7 +382,7 @@
 .research-library-card__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
   margin-top: 2px;
   align-items: center;
 }
@@ -485,4 +488,31 @@
   .research-library__grid { grid-template-columns: minmax(0, 1fr); }
   .research-library__grid[data-view="rows"] .research-library-card__head { min-width: 0; }
   .research-library__grid[data-view="rows"] .research-library-card__title { max-width: none; }
+}
+
+/* ── Pager: only rendered past one page, so it never states the obvious. ── */
+.research-library__pager {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.research-library__pager-info {
+  margin-right: auto;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.research-library__pager-count {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+@container research-desk (max-width: 760px) {
+  .research-library__search {
+    flex-basis: 100%;
+    max-width: none;
+    margin-left: 0;
+  }
 }

@@ -64,6 +64,79 @@ export function codeDockTabWantsExpanded(tab: CodeDockTab): boolean {
   return tab === "browser" || tab === "github";
 }
 
+/**
+ * Room layout thresholds (cave-k3a9u).
+ *
+ * These are the ONE source of truth for how much width each zone needs; the
+ * CSS `minSize` strings are derived from them so a number can never drift
+ * between the constraint and the decision to apply it.
+ *
+ * They are measured against the Room's own box, never the viewport. The
+ * approved design is explicit about this — "container queries or measured
+ * panel width drive compact behavior; viewport width alone is insufficient
+ * because the Room can appear beside other pages" — and it is not a
+ * formality: the Room renders inside the role-surface host beside the app
+ * sidebar and can be placed in a split, so viewport width systematically
+ * overstates the width the Room actually got.
+ */
+export const CODE_ROOM_RAIL_WIDTH_PX = 256;
+export const CODE_ROOM_MIN_TERMINAL_WIDTH_PX = 320;
+export const CODE_ROOM_MIN_DOCK_WIDTH_PX = 300;
+
+/** Below this the terminal and the dock cannot both be legible, so the
+ *  workbench drills in (Terminal <-> Context) instead of showing two crushed
+ *  columns. */
+export const CODE_ROOM_SPLIT_MIN_WIDTH_PX =
+  CODE_ROOM_MIN_TERMINAL_WIDTH_PX + CODE_ROOM_MIN_DOCK_WIDTH_PX;
+
+/** Below this the session rail cannot sit beside a workbench that still fits
+ *  its split, so the rail becomes the landing step. Derived from the two
+ *  zones it must accompany, which is what keeps this breakpoint and the split
+ *  breakpoint from disagreeing the way 768px and 900px did. */
+export const CODE_ROOM_RAIL_MIN_WIDTH_PX =
+  CODE_ROOM_RAIL_WIDTH_PX + CODE_ROOM_SPLIT_MIN_WIDTH_PX;
+
+/** The narrow workbench's two steps. Terminal is the landing step — the shell
+ *  is the Room's priority surface — and Context is reached explicitly. */
+export const CODE_WORKBENCH_STEPS = ["terminal", "context"] as const;
+export type CodeWorkbenchStep = (typeof CODE_WORKBENCH_STEPS)[number];
+
+/**
+ * Does a measured box have room for a zone that needs `minWidth`?
+ *
+ * `width === null` means "not measured yet" — the first paint, SSR, or a test
+ * environment without ResizeObserver. That is not the same as "too narrow", so
+ * the caller supplies a viewport-derived guess to use until the real number
+ * arrives. Guessing wide on a phone would flash a crushed two-column layout
+ * before correcting, which is exactly the bug this replaces.
+ */
+export function codeRoomFits(
+  width: number | null | undefined,
+  minWidth: number,
+  fallbackNarrow: boolean,
+): boolean {
+  if (width === null || width === undefined || !Number.isFinite(width) || width <= 0) {
+    return !fallbackNarrow;
+  }
+  return width >= minWidth;
+}
+
+/** Can the Room show the session rail beside a usable workbench? */
+export function codeRoomFitsRail(
+  width: number | null | undefined,
+  fallbackNarrow: boolean,
+): boolean {
+  return codeRoomFits(width, CODE_ROOM_RAIL_MIN_WIDTH_PX, fallbackNarrow);
+}
+
+/** Can the workbench show the terminal center and the context dock at once? */
+export function codeWorkbenchFitsSplit(
+  width: number | null | undefined,
+  fallbackNarrow: boolean,
+): boolean {
+  return codeRoomFits(width, CODE_ROOM_SPLIT_MIN_WIDTH_PX, fallbackNarrow);
+}
+
 /** Top-level surface tabs: the session workbench plus Activity (the former
  *  all-content GitHub feed) and focused GitHub slices. Legacy `ctab=github`
  *  deep links normalize onto Activity. */

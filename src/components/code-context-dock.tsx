@@ -90,6 +90,15 @@ export type CodeContextDockProps = {
   running: boolean;
   /** A routed file/diff open, already resolved to this session. */
   openTarget?: PendingCodeOpen;
+  /** False while the dock is mounted but off-screen — the narrow Room's
+   *  terminal step (cave-k3a9u). Kept mounted so tab choice and the Browser
+   *  keepalive survive a step change, but the native webview must go inactive
+   *  or it draws over a container that is no longer showing. */
+  visible?: boolean;
+  /** Present only in the narrow Room, where the dock is a drill-in step rather
+   *  than a column: replaces collapse/expand (both meaningless at full width)
+   *  with a Back control to the terminal. */
+  onBack?: () => void;
   onTabChange: (tab: CodeDockTab) => void;
   onSizeChange: (size: CodeDockSize) => void;
   onRefresh?: () => void;
@@ -102,6 +111,8 @@ export function CodeContextDock({
   size,
   running,
   openTarget,
+  visible = true,
+  onBack,
   onTabChange,
   onSizeChange,
   onRefresh,
@@ -113,8 +124,14 @@ export function CodeContextDock({
   // scroll position survive a switch to Changes and back.
   const [browserOpened, setBrowserOpened] = useState(false);
   useEffect(() => {
-    if (tab === "browser") setBrowserOpened(true);
-  }, [tab]);
+    if (tab === "browser" && visible) setBrowserOpened(true);
+  }, [tab, visible]);
+
+  // The native browser is only active when its tab is selected AND the dock is
+  // on screen. A native webview positions itself over the container's box, so
+  // leaving it active behind a hidden dock paints it over whatever replaced it.
+  // (Collapsing needs no term here — a collapsed dock renders no body at all.)
+  const browserActive = tab === "browser" && visible;
 
   const collapsed = size === "collapsed";
   const expanded = size === "expanded";
@@ -179,34 +196,51 @@ export function CodeContextDock({
           ))}
         </div>
         <div className="code-context-dock__actions">
-          <button
-            type="button"
-            className="focus-ring code-context-dock__action"
-            aria-label={expanded ? "Restore context width" : "Expand context"}
-            aria-pressed={expanded}
-            title={expanded ? "Restore context width" : "Expand context"}
-            onClick={() => changeSize(expanded ? "normal" : "expanded")}
-          >
-            <Icon
-              name={expanded ? "ph:arrows-in-line-horizontal" : "ph:arrows-out-line-horizontal"}
-              width={12}
-              height={12}
-            />
-          </button>
-          <button
-            type="button"
-            className="focus-ring code-context-dock__action"
-            aria-label={collapsed ? "Show context" : "Collapse context"}
-            // aria-expanded, not aria-pressed: this reveals and hides the dock
-            // body, so it is a disclosure. It is also what now carries the
-            // collapsed state, since the tabs keep their real selection.
-            aria-expanded={!collapsed}
-            aria-controls={`code-context-dock-body-${row.id}`}
-            title={collapsed ? "Show context" : "Collapse context"}
-            onClick={() => changeSize(collapsed ? "normal" : "collapsed")}
-          >
-            <Icon name={collapsed ? "ph:caret-left" : "ph:caret-right"} width={12} height={12} />
-          </button>
+          {onBack ? (
+            // Narrow Room: the dock is a step, not a column. Collapse and
+            // expand both describe a width this dock does not have here, so
+            // the one action that means anything is going back.
+            <button
+              type="button"
+              className="focus-ring code-context-dock__action"
+              aria-label="Back to terminal"
+              title="Back to terminal"
+              onClick={onBack}
+            >
+              <Icon name="ph:caret-left" width={12} height={12} />
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="focus-ring code-context-dock__action"
+                aria-label={expanded ? "Restore context width" : "Expand context"}
+                aria-pressed={expanded}
+                title={expanded ? "Restore context width" : "Expand context"}
+                onClick={() => changeSize(expanded ? "normal" : "expanded")}
+              >
+                <Icon
+                  name={expanded ? "ph:arrows-in-line-horizontal" : "ph:arrows-out-line-horizontal"}
+                  width={12}
+                  height={12}
+                />
+              </button>
+              <button
+                type="button"
+                className="focus-ring code-context-dock__action"
+                aria-label={collapsed ? "Show context" : "Collapse context"}
+                // aria-expanded, not aria-pressed: this reveals and hides the dock
+                // body, so it is a disclosure. It is also what now carries the
+                // collapsed state, since the tabs keep their real selection.
+                aria-expanded={!collapsed}
+                aria-controls={`code-context-dock-body-${row.id}`}
+                title={collapsed ? "Show context" : "Collapse context"}
+                onClick={() => changeSize(collapsed ? "normal" : "collapsed")}
+              >
+                <Icon name={collapsed ? "ph:caret-left" : "ph:caret-right"} width={12} height={12} />
+              </button>
+            </>
+          )}
         </div>
       </div>
       {collapsed ? null : (
@@ -243,7 +277,7 @@ export function CodeContextDock({
           ) : null}
           {browserOpened ? (
             <div className={tab === "browser" ? "code-context-dock__pane" : "hidden"}>
-              <LazyBrowser label={`code:${row.id}`} active={tab === "browser"} />
+              <LazyBrowser label={`code:${row.id}`} active={browserActive} />
             </div>
           ) : null}
         </div>
