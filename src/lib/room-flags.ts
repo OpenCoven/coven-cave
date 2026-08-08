@@ -130,7 +130,20 @@ export function buildRoomVisibilityEnv(): RoomVisibilityEnv {
   };
 }
 
+/**
+ * Both inputs are build-time constants Next inlines into the bundle, so the
+ * predicate cannot change while the app runs — resolve it once rather than
+ * re-reading the env, re-splitting the setting and re-allocating a Set on
+ * every call. It is called per room per render (the surface filter), and again
+ * per Type chip in Familiar Studio.
+ *
+ * Tests exercise `resolveRoomVisibility` directly with an explicit env, which
+ * is why this cache never needs a reset hook.
+ */
+let buildRoomVisibility: ((roomId: string) => boolean) | null = null;
+
 /** Does this build show the room? Registration and role matching still apply. */
 export function roomEnabledInBuild(roomId: string): boolean {
-  return resolveRoomVisibility(buildRoomVisibilityEnv())(roomId);
+  buildRoomVisibility ??= resolveRoomVisibility(buildRoomVisibilityEnv());
+  return buildRoomVisibility(roomId);
 }
