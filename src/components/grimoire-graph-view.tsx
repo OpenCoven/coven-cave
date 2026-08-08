@@ -145,6 +145,7 @@ export function GrimoireGraphView({
   graph,
   meta,
   scopeLabel,
+  scopedMemoryTotal,
   scanning,
   scanError,
   onOpen,
@@ -156,6 +157,12 @@ export function GrimoireGraphView({
   /** Who the shell's familiar multiselect has narrowed memory to, if anyone —
    *  the graph arrives already scoped, this only makes that visible. */
   scopeLabel?: string | null;
+  /** How many memory files the active scope owns IN TOTAL, straight off the
+   *  same inventory the Memory rail counts. The scan cap is applied coven-wide
+   *  BEFORE scoping, so this is the number the rail shows and the graph cannot
+   *  match; without it the notice can only talk about coven-wide totals and
+   *  leaves the rail's figure unexplained (cave-ed4s3). Null in All scope. */
+  scopedMemoryTotal?: number | null;
   /** True while the full-corpus scan is still in flight. */
   scanning?: boolean;
   /** Set when the full scan failed — the local graph stays up. */
@@ -772,6 +779,23 @@ export function GrimoireGraphView({
 
   const summary = `${visible.nodes.length} of ${graph.nodes.length} nodes, ${visible.edges.length} connections shown`;
   const memoryTruncated = meta ? meta.memory.scanned < meta.memory.total : false;
+  // How many of the scope's memory files actually reached the graph. The scan
+  // cap is applied coven-wide BEFORE familiar scoping, so a scoped view is not
+  // "this familiar's memory graph" — it is their slice of the coven's most
+  // recent N files. Counting the memory nodes present is the only honest source
+  // for that number; `meta.memory.scanned` is coven-wide (cave-ed4s3).
+  const scopedMemoryInWindow = useMemo(
+    () => (scopeLabel ? graph.nodes.reduce((n, node) => n + (node.kind === "memory" ? 1 : 0), 0) : 0),
+    [graph, scopeLabel],
+  );
+  // Only worth saying when the scope actually lost files to the cap. Equal
+  // counts mean the window covered them all, and a shortfall notice would be
+  // noise; `>` cannot happen, but treating it as "nothing to report" keeps the
+  // copy from ever rendering a negative remainder.
+  const scopedShortfall =
+    scopeLabel != null &&
+    typeof scopedMemoryTotal === "number" &&
+    scopedMemoryInWindow < scopedMemoryTotal;
 
   const checkboxRow = (
     label: string,
@@ -966,8 +990,18 @@ export function GrimoireGraphView({
             ) : null}
             {memoryTruncated && meta ? (
               <p className="text-[length:var(--text-sm)] leading-snug text-[var(--text-muted)]">
-                Scanned the {meta.memory.scanned} most recent of {meta.memory.total} memory files
-                {scopeLabel ? " across the coven" : ""}.
+                {scopedShortfall ? (
+                  <>
+                    {scopedMemoryInWindow} of {scopeLabel}&rsquo;s {scopedMemoryTotal} memory files are in
+                    the scanned window — the {meta.memory.scanned} most recent of {meta.memory.total}{" "}
+                    across the coven.
+                  </>
+                ) : (
+                  <>
+                    Scanned the {meta.memory.scanned} most recent of {meta.memory.total} memory files
+                    {scopeLabel ? " across the coven" : ""}.
+                  </>
+                )}
               </p>
             ) : null}
             {scanError ? (
