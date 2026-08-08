@@ -5,6 +5,7 @@ import test from "node:test";
 const deskTab = readFileSync(new URL("./research-tab-desk.tsx", import.meta.url), "utf8");
 const list = readFileSync(new URL("./research-mission-list.tsx", import.meta.url), "utf8");
 const detail = readFileSync(new URL("./research-mission-detail.tsx", import.meta.url), "utf8");
+const pane = readFileSync(new URL("./use-research-pane.ts", import.meta.url), "utf8");
 const ledger = readFileSync(new URL("./research-evidence-ledger.tsx", import.meta.url), "utf8");
 // The desk sheet rides with the mode-gated surface (bundle budget, #3264
 // pattern), so selector pins read the sheet itself, not the root globals.
@@ -208,12 +209,45 @@ test("focus mode removes both rails without changing mission detail", () => {
   assert.match(detail, /showEvidence: boolean/);
   assert.match(detail, /\{showEvidence \? \(\s*<aside/);
   assert.match(detail, /data-evidence-open=\{showEvidence\}/);
-  assert.match(deskTab, /showEvidence=\{!focusMode\}/);
+  // Focus hides the rail outright; the independent collapse (next test) is a
+  // second axis, so focus must win even with the evidence rail left open.
+  assert.match(deskTab, /showEvidence=\{!focusMode && evidenceOpen\}/);
   assert.match(deskTab, /data-focus-mode=\{focusMode\}/);
   assert.match(
     css,
     /\.research-desk-tab \.research-desk__workspace\[data-focus-mode="true"\]/,
   );
+  // Focus also hides the queue's spine and drag separator — leaving either
+  // behind puts a stray 36px column beside a supposedly full-width run.
+  assert.match(css, /data-focus-mode="true"\]\s*>\s*\.research-desk-handle/);
+  assert.match(css, /data-focus-mode="true"\]\s*>\s*\.research-desk-spine/);
+  // And it offers no collapse controls, because there is nothing to collapse.
+  assert.match(deskTab, /onCollapseEvidence=\{focusMode \? undefined :/);
+  assert.match(deskTab, /onOpenEvidence=\{focusMode \? undefined :/);
+});
+
+test("both desk rails resize, persist and collapse to a labelled spine", () => {
+  // Width clamps on READ as well as write, so a stale or hand-edited
+  // localStorage value can never wedge a rail off screen.
+  assert.match(pane, /function readStoredWidth/);
+  assert.match(pane, /Number\.isFinite\(parsed\) \? clamp\(parsed, min, max\) : initial/);
+  // Pointer capture, not a bare mousemove listener: releasing outside the
+  // window must still end the drag rather than gluing the rail to the cursor.
+  assert.match(pane, /setPointerCapture/);
+  assert.match(pane, /pointercancel/);
+  // Keyboard parity — a drag handle no keyboard can reach is a rail no
+  // keyboard user can size.
+  assert.match(pane, /role: "separator"/);
+  assert.match(pane, /tabIndex: 0/);
+  assert.match(pane, /ArrowLeft/);
+  assert.match(deskTab, /useResearchPane\(QUEUE_PANE\)/);
+  assert.match(deskTab, /queue\.separatorProps/);
+  // A collapsed rail still says what it holds, in words and in a count.
+  assert.match(deskTab, /research-desk-spine__badge/);
+  assert.match(deskTab, /aria-label=\{`Open the run queue/);
+  assert.match(detail, /aria-label=\{`Open the evidence inspector/);
+  assert.match(css, /\.research-desk__workspace\[data-queue-collapsed="true"\]/);
+  assert.match(css, /\.research-mission-detail__body\[data-evidence-spine="true"\]/);
 });
 
 test("the right rail is one Artifacts|Sources toggle over a full-height pane", () => {
@@ -333,8 +367,11 @@ test("archived missions gate automation controls like the schedule button", () =
 // ── Responsive collapses re-declared for the desk-tab overrides ─────────────
 
 test("desk-tab responsive collapses match the existing container breakpoints", () => {
-  assert.match(css, /@container research-desk \(max-width: 900px\) \{[\s\S]*?\.research-desk-tab \.research-desk__workspace \{ grid-template-columns: 1fr; \}/);
-  assert.match(css, /@container research-desk \(max-width: 760px\) \{[\s\S]*?\.research-desk-tab \.research-mission-detail__body \{ grid-template-columns: 1fr; \}/);
+  // Both the open and the collapsed grid must flatten together — flattening
+  // only one leaves a 36px spine stacked above a full-width run.
+  assert.match(css, /@container research-desk \(max-width: 900px\) \{[\s\S]*?\.research-desk-tab \.research-desk__workspace,\s*\.research-desk-tab \.research-desk__workspace\[data-queue-collapsed="true"\] \{\s*grid-template-columns: 1fr;/);
+  assert.match(css, /@container research-desk \(max-width: 900px\) \{[\s\S]*?\.research-desk-handle \{ display: none; \}/);
+  assert.match(css, /@container research-desk \(max-width: 760px\) \{[\s\S]*?\.research-desk-tab \.research-mission-detail__body,\s*\.research-desk-tab \.research-mission-detail__body\[data-evidence-spine="true"\] \{\s*grid-template-columns: 1fr;/);
   assert.match(
     css,
     /\.research-desk-rail \{[\s\S]*?border-left: 0;[\s\S]*?border-top: 1px solid var\(--border\);/,

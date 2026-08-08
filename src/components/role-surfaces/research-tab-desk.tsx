@@ -23,11 +23,13 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { SearchInput } from "@/components/ui/search-input";
+import { Icon } from "@/lib/icon";
 import {
   filterResearchMissionsByText,
   researchMissionScopeCounts,
@@ -36,6 +38,7 @@ import {
 import { ResearchMissionDetail } from "./research-mission-detail";
 import { ResearchMissionList } from "./research-mission-list";
 import type { ResearchTabProps } from "./researcher-surface";
+import { useResearchPane } from "./use-research-pane";
 
 type DeskCommand = {
   cmd: string;
@@ -48,12 +51,24 @@ type DeskCommand = {
 
 const FOCUS_STORAGE_PREFIX = "cave:research:desk-focus:";
 
-const SCOPES: Array<{ id: ResearchMissionScope; label: string }> = [
+/** Scope chips. `tone` drives the leading status dot; "all" has none because
+ *  it is a reset, not a state. */
+const SCOPES: Array<{ id: ResearchMissionScope; label: string; tone?: string }> = [
   { id: "all", label: "All" },
-  { id: "active", label: "Active" },
-  { id: "needs-review", label: "Needs review" },
-  { id: "finished", label: "Finished" },
+  { id: "active", label: "Active", tone: "active" },
+  { id: "needs-review", label: "Needs review", tone: "needs-review" },
+  { id: "finished", label: "Finished", tone: "finished" },
 ];
+
+/** Rail sizing. Both clamp on read, so a stale stored width cannot wedge a
+ *  rail off screen (see use-research-pane). */
+const QUEUE_PANE = {
+  storageKey: "cave:research:desk-queue-width",
+  min: 230,
+  max: 440,
+  initial: 296,
+  direction: 1,
+} as const;
 
 function readFocusMode(familiarId: string): boolean {
   if (typeof window === "undefined") return false;
@@ -72,6 +87,10 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
   const familiarId = context.activeFamiliar.id;
   const [focusMode, setFocusMode] = useState(() =>
     readFocusMode(familiarId));
+  const queue = useResearchPane(QUEUE_PANE);
+  // The evidence rail collapses independently of focus mode: focus hides both
+  // rails for reading, this keeps the queue while widening the run.
+  const [evidenceOpen, setEvidenceOpen] = useState(true);
   const queryInputRef = useRef<HTMLInputElement>(null);
   const { announce } = useAnnouncer();
 
@@ -258,8 +277,12 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
               className="research-desk-scope focus-ring"
               aria-pressed={scope === item.id}
               aria-label={`${item.label}, ${scopeCounts[item.id]} ${scopeCounts[item.id] === 1 ? "run" : "runs"}`}
+              data-zero={scopeCounts[item.id] === 0}
               onClick={() => setScope(item.id)}
             >
+              {item.tone ? (
+                <i className="research-desk-scope__dot" data-tone={item.tone} aria-hidden />
+              ) : null}
               <span>{item.label}</span>
               <span aria-hidden>{scopeCounts[item.id]}</span>
             </button>
@@ -270,19 +293,44 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
       <div
         className="research-desk__workspace"
         data-focus-mode={focusMode}
+        data-queue-collapsed={queue.collapsed}
+        style={{ "--research-queue-width": `${queue.width}px` } as CSSProperties}
       >
-        <ResearchMissionList
-          missions={research.missions}
-          selectedId={research.selectedId}
-          loading={research.loading}
-          onSelect={research.select}
-          filter={listFilter}
-          scope={scope}
-          onClearFilters={() => {
-            setQuery("");
-            setScope("all");
-          }}
-        />
+        {queue.collapsed ? (
+          <button
+            type="button"
+            className="research-desk-spine focus-ring"
+            aria-expanded={false}
+            aria-label={`Open the run queue — ${research.missions.length} ${research.missions.length === 1 ? "run" : "runs"}`}
+            onClick={() => queue.setCollapsed(false)}
+          >
+            <Icon name="ph:sidebar-simple" width={14} height={14} aria-hidden />
+            <span className="research-desk-spine__badge" aria-hidden>{research.missions.length}</span>
+            <span className="research-desk-spine__label" aria-hidden>Run queue</span>
+          </button>
+        ) : (
+          <>
+            <ResearchMissionList
+              missions={research.missions}
+              selectedId={research.selectedId}
+              loading={research.loading}
+              onSelect={research.select}
+              filter={listFilter}
+              scope={scope}
+              onCollapse={() => queue.setCollapsed(true)}
+              onClearFilters={() => {
+                setQuery("");
+                setScope("all");
+              }}
+            />
+            <div
+              {...queue.separatorProps}
+              className="research-desk-handle"
+              aria-label="Resize the run queue"
+              title="Drag, or use arrow keys, to resize the run queue"
+            />
+          </>
+        )}
         <main className="research-desk__main">
           {research.error ? (
             <div className="research-desk__error" role="alert">
@@ -294,7 +342,9 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
           ) : null}
           <ResearchMissionDetail
             mission={research.selected}
-            showEvidence={!focusMode}
+            showEvidence={!focusMode && evidenceOpen}
+            onCollapseEvidence={focusMode ? undefined : () => setEvidenceOpen(false)}
+            onOpenEvidence={focusMode ? undefined : () => setEvidenceOpen(true)}
             onOpenSession={(sessionId) => {
               context.openSession(sessionId, context.activeFamiliar.id);
             }}

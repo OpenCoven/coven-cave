@@ -19,7 +19,7 @@
  * missing are omitted rather than invented.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Modal } from "@/components/ui/modal";
@@ -35,6 +35,7 @@ import {
   researchBoundReadings,
   researchContinueLabel,
   researchIntentAddsContext,
+  researchPhaseMeta,
   researchPhaseStatuses,
   researchSourceStatusCounts,
   type ResearchMission,
@@ -49,6 +50,11 @@ import { ResearchEvidenceLedger, type ResearchOutputTab } from "./research-evide
 type Props = {
   mission: ResearchMission | null;
   showEvidence: boolean;
+  /** Collapse the evidence rail to its spine. Absent = not collapsible here
+   *  (focus mode already hides the rail outright). */
+  onCollapseEvidence?(): void;
+  /** Reopen from the spine; rendered in the rail's grid slot when collapsed. */
+  onOpenEvidence?(): void;
   onOpenSession(sessionId: string): void;
   onOpenUrl(url: string): void;
   /** Quick link to the Resources tab (Saved resources). */
@@ -96,6 +102,8 @@ const LIVE_STATUSES = new Set<ResearchMission["status"]>(["queued", "planning", 
 export function ResearchMissionDetail({
   mission,
   showEvidence,
+  onCollapseEvidence,
+  onOpenEvidence,
   onOpenSession,
   onOpenUrl,
   onShowResources,
@@ -190,6 +198,20 @@ export function ResearchMissionDetail({
     : iteration
       ? `pass ${iteration.number} of ${mission.bounds.maxIterations}`
       : `0 of ${mission.bounds.maxIterations} passes`;
+  const phaseStatuses = researchPhaseStatuses(mission, PHASE_IDS);
+  const phaseMeta = researchPhaseMeta(mission, PHASE_IDS);
+  // Wash width = settled phases. "Settled" counts skipped alongside succeeded:
+  // a cancelled run's remaining phases are done being waited on, so a wash
+  // frozen at 20% would read as still-in-progress.
+  const phaseProgress =
+    phaseStatuses.filter((status) => status === "succeeded" || status === "skipped").length
+    / PHASES.length;
+  // One dot per allowed pass, capped so a 40-iteration budget stays a row and
+  // not a ribbon. The count text next to it carries the exact numbers.
+  const passCount = Math.max(1, Math.min(8, mission.bounds.maxIterations));
+  const currentPass = iteration?.number ?? 0;
+  const passDots = Array.from({ length: passCount }, (_, index) =>
+    index < currentPass - 1 ? "done" : index === currentPass - 1 ? "current" : "pending");
   // The design's "draft synthesis updated · vN" tile — only when the primary
   // deliverable is still a working draft; its version is the iteration that
   // wrote it. Every mission now also carries the 3 standard refs (findings,
@@ -373,6 +395,7 @@ export function ResearchMissionDetail({
       <div
         className="research-mission-detail__body"
         data-evidence-open={showEvidence}
+        data-evidence-spine={!showEvidence && Boolean(onOpenEvidence)}
       >
         <div className="research-desk-center">
           <header className="research-mission-detail__header">
@@ -398,27 +421,53 @@ export function ResearchMissionDetail({
             ) : null}
           </header>
 
-          {/* ── Stepper card: 6 reconciled phases + bounds row ── */}
-          <div className="research-desk-stepper">
+          {/* ── Stepper card: 6 reconciled phases + bounds row ──
+             Each node carries a meta line derived from the mission (source
+             counts, conflicts, artifacts), and the card washes left-to-right
+             in proportion to how many phases have actually settled. */}
+          <div
+            className="research-desk-stepper"
+            style={{ "--research-progress": `${Math.round(phaseProgress * 100)}%` } as CSSProperties}
+          >
+            <span className="research-desk-stepper__wash" aria-hidden />
             <ol className="research-desk-stepper__track" aria-label="Research progress">
-              {researchPhaseStatuses(mission, PHASE_IDS).map((status, index) => {
+              {phaseStatuses.map((status, index) => {
                 const [id, label] = PHASES[index];
                 const step = iteration?.steps?.find((item) => item.id === id);
                 // A stale step detail ("Searching sources…") contradicts a
                 // reconciled status; expose the detail only when the status is
                 // still the step's own report.
                 const reconciled = status !== (step?.status ?? "pending");
+                const meta = phaseMeta[index];
+                // The Control phase is where a checkpoint is waiting on a
+                // person — flag it even when its own status is still pending.
+                const awaiting = id === "control" && mission.status === "checkpoint";
                 return (
-                  <li key={id} className={`research-desk-step research-desk-step--${status}`}>
-                    <span className="research-desk-step__node" aria-hidden>
-                      {status === "succeeded" ? (
-                        <Icon name="ph:check" width={11} height={11} aria-hidden />
-                      ) : status === "failed" ? (
-                        <Icon name="ph:x" width={10} height={10} aria-hidden />
+                  <li
+                    key={id}
+                    className={`research-desk-step research-desk-step--${status}`}
+                    data-awaiting={awaiting || undefined}
+                    title={`${label} — ${meta === "—" ? status : meta}`}
+                  >
+                    <span className="research-desk-step__rail">
+                      <span className="research-desk-step__node" aria-hidden>
+                        {status === "succeeded" ? (
+                          <Icon name="ph:check" width={11} height={11} aria-hidden />
+                        ) : status === "failed" ? (
+                          <Icon name="ph:x" width={10} height={10} aria-hidden />
+                        ) : null}
+                      </span>
+                      {index < PHASES.length - 1 ? (
+                        <span className="research-desk-step__line" aria-hidden />
                       ) : null}
                     </span>
                     <span className="research-desk-step__label">{label}</span>
-                    <span className="sr-only"> — {reconciled ? status : step?.detail || status}</span>
+                    <span className="research-desk-step__meta" aria-hidden>{meta}</span>
+                    <span className="sr-only">
+                      {" — "}
+                      {reconciled ? status : step?.detail || status}
+                      {meta === "—" ? "" : `, ${meta}`}
+                    </span>
                   </li>
                 );
               })}
@@ -439,10 +488,25 @@ export function ResearchMissionDetail({
                       ) : null}
                       <span className="sr-only"> — {reading.detail}</span>
                     </dd>
+                    {reading.progress === undefined ? null : (
+                      <span
+                        className="research-bound-bar"
+                        aria-hidden
+                        style={{ "--research-bound-fill": `${Math.round(reading.progress * 100)}%` } as CSSProperties}
+                      />
+                    )}
                   </div>
                 ))}
               </dl>
-              <span className="research-desk-stepper__pass">{passNote}</span>
+              <span className="research-desk-stepper__pass" title={passNote}>
+                <span className="research-desk-stepper__pass-label">Pass</span>
+                <span className="research-desk-stepper__dots" aria-hidden>
+                  {passDots.map((state, index) => (
+                    <i key={index} data-state={state} />
+                  ))}
+                </span>
+                <span className="research-desk-stepper__pass-text">{passNote}</span>
+              </span>
             </div>
           </div>
 
@@ -734,6 +798,17 @@ export function ResearchMissionDetail({
               above a collapsed copy of the same data. ── */}
         {showEvidence ? (
           <aside className="research-desk-rail" aria-label="Run evidence and links">
+            {onCollapseEvidence ? (
+              <button
+                type="button"
+                className="research-desk-rail__collapse focus-ring"
+                aria-label="Collapse the evidence inspector"
+                title="Collapse the evidence inspector"
+                onClick={onCollapseEvidence}
+              >
+                <Icon name="ph:sidebar-simple" width={14} height={14} aria-hidden />
+              </button>
+            ) : null}
             <Tabs<ResearchOutputTab>
               className="research-desk-rail__toggle"
               idPrefix="research-output"
@@ -783,6 +858,18 @@ export function ResearchMissionDetail({
               </button>
             </div>
           </aside>
+        ) : onOpenEvidence ? (
+          <button
+            type="button"
+            className="research-desk-spine research-desk-spine--rail focus-ring"
+            aria-expanded={false}
+            aria-label={`Open the evidence inspector — ${mission.sources.length} ${mission.sources.length === 1 ? "source" : "sources"}, ${mission.artifacts.length} ${mission.artifacts.length === 1 ? "artifact" : "artifacts"}`}
+            onClick={onOpenEvidence}
+          >
+            <Icon name="ph:sidebar-simple" width={14} height={14} aria-hidden />
+            <span className="research-desk-spine__badge" aria-hidden>{mission.sources.length}</span>
+            <span className="research-desk-spine__label" aria-hidden>Evidence</span>
+          </button>
         ) : null}
       </div>
     </section>

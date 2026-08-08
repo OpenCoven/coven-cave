@@ -745,6 +745,54 @@ function settledPhaseOutcome(
  * - cancelled/archived mid-run — unfinished phases read skipped.
  * Live missions pass raw step statuses through unchanged.
  */
+/**
+ * One short meta line per display phase, for the Desk stepper.
+ *
+ * The handoff prints a second line under each phase node ("12/12 src",
+ * "your turn") so the stepper reports progress rather than only position.
+ * Every string here is read off the mission — counts, statuses, the
+ * checkpoint state — so a phase with nothing to report says "—" instead of
+ * inventing a number.
+ */
+export function researchPhaseMeta(
+  mission: Pick<ResearchMission, "status" | "bounds" | "sources" | "artifacts" | "iterations">,
+  phaseIds: readonly string[],
+): string[] {
+  const statuses = researchPhaseStatuses(mission, phaseIds);
+  const counts = researchSourceStatusCounts(mission.sources);
+  const artifacts = mission.artifacts.filter((artifact) => artifact.state !== "rejected").length;
+  return phaseIds.map((phase, index) => {
+    const status = statuses[index];
+    if (phase === "scope") {
+      return status === "succeeded" ? "bounds set" : status === "running" ? "framing…" : "—";
+    }
+    if (phase === "gather") {
+      return status === "pending" ? "—" : `${mission.sources.length}/${mission.bounds.sourceTarget} src`;
+    }
+    if (phase === "challenge") {
+      if (status === "failed") return "stopped here";
+      if (counts.conflicting > 0) {
+        return `${counts.conflicting} conflicting`;
+      }
+      return status === "succeeded" ? "verified" : status === "running" ? "testing…" : "—";
+    }
+    if (phase === "synthesize") {
+      if (status === "pending") return "—";
+      return artifacts > 0 ? `${artifacts} artifact${artifacts === 1 ? "" : "s"}` : "drafting…";
+    }
+    if (phase === "control") {
+      if (mission.status === "checkpoint") return "your turn";
+      return status === "succeeded" ? "approved" : "—";
+    }
+    if (phase === "publish") {
+      const published = mission.artifacts.filter((artifact) => artifact.state === "published").length;
+      if (published > 0) return `${published} published`;
+      return status === "succeeded" ? "shipped" : "gated";
+    }
+    return "—";
+  });
+}
+
 export function researchPhaseStatuses(
   mission: Pick<ResearchMission, "status" | "iterations">,
   phaseIds: readonly string[],
@@ -876,7 +924,21 @@ export type ResearchBoundReading = {
   badge?: "over" | "met";
   /** Plain-prose gate-vs-target semantics for tooltips and screen readers. */
   detail: string;
+  /**
+   * Fraction of the bound consumed, clamped to 0–1, for the reading's meter
+   * bar. Present only where a denominator genuinely exists: a spend with no
+   * cap and the checkpoint cadence have nothing to be a fraction *of*, so they
+   * carry no bar rather than a bar that means nothing (the value text still
+   * says everything). Past a stop gate it pins at 1 while `tone` says "over".
+   */
+  progress?: number;
 };
+
+/** Clamp a ratio into 0–1; a zero or absent denominator yields no bar. */
+function boundProgress(used: number, total: number): number | undefined {
+  if (!Number.isFinite(total) || total <= 0) return undefined;
+  return Math.max(0, Math.min(1, used / total));
+}
 
 /**
  * Bound-meter rows with honest over/met states.
@@ -917,6 +979,9 @@ export function researchBoundReadings(
       value: `$${reportedCost.toFixed(2)}${bounds.maxSpendUsd === undefined ? " reported" : `/$${bounds.maxSpendUsd.toFixed(2)}`}`,
       tone: spendOver ? "over" : "neutral",
       ...(spendOver ? { badge: "over" as const } : {}),
+      ...(bounds.maxSpendUsd === undefined
+        ? {}
+        : { progress: boundProgress(reportedCost, bounds.maxSpendUsd) }),
       detail: bounds.maxSpendUsd === undefined
         ? "Reported spend so far; no spend cap is set."
         : spendOver
@@ -937,6 +1002,7 @@ export function researchBoundReadings(
       value: `${elapsedMinutes}/${bounds.wallClockMinutes} min`,
       tone: timeOver ? "over" : "neutral",
       ...(timeOver ? { badge: "over" as const } : {}),
+      progress: boundProgress(elapsedMinutes, bounds.wallClockMinutes),
       detail: timeOver
         ? "Past the wall-clock budget — it is a stop gate checked between iterations, so a running iteration may finish over it, but no further iterations will start."
         : "Wall-clock budget is a stop gate checked between iterations.",
@@ -947,6 +1013,7 @@ export function researchBoundReadings(
       value: `${mission.sources.length}/${bounds.sourceTarget}`,
       tone: sourcesMet ? "met" : "neutral",
       ...(sourcesMet ? { badge: "met" as const } : {}),
+      progress: boundProgress(mission.sources.length, bounds.sourceTarget),
       detail: sourcesMet
         ? "Source target reached — it is a goal, not a cap."
         : "Source target is a goal, not a cap.",

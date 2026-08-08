@@ -16,6 +16,7 @@ import {
   researchBoundReadings,
   researchContinueLabel,
   researchIntentAddsContext,
+  researchPhaseMeta,
   researchPhaseStatuses,
   researchSourceStatusCounts,
   type ResearchMission,
@@ -839,4 +840,120 @@ test("Continue reports every runner stop gate, not just the iteration limit", ()
   );
   assert.equal(noCost.gated, true);
   assert.match(noCost.description, /finished without reporting cost/);
+});
+
+// --- bound readings: a bar only where a denominator exists -----------------
+
+test("bound readings carry a clamped progress ratio, and only where one exists", () => {
+  const mission = validMission();
+  mission.startedAt = new Date(Date.now() - 15 * 60_000).toISOString();
+  mission.sources = [
+    { id: "s1", title: "One", sourceType: "web", status: "used" },
+    { id: "s2", title: "Two", sourceType: "web", status: "used" },
+  ];
+  const byId = Object.fromEntries(
+    researchBoundReadings(mission).map((reading) => [reading.id, reading]),
+  );
+  // 15 of 30 minutes, 2 of 5 sources.
+  assert.equal(byId.time.progress, 0.5);
+  assert.equal(byId.sources.progress, 0.4);
+  // A cadence is not a fraction of anything, and spend with no cap has no
+  // denominator — those readings ship no bar rather than a meaningless one.
+  assert.equal(byId.checkpoint.progress, undefined);
+  assert.equal(byId.spend.progress, undefined);
+});
+
+test("an overrun pins its bar at 1 while the tone still says over", () => {
+  const mission = validMission();
+  mission.startedAt = new Date(Date.now() - 300 * 60_000).toISOString();
+  const time = researchBoundReadings(mission).find((reading) => reading.id === "time");
+  assert.equal(time?.progress, 1, "clamped, never past the track");
+  assert.equal(time?.tone, "over");
+  assert.equal(time?.badge, "over");
+});
+
+test("a zero source target yields no bar instead of a divide-by-zero", () => {
+  const mission = validMission();
+  mission.bounds = { ...mission.bounds, sourceTarget: 0 };
+  const sources = researchBoundReadings(mission).find((reading) => reading.id === "sources");
+  assert.equal(sources?.progress, undefined);
+});
+
+test("a capped spend gets a bar measured against the cap", () => {
+  const mission = validMission();
+  mission.bounds = { ...mission.bounds, maxSpendUsd: 4 };
+  mission.iterations = [{ number: 1, status: "completed", costUsd: 1 }];
+  const spend = researchBoundReadings(mission).find((reading) => reading.id === "spend");
+  assert.equal(spend?.progress, 0.25);
+});
+
+// --- phase meta: reports findings, never invents them ----------------------
+
+test("phase meta reports real counts and says — when it has nothing", () => {
+  const mission = validMission();
+  mission.status = "running";
+  mission.sources = [
+    { id: "s1", title: "One", sourceType: "web", status: "used" },
+    { id: "s2", title: "Two", sourceType: "web", status: "conflicting" },
+  ];
+  mission.artifacts = [];
+  mission.iterations = [{
+    number: 1,
+    status: "running",
+    steps: [
+      { id: "scope", type: "scope", status: "succeeded" },
+      { id: "gather", type: "gather", status: "running" },
+    ],
+  }];
+  const meta = researchPhaseMeta(mission, PHASE_IDS);
+  assert.deepEqual(meta.slice(0, 3), ["bounds set", "2/5 src", "1 conflicting"]);
+  // Nothing has been synthesized and nothing is waiting on a person.
+  assert.equal(meta[4], "—");
+  assert.equal(meta[5], "gated");
+});
+
+test("phase meta flags the checkpoint as the reader's turn", () => {
+  const mission = validMission();
+  mission.status = "checkpoint";
+  mission.iterations = [{ number: 1, status: "checkpoint" }];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[4], "your turn");
+});
+
+test("phase meta counts artifacts but never the rejected ones", () => {
+  const mission = validMission();
+  mission.status = "running";
+  mission.iterations = [{
+    number: 1,
+    status: "running",
+    steps: [{ id: "synthesize", type: "synthesize", status: "running" }],
+  }];
+  mission.artifacts = [
+    { key: "a", kind: "brief", title: "A", relativePath: "a.md", iteration: 1, state: "working", updatedAt: "2026-08-01T00:00:00.000Z" },
+    { key: "b", kind: "brief", title: "B", relativePath: "b.md", iteration: 1, state: "rejected", updatedAt: "2026-08-01T00:00:00.000Z" },
+  ];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[3], "1 artifact");
+});
+
+test("phase meta reports published artifacts rather than a bare shipped", () => {
+  const mission = validMission();
+  mission.status = "completed";
+  mission.artifacts = [
+    { key: "a", kind: "brief", title: "A", relativePath: "a.md", iteration: 1, state: "published", updatedAt: "2026-08-01T00:00:00.000Z" },
+  ];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[5], "1 published");
+});
+
+test("a failed challenge says where the run stopped", () => {
+  const mission = validMission();
+  mission.status = "failed";
+  mission.iterations = [{
+    number: 1,
+    status: "failed",
+    steps: [
+      { id: "scope", type: "scope", status: "succeeded" },
+      { id: "gather", type: "gather", status: "succeeded" },
+      { id: "challenge", type: "challenge", status: "failed" },
+    ],
+  }];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[2], "stopped here");
 });
