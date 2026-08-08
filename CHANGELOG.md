@@ -31,6 +31,10 @@ Patch release on top of v0.2.4.
   loading (#4397, #4424).
 - Added sub-surface Back/Forward history, beginning with the Chat scope strip
   (#4407).
+- Added durable Chat attention states and an **Awaiting you** group for explicit
+  requests, conversations left hanging, and overdue replies, with persistence,
+  replay, and stream reconciliation that clears requests on a newer human reply
+  rather than merely opening the chat (#4391).
 - Enabled Discord Rich Presence consistently in local and release builds, with
   links to OpenCoven and Coven Cave (#4403, #4409, #4410, #4411).
 
