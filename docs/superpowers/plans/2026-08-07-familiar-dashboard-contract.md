@@ -12,13 +12,15 @@
 
 ## Phase boundary
 
-This plan implements only the shared server contract and model described in phase 1 of `docs/superpowers/specs/2026-08-07-ios-familiar-command-center-design.md`. It does not add Swift models, the native hub, reminder mutation routes, avatar editing, web UI changes, design-spec edits, goal edits, or Beads mutations.
+This plan implements only the shared server contract and model described in phase 1 of `docs/superpowers/specs/2026-08-07-ios-familiar-command-center-design.md`. It does not add Swift models, the native hub, reminder mutation routes, avatar editing, web UI changes, goal edits, or Beads mutations. The approved design and this implementation plan are tracked with the branch and may receive contract-alignment corrections discovered during implementation review.
 Existing web Familiar analytics loaders are intentionally not migrated in phase 1; this shared/iOS-first contract is the new read path here, and any web-loader migration is separate follow-up work.
 
 ## File map
 
 ### Create
 
+- `docs/superpowers/specs/2026-08-07-ios-familiar-command-center-design.md` — approved phase-one product and architecture contract.
+- `docs/superpowers/plans/2026-08-07-familiar-dashboard-contract.md` — executable phase-one implementation and validation record.
 - `src/lib/server/familiar-enrichment.ts` — reusable enrichment currently nested in the Familiars route.
 - `src/lib/server/familiar-enrichment.test.ts` — enrichment/default/avatar behavior.
 - `src/lib/server/sessions-list.ts` — reusable session computation; no cache ownership.
@@ -4173,7 +4175,8 @@ Expected:
 - `git diff --check` prints nothing.
 - Changed paths are only those listed in this plan.
 - The grep finds no raw-error serialization in the dashboard implementation.
-- No Swift, reminder mutation, design spec, goal, or Beads file is changed.
+- No Swift, reminder mutation, goal, or Beads file is changed.
+- Design/plan changes are limited to tracking the approved phase-one contract and aligning it with reviewed implementation behavior.
 
 - [ ] **Step 9: Commit the route and final contract wiring**
 
