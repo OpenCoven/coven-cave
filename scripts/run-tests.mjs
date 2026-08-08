@@ -1465,6 +1465,7 @@ export const SUITES = {
     "src/lib/server/memory-trash.test.ts",
     "src/lib/server/memory-file-write.test.ts",
     "src/lib/server/memory-file-inventory.test.ts",
+    "src/lib/server/grimoire-graph-scan.test.ts",
     "src/lib/server/space-usage.test.ts",
     "src/lib/server/preferences-store.test.ts",
     "src/lib/server/webauthn-verify.test.ts",
