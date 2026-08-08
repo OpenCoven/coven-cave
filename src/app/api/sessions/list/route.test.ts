@@ -16,14 +16,8 @@ assert.match(
 
 assert.match(
   route,
-  /cacheKey\s*=[\s\S]{0,160}collapseFamiliarWorkspace\s*\?\s*"collapse"\s*:\s*"full"/,
-  "the cache key varies by collapse mode so full and collapsed views never alias",
-);
-
-assert.match(
-  route,
-  /computeSessionsList\(includeArchived,\s*familiarId,\s*collapseFamiliarWorkspace\)/,
-  "the collapse flag is threaded into computeSessionsList",
+  /loadCachedSessionsList\(\s*includeArchived,\s*familiarId,\s*collapseFamiliarWorkspace,\s*\)/,
+  "the route delegates familiar-scoped reads through the shared cached wrapper",
 );
 
 assert.match(

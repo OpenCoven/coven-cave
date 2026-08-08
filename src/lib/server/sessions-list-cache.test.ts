@@ -14,8 +14,11 @@
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createSwrCache } from "../swr-cache.ts";
 import {
   invalidateSessionsListCache,
+  loadCachedSessionsList,
+  sessionsListCacheKey,
   sessionsListCache,
 } from "./sessions-list-cache.ts";
 
@@ -49,6 +52,64 @@ import {
   invalidateSessionsListCache(); // leave no test entry behind
 }
 
+// ── shared cached reader: route + dashboard reuse one cache contract ────────
+{
+  let now = 0;
+  let computes = 0;
+  const cache = createSwrCache({
+    ttlMs: 2_000,
+    staleServeMs: 30_000,
+    canServeStale: (result) => result.payload.ok,
+    now: () => now,
+  });
+  const compute = async (
+    includeArchived,
+    familiarId,
+    collapseFamiliarWorkspace,
+  ) => ({
+    payload: {
+      ok: true,
+      sessions: [],
+      error: `${++computes}:${includeArchived}:${familiarId}:${collapseFamiliarWorkspace}`,
+    },
+  });
+
+  const first = await loadCachedSessionsList(false, "sage", false, {
+    cache,
+    compute,
+  });
+  const cached = await loadCachedSessionsList(false, "sage", false, {
+    cache,
+    compute,
+  });
+  assert.equal(first.payload.error, "1:false:sage:false");
+  assert.equal(cached.payload.error, first.payload.error);
+  assert.equal(computes, 1, "repeat reads of the same dashboard scope share the cache");
+
+  cache.invalidate(sessionsListCacheKey(false, "sage", false));
+  const invalidated = await loadCachedSessionsList(false, "sage", false, {
+    cache,
+    compute,
+  });
+  assert.equal(invalidated.payload.error, "2:false:sage:false");
+  assert.equal(computes, 2, "an invalidated scope recomputes");
+
+  now = 30_001;
+  const expired = await loadCachedSessionsList(false, "sage", false, {
+    cache,
+    compute,
+  });
+  assert.equal(expired.payload.error, "3:false:sage:false");
+  assert.equal(computes, 3, "an expired scope recomputes");
+
+  const distinctScope = await loadCachedSessionsList(false, "sage", true, {
+    cache,
+    compute,
+  });
+  assert.equal(distinctScope.payload.error, "4:false:sage:true");
+  assert.equal(computes, 4, "collapse mode remains part of the shared cache key");
+}
+
 // ── wiring pins ──────────────────────────────────────────────────────────────
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
@@ -65,18 +126,13 @@ function fnBlock(source, name) {
   const route = read("../../app/api/sessions/list/route.ts");
   assert.match(
     route,
-    /sessionsListCache/,
-    "the list route imports the shared cache",
-  );
-  assert.doesNotMatch(
-    route,
-    /createSwrCache/,
-    "the route does not create a private cache",
+    /loadCachedSessionsList/,
+    "the list route delegates reads through the shared cached reader",
   );
   assert.match(
     route,
-    /computeSessionsList/,
-    "the cached callback delegates to the shared compute helper",
+    /loadCachedSessionsList\(\s*includeArchived,\s*familiarId,\s*collapseFamiliarWorkspace,\s*\)/,
+    "the route reuses the shared cache wrapper instead of duplicating cache logic",
   );
 }
 

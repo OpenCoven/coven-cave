@@ -25,6 +25,7 @@
  * contain the session is the same work the compute itself does, and there are
  * only a handful of keys.
  */
+import { computeSessionsList } from "./sessions-list.ts";
 import { createSwrCache } from "../swr-cache.ts";
 import type { SessionRow } from "../types.ts";
 
@@ -54,6 +55,42 @@ export const sessionsListCache = createSwrCache<SessionsListResult>({
   staleServeMs: SESSIONS_LIST_STALE_SERVE_MS,
   canServeStale: (result) => result.payload.ok,
 });
+
+export function sessionsListCacheKey(
+  includeArchived: boolean,
+  familiarId: string | null,
+  collapseFamiliarWorkspace: boolean,
+): string {
+  return `${includeArchived ? "archived" : "active"}:${familiarId ?? "all"}:${
+    collapseFamiliarWorkspace ? "collapse" : "full"
+  }`;
+}
+
+export async function loadCachedSessionsList(
+  includeArchived: boolean,
+  familiarId: string | null,
+  collapseFamiliarWorkspace: boolean,
+  dependencies: {
+    cache?: Pick<typeof sessionsListCache, "get">;
+    compute?: typeof computeSessionsList;
+  } = {},
+): Promise<SessionsListResult> {
+  const cache = dependencies.cache ?? sessionsListCache;
+  const compute = dependencies.compute ?? computeSessionsList;
+  return cache.get(
+    sessionsListCacheKey(
+      includeArchived,
+      familiarId,
+      collapseFamiliarWorkspace,
+    ),
+    () =>
+      compute(
+        includeArchived,
+        familiarId,
+        collapseFamiliarWorkspace,
+      ),
+  );
+}
 
 /**
  * Bust every cached sessions-list view so the next request recomputes.

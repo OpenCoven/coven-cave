@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import type { PathLike } from "node:fs";
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
@@ -8,6 +9,7 @@ import type { ThreadSelfReport } from "@/lib/thread-self-report";
 import {
   appendSelfReport,
   listDashboardMetricSnapshots,
+  listDashboardSelfReports,
   findSelfReport,
   listMetricSnapshots,
   listSelfReports,
@@ -53,6 +55,25 @@ function report(overrides: Partial<ThreadSelfReport> = {}): ThreadSelfReport {
     fileLocatabilityScore: overrides.fileLocatabilityScore ?? 65,
     fileLocatabilityNotes: overrides.fileLocatabilityNotes,
     persistentBlockers: overrides.persistentBlockers ?? [],
+  };
+}
+
+function trackedReads() {
+  const files: string[] = [];
+  const lines: string[] = [];
+  return {
+    files,
+    lines,
+    deps: {
+      readdir: async (fullPath: PathLike) => readdir(fullPath, "utf8"),
+      readFile: async (fullPath: PathLike, encoding: BufferEncoding) => {
+        files.push(path.relative(tmpRoot, String(fullPath)));
+        return readFile(fullPath, encoding);
+      },
+      onLineRead: (_fullPath: string, line: string) => {
+        lines.push(JSON.parse(line).id);
+      },
+    },
   };
 }
 
@@ -103,6 +124,39 @@ describe("familiar self-report storage", () => {
     const listed = await listSelfReports("cody", { before: "2026-06-25T00:00:00.000Z" });
 
     assert.deepEqual(listed.reports.map((item) => item.id), ["mid", "old"]);
+  });
+
+  it("listDashboardSelfReports stops after the newest 30 rows without reading older files or rows", async () => {
+    const base = Date.parse("2026-06-25T00:00:00.000Z");
+    for (let index = 0; index < 35; index++) {
+      await appendSelfReport("cody", report({
+        id: `recent-${index}`,
+        sessionId: `recent-session-${index}`,
+        reportedAt: new Date(base + index * 60_000).toISOString(),
+      }));
+    }
+    await appendSelfReport("cody", report({
+      id: "older-file",
+      sessionId: "older-file-session",
+      reportedAt: "2026-06-24T23:59:00.000Z",
+    }));
+
+    const tracker = trackedReads();
+    const listed = await listDashboardSelfReports("cody", tracker.deps);
+
+    assert.equal(listed.total, 30);
+    assert.deepEqual(
+      listed.reports.map((item) => item.id),
+      Array.from({ length: 30 }, (_, offset) => `recent-${34 - offset}`),
+    );
+    assert.deepEqual(
+      tracker.files,
+      ["workspaces/familiars/cody/self-reports/2026-06-25.jsonl"],
+    );
+    assert.deepEqual(
+      tracker.lines,
+      Array.from({ length: 30 }, (_, offset) => `recent-${34 - offset}`),
+    );
   });
 
   it("findSelfReport returns null for missing sessions and the matching report for existing ones", async () => {
@@ -204,51 +258,90 @@ describe("familiar self-report storage", () => {
       overallConfidence: 42,
     }));
 
-    const listed = await listDashboardMetricSnapshots("cody", now);
-    assert.equal(listed.total, 121, "only the trailing 30-day window contributes to the total");
+    const tracker = trackedReads();
+    const listed = await listDashboardMetricSnapshots("cody", now, tracker.deps);
+    assert.equal(listed.total, 100, "dashboard snapshot reads stop once the bounded window is filled");
     assert.equal(listed.snapshots.length, 100, "dashboard responses cap the visible snapshot ledger");
     assert.equal(listed.snapshots[0].id, "recent-99", "the bounded window keeps the newest 100 items");
     assert.equal(listed.snapshots.at(-1)?.id, "recent-0");
     assert.equal(listed.snapshots.some((snapshot) => snapshot.id === "outside-window"), false);
+    assert.equal(
+      tracker.files.every((file) => file.includes("metric-snapshots/")),
+      true,
+      "persisted coverage should satisfy the dashboard read without backfilling from report history",
+    );
+    assert.equal(
+      tracker.files.some((file) => file.endsWith("metric-snapshots/2026-07-08.jsonl")),
+      false,
+      "older in-window files stay unread once the newest 100 snapshots are satisfied",
+    );
   });
 
-  it("listDashboardMetricSnapshots backfills missing in-window snapshots without loading older history", async () => {
+  it("listDashboardMetricSnapshots backfills only enough newest report rows to reach the cap", async () => {
     const now = Date.parse("2026-08-07T20:00:00.000Z");
     const legacyDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports");
+    const snapshotDir = path.join(legacyDir, "metric-snapshots");
     await mkdir(legacyDir, { recursive: true });
+    await mkdir(snapshotDir, { recursive: true });
+    let persistedRaw = "";
+    for (let index = 0; index < 40; index++) {
+      persistedRaw += `${JSON.stringify({
+        id: `persisted-${index}`,
+        sessionId: `persisted-session-${index}`,
+        reportedAt: new Date(now - (79 - index) * 60_000).toISOString(),
+        confidence: 61,
+        toolReliability: 75,
+        memoryRecall: 70,
+        fileLocatability: 65,
+        contextPressure: "adequate",
+      })}\n`;
+    }
+    await writeFile(path.join(snapshotDir, "2026-08-07.jsonl"), persistedRaw, "utf8");
+
+    let reportRaw = "";
+    for (let index = 79; index >= 0; index--) {
+      reportRaw += `${JSON.stringify(report({
+        id: `backfill-${index}`,
+        sessionId: `backfill-session-${index}`,
+        reportedAt: new Date(now - index * 60_000).toISOString(),
+        overallConfidence: 80,
+      }))}\n`;
+    }
     await writeFile(
-      path.join(legacyDir, "2026-08-06.jsonl"),
-      `${JSON.stringify(report({
-        id: "legacy-window",
-        sessionId: "legacy-window-session",
-        reportedAt: "2026-08-06T18:00:00.000Z",
-        overallConfidence: 61,
-      }))}\n`,
+      path.join(legacyDir, "2026-08-07.jsonl"),
+      reportRaw,
       "utf8",
     );
     await writeFile(
-      path.join(legacyDir, "2026-06-01.jsonl"),
+      path.join(legacyDir, "2026-07-10.jsonl"),
       `${JSON.stringify(report({
-        id: "legacy-old",
-        sessionId: "legacy-old-session",
-        reportedAt: "2026-06-01T18:00:00.000Z",
+        id: "older-file",
+        sessionId: "older-file-session",
+        reportedAt: "2026-07-10T18:00:00.000Z",
         overallConfidence: 17,
       }))}\n`,
       "utf8",
     );
-    await appendSelfReport("cody", report({
-      id: "persisted-window",
-      sessionId: "persisted-window-session",
-      reportedAt: "2026-08-07T19:00:00.000Z",
-      overallConfidence: 88,
-    }));
 
-    const listed = await listDashboardMetricSnapshots("cody", now);
-    assert.equal(listed.total, 2);
+    const tracker = trackedReads();
+    const listed = await listDashboardMetricSnapshots("cody", now, tracker.deps);
+    assert.equal(listed.total, 100);
+    assert.equal(listed.snapshots.length, 100);
+    assert.equal(listed.snapshots.at(-1)?.id, "backfill-0");
     assert.deepEqual(
-      listed.snapshots.map((snapshot) => snapshot.id),
-      ["legacy-window", "persisted-window"],
+      tracker.files,
+      [
+        "workspaces/familiars/cody/self-reports/metric-snapshots/2026-08-07.jsonl",
+        "workspaces/familiars/cody/self-reports/2026-08-07.jsonl",
+      ],
+      "report backfill starts only after persisted snapshots run short, and older files stay unread",
     );
-    assert.equal(listed.snapshots.some((snapshot) => snapshot.id === "legacy-old"), false);
+    assert.equal(
+      tracker.lines.length,
+      100,
+      "the reader stops after 40 persisted rows plus the 60 newest report backfills needed to satisfy the cap",
+    );
+    assert.equal(tracker.lines.includes("backfill-60"), false);
+    assert.equal(listed.snapshots.some((snapshot) => snapshot.id === "older-file"), false);
   });
 });

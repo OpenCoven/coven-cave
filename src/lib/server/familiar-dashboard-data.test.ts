@@ -10,7 +10,11 @@ import {
   loadFamiliarDashboard,
   type FamiliarDashboardDependencies,
 } from "./familiar-dashboard-data.ts";
-import { listDashboardMetricSnapshots } from "./familiar-self-reports.ts";
+import {
+  listDashboardMetricSnapshots,
+  listDashboardSelfReports,
+} from "./familiar-self-reports.ts";
+import { loadCachedSessionsList } from "./sessions-list-cache.ts";
 
 const NOW = Date.parse("2026-08-07T20:00:00.000Z");
 const CONFIG = {
@@ -597,7 +601,18 @@ test("overview heal attention keeps the derived request timestamp non-null", asy
   );
 });
 
-test("default dashboard dependencies use the bounded metric snapshot query", () => {
+test("default dashboard dependencies use the shared cached sessions reader", () => {
+  assert.equal(
+    DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES.loadSessions,
+    loadCachedSessionsList,
+  );
+});
+
+test("default dashboard dependencies use bounded report and metric readers", () => {
+  assert.equal(
+    DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES.loadReports,
+    listDashboardSelfReports,
+  );
   assert.equal(
     DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES.loadMetricSnapshots,
     listDashboardMetricSnapshots,

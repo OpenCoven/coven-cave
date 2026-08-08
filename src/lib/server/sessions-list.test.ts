@@ -35,8 +35,8 @@ assert.doesNotMatch(
 );
 assert.match(
   route,
-  /sessionsListCache\.get\(cacheKey, \(\) =>\s*computeSessionsList\(/,
-  "the route retains cache ownership and delegates computation",
+  /loadCachedSessionsList\(\s*includeArchived,\s*familiarId,\s*collapseFamiliarWorkspace,\s*\)/,
+  "the route delegates reads through the shared cached wrapper",
 );
 
 console.log("sessions-list.test.ts: ok");

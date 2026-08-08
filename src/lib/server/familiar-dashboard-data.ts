@@ -38,16 +38,19 @@ import { readFamiliarContractFiles } from "@/lib/server/familiar-contract-files"
 import { loadVisibleFamiliarRoster } from "@/lib/server/familiar-roster";
 import {
   listDashboardMetricSnapshots,
+  listDashboardSelfReports,
   listMetricSnapshots,
   listSelfReports,
 } from "@/lib/server/familiar-self-reports";
 import { loadMessageFeedbackRollup } from "@/lib/server/message-feedback-store";
 import {
+  loadCachedSessionsList,
+  type SessionsListResult,
+} from "@/lib/server/sessions-list-cache";
+import {
   loadRetroRunsSnapshot,
   type RetroRunsSnapshotResult,
 } from "@/lib/server/retro-runs-snapshot";
-import { computeSessionsList } from "@/lib/server/sessions-list";
-import type { SessionsListResult } from "@/lib/server/sessions-list-cache";
 import type { Familiar } from "@/lib/types";
 
 export type FamiliarDashboardDependencies = {
@@ -102,7 +105,7 @@ export const DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES: FamiliarDashboardDependenc
   loadRoster: loadVisibleFamiliarRoster,
   enrichFamiliar,
   loadBoard,
-  loadSessions: computeSessionsList,
+  loadSessions: loadCachedSessionsList,
   loadInbox,
   loadContract: async (id) => {
     const { files } = await readFamiliarContractFiles(id);
@@ -119,8 +122,7 @@ export const DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES: FamiliarDashboardDependenc
     return { entries, overview };
   },
   loadRetro: ({ familiarId }) => loadRetroRunsSnapshot({ familiarId }),
-  loadReports: (id) =>
-    listSelfReports(id, { limit: FAMILIAR_DASHBOARD_LIMITS.reports }),
+  loadReports: listDashboardSelfReports,
   loadMetricSnapshots: listDashboardMetricSnapshots,
   loadFeedback: ({ familiarId }) =>
     loadMessageFeedbackRollup({

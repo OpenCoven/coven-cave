@@ -45,6 +45,18 @@ type TimestampWindow = {
   untilMs: number | null;
 };
 
+type SelfReportReadDependencies = {
+  readdir: (fullPath: string) => Promise<string[]>;
+  readFile: (fullPath: string, encoding: BufferEncoding) => Promise<string>;
+  onFileRead?: (fullPath: string) => void;
+  onLineRead?: (fullPath: string, line: string) => void;
+};
+
+const DEFAULT_READ_DEPENDENCIES: SelfReportReadDependencies = {
+  readdir: (fullPath) => readdir(fullPath, "utf8"),
+  readFile: (fullPath, encoding) => readFile(fullPath, encoding),
+};
+
 function normalizeWindow(args?: {
   since?: string;
   until?: string;
@@ -87,6 +99,143 @@ function filterWindowFiles(files: string[], window: TimestampWindow): string[] {
     if (untilDate !== null && fileDate > untilDate) return false;
     return true;
   });
+}
+
+function* newestJsonlLines(raw: string): Iterable<string> {
+  let end = raw.length;
+  while (end >= 0) {
+    const nextEnd = end > 0 && raw.charCodeAt(end - 1) === 10 ? end - 1 : end;
+    const start = raw.lastIndexOf("\n", nextEnd - 1);
+    const line = raw.slice(start + 1, nextEnd).trim();
+    if (line) yield line;
+    if (start < 0) return;
+    end = start;
+  }
+}
+
+async function readNewestReportsBounded(
+  familiarId: string,
+  limit: number,
+  window: TimestampWindow,
+  dependencies: SelfReportReadDependencies = DEFAULT_READ_DEPENDENCIES,
+): Promise<ThreadSelfReport[]> {
+  const dir = await reportsDir(familiarId);
+  let files: string[];
+  try {
+    files = await dependencies.readdir(dir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+
+  const reports: ThreadSelfReport[] = [];
+  const orderedFiles = filterWindowFiles(files, window).sort().reverse();
+  for (const file of orderedFiles) {
+    const fullPath = path.join(dir, file);
+    let raw = "";
+    try {
+      raw = await dependencies.readFile(fullPath, "utf8");
+      dependencies.onFileRead?.(fullPath);
+    } catch {
+      continue;
+    }
+    for (const line of newestJsonlLines(raw)) {
+      dependencies.onLineRead?.(fullPath, line);
+      try {
+        const parsed = redactReport(JSON.parse(line) as ThreadSelfReport);
+        if (!withinWindow(parsed.reportedAt, window)) continue;
+        reports.push(parsed);
+        if (reports.length >= limit) return reports;
+      } catch {
+        /* Ignore malformed historical lines; append-only storage should keep listing usable. */
+      }
+    }
+  }
+  return reports;
+}
+
+async function readNewestPersistedMetricSnapshotsBounded(
+  familiarId: string,
+  limit: number,
+  window: TimestampWindow,
+  dependencies: SelfReportReadDependencies = DEFAULT_READ_DEPENDENCIES,
+): Promise<Map<string, ThreadMetricSnapshot>> {
+  const dir = await metricSnapshotsDir(familiarId);
+  let files: string[];
+  try {
+    files = await dependencies.readdir(dir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return new Map();
+    throw err;
+  }
+
+  const snapshots = new Map<string, ThreadMetricSnapshot>();
+  const orderedFiles = filterWindowFiles(files, window).sort().reverse();
+  for (const file of orderedFiles) {
+    const fullPath = path.join(dir, file);
+    let raw = "";
+    try {
+      raw = await dependencies.readFile(fullPath, "utf8");
+      dependencies.onFileRead?.(fullPath);
+    } catch {
+      continue;
+    }
+    for (const line of newestJsonlLines(raw)) {
+      dependencies.onLineRead?.(fullPath, line);
+      try {
+        const parsed: unknown = JSON.parse(line);
+        if (!isThreadMetricSnapshot(parsed)) continue;
+        if (!withinWindow(parsed.reportedAt, window)) continue;
+        if (!snapshots.has(parsed.id)) snapshots.set(parsed.id, parsed);
+        if (snapshots.size >= limit) return snapshots;
+      } catch {
+        /* Ignore malformed historical lines; append-only storage should keep listing usable. */
+      }
+    }
+  }
+  return snapshots;
+}
+
+async function backfillNewestMetricSnapshotsFromReports(
+  familiarId: string,
+  snapshots: Map<string, ThreadMetricSnapshot>,
+  limit: number,
+  window: TimestampWindow,
+  dependencies: SelfReportReadDependencies = DEFAULT_READ_DEPENDENCIES,
+): Promise<Map<string, ThreadMetricSnapshot>> {
+  if (snapshots.size >= limit) return snapshots;
+  const dir = await reportsDir(familiarId);
+  let files: string[];
+  try {
+    files = await dependencies.readdir(dir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return snapshots;
+    throw err;
+  }
+
+  const orderedFiles = filterWindowFiles(files, window).sort().reverse();
+  for (const file of orderedFiles) {
+    const fullPath = path.join(dir, file);
+    let raw = "";
+    try {
+      raw = await dependencies.readFile(fullPath, "utf8");
+      dependencies.onFileRead?.(fullPath);
+    } catch {
+      continue;
+    }
+    for (const line of newestJsonlLines(raw)) {
+      dependencies.onLineRead?.(fullPath, line);
+      try {
+        const parsed = redactReport(JSON.parse(line) as ThreadSelfReport);
+        if (!withinWindow(parsed.reportedAt, window)) continue;
+        if (!snapshots.has(parsed.id)) snapshots.set(parsed.id, snapshotFromReport(parsed));
+        if (snapshots.size >= limit) return snapshots;
+      } catch {
+        /* Ignore malformed historical lines; append-only storage should keep listing usable. */
+      }
+    }
+  }
+  return snapshots;
 }
 
 async function readAllReports(
@@ -249,9 +398,23 @@ export async function listMetricSnapshots(
   return finalizeSnapshots(persisted, reports, "all");
 }
 
+export async function listDashboardSelfReports(
+  familiarId: string,
+  dependencies: SelfReportReadDependencies = DEFAULT_READ_DEPENDENCIES,
+): Promise<{ reports: ThreadSelfReport[]; total: number }> {
+  const reports = await readNewestReportsBounded(
+    familiarId,
+    FAMILIAR_DASHBOARD_LIMITS.reports,
+    normalizeWindow(),
+    dependencies,
+  );
+  return { reports, total: reports.length };
+}
+
 export async function listDashboardMetricSnapshots(
   familiarId: string,
   now: number = Date.now(),
+  dependencies: SelfReportReadDependencies = DEFAULT_READ_DEPENDENCIES,
 ): Promise<{ snapshots: ThreadMetricSnapshot[]; total: number }> {
   const window = normalizeWindow({
     since: new Date(
@@ -259,15 +422,22 @@ export async function listDashboardMetricSnapshots(
     ).toISOString(),
     until: new Date(now).toISOString(),
   });
-  const [persisted, reports] = await Promise.all([
-    readPersistedMetricSnapshots(familiarId, window),
-    readAllReports(familiarId, window),
-  ]);
-  return finalizeSnapshots(
-    persisted,
-    reports,
+  const snapshots = await backfillNewestMetricSnapshotsFromReports(
+    familiarId,
+    await readNewestPersistedMetricSnapshotsBounded(
+      familiarId,
+      FAMILIAR_DASHBOARD_LIMITS.metricSnapshots,
+      window,
+      dependencies,
+    ),
     FAMILIAR_DASHBOARD_LIMITS.metricSnapshots,
+    window,
+    dependencies,
   );
+  const boundedSnapshots = [...snapshots.values()].sort(
+    (a, b) => new Date(a.reportedAt).getTime() - new Date(b.reportedAt).getTime(),
+  );
+  return { snapshots: boundedSnapshots, total: boundedSnapshots.length };
 }
 
 export async function listSelfReports(

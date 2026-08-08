@@ -652,8 +652,8 @@ for (const contract of contracts) {
   );
   assert.match(
     sessionsListRouteSource,
-    /import \{\s*sessionsListCache,[\s\S]{0,80}\} from "@\/lib\/server\/sessions-list-cache"/,
-    "/sessions/list: repeated callers should share the invalidatable stale-while-revalidate cache (cave-53yx)",
+    /import \{\s*loadCachedSessionsList[\s\S]{0,80}\} from "@\/lib\/server\/sessions-list-cache"/,
+    "/sessions/list: repeated callers should share the invalidatable stale-while-revalidate cache through the shared reader (cave-53yx)",
   );
   const sessionsListCacheSource = readFileSync(
     path.join(apiRoot, "..", "..", "lib", "server", "sessions-list-cache.ts"),
@@ -663,6 +663,16 @@ for (const contract of contracts) {
     sessionsListCacheSource,
     /export const sessionsListCache = createSwrCache<SessionsListResult>\(/,
     "sessions-list-cache: the shared cache instance is a stale-while-revalidate cache",
+  );
+  assert.match(
+    sessionsListCacheSource,
+    /export function sessionsListCacheKey\([\s\S]*collapseFamiliarWorkspace[\s\S]*collapseFamiliarWorkspace \? "collapse" : "full"/,
+    "sessions-list-cache: cache keying varies by archived/familiar/collapse so views never alias",
+  );
+  assert.match(
+    sessionsListCacheSource,
+    /export async function loadCachedSessionsList\([\s\S]*sessionsListCacheKey\([\s\S]*compute\([\s\S]*collapseFamiliarWorkspace/,
+    "sessions-list-cache: the shared reader routes callers through the shared cache and compute helper",
   );
   assert.match(
     sessionsListCacheSource,
