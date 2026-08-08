@@ -1064,16 +1064,23 @@ await withFixture({ fixturePrefix: "cave-worktree-create-o'reilly-" }, async (fi
   const existingPath = addWorktree(fixture, "feat/cave-unit1-existing", "cave-unit1-existing");
   // Drive the registration count to exactly WORKTREE_WARNING_BUDGET so admission
   // refuses at `count >= budget`. The count includes the primary checkout, so the
-  // arithmetic is: 18 detached + 1 existing (above) + 1 primary = 20. If the
+  // arithmetic is: 18 attached + 1 existing (above) + 1 primary = 20. If the
   // budget moves again, this loop moves with it (budget - 2).
+  //
+  // These MUST be branch-attached (cave-oenag). They were `--detach` until the
+  // budget stopped counting detached units, at which point this fixture stopped
+  // reaching the budget at all and the refusal below silently disappeared — the
+  // fixture was simulating sprawl with exactly the scratch space the budget now
+  // ignores. The separate detached case is asserted below.
   for (let index = 0; index < 18; index += 1) {
     git(
       [
         "worktree",
         "add",
         "-q",
-        "--detach",
-        path.join(fixture.repo, ".worktrees", `budget-detached-${index}`),
+        "-b",
+        `budget/attached-${index}`,
+        path.join(fixture.repo, ".worktrees", `budget-attached-${index}`),
         "origin/main",
       ],
       fixture.repo,

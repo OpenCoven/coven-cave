@@ -87,7 +87,7 @@ export function loadTailscaleDevices(timeoutMs = 5000): Promise<TailscaleDevices
     execFile(
       tailscaleBin(),
       ["status", "--json"],
-      { encoding: "utf8", timeout: timeoutMs, env: tailscaleSpawnEnv(), maxBuffer: 2 * 1024 * 1024 },
+      { windowsHide: true, encoding: "utf8", timeout: timeoutMs, env: tailscaleSpawnEnv(), maxBuffer: 2 * 1024 * 1024 },
       (error, stdout, stderr) => {
         if (error) {
           resolve({ ok: false, reason: typedTailscaleFailure(error, `${stdout} ${stderr}`) });

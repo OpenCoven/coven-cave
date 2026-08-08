@@ -114,6 +114,14 @@ jobs:
       # not rotate the secret phones signed their tokens against.
       - run: cargo test --locked --lib app_lifecycle_tests::mobile_access_token -- --nocapture
 
+      # Second-GUI ownership (cave-4wnxo): launching a second copy must resolve
+      # to an ordinary outcome. Reported as an error it unwinds out of Tauri's
+      # setup hook, which on macOS sits inside a non-unwinding Objective-C
+      # frame, so the process aborted with SIGABRT instead of naming the GUI
+      # already running. No CI runner is macOS, so the conflict decision is
+      # deliberately cfg(desktop) rather than macOS-only to be executable here.
+      - run: cargo test --locked --lib desktop_reachability::tests::gui_conflict -- --nocapture
+
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest

@@ -1676,7 +1676,8 @@ exit 0
     "the stable direct landing becomes eligible after 8 hours",
   );
   assert.deepEqual(report.budgets, {
-    worktrees: { count: 8, warning: 20, exceeded: false },
+    // cave-oenag: 8 registered, one of them detached, so 7 are assessed.
+    worktrees: { count: 7, registered: 8, detached: 1, warning: 20, exceeded: false },
 
     branches: { count: 11, warning: 30, exceeded: false },
     exceptions: { active: 0, expired: 0 },
@@ -1766,7 +1767,10 @@ exit 0
   assert.match(humanReport, /uncommitted\.txt/, "the routine report includes exact dirty paths");
   assert.match(
     humanReport,
-    /^Worktree budget: 8\/20 \(within budget\)$/m,
+    // cave-oenag: this fixture registers one detached unit, so the assessed
+    // count is 7 of 8 and the line says which one it dropped. Anchored end-of-line
+    // so the note has to be present and exact, not merely tolerated.
+    /^Worktree budget: 7\/20 \(within budget\) — 1 detached unit not counted \(8 registered\)$/m,
     "the routine report uses the lifecycle renderer's exact worktree budget line",
   );
   assert.match(

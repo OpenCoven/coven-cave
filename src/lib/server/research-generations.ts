@@ -835,11 +835,14 @@ const SPOKEN_GLYPHS: [RegExp, string][] = [
   // like "~/.config" stay untouched.
   [/~\s*(?=\d)/g, "about "],
   // "spec+regression" gets ASR-mangled ("specs or aggression"); digits keep
-  // arithmetic sense ("2+2" → "2 plus 2"), words read as a pairing. "C++"
-  // stays intact: its second "+" is not followed by a letter, so neither
-  // pattern matches the token.
+  // arithmetic sense ("2+2" → "2 plus 2"), words read as a pairing — with or
+  // without surrounding same-line spaces ("spec + regression" mangles just
+  // the same; a "+" list bullet after a newline never merges lines).
+  // "C++" stays intact: only whitespace may sit between the letter and the
+  // "+", so its first "+" (followed by "+") and second "+" (preceded by "+")
+  // both fail to match.
   [/(?<=\d)\s*\+\s*(?=\d)/g, " plus "],
-  [/(?<=[A-Za-z])\+(?=[A-Za-z])/g, " and "],
+  [/(?<=[A-Za-z])[^\S\n]*\+[^\S\n]*(?=[A-Za-z])/g, " and "],
 ];
 
 function normalizeSpokenGlyphs(text: string): string {

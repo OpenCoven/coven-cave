@@ -37,6 +37,7 @@ export function listOpenCodeModels(familiarId?: string | null): Promise<RuntimeM
         return;
       }
       const child = spawn(launch.command, launch.args, {
+        windowsHide: true,
         // Match the chat spawn's vault scope. A provider key can be granted to
         // one familiar only, and listing its authenticated OpenCode models must
         // not silently drop that key by using the unscoped probe environment.

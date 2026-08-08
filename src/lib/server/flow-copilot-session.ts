@@ -110,6 +110,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     fixedArgs: [],
   };
   const child = spawn(command.command, [...command.fixedArgs, ...args], {
+    windowsHide: true,
     cwd: launch.projectRoot,
     env: harnessSpawnEnv(launch.familiarId),
     stdio: ["ignore", "pipe", "pipe"],

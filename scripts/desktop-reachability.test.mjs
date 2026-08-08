@@ -105,8 +105,22 @@ assert.match(
 );
 assert.match(
   reachability,
-  /another CovenCave GUI already owns desktop reachability/,
+  /conflicts_with_live_gui\([\s\S]*?\) \{\s*return Ok\(GuiReachability::AlreadyOwnedBy \{/,
   "a second GUI must not overwrite the live GUI ownership marker",
+);
+// cave-4wnxo: the conflict must stay inside `Ok`. Reported as `Err` it unwinds
+// out of Tauri's setup hook, which on macOS runs inside tao's
+// did_finish_launching — an Objective-C frame that cannot unwind — so the
+// runtime aborts with SIGABRT instead of naming the GUI already running.
+assert.doesNotMatch(
+  reachability,
+  /Err\("another CovenCave GUI already owns desktop reachability"/,
+  "a live second GUI is an ordinary outcome, not a setup error that aborts macOS",
+);
+assert.match(
+  reachability,
+  /fn conflicts_with_live_gui\([\s\S]*?existing\.pid != current\.pid && lease_matches\(/,
+  "ownership conflicts must compare process identity, not a reusable PID alone",
 );
 assert.match(
   reachability,
@@ -143,9 +157,18 @@ assert.match(
   /run_sidecar_daemon_if_requested\(\)[\s\S]*tauri::Builder::default/,
   "the background entrypoint must exit before constructing a GUI",
 );
+const reachabilityCall = setup.indexOf("prepare_gui_reachability(app.handle())?");
+assert.ok(reachabilityCall !== -1, "the setup hook must still prepare GUI reachability");
 assert.ok(
-  setup.indexOf("check_app_translocation();") < setup.indexOf("prepare_gui_reachability(app.handle())?;"),
+  setup.indexOf("check_app_translocation();") < reachabilityCall,
   "AppTranslocation must be rejected before reachability can install a LaunchAgent",
+);
+// The conflict has to be handled at the call site rather than propagated. See
+// the abort note above: `?` on this outcome is what SIGABRTs a second launch.
+assert.match(
+  setup,
+  /match prepare_gui_reachability\(app\.handle\(\)\)\? \{[\s\S]*?GuiReachability::Acquired => \{\}[\s\S]*?GuiReachability::AlreadyOwnedBy \{ pid \} => report_existing_gui_owner\(pid\)/,
+  "a second GUI must be reported and exited cleanly, never propagated into a non-unwinding panic",
 );
 assert.match(
   setup,

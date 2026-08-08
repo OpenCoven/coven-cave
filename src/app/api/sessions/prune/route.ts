@@ -103,6 +103,7 @@ export async function POST(req: Request) {
     try {
       const { command, fixedArgs } = covenLaunchCommand();
       await execFileAsync(command, [...fixedArgs, "sacrifice", s.id, "--yes"], {
+        windowsHide: true,
         env: covenSpawnEnv(),
         timeout: SACRIFICE_TIMEOUT_MS,
       });
