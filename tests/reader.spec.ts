@@ -22,15 +22,23 @@ import { expect, test, type Page } from "@playwright/test";
 // navigation — which reads as "the reader is broken" when it is only cold.
 // Serial lets the first test pay the compile and the rest run warm. Same
 // posture as canonical-memory / code-surface / research-desk-tabs.
-// 240s, not 180s: openReader's own waits already budget 30s (chat surface) +
-// 30s (the answer) + 90s (the reader chunk) = 150s, and the FIRST test also
-// pays cold navigation and compile on top. At 180s the outer timeout fired
-// mid-wait and killed the very allowance the inner 90s exists to provide —
-// observed as `.cave-reader` "element(s) not found" with "Test timeout of
-// 180000ms exceeded" in the call log, on the first test only, passing on retry
-// (cave-n7wm5). Serial mode means only that first test is cold, so this buys
-// headroom for one test rather than lengthening the suite.
-test.describe.configure({ mode: "serial", timeout: 240_000 });
+// The budget must exceed the SUM of openReader's own waits, or the outer
+// timeout fires mid-wait and kills the very allowance an inner wait exists to
+// provide — reported as a product failure ("element(s) not found") rather than
+// as the compile it actually is. That happened at 180s and cost cave-n7wm5 its
+// diagnosis, on the first test only, passing on retry.
+//
+// Current inner budget: 30s (chat surface) + 30s (the answer) + 90s (the
+// reader chunk) + 30s (the prose) + 90s (the citation anchors) + 45s (the
+// decoration) = 315s, and the FIRST test also pays cold navigation and compile
+// on top. 360s covers that; 240s no longer did once the citation waits were
+// added (cave-nrptt). Recompute this sum whenever a wait above changes — the
+// failure it prevents looks like a product bug, not a budget one.
+//
+// Set here and nowhere else. These tests are top level — no test.describe()
+// block — so this configure applies file-wide, and a per-test
+// test.setTimeout() intended as "headroom" silently LOWERS it instead.
+test.describe.configure({ mode: "serial", timeout: 360_000 });
 
 const ISO = "2026-08-03T14:02:00.000Z";
 
@@ -188,9 +196,38 @@ async function openReader(page: Page, turn: TurnSpec) {
     [...turn.text.matchAll(/^\[\^([^\]]+)\]:/gm)].map((match) => match[1]),
   ).size;
   if (expectedCitations > 0) {
+    // Split into the two steps rather than waiting on the end state alone.
+    //
+    // The chip wait above was right about the milestone and wrong about the
+    // budget: it reds `main` on a cold shard (cave-nrptt). Playwright's DOM at
+    // the 30s mark holds the reader's anchors — `#cite-1`, `#cite-2`, inside
+    // the reader — carrying neither the aria-label nor the aria-haspopup that
+    // citation.tsx adds beside the class. So the footnote pipeline HAD run and
+    // only the decoration had not. That is a cold-compile cost, not a render
+    // race: `next dev` compiles the citation chunk on demand while two workers
+    // contend for it, and 64 polls over 30s never saw it land.
+    //
+    // Waiting on each step separately also names the culprit next time. A
+    // single chip wait cannot distinguish "the pipeline never emitted anchors"
+    // from "the anchors are there, undecorated", and telling those apart is
+    // what cost this round its diagnosis.
+    // 90s, not 30s. Measured on `rm -rf .next && CI=true playwright test
+    // --shard=3/3`: the prose wait above settles and the anchors then take MORE
+    // than another 30s, so prose and anchors are not one render.
+    //
+    // It reproduces on the same single test each run rather than wandering, but
+    // do not read that as "only this test is slow" — the mechanism is not
+    // established. Serial mode means the file runs in order on one worker, and
+    // the test that reds is mid-file, not first, so "the first test pays the
+    // compile" does not explain it on its own. The budget below is sized to the
+    // measurement, not to that theory.
+    await expect(page.locator('.cave-reader-doc .cave-md a[href^="#cite-"]')).toHaveCount(
+      expectedCitations,
+      { timeout: 90_000 },
+    );
     await expect(page.locator(".cave-reader-doc .cave-md a.cave-citation-chip")).toHaveCount(
       expectedCitations,
-      { timeout: 30_000 },
+      { timeout: 45_000 },
     );
   }
 }
