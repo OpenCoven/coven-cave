@@ -2270,10 +2270,26 @@ function metadataFor(
   tasks: BeadTask[],
 ): { metadata: WorktreeLifecycleMetadata | null; errors: string[] } {
   if (!branch) return { metadata: null, errors: [] };
-  const globalErrors = tasks.flatMap((task) => task.structuredErrors);
+  const normalizedWorktreePath = normalizeAbsoluteWorktreePath(worktreePath);
+  const scopedStructuredErrors = tasks.flatMap((task) => {
+    if (task.structuredErrors.length === 0) return [];
+    const scopeableRecords = task.structured.filter(
+      (record) =>
+        record.branch.length > 0 ||
+        normalizeAbsoluteWorktreePath(record.path) !== null,
+    );
+    if (scopeableRecords.length === 0) return task.structuredErrors;
+    return scopeableRecords.some(
+      (record) =>
+        record.branch === branch ||
+        (normalizedWorktreePath !== null &&
+          normalizeAbsoluteWorktreePath(record.path) === normalizedWorktreePath),
+    )
+      ? task.structuredErrors
+      : [];
+  });
   const allRecords = tasks.flatMap((task) => task.structured);
   const records = allRecords.filter((record) => record.branch === branch);
-  const normalizedWorktreePath = normalizeAbsoluteWorktreePath(worktreePath);
   const conflictingPathRecords =
     normalizedWorktreePath === null
       ? []
@@ -2290,7 +2306,9 @@ function metadataFor(
             ...new Set(conflictingPathRecords.map((record) => record.branch || "<invalid branch>")),
           ].join(", ")}`,
         ];
-  const inventoryErrors = [...new Set([...globalErrors, ...ownershipErrors])];
+  const inventoryErrors = [
+    ...new Set([...scopedStructuredErrors, ...ownershipErrors]),
+  ];
   if (inventoryErrors.length > 0) {
     return { metadata: null, errors: inventoryErrors };
   }
@@ -2880,14 +2898,19 @@ export function collectWorktreeLifecycleInventory(
     throw new Error(HISTORY_OVERRIDE_DRIFT_ERROR);
   }
 
-  const structuredRecords = tasks.tasks
-    .flatMap((task) => task.structured);
+  const structuredRecords = tasks.tasks.flatMap((task) => task.structured);
   const validMetadata = structuredRecords
     .filter(
       (record): record is StructuredMetadataRecord & { metadata: WorktreeLifecycleMetadata } =>
         record.errors.length === 0 && record.metadata !== null,
     )
-    .filter(() => tasks.tasks.every((task) => task.structuredErrors.length === 0))
+    .filter((record) =>
+      tasks.tasks.some(
+        (task) =>
+          task.structuredErrors.length === 0 &&
+          task.structured.includes(record),
+      ),
+    )
     .filter(
       (record) =>
         structuredRecords.filter((candidate) => candidate.branch === record.branch).length === 1,
