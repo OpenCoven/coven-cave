@@ -288,6 +288,8 @@ export type CanonicalMemoryGatewayDependencies = {
   call: typeof callDaemonTarget;
 };
 
+type LocalDaemonTarget = ReturnType<typeof localDaemonTarget>;
+
 function createCanonicalMemoryPolicySelector(
   hubTargetForConfig: typeof daemonTargetForConfig,
 ): typeof daemonTargetForConfig {
@@ -455,12 +457,23 @@ async function requireSelectedLocal(
   }
 }
 
+async function resolveSelectedLocalTarget(
+  dependencies: CanonicalMemoryGatewayDependencies,
+): Promise<LocalDaemonTarget> {
+  await requireSelectedLocal(dependencies);
+  try {
+    return dependencies.localTarget();
+  } catch {
+    throw gatewayError("canonical_memory_unavailable", 503);
+  }
+}
+
 async function callLocal(
   path: string,
   dependencies: CanonicalMemoryGatewayDependencies,
+  target: LocalDaemonTarget,
 ): Promise<DaemonResponse<unknown>> {
   try {
-    const target = dependencies.localTarget();
     return await dependencies.call<unknown>(target, {
       method: "GET",
       path,
@@ -493,12 +506,12 @@ function requireSuccessfulResponse(
   return response.data;
 }
 
-export async function canonicalMemoryList(
-  dependencies: CanonicalMemoryGatewayDependencies = DEFAULT_DEPENDENCIES,
+async function canonicalMemoryListFromResolvedTarget(
+  target: LocalDaemonTarget,
+  dependencies: CanonicalMemoryGatewayDependencies,
 ): Promise<CanonicalMemorySummary[]> {
-  await requireSelectedLocal(dependencies);
   const payload = requireSuccessfulResponse(
-    await callLocal("/api/v1/memory", dependencies),
+    await callLocal("/api/v1/memory", dependencies, target),
     "list",
   );
 
@@ -536,6 +549,13 @@ export async function canonicalMemoryList(
   throw gatewayError("invalid_daemon_payload", 502);
 }
 
+export async function canonicalMemoryList(
+  dependencies: CanonicalMemoryGatewayDependencies = DEFAULT_DEPENDENCIES,
+): Promise<CanonicalMemorySummary[]> {
+  const target = await resolveSelectedLocalTarget(dependencies);
+  return canonicalMemoryListFromResolvedTarget(target, dependencies);
+}
+
 type FamiliarCanonicalMemoryCache = {
   load: (
     familiarId: string,
@@ -549,7 +569,19 @@ type FamiliarCanonicalMemoryCacheOptions = {
   now?: () => number;
   loadList?: (
     dependencies?: CanonicalMemoryGatewayDependencies,
+    target?: LocalDaemonTarget,
   ) => Promise<CanonicalMemorySummary[]>;
+};
+
+type LocalDaemonCacheScope = {
+  cachedIndex: Map<string, CanonicalMemorySummary[]> | null;
+  expiresAt: number;
+  inFlight:
+    | {
+        generation: number;
+        promise: Promise<Map<string, CanonicalMemorySummary[]>>;
+      }
+    | null;
 };
 
 function indexCanonicalMemorySummariesByFamiliar(
@@ -567,47 +599,84 @@ function indexCanonicalMemorySummariesByFamiliar(
   return index;
 }
 
+function canonicalMemoryCacheScopeKey(
+  target: LocalDaemonTarget,
+): string {
+  return JSON.stringify({
+    mode: target.mode,
+    socketPath: target.socketPath,
+  });
+}
+
+async function resolveSelectedLocalCacheTarget(
+  dependencies: CanonicalMemoryGatewayDependencies,
+): Promise<LocalDaemonTarget> {
+  return resolveSelectedLocalTarget(dependencies);
+}
+
 export function createFamiliarCanonicalMemoryCache(
   options: FamiliarCanonicalMemoryCacheOptions = {},
 ): FamiliarCanonicalMemoryCache {
   const ttlMs = options.ttlMs ?? FAMILIAR_CANONICAL_MEMORY_CACHE_TTL_MS;
   const now = options.now ?? Date.now;
-  const loadList = options.loadList ?? canonicalMemoryList;
-  let cachedIndex: Map<string, CanonicalMemorySummary[]> | null = null;
-  let expiresAt = 0;
+  const loadList =
+    options.loadList ??
+    ((dependencies, target) =>
+      target
+        ? canonicalMemoryListFromResolvedTarget(
+            target,
+            dependencies ?? DEFAULT_DEPENDENCIES,
+          )
+        : canonicalMemoryList(dependencies ?? DEFAULT_DEPENDENCIES));
   let generation = 0;
-  let inFlight:
-    | {
-        generation: number;
-        promise: Promise<Map<string, CanonicalMemorySummary[]>>;
-      }
-    | null = null;
+  const scopes = new Map<string, LocalDaemonCacheScope>();
+
+  function scopeFor(targetKey: string): LocalDaemonCacheScope {
+    const cached = scopes.get(targetKey);
+    if (cached) return cached;
+    const created: LocalDaemonCacheScope = {
+      cachedIndex: null,
+      expiresAt: 0,
+      inFlight: null,
+    };
+    scopes.set(targetKey, created);
+    return created;
+  }
 
   async function loadIndex(
     dependencies: CanonicalMemoryGatewayDependencies,
   ): Promise<Map<string, CanonicalMemorySummary[]>> {
-    if (cachedIndex !== null && now() < expiresAt) {
-      return cachedIndex;
+    const target = await resolveSelectedLocalCacheTarget(dependencies);
+    const targetKey = canonicalMemoryCacheScopeKey(target);
+    const scope = scopeFor(targetKey);
+    if (scope.cachedIndex !== null && now() < scope.expiresAt) {
+      return scope.cachedIndex;
     }
-    if (inFlight && inFlight.generation === generation) {
-      return inFlight.promise;
+    if (scope.inFlight && scope.inFlight.generation === generation) {
+      return scope.inFlight.promise;
     }
     const inFlightGeneration = generation;
-    const promise = loadList(dependencies)
+    const promise = loadList(dependencies, target)
       .then((entries) => {
         const indexed = indexCanonicalMemorySummariesByFamiliar(entries);
-        if (generation === inFlightGeneration) {
-          cachedIndex = indexed;
-          expiresAt = now() + ttlMs;
+        if (
+          generation === inFlightGeneration &&
+          scopes.get(targetKey) === scope
+        ) {
+          scope.cachedIndex = indexed;
+          scope.expiresAt = now() + ttlMs;
         }
         return indexed;
       })
       .finally(() => {
-        if (inFlight?.promise === promise) {
-          inFlight = null;
+        if (
+          scopes.get(targetKey) === scope &&
+          scope.inFlight?.promise === promise
+        ) {
+          scope.inFlight = null;
         }
       });
-    inFlight = { generation: inFlightGeneration, promise };
+    scope.inFlight = { generation: inFlightGeneration, promise };
     return promise;
   }
 
@@ -621,9 +690,7 @@ export function createFamiliarCanonicalMemoryCache(
     },
     invalidate() {
       generation += 1;
-      cachedIndex = null;
-      expiresAt = 0;
-      inFlight = null;
+      scopes.clear();
     },
   };
 }
@@ -644,9 +711,9 @@ export function invalidateCachedCanonicalMemorySummariesForTest(): void {
 export async function canonicalMemoryOverview(
   dependencies: CanonicalMemoryGatewayDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<CanonicalMemoryOverview> {
-  await requireSelectedLocal(dependencies);
+  const target = await resolveSelectedLocalTarget(dependencies);
   const payload = requireSuccessfulResponse(
-    await callLocal("/api/v1/memory/overview", dependencies),
+    await callLocal("/api/v1/memory/overview", dependencies, target),
     "overview",
   );
   if (!Value.Check(overviewSchema, payload)) {
@@ -691,9 +758,15 @@ export async function canonicalMemoryDetail(
   if (!isUuid(id)) {
     throw gatewayError("invalid_memory_id", 400);
   }
+  let target: LocalDaemonTarget;
+  try {
+    target = dependencies.localTarget();
+  } catch {
+    throw gatewayError("canonical_memory_unavailable", 503);
+  }
   const validatedId = id.toLowerCase();
   const payload = requireSuccessfulResponse(
-    await callLocal(`/api/v1/memory/${validatedId}`, dependencies),
+    await callLocal(`/api/v1/memory/${validatedId}`, dependencies, target),
     "detail",
   );
   if (!Value.Check(detailSchema, payload)) {

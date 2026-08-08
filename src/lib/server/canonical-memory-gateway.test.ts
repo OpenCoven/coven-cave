@@ -113,12 +113,14 @@ function dependencies(
   result: ReturnType<typeof response>,
   options: {
     selectedMode?: "local" | "hub" | "unconfigured-hub";
+    localSocketPath?: string;
     events?: string[];
   } = {},
 ) {
   const events = options.events ?? [];
   const calls: Array<{ target: unknown; request: unknown }> = [];
   const selectedMode = options.selectedMode ?? "local";
+  const localSocketPath = options.localSocketPath ?? "/secret/local.sock";
   const deps = {
     loadConfig: async () => {
       events.push("loadConfig");
@@ -156,7 +158,7 @@ function dependencies(
       return {
         mode: "local",
         label: "Local daemon",
-        socketPath: "/secret/local.sock",
+        socketPath: localSocketPath,
       };
     },
     call: async (target: unknown, request: unknown) => {
@@ -303,7 +305,36 @@ test("maps a null detail attestation to null metadata", async () => {
   assert.equal(normalized.attestationMetadata, null);
 });
 
-test("familiar-scoped cache shares one full-list fetch across concurrent and repeated reads within ttl", async () => {
+test("familiar-scoped cache rejects a warmed local scope after selection switches to hub mode", async () => {
+  let calls = 0;
+  const cache = createFamiliarCanonicalMemoryCache({
+    loadList: async () => {
+      calls += 1;
+      return [summaryFixture("memory-1", "sage")];
+    },
+  });
+  const local = dependencies(response([currentListEntry]), {
+    localSocketPath: "/secret/target-a.sock",
+  });
+  const hub = dependencies(response([currentListEntry]), {
+    selectedMode: "hub",
+    localSocketPath: "/secret/target-a.sock",
+  });
+
+  assert.deepEqual(await cache.load("sage", local.deps), [
+    summaryFixture("memory-1", "sage"),
+  ]);
+  assert.equal(calls, 1);
+
+  await expectGatewayError(
+    () => cache.load("sage", hub.deps),
+    "local_daemon_required",
+    409,
+  );
+  assert.equal(calls, 1);
+});
+
+test("familiar-scoped cache shares one full-list fetch across same-target concurrent and repeated reads within ttl", async () => {
   let calls = 0;
   let resolveList:
     | ((entries: Array<ReturnType<typeof summaryFixture>>) => void)
@@ -316,10 +347,17 @@ test("familiar-scoped cache shares one full-list fetch across concurrent and rep
         resolveList = resolve;
       }),
   });
+  const firstDeps = dependencies(response([currentListEntry]), {
+    localSocketPath: "/secret/shared.sock",
+  });
+  const secondDeps = dependencies(response([currentListEntry]), {
+    localSocketPath: "/secret/shared.sock",
+  });
 
-  const sagePromise = cache.load("sage");
-  const mossPromise = cache.load("moss");
+  const sagePromise = cache.load("sage", firstDeps.deps);
+  const mossPromise = cache.load("moss", secondDeps.deps);
 
+  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(calls, 1);
 
   resolveList?.([
@@ -333,41 +371,142 @@ test("familiar-scoped cache shares one full-list fetch across concurrent and rep
     summaryFixture("memory-3", "sage"),
   ]);
   assert.deepEqual(await mossPromise, [summaryFixture("memory-2", "moss")]);
-  assert.deepEqual(await cache.load("sage"), [
+  assert.deepEqual(await cache.load("sage", secondDeps.deps), [
     summaryFixture("memory-1", "sage"),
     summaryFixture("memory-3", "sage"),
   ]);
-  assert.deepEqual(await cache.load("unknown"), []);
+  assert.deepEqual(await cache.load("unknown", firstDeps.deps), []);
   assert.equal(calls, 1);
 });
 
-test("familiar-scoped cache refetches after ttl expiry and invalidation", async () => {
-  let now = 0;
+test("familiar-scoped cache refetches when the local target changes", async () => {
   let calls = 0;
   const cache = createFamiliarCanonicalMemoryCache({
-    now: () => now,
-    loadList: async () => {
+    loadList: async (deps) => {
       calls += 1;
-      return calls === 1
-        ? [summaryFixture("memory-1", "sage")]
-        : calls === 2
-          ? [summaryFixture("memory-2", "sage")]
-          : [summaryFixture("memory-3", "sage")];
+      const socketPath = deps?.localTarget().socketPath;
+      return [
+        summaryFixture(
+          socketPath === "/secret/target-a.sock" ? "memory-a" : "memory-b",
+          "sage",
+        ),
+      ];
     },
   });
+  const targetA = dependencies(response([currentListEntry]), {
+    localSocketPath: "/secret/target-a.sock",
+  });
+  const targetB = dependencies(response([currentListEntry]), {
+    localSocketPath: "/secret/target-b.sock",
+  });
 
-  assert.deepEqual(await cache.load("sage"), [summaryFixture("memory-1", "sage")]);
-  now = 59_999;
-  assert.deepEqual(await cache.load("sage"), [summaryFixture("memory-1", "sage")]);
+  assert.deepEqual(await cache.load("sage", targetA.deps), [
+    summaryFixture("memory-a", "sage"),
+  ]);
+  assert.deepEqual(await cache.load("sage", targetA.deps), [
+    summaryFixture("memory-a", "sage"),
+  ]);
   assert.equal(calls, 1);
 
-  now = 60_000;
-  assert.deepEqual(await cache.load("sage"), [summaryFixture("memory-2", "sage")]);
+  assert.deepEqual(await cache.load("sage", targetB.deps), [
+    summaryFixture("memory-b", "sage"),
+  ]);
+  assert.equal(calls, 2);
+});
+
+test("familiar-scoped cache isolates concurrent in-flight work for different local targets", async () => {
+  let calls = 0;
+  let resolveA:
+    | ((entries: Array<ReturnType<typeof summaryFixture>>) => void)
+    | null = null;
+  let resolveB:
+    | ((entries: Array<ReturnType<typeof summaryFixture>>) => void)
+    | null = null;
+  const cache = createFamiliarCanonicalMemoryCache({
+    loadList: (deps) =>
+      new Promise((resolve) => {
+        calls += 1;
+        const socketPath = deps?.localTarget().socketPath;
+        if (socketPath === "/secret/target-a.sock") {
+          resolveA = resolve;
+          return;
+        }
+        resolveB = resolve;
+      }),
+  });
+  const targetA = dependencies(response([currentListEntry]), {
+    localSocketPath: "/secret/target-a.sock",
+  });
+  const targetB = dependencies(response([currentListEntry]), {
+    localSocketPath: "/secret/target-b.sock",
+  });
+
+  const promiseA = cache.load("sage", targetA.deps);
+  const promiseB = cache.load("sage", targetB.deps);
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(calls, 2);
 
+  resolveB?.([summaryFixture("memory-b", "sage")]);
+  assert.deepEqual(await promiseB, [summaryFixture("memory-b", "sage")]);
+
+  resolveA?.([summaryFixture("memory-a", "sage")]);
+  assert.deepEqual(await promiseA, [summaryFixture("memory-a", "sage")]);
+});
+
+test("familiar-scoped cache refetches after ttl expiry and invalidation across all scopes", async () => {
+  let now = 0;
+  let calls = 0;
+  const perTargetCalls = new Map<string, number>();
+  const cache = createFamiliarCanonicalMemoryCache({
+    now: () => now,
+    loadList: async (deps) => {
+      calls += 1;
+      const socketPath = deps?.localTarget().socketPath ?? "/missing";
+      const nextCall = (perTargetCalls.get(socketPath) ?? 0) + 1;
+      perTargetCalls.set(socketPath, nextCall);
+      return [summaryFixture(`memory-${socketPath}-${nextCall}`, "sage")];
+    },
+  });
+  const targetA = dependencies(response([currentListEntry]), {
+    localSocketPath: "/secret/target-a.sock",
+  });
+  const targetB = dependencies(response([currentListEntry]), {
+    localSocketPath: "/secret/target-b.sock",
+  });
+
+  assert.deepEqual(await cache.load("sage", targetA.deps), [
+    summaryFixture("memory-/secret/target-a.sock-1", "sage"),
+  ]);
+  assert.deepEqual(await cache.load("sage", targetB.deps), [
+    summaryFixture("memory-/secret/target-b.sock-1", "sage"),
+  ]);
+  now = 59_999;
+  assert.deepEqual(await cache.load("sage", targetA.deps), [
+    summaryFixture("memory-/secret/target-a.sock-1", "sage"),
+  ]);
+  assert.deepEqual(await cache.load("sage", targetB.deps), [
+    summaryFixture("memory-/secret/target-b.sock-1", "sage"),
+  ]);
+  assert.equal(calls, 2);
+
+  now = 60_000;
+  assert.deepEqual(await cache.load("sage", targetA.deps), [
+    summaryFixture("memory-/secret/target-a.sock-2", "sage"),
+  ]);
+  assert.deepEqual(await cache.load("sage", targetB.deps), [
+    summaryFixture("memory-/secret/target-b.sock-2", "sage"),
+  ]);
+  assert.equal(calls, 4);
+
   cache.invalidate();
-  assert.deepEqual(await cache.load("sage"), [summaryFixture("memory-3", "sage")]);
-  assert.equal(calls, 3);
+  assert.deepEqual(await cache.load("sage", targetA.deps), [
+    summaryFixture("memory-/secret/target-a.sock-3", "sage"),
+  ]);
+  assert.deepEqual(await cache.load("sage", targetB.deps), [
+    summaryFixture("memory-/secret/target-b.sock-3", "sage"),
+  ]);
+  assert.equal(calls, 6);
 });
 
 test("familiar-scoped cache does not cache failures as success", async () => {
