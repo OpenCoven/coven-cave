@@ -165,6 +165,7 @@ async function openReader(page: Page, turn: TurnSpec) {
   await expect(page.locator(".cave-reader-doc .cave-md")).toContainText(marker.slice(0, 24), {
     timeout: 30_000,
   });
+
 }
 
 test("cited sources render as chips, with no footnote plumbing left in the prose", async ({ page }) => {
@@ -172,13 +173,12 @@ test("cited sources render as chips, with no footnote plumbing left in the prose
   const body = page.locator(".cave-reader-doc .cave-md");
 
   // #4265: the reader rendered through MarkdownBlock, which does not mount the
-  // citation previews, so these were plain underlined links.
-  // Citation enhancement is this test's product contract. Other reader tests
-  // must not fail before reaching their own assertions if that enhancement is
-  // still settling, but this one waits through a cold lazy-chunk render.
-  await expect(body.locator("a.cave-citation-chip")).toHaveCount(2, {
-    timeout: 30_000,
-  });
+  // citation previews, so these were plain underlined links. Wait for the chips
+  // themselves: prose can settle before the async markdown and preview effects.
+  // Keep this wait scoped to the only test whose contract is citation chips;
+  // making every reader test wait on them multiplied one flaky assertion across
+  // the serial suite and failed different unrelated cases on each CI attempt.
+  await expect(body.locator("a.cave-citation-chip")).toHaveCount(2, { timeout: 30_000 });
   await expect(body.locator("a.cave-citation-chip").first()).toHaveText("developer.mozilla.org");
 
   // The markdown renderer may replace injected DOM after the preview effect's
