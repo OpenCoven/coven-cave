@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   FAMILIAR_DASHBOARD_LIMITS,
@@ -83,34 +84,7 @@ function makeDependencies(
       },
     }),
     loadAccess: async () => ({ projects: [] }),
-    loadMemory: async () => ({
-      entries: [],
-      overview: {
-        generatedAt: new Date(NOW).toISOString(),
-        totals: {
-          entries: 0,
-          familiars: 0,
-          verified: 0,
-          needsReview: 0,
-          unknown: 0,
-        },
-        lastUpdatedAt: null,
-        capabilities: {
-          detail: true,
-          verification: true,
-          attestationMetadata: true,
-          supersessionHistory: true,
-          mutations: true,
-        },
-        verification: {
-          state: "verified",
-          checkedAt: new Date(NOW).toISOString(),
-          manifest: null,
-          index: null,
-          issues: [],
-        },
-      },
-    }),
+    loadMemory: async () => [],
     loadRetro: async () => ({
       ok: true,
       snapshot: {
@@ -316,6 +290,38 @@ test("successful empty stores produce truthful empty data states", async () => {
   assert.equal(result.response.sections.analytics.state, "empty");
   assert.equal(result.response.sections.analytics.data.activity.totalSessions, 0);
   assert.equal(result.response.sections.profile.state, "fresh");
+});
+
+test("memory analytics depend only on canonical list entries", async () => {
+  const updatedAt = "2026-08-07T19:59:00.000Z";
+  const result = await loadFamiliarDashboard("sage", makeDependencies({
+    loadMemory: async () => [{
+      id: "memory-1",
+      familiarId: "sage",
+      title: "Remember the source contract",
+      updatedAt,
+      relativeUpdatedAt: "1 minute ago",
+      excerpt: "The dashboard consumes list entries only.",
+      source: { kind: "journal", label: "Journal" },
+      privacy: { classification: null, revealRequired: false },
+      verification: { state: "verified" },
+    }],
+  }));
+
+  assert.equal(result.kind, "ok");
+  assert.equal(result.response.sections.analytics.state, "fresh");
+  assert.deepEqual(result.response.sections.analytics.issues, []);
+  assert.deepEqual(result.response.sections.analytics.data.memory, {
+    definition: "Canonical memory availability and report-backed recall signals.",
+    period: "current memory plus latest 30 reports",
+    sampleCount: 0,
+    freshness: updatedAt,
+    availability: "ready",
+    count: 1,
+    latestUpdatedAt: updatedAt,
+    averageRecall: null,
+    averageFileLocatability: null,
+  });
 });
 
 test("every source failure is independent", async () => {
@@ -658,6 +664,23 @@ test("default dashboard dependencies use bounded report and metric readers", () 
     DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES.loadMetricSnapshots,
     listDashboardMetricSnapshots,
   );
+});
+
+test("default dashboard memory loader has no overview dependency", () => {
+  assert.equal(
+    DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES.loadMemory.name,
+    "canonicalMemoryList",
+  );
+
+  const source = readFileSync(
+    new URL("./familiar-dashboard-data.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    source,
+    /import \{\s*canonicalMemoryList,\s*\} from "@\/lib\/server\/canonical-memory-gateway";/,
+  );
+  assert.doesNotMatch(source, /canonicalMemoryOverview/);
 });
 
 test("response stays within budget with thousands of distinct feedback buckets", async () => {

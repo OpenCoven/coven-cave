@@ -4,12 +4,8 @@ import { loadProjects } from "@/lib/cave-projects";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import {
   canonicalMemoryList,
-  canonicalMemoryOverview,
 } from "@/lib/server/canonical-memory-gateway";
-import type {
-  CanonicalMemoryOverview,
-  CanonicalMemorySummary,
-} from "@/lib/canonical-memory";
+import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
 import {
   evaluateFamiliarContract,
   type ContractFiles,
@@ -71,10 +67,7 @@ export type FamiliarDashboardDependencies = {
   loadAccess: (id: string) => Promise<{
     projects: { project: CaveProject; access: ProjectAccessLevel }[];
   }>;
-  loadMemory: () => Promise<{
-    entries: CanonicalMemorySummary[];
-    overview: CanonicalMemoryOverview;
-  }>;
+  loadMemory: () => Promise<CanonicalMemorySummary[]>;
   loadRetro: (args: { familiarId: string }) => Promise<RetroRunsSnapshotResult>;
   loadReports: (id: string) => ReturnType<typeof listSelfReports>;
   loadMetricSnapshots: (id: string) => ReturnType<typeof listMetricSnapshots>;
@@ -120,13 +113,7 @@ export const DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES: FamiliarDashboardDependenc
   loadAccess: async (id) => ({
     projects: await listAccessibleProjects(await loadProjects(), id),
   }),
-  loadMemory: async () => {
-    const [entries, overview] = await Promise.all([
-      canonicalMemoryList(),
-      canonicalMemoryOverview(),
-    ]);
-    return { entries, overview };
-  },
+  loadMemory: canonicalMemoryList,
   loadRetro: ({ familiarId }) => loadRetroRunsSnapshot({ familiarId }),
   loadReports: listDashboardSelfReports,
   loadMetricSnapshots: listDashboardMetricSnapshots,
@@ -308,9 +295,7 @@ export async function loadFamiliarDashboard(
         report: null,
       };
   const access = sourceData(accessSource, { projects: [] });
-  const memory = memorySource.ok
-    ? memorySource.data
-    : { entries: [], overview: null };
+  const memoryEntries = sourceData(memorySource, []);
   const retroSnapshot = sourceData(retroSource, {
     generatedAt,
     summary: {
@@ -362,7 +347,7 @@ export async function loadFamiliarDashboard(
     familiarId,
     familiar,
     sessions: scopedSessions,
-    memories: memory.entries,
+    memories: memoryEntries,
     memoryAvailability: memorySource.ok ? "ready" : "unavailable",
     retroState: familiarRetroState,
     contractReport: contract.report,
@@ -379,7 +364,7 @@ export async function loadFamiliarDashboard(
       snapshotsSource,
       { snapshots: [], total: 0 },
     ).total,
-    memories: memory.entries,
+    memories: memoryEntries,
     memoryAvailability: memorySource.ok ? "ready" : "unavailable",
     retroState: familiarRetroState,
     contractReport: contract.report,
