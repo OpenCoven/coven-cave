@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync, realpathSync, type Stats } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync, type Stats } from "node:fs";
 import { devNull } from "node:os";
 
 import path from "node:path";
@@ -29,6 +29,7 @@ export interface WorktreeLifecycleInventoryOptions {
 
 export interface WorktreeLifecycleInventory {
   items: WorktreeLifecycleItem[];
+  orphanedMetadata: OrphanedWorktreeMetadataRecord[];
   budgets: WorktreeLifecycleBudgets;
   inventoryFingerprint: string;
   /**
@@ -120,11 +121,35 @@ type BeadTask = {
   structuredErrors: string[];
 };
 
+type StructuredMetadataLocation = "primary" | `additional:${number}`;
+
 type StructuredMetadataRecord = {
+  location: StructuredMetadataLocation;
   branch: string;
   path: string | null;
   metadata: WorktreeLifecycleMetadata | null;
   errors: string[];
+};
+
+export type OrphanedWorktreeMetadataRecord = {
+  beadId: string;
+  beadStatus: string;
+  location: StructuredMetadataLocation;
+  branch: string;
+  path: string;
+  record: {
+    branch: string;
+    path: string;
+    owner: string;
+    purpose: string;
+    disposition: WorktreeLifecycleMetadata["disposition"];
+    createdAt: string;
+    reason?: string;
+    reviewAfter?: string;
+    exception?: WorktreeLifecycleMetadata["exception"];
+  };
+  repairable: boolean;
+  reasons: string[];
 };
 
 type StructuredMetadataParse = {
@@ -1539,12 +1564,14 @@ function parseException(
 function parseStructuredRecord(
   taskId: string,
   value: unknown,
-  location: string,
+  prefixLocation: string,
+  location: StructuredMetadataLocation,
   root: string,
 ): StructuredMetadataRecord {
-  const prefix = `Bead ${taskId} ${location} metadata`;
+  const prefix = `Bead ${taskId} ${prefixLocation} metadata`;
   if (!isRecord(value)) {
     return {
+      location,
       branch: "",
       path: null,
       metadata: null,
@@ -1612,8 +1639,9 @@ function parseStructuredRecord(
   const exception = parseException(worktree.exception, exceptionErrors);
   for (const error of exceptionErrors) metadataErrors(error);
 
-  if (errors.length > 0) return { branch, path: metadataPath, metadata: null, errors };
+  if (errors.length > 0) return { location, branch, path: metadataPath, metadata: null, errors };
   return {
+    location,
     branch,
     path: metadataPath,
     metadata: {
@@ -1653,6 +1681,7 @@ function parseStructuredMetadata(
       taskId,
       value.coven.worktree,
       "worktree",
+      "primary",
       root,
     );
     records.push(primary);
@@ -1673,6 +1702,7 @@ function parseStructuredMetadata(
           taskId,
           record,
           `worktrees[${index}]`,
+          `additional:${index}`,
           root,
         );
         records.push(parsed);
@@ -2300,6 +2330,57 @@ function metadataFor(
   return { metadata: record.metadata, errors: [] };
 }
 
+function collectOrphanedMetadata(
+  tasks: BeadTask[],
+  localRefs: LocalBranchRef[],
+  entries: WorktreeEntry[],
+): OrphanedWorktreeMetadataRecord[] {
+  const localBranches = new Set(localRefs.map((localRef) => localRef.branch));
+  const registeredPaths = new Set(
+    entries.flatMap((entry) => {
+      const normalized = normalizeAbsoluteWorktreePath(entry.path);
+      return normalized === null ? [] : [normalized];
+    }),
+  );
+  return tasks.flatMap((task) =>
+    task.status === "closed"
+      ? []
+      : task.structured.flatMap((record) => {
+          if (record.errors.length > 0 || record.metadata === null || record.path === null) {
+            return [];
+          }
+          if (localBranches.has(record.branch) || registeredPaths.has(record.path)) {
+            return [];
+          }
+          const pathPresent = existsSync(record.path);
+          return [
+            {
+              beadId: task.id,
+              beadStatus: task.status,
+              location: record.location,
+              branch: record.branch,
+              path: record.path,
+              record: {
+                branch: record.branch,
+                path: record.path,
+                owner: record.metadata.owner,
+                purpose: record.metadata.purpose,
+                disposition: record.metadata.disposition,
+                createdAt: record.metadata.createdAt,
+                ...(record.metadata.reason ? { reason: record.metadata.reason } : {}),
+                ...(record.metadata.reviewAfter
+                  ? { reviewAfter: record.metadata.reviewAfter }
+                  : {}),
+                ...(record.metadata.exception ? { exception: record.metadata.exception } : {}),
+              },
+              repairable: !pathPresent,
+              reasons: pathPresent ? [`recorded path exists on disk: ${record.path}`] : [],
+            },
+          ];
+        }),
+  );
+}
+
 function pathContains(root: string, candidate: string): boolean {
   return candidate === root || candidate.startsWith(`${root}${path.sep}`);
 }
@@ -2546,6 +2627,7 @@ export function collectWorktreeLifecycleInventory(
   const claims = fetchClaims(root);
   const sessions = fetchSessions(root);
   const tasks = fetchTasks(root);
+  const orphanedMetadata = collectOrphanedMetadata(tasks.tasks, localRefs, entries);
   const processes = fetchProcessOwners();
   const sessionOwnership =
     sessions.error === null
@@ -2857,6 +2939,7 @@ export function collectWorktreeLifecycleInventory(
     items: driftedObservations.map((observation) =>
       classifyInventoryObservation(observation, options.nowMs),
     ),
+    orphanedMetadata,
     budgets,
     globalErrors: [...new Set(branchGlobalErrors)],
     inventoryFingerprint: fingerprint(

@@ -191,6 +191,8 @@ function buildJsonReport(
     ok: true,
     generatedAt: new Date(options.nowMs).toISOString(),
     ...summary,
+    orphanedMetadata: inventory.orphanedMetadata,
+    orphanedMetadataCount: inventory.orphanedMetadata.length,
     inventoryFingerprint: inventory.inventoryFingerprint,
     ...extras,
   };

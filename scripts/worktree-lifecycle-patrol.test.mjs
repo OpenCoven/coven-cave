@@ -35,6 +35,9 @@ const registeredDrift = path.join(fixtureRoot, "registered-drift");
 const duplicateRegisteredPath = path.join(fixtureRoot, "duplicate-registered");
 const duplicateWorktreeInventory = path.join(fixtureRoot, "duplicate-worktree-inventory");
 const metadataAlias = path.join(fixtureRoot, "old-alias");
+const orphanedMissingPath = path.join(fixtureRoot, "missing-orphan");
+const orphanedClosedPath = path.join(fixtureRoot, "missing-closed");
+const orphanedPresentPath = path.join(repo, ".worktrees", "orphaned-present");
 
 // No child of this test should ever run unbounded. `execFileSync` without a
 // timeout waits forever, so a wedged git or a stub that never exits used to
@@ -303,6 +306,7 @@ try {
   git(["worktree", "add", "-q", "--detach", detached, "origin/main"], repo);
   const defaultHead = git(["rev-parse", "refs/remotes/origin/main"], repo).trim();
   git(["update-ref", "refs/remotes/origin/trunk", defaultHead], repo);
+  mkdirSync(orphanedPresentPath, { recursive: true });
   const worktreeInventory = git(["worktree", "list", "--porcelain", "-z"], repo);
   writeFileSync(
     duplicateWorktreeInventory,
@@ -1313,8 +1317,10 @@ elif [ -n "\${LIFECYCLE_BAD_METADATA_DATE_CASE:-}" ]; then
   cat "${path.join(fixtureRoot, "metadata-")}\${LIFECYCLE_BAD_METADATA_DATE_CASE}.json"
 elif [ "\${LIFECYCLE_MULTI_WORKTREE_METADATA:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Multi-worktree fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Shared split","expiresAt":"2026-08-11T00:00:00.1Z","additionalPaths":["${old}","${live}"]}},"worktrees":[{"branch":"feat/live","path":"${live}","owner":"Kitty","purpose":"Additional fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z","exception":{"owner":"Kitty","reason":"Shared split","expiresAt":"2026-08-11T00:00:00.1Z","additionalPaths":["${live}","${old}"]}}]}}}]'
+elif [ "\${LIFECYCLE_ORPHANED_METADATA:-0}" = "1" ]; then
+printf '%s\n' '[{"id":"cave-orphan","status":"open","title":"Orphaned metadata fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/orphaned","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-present-path","status":"open","title":"Present path fixture","metadata":{"coven":{"worktree":{"branch":"feat/present-path","path":"${orphanedPresentPath}","owner":"Kitty","purpose":"Present path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-closed-orphan","status":"closed","title":"Closed orphaned metadata fixture","metadata":{"coven":{"worktree":{"branch":"feat/closed-orphan","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Closed orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_MALFORMED_WORKTREES:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Malformed array","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":{}}}}]'
+printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Malformed array","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":{}}}}]'
 elif [ "\${LIFECYCLE_DUPLICATE_WORKTREE_BRANCH:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Duplicate branch","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/old","path":"${live}","owner":"Kitty","purpose":"Duplicate fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_DUPLICATE_WORKTREE_PATH:-0}" = "1" ]; then
@@ -1622,6 +1628,23 @@ exit 0
     "cooldown",
     "recent worktree-local HEAD activity keeps an old landed commit inside the cooldown",
   );
+  const orphanedMetadataReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_ORPHANED_METADATA: "1" }),
+  );
+  assert.equal(orphanedMetadataReport.orphanedMetadata.length, 2);
+  assert.equal(orphanedMetadataReport.orphanedMetadataCount, 2);
+  const orphanedByBead = new Map(
+    orphanedMetadataReport.orphanedMetadata.map((entry) => [entry.beadId, entry]),
+  );
+  assert.equal(orphanedByBead.get("cave-orphan").location, "primary");
+  assert.equal(orphanedByBead.get("cave-orphan").repairable, true);
+  assert.deepEqual(orphanedByBead.get("cave-orphan").reasons, []);
+  assert.equal(orphanedByBead.get("cave-present-path").repairable, false);
+  assert.match(
+    orphanedByBead.get("cave-present-path").reasons.join("\n"),
+    /path/i,
+  );
+  assert.equal(orphanedByBead.has("cave-closed-orphan"), false);
   const detachedItem = report.items.find(
     (item) => item.kind === "worktree" && item.branch === null,
   );
