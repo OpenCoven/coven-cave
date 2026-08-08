@@ -77,8 +77,6 @@ export const SUITES = {
     "src/lib/familiar-types.test.ts",
     "src/lib/research-missions.test.ts",
     "src/lib/research-prompt-brief.test.ts",
-  // the picker resolves "@/lib/code-surface" for the shared visibility rule
-  "src/lib/code-session-picker.test.ts",
     "src/lib/research-autoloop.test.ts",
     "src/lib/research-mission-client.test.ts",
     "src/lib/roving-list.test.ts",
@@ -1609,6 +1607,9 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  // the picker imports the module under test, which resolves
+  // "@/lib/code-surface" for the shared session-visibility rule.
+  "src/lib/code-session-picker.test.ts",
   // the prompt-brief + quick-saves tests type their fixtures against
   // "@/lib/research-missions" and "@/lib/link-organizer"
   "src/lib/research-prompt-brief.test.ts",
