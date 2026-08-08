@@ -1767,7 +1767,10 @@ exit 0
   assert.match(humanReport, /uncommitted\.txt/, "the routine report includes exact dirty paths");
   assert.match(
     humanReport,
-    /^Worktree budget: 8\/20 \(within budget\)$/m,
+    // cave-oenag: this fixture registers one detached unit, so the assessed
+    // count is 7 of 8 and the line says which one it dropped. Anchored end-of-line
+    // so the note has to be present and exact, not merely tolerated.
+    /^Worktree budget: 7\/20 \(within budget\) — 1 detached unit not counted \(8 registered\)$/m,
     "the routine report uses the lifecycle renderer's exact worktree budget line",
   );
   assert.match(
