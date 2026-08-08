@@ -314,6 +314,31 @@ export const ACCESS_TOKEN_COOKIE = "coven_cave_access";
 // server.ts, which cannot import from src/.
 export const LOCAL_PEER_HEADER = "x-coven-cave-local-peer";
 export const TAILNET_PEER_HEADER = "x-coven-cave-tailnet-peer";
+/**
+ * Whether this request must carry a proven biometric check (cave-brksh).
+ *
+ * Three deliberate exemptions:
+ *
+ *   - Non-API paths. Page navigations have to load, or the surface that runs
+ *     the WebAuthn ceremony can never render and the gate becomes a brick wall
+ *     with no door.
+ *   - `/api/passkey/*`. Obtaining presence cannot itself require presence. The
+ *     sensitive members of that family — enrolling an ADDITIONAL credential and
+ *     revoking one — police themselves at the route layer, where they can read
+ *     the credential store that middleware cannot.
+ *   - Local ingress. A direct loopback peer is someone at the machine; the
+ *     phone is what this control is about.
+ */
+export function requiresPasskeyPresence(
+  pathname: string,
+  remoteIngress: boolean,
+  enabled: boolean,
+): boolean {
+  if (!enabled || !remoteIngress) return false;
+  if (!pathname.startsWith("/api/")) return false;
+  return !(pathname === "/api/passkey" || pathname.startsWith("/api/passkey/"));
+}
+
 export const ACCESS_TOKEN_QUERY_PARAM = "coven_access_token";
 export const TOKEN_PARAM = "covenCaveToken";
 export const TOKEN_HEADER = "x-coven-cave-token";

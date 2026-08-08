@@ -389,6 +389,14 @@ const TAILNET_PEER_SECRET = randomUUID();
 process.env.COVEN_CAVE_TAILNET_PEER_SECRET = TAILNET_PEER_SECRET;
 const TAILNET_STATUS_REFRESH_MS = 30_000;
 
+// Passkey presence (cave-brksh). A verified WebAuthn assertion proves a human
+// authenticated on the device just now; this per-boot secret is what carries
+// that fact from the assert route to the proxy on subsequent requests. Minted
+// here for the same reason as the two secrets above — the value never leaves
+// the process, and a restart invalidating every outstanding presence token is
+// the desired behavior rather than a limitation.
+process.env.COVEN_CAVE_PASSKEY_SESSION_SECRET = randomUUID();
+
 function allowedTailnetNodeIds(): Set<string> {
   const raw = process.env.COVEN_CAVE_TAILNET_ALLOWED_NODES ?? "";
   return new Set(

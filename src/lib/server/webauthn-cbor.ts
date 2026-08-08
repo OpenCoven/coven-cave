@@ -42,9 +42,12 @@ function toSafeInteger(value: bigint): number | bigint {
 
 function readUint(bytes: Uint8Array, offset: number, count: number): { value: bigint; offset: number } {
   if (offset + count > bytes.length) throw new CborError("truncated integer");
-  let value = 0n;
+  // BigInt LITERALS (0n) need an ES2020 target; this project targets lower,
+  // so the constants are constructed instead.
+  const eight = BigInt(8);
+  let value = BigInt(0);
   for (let index = 0; index < count; index += 1) {
-    value = (value << 8n) | BigInt(bytes[offset + index]);
+    value = (value << eight) | BigInt(bytes[offset + index]);
   }
   return { value, offset: offset + count };
 }
@@ -93,7 +96,7 @@ function decodeAt(bytes: Uint8Array, offset: number, depth: number): CborDecoded
       return { value: toSafeInteger(argument.value), offset: argument.offset };
     case 1: {
       // Negative integers encode -1 - n.
-      const negative = -1n - argument.value;
+      const negative = BigInt(-1) - argument.value;
       const asNumber = Number(negative);
       return {
         value: Number.isSafeInteger(asNumber) ? asNumber : negative,
