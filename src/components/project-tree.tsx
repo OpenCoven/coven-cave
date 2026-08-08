@@ -30,7 +30,7 @@ export type ProjectTreeHandle = {
 };
 
 /**
- * Working-tree status for one file, as the Coding Room's tree paints it
+ * Working-tree status for one file, as the Coding Desk's tree paints it
  * (cave-0rcku). Status is the non-colour channel — the letter is always shown —
  * so a colourblind reader never has to infer "changed" from a tint alone.
  */
@@ -53,7 +53,7 @@ type Props = {
   root?: string;
   familiarId?: string;
   /**
-   * Optional per-file working-tree status. The Coding Room passes the live
+   * Optional per-file working-tree status. The Coding Desk passes the live
    * `/api/changes` list so the tree marks what this session actually touched;
    * everyone else leaves it undefined and gets the plain tree.
    */
@@ -614,7 +614,7 @@ function TreeRow({
           {entry.name}
         </span>
 
-        {/* Working-tree status (Coding Room only). The status letter is the
+        {/* Working-tree status (Coding Desk only). The status letter is the
             non-colour channel; the diffstat is a second, independent one. */}
         {decoration ? (
           <span className="project-tree__status" title={`${decoration.status} · +${decoration.additions} −${decoration.deletions}`}>

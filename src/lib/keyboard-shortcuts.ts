@@ -30,7 +30,7 @@
  * if a binding lands, add it here in the same change that wires it.
  *
  * (cave-uod42) "Terminal & panes" is back, and this time it is wired: the
- * Coding Room's terminal center handles it. The bindings are ⇧⌘ rather than
+ * Coding Desk's terminal center handles it. The bindings are ⇧⌘ rather than
  * the ⌃/⌥ combos the old group used, because bare Ctrl+letter is shell signal
  * territory and Alt+letter is an escape sequence — either would have been
  * eaten by the very surface they control.
@@ -71,7 +71,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   },
   {
     id: "terminal",
-    label: "Terminal & panes (Coding Room)",
+    label: "Terminal & panes (Coding Desk)",
     entries: [
       { keys: "⇧⌘→ / ⇧⌘←", description: "Focus the next / previous terminal" },
       { keys: "⇧⌘D", description: "Split the focused terminal right" },

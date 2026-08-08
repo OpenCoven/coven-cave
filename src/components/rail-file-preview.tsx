@@ -72,7 +72,7 @@ export function RailFilePreview({
    *  paths are resolved by the owner, same as focusPath events). */
   onOpenPath?: (path: string) => void;
   /**
-   * `workbench` adds the Coding Room's fuller chrome (cave-0rcku): directory,
+   * `workbench` adds the Coding Desk's fuller chrome (cave-0rcku): directory,
    * language, a "working tree" provenance chip, an unsaved marker while
    * editing, and the symbol outline. The chat rail keeps the compact `rail`
    * header — the same file, read in a much narrower column.

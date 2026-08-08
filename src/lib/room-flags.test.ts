@@ -32,7 +32,7 @@ test("a production build ships the Research Desk and the Chart Room, and nothing
 
 test("a dev build shows every registered room, including the Coding familiar's", () => {
   assert.deepEqual(filterEnabledRoomIds(dev, KNOWN_ROOM_IDS), [...KNOWN_ROOM_IDS]);
-  assert.equal(resolveRoomVisibility(dev)(CODE), true, "the Coding Room is workable in dev");
+  assert.equal(resolveRoomVisibility(dev)(CODE), true, "the Coding Desk is workable in dev");
   assert.equal(resolveRoomVisibility(prod)(CODE), false, "…and under construction in production");
 });
 

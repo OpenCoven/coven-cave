@@ -88,7 +88,7 @@ export function FileRow({
   onToggle: () => void;
   onRevert: () => void;
   /**
-   * Review bookkeeping for the Coding Room's rail (cave-0rcku). Undefined
+   * Review bookkeeping for the Coding Desk's rail (cave-0rcku). Undefined
    * everywhere else, which keeps the column — and the row's shape — exactly as
    * it was for the chat panel.
    */

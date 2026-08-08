@@ -1,4 +1,4 @@
-/* ═══ Coding Room — three-zone workbench (cave-98o51) ═══
+/* ═══ Coding Desk — three-zone workbench (cave-98o51) ═══
    The terminal center and the context dock beside it: split panes, pane
    chrome, focus treatment, and the dock's collapsed / normal / expanded
    sizes. Semantic tokens only — every palette and mode combination must hold.
@@ -158,7 +158,7 @@
    from the Room's MEASURED width rather than the viewport (cave-k3a9u), and
    that stayed true through the three-column rebuild (cave-0rcku). ── */
 
-/* ═══ Coding Room — reading workbench (cave-0rcku) ═══
+/* ═══ Coding Desk — reading workbench (cave-0rcku) ═══
    The `Cody Code Reading v2` frame's shape: a session header over three
    columns (tree | source | review rail), with the terminal docked to the
    bottom edge as a bar that expands into a drawer.

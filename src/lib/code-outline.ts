@@ -1,5 +1,5 @@
 /**
- * File outline for the Coding Room's code viewer (cave-0rcku).
+ * File outline for the Coding Desk's code viewer (cave-0rcku).
  *
  * The `Cody Code Reading v2` frame puts a row of symbol chips above the source —
  * "≡ outline 4" — each chip jumping to a line. This derives that list from the

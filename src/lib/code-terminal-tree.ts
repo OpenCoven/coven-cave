@@ -1,5 +1,5 @@
 /**
- * Pure split-tree model for the Coding Room's terminal center (cave-98o51).
+ * Pure split-tree model for the Coding Desk's terminal center (cave-98o51).
  *
  * The Room's middle zone is a recursive binary split of terminal panes, so the
  * layout is data rather than component state: splitting replaces the focused

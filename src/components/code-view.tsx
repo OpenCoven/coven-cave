@@ -7,7 +7,7 @@
  *
  * Phase 3+ (this shape): top-level Sessions/Activity/PRs/Issues/Reviews tabs, the session rail
  * (grouped by project, git-attribution badges, + New session) and the
- * per-session Coding Room — a persistent terminal center beside a resizable
+ * per-session Coding Desk — a persistent terminal center beside a resizable
  * context dock (Changes | Files | Pull request | Inspector | GitHub | Browser)
  * with the follow-up composer (code-composer.tsx) under both. New sessions
  * start via code-new-session.tsx — project + familiar + optional fresh
