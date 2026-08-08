@@ -52,17 +52,21 @@ export type FamiliarTypeSpec = {
   /** The role token this type grants (matched against RoleSurface.role /
    *  aliases after normalizeRoleId). Null for General — no room. */
   roleToken: string | null;
+  /** The Role Surface id this type unlocks (`role-surfaces/ids.ts`), or null
+   *  for General. Named here so a surface can tell the user when the room a
+   *  type promises isn't in this build — see `src/lib/room-flags.ts`. */
+  roomId: string | null;
   /** One-line unlock description shown under the Identity-tab picker. */
   description: string;
   iconName: IconName;
 };
 
 export const FAMILIAR_TYPES: readonly FamiliarTypeSpec[] = [
-  { id: "general", label: "General", roleToken: null, description: "No dedicated room — every shared surface, nothing extra.", iconName: "ph:sparkle" },
-  { id: "coding", label: "Coding", roleToken: "coder", description: "Unlocks the Code room — multi-session coding with diffs, files, branches, worktrees, and GitHub.", iconName: "ph:code" },
-  { id: "research", label: "Research", roleToken: "researcher", description: "Unlocks the Research Desk — bounded missions, evidence, and durable knowledge artifacts.", iconName: "ph:detective" },
-  { id: "review", label: "Review", roleToken: "reviewer", description: "Unlocks the Review Deck — queued change reviews with verdicts and notes.", iconName: "ph:git-branch" },
-  { id: "comms", label: "Comms", roleToken: "messenger", description: "Unlocks Comms Operations — outbound and inbound communication across channels.", iconName: "ph:paper-plane-tilt" },
+  { id: "general", label: "General", roleToken: null, roomId: null, description: "No dedicated room — every shared surface, nothing extra.", iconName: "ph:sparkle" },
+  { id: "coding", label: "Coding", roleToken: "coder", roomId: "code", description: "Unlocks the Code room — multi-session coding with diffs, files, branches, worktrees, and GitHub.", iconName: "ph:code" },
+  { id: "research", label: "Research", roleToken: "researcher", roomId: "researcher-desk", description: "Unlocks the Research Desk — bounded missions, evidence, and durable knowledge artifacts.", iconName: "ph:detective" },
+  { id: "review", label: "Review", roleToken: "reviewer", roomId: "reviewer-review-deck", description: "Unlocks the Review Deck — queued change reviews with verdicts and notes.", iconName: "ph:git-branch" },
+  { id: "comms", label: "Comms", roleToken: "messenger", roomId: "messenger-ops", description: "Unlocks Comms Operations — outbound and inbound communication across channels.", iconName: "ph:paper-plane-tilt" },
 ];
 
 /** The explicit default: a familiar with no stored type is General. */
