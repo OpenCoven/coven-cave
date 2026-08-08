@@ -83,6 +83,7 @@ export const SUITES = {
     "src/lib/server/harness-report-cache.test.ts",
     "src/lib/foil/plate.test.ts",
     "src/lib/research-missions.test.ts",
+    "src/lib/research-prompt-brief.test.ts",
     "src/lib/research-autoloop.test.ts",
     "src/lib/research-mission-client.test.ts",
     "src/lib/roving-list.test.ts",
@@ -101,6 +102,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-artifact-actions.test.ts",
     "src/components/role-surfaces/research-tab-prompt.test.ts",
     "src/components/role-surfaces/research-desk-view.test.ts",
+    "src/components/role-surfaces/research-quick-saves.test.ts",
     "src/components/role-surfaces/research-tab-desk.test.ts",
     "src/components/ui/clamped-text.test.ts",
     "src/components/role-surfaces/research-tab-library.test.ts",
@@ -1602,6 +1604,10 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  // the prompt-brief + quick-saves tests type their fixtures against
+  // "@/lib/research-missions" and "@/lib/link-organizer"
+  "src/lib/research-prompt-brief.test.ts",
+  "src/components/role-surfaces/research-quick-saves.test.ts",
   "src/lib/daemon-desktop-auto-start.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
   "src/lib/podcast-script.test.ts",
