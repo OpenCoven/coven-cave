@@ -17,6 +17,9 @@
   "scripts": {
     "dev": "node --experimental-strip-types server.ts",
     "dev:app": "bash scripts/dev-app.sh",
+    "release:preview": "node scripts/stamp-release.mjs --dry-run",
+    "release:prepare": "node scripts/stamp-release.mjs --prepare-only",
+    "release:verify": "node scripts/check-release-version.mjs --root . --require-final-changelog",
     "mobile:ios:sim": "bash scripts/ios-simulator.sh",
     "uninstall:app": "bash scripts/uninstall-app.sh",
     "mobile:tailscale": "bash scripts/mobile-tailscale.sh start",
