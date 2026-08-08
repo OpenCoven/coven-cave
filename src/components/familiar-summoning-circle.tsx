@@ -6,8 +6,6 @@ import { createPortal } from "react-dom";
 import "@/styles/summoning-circle.css";
 import { Icon, type IconName } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
-import { FamiliarCardPreview } from "@/components/familiar-card-preview";
-import { useConjuredCard } from "@/lib/use-conjured-card";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -19,7 +17,6 @@ import {
   inventoryProvenanceLabel,
   useRuntimeModelInventory,
 } from "@/lib/use-runtime-model-options";
-import { clearFamiliarFoil } from "@/lib/cave-familiar-foil";
 import { setFamiliarOverride } from "@/lib/cave-familiar-overrides";
 import { clearSummoningDraft, readSummoningDraft, saveSummoningDraft } from "@/lib/summoning-draft";
 import { setGlyphOverride } from "@/lib/cave-glyph-overrides";
@@ -482,13 +479,6 @@ function SummoningRite({
             displayName: name.trim(),
             glyph,
             description: description.trim(),
-            // The circle's one prose field asks "What it does" — a purpose, not
-            // a likeness — so it is also what SOUL.md should print after "My
-            // purpose is to". The RITE sends the two separately, because its
-            // description is written by the scry looking at the portrait and a
-            // caption in that slot is the bug this split exists to end
-            // (`src/lib/familiar-identity-scaffold.ts`).
-            purpose: description.trim(),
             ...(role.trim() ? { role: role.trim() } : {}),
             ...(vessel === "openclaw" && selectedAgent
               ? { openclawAgentId: selectedAgent.id }
@@ -693,11 +683,6 @@ function SummoningRite({
                     aura={aura}
                     setAura={setAura}
                     fileRef={fileRef}
-                    name={name}
-                    role={role}
-                    description={description}
-                    harness={harness}
-                    model={model}
                   />
                 ) : (
                   <StageSummon
@@ -1245,11 +1230,6 @@ function StageForm({
   aura,
   setAura,
   fileRef,
-  name,
-  role,
-  description,
-  harness,
-  model,
 }: {
   glyph: string;
   setGlyph: (g: string) => void;
@@ -1258,32 +1238,9 @@ function StageForm({
   aura: string | null;
   setAura: (c: string | null) => void;
   fileRef: RefObject<HTMLInputElement | null>;
-  name: string;
-  role: string;
-  description: string;
-  harness: string | null;
-  model: string;
 }) {
-  const conjure = useConjuredCard(avatarFile, role || name);
   return (
     <div className="flex flex-col gap-3">
-      {/* Live card. Foil is derived from the dropped likeness's own pixels, so
-          it lands on whatever in the image would actually reflect. */}
-      <div className="flex justify-center">
-        <FamiliarCardPreview
-          name={name}
-          role={role}
-          description={description}
-          harness={harness}
-          model={model || null}
-          artUrl={conjure.artUrl}
-          plateUrl={conjure.plateUrl}
-          aura={conjure.aura ?? aura}
-        />
-      </div>
-      {conjure.note ? (
-        <p className={labelClass}>{conjure.note}</p>
-      ) : null}
       <div>
         <div className="mb-1 flex items-center justify-between">
           <span className={`${labelClass} mb-0`}>Sigil</span>
@@ -1604,9 +1561,6 @@ function EnhancementRite({
           body: avatarFile,
         });
         if (!res.ok) throw new Error(`Portrait upload failed (HTTP ${res.status}).`);
-        // A new portrait retires the card's foil plate — it was cut from the
-        // old one's pixels. The next card opened rebuilds it.
-        void clearFamiliarFoil(familiar.id);
       }
       if (mindDirty) {
         const res = await fetch("/api/config", {

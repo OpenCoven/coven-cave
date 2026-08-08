@@ -453,14 +453,19 @@ assert.match(
 );
 
 // ── cave-ibvl: the summon-event listener consumes the latch ──────────────────
-// requestSummonFamiliar() arms the module latch unconditionally; a mounted
-// view that only reacted to the event left the latch armed, so the NEXT
-// FamiliarsView mount popped the circle open uninvited. Both intake paths
-// must consume it: the mount check and the live event listener.
+// requestSummonFamiliar() arms the window-scoped latch unconditionally. A fresh
+// FamiliarsView peeks without mutating during render, then consumes after commit;
+// the live listener handles an already-mounted surface and consumes the latch
+// so the next mount is not hijacked.
 assert.match(
   source,
-  /if \(consumeSummonPending\(\)\) setCreateOpen\(true\);/,
-  "a fresh mount consumes the summon latch",
+  /const \[createOpen, setCreateOpen\] = useState\(hasSummonPending\);/,
+  "a fresh mount initializes open state from a pure latch peek",
+);
+assert.match(
+  source,
+  /useLayoutEffect\(\(\) => \{\s*if \(createOpen\) consumeSummonPending\(\);\s*\}, \[createOpen\]\);/,
+  "a committed open render consumes the summon latch before paint",
 );
 assert.match(
   source,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useDateTimePrefs } from "@/lib/datetime-format";
@@ -8,7 +8,6 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import type { FileMemoryEntry, MemoryFeed } from "@/components/familiars-memory-view";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
-import { FamiliarRiteOverlay } from "@/components/familiar-rite";
 import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import {
   buildFamiliarCardStats,
@@ -25,7 +24,11 @@ import { CanonicalMemoryRequestError } from "@/lib/canonical-memory-client";
 import type { PendingCanonicalMemorySelection } from "@/lib/canonical-memory";
 import { createMemoryFeedRequestGate } from "@/lib/memory-feed-request-gate";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
-import { SUMMON_FAMILIAR_EVENT, consumeSummonPending } from "@/lib/summon-events";
+import {
+  SUMMON_FAMILIAR_EVENT,
+  consumeSummonPending,
+  hasSummonPending,
+} from "@/lib/summon-events";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import { readSurfaceResource } from "@/lib/surface-warmup-registry";
@@ -103,28 +106,18 @@ export function FamiliarsView({
   onRetryFamiliars,
 }: AgentsViewProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
-  // Summoning is a two-surface affair, and the split is deliberate.
-  //
-  // `createOpen` is the RITE — the default path from every Summon entry point:
-  // drop a likeness, answer one question per screen, strike the seal. It binds
-  // the five local harnesses and nothing else.
-  //
-  // `byHandOpen` is the SUMMONING CIRCLE, still the only surface that can bind
-  // an SSH host, an existing OpenClaw agent, or an existing Hermes profile. The
-  // rite reaches it through `onSummonByHand` rather than dead-ending on a
-  // vessel it cannot express, so making the rite the default strands nobody.
-  // The circle is also still the whole Enhancement Rite (see `enhanceTarget`).
-  const [createOpen, setCreateOpen] = useState(false);
-  const [byHandOpen, setByHandOpen] = useState(false);
-  // Other surfaces request summoning through summon-events, and land on the
-  // rite like every other entry point: the retained latch covers the
-  // fresh-mount race (mode flip → this view mounts after the event fired); the
-  // event covers the already-mounted case. The listener consumes the latch too
-  // — requestSummonFamiliar arms it unconditionally, so an already-mounted view
-  // that only reacted to the event left it armed and the NEXT mount popped the
-  // rite open uninvited (cave-ibvl).
+  const [createOpen, setCreateOpen] = useState(hasSummonPending);
+  // Other surfaces request the Summoning Circle through summon-events: the
+  // retained latch covers the fresh-mount race (mode flip → this view mounts
+  // after the event fired); the event covers the already-mounted case. The
+  // listener consumes the latch too — requestSummonFamiliar arms it
+  // unconditionally, so an already-mounted view that only reacted to the
+  // event left it armed and the NEXT mount popped the circle open uninvited
+  // (cave-ibvl).
+  useLayoutEffect(() => {
+    if (createOpen) consumeSummonPending();
+  }, [createOpen]);
   useEffect(() => {
-    if (consumeSummonPending()) setCreateOpen(true);
     const open = () => {
       consumeSummonPending();
       setCreateOpen(true);
@@ -468,7 +461,7 @@ export function FamiliarsView({
             <button
               type="button"
               onClick={() => setCreateOpen(true)}
-              title="Open the summoning rite"
+              title="Open the summoning circle"
               className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-2.5 text-[length:var(--text-xs)] font-medium text-[var(--bg-base)] hover:opacity-90"
             >
               <Icon name="ph:magic-wand-fill" width={12} />
@@ -659,24 +652,10 @@ export function FamiliarsView({
           onClose={() => setPreviewFamiliar(null)}
         />
       ) : null}
-      <FamiliarRiteOverlay
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        existingIds={familiars.map((f) => f.id)}
-        defaultHarness={familiars.find((f) => f.defaultHarness)?.defaultHarness}
-        onCreated={(id) => onFamiliarCreated?.(id)}
-        onStartChat={onStartChat}
-        // The advanced vessels the rite cannot express. Hand the whole
-        // summoning over to the circle rather than half-carrying state across.
-        onSummonByHand={() => {
-          setCreateOpen(false);
-          setByHandOpen(true);
-        }}
-      />
       <FamiliarSummoningCircle
-        open={byHandOpen || enhanceTarget !== null}
+        open={createOpen || enhanceTarget !== null}
         onClose={() => {
-          setByHandOpen(false);
+          setCreateOpen(false);
           setEnhanceTarget(null);
         }}
         existingIds={familiars.map((f) => f.id)}
