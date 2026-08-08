@@ -587,10 +587,17 @@ for (const [name, text, loader] of [
 //    happened, which is the difference between a five-minute fix and the
 //    outage that produced this bead.
 //
+//    All FOUR marker kinds, not three: `|||||||` opens the base section under
+//    `merge.conflictStyle = diff3` / `zdiff3`, which is a per-contributor git
+//    setting this repo does not pin. A complete diff3 conflict would still trip
+//    the other three, so this mainly covers a partial resolution that clears
+//    `<<<<<<<` / `=======` / `>>>>>>>` and leaves the base section behind —
+//    which is precisely the artifact a hand-edited conflict tends to strand.
+//
 //    Anchored at line start on purpose: a seven-character run only reads as a
 //    conflict marker when it opens the line, and `=======` appears mid-line in
 //    legitimate comment rules and CSS.
-const CONFLICT_MARKER = /^(?:<{7}|={7}|>{7})/m;
+const CONFLICT_MARKER = /^(?:<{7}|\|{7}|={7}|>{7})/m;
 for (const [name, text] of [
   ["sidebar-minimal.tsx", source],
   ["sidebar-rail-header.tsx", railHeaderSource],
