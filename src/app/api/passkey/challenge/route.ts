@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   try {
     purpose = (await req.json())?.purpose;
   } catch {
-    return NextResponse.json({ ok: false, error: "malformed body" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
   }
   if (purpose !== "register" && purpose !== "assert") {
     return NextResponse.json({ ok: false, error: "unknown purpose" }, { status: 400 });
