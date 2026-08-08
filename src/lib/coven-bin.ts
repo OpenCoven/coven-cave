@@ -278,6 +278,7 @@ function loginShellPath(discovery: DiscoveryOptions): string | null {
   if (timeout <= 0) return null;
   try {
     const out = execFileSync(/* turbopackIgnore: true */ shell, ["-ilc", "echo $PATH"], {
+      windowsHide: true,
       encoding: "utf-8",
       timeout,
       env: discovery.env,
@@ -333,6 +334,7 @@ function windowsRegistryPath(discovery: DiscoveryOptions): string | null {
     if (timeout <= 0) break;
     try {
       const out = execFileSync("reg", ["query", key, "/v", "Path"], {
+        windowsHide: true,
         encoding: "utf-8",
         timeout,
         env: discovery.env,
@@ -394,6 +396,7 @@ export function covenBin(): string {
   if (process.platform === "win32") {
     try {
       const out = execFileSync("where", ["coven"], {
+        windowsHide: true,
         encoding: "utf-8",
         timeout: 1500,
         env: {

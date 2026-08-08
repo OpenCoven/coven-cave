@@ -21,7 +21,7 @@ function probeSshHost(host: string): Promise<boolean> {
     const child = execFile(
       "ssh",
       ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "--", host, "true"],
-      { timeout: PROBE_TIMEOUT_MS },
+      { windowsHide: true, timeout: PROBE_TIMEOUT_MS },
       (error) => resolve(!error),
     );
     child.on("error", () => resolve(false));

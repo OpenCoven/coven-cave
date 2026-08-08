@@ -129,6 +129,7 @@ function decodePayload(secret: string): unknown {
 function defaultRunSecurity(args: string[], input?: string): SecurityResult {
   try {
     const stdout = execFileSync(SECURITY_BIN, args, {
+      windowsHide: true,
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
       ...(input === undefined ? {} : { input }),

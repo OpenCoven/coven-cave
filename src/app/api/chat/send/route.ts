@@ -1094,6 +1094,7 @@ function openClawChatResponse(args: {
       const spawnChild = (mode: "gateway" | "local") => {
         const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, mode);
         return spawn(/* turbopackIgnore: true */ openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
+          windowsHide: true,
           cwd,
           stdio: ["ignore", "pipe", "pipe"],
           env: openclawEnv,
@@ -4405,6 +4406,7 @@ export async function POST(req: Request) {
             ? (() => {
                 const sshArgs = spawnArgs;
                 return spawn("ssh", sshArgs, {
+                  windowsHide: true,
                   stdio: ["ignore", "pipe", "pipe"],
                   env: harnessSpawnEnv(body.familiarId),
                 });
@@ -4491,6 +4493,10 @@ export async function POST(req: Request) {
                     cwd: localPlan.cwd ?? cwd,
                     env: localPlan.env,
                     shell: false,
+                    // The sidecar runs without a console (CREATE_NO_WINDOW), so
+                    // a console-subsystem child would be given a fresh, visible
+                    // one. Every research familiar step spawns through here.
+                    windowsHide: true,
                   } as const;
                   if (openCodeDirect) {
                     const child = spawn(/* turbopackIgnore: true */ command.command, command.args, {

@@ -35,6 +35,7 @@ const MERGED_PR_LIMIT = "30";
 
 async function ghPrList(repoRoot: string, args: string[]): Promise<unknown> {
   const { stdout } = await execFileAsync("gh", args, {
+    windowsHide: true,
     cwd: repoRoot, // cwd's repo → gh targets the right OWNER/REPO without hardcoding
     env: { ...caveToolSpawnEnv(), GH_PROMPT_DISABLED: "1" },
     timeout: GH_TIMEOUT_MS,

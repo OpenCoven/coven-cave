@@ -194,6 +194,7 @@ export function probeHelpOutcome(
     };
     try {
       const child = spawn(/* turbopackIgnore: true */ command, args, {
+        windowsHide: true,
         env,
         cwd,
         stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
@@ -288,6 +289,7 @@ function probeOutput(
     };
     try {
       const child = spawn(/* turbopackIgnore: true */ command, args, {
+        windowsHide: true,
         env,
         stdio: ["ignore", "pipe", "pipe"],
         ...openCodeProbeSpawnOptions(),

@@ -139,6 +139,7 @@ async function commandPath(
   const find = async (env: NodeJS.ProcessEnv) => {
     try {
       const { stdout } = await execFileAsync(finder, [binary], {
+        windowsHide: true,
         env,
         timeout: 1500,
       });
@@ -779,6 +780,7 @@ async function runInstallJob(
     }
 
     child = spawn(plan.command, plan.args, {
+      windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: plan.env,
       shell: plan.shell,

@@ -93,6 +93,7 @@ export async function sweepStuckCreatedSessions(opts: {
       try {
         const { command, fixedArgs } = covenLaunchCommand();
         await execFileAsync(command, [...fixedArgs, "sacrifice", id, "--yes"], {
+          windowsHide: true,
           env: covenSpawnEnv(),
           timeout: SACRIFICE_TIMEOUT_MS,
         });

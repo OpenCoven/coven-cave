@@ -77,7 +77,7 @@ type NpmLatestCheckDependencies = {
   execFile?: (
     command: string,
     args: string[],
-    options: { env: NodeJS.ProcessEnv; timeout: number },
+    options: { env: NodeJS.ProcessEnv; timeout: number; windowsHide: true },
   ) => Promise<{ stdout: string }>;
   now?: () => Date;
 };
@@ -142,7 +142,7 @@ async function commandPath(
   const timeout = options.timeoutMs ?? LOOKUP_TIMEOUT_MS;
   const find = async (env: NodeJS.ProcessEnv): Promise<CommandPathResult> => {
     try {
-      const { stdout } = await execFileAsync(finder, [binary], { env, timeout });
+      const { stdout } = await execFileAsync(finder, [binary], { windowsHide: true, env, timeout });
       const lines = stdout.split(/\r?\n/);
       return {
         path:
@@ -286,7 +286,7 @@ export async function probeOpenCovenBinaryAt(
     const { stdout, stderr } = await execFileAsync(
       launch.command,
       [...launch.fixedArgs, ...tool.versionArgs],
-      { env, timeout: options.timeoutMs ?? VERSION_PROBE_TIMEOUT_MS },
+      { windowsHide: true, env, timeout: options.timeoutMs ?? VERSION_PROBE_TIMEOUT_MS },
     );
     const version = firstSemver(`${stdout}\n${stderr}`);
     return {
@@ -314,7 +314,7 @@ export async function probeOpenCovenBinaryAt(
 async function execLatestVersion(
   command: string,
   args: string[],
-  options: { env: NodeJS.ProcessEnv; timeout: number },
+  options: { env: NodeJS.ProcessEnv; timeout: number; windowsHide: true },
 ): Promise<{ stdout: string }> {
   const { stdout } = await execFileAsync(command, args, options);
   return { stdout: String(stdout) };
@@ -358,7 +358,7 @@ async function npmPathFromEnvironment(
 ): Promise<string | null> {
   const finder = platform === "win32" ? "where" : "which";
   try {
-    const { stdout } = await exec(finder, ["npm"], { env, timeout: 1500 });
+    const { stdout } = await exec(finder, ["npm"], { windowsHide: true, env, timeout: 1500 });
     const lines = stdout.split(/\r?\n/);
     return platform === "win32"
       ? pickWindowsLauncher(lines)
@@ -447,7 +447,7 @@ export async function checkNpmLatestVersion(
     const { stdout } = await exec(
       launch.command,
       [...launch.fixedArgs, "view", tool.packageName, "version", "--json"],
-      { env, timeout: 5000 },
+      { windowsHide: true, env, timeout: 5000 },
     );
     const parsed = JSON.parse(stdout);
     const latest = typeof parsed === "string" ? firstSemver(parsed) : null;

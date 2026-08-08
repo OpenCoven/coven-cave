@@ -39,6 +39,7 @@ function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult
   return new Promise((resolve) => {
     const bin = tailscaleBin();
     const child = spawn(bin, args, {
+      windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: tailscaleSpawnEnv(),
     });

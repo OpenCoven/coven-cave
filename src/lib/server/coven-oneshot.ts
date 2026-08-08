@@ -58,6 +58,7 @@ export function runCovenOneShot(
       let settled = false;
       const { command, fixedArgs } = covenLaunchCommand();
       const child = spawn(command, [...fixedArgs, ...args], {
+        windowsHide: true,
         cwd: cwd ?? process.cwd(),
         stdio: ["ignore", "pipe", "pipe"],
         env: harnessSpawnEnv(familiarId),
