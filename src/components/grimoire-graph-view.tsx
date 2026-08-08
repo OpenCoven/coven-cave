@@ -779,13 +779,23 @@ export function GrimoireGraphView({
 
   const summary = `${visible.nodes.length} of ${graph.nodes.length} nodes, ${visible.edges.length} connections shown`;
   const memoryTruncated = meta ? meta.memory.scanned < meta.memory.total : false;
-  // How many of the scope's memory files actually reached the graph. The scan
-  // cap is applied coven-wide BEFORE familiar scoping, so a scoped view is not
-  // "this familiar's memory graph" — it is their slice of the coven's most
-  // recent N files. Counting the memory nodes present is the only honest source
-  // for that number; `meta.memory.scanned` is coven-wide (cave-ed4s3).
+  // How many of the scope's memory files were actually READ. The scan cap is
+  // applied coven-wide BEFORE familiar scoping, so a scoped view is not "this
+  // familiar's memory graph" — it is their slice of the coven's most recent N
+  // files. `meta.memory.scanned` is coven-wide and cannot answer this, so the
+  // count comes off the nodes themselves (cave-ed4s3).
+  //
+  // `scanned` is load-bearing, not defensive: the resolution index spans the
+  // WHOLE corpus while the scan is capped, so a [[link]] into an out-of-window
+  // memory file still resolves and lands as a leaf node with no body. Counting
+  // raw memory nodes would mix files that were read with files merely pointed
+  // at and overcount the window — the exact class of false claim this notice
+  // exists to stop making.
   const scopedMemoryInWindow = useMemo(
-    () => (scopeLabel ? graph.nodes.reduce((n, node) => n + (node.kind === "memory" ? 1 : 0), 0) : 0),
+    () =>
+      scopeLabel
+        ? graph.nodes.reduce((n, node) => n + (node.kind === "memory" && node.scanned ? 1 : 0), 0)
+        : 0,
     [graph, scopeLabel],
   );
   // Only worth saying when the scope actually lost files to the cap. Equal

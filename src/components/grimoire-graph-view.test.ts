@@ -64,8 +64,19 @@ assert.match(
 );
 assert.match(
   view,
-  /const scopedMemoryInWindow = useMemo\([\s\S]{0,200}node\.kind === "memory"/,
+  /const scopedMemoryInWindow = useMemo\([\s\S]{0,320}node\.kind === "memory"/,
   "the in-window count is derived from the memory nodes actually present, not from coven-wide meta",
+);
+// Review catch on #4431. buildDocGraph adds a LEAF node for any link target it
+// resolves but never scanned — and the resolution index deliberately spans the
+// whole corpus while the scan is capped, so a [[link]] into an out-of-window
+// memory file lands as a memory node with no body. Counting raw memory nodes
+// therefore overcounts the scanned window and makes this very notice state a
+// number it cannot back: precisely the failure it was written to prevent.
+assert.match(
+  view,
+  /node\.kind === "memory" && node\.scanned/,
+  "the in-window count excludes unscanned leaf nodes, which exist only because something linked to them",
 );
 assert.match(
   view,
