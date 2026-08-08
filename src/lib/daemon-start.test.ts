@@ -385,6 +385,34 @@ test("automatic recovery checks lifecycle ownership before it checks the address
   assert.equal(result.code, "address_in_use");
 });
 
+test("a stale runtime discovered after launch is rejected and the owned tree is cleaned up", async () => {
+  const child = fakeChild();
+  let cleanupCalls = 0;
+  const result = await startLocalDaemon({
+    restart: true,
+    startTimeoutMs: 0,
+    installedVersion: async () => "1.2.3",
+    readHealthDocument: async () => ({
+      ok: true,
+      apiVersion: "v1",
+      covenVersion: "1.2.2",
+    }),
+    spawnImpl: () => child,
+    terminateLaunchTree: async () => {
+      cleanupCalls += 1;
+      return { attempted: true, completed: true, mode: "process-group" };
+    },
+    platform: "linux",
+  });
+
+  assert.equal(cleanupCalls, 1);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "runtime_incompatible");
+  assert.equal(result.status, 409);
+  assert.match(result.error, /does not match the installed runtime/i);
+  assert.deepEqual(result.cleanup, { attempted: true, completed: true, mode: "process-group" });
+});
+
 test("Windows cleanup delegates the complete owned tree to taskkill", async () => {
   const child = fakeChild(5199);
   let taskkillPid = null;
