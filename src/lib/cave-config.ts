@@ -671,6 +671,7 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
   sanitizeMultiHostHubToken(updated);
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
   await writeJsonAtomic(CONFIG_PATH, updated);
+  invalidateSessionsListCache();
   return updated;
   });
 }

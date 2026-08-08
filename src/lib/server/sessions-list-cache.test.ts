@@ -223,6 +223,7 @@ function fnBlock(source, name) {
 {
   const config = read("../cave-config.ts");
   for (const mutator of [
+    "saveConfig",
     "recordOwnedSession",
     "recordSessionFamiliar",
     "setSessionTitle",
@@ -239,6 +240,11 @@ function fnBlock(source, name) {
       `${mutator} invalidates the sessions-list cache`,
     );
   }
+  assert.match(
+    fnBlock(config, "saveConfig"),
+    /await writeJsonAtomic\(CONFIG_PATH, updated\);\s*invalidateSessionsListCache\(\);\s*return updated;/s,
+    "saveConfig invalidates only after config persistence succeeds",
+  );
 
   // …but the sweep-internal batch archivers must NOT: they run inside the
   // list compute and would leave the cache permanently cold.

@@ -549,11 +549,23 @@ async function canonicalMemoryListFromResolvedTarget(
   throw gatewayError("invalid_daemon_payload", 502);
 }
 
+async function canonicalMemoryListWithTarget(
+  dependencies: CanonicalMemoryGatewayDependencies = DEFAULT_DEPENDENCIES,
+): Promise<{
+  target: LocalDaemonTarget;
+  entries: CanonicalMemorySummary[];
+}> {
+  const target = await resolveSelectedLocalTarget(dependencies);
+  return {
+    target,
+    entries: await canonicalMemoryListFromResolvedTarget(target, dependencies),
+  };
+}
+
 export async function canonicalMemoryList(
   dependencies: CanonicalMemoryGatewayDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<CanonicalMemorySummary[]> {
-  const target = await resolveSelectedLocalTarget(dependencies);
-  return canonicalMemoryListFromResolvedTarget(target, dependencies);
+  return (await canonicalMemoryListWithTarget(dependencies)).entries;
 }
 
 type FamiliarCanonicalMemoryCache = {
@@ -561,6 +573,10 @@ type FamiliarCanonicalMemoryCache = {
     familiarId: string,
     dependencies?: CanonicalMemoryGatewayDependencies,
   ) => Promise<CanonicalMemorySummary[]>;
+  prime: (
+    target: LocalDaemonTarget,
+    entries: CanonicalMemorySummary[],
+  ) => void;
   invalidate: () => void;
 };
 
@@ -576,9 +592,11 @@ type FamiliarCanonicalMemoryCacheOptions = {
 type LocalDaemonCacheScope = {
   cachedIndex: Map<string, CanonicalMemorySummary[]> | null;
   expiresAt: number;
+  version: number;
   inFlight:
     | {
         generation: number;
+        scopeVersion: number;
         promise: Promise<Map<string, CanonicalMemorySummary[]>>;
       }
     | null;
@@ -637,6 +655,7 @@ export function createFamiliarCanonicalMemoryCache(
     const created: LocalDaemonCacheScope = {
       cachedIndex: null,
       expiresAt: 0,
+      version: 0,
       inFlight: null,
     };
     scopes.set(targetKey, created);
@@ -652,16 +671,22 @@ export function createFamiliarCanonicalMemoryCache(
     if (scope.cachedIndex !== null && now() < scope.expiresAt) {
       return scope.cachedIndex;
     }
-    if (scope.inFlight && scope.inFlight.generation === generation) {
+    if (
+      scope.inFlight &&
+      scope.inFlight.generation === generation &&
+      scope.inFlight.scopeVersion === scope.version
+    ) {
       return scope.inFlight.promise;
     }
     const inFlightGeneration = generation;
+    const inFlightScopeVersion = scope.version;
     const promise = loadList(dependencies, target)
       .then((entries) => {
         const indexed = indexCanonicalMemorySummariesByFamiliar(entries);
         if (
           generation === inFlightGeneration &&
-          scopes.get(targetKey) === scope
+          scopes.get(targetKey) === scope &&
+          scope.version === inFlightScopeVersion
         ) {
           scope.cachedIndex = indexed;
           scope.expiresAt = now() + ttlMs;
@@ -676,7 +701,11 @@ export function createFamiliarCanonicalMemoryCache(
           scope.inFlight = null;
         }
       });
-    scope.inFlight = { generation: inFlightGeneration, promise };
+    scope.inFlight = {
+      generation: inFlightGeneration,
+      scopeVersion: inFlightScopeVersion,
+      promise,
+    };
     return promise;
   }
 
@@ -687,6 +716,13 @@ export function createFamiliarCanonicalMemoryCache(
     ): Promise<CanonicalMemorySummary[]> {
       const index = await loadIndex(dependencies);
       return [...(index.get(familiarId) ?? [])];
+    },
+    prime(target, entries) {
+      const scope = scopeFor(canonicalMemoryCacheScopeKey(target));
+      scope.version += 1;
+      scope.cachedIndex = indexCanonicalMemorySummariesByFamiliar(entries);
+      scope.expiresAt = now() + ttlMs;
+      scope.inFlight = null;
     },
     invalidate() {
       generation += 1;
@@ -845,11 +881,15 @@ function canonicalMemoryErrorResponse(error: unknown): Response {
   );
 }
 
-export async function canonicalMemoryListResponse(): Promise<Response> {
+export async function canonicalMemoryListResponse(
+  dependencies: CanonicalMemoryGatewayDependencies = DEFAULT_DEPENDENCIES,
+): Promise<Response> {
   try {
+    const { target, entries } = await canonicalMemoryListWithTarget(dependencies);
+    familiarCanonicalMemoryCache.prime(target, entries);
     return canonicalMemoryJson({
       ok: true,
-      entries: await canonicalMemoryList(),
+      entries,
     });
   } catch (error) {
     return canonicalMemoryErrorResponse(error);

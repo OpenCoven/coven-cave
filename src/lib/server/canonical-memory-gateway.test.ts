@@ -6,8 +6,11 @@ import {
   CanonicalMemoryGatewayError,
   canonicalMemoryDetail,
   canonicalMemoryList,
+  canonicalMemoryListResponse,
   canonicalMemoryOverview,
   createFamiliarCanonicalMemoryCache,
+  invalidateCachedCanonicalMemorySummariesForTest,
+  loadCachedCanonicalMemorySummariesForFamiliar,
 } from "./canonical-memory-gateway.ts";
 
 const MEMORY_ID = "11111111-1111-5111-8111-111111111111";
@@ -528,6 +531,169 @@ test("familiar-scoped cache does not cache failures as success", async () => {
   assert.equal(calls, 2);
   assert.deepEqual(await cache.load("sage"), [summaryFixture("memory-1", "sage")]);
   assert.equal(calls, 2);
+});
+
+test("canonicalMemoryListResponse immediately primes a warmed dashboard cache with fresh entries", async () => {
+  invalidateCachedCanonicalMemorySummariesForTest();
+  const target = "/secret/prime.sock";
+  const warmedDeps = dependencies(
+    response([
+      { ...clone(currentListEntry), familiar_id: "sage", id: MEMORY_ID, title: "Warm", excerpt: "Warm entry." },
+    ]),
+    { localSocketPath: target },
+  );
+  const freshDeps = dependencies(
+    response([
+      { ...clone(currentListEntry), familiar_id: "sage", id: OTHER_MEMORY_ID, title: "Fresh", excerpt: "Fresh entry." },
+    ]),
+    { localSocketPath: target },
+  );
+  const readDeps = dependencies(response([]), { localSocketPath: target });
+
+  assert.deepEqual(
+    await loadCachedCanonicalMemorySummariesForFamiliar("sage", warmedDeps.deps),
+    [
+      {
+        id: MEMORY_ID,
+        familiarId: "sage",
+        title: "Warm",
+        updatedAt: "2026-07-26T09:56:00Z",
+        relativeUpdatedAt: "4m ago",
+        excerpt: "Warm entry.",
+        source: FALLBACK_SOURCE,
+        privacy: { classification: null, revealRequired: null },
+        verification: { state: "needs-review" },
+      },
+    ],
+  );
+
+  const responseValue = await canonicalMemoryListResponse(freshDeps.deps);
+  assert.equal(responseValue.status, 200);
+
+  assert.deepEqual(
+    await loadCachedCanonicalMemorySummariesForFamiliar("sage", readDeps.deps),
+    [
+      {
+        id: OTHER_MEMORY_ID,
+        familiarId: "sage",
+        title: "Fresh",
+        updatedAt: "2026-07-26T09:56:00Z",
+        relativeUpdatedAt: "4m ago",
+        excerpt: "Fresh entry.",
+        source: FALLBACK_SOURCE,
+        privacy: { classification: null, revealRequired: null },
+        verification: { state: "needs-review" },
+      },
+    ],
+  );
+});
+
+test("canonicalMemoryListResponse does not overwrite the last valid cache entry on failure", async () => {
+  invalidateCachedCanonicalMemorySummariesForTest();
+  const target = "/secret/failure.sock";
+  const warmedDeps = dependencies(
+    response([
+      { ...clone(currentListEntry), familiar_id: "sage", id: MEMORY_ID, title: "Warm", excerpt: "Warm entry." },
+    ]),
+    { localSocketPath: target },
+  );
+  const failedDeps = dependencies(
+    { ok: false, status: 503, error: "daemon token=/secret" },
+    { localSocketPath: target },
+  );
+  const readDeps = dependencies(response([]), { localSocketPath: target });
+
+  await loadCachedCanonicalMemorySummariesForFamiliar("sage", warmedDeps.deps);
+  const responseValue = await canonicalMemoryListResponse(failedDeps.deps);
+  assert.equal(responseValue.status, 503);
+  assert.deepEqual(await responseValue.json(), {
+    ok: false,
+    code: "canonical_memory_unavailable",
+  });
+
+  assert.deepEqual(
+    await loadCachedCanonicalMemorySummariesForFamiliar("sage", readDeps.deps),
+    [
+      {
+        id: MEMORY_ID,
+        familiarId: "sage",
+        title: "Warm",
+        updatedAt: "2026-07-26T09:56:00Z",
+        relativeUpdatedAt: "4m ago",
+        excerpt: "Warm entry.",
+        source: FALLBACK_SOURCE,
+        privacy: { classification: null, revealRequired: null },
+        verification: { state: "needs-review" },
+      },
+    ],
+  );
+});
+
+test("canonicalMemoryListResponse primes only the validated target scope", async () => {
+  invalidateCachedCanonicalMemorySummariesForTest();
+  const targetA = "/secret/target-a.sock";
+  const targetB = "/secret/target-b.sock";
+  const warmA = dependencies(
+    response([
+      { ...clone(currentListEntry), familiar_id: "sage", id: MEMORY_ID, title: "A-warm", excerpt: "Warm A." },
+    ]),
+    { localSocketPath: targetA },
+  );
+  const warmB = dependencies(
+    response([
+      { ...clone(currentListEntry), familiar_id: "sage", id: OTHER_MEMORY_ID, title: "B-warm", excerpt: "Warm B." },
+    ]),
+    { localSocketPath: targetB },
+  );
+  const primeA = dependencies(
+    response([
+      {
+        ...clone(currentListEntry),
+        familiar_id: "sage",
+        id: "33333333-3333-5333-8333-333333333333",
+        title: "A-fresh",
+        excerpt: "Fresh A.",
+      },
+    ]),
+    { localSocketPath: targetA },
+  );
+
+  await loadCachedCanonicalMemorySummariesForFamiliar("sage", warmA.deps);
+  await loadCachedCanonicalMemorySummariesForFamiliar("sage", warmB.deps);
+  await canonicalMemoryListResponse(primeA.deps);
+
+  assert.deepEqual(
+    await loadCachedCanonicalMemorySummariesForFamiliar("sage", dependencies(response([]), { localSocketPath: targetA }).deps),
+    [
+      {
+        id: "33333333-3333-5333-8333-333333333333",
+        familiarId: "sage",
+        title: "A-fresh",
+        updatedAt: "2026-07-26T09:56:00Z",
+        relativeUpdatedAt: "4m ago",
+        excerpt: "Fresh A.",
+        source: FALLBACK_SOURCE,
+        privacy: { classification: null, revealRequired: null },
+        verification: { state: "needs-review" },
+      },
+    ],
+  );
+  assert.deepEqual(
+    await loadCachedCanonicalMemorySummariesForFamiliar("sage", dependencies(response([]), { localSocketPath: targetB }).deps),
+    [
+      {
+        id: OTHER_MEMORY_ID,
+        familiarId: "sage",
+        title: "B-warm",
+        updatedAt: "2026-07-26T09:56:00Z",
+        relativeUpdatedAt: "4m ago",
+        excerpt: "Warm B.",
+        source: FALLBACK_SOURCE,
+        privacy: { classification: null, revealRequired: null },
+        verification: { state: "needs-review" },
+      },
+    ],
+  );
 });
 
 test("rejects missing, extra, mistyped, and malformed list payloads", async () => {

@@ -823,6 +823,28 @@ try {
       executorUrls: ["  macbook.tailnet:8787  ", "", "macbook.tailnet:8787", "linux.tailnet:8787"],
     },
   });
+  {
+    let computes = 0;
+    const compute = async () => ({
+      payload: { ok: true, sessions: [], error: `compute-${++computes}` },
+    });
+    const first = await sessionsListCache.get("test:save-config-invalidation", compute);
+    const cached = await sessionsListCache.get("test:save-config-invalidation", compute);
+    assert.equal(first.payload.error, "compute-1");
+    assert.equal(cached.payload.error, "compute-1");
+
+    await config.saveConfig({
+      addons: { github: true },
+    });
+
+    const recomputed = await sessionsListCache.get("test:save-config-invalidation", compute);
+    assert.equal(
+      recomputed.payload.error,
+      "compute-2",
+      "saveConfig invalidates the warmed sessions cache after persistence",
+    );
+    sessionsListCache.clear();
+  }
   cfg = await config.loadConfig();
   assert.deepEqual(cfg.multiHost, {
     mode: "hub",

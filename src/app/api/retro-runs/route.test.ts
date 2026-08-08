@@ -1,19 +1,100 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { test } from "node:test";
+import { createRetroRunsGetHandler } from "./route.ts";
 
-const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+function snapshotFixture() {
+  return {
+    generatedAt: "2026-08-08T12:00:00.000Z",
+    summary: {
+      totalRuns: 0,
+      accepted: 0,
+      reverted: 0,
+      runningFamiliars: 0,
+      familiarsWithData: 0,
+      trackCounts: { synthesis: 0, prompt: 0, memory: 0 },
+      lastRun: null,
+    },
+    familiars: [],
+    runs: [],
+  };
+}
 
-assert.match(
-  source,
-  /if \(result\.ok \|\| result\.code === "retro_state_unavailable"\) \{\s*return NextResponse\.json\(\{ ok: true, snapshot: result\.snapshot \}\);\s*\}/,
-  "retro-runs GET should preserve the public ok:true snapshot response for unavailable retro state loads",
-);
+test("retro-runs GET preserves ok:true for successful snapshots", async () => {
+  const response = await createRetroRunsGetHandler({
+    loadRetroRunsSnapshot: async () => ({
+      ok: true,
+      snapshot: snapshotFixture(),
+    }),
+  })(new Request("http://cave.local/api/retro-runs"));
 
-assert.match(
-  source,
-  /return NextResponse\.json\(\{ ok: false, error: result\.error, snapshot: result\.snapshot \}\);/,
-  "retro-runs GET should expose only the sanitized top-level roster error contract",
-);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    ok: true,
+    snapshot: snapshotFixture(),
+  });
+});
 
-console.log("retro-runs route.test.ts: ok");
+test("retro-runs GET preserves ok:true for per-familiar retro state unavailability", async () => {
+  const response = await createRetroRunsGetHandler({
+    loadRetroRunsSnapshot: async () => ({
+      ok: false,
+      code: "retro_state_unavailable",
+      error: "One or more retro states are unavailable.",
+      snapshot: snapshotFixture(),
+    }),
+  })(new Request("http://cave.local/api/retro-runs?familiarId=sage"));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    ok: true,
+    snapshot: snapshotFixture(),
+  });
+});
+
+test("retro-runs GET preserves the roster failure envelope", async () => {
+  const response = await createRetroRunsGetHandler({
+    loadRetroRunsSnapshot: async () => ({
+      ok: false,
+      code: "retro_roster_unavailable",
+      error: "daemon http 503",
+      snapshot: snapshotFixture(),
+    }),
+  })(new Request("http://cave.local/api/retro-runs"));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: "daemon http 503",
+    snapshot: snapshotFixture(),
+  });
+});
+
+test("retro-runs GET redacts thrown loader failures into a stable 503 envelope", async () => {
+  const response = await createRetroRunsGetHandler({
+    loadRetroRunsSnapshot: async () => {
+      throw new Error("token=/secret/path\nstack=very-secret");
+    },
+  })(new Request("http://cave.local/api/retro-runs?familiarId=sage"));
+
+  assert.equal(response.status, 503);
+  const body = await response.json();
+  assert.equal(body.ok, false);
+  assert.equal(body.error, "retro_runs_unavailable");
+  assert.deepEqual(body.snapshot, {
+    generatedAt: body.snapshot.generatedAt,
+    summary: {
+      totalRuns: 0,
+      accepted: 0,
+      reverted: 0,
+      runningFamiliars: 0,
+      familiarsWithData: 0,
+      trackCounts: { synthesis: 0, prompt: 0, memory: 0 },
+      lastRun: null,
+    },
+    familiars: [],
+    runs: [],
+  });
+  assert.equal(JSON.stringify(body).includes("secret"), false);
+  assert.equal(JSON.stringify(body).includes("stack"), false);
+});
