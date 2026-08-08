@@ -208,6 +208,12 @@ jobs:
       # deliberately cfg(desktop) rather than macOS-only to be executable here.
       - run: cargo test --locked --lib desktop_reachability::tests::gui_conflict -- --nocapture
 
+      # Dev-launcher startup handshake (cave-g8n5v): `tauri dev` returns 0 when
+      # the app dies from a signal, so scripts/dev-app.sh reads this marker
+      # rather than that status. An empty or unwritten marker must mean startup
+      # never finished — nothing else may produce one.
+      - run: cargo test --locked --lib app_lifecycle_tests::dev_startup_marker -- --nocapture
+
   # Sharded across THREE runners (cave-5pa). This was one job running the whole
   # suite serially, and it was the CI critical path: 14m09s total, of which
   # 12m56s was the single `playwright test` call. Each shard pays the fixed

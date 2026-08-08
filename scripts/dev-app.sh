@@ -89,6 +89,7 @@ esac
 
 TAURI_OVERRIDE_CONFIG="$(mktemp)"
 WATCHDOG_VERDICT="$(mktemp)"
+DEV_STARTUP_MARKER="$(mktemp)"
 tauri_pid=""
 server_pid=""
 watchdog_pid=""
@@ -144,7 +145,7 @@ cleanup() {
   if [ "${should_start_server:-false}" = true ] && port_is_listening "$dev_port" >/dev/null 2>&1; then
     echo "[dev:app] warning: 127.0.0.1:${dev_port} is still listening after teardown" >&2
   fi
-  rm -f "$TAURI_OVERRIDE_CONFIG" "$WATCHDOG_VERDICT"
+  rm -f "$TAURI_OVERRIDE_CONFIG" "$WATCHDOG_VERDICT" "$DEV_STARTUP_MARKER"
 }
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT
@@ -213,6 +214,25 @@ watch_dev_server() {
   done
 }
 
+# `tauri dev` forwards a clean non-zero exit but returns 0 when the app dies
+# from a SIGNAL, so its status cannot distinguish a crash during startup from
+# an ordinary quit — a SIGABRT left this launcher reporting success having
+# opened no window at all (cave-g8n5v). The desktop shell writes this marker as
+# the last statement of its setup closure; its absence is the only evidence a
+# signal death leaves behind.
+#
+# Git Bash's mktemp hands back a POSIX path (/tmp/…), but the desktop shell is
+# a native Windows process: it would resolve that against the current drive as
+# C:\tmp\…, fail to write, and leave this launcher reporting a startup failure
+# on every Windows run. cygpath is MSYS's own converter; where it does not
+# exist the path is already native. Bash keeps testing the POSIX name below —
+# both spellings name the same file.
+if command -v cygpath >/dev/null 2>&1; then
+  export COVEN_CAVE_DEV_STARTUP_MARKER="$(cygpath -w "$DEV_STARTUP_MARKER")"
+else
+  export COVEN_CAVE_DEV_STARTUP_MARKER="$DEV_STARTUP_MARKER"
+fi
+
 pnpm exec tauri dev --config "$TAURI_OVERRIDE_CONFIG" "$@" &
 tauri_pid=$!
 
@@ -226,6 +246,18 @@ wait "$tauri_pid" || tauri_status=$?
 tauri_pid=""
 
 if [ -s "$WATCHDOG_VERDICT" ]; then
+  exit 1
+fi
+
+# A zero status the shell never earned. Everything the launcher preflights —
+# the port owner, the root document — exists so startup fails in the terminal
+# instead of behind a black window; trusting this 0 would undo that at the last
+# step.
+if [ "$tauri_status" -eq 0 ] && [ ! -s "$DEV_STARTUP_MARKER" ]; then
+  echo "[dev:app] ERROR: the desktop app exited before it finished starting up." >&2
+  echo "[dev:app]        'tauri dev' reported success, but it returns 0 when the app dies from" >&2
+  echo "[dev:app]        a signal (SIGABRT, SIGSEGV), so its status alone cannot tell a crash" >&2
+  echo "[dev:app]        during setup apart from a clean quit. Scroll up for the app's output." >&2
   exit 1
 fi
 
