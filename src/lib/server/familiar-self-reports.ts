@@ -54,6 +54,15 @@ type SelfReportReadDependencies = {
   onLineRead?: (fullPath: string, line: string) => void;
 };
 
+type SnapshotCandidateSource = "persisted" | "reportDerived";
+
+type SnapshotCandidate = {
+  snapshot: ThreadMetricSnapshot;
+  source: SnapshotCandidateSource;
+  fileOrder: number;
+  lineOrder: number;
+};
+
 const DEFAULT_READ_DEPENDENCIES: SelfReportReadDependencies = {
   readdir: (fullPath) => readdir(fullPath, "utf8"),
   readFile: (fullPath, encoding) => readFile(fullPath, encoding),
@@ -135,6 +144,66 @@ function canStopBoundedDateScan<T extends { reportedAt: string }>(
   return nextFileDate !== null && nextFileDate < cutoffDate;
 }
 
+function compareSnapshotCandidatePriority(
+  left: SnapshotCandidate,
+  right: SnapshotCandidate,
+): number {
+  const reportedAtDiff =
+    new Date(left.snapshot.reportedAt).getTime() -
+    new Date(right.snapshot.reportedAt).getTime();
+  if (reportedAtDiff !== 0) return reportedAtDiff;
+  if (left.source !== right.source) return left.source === "persisted" ? 1 : -1;
+  const fileOrderDiff = left.fileOrder - right.fileOrder;
+  if (fileOrderDiff !== 0) return fileOrderDiff;
+  return left.lineOrder - right.lineOrder;
+}
+
+function chooseSnapshotCandidate(
+  current: SnapshotCandidate | undefined,
+  incoming: SnapshotCandidate,
+): SnapshotCandidate {
+  if (!current) return incoming;
+  return compareSnapshotCandidatePriority(incoming, current) > 0
+    ? incoming
+    : current;
+}
+
+function mergeSnapshotCandidates(
+  current: Map<string, SnapshotCandidate>,
+  incoming: Iterable<SnapshotCandidate>,
+): Map<string, SnapshotCandidate> {
+  for (const candidate of incoming) {
+    current.set(
+      candidate.snapshot.id,
+      chooseSnapshotCandidate(current.get(candidate.snapshot.id), candidate),
+    );
+  }
+  return current;
+}
+
+function newestSnapshotCandidatesBounded(
+  values: Iterable<SnapshotCandidate>,
+  limit: number,
+): SnapshotCandidate[] {
+  return newestBoundedSlice(
+    values,
+    limit,
+    (left, right) => sortSnapshotsNewestFirst(left.snapshot, right.snapshot),
+  );
+}
+
+function snapshotCandidate(
+  snapshot: ThreadMetricSnapshot,
+  source: SnapshotCandidateSource,
+): SnapshotCandidate {
+  return {
+    snapshot,
+    source,
+    fileOrder: 0,
+    lineOrder: 0,
+  };
+}
+
 async function readNewestReportsBounded(
   familiarId: string,
   limit: number,
@@ -199,7 +268,7 @@ async function readNewestPersistedMetricSnapshotsBounded(
     throw err;
   }
 
-  let snapshots = new Map<string, ThreadMetricSnapshot>();
+  let snapshots = new Map<string, SnapshotCandidate>();
   const orderedFiles = filterWindowFiles(files, window).sort().reverse();
   for (const [index, file] of orderedFiles.entries()) {
     const fullPath = path.join(dir, file);
@@ -210,8 +279,9 @@ async function readNewestPersistedMetricSnapshotsBounded(
     } catch {
       continue;
     }
-    const fileSnapshots = new Map<string, ThreadMetricSnapshot>();
-    for (const line of raw.split("\n")) {
+    const fileOrder = orderedFiles.length - 1 - index;
+    const fileSnapshots = new Map<string, SnapshotCandidate>();
+    for (const [lineOrder, line] of raw.split("\n").entries()) {
       const trimmed = line.trim();
       if (!trimmed) continue;
       dependencies.onLineRead?.(fullPath, trimmed);
@@ -219,31 +289,40 @@ async function readNewestPersistedMetricSnapshotsBounded(
         const parsed: unknown = JSON.parse(trimmed);
         if (!isThreadMetricSnapshot(parsed)) continue;
         if (!withinWindow(parsed.reportedAt, window)) continue;
-        fileSnapshots.set(parsed.id, parsed);
+        fileSnapshots.set(
+          parsed.id,
+          chooseSnapshotCandidate(fileSnapshots.get(parsed.id), {
+            snapshot: parsed,
+            source: "persisted",
+            fileOrder,
+            lineOrder,
+          }),
+        );
       } catch {
         /* Ignore malformed historical lines; append-only storage should keep listing usable. */
       }
     }
-    for (const [id, snapshot] of fileSnapshots) snapshots.set(id, snapshot);
+    snapshots = mergeSnapshotCandidates(snapshots, fileSnapshots.values());
+    const topCandidates = newestSnapshotCandidatesBounded(
+      snapshots.values(),
+      limit,
+    );
     snapshots = new Map(
-      newestBoundedSlice(
-        snapshots.values(),
-        limit,
-        sortSnapshotsNewestFirst,
-      ).map((snapshot) => [snapshot.id, snapshot] as const),
+      topCandidates.map((candidate) => [candidate.snapshot.id, candidate] as const),
     );
     if (
       canStopBoundedDateScan(
         orderedFiles,
         index,
-        [...snapshots.values()].sort(sortSnapshotsNewestFirst),
+        topCandidates.map((candidate) => candidate.snapshot),
         limit,
       )
     ) {
       break;
     }
   }
-  return [...snapshots.values()].sort(sortSnapshotsNewestFirst);
+  return newestSnapshotCandidatesBounded(snapshots.values(), limit)
+    .map((candidate) => candidate.snapshot);
 }
 
 async function readNewestReportDerivedMetricSnapshotsBounded(
@@ -261,7 +340,7 @@ async function readNewestReportDerivedMetricSnapshotsBounded(
     throw err;
   }
 
-  let snapshots = new Map<string, ThreadMetricSnapshot>();
+  let snapshots = new Map<string, SnapshotCandidate>();
   const orderedFiles = filterWindowFiles(files, window).sort().reverse();
   for (const [index, file] of orderedFiles.entries()) {
     const fullPath = path.join(dir, file);
@@ -272,39 +351,49 @@ async function readNewestReportDerivedMetricSnapshotsBounded(
     } catch {
       continue;
     }
-    const fileSnapshots = new Map<string, ThreadMetricSnapshot>();
-    for (const line of raw.split("\n")) {
+    const fileOrder = orderedFiles.length - 1 - index;
+    const fileSnapshots = new Map<string, SnapshotCandidate>();
+    for (const [lineOrder, line] of raw.split("\n").entries()) {
       const trimmed = line.trim();
       if (!trimmed) continue;
       dependencies.onLineRead?.(fullPath, trimmed);
       try {
         const parsed = redactReport(JSON.parse(trimmed) as ThreadSelfReport);
         if (!withinWindow(parsed.reportedAt, window)) continue;
-        fileSnapshots.set(parsed.id, snapshotFromReport(parsed));
+        fileSnapshots.set(
+          parsed.id,
+          chooseSnapshotCandidate(fileSnapshots.get(parsed.id), {
+            snapshot: snapshotFromReport(parsed),
+            source: "reportDerived",
+            fileOrder,
+            lineOrder,
+          }),
+        );
       } catch {
         /* Ignore malformed historical lines; append-only storage should keep listing usable. */
       }
     }
-    for (const [id, snapshot] of fileSnapshots) snapshots.set(id, snapshot);
+    snapshots = mergeSnapshotCandidates(snapshots, fileSnapshots.values());
+    const topCandidates = newestSnapshotCandidatesBounded(
+      snapshots.values(),
+      limit,
+    );
     snapshots = new Map(
-      newestBoundedSlice(
-        snapshots.values(),
-        limit,
-        sortSnapshotsNewestFirst,
-      ).map((snapshot) => [snapshot.id, snapshot] as const),
+      topCandidates.map((candidate) => [candidate.snapshot.id, candidate] as const),
     );
     if (
       canStopBoundedDateScan(
         orderedFiles,
         index,
-        [...snapshots.values()].sort(sortSnapshotsNewestFirst),
+        topCandidates.map((candidate) => candidate.snapshot),
         limit,
       )
     ) {
       break;
     }
   }
-  return [...snapshots.values()].sort(sortSnapshotsNewestFirst);
+  return newestSnapshotCandidatesBounded(snapshots.values(), limit)
+    .map((candidate) => candidate.snapshot);
 }
 
 function sortSnapshotsOldestFirst(
@@ -330,12 +419,15 @@ function mergeBoundedMetricSnapshotCandidates(
   reportDerived: ThreadMetricSnapshot[],
   limit: number,
 ): ThreadMetricSnapshot[] {
-  const byId = new Map(reportDerived.map((snapshot) => [snapshot.id, snapshot] as const));
-  for (const snapshot of persisted) {
-    byId.set(snapshot.id, snapshot);
-  }
-  return [...byId.values()]
-    .sort(sortSnapshotsNewestFirst)
+  const byId = mergeSnapshotCandidates(
+    mergeSnapshotCandidates(
+      new Map<string, SnapshotCandidate>(),
+      reportDerived.map((snapshot) => snapshotCandidate(snapshot, "reportDerived")),
+    ),
+    persisted.map((snapshot) => snapshotCandidate(snapshot, "persisted")),
+  );
+  return newestSnapshotCandidatesBounded(byId.values(), limit)
+    .map((candidate) => candidate.snapshot)
     .slice(0, limit)
     .sort(sortSnapshotsOldestFirst);
 }

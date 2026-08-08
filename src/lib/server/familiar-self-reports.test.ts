@@ -399,6 +399,171 @@ describe("familiar self-report storage", () => {
     );
   });
 
+  it("listDashboardMetricSnapshots keeps the newest persisted duplicate even after reading an older date file later", async () => {
+    const now = Date.parse("2026-08-07T23:59:59.000Z");
+    const snapshotDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports", "metric-snapshots");
+    await mkdir(snapshotDir, { recursive: true });
+
+    await writeFile(
+      path.join(snapshotDir, "2026-08-07.jsonl"),
+      `${JSON.stringify({
+        id: "shared",
+        sessionId: "shared-session",
+        reportedAt: "2026-08-07T18:00:00.000Z",
+        confidence: 91,
+        toolReliability: 75,
+        memoryRecall: 70,
+        fileLocatability: 65,
+        contextPressure: "adequate",
+      })}\n${JSON.stringify({
+        id: "newer-only",
+        sessionId: "newer-session",
+        reportedAt: "2026-08-07T19:00:00.000Z",
+        confidence: 88,
+        toolReliability: 75,
+        memoryRecall: 70,
+        fileLocatability: 65,
+        contextPressure: "adequate",
+      })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(snapshotDir, "2026-08-06.jsonl"),
+      `${JSON.stringify({
+        id: "shared",
+        sessionId: "shared-session",
+        reportedAt: "2026-08-06T18:00:00.000Z",
+        confidence: 12,
+        toolReliability: 75,
+        memoryRecall: 70,
+        fileLocatability: 65,
+        contextPressure: "adequate",
+      })}\n${JSON.stringify({
+        id: "older-only",
+        sessionId: "older-session",
+        reportedAt: "2026-08-06T17:00:00.000Z",
+        confidence: 44,
+        toolReliability: 75,
+        memoryRecall: 70,
+        fileLocatability: 65,
+        contextPressure: "adequate",
+      })}\n`,
+      "utf8",
+    );
+
+    const listed = await listDashboardMetricSnapshots("cody", now);
+
+    assert.deepEqual(
+      listed.snapshots.map((snapshot) => snapshot.id),
+      ["older-only", "shared", "newer-only"],
+    );
+    assert.equal(
+      listed.snapshots.find((snapshot) => snapshot.id === "shared")?.reportedAt,
+      "2026-08-07T18:00:00.000Z",
+    );
+    assert.equal(
+      listed.snapshots.find((snapshot) => snapshot.id === "shared")?.confidence,
+      91,
+      "the newer persisted candidate must survive even though the older file is read later",
+    );
+  });
+
+  it("listDashboardMetricSnapshots keeps the newest report-derived duplicate even after reading an older date file later", async () => {
+    const now = Date.parse("2026-08-07T23:59:59.000Z");
+    const reportsDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports");
+    await mkdir(reportsDir, { recursive: true });
+
+    await writeFile(
+      path.join(reportsDir, "2026-08-07.jsonl"),
+      `${JSON.stringify(report({
+        id: "shared",
+        sessionId: "shared-session",
+        reportedAt: "2026-08-07T18:00:00.000Z",
+        overallConfidence: 87,
+      }))}\n${JSON.stringify(report({
+        id: "newer-only",
+        sessionId: "newer-session",
+        reportedAt: "2026-08-07T19:00:00.000Z",
+        overallConfidence: 82,
+      }))}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(reportsDir, "2026-08-06.jsonl"),
+      `${JSON.stringify(report({
+        id: "shared",
+        sessionId: "shared-session",
+        reportedAt: "2026-08-06T18:00:00.000Z",
+        overallConfidence: 14,
+      }))}\n${JSON.stringify(report({
+        id: "older-only",
+        sessionId: "older-session",
+        reportedAt: "2026-08-06T17:00:00.000Z",
+        overallConfidence: 41,
+      }))}\n`,
+      "utf8",
+    );
+
+    const listed = await listDashboardMetricSnapshots("cody", now);
+
+    assert.deepEqual(
+      listed.snapshots.map((snapshot) => snapshot.id),
+      ["older-only", "shared", "newer-only"],
+    );
+    assert.equal(
+      listed.snapshots.find((snapshot) => snapshot.id === "shared")?.reportedAt,
+      "2026-08-07T18:00:00.000Z",
+    );
+    assert.equal(
+      listed.snapshots.find((snapshot) => snapshot.id === "shared")?.confidence,
+      87,
+      "the newer report-derived candidate must survive even though the older file is read later",
+    );
+  });
+
+  it("listDashboardMetricSnapshots keeps the persisted representation for equal-timestamp cross-source duplicates", async () => {
+    const now = Date.parse("2026-08-07T23:59:59.000Z");
+    const reportsDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports");
+    const snapshotDir = path.join(reportsDir, "metric-snapshots");
+    await mkdir(reportsDir, { recursive: true });
+    await mkdir(snapshotDir, { recursive: true });
+
+    await writeFile(
+      path.join(reportsDir, "2026-08-07.jsonl"),
+      `${JSON.stringify(report({
+        id: "shared",
+        sessionId: "shared-session",
+        reportedAt: "2026-08-07T18:00:00.000Z",
+        overallConfidence: 38,
+      }))}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(snapshotDir, "2026-08-07.jsonl"),
+      `${JSON.stringify({
+        id: "shared",
+        sessionId: "shared-session",
+        reportedAt: "2026-08-07T18:00:00.000Z",
+        confidence: 84,
+        toolReliability: 75,
+        memoryRecall: 70,
+        fileLocatability: 65,
+        contextPressure: "adequate",
+      })}\n`,
+      "utf8",
+    );
+
+    const listed = await listDashboardMetricSnapshots("cody", now);
+
+    assert.equal(listed.snapshots.length, 1);
+    assert.equal(listed.snapshots[0].id, "shared");
+    assert.equal(
+      listed.snapshots[0].confidence,
+      84,
+      "persisted snapshots keep precedence when timestamps tie across persisted and report-derived sources",
+    );
+  });
+
   it("listDashboardMetricSnapshots ignores same-day appended older backfills, breaks ties by id, and still prefers persisted duplicates", async () => {
     const now = Date.parse("2026-08-07T23:59:59.000Z");
     const reportsDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports");
