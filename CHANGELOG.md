@@ -7,12 +7,81 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-08-08
+
+> A reading-first Coding Room, a rebuilt Research Desk, safer remote access,
+> steadier navigation, and release and runtime checks that name what went wrong.
+
+Patch release on top of v0.2.4.
+
+### Added
+
+- Rebuilt the Coding Room around a worktree-aware file tree, source viewer,
+  resizable Changes/PR rail, persistent terminal drawer, session picker,
+  per-version viewed state, and rebindable shortcuts; narrow layouts now use
+  the room's measured width (#4418, #4423).
+- Rebuilt the Research Desk with structured briefs, recommendations, resizable
+  rails, richer mission progress, searchable and pageable Library results,
+  truthful provider readiness, and improved resource cards and grids
+  (#4417, #4419).
+- Added the full familiar activity lattice, comparing a 52-week density grid,
+  eight-week trend, and 14-day pulse from one shared data model (#4425).
+- Added app-wide loaded-data search and richer project/task context to iOS, and
+  made contextual New Chat reuse the visible familiar with recoverable project
+  loading (#4397, #4424).
+- Added sub-surface Back/Forward history, beginning with the Chat scope strip
+  (#4407).
+- Enabled Discord Rich Presence consistently in local and release builds, with
+  links to OpenCoven and Coven Cave (#4403, #4409, #4410, #4411).
+
+### Changed
+
+- Unified the Home and Chat sidebar header, kept the rail open when navigating
+  away from Chat, and made desktop collapse leave a usable icon rail with
+  hover-to-peek instead of hiding navigation entirely (#4404, #4405, #4406).
+- Restored the prior familiar creation and avatar flow by removing the
+  experimental image-driven summoning, scrying, rite, and foil-card path
+  (#4412).
+- Made Grimoire Relations counts explicitly scope-aware and expanded the
+  bounded graph window while preserving the renderer's measured performance
+  ceiling (#4431).
+
 ### Fixed
 
-- Windows: console windows no longer pop up over the app when Cave runs a CLI.
-  Every child process now launches with `windowsHide: true`. Most visible in the
-  Research Desk, where a single mission iteration opened one window per familiar
-  step (cave-7jb).
+- Refused a proven occupied daemon address before spawning, now returning an
+  actionable `address_in_use` result while preserving conservative recovery
+  and ownership behavior (#4429).
+- Stopped Windows child-process console windows from appearing over Cave and
+  made macOS report an already-running second GUI instead of aborting
+  (#4413, #4416).
+- Made `dev:app` reject ANSI-contaminated port captures and report a desktop
+  shell that dies before setup completes instead of claiming a successful
+  launch (#4401, #4426).
+- Closed spoken-text normalization edge cases from the reader and voice paths
+  (#4399).
+
+### Security
+
+- Added fail-closed Tailscale device authorization using an explicit stable
+  node-ID allowlist rather than trusting a client-controlled host header
+  (#4402).
+- Added an opt-in WebAuthn presence gate that binds a user-verified passkey to
+  the allowlisted tailnet device; local access and first enrollment remain
+  deliberately recoverable (#4415).
+
+### Build and release
+
+- Added preview, transactional preparation, and fail-closed verification for
+  releases. The stamp now updates every canonical desktop, Cargo, and iOS
+  version source plus the changelog; release CI accepts only a verified
+  annotated tag on `main` and builds every artifact from its immutable commit
+  (#4433, #4437).
+- Split frontend and Windows-native CI work, sharded Playwright, stabilized
+  citation-chip waits, restored two Windows source guards, and added
+  repository-wide protection against committed merge-conflict markers
+  (#4420, #4421, #4422, #4427, #4430, #4434, #4436).
+- Excluded detached worktrees from managed-creation admission and documented
+  the current gate-blocked retirement path (#4414, #4432).
 
 ## [0.2.4] - 2026-08-06
 
