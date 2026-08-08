@@ -29,7 +29,16 @@ the user cannot repair access without leaving the flow.
   familiar.
 
 `FamiliarThreadsView` and familiar-specific launch actions use fixed mode.
-Global compose actions continue using general mode.
+Global compose actions resolve the visible Chats route before presenting:
+
+- a selected familiar fixes that familiar;
+- a selected direct thread fixes its sole familiar;
+- a direct thread pushed within a familiar's history fixes its sole familiar;
+- a group thread or no visible route keeps general mode.
+
+This makes compose contextual without silently choosing a "most recent"
+familiar the user is not currently viewing. The empty-state action remains an
+explicit general-mode escape hatch for choosing one or more familiars.
 
 `ChatProjectPicker` continues querying `/api/projects?familiarId=...` through
 the existing `CaveClient.projects(familiarIds:)` path. It does not fall back to
@@ -43,6 +52,13 @@ closing New Chat.
 The Start action remains disabled until the picker resolves a valid project
 root. A successful launch persists that root on the new thread, preserving the
 existing first-turn request contract.
+
+Project discovery must use `CaveClient.data(for:)`, the same request boundary
+as the rest of the REST client. The projects extension must not create its own
+URL session because that bypasses injected test transports and the bounded GET
+retry policy. The picker still performs one higher-level connection recovery
+after those request retries are exhausted, so endpoint relocation and ordinary
+transient transport recovery remain separate and bounded.
 
 ## Error handling
 
@@ -60,8 +76,13 @@ existing first-turn request contract.
 - Verify fixed mode hides the familiar roster and keeps exactly one familiar.
 - Verify general mode still renders editable familiar selection.
 - Verify familiar-specific entry points pass fixed mode.
+- Verify global compose resolves a visible direct-chat familiar but preserves
+  general mode for group or absent context.
 - Verify an empty project response exposes Project access and reloads after the
   permissions sheet closes.
+- Verify project discovery uses the injected client transport and survives one
+  transient request failure without requiring endpoint relocation.
+- Drive a simulator fixture that opens contextual New Chat with no familiar
+  roster, surfaces a project load failure, and resolves the project after Retry.
 - Preserve the existing project-selection unit and first-turn provenance tests.
 - Run the repository's wired iOS source-contract tests and an iOS app build.
-

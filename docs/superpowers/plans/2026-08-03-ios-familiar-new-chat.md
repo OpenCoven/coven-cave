@@ -8,6 +8,34 @@
 
 **Tech Stack:** SwiftUI, Swift concurrency, XCTest source contracts, Node.js test runner, XcodeGen/xcodebuild.
 
+## 2026-08-06 revision: contextual compose and project transport repair
+
+The fixed-familiar mode below has landed. The remaining user-visible gap is
+that Chats compose still calls the general presenter even when the visible
+route already identifies one familiar. The remaining project failure is in the
+client boundary: `CaveClient+Dev.swift` creates a separate URL session instead
+of using `CaveClient.data(for:)`, bypassing injected transports and the normal
+bounded GET retry policy.
+
+Implement this revision test-first:
+
+1. Add a pure `ChatNewConversationContext` resolver beside `ChatRoute`. Prefer
+   the last detail route over the sidebar selection and return a familiar only
+   for a familiar route or a direct thread with exactly one distinct familiar.
+2. Route header, bottom-bar, drawer, and consumed global New Chat intents
+   through contextual presentation. Keep the no-familiars empty action
+   explicitly general so group creation remains discoverable.
+3. Move project requests onto `CaveClient.data(for:)`; remove the projects
+   extension's private URL session.
+4. Add native tests for direct/group/absent context and an injected-transport
+   test proving a transient project GET retries and decodes the authorized
+   project response.
+5. Add a DEBUG-only project fixture to `AppModel` and a simulator UI test that
+   proves contextual New Chat hides the roster, exposes Retry after a forced
+   project failure, and enables Start after retry resolves the project.
+6. Extend `scripts/ios-chat-project-contract.test.mjs`, run focused native/UI
+   tests, the wired mobile contract, and the iOS build.
+
 ---
 
 ## File map
