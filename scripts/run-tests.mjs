@@ -1643,6 +1643,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/sessions/[id]/route.test.ts",
   "src/app/api/familiars/route.test.ts",
   "src/lib/server/familiar-enrichment.test.ts",
+  "src/lib/server/sessions-list-cache.test.ts",
   "src/lib/server/retro-runs-snapshot.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
   "src/lib/opencode-models.test.ts",
