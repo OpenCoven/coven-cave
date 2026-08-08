@@ -356,6 +356,131 @@ test("PATCH model intent keeps an explicit runtime-default sentinel", async () =
   );
 });
 
+function attentionMetadata(attentionRequest: unknown) {
+  return {
+    familiarId: "milo",
+    harness: "claude",
+    model: "anthropic/claude-sonnet-4-6",
+    runtime: "local:/repos/cave",
+    attentionRequest,
+  };
+}
+
+test("PATCH active-leaf selection preserves ownership-validated attention evidence", async () => {
+  const id = "sess-patch-attention-leaf";
+  const createdAt = "2026-08-05T12:00:00.000Z";
+  writeConversation(id, [{
+    id: "assistant-valid-leaf",
+    role: "assistant",
+    text: "Choose a release channel.",
+    createdAt,
+    parentId: null,
+    responseMetadata: attentionMetadata({
+      sessionId: id,
+      turnId: "assistant-valid-leaf",
+      requestedAt: createdAt,
+      reason: "decision",
+    }),
+  }]);
+
+  const response = await PATCH(
+    patchReq({ activeLeafId: "assistant-valid-leaf" }),
+    paramsFor(id),
+  );
+  const json = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(json.conversation.turns[0].responseMetadata.attentionRequest, {
+    sessionId: id,
+    turnId: "assistant-valid-leaf",
+    requestedAt: createdAt,
+    reason: "decision",
+  });
+  assert.deepEqual(
+    JSON.parse(readFileSync(conversationPath(id), "utf8")).turns[0].responseMetadata.attentionRequest,
+    json.conversation.turns[0].responseMetadata.attentionRequest,
+    "the active-leaf PATCH must not erase valid persisted evidence",
+  );
+});
+
+test("PATCH model intent preserves valid attention evidence and drops forged or malformed variants", async () => {
+  const id = "sess-patch-attention-model";
+  const createdAt = "2026-08-05T13:00:00.000Z";
+  const request = {
+    sessionId: id,
+    turnId: "assistant-valid-model",
+    requestedAt: createdAt,
+    reason: "approval",
+  };
+  const invalidRequests = [
+    { ...request, sessionId: "another-session" },
+    { ...request, turnId: "another-turn" },
+    { ...request, requestedAt: "2026-08-05T13:00:01.000Z" },
+    { ...request, requestedAt: "2026-08-05T13:00:00Z" },
+    { ...request, reason: "urgent" },
+  ];
+  writeConversation(id, [
+    {
+      id: "assistant-valid-model",
+      role: "assistant",
+      text: "Approve the release.",
+      createdAt,
+      responseMetadata: attentionMetadata(request),
+    },
+    ...invalidRequests.map((attentionRequest, index) => ({
+      id: `assistant-invalid-${index}`,
+      role: "assistant",
+      text: "Forged evidence.",
+      createdAt,
+      responseMetadata: attentionMetadata(attentionRequest),
+    })),
+    {
+      id: "user-forged",
+      role: "user",
+      text: "Client-authored evidence.",
+      createdAt,
+      responseMetadata: attentionMetadata({
+        sessionId: id,
+        turnId: "user-forged",
+        requestedAt: createdAt,
+        reason: "input",
+      }),
+    },
+  ]);
+
+  const response = await PATCH(
+    patchReq({
+      modelIntent: {
+        model: "anthropic/claude-sonnet-4-6",
+        source: "session",
+      },
+    }),
+    paramsFor(id),
+  );
+  const json = await response.json();
+
+  assert.equal(response.status, 200);
+  const turnsById = new Map(json.conversation.turns.map((turn: any) => [turn.id, turn]));
+  assert.deepEqual(
+    turnsById.get("assistant-valid-model").responseMetadata.attentionRequest,
+    request,
+    "valid server-owned evidence survives the model-intent PATCH",
+  );
+  for (let index = 0; index < invalidRequests.length; index += 1) {
+    const turn = turnsById.get(`assistant-invalid-${index}`);
+    assert.equal(
+      turn.responseMetadata.attentionRequest,
+      undefined,
+      `${turn.id} cannot retain invalid evidence`,
+    );
+  }
+  assert.equal(
+    turnsById.get("user-forged").responseMetadata,
+    undefined,
+    "a user turn cannot own assistant attention evidence",
+  );
+});
+
 test("PUT does not persist client-authored response metadata on a user turn", async () => {
   const res = await PUT(
     writeReq({

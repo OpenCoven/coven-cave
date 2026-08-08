@@ -2,6 +2,7 @@
 // docs/chat-github-integration.md §1; bead cave-fpqx.6).
 import assert from "node:assert/strict";
 import test from "node:test";
+import { extractChatAttentionMarker } from "./chat-attention-marker.ts";
 import {
   classifyGitHubAction,
   descriptorUrl,
@@ -12,6 +13,8 @@ import {
   unfurlUserMessage,
   type GitHubActionKind,
 } from "./github-blocks.ts";
+import { sliceImageBlocks, stripImageMarkers } from "./image-blocks.ts";
+import { extractNextPaths } from "./next-paths.ts";
 
 // ── parseGitHubUrl ───────────────────────────────────────────────────────────
 
@@ -294,6 +297,103 @@ test("slice/strip: fenced markers are example text — literal, no cards, fence 
   // Unclosed trailing fence protects through the text end (streaming).
   const streaming = 'look:\n```\n<coven:github kind="pr" repo="o/r" number="7" />';
   assert.equal(stripGitHubMarkers(streaming), streaming);
+});
+
+test("slice/strip: an empty top-level fence closes before a following live GitHub marker", () => {
+  const fenced = "```\n```";
+  const text = `${fenced}\n<coven:github kind="issue" repo="o/r" number="8" />`;
+  const pieces = sliceGitHubBlocks(text);
+  assert.equal(pieces.filter((piece) => piece.kind === "card").length, 1);
+  assert.equal(pieces.find((piece) => piece.kind === "card")?.descriptor.number, 8);
+  assert.equal(stripGitHubMarkers(text), `${fenced}\n`);
+});
+
+test("slice/strip: a list-contained renderer fence ends before a following live GitHub marker", () => {
+  const fenced = '- ```xml\n  <coven:github kind="pr" repo="o/r" number="7" />\n  ```';
+  const live = '<coven:github kind="issue" repo="o/r" number="8" />';
+  const text = `${fenced}\n${live}`;
+  const pieces = sliceGitHubBlocks(text);
+  assert.equal(pieces.filter((piece) => piece.kind === "card").length, 1);
+  assert.equal(pieces.find((piece) => piece.kind === "card")?.descriptor.number, 8);
+  assert.equal(stripGitHubMarkers(text), `${fenced}\n`);
+});
+
+test("slice/strip: a live GitHub marker survives a blockquoted fence with a longer close", () => {
+  const fenced = [
+    "> ```xml",
+    '> <coven:github kind="pr" repo="o/r" number="7" />',
+    "> ````",
+  ].join("\n");
+  const live = '<coven:github kind="issue" repo="o/r" number="8" />';
+  const text = `${fenced}\n${live}`;
+  const pieces = sliceGitHubBlocks(text);
+  assert.equal(pieces.filter((piece) => piece.kind === "card").length, 1);
+  assert.equal(pieces.find((piece) => piece.kind === "card")?.descriptor.number, 8);
+  assert.equal(stripGitHubMarkers(text), `${fenced}\n`);
+});
+
+test("slice/strip: overlapping blockquoted fence delimiters keep following GitHub markers literal", () => {
+  const text = [
+    "> ```x",
+    "> ````",
+    '> <coven:github-action kind="merge" repo="o/r" number="7" />',
+    "> ```",
+  ].join("\n");
+  const pieces = sliceGitHubBlocks(text);
+  assert.deepEqual(pieces, [{ kind: "text", text }]);
+  assert.equal(stripGitHubMarkers(text), text);
+});
+
+test("shared code ranges let every live marker execute after a list fence closes", () => {
+  const fenced = [
+    "- ```xml",
+    "  literal example",
+    "  ```",
+  ].join("\n");
+  const cases = [
+    {
+      label: "image",
+      run: () => {
+        const text = `${fenced}\n<coven:image src="https://example.com/live.png" />`;
+        const pieces = sliceImageBlocks(text);
+        assert.equal(pieces.filter((piece) => piece.kind === "carousel").length, 1);
+        assert.equal(stripImageMarkers(text), `${fenced}\n`);
+      },
+    },
+    {
+      label: "github",
+      run: () => {
+        const text = `${fenced}\n<coven:github kind="issue" repo="o/r" number="8" />`;
+        const pieces = sliceGitHubBlocks(text);
+        assert.equal(pieces.filter((piece) => piece.kind === "card").length, 1);
+        assert.equal(stripGitHubMarkers(text), `${fenced}\n`);
+      },
+    },
+    {
+      label: "attention",
+      run: () => {
+        const text = `${fenced}\n<coven:attention reason="decision" />`;
+        assert.deepEqual(extractChatAttentionMarker(text), {
+          visible: `${fenced}\n`,
+          request: { reason: "decision" },
+        });
+      },
+    },
+    {
+      label: "next-paths",
+      run: () => {
+        const text = `${fenced}\n<coven:next-paths>\n- [reply] Continue the work\n</coven:next-paths>`;
+        assert.deepEqual(extractNextPaths(text), {
+          visible: fenced,
+          suggestions: [{ kind: "reply", label: "Continue the work", prompt: "Continue the work" }],
+        });
+      },
+    },
+  ] as const;
+
+  for (const { label, run } of cases) {
+    assert.doesNotThrow(run, label);
+  }
 });
 
 test("action attrs: issue-state requires an explicit state; resolve accepts a thread id", () => {

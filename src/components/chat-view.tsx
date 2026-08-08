@@ -136,7 +136,6 @@ import { LinkedContextRow } from "@/components/composer-linked-work-actions";
 import { ComposerContextChips } from "@/components/composer-context-pill";
 import {
   cleanImageDataUrl,
-  extractAgentAttachmentMarkers,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
@@ -200,14 +199,17 @@ import {
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
 import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
-import { extractNextPaths, type NextPath } from "@/lib/next-paths";
+import type { NextPath } from "@/lib/next-paths";
 import { FollowUpCards } from "@/components/chat-follow-up-cards";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
-import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
-import { imageCarouselKey, sliceImageBlocks, stripImageMarkers } from "@/lib/image-blocks";
+import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
+import { imageCarouselKey, sliceImageBlocks } from "@/lib/image-blocks";
+import { parseSkillInvocation } from "@/lib/skill-blocks";
+import {
+  chatTurnVisibleText,
+  extractChatRenderedText,
+} from "@/lib/chat-rendered-text";
 import { sliceSpecBlocks } from "@/lib/spec-blocks";
-import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
-import { extractAutoStatusMarkers } from "@/lib/auto-status-blocks";
 import {
   AUTO_BRIEFED_KEY,
   clearAutoMission,
@@ -219,6 +221,19 @@ import {
   type AutoMissionRecord,
 } from "@/lib/auto-mission-state";
 import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
+import {
+  emitChatAttentionClear,
+  emitChatAttentionSettlement,
+} from "@/lib/chat-attention-events";
+import {
+  createAdoptedAttentionSettlementRegistry,
+  createChatAttentionAdoptionTracker,
+  createChatAttentionSettlementTracker,
+  createExternallySettledGenerationRegistry,
+} from "@/lib/chat-attention-lifecycle";
+import {
+  chatAttentionProjectionScopeKey,
+} from "@/lib/chat-attention-projection";
 import { GitHubCard } from "@/components/github-card";
 import { ImageCarousel } from "@/components/image-carousel";
 import { ChatSpecCard } from "@/components/chat-spec-card";
@@ -319,6 +334,27 @@ const replyableTurnCache = new WeakMap<Turn, boolean>();
 // state) can be unit-tested without React. The full LiveChatGenerationSnapshot
 // is structurally assignable to the helper's minimal SnapshotLiveness shape.
 
+// `isLiveSnapshotActive` only proves the registry entry hasn't gone stale
+// (unaborted + recently touched) — a generation that finished seconds ago
+// still reads as "active" until its owning send's `finally` retires the
+// entry. Adopting a snapshot like that (opening/refreshing a thread whose
+// reply already landed) must repaint the transcript, but it must NOT clear
+// sidebar attention: that reply already went through its own settlement, and
+// re-clearing here would suppress a genuinely new human request that arrived
+// in the same TTL window. Only a snapshot whose active leaf is still
+// `pending` represents a generation actually awaiting a reply.
+function isLiveGenerationPending(live: Pick<LiveChatGenerationSnapshot, "turns" | "activeLeafId">): boolean {
+  return Boolean(live.turns.find((t) => t.id === live.activeLeafId)?.pending);
+}
+
+// A remounted view can evict and externally settle a stale/orphaned live
+// snapshot before the original send owner's `finally` runs. Share that
+// suppression by the generation controller: it is unique per run, survives
+// remount adoption through the live registry, and does not leak if an orphaned
+// owner never comes back to consume it.
+const externallySettledChatAttentionControllers = createExternallySettledGenerationRegistry();
+const adoptedPendingAttentionSettlementOwners = createAdoptedAttentionSettlementRegistry();
+
 type Props = {
   familiar: Familiar;
   sessionId: string | null;
@@ -356,6 +392,17 @@ type Props = {
    *  switched this view to a different session. */
   openVoiceSessionId?: string;
   daemonRunning?: boolean;
+  /** Workspace's current sidebar familiar filter — the scope its
+   *  `/api/sessions/list` request is actually loaded under (null means "all
+   *  familiars"). This is the list scope that can prove a session's absence,
+   *  which can differ from this chat's own `familiar`/`session.familiarId`
+   *  (a split pane showing a different familiar, or a caller that mounts
+   *  ChatView outside Workspace's sidebar entirely). Left undefined by
+   *  callers that don't track a list scope; Workspace's own attention-clear
+   *  handler always re-derives and overrides the authoritative scope itself,
+   *  so this is best-effort provenance on the emitted event, not the sole
+   *  source of truth. */
+  activeFamiliarId?: string | null;
   /** Roster used to promote this chat into a coven from the familiar rail. */
   familiars?: Familiar[];
   /** Workspace-owned session list; the starting page's "Continue" row reads it
@@ -452,18 +499,24 @@ type QueuedChatMessage = {
   options?: ChatSendOptions;
   controls: ChatSendControls;
 };
+// Settles exactly one sidebar-attention reconciliation per generation. An
 type LiveStreamGeneration = {
   sessionId: string | null;
   originSessionId: string | null;
   sessionAliases: Set<string>;
   controller: AbortController;
   runId: string;
+  clearWatermark: string;
   streamHealth: () => ChatStreamClientHealth;
+  markAttentionCleared: (sessionId: string) => void;
+  markPersistenceConfirmed: () => void;
+  reconcileCanonicalSessions: () => void;
 };
 function liveStreamMetadata(liveGeneration: LiveStreamGeneration): LiveChatGenerationMetadata {
   return {
     runId: liveGeneration.runId,
     streamHealth: liveGeneration.streamHealth(),
+    clearWatermark: liveGeneration.clearWatermark,
   };
 }
 type ComposerThinkingEffort = CommandThinkingEffort;
@@ -992,64 +1045,6 @@ function lifecycleLabel(lifecycle: ChatTurnLifecycle): string {
     case "complete":
       return "Complete";
   }
-}
-
-/**
- * Split assistant text into visible body + accumulated reasoning. We treat any
- * `<thinking>...</thinking>` or `<reasoning>...</reasoning>` block (both
- * commonly emitted by Claude/Codex harnesses) as reasoning to be collapsed.
- * Unclosed reasoning blocks are captured while streaming instead of leaking
- * raw internal tags into the transcript.
- */
-function splitReasoning(text: string): { visible: string; reasoning: string } {
-  const reasoningParts: string[] = [];
-  const visibleParts: string[] = [];
-  const tagRe = /<(\/?)(thinking|reasoning)>/gi;
-  let activeTag: string | null = null;
-  let reasoningStart = 0;
-  let cursor = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = tagRe.exec(text)) !== null) {
-    const closing = match[1] === "/";
-    const tag = match[2].toLowerCase();
-
-    if (!activeTag && closing) {
-      visibleParts.push(text.slice(cursor, match.index));
-      cursor = tagRe.lastIndex;
-      continue;
-    }
-
-    if (!activeTag && !closing) {
-      visibleParts.push(text.slice(cursor, match.index));
-      activeTag = tag;
-      reasoningStart = tagRe.lastIndex;
-      cursor = tagRe.lastIndex;
-      continue;
-    }
-
-    if (activeTag === tag && closing) {
-      reasoningParts.push(text.slice(reasoningStart, match.index).trim());
-      activeTag = null;
-      cursor = tagRe.lastIndex;
-    }
-  }
-
-  if (activeTag) {
-    reasoningParts.push(text.slice(reasoningStart).trim());
-  } else {
-    visibleParts.push(text.slice(cursor));
-  }
-
-  const visible = visibleParts.join("");
-  // Strip upstream debug-prefix lines (e.g. "[model-fallback/decision] …")
-  // that leak into the assistant transcript. Anchored to line start so
-  // inline brackets in prose are untouched.
-  const DEBUG_PREFIX_RE = /^\[[a-z][\w-]*(?:\/[\w-]+)+\][^\n]*\n?/gim;
-  return {
-    visible: visible.replace(DEBUG_PREFIX_RE, "").replace(/\n{3,}/g, "\n\n").trimStart(),
-    reasoning: reasoningParts.join("\n\n").trim(),
-  };
 }
 
 // ── ChatEmptyState ────────────────────────────────────────────────────────────
@@ -1832,7 +1827,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, familiars = [], sessions, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -3049,6 +3044,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
    *  settle-refetch below; an instance that merely ADOPTED a live snapshot
    *  (remounted mid-generation) does. */
   const streamOwnerRef = useRef(false);
+  const adoptedPendingAttentionClearRef = useRef(createChatAttentionAdoptionTracker());
   /** Session whose settle (registry clear) should trigger a disk refetch:
    *  set when this non-owner view adopts a live snapshot, or when it evicts
    *  a stale one while the orphaned stream may still be running (cave-0er). */
@@ -3070,6 +3066,45 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       runId: currentStreamHealthRunIdRef.current,
       sessionId: targetSessionId,
     };
+  }
+
+  function maybeEmitAdoptedPendingAttentionClear(
+    targetSessionId: string,
+    live: LiveChatGenerationSnapshot,
+  ) {
+    if (!isLiveGenerationPending(live) || !live.runId) return;
+    if (!adoptedPendingAttentionClearRef.current.shouldEmit(targetSessionId, live.runId)) return;
+    emitAttentionClear(targetSessionId, live.runId, attentionClearWatermarkForLiveGeneration(live));
+    adoptedPendingAttentionSettlementOwners.markAttentionCleared(live.controller, targetSessionId);
+  }
+
+  function emitAttentionClear(
+    targetSessionId: string,
+    operationId: string,
+    clearWatermark?: string | null,
+  ) {
+    const knownSession = session?.id === targetSessionId
+      ? session
+      : sessions?.find((entry) => entry.id === targetSessionId) ?? null;
+    // The scope that can prove absence is Workspace's own current sidebar
+    // filter (the scope its session list is actually loaded under), not this
+    // chat's owning familiar — a split pane, or any session whose familiar
+    // differs from the active filter, would otherwise carry a scope that can
+    // never prove anything relative to the list actually being polled. Fall
+    // back to the session's own familiar only when the caller never learned
+    // the active scope at all (activeFamiliarId is undefined, not null).
+    const scopeFamiliarId = activeFamiliarId !== undefined
+      ? activeFamiliarId
+      : knownSession?.familiarId ?? familiar.id;
+    emitChatAttentionClear(targetSessionId, operationId, {
+      clearWatermark,
+      scopeKey: chatAttentionProjectionScopeKey(scopeFamiliarId),
+      baselineAttention: knownSession?.attention ?? null,
+    });
+  }
+
+  function attentionClearWatermarkForLiveGeneration(live: LiveChatGenerationSnapshot): string | null {
+    return live.clearWatermark ?? live.turns.find((turn) => turn.id === live.activeLeafId)?.createdAt ?? null;
   }
 
   function persistLiveTurns(
@@ -3161,6 +3196,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       if (live && isLiveSnapshotActive(live, Date.now())) {
         adoptLiveGenerationMetadata(live, sessionId);
+        maybeEmitAdoptedPendingAttentionClear(sessionId, live);
         setTurns(live.turns);
         turnsRef.current = live.turns;
         setActiveLeafId(live.activeLeafId);
@@ -3240,9 +3276,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       turns.map((t) => ({
         id: t.id,
         role: t.role,
-        // Visible text only: assistant turns may carry inline <thinking>
-        // blocks in `text`; match what the transcript actually renders.
-        text: t.role === "assistant" ? splitReasoning(t.text).visible : t.text,
+        // Match the exact prose projection used by the transcript, excluding
+        // reasoning and every non-visible control marker.
+        text: chatTurnVisibleText(t),
       })),
       findDebouncedQuery,
       { matchCase: findMatchCase, wholeWord: findWholeWord },
@@ -3731,7 +3767,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return null;
-    return extractNextPaths(last.text).suggestions.find((path) => path.kind === "reply") ?? null;
+    return extractChatRenderedText(last.text).nextPaths.find((path) => path.kind === "reply") ?? null;
   }, [activePath]);
 
   // Chat-revamp 1b: the LATEST settled turn's follow-up suggestions render as
@@ -3746,7 +3782,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return empty;
-    const suggestions = extractNextPaths(splitReasoning(last.text).visible).suggestions;
+    const suggestions = extractChatRenderedText(last.text).nextPaths;
     return suggestions.length ? { turnId: last.id, suggestions } : empty;
   }, [activePath]);
 
@@ -3883,6 +3919,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const live = readLiveChatGeneration(sessionId);
     if (live && isLiveSnapshotActive(live, Date.now())) {
       adoptLiveGenerationMetadata(live, sessionId);
+      maybeEmitAdoptedPendingAttentionClear(sessionId, live);
       setTurns(live.turns);
       turnsRef.current = live.turns;
       setActiveLeafId(live.activeLeafId);
@@ -3907,6 +3944,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       skipSettleNotifyRef.current += 1;
       clearLiveChatGeneration(sessionId);
       if (!live.controller.signal.aborted) refetchOnSettleRef.current = sessionId;
+      // A still-pending snapshot (see isLiveGenerationPending above) had
+      // already optimistically cleared sidebar attention via
+      // emitChatAttentionClear when it was adopted. Evicting it here — dead
+      // orphan cleanup, not a real settlement — must not leave that
+      // projection "pending" forever (no owning generation is left to ever
+      // settle it). Settle it now as "failed": we cannot prove the human's
+      // request actually got a persisted reply, and fabricating "persisted"
+      // risks permanently hiding attention on a request that never got
+      // answered. Reconciling canonical sessions once afterward repaints the
+      // sidebar from disk truth (a genuinely still-running orphan stream's
+      // later settle must be a no-op against both the already-cleared
+      // operation and this one reload).
+      if (isLiveGenerationPending(live) && live.runId) {
+        externallySettledChatAttentionControllers.mark(live.controller, sessionId, live.runId);
+        emitChatAttentionSettlement(sessionId, live.runId, "failed");
+        onSessionsChangedRef.current?.();
+      }
     }
     const applyConversationPayload = (json: ConversationHistoryPayload) => {
       const mapped = mapConversationHistoryTurns(json.conversation?.turns ?? []);
@@ -4982,6 +5036,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       runId,
       at: new Date().toISOString(),
     });
+    const attentionSettlement = createChatAttentionSettlementTracker({
+      operationId: runId,
+      operationController: controller,
+      externalSettlements: externallySettledChatAttentionControllers,
+      settleProjection: (sessionId, operationId, outcome) => {
+        emitChatAttentionSettlement(sessionId, operationId, outcome);
+      },
+      reconcileCanonicalSessions: () => onSessionsChangedRef.current?.(),
+    });
+    adoptedPendingAttentionSettlementOwners.register(controller, attentionSettlement);
     // `sessionId` mutates to the server-assigned id as events arrive;
     // `originSessionId` stays the thread this generation started on, so a
     // background generation (user switched threads mid-stream) can tell it no
@@ -4992,7 +5056,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       sessionAliases: new Set(initialLiveSessionId ? [initialLiveSessionId] : []),
       controller,
       runId,
+      clearWatermark: now,
       streamHealth: () => generationStreamHealth,
+      markAttentionCleared: (sessionId) => {
+        attentionSettlement.markAttentionCleared(sessionId);
+      },
+      markPersistenceConfirmed: () => {
+        attentionSettlement.markPersistenceConfirmed();
+      },
+      reconcileCanonicalSessions: () => {
+        attentionSettlement.reconcileNow();
+      },
     };
     const publishStreamHealth = (
       action: Exclude<
@@ -5071,6 +5145,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         updatedAt: Date.now(),
         runId,
         streamHealth: generationStreamHealth,
+        clearWatermark: now,
       });
     }
     try {
@@ -5083,6 +5158,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // The on-disk conversation is about to change; a cached pre-send payload
       // must not be painted on a later revisit of this thread.
       if (liveGeneration.sessionId) invalidateConversation(liveGeneration.sessionId);
+      if (liveGeneration.sessionId) {
+        emitAttentionClear(liveGeneration.sessionId, runId, liveGeneration.clearWatermark);
+        attentionSettlement.markAttentionCleared(liveGeneration.sessionId);
+      }
       const res = await fetch("/api/chat/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -5357,6 +5436,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         });
       }
     } finally {
+      attentionSettlement.reconcileIfNeeded();
       // All terminal exits — HTTP rejection, missing body, exhausted recovery,
       // abort, and stream exceptions — reach here. Calling
       // onCreationRunTerminated unconditionally is safe: it removes only
@@ -5579,7 +5659,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // comparator that ignores callback identity, so a captured hook
           // value could go stale (chat-view memo notes below).
           : userDisplayName(readUserProfileSnapshot()?.profile);
-    const source = turn.role === "assistant" ? extractNextPaths(splitReasoning(turn.text).visible).visible : turn.text;
+    const source = chatTurnVisibleText(turn);
     // A quote is a passage the reader selected inside the Expand reader; with
     // none, the whole turn is the subject, exactly as the Reply action means.
     const snippet = buildReplySnippet(quote ?? source);
@@ -5596,8 +5676,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // captures a stale `replyToTurn`.
     let canReply = replyableTurnCache.get(turn);
     if (canReply === undefined) {
-      const source =
-        turn.role === "assistant" ? extractNextPaths(splitReasoning(turn.text).visible).visible : turn.text;
+      const source = chatTurnVisibleText(turn);
       canReply = source.trim().length > 0;
       replyableTurnCache.set(turn, canReply);
     }
@@ -6043,6 +6122,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ) => {
     switch (ev.kind) {
       case "session": {
+        // A generation that started with no session id at all is a brand-new
+        // chat: this event mints ev.sessionId for the first time, so no
+        // canonical row can contain stale attention to clear. Resumed sessions
+        // already carry their id at generation start and clear conservatively.
+        const isBrandNewSession = liveGeneration.sessionId == null;
+        if (!isBrandNewSession) {
+          emitAttentionClear(ev.sessionId, liveGeneration.runId, liveGeneration.clearWatermark);
+          liveGeneration.markAttentionCleared(ev.sessionId);
+        }
         reconcileLiveChatGenerationSession(
           liveGeneration,
           ev.sessionId,
@@ -6246,6 +6334,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           setError((prev) => prev ?? "The agent run ended with an error.");
           raiseDebugError({ turnId: assistantId });
         } else {
+          liveGeneration.markPersistenceConfirmed();
           // cave-fy1q phase 3: first completed reply ever — no-op unless the
           // first-open anchor exists (fresh installs only).
           stampFirstReplyOnce();
@@ -8561,27 +8650,14 @@ function TurnRowImpl({
     );
   }
 
-  // Hide raw `coven:attachment` marker blocks from the live-streamed text. The
-  // server strips them from the persisted text and streams the parsed files as
-  // `attachment` events; this keeps the in-flight turn clean before reload.
-  const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(turn.text).text);
-  const inlineReasoning = reasoningSplit.reasoning;
-  // GitHub markers: while streaming, strip complete + partial `<coven:github…>`
-  // tags so they never flash as raw text (cards mount on settle); settled
-  // turns keep them for splitSegmentsForGitHub below to replace with cards.
-  const ghSafeVisible = turn.pending
-    ? stripImageMarkers(stripGitHubMarkers(reasoningSplit.visible))
-    : reasoningSplit.visible;
-  // Skill markers extract on BOTH paths — the whole point is live "which
-  // skill, what stage" visibility while the agent works (design §5). The
-  // extraction also strips partial tails so raw tags never flash.
-  const skillSplit = extractSkillMarkers(ghSafeVisible);
-  // Auto-mission status card (design mirrors skill markers): extracted the
-  // same way, on both the streaming and settled path, so the phase chip
-  // (clarifying/working/blocked/done) updates live.
-  const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);
-  const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(autoStatusSplit.visible);
-  const visible = turn.pending ? visibleWithGh : stripImageMarkers(stripGitHubMarkers(visibleWithGh));
+  const {
+    visible,
+    cardText: visibleWithGh,
+    inlineReasoning,
+    skillUpdates,
+    autoStatusUpdate,
+    nextPaths,
+  } = extractChatRenderedText(turn.text, { pending: Boolean(turn.pending) });
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
   // CHAT-D12-01: while this turn's own live indicator is showing (pending, no
@@ -8818,9 +8894,9 @@ function TurnRowImpl({
             {/* Skill stage cards (design §5): one per skill name per turn,
                 updated in place by repeated <coven:skill> markers — live
                 while streaming, settled state after. */}
-            {skillSplit.updates.length ? (
+            {skillUpdates.length ? (
               <div className="mt-2 space-y-1.5">
-                {skillSplit.updates.map((u) => (
+                {skillUpdates.map((u) => (
                   <SkillStageCard key={u.name} name={u.name} stage={u.stage} note={u.note} />
                 ))}
               </div>
@@ -8828,9 +8904,9 @@ function TurnRowImpl({
             {/* Auto-mission status card: one per turn, updated in place by
                 repeated <coven:auto-status> markers — the human-visible half
                 of the /auto watcher above that fires the blocked/done ping. */}
-            {autoStatusSplit.update ? (
+            {autoStatusUpdate ? (
               <div className="mt-2">
-                <AutoStatusCard state={autoStatusSplit.update.state} note={autoStatusSplit.update.note} />
+                <AutoStatusCard state={autoStatusUpdate.state} note={autoStatusUpdate.note} />
               </div>
             ) : null}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}

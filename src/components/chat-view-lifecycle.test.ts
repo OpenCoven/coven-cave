@@ -83,6 +83,12 @@ assert.match(
 
 assert.match(
   source,
+  /case "session": \{[\s\S]*const isBrandNewSession = liveGeneration\.sessionId == null;[\s\S]*if \(!isBrandNewSession\) \{[\s\S]*emitAttentionClear\(ev\.sessionId, liveGeneration\.runId, liveGeneration\.clearWatermark\);[\s\S]*liveGeneration\.markAttentionCleared\(ev\.sessionId\);[\s\S]*\}\n\s*reconcileLiveChatGenerationSession\(\s*liveGeneration,\s*ev\.sessionId,\s*liveGeneration\.runId,\s*\);/,
+  "A brand-new chat's first session event must not emit an attention clear — no canonical row exists yet, so the assistant's first genuine request must surface instead of being masked by an unknown-baseline projection",
+);
+
+assert.match(
+  source,
   /function ProgressGroup[\s\S]*<details[\s\S]*open=\{pending \|\| undefined\}[\s\S]*Progress[\s\S]*progress\.map/,
   "Progress events should render as a collapsible activity timeline that stays open while running",
 );
@@ -260,8 +266,8 @@ assert.match(
 );
 assert.match(
   turnStateSource,
-  /type LiveChatGenerationSnapshot = LiveGenerationSnapshot<Turn> & \{[\s\S]*runId\?: string \| null;[\s\S]*streamHealth\?: ChatStreamClientHealth;/,
-  "Live chat snapshots should persist run ownership and client stream health without widening unrelated registries",
+  /type LiveChatGenerationSnapshot = LiveGenerationSnapshot<Turn> & \{[\s\S]*runId\?: string \| null;[\s\S]*streamHealth\?: ChatStreamClientHealth;[\s\S]*clearWatermark\?: string \| null;/,
+  "Live chat snapshots should persist run ownership, client stream health, and the stable attention-clear watermark without widening unrelated registries",
 );
 assert.match(
   turnStateSource,
@@ -281,8 +287,20 @@ assert.match(
 
 assert.match(
   source,
-  /const liveGeneration: LiveStreamGeneration = \{[\s\S]*?sessionId: initialLiveSessionId,[\s\S]*?originSessionId: initialLiveSessionId,[\s\S]*?controller,[\s\S]*?runId,[\s\S]*?recordLiveChatGeneration\(\{\s*sessionId: liveGeneration\.sessionId,[\s\S]*?controller,[\s\S]*?turns: nextTurns,[\s\S]*?runId,[\s\S]*?streamHealth: generationStreamHealth/,
-  "sendRaw should persist the active stream snapshot with its controller, run ID, and health",
+  /const liveGeneration: LiveStreamGeneration = \{[\s\S]*?sessionId: initialLiveSessionId,[\s\S]*?originSessionId: initialLiveSessionId,[\s\S]*?controller,[\s\S]*?runId,[\s\S]*?clearWatermark: now,[\s\S]*?recordLiveChatGeneration\(\{\s*sessionId: liveGeneration\.sessionId,[\s\S]*?controller,[\s\S]*?turns: nextTurns,[\s\S]*?runId,[\s\S]*?streamHealth: generationStreamHealth,[\s\S]*?clearWatermark: now/,
+  "sendRaw should persist the active stream snapshot with its controller, run ID, health, and stable clear watermark",
+);
+
+assert.match(
+  source,
+  /function attentionClearWatermarkForLiveGeneration\([\s\S]*?return live\.clearWatermark \?\? live\.turns\.find\(\(turn\) => turn\.id === live\.activeLeafId\)\?\.createdAt \?\? null;/,
+  "adopted live generations should reuse the snapshot's own clear watermark, falling back to its active pending turn timestamp instead of remount time",
+);
+
+assert.match(
+  source,
+  /function maybeEmitAdoptedPendingAttentionClear\([\s\S]*?emitAttentionClear\(targetSessionId, live\.runId, attentionClearWatermarkForLiveGeneration\(live\)\);/,
+  "adopted pending generations should emit clears with the stable snapshot watermark",
 );
 
 // sessionAliases must be seeded with the origin id so the pre-migration

@@ -20,6 +20,7 @@ export const styles = [
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 export const globalsSrc = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+export const splitReasoning = readFileSync(new URL("../lib/chat-reasoning.ts", import.meta.url), "utf8");
 export const chatDebugStoreSource = readFileSync(new URL("../lib/chat-debug-store.ts", import.meta.url), "utf8");
 export const attachmentsLib = readFileSync(new URL("../lib/chat-attachments.ts", import.meta.url), "utf8");
 export const attachStagingHook = readFileSync(new URL("../lib/use-attachment-staging.ts", import.meta.url), "utf8");
@@ -33,4 +34,3 @@ export const chatRuntimeSource = readFileSync(
   "utf8",
 );
 export const turnRow = source.match(/function TurnRowImpl[\s\S]*?\n}\n\ntype TurnRowProps/)?.[0] ?? "";
-export const splitReasoning = source.match(/function splitReasoning[\s\S]*?\n}\n\n\/\/ ── ChatEmptyState/)?.[0] ?? "";

@@ -961,6 +961,22 @@ export async function markOfflineTravelItemSyncing(itemId: string): Promise<Cave
   });
 }
 
+export async function updateOfflineTravelItemPayload(
+  itemId: string,
+  payload: unknown,
+): Promise<CaveTravelQueueItem | null> {
+  return updateState((state) => {
+    state.travel = normalizeTravelState(state.travel);
+    let updated: CaveTravelQueueItem | null = null;
+    state.travel.offlineQueue = state.travel.offlineQueue.map((item) => {
+      if (item.id !== itemId) return item;
+      updated = { ...item, payload };
+      return updated;
+    });
+    return updated;
+  });
+}
+
 export async function failOfflineTravelItem(itemId: string, error: string): Promise<void> {
   await updateState((state) => {
     state.travel = normalizeTravelState(state.travel);

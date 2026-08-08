@@ -146,13 +146,23 @@ assert.equal(
 );
 assert.match(
   chatRoute,
-  /const stopGateway = \(\) => \{[\s\S]*?settleOpenGatewayTools\("\[tool cancelled by user\]"\);[\s\S]*?void gatewayDispatch\.abort\(\);/,
-  "Stop must settle live Gateway cards before the fire-and-forget abort",
+  /const abortGateway = \(toolOutcome: string\) => \{[\s\S]*?settleOpenGatewayTools\(toolOutcome\);[\s\S]*?void gatewayDispatch\.abort\(\);[\s\S]*?const stopGateway = \(\) => abortGateway\("\[tool cancelled by user\]"\);[\s\S]*?const stopDetachedGateway = \(\) => abortGateway\("\[tool did not settle before the Gateway turn ended\]"\);/,
+  "explicit Stop and detached-client expiry must share Gateway abort mechanics but retain distinct user-facing tool outcomes",
 );
 assert.match(
   chatRoute,
-  /const gatewayResult = await gatewayDispatch\.done;[\s\S]*?settleOpenGatewayTools\([\s\S]*?"\[tool did not settle before the Gateway turn ended\]"[\s\S]*?\);[\s\S]*?pushProgress\("save-transcript"/,
-  "every Gateway terminal state must settle unfinished cards before persistence",
+  /let detachTimeoutFired = false;[\s\S]*?detachKillTimer = setTimeout\(\(\) => \{\s*detachTimeoutFired = true;\s*stopDetachedGateway\(\);[\s\S]*?\}, CHAT_DETACH_MAX_MS\);/,
+  "the detach timeout must record its causal flag before taking the non-user interruption path",
+);
+assert.match(
+  chatRoute,
+  /const gatewayOutcome = resolveOpenClawGatewayOutcome\(\s*gatewayResult,\s*runHandle\.stopRequested,\s*detachTimeoutFired,\s*\);[\s\S]*?const \{ cancelledByUser \} = gatewayOutcome;[\s\S]*?let \{ isError \} = gatewayOutcome;[\s\S]*?gatewayAssistantText = gatewayOutcome\.emptyText;[\s\S]*?pushProgress\([\s\S]*?gatewayOutcome\.progressMessage,/,
+  "Gateway persistence and progress derive cancellation solely from the stop-registry handle and distinguish timeout-fired from remote interruptions",
+);
+assert.match(
+  chatRoute,
+  /const gatewayResult = await gatewayDispatch\.done;[\s\S]*?markChatRunTransportSettled\(runHandle\);[\s\S]*?settleOpenGatewayTools\([\s\S]*?"\[tool did not settle before the Gateway turn ended\]"[\s\S]*?\);[\s\S]*?try \{\s*pushProgress\("save-transcript"/,
+  "every Gateway terminal state must freeze Stop, settle unfinished cards, and only then enter persistence",
 );
 assert.match(
   chatRoute,
@@ -163,6 +173,11 @@ assert.match(
   chatRoute,
   /\.\.\.\(persistedGatewayTools \? \{ tools: persistedGatewayTools \} : \{\}\)/,
   "the Gateway assistant turn must persist tools only when the tracker snapshot is nonempty",
+);
+assert.match(
+  chatRoute,
+  /pushProgress\("save-transcript", "Transcript saved", "done"\);[\s\S]*?markChatRunProjectionSettled\(runHandle\);[\s\S]*?unregisterChatRun\(runHandle\);[\s\S]*?push\(\{\s*kind: "done"/,
+  "Gateway keeps projection live through transcript persistence, then settles projection and unregisters before done",
 );
 // ── Tool-event fidelity (CHAT-D4-03 + CHAT-D4-04) ──────────────────────────
 // Source pins: the route must route BOTH tool-event sources through the

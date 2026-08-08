@@ -235,6 +235,26 @@ test("strip: fenced markers survive the streaming strip", () => {
   assert.equal(stripImageMarkers(text), text);
 });
 
+test("list-contained fenced image literals do not hide a following live image marker", () => {
+  const fenced = `- \`\`\`xml\n  <coven:image src="${PNG}" />\n  \`\`\``;
+  const live = `<coven:image src="${PNG2}" />`;
+  const pieces = sliceImageBlocks(`${fenced}\n${live}`);
+  assert.equal(pieces.filter((piece) => piece.kind === "carousel").length, 1);
+  assert.equal(stripImageMarkers(`${fenced}\n${live}`), `${fenced}\n`);
+});
+
+test("blockquoted fenced image literals with a longer close do not hide a following live marker", () => {
+  const fenced = [
+    "> ```xml",
+    `> <coven:image src="${PNG}" />`,
+    "> ````",
+  ].join("\n");
+  const live = `<coven:image src="${PNG2}" />`;
+  const pieces = sliceImageBlocks(`${fenced}\n${live}`);
+  assert.equal(pieces.filter((piece) => piece.kind === "carousel").length, 1);
+  assert.equal(stripImageMarkers(`${fenced}\n${live}`), `${fenced}\n`);
+});
+
 test("strip: malformed text before a fenced marker preserves the example", () => {
   const fenced = "```\n<coven:image src=\"" + PNG + "\" />\n```";
   assert.equal(
