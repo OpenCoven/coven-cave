@@ -53,6 +53,8 @@
     "beads:prs:apply": "node --experimental-strip-types scripts/beads-pr-bridge.ts --repo OpenCoven/coven-cave --apply",
     "beads:prs:patrol": "node --experimental-strip-types scripts/beads-pr-patrol.ts --repo OpenCoven/coven-cave",
     "beads:prs:patrol:apply": "node --experimental-strip-types scripts/beads-pr-patrol.ts --repo OpenCoven/coven-cave --apply",
+    "ci:recovery": "node scripts/ci-recovery.mjs",
+    "ci:recovery:apply": "node scripts/ci-recovery.mjs --apply",
     "wt:status": "node scripts/worktree-status.mjs",
     "wt:status:json": "node scripts/worktree-status.mjs --json",
     "wt:prune": "node scripts/worktree-status.mjs --prune",

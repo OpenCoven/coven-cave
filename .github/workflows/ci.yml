@@ -8,7 +8,9 @@ on:
     branches: [main]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # A recovered workflow_dispatch and a late pull_request delivery for the
+  # same commit must supersede one another instead of running two full suites.
+  group: ci-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
