@@ -1,6 +1,6 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
-import { callDaemonTarget, localDaemonTarget } from "./coven-daemon.ts";
+import { callDaemonTarget, localDaemonTarget, socketPath } from "./coven-daemon.ts";
 import { covenBin, covenLaunchCommand } from "./coven-bin.ts";
 import { covenCliMissingError, isMissingExecutableError } from "./coven-spawn-error.ts";
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
@@ -13,6 +13,11 @@ import {
   type DaemonStartupHealth,
 } from "./daemon-startup-contract.ts";
 import { RuntimeStartupThrottle } from "./runtime-startup-throttle.ts";
+import {
+  inspectDaemonAddress,
+  reportsDaemonAddressInUse,
+  type DaemonAddressOccupancy,
+} from "./daemon-socket-occupancy.ts";
 
 export type DaemonStartResult =
   | { ok: true; alreadyRunning: true; readinessAttempts: number; elapsedMs: number; launchMode: "none" }
@@ -34,7 +39,8 @@ export type DaemonStartResult =
       | "readiness_timeout"
       | "runtime_incompatible"
       | "restart_throttled"
-      | "owner_unreachable";
+      | "owner_unreachable"
+      | "address_in_use";
     error: string;
     stdout: string;
     stderr: string;
@@ -175,6 +181,8 @@ type StartLocalDaemonOptions = {
   probe?: () => Promise<{ ok: boolean }>;
   /** Injectable installed-version seam for deterministic startup coherence tests. */
   installedVersion?: () => Promise<string | null>;
+  /** Injectable address-occupancy seam for deterministic already-bound tests. */
+  inspectAddress?: () => Promise<DaemonAddressOccupancy>;
   spawnImpl?: typeof spawn;
   terminateLaunchTree?: (child: ChildProcess) => Promise<DaemonLaunchCleanup>;
   inspectLifecycle?: () => Promise<DaemonLifecycleInspection>;
@@ -222,8 +230,24 @@ const daemonStartThrottle = new RuntimeStartupThrottle();
 let activeDaemonStart: Promise<DaemonStartResult> | null = null;
 
 function hasTestSeam(options: StartLocalDaemonOptions): boolean {
-  return Boolean(options.probe || options.spawnImpl || options.terminateLaunchTree || options.installedVersion || options.platform);
+  return Boolean(
+    options.probe
+    || options.spawnImpl
+    || options.terminateLaunchTree
+    || options.installedVersion
+    || options.inspectAddress
+    || options.platform,
+  );
 }
+
+/**
+ * One next step for an address someone else already holds. Deliberately names
+ * no socket path, PID, or command line: this crosses the API boundary, and the
+ * diagnostics sanitizer would redact a home-relative path into uselessness
+ * anyway.
+ */
+const ADDRESS_IN_USE_DIAGNOSTIC =
+  "Another process is already using the local Coven daemon address. Stop that process, or restart Cave so it can reconnect, then try again.";
 
 export function startLocalDaemon(options: StartLocalDaemonOptions = {}): Promise<DaemonStartResult> {
   if (hasTestSeam(options)) return runLocalDaemonStart(options);
@@ -266,6 +290,7 @@ async function runLocalDaemonStart({
   readinessPollMs = 250,
   probe: probeOverride,
   installedVersion,
+  inspectAddress = () => inspectDaemonAddress({ socketPath: socketPath() }),
   spawnImpl = spawn,
   terminateLaunchTree = terminateDaemonLaunchTree,
   inspectLifecycle = inspectDaemonLifecycle,
@@ -327,6 +352,29 @@ async function runLocalDaemonStart({
         stderr: "",
         status: 409,
         readinessAttempts: 2,
+        elapsedMs: Date.now() - startedAt,
+        launchMode: "none",
+      };
+    }
+  }
+
+  // Reaching here without `restart` means the health probe already failed, so
+  // an address that is nonetheless bound belongs to something Cave cannot
+  // adopt. Spawning against it produces a launcher that dies on its own bind
+  // and a diagnostic that names neither cause nor next step, so refuse by name
+  // instead. `restart` skips this deliberately: the address it would find
+  // occupied is the very daemon the caller asked to replace.
+  if (!restart) {
+    const occupancy = await inspectAddress();
+    if (occupancy === "occupied") {
+      return {
+        ok: false,
+        code: "address_in_use",
+        error: ADDRESS_IN_USE_DIAGNOSTIC,
+        stdout: "",
+        stderr: "",
+        status: 409,
+        readinessAttempts: automatic ? 2 : 1,
         elapsedMs: Date.now() - startedAt,
         launchMode: "none",
       };
@@ -434,6 +482,25 @@ async function runLocalDaemonStart({
   // readiness deadline.
   const runnerExitedBeforeCleanup = exitCode !== undefined;
   const cleanup = await terminateLaunchTree(child);
+  // The preflight above cannot close the window between its probe and the
+  // daemon's bind, and it never runs at all for `restart`. When the launcher
+  // itself blames the address, that is a better answer than the exit it caused:
+  // "the launcher exited" describes the symptom, this describes the cause.
+  if (reportsDaemonAddressInUse(stdout, stderr)) {
+    return {
+      ok: false,
+      code: "address_in_use",
+      error: ADDRESS_IN_USE_DIAGNOSTIC,
+      stdout: sanitizeDaemonStartDiagnostic(stdout),
+      stderr: sanitizeDaemonStartDiagnostic(stderr),
+      status: 409,
+      readinessAttempts: readiness.attempts + 1,
+      elapsedMs: Date.now() - startedAt,
+      launchMode,
+      exitCode,
+      cleanup,
+    };
+  }
   if (runnerExitedBeforeCleanup) {
     return {
       ok: false, code: "runner_exited", error: "daemon launcher exited before health became ready",

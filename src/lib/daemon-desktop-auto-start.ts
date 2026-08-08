@@ -184,7 +184,11 @@ export async function runWorkspaceDaemonStart(input: {
     );
     const payload = daemonStartPayload(await response.json().catch(() => ({})));
     if (!response.ok || payload.ok === false) {
-      if (input.automatic && payload.code === "owner_unreachable") {
+      // Both codes mean someone else holds the daemon: an unconfirmed
+      // lifecycle owner, or a process already bound to its address. Neither is
+      // ours to displace, and retrying spends revive budget on a refusal that
+      // cannot change until that owner goes away.
+      if (input.automatic && (payload.code === "owner_unreachable" || payload.code === "address_in_use")) {
         await input.refreshStatus();
         return "deferred";
       }
