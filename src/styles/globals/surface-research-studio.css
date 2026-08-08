@@ -177,20 +177,28 @@
   cursor: pointer;
   transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
 }
-/* The two long-form kinds anchor the mosaic; the rest keep the base span. */
-.research-studio-card[data-kind="podcast"] { grid-column: span 3; }
-.research-studio-card[data-kind="long-video"] { grid-column: span 3; }
-/* Oversized ghost of the kind glyph, bled off the corner. Decorative only —
-   the real glyph and label still carry the meaning. */
+/* Every kind takes the same 2-of-6 span (three per row). The frame gives its
+   two long-form kinds a wider hero tile, which is lovely at its fixed set of
+   seven cards and brittle here: RESEARCH_GENERATION_CREATABLE_KINDS is a live
+   list, and any hand-tuned span plan leaves a half-empty row the moment a kind
+   is added or removed. Equal tiles also make no claim about which kind matters
+   more — a claim nothing in the model backs.
+
+   A soft corner bloom carries the kind's hue instead. It is a radial gradient
+   with no hard edge: a filled shape at this size reads as a stray panel rather
+   than as depth. */
 .research-studio-card::before {
   content: "";
   position: absolute;
-  right: -8px;
-  bottom: -18px;
-  width: 74px;
-  height: 74px;
-  border-radius: var(--radius-panel);
-  background: color-mix(in oklch, var(--studio-kind, var(--research-accent)) 7%, transparent);
+  right: -20px;
+  bottom: -28px;
+  width: 120px;
+  height: 120px;
+  background: radial-gradient(
+    circle at center,
+    color-mix(in oklch, var(--studio-kind, var(--research-accent)) 14%, transparent),
+    transparent 68%
+  );
   pointer-events: none;
   transition: transform 300ms cubic-bezier(0.2, 0.8, 0.3, 1.2);
 }
@@ -1006,12 +1014,8 @@
 
 /* ── Responsive: follow the desk's container breakpoints ── */
 @container research-desk (max-width: 900px) {
-  /* Below 900px every kind is equal width — a 3-of-6 span would be a full
-     row on its own and read as a heading, not a card. */
   .research-studio__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .research-studio-card,
-  .research-studio-card[data-kind="podcast"],
-  .research-studio-card[data-kind="long-video"] { grid-column: auto; }
+  .research-studio-card { grid-column: auto; }
   .research-studio-config__media { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .research-studio { padding: var(--space-4) 18px 24px; }
   .research-studio-row { flex-wrap: wrap; }
@@ -1024,9 +1028,7 @@
 }
 @container research-desk (max-width: 560px) {
   .research-studio__grid { grid-template-columns: minmax(0, 1fr); }
-  .research-studio-card,
-  .research-studio-card[data-kind="podcast"],
-  .research-studio-card[data-kind="long-video"] { grid-column: auto; }
+  .research-studio-card { grid-column: auto; }
   .research-studio-config__media,
   .research-studio-review__config { grid-template-columns: 1fr; }
   .research-studio { padding: var(--space-4) 12px 20px; }

@@ -934,6 +934,13 @@ test("phase meta counts artifacts but never the rejected ones", () => {
   assert.equal(researchPhaseMeta(mission, PHASE_IDS)[3], "1 artifact");
 });
 
+test("a succeeded publish with nothing published says so, never \"shipped\"", () => {
+  const mission = validMission();
+  mission.status = "completed";
+  mission.artifacts = [];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[5], "none published");
+});
+
 test("phase meta reports published artifacts rather than a bare shipped", () => {
   const mission = validMission();
   mission.status = "completed";

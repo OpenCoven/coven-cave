@@ -787,7 +787,10 @@ export function researchPhaseMeta(
     if (phase === "publish") {
       const published = mission.artifacts.filter((artifact) => artifact.state === "published").length;
       if (published > 0) return `${published} published`;
-      return status === "succeeded" ? "shipped" : "gated";
+      // A succeeded publish phase with nothing published is a real state (the
+      // run finished without promoting an artifact). "shipped" would claim
+      // something went out; say what actually happened instead.
+      return status === "succeeded" ? "none published" : "gated";
     }
     return "—";
   });
