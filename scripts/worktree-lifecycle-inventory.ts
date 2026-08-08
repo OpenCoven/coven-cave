@@ -2342,14 +2342,40 @@ function collectOrphanedMetadata(
       return normalized === null ? [] : [normalized];
     }),
   );
+  const structuredRecords = tasks.flatMap((task) => task.structured);
+  const branchOwnershipCounts = new Map<string, number>();
+  const pathOwnershipCounts = new Map<string, number>();
+  for (const record of structuredRecords) {
+    branchOwnershipCounts.set(
+      record.branch,
+      (branchOwnershipCounts.get(record.branch) ?? 0) + 1,
+    );
+    const normalizedPath = normalizeAbsoluteWorktreePath(record.path);
+    if (normalizedPath !== null) {
+      pathOwnershipCounts.set(
+        normalizedPath,
+        (pathOwnershipCounts.get(normalizedPath) ?? 0) + 1,
+      );
+    }
+  }
   return tasks.flatMap((task) =>
-    task.status === "closed"
+    task.status === "closed" || task.structuredErrors.length > 0
       ? []
       : task.structured.flatMap((record) => {
           if (record.errors.length > 0 || record.metadata === null || record.path === null) {
             return [];
           }
-          if (localBranches.has(record.branch) || registeredPaths.has(record.path)) {
+          const normalizedRecordPath = normalizeAbsoluteWorktreePath(record.path);
+          if (normalizedRecordPath === null) {
+            return [];
+          }
+          if (
+            (branchOwnershipCounts.get(record.branch) ?? 0) !== 1 ||
+            (pathOwnershipCounts.get(normalizedRecordPath) ?? 0) !== 1
+          ) {
+            return [];
+          }
+          if (localBranches.has(record.branch) || registeredPaths.has(normalizedRecordPath)) {
             return [];
           }
           const pathPresent = existsSync(record.path);

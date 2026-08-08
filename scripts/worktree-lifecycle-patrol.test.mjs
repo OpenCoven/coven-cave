@@ -1317,6 +1317,8 @@ elif [ -n "\${LIFECYCLE_BAD_METADATA_DATE_CASE:-}" ]; then
   cat "${path.join(fixtureRoot, "metadata-")}\${LIFECYCLE_BAD_METADATA_DATE_CASE}.json"
 elif [ "\${LIFECYCLE_MULTI_WORKTREE_METADATA:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Multi-worktree fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Shared split","expiresAt":"2026-08-11T00:00:00.1Z","additionalPaths":["${old}","${live}"]}},"worktrees":[{"branch":"feat/live","path":"${live}","owner":"Kitty","purpose":"Additional fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z","exception":{"owner":"Kitty","reason":"Shared split","expiresAt":"2026-08-11T00:00:00.1Z","additionalPaths":["${live}","${old}"]}}]}}}]'
+elif [ "\${LIFECYCLE_ORPHANED_METADATA_AMBIGUOUS:-0}" = "1" ]; then
+printf '%s\n' '[{"id":"cave-orphan-malformed-sibling","status":"open","title":"Malformed sibling orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-malformed","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Malformed sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-malformed-sibling","path":"relative/orphaned","owner":"Kitty","purpose":"Malformed sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}},{"id":"cave-orphan-duplicate-branch","status":"open","title":"Duplicate branch orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-duplicate-branch","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Duplicate branch fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-duplicate-branch","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Duplicate branch fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}},{"id":"cave-orphan-duplicate-path","status":"open","title":"Duplicate path orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-duplicate-path","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Duplicate path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-duplicate-path-sibling","path":"${orphanedMissingPath}/","owner":"Kitty","purpose":"Duplicate path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_ORPHANED_METADATA:-0}" = "1" ]; then
 printf '%s\n' '[{"id":"cave-orphan","status":"open","title":"Orphaned metadata fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/orphaned","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-present-path","status":"open","title":"Present path fixture","metadata":{"coven":{"worktree":{"branch":"feat/present-path","path":"${orphanedPresentPath}","owner":"Kitty","purpose":"Present path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-closed-orphan","status":"closed","title":"Closed orphaned metadata fixture","metadata":{"coven":{"worktree":{"branch":"feat/closed-orphan","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Closed orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_MALFORMED_WORKTREES:-0}" = "1" ]; then
@@ -1645,6 +1647,19 @@ exit 0
     /path/i,
   );
   assert.equal(orphanedByBead.has("cave-closed-orphan"), false);
+  const ambiguousOrphanedMetadataReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_ORPHANED_METADATA_AMBIGUOUS: "1" }),
+  );
+  assert.equal(ambiguousOrphanedMetadataReport.orphanedMetadata.length, 0);
+  assert.equal(ambiguousOrphanedMetadataReport.orphanedMetadataCount, 0);
+  const ambiguousByBranch = new Map(
+    ambiguousOrphanedMetadataReport.items.map((item) => [item.branch, item]),
+  );
+  assert.equal(
+    ambiguousByBranch.get("feat/old").lane,
+    byBranch.get("feat/old").lane,
+    "ambiguous orphan metadata does not disturb existing patrol classification",
+  );
   const detachedItem = report.items.find(
     (item) => item.kind === "worktree" && item.branch === null,
   );
