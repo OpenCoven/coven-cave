@@ -2832,6 +2832,8 @@ export function collectWorktreeLifecycleInventory(
   ];
   const budgets = calculateLifecycleBudgets({
     worktreeCount: entries.length,
+    // `branch` is null exactly when the worktree is on a detached HEAD.
+    detachedWorktreeCount: entries.filter((entry) => entry.branch === null).length,
     branchCount: localRefs.length,
     activeExceptions: exceptions.filter(
       (exception) => Date.parse(exception.expiresAt) > options.nowMs,

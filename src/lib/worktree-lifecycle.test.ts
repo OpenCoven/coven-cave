@@ -228,6 +228,34 @@ function legacyObservation(overrides = {}) {
   assert.match(item.reasons.join("\n"), /metadata backfill/i);
 }
 
+// cave-oenag: a detached unit with no metadata is not a managed worktree
+// awaiting backfill — there is no bead to backfill onto. It reaches the same
+// fail-closed lane, but "backfill required" points the reader at a remedy that
+// cannot apply here.
+{
+  const item = classifyLifecycleUnit(
+    observation({
+      path: "/repo/.worktrees/_review-verify-76452b0",
+      metadata: null,
+      branch: null,
+      ref: null,
+      remoteRef: null,
+      remoteRefsContainingHead: [],
+      headOnDefaultBranch: true,
+    }),
+    NOW,
+  );
+  assert.equal(item.lane, "uncertain", "detached scratch still fails closed");
+  const reasons = item.reasons.join("\n");
+  assert.match(reasons, /detached HEAD with no lifecycle metadata/i);
+  assert.match(reasons, /prove retention first/i);
+  assert.doesNotMatch(
+    reasons,
+    /backfill/i,
+    "there is no bead to backfill a record onto, so it must not suggest one",
+  );
+}
+
 {
   const item = classifyLifecycleUnit(
     observation({
@@ -554,9 +582,104 @@ function legacyObservation(overrides = {}) {
   assert.equal(exceeded.branches.exceeded, true);
 }
 
+// cave-oenag: detached units are excluded from the assessment. They are never
+// made by the managed creator and can never be retired by the patrol, so
+// counting them lets units the gate has no authority over refuse the ones it
+// does.
+{
+  const withScratch = calculateLifecycleBudgets({
+    worktreeCount: WORKTREE_WARNING_BUDGET + 3,
+    detachedWorktreeCount: 3,
+    branchCount: 0,
+    activeExceptions: 0,
+    expiredExceptions: 0,
+  });
+  assert.equal(withScratch.worktrees.count, WORKTREE_WARNING_BUDGET, "detached units are not assessed");
+  assert.equal(
+    withScratch.worktrees.registered,
+    WORKTREE_WARNING_BUDGET + 3,
+    "every unit stays visible",
+  );
+  assert.equal(withScratch.worktrees.detached, 3);
+  assert.equal(
+    withScratch.worktrees.exceeded,
+    false,
+    "three scratch units do not push a full checkout over",
+  );
+
+  // The load-bearing assertion: the exclusion has to reach the refusal, not
+  // only the report. This is the exact shape that refused cave-oenag's own
+  // worktree creation — a checkout at the budget purely because of scratch.
+  const admission = assessManagedWorktreeCreation({
+    beadId: "cave-71ku9",
+    requestedPath: "/repo/.worktrees/cave-71ku9",
+    nowMs: NOW,
+    existingPaths: [],
+    budgets: calculateLifecycleBudgets({
+      worktreeCount: WORKTREE_WARNING_BUDGET + 3,
+      detachedWorktreeCount: 4,
+      branchCount: 0,
+      activeExceptions: 0,
+      expiredExceptions: 0,
+    }),
+  });
+  assert.deepEqual(
+    admission,
+    { allowed: true, reasons: [] },
+    "scratch worktrees no longer refuse managed creation",
+  );
+
+  // …and the budget still bites when the units are real branch-attached work.
+  const attachedOnly = assessManagedWorktreeCreation({
+    beadId: "cave-71ku9",
+    requestedPath: "/repo/.worktrees/cave-71ku9",
+    nowMs: NOW,
+    existingPaths: [],
+    budgets: calculateLifecycleBudgets({
+      worktreeCount: WORKTREE_WARNING_BUDGET,
+      detachedWorktreeCount: 0,
+      branchCount: 0,
+      activeExceptions: 0,
+      expiredExceptions: 0,
+    }),
+  });
+  assert.equal(attachedOnly.allowed, false, "the budget still refuses real branch-attached sprawl");
+
+  // Omitting the field reproduces the pre-cave-oenag arithmetic exactly.
+  const legacy = calculateLifecycleBudgets({
+    worktreeCount: 5,
+    branchCount: 0,
+    activeExceptions: 0,
+    expiredExceptions: 0,
+  });
+  assert.equal(legacy.worktrees.count, 5);
+  assert.equal(legacy.worktrees.detached, 0);
+  assert.equal(legacy.worktrees.registered, 5);
+
+  assert.throws(
+    () =>
+      calculateLifecycleBudgets({
+        worktreeCount: 2,
+        detachedWorktreeCount: 3,
+        branchCount: 0,
+        activeExceptions: 0,
+        expiredExceptions: 0,
+      }),
+    /detachedWorktreeCount must not exceed worktreeCount/,
+    "a detached count larger than the total is incoherent, not a clamp",
+  );
+}
+
 {
   for (const badCounts of [
     { worktreeCount: -1, branchCount: 0, activeExceptions: 0, expiredExceptions: 0 },
+    {
+      worktreeCount: 2,
+      detachedWorktreeCount: -1,
+      branchCount: 0,
+      activeExceptions: 0,
+      expiredExceptions: 0,
+    },
     { worktreeCount: 0, branchCount: 1.5, activeExceptions: 0, expiredExceptions: 0 },
     { worktreeCount: 0, branchCount: 0, activeExceptions: Number.NaN, expiredExceptions: 0 },
   ]) {
@@ -723,7 +846,7 @@ function legacyObservation(overrides = {}) {
     ),
   ];
   const budgets = {
-    worktrees: { count: 13, warning: 12, exceeded: true },
+    worktrees: { count: 13, registered: 13, detached: 0, warning: 12, exceeded: true },
     branches: { count: 31, warning: 30, exceeded: true },
     exceptions: { active: 1, expired: 2 },
   };
@@ -752,6 +875,38 @@ function legacyObservation(overrides = {}) {
   assert.ok(
     text.endsWith("Report only. No worktree or branch was changed."),
     "the final safety line remains exact and final",
+  );
+}
+
+// cave-oenag: the exclusion is reported, not silent — otherwise the assessed
+// number and the registered one differ with nothing to explain the gap.
+{
+  const summary = summarizeWorktreeLifecycle([], {
+    worktrees: { count: 18, registered: 22, detached: 4, warning: 20, exceeded: false },
+    branches: { count: 2, warning: 30, exceeded: false },
+    exceptions: { active: 0, expired: 0 },
+  });
+  assert.match(
+    renderWorktreeLifecycleReport(summary),
+    /Worktree budget: 18\/20 \(within budget\) — 4 detached units not counted \(22 registered\)/,
+  );
+
+  const singular = summarizeWorktreeLifecycle([], {
+    worktrees: { count: 18, registered: 19, detached: 1, warning: 20, exceeded: false },
+    branches: { count: 2, warning: 30, exceeded: false },
+    exceptions: { active: 0, expired: 0 },
+  });
+  assert.match(renderWorktreeLifecycleReport(singular), /1 detached unit not counted/);
+
+  const none = summarizeWorktreeLifecycle([], {
+    worktrees: { count: 18, registered: 18, detached: 0, warning: 20, exceeded: false },
+    branches: { count: 2, warning: 30, exceeded: false },
+    exceptions: { active: 0, expired: 0 },
+  });
+  assert.match(
+    renderWorktreeLifecycleReport(none),
+    /Worktree budget: 18\/20 \(within budget\)\n/,
+    "a checkout with no scratch space reads exactly as it did before",
   );
 }
 
@@ -800,7 +955,7 @@ function legacyObservation(overrides = {}) {
   ];
   const text = renderWorktreeLifecycleReport(
     summarizeWorktreeLifecycle(items, {
-      worktrees: { count: 4, warning: 12, exceeded: false },
+      worktrees: { count: 4, registered: 4, detached: 0, warning: 12, exceeded: false },
       branches: { count: 4, warning: 30, exceeded: false },
       exceptions: { active: 0, expired: 0 },
     }),
@@ -839,7 +994,7 @@ function legacyObservation(overrides = {}) {
       },
     ],
     {
-      worktrees: { count: 2, warning: 12, exceeded: false },
+      worktrees: { count: 2, registered: 2, detached: 0, warning: 12, exceeded: false },
       branches: { count: 2, warning: 30, exceeded: false },
       exceptions: { active: 0, expired: 0 },
     },
