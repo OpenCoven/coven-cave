@@ -47,9 +47,11 @@ vi.mock("@/components/project-avatar", async () => {
     ProjectAvatar: ({ name }) => createElement("span", { "data-project-avatar": name }),
   };
 });
-vi.mock("@/lib/icon", async () => {
+vi.mock("@/lib/icon", async (importOriginal) => {
   const { createElement } = await import("react");
+  const actual = await importOriginal<typeof import("@/lib/icon")>();
   return {
+    ...actual,
     Icon: () => createElement("span", { "aria-hidden": "true" }),
   };
 });
