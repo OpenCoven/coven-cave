@@ -248,13 +248,51 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked sidecar_archive
 
+  # Split out of the sidecar-runtime windows leg (cave-b3d). These seven steps
+  # are pure `cargo test` / PowerShell-fixture work: none of them reads the
+  # packaged sidecar bundle, so making them queue behind a 4m23s bundle build
+  # only delayed their signal. On run 31229051374 they started at 6m36s into
+  # the job and took 48s between them; as their own job they report at ~3m.
+  #
+  # The one Windows cargo step that does NOT move is `Test Windows sidecar
+  # cache extraction`. Its `extracts_the_built_windows_archive_when_available`
+  # case returns early when src-tauri/resources/server-archive is absent, so
+  # running it here would still pass — while silently testing nothing. It stays
+  # behind the bundle build that produces that archive.
+  #
+  # Enforcement rides the existing `Sidecar runtime required` rollup below,
+  # which is already a required status check, so branch protection needs no
+  # edit for this job to be able to fail a PR.
+  windows-native:
+    name: Windows native tests
+    runs-on: windows-latest
+    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~2.5min incl. cold cargo build).
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-03-27
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: src-tauri -> target
+
+      # tauri-build validates bundle resource globs while building the crate,
+      # and this job deliberately does not build the real resources. Same
+      # placeholder trick the Rust check job uses so the globs in
+      # tauri.conf.json match at least one file.
+      - shell: bash
+        run: |
+          mkdir -p src-tauri/resources/server src-tauri/resources/node
+          touch src-tauri/resources/server/.cargo-test-placeholder
+          touch src-tauri/resources/node/.cargo-test-placeholder
+
       # Exercise the same native browser reducer and kernel-owned process-tree
       # paths used by the desktop shell. Each filter is its own step because
       # PowerShell does not stop after a failed native command by default. The
       # output guard also rejects Cargo's successful "0 tests" result when a
       # cfg gate or renamed test makes a filter stale.
       - name: Test Windows native Browser lifecycle reducer
-        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib browser::lifecycle_tests -- --nocapture 2>&1)
@@ -267,7 +305,6 @@ jobs:
           }
 
       - name: Test Windows PTY callback isolation
-        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib pty::tests::pty_start_worker_returns_dependency_panics_as_errors -- --exact --nocapture 2>&1)
@@ -280,7 +317,6 @@ jobs:
           }
 
       - name: Test Windows owned-process Job Object lifecycle
-        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib windows_process_job::tests -- --nocapture 2>&1)
@@ -293,7 +329,6 @@ jobs:
           }
 
       - name: Test Windows raw main close fallback
-        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::raw_main_close_fallback_recognizes_only_native_close_messages -- --exact --nocapture 2>&1)
@@ -306,7 +341,6 @@ jobs:
           }
 
       - name: Test Windows close hard deadline
-        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::close_hard_deadline_terminates_the_exact_stalled_process -- --exact --nocapture 2>&1)
@@ -319,7 +353,6 @@ jobs:
           }
 
       - name: Test Windows idempotent sidecar cleanup
-        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::sidecar_cleanup_is_idempotent_when_no_child_is_running -- --exact --nocapture 2>&1)
@@ -332,7 +365,6 @@ jobs:
           }
 
       - name: Test Windows sidecar descendant cleanup
-        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::sidecar_state_terminates_root_and_descendant_within_deadline -- --exact --nocapture 2>&1)
@@ -345,7 +377,6 @@ jobs:
           }
 
       - name: Test Windows upgrade diagnostics fixture
-        if: matrix.os == 'windows-latest'
         shell: powershell
         run: .\scripts\windows-upgrade-diagnostics.test.ps1
 
@@ -354,13 +385,26 @@ jobs:
     runs-on: ubuntu-latest
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (aggregation no-op).
     timeout-minutes: 5
-    needs: sidecar-runtime
+    needs: [sidecar-runtime, windows-native]
     if: always()
     steps:
+      # Also gates the Windows native tests split out above (cave-b3d). This
+      # rollup is already a required status check, so routing the new job
+      # through it is what keeps those tests blocking rather than advisory,
+      # without adding a context to branch protection. Both results are
+      # reported before exiting so one red job does not mask the other.
       - name: Require every sidecar runtime matrix leg
         run: |
+          failed=0
           if [ "${{ needs.sidecar-runtime.result }}" != "success" ]; then
             echo "::error::Sidecar runtime matrix result: ${{ needs.sidecar-runtime.result }}"
+            failed=1
+          fi
+          if [ "${{ needs.windows-native.result }}" != "success" ]; then
+            echo "::error::Windows native tests result: ${{ needs.windows-native.result }}"
+            failed=1
+          fi
+          if [ "$failed" -ne 0 ]; then
             exit 1
           fi
-          echo "Sidecar runtime matrix passed on ubuntu-latest and windows-latest."
+          echo "Sidecar runtime matrix passed on ubuntu-latest and windows-latest, and Windows native tests passed."
