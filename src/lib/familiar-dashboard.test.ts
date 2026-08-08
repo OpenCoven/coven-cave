@@ -71,6 +71,57 @@ test("Overview selects the newest running non-generated session for Now", () => 
   assert.equal(overview.sessions.totalNonGenerated, 2);
 });
 
+test("Overview excludes archived sessions from active and recent lists", () => {
+  const overview = buildFamiliarOverview({
+    familiarId: "sage",
+    familiar: { id: "sage", display_name: "Sage", role: "Researcher" },
+    tasks: [],
+    sessions: [
+      modelSession(1, {
+        id: "archived-running",
+        status: "running",
+        title: "Hidden active chat",
+        updated_at: "2026-08-07T19:59:30.000Z",
+        archived_at: "2026-08-07T20:00:00.000Z",
+      }),
+      modelSession(2, {
+        id: "visible-running",
+        status: "running",
+        title: "Visible active chat",
+        updated_at: "2026-08-07T19:59:00.000Z",
+      }),
+      modelSession(3, {
+        id: "archived-complete",
+        status: "completed",
+        title: "Hidden finished chat",
+        updated_at: "2026-08-07T19:58:30.000Z",
+        archived_at: "2026-08-07T19:58:45.000Z",
+      }),
+      modelSession(4, {
+        id: "visible-complete",
+        status: "completed",
+        title: "Visible finished chat",
+        updated_at: "2026-08-07T19:58:00.000Z",
+      }),
+    ],
+    reminders: [],
+    healRequests: [],
+    now: NOW,
+  });
+
+  assert.deepEqual(overview.now, {
+    kind: "session",
+    id: "visible-running",
+    title: "Visible active chat",
+    updatedAt: "2026-08-07T19:59:00.000Z",
+  });
+  assert.equal(overview.sessions.activeTotal, 1);
+  assert.deepEqual(overview.sessions.active.map((session) => session.id), ["visible-running"]);
+  assert.equal(overview.sessions.recentTotal, 1);
+  assert.deepEqual(overview.sessions.recent.map((session) => session.id), ["visible-complete"]);
+  assert.equal(overview.sessions.totalNonGenerated, 2);
+});
+
 test("Overview falls back to the next active task when no running session exists", () => {
   const overview = buildFamiliarOverview({
     familiarId: "sage",
@@ -263,6 +314,59 @@ test("Analytics publishes bands and samples without a composite score", () => {
   assert.equal("overallScore" in analytics, false);
   assert.equal(analytics.memory.count, 0);
   assert.equal(analytics.memory.availability, "ready");
+});
+
+test("Analytics excludes archived sessions from totals, evidence, and pulse", () => {
+  const analytics = buildFamiliarAnalyticsDigest({
+    familiarId: "sage",
+    familiar: { id: "sage", display_name: "Sage", role: "Researcher" },
+    sessions: [
+      modelSession(1, {
+        id: "archived-latest",
+        status: "running",
+        updated_at: "2026-08-07T19:59:30.000Z",
+        archived_at: "2026-08-07T20:00:00.000Z",
+      }),
+      modelSession(2, {
+        id: "visible-latest",
+        status: "running",
+        updated_at: "2026-08-07T19:59:00.000Z",
+      }),
+      modelSession(3, {
+        id: "visible-earlier",
+        status: "completed",
+        updated_at: "2026-08-06T19:58:00.000Z",
+      }),
+    ],
+    reports: [],
+    reportTotal: 0,
+    snapshots: [],
+    snapshotTotal: 0,
+    memories: [],
+    memoryAvailability: "ready",
+    retroState: null,
+    contractReport: null,
+    feedback: { up: 0, down: 0, total: 0, models: [], runtimes: [] },
+    now: NOW,
+  });
+
+  assert.equal(analytics.activity.sampleCount, 2);
+  assert.equal(analytics.activity.evidenceCount, 2);
+  assert.equal(analytics.activity.totalSessions, 2);
+  assert.equal(analytics.activity.freshness, "2026-08-07T19:59:00.000Z");
+  assert.equal(analytics.activity.lastActiveAt, "2026-08-07T19:59:00.000Z");
+  assert.equal(
+    analytics.activity.pulse.reduce((sum, day) => sum + day.count, 0),
+    2,
+  );
+  assert.equal(
+    analytics.activity.pulse.find((day) => day.key === "2026-08-07")?.count,
+    1,
+  );
+  assert.equal(
+    analytics.activity.pulse.find((day) => day.key === "2026-08-06")?.count,
+    1,
+  );
 });
 
 test("serializedDashboardBytes counts UTF-8 bytes", () => {

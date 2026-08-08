@@ -354,6 +354,17 @@ function isRunningSessionStatus(status: string | null | undefined): boolean {
   return normalizedSessionStatus(status) === "running";
 }
 
+function isVisibleNonGeneratedFamiliarSession(
+  session: SessionRow,
+  familiarId: string,
+): boolean {
+  return (
+    session.familiarId === familiarId &&
+    !session.archived_at &&
+    !isGeneratedChatSession(session)
+  );
+}
+
 function timestampValue(value: string | null | undefined): number {
   const parsed = value ? Date.parse(value) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
@@ -482,11 +493,7 @@ export function buildFamiliarOverview({
       return newestFirst(left, right, (card) => card.updatedAt, (card) => card.id);
     });
   const visibleSessions = sessions
-    .filter(
-      (session) =>
-        session.familiarId === familiarId &&
-        !isGeneratedChatSession(session),
-    )
+    .filter((session) => isVisibleNonGeneratedFamiliarSession(session, familiarId))
     .sort((left, right) => newestFirst(left, right, (session) => session.updated_at, (session) => session.id));
   const activeSessions = visibleSessions.filter((session) =>
     isActiveSessionStatus(session.status),
@@ -781,11 +788,7 @@ export function buildFamiliarAnalyticsDigest({
   now: number;
 }): FamiliarAnalyticsDigest {
   const nonGeneratedSessions = sessions
-    .filter(
-      (session) =>
-        session.familiarId === familiarId &&
-        !isGeneratedChatSession(session),
-    )
+    .filter((session) => isVisibleNonGeneratedFamiliarSession(session, familiarId))
     .sort((left, right) => newestFirst(left, right, (session) => session.updated_at, (session) => session.id));
   const evidenceSessions = nonGeneratedSessions.slice(
     0,
