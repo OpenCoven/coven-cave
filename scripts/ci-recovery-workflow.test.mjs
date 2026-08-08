@@ -36,6 +36,11 @@ assert.match(detector.run, /node scripts\/ci-recovery\.mjs --apply/);
 
 const ciSource = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
 const ciWorkflow = parse(ciSource);
+assert.equal(
+  ciWorkflow["run-name"],
+  "CI ${{ github.event_name }} ${{ inputs.expected_sha || github.sha }}",
+  "workflow_dispatch runs must expose their expected SHA to REST inventory",
+);
 assert.deepEqual(ciWorkflow.on.workflow_dispatch, {
   inputs: {
     expected_sha: {

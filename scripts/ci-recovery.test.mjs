@@ -47,12 +47,16 @@ function workflowRun({
   status = "completed",
   event = "pull_request",
   createdAt = new Date(NOW - RECOVERY_GRACE_MS - 1).toISOString(),
+  headSha = "a".repeat(40),
+  displayTitle = `CI ${event} ${headSha}`,
 } = {}) {
   return {
     id,
     status,
     event,
     created_at: createdAt,
+    head_sha: headSha,
+    display_title: displayTitle,
     html_url: `https://github.com/${REPOSITORY}/actions/runs/${id}`,
   };
 }
@@ -302,6 +306,42 @@ test("apply skips a recovery when the pull request head moves before dispatch", 
   assert.deepEqual(result.recoveries, []);
   assert.deepEqual(result.skipped, [{ number: original.number, reason: "head_changed" }]);
   assert.equal(requests.some((request) => request.method === "POST"), false);
+});
+
+test("a completed dispatch for a different expected SHA does not cover the current head", async () => {
+  const current = pull({ sha: "b".repeat(40) });
+  const mismatched = workflowRun({
+    event: "workflow_dispatch",
+    headSha: current.head.sha,
+    displayTitle: `CI workflow_dispatch ${"a".repeat(40)}`,
+  });
+  const fixture = githubFixture({
+    pulls: [current],
+    runsBySha: { [current.head.sha]: [mismatched] },
+  });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+  assert.deepEqual(result.recoveries, [
+    {
+      number: current.number,
+      reason: "missing_ci_run",
+      ref: current.head.ref,
+      sha: current.head.sha,
+      url: current.html_url,
+      dispatched: true,
+    },
+  ]);
+  assert.deepEqual(
+    fixture.requests.filter((request) => request.method === "POST"),
+    [
+      {
+        method: "POST",
+        path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
+        body: { ref: current.head.ref, inputs: { expected_sha: current.head.sha } },
+      },
+    ],
+  );
 });
 
 test("pull pagination never forwards the token to a cross-origin Link URL", async () => {

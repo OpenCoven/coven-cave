@@ -130,7 +130,14 @@ async function listWorkflowRuns(context, sha) {
   if (!payload || !Array.isArray(payload.workflow_runs)) {
     throw new Error("CI workflow run response was malformed");
   }
-  return payload.workflow_runs.map(parseRun).sort((left, right) => right.createdAt - left.createdAt);
+  return payload.workflow_runs
+    .map(parseRun)
+    .filter(
+      (run) =>
+        run.expectedSha === null ||
+        run.expectedSha.toLowerCase() === run.headSha.toLowerCase(),
+    )
+    .sort((left, right) => right.createdAt - left.createdAt);
 }
 
 async function getPull(context, number) {
@@ -227,6 +234,8 @@ function parseRun(value) {
   const status = value?.status;
   const event = value?.event;
   const createdAt = Date.parse(value?.created_at);
+  const headSha = value?.head_sha;
+  const displayTitle = value?.display_title;
   if (
     !Number.isInteger(id) ||
     id <= 0 ||
@@ -234,11 +243,26 @@ function parseRun(value) {
     status.length === 0 ||
     typeof event !== "string" ||
     event.length === 0 ||
-    !Number.isFinite(createdAt)
+    !Number.isFinite(createdAt) ||
+    typeof headSha !== "string" ||
+    !/^[0-9a-f]{40}$/i.test(headSha) ||
+    typeof displayTitle !== "string" ||
+    displayTitle.length === 0
   ) {
     throw new Error("CI workflow run response contained a malformed entry");
   }
-  return { id, status, event, createdAt };
+  const expectedShaMatch =
+    event === "workflow_dispatch"
+      ? displayTitle.match(/^CI workflow_dispatch ([0-9a-f]{40})$/i)
+      : null;
+  return {
+    id,
+    status,
+    event,
+    createdAt,
+    headSha,
+    expectedSha: expectedShaMatch?.[1] ?? null,
+  };
 }
 
 function baseSkipReason(pull, repository, now) {
