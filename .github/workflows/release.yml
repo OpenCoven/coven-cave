@@ -88,7 +88,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   daemon-package:
@@ -163,9 +163,132 @@ jobs:
           fi
           echo "Verified @opencoven/cli@latest ($LATEST) satisfies the Cave daemon update for version $VERSION."
 
+  source-version:
+    name: Verify tag matches stamped source
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      release-commit: ${{ steps.tag.outputs.commit }}
+    steps:
+      - name: Resolve stable release tag
+        id: release
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EVENT_NAME: ${{ github.event_name }}
+          RAW_RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$WORKFLOW_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "::error::Manual release recovery must be dispatched from the repository default branch."
+            exit 1
+          fi
+          TAG="$RAW_RELEASE_TAG"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid stable release tag. Expected vMAJOR.MINOR.PATCH; this workflow does not publish prereleases."
+            exit 1
+          fi
+          {
+            echo "tag=$TAG"
+            echo "version=${TAG#v}"
+            echo "ref=refs/tags/$TAG"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ steps.release.outputs.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - name: Install release checker runtime dependency
+        run: pnpm install --frozen-lockfile --prod --ignore-scripts
+
+      - name: Require a verified signed tag on main
+        id: tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          OBJECT_TYPE="$(git cat-file -t "refs/tags/$RELEASE_TAG" 2>/dev/null || true)"
+          if [ "$OBJECT_TYPE" != "tag" ]; then
+            echo "::error::$RELEASE_TAG must be an annotated signed tag, not a branch or lightweight tag."
+            exit 1
+          fi
+          TAG_OBJECT_SHA="$(git rev-parse "refs/tags/$RELEASE_TAG")"
+          TAGGED_COMMIT="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+          CHECKED_OUT_COMMIT="$(git rev-parse --verify HEAD)"
+          if [ "$TAGGED_COMMIT" != "$CHECKED_OUT_COMMIT" ]; then
+            echo "::error::$RELEASE_TAG targets $TAGGED_COMMIT, but checkout resolved $CHECKED_OUT_COMMIT."
+            exit 1
+          fi
+          VERIFIED="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$TAG_OBJECT_SHA" --jq '.verification.verified')"
+          if [ "$VERIFIED" != "true" ]; then
+            echo "::error::$RELEASE_TAG is not reported as cryptographically verified by GitHub."
+            exit 1
+          fi
+          git fetch --no-tags origin "main:refs/remotes/origin/main"
+          if ! git merge-base --is-ancestor "$TAGGED_COMMIT" origin/main; then
+            echo "::error::$RELEASE_TAG targets a commit that is not contained in origin/main."
+            exit 1
+          fi
+          echo "commit=$TAGGED_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "Verified signed $RELEASE_TAG at $TAGGED_COMMIT on origin/main."
+
+      - name: Load audited release-version checker
+        id: checker
+        shell: bash
+        env:
+          WORKFLOW_TOOLING_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$WORKFLOW_TOOLING_SHA"
+          if ! git merge-base --is-ancestor "$WORKFLOW_TOOLING_SHA" origin/main; then
+            echo "::error::Release-version checker tooling is not contained in origin/main."
+            exit 1
+          fi
+          CHECKER_DIR="$GITHUB_WORKSPACE/.release-version-tooling"
+          CHECKER_PATH="$CHECKER_DIR/check-release-version.mjs"
+          mkdir -p "$CHECKER_DIR"
+          for tooling_path in scripts/check-release-version.mjs scripts/release-yaml-settings.mjs; do
+            destination="$CHECKER_DIR/${tooling_path#scripts/}"
+            git show "${WORKFLOW_TOOLING_SHA}:${tooling_path}" > "$destination"
+            expected_blob="$(git rev-parse "${WORKFLOW_TOOLING_SHA}:${tooling_path}")"
+            actual_blob="$(git hash-object "$destination")"
+            if [ "$actual_blob" != "$expected_blob" ]; then
+              echo "::error::Release-version tooling blob mismatch for $tooling_path."
+              exit 1
+            fi
+            echo "$actual_blob  $destination"
+          done
+          echo "checker_path=$CHECKER_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Require tag/source version agreement
+        shell: bash
+        env:
+          CHECKER_PATH: ${{ steps.checker.outputs.checker_path }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          node "$CHECKER_PATH" \
+            --root "$GITHUB_WORKSPACE" \
+            --version "$RELEASE_VERSION" \
+            --require-final-changelog
+
   build:
     name: Build ${{ matrix.label }}
-    needs: daemon-package
+    needs:
+      - daemon-package
+      - source-version
     env:
       COVEN_CAVE_X_PRODUCTION_CLIENT_ID: ${{ vars.COVEN_CAVE_X_PRODUCTION_CLIENT_ID }}
       # Public Discord application ID, read by option_env! at compile time in
@@ -209,7 +332,8 @@ jobs:
           # Build the exact tag whose release receives the artifacts. Keeping
           # checkout provenance tied to RELEASE_TAG prevents manual retries from
           # signing and publishing assets from an unrelated ref.
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.source-version.outputs.release-commit }}
+          persist-credentials: false
 
       - name: Overlay audited recovery release tooling
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.use_current_release_tooling }}
@@ -272,12 +396,14 @@ jobs:
             echo "::error::Invalid release tag. Expected format: vMAJOR.MINOR.PATCH[-PRERELEASE]"
             exit 1
           fi
-          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
-          echo "RELEASE_VERSION=${TAG#v}" >> "$GITHUB_ENV"
-          # This public value is compiled into the desktop shell and its
-          # bundled sidecar, so support diagnostics can identify the exact
-          # source artifact that was packaged for a release.
-          echo "NEXT_PUBLIC_COVEN_CAVE_BUILD_REVISION=$(git rev-parse --verify HEAD)" >> "$GITHUB_ENV"
+          {
+            echo "RELEASE_TAG=$TAG"
+            echo "RELEASE_VERSION=${TAG#v}"
+            # This public value is compiled into the desktop shell and its
+            # bundled sidecar, so support diagnostics can identify the exact
+            # source artifact that was packaged for a release.
+            echo "NEXT_PUBLIC_COVEN_CAVE_BUILD_REVISION=$(git rev-parse --verify HEAD)"
+          } >> "$GITHUB_ENV"
 
       - name: Install Linux dependencies
         if: >-
@@ -376,7 +502,7 @@ jobs:
           {
             echo "### ⚠️ Compatibility registry guards SKIPPED"
             echo
-            echo "This \`${{ matrix.os }}\` build ran with \`allow_unconfigured_registries: true\`, so"
+            echo "This \`${{ matrix.platform }}\` build ran with \`allow_unconfigured_registries: true\`, so"
             echo "**neither** the OpenCode nor the Grok signed schema-registry gate verified"
             echo "anything. The build used the built-in baseline parsers."
             echo
@@ -827,7 +953,9 @@ jobs:
 
   checksums:
     name: Publish SHA256SUMS
-    needs: build
+    needs:
+      - build
+      - source-version
     permissions:
       contents: write
       id-token: write
@@ -839,12 +967,13 @@ jobs:
         with:
           # Run release helper scripts from the same tag whose release metadata
           # is being updated, rather than from an operator-supplied ref.
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.source-version.outputs.release-commit }}
           # release-notes.sh resolves the previous tag for the compare link
           # via `git tag --sort=-version:refname`, so the checksums job needs
           # the full tag history (shallow defaults would only have HEAD).
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
 
       - name: Overlay audited X release provenance renderer
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app }}
@@ -980,7 +1109,11 @@ jobs:
   # manifest reflects all platforms that produced a signed artifact.
   updater-manifest:
     name: Publish updater manifest (latest.json)
-    needs: build
+    needs:
+      - build
+      - source-version
+    permissions:
+      contents: write
     runs-on: ubuntu-24.04
     # cave-ef6f: `if: success()` skipped this job whenever ANY platform leg
     # flaked (3 of 4 cuts on 2026-07-08), publishing a release with NO
@@ -994,6 +1127,9 @@ jobs:
     if: ${{ !cancelled() && needs.build.result != 'cancelled' && needs.build.result != 'skipped' && (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only) }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.source-version.outputs.release-commit }}
+          persist-credentials: false
 
       - name: Resolve release tag
         shell: bash

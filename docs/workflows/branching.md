@@ -50,7 +50,21 @@ Before removing a stale branch or worktree, inspect it.
 Release work should start only after branch consolidation:
 
 1. Confirm no open PRs are intended for the release.
-2. Confirm `origin/main` is current and local `main` is clean.
-3. Run the release or TestFlight verification from `main`.
-4. Record the build/version, verification, upload artifact, and any App Store Connect status in the release handoff.
-
+2. Confirm `origin/main` is current and contains every commit intended for the release.
+3. Create the release stamp branch through the managed Beads worktree command,
+   using the exact name `release/stamp-vX.Y.Z`.
+4. Preview the complete stamp with `pnpm release:preview --version X.Y.Z`,
+   then run `pnpm release:prepare --version X.Y.Z` from that clean managed
+   worktree. The preparation command updates `package.json`, the Tauri config,
+   Cargo manifest and lockfile, both iOS release values, and `CHANGELOG.md`;
+   it first requires HEAD to equal live `origin/main`, and it does not commit,
+   push, tag, publish, or open a PR.
+5. Edit the generated changelog, run
+   `pnpm release:verify --version X.Y.Z`, make a signed stamp commit, and merge
+   it through the protected PR path.
+6. Reconcile clean `main` at the stamp merge commit before creating the signed
+   `vX.Y.Z` tag. The release workflow requires an annotated GitHub-verified
+   tag contained in `main`, then rejects any disagreement across the five
+   stamped sources before platform builds begin.
+7. Record the build/version, exact tagged SHA, verification, upload artifact,
+   and any App Store Connect status in the release handoff.
