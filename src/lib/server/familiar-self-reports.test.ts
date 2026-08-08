@@ -159,6 +159,196 @@ describe("familiar self-report storage", () => {
     );
   });
 
+  it("listDashboardSelfReports dedupes cross-day duplicate ids and keeps the newest report", async () => {
+    const reportsDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports");
+    await mkdir(reportsDir, { recursive: true });
+
+    await writeFile(
+      path.join(reportsDir, "2026-06-25.jsonl"),
+      `${JSON.stringify(report({
+        id: "shared",
+        sessionId: "shared-newer",
+        reportedAt: "2026-06-25T12:00:00.000Z",
+      }))}\n${JSON.stringify(report({
+        id: "newer-only",
+        sessionId: "newer-session",
+        reportedAt: "2026-06-25T13:00:00.000Z",
+      }))}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(reportsDir, "2026-06-24.jsonl"),
+      `${JSON.stringify(report({
+        id: "shared",
+        sessionId: "shared-older",
+        reportedAt: "2026-06-24T11:00:00.000Z",
+      }))}\n${JSON.stringify(report({
+        id: "older-only",
+        sessionId: "older-session",
+        reportedAt: "2026-06-24T10:00:00.000Z",
+      }))}\n`,
+      "utf8",
+    );
+
+    const listed = await listDashboardSelfReports("cody");
+
+    assert.equal(listed.total, 3);
+    assert.deepEqual(
+      listed.reports.map((item) => item.id),
+      ["newer-only", "shared", "older-only"],
+    );
+    assert.equal(
+      listed.reports.find((item) => item.id === "shared")?.sessionId,
+      "shared-newer",
+    );
+  });
+
+  it("listDashboardSelfReports dedupes same-file duplicate ids by newest reportedAt instead of append order", async () => {
+    const reportsDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports");
+    await mkdir(reportsDir, { recursive: true });
+
+    await writeFile(
+      path.join(reportsDir, "2026-06-25.jsonl"),
+      `${JSON.stringify(report({
+        id: "shared",
+        sessionId: "shared-newer",
+        reportedAt: "2026-06-25T14:00:00.000Z",
+      }))}\n${JSON.stringify(report({
+        id: "between",
+        sessionId: "between-session",
+        reportedAt: "2026-06-25T13:30:00.000Z",
+      }))}\n${JSON.stringify(report({
+        id: "shared",
+        sessionId: "shared-older-appended-last",
+        reportedAt: "2026-06-25T12:00:00.000Z",
+      }))}\n`,
+      "utf8",
+    );
+
+    const listed = await listDashboardSelfReports("cody");
+
+    assert.equal(listed.total, 2);
+    assert.deepEqual(
+      listed.reports.map((item) => item.id),
+      ["shared", "between"],
+    );
+    assert.equal(
+      listed.reports.find((item) => item.id === "shared")?.sessionId,
+      "shared-newer",
+    );
+  });
+
+  it("listDashboardSelfReports breaks equal-timestamp duplicate ids by newer file then later line", async () => {
+    const reportsDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports");
+    await mkdir(reportsDir, { recursive: true });
+
+    await writeFile(
+      path.join(reportsDir, "2026-06-25.jsonl"),
+      `${JSON.stringify(report({
+        id: "newest",
+        sessionId: "newest-session",
+        reportedAt: "2026-06-25T12:01:00.000Z",
+      }))}\n${JSON.stringify(report({
+        id: "shared",
+        sessionId: "shared-newer-file-early-line",
+        reportedAt: "2026-06-25T12:00:00.000Z",
+        overallConfidenceReason: "newer file early line",
+      }))}\n${JSON.stringify(report({
+        id: "shared",
+        sessionId: "shared-newer-file-late-line",
+        reportedAt: "2026-06-25T12:00:00.000Z",
+        overallConfidenceReason: "newer file late line",
+      }))}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(reportsDir, "2026-06-24.jsonl"),
+      `${JSON.stringify(report({
+        id: "shared",
+        sessionId: "shared-older-file",
+        reportedAt: "2026-06-25T12:00:00.000Z",
+        overallConfidenceReason: "older file",
+      }))}\n`,
+      "utf8",
+    );
+
+    const listed = await listDashboardSelfReports("cody");
+
+    assert.equal(listed.total, 2);
+    assert.deepEqual(
+      listed.reports.map((item) => item.id),
+      ["newest", "shared"],
+    );
+    assert.equal(
+      listed.reports.find((item) => item.id === "shared")?.sessionId,
+      "shared-newer-file-late-line",
+    );
+    assert.equal(
+      listed.reports.find((item) => item.id === "shared")?.overallConfidenceReason,
+      "newer file late line",
+    );
+  });
+
+  it("listDashboardSelfReports keeps scanning until it fills 30 unique reports even when duplicates occupy recent rows", async () => {
+    const reportsDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports");
+    await mkdir(reportsDir, { recursive: true });
+
+    const recentRaw = [
+      ...Array.from({ length: 20 }, (_, offset) => JSON.stringify(report({
+        id: `recent-${offset + 1}`,
+        sessionId: `recent-session-${offset + 1}`,
+        reportedAt: `2026-06-25T12:${String(offset + 1).padStart(2, "0")}:00.000Z`,
+      }))),
+      ...Array.from({ length: 10 }, (_, offset) => JSON.stringify(report({
+        id: `recent-${offset + 11}`,
+        sessionId: `recent-duplicate-${offset + 11}`,
+        reportedAt: `2026-06-25T11:${String(offset + 1).padStart(2, "0")}:00.000Z`,
+      }))),
+    ].join("\n");
+    const olderRaw = Array.from({ length: 15 }, (_, offset) => JSON.stringify(report({
+      id: `older-${offset + 1}`,
+      sessionId: `older-session-${offset + 1}`,
+      reportedAt: `2026-06-24T10:${String(offset + 1).padStart(2, "0")}:00.000Z`,
+    }))).join("\n");
+
+    await writeFile(path.join(reportsDir, "2026-06-25.jsonl"), `${recentRaw}\n`, "utf8");
+    await writeFile(path.join(reportsDir, "2026-06-24.jsonl"), `${olderRaw}\n`, "utf8");
+    await writeFile(
+      path.join(reportsDir, "2026-06-23.jsonl"),
+      `${JSON.stringify(report({
+        id: "should-not-be-read",
+        sessionId: "unread-session",
+        reportedAt: "2026-06-23T09:00:00.000Z",
+      }))}\n`,
+      "utf8",
+    );
+
+    const tracker = trackedReads();
+    const listed = await listDashboardSelfReports("cody", tracker.deps);
+
+    assert.equal(listed.total, 30);
+    assert.deepEqual(
+      listed.reports.slice(0, 5).map((item) => item.id),
+      ["recent-20", "recent-19", "recent-18", "recent-17", "recent-16"],
+    );
+    assert.deepEqual(
+      listed.reports.slice(-10).map((item) => item.id),
+      ["older-15", "older-14", "older-13", "older-12", "older-11", "older-10", "older-9", "older-8", "older-7", "older-6"],
+    );
+    assert.deepEqual(
+      tracker.files,
+      [
+        "workspaces/familiars/cody/self-reports/2026-06-25.jsonl",
+        "workspaces/familiars/cody/self-reports/2026-06-24.jsonl",
+      ],
+    );
+    assert.equal(tracker.lines.length, 45);
+    assert.equal(
+      listed.reports.some((item) => item.id === "should-not-be-read"),
+      false,
+    );
+  });
+
   it("listDashboardSelfReports keeps same-day appended backfills from displacing newer rows and breaks ties by id", async () => {
     const reportsDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports");
     await mkdir(reportsDir, { recursive: true });

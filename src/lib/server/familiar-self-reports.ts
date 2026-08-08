@@ -54,6 +54,12 @@ type SelfReportReadDependencies = {
   onLineRead?: (fullPath: string, line: string) => void;
 };
 
+type ReportCandidate = {
+  report: ThreadSelfReport;
+  fileOrder: number;
+  lineOrder: number;
+};
+
 type SnapshotCandidateSource = "persisted" | "reportDerived";
 
 type SnapshotCandidate = {
@@ -144,6 +150,40 @@ function canStopBoundedDateScan<T extends { reportedAt: string }>(
   return nextFileDate !== null && nextFileDate < cutoffDate;
 }
 
+function compareReportCandidatePriority(
+  left: ReportCandidate,
+  right: ReportCandidate,
+): number {
+  const reportedAtDiff =
+    new Date(left.report.reportedAt).getTime() -
+    new Date(right.report.reportedAt).getTime();
+  if (reportedAtDiff !== 0) return reportedAtDiff;
+  const fileOrderDiff = left.fileOrder - right.fileOrder;
+  if (fileOrderDiff !== 0) return fileOrderDiff;
+  return left.lineOrder - right.lineOrder;
+}
+
+function chooseReportCandidate(
+  current: ReportCandidate | undefined,
+  incoming: ReportCandidate,
+): ReportCandidate {
+  if (!current) return incoming;
+  return compareReportCandidatePriority(incoming, current) > 0
+    ? incoming
+    : current;
+}
+
+function newestReportCandidatesBounded(
+  values: Iterable<ReportCandidate>,
+  limit: number,
+): ReportCandidate[] {
+  return newestBoundedSlice(
+    values,
+    limit,
+    (left, right) => sortNewestFirst(left.report, right.report),
+  );
+}
+
 function compareSnapshotCandidatePriority(
   left: SnapshotCandidate,
   right: SnapshotCandidate,
@@ -219,7 +259,7 @@ async function readNewestReportsBounded(
     throw err;
   }
 
-  let reports: ThreadSelfReport[] = [];
+  let reports = new Map<string, ReportCandidate>();
   const orderedFiles = filterWindowFiles(files, window).sort().reverse();
   for (const [index, file] of orderedFiles.entries()) {
     const fullPath = path.join(dir, file);
@@ -230,27 +270,50 @@ async function readNewestReportsBounded(
     } catch {
       continue;
     }
-    const fileReports: ThreadSelfReport[] = [];
-    for (const line of raw.split("\n")) {
+    const fileOrder = orderedFiles.length - 1 - index;
+    const fileReports = new Map<string, ReportCandidate>();
+    for (const [lineOrder, line] of raw.split("\n").entries()) {
       const trimmed = line.trim();
       if (!trimmed) continue;
       dependencies.onLineRead?.(fullPath, trimmed);
       try {
         const parsed = redactReport(JSON.parse(trimmed) as ThreadSelfReport);
         if (!withinWindow(parsed.reportedAt, window)) continue;
-        fileReports.push(parsed);
+        fileReports.set(
+          parsed.id,
+          chooseReportCandidate(fileReports.get(parsed.id), {
+            report: parsed,
+            fileOrder,
+            lineOrder,
+          }),
+        );
       } catch {
         /* Ignore malformed historical lines; append-only storage should keep listing usable. */
       }
     }
-    reports = newestBoundedSlice(
-      [...reports, ...fileReports],
-      limit,
-      sortNewestFirst,
+    for (const candidate of fileReports.values()) {
+      reports.set(
+        candidate.report.id,
+        chooseReportCandidate(reports.get(candidate.report.id), candidate),
+      );
+    }
+    const topCandidates = newestReportCandidatesBounded(reports.values(), limit);
+    reports = new Map(
+      topCandidates.map((candidate) => [candidate.report.id, candidate] as const),
     );
-    if (canStopBoundedDateScan(orderedFiles, index, reports, limit)) break;
+    if (
+      canStopBoundedDateScan(
+        orderedFiles,
+        index,
+        topCandidates.map((candidate) => candidate.report),
+        limit,
+      )
+    ) {
+      break;
+    }
   }
-  return reports;
+  return newestReportCandidatesBounded(reports.values(), limit)
+    .map((candidate) => candidate.report);
 }
 
 async function readNewestPersistedMetricSnapshotsBounded(
