@@ -75,7 +75,9 @@ export function CodeReviewRail({
   const { announce } = useAnnouncer();
   const [files, setFiles] = useState<ChangedFile[]>([]);
   const [viewed, setViewed] = useState<CodeRailViewedState>({});
-  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  // The AbortController rides along so an unmount mid-drag can tear the window
+  // listeners down — typed rather than cast, so the field is real.
+  const dragRef = useRef<{ startX: number; startWidth: number; controller: AbortController } | null>(null);
 
   // Review state is per session: carrying one session's ticks into another
   // would certify files nobody looked at.
@@ -101,9 +103,9 @@ export function CodeReviewRail({
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       const controller = new AbortController();
-      dragRef.current = { startX: event.clientX, startWidth: widthPx, controller } as any;
+      dragRef.current = { startX: event.clientX, startWidth: widthPx, controller };
       const move = (moveEvent: PointerEvent) => {
-        const drag = dragRef.current as any;
+        const drag = dragRef.current;
         if (!drag) return;
         // The rail is on the right, so dragging left widens it.
         onWidthChange(clampCodeRailWidth(drag.startWidth - (moveEvent.clientX - drag.startX), roomWidthPx));
@@ -118,8 +120,10 @@ export function CodeReviewRail({
     [onWidthChange, roomWidthPx, widthPx],
   );
 
+  // A drag interrupted by an unmount would otherwise leave two window
+  // listeners alive holding this component's closure.
   useEffect(() => {
-    return () => (dragRef.current as any)?.controller?.abort();
+    return () => dragRef.current?.controller.abort();
   }, []);
 
   // Keyboard resize: a pointer-only divider is not a control, it is a hazard.

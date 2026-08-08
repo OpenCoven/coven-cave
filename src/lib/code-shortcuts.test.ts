@@ -10,6 +10,7 @@ const {
   codeShortcutForCombo,
   codeComboChips,
   CODE_RESERVED_COMBOS,
+  isCodeShortcutTarget,
 } = await import("./code-shortcuts.ts");
 
 const ev = (over) => ({ key: "a", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...over });
@@ -55,6 +56,11 @@ assert.equal(codeComboFromEvent(ev({ key: "Shift", shiftKey: true })), null);
 assert.equal(codeComboFromEvent(ev({ key: "Meta", metaKey: true })), null);
 
 assert.equal(codeComboFromEvent(ev({ key: "c", metaKey: true, shiftKey: true })), "Mod+Shift+C");
+// Ctrl and Cmd both mean Mod REGARDLESS of platform. The stored combo is an
+// intent; resolving it to ⌘ or Ctrl happens only at display time. A
+// navigator-reading variant of this function was tried and reverted — it makes
+// a keymap saved on one platform stop matching on another, and it changes what
+// the model returns under a Node runner that exposes navigator.platform.
 assert.equal(codeComboFromEvent(ev({ key: "c", ctrlKey: true, shiftKey: true })), "Mod+Shift+C");
 assert.equal(codeComboFromEvent(ev({ key: "j", altKey: true })), "Alt+J");
 assert.equal(codeComboFromEvent(ev({ key: " ", metaKey: true })), "Mod+Space");
@@ -65,6 +71,36 @@ assert.equal(codeComboFromEvent(ev({ key: "Escape" })), "Escape");
 assert.equal(codeComboFromEvent(ev({ key: "?", shiftKey: true })), "?");
 // It is kept for letters and digits, where the character alone loses it.
 assert.equal(codeComboFromEvent(ev({ key: "P", shiftKey: true, metaKey: true })), "Mod+Shift+P");
+
+// ── Who owns a keystroke ─────────────────────────────────────────────────────
+
+const el = (tag, over = {}) => ({
+  tagName: tag,
+  isContentEditable: false,
+  closest: () => null,
+  ...over,
+});
+
+// Plain surfaces are ours.
+assert.equal(isCodeShortcutTarget(el("DIV")), true);
+assert.equal(isCodeShortcutTarget(el("BUTTON")), true);
+// A missing/odd target must not disable every shortcut.
+assert.equal(isCodeShortcutTarget(null), true);
+assert.equal(isCodeShortcutTarget({}), true);
+
+// Prose fields are not — a global "?" that ate a question mark mid-sentence
+// would be indefensible.
+assert.equal(isCodeShortcutTarget(el("INPUT")), false);
+assert.equal(isCodeShortcutTarget(el("TEXTAREA")), false);
+assert.equal(isCodeShortcutTarget(el("SELECT")), false);
+assert.equal(isCodeShortcutTarget(el("DIV", { isContentEditable: true })), false);
+
+// THE TERMINAL CASE. xterm renders a hidden textarea, and the ROOM's own
+// terminal-shortcut predicate deliberately calls that "not a typing target" so
+// the terminal's ⇧⌘ split bindings resolve. Without this exclusion the room
+// would steal Ctrl+P and Ctrl+C from a running shell.
+assert.equal(isCodeShortcutTarget(el("TEXTAREA", { closest: (s) => (s === ".xterm" ? {} : null) })), false);
+assert.equal(isCodeShortcutTarget(el("DIV", { closest: (s) => (s === ".xterm" ? {} : null) })), false);
 
 // ── Rebinding ────────────────────────────────────────────────────────────────
 

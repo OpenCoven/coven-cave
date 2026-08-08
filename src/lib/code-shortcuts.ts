@@ -109,10 +109,18 @@ export function codeComboFromEvent(event: {
   let printable = key.length === 1 ? key.toUpperCase() : key;
   if (printable === " ") printable = "Space";
   const parts: string[] = [];
-  const apple =
-    typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent);
-  const modDown = apple ? event.metaKey : event.metaKey || event.ctrlKey;
-  if (modDown) parts.push("Mod");
+  // Mod is the INTENT, resolved per platform only at display time
+  // (`codeComboChips`). Reading `navigator` here was tried and reverted: it
+  // makes a pure function platform-dependent, so a keymap saved on a Mac stops
+  // matching in a browser on another OS — the exact portability this grammar
+  // exists to provide — and it silently changes what the model returns under a
+  // Node test runner, which exposes `navigator.platform` as "MacIntel".
+  //
+  // The hazard that change was aiming at is real but lives elsewhere: on macOS
+  // Ctrl+P belongs to the shell, not to us. That is fixed where it belongs, in
+  // the room's global handler, by refusing to act on a keystroke aimed at a
+  // focused terminal pane (see `isCodeShortcutTarget`).
+  if (event.metaKey || event.ctrlKey) parts.push("Mod");
   if (event.altKey) parts.push("Alt");
   if (event.shiftKey && !(key.length === 1 && !/[A-Z0-9]/i.test(key))) parts.push("Shift");
   parts.push(printable);
@@ -140,6 +148,26 @@ export function bindCodeShortcut(
   }
   next[id] = combo;
   return next;
+}
+
+/**
+ * Should a room shortcut act on a keystroke aimed at this element?
+ *
+ * No for prose fields (the composer, the picker's filter, the editor) — a
+ * global `?` that ate a question mark mid-sentence would be indefensible — and
+ * no for a focused TERMINAL pane. The terminal case is the subtle one:
+ * `isCodeRoomTypingTarget` deliberately answers "not a typing target" for
+ * xterm so the terminal's OWN ⇧⌘ split bindings resolve, which means the room
+ * would otherwise happily steal Ctrl+P and Ctrl+C from a running shell.
+ * Keystrokes inside a terminal belong to the terminal.
+ */
+export function isCodeShortcutTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.tagName !== "string") return true;
+  if (typeof el.closest === "function" && el.closest(".xterm")) return false;
+  if (el.isContentEditable) return false;
+  const tag = el.tagName.toLowerCase();
+  return tag !== "input" && tag !== "textarea" && tag !== "select";
 }
 
 /** Which action a live keypress triggers, or null. Unbound entries never match. */

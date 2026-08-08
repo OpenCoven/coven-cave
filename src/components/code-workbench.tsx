@@ -66,11 +66,11 @@ import {
   CODE_SHORTCUT_STORAGE_KEY,
   codeComboFromEvent,
   codeShortcutForCombo,
+  isCodeShortcutTarget,
   defaultCodeKeymap,
   mergeCodeKeymap,
   type CodeShortcutId,
 } from "@/lib/code-shortcuts";
-import { isCodeRoomTypingTarget } from "@/lib/code-room-shortcuts";
 import { useWorktreeChanges } from "@/lib/use-worktree-changes";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
 import type { SessionRow } from "@/lib/types";
@@ -232,12 +232,11 @@ export function CodeWorkbench({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      // Never steal a keystroke from a field. The room is full of them — the
-      // composer, the picker's filter, the editor — and a global "?" that ate a
-      // question mark mid-sentence would be indefensible. Shared with the
-      // terminal shortcuts so both agree about xterm's hidden textarea, which a
-      // naive tag test would treat as prose.
-      if (isCodeRoomTypingTarget(event.target)) return;
+      // Never steal a keystroke from a field — the composer, the picker's
+      // filter, the editor — nor from a focused TERMINAL pane, where Ctrl+P
+      // and Ctrl+C belong to the shell. Both exclusions live in one predicate
+      // so the room and the terminal cannot disagree about who owns a key.
+      if (!isCodeShortcutTarget(event.target)) return;
       const action = codeShortcutForCombo(keymap, codeComboFromEvent(event));
       if (!action) return;
       event.preventDefault();
