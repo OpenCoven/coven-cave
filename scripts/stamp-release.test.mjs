@@ -131,6 +131,16 @@ assert.equal(
   "0.2.4",
 );
 assert.throws(
+  () =>
+    readStampedVersion(
+      "cargo-lock-app",
+      '[[package]]\nname = "app"\nversion = "0.2.4"\n\n[[package]]\nname = "app"\nversion = "9.9.9"\n',
+      "src-tauri/Cargo.lock",
+    ),
+  /expected exactly one app package version in Cargo.lock/,
+  "duplicate app package blocks must not silently choose the first version",
+);
+assert.throws(
   () => readStampedVersion("json-version", '{"name":"missing-version"}', "package.json"),
   /package\.json: could not read/,
 );
@@ -731,6 +741,18 @@ function releaseSourceFixture(overrides = {}) {
       expectedVersion: "0.0.159",
       files: {
         ...files,
+        "apps/ios/CovenCave/project.yml":
+          'settings:\n  base:\n    MARKETING_VERSION: "0.0.159"\n    CURRENT_PROJECT_VERSION: "2026133224"\n',
+      },
+    }).join("\n"),
+    /expected one valid YYYYMMDDHH CURRENT_PROJECT_VERSION/,
+    "a numeric but impossible iOS build timestamp must not pass release verification",
+  );
+  assert.match(
+    releaseSourceErrors({
+      expectedVersion: "0.0.159",
+      files: {
+        ...files,
         "CHANGELOG.md":
           "# Changelog\n\n## [0.0.159] - 2026-07-08\n\n> _One-line teaser — edit before merge._\n",
       },
@@ -888,6 +910,20 @@ function stampHarnessState(result) {
   });
   assert.equal(result.status, 1, "manifest drift fails preparation");
   assert.match(result.stderr, /version drift: src-tauri\/Cargo\.lock has 0\.0\.158/);
+  assert.doesNotMatch(result.stderr, /WRITE_WAS_CALLED/);
+}
+
+{
+  const result = runStampHarness({
+    args: ["--prepare-only", "--version", "0.0.160"],
+    fixtures: stampFixtures({
+      [path.join(REPO_ROOT, "src-tauri/Cargo.lock")]:
+        '[[package]]\nname = "app"\nversion = "0.0.159"\n\n[[package]]\nname = "app"\nversion = "9.9.9"\n',
+    }),
+    forbidWrites: true,
+  });
+  assert.equal(result.status, 1, "ambiguous app package blocks fail preparation");
+  assert.match(result.stderr, /expected exactly one app package version in Cargo.lock/);
   assert.doesNotMatch(result.stderr, /WRITE_WAS_CALLED/);
 }
 
