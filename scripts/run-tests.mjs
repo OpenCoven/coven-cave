@@ -1448,6 +1448,8 @@ export const SUITES = {
     "src/lib/server/space-usage.test.ts",
     "src/lib/server/preferences-store.test.ts",
     "src/lib/server/webauthn-verify.test.ts",
+    "src/lib/server/passkey-store.test.ts",
+    "src/lib/passkey-presence.test.ts",
     "src/lib/server/backdrop-store.test.ts",
     "src/lib/server/beads-cli.test.ts",
     "src/lib/server/beads-workspace.test.ts",
@@ -1688,6 +1690,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/cave-home-migration-status.test.ts",
   "src/lib/server/cave-home-migration-discard-guard.test.ts",
   "src/lib/server/cave-home-migration-fast-path.test.ts",
+  // resolves "@/lib/coven-paths" for the store path and "@/lib/server/atomic-write"
+  "src/lib/server/passkey-store.test.ts",
   "src/lib/server/preferences-store.test.ts",
   "src/lib/server/backdrop-store.test.ts",
   "src/lib/server/beads-cli.test.ts",
