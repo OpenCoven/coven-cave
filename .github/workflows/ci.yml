@@ -32,11 +32,27 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
+      # Guard: no committed merge-conflict markers anywhere in the tree.
+      # 23316da3 landed two unresolved conflict blocks in a component; the file
+      # stopped parsing, every route 500'd, and main stayed broken until
+      # 4ea88862. Nothing in this workflow would have caught it — `git diff
+      # --check` runs only in release.yml, by which point the artifact is
+      # already on main. Per-file guards exist and are worth keeping, but they
+      # only protect files someone already thought to protect.
+      #
+      # Deliberately not a new job or a required context: an added context that
+      # does not report is how a PR ends up BLOCKED with nothing failing. It
+      # rides the existing static-check job and runs before install, since a
+      # tree with markers cannot lint or typecheck meaningfully — but after
+      # setup-node, so it runs on the pinned Node rather than whatever the
+      # runner image happens to ship.
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
+
+      - run: node scripts/check-conflict-markers.mjs
 
       - run: pnpm install --frozen-lockfile
 
