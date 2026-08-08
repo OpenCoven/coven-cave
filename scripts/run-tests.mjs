@@ -124,6 +124,7 @@ export const SUITES = {
     "src/lib/model-control-capabilities.test.ts",
     "src/lib/chat-transcript-groups.test.ts",
     "src/components/chat-view-chunk-coalescing.test.ts",
+    "src/lib/child-spawn-window.test.ts",
     "src/lib/chunk-coalescer.test.ts",
     "src/components/chat-view-scroll-pin.test.ts",
     "src/components/home/use-home-model-state.test.ts",

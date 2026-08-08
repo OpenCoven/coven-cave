@@ -107,21 +107,19 @@ async function processStartIdentity(pid: number): Promise<string | null> {
         `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}"`,
         `if ($null -ne $p) { $p.CreationDate.ToUniversalTime().Ticks }`,
       ].join("; ");
-      const { stdout } = await execFileAsync("powershell.exe", [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        script,
-      ]);
+      const { stdout } = await execFileAsync(
+        "powershell.exe",
+        ["-NoProfile", "-NonInteractive", "-Command", script],
+        { windowsHide: true },
+      );
       const startedAt = stdout.trim();
       if (startedAt) return `win32:${startedAt}`;
     } else {
-      const { stdout } = await execFileAsync("ps", [
-        "-o",
-        "lstart=",
-        "-p",
-        String(pid),
-      ]);
+      const { stdout } = await execFileAsync(
+        "ps",
+        ["-o", "lstart=", "-p", String(pid)],
+        { windowsHide: true },
+      );
       const startedAt = stdout.trim().replace(/\s+/g, " ");
       if (startedAt) return `${process.platform}:${startedAt}`;
     }

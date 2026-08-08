@@ -28,6 +28,7 @@ export async function installedCovenVersion(): Promise<string | null> {
   try {
     const { command, fixedArgs } = covenLaunchCommand();
     const { stdout, stderr } = await execFileAsync(command, [...fixedArgs, "--version"], {
+      windowsHide: true,
       env: covenSpawnEnv(),
       timeout: 2500,
     });

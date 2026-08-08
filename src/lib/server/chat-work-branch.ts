@@ -31,6 +31,7 @@ export async function captureWorkBranch(cwd: string | null): Promise<string | nu
   if (!cwd) return null;
   try {
     const { stdout } = await execFileAsync("git", ["branch", "--show-current"], {
+      windowsHide: true,
       cwd,
       encoding: "utf8",
       timeout: GIT_TIMEOUT_MS,

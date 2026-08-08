@@ -189,6 +189,7 @@ function runCoven(
     try {
       const { command, fixedArgs } = covenLaunchCommand();
       child = spawn(command, [...fixedArgs, ...args], {
+        windowsHide: true,
         // No familiar means no familiar workspace: run where the app runs.
         cwd: process.cwd(),
         stdio: ["ignore", "pipe", "pipe"],

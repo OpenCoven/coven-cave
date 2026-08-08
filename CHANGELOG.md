@@ -7,6 +7,13 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows: console windows no longer pop up over the app when Cave runs a CLI.
+  Every child process now launches with `windowsHide: true`. Most visible in the
+  Research Desk, where a single mission iteration opened one window per familiar
+  step (cave-7jb).
+
 ## [0.2.4] - 2026-08-06
 
 > A tabbed sidebar, the Coding Room rebuilt as a three-zone workbench, image
