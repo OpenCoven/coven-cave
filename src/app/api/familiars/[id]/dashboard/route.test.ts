@@ -239,6 +239,23 @@ test("unknown Familiar returns 404", async () => {
   });
 });
 
+for (const status of [401, 403] as const) {
+  test(`roster auth ${status} preserves a stable unauthorized response`, async () => {
+    const response = await handleDashboardRequest(
+      new Request("http://cave.local/api/familiars/sage/dashboard?v=1"),
+      { params: Promise.resolve({ id: "sage" }) },
+      async () => ({ kind: "auth_error", status }),
+    );
+    assert.equal(response.status, status);
+    assert.match(response.headers.get("content-type") ?? "", /^application\/json\b/i);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await response.json(), {
+      ok: false,
+      error: "dashboard_unauthorized",
+    });
+  });
+}
+
 test("an explicit unsupported version returns 400 before loading", async () => {
   let calls = 0;
   const response = await handleDashboardRequest(
@@ -349,4 +366,5 @@ test("oversized success is replaced by the stable 500 response", async () => {
 
 assert.match(source, /export const dynamic = "force-dynamic"/);
 assert.match(source, /export const runtime = "nodejs"/);
+assert.match(source, /dashboard_unauthorized/);
 assert.doesNotMatch(source, /fetch\(/, "dashboard route must not self-fetch Cave APIs");

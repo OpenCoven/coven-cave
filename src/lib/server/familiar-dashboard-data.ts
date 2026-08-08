@@ -3,7 +3,7 @@ import { loadInbox } from "@/lib/cave-inbox";
 import { loadProjects } from "@/lib/cave-projects";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import {
-  canonicalMemoryList,
+  loadCachedCanonicalMemorySummariesForFamiliar,
 } from "@/lib/server/canonical-memory-gateway";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
 import {
@@ -68,7 +68,7 @@ export type FamiliarDashboardDependencies = {
   loadAccess: (id: string) => Promise<{
     projects: { project: CaveProject; access: ProjectAccessLevel }[];
   }>;
-  loadMemory: () => Promise<CanonicalMemorySummary[]>;
+  loadMemory: (familiarId: string) => Promise<CanonicalMemorySummary[]>;
   loadRetro: (args: { familiarId: string }) => Promise<RetroRunsSnapshotResult>;
   loadReports: (id: string) => ReturnType<typeof listSelfReports>;
   loadMetricSnapshots: (id: string) => ReturnType<typeof listMetricSnapshots>;
@@ -114,19 +114,17 @@ export const DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES: FamiliarDashboardDependenc
   loadAccess: async (id) => ({
     projects: await listAccessibleProjects(await loadProjects(), id),
   }),
-  loadMemory: canonicalMemoryList,
+  loadMemory: loadCachedCanonicalMemorySummariesForFamiliar,
   loadRetro: ({ familiarId }) => loadRetroRunsSnapshot({ familiarId }),
   loadReports: listDashboardSelfReports,
   loadMetricSnapshots: listDashboardMetricSnapshots,
   loadFeedback: ({ familiarId }) =>
-    loadMessageFeedbackRollup({
-      familiarId,
-      bucketLimit: FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets,
-    }),
+    loadMessageFeedbackRollup({ familiarId }),
 };
 
 export type FamiliarDashboardLoadResult =
   | { kind: "ok"; response: Extract<FamiliarDashboardResponse, { ok: true }> }
+  | { kind: "auth_error"; status: 401 | 403 }
   | { kind: "not_found" }
   | { kind: "unavailable" };
 
@@ -140,7 +138,12 @@ export async function loadFamiliarDashboard(
   } catch {
     return { kind: "unavailable" };
   }
-  if (!rosterResult.ok) return { kind: "unavailable" };
+  if (!rosterResult.ok) {
+    if (rosterResult.status === 401 || rosterResult.status === 403) {
+      return { kind: "auth_error", status: rosterResult.status };
+    }
+    return { kind: "unavailable" };
+  }
 
   const rosterEntry = rosterResult.roster.find(
     (familiar) => familiar.id === familiarId,
@@ -184,7 +187,7 @@ export async function loadFamiliarDashboard(
       "access_unavailable",
       () => dependencies.loadAccess(familiarId),
     ),
-    capture("memory", "memory_unavailable", dependencies.loadMemory),
+    capture("memory", "memory_unavailable", () => dependencies.loadMemory(familiarId)),
     capture(
       "retro",
       "retro_state_unavailable",

@@ -7,6 +7,7 @@ import {
   canonicalMemoryDetail,
   canonicalMemoryList,
   canonicalMemoryOverview,
+  createFamiliarCanonicalMemoryCache,
 } from "./canonical-memory-gateway.ts";
 
 const MEMORY_ID = "11111111-1111-5111-8111-111111111111";
@@ -80,6 +81,20 @@ const currentDetail = {
     superseded_by: OTHER_MEMORY_ID,
   },
 };
+
+function summaryFixture(id: string, familiarId: string) {
+  return {
+    id,
+    familiarId,
+    title: `memory-${id}`,
+    updatedAt: "2026-07-26T09:56:00Z",
+    relativeUpdatedAt: "4m ago",
+    excerpt: `Summary ${id}`,
+    source: FALLBACK_SOURCE,
+    privacy: { classification: null, revealRequired: null },
+    verification: { state: "verified" as const },
+  };
+}
 
 function clone<T>(value: T): T {
   return structuredClone(value);
@@ -286,6 +301,94 @@ test("maps a null detail attestation to null metadata", async () => {
   const normalized = await canonicalMemoryDetail(MEMORY_ID, deps);
 
   assert.equal(normalized.attestationMetadata, null);
+});
+
+test("familiar-scoped cache shares one full-list fetch across concurrent and repeated reads within ttl", async () => {
+  let calls = 0;
+  let resolveList:
+    | ((entries: Array<ReturnType<typeof summaryFixture>>) => void)
+    | null = null;
+  const cache = createFamiliarCanonicalMemoryCache({
+    now: () => 0,
+    loadList: () =>
+      new Promise((resolve) => {
+        calls += 1;
+        resolveList = resolve;
+      }),
+  });
+
+  const sagePromise = cache.load("sage");
+  const mossPromise = cache.load("moss");
+
+  assert.equal(calls, 1);
+
+  resolveList?.([
+    summaryFixture("memory-1", "sage"),
+    summaryFixture("memory-2", "moss"),
+    summaryFixture("memory-3", "sage"),
+  ]);
+
+  assert.deepEqual(await sagePromise, [
+    summaryFixture("memory-1", "sage"),
+    summaryFixture("memory-3", "sage"),
+  ]);
+  assert.deepEqual(await mossPromise, [summaryFixture("memory-2", "moss")]);
+  assert.deepEqual(await cache.load("sage"), [
+    summaryFixture("memory-1", "sage"),
+    summaryFixture("memory-3", "sage"),
+  ]);
+  assert.deepEqual(await cache.load("unknown"), []);
+  assert.equal(calls, 1);
+});
+
+test("familiar-scoped cache refetches after ttl expiry and invalidation", async () => {
+  let now = 0;
+  let calls = 0;
+  const cache = createFamiliarCanonicalMemoryCache({
+    now: () => now,
+    loadList: async () => {
+      calls += 1;
+      return calls === 1
+        ? [summaryFixture("memory-1", "sage")]
+        : calls === 2
+          ? [summaryFixture("memory-2", "sage")]
+          : [summaryFixture("memory-3", "sage")];
+    },
+  });
+
+  assert.deepEqual(await cache.load("sage"), [summaryFixture("memory-1", "sage")]);
+  now = 59_999;
+  assert.deepEqual(await cache.load("sage"), [summaryFixture("memory-1", "sage")]);
+  assert.equal(calls, 1);
+
+  now = 60_000;
+  assert.deepEqual(await cache.load("sage"), [summaryFixture("memory-2", "sage")]);
+  assert.equal(calls, 2);
+
+  cache.invalidate();
+  assert.deepEqual(await cache.load("sage"), [summaryFixture("memory-3", "sage")]);
+  assert.equal(calls, 3);
+});
+
+test("familiar-scoped cache does not cache failures as success", async () => {
+  let calls = 0;
+  const cache = createFamiliarCanonicalMemoryCache({
+    loadList: async () => {
+      calls += 1;
+      if (calls === 1) {
+        throw new Error("temporary failure");
+      }
+      return [summaryFixture("memory-1", "sage")];
+    },
+  });
+
+  await assert.rejects(cache.load("sage"), /temporary failure/);
+  assert.equal(calls, 1);
+
+  assert.deepEqual(await cache.load("sage"), [summaryFixture("memory-1", "sage")]);
+  assert.equal(calls, 2);
+  assert.deepEqual(await cache.load("sage"), [summaryFixture("memory-1", "sage")]);
+  assert.equal(calls, 2);
 });
 
 test("rejects missing, extra, mistyped, and malformed list payloads", async () => {

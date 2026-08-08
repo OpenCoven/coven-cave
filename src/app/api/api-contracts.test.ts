@@ -807,22 +807,25 @@ for (const contract of contracts) {
 
   assert.match(dashboardRoute, /isValidFamiliarId\(id\)/);
   assert.match(dashboardRoute, /dashboardError\(403,\s*"invalid_familiar_id"\)|status: 403/);
+  assert.match(dashboardRoute, /dashboard_unauthorized/);
   assert.match(dashboardRoute, /dashboardError\(404,\s*"familiar_not_found"\)|status: 404/);
   assert.match(dashboardRoute, /dashboardError\(500,\s*"dashboard_unavailable"\)|status: 500/);
   assert.match(dashboardRoute, /serializedDashboardBytes/);
   assert.match(dashboardRoute, /"cache-control": "no-store"/);
   assert.doesNotMatch(dashboardRoute, /fetch\(/);
   assert.doesNotMatch(dashboardData, /fetch\(/);
+  assert.match(dashboardData, /rosterResult\.status === 401 \|\| rosterResult\.status === 403/);
   assert.match(dashboardData, /loadBoard/);
   assert.match(dashboardData, /loadCachedSessionsList/);
   assert.match(dashboardData, /loadInbox/);
-  assert.match(dashboardData, /canonicalMemoryList/);
+  assert.match(dashboardData, /loadCachedCanonicalMemorySummariesForFamiliar/);
   assert.match(dashboardData, /readFamiliarContractFiles/);
   assert.match(dashboardData, /evaluateFamiliarContract/);
   assert.match(dashboardData, /listDashboardSelfReports/);
   assert.match(dashboardData, /listDashboardMetricSnapshots/);
   assert.match(dashboardData, /loadMessageFeedbackRollup/);
   assert.match(dashboardModel, /responseBytes: 128 \* 1024/);
+  assert.match(dashboardModel, /"dashboard_unauthorized"/);
   assert.doesNotMatch(
     dashboardData,
     /error:\s*(err|error)\.(message|stack)/,

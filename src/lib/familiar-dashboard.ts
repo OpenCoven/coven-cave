@@ -29,18 +29,21 @@ export const FAMILIAR_DASHBOARD_VERSION = 1 as const;
 export const FAMILIAR_DASHBOARD_LIMITS = {
   responseBytes: 128 * 1024,
   assignedTasks: 6,
-  taskDependencies: 6,
   activeSessions: 3,
   recentSessions: 5,
   attention: 6,
   reminders: 5,
-  feedbackBuckets: 25,
-  accessProjects: 50,
   reports: 30,
   metricSnapshots: 100,
   metricTrailingDays: 30,
   sessionEvidence: 100,
   sessionPulseDays: 14,
+} as const;
+
+const INTERNAL_DASHBOARD_LIMITS = {
+  taskDependencies: 6,
+  feedbackBuckets: 25,
+  accessProjects: 50,
   capabilityUsed: 5,
   capabilityLacking: 12,
   capabilityVital: 12,
@@ -361,6 +364,7 @@ export type FamiliarDashboardResponse =
       ok: false;
       error:
         | "invalid_familiar_id"
+        | "dashboard_unauthorized"
         | "familiar_not_found"
         | "dashboard_unavailable";
     };
@@ -435,7 +439,7 @@ const HEAL_SEVERITY_RANK: Record<SelfHealRequest["severity"], number> = {
 };
 
 function boundedTaskDependencies(dependencies: TaskDependency[]): TaskDependency[] {
-  return dependencies.slice(0, FAMILIAR_DASHBOARD_LIMITS.taskDependencies);
+  return dependencies.slice(0, INTERNAL_DASHBOARD_LIMITS.taskDependencies);
 }
 
 function boundedCapabilityUsage(
@@ -451,7 +455,7 @@ function boundedCapabilityUsage(
   return [...counts.entries()]
     .map(([skillId, count]) => ({ skillId, count }))
     .sort((left, right) => right.count - left.count || compareStrings(left.skillId, right.skillId))
-    .slice(0, FAMILIAR_DASHBOARD_LIMITS.capabilityUsed)
+    .slice(0, INTERNAL_DASHBOARD_LIMITS.capabilityUsed)
     .map(({ skillId, count }) => ({ name: skillId, count }));
 }
 
@@ -463,7 +467,7 @@ function boundedCapabilityLacking(
       CAPABILITY_IMPORTANCE_RANK[left.importance] - CAPABILITY_IMPORTANCE_RANK[right.importance] ||
       compareStrings(left.name, right.name) ||
       compareStrings(left.detail, right.detail))
-    .slice(0, FAMILIAR_DASHBOARD_LIMITS.capabilityLacking);
+    .slice(0, INTERNAL_DASHBOARD_LIMITS.capabilityLacking);
 }
 
 function boundedCapabilityVital(
@@ -474,7 +478,7 @@ function boundedCapabilityVital(
       CAPABILITY_STATE_RANK[left.currentState] - CAPABILITY_STATE_RANK[right.currentState] ||
       compareStrings(left.name, right.name) ||
       compareStrings(left.notes ?? "", right.notes ?? ""))
-    .slice(0, FAMILIAR_DASHBOARD_LIMITS.capabilityVital);
+    .slice(0, INTERNAL_DASHBOARD_LIMITS.capabilityVital);
 }
 
 function boundedHealRequests(
@@ -485,7 +489,7 @@ function boundedHealRequests(
       HEAL_SEVERITY_RANK[left.severity] - HEAL_SEVERITY_RANK[right.severity] ||
       timestampValue(right.createdAt) - timestampValue(left.createdAt) ||
       compareStrings(left.id, right.id))
-    .slice(0, FAMILIAR_DASHBOARD_LIMITS.healRequests)
+    .slice(0, INTERNAL_DASHBOARD_LIMITS.healRequests)
     .map((request) => ({
       id: request.id,
       severity: request.severity,
@@ -598,7 +602,7 @@ function boundedFeedbackSlices(
 ): MessageFeedbackRollup["models"] {
   return [...slices]
     .sort((left, right) => right.total - left.total || compareStrings(left.key, right.key))
-    .slice(0, FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets);
+    .slice(0, INTERNAL_DASHBOARD_LIMITS.feedbackBuckets);
 }
 
 function growthSignalTimestamp(
@@ -981,7 +985,7 @@ export function buildFamiliarProfile({
       : null,
     access: {
       projects: {
-        items: sortedProjects.slice(0, FAMILIAR_DASHBOARD_LIMITS.accessProjects).map(({ project, access }) => ({
+        items: sortedProjects.slice(0, INTERNAL_DASHBOARD_LIMITS.accessProjects).map(({ project, access }) => ({
           id: project.id,
           name: project.name,
           access,

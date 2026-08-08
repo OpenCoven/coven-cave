@@ -152,7 +152,11 @@ type FamiliarDashboardResponse =
     }
   | {
       ok: false;
-      error: "invalid_familiar_id" | "familiar_not_found" | "dashboard_unavailable";
+      error:
+        | "invalid_familiar_id"
+        | "dashboard_unauthorized"
+        | "familiar_not_found"
+        | "dashboard_unavailable";
     };
 
 type DashboardSection<T> = {
@@ -183,10 +187,11 @@ snapshot cache. `stale` is a client presentation state applied only when a
 refresh fails and iOS retains a previous successful section. The retained
 section keeps its original server state and `generatedAt`.
 
-An invalid ID returns 403, matching existing Familiar path validation. An
-unknown Familiar returns 404. A known Familiar returns 200 even when one or
-more sections are partial. A 500 response is reserved for failure to construct
-any safe dashboard response.
+An invalid ID returns 403, matching existing Familiar path validation. Roster
+auth failures preserve 401 or 403 with the stable `dashboard_unauthorized`
+code. An unknown Familiar returns 404. A known Familiar returns 200 even when
+one or more sections are partial. A 500 response is reserved for non-auth
+failure to construct any safe dashboard response.
 
 The route is dynamic and not browser-cacheable. The client owns its visible
 refresh cadence and in-memory last-known-good state.

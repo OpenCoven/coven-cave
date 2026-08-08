@@ -2,7 +2,6 @@
 import assert from "node:assert/strict";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { FAMILIAR_DASHBOARD_LIMITS } from "../familiar-dashboard.ts";
 
 const scratchRoot = path.join(
   process.cwd(),
@@ -12,6 +11,8 @@ const scratchRoot = path.join(
 await mkdir(scratchRoot, { recursive: true });
 process.env.HOME = scratchRoot;
 process.env.COVEN_HOME = path.join(scratchRoot, ".coven");
+
+const FEEDBACK_BUCKET_LIMIT = 25;
 
 const fb = await import("./message-feedback-store.ts");
 
@@ -86,13 +87,13 @@ await writeFile(
 
 const rollup = await fb.loadMessageFeedbackRollup({
   familiarId: "sage",
-  bucketLimit: FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets,
+  bucketLimit: FEEDBACK_BUCKET_LIMIT,
 });
 assert.equal(rollup.total, HUGE_BUCKET_COUNT, "overall totals stay uncapped");
 assert.equal(rollup.up, HUGE_BUCKET_COUNT - Math.ceil(HUGE_BUCKET_COUNT / 3));
 assert.equal(rollup.down, Math.ceil(HUGE_BUCKET_COUNT / 3));
-assert.equal(rollup.models.length, FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets);
-assert.equal(rollup.runtimes.length, FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets);
+assert.equal(rollup.models.length, FEEDBACK_BUCKET_LIMIT);
+assert.equal(rollup.runtimes.length, FEEDBACK_BUCKET_LIMIT);
 assert.deepEqual(
   rollup.models.slice(0, 3).map((slice) => slice.key),
   ["model-0000", "model-0001", "model-0002"],

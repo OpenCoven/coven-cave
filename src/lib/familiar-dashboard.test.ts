@@ -13,28 +13,26 @@ import {
 } from "./familiar-dashboard.ts";
 
 const NOW = Date.parse("2026-08-07T20:00:00.000Z");
+const TASK_DEPENDENCY_LIMIT = 6;
+const ACCESS_PROJECT_LIMIT = 50;
+const CAPABILITY_LACKING_LIMIT = 12;
+const CAPABILITY_VITAL_LIMIT = 12;
+const HEAL_REQUEST_LIMIT = 8;
 
 test("published limits match the v1 contract", () => {
   assert.equal(FAMILIAR_DASHBOARD_VERSION, 1);
   assert.deepEqual(FAMILIAR_DASHBOARD_LIMITS, {
     responseBytes: 131072,
     assignedTasks: 6,
-    taskDependencies: 6,
     activeSessions: 3,
     recentSessions: 5,
     attention: 6,
     reminders: 5,
-    feedbackBuckets: 25,
-    accessProjects: 50,
     reports: 30,
     metricSnapshots: 100,
     metricTrailingDays: 30,
     sessionEvidence: 100,
     sessionPulseDays: 14,
-    capabilityUsed: 5,
-    capabilityLacking: 12,
-    capabilityVital: 12,
-    healRequests: 8,
   });
 });
 
@@ -233,7 +231,7 @@ test("blocked task rows preserve dependencies, primary blocker, and next step", 
 
 test("blocked task rows cap dependency previews without losing the primary blocker", () => {
   const dependencies = Array.from(
-    { length: FAMILIAR_DASHBOARD_LIMITS.taskDependencies + 2 },
+    { length: TASK_DEPENDENCY_LIMIT + 2 },
     (_, index) => ({
       id: `dep-${index}`,
       kind: "task",
@@ -264,12 +262,12 @@ test("blocked task rows cap dependency previews without losing the primary block
 
   assert.equal(
     overview.tasks.items[0].dependencies.length,
-    FAMILIAR_DASHBOARD_LIMITS.taskDependencies,
+    TASK_DEPENDENCY_LIMIT,
   );
   assert.deepEqual(
     overview.tasks.items[0].dependencies.map((dependency) => dependency.id),
     dependencies
-      .slice(0, FAMILIAR_DASHBOARD_LIMITS.taskDependencies)
+      .slice(0, TASK_DEPENDENCY_LIMIT)
       .map((dependency) => dependency.id),
   );
   assert.deepEqual(overview.tasks.items[0].primaryBlocker, primaryBlocker);
@@ -1015,7 +1013,7 @@ test("Analytics caps capabilities and heal requests deterministically", () => {
   ]);
   assert.equal(
     analytics.capabilities.lacking.length,
-    FAMILIAR_DASHBOARD_LIMITS.capabilityLacking,
+    CAPABILITY_LACKING_LIMIT,
   );
   assert.deepEqual(
     analytics.capabilities.lacking.slice(0, 5).map((capability) => capability.name),
@@ -1023,13 +1021,13 @@ test("Analytics caps capabilities and heal requests deterministically", () => {
   );
   assert.equal(
     analytics.capabilities.vital.length,
-    FAMILIAR_DASHBOARD_LIMITS.capabilityVital,
+    CAPABILITY_VITAL_LIMIT,
   );
   assert.deepEqual(
     analytics.capabilities.vital.slice(0, 5).map((capability) => capability.name),
     ["agent", "browser", "vital-00", "vital-03", "vital-06"],
   );
-  assert.equal(analytics.healRequests.length, FAMILIAR_DASHBOARD_LIMITS.healRequests);
+  assert.equal(analytics.healRequests.length, HEAL_REQUEST_LIMIT);
   assert.deepEqual(
     analytics.healRequests.slice(0, 5).map((request) => request.id),
     ["heal-3", "heal-4", "heal-5", "heal-0", "heal-1"],
@@ -1164,7 +1162,7 @@ test("Profile caps project access rows deterministically while preserving total"
   assert.equal(profile.access.projects.total, 57);
   assert.equal(
     profile.access.projects.items.length,
-    FAMILIAR_DASHBOARD_LIMITS.accessProjects,
+    ACCESS_PROJECT_LIMIT,
   );
   assert.deepEqual(profile.access.projects.items.slice(0, 2), [
     { id: "alpha-a", name: "Alpha", access: "read" },

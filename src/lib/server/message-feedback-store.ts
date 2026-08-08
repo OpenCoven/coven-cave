@@ -11,7 +11,6 @@ import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline";
-import { FAMILIAR_DASHBOARD_LIMITS } from "@/lib/familiar-dashboard";
 import { caveHome } from "@/lib/coven-paths";
 import {
   applyMessageFeedbackEntry,
@@ -22,6 +21,8 @@ import {
 } from "@/lib/message-feedback-rollup";
 
 export const MESSAGE_FEEDBACK_PATH = path.join(caveHome(), "message-feedback.json");
+
+const DEFAULT_MESSAGE_FEEDBACK_BUCKET_LIMIT = 25;
 
 export type MessageFeedbackVote = "up" | "down";
 
@@ -186,7 +187,7 @@ async function loadMessageFeedbackRollupFromPrettyStore(args?: {
   if (!sawObjectEnd) throw invalidFeedbackStore('missing closing "}"');
 
   return finalizeMessageFeedbackRollup(finalVotes.values(), {
-    bucketLimit: args?.bucketLimit ?? FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets,
+    bucketLimit: args?.bucketLimit ?? DEFAULT_MESSAGE_FEEDBACK_BUCKET_LIMIT,
   });
 }
 
@@ -206,7 +207,7 @@ export async function loadMessageFeedbackRollup(args?: {
 
   return rollupMessageFeedback(await loadMessageFeedbackStrict(), {
     familiarId: args?.familiarId,
-    bucketLimit: args?.bucketLimit ?? FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets,
+    bucketLimit: args?.bucketLimit ?? DEFAULT_MESSAGE_FEEDBACK_BUCKET_LIMIT,
   });
 }
 

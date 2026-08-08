@@ -1663,6 +1663,7 @@ export type FamiliarDashboardResponse =
       ok: false;
       error:
         | "invalid_familiar_id"
+        | "dashboard_unauthorized"
         | "familiar_not_found"
         | "dashboard_unavailable";
     };
@@ -4189,7 +4190,8 @@ git commit -m "feat: add familiar dashboard endpoint"
 - [ ] Invalid Familiar IDs return 403 with `invalid_familiar_id`.
 - [ ] Unknown Familiars return 404 with `familiar_not_found`.
 - [ ] Known Familiars return 200 when sections are partial, empty, or unavailable.
-- [ ] Only failure to identify/build any safe dashboard, or a payload above 128 KiB, returns 500 `dashboard_unavailable`.
+- [ ] Roster auth failures preserve 401 or 403 with `dashboard_unauthorized`.
+- [ ] Only non-auth failure to identify/build any safe dashboard, or a payload above 128 KiB, returns 500 `dashboard_unavailable`.
 - [ ] Server states are limited to `fresh | partial | empty | unavailable`; `stale` exists only in the client-facing type union.
 - [ ] Every issue is a stable `{ source, code }`; raw provider/filesystem/daemon errors are absent.
 - [ ] Tasks, sessions, attention, reminders, reports, snapshots, and evidence obey every approved bound and retain totals.

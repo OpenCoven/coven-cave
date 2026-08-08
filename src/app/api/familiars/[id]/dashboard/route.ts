@@ -18,7 +18,14 @@ type DashboardLoader = (id: string) => Promise<FamiliarDashboardLoadResult>;
 
 const NO_STORE = { "cache-control": "no-store" };
 
-function dashboardError(status: number, error: "invalid_familiar_id" | "familiar_not_found" | "dashboard_unavailable") {
+function dashboardError(
+  status: number,
+  error:
+    | "invalid_familiar_id"
+    | "dashboard_unauthorized"
+    | "familiar_not_found"
+    | "dashboard_unavailable",
+) {
   return NextResponse.json(
     { ok: false, error },
     { status, headers: NO_STORE },
@@ -49,6 +56,9 @@ export async function handleDashboardRequest(
 
   if (result.kind === "not_found") {
     return dashboardError(404, "familiar_not_found");
+  }
+  if (result.kind === "auth_error") {
+    return dashboardError(result.status, "dashboard_unauthorized");
   }
   if (result.kind === "unavailable") {
     return dashboardError(500, "dashboard_unavailable");

@@ -18,6 +18,13 @@ import {
 import { loadCachedSessionsList } from "./sessions-list-cache.ts";
 
 const NOW = Date.parse("2026-08-07T20:00:00.000Z");
+const TASK_DEPENDENCY_LIMIT = 6;
+const FEEDBACK_BUCKET_LIMIT = 25;
+const ACCESS_PROJECT_LIMIT = 50;
+const CAPABILITY_USED_LIMIT = 5;
+const CAPABILITY_LACKING_LIMIT = 12;
+const CAPABILITY_VITAL_LIMIT = 12;
+const HEAL_REQUEST_LIMIT = 8;
 const CONFIG = {
   version: 1,
   defaults: { harness: "claude", model: "claude-sonnet" },
@@ -237,6 +244,26 @@ test("unknown Familiar stops after roster resolution", async () => {
   assert.deepEqual(result, { kind: "not_found" });
   assert.equal(boardCalls, 0);
 });
+
+for (const status of [401, 403] as const) {
+  test(`roster auth ${status} preserves a safe auth outcome`, async () => {
+    const result = await loadFamiliarDashboard("sage", makeDependencies({
+      loadRoster: async () => ({
+        ok: false,
+        config: CONFIG,
+        target: {
+          mode: "hub",
+          label: "Server hub",
+          url: "https://hub.example",
+        },
+        status,
+        error: "upstream token=secret",
+      }),
+    }));
+
+    assert.deepEqual(result, { kind: "auth_error", status });
+  });
+}
 
 test("known Familiar returns 200-shaped partial data when one source fails", async () => {
   const result = await loadFamiliarDashboard("sage", makeDependencies({
@@ -654,11 +681,11 @@ test("response stays within budget with oversized self-report capabilities and o
   const analytics = result.response.sections.analytics.data;
   assert.equal(
     overviewTask.dependencies.length,
-    FAMILIAR_DASHBOARD_LIMITS.taskDependencies,
+    TASK_DEPENDENCY_LIMIT,
   );
   assert.equal(
     analytics.capabilities.used.length,
-    FAMILIAR_DASHBOARD_LIMITS.capabilityUsed,
+    CAPABILITY_USED_LIMIT,
   );
   assert.deepEqual(analytics.capabilities.used.map((entry) => entry.name), [
     "skill-000",
@@ -669,15 +696,15 @@ test("response stays within budget with oversized self-report capabilities and o
   ]);
   assert.equal(
     analytics.capabilities.lacking.length,
-    FAMILIAR_DASHBOARD_LIMITS.capabilityLacking,
+    CAPABILITY_LACKING_LIMIT,
   );
   assert.equal(
     analytics.capabilities.vital.length,
-    FAMILIAR_DASHBOARD_LIMITS.capabilityVital,
+    CAPABILITY_VITAL_LIMIT,
   );
   assert.equal(
     analytics.healRequests.length,
-    FAMILIAR_DASHBOARD_LIMITS.healRequests,
+    HEAL_REQUEST_LIMIT,
   );
   assert.ok(
     serializedDashboardBytes(result.response) <= FAMILIAR_DASHBOARD_LIMITS.responseBytes,
@@ -730,7 +757,7 @@ test("default dashboard dependencies use bounded report and metric readers", () 
 test("default dashboard memory loader has no overview dependency", () => {
   assert.equal(
     DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES.loadMemory.name,
-    "canonicalMemoryList",
+    "loadCachedCanonicalMemorySummariesForFamiliar",
   );
 
   const source = readFileSync(
@@ -739,8 +766,9 @@ test("default dashboard memory loader has no overview dependency", () => {
   );
   assert.match(
     source,
-    /import \{\s*canonicalMemoryList,\s*\} from "@\/lib\/server\/canonical-memory-gateway";/,
+    /import \{\s*loadCachedCanonicalMemorySummariesForFamiliar,\s*\} from "@\/lib\/server\/canonical-memory-gateway";/,
   );
+  assert.doesNotMatch(source, /canonicalMemoryList,/);
   assert.doesNotMatch(source, /canonicalMemoryOverview/);
 });
 
@@ -774,8 +802,8 @@ test("response stays within budget with thousands of distinct feedback buckets",
     { up: feedback.up, down: feedback.down, total: feedback.total },
     { up: hugeBucketCount * 2, down: hugeBucketCount, total: hugeBucketCount * 3 },
   );
-  assert.equal(feedback.models.length, FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets);
-  assert.equal(feedback.runtimes.length, FAMILIAR_DASHBOARD_LIMITS.feedbackBuckets);
+  assert.equal(feedback.models.length, FEEDBACK_BUCKET_LIMIT);
+  assert.equal(feedback.runtimes.length, FEEDBACK_BUCKET_LIMIT);
   assert.deepEqual(
     feedback.models.slice(0, 3).map((slice) => slice.key),
     ["model-0000", "model-0001", "model-0002"],
@@ -804,7 +832,7 @@ test("response stays within budget with 5000 accessible projects", async () => {
   assert.equal(result.kind, "ok");
   const projects = result.response.sections.profile.data.access.projects;
   assert.equal(projects.total, 5000);
-  assert.equal(projects.items.length, FAMILIAR_DASHBOARD_LIMITS.accessProjects);
+  assert.equal(projects.items.length, ACCESS_PROJECT_LIMIT);
   assert.deepEqual(projects.items.slice(0, 3), [
     { id: "project-0001", name: "Project 0001", access: "read" },
     { id: "project-0002", name: "Project 0002", access: "write" },
