@@ -327,12 +327,7 @@ export async function loadFamiliarDashboard(
   });
   const familiar: Familiar = enrichmentSource.ok
     ? enrichmentSource.data
-    : {
-        ...rosterEntry,
-        defaultHarness: rosterResult.config.defaults.harness,
-        harnessOverride: null,
-        autoSelfReport: false,
-      };
+    : rosterEntry;
   const overviewRequired = [boardSource, sessionsSource, inboxSource];
   const overviewOptional = [
     contractSource,
@@ -396,13 +391,15 @@ export async function loadFamiliarDashboard(
         now,
       })
     : null;
-  const profileData = buildFamiliarProfile({
-    familiar,
-    config: rosterResult.config,
-    files: contract.files,
-    contractReport: contract.report,
-    projects: access.projects,
-  });
+  const profileData = enrichmentSource.ok
+    ? buildFamiliarProfile({
+        familiar,
+        config: rosterResult.config,
+        files: contract.files,
+        contractReport: contract.report,
+        projects: access.projects,
+      })
+    : null;
   const overview = buildDashboardSection({
     generatedAt,
     required: overviewRequired,

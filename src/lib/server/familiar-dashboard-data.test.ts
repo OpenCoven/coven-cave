@@ -346,6 +346,61 @@ test("multiple failures affect only the sections that consume them", async () =>
   assert.equal(JSON.stringify(result).includes("private failure detail"), false);
 });
 
+test("enrichment failure never publishes guessed Profile config and preserves independent sections", async () => {
+  const result = await loadFamiliarDashboard("sage", makeDependencies({
+    loadRoster: async () => ({
+      ok: true,
+      config: {
+        ...CONFIG,
+        familiars: {
+          sage: {
+            display_name: "Configured Sage",
+            role: "Planner",
+            harness: "codex",
+            model: "gpt-5.3-codex",
+            autoSelfReport: true,
+            asanaEnabled: false,
+            xResearchEnabled: true,
+            xPublishEnabled: false,
+          },
+        },
+      },
+      target: {
+        mode: "local",
+        label: "Local daemon",
+        socketPath: "/var/run/coven.sock",
+      },
+      roster: [{
+        id: "sage",
+        display_name: "Roster Sage",
+        role: "Researcher",
+        status: "online",
+        active_sessions: 1,
+      }],
+    }),
+    enrichFamiliar: async () => {
+      throw new Error("/Users/private/familiar-config token=secret");
+    },
+  }));
+
+  assert.equal(result.kind, "ok");
+  assert.equal(result.response.identity.displayName, "Roster Sage");
+  assert.equal(result.response.sections.profile.state, "unavailable");
+  assert.equal(result.response.sections.profile.data, null);
+  assert.deepEqual(result.response.sections.profile.issues, [{
+    source: "familiar",
+    code: "familiar_enrichment_unavailable",
+  }]);
+  assert.equal(result.response.sections.overview.state, "empty");
+  assert.equal(result.response.sections.overview.data.live.harness, null);
+  assert.equal(result.response.sections.overview.data.live.model, null);
+  assert.deepEqual(result.response.sections.overview.issues, []);
+  assert.equal(result.response.sections.analytics.state, "empty");
+  assert.deepEqual(result.response.sections.analytics.issues, []);
+  assert.equal(JSON.stringify(result).includes("private"), false);
+  assert.equal(JSON.stringify(result).includes("secret"), false);
+});
+
 test("all required Overview sources failing yields unavailable only for Overview", async () => {
   const fail = async () => { throw new Error("source failed"); };
   const result = await loadFamiliarDashboard("sage", makeDependencies({
