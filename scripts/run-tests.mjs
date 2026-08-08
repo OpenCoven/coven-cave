@@ -74,6 +74,7 @@ export const SUITES = {
     "src/components/workspace-canonical-memory-lazy-familiar.test.tsx",
     "src/lib/workspace-github-task-context.test.ts",
     "src/lib/role-surfaces.test.ts",
+    "src/lib/room-flags.test.ts",
     "src/lib/use-role-surfaces-loader.test.ts",
     "src/lib/familiar-types.test.ts",
     "src/lib/research-missions.test.ts",
