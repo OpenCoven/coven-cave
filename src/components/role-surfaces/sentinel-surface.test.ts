@@ -9,6 +9,7 @@ import {
   watchSessions,
   watchtowerStatus,
 } from "./sentinel-watch.ts";
+import { NO_CHAT_ATTENTION } from "../../lib/chat-attention.ts";
 import type { Escalation } from "@/lib/escalations-types";
 import type { SessionRow } from "@/lib/types";
 
@@ -100,6 +101,7 @@ function session(overrides: Partial<SessionRow> = {}): SessionRow {
     created_at: "2026-07-14T09:00:00Z",
     updated_at: "2026-07-14T09:30:00Z",
     ...overrides,
+    attention: overrides.attention ?? NO_CHAT_ATTENTION,
   };
 }
 

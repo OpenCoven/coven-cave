@@ -56,6 +56,24 @@ function getWorkflowJob(workflow, name) {
   return lines.slice(start, end).join("\n");
 }
 
+// A job holding Windows-only native tests must actually run on Windows. When
+// those steps carried their own `if: matrix.os == 'windows-latest'` this was
+// implicit; now that they live in a single-OS job it has to be checked here, or
+// a future edit to `runs-on` would silently move them onto a Linux runner where
+// every cfg(windows) filter reports zero tests.
+function assertWindowsOnlyJob(job, name) {
+  assert.match(
+    job,
+    /^\s+runs-on: windows-latest$/m,
+    `${name} must run on Windows for its native filters to execute`,
+  );
+  assert.doesNotMatch(
+    job,
+    /^\s+matrix:$/m,
+    `${name} must stay single-OS so no leg silently skips the native filters`,
+  );
+}
+
 function getNamedWorkflowStep(job, name) {
   const lines = job.split(/\r?\n/);
   const marker = `- name: ${name}`;
@@ -75,9 +93,13 @@ function getNamedWorkflowStep(job, name) {
   return lines.slice(start, end).join("\n");
 }
 
+// These steps used to live on the sidecar-runtime matrix and carried a per-step
+// `if: matrix.os == 'windows-latest'`. They now sit in the dedicated
+// windows-native job (cave-b3d), which is windows-only by `runs-on`, so the
+// Windows guarantee is asserted once on the job itself — see
+// assertWindowsOnlyJob — rather than repeated on every step.
 function assertWindowsNativeRustStep(job, expected) {
   const step = getNamedWorkflowStep(job, expected.name);
-  assert.match(step, /^\s+if: matrix\.os == 'windows-latest'$/m);
   assert.match(step, /^\s+shell: pwsh$/m);
   assert.equal(
     step.match(/\bcargo test\b/g)?.length,
@@ -504,15 +526,41 @@ test("Windows native Rust regression filters are isolated and cannot pass with z
     new URL("../.github/workflows/ci.yml", import.meta.url),
     "utf8",
   );
-  const sidecarRuntimeJob = getWorkflowJob(workflow, "sidecar-runtime");
+  // Split out of sidecar-runtime (cave-b3d): these filters need no packaged
+  // sidecar bundle, so they run in their own job instead of queueing behind it.
+  const windowsNativeJob = getWorkflowJob(workflow, "windows-native");
+  assertWindowsOnlyJob(windowsNativeJob, "windows-native");
 
   for (const expected of WINDOWS_NATIVE_RUST_STEPS) {
-    assertWindowsNativeRustStep(sidecarRuntimeJob, expected);
+    assertWindowsNativeRustStep(windowsNativeJob, expected);
   }
-  assert.doesNotMatch(
+  // Checked against BOTH jobs: the filter is cfg-disabled on Windows wherever it
+  // is invoked from, so the guard must not lapse just because the steps moved.
+  const sidecarRuntimeJob = getWorkflowJob(workflow, "sidecar-runtime");
+  for (const [name, job] of [
+    ["windows-native", windowsNativeJob],
+    ["sidecar-runtime", sidecarRuntimeJob],
+  ]) {
+    assert.doesNotMatch(
+      job,
+      /dropping_application_cleanup_guard_stops_and_reaps_sidecar/,
+      `Windows CI must not silently pass a cleanup filter that is cfg-disabled on Windows (${name})`,
+    );
+  }
+
+  // The archive extraction test deliberately stays behind the bundle build:
+  // extracts_the_built_windows_archive_when_available returns early when
+  // resources/server-archive is absent, so running it in the bundle-less job
+  // would pass while testing nothing.
+  assert.match(
     sidecarRuntimeJob,
-    /dropping_application_cleanup_guard_stops_and_reaps_sidecar/,
-    "Windows CI must not silently pass a cleanup filter that is cfg-disabled on Windows",
+    /^\s+- name: Test Windows sidecar cache extraction$/m,
+    "sidecar archive extraction must stay in the job that builds the archive",
+  );
+  assert.doesNotMatch(
+    windowsNativeJob,
+    /sidecar_archive/,
+    "sidecar archive extraction must not move to the bundle-less job, where it would silently test nothing",
   );
 });
 
@@ -756,12 +804,14 @@ test("Windows upgrade diagnostics preserve the legacy-bridge evidence", async ()
   );
   assert.match(fixtureTest, /legacy-expanded-msi-bridge/);
   assert.match(fixtureTest, /msiLog\.actions/);
-  const sidecarRuntimeJob = getWorkflowJob(workflow, "sidecar-runtime");
+  // Moved to the dedicated windows-native job (cave-b3d); the Windows guarantee
+  // is now carried by that job's runs-on rather than a per-step if.
+  const windowsNativeJob = getWorkflowJob(workflow, "windows-native");
+  assertWindowsOnlyJob(windowsNativeJob, "windows-native");
   const diagnosticsStep = getNamedWorkflowStep(
-    sidecarRuntimeJob,
+    windowsNativeJob,
     "Test Windows upgrade diagnostics fixture",
   );
-  assert.match(diagnosticsStep, /^\s+if: matrix\.os == 'windows-latest'$/m);
   assert.match(diagnosticsStep, /^\s+shell: powershell$/m);
   assert.match(
     diagnosticsStep,

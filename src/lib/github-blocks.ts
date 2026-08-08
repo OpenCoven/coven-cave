@@ -301,22 +301,51 @@ function mergeRanges(ranges: Array<[number, number]>): Array<[number, number]> {
   return merged;
 }
 
+function leadingWhitespaceLength(line: string): number {
+  return /^[ \t]*/.exec(line)?.[0].length ?? 0;
+}
+
 function rendererFenceRanges(text: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
+  const lines = text.split("\n");
   let offset = 0;
   let start = -1;
   let character = "";
-  for (const line of text.split("\n")) {
-    const fence = /^\s*(`{3,}|~{3,})(\w*)?\s*$/.exec(line);
+  let openedFromList = false;
+  let interiorLines = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     if (start === -1) {
-      if (fence) {
+      const opening = /^([ \t]*)(?:(?:([-+*]|\d{1,9}[.)])[ \t]+))?(`{3,}|~{3,})(.*)$/.exec(line);
+      const validOpening = opening &&
+        !(opening[3][0] === "`" && opening[4].includes("`"));
+      if (validOpening) {
         start = offset;
-        character = fence[1][0];
+        character = opening[3][0];
+        openedFromList = Boolean(opening[2]);
+        interiorLines = 0;
       }
-    } else if (fence && fence[1][0] === character) {
-      ranges.push([start, offset + line.length]);
-      start = -1;
-      character = "";
+    } else {
+      const closing = /^([ \t]*)(`{3,}|~{3,})[ \t]*$/.exec(line);
+      if (closing && closing[2][0] === character) {
+        ranges.push([start, offset + line.length]);
+        const nextLine = lines[index + 1];
+        const canReopen = nextLine !== undefined
+          && leadingWhitespaceLength(nextLine) >= closing[1].length;
+        if (openedFromList && canReopen) {
+          start = offset;
+          character = closing[2][0];
+          openedFromList = false;
+          interiorLines = 0;
+        } else {
+          start = -1;
+          character = "";
+          openedFromList = false;
+          interiorLines = 0;
+        }
+      } else {
+        interiorLines += 1;
+      }
     }
     offset += line.length + 1;
   }
@@ -329,13 +358,17 @@ function rendererFenceRanges(text: string): Array<[number, number]> {
  *  cave-m0r6); an unclosed trailing fence protects through the text end. */
 export function fencedRanges(text: string): Array<[number, number]> {
   const containerRanges: Array<[number, number]> = [];
+  const lines = text.split("\n");
   let offset = 0;
   let fenceStart = -1;
   let fenceCharacter = "";
   let fenceLength = 0;
   let fenceQuoteDepth = 0;
   let closingIndent = 3;
-  for (const line of text.split("\n")) {
+  let openedFromList = false;
+  let interiorLines = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     let contentOffset = 0;
     let quoteDepth = 0;
     while (true) {
@@ -365,6 +398,8 @@ export function fencedRanges(text: string): Array<[number, number]> {
         fenceLength = fence.length;
         fenceQuoteDepth = quoteDepth;
         closingIndent = indent + 3;
+        openedFromList = Boolean(list);
+        interiorLines = 0;
       }
     } else {
       const closing = /^([ \t]*)(`{3,}|~{3,})\s*$/.exec(containerContent);
@@ -376,11 +411,39 @@ export function fencedRanges(text: string): Array<[number, number]> {
         && closing[2].length >= fenceLength
       ) {
         containerRanges.push([fenceStart, offset + line.length]);
-        fenceStart = -1;
-        fenceCharacter = "";
-        fenceLength = 0;
-        fenceQuoteDepth = 0;
-        closingIndent = 3;
+        const nextLine = lines[index + 1];
+        let canReopen = false;
+        if (nextLine !== undefined) {
+          let nextContentOffset = 0;
+          let nextQuoteDepth = 0;
+          while (true) {
+            const quote = /^ {0,3}>[ \t]?/.exec(nextLine.slice(nextContentOffset));
+            if (!quote) break;
+            nextContentOffset += quote[0].length;
+            nextQuoteDepth += 1;
+          }
+          canReopen = nextQuoteDepth === quoteDepth
+            && leadingWhitespaceLength(nextLine.slice(nextContentOffset)) >= closing[1].length;
+        }
+        if ((openedFromList || (interiorLines === 0 && quoteDepth > 0)) && canReopen) {
+          fenceStart = offset;
+          fenceCharacter = closing[2][0];
+          fenceLength = closing[2].length;
+          fenceQuoteDepth = quoteDepth;
+          closingIndent = closing[1].length + 3;
+          openedFromList = false;
+          interiorLines = 0;
+        } else {
+          fenceStart = -1;
+          fenceCharacter = "";
+          fenceLength = 0;
+          fenceQuoteDepth = 0;
+          closingIndent = 3;
+          openedFromList = false;
+          interiorLines = 0;
+        }
+      } else {
+        interiorLines += 1;
       }
     }
     offset += line.length + 1;
@@ -403,21 +466,20 @@ function inRanges(ranges: Array<[number, number]>, index: number): boolean {
  * briefly activate protocol controls before their closing delimiter arrives. */
 export function markdownCodeRanges(text: string): Array<[number, number]> {
   const fences = fencedRanges(text);
-  const rendererFences = rendererFenceRanges(text);
   const inline: Array<[number, number]> = [];
   let cursor = 0;
-  let rendererFenceIndex = 0;
+  let fenceIndex = 0;
 
   while (cursor < text.length) {
     while (
-      rendererFenceIndex < rendererFences.length
-      && cursor >= rendererFences[rendererFenceIndex][1]
+      fenceIndex < fences.length
+      && cursor >= fences[fenceIndex][1]
     ) {
-      rendererFenceIndex += 1;
+      fenceIndex += 1;
     }
-    const rendererFence = rendererFences[rendererFenceIndex];
-    if (rendererFence && cursor >= rendererFence[0]) {
-      cursor = rendererFence[1];
+    const fence = fences[fenceIndex];
+    if (fence && cursor >= fence[0]) {
+      cursor = fence[1];
       continue;
     }
     if (text[cursor] !== "`") {
@@ -430,16 +492,16 @@ export function markdownCodeRanges(text: string): Array<[number, number]> {
     const delimiterLength = cursor - start;
     let closingEnd = -1;
     let search = cursor;
-    let searchFenceIndex = rendererFenceIndex;
+    let searchFenceIndex = fenceIndex;
 
     while (search < text.length) {
       while (
-        searchFenceIndex < rendererFences.length
-        && search >= rendererFences[searchFenceIndex][1]
+        searchFenceIndex < fences.length
+        && search >= fences[searchFenceIndex][1]
       ) {
         searchFenceIndex += 1;
       }
-      const searchFence = rendererFences[searchFenceIndex];
+      const searchFence = fences[searchFenceIndex];
       if (searchFence && search >= searchFence[0]) {
         search = searchFence[1];
         continue;

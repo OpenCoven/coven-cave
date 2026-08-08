@@ -18,6 +18,8 @@ import { loadConversationFromJsonl } from "@/lib/openclaw-conversation";
 import { loadState, recordSessionFamiliar, sacrificeSessionLocal } from "@/lib/cave-config";
 import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import { normalizeTurnUsage, parseCostUsd } from "@/lib/usage-format";
+import { CHAT_ATTENTION_REASONS } from "@/lib/chat-attention-marker";
+import { isCanonicalIsoInstant } from "@/lib/chat-attention";
 import {
   checkTurnBounds,
   sanitizeClientTurns,
@@ -92,6 +94,7 @@ const MODEL_APPLICATION_REASONS = new Set([
   "Model forwarding is unavailable for this runtime binding.",
   "Coven forwarded the selected model; downstream acceptance was not confirmed.",
 ]);
+const CHAT_ATTENTION_REASON_SET = new Set<string>(CHAT_ATTENTION_REASONS);
 
 function safeMetadataText(value: unknown, maxLength = 512, allowEmpty = false): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -132,7 +135,40 @@ function cleanMetadataToken(value: unknown, maxLength: number): string | undefin
  * user-visible facts; provider payloads, credentials, and secret-bearing URLs
  * are never accepted as transcript metadata.
  */
-function normalizeResponseMetadata(input: unknown): ChatResponseMetadata | undefined {
+type AttentionRequestOwner = {
+  sessionId: string;
+  turnId: string;
+  createdAt: string;
+};
+
+function normalizeOwnedAttentionRequest(
+  input: unknown,
+  owner: AttentionRequestOwner | undefined,
+): ChatResponseMetadata["attentionRequest"] | undefined {
+  if (!owner || !input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const value = input as Record<string, unknown>;
+  if (
+    value.sessionId !== owner.sessionId ||
+    value.turnId !== owner.turnId ||
+    value.requestedAt !== owner.createdAt ||
+    !isCanonicalIsoInstant(value.requestedAt) ||
+    typeof value.reason !== "string" ||
+    !CHAT_ATTENTION_REASON_SET.has(value.reason)
+  ) {
+    return undefined;
+  }
+  return {
+    sessionId: owner.sessionId,
+    turnId: owner.turnId,
+    requestedAt: owner.createdAt,
+    reason: value.reason as NonNullable<ChatResponseMetadata["attentionRequest"]>["reason"],
+  };
+}
+
+function normalizeResponseMetadata(
+  input: unknown,
+  attentionOwner?: AttentionRequestOwner,
+): ChatResponseMetadata | undefined {
   if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
   const value = input as Record<string, unknown>;
   const familiarId = safeMetadataText(value.familiarId, 160);
@@ -180,6 +216,7 @@ function normalizeResponseMetadata(input: unknown): ChatResponseMetadata | undef
   const caveSessionId = cleanMetadataToken(value.caveSessionId, 160);
   const gatewaySessionId = cleanMetadataToken(value.gatewaySessionId, 160);
   const sessionKey = cleanMetadataToken(value.sessionKey, 256);
+  const attentionRequest = normalizeOwnedAttentionRequest(value.attentionRequest, attentionOwner);
 
   return {
     familiarId,
@@ -204,6 +241,7 @@ function normalizeResponseMetadata(input: unknown): ChatResponseMetadata | undef
     ...(caveSessionId ? { caveSessionId } : {}),
     ...(gatewaySessionId ? { gatewaySessionId } : {}),
     ...(sessionKey ? { sessionKey } : {}),
+    ...(attentionRequest ? { attentionRequest } : {}),
   };
 }
 
@@ -233,7 +271,11 @@ function sanitizeConversationMetadata(conversation: ConversationFile): Conversat
     turns: conversation.turns.map((turn) => {
       const responseMetadata = turn.role === "user"
         ? undefined
-        : normalizeResponseMetadata(turn.responseMetadata);
+        : normalizeResponseMetadata(turn.responseMetadata, {
+            sessionId: conversation.sessionId,
+            turnId: turn.id,
+            createdAt: turn.createdAt,
+          });
       return {
         ...turn,
         ...(responseMetadata ? { responseMetadata } : { responseMetadata: undefined }),

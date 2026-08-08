@@ -529,7 +529,7 @@ for (const contract of contracts) {
   );
   const guardedDiagnostics = [
     ...sendSource.matchAll(
-      /if \(cancelledByUser\) \{[\s\S]{0,200}?\} else if \(!assistantText\.trim\(\)(?: && !launchFailure)?\) \{/g,
+      /(?:if \(cancelledByUser\) \{[\s\S]{0,200}?\} else if \(!assistantText\.trim\(\)(?: && !launchFailure)?\) \{|if \(!cancelledByUser && !assistantText\.trim\(\)\) \{)/g,
     ),
   ];
   assert.equal(
@@ -582,8 +582,8 @@ for (const contract of contracts) {
   );
   assert.match(
     sendSource,
-    /if \(cancelledByUser\) \{\s*\n\s*if \(!assistantText\.trim\(\)\) assistantText = "\(cancelled\)";\s*\n\s*isError = false;/,
-    "/chat/send: a user cancel must never be recorded as a harness error (openclaw path)",
+    /if \(cancelledByUser\) \{\s*\n\s*assistantText = "\(cancelled\)";\s*\n\s*isError = false;\s*\n\s*\} else if \(stdout\.trim\(\)\) \{/,
+    "/chat/send: an explicit OpenClaw stop must take precedence over malformed or truncated bridge stdout",
   );
 
   // SSE heartbeats: a long tool run can stream nothing for minutes, and a

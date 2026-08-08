@@ -50,8 +50,26 @@ struct ChatProjectPicker: View {
         )
     }
 
+    #if DEBUG
+    private enum PreviewInitialState {
+        case empty
+        case failure
+    }
+
+    private var previewInitialState: PreviewInitialState? {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--ui-preview-new-chat-project-retry") {
+            return .failure
+        }
+        if arguments.contains("--ui-preview-new-chat-project-empty-retry") {
+            return .empty
+        }
+        return nil
+    }
+    #endif
+
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 0) {
             if familiarKey.isEmpty {
                 Label(
                     "Choose a familiar before selecting a project.",
@@ -75,8 +93,11 @@ struct ChatProjectPicker: View {
                         systemImage: "folder.badge.questionmark"
                     )
                     .foregroundStyle(.secondary)
-                    if let onManageAccess {
-                        Button("Project access", action: onManageAccess)
+                    HStack(spacing: 12) {
+                        Button("Retry") { reloadToken += 1 }
+                        if let onManageAccess {
+                            Button("Project access", action: onManageAccess)
+                        }
                     }
                 }
             } else {
@@ -109,6 +130,7 @@ struct ChatProjectPicker: View {
             }
         }
         .pickerStyle(.menu)
+        .accessibilityIdentifier("New chat project")
         .accessibilityHint("Chooses where this chat can work")
     }
 
@@ -141,6 +163,22 @@ struct ChatProjectPicker: View {
             return
         }
 
+        #if DEBUG
+        if refreshToken == 0, reloadToken == 0 {
+            switch previewInitialState {
+            case .failure:
+                errorMessage = "Couldn’t load projects."
+                resolvedLoadKey = identity.key
+                return
+            case .empty:
+                resolvedLoadKey = identity.key
+                return
+            case nil:
+                break
+            }
+        }
+        #endif
+
         isLoading = true
         defer {
             if loadGeneration == identity.generation {
@@ -148,7 +186,7 @@ struct ChatProjectPicker: View {
             }
         }
 
-        guard app.client != nil else {
+        guard app.canLoadChatProjects else {
             guard loadGeneration == identity.generation else { return }
             isLoading = false
             errorMessage = "Connect to your Cave to load projects."
@@ -159,12 +197,10 @@ struct ChatProjectPicker: View {
         do {
             let loaded = try await ChatProjectSelection.loadProjectsWithRecovery(
                 load: {
-                    guard let currentClient = app.client else {
-                        throw CaveError.notConfigured
-                    }
-                    return try await currentClient.projects(familiarIds: familiarKey)
+                    try await app.loadChatProjects(familiarIds: familiarKey)
                 },
                 recover: { _ in
+                    guard app.canRecoverChatProjectConnection else { return false }
                     await app.recoverConnectionInBackground()
                     return app.connectionState == .connected
                 }

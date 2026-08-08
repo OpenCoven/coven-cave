@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -11,6 +11,7 @@ const home = await mkdtemp(path.join(homedir(), "cave-openclaw-route-"));
 const bin = path.join(home, "bin");
 const workspace = path.join(home, "workspace");
 const log = path.join(home, "openclaw-calls.jsonl");
+const cancelReady = path.join(home, "openclaw-cancel-ready");
 await mkdir(bin, { recursive: true });
 await mkdir(workspace, { recursive: true });
 
@@ -20,12 +21,14 @@ const previous = {
   OPENCLAW_BIN: process.env.OPENCLAW_BIN,
   OPENCLAW_TEST_MODE: process.env.OPENCLAW_TEST_MODE,
   OPENCLAW_TEST_LOG: process.env.OPENCLAW_TEST_LOG,
+  OPENCLAW_TEST_CANCEL_READY: process.env.OPENCLAW_TEST_CANCEL_READY,
   OPENCLAW_EMBEDDED_LOCAL: process.env.OPENCLAW_EMBEDDED_LOCAL,
   OPENCLAW_GATEWAY_DISPATCH: process.env.OPENCLAW_GATEWAY_DISPATCH,
 };
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 process.env.OPENCLAW_TEST_LOG = log;
+process.env.OPENCLAW_TEST_CANCEL_READY = cancelReady;
 delete process.env.OPENCLAW_GATEWAY_DISPATCH;
 delete process.env.OPENCLAW_EMBEDDED_LOCAL;
 await writeFile(
@@ -55,6 +58,36 @@ const shim = [
   "if (mode === 'explicit-local') {",
   "  if (!local) { process.stderr.write('expected embedded run'); process.exit(1); }",
   "  process.stdout.write(JSON.stringify({ payloads: [{ text: 'explicit local reply' }] })); process.exit(0);",
+  "}",
+  "if (mode === 'attention-reasoning') {",
+  "  process.stdout.write(JSON.stringify({ payloads: [{ text: 'Visible answer.\\n<thinking>private <coven:attention reason=\"approval\" /></thinking>' }] })); process.exit(0);",
+  "}",
+  "if (mode === 'attention-both') {",
+  "  process.stdout.write(JSON.stringify({ payloads: [{ text: 'Visible answer.\\n<coven:attention reason=\"approval\" />\\n<thinking>private plan</thinking>' }] })); process.exit(0);",
+  "}",
+  "if (mode === 'attention-visible') {",
+  "  process.stdout.write(JSON.stringify({ payloads: [{ text: '<reasoning>private notes</reasoning>\\nVisible question.\\n<coven:attention reason=\"decision\" />' }] })); process.exit(0);",
+  "}",
+  "if (mode === 'truncated') { process.stdout.write('{\"payloads\":[{\"text\":\"truncated'); process.exit(1); }",
+  "if (mode === 'cancel-empty') {",
+  "  record({ cancelReady: true, mode });",
+  "  appendFileSync(process.env.OPENCLAW_TEST_CANCEL_READY, 'started');",
+  "  setInterval(() => {}, 1000);",
+  "  return;",
+  "}",
+  "if (mode === 'cancel-truncated') {",
+  "  process.stdout.write('{\"payloads\":[{\"text\":\"partial');",
+  "  record({ cancelReady: true, mode, output: 'truncated' });",
+  "  appendFileSync(process.env.OPENCLAW_TEST_CANCEL_READY, 'started');",
+  "  setInterval(() => {}, 1000);",
+  "  return;",
+  "}",
+  "if (mode === 'cancel-full-output') {",
+  "  process.stdout.write(JSON.stringify({ payloads: [{ text: 'late complete output' }], meta: { agentMeta: { sessionId: 'late-session' } } }));",
+  "  record({ cancelReady: true, mode, output: 'full' });",
+  "  appendFileSync(process.env.OPENCLAW_TEST_CANCEL_READY, 'started');",
+  "  setInterval(() => {}, 1000);",
+  "  return;",
   "}",
   "if (mode === 'malformed') { process.stdout.write(JSON.stringify({ payloads: {} })); process.exit(0); }",
   "process.stderr.write('unknown fixture mode'); process.exit(1);",
@@ -95,10 +128,28 @@ async function clearCalls() {
   await writeFile(log, "", "utf8");
 }
 
+async function clearCancelReady() {
+  await unlink(cancelReady).catch(() => undefined);
+}
+
+async function waitForText(file, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      return await readFile(file, "utf8");
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+  assert.fail(`timed out waiting for fixture marker ${file}`);
+}
+
 try {
   const { saveConfig } = await import("@/lib/cave-config");
+  const { loadConversation } = await import("@/lib/cave-conversations");
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
+  const { requestChatStop } = await import("@/lib/server/chat-stop-registry");
   const { POST } = await import("./route.ts");
   // OpenClaw owns model selection and cannot accept a Cave model override;
   // keep this bridge fixture on the explicit runtime-default sentinel.
@@ -139,12 +190,89 @@ try {
   assert.equal(explicitEvents.findLast((event) => event.kind === "done")?.isError, false);
   assert.deepEqual((await calls()).map((call) => call.local), [true], "an explicit local selection uses one embedded child");
 
+  delete process.env.OPENCLAW_EMBEDDED_LOCAL;
+  process.env.OPENCLAW_TEST_MODE = "attention-reasoning";
+  const reasoningOnlyEvents = await readSse(await send("do not request attention from hidden reasoning"));
+  const reasoningOnlySessionId = reasoningOnlyEvents.findLast((event) => event.kind === "done")?.sessionId;
+  const reasoningOnlyConversation = await loadConversation(reasoningOnlySessionId);
+  const reasoningOnlyTurn = reasoningOnlyConversation?.turns.at(-1);
+  assert.equal(reasoningOnlyTurn?.text, "Visible answer.");
+  assert.equal(reasoningOnlyTurn?.reasoning, "private", "reload keeps the reasoning content without its control marker");
+  assert.equal(
+    reasoningOnlyTurn?.responseMetadata?.attentionRequest,
+    undefined,
+    "a marker inside hidden reasoning is not persisted as an attention request",
+  );
+  assert.doesNotMatch(reasoningOnlyTurn?.text ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
+  assert.doesNotMatch(reasoningOnlyTurn?.reasoning ?? "", /<coven:attention/);
+
+  process.env.OPENCLAW_TEST_MODE = "attention-both";
+  const visibleAndReasoningEvents = await readSse(await send("keep reasoning on reload while honoring visible attention"));
+  const visibleAndReasoningSessionId = visibleAndReasoningEvents.findLast((event) => event.kind === "done")?.sessionId;
+  const visibleAndReasoningConversation = await loadConversation(visibleAndReasoningSessionId);
+  const visibleAndReasoningTurn = visibleAndReasoningConversation?.turns.at(-1);
+  assert.equal(visibleAndReasoningTurn?.text, "Visible answer.");
+  assert.equal(visibleAndReasoningTurn?.reasoning, "private plan");
+  assert.equal(visibleAndReasoningTurn?.responseMetadata?.attentionRequest?.reason, "approval");
+  assert.doesNotMatch(visibleAndReasoningTurn?.text ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
+  assert.doesNotMatch(visibleAndReasoningTurn?.reasoning ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
+
+  process.env.OPENCLAW_TEST_MODE = "attention-visible";
+  const visibleMarkerEvents = await readSse(await send("request a visible decision"));
+  const visibleMarkerSessionId = visibleMarkerEvents.findLast((event) => event.kind === "done")?.sessionId;
+  const visibleMarkerConversation = await loadConversation(visibleMarkerSessionId);
+  const visibleMarkerTurn = visibleMarkerConversation?.turns.at(-1);
+  assert.equal(visibleMarkerTurn?.text, "Visible question.");
+  assert.equal(visibleMarkerTurn?.reasoning, "private notes", "visible-marker turns still persist reloadable reasoning");
+  assert.equal(
+    visibleMarkerTurn?.responseMetadata?.attentionRequest?.reason,
+    "decision",
+    "visible-body attention behavior remains intact after reasoning is removed",
+  );
+  assert.doesNotMatch(visibleMarkerTurn?.text ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
+  assert.doesNotMatch(visibleMarkerTurn?.reasoning ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
+
   process.env.OPENCLAW_TEST_MODE = "malformed";
   await clearCalls();
   const malformedEvents = await readSse(await send("malformed current envelope"));
   assert.equal(malformedEvents.find((event) => event.kind === "assistant_chunk")?.text, "The OpenClaw bridge emitted an invalid response.");
   assert.ok(malformedEvents.some((event) => event.id === "openclaw-protocol" && event.status === "error"));
   assert.equal(malformedEvents.findLast((event) => event.kind === "done")?.isError, true, "malformed payloads complete as a safe failed turn");
+
+  process.env.OPENCLAW_TEST_MODE = "truncated";
+  await clearCalls();
+  const truncatedEvents = await readSse(await send("truncated current envelope"));
+  assert.equal(truncatedEvents.find((event) => event.kind === "assistant_chunk")?.text, "The OpenClaw bridge emitted an invalid response.");
+  assert.ok(truncatedEvents.some((event) => event.id === "openclaw-protocol" && event.status === "error"));
+  assert.equal(truncatedEvents.findLast((event) => event.kind === "done")?.isError, true, "truncated stdout remains a real invalid-response failure when not cancelled");
+
+  for (const mode of ["cancel-empty", "cancel-truncated", "cancel-full-output"]) {
+    process.env.OPENCLAW_TEST_MODE = mode;
+    await clearCalls();
+    await clearCancelReady();
+    const sessionId = `openclaw-${mode}-session`;
+    const runId = `openclaw-${mode}-run`;
+    const response = await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ familiarId: "wren", prompt: `stop ${mode}`, projectRoot: workspace, sessionId, runId }),
+    }));
+    await waitForText(cancelReady);
+    assert.equal(requestChatStop(runId), true, `${mode} should register with the shared stop registry`);
+    const events = await readSse(response);
+    assert.equal(events.find((event) => event.kind === "error"), undefined, `${mode} stop never emits an error event`);
+    assert.equal(
+      events.find((event) => event.kind === "progress" && event.id === "openclaw-protocol"),
+      undefined,
+      `${mode} stop must not fabricate an invalid-response diagnostic`,
+    );
+    assert.equal(events.findLast((event) => event.kind === "done")?.isError, false, `${mode} stop completes as success`);
+    const conversation = await loadConversation(sessionId);
+    const turn = conversation?.turns.at(-1);
+    assert.equal(turn?.text, "(cancelled)", `${mode} stop persists the canonical cancelled text`);
+    assert.equal(turn?.cancelled, true, `${mode} stop marks the persisted turn cancelled`);
+    assert.equal(turn?.isError, false, `${mode} stop never marks the persisted turn failed`);
+  }
 } finally {
   for (const [key, value] of Object.entries(previous)) {
     if (value === undefined) delete process.env[key];

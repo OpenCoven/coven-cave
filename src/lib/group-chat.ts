@@ -112,6 +112,11 @@ export type GroupStreamEvent =
 // Streaming reducers (pure)
 // ---------------------------------------------------------------------------
 
+/** Replace rendered text without changing terminal status, errors, or activity. */
+export function replaceGroupReplyText(reply: GroupReply, text: string): GroupReply {
+  return { ...reply, text };
+}
+
 /** Apply one stream event to a reply, returning the next immutable state. */
 export function applyGroupEvent(reply: GroupReply, ev: GroupStreamEvent): GroupReply {
   switch (ev.kind) {

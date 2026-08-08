@@ -35,6 +35,11 @@ assert.match(
   /attachments: args\.persistedAttachments/,
   "Queued offline chat payloads should keep transcript-safe attachment metadata, not preview payloads",
 );
+assert.match(
+  chatRoute,
+  /runId: args\.body\.runId,/,
+  "Queued offline chat payloads should preserve the normalized client run id for queue-time attention persistence",
+);
 
 assert.match(
   chatRoute,
@@ -67,4 +72,45 @@ assert.ok(
 assert.ok(
   queueIndex < harnessPromptIndex,
   "Offline queueing should run before prompt assembly and harness spawning work",
+);
+
+// ── cave-zs85n Task 5: the queued-offline "done" event reports success after
+//    both the queue item and original user turn are durably persisted.
+//    ChatView's "done" handler treats
+//    any isError:false terminal as persistence-confirmed
+//    (chat-sidebar-wiring.test.ts pins this), so persistence must finish before
+//    the stream settles. ─────────────────────────────────────────────────────
+const offlineChatResponseBlock = chatRoute.match(
+  /async function maybeQueueOfflineChat\([\s\S]*?\n\}\n/,
+)?.[0] ?? "";
+assert.ok(offlineChatResponseBlock, "maybeQueueOfflineChat should be defined");
+assert.match(
+  offlineChatResponseBlock,
+  /const queuedUserTurnId = crypto\.randomUUID\(\);[\s\S]*userTurnId: queuedUserTurnId,[\s\S]*await persistQueuedOfflineConversation\(\{[\s\S]*userTurn: \{[\s\S]*id: queuedUserTurnId,[\s\S]*attachments: args\.persistedAttachments[\s\S]*attentionClearOperationForTurn\(args\.body\.runId\)[\s\S]*persistedTurnControls\([\s\S]*parentId: args\.body\.parentTurnId/,
+  "the queue payload and original local human turn share one stable id and preserve attachments, controls, parentage, and the attention operation",
+);
+assert.doesNotMatch(
+  offlineChatResponseBlock,
+  /replaySessions|replaySessionId|daemonSessionId|continuity|resolveReplayBacked/,
+  "queue-time persistence must not promise replay continuity or daemon identity",
+);
+const queuedSessionIndex = offlineChatResponseBlock.indexOf('push({ kind: "session", sessionId });');
+const queuedProgressIndex = offlineChatResponseBlock.indexOf('id: "queued-offline"');
+const queuedDoneIndex = offlineChatResponseBlock.indexOf('kind: "done"');
+const queuedPersistenceIndex = offlineChatResponseBlock.indexOf("await persistQueuedOfflineConversation");
+assert.ok(
+  queuedPersistenceIndex >= 0 && queuedPersistenceIndex < queuedSessionIndex,
+  "the original user turn must be durable before the queued stream announces success",
+);
+assert.ok(queuedSessionIndex >= 0, "the queued offline stream should push a session event");
+assert.ok(queuedProgressIndex >= 0, "the queued offline stream should push the queued-offline progress step");
+assert.ok(queuedDoneIndex >= 0, "the queued offline stream should push a terminal done event");
+assert.ok(
+  queuedSessionIndex < queuedProgressIndex && queuedProgressIndex < queuedDoneIndex,
+  "the queued offline stream must push session, then the queued-offline progress step, then done — in that order, so ChatView records the attention clear before the outcome settles",
+);
+assert.match(
+  offlineChatResponseBlock,
+  /push\(\{\s*kind: "done",\s*isError: false,/,
+  "the queued offline stream's done event reports genuine durable acceptance",
 );
