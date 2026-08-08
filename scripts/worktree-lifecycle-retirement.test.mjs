@@ -844,6 +844,73 @@ test("fails closed when the retention probe cannot read the remote", () => {
   );
 });
 
+test("a reprobe that resolves the remote branch is preferred over a stale inventory null", () => {
+  // remoteRef is not part of retirementIdentityError, so a transient
+  // remote-read failure at inventory time reports null for a branch that
+  // still exists. Requiring a tag in that case refuses a plainly retained
+  // unit. Reported on PR #4438.
+  const item = makeItem({ remoteRef: null });
+  const { operations, calls } = makeOperations({
+    reprobe(candidate) {
+      return {
+        ok: true,
+        item: {
+          ...candidate,
+          remoteRef: { ref: "refs/heads/fix/example", oid: hex("1") },
+        },
+      };
+    },
+    readRemoteRef() {
+      return { ok: true, remoteRef: { ref: "refs/heads/fix/example", oid: hex("1") } };
+    },
+    readRemoteTagRetention() {
+      throw new Error("tag retention must not be consulted when the reprobe found the branch");
+    },
+  });
+
+  const report = retireLifecycleUnits({
+    items: [item],
+    gateHandle: { generation: 14, token: "gate" },
+    operations,
+    maxRetire: "1",
+  });
+
+  assert.equal(report.retired.length, 1);
+  assert.ok(!calls.some(([name]) => name === "readRemoteTagRetention"));
+  // The resolved ref is what gets proposed for remote deletion.
+  assert.deepEqual(report.remoteDeletionProposals[0]?.ref, "refs/heads/fix/example");
+});
+
+test("a branch that disappeared between inventory and reprobe fails live revalidation", () => {
+  // The inverse of the case above: falling back to the inventory value keeps
+  // this a live-revalidation failure rather than silently taking the tag path.
+  const item = makeItem({
+    remoteRef: { ref: "refs/heads/fix/example", oid: hex("1") },
+  });
+  const { operations, calls } = makeOperations({
+    reprobe(candidate) {
+      return { ok: true, item: { ...candidate, remoteRef: null } };
+    },
+    readRemoteRef() {
+      return { ok: true, remoteRef: null };
+    },
+  });
+
+  const report = retireLifecycleUnits({
+    items: [item],
+    gateHandle: { generation: 14, token: "gate" },
+    operations,
+    maxRetire: "1",
+  });
+
+  assert.equal(report.retired.length, 0);
+  assert.match(report.attempts[0].reason, /remote ref disappeared/);
+  assert.ok(
+    !calls.some(([name]) => name === "readRemoteTagRetention"),
+    "a vanished branch is drift to report, not a unit to re-qualify via tags",
+  );
+});
+
 test("a live remote branch retires without consulting tag retention", () => {
   const item = makeItem({
     remoteRef: { ref: "refs/heads/fix/example", oid: hex("1") },

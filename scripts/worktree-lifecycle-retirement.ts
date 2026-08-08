@@ -209,10 +209,21 @@ export function retireLifecycleUnits({
       continue;
     }
 
-    if (expectedRemoteRef !== null) {
+    // `remoteRef` is deliberately NOT part of retirementIdentityError, so a
+    // transient remote-read failure at inventory time can report null for a
+    // branch that still exists. Prefer the reprobed observation so that stale
+    // null does not force the tag-retention path and refuse a unit that is
+    // plainly retained; fall back to the inventory value so a branch that
+    // disappeared BETWEEN the two observations still fails the live
+    // revalidation below rather than quietly taking the tag path. Neither
+    // observation is trusted on its own -- whichever is used is revalidated
+    // against the live remote before anything is destroyed.
+    const remoteRefForCheck = currentItem.remoteRef ?? expectedRemoteRef;
+
+    if (remoteRefForCheck !== null) {
       const remotePrecheck = readRemoteRefStrict(
         operations,
-        expectedRemoteRef,
+        remoteRefForCheck,
         "before local retirement started",
       );
       if (!remotePrecheck.ok) {
@@ -359,10 +370,10 @@ export function retireLifecycleUnits({
     attempt.worktreePostcondition = currentItem.path === null ? "not-applicable" : "verified";
     attempt.localRefPostcondition = "verified";
 
-    if (expectedRemoteRef !== null) {
+    if (remoteRefForCheck !== null) {
       const remote = readRemoteRefStrict(
         operations,
-        expectedRemoteRef,
+        remoteRefForCheck,
         "before local retirement completed",
       );
       if (!remote.ok) {
@@ -394,10 +405,10 @@ export function retireLifecycleUnits({
     attempt.reason = null;
     report.attempts.push({ ...attempt });
     report.retired.push(currentItem);
-    if (expectedRemoteRef !== null) {
+    if (remoteRefForCheck !== null) {
       report.remoteDeletionProposals.push({
-        ref: expectedRemoteRef.ref,
-        oid: expectedRemoteRef.oid,
+        ref: remoteRefForCheck.ref,
+        oid: remoteRefForCheck.oid,
         localRetirementOid: currentItem.head,
         mergedPr: currentItem.mergedPr?.number ?? null,
         reason: "remote-deletion-requires-separate-authorization",
