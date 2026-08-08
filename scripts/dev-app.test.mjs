@@ -136,4 +136,54 @@ assert.match(
   "the running shell must still tear down its owned Tauri tree when the loopback origin later becomes unavailable or HTTP-hung",
 );
 
+// `tauri dev` forwards a clean non-zero exit but returns 0 when the app dies
+// from a signal, so a SIGABRT during setup reported success with no window
+// ever drawn (cave-g8n5v). The launcher must therefore require positive
+// evidence of startup rather than trusting that status.
+assert.match(
+  source,
+  /export COVEN_CAVE_DEV_STARTUP_MARKER=[\s\S]*?pnpm exec tauri dev/,
+  "the launcher must hand the desktop app a startup marker before starting it",
+);
+// Git Bash's mktemp yields /tmp/…, which the native Windows shell would
+// resolve against the current drive and fail to write — reporting a false
+// startup failure on every Windows run.
+assert.match(
+  source,
+  /cygpath -w "\$DEV_STARTUP_MARKER"/,
+  "the exported marker path must be native where Bash paths are not",
+);
+assert.match(
+  source,
+  /if \[ "\$tauri_status" -eq 0 \] && \[ ! -s "\$DEV_STARTUP_MARKER" \]; then[\s\S]*?exit 1/,
+  "a zero status with no startup marker must be reported as a failure",
+);
+assert.match(
+  source,
+  /rm -f "\$TAURI_OVERRIDE_CONFIG" "\$WATCHDOG_VERDICT" "\$DEV_STARTUP_MARKER"/,
+  "cleanup must remove the startup marker along with the other generated files",
+);
+
+// Both halves of the handshake live in different languages, so nothing but
+// this pins them together: a rename on either side would silently return the
+// launcher to trusting tauri's exit status.
+const srcTauriDir = path.join(path.dirname(scriptsDir), "src-tauri", "src");
+const lifecycleSource = readFileSync(
+  path.join(srcTauriDir, "platform_lifecycle.rs"),
+  "utf8",
+);
+assert.match(
+  lifecycleSource,
+  /DEV_STARTUP_MARKER_ENV: &str = "COVEN_CAVE_DEV_STARTUP_MARKER"/,
+  "the desktop app must read the same variable the launcher exports",
+);
+// Placement is the whole contract. Written before the `?`s above it, the
+// marker would vouch for a startup that then failed and aborted.
+const setupSource = readFileSync(path.join(srcTauriDir, "tauri_setup.rs"), "utf8");
+assert.match(
+  setupSource,
+  /announce_startup_completed\(\);\s*\n\s*Ok\(\(\)\)\s*\n\s*\}\)/,
+  "the marker must be written as the last statement of Tauri's setup closure",
+);
+
 console.log("dev-app: ok");

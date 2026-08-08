@@ -1981,6 +1981,7 @@ export function FamiliarAnalyticsContent({
         {pulseOpen ? (
           <PulseOverlay
             pulse={model.sessionPulse}
+            lattice={model.activityLattice}
             lastActive={model.growthReport?.lastActiveAt ?? model.recentSessions[0]?.updated_at ?? null}
             streakDays={model.progression?.streakDays ?? 0}
             onClose={() => setPulseOpen(false)}
