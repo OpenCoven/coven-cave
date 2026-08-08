@@ -30,6 +30,7 @@ export interface WorktreeLifecycleInventoryOptions {
 export interface WorktreeLifecycleInventory {
   items: WorktreeLifecycleItem[];
   orphanedMetadata: OrphanedWorktreeMetadataRecord[];
+  orphanedMetadataErrors: string[];
   budgets: WorktreeLifecycleBudgets;
   inventoryFingerprint: string;
   /**
@@ -1666,11 +1667,21 @@ function parseStructuredMetadata(
   root: string,
 ): StructuredMetadataParse {
   if (value === undefined || value === null) return { records: [], errors: [] };
-  if (!isRecord(value)) throw new Error();
+  if (!isRecord(value)) {
+    return {
+      records: [],
+      errors: [`Bead ${taskId} metadata: metadata must be an object`],
+    };
+  }
   if (value.coven === undefined || value.coven === null) {
     return { records: [], errors: [] };
   }
-  if (!isRecord(value.coven)) throw new Error();
+  if (!isRecord(value.coven)) {
+    return {
+      records: [],
+      errors: [`Bead ${taskId} coven metadata: coven must be an object`],
+    };
+  }
 
   const records: StructuredMetadataRecord[] = [];
   const errors: string[] = [];
@@ -2278,7 +2289,7 @@ function metadataFor(
         record.branch.length > 0 ||
         normalizeAbsoluteWorktreePath(record.path) !== null,
     );
-    if (scopeableRecords.length === 0) return task.structuredErrors;
+    if (scopeableRecords.length === 0) return [];
     return scopeableRecords.some(
       (record) =>
         record.branch === branch ||
@@ -2375,7 +2386,10 @@ function collectOrphanedMetadata(
   tasks: BeadTask[],
   localRefs: LocalBranchRef[],
   entries: WorktreeEntry[],
-): OrphanedWorktreeMetadataRecord[] {
+): {
+  candidates: OrphanedWorktreeMetadataRecord[];
+  errors: string[];
+} {
   const localBranches = new Set(localRefs.map((localRef) => localRef.branch));
   const registeredPaths = new Set(
     entries.flatMap((entry) => {
@@ -2399,53 +2413,101 @@ function collectOrphanedMetadata(
       );
     }
   }
-  return tasks.flatMap((task) =>
-    task.status === "closed" || task.structuredErrors.length > 0
-      ? []
-      : task.structured.flatMap((record) => {
-          if (record.errors.length > 0 || record.metadata === null || record.path === null) {
-            return [];
-          }
-          const normalizedRecordPath = normalizeAbsoluteWorktreePath(record.path);
-          if (normalizedRecordPath === null) {
-            return [];
-          }
-          if (
-            (branchOwnershipCounts.get(record.branch) ?? 0) !== 1 ||
-            (pathOwnershipCounts.get(normalizedRecordPath) ?? 0) !== 1
-          ) {
-            return [];
-          }
-          if (localBranches.has(record.branch) || registeredPaths.has(normalizedRecordPath)) {
-            return [];
-          }
-          const pathProbe = probeRecordedPathAbsence(record.path);
-          return [
-            {
-              beadId: task.id,
-              beadStatus: task.status,
-              location: record.location,
-              branch: record.branch,
-              path: record.path,
-              record: {
-                branch: record.branch,
-                path: record.path,
-                owner: record.metadata.owner,
-                purpose: record.metadata.purpose,
-                disposition: record.metadata.disposition,
-                createdAt: record.metadata.createdAt,
-                ...(record.metadata.reason ? { reason: record.metadata.reason } : {}),
-                ...(record.metadata.reviewAfter
-                  ? { reviewAfter: record.metadata.reviewAfter }
-                  : {}),
-                ...(record.metadata.exception ? { exception: record.metadata.exception } : {}),
-              },
-              repairable: pathProbe.absent,
-              reasons: pathProbe.reason === null ? [] : [pathProbe.reason],
-            },
-          ];
-        }),
+  const candidates: OrphanedWorktreeMetadataRecord[] = [];
+  const errors: string[] = [];
+  for (const task of tasks) {
+    if (task.status === "closed") continue;
+
+    const recordErrors = new Set(task.structured.flatMap((record) => record.errors));
+    errors.push(
+      ...task.structuredErrors.filter((error) => !recordErrors.has(error)),
+    );
+
+    for (const record of task.structured) {
+      const normalizedRecordPath = normalizeAbsoluteWorktreePath(record.path);
+      const hasLifecycleUnit =
+        localBranches.has(record.branch) ||
+        (normalizedRecordPath !== null && registeredPaths.has(normalizedRecordPath));
+      if (record.errors.length > 0 || record.metadata === null || record.path === null) {
+        if (!hasLifecycleUnit) errors.push(...record.errors);
+        continue;
+      }
+      if (normalizedRecordPath === null || hasLifecycleUnit) continue;
+
+      const reasons = [...task.structuredErrors];
+      const branchOwners = branchOwnershipCounts.get(record.branch) ?? 0;
+      if (branchOwners !== 1) {
+        reasons.push(
+          `branch ${record.branch} appears in ${branchOwners} structured metadata records`,
+        );
+      }
+      const pathOwners = pathOwnershipCounts.get(normalizedRecordPath) ?? 0;
+      if (pathOwners !== 1) {
+        reasons.push(
+          `path ${normalizedRecordPath} appears in ${pathOwners} structured metadata records`,
+        );
+      }
+      candidates.push({
+        beadId: task.id,
+        beadStatus: task.status,
+        location: record.location,
+        branch: record.branch,
+        path: record.path,
+        record: {
+          branch: record.branch,
+          path: record.path,
+          owner: record.metadata.owner,
+          purpose: record.metadata.purpose,
+          disposition: record.metadata.disposition,
+          createdAt: record.metadata.createdAt,
+          ...(record.metadata.reason ? { reason: record.metadata.reason } : {}),
+          ...(record.metadata.reviewAfter
+            ? { reviewAfter: record.metadata.reviewAfter }
+            : {}),
+          ...(record.metadata.exception ? { exception: record.metadata.exception } : {}),
+        },
+        repairable: false,
+        reasons: [...new Set(reasons)],
+      });
+    }
+  }
+  return {
+    candidates,
+    errors: [...new Set(errors)],
+  };
+}
+
+function reconcileOrphanedMetadata(
+  candidates: OrphanedWorktreeMetadataRecord[],
+  localRefs: LocalBranchRef[],
+  entries: WorktreeEntry[],
+): OrphanedWorktreeMetadataRecord[] {
+  const localBranches = new Set(localRefs.map((localRef) => localRef.branch));
+  const registeredPaths = new Set(
+    entries.flatMap((entry) => {
+      const normalized = normalizeAbsoluteWorktreePath(entry.path);
+      return normalized === null ? [] : [normalized];
+    }),
   );
+
+  return candidates.map((candidate) => {
+    const reasons = [...candidate.reasons];
+    if (localBranches.has(candidate.branch)) {
+      reasons.push(`exact local branch still exists: ${candidate.branch}`);
+    }
+    const normalizedPath = normalizeAbsoluteWorktreePath(candidate.path);
+    if (normalizedPath !== null && registeredPaths.has(normalizedPath)) {
+      reasons.push(`recorded path is still registered: ${candidate.path}`);
+    }
+    const pathProbe = probeRecordedPathAbsence(candidate.path);
+    if (pathProbe.reason !== null) reasons.push(pathProbe.reason);
+    const uniqueReasons = [...new Set(reasons)];
+    return {
+      ...candidate,
+      repairable: uniqueReasons.length === 0 && pathProbe.absent,
+      reasons: uniqueReasons,
+    };
+  });
 }
 
 function pathContains(root: string, candidate: string): boolean {
@@ -2869,6 +2931,8 @@ export function collectWorktreeLifecycleInventory(
     "--format=%(refname)%0a%(objectname)%00",
     "refs/heads",
   ]);
+  const finalEntries = parseWorktrees(finalWorktreeRaw);
+  const finalLocalRefs = parseLocalBranchRefs(finalRefsRaw);
   const finalReplacementRefsRaw = requiredGit(root, [
     "for-each-ref",
     "--format=%(refname)%0a%(objectname)%00",
@@ -3006,12 +3070,18 @@ export function collectWorktreeLifecycleInventory(
       ? observation
       : { ...observation, probeErrors: [...observation.probeErrors, reason] };
   });
+  const reconciledOrphanedMetadata = reconcileOrphanedMetadata(
+    orphanedMetadata.candidates,
+    finalLocalRefs,
+    finalEntries,
+  );
 
   return {
     items: driftedObservations.map((observation) =>
       classifyInventoryObservation(observation, options.nowMs),
     ),
-    orphanedMetadata,
+    orphanedMetadata: reconciledOrphanedMetadata,
+    orphanedMetadataErrors: orphanedMetadata.errors,
     budgets,
     globalErrors: [...new Set(branchGlobalErrors)],
     inventoryFingerprint: fingerprint(

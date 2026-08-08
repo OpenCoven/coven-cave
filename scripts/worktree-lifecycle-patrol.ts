@@ -193,6 +193,8 @@ function buildJsonReport(
     ...summary,
     orphanedMetadata: inventory.orphanedMetadata,
     orphanedMetadataCount: inventory.orphanedMetadata.length,
+    orphanedMetadataErrors: inventory.orphanedMetadataErrors,
+    orphanedMetadataErrorCount: inventory.orphanedMetadataErrors.length,
     inventoryFingerprint: inventory.inventoryFingerprint,
     ...extras,
   };

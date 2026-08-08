@@ -635,6 +635,29 @@ if [ "\${LIFECYCLE_REF_INVENTORY_STDERR:-0}" = "1" ]; then
   esac
 fi
 
+if [ "\${LIFECYCLE_ORPHANED_METADATA_RACE:-0}" = "1" ]; then
+  case " $* " in
+    *" for-each-ref --format=%(refname)%0a%(objectname)%00 refs/heads "*)
+      COUNT_FILE=${JSON.stringify(
+        path.join(fixtureRoot, "orphaned-race-ref-count-"),
+      )}"\${LIFECYCLE_TEST_INVOCATION:-unknown}"
+      COUNT=0
+      if [ -e "$COUNT_FILE" ]; then
+        COUNT=$(cat "$COUNT_FILE")
+      fi
+      COUNT=$((COUNT + 1))
+      printf '%s' "$COUNT" > "$COUNT_FILE"
+      if [ "$COUNT" -eq 2 ]; then
+        PATH=\${PATH#${gitBin}:}
+        export PATH
+        git --no-replace-objects -c advice.graftFileDeprecated=false -C ${JSON.stringify(repo)} update-ref refs/heads/feat/orphaned "$OLD_OID"
+        git "$@"
+        exit $?
+      fi
+      ;;
+  esac
+fi
+
 if [ "\${LIFECYCLE_STATUS_STDERR:-0}" = "1" ]; then
   case " $* " in
     *" status "*)
@@ -1332,6 +1355,8 @@ elif [ -n "\${LIFECYCLE_BAD_METADATA_DATE_CASE:-}" ]; then
   cat "${path.join(fixtureRoot, "metadata-")}\${LIFECYCLE_BAD_METADATA_DATE_CASE}.json"
 elif [ "\${LIFECYCLE_MULTI_WORKTREE_METADATA:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Multi-worktree fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Shared split","expiresAt":"2026-08-11T00:00:00.1Z","additionalPaths":["${old}","${live}"]}},"worktrees":[{"branch":"feat/live","path":"${live}","owner":"Kitty","purpose":"Additional fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z","exception":{"owner":"Kitty","reason":"Shared split","expiresAt":"2026-08-11T00:00:00.1Z","additionalPaths":["${live}","${old}"]}}]}}}]'
+elif [ "\${LIFECYCLE_ORPHANED_METADATA_UNSCOPED:-0}" = "1" ]; then
+printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-orphan-unscoped","status":"open","title":"Unscoped malformed orphan fixture","metadata":{"coven":"malformed"}}]'
 elif [ "\${LIFECYCLE_ORPHANED_METADATA_AMBIGUOUS:-0}" = "1" ]; then
 printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-orphan-malformed-sibling","status":"open","title":"Malformed sibling orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-malformed","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Malformed sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-malformed-sibling","path":"relative/orphaned","owner":"Kitty","purpose":"Malformed sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}},{"id":"cave-orphan-duplicate-branch","status":"open","title":"Duplicate branch orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-duplicate-branch","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Duplicate branch fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-duplicate-branch","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Duplicate branch fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}},{"id":"cave-orphan-duplicate-path","status":"open","title":"Duplicate path orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-duplicate-path","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Duplicate path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-duplicate-path-sibling","path":"${orphanedMissingPath}/","owner":"Kitty","purpose":"Duplicate path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_ORPHANED_METADATA:-0}" = "1" ]; then
@@ -1650,6 +1675,8 @@ exit 0
   );
   assert.equal(orphanedMetadataReport.orphanedMetadata.length, 3);
   assert.equal(orphanedMetadataReport.orphanedMetadataCount, 3);
+  assert.deepEqual(orphanedMetadataReport.orphanedMetadataErrors, []);
+  assert.equal(orphanedMetadataReport.orphanedMetadataErrorCount, 0);
   const orphanedByBead = new Map(
     orphanedMetadataReport.orphanedMetadata.map((entry) => [entry.beadId, entry]),
   );
@@ -1670,12 +1697,38 @@ exit 0
   const ambiguousOrphanedMetadataReport = JSON.parse(
     patrol(["--json"], { LIFECYCLE_ORPHANED_METADATA_AMBIGUOUS: "1" }),
   );
-  assert.deepEqual(
-    ambiguousOrphanedMetadataReport.orphanedMetadata,
-    [],
-    "malformed and duplicate orphan metadata is excluded from repair candidates",
+  assert.equal(ambiguousOrphanedMetadataReport.orphanedMetadata.length, 5);
+  assert.equal(ambiguousOrphanedMetadataReport.orphanedMetadataCount, 5);
+  assert.match(
+    ambiguousOrphanedMetadataReport.orphanedMetadataErrors.join("\n"),
+    /cave-orphan-malformed-sibling worktrees\[0\].*path must be absolute/i,
   );
-  assert.equal(ambiguousOrphanedMetadataReport.orphanedMetadataCount, 0);
+  assert.equal(ambiguousOrphanedMetadataReport.orphanedMetadataErrorCount, 1);
+  for (const entry of ambiguousOrphanedMetadataReport.orphanedMetadata) {
+    assert.equal(entry.repairable, false);
+  }
+  const malformedSibling = ambiguousOrphanedMetadataReport.orphanedMetadata.find(
+    (entry) => entry.beadId === "cave-orphan-malformed-sibling",
+  );
+  assert.match(malformedSibling.reasons.join("\n"), /path must be absolute/i);
+  const duplicateBranchEntries =
+    ambiguousOrphanedMetadataReport.orphanedMetadata.filter(
+      (entry) => entry.beadId === "cave-orphan-duplicate-branch",
+    );
+  assert.equal(duplicateBranchEntries.length, 2);
+  assert.match(
+    duplicateBranchEntries[0].reasons.join("\n"),
+    /branch .* appears in 2 structured metadata records/i,
+  );
+  const duplicatePathEntries =
+    ambiguousOrphanedMetadataReport.orphanedMetadata.filter(
+      (entry) => entry.beadId === "cave-orphan-duplicate-path",
+    );
+  assert.equal(duplicatePathEntries.length, 2);
+  assert.match(
+    duplicatePathEntries[0].reasons.join("\n"),
+    /path .* appears in [2-9]\d* structured metadata records/i,
+  );
   const ambiguousByBranch = new Map(
     ambiguousOrphanedMetadataReport.items.map((item) => [item.branch, item]),
   );
@@ -1690,6 +1743,35 @@ exit 0
       reasons: ambiguousByBranch.get("feat/old").reasons,
     }),
   );
+  const unscopedOrphanedMetadataReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_ORPHANED_METADATA_UNSCOPED: "1" }),
+  );
+  assert.deepEqual(unscopedOrphanedMetadataReport.orphanedMetadata, []);
+  assert.deepEqual(unscopedOrphanedMetadataReport.orphanedMetadataErrors, [
+    "Bead cave-orphan-unscoped coven metadata: coven must be an object",
+  ]);
+  assert.equal(unscopedOrphanedMetadataReport.orphanedMetadataErrorCount, 1);
+  const unscopedOldItem = unscopedOrphanedMetadataReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.equal(unscopedOldItem.lane, "retire-after-gate");
+  assert.deepEqual(
+    unscopedOldItem.metadataErrors,
+    [],
+    "unscoped malformed orphan metadata stays diagnostic instead of poisoning a lifecycle item",
+  );
+  const racedOrphanedMetadataReport = JSON.parse(
+    patrol(["--json"], {
+      LIFECYCLE_ORPHANED_METADATA: "1",
+      LIFECYCLE_ORPHANED_METADATA_RACE: "1",
+    }),
+  );
+  const racedOrphan = racedOrphanedMetadataReport.orphanedMetadata.find(
+    (entry) => entry.beadId === "cave-orphan",
+  );
+  assert.equal(racedOrphan.repairable, false);
+  assert.match(racedOrphan.reasons.join("\n"), /local branch .* exists/i);
+  git(["update-ref", "-d", "refs/heads/feat/orphaned"], repo);
   const detachedItem = report.items.find(
     (item) => item.kind === "worktree" && item.branch === null,
   );
