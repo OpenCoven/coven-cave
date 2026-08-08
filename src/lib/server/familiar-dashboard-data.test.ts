@@ -445,6 +445,47 @@ test("degraded local sessions remain usable and make required sections partial",
   assert.equal(JSON.stringify(result).includes("daemon token=secret"), false);
 });
 
+test("degraded session rows keep Overview and Analytics partial when other required sources fail", async () => {
+  const fail = async () => { throw new Error("source failed"); };
+  const result = await loadFamiliarDashboard("sage", makeDependencies({
+    loadBoard: fail,
+    loadSessions: async () => ({
+      payload: {
+        ok: true,
+        degraded: true,
+        error: "daemon unavailable",
+        sessions: [sessionFixture(0)],
+      },
+    }),
+    loadInbox: fail,
+    loadReports: fail,
+    loadMetricSnapshots: fail,
+    loadMemory: fail,
+  }));
+
+  assert.equal(result.kind, "ok");
+  assert.equal(result.response.sections.overview.state, "partial");
+  assert.notEqual(result.response.sections.overview.data, null);
+  assert.equal(result.response.sections.overview.data.sessions.totalNonGenerated, 1);
+  assert.deepEqual(
+    result.response.sections.overview.issues.find(
+      (issue) => issue.source === "sessions",
+    ),
+    { source: "sessions", code: "sessions_degraded" },
+  );
+
+  assert.equal(result.response.sections.analytics.state, "partial");
+  assert.notEqual(result.response.sections.analytics.data, null);
+  assert.equal(result.response.sections.analytics.data.activity.totalSessions, 1);
+  assert.equal(result.response.sections.analytics.data.activity.evidenceCount, 1);
+  assert.deepEqual(
+    result.response.sections.analytics.issues.find(
+      (issue) => issue.source === "sessions",
+    ),
+    { source: "sessions", code: "sessions_degraded" },
+  );
+});
+
 test("roster failure yields no safe dashboard", async () => {
   const result = await loadFamiliarDashboard("sage", makeDependencies({
     loadRoster: async () => ({

@@ -666,8 +666,8 @@ for (const contract of contracts) {
   );
   assert.match(
     sessionsListCacheSource,
-    /export function sessionsListCacheKey\([\s\S]*collapseFamiliarWorkspace[\s\S]*collapseFamiliarWorkspace \? "collapse" : "full"/,
-    "sessions-list-cache: cache keying varies by archived/familiar/collapse so views never alias",
+    /export function sessionsListCacheKey\([\s\S]*JSON\.stringify\(\{\s*includeArchived,\s*familiarId,\s*collapseFamiliarWorkspace,\s*\}\)/,
+    "sessions-list-cache: cache keying uses a structural archived/familiar/collapse encoding so null and valid ids never alias",
   );
   assert.match(
     sessionsListCacheSource,

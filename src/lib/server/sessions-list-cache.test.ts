@@ -110,6 +110,89 @@ import {
   assert.equal(computes, 4, "collapse mode remains part of the shared cache key");
 }
 
+// ── keying: unscoped null and the valid Familiar id "all" never alias ──────
+{
+  assert.notEqual(
+    sessionsListCacheKey(false, null, false),
+    sessionsListCacheKey(false, "all", false),
+    "the cache key structurally distinguishes the unscoped null view from the valid Familiar id \"all\"",
+  );
+
+  let computes = 0;
+  const cache = createSwrCache({
+    ttlMs: 2_000,
+    staleServeMs: 30_000,
+    canServeStale: (result) => result.payload.ok,
+  });
+  const compute = async (
+    includeArchived,
+    familiarId,
+    collapseFamiliarWorkspace,
+  ) => ({
+    payload: {
+      ok: true,
+      sessions: [],
+      error: JSON.stringify({
+        compute: ++computes,
+        includeArchived,
+        familiarId,
+        collapseFamiliarWorkspace,
+      }),
+    },
+  });
+
+  const unscoped = await loadCachedSessionsList(false, null, false, {
+    cache,
+    compute,
+  });
+  const validAll = await loadCachedSessionsList(false, "all", false, {
+    cache,
+    compute,
+  });
+  const unscopedCached = await loadCachedSessionsList(false, null, false, {
+    cache,
+    compute,
+  });
+  const validAllCached = await loadCachedSessionsList(false, "all", false, {
+    cache,
+    compute,
+  });
+
+  assert.equal(
+    unscoped.payload.error,
+    JSON.stringify({
+      compute: 1,
+      includeArchived: false,
+      familiarId: null,
+      collapseFamiliarWorkspace: false,
+    }),
+  );
+  assert.equal(
+    validAll.payload.error,
+    JSON.stringify({
+      compute: 2,
+      includeArchived: false,
+      familiarId: "all",
+      collapseFamiliarWorkspace: false,
+    }),
+  );
+  assert.equal(
+    unscopedCached.payload.error,
+    unscoped.payload.error,
+    "re-reading the unscoped view keeps its own cached payload",
+  );
+  assert.equal(
+    validAllCached.payload.error,
+    validAll.payload.error,
+    "re-reading the valid Familiar id \"all\" keeps its own cached payload",
+  );
+  assert.notEqual(
+    unscopedCached.payload.error,
+    validAllCached.payload.error,
+    "the unscoped and valid-\"all\" cached payloads cannot alias",
+  );
+}
+
 // ── wiring pins ──────────────────────────────────────────────────────────────
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 

@@ -100,6 +100,12 @@ function sourceData<T>(
   return result.ok ? result.data : result.data ?? fallback;
 }
 
+function hasUsableSourceData(result: DashboardSourceResult<unknown>): boolean {
+  if (result.ok) return true;
+  if (Array.isArray(result.data)) return result.data.length > 0;
+  return result.data !== undefined && result.data !== null;
+}
+
 export const DEFAULT_FAMILIAR_DASHBOARD_DEPENDENCIES: FamiliarDashboardDependencies = {
   now: Date.now,
   loadRoster: loadVisibleFamiliarRoster,
@@ -346,8 +352,8 @@ export async function loadFamiliarDashboard(
     memorySource,
   ];
   const analyticsOptional = [contractSource, retroSource, feedbackSource];
-  const overviewAvailable = overviewRequired.some((source) => source.ok);
-  const analyticsAvailable = analyticsRequired.some((source) => source.ok);
+  const overviewAvailable = overviewRequired.some(hasUsableSourceData);
+  const analyticsAvailable = analyticsRequired.some(hasUsableSourceData);
   const familiarRetroState =
     retroSnapshot.familiars.find(
       (state) => state.familiarId === familiarId,

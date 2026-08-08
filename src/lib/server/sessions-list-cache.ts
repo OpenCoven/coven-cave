@@ -61,9 +61,11 @@ export function sessionsListCacheKey(
   familiarId: string | null,
   collapseFamiliarWorkspace: boolean,
 ): string {
-  return `${includeArchived ? "archived" : "active"}:${familiarId ?? "all"}:${
-    collapseFamiliarWorkspace ? "collapse" : "full"
-  }`;
+  return JSON.stringify({
+    includeArchived,
+    familiarId,
+    collapseFamiliarWorkspace,
+  });
 }
 
 export async function loadCachedSessionsList(
