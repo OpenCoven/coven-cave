@@ -101,6 +101,25 @@ pub(super) fn check_app_translocation() {
     }
 }
 
+/// Report the GUI that already owns desktop reachability, then leave.
+///
+/// Exits the process rather than returning an error to Tauri's setup hook.
+/// On macOS that hook runs inside tao's `did_finish_launching`, an
+/// Objective-C callback that cannot unwind, so a propagated error becomes a
+/// panic in a non-unwinding frame and the runtime aborts with SIGABRT — a
+/// crash report for the entirely ordinary case of launching a second copy.
+/// This mirrors `check_app_translocation`: say what happened, exit cleanly.
+#[cfg(desktop)]
+pub(super) fn report_existing_gui_owner(pid: u32) -> ! {
+    log::warn!(
+        "[cave] another CovenCave GUI (pid {pid}) already owns desktop reachability; this instance is exiting"
+    );
+    show_fatal_dialog(&format!(
+        "CovenCave is already running (process {pid}).\n\nSwitch to the window that is already open, or quit it before starting another copy."
+    ));
+    std::process::exit(1);
+}
+
 // This hook sits below Tao/Tauri's event dispatch. WRY waits for WebView2
 // environment/controller creation inside a nested Windows message pump. A
 // WM_CLOSE received there is otherwise buffered by Tao until the active event

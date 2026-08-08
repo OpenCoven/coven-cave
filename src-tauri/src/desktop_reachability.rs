@@ -915,8 +915,18 @@ fn remove_gui_ownership_if_owned(app_data_dir: &Path, owner: &ProcessLease) {
     }
 }
 
+/// Take reachability ownership for this GUI, or report the GUI that already
+/// holds it.
+///
+/// A live second owner returns `Ok(GuiReachability::AlreadyOwnedBy)` rather
+/// than `Err`. This is not cosmetic: the caller runs inside Tauri's setup hook,
+/// which on macOS executes within tao's `did_finish_launching` — an
+/// Objective-C callback that cannot unwind. An `Err` there becomes a `panic!`
+/// in a non-unwinding frame, which the runtime escalates to SIGABRT, so a
+/// perfectly ordinary "it's already running" turned into a crash report.
+/// `Err` is therefore reserved for genuine failures to determine ownership.
 #[cfg(all(desktop, target_os = "macos"))]
-pub(super) fn prepare_gui_reachability(app: &tauri::AppHandle) -> Result<(), String> {
+pub(super) fn prepare_gui_reachability(app: &tauri::AppHandle) -> Result<GuiReachability, String> {
     let app_data_dir = app
         .path()
         .app_data_dir()
@@ -924,12 +934,14 @@ pub(super) fn prepare_gui_reachability(app: &tauri::AppHandle) -> Result<(), Str
     let _ownership = acquire_reachability_ownership_lease(&app_data_dir)?;
     let current_gui = current_process_lease()?;
     if let Some(existing) = read_gui_ownership_state(&app_data_dir) {
-        if lease_matches(
+        if conflicts_with_live_gui(
             &existing.lease,
+            &current_gui,
             process_identity(existing.lease.pid).as_deref(),
-        ) && existing.lease.pid != current_gui.pid
-        {
-            return Err("another CovenCave GUI already owns desktop reachability".to_string());
+        ) {
+            return Ok(GuiReachability::AlreadyOwnedBy {
+                pid: existing.lease.pid,
+            });
         }
         if existing.lease.pid == current_gui.pid && existing.lease.identity == current_gui.identity
         {
@@ -972,12 +984,14 @@ pub(super) fn prepare_gui_reachability(app: &tauri::AppHandle) -> Result<(), Str
     } else if launch_agent_installed() {
         uninstall_launch_agent(&app_data_dir)?;
     }
-    Ok(())
+    Ok(GuiReachability::Acquired)
 }
 
 #[cfg(all(desktop, not(target_os = "macos")))]
-pub(super) fn prepare_gui_reachability(_app: &tauri::AppHandle) -> Result<(), String> {
-    Ok(())
+pub(super) fn prepare_gui_reachability(
+    _app: &tauri::AppHandle,
+) -> Result<GuiReachability, String> {
+    Ok(GuiReachability::Acquired)
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
@@ -1100,6 +1114,42 @@ fn process_identity(pid: u32) -> Option<String> {
 #[cfg(desktop)]
 fn lease_matches(lease: &ProcessLease, current_identity: Option<&str>) -> bool {
     current_identity.is_some_and(|current| current == lease.identity)
+}
+
+/// What starting this GUI meant for reachability ownership.
+///
+/// Finding a live owner is an ordinary second-instance outcome, not a setup
+/// failure, so it is reported as `Ok` and left for the caller to act on. See
+/// `prepare_gui_reachability` for why the distinction is load-bearing.
+#[cfg(desktop)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum GuiReachability {
+    /// This process now owns reachability.
+    Acquired,
+    /// A different, still-live GUI owns it; this process must not take over.
+    // Only macOS records GUI ownership, so nothing constructs this elsewhere.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    AlreadyOwnedBy { pid: u32 },
+}
+
+/// Whether a recorded ownership lease belongs to a *different* GUI that is
+/// still alive.
+///
+/// Split out from `prepare_gui_reachability` so the conflict decision can be
+/// tested without a live `AppHandle` — and kept on `cfg(desktop)` rather than
+/// macOS so that test actually runs in CI, which has no macOS runner.
+///
+/// A recorded PID alone proves nothing: PIDs are reused. `lease_matches`
+/// compares the kernel-recorded birth timestamp, so a reused PID reads as a
+/// dead owner and this GUI is free to claim ownership.
+#[cfg(desktop)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn conflicts_with_live_gui(
+    existing: &ProcessLease,
+    current: &ProcessLease,
+    existing_identity: Option<&str>,
+) -> bool {
+    existing.pid != current.pid && lease_matches(existing, existing_identity)
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
@@ -1910,6 +1960,69 @@ mod tests {
             Some("Thu Jul 24 12:00:01 2026 /usr/bin/unrelated")
         ));
         assert!(!lease_matches(&lease, None));
+    }
+
+    fn lease(pid: u32, identity: &str) -> ProcessLease {
+        ProcessLease {
+            pid,
+            identity: identity.to_string(),
+        }
+    }
+
+    #[test]
+    fn gui_conflict_detects_a_live_second_gui() {
+        let existing = lease(4001, "birth-a");
+        let current = lease(4002, "birth-b");
+        assert!(conflicts_with_live_gui(
+            &existing,
+            &current,
+            Some("birth-a")
+        ));
+    }
+
+    #[test]
+    fn gui_conflict_ignores_reentrant_setup_by_the_same_gui() {
+        // macOS lifecycle restoration can re-enter setup in the same process.
+        // Treating that as a second instance would make the app exit on resume.
+        let same = lease(4001, "birth-a");
+        assert!(!conflicts_with_live_gui(&same, &same, Some("birth-a")));
+    }
+
+    #[test]
+    fn gui_conflict_ignores_a_recycled_pid() {
+        // The recorded owner died and the OS handed its PID to something else.
+        // Comparing PIDs alone would lock the user out of their own app.
+        let existing = lease(4001, "birth-a");
+        let current = lease(4002, "birth-b");
+        assert!(!conflicts_with_live_gui(
+            &existing,
+            &current,
+            Some("birth-of-some-unrelated-process")
+        ));
+    }
+
+    #[test]
+    fn gui_conflict_ignores_a_dead_owner() {
+        // No identity at all means the recorded PID is not running.
+        let existing = lease(4001, "birth-a");
+        let current = lease(4002, "birth-b");
+        assert!(!conflicts_with_live_gui(&existing, &current, None));
+    }
+
+    #[test]
+    fn gui_conflict_is_a_success_outcome_not_an_error() {
+        // The regression this guards (cave-4wnxo): reporting a second GUI as
+        // `Err` propagates out of Tauri's setup hook, which on macOS cannot
+        // unwind, so the process aborts with SIGABRT rather than saying what
+        // happened. Keeping the conflict inside `Ok` makes that unrepresentable
+        // — a caller cannot `?` it into a panic.
+        let conflict: Result<GuiReachability, String> =
+            Ok(GuiReachability::AlreadyOwnedBy { pid: 4001 });
+        assert!(conflict.is_ok());
+        assert_ne!(
+            conflict.expect("a live second GUI is not a setup failure"),
+            GuiReachability::Acquired
+        );
     }
 
     #[test]

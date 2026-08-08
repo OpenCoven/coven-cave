@@ -312,7 +312,16 @@ pub fn run() {
             check_app_translocation();
 
             app.handle().plugin(tauri_plugin_notification::init())?;
-            prepare_gui_reachability(app.handle())?;
+            // A second GUI must not be reported through `?`. This closure is
+            // Tauri's setup hook, which on macOS runs inside tao's
+            // `did_finish_launching` — an Objective-C callback that cannot
+            // unwind — so an error here aborts with SIGABRT instead of
+            // surfacing the conflict. Report it and exit like a translocated
+            // app does. Genuine ownership failures still propagate.
+            match prepare_gui_reachability(app.handle())? {
+                GuiReachability::Acquired => {}
+                GuiReachability::AlreadyOwnedBy { pid } => report_existing_gui_owner(pid),
+            }
             discord_presence::start();
 
             // Desktop auto-update: updater checks/downloads/installs signed
