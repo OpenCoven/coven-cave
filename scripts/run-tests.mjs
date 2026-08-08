@@ -1447,6 +1447,7 @@ export const SUITES = {
     "src/lib/server/memory-file-inventory.test.ts",
     "src/lib/server/space-usage.test.ts",
     "src/lib/server/preferences-store.test.ts",
+    "src/lib/server/webauthn-verify.test.ts",
     "src/lib/server/backdrop-store.test.ts",
     "src/lib/server/beads-cli.test.ts",
     "src/lib/server/beads-workspace.test.ts",
