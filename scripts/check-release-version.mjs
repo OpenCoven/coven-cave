@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import YAML from "yaml";
 import { readCanonicalYamlStringSetting } from "./release-yaml-settings.mjs";
 
 export const RELEASE_SOURCE_PATHS = [
@@ -32,6 +33,31 @@ function tomlPackageVersionValues(source) {
   return values;
 }
 
+function canonicalJsonVersionValues(source, sourceLabel, structuralErrors) {
+  try {
+    JSON.parse(source);
+    const document = YAML.parseDocument(source, { prettyErrors: true });
+    if (document.errors.length > 0) {
+      throw new Error(
+        `JSON must not contain duplicate keys (${document.errors.map((error) => error.message).join("; ")})`,
+      );
+    }
+    if (!YAML.isMap(document.contents)) {
+      throw new Error("JSON root must be an object with one version field");
+    }
+    const matches = document.contents.items.filter(
+      (pair) => YAML.isScalar(pair.key) && pair.key.value === "version",
+    );
+    if (matches.length !== 1 || !YAML.isScalar(matches[0]?.value) || typeof matches[0].value.value !== "string") {
+      throw new Error("expected exactly one root string version field");
+    }
+    return [matches[0].value.value];
+  } catch (error) {
+    structuralErrors.push(`${sourceLabel}: ${error instanceof Error ? error.message : String(error)}`);
+    return [];
+  }
+}
+
 function canonicalIosSetting(source, key, structuralErrors) {
   try {
     return [
@@ -48,8 +74,6 @@ function canonicalIosSetting(source, key, structuralErrors) {
 }
 
 export function inspectReleaseSourceFiles(files) {
-  const packageJson = JSON.parse(files["package.json"]);
-  const tauriConfig = JSON.parse(files["src-tauri/tauri.conf.json"]);
   const cargoToml = files["src-tauri/Cargo.toml"];
   const cargoLock = files["src-tauri/Cargo.lock"];
   const iosProject = files["apps/ios/CovenCave/project.yml"];
@@ -68,8 +92,18 @@ export function inspectReleaseSourceFiles(files) {
   return {
     structuralErrors,
     versions: [
-      { path: "package.json", values: [packageJson.version] },
-      { path: "src-tauri/tauri.conf.json", values: [tauriConfig.version] },
+      {
+        path: "package.json",
+        values: canonicalJsonVersionValues(files["package.json"], "package.json", structuralErrors),
+      },
+      {
+        path: "src-tauri/tauri.conf.json",
+        values: canonicalJsonVersionValues(
+          files["src-tauri/tauri.conf.json"],
+          "src-tauri/tauri.conf.json",
+          structuralErrors,
+        ),
+      },
       {
         path: "src-tauri/Cargo.toml",
         values: tomlPackageVersionValues(cargoToml),

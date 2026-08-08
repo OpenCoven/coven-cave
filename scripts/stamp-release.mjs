@@ -27,6 +27,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import YAML from "yaml";
 import {
   readCanonicalYamlStringSetting,
   replaceCanonicalYamlStringSetting,
@@ -111,22 +112,76 @@ export const STAMP_FILES = [
   { path: "apps/ios/CovenCave/project.yml", kind: "yaml-ios-versions" },
 ];
 
+function canonicalJsonVersionNode(content, relativePath) {
+  try {
+    JSON.parse(content);
+  } catch (error) {
+    throw new Error(`${relativePath}: invalid JSON (${error.message})`);
+  }
+
+  const document = YAML.parseDocument(content, { prettyErrors: true });
+  if (document.errors.length > 0) {
+    throw new Error(
+      `${relativePath}: JSON must not contain duplicate keys (${document.errors
+        .map((error) => error.message)
+        .join("; ")})`,
+    );
+  }
+  if (!YAML.isMap(document.contents)) {
+    throw new Error(`${relativePath}: JSON root must be an object with one version field`);
+  }
+
+  const matches = document.contents.items.filter(
+    (pair) => YAML.isScalar(pair.key) && pair.key.value === "version",
+  );
+  if (matches.length !== 1 || !YAML.isScalar(matches[0]?.value)) {
+    throw new Error(`${relativePath}: could not read exactly one root string version field`);
+  }
+  const valueNode = matches[0].value;
+  if (typeof valueNode.value !== "string" || valueNode.type !== "QUOTE_DOUBLE") {
+    throw new Error(`${relativePath}: root version must be a JSON string`);
+  }
+  const [start, end] = valueNode.range ?? [];
+  if (!Number.isInteger(start) || !Number.isInteger(end)) {
+    throw new Error(`${relativePath}: could not locate root version source range`);
+  }
+  return { value: valueNode.value, start, end };
+}
+
+function canonicalTomlVersionMatch(content, relativePath) {
+  let section = null;
+  const matches = [];
+  let offset = 0;
+  for (const line of content.split(/(?<=\n)/)) {
+    const body = line.replace(/[\r\n]+$/, "");
+    const sectionMatch = /^\s*\[([^\]]+)\]\s*(?:#.*)?$/.exec(body);
+    if (sectionMatch) {
+      section = sectionMatch[1];
+    } else if (section === "package") {
+      const versionMatch = /^(\s*version\s*=\s*")((?:[^"\\]|\\.)*)(")(?:\s*#.*)?\s*$/.exec(body);
+      if (versionMatch) {
+        const start = offset + versionMatch[1].length;
+        matches.push({ value: JSON.parse(`"${versionMatch[2]}"`), start, end: start + versionMatch[2].length });
+      }
+    }
+    offset += line.length;
+  }
+  if (matches.length !== 1) {
+    throw new Error(`${relativePath}: expected exactly one version in the canonical [package] table`);
+  }
+  return matches[0];
+}
+
 /** Read the version currently encoded by one stamp location. */
 export function readStampedVersion(kind, content, relativePath = "<unknown>") {
   let version;
   switch (kind) {
     case "json-version": {
-      let parsed;
-      try {
-        parsed = JSON.parse(content);
-      } catch (error) {
-        throw new Error(`${relativePath}: invalid JSON (${error.message})`);
-      }
-      version = parsed.version;
+      version = canonicalJsonVersionNode(content, relativePath).value;
       break;
     }
     case "toml-version":
-      version = content.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
+      version = canonicalTomlVersionMatch(content, relativePath).value;
       break;
     case "cargo-lock-app":
       version = content.match(
@@ -167,10 +222,22 @@ export function stampContent(kind, content, oldVersion, newVersion) {
   };
   switch (kind) {
     case "json-version":
-      sub(new RegExp(`("version":\\s*")${old}(")`));
+      {
+        const version = canonicalJsonVersionNode(content, "JSON manifest");
+        if (version.value === oldVersion) {
+          content = `${content.slice(0, version.start)}${JSON.stringify(newVersion)}${content.slice(version.end)}`;
+          replaced = 1;
+        }
+      }
       break;
     case "toml-version":
-      sub(new RegExp(`(^version = ")${old}(")`, "m"));
+      {
+        const version = canonicalTomlVersionMatch(content, "Cargo.toml");
+        if (version.value === oldVersion) {
+          content = `${content.slice(0, version.start)}${newVersion}${content.slice(version.end)}`;
+          replaced = 1;
+        }
+      }
       break;
     case "cargo-lock-app":
       sub(new RegExp(`(name = "app"\\nversion = ")${old}(")`));
@@ -435,7 +502,14 @@ same fail-closed source check used by release CI.`);
 
   // Collision guard — three stamp PRs raced on 2026-07-08; never open a second.
   const repo = "OpenCoven/coven-cave";
-  const pulls = JSON.parse(run("gh", ["api", `repos/${repo}/pulls?state=open&per_page=50`]));
+  const pullLines = run("gh", [
+    "api",
+    "--paginate",
+    "--jq",
+    ".[] | { number, title } | @json",
+    `repos/${repo}/pulls?state=open&per_page=100`,
+  ]);
+  const pulls = pullLines ? pullLines.split("\n").map((line) => JSON.parse(line)) : [];
   const openStamp = findOpenStampPr(pulls);
   if (openStamp) {
     console.error(

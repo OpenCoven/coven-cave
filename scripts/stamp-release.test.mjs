@@ -99,6 +99,25 @@ assert.equal(
   const { replaced } = stampContent("toml-version", `[package]\nname = "app"\nversion = "0.0.159"\n`, "0.0.159", "0.0.160");
   assert.equal(replaced, 1);
 }
+{
+  const source = `[workspace.package]\nversion = "0.0.159"\n\n[package]\nname = "app"\nversion = "0.0.159"\n`;
+  const { content, replaced } = stampContent("toml-version", source, "0.0.159", "0.0.160");
+  assert.equal(replaced, 1, "only the canonical package version is stamped");
+  assert.match(content, /\[workspace\.package\]\nversion = "0\.0\.159"/);
+  assert.match(content, /\[package\][\s\S]*version = "0\.0\.160"/);
+}
+{
+  const source = '{"metadata":{"version":"0.0.159"},"version":"0.0.159"}\n';
+  const { content, replaced } = stampContent("json-version", source, "0.0.159", "0.0.160");
+  assert.equal(replaced, 1, "only the root JSON version is stamped");
+  assert.match(content, /"metadata":\{"version":"0\.0\.159"\}/);
+  assert.match(content, /,"version":"0\.0\.160"/);
+}
+assert.throws(
+  () => readStampedVersion("json-version", '{"version":"0.2.4","version":"0.2.3"}', "package.json"),
+  /duplicate keys/,
+  "duplicate JSON version keys must not silently choose the last value",
+);
 assert.equal(
   readStampedVersion("json-version", '{"name":"coven-cave","version":"0.2.4"}', "package.json"),
   "0.2.4",
@@ -514,7 +533,7 @@ const fixtures = ${JSON.stringify(fixtures)};
 const script = ${JSON.stringify(STAMP_RELEASE)};
 childProcess.execFileSync = (cmd, args) => {
   if (cmd === "git" && args[0] === "status" && args[1] === "--porcelain") return "";
-  if (cmd === "gh" && args[0] === "api" && String(args[1]).includes("/pulls")) return "[]";
+  if (cmd === "gh" && args[0] === "api" && args.some((arg) => String(arg).includes("/pulls"))) return "[]";
   if (cmd === "git" && args[0] === "log") return "feat(release): polish dry run\\nfix(release): cover files\\n";
   throw new Error(\`unexpected execFileSync: \${cmd} \${args.join(" ")}\`);
 };
@@ -623,6 +642,21 @@ function releaseSourceFixture(overrides = {}) {
     assert.ok(
       errors.some((error) => error.includes(`${file}: expected 0.0.159`)),
       `${file} drift must fail the shared release checker: ${errors.join("; ")}`,
+    );
+  }
+
+  {
+    const errors = releaseSourceErrors({
+      expectedVersion: "0.0.159",
+      files: {
+        ...files,
+        "package.json": '{"version":"0.0.159","version":"0.0.158"}\n',
+      },
+    });
+    assert.match(
+      errors.join("\n"),
+      /package\.json: JSON must not contain duplicate keys/,
+      "duplicate JSON keys cannot silently substitute the release version",
     );
   }
 
@@ -939,6 +973,11 @@ for (const target of ["0.0.159", "0.0.158"]) {
 // ── collision guard ───────────────────────────────────────────────────────────
 assert.equal(findOpenStampPr([{ title: "feat: x" }]), null);
 assert.equal(findOpenStampPr([{ title: "feat: x" }, { title: "chore(release): stamp v0.0.160", number: 9 }]).number, 9);
+assert.match(
+  await readFile(new URL("./stamp-release.mjs", import.meta.url), "utf8"),
+  /"--paginate",\s*"--jq",\s*"\.\[\] \| \{ number, title \} \| @json",\s*`repos\/\$\{repo\}\/pulls\?state=open&per_page=100`/,
+  "the stamp collision guard must inspect every page of open pull requests",
+);
 
 // ── release.yml resilience pins ───────────────────────────────────────────────
 const yml = await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
