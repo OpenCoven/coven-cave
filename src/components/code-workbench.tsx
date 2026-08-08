@@ -107,7 +107,8 @@ export function CodeWorkbench({
    *  with that path focused. `nonce` re-triggers the jump for a repeat path. */
   openTarget?: PendingCodeOpen;
   onSelectSession?: (sessionId: string) => void;
-  onNewSession?: (title: string) => void;
+  /** Receives the picker's unmatched query, which seeds the kickoff prompt. */
+  onNewSession?: (seed: string) => void;
   onJumpToSession: (sessionId: string, familiarId?: string | null) => void;
   /** Re-poll the enriched session list (branch/worktree chips) after inspector mutations. */
   onRefresh?: () => void;

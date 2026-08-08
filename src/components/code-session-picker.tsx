@@ -71,8 +71,12 @@ export type CodeSessionPickerProps = {
   sessions: SessionRow[];
   selected: SessionRow;
   onSelect: (sessionId: string) => void;
-  /** Start a session named after an unmatched query — the frame's Enter path. */
-  onCreate?: (title: string) => void;
+  /**
+   * Start a new session from an unmatched query — the frame's Enter path. The
+   * query is what the session should work on, so it seeds the kickoff prompt;
+   * a session's title belongs to the daemon and is not set here.
+   */
+  onCreate?: (seed: string) => void;
 };
 
 export function CodeSessionPicker({
@@ -111,10 +115,10 @@ export function CodeSessionPicker({
   );
 
   const create = useCallback(() => {
-    const title = query.trim();
-    if (!title || !onCreate) return;
+    const seed = query.trim();
+    if (!seed || !onCreate) return;
     setOpen(false);
-    onCreate(title);
+    onCreate(seed);
   }, [onCreate, query]);
 
   const onQueryKeyDown = useCallback(
@@ -220,7 +224,7 @@ export function CodeSessionPicker({
                 </p>
                 {onCreate ? (
                   <button type="button" className="focus-ring code-picker__empty-action" onClick={create}>
-                    Start a session called “{query.trim()}”
+                    Start a new session about “{query.trim()}”
                   </button>
                 ) : null}
               </div>
