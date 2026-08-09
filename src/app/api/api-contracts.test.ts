@@ -176,6 +176,7 @@ const contracts: RouteContract[] = [
   { route: "/omnigent/hosts", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/omnigent/sessions", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/omnigent/status", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/onboarding/bootstrap", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/onboarding/install", methods: ["GET", "DELETE", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/onboarding/prerequisites", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/onboarding/setup", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
@@ -350,6 +351,9 @@ function effectiveRouteSource(file: string, source: string): string {
   // nothing.
   if (source.includes('from "@/lib/server/x-oauth-start-route"')) {
     parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "x-oauth-start-route.ts"), "utf8"));
+  }
+  if (source.includes('from "./install-service"')) {
+    parts.push(readFileSync(path.join(path.dirname(file), "install-service.ts"), "utf8"));
   }
   return parts.join("\n");
 }
