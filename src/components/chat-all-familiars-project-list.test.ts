@@ -71,7 +71,7 @@ assert.match(
 
 assert.match(
   chatProjectSidebar,
-  /<section[\s\S]*aria-label=\{organization\.label\}[\s\S]*<button[\s\S]*type="button"[\s\S]*className="focus-ring[\s\S]*aria-expanded=\{organizationExpanded\}/,
+  /<section[\s\S]*aria-label=\{organization\.label\}[\s\S]*<button[\s\S]*type="button"[\s\S]*className="focus-ring[\s\S]*aria-expanded=\{organizationVisible\}/,
   "Open project mode should render accessible organization sections with full-row disclosure buttons",
 );
 

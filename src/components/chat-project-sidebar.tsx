@@ -850,6 +850,7 @@ export function ChatProjectSidebar({
                 <div className="flex flex-col items-center gap-1">
                   {groups.map((group) => {
                     const key = selectionKey(group.projectId, group.projectRoot);
+                    const organizationKey = organizationExpansionKey(group.organization.key);
                     const label = repoLabel(group);
                     return (
                       <button
@@ -861,6 +862,7 @@ export function ChatProjectSidebar({
                         onClick={() => {
                           setOpen(true);
                           onSelect(key);
+                          if (!expandedKeys.includes(organizationKey)) onToggleExpanded(organizationKey);
                           if (!expandedKeys.includes(key)) onToggleExpanded(key);
                         }}
                         className={[
@@ -901,6 +903,7 @@ export function ChatProjectSidebar({
                       const organization = organizationGroup.organization;
                       const organizationKey = organizationExpansionKey(organization.key);
                       const organizationExpanded = expandedKeys.includes(organizationKey);
+                      const organizationVisible = hasSearch || organizationExpanded;
                       const projectCount = organizationGroup.items.length;
                       return (
                         <section
@@ -912,11 +915,11 @@ export function ChatProjectSidebar({
                             type="button"
                             onClick={() => onToggleExpanded(organizationKey)}
                             className="focus-ring flex w-full items-center gap-1.5 bg-[var(--bg-panel)] px-2 py-1.5 text-left text-[length:var(--text-xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                            aria-expanded={organizationExpanded}
-                            aria-label={`${organizationExpanded ? "Collapse" : "Expand"} ${organization.label} projects`}
+                            aria-expanded={organizationVisible}
+                            aria-label={`${organizationVisible ? "Collapse" : "Expand"} ${organization.label} projects`}
                           >
                             <Icon
-                              name={organizationExpanded ? "ph:caret-down" : "ph:caret-right"}
+                              name={organizationVisible ? "ph:caret-down" : "ph:caret-right"}
                               width={10}
                               aria-hidden
                               className="shrink-0 text-[var(--text-muted)]"
@@ -928,7 +931,7 @@ export function ChatProjectSidebar({
                               {projectCount} project{projectCount === 1 ? "" : "s"}
                             </span>
                           </button>
-                          {hasSearch || organizationExpanded ? (
+                          {organizationVisible ? (
                             <div>
                               {organizationGroup.items.map((group) => renderProjectGroup(group))}
                             </div>

@@ -184,8 +184,8 @@ assert.match(
 // activating one re-expands the rail and opens that group.
 assert.match(
   source,
-  /\{!open && groups\.length > 0 \?[\s\S]{0,700}setOpen\(true\);\s*\n\s*onSelect\(key\);\s*\n\s*if \(!expandedKeys\.includes\(key\)\) onToggleExpanded\(key\);/,
-  "Collapsed rail renders group tiles that expand the rail and open the group",
+  /const organizationKey = organizationExpansionKey\(group\.organization\.key\);[\s\S]*setOpen\(true\);\s*\n\s*onSelect\(key\);[\s\S]*if \(!expandedKeys\.includes\(organizationKey\)\) onToggleExpanded\(organizationKey\);[\s\S]*if \(!expandedKeys\.includes\(key\)\) onToggleExpanded\(key\);/,
+  "Collapsed rail renders group tiles that expand the rail, select the project, and open the ancestor organization",
 );
 assert.match(
   source,
@@ -224,7 +224,7 @@ assert.match(
 );
 assert.match(
   source,
-  /aria-label=\{`\$\{organizationExpanded \? "Collapse" : "Expand"\} \$\{organization\.label\} projects`\}/,
+  /aria-label=\{`\$\{organizationVisible \? "Collapse" : "Expand"\} \$\{organization\.label\} projects`\}/,
   "Organization disclosure buttons announce their next action and label",
 );
 assert.match(
@@ -234,8 +234,13 @@ assert.match(
 );
 assert.match(
   source,
-  /\{hasSearch \|\| organizationExpanded \? \([\s\S]*organizationGroup\.items\.map\(\(group\) => renderProjectGroup\(group\)\)/,
-  "Search reveals organization descendants even when their disclosure is collapsed",
+  /const organizationVisible = hasSearch \|\| organizationExpanded;/,
+  "Search visibility should be collapsed into one effective disclosure state",
+);
+assert.match(
+  source,
+  /aria-expanded=\{organizationVisible\}[\s\S]*aria-label=\{`\$\{organizationVisible \? "Collapse" : "Expand"\} \$\{organization\.label\} projects`\}[\s\S]*name=\{organizationVisible \? "ph:caret-down" : "ph:caret-right"\}[\s\S]*\{organizationVisible \? \([\s\S]*organizationGroup\.items\.map\(\(group\) => renderProjectGroup\(group\)\)/,
+  "Search visibility should drive descendant rendering and disclosure semantics together",
 );
 
 // The open conversation row announces itself to assistive tech (was visual-only:
