@@ -44,6 +44,29 @@ struct ToastMessage: Identifiable, Equatable {
     var style: Style = .info
 }
 
+/// A one-shot, operator-reviewed transfer from Terminal to a new chat.
+///
+/// The value is prefilled into chat but is never submitted by this handoff.
+struct TerminalFamiliarHandoff: Equatable {
+    let draft: String
+    let cwd: String?
+
+    var chatDraft: String {
+        let location = cwd ?? "Home"
+        return """
+        Please review this terminal input before I run it.
+
+        Working directory: \(location)
+
+        ```shell
+        \(draft)
+        ```
+
+        Explain what it does and flag risks. Do not execute anything.
+        """
+    }
+}
+
 @Observable
 @MainActor
 final class AppModel {
@@ -152,6 +175,9 @@ final class AppModel {
     var navigationDrawerOpen = false
     var newChatRequested = false
     var chatSearchRequested = false
+    /// Held only while the New Chat flow is selecting a familiar and project.
+    /// `applyTerminalFamiliarHandoff` turns it into an ordinary unsent chat draft.
+    var terminalFamiliarHandoff: TerminalFamiliarHandoff?
 
     /// The active confirmation toast, auto-dismissed by the overlay.
     var toast: ToastMessage?
@@ -198,6 +224,24 @@ final class AppModel {
     func requestOpen(_ thread: ChatThread) {
         selectedTab = .chats
         threadToOpen = thread
+    }
+
+    func requestTerminalFamiliarHandoff(draft: String, cwd: String?) {
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        terminalFamiliarHandoff = TerminalFamiliarHandoff(draft: trimmed, cwd: cwd)
+        selectedTab = .chats
+        newChatRequested = true
+    }
+
+    func applyTerminalFamiliarHandoff(to thread: ChatThread) {
+        guard let handoff = terminalFamiliarHandoff else { return }
+        setThreadDraft(thread.id, text: handoff.chatDraft)
+        terminalFamiliarHandoff = nil
+    }
+
+    func cancelTerminalFamiliarHandoff() {
+        terminalFamiliarHandoff = nil
     }
 
     /// Switch the visible conversation to one chosen in the session picker.

@@ -1606,6 +1606,7 @@ export const SUITES = {
     "scripts/ios-chat-thread-no-search.test.mjs",
     "scripts/ios-chat-tab-free.test.mjs",
     "scripts/ios-development-terminal-chrome.test.mjs",
+    "scripts/ios-terminal-composer.test.mjs",
     "scripts/ios-surface-failures.test.mjs",
     "scripts/ios-surface-load-discipline.test.mjs",
     "scripts/mobile-tailscale.test.mjs",
