@@ -9,17 +9,17 @@ breaking config changes; patch releases stay additive.
 
 ## [0.2.5] - 2026-08-08
 
-> A reading-first Coding Room, a rebuilt Research Desk, safer remote access,
+> A reading-first Coding Desk, a rebuilt Research Desk, safer remote access,
 > steadier navigation, and release and runtime checks that name what went wrong.
 
 Patch release on top of v0.2.4.
 
 ### Added
 
-- Rebuilt the Coding Room around a worktree-aware file tree, source viewer,
+- Rebuilt the Coding Desk around a worktree-aware file tree, source viewer,
   resizable Changes/PR rail, persistent terminal drawer, session picker,
   per-version viewed state, and rebindable shortcuts; narrow layouts now use
-  the room's measured width (#4418, #4423).
+  the room's measured width (#4418, #4423, #4443).
 - Rebuilt the Research Desk with structured briefs, recommendations, resizable
   rails, richer mission progress, searchable and pageable Library results,
   truthful provider readiness, and improved resource cards and grids

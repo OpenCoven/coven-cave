@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * CodeTerminalDrawer — the Coding Room's shell, docked to the bottom edge
+ * CodeTerminalDrawer — the Coding Desk's shell, docked to the bottom edge
  * (cave-0rcku).
  *
  * The `Cody Code Reading v2` frame keeps the terminal permanently present as a

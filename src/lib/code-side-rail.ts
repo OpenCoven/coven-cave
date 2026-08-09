@@ -1,5 +1,5 @@
 /**
- * Diff · PR rail model for the Coding Room (cave-0rcku).
+ * Diff · PR rail model for the Coding Desk (cave-0rcku).
  *
  * The `Cody Code Reading v2` frame docks review beside the source rather than
  * over it: a rail you drag to resize, double-click to swap between a reading

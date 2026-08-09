@@ -173,7 +173,7 @@ assert.match(
 assert.match(
   codeView,
   /activity: "all"[\s\S]*prs: "pr"[\s\S]*issues: "issue"[\s\S]*reviews: "review_request"/,
-  "Code Workshop preserves the former all feed and each specialized filter",
+  "Coding Desk preserves the former all feed and each specialized filter",
 );
 assert.match(
   codeView,

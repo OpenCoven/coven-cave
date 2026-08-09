@@ -198,7 +198,7 @@ async function createXterm(
 }
 
 /** Imperative handle for writing into a pane's PTY from outside it — the
- *  Coding Room's broadcast input (cave-98o51). Deliberately write-only: it
+ *  Coding Desk's broadcast input (cave-98o51). Deliberately write-only: it
  *  reuses the transport this pane already owns rather than adding a second PTY
  *  API, and a write made through it does NOT re-fire `onUserInput`, so a
  *  broadcast can never echo back into the pane that produced it. */

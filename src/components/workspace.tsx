@@ -2267,7 +2267,7 @@ export function Workspace() {
   }, [openFamiliarSession]);
 
   // GitHub PR/issue URLs (github-watcher notifications, reminder links) open
-  // natively in Code Workshop with the item's detail — never a browser tab.
+  // natively in Coding Desk with the item's detail — never a browser tab.
   // Returns false for anything that isn't a github.com item URL so callers
   // fall back to their existing behavior (cave-qcsv).
   const openGitHubTarget = useCallback((url: string | null | undefined): boolean => {
@@ -3492,7 +3492,7 @@ export function Workspace() {
               if (item.sessionId) {
                 openFamiliarSession(item.sessionId, item.familiarId);
               } else if (item.link) {
-                // GitHub-event notifications open natively in Code Workshop;
+                // GitHub-event notifications open natively in Coding Desk;
                 // other links use their normal open paths.
                 openReminderLink(item.link);
               }

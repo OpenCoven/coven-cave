@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * CodeReviewRail — the Coding Room's right column (cave-0rcku).
+ * CodeReviewRail — the Coding Desk's right column (cave-0rcku).
  *
  * The `Cody Code Reading v2` frame docks review beside the source: two tabs
  * (Changes, PR), a drag handle, double-click to swap between a reading width
