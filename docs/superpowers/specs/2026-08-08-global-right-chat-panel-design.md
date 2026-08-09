@@ -1,7 +1,7 @@
 # Global right chat panel
 
-**Bead:** `cave-xxc55`  
-**Status:** Approved design  
+**Bead:** `cave-xxc55`
+**Status:** Approved design
 **Scope:** A shell-owned auxiliary chat available from every Cave surface
 
 ## Problem
