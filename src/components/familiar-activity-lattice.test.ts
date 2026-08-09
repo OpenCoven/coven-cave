@@ -125,6 +125,31 @@ assert.match(
   /data-step=\{densityStep\(day\.count, lattice\.peak\)\}/,
   "shade steps come from the shared densityStep against the year's peak",
 );
+assert.match(
+  css,
+  /\.fa-lattice__day\s*\{[^}]*border-radius:\s*2px;/,
+  "year cells keep a 2px micro-radius so the square grid never becomes circles",
+);
+assert.doesNotMatch(
+  css,
+  /\.fa-lattice__trend,\s*\n?\.fa-lattice__pulse\s*\{/,
+  "the quarter Sparkline does not inherit the fortnight bar layout",
+);
+assert.match(
+  css,
+  /\.fa-lattice__trend\s*\{[^}]*display:\s*block;[^}]*margin:\s*0;/,
+  "the quarter figure stacks its Sparkline and caption vertically",
+);
+assert.match(
+  css,
+  /\.fa-lattice__pulse\s*\{[^}]*display:\s*flex;[^}]*height:\s*72px;/,
+  "the fortnight alone retains the fixed-height flex bar layout",
+);
+assert.match(
+  css,
+  /\.fa-lattice__trend figcaption\s*\{[^}]*margin-top:\s*var\(--space-1\);/,
+  "the quarter caption has explicit space below the Sparkline",
+);
 // Call syntax, not bare names: the header comment legitimately cites
 // `sessionDayKey` when explaining why weeks are not selectable, and a pin that
 // cannot tell prose from code fails on its own documentation.
