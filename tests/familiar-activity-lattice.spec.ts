@@ -231,5 +231,12 @@ test("activity lattice keeps its browser geometry in wide and narrow layouts", a
   expect(narrow.fortnight.top, "fortnight should stack below the quarter in narrow layout").toBeGreaterThanOrEqual(narrow.quarter.bottom);
   expect(narrow.viewsFits, "the lattice views container should not overflow when stacked").toBe(true);
   expect(narrow.yearGridScrollWidth, "the year grid should scroll horizontally instead of collapsing cells").toBeGreaterThan(narrow.yearGridClientWidth);
+  const yearGridCanScroll = await lattice.evaluate((host) => {
+    const grid = host.querySelector(".fa-lattice__grid") as HTMLElement | null;
+    if (!grid) throw new Error("Missing .fa-lattice__grid");
+    grid.scrollLeft = grid.scrollWidth;
+    return grid.scrollLeft > 0;
+  });
+  expect(yearGridCanScroll, "the overflowing year grid must remain horizontally scrollable").toBe(true);
   expect(narrow.yearCellWidth, "year cells should keep the reviewed minimum width").toBeGreaterThanOrEqual(6);
 });
