@@ -1720,6 +1720,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/proposals-flow-e2e.test.ts",
   "src/app/api/prompts/route.test.ts",
   "src/app/api/marketplace/pack-prompts-route.test.ts",
+  "src/app/api/beads/overview/route.test.ts",
   "src/lib/cave-backdrop.test.ts",
   "src/lib/cave-backdrop-blaze.test.ts",
   "src/lib/wiki-link-parser.test.ts",
