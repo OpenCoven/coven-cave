@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applyGroupEvent,
+  replaceGroupReplyText,
   parseSseBuffer,
   defaultGroupName,
   makeGroup,
@@ -36,6 +37,7 @@ import {
   type MentionableFamiliar,
   type RosterParticipant,
 } from "./group-chat.ts";
+import { createAttentionSafeTextAccumulator } from "./chat-attention-stream.ts";
 
 const ROSTER: MentionableFamiliar[] = [
   { id: "nova", name: "Nova" },
@@ -104,6 +106,57 @@ test("applyGroupEvent: done settles the reply", () => {
 test("applyGroupEvent: done with isError flips to error", () => {
   const r = applyGroupEvent(baseReply(), { kind: "done", isError: true });
   assert.equal(r.status, "error");
+});
+
+test("terminal text replacement strips marker tails while preserving done", () => {
+  const text = createAttentionSafeTextAccumulator();
+  let r = baseReply();
+  r = applyGroupEvent(r, {
+    kind: "assistant_replace",
+    text: text.append("Useful answer<coven:attention reason=\"approval\" /> with tail<coven:atten"),
+  });
+  r = applyGroupEvent(r, { kind: "done", durationMs: 1200 });
+  r = replaceGroupReplyText(r, text.terminal());
+  assert.equal(r.status, "done");
+  assert.equal(r.text, "Useful answer with tail");
+  assert.equal(r.durationMs, 1200);
+});
+
+test("terminal text replacement preserves an errored reply and excludes it from the next round", () => {
+  const text = createAttentionSafeTextAccumulator();
+  let r = baseReply();
+  r = applyGroupEvent(r, {
+    kind: "assistant_replace",
+    text: text.append("failed output<coven:attention reason=\"approval\" /> leaked tail<coven:atten"),
+  });
+  r = applyGroupEvent(r, { kind: "error", message: "boom" });
+  r = replaceGroupReplyText(r, text.terminal());
+  assert.equal(r.status, "error");
+  assert.equal(r.error, "boom");
+  assert.equal(r.text, "failed output leaked tail");
+  const prompt = renderCovenRoundRobinPrompt({
+    participants: [
+      { id: "aria", name: "Aria", role: "", kind: "familiar" },
+      { id: "sage", name: "Sage", role: "", kind: "familiar" },
+    ],
+    receivingFamiliarId: "sage",
+    userText: "Continue the round",
+    targeted: false,
+    familiarNames: [
+      { id: "aria", name: "Aria" },
+      { id: "sage", name: "Sage" },
+    ],
+    transcript: [
+      {
+        id: "u1",
+        role: "user",
+        text: "Start the round",
+        createdAt: "2026-06-24T00:00:00.000Z",
+      },
+      r,
+    ],
+  });
+  assert.doesNotMatch(prompt, /failed output|leaked tail/);
 });
 
 test("applyGroupEvent: error captures the message", () => {

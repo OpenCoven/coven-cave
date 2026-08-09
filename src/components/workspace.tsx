@@ -100,6 +100,25 @@ import { readDaemonAutomation } from "@/lib/daemon-automation-pref";
 import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
+import {
+  CHAT_ATTENTION_UNPROVEN_SCOPE,
+  applyChatAttentionSettlementToRows,
+  applyChatAttentionProjections,
+  chatAttentionProjectionScopeKey,
+  clearSessionAttentionRows,
+  createChatAttentionProjectionState,
+  forgetChatAttentionProjections,
+  isCurrentSessionListRequest,
+  recordChatAttentionClear,
+  settleChatAttentionClear,
+} from "@/lib/chat-attention-projection";
+import {
+  CHAT_ATTENTION_CLEAR_EVENT,
+  CHAT_ATTENTION_SETTLE_EVENT,
+  attentionClearFromEvent,
+  attentionClearedSessionId,
+  attentionSettlementFromEvent,
+} from "@/lib/chat-attention-events";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
 // their chunks (and deps like @uiw/react-codemirror) load on
 // first open instead of shipping in the main bundle. See lazy-surfaces.tsx.
@@ -327,6 +346,8 @@ export function Workspace() {
     familiarsLoaded,
     familiarRosterLoadedSuccessfully,
   );
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const {
     projects: registeredProjects,
@@ -364,6 +385,8 @@ export function Workspace() {
   const loadGitHubTasksForceEpochRef = useRef(0);
   const loadGitHubTasksForceInFlightRef = useRef(0);
   const baseSessionsRef = useRef<SessionRow[]>([]);
+  const baseSessionScopeKeyByIdRef = useRef(new Map<string, string>());
+  const chatAttentionProjectionRef = useRef(createChatAttentionProjectionState());
   const locallyDeletedSessionIdsRef = useRef<Set<string>>(new Set());
   const githubTasksRef = useRef<GitHubTask[] | null>(null);
   const [daemonRunning, setDaemonRunning] = useState<boolean>(false);
@@ -628,6 +651,97 @@ export function Workspace() {
       window.removeEventListener("cave:chat-history-replace", onChatHistoryReplace);
     };
   }, []);
+  useEffect(() => {
+    const onChatAttentionClear = (event: Event) => {
+      const detail = attentionClearFromEvent(event);
+      const sessionId = detail?.sessionId ?? attentionClearedSessionId(event);
+      if (!sessionId) return;
+      if (detail) {
+        // Workspace's own accepted canonical row (from the latest /api/sessions/list
+        // poll it has patched into baseSessionsRef) is fresher authority than a
+        // baseline carried on the clear event: that event was built from ChatView's
+        // local snapshot at emit time, which can predate a poll that already
+        // resolved a real, non-none attention row (the race this guards against —
+        // an accepted poll lands, then a stale "none" event arrives after it). Only
+        // fall back to the event's baseline when Workspace has no row for this
+        // session (absent — e.g. a different familiar's off-list session) or its
+        // own row is "none" and so cannot represent pre-clear canonical state
+        // (either truly no attention ever existed, or it was already patched to
+        // none by an earlier optimistic clear and tells us nothing new).
+        const acceptedRow = baseSessionsRef.current.find((session) => session.id === detail.sessionId);
+        const acceptedCanonical = acceptedRow && acceptedRow.attention.state !== "none"
+          ? acceptedRow.attention
+          : null;
+        const baselineAttention = acceptedCanonical ??
+          detail.baselineAttention ??
+          acceptedRow?.attention ??
+          sessionsRef.current.find((session) => session.id === detail.sessionId)?.attention;
+        // Preserve the scope of the request that actually supplied this row.
+        // A row's familiar identity is not request provenance: all-familiars
+        // responses contain familiar-owned rows and collapse some rows.
+        const recordResult = recordChatAttentionClear(
+          chatAttentionProjectionRef.current,
+          detail.sessionId,
+          detail.operationId,
+          baseSessionScopeKeyByIdRef.current.get(detail.sessionId) ??
+            CHAT_ATTENTION_UNPROVEN_SCOPE,
+          baselineAttention,
+          detail.clearWatermark,
+        );
+        if (!recordResult.recorded) return;
+      }
+      // Invalidate any in-flight loadSessions before patching state: a load
+      // started before this clear (mount, the 4s poll, a scope change) can
+      // still be in flight and resolve *after* it with a stale, pre-clear
+      // attention snapshot, silently resurrecting the attention this handler
+      // just cleared. Bumping the shared reqId makes loadSessions' own
+      // isCurrent() guard drop that stale response; a fresh loadSessions()
+      // call (e.g. the failure-path reconciliation below) still gets its own
+      // newer reqId and is unaffected.
+      loadSessionsReqRef.current += 1;
+      // Patch only THIS session's attention to none on both the canonical
+      // base rows and the currently rendered rows. This is an optimistic
+      // clear, not a canonical response: applyChatAttentionProjections also
+      // RETIRES operations (it may delete the just-recorded projection once
+      // it judges a response eligible), which is only safe to run against an
+      // accepted `/api/sessions/list` response carrying its own real request
+      // id (see loadSessions below) — never against these cached arrays with
+      // a synthetic, merely-incremented reqId. Doing so here would let this
+      // handler retire its own operation before any real response ever
+      // confirmed the clear.
+      baseSessionsRef.current = clearSessionAttentionRows(baseSessionsRef.current, sessionId);
+      setSessions((currentSessions) => clearSessionAttentionRows(currentSessions, sessionId));
+    };
+    const onChatAttentionSettle = (event: Event) => {
+      const detail = attentionSettlementFromEvent(event);
+      if (!detail) return;
+      const settlement = settleChatAttentionClear(
+        chatAttentionProjectionRef.current,
+        detail.sessionId,
+        detail.operationId,
+        detail.outcome,
+        loadSessionsReqRef.current + 1,
+      );
+      const currentRowScopeKey = baseSessionScopeKeyByIdRef.current.get(detail.sessionId) ??
+        CHAT_ATTENTION_UNPROVEN_SCOPE;
+      baseSessionsRef.current = applyChatAttentionSettlementToRows(
+        baseSessionsRef.current,
+        settlement,
+        currentRowScopeKey,
+      );
+      setSessions((currentSessions) => applyChatAttentionSettlementToRows(
+        currentSessions,
+        settlement,
+        currentRowScopeKey,
+      ));
+    };
+    window.addEventListener(CHAT_ATTENTION_CLEAR_EVENT, onChatAttentionClear);
+    window.addEventListener(CHAT_ATTENTION_SETTLE_EVENT, onChatAttentionSettle);
+    return () => {
+      window.removeEventListener(CHAT_ATTENTION_CLEAR_EVENT, onChatAttentionClear);
+      window.removeEventListener(CHAT_ATTENTION_SETTLE_EVENT, onChatAttentionSettle);
+    };
+  }, []);
   // Chat mode replaces the global nav with the project-grouped Chats sidebar.
   // Its Home button exits Chat, restoring the normal navigation.
   // Whether the first daemon status poll has resolved. Until it has, the daemon
@@ -797,8 +911,6 @@ export function Workspace() {
   const sessionsLoadedRef = useRef(sessionsLoaded);
   sessionsLoadedRef.current = sessionsLoaded;
   modeRef.current = mode;
-  const activeIdRef = useRef(activeId);
-  activeIdRef.current = activeId;
   // Keep an already-open role room from undoing an explicit switch to the All
   // or multi-familiar scope. The room can stay honestly unavailable until the
   // user selects a unique owner row; deep links and mode changes still narrow.
@@ -1333,16 +1445,24 @@ export function Workspace() {
 
   const loadSessions = useCallback(() => {
     // Sequence guard. loadSessions runs from mount, the 4s poll, the
-    // active-scope effect, and child callbacks. Scope is read from
-    // activeIdRef.current so this callback stays stable while always using the
-    // familiar's granted projects, so a load started under scope A that resolves
+    // familiars-refresh event, and the active-scope effect. The callback stays
+    // stable so background send settlements always read the latest activeId ref.
+    // It scopes the fetch to that familiar's granted projects, so a load started
+    // under scope A that resolves
     // *after* the user switches to scope B would paint A's sessions under B
     // until the next poll healed it. A monotonic reqId (replacing the old
     // in-flight-promise dedup, which additionally *skipped* the new-scope load
     // while A was still in flight) drops every superseded load's writes, so only
     // the newest scope ever reaches state.
+    const capturedActiveId = activeIdRef.current;
+    const capturedScopeKey = chatAttentionProjectionScopeKey(capturedActiveId);
     const reqId = ++loadSessionsReqRef.current;
-    const isCurrent = () => reqId === loadSessionsReqRef.current;
+    const isCurrent = () => isCurrentSessionListRequest({
+      requestId: reqId,
+      currentRequestId: loadSessionsReqRef.current,
+      capturedScopeKey,
+      currentScopeKey: chatAttentionProjectionScopeKey(activeIdRef.current),
+    });
 
     return (async () => {
       let baseSessionsApplied = false;
@@ -1355,9 +1475,8 @@ export function Workspace() {
         // contradictory versus the clean project-scoped familiar homes. Scoped
         // views already drop them via project-grant scoping, so collapse is only
         // applied to the unscoped view.
-        const currentActiveId = activeIdRef.current;
-        const scope = currentActiveId
-          ? `?familiarId=${encodeURIComponent(currentActiveId)}`
+        const scope = capturedActiveId
+          ? `?familiarId=${encodeURIComponent(capturedActiveId)}`
           : "?collapseFamiliarWorkspace=1";
         const sessionsResult = await fetch(`/api/sessions/list${scope}`, { cache: "no-store" });
         const json = await sessionsResult.json();
@@ -1371,8 +1490,19 @@ export function Workspace() {
         }
 
         setSessionsError(false);
-        const baseSessions = filterDeletedSessions((json.sessions ?? []) as SessionRow[], locallyDeletedSessionIdsRef.current);
+        const baseSessions = applyChatAttentionProjections(
+          chatAttentionProjectionRef.current,
+          filterDeletedSessions((json.sessions ?? []) as SessionRow[], locallyDeletedSessionIdsRef.current),
+          reqId,
+          capturedScopeKey,
+        );
         baseSessionsRef.current = baseSessions;
+        baseSessionScopeKeyByIdRef.current = new Map(
+          baseSessions.map((session) => [
+            session.id,
+            capturedScopeKey,
+          ]),
+        );
         const visibleSessions = githubTasksRef.current
           ? attachGitHubTaskContext(baseSessions, githubTasksRef.current)
           : baseSessions;
@@ -1393,11 +1523,15 @@ export function Workspace() {
   const handleSessionsDeleted = useCallback((sessionIds: readonly string[]) => {
     const confirmedIds = recordDeletedSessionIds(locallyDeletedSessionIdsRef.current, sessionIds);
     if (confirmedIds.length === 0) return;
+    forgetChatAttentionProjections(chatAttentionProjectionRef.current, confirmedIds);
 
     baseSessionsRef.current = filterDeletedSessions(
       baseSessionsRef.current,
       locallyDeletedSessionIdsRef.current,
     );
+    for (const sessionId of confirmedIds) {
+      baseSessionScopeKeyByIdRef.current.delete(sessionId);
+    }
     setSessions((currentSessions) => {
       const nextSessions = filterDeletedSessions(
         currentSessions,
@@ -2133,7 +2267,7 @@ export function Workspace() {
   }, [openFamiliarSession]);
 
   // GitHub PR/issue URLs (github-watcher notifications, reminder links) open
-  // natively in Code Workshop with the item's detail — never a browser tab.
+  // natively in Coding Desk with the item's detail — never a browser tab.
   // Returns false for anything that isn't a github.com item URL so callers
   // fall back to their existing behavior (cave-qcsv).
   const openGitHubTarget = useCallback((url: string | null | undefined): boolean => {
@@ -3358,7 +3492,7 @@ export function Workspace() {
               if (item.sessionId) {
                 openFamiliarSession(item.sessionId, item.familiarId);
               } else if (item.link) {
-                // GitHub-event notifications open natively in Code Workshop;
+                // GitHub-event notifications open natively in Coding Desk;
                 // other links use their normal open paths.
                 openReminderLink(item.link);
               }

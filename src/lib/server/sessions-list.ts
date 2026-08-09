@@ -11,6 +11,7 @@ import {
   localConversationSessionRows,
   mergeSessionRows,
 } from "@/lib/session-list-merge";
+import { NO_CHAT_ATTENTION } from "@/lib/chat-attention";
 import {
   applyStaleRunningPresentation,
   sweepStaleRunningGhosts,
@@ -62,7 +63,9 @@ function applySweptRows(
   for (const row of sessions) {
     const archivedAt = swept.get(row.id);
     if (!archivedAt) next.push(row);
-    else if (includeArchived) next.push({ ...row, archived_at: archivedAt });
+    else if (includeArchived) {
+      next.push({ ...row, archived_at: archivedAt, attention: NO_CHAT_ATTENTION });
+    }
   }
   return next;
 }
@@ -151,16 +154,15 @@ export async function computeSessionsList(
     loadProjects(),
   ]);
   const localConversations = (await listConversations()).map((conv) => {
-    // First-turn stubs (cave-0g2x) are statusless; resolve them against the
-    // in-process run registry. Run in flight → an honest `running` row (a
-    // conversation-only row would otherwise default to "completed"). No run →
-    // the server died mid-first-turn: `failed`, not a phantom completion.
+    // Resolve every live chat against the in-process run registry so an
+    // existing conversation's follow-up cannot retain stale attention.
     // Registry-truth is process-local, which matches how chat runs live and
     // die with this server process.
-    if (!conv.pending) return conv;
-    return hasActiveChatRun(conv.sessionId)
-      ? { ...conv, status: "running", exitCode: 0 }
-      : { ...conv, status: "failed", exitCode: 1 };
+    if (hasActiveChatRun(conv.sessionId)) {
+      return { ...conv, status: "running", exitCode: 0 };
+    }
+    if (conv.pending) return { ...conv, status: "failed", exitCode: 1 };
+    return conv;
   });
   // Backfill for local-only chat rows (UI chats the daemon never sees):
   // map the conversation's recorded cwd to its registered project root so
@@ -218,7 +220,11 @@ export async function computeSessionsList(
       includeArchived,
       isValidDaemonProjectRoot: isKnownProjectOrValidDir,
       projectRootForCwd,
-    }),
+    }).map((session) =>
+      hasActiveChatRun(session.id)
+        ? { ...session, status: "running", exit_code: 0, attention: NO_CHAT_ATTENTION }
+        : session
+    ),
     state,
     includeArchived,
   );

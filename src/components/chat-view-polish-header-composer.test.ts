@@ -289,7 +289,7 @@ assert.match(
   "Only the active slash command row should receive the scroll target ref",
 );
 
-const splitFn = source.match(/function splitReasoning\([\s\S]*?\n}\n/)?.[0] ?? "";
+const splitFn = splitReasoning;
 assert.match(
   splitFn,
   /DEBUG_PREFIX_RE/,

@@ -32,6 +32,24 @@ assert.match(
 
 assert.match(
   eventsSource,
+  /loadConversation/,
+  "events route must resolve an owned Cave conversation before proxying to the daemon",
+);
+
+assert.match(
+  eventsSource,
+  /const daemonSessionId = \(await loadConversation\(id\)\)\?\.harnessSessionId \?\? id/,
+  "replayed conversations proxy events through their persisted harness session id",
+);
+
+assert.match(
+  eventsSource,
+  /encodeURIComponent\(daemonSessionId\)/,
+  "the daemon event request uses the resolved harness session id rather than the display id",
+);
+
+assert.match(
+  eventsSource,
   /status.*400|400.*status/,
   "events route must return 400 on invalid session ID, not 500 or silent proxy",
 );

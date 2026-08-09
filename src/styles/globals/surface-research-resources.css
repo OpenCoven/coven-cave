@@ -326,7 +326,7 @@
 }
 .research-res__chips {
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 .research-res__chip {
@@ -431,9 +431,14 @@
 
 /* ── Item cards: grid and rows variants. ── */
 .research-res__items { margin-top: 10px; }
+/* auto-FIT, not auto-fill: auto-fill keeps the empty tracks it created, so a
+   group holding fewer links than the row fits left its cards stranded at the
+   minimum width beside dead space (cave-93jz1). auto-fit collapses those
+   tracks — paired with the card cap below, which stops the collapse turning a
+   single saved link into one 1300px-wide card. */
 .research-res__items[data-view="grid"] {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 10px;
 }
 .research-res__items[data-view="rows"] {
@@ -441,23 +446,58 @@
   flex-direction: column;
   gap: var(--space-1);
 }
+/* Card: a tinted band names the kind, the body carries the link. The band is
+   what makes a wall of saves scannable by type at a glance — the chip inside
+   it still spells the kind out, so the tint is reinforcement, not the signal.
+
+   Per-category hue is one variable, so a new category needs one line. */
 .research-res-card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
   min-width: 0;
-  padding: var(--space-3) var(--space-3);
-  background: var(--bg-raised);
+  padding: 0 0 var(--space-3);
+  overflow: hidden;
+  background: color-mix(in oklch, var(--bg-raised) 85%, transparent);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
+  transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+  --res-kind: var(--research-accent);
 }
-.research-res-card[data-category="github"] { background: var(--bg-base); }
+/* Grid only — rows view is a flex column whose cards must span the full width,
+   and a cap there would shrink every row to a third of the surface.
+   The cap sits just above the widest track a packed row produces, so a lone
+   card reads as the same component as one in a full group rather than as a
+   banner. */
+.research-res-card[data-view="grid"] { max-width: 360px; }
+.research-res-card[data-category="github"] { --res-kind: var(--text-secondary); }
+.research-res-card[data-category="docs"] { --res-kind: var(--color-info); }
+.research-res-card[data-category="paper"] { --res-kind: var(--color-danger); }
+.research-res-card[data-category="video"] { --res-kind: var(--color-warning); }
+.research-res-card[data-category="social"] { --res-kind: var(--research-accent); }
+.research-res-card[data-category="article"] { --res-kind: var(--color-success); }
+.research-res-card[data-view="grid"]:hover {
+  border-color: color-mix(in oklch, var(--res-kind) 45%, transparent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md, 0 10px 26px oklch(0 0 0 / 0.3));
+}
 .research-res-card__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+  padding: var(--space-3);
+  background: linear-gradient(
+    120deg,
+    color-mix(in oklch, var(--res-kind) 13%, transparent),
+    transparent 70%
+  );
+  border-bottom: 1px solid color-mix(in oklch, var(--text-primary) 7%, transparent);
 }
+/* The body sits inside the card's own padding now that the band owns the top. */
+.research-res-card > :not(.research-res-card__head) { margin-inline: var(--space-3); }
+.research-res-card__chip { color: var(--res-kind); }
 .research-res-card__chip {
   display: inline-flex;
   align-items: center;
@@ -529,6 +569,18 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
+}
+/* In rows the band collapses back to an inline head — a gradient stripe on a
+   40px row reads as damage, not as structure. The kind tint moves to a leading
+   edge marker instead. */
+.research-res-card[data-view="rows"] > :not(.research-res-card__head) { margin-inline: 0; }
+.research-res-card[data-view="rows"] .research-res-card__head {
+  padding: 0;
+  background: none;
+  border-bottom: 0;
+}
+.research-res-card[data-view="rows"] {
+  border-left: 2px solid color-mix(in oklch, var(--res-kind) 55%, transparent);
 }
 .research-res-card[data-view="rows"] .research-res-card__head { flex: none; }
 .research-res-card[data-view="rows"] .research-res-card__title {
@@ -736,14 +788,14 @@
 }
 .research-res-overlay__runs-chips {
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
   margin-top: var(--space-2);
   flex-wrap: wrap;
 }
 .research-res-overlay__runs-chips button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   padding: var(--space-1) var(--space-3);
   font-size: var(--text-sm);
   color: var(--text-secondary);
@@ -838,6 +890,8 @@
   }
   .research-res__intake-footer .ui-btn { width: 100%; }
   .research-res__items[data-view="grid"] { grid-template-columns: 1fr; }
+  /* Single column already: capping here would re-create the gap this fixes. */
+  .research-res-card[data-view="grid"] { max-width: none; }
   .research-res-card[data-view="rows"] { flex-wrap: wrap; }
   .research-res-card[data-view="rows"] .research-res-card__sub { flex-basis: 100%; order: 3; }
   .research-res-card[data-view="rows"] .research-res-card__footer {
@@ -851,4 +905,9 @@
     margin-left: 0;
   }
   .research-res-overlay__actions { align-items: flex-start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .research-res-card { transition: none; }
+  .research-res-card[data-view="grid"]:hover { transform: none; }
 }

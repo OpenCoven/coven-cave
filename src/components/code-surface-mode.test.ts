@@ -173,7 +173,7 @@ assert.match(
 assert.match(
   codeView,
   /activity: "all"[\s\S]*prs: "pr"[\s\S]*issues: "issue"[\s\S]*reviews: "review_request"/,
-  "Code Workshop preserves the former all feed and each specialized filter",
+  "Coding Desk preserves the former all feed and each specialized filter",
 );
 assert.match(
   codeView,
@@ -216,119 +216,135 @@ assert.match(
   "file/diff navigation supersedes a pending GitHub detail so it cannot replay: the pending-open effect must switch to Sessions, clear the latched GitHub target, then keep the existing session/workbench selection flow",
 );
 
-// ── Workbench: the three-zone Room (terminal center | context dock) ──────────
+// ── Workbench: the reading room (tree | source | review, terminal drawer) ────
 //
-// cave-98o51 recomposed this. The retired shape put the terminal in a tab row
-// beside Diff/Files/PR, so reading a diff hid a running shell. These pins now
-// hold the terminal as the persistent CENTER with context docked beside it.
+// Rebuilt from the `Cody Code Reading v2` frame (cave-0rcku). The previous
+// shape put the terminal in the CENTRE column, which honoured "never hide the
+// shell" but left the source itself without a column on a surface whose whole
+// job is reading. The frame keeps the commitment and pays for it in height: the
+// shell is a permanently-present bottom drawer.
 
 const workbench = await readFile(new URL("./code-workbench.tsx", import.meta.url), "utf8");
-const workbenchFiles = await readFile(new URL("./code-workbench-files.tsx", import.meta.url), "utf8");
-const contextDock = await readFile(new URL("./code-context-dock.tsx", import.meta.url), "utf8");
+const reviewRail = await readFile(new URL("./code-review-rail.tsx", import.meta.url), "utf8");
+const terminalDrawer = await readFile(new URL("./code-terminal-drawer.tsx", import.meta.url), "utf8");
+const workbenchTree = await readFile(new URL("./code-workbench-tree.tsx", import.meta.url), "utf8");
 const terminalWorkspace = await readFile(new URL("./code-terminal-workspace.tsx", import.meta.url), "utf8");
 
-// Every context tab scopes to the session's WORK root (worktree over shared
+// Every column scopes to the session's WORK root (worktree over shared
 // checkout, cave-9q24) — pointing any of them at project_root directly would
 // show a different session's churn on shared checkouts.
 assert.match(
   workbench,
   /const workRoot = codeSessionWorkRoot\(row\);/,
-  "the workbench derives one work root for the terminal center and the dock",
-);
-assert.match(
-  contextDock,
-  /const workRoot = codeSessionWorkRoot\(row\);/,
-  "the context dock scopes every tab to the same work root",
+  "the workbench derives one work root for the tree, the viewer and the rail",
 );
 
-// The three zones, in order: the terminal center and the dock are siblings of
-// ONE resizable group, which is what keeps the shell mounted while context
-// changes. A layout that nested the dock inside the terminal, or swapped them
-// into the same slot, would reintroduce the tab behaviour this replaced.
+// The three columns, in order.
 assert.match(
   workbench,
-  /<CodeTerminalWorkspace[\s\S]*?<Separator[\s\S]*?<CodeContextDock/,
-  "the Room renders terminal center, a separator, then the context dock",
+  /<CodeWorkbenchTree[\s\S]*?<RailFilePreview[\s\S]*?<CodeReviewRail/,
+  "the room renders file tree, source viewer, then the review rail",
 );
+
+// THE COMMITMENT THAT SURVIVED THE REBUILD. The terminal must never unmount —
+// remounting it would drop the live PTY attachment and the scrollback with it.
+// It keeps ONE slot in the tree at every width and every drill-in step, and
+// only its `visible` prop changes.
 assert.match(
   workbench,
-  /minSize=\{MIN_TERMINAL_WIDTH\}/,
-  "the terminal center holds a width floor so the divider can starve context but never the shell",
+  /<CodeTerminalDrawer[\s\S]{0,240}open=\{termOpen\}/,
+  "the terminal drawer sits outside the column body, so no step can unmount it",
 );
 assert.doesNotMatch(
   workbench,
-  /role="tablist"/,
-  "the workbench no longer owns a tab row — context tabs live in the dock",
+  /step === "terminal"/,
+  "the terminal is not a drill-in step — narrowing the room must never take the shell away",
 );
+assert.match(
+  terminalDrawer,
+  /visible=\{open\}/,
+  "the drawer hides the workspace via its supported keepalive prop, never by unmounting",
+);
+assert.doesNotMatch(
+  terminalDrawer,
+  /\{open \? <CodeTerminalWorkspace/,
+  "the workspace must not be conditionally rendered — that is an unmount, and the PTY goes with it",
+);
+
+// The composer rides under every column, so a follow-up stays available while
+// reading any of them.
 assert.match(
   workbench,
   /<CodeComposer row=\{row\} onJumpToSession=\{onJumpToSession\} \/>/,
-  "the composer rides under BOTH zones — a follow-up stays available while reading any context tab",
+  "the composer rides under the whole room",
 );
 
 // Session switches reset the split tree; carrying another session's panes over
 // would attach terminals to the wrong work root.
 assert.match(
-  workbench,
-  /useEffect\(\(\) => \{[\s\S]*?createTerminalLayout\(\);[\s\S]*?\}, \[row\.id\]\);/,
+  terminalDrawer,
+  /useEffect\(\(\) => \{[\s\S]*?createTerminalLayout\(\);[\s\S]*?\}, \[sessionId\]\);/,
   "the terminal layout resets per session",
 );
 
-// Heavy dock tabs stay code-split; the Room opens far more often than any one
-// of them, and CodeMirror/PR fetches/browser bridge must not ride the first chunk.
+// The review rail keeps the PR panel code-split — the room opens far more often
+// than the PR tab, and its fetch stack must not ride the first chunk.
 assert.match(
-  contextDock,
-  /import\("@\/components\/code-workbench-files"\)/,
-  "Files is dynamic() so CodeMirror stays out of the Room's initial chunk",
+  reviewRail,
+  /import\("@\/components\/code-session-pr-panel"\)/,
+  "the PR panel is dynamic() so its fetch stack stays out of the room's initial chunk",
 );
 assert.match(
-  contextDock,
-  /import\("@\/components\/browser-pane"\)/,
-  "Browser is dynamic() so the browser bridge stays out of the Room's initial chunk",
-);
-assert.match(
-  contextDock,
-  /import\("@\/components\/github-view"\)/,
-  "GitHub is dynamic() so GitHubView's fetch stack stays out of the Room's initial chunk",
-);
-assert.match(
-  contextDock,
-  /<SessionChangesInner\s+key=\{workRoot\}\s+projectRoot=\{workRoot\}\s+running=\{running\}/,
+  reviewRail,
+  /<SessionChangesInner\s+key=\{projectRoot\}\s+projectRoot=\{projectRoot\}\s+running=\{running\}/,
   "Changes mounts the proven changes panel keyed+scoped to the work root",
 );
+
+// A CLOSED rail still has to answer "is there anything to review?" — a panel
+// that vanished entirely would make that unanswerable without reopening it.
 assert.match(
-  contextDock,
-  /\{browserOpened \? \([\s\S]*?active=\{tab === "browser"\}/,
-  "Browser stays mounted once opened (keepalive) and is active only while selected, so native bounds follow the visible pane",
+  reviewRail,
+  /className="focus-ring code-rail__spine"[\s\S]{0,700}code-rail__spine-stat/,
+  "the closed rail leaves a spine that still prints the diffstat",
 );
+
+// The divider is a real control, not a pointer-only hazard.
 assert.match(
-  contextDock,
-  /codeDockTabWantsExpanded\(next\)[\s\S]{0,80}"expanded"/,
-  "the wide tabs (Browser, GitHub) open the dock expanded — a native webview or a list/detail split in a sidebar renders unusable wrapped text",
+  reviewRail,
+  /role="separator"[\s\S]{0,400}onKeyDown=\{onSeparatorKeyDown\}/,
+  "the resize handle is keyboard-operable",
 );
-// Re-selecting the active tab with the dock already sized for it must not
-// re-announce; a live region that repeats on every click is noise, not feedback.
-assert.match(
-  contextDock,
-  /if \(next === tab && !wantedSize\) return;/,
-  "selecting the already-active tab is a no-op instead of a redundant state write and announcement",
-);
-// cave-uod42: the dock is the one zone whose content swaps under a stationary
+
+// cave-uod42, kept: the rail and the drill-in swap content under a stationary
 // cursor, so a change nobody can see must at least be a change somebody hears.
 assert.match(
-  contextDock,
+  reviewRail,
   /const \{ announce \} = useAnnouncer\(\)/,
-  "the dock announces through the shared live region",
+  "the rail announces through the shared live region",
 );
 assert.match(
-  contextDock,
-  /announce\(`\$\{DOCK_TAB_META\[next\]\.label\} context shown\.`\)/,
-  "every tab change is announced by name",
+  terminalDrawer,
+  /announce\(next \? "Terminal drawer open\." : "Terminal drawer closed\."\)/,
+  "opening and closing the drawer is announced",
+);
+
+// The tree's status marks and the rail's diffstat read the SAME summary, so the
+// two can never disagree about what changed.
+assert.match(
+  workbench,
+  /const changes = useWorktreeChanges\(workRoot, running\);/,
+  "one changes subscription feeds the tree and the rail",
 );
 assert.match(
-  contextDock,
-  /announce\(DOCK_SIZE_ANNOUNCEMENT\[next\]\)/,
-  "every collapse/restore/expand is announced",
+  workbenchTree,
+  /decorate=\{decorate\}/,
+  "the tree decorates rows from that same summary rather than fetching its own",
+);
+// Status is never carried by colour alone.
+assert.match(
+  workbenchTree,
+  /\{STATUS_LETTER\[file\.status\]\}/,
+  "the porcelain letter is always rendered beside the tint",
 );
 
 // The primary pane must keep the session's shared rail shell, or a shell
@@ -367,23 +383,74 @@ assert.match(
   "the split handler re-checks the target pane's measurement, not the focused pane's",
 );
 assert.match(
-  workbenchFiles,
-  /<RailFilePreview[\s\S]*?projectRoot=\{projectRoot\}/,
-  "Files reuses RailFilePreview — editing + Cmd/Ctrl+S save come with it",
+  workbench,
+  /<RailFilePreview[\s\S]*?projectRoot=\{workRoot\}/,
+  "the viewer reuses RailFilePreview — editing + Cmd/Ctrl+S save come with it",
 );
+
+
+// ── Full PR reader (cave-l82dm) ─────────────────────────────────────────────
+//
+// `Coven Pr.dc.html`: the rail links to it as "Full PR view" because a
+// conversation, a commit list and a unified diff are not sidebar shapes.
+
+const prReader = await readFile(new URL("./github-pr-reader.tsx", import.meta.url), "utf8");
+
+assert.match(
+  workbench,
+  /const LazyPrReader = dynamic\(/,
+  "the reader is dynamic() — it pulls a markdown renderer and a diff highlighter, and the room opens far more often than the full PR view",
+);
+// A reader with no PR to read would render a permanent error. The affordance
+// and the surface are both gated on the session actually having one.
+assert.match(
+  workbench,
+  /\{prFull && prRepo && prNumber != null \? \(/,
+  "the reader only mounts when the session has a repo AND a number",
+);
+assert.match(
+  workbench,
+  /onOpenFullPr=\{prRepo && prNumber != null \? \(\) => setPrFull\(true\) : undefined\}/,
+  "the Full PR view affordance is absent when there is no PR, rather than opening an error",
+);
+assert.match(
+  reviewRail,
+  /\{tab === "pr" && onOpenFullPr \?/,
+  "the affordance belongs to the PR tab, not the Changes tab",
+);
+// THE HONESTY RULE. Gate state and the merge verdict come from the shared
+// model, which returns `unknown` when GitHub is still computing mergeability
+// or reported no checks — and refuses to merge on anything short of a pass.
+// A local boolean here would be free to say "clear" when nothing verified it.
+assert.match(
+  prReader,
+  /const gates = prLandingGates\(\{ counts, reviews, mergeable, mergeableState \}\);\s*\n\s*const verdict = prMergeVerdict\(gates\);/,
+  "gates and the merge verdict come from the shared model, never a local boolean",
+);
+// Skipped runs are named, never folded into the passing count — a rollup that
+// counts skips as passes is a green wall that means nothing.
+assert.match(
+  prReader,
+  /counts\.neutral \? ` · \$\{counts\.neutral\} skipped` : ""/,
+  "skipped checks are reported separately from passes",
+);
+// Every gate prints its state as a WORD beside the bar.
+assert.match(
+  prReader,
+  /className="pr-reader__gate-state"> — \{gate\.state\}/,
+  "gate state is carried by a word, not by the bar's colour alone",
+);
+// A capped diff and a capped commit list both say so.
+assert.match(prReader, /files\.truncated \? \(/, "a truncated diff is disclosed");
+assert.match(prReader, /commits\.truncated \? \(/, "a truncated commit list is disclosed");
 
 // ── PR tab (stage pipeline + checks + review + merge) ────────────────────────
 
 const prPanel = await readFile(new URL("./code-session-pr-panel.tsx", import.meta.url), "utf8");
 
 assert.match(
-  contextDock,
-  /import\("@\/components\/code-session-pr-panel"\)/,
-  "Pull request is dynamic() — its fetch stack stays out of the Room's initial chunk",
-);
-assert.match(
-  contextDock,
-  /\{tab === "pr" \? <LazyPr key=\{row\.id\} row=\{row\} \/> : null\}/,
+  reviewRail,
+  /<LazyPr key=\{row\.id\} row=\{row\} \/>/,
   "Pull request mounts keyed by session id so switching sessions never shows stale PR state",
 );
 assert.match(
@@ -513,14 +580,9 @@ assert.match(
   "the checked-out branch is not a switch target and switches don't overlap",
 );
 assert.match(
-  contextDock,
-  /\{tab === "inspector" \? <LazyInspector key=\{workRoot\} row=\{row\} onChanged=\{onRefresh\} \/> : null\}/,
-  "the inspector is a dock tab now, and its mutations still re-poll the enriched session list via onRefresh",
-);
-assert.match(
   workbench,
-  /onRefresh=\{onRefresh\}/,
-  "the workbench threads its refresh callback down into the dock",
+  /<CodeInspector row=\{row\} onChanged=\{onRefresh\} \/>/,
+  "the inspector is a header popover now, and its mutations still re-poll the enriched session list via onRefresh",
 );
 assert.match(
   codeView,
@@ -528,12 +590,14 @@ assert.match(
   "code-view threads the workspace's tasks refresh into the workbench",
 );
 
-// ── Mobile drill-in (list-first below md) ────────────────────────────────────
+// ── Narrow drill-in (list-first, measured) ───────────────────────────
 
-// Below the md breakpoint the rail is the landing screen: no newest-session
-// auto-pick on narrow mounts, an explicit Back (null) suppresses re-selection,
-// and the rail/workbench swap is pure CSS (hidden md:block / hidden md:flex)
-// so desktop keeps the three-pane layout untouched.
+// When the Room is too narrow to hold the rail beside a usable workbench, the
+// rail is the landing screen: no newest-session auto-pick, an explicit Back
+// (null) suppresses re-selection, and the rail/workbench swap is driven by the
+// Room's OWN measured width. It used to key off the viewport (`md:`), which
+// this surface cannot ask about honestly — it renders inside the role-surface
+// host beside the sidebar and can sit in a split (cave-k3a9u).
 assert.match(
   codeView,
   /useState<string \| null \| undefined>\(\s*deepLink\?\.sessionId \?\? undefined,?\s*\)/,
@@ -558,30 +622,142 @@ assert.match(
   /useEffect\(\(\) => \{\s*const params = new URLSearchParams\(window\.location\.search\);\s*if \(!params\.has\("session"\)/,
   "the ?session/ctab/wtab strip happens in a mount effect, not the initializer",
 );
-assert.match(
+assert.doesNotMatch(
   codeView,
-  /window\.matchMedia\("\(max-width: 767px\)"\)\.matches/,
-  "narrow mounts land on the session list, not the newest workbench",
+  /matchMedia|\bmd:(block|flex|hidden|w-64|border-r)/,
+  "the Room decides from its measured box, never a viewport query or md: class",
 );
 assert.match(
   codeView,
-  /if \(narrowMountRef\.current\) return;/,
-  "the auto-pick effect honors the narrow-mount guard",
+  /const roomWidth = useMeasuredWidth\(roomRef\);/,
+  "the Room measures its own width",
 );
 assert.match(
   codeView,
-  /\$\{selected \? "hidden md:block" : "block"\}/,
-  "picking a session hides the rail below md only",
+  /const fitsRail = codeRoomFitsRail\(roomWidth, isMobile\);/,
+  "the rail breakpoint comes from the shared layout model, not a literal",
+);
+// The landing decision is captured once and lives in STATE, not just a ref: a
+// ref set inside one effect cannot re-run the auto-pick effect that reads it,
+// so the measurement would land and auto-pick would never fire.
+assert.match(
+  codeView,
+  /const \[narrowLanding, setNarrowLanding\] = useState<boolean \| null>\(null\);/,
+  "the narrow-landing decision is state so the auto-pick effect re-runs on it",
 );
 assert.match(
   codeView,
-  /\$\{selected \? "flex" : "hidden md:flex"\}/,
-  "the workbench column is hidden below md until a session is picked",
+  /if \(narrowLanding !== false\) return;/,
+  "auto-pick waits for a decision and is skipped entirely when narrow",
 );
 assert.match(
   codeView,
-  /aria-label="Back to sessions"[\s\S]{0,80}onClick=\{\(\) => setSelectedId\(null\)\}/,
-  "the mobile Back affordance clears the selection explicitly",
+  /if \(roomWidth === null && typeof ResizeObserver !== "undefined"\) return;/,
+  "the decision waits for a real measurement only when one is actually coming",
+);
+assert.match(
+  codeView,
+  /fitsRail \? "block w-64 border-r" : selected \? "hidden" : "block w-full"/,
+  "picking a session hides the rail only while the Room is too narrow for both",
+);
+assert.match(
+  codeView,
+  /\$\{selected \|\| fitsRail \? "flex" : "hidden"\}/,
+  "the workbench column is hidden on a narrow Room until a session is picked",
+);
+assert.match(
+  codeView,
+  /aria-label="Back to sessions"[\s\S]{0,120}onClick=\{\(\) => setSelectedId\(null\)\}/,
+  "the narrow Back affordance clears the selection explicitly",
+);
+
+// ── Room narrow layout: the split drill-in (cave-k3a9u) ─────────────────────
+
+// THE BUG THIS GUARDS. The Room shipped with
+//   @media (max-width: 900px) { .code-room__group { flex-direction: column } }
+// which never once applied. `react-resizable-panels` renders its Group with an
+// INLINE style whose own keys land after the caller's spread:
+//   { height, width, overflow, ...userStyle, display:"flex",
+//     flexDirection: orientation === "horizontal" ? "row" : "column", ... }
+// Inline beats every class selector, and the library's key beats even a passed
+// `style`. So the rule was inert, and at 390px the Room rendered two columns
+// whose minimums alone sum to 620px. Orientation is a PROP, never CSS.
+const roomCss = await readFile(
+  new URL("../styles/globals/surface-code-room.css", import.meta.url),
+  "utf8",
+);
+assert.doesNotMatch(
+  roomCss,
+  /\.code-room__group[^}]*flex-direction/,
+  "a CSS flex-direction on the panel group is dead code — the library sets it inline",
+);
+assert.doesNotMatch(
+  roomCss,
+  /@media[^{]*max-width:\s*900px/,
+  "the 900px stacking query is retired; the workbench decides in JS instead",
+);
+assert.match(
+  workbench,
+  /const fitsSplit = codeWorkbenchFitsSplit\(measuredWidth, isMobile\);/,
+  "the split/drill-in decision is measured, from the shared layout model",
+);
+assert.match(
+  workbench,
+  /useState<CodeWorkbenchStep>\("source"\)/,
+  "the narrow workbench lands on the source — this is a reading surface",
+);
+// The terminal must never unmount across the breakpoint OR across a step:
+// remounting it would drop the live PTY attachment and the scrollback with it.
+// It keeps ONE slot in the tree, outside the column body entirely, so no
+// drill-in branch can take it away.
+assert.doesNotMatch(
+  workbench,
+  /fitsSplit \? \([\s\S]{0,400}<CodeTerminalDrawer[\s\S]{0,600}\) : \([\s\S]{0,400}<CodeTerminalDrawer/,
+  "the layouts must not fork into two separate terminal drawers",
+);
+// Announcing from inside a setState updater is a render-phase setState on the
+// live region — React re-invokes updaters while rendering, and it warned
+// exactly that ("Cannot update a component while rendering a different
+// component") until this moved into an effect.
+assert.doesNotMatch(
+  workbench,
+  /setStep\(\([\s\S]{0,200}announce\(/,
+  "the step announcement must not run inside the setState updater",
+);
+assert.match(
+  workbench,
+  /announcedStepRef\.current = step;/,
+  "the step change is announced from an effect, so routed steps announce too",
+);
+
+// A routed diff/file open on a narrow Room has to bring the right column
+// forward too, or it silently points a hidden column at the target and looks
+// like a no-op.
+assert.match(
+  workbench,
+  /setStep\("review"\);/,
+  "a routed diff open drills into Review so the target is actually visible",
+);
+assert.match(
+  workbench,
+  /setStep\("source"\);/,
+  "a routed file open drills into Source so the target is actually visible",
+);
+
+// A rail closed to its spine while the room was wide must not survive into the
+// narrow Review step: that step would render a 28px sliver with no control to
+// recover it. The stored state is left alone so returning to the split
+// restores the width you chose. (Same class of bug as the collapsed dock found
+// in review on #4418 — every check was green.)
+assert.match(
+  workbench,
+  /open=\{fitsSplit \? railOpen : true\}/,
+  "the narrow Review step always renders an open rail, so it can never be a blank sliver",
+);
+assert.match(
+  workbench,
+  /onOpenChange=\{fitsSplit \? setRailOpen : \(\) => setStep\("source"\)\}/,
+  "closing the rail on a narrow room steps back to the source rather than leaving nothing",
 );
 
 // ── Chat stays untouched this phase ──────────────────────────────────────────

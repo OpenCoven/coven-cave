@@ -123,6 +123,18 @@ function makeOperations(overrides = {}) {
         calls.push(["readRemoteRef", ref]);
         return overrides.readRemoteRef?.(ref) ?? { ok: true, remoteRef: null };
       },
+      // Defaults to RETAINED so the many cases that leave readRemoteRef at its
+      // null default keep exercising what they were written to exercise. The
+      // unretained and unreadable paths are covered explicitly below.
+      readRemoteTagRetention(head) {
+        calls.push(["readRemoteTagRetention", head]);
+        return (
+          overrides.readRemoteTagRetention?.(head) ?? {
+            ok: true,
+            retainedBy: "refs/tags/archive/fixture",
+          }
+        );
+      },
     },
   };
 }
@@ -663,6 +675,9 @@ test("removeWorktree failure blocks before local-ref deletion", () => {
     "heartbeatGate",
     "verifyGate",
     "reprobe",
+    // No remote branch on this fixture, so retention is proven before any
+    // destructive step (cave-s03wp.1).
+    "readRemoteTagRetention",
     "heartbeatGate",
     "verifyGate",
     "removeWorktree",
@@ -748,6 +763,176 @@ test("expected OID mismatch before ref deletion becomes a partial after worktree
       reason: "local ref moved before compare-delete",
     },
   ]);
+});
+
+// --- retention proof when the remote branch is gone (cave-s03wp.1) ----------
+// Merging deletes the remote branch, so remoteRef === null is the COMMON case,
+// not an edge one. Landing proof covers the squashed content on the default
+// branch, never the branch's own pre-squash commits.
+
+test("blocks retirement when the remote branch is gone and no remote tag retains the head", () => {
+  const item = makeItem();
+  const { operations, calls } = makeOperations({
+    readRemoteTagRetention() {
+      return { ok: true, retainedBy: null };
+    },
+  });
+
+  const report = retireLifecycleUnits({
+    items: [item],
+    gateHandle: { generation: 14, token: "gate" },
+    operations,
+    maxRetire: "1",
+  });
+
+  assert.equal(report.retired.length, 0);
+  assert.equal(report.attempts[0].outcome, "blocked");
+  assert.match(report.attempts[0].reason, /no remote tag resolves to/);
+  assert.match(report.attempts[0].reason, /archive the head to a pushed tag/);
+  // Nothing destructive may run before the proof.
+  assert.ok(
+    !calls.some(([name]) => name === "removeWorktree" || name === "deleteLocalRef"),
+    "a unit with no retention must not reach any destructive operation",
+  );
+});
+
+test("retires when a remote tag resolves to the exact head", () => {
+  const item = makeItem();
+  const { operations, calls } = makeOperations({
+    readRemoteTagRetention() {
+      return { ok: true, retainedBy: "refs/tags/archive/fix-example-2026-08-08" };
+    },
+  });
+
+  const report = retireLifecycleUnits({
+    items: [item],
+    gateHandle: { generation: 14, token: "gate" },
+    operations,
+    maxRetire: "1",
+  });
+
+  assert.equal(report.retired.length, 1);
+  assert.equal(report.attempts[0].outcome, "retired");
+  assert.deepEqual(
+    calls.filter(([name]) => name === "readRemoteTagRetention"),
+    [["readRemoteTagRetention", hex("1")]],
+    "retention is proven against the unit's exact head",
+  );
+});
+
+test("fails closed when the retention probe cannot read the remote", () => {
+  const item = makeItem();
+  const { operations, calls } = makeOperations({
+    readRemoteTagRetention() {
+      return { ok: false, reason: "ls-remote --tags failed while proving retention" };
+    },
+  });
+
+  const report = retireLifecycleUnits({
+    items: [item],
+    gateHandle: { generation: 14, token: "gate" },
+    operations,
+    maxRetire: "1",
+  });
+
+  assert.equal(report.retired.length, 0);
+  assert.equal(report.attempts[0].outcome, "blocked");
+  assert.match(report.attempts[0].reason, /ls-remote --tags failed/);
+  assert.ok(
+    !calls.some(([name]) => name === "removeWorktree"),
+    "an unreadable remote is not evidence of retention",
+  );
+});
+
+test("a reprobe that resolves the remote branch is preferred over a stale inventory null", () => {
+  // remoteRef is not part of retirementIdentityError, so a transient
+  // remote-read failure at inventory time reports null for a branch that
+  // still exists. Requiring a tag in that case refuses a plainly retained
+  // unit. Reported on PR #4438.
+  const item = makeItem({ remoteRef: null });
+  const { operations, calls } = makeOperations({
+    reprobe(candidate) {
+      return {
+        ok: true,
+        item: {
+          ...candidate,
+          remoteRef: { ref: "refs/heads/fix/example", oid: hex("1") },
+        },
+      };
+    },
+    readRemoteRef() {
+      return { ok: true, remoteRef: { ref: "refs/heads/fix/example", oid: hex("1") } };
+    },
+    readRemoteTagRetention() {
+      throw new Error("tag retention must not be consulted when the reprobe found the branch");
+    },
+  });
+
+  const report = retireLifecycleUnits({
+    items: [item],
+    gateHandle: { generation: 14, token: "gate" },
+    operations,
+    maxRetire: "1",
+  });
+
+  assert.equal(report.retired.length, 1);
+  assert.ok(!calls.some(([name]) => name === "readRemoteTagRetention"));
+  // The resolved ref is what gets proposed for remote deletion.
+  assert.deepEqual(report.remoteDeletionProposals[0]?.ref, "refs/heads/fix/example");
+});
+
+test("a branch that disappeared between inventory and reprobe fails live revalidation", () => {
+  // The inverse of the case above: falling back to the inventory value keeps
+  // this a live-revalidation failure rather than silently taking the tag path.
+  const item = makeItem({
+    remoteRef: { ref: "refs/heads/fix/example", oid: hex("1") },
+  });
+  const { operations, calls } = makeOperations({
+    reprobe(candidate) {
+      return { ok: true, item: { ...candidate, remoteRef: null } };
+    },
+    readRemoteRef() {
+      return { ok: true, remoteRef: null };
+    },
+  });
+
+  const report = retireLifecycleUnits({
+    items: [item],
+    gateHandle: { generation: 14, token: "gate" },
+    operations,
+    maxRetire: "1",
+  });
+
+  assert.equal(report.retired.length, 0);
+  assert.match(report.attempts[0].reason, /remote ref disappeared/);
+  assert.ok(
+    !calls.some(([name]) => name === "readRemoteTagRetention"),
+    "a vanished branch is drift to report, not a unit to re-qualify via tags",
+  );
+});
+
+test("a live remote branch retires without consulting tag retention", () => {
+  const item = makeItem({
+    remoteRef: { ref: "refs/heads/fix/example", oid: hex("1") },
+  });
+  const { operations, calls } = makeOperations({
+    readRemoteRef() {
+      return { ok: true, remoteRef: { ref: "refs/heads/fix/example", oid: hex("1") } };
+    },
+    readRemoteTagRetention() {
+      throw new Error("tag retention must not be consulted when the branch is retained");
+    },
+  });
+
+  const report = retireLifecycleUnits({
+    items: [item],
+    gateHandle: { generation: 14, token: "gate" },
+    operations,
+    maxRetire: "1",
+  });
+
+  assert.equal(report.retired.length, 1);
+  assert.ok(!calls.some(([name]) => name === "readRemoteTagRetention"));
 });
 
 test("deleteLocalRef failure after worktree removal stays partial and does not pretend the ref remained", () => {
@@ -955,6 +1140,7 @@ test("gate loss before cleanup blocks without mutating", () => {
     "heartbeatGate",
     "verifyGate",
     "reprobe",
+    "readRemoteTagRetention",
     "heartbeatGate",
     "verifyGate",
   ]);
@@ -986,6 +1172,7 @@ test("gate loss after cleanup but before worktree removal is reported as partial
     "heartbeatGate",
     "verifyGate",
     "reprobe",
+    "readRemoteTagRetention",
     "heartbeatGate",
     "verifyGate",
     "removeDisposableIgnored",
@@ -1246,6 +1433,74 @@ test("adapter reprobe catches inventory exceptions and returns a blocked result"
 
     assert.equal(reprobed.ok, false);
     assert.match(reprobed.reason, /^final retirement probe failed:/);
+  } finally {
+    cleanupFixture(fixture.fixtureRoot);
+  }
+});
+
+test("real git adapter reads tag retention from the remote, peeling annotated tags", () => {
+  const fixture = createGitFixture();
+  try {
+    const operations = createGitRetirementOperations({
+      root: fixture.repo,
+      repo: "OpenCoven/coven-cave",
+      gateHandle: { generation: 1, token: "gate", ownerId: "retirement-test" },
+    });
+
+    const head = git(["rev-parse", "HEAD"], fixture.repo).trim();
+
+    // Nothing is tagged yet.
+    assert.deepEqual(operations.readRemoteTagRetention(head), {
+      ok: true,
+      retainedBy: null,
+    });
+
+    // An ANNOTATED tag: its own line carries the tag object's oid and only the
+    // peeled `^{}` line carries the commit, which is the case a naive
+    // line-by-line match gets wrong in both directions.
+    git(["tag", "-a", "archive/fix-example-2026-08-08", head, "-m", "archive"], fixture.repo);
+    git(["push", "-q", "origin", "archive/fix-example-2026-08-08"], fixture.repo);
+
+    assert.deepEqual(operations.readRemoteTagRetention(head), {
+      ok: true,
+      retainedBy: "refs/tags/archive/fix-example-2026-08-08",
+    });
+
+    // The tag OBJECT's oid is not a commit and must not read as retention.
+    const tagObjectOid = git(
+      ["rev-parse", "archive/fix-example-2026-08-08"],
+      fixture.repo,
+    ).trim();
+    assert.notEqual(tagObjectOid, head, "fixture must produce a real annotated tag object");
+    assert.deepEqual(operations.readRemoteTagRetention(tagObjectOid), {
+      ok: true,
+      retainedBy: null,
+    });
+
+    // A LIGHTWEIGHT tag has no peeled line and points straight at the commit.
+    git(["commit", "-q", "--allow-empty", "-m", "second"], fixture.repo);
+    const second = git(["rev-parse", "HEAD"], fixture.repo).trim();
+    git(["tag", "archive/light-2026-08-08", second], fixture.repo);
+    git(["push", "-q", "origin", "archive/light-2026-08-08"], fixture.repo);
+
+    assert.deepEqual(operations.readRemoteTagRetention(second), {
+      ok: true,
+      retainedBy: "refs/tags/archive/light-2026-08-08",
+    });
+
+    // A LOCAL-only tag is not retention.
+    git(["commit", "-q", "--allow-empty", "-m", "third"], fixture.repo);
+    const third = git(["rev-parse", "HEAD"], fixture.repo).trim();
+    git(["tag", "archive/local-only", third], fixture.repo);
+
+    assert.deepEqual(operations.readRemoteTagRetention(third), {
+      ok: true,
+      retainedBy: null,
+    });
+
+    const malformed = operations.readRemoteTagRetention("not-an-oid");
+    assert.equal(malformed.ok, false);
+    assert.match(malformed.reason, /malformed oid/);
   } finally {
     cleanupFixture(fixture.fixtureRoot);
   }

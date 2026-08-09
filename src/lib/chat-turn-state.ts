@@ -166,11 +166,13 @@ function cloneLiveTurn(turn: Turn): Turn {
 export type LiveChatGenerationSnapshot = LiveGenerationSnapshot<Turn> & {
   runId?: string | null;
   streamHealth?: ChatStreamClientHealth;
+  clearWatermark?: string | null;
 };
 
 export type LiveChatGenerationMetadata = {
   runId: string;
   streamHealth: ChatStreamClientHealth;
+  clearWatermark?: string | null;
 };
 
 // A generation must outlive the ChatView instance that started it: thread

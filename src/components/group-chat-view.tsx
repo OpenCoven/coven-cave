@@ -25,6 +25,7 @@ import {
 } from "react";
 import { Icon } from "@/lib/icon";
 import { extractNextPaths } from "@/lib/next-paths";
+import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
 import { Button } from "@/components/ui/button";
 import { ProjectPicker } from "@/components/project-picker";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
@@ -50,6 +51,7 @@ import {
   MAX_COVEN_DELEGATION_DEPTH,
   MAX_COVEN_DELEGATIONS_PER_TURN,
   applyGroupEvent,
+  replaceGroupReplyText,
   parseSseBuffer,
   defaultGroupName,
   makeGroup,
@@ -90,6 +92,15 @@ import {
 } from "@/lib/group-chat";
 import { newId, nowIso } from "@/lib/group-chat-ids";
 import { groupChatTranscriptThreads } from "@/lib/group-chat-transcript";
+import {
+  listActiveGroupReplyRuns,
+  newGroupReplyRunId,
+  registerActiveGroupReplyRun,
+  stopActiveGroupReplyRuns,
+  unregisterActiveGroupReplyRun,
+  updateActiveGroupReplyRunSession,
+  type ActiveGroupReplyRun,
+} from "@/lib/group-chat-stop";
 import { useGroupProjects } from "@/lib/use-group-projects";
 
 type Props = {
@@ -164,6 +175,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
 
   const addBtnRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const activeRunsRef = useRef(new Map<string, ActiveGroupReplyRun>());
+  const runScopeRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // Intent-based follow (cave-o8si): scrolling up releases the stick, and only
   // returning to the true bottom re-attaches — the old 48px position threshold
@@ -267,13 +280,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   // --- swap transcript when the active group changes ----------------------
   useEffect(() => {
     // Switching covens abandons any in-flight broadcast on the previous one.
-    // Abort it (otherwise its streams keep running and their tokens no-op
-    // against the newly-loaded transcript — a leaked stream) and clear the
-    // busy/abort state so the new coven starts clean. The previous coven keeps
-    // its last-saved transcript; returning to it offers retry on any partial.
-    abortRef.current?.abort();
+    // Retire that scope before swapping so any late completion becomes inert
+    // here, ask the server to stop its runs, and let the helper abort the local
+    // stream once the stop dispatch settles.
+    const retiringScopeId = runScopeRef.current;
+    runScopeRef.current += 1;
     abortRef.current = null;
     setBusy(false);
+    void stopScopeRuns(retiringScopeId, { quiet: false });
     // Persist the outgoing coven's tail before swapping — the pending record
     // carries ITS group id, so this can never write under the new coven's key.
     flushPendingSave();
@@ -328,7 +342,12 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       }, 400);
     }
   }, [activeId, transcript, flushPendingSave]);
-  useEffect(() => () => flushPendingSave(), [flushPendingSave]);
+  useEffect(() => () => {
+    flushPendingSave();
+    const retiringScopeId = runScopeRef.current;
+    runScopeRef.current += 1;
+    void stopScopeRuns(retiringScopeId, { quiet: true });
+  }, [flushPendingSave]);
 
   // --- autoscroll to newest, but only when the reader is already at the bottom
   // Streaming replies grow the transcript constantly; force-scrolling on every
@@ -578,6 +597,54 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     });
   }, []);
 
+  async function stopServerRun(entry: { runId: string; sessionId: string | null }) {
+    const response = await fetch("/api/chat/stop", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        runId: entry.runId,
+        ...(entry.sessionId ? { sessionId: entry.sessionId } : {}),
+      }),
+    });
+    let payload: { ok?: boolean; stopped?: boolean; error?: string } | null = null;
+    try {
+      payload = await response.json() as { ok?: boolean; stopped?: boolean; error?: string };
+    } catch {
+      payload = null;
+    }
+    return {
+      ok: response.ok,
+      stopped: payload?.stopped ?? false,
+      status: response.status,
+      error: payload?.error ?? (response.ok ? undefined : `stop failed (${response.status})`),
+    };
+  }
+
+  async function stopScopeRuns(
+    scopeId: number,
+    { quiet }: { quiet: boolean } = { quiet: false },
+  ) {
+    const entries = listActiveGroupReplyRuns(activeRunsRef.current, scopeId);
+    if (entries.length === 0) return [];
+    let announced = false;
+    return stopActiveGroupReplyRuns({
+      entries,
+      stopRun: stopServerRun,
+      onError: (result, entry) => {
+        console.warn("[group-chat] stop failed", {
+          runId: result.runId,
+          familiarId: entry.familiarId,
+          status: result.status,
+          error: result.error,
+        });
+        if (!quiet && !announced) {
+          announced = true;
+          announce("Some replies may keep running on the server.", "assertive");
+        }
+      },
+    });
+  }
+
   // --- mode-aware group send ----------------------------------------------
   const streamOne = useCallback(
     async (
@@ -585,15 +652,28 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       reply: GroupReply,
       prompt: string,
       projectRoot: string,
+      scopeId: number,
       signal: AbortSignal,
     ): Promise<GroupReply> => {
       // `settled` mirrors the live React state so callers can await the final
       // reply state without waiting for React to render. Apply every update to both.
       let settled = reply;
+      const replyRunId = newGroupReplyRunId();
+      const attentionText = createAttentionSafeTextAccumulator();
       const apply = (fn: (r: GroupReply) => GroupReply) => {
         settled = fn(settled);
+        if (scopeId !== runScopeRef.current) return;
         updateReply(reply.id, fn);
       };
+      registerActiveGroupReplyRun(activeRunsRef.current, {
+        runId: replyRunId,
+        replyId: reply.id,
+        groupId: group.id,
+        familiarId: reply.familiarId,
+        sessionId: reply.sessionId,
+        scopeId,
+        controller: abortRef.current ?? new AbortController(),
+      });
       if (!projectRoot) {
         apply((current) =>
           applyGroupEvent(current, {
@@ -612,6 +692,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
             prompt,
             sessionId: reply.sessionId,
             projectRoot,
+            runId: replyRunId,
           }),
           signal,
         });
@@ -629,23 +710,42 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
           const { events, rest } = parseSseBuffer(buffer);
           buffer = rest;
           for (const ev of events) {
-            if (ev.kind === "session") recordSession(group.id, reply.familiarId, ev.sessionId);
-            if (ev.kind === "done" && ev.sessionId)
-              recordSession(group.id, reply.familiarId, ev.sessionId);
-            apply((r) => applyGroupEvent(r, ev));
+            if (ev.kind === "session") {
+              updateActiveGroupReplyRunSession(activeRunsRef.current, replyRunId, ev.sessionId);
+              if (scopeId === runScopeRef.current) recordSession(group.id, reply.familiarId, ev.sessionId);
+            }
+            if (ev.kind === "done" && ev.sessionId) {
+              updateActiveGroupReplyRunSession(activeRunsRef.current, replyRunId, ev.sessionId);
+              if (scopeId === runScopeRef.current) recordSession(group.id, reply.familiarId, ev.sessionId);
+            }
+            if (ev.kind === "assistant_chunk") {
+              apply((r) => applyGroupEvent(r, {
+                kind: "assistant_replace", text: attentionText.append(ev.text),
+              }));
+            } else if (ev.kind === "assistant_replace") {
+              apply((r) => applyGroupEvent(r, {
+                kind: "assistant_replace", text: attentionText.replace(ev.text),
+              }));
+            } else {
+              apply((r) => applyGroupEvent(r, ev));
+            }
           }
         }
+        apply((r) => replaceGroupReplyText(r, attentionText.terminal()));
         // Stream closed without an explicit `done` — settle anything still live.
         apply((r) =>
           r.status === "streaming" || r.status === "queued" ? { ...r, status: "done", activity: undefined } : r,
         );
       } catch (err) {
         const aborted = (err as Error)?.name === "AbortError";
+        apply((r) => replaceGroupReplyText(r, attentionText.terminal()));
         apply((r) =>
           aborted
             ? { ...r, status: "error", error: "cancelled", activity: undefined }
             : applyGroupEvent(r, { kind: "error", message: (err as Error)?.message ?? "send failed" }),
         );
+      } finally {
+        unregisterActiveGroupReplyRun(activeRunsRef.current, replyRunId);
       }
       return settled;
     },
@@ -730,6 +830,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       setMention(null);
       completedMentionsRef.current = [];
       setBusy(true);
+      runScopeRef.current += 1;
+      const scopeId = runScopeRef.current;
       const controller = new AbortController();
       abortRef.current = controller;
       if (group.responseMode === "round-robin" && replies.length > 1) {
@@ -760,7 +862,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                 userText: text,
                 targeted,
               });
-          return streamOne(group, reply, prompt, projectRoot, controller.signal);
+          return streamOne(group, reply, prompt, projectRoot, scopeId, controller.signal);
         },
       });
       // A familiar can perform an explicit human-requested handoff by emitting
@@ -835,6 +937,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                 targeted: true,
               }),
               projectRoot,
+              scopeId,
               controller.signal,
             );
             await runDelegations([child], depth + 1, new Set([...lineage, targetId]));
@@ -886,9 +989,9 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     [broadcast],
   );
 
-  const stop = useCallback(() => {
-    abortRef.current?.abort();
-  }, []);
+  const stop = useCallback(async () => {
+    await stopScopeRuns(runScopeRef.current);
+  }, [stopScopeRuns]);
 
   // Re-run a single familiar's reply after a failure (or a cancel), reusing the
   // original user turn's text + targeting so the roundtable context is identical.
@@ -928,6 +1031,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       const retryText = delegator ? `Delegated by @${delegator}:\n${userTurn.text}` : userTurn.text;
       updateReply(reply.id, () => fresh);
       setBusy(true);
+      runScopeRef.current += 1;
+      const scopeId = runScopeRef.current;
       const controller = new AbortController();
       abortRef.current = controller;
       const settled = await streamOne(
@@ -956,6 +1061,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
               targeted: Boolean(userTurn.targetFamiliarIds && userTurn.targetFamiliarIds.length > 0),
             }),
         selectedGroupProject.root,
+        scopeId,
         controller.signal,
       );
       // Ownership-guarded (see broadcast): don't clobber a newer stream's wiring.
@@ -1521,6 +1627,15 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                       <div className="flex flex-col gap-3 pl-1">
                         {replies.map((r) => {
                           const f = byId.get(r.familiarId);
+                          // Explicit human-attention marker (chat sidebar
+                          // attention task, holistic-review fix): strip BEFORE
+                          // next-paths/delegations/MessageBubble, same order as
+                          // the single-chat surface, so a complete or partial
+                          // `<coven:attention …>` tag never flashes as raw text
+                          // in the coven bubble. No inline card renders here —
+                          // attention surfaces in the sidebar, derived from the
+                          // persisted `attentionRequest` metadata the server
+                          // route owns.
                           // Strip the piggybacked `<coven:next-paths>` suggestions
                           // block (and its streaming partial) from the visible
                           // reply, mirroring the single-chat surface; otherwise

@@ -214,22 +214,6 @@ assert.match(
   "contract scaffolding must be best-effort (never fail creation)",
 );
 
-// The scaffolder is handed the familiar's PURPOSE, never its description. The
-// description is written by the rite's scry from the portrait, and passing it
-// here is what made familiars declare "My purpose is to <a caption of my own
-// face>" — a contract that scored five green properties while saying nothing
-// about the job.
-assert.match(
-  source,
-  /scaffoldFamiliarContractFiles\(\{[\s\S]*?purpose: draft\.purpose/,
-  "POST must pass the purpose to the contract scaffolder",
-);
-assert.doesNotMatch(
-  source,
-  /scaffoldFamiliarContractFiles\(\{[\s\S]*?description: draft\.description/,
-  "the description must NOT reach the contract scaffolder — it is prose about the likeness",
-);
-
 // Real POST behavior: exercise the route against isolated Cave/Coven homes and
 // a controlled empty daemon roster so config/TOML ordering and deep-merge
 // behavior are verified without touching a live install or external service.

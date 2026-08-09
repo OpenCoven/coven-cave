@@ -16,6 +16,7 @@ test("GroupChatView schedules Broadcast and Round robin replies through /api/cha
   // Both schedules use one /api/chat/send per participant carrying the
   // per-familiar id. The pure scheduler owns concurrent vs sequential timing.
   assert.match(view, /fetch\("\/api\/chat\/send"/, "sends through the chat bridge");
+  assert.match(view, /runId: replyRunId/, "each familiar reply send carries a stable stop-targetable run id");
   assert.match(view, /familiarId: reply\.familiarId/, "each stream targets one familiar");
   assert.match(view, /runCovenReplySchedule\(\{/, "delegates reply timing to the tested scheduler");
   assert.match(view, /mode: group\.responseMode/, "uses the active Coven's configured response mode");
@@ -24,7 +25,8 @@ test("GroupChatView schedules Broadcast and Round robin replies through /api/cha
   // Per-familiar session pinning so each thread resumes.
   assert.match(view, /recordSession\(group\.id, reply\.familiarId/, "pins each familiar's session id");
   // A Stop control aborts the in-flight broadcast.
-  assert.match(view, /abortRef\.current\?\.abort\(\)/, "Stop aborts the broadcast");
+  assert.match(view, /await stopScopeRuns\(runScopeRef\.current\)/, "Stop posts cancellation for every active run in the current scope");
+  assert.match(view, /stopActiveGroupReplyRuns\(\{/, "local abort waits for the shared stop-dispatch helper");
   // Broadcast injects the roster but remains an independent first pass.
   assert.match(view, /renderCovenRoundtablePrompt\(\{/, "builds the per-familiar roundtable prompt");
   assert.match(view, /receivingFamiliarId: reply\.familiarId/, "marks the receiving familiar in prompt context");
@@ -87,7 +89,7 @@ test("Group Chat requires one project every participant can access", () => {
   );
   assert.match(
     view,
-    /projectRoot,\s*\n\s*\}\),/,
+    /projectRoot,[\s\S]{0,80}runId: replyRunId[\s\S]{0,80}\}\),/,
     "every participant chat request carries the shared authorized project root",
   );
   assert.match(
@@ -325,6 +327,19 @@ test("Group Chat is a tab inside the Chat surface, not a standalone page", () =>
   );
 });
 
+test("Group chat stop cleanup targets only the retired scope on switch and unmount", () => {
+  assert.match(view, /const activeRunsRef = useRef\(new Map<string, ActiveGroupReplyRun>\(\)\)/, "tracks every in-flight familiar reply in a local active-run registry");
+  assert.match(view, /const runScopeRef = useRef\(0\)/, "assigns every turn a scope token");
+  assert.match(view, /const retiringScopeId = runScopeRef\.current;[\s\S]{0,200}runScopeRef\.current \+= 1;[\s\S]{0,200}void stopScopeRuns\(retiringScopeId, \{ quiet: false \}\);/, "coven switches retire the old scope before best-effort stop cleanup");
+  assert.match(view, /useEffect\(\(\) => \(\) => \{[\s\S]{0,300}const retiringScopeId = runScopeRef\.current;[\s\S]{0,120}runScopeRef\.current \+= 1;[\s\S]{0,220}void stopScopeRuns\(retiringScopeId, \{ quiet: true \}\);[\s\S]{0,120}\}, \[flushPendingSave\]\);/, "unmount cleanup posts stops without touching a future scope");
+  assert.match(view, /scopeId !== runScopeRef\.current/, "late completions from a retired scope are ignored");
+  assert.match(view, /registerActiveGroupReplyRun\(/, "each reply registers itself when its stream starts");
+  assert.match(view, /updateActiveGroupReplyRunSession\(/, "session announcements update the active stop payload");
+  assert.match(view, /unregisterActiveGroupReplyRun\(/, "active replies leave the registry only in terminal cleanup");
+  assert.match(view, /console\.warn\("\[group-chat\] stop failed"/, "stop endpoint failures are explicitly logged");
+  assert.match(view, /Some replies may keep running on the server\./, "stop endpoint failures are announced instead of silently swallowed");
+});
+
 test("Group surface follows the design handoff: SurfaceRail covens + details drawer", () => {
   // The coven list is the shared SurfaceRail primitive (persisted width /
   // collapse, search slot) instead of a bespoke fixed-width aside.
@@ -398,8 +413,8 @@ test("Group chat is a world-class chat surface (a11y + resilience)", () => {
   // abort/busy wiring when they still own the active controller.
   assert.match(
     view,
-    /swap transcript when the active group changes[\s\S]*?abortRef\.current\?\.abort\(\);\s*\n\s*abortRef\.current = null;\s*\n\s*setBusy\(false\);/,
-    "changing the active coven aborts any in-flight broadcast before loading the new transcript",
+    /swap transcript when the active group changes[\s\S]*?const retiringScopeId = runScopeRef\.current;\s*\n\s*runScopeRef\.current \+= 1;\s*\n\s*abortRef\.current = null;\s*\n\s*setBusy\(false\);\s*\n\s*void stopScopeRuns\(retiringScopeId, \{ quiet: false \}\);/,
+    "changing the active coven retires and stops the in-flight scope before loading the new transcript",
   );
   {
     const guarded = view.match(
@@ -432,7 +447,7 @@ test("Group chat is a world-class chat surface (a11y + resilience)", () => {
   );
   assert.match(
     view,
-    /useEffect\(\(\) => \(\) => flushPendingSave\(\), \[flushPendingSave\]\);/,
+    /useEffect\(\(\) => \(\) => \{[\s\S]*flushPendingSave\(\);[\s\S]*void stopScopeRuns\(retiringScopeId, \{ quiet: true \}\);[\s\S]*\}, \[flushPendingSave\]\);/,
     "unmount flushes the pending transcript save",
   );
   assert.match(
@@ -535,5 +550,51 @@ test("coven Details drawer offers per-participant Debug (A5: no debug affordance
     chatSurface,
     /onDebugSession=\{debugGroupSession\}/,
     "chat-surface hands the handler to GroupChatView",
+  );
+});
+
+test("coven bubbles strip attention markers before next-paths/delegations/MessageBubble (holistic-review fix)", () => {
+  // The human-attention directive (chat sidebar attention task) applies to
+  // every chat send, so the coven render pipeline must never let a complete
+  // or partial `<coven:attention …>` tag leak into the group bubble. Import
+  // present, and the extraction must run on the raw reply text BEFORE
+  // next-paths/delegations are extracted and before the result reaches
+  // MessageBubble — same order the single-chat surface (chat-view.tsx) uses.
+  assert.match(
+    view,
+    /import \{ createAttentionSafeTextAccumulator \} from "@\/lib\/chat-attention-stream";/,
+    "imports the shared raw-text accumulator",
+  );
+  assert.match(
+    view,
+    /const attentionText = createAttentionSafeTextAccumulator\(\);/,
+    "each participant stream owns an independent raw accumulator",
+  );
+  assert.match(
+    view,
+    /ev\.kind === "assistant_chunk"[\s\S]{0,240}kind: "assistant_replace", text: attentionText\.append\(ev\.text\)[\s\S]{0,240}ev\.kind === "assistant_replace"[\s\S]{0,180}attentionText\.replace\(ev\.text\)/,
+    "chunk and replacement frames become authoritative safe replacements before transcript storage",
+  );
+  assert.match(
+    view,
+    /replaceGroupReplyText\(r, attentionText\.terminal\(\)\)/,
+    "the final group reply strips complete and partial marker tails through a text-only helper",
+  );
+  assert.match(
+    view,
+    /catch \(err\)[\s\S]{0,220}replaceGroupReplyText\(r, attentionText\.terminal\(\)\)[\s\S]{0,260}status: "error"/,
+    "error sanitization preserves the terminal error path and its Retry state",
+  );
+  // The transcript is already attention-safe before render; next-paths then
+  // feed delegation extraction and MessageBubble.
+  assert.match(
+    view,
+    /extractNextPaths\(r\.text\)[\s\S]*?extractCovenDelegations\(withoutNextPaths\)/,
+    "delegation extraction runs after next-paths, preserving the existing marker-protocol order",
+  );
+  assert.match(
+    view,
+    /extractCovenDelegations\(withoutNextPaths\)[\s\S]{0,2000}<MessageBubble/,
+    "MessageBubble renders only after attention/next-paths/delegations have all been stripped",
   );
 });

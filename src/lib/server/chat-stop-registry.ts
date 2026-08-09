@@ -6,6 +6,7 @@
 //
 // Per-process state, matching the single-server posture of the rest of the
 // chat stack (same exposure as withInboxLock).
+import { invalidateSessionsListCache } from "./sessions-list-cache.ts";
 
 type ChatRunEntry = {
   handle: ChatRunHandle;
@@ -16,6 +17,10 @@ export type ChatRunHandle = {
   /** Set when a deliberate stop arrived via /api/chat/stop. The send route
    *  reads this — not `req.signal.aborted` — to decide cancel semantics. */
   stopRequested: boolean;
+  /** Monotonic: false once the transport produced its definitive outcome. */
+  acceptingStop: boolean;
+  /** True while sessions/list should still treat the run as live. */
+  projectionActive: boolean;
   /** Registry keys this run is reachable under (runId, conversation id). */
   keys: string[];
 };
@@ -28,24 +33,37 @@ export function registerChatRun(
   keys: Array<string | null | undefined>,
   kill: () => void,
 ): ChatRunHandle {
-  const handle: ChatRunHandle = { stopRequested: false, keys: [] };
+  const handle: ChatRunHandle = {
+    stopRequested: false,
+    acceptingStop: true,
+    projectionActive: true,
+    keys: [],
+  };
   const entry: ChatRunEntry = { handle, kill };
   for (const key of keys) {
     if (!key) continue;
     active.set(key, entry);
     handle.keys.push(key);
   }
+  if (handle.keys.length > 0) invalidateSessionsListCache();
   return handle;
 }
 
 /** Drop a run from the registry (child exited or request settled). */
 export function unregisterChatRun(handle: ChatRunHandle): void {
+  const projectionWasActive = handle.projectionActive;
+  let changed = false;
   for (const key of handle.keys) {
     // Another run may have re-registered the same conversation key (e.g. a
     // follow-up turn) — only delete entries that still point at this handle.
-    if (active.get(key)?.handle === handle) active.delete(key);
+    if (active.get(key)?.handle === handle) {
+      active.delete(key);
+      changed = true;
+    }
   }
+  handle.projectionActive = false;
   handle.keys.length = 0;
+  if (changed && projectionWasActive) invalidateSessionsListCache();
 }
 
 /**
@@ -53,21 +71,25 @@ export function unregisterChatRun(handle: ChatRunHandle): void {
  * harness announces it, so the initial registration carries just the client
  * runId; adding the announced id makes the run reachable by conversation id —
  * for /api/chat/stop on a first turn and for the sessions-list liveness probe
- * (hasActiveChatRun). No-op after the run settled.
+ * (hasActiveChatRun). No-op after projection settlement/unregister.
  */
 export function addChatRunKeys(
   handle: ChatRunHandle,
   keys: Array<string | null | undefined>,
 ): void {
+  if (!handle.projectionActive) return;
   const entry = handle.keys
     .map((key) => active.get(key))
     .find((candidate) => candidate?.handle === handle);
   if (!entry) return;
+  let changed = false;
   for (const key of keys) {
     if (!key || handle.keys.includes(key)) continue;
     active.set(key, entry);
     handle.keys.push(key);
+    changed = true;
   }
+  if (changed) invalidateSessionsListCache();
 }
 
 /**
@@ -77,14 +99,15 @@ export function addChatRunKeys(
  * mid-turn — the row reports `failed` instead of a phantom `completed`.
  */
 export function hasActiveChatRun(key: string): boolean {
-  return active.has(key);
+  const entry = active.get(key);
+  return Boolean(entry && entry.handle.projectionActive);
 }
 
 /** Deliberate user stop: mark the run cancelled and SIGTERM its child.
  *  Returns false when nothing is in flight under the key. */
 export function requestChatStop(key: string): boolean {
   const entry = active.get(key);
-  if (!entry) return false;
+  if (!entry || !entry.handle.acceptingStop) return false;
   entry.handle.stopRequested = true;
   try {
     entry.kill();
@@ -92,4 +115,18 @@ export function requestChatStop(key: string): boolean {
     /* child already gone */
   }
   return true;
+}
+
+/** Freeze cancellation semantics as soon as the transport reaches a
+ * definitive outcome. Projection stays live until persistence/final cleanup. */
+export function markChatRunTransportSettled(handle: ChatRunHandle): void {
+  handle.acceptingStop = false;
+}
+
+/** Sessions/list should stop presenting the run as live once persistence/final
+ * cleanup has definitively ended, even before the registry entries are removed. */
+export function markChatRunProjectionSettled(handle: ChatRunHandle): void {
+  if (!handle.projectionActive) return;
+  handle.projectionActive = false;
+  if (handle.keys.length > 0) invalidateSessionsListCache();
 }

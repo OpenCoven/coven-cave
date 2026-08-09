@@ -7,7 +7,7 @@
  *
  * Phase 3+ (this shape): top-level Sessions/Activity/PRs/Issues/Reviews tabs, the session rail
  * (grouped by project, git-attribution badges, + New session) and the
- * per-session Coding Room — a persistent terminal center beside a resizable
+ * per-session Coding Desk — a persistent terminal center beside a resizable
  * context dock (Changes | Files | Pull request | Inspector | GitHub | Browser)
  * with the follow-up composer (code-composer.tsx) under both. New sessions
  * start via code-new-session.tsx — project + familiar + optional fresh
@@ -22,6 +22,7 @@ import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import {
   CODE_GITHUB_TABS,
+  codeRoomFitsRail,
   codeSessionWorkRoot,
   groupCodeRailSessions,
   isCodeGithubTab,
@@ -39,6 +40,8 @@ import type { GitHubItemTarget } from "@/lib/github-item-url";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
 import { codeTopTabForGitHubTarget, type PendingCodeNavigation } from "@/lib/pending-code-navigation";
 import type { SessionRow } from "@/lib/types";
+import { useIsMobile } from "@/lib/use-viewport";
+import { useMeasuredWidth } from "@/lib/use-measured-width";
 
 // GitHubView keeps its own chunk: CodeView opens far more often than its
 // GitHub tabs, and github-view is a 3k-line surface (same split posture as
@@ -151,15 +154,34 @@ export function CodeView({
     deepLink?.sessionId ?? undefined,
   );
   const [newSessionOpen, setNewSessionOpen] = useState(false);
+  // The workbench picker offers "start a new session about <query>" when the
+  // filter matches nothing. There is no title field to set — a session's title
+  // is the daemon's, derived from the conversation — so the typed text seeds
+  // the kickoff prompt instead of being silently dropped.
+  const [newSessionSeed, setNewSessionSeed] = useState("");
   // A session created HERE isn't in the polled list yet; hold its selection
   // until /api/sessions/list catches up instead of auto-picking the newest.
   const pendingNewIdRef = useRef<string | null>(null);
   // On a phone the rail IS the landing screen — auto-picking the newest
   // session would skip the list and drop the user straight into a workbench
-  // with no context. Captured once at mount (Tailwind md breakpoint).
-  const narrowMountRef = useRef(
-    typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
-  );
+  // with no context. Decided once, from the Room's own measured width: this
+  // surface renders inside the role-surface host and can sit in a split, so a
+  // viewport query answers a question nobody asked (cave-k3a9u).
+  const roomRef = useRef<HTMLDivElement | null>(null);
+  const roomWidth = useMeasuredWidth(roomRef);
+  const isMobile = useIsMobile();
+  const fitsRail = codeRoomFitsRail(roomWidth, isMobile);
+  const narrowLandingRef = useRef<boolean | null>(null);
+  const [narrowLanding, setNarrowLanding] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (narrowLandingRef.current !== null) return;
+    // Hold for the first real measurement when one is coming. Without
+    // ResizeObserver none ever arrives, so take the viewport fallback rather
+    // than never deciding — that would strand auto-pick permanently.
+    if (roomWidth === null && typeof ResizeObserver !== "undefined") return;
+    narrowLandingRef.current = !codeRoomFitsRail(roomWidth, isMobile);
+    setNarrowLanding(narrowLandingRef.current);
+  }, [roomWidth, isMobile]);
 
   const groups = useMemo(() => groupCodeRailSessions(sessions), [sessions]);
 
@@ -226,14 +248,14 @@ export function CodeView({
       return;
     }
     if (selectedId === null) return;
-    if (narrowMountRef.current) return;
+    if (narrowLanding !== false) return;
     if (selectedId && pendingNewIdRef.current === selectedId) return;
     const first = groups[0]?.sessions[0];
     if (first) setSelectedId(first.id);
-  }, [groups, selected, selectedId]);
+  }, [groups, selected, selectedId, narrowLanding]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div ref={roomRef} className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-1 border-b border-[var(--border-hairline)] px-3 py-1.5">
         <div
           role="tablist"
@@ -290,10 +312,16 @@ export function CodeView({
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          {/* Mobile drill-in: below md the rail is the landing screen and the
-              workbench replaces it once a session is picked (Back returns). */}
+          {/* Narrow drill-in: when the Room itself is too narrow to hold the
+              rail beside the workbench, the rail is the landing screen and the
+              workbench replaces it once a session is picked (Back returns).
+              Driven by the Room's measured width, not the viewport — this
+              surface can sit in a split beside another page (cave-k3a9u).
+              w-64 is CODE_ROOM_RAIL_WIDTH_PX. */}
           <div
-            className={`${selected ? "hidden md:block" : "block"} w-full shrink-0 border-[var(--border-hairline)] md:w-64 md:border-r`}
+            className={`${
+              fitsRail ? "block w-64 border-r" : selected ? "hidden" : "block w-full"
+            } shrink-0 border-[var(--border-hairline)]`}
           >
             <CodeSessionRail
               sessions={sessions}
@@ -304,23 +332,30 @@ export function CodeView({
                 setWorkbenchTarget(null);
                 setSelectedId(id);
               }}
-              onNewSession={() => setNewSessionOpen(true)}
+              onNewSession={() => {
+                setNewSessionSeed("");
+                setNewSessionOpen(true);
+              }}
             />
           </div>
-          <div className={`${selected ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col`}>
+          <div
+            className={`${selected || fitsRail ? "flex" : "hidden"} min-w-0 flex-1 flex-col`}
+          >
             {selected ? (
               <>
-                <div className="shrink-0 border-b border-[var(--border-hairline)] px-2 py-1 md:hidden">
-                  <button
-                    type="button"
-                    aria-label="Back to sessions"
-                    onClick={() => setSelectedId(null)}
-                    className="focus-ring inline-flex items-center gap-1 rounded px-1.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                  >
-                    <Icon name="ph:caret-left" width={12} height={12} />
-                    Sessions
-                  </button>
-                </div>
+                {fitsRail ? null : (
+                  <div className="shrink-0 border-b border-[var(--border-hairline)] px-2 py-1">
+                    <button
+                      type="button"
+                      aria-label="Back to sessions"
+                      onClick={() => setSelectedId(null)}
+                      className="focus-ring inline-flex items-center gap-1 rounded px-1.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                    >
+                      <Icon name="ph:caret-left" width={12} height={12} />
+                      Sessions
+                    </button>
+                  </div>
+                )}
                 {activeOrigin ? (
                   <CodeSourceContext
                     origin={activeOrigin}
@@ -337,6 +372,17 @@ export function CodeView({
                   <CodeWorkbench
                     key={selected.id}
                     row={selected}
+                    // The workbench header carries its own session picker
+                    // (cave-0rcku), so it needs the same list the rail shows.
+                    sessions={sessions}
+                    onSelectSession={(id) => {
+                      setWorkbenchTarget(null);
+                      setSelectedId(id);
+                    }}
+                    onNewSession={(seed) => {
+                      setNewSessionSeed(seed);
+                      setNewSessionOpen(true);
+                    }}
                     initialTab={deepLink?.sessionId === selected.id ? deepLink?.workbenchTab : undefined}
                     openTarget={
                       workbenchTarget && (workbenchTarget.sessionId ?? selected.id) === selected.id
@@ -358,6 +404,7 @@ export function CodeView({
       )}
       <CodeNewSession
         open={newSessionOpen}
+        initialPrompt={newSessionSeed}
         onClose={() => setNewSessionOpen(false)}
         onCreated={(sessionId) => {
           pendingNewIdRef.current = sessionId;

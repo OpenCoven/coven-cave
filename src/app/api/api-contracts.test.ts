@@ -22,6 +22,12 @@ type RouteContract = {
 const contracts: RouteContract[] = [
   { route: "/access-groups", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/access-groups/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  // AFS routes expose a session's working tree, so every one is same-user
+  // local IPC (specs/coven-agent-fs/DESIGN.md section 3).
+  { route: "/afs", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/afs/[id]/commit", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/afs/[id]/diff", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/afs/[id]/timeline", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/app/build-info", methods: ["GET"], kind: "json" },
   { route: "/app/latest-release", methods: ["GET"], kind: "json" },
   { route: "/asana/assigned", methods: ["GET"], kind: "json" },
@@ -238,10 +244,6 @@ const contracts: RouteContract[] = [
   { route: "/salem", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/salem/pathfinder", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/salem/pathfinder/feedback", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  // cave-3rz.3: the image scry. Spawns a local harness with caller-supplied
-  // content, so it carries the same local-origin guard as the other
-  // process-spawning routes.
-  { route: "/scry", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/sessions/[id]/events", methods: ["GET"], kind: "json" },
   { route: "/sessions/[id]/input", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/sessions/[id]/kill", methods: ["POST"], kind: "json" },
@@ -551,7 +553,7 @@ for (const contract of contracts) {
   );
   const guardedDiagnostics = [
     ...sendSource.matchAll(
-      /if \(cancelledByUser\) \{[\s\S]{0,200}?\} else if \(!assistantText\.trim\(\)(?: && !launchFailure)?\) \{/g,
+      /(?:if \(cancelledByUser\) \{[\s\S]{0,200}?\} else if \(!assistantText\.trim\(\)(?: && !launchFailure)?\) \{|if \(!cancelledByUser && !assistantText\.trim\(\)\) \{)/g,
     ),
   ];
   assert.equal(
@@ -604,8 +606,8 @@ for (const contract of contracts) {
   );
   assert.match(
     sendSource,
-    /if \(cancelledByUser\) \{\s*\n\s*if \(!assistantText\.trim\(\)\) assistantText = "\(cancelled\)";\s*\n\s*isError = false;/,
-    "/chat/send: a user cancel must never be recorded as a harness error (openclaw path)",
+    /if \(cancelledByUser\) \{\s*\n\s*assistantText = "\(cancelled\)";\s*\n\s*isError = false;\s*\n\s*\} else if \(stdout\.trim\(\)\) \{/,
+    "/chat/send: an explicit OpenClaw stop must take precedence over malformed or truncated bridge stdout",
   );
 
   // SSE heartbeats: a long tool run can stream nothing for minutes, and a

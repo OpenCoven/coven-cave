@@ -8,11 +8,12 @@ import { readFileSync } from "node:fs";
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const carousel = readFileSync(new URL("./image-carousel.tsx", import.meta.url), "utf8");
 const attachmentCards = readFileSync(new URL("./chat-attachment-cards.tsx", import.meta.url), "utf8");
+const renderedText = readFileSync(new URL("../lib/chat-rendered-text.ts", import.meta.url), "utf8");
 
 // ── chat-view: imports and render paths ─────────────────────────────────────
 assert.match(
   chatView,
-  /import \{ imageCarouselKey, sliceImageBlocks, stripImageMarkers \} from "@\/lib\/image-blocks"/,
+  /import \{ imageCarouselKey, sliceImageBlocks \} from "@\/lib\/image-blocks"/,
   "chat-view imports the image-blocks lib",
 );
 assert.match(
@@ -30,13 +31,18 @@ assert.match(
 );
 assert.match(
   chatView,
-  /turn\.pending\s*\?\s*stripImageMarkers\(stripGitHubMarkers\(reasoningSplit\.visible\)\)/,
-  "streaming path strips image markers so raw tags never flash",
+  /extractChatRenderedText\(turn\.text, \{ pending: Boolean\(turn\.pending\) \}\)/,
+  "pending and settled image text uses the shared rendered-text projection",
 );
 assert.match(
-  chatView,
-  /stripImageMarkers\(stripGitHubMarkers\(visibleWithGh\)\)/,
-  "the settled fallback text path is image-marker-free too",
+  renderedText,
+  /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);[\s\S]*visible: stripImageMarkers\(stripGitHubMarkers\(nextPathSplit\.visible\)\)/,
+  "image markers strip unconditionally and LAST, after skill/auto-status/attention/next-path extraction — raw tags never flash on pending OR settled turns",
+);
+assert.doesNotMatch(
+  renderedText,
+  /pending\s*\?\s*stripImageMarkers\(stripGitHubMarkers\(/,
+  "image stripping must not be gated behind turn.pending — it runs unconditionally on both streaming and settled turns",
 );
 assert.match(
   chatView,

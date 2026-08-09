@@ -141,15 +141,24 @@ if (typeof document !== "undefined") {
   }
 }
 
-// ── Source contract: the dock announces its changes ─────────────────────────
+// ── Source contract: the room announces what swaps under the cursor ────────
+// cave-uod42, carried through the cave-0rcku rebuild: the review rail and the
+// terminal drawer both change content without the pointer moving, so a change
+// nobody can see must at least be a change somebody hears.
 {
-  const dock = readFileSync(
-    new URL("../components/code-context-dock.tsx", import.meta.url),
+  const rail = readFileSync(
+    new URL("../components/code-review-rail.tsx", import.meta.url),
     "utf8",
   );
-  assert.match(dock, /useAnnouncer\(\)/, "the dock swaps content under a stationary cursor");
-  assert.match(dock, /context shown\./, "tab changes are announced");
-  assert.match(dock, /DOCK_SIZE_ANNOUNCEMENT/, "size changes are announced");
+  assert.match(rail, /useAnnouncer\(\)/, "the rail swaps content under a stationary cursor");
+  assert.match(rail, /Review rail (shown|hidden)\./, "showing and hiding the rail is announced");
+
+  const drawer = readFileSync(
+    new URL("../components/code-terminal-drawer.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(drawer, /useAnnouncer\(\)/, "the drawer opens and closes under a stationary cursor");
+  assert.match(drawer, /Terminal drawer (open|closed)\./, "the drawer announces both states");
 }
 
 console.log("code-room-shortcuts.test.ts ok");

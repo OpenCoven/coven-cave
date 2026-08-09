@@ -110,6 +110,11 @@ type Props = {
    *  full-width main chat surface opts in — the compact companion rail has no
    *  room, and two mounts must not fight over the persisted layout. */
   enableSplitPanes?: boolean;
+  /** Workspace's current sidebar familiar filter, forwarded to every ChatView
+   *  mount (primary and split panes) so attention-clear provenance uses the
+   *  list scope that can actually prove absence, not each pane's own
+   *  familiar. See ChatView's `activeFamiliarId` prop. */
+  activeFamiliarId?: string | null;
 };
 
 export type ChatRouterHandle = {
@@ -163,6 +168,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onOpenProjectsTab,
     onActiveSessionChange,
     enableSplitPanes = false,
+    activeFamiliarId,
   },
   ref,
 ) {
@@ -809,6 +815,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       familiars={familiars}
       sessionId={view.sessionId}
       session={activeSession}
+      activeFamiliarId={activeFamiliarId}
       projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
       initialPrompt={view.kind === "chat" ? view.initialPrompt : undefined}
       initialAttachments={view.kind === "chat" ? view.initialAttachments : undefined}
@@ -900,6 +907,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
               familiar={paneFamiliar}
               sessionId={paneId}
               session={paneSession}
+              activeFamiliarId={activeFamiliarId}
               daemonRunning={daemonRunning}
               sessions={sessions}
               onSessionsChanged={onSessionsChanged}

@@ -36,6 +36,33 @@ const realGit = process.env.PATH.split(path.delimiter)
 assert.ok(realGit, "the test requires git on PATH");
 assert.equal(existsSync(script), true, "managed worktree creator module must exist");
 
+// Every emitter of the `--apply` suggestion must go through maintenanceSuggestion(),
+// which gates it on capabilities.complete. The suggestion is unrunnable while any
+// maintenance plane is unenforced, and a refusal that names an impossible next step
+// pushes the operator toward the unmanaged fallbacks the guard rules forbid.
+//
+// Structural, not a count. cave-wmkn4 fixed refusalOutcome and left two compensate
+// paths emitting the literal directly (cave-e4n3l); the miss survived verification
+// because grepping the literal returns a nonzero count either way — the gated branch
+// legitimately contains it. So assert on WHERE it appears: exactly one occurrence,
+// on the line that returns it from behind the capabilities check.
+{
+  const createSource = readFileSync(script, "utf8");
+  const suggestionLines = createSource
+    .split("\n")
+    .filter((line) => line.includes('"Suggestion: pnpm beads:worktrees:apply"'));
+  assert.equal(
+    suggestionLines.length,
+    1,
+    `the --apply suggestion must have exactly one emitter; found ${suggestionLines.length}:\n${suggestionLines.join("\n")}`,
+  );
+  assert.match(
+    suggestionLines[0],
+    /capabilities\?\.complete/,
+    "the sole emitter must be the branch gated on capabilities.complete",
+  );
+}
+
 function run(command, args, cwd, options = {}) {
   return spawnSync(command, args, {
     cwd,
@@ -1120,7 +1147,22 @@ await withFixture({ fixturePrefix: "cave-worktree-create-o'reilly-" }, async (fi
   assert.match(refused.stderr, /already owns a registered worktree/);
   assert.match(refused.stderr, /20-worktree budget/);
   assert.match(refused.stderr, /30-local-branch budget/);
-  assert.match(refused.stderr, /Suggestion: pnpm beads:worktrees:apply/);
+  // A refusal must not send the operator to a command that cannot run. Today,
+  // three of the four maintenance planes are hard-coded unenforced, so `--apply`
+  // exits 2 before assessing anything — yet this line was printed on EVERY
+  // refusal (cave-wmkn4). If the maintenance planes later become enforced and
+  // `--apply` becomes runnable, this assertion should be updated accordingly.
+  assert.doesNotMatch(
+    refused.stderr,
+    /Suggestion: pnpm beads:worktrees:apply/,
+    "an unrunnable command must not be suggested",
+  );
+  assert.match(refused.stderr, /cannot run here — unenforced maintenance planes: .*coven/);
+  assert.match(
+    refused.stderr,
+    /a merged PR is not retention/,
+    "the hand-retirement route must state the trap that makes it lossy",
+  );
   assert.match(refused.stderr, /This admission refusal can be lifted/i);
   assert.doesNotMatch(refused.stderr, /worth exceeding the budget/i);
   // The refusal must name the escape hatch it would accept. Without this the

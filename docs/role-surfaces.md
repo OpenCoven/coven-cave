@@ -15,6 +15,7 @@ vocation (an analyst's desk, an operations center, an archive…).
 | Generic host | `src/components/role-surface-host.tsx` | Looks the surface up, applies contributions (shortcuts, toolbar, status, notifications, commands), renders it inside room chrome |
 | Rooms | `src/components/role-surfaces/` | The registered surfaces themselves + `surface-room.tsx` layout primitives |
 | Manifest | `src/components/role-surfaces/register.tsx` | The ONE place initial rooms are named; code-split via `next/dynamic` |
+| Build visibility | `src/lib/room-flags.ts` | Which registered rooms a *build* may show (see below) |
 
 The shell (`workspace.tsx`, `sidebar-minimal.tsx`, `shell.tsx`) handles only
 the generic `surface:<id>` workspace mode. It never names a role —
@@ -24,13 +25,66 @@ the generic `surface:<id>` workspace mode. It never names a role —
 
 1. `workspace.tsx` imports the manifest for its side effect; every module that
    calls `registerRoleSurface` at import time appears identically.
-2. `useRoleSurfaceSession` builds one `RoleSurfaceContext` per active familiar
-   and resolves `resolveVisibleRoleSurfaces(listRoleSurfaces(), roleIds, ctx)`:
-   role match → `shouldDisplay` gate → priority sort.
+2. `useRoleSurfaceSession` filters the registry through `roomEnabledInBuild`
+   (build visibility, below), then resolves
+   `resolveVisibleRoleSurfaces(surfaces, roleIds, ctx)`: role match →
+   `shouldDisplay` gate → priority sort.
 3. Visible surfaces render as sidebar rows (the "Rooms" cluster) whose mode is
    `surface:<id>`; the detail pane routes that mode to `RoleSurfaceHost`.
 4. Room UI state survives switching surfaces and familiars via
    `useRoleSurfaceState(familiarId, surfaceId, initial)`.
+
+## Build visibility (which rooms ship)
+
+Registration says a room **exists**; `src/lib/room-flags.ts` says a build may
+**show** it. A room has to clear both, and then role matching, before anyone
+gets in. The registry stays open — this is a release gate, not an architecture
+change.
+
+A production build ships `PRODUCTION_ROOM_IDS`:
+
+| Room | Ships in production |
+| --- | --- |
+| Research Desk (`researcher-desk`) | ✅ |
+| Chart Room (`navigator-chart-room`) | ✅ |
+| Coding Desk (`code`) | dev only — under construction |
+| Review Deck (`reviewer-review-deck`) | dev only — under construction |
+| Writing Desk (`scribe-writing-desk`) | dev only — under construction |
+| Watchtower (`sentinel-watchtower`) | dev only — under construction |
+| Comms Operations (`messenger-ops`) | dev only — under construction |
+| The Archive (`indexer-archive`) | dev only — under construction |
+
+A **dev build shows every room**, so an unfinished room is fully workable; it
+joins the table's shipped half by moving its id into `PRODUCTION_ROOM_IDS`.
+
+Override the default for a build with `NEXT_PUBLIC_CAVE_ROOMS`:
+
+```bash
+NEXT_PUBLIC_CAVE_ROOMS=all                    # every registered room
+NEXT_PUBLIC_CAVE_ROOMS=researcher-desk,code   # exactly these two
+```
+
+When set, the variable is the **complete** allowlist — it replaces the default
+rather than adding to it, in both directions, so what a build shows is always
+readable off one value. Like every `NEXT_PUBLIC_*` flag it is inlined at build
+time, not read at runtime.
+
+Two consequences worth knowing:
+
+- The gate is applied once, in `useRoleSurfaceSession`, *before* role matching.
+  A room the build doesn't ship therefore has no sidebar row, no command-palette
+  entry, and no restorable `surface:<id>` mode — there is no consumer of
+  `visibleSurfaces` that can route around it.
+- Reaching such a room directly (a stored mode, a `?mode=` link) lands on
+  `RoleSurfaceHost`'s **"still under construction and isn't part of this
+  build"** panel rather than the role-mismatch one, and the Familiar Studio
+  Type picker appends the same sentence to a Type whose room is absent. A build
+  gate that reported itself as a role problem would send people to change roles
+  that were never the issue.
+
+Adding a room means adding its id to `KNOWN_ROOM_IDS` too;
+`src/lib/room-flags.test.ts` fails otherwise, so a new room cannot reach a
+production build merely by being registered.
 
 ## Role assignment
 

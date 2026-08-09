@@ -61,7 +61,7 @@ export const CANONICAL_WORKSPACE_MODES: readonly CanonicalWorkspaceMode[] = [
  * - Rewritten in Workspace.setMode, so `mode` state never holds them:
  *   `groupchat` opens Chat's Group tab, `journal` opens Memories' Journal
  *   tab, `flow` (retired surface) lands on Rituals, and `code` / `github`
- *   open the Coding familiar's Code Workshop room (cave-cc5r) — old
+ *   open the Coding familiar's Coding Desk room (cave-cc5r) — old
  *   `?mode=code` deep links and persisted last-surface strings keep landing on
  *   the workbench, now behind the room's role gate; `github` additionally
  *   requests the Activity tab from Workspace.setMode.
