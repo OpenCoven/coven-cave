@@ -1236,14 +1236,15 @@ const FIRST_SENTENCE_RE = /^[\s\S]*?[.!?…]["'”’)\]]*(?=\s|$)/;
 /**
  * The section's lead sentence, restated verbatim by content-bearing closers.
  * Declarative sentences only — a question restated as "the takeaway" is not a
- * synthesis — and only when short enough to work as a spoken bookend.
+ * synthesis — and only when short enough to work as a spoken bookend. Any
+ * non-question terminator qualifies; only `?` disqualifies.
  */
 function sectionTakeaway(chunks: string[]): string | undefined {
   const lead = chunks[0]?.trimStart();
   if (!lead) return undefined;
   const sentence = lead.match(FIRST_SENTENCE_RE)?.[0]?.trim();
   if (!sentence || sentence.length > MAX_TAKEAWAY_CHARS) return undefined;
-  return /\.["'”’)\]]*$/.test(sentence) ? sentence : undefined;
+  return /\?["'”’)\]]*$/.test(sentence) ? undefined : sentence;
 }
 
 /**
