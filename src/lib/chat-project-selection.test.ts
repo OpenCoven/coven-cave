@@ -83,6 +83,15 @@ const registeredAlphaProject = {
   createdAt: OLD,
   updatedAt: OLD,
 };
+const migratedLegacyProject = {
+  id: "app",
+  name: "App",
+  root: "/Users/me/code/app",
+  legacyRoot: "~/code/app",
+  repoUrl: "https://github.com/OpenCoven/app",
+  createdAt: OLD,
+  updatedAt: OLD,
+};
 assert.deepEqual(
   migrateOrganizationExpansionKeys(["alpha"], migrationGroups),
   ["org:opencoven", "alpha"],
@@ -152,6 +161,18 @@ assert.deepEqual(
     [registeredAlphaProject],
   ),
   ["org:opencoven", "alpha"],
+);
+assert.deepEqual(
+  migrateOrganizationExpansionKeys(["root:~/code/app"], [], [migratedLegacyProject]),
+  ["org:opencoven", "app"],
+);
+assert.deepEqual(
+  migrateOrganizationExpansionKeys(
+    ["root:~/code/app", "root:/Users/me/code/app", "app"],
+    [],
+    [migratedLegacyProject],
+  ),
+  ["org:opencoven", "app"],
 );
 assert.deepEqual(
   migrateOrganizationExpansionKeys(

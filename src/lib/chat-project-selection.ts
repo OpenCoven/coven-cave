@@ -73,6 +73,12 @@ export function migrateOrganizationExpansionKeys(
       `root:${normalizeProjectRoot(project.root)}`,
       mapping,
     );
+    if (typeof project.legacyRoot === "string" && project.legacyRoot.trim()) {
+      migrationByStoredKey.set(
+        `root:${normalizeProjectRoot(project.legacyRoot)}`,
+        mapping,
+      );
+    }
   }
   const originalKeys = new Set(storedKeys);
   const migrated: string[] = [];
