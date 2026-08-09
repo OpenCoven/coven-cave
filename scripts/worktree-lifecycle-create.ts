@@ -18,6 +18,7 @@ import {
   heartbeatWriterIntent,
   registerWriterIntent,
   releaseWriterIntent,
+  repositoryMaintenanceCapabilities,
 } from "./maintenance-gate.mjs";
 
 const REPOSITORY = "OpenCoven/coven-cave";
@@ -836,13 +837,67 @@ function exceptionSuggestion(options: ManagedCreateOptions, worktreePath: string
   ];
 }
 
-function refusalOutcome(reasons: string[], suggestion: string[] = []): Outcome {
+/**
+ * Only suggest the patrol's `--apply` when it can actually run.
+ *
+ * This line used to be unconditional, on EVERY refusal this script emits —
+ * budget, duplicate metadata, orphaned record alike. But `--apply` refuses
+ * outright whenever any maintenance plane is unenforced, and
+ * `repositoryMaintenanceCapabilities()` has three of the four hard-coded to
+ * `false` against unbuilt work, so the suggestion has never been runnable in
+ * this repository (cave-wmkn4).
+ *
+ * A refusal that prints an impossible next step is worse than one that prints
+ * none: it sends the operator through a command that exits 2, and the documented
+ * escapes they reach for next are the ones the guard rules exist to forbid — a
+ * bare `git worktree add`, which yields a permanently `uncertain` unit, or
+ * hand-editing the bead, which is the forgery cave-l52dt rules out.
+ *
+ * Uses `capabilities.complete` to gate the suggestion — the same field the
+ * patrol itself uses — rather than counting per-plane `enforced === false`.
+ * A newly added unenforced plane, or any other condition that sets
+ * `complete=false`, will suppress the suggestion even if the listed-plane scan
+ * would have wrongly cleared it.
+ *
+ * `includeRetireByHand` controls whether the hand-retirement route is printed.
+ * It is only relevant for budget refusals; non-budget refusals (duplicate
+ * metadata, missing primary registration) should omit it.
+ */
+function maintenanceSuggestion(
+  capabilities = repositoryMaintenanceCapabilities(),
+  includeRetireByHand = true,
+): string[] {
+  if (capabilities?.complete) return ["Suggestion: pnpm beads:worktrees:apply"];
+  const planes = ["coven", "beads", "github", "local"] as const;
+  const missing = capabilities
+    ? planes.filter((plane) => capabilities[plane]?.enforced === false)
+    : [];
+  const planeSummary =
+    missing.length > 0 ? missing.join(", ") : "unknown (capabilities unavailable)";
+  const lines: string[] = [
+    `Note: pnpm beads:worktrees:apply cannot run here — unenforced maintenance planes: ${planeSummary}.`,
+  ];
+  if (includeRetireByHand) {
+    lines.push(
+      "Retire by hand instead: prove retention (a remote branch, or a pushed archive tag —",
+      "a merged PR is not retention, since a squash leaves the branch's commits on no remote ref),",
+      "then `git worktree unlock <path> && git worktree remove <path> && git branch -d <branch>`.",
+    );
+  }
+  return lines;
+}
+
+function refusalOutcome(
+  reasons: string[],
+  suggestion: string[] = [],
+  includeRetireByHand = true,
+): Outcome {
   return {
     status: 2,
     stdout: null,
     stderr: [
       ...reasons.map((reason) => `worktree-lifecycle-create: ${reason}`),
-      "Suggestion: pnpm beads:worktrees:apply",
+      ...maintenanceSuggestion(undefined, includeRetireByHand),
       ...suggestion,
     ],
     createdReport: null,
@@ -1568,12 +1623,15 @@ function execute(
         `Bead ${options.beadId} already has structured worktree metadata; a current worktree exception is required to append another record`,
       ],
       exceptionSuggestion(options, worktreePath),
+      false,
     );
   }
   if (primaryRegistrationMissing) {
-    return refusalOutcome([
-      `Bead ${options.beadId} primary structured worktree metadata is not currently registered`,
-    ]);
+    return refusalOutcome(
+      [`Bead ${options.beadId} primary structured worktree metadata is not currently registered`],
+      [],
+      false,
+    );
   }
   const existingPaths = existingOwnedPaths(inventory.items, options.beadId);
 
