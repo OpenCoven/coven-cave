@@ -99,6 +99,12 @@ type OperationResult = OperationSuccess | OperationFailure;
 type ReprobeResult = OperationFailure | { ok: true; item: WorktreeLifecycleItem };
 type RemoteReadResult = OperationFailure | { ok: true; remoteRef: WorktreeRemoteRef | null };
 
+/**
+ * Retention for a unit whose remote branch is gone: the tag ref on the remote
+ * that resolves to the unit's exact head, or null when nothing retains it.
+ */
+type RetentionReadResult = OperationFailure | { ok: true; retainedBy: string | null };
+
 export interface RetirementOperations {
   verifyGate(handle: RetirementGateHandle): OperationResult;
   heartbeatGate(handle: RetirementGateHandle): OperationResult;
@@ -109,6 +115,7 @@ export interface RetirementOperations {
   restoreLocalRef(item: WorktreeLifecycleItem): OperationResult;
   verifyAbsent(item: WorktreeLifecycleItem): OperationResult;
   readRemoteRef(ref: string): RemoteReadResult;
+  readRemoteTagRetention(head: string): RetentionReadResult;
 }
 
 type RetirementState = {
@@ -202,14 +209,51 @@ export function retireLifecycleUnits({
       continue;
     }
 
-    if (expectedRemoteRef !== null) {
+    // `remoteRef` is deliberately NOT part of retirementIdentityError, so a
+    // transient remote-read failure at inventory time can report null for a
+    // branch that still exists. Prefer the reprobed observation so that stale
+    // null does not force the tag-retention path and refuse a unit that is
+    // plainly retained; fall back to the inventory value so a branch that
+    // disappeared BETWEEN the two observations still fails the live
+    // revalidation below rather than quietly taking the tag path. Neither
+    // observation is trusted on its own -- whichever is used is revalidated
+    // against the live remote before anything is destroyed.
+    const remoteRefForCheck = currentItem.remoteRef ?? expectedRemoteRef;
+
+    if (remoteRefForCheck !== null) {
       const remotePrecheck = readRemoteRefStrict(
         operations,
-        expectedRemoteRef,
+        remoteRefForCheck,
         "before local retirement started",
       );
       if (!remotePrecheck.ok) {
         reportFailure(report, item, attempt, state, remotePrecheck.reason);
+        continue;
+      }
+    } else {
+      // The remote branch is gone -- the DEFAULT here, because merging deletes
+      // it. Landing proof says the CONTENT is on the default branch, squashed;
+      // it says nothing about the branch's own pre-squash commits, which after
+      // branch deletion survive only in the provider's PR record. Retiring on
+      // landing alone therefore drops them, so require the same proof the
+      // manual route requires: a tag on the remote resolving to this exact
+      // head. Fail closed -- an unreadable remote is not evidence of retention.
+      const retention = safeInvoke("readRemoteTagRetention", () =>
+        operations.readRemoteTagRetention(currentItem.head),
+      );
+      if (!retention.ok) {
+        reportFailure(report, item, attempt, state, retention.reason);
+        continue;
+      }
+      if (retention.retainedBy === null) {
+        reportFailure(
+          report,
+          item,
+          attempt,
+          state,
+          `remote branch is absent and no remote tag resolves to ${currentItem.head}; ` +
+            "archive the head to a pushed tag before retiring",
+        );
         continue;
       }
     }
@@ -326,10 +370,10 @@ export function retireLifecycleUnits({
     attempt.worktreePostcondition = currentItem.path === null ? "not-applicable" : "verified";
     attempt.localRefPostcondition = "verified";
 
-    if (expectedRemoteRef !== null) {
+    if (remoteRefForCheck !== null) {
       const remote = readRemoteRefStrict(
         operations,
-        expectedRemoteRef,
+        remoteRefForCheck,
         "before local retirement completed",
       );
       if (!remote.ok) {
@@ -361,10 +405,10 @@ export function retireLifecycleUnits({
     attempt.reason = null;
     report.attempts.push({ ...attempt });
     report.retired.push(currentItem);
-    if (expectedRemoteRef !== null) {
+    if (remoteRefForCheck !== null) {
       report.remoteDeletionProposals.push({
-        ref: expectedRemoteRef.ref,
-        oid: expectedRemoteRef.oid,
+        ref: remoteRefForCheck.ref,
+        oid: remoteRefForCheck.oid,
         localRetirementOid: currentItem.head,
         mergedPr: currentItem.mergedPr?.number ?? null,
         reason: "remote-deletion-requires-separate-authorization",
@@ -639,6 +683,39 @@ export function createGitRetirementOperations({
         ok: true,
         remoteRef: { ref: match[2], oid: match[1] },
       };
+    },
+    readRemoteTagRetention(head) {
+      if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(head)) {
+        return { ok: false, reason: `refusing to probe retention for malformed oid ${head}` };
+      }
+      const remote = git(normalizedRoot, ["ls-remote", "--tags", "origin"], 60_000);
+      if (!remote.ok) {
+        return {
+          ok: false,
+          reason: remote.stderr || "ls-remote --tags failed while proving retention",
+        };
+      }
+      // An ANNOTATED tag emits two lines: `<tag-object-oid>\t<ref>` and
+      // `<commit-oid>\t<ref>^{}`. A LIGHTWEIGHT tag emits only
+      // `<commit-oid>\t<ref>`. So a tag retains `head` when its PEELED target
+      // matches, falling back to the direct oid only when no peeled line
+      // exists. Matching any line instead would report a tag as retaining its
+      // own tag-object oid -- unreachable in practice, since a head is always a
+      // commit, but it would make the probe mean something other than it says.
+      const targets = new Map<string, { direct: string | null; peeled: string | null }>();
+      for (const line of remote.stdout.split("\n")) {
+        const match = line.match(/^((?:[0-9a-f]{40}|[0-9a-f]{64}))\t(refs\/tags\/[^\n]+?)(\^\{\})?$/);
+        if (!match) continue;
+        const [, oid, ref, peeledMarker] = match;
+        const entry = targets.get(ref) ?? { direct: null, peeled: null };
+        if (peeledMarker) entry.peeled = oid;
+        else entry.direct = oid;
+        targets.set(ref, entry);
+      }
+      for (const [ref, { direct, peeled }] of targets) {
+        if ((peeled ?? direct) === head) return { ok: true, retainedBy: ref };
+      }
+      return { ok: true, retainedBy: null };
     },
   };
 }

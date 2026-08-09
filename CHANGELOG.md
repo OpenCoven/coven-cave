@@ -94,8 +94,9 @@ Patch release on top of v0.2.4.
 - Added fail-closed recovery for same-repository pull requests whose CI event
   never arrived, with explicit apply mode, cooldowns, and shared head-SHA
   concurrency (#4435).
-- Excluded detached worktrees from managed-creation admission and documented
-  the current gate-blocked retirement path (#4414, #4432).
+- Excluded detached worktrees from managed-creation admission, required verified
+  remote retention before retiring units whose branch is gone, and documented
+  the current gate-blocked retirement path (#4414, #4432, #4438).
 
 ## [0.2.4] - 2026-08-06
 
