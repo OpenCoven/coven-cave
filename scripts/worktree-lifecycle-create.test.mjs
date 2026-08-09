@@ -36,6 +36,33 @@ const realGit = process.env.PATH.split(path.delimiter)
 assert.ok(realGit, "the test requires git on PATH");
 assert.equal(existsSync(script), true, "managed worktree creator module must exist");
 
+// Every emitter of the `--apply` suggestion must go through maintenanceSuggestion(),
+// which gates it on capabilities.complete. The suggestion is unrunnable while any
+// maintenance plane is unenforced, and a refusal that names an impossible next step
+// pushes the operator toward the unmanaged fallbacks the guard rules forbid.
+//
+// Structural, not a count. cave-wmkn4 fixed refusalOutcome and left two compensate
+// paths emitting the literal directly (cave-e4n3l); the miss survived verification
+// because grepping the literal returns a nonzero count either way — the gated branch
+// legitimately contains it. So assert on WHERE it appears: exactly one occurrence,
+// on the line that returns it from behind the capabilities check.
+{
+  const createSource = readFileSync(script, "utf8");
+  const suggestionLines = createSource
+    .split("\n")
+    .filter((line) => line.includes('"Suggestion: pnpm beads:worktrees:apply"'));
+  assert.equal(
+    suggestionLines.length,
+    1,
+    `the --apply suggestion must have exactly one emitter; found ${suggestionLines.length}:\n${suggestionLines.join("\n")}`,
+  );
+  assert.match(
+    suggestionLines[0],
+    /capabilities\?\.complete/,
+    "the sole emitter must be the branch gated on capabilities.complete",
+  );
+}
+
 function run(command, args, cwd, options = {}) {
   return spawnSync(command, args, {
     cwd,
