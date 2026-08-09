@@ -35,6 +35,7 @@ export const SUITES = {
     "src/lib/chat-creation-refresh.test.ts",
     "src/lib/chat-session-ownership.test.ts",
     "src/lib/right-chat-session.test.ts",
+    "src/lib/shell-right-chat.test.ts",
     "src/lib/chat-live-generation-identity.test.ts",
     "src/lib/chat-router-promotion.test.ts",
     "src/lib/code-rail.test.ts",
