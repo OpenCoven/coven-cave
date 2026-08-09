@@ -1120,11 +1120,11 @@ await withFixture({ fixturePrefix: "cave-worktree-create-o'reilly-" }, async (fi
   assert.match(refused.stderr, /already owns a registered worktree/);
   assert.match(refused.stderr, /20-worktree budget/);
   assert.match(refused.stderr, /30-local-branch budget/);
-  // A refusal must not send the operator to a command that cannot run. Three of
-  // the four maintenance planes are hard-coded unenforced, so `--apply` exits 2
-  // before assessing anything — yet this line was printed on EVERY refusal
-  // (cave-wmkn4). It now names the unenforced planes and the hand-retirement
-  // route instead, and the suggestion returns on its own once the planes land.
+  // A refusal must not send the operator to a command that cannot run. Today,
+  // three of the four maintenance planes are hard-coded unenforced, so `--apply`
+  // exits 2 before assessing anything — yet this line was printed on EVERY
+  // refusal (cave-wmkn4). If the maintenance planes later become enforced and
+  // `--apply` becomes runnable, this assertion should be updated accordingly.
   assert.doesNotMatch(
     refused.stderr,
     /Suggestion: pnpm beads:worktrees:apply/,
