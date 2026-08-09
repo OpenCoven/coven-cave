@@ -150,8 +150,13 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /useEffect\(\(\) => \{\s*if \(!sidebarHydrated \|\| !sidebarOrganizationMigrationPendingRef\.current\) return;\s*if \(sessionsLoaded === false \|\| sessionsError\) return;\s*if \(!projectsLoadedSuccessfully\) return;\s*const migratedExpandedKeys = migrateOrganizationExpansionKeys\(expandedKeys, sidebarGroups\);\s*setExpandedKeys\(migratedExpandedKeys\);[\s\S]*PROJECT_SIDEBAR_KEYS\.expanded,\s*JSON\.stringify\(migratedExpandedKeys\),[\s\S]*PROJECT_SIDEBAR_KEYS\.expandedVersion,\s*JSON\.stringify\(PROJECT_SIDEBAR_EXPANSION_VERSION\),[\s\S]*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}, \[[^\]]*expandedKeys[^\]]*\]\);/,
-  "ChatRouter persists migrated keys before marking the deferred organization migration current",
+  /const sidebarSessions = useMemo\(\s*\(\) => filterVisibleChatSessions\(sessions, familiar\?\.id \?\? null\),[\s\S]*const sidebarGroups = useMemo\([\s\S]*const migrationSessions = useMemo\(\s*\(\) => filterVisibleChatSessions\(sessions, null\),[\s\S]*const migrationGroups = useMemo\(/,
+  "ChatRouter keeps visible rail groups familiar-filtered while deriving migration groups from every visible familiar",
+);
+assert.match(
+  chatRouter,
+  /const migratedExpandedKeys = migrateOrganizationExpansionKeys\(expandedKeys, migrationGroups\);[\s\S]*PROJECT_SIDEBAR_KEYS\.expanded,\s*JSON\.stringify\(migratedExpandedKeys\),[\s\S]*PROJECT_SIDEBAR_KEYS\.expandedVersion,\s*JSON\.stringify\(PROJECT_SIDEBAR_EXPANSION_VERSION\),[\s\S]*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}, \[[^\]]*migrationGroups[^\]]*\]\);/,
+  "ChatRouter persists a globally-derived migration before marking the global organization version current",
 );
 assert.match(
   chatRouter,
@@ -169,19 +174,24 @@ assert.match(
   "ChatView must report project-root changes back to the rail owner",
 );
 assert.match(
-  chatList,
-  /if \(sessionsLoaded === false\) return;\s*sidebarPrefsLoadedRef\.current = true;/,
-  "ChatList hydrates raw sidebar preferences after the first session attempt without waiting for projects",
+  chatRouter,
+  /<ChatList[\s\S]*selection=\{selection\}[\s\S]*expandedKeys=\{expandedKeys\}[\s\S]*onSelectionChange=\{setSelection\}[\s\S]*onToggleExpanded=\{toggleSidebarExpanded\}/,
+  "ChatRouter passes its project selection and disclosure state into ChatList",
 );
 assert.match(
   chatList,
-  /const storedExpansionVersion = readPersisted<unknown>\(\s*PROJECT_SIDEBAR_KEYS\.expandedVersion,\s*null,\s*\);[\s\S]*if \(Array\.isArray\(storedExpanded\)\) \{\s*setExpandedKeys\(storedExpanded\.filter\(\(k\): k is string => typeof k === "string"\)\);\s*sidebarOrganizationMigrationPendingRef\.current =\s*storedExpansionVersion !== PROJECT_SIDEBAR_EXPANSION_VERSION;\s*\} else \{\s*setExpandedKeys\(projectSelectionKeys\(sidebarGroups\)\);\s*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}[\s\S]*if \(!sidebarOrganizationMigrationPendingRef\.current\) \{[\s\S]*PROJECT_SIDEBAR_KEYS\.expandedVersion,[\s\S]*JSON\.stringify\(PROJECT_SIDEBAR_EXPANSION_VERSION\)/,
-  "ChatList migrates only stored arrays from an older expansion version and marks defaults/current arrays current",
+  /selection: ProjectSelection;[\s\S]*expandedKeys: string\[\];[\s\S]*onSelectionChange: \(selection: ProjectSelection\) => void;[\s\S]*onToggleExpanded: \(key: string\) => void;/,
+  "ChatList requires Router-owned project selection and disclosure props",
 );
 assert.match(
   chatList,
-  /useEffect\(\(\) => \{\s*if \(!sidebarHydrated \|\| !sidebarOrganizationMigrationPendingRef\.current\) return;\s*if \(sessionsLoaded === false \|\| sessionsError\) return;\s*if \(!projectsLoadedSuccessfully\) return;\s*const migratedExpandedKeys = migrateOrganizationExpansionKeys\(expandedKeys, sidebarGroups\);\s*setExpandedKeys\(migratedExpandedKeys\);[\s\S]*PROJECT_SIDEBAR_KEYS\.expanded,\s*JSON\.stringify\(migratedExpandedKeys\),[\s\S]*PROJECT_SIDEBAR_KEYS\.expandedVersion,\s*JSON\.stringify\(PROJECT_SIDEBAR_EXPANSION_VERSION\),[\s\S]*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}, \[[^\]]*expandedKeys[^\]]*\]\);/,
-  "ChatList persists migrated keys before marking the deferred organization migration current",
+  /<ChatProjectSidebar[\s\S]*selection=\{effectiveSelection\}[\s\S]*expandedKeys=\{expandedKeys\}[\s\S]*onSelect=\{onSelectionChange\}[\s\S]*onToggleExpanded=\{onToggleExpanded\}/,
+  "ChatList consumes Router-owned project selection and disclosure callbacks",
+);
+assert.doesNotMatch(
+  chatList,
+  /PROJECT_SIDEBAR_KEYS|migrateOrganizationExpansionKeys|useAutoExpandNewGroups/,
+  "ChatList must not hydrate, migrate, auto-expand, or persist Router-owned project disclosure state",
 );
 
 // ── Preserved contracts other suites rely on ─────────────────────────────────

@@ -293,10 +293,24 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     () => deriveChatProjectGroups(applyProjectOverrides(sidebarSessions, projectOverrides), projects),
     [sidebarSessions, projects, projectOverrides],
   );
+  const migrationSessions = useMemo(
+    () => filterVisibleChatSessions(sessions, null),
+    [sessions],
+  );
+  const migrationGroups = useMemo(
+    () => deriveChatProjectGroups(applyProjectOverrides(migrationSessions, projectOverrides), projects),
+    [migrationSessions, projects, projectOverrides],
+  );
   const effectiveSelection = useMemo(
     () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
     [isMobile, selection, sidebarGroups],
   );
+  const toggleSidebarExpanded = useCallback((key: string) => {
+    sidebarDefaultExpandedRef.current = false;
+    setExpandedKeys((prev) =>
+      prev.includes(key) ? prev.filter((entry) => entry !== key) : [...prev, key],
+    );
+  }, []);
   const syncSidebarProjectRoot = useCallback((nextProjectRoot: string | null) => {
     const nextSelection = selectionForProjectRoot(nextProjectRoot, sidebarGroups);
     setSelection(nextSelection);
@@ -365,7 +379,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     if (!sidebarHydrated || !sidebarOrganizationMigrationPendingRef.current) return;
     if (sessionsLoaded === false || sessionsError) return;
     if (!projectsLoadedSuccessfully) return;
-    const migratedExpandedKeys = migrateOrganizationExpansionKeys(expandedKeys, sidebarGroups);
+    const migratedExpandedKeys = migrateOrganizationExpansionKeys(expandedKeys, migrationGroups);
     setExpandedKeys(migratedExpandedKeys);
     try {
       window.localStorage.setItem(
@@ -386,7 +400,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     sessionsError,
     projectsLoadedSuccessfully,
     expandedKeys,
-    sidebarGroups,
+    migrationGroups,
   ]);
   // First chat in a fresh project folder (or this surface's just-started
   // chat) must not hide inside a collapsed group (cave-mllp).
@@ -814,6 +828,10 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         familiar={familiar}
         familiars={familiars}
         sessions={sessions}
+        selection={selection}
+        expandedKeys={expandedKeys}
+        onSelectionChange={setSelection}
+        onToggleExpanded={toggleSidebarExpanded}
         daemonRunning={daemonRunning}
         sessionsLoaded={sessionsLoaded}
         sessionsError={sessionsError}
@@ -993,12 +1011,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         expandedKeys={expandedKeys}
         activeSessionId={view.kind === "chat" ? view.sessionId : null}
         onSelect={setSelection}
-        onToggleExpanded={(key) => {
-          sidebarDefaultExpandedRef.current = false;
-          setExpandedKeys((prev) =>
-            prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
-          );
-        }}
+        onToggleExpanded={toggleSidebarExpanded}
         onOpenSession={(s) => {
           const next = selectFamiliarForChat(s.familiarId);
           setView({ kind: "chat", sessionId: s.id, familiarId: next?.id ?? s.familiarId ?? null });
