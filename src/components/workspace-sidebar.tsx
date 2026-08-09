@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { Icon, type IconName } from "@/lib/icon";
@@ -33,7 +32,6 @@ import {
   emitChatSessionDragEnd,
   emitChatSessionDragStart,
 } from "@/lib/chat-split";
-import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
 import { NavSectionTabs } from "@/components/nav-section-tabs";
@@ -228,7 +226,7 @@ function ThreadRow({
   // reached an actual pull request, the leading slot shows the clickable
   // state-colored badge instead of the dot or heuristic icon.
   const prStatus = sessionPrStatus(session.pullRequest);
-  // Archived rows (visible via the "Show archived" option) read muted, and the
+  // Archived rows read muted, and the
   // leading slot shows the archive glyph so they can't pass for live threads.
   const archived = Boolean(session.archived_at);
   const leadGlyph = archived ? ("ph:archive" as IconName) : glyph;
@@ -369,22 +367,9 @@ export function WorkspaceSidebar({
   const [registeringRoot, setRegisteringRoot] = useState<string | null>(null);
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // Archived rows are excluded server-side by /api/sessions/list; the Organize
-  // menu's "Show archived" option opts in with its own includeArchived fetch,
-  // mirroring the chat list's toggle (the workspace poll stays archive-free).
-  const [showArchived, setShowArchived] = useState(false);
-  const [archivedRows, setArchivedRows] = useState<SessionRow[]>([]);
   const [archivingId, setArchivingId] = useState<string | null>(null);
-  const [archiveNonce, setArchiveNonce] = useState(0);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [view, setView] = useState<ChatSidebarView>("recent");
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuAnchorRef = useRef<HTMLButtonElement>(null);
-  const menuBodyRef = useRef<HTMLDivElement>(null);
-
-  // Trap focus inside the Organize menu while it is open (same convention as
-  // the GitHub action popover, #2288). Also hydrates the organize-view preference.
-  useFocusTrap(menuOpen, menuBodyRef, { onEscape: () => setMenuOpen(false) });
 
   // The organize-view preference loads after mount so SSR and first client
   // render agree (same idiom as the chat list).
@@ -392,41 +377,10 @@ export function WorkspaceSidebar({
     setView(readChatSidebarView());
   }, []);
 
-  // Archived sessions only load while "Show archived" is on; archive/unarchive
-  // bumps archiveNonce so the opt-in list refetches after each change (same
-  // idiom as the chat list's toggle).
-  useEffect(() => {
-    if (!showArchived) {
-      setArchivedRows([]);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        // Scope archived rows to the active familiar's projects, same as the
-        // live list — keeps forbidden-project sessions out of the archive view.
-        const scope = activeFamiliarId ? `&familiarId=${encodeURIComponent(activeFamiliarId)}` : "";
-        const res = await fetch(`/api/sessions/list?includeArchived=1${scope}`, { cache: "no-store" });
-        const json = await res.json().catch(() => ({ ok: false }));
-        if (cancelled || !json.ok || !Array.isArray(json.sessions)) return;
-        setArchivedRows((json.sessions as SessionRow[]).filter((s) => s.archived_at));
-      } catch {
-        // keep whatever archived rows we already have
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [showArchived, archiveNonce, activeFamiliarId]);
-
-  const visibleSessions = useMemo(() => {
-    let rows: SessionRow[] = sessions;
-    if (showArchived && archivedRows.length > 0) {
-      const seen = new Set(sessions.map((s) => s.id));
-      rows = [...sessions, ...archivedRows.filter((s) => !seen.has(s.id))];
-    }
-    return filterVisibleChatSessions(rows, activeFamiliarId ?? null, { includeArchived: showArchived });
-  }, [sessions, showArchived, archivedRows, activeFamiliarId]);
+  const visibleSessions = useMemo(
+    () => filterVisibleChatSessions(sessions, activeFamiliarId ?? null),
+    [sessions, activeFamiliarId],
+  );
 
   const groups = useMemo(
     () => deriveChatProjectGroups(applyProjectOverrides(visibleSessions, overrides), projects),
@@ -505,7 +459,6 @@ export function WorkspaceSidebar({
   const selectView = (next: ChatSidebarView) => {
     setView(next);
     writeChatSidebarView(next);
-    setMenuOpen(false);
   };
 
   async function handleDeleteSession(session: SessionRow) {
@@ -522,7 +475,7 @@ export function WorkspaceSidebar({
   }
 
   // Archive/unarchive rides the same undo-safe sessions PATCH as the chat
-  // list; a success refreshes both the workspace poll and the opt-in list.
+  // list; a success refreshes the workspace poll so the row leaves or re-enters.
   async function setSessionArchived(session: SessionRow, archived: boolean) {
     setArchivingId(session.id);
     setArchiveError(null);
@@ -537,7 +490,6 @@ export function WorkspaceSidebar({
         setArchiveError(json.error ?? (archived ? "archive failed" : "unarchive failed"));
         return;
       }
-      setArchiveNonce((n) => n + 1);
       onSessionsChanged?.();
     } catch (err) {
       setArchiveError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
@@ -597,8 +549,8 @@ export function WorkspaceSidebar({
           </button>
         </div>
 
-        {/* Grouping tabs share their row with the overflow menu. The standalone
-            utilities band (Scheduled / Plugins icon chips) is retired — both
+        {/* Grouping tabs sit above the thread list. The standalone utilities
+            band (Scheduled / Plugins icon chips) is retired — both
             destinations live in the Home rail's list, and dropping the band
             gives Chat the same tabs → switcher → New chat rhythm as Home. */}
         <div className="cnav__tabs-row">
@@ -625,42 +577,6 @@ export function WorkspaceSidebar({
               <Icon name="ph:house-bold" width={15} aria-hidden />
             </button>
           )}
-          <button
-            ref={menuAnchorRef}
-            type="button"
-            aria-label="Sidebar options"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            title="Sidebar options"
-            onClick={() => setMenuOpen((cur) => !cur)}
-            className="cnav__back focus-ring"
-          >
-            <Icon name="ph:dots-three-bold" width={15} aria-hidden />
-          </button>
-          <Popover
-            open={menuOpen}
-            onOpenChange={setMenuOpen}
-            anchorRef={menuAnchorRef}
-            placement="bottom-end"
-            minWidth={190}
-            ariaLabel="Sidebar options"
-          >
-            <div ref={menuBodyRef} tabIndex={-1}>
-              <PopoverBody role="menu" ariaLabel="Sidebar options">
-                <PopoverLabel>Chat visibility</PopoverLabel>
-                <PopoverItem
-                  icon="ph:archive"
-                  checked={showArchived}
-                  onSelect={() => {
-                    setShowArchived((v) => !v);
-                    setMenuOpen(false);
-                  }}
-                >
-                  Show archived
-                </PopoverItem>
-              </PopoverBody>
-            </div>
-          </Popover>
         </div>
 
         <div className="cnav__search-wrap">
