@@ -61,7 +61,7 @@ export function OnboardingOverlay({
   const [requestError, setRequestError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const autoFinishFiredRef = useRef(false);
-  const requestInFlightRef = useRef(false);
+  const requestQueueRef = useRef<Promise<unknown>>(Promise.resolve());
   const { announce } = useAnnouncer();
 
   const persistDismissal = useCallback(() => {
@@ -84,10 +84,8 @@ export function OnboardingOverlay({
 
   useFocusTrap(open, dialogRef, { onEscape: dismiss });
 
-  const request = useCallback(
+  const performRequest = useCallback(
     async (method: "GET" | "POST", body?: object) => {
-      if (requestInFlightRef.current) return null;
-      requestInFlightRef.current = true;
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), STATUS_TIMEOUT_MS);
       setLoading(true);
@@ -120,11 +118,24 @@ export function OnboardingOverlay({
         return null;
       } finally {
         clearTimeout(timeout);
-        requestInFlightRef.current = false;
         setLoading(false);
       }
     },
     [],
+  );
+
+  const request = useCallback(
+    (method: "GET" | "POST", body?: object) => {
+      const queued = requestQueueRef.current.then(() =>
+        performRequest(method, body),
+      );
+      requestQueueRef.current = queued.then(
+        () => undefined,
+        () => undefined,
+      );
+      return queued;
+    },
+    [performRequest],
   );
 
   useEffect(() => {

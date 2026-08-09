@@ -48,6 +48,16 @@ assert.match(
 );
 assert.match(
   source,
+  /requestQueueRef\.current\.then\(\(\) =>\s*performRequest\(method, body\)/,
+  "status, confirmation, and resume requests are serialized instead of dropped",
+);
+assert.doesNotMatch(
+  source,
+  /requestInFlightRef\.current\) return null/,
+  "a status request cannot swallow a queued confirmation or resume",
+);
+assert.match(
+  source,
   /useAnnouncer\(\)/,
   "stage changes and failures use the shared live region",
 );
