@@ -44,6 +44,7 @@ export const SUITES = {
     "src/lib/nav-section.test.ts",
     "src/lib/workspace-mode.test.ts",
     "src/lib/workspace-page-registry.test.ts",
+    "src/lib/workspace-pane-request.test.ts",
     "src/lib/workspace-url-state.test.ts",
     "src/lib/pending-code-navigation.test.ts",
     "src/lib/workspace-navigation.test.ts",
