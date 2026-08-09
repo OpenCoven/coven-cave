@@ -9,19 +9,25 @@ import {
   readPersisted,
   PROJECT_SIDEBAR_KEYS,
 } from "./chat-project-selection.ts";
+import {
+  NO_PROJECT_ORGANIZATION,
+  organizationExpansionKey,
+} from "./project-organizations.ts";
 
 const T0 = Date.parse("2026-06-11T12:00:00Z"); // baseline capture instant
 const RECENT = "2026-06-11T12:30:00Z"; // created after the baseline
 const OLD = "2026-06-01T00:00:00Z"; // created long before the baseline
 
-const group = (projectId, projectRoot, n = 1, createdAt = RECENT, organizationKey = "opencoven") => ({
+const group = (
   projectId,
   projectRoot,
-  organization: {
-    key: organizationKey,
-    label: organizationKey,
-    source: organizationKey === "none" ? "none" : "github",
-  },
+  n = 1,
+  createdAt = RECENT,
+  organization = { key: "opencoven", label: "opencoven", source: "github" },
+) => ({
+  projectId,
+  projectRoot,
+  organization,
   sessions: Array.from({ length: n }, (_, i) => ({
     id: `${projectId ?? "none"}-${i}`,
     created_at: createdAt,
@@ -37,8 +43,13 @@ assert.equal(selectionKey(null), "none");
 assert.equal(selectionKey(null, "/orphan/root"), "root:/orphan/root");
 
 // applyProjectScope: "all" passes groups through untouched (same reference)
-const groups = [group("alpha", "/alpha"), group(null, null, 1, RECENT, "none")];
-assert.deepEqual(projectSelectionKeys(groups), ["org:opencoven", "alpha", "org:none", "none"]);
+const groups = [group("alpha", "/alpha"), group(null, null, 1, RECENT, NO_PROJECT_ORGANIZATION)];
+assert.deepEqual(projectSelectionKeys(groups), [
+  organizationExpansionKey("opencoven"),
+  "alpha",
+  organizationExpansionKey(NO_PROJECT_ORGANIZATION.key),
+  "none",
+]);
 assert.equal(applyProjectScope(groups, "all"), groups);
 
 const projectScopeGroups = [group("a", "/a"), group("b", "/b", 2), group(null, "/orphan/root"), group(null, null)];
@@ -90,13 +101,13 @@ assert.deepEqual(
 // root-fallback keys expand under their root-scoped key
 assert.deepEqual(
   autoExpandKeysForNewSessions({
-    groups: [group(null, "/orphan/root", 1, RECENT, "none")],
+    groups: [group(null, "/orphan/root", 1, RECENT, NO_PROJECT_ORGANIZATION)],
     knownSessionIds: new Set(),
     knownGroupKeys: new Set(),
     activeSessionId: null,
     newSinceMs: T0,
   }),
-  ["org:none", "root:/orphan/root"],
+  [organizationExpansionKey(NO_PROJECT_ORGANIZATION.key), "root:/orphan/root"],
 );
 
 // filter reveal (familiar switch): new key but every session already known →
