@@ -133,9 +133,10 @@ Required semantics:
 - active tint is not the only indication of state.
 
 Reuse the shared `toggleRightPanel` binding, which already defaults to `⌘⇧B` on
-macOS and `Ctrl+Shift+B` elsewhere. The shortcut is documented in the Shortcuts
-sheet and does not fire from editable controls. Keeping the existing binding
-name preserves user overrides stored under `cave:keyboard-shortcuts:panels`.
+macOS and `Ctrl+Shift+B` elsewhere. The implementation must document the
+shortcut in the Shortcuts sheet and keep it inert in editable controls. Keeping
+the existing binding name preserves user overrides stored under
+`cave:keyboard-shortcuts:panels`.
 
 ### Panel header
 
