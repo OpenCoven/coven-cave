@@ -194,6 +194,14 @@ async function latticeMetrics(page: Page) {
   });
 }
 
+async function setLatticeHostWidth(page: Page, width: string) {
+  await page.getByTestId("familiar-activity-lattice").evaluate((element, nextWidth) => {
+    const host = element as HTMLElement;
+    host.style.inlineSize = nextWidth;
+    host.style.maxInlineSize = nextWidth;
+  }, width);
+}
+
 test("activity lattice keeps its browser geometry in wide and narrow layouts", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await installAnalyticsRoutes(page);
@@ -205,18 +213,16 @@ test("activity lattice keeps its browser geometry in wide and narrow layouts", a
   await expect(lattice).toBeVisible({ timeout: 30_000 });
   await expect.poll(() => uniqueNonZeroSteps(page)).toEqual(["1", "2", "3", "4"]);
 
+  await setLatticeHostWidth(page, "760px");
+  await expect.poll(async () => (await latticeMetrics(page)).gridColumnCount).toBe(2);
+
   const wide = await latticeMetrics(page);
   expect(wide.yearCellRadius).toBe("2px");
   expect(wide.caption.top, "quarter figcaption should start at or below the Sparkline").toBeGreaterThanOrEqual(wide.spark.bottom - 1);
   expect(Math.abs(wide.quarter.top - wide.fortnight.top), "quarter and fortnight should align on the same row in wide layout").toBeLessThanOrEqual(2);
   expect(wide.fortnight.left, "fortnight should sit to the right of the quarter in wide layout").toBeGreaterThanOrEqual(wide.quarter.right - 2);
 
-  await lattice.evaluate((element) => {
-    const host = element as HTMLElement;
-    host.style.inlineSize = "320px";
-    host.style.maxInlineSize = "320px";
-  });
-
+  await setLatticeHostWidth(page, "320px");
   await expect.poll(async () => (await latticeMetrics(page)).gridColumnCount).toBe(1);
   await expect.poll(async () => (await latticeMetrics(page)).viewsFits).toBe(true);
 
