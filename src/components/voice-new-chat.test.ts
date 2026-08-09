@@ -239,10 +239,12 @@ test("chat-view: closing an auto-created call discards exactly the session it wa
   assert.match(startVoiceChat, /method: "DELETE"/);
   // Finding 2: the view is only yanked back to compose when the discarded
   // session is still the active one — if the user already switched away,
-  // the discard happens silently in the background with no view reset.
+  // the discard happens silently in the background with no view reset. The
+  // narrow onSessionRemoved("discarded") signal (cave-rl980 Task 4 review)
+  // fires in that same branch, immediately before onVoiceSessionDiscarded.
   assert.match(
     chatView,
-    /if \(deleted\) \{[\s\S]*?onSessionsChanged\?\.\(\);[\s\S]*?if \(target === sessionId\) onVoiceSessionDiscarded\?\.\(\);/,
+    /if \(deleted\) \{[\s\S]*?onSessionsChanged\?\.\(\);[\s\S]*?if \(target === sessionId\) \{\s*\n\s*onSessionRemoved\?\.\(target, "discarded"\);\s*\n\s*onVoiceSessionDiscarded\?\.\(\);\s*\n\s*\}/,
   );
   // Finding 4: the call item can't fork a streaming first send by
   // minting a second, unrelated session underneath it (pre-session only —

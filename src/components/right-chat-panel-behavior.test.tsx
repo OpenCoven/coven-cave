@@ -8,19 +8,30 @@
 // cave-rl980 Task 4 review fixes behave, not just that certain substrings
 // exist in source:
 //   1. a promotion race never misclassifies a brand-new session as deleted.
-//   1b. a confirmed archive/delete (onSessionsChanged/onSessionsDeleted then
-//      a null) retains the prior selection until the roster confirms
-//      removal; an explicit New chat still clears instantly; an ordinary
-//      back with no removal mutation (e.g. a transcript-load-failure "Back
-//      to sessions") clears the stale selection immediately even though the
-//      session remains eligible; and a discarded pre-roster promoted/voice
-//      session — which reports the same onSessionsChanged-then-null shape as
-//      a confirmed removal, but was never observed in the eligible roster —
-//      clears instead of leaving a permanent ghost.
-//   2. a transient roster error keeps an already-resolved ChatRouter mounted,
+//   1b. a confirmed archive/delete/discard (ChatView's own narrow
+//      onSessionRemoved signal, then a null) retains the prior selection
+//      until the roster confirms removal; an explicit New chat still clears
+//      instantly; an ordinary back with no removal signal (e.g. a
+//      transcript-load-failure "Back to sessions") clears the stale
+//      selection immediately even though the session remains eligible; a
+//      discarded pre-roster promoted/voice session — which reports the same
+//      onSessionRemoved-then-null shape as a confirmed removal, but was
+//      never observed in the eligible roster — clears instead of leaving a
+//      permanent ghost; and a generic, non-removal onSessionsChanged (a
+//      refresh unrelated to this session, e.g. a canonical-session
+//      reconcile) followed by an ordinary null must still clear — never
+//      retain — since onSessionsChanged is no longer treated as a removal
+//      signal on its own.
+//   2. a familiar change is tracked even while the panel is closed: a closed
+//      A -> B -> A sequence re-resolves A, and reopening finds the header and
+//      the router already agreeing, with no extra resolution needed.
+//   3. an open familiar switch issues exactly one imperative openSession/
+//      newChat call — never a second one caused by the outgoing familiar's
+//      stale selection being compared against the new familiar's roster.
+//   4. a transient roster error keeps an already-resolved ChatRouter mounted,
 //      and never marks a not-yet-mounted ("null") router resolved.
-//   3. every loading/error/chooser state exposes a working Close action.
-//   4. the familiar chooser only offers the filtered, resolved roster.
+//   5. every loading/error/chooser state exposes a working Close action.
+//   6. the familiar chooser only offers the filtered, resolved roster.
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -219,7 +230,7 @@ describe("promotion race (fix 1: a newly promoted session is never misclassified
 });
 
 describe("confirmed removal vs ordinary null (fix 1 follow-up: archive/delete retain, ordinary back/discard clear)", () => {
-  test("a confirmed archive (onSessionsChanged then null) retains the current selection, then resolves to the familiar's next session once the roster confirms removal", async () => {
+  test("a confirmed archive (onSessionsChanged, then onSessionRemoved, then null) retains the current selection, then resolves to the familiar's next session once the roster confirms removal", async () => {
     const cody = familiar("cody", "Cody");
     const older = sessionRow("cody-older", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
     const newer = sessionRow("cody-newer", { familiarId: "cody", created_at: "2026-01-05T00:00:00.000Z", updated_at: "2026-01-05T00:00:00.000Z" });
@@ -227,15 +238,18 @@ describe("confirmed removal vs ordinary null (fix 1 follow-up: archive/delete re
     const renderer = await renderPanel(props);
     expect(sessionIdAttr(renderer)).toBe("cody-newer");
 
-    // Simulates ChatView's archiveChat: onSessionsChanged() then (via
-    // ChatRouter's onBack) a null — synchronously, same as the real order.
+    // Simulates ChatView's archiveChat: onSessionsChanged(), then the narrow
+    // onSessionRemoved("archived") signal, then (via ChatRouter's onBack) a
+    // null — synchronously, same as the real order. Retention is armed by
+    // onSessionRemoved, not by onSessionsChanged firing.
     await act(async () => {
       (router.latestProps!.onSessionsChanged as () => void)();
+      (router.latestProps!.onSessionRemoved as (id: string, reason: string) => void)("cody-newer", "archived");
       (router.latestProps!.onActiveSessionChange as (id: string | null) => void)(null);
     });
     expect(sessionIdAttr(renderer)).toBe("cody-newer"); // retained, not cleared
     expect(router.calls.newChat.length).toBe(0);
-    expect(props.onSessionsChanged).toHaveBeenCalledTimes(1); // wrapper still forwards it
+    expect(props.onSessionsChanged).toHaveBeenCalledTimes(1); // forwarded unchanged to the real consumer
 
     // Roster refresh confirms cody-newer is actually gone.
     props = { ...props, sessions: [older] };
@@ -244,21 +258,23 @@ describe("confirmed removal vs ordinary null (fix 1 follow-up: archive/delete re
     expect(router.calls.openSession.at(-1)?.[0]).toBe("cody-older");
   });
 
-  test("a confirmed delete (onSessionsDeleted then null) resolves to a blank familiar-bound compose when no eligible session remains", async () => {
+  test("a confirmed delete (onSessionsDeleted, then onSessionRemoved, then null) resolves to a blank familiar-bound compose when no eligible session remains", async () => {
     const cody = familiar("cody", "Cody");
     const only = sessionRow("cody-only", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
     let props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions: [only] });
     const renderer = await renderPanel(props);
     expect(sessionIdAttr(renderer)).toBe("cody-only");
 
-    // Simulates ChatView's deleteChat: onSessionsDeleted([id]) then (via
-    // ChatRouter's onBack) a null — synchronously, same as the real order.
+    // Simulates ChatView's deleteChat: onSessionsDeleted([id]), then the
+    // narrow onSessionRemoved("deleted") signal, then (via ChatRouter's
+    // onBack) a null — synchronously, same as the real order.
     await act(async () => {
       (router.latestProps!.onSessionsDeleted as (ids: readonly string[]) => void)(["cody-only"]);
+      (router.latestProps!.onSessionRemoved as (id: string, reason: string) => void)("cody-only", "deleted");
       (router.latestProps!.onActiveSessionChange as (id: string | null) => void)(null);
     });
     expect(sessionIdAttr(renderer)).toBe("cody-only"); // retained until the roster confirms it
-    expect(props.onSessionsDeleted).toHaveBeenCalledWith(["cody-only"]); // wrapper still forwards it
+    expect(props.onSessionsDeleted).toHaveBeenCalledWith(["cody-only"]); // forwarded unchanged to the real consumer
 
     props = { ...props, sessions: [] };
     await update(renderer, props);
@@ -288,7 +304,7 @@ describe("confirmed removal vs ordinary null (fix 1 follow-up: archive/delete re
     expect(sessionIdAttr(renderer)).toBe("new");
   });
 
-  test("an ordinary back with no removal mutation (e.g. 'Back to sessions' after a transcript load failure) clears the stale header immediately, even though the session remains eligible", async () => {
+  test("an ordinary back with no removal signal (e.g. 'Back to sessions' after a transcript load failure) clears the stale header immediately, even though the session remains eligible", async () => {
     const cody = familiar("cody", "Cody");
     const sessions = [sessionRow("cody-1", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" })];
     const props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions });
@@ -296,9 +312,9 @@ describe("confirmed removal vs ordinary null (fix 1 follow-up: archive/delete re
     expect(sessionIdAttr(renderer)).toBe("cody-1");
 
     // ChatRouter's onBack fires with no preceding onSessionsChanged/
-    // onSessionsDeleted call — exactly what "Back to sessions" on a
-    // ChatHistoryNotice transcript-load failure does. cody-1 is still fully
-    // present in `sessions`: nothing was archived or deleted.
+    // onSessionsDeleted/onSessionRemoved call — exactly what "Back to
+    // sessions" on a ChatHistoryNotice transcript-load failure does. cody-1
+    // is still fully present in `sessions`: nothing was archived or deleted.
     await act(async () => {
       (router.latestProps!.onActiveSessionChange as (id: string | null) => void)(null);
     });
@@ -310,6 +326,36 @@ describe("confirmed removal vs ordinary null (fix 1 follow-up: archive/delete re
 
     // The session's continued eligibility must never resurrect it: a stale
     // roster re-render (unchanged sessions) must not reopen cody-1.
+    await update(renderer, props);
+    expect(sessionIdAttr(renderer)).toBe("new");
+    expect(router.calls.openSession.length).toBe(openSessionCallsSoFar);
+  });
+
+  test("a non-removal onSessionsChanged (e.g. an unrelated canonical-session refresh) followed by an ordinary null clears the selection instead of retaining it", async () => {
+    const cody = familiar("cody", "Cody");
+    const sessions = [sessionRow("cody-1", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" })];
+    const props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions });
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-1");
+
+    // onSessionsChanged fires for plenty of reasons that have nothing to do
+    // with THIS session's removal — a live-generation stream settling, a
+    // Board handoff refresh, a *different* thread auto-archiving on
+    // reflection. It must never be treated as a removal signal on its own:
+    // only the dedicated onSessionRemoved callback may arm retention. So an
+    // ordinary null (no onSessionRemoved) that merely happens to follow one
+    // must still clear immediately, exactly like the no-signal-at-all case
+    // above.
+    await act(async () => {
+      (router.latestProps!.onSessionsChanged as () => void)();
+      (router.latestProps!.onActiveSessionChange as (id: string | null) => void)(null);
+    });
+
+    expect(sessionIdAttr(renderer)).toBe("new"); // cleared, not retained
+    expect(props.onSessionsChanged).toHaveBeenCalledTimes(1); // still forwarded to the real consumer
+    const openSessionCallsSoFar = router.calls.openSession.length;
+
+    // No lingering retention: a stale roster re-render must not reopen cody-1.
     await update(renderer, props);
     expect(sessionIdAttr(renderer)).toBe("new");
     expect(router.calls.openSession.length).toBe(openSessionCallsSoFar);
@@ -331,16 +377,19 @@ describe("confirmed removal vs ordinary null (fix 1 follow-up: archive/delete re
     expect(sessionIdAttr(renderer)).toBe("cody-voice-ghost");
 
     // The call ends with nothing said: discardVoiceSessionIfEmpty deletes the
-    // session server-side, refreshes the list (onSessionsChanged), and only
-    // THEN reports onVoiceSessionDiscarded — the exact same onSessionsChanged
-    // -> null order a confirmed archive/delete uses. Unlike those, this id
-    // was NEVER observed in the eligible roster (sessions stays empty: the
-    // session never really existed from the roster's point of view), so it
-    // must clear immediately rather than retain — retaining would leave a
-    // permanent ghost, since the observed-gated reconcile effect could never
+    // session server-side, refreshes the list (onSessionsChanged), reports
+    // the narrow onSessionRemoved("discarded") signal, and only THEN reports
+    // onVoiceSessionDiscarded (surfaced here as the resulting null) — the
+    // same order a confirmed archive/delete uses. Unlike those, this id was
+    // NEVER observed in the eligible roster (sessions stays empty: the
+    // session never really existed from the roster's point of view), so
+    // handleSessionRemoved's own observed-gate refuses to arm retention at
+    // all, and it must clear immediately rather than retain — retaining
+    // would leave a permanent ghost, since the reconcile branch could never
     // confirm removal of an id the roster never listed to begin with.
     await act(async () => {
       (router.latestProps!.onSessionsChanged as () => void)();
+      (router.latestProps!.onSessionRemoved as (id: string, reason: string) => void)("cody-voice-ghost", "discarded");
       (router.latestProps!.onActiveSessionChange as (id: string | null) => void)(null);
     });
     expect(sessionIdAttr(renderer)).toBe("new"); // cleared, not stuck on cody-voice-ghost
@@ -350,6 +399,84 @@ describe("confirmed removal vs ordinary null (fix 1 follow-up: archive/delete re
     await update(renderer, props);
     expect(sessionIdAttr(renderer)).toBe("new");
     expect(router.calls.openSession.some((call) => call[0] === "cody-voice-ghost")).toBe(false);
+  });
+});
+
+describe("familiar transitions are tracked deterministically even while the panel is closed (fix 2)", () => {
+  test("a closed A -> B -> A familiar sequence re-resolves A and leaves the header and router already agreeing by the time the panel reopens", async () => {
+    const cody = familiar("cody", "Cody");
+    const nova = familiar("nova", "Nova");
+    const codySession = sessionRow("cody-1", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    const novaSession = sessionRow("nova-1", { familiarId: "nova", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    let props = baseProps({ activeFamiliar: cody, familiars: [cody, nova], sessions: [codySession, novaSession] });
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-1");
+
+    // Close the panel — ChatRouter/ChatView stay mounted underneath as a
+    // persistent controller (per the design doc); only visibility changes.
+    props = { ...props, open: false };
+    await update(renderer, props);
+    expect(sessionIdAttr(renderer)).toBe("cody-1"); // closing alone changes nothing
+
+    // The active familiar changes twice while the panel is hidden.
+    props = { ...props, activeFamiliar: nova };
+    await update(renderer, props);
+    expect(sessionIdAttr(renderer)).toBe("nova-1"); // tracked even while closed
+    expect(router.calls.openSession.at(-1)?.[0]).toBe("nova-1");
+
+    props = { ...props, activeFamiliar: cody };
+    await update(renderer, props);
+    expect(sessionIdAttr(renderer)).toBe("cody-1"); // re-resolved back to cody, still closed
+    expect(router.calls.openSession.at(-1)?.[0]).toBe("cody-1");
+
+    // Reopen: the header and the router must already agree — no desync, and
+    // no extra resolution call is needed just to reveal the panel.
+    const callsBeforeReopen = router.calls.openSession.length + router.calls.newChat.length;
+    props = { ...props, open: true };
+    await update(renderer, props);
+    expect(sessionIdAttr(renderer)).toBe("cody-1");
+    expect(router.calls.openSession.length + router.calls.newChat.length).toBe(callsBeforeReopen);
+  });
+});
+
+describe("familiar transitions issue exactly one imperative action (fix 3: no double resolution from stale selection)", () => {
+  test("an open A -> B familiar switch issues exactly one resolution call, never a second one from the outgoing familiar's stale selection", async () => {
+    const cody = familiar("cody", "Cody");
+    const nova = familiar("nova", "Nova");
+    const codySession = sessionRow("cody-1", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    const novaSession = sessionRow("nova-1", { familiarId: "nova", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    let props = baseProps({ activeFamiliar: cody, familiars: [cody, nova], sessions: [codySession, novaSession] });
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-1");
+    const callsBefore = router.calls.openSession.length + router.calls.newChat.length;
+
+    props = { ...props, activeFamiliar: nova };
+    await update(renderer, props);
+
+    expect(sessionIdAttr(renderer)).toBe("nova-1");
+    // Exactly one imperative action for this transition. cody-1 (the
+    // outgoing familiar's now-stale selection) is never eligible for nova's
+    // roster and was already observed under cody — precisely the shape that
+    // would cause a second, redundant reconcile call if resolution were
+    // split across two separate effects instead of one.
+    expect(router.calls.openSession.length + router.calls.newChat.length).toBe(callsBefore + 1);
+  });
+
+  test("an open A -> B switch to a familiar with no eligible session issues exactly one newChat call", async () => {
+    const cody = familiar("cody", "Cody");
+    const nova = familiar("nova", "Nova");
+    const codySession = sessionRow("cody-1", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    let props = baseProps({ activeFamiliar: cody, familiars: [cody, nova], sessions: [codySession] });
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-1");
+    const callsBefore = router.calls.openSession.length + router.calls.newChat.length;
+
+    props = { ...props, activeFamiliar: nova };
+    await update(renderer, props);
+
+    expect(sessionIdAttr(renderer)).toBe("new");
+    expect(router.calls.newChat.at(-1)).toEqual([undefined, undefined, "nova"]);
+    expect(router.calls.openSession.length + router.calls.newChat.length).toBe(callsBefore + 1);
   });
 });
 

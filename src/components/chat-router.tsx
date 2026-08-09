@@ -58,6 +58,7 @@ import { shouldRouterPromoteSession } from "@/lib/chat-router-promotion";
 import { useAutoExpandNewGroups } from "@/lib/use-auto-expand-new-groups";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
+import type { SessionRemovalReason } from "@/lib/chat-session-removal";
 
 type View =
   | { kind: "list" }
@@ -72,6 +73,10 @@ type Props = {
   onSessionStarted?: () => void;
   onSessionsChanged?: () => void;
   onSessionsDeleted: (sessionIds: readonly string[]) => void;
+  /** Fires exactly when the primary chat's own session is confirmed removed
+   *  (archived, deleted, or a discarded empty voice/pre-session) — forwarded
+   *  unchanged from ChatView. See ChatView's `onSessionRemoved` doc. */
+  onSessionRemoved?: (sessionId: string, reason: SessionRemovalReason) => void;
   sessionsLoaded?: boolean;
   /** Last session-list load failed — forwarded to ChatList (cave-x6k5). */
   sessionsError?: boolean;
@@ -153,6 +158,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onSessionStarted,
     onSessionsChanged,
     onSessionsDeleted,
+    onSessionRemoved,
     sessionsLoaded,
     sessionsError,
     familiarsLoaded,
@@ -833,6 +839,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       composeInstance={composeInstance}
       onSessionsChanged={onSessionsChanged}
       onSessionsDeleted={onSessionsDeleted}
+      onSessionRemoved={onSessionRemoved}
       onBack={() => setView({ kind: "list" })}
       onSessionStarted={(request) => {
         // Match both the originating session and compose lineage. The functional
