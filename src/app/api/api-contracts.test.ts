@@ -736,8 +736,8 @@ for (const contract of contracts) {
   );
   assert.match(
     beadsOverviewSource,
-    /export function invalidateBeadsDeliveryOverview\(repoRoot: string\): void \{\s*\n\s*overviewCache\.delete\(repoRoot\);/,
-    "beads-delivery-source: production invalidation should evict only the named canonical repo root",
+    /export function invalidateBeadsDeliveryOverview\(repoRoot: string\): void \{\s*\n\s*overviewEpochs\.set\(repoRoot, readEpoch\(repoRoot\) \+ 1\);\s*\n\s*overviewCache\.delete\(repoRoot\);/,
+    "beads-delivery-source: production invalidation should advance only the named canonical repo root and evict its cache entry",
   );
   assert.match(
     beadsRouteSource,
