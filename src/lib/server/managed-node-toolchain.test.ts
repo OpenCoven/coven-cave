@@ -199,8 +199,70 @@ test("managed Node probe gives npm a cold-start budget without slowing the Node 
     assert.equal(probe.status, "ready");
     assert.deepEqual(calls.map(({ args, timeout }) => ({ args, timeout })), [
       { args: ["--version"], timeout: 1_500 },
-      { args: [paths.npmCli, "--version"], timeout: 10_000 },
+      { args: [paths.npmCli, "--version"], timeout: 15_000 },
     ]);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("managed Node probe labels npm timeouts with an actionable deadline", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "coven-managed-node-timeout-"));
+  const env = { NODE_ENV: "test" } satisfies NodeJS.ProcessEnv;
+  const paths = managedNodePaths("linux", "x64", env, home);
+  assert.ok(paths);
+  await mkdir(path.dirname(paths.node), { recursive: true });
+  await mkdir(path.dirname(paths.npmCli), { recursive: true });
+  await writeFile(paths.node, "");
+  await writeFile(paths.npmCli, "");
+
+  try {
+    const probe = await probeManagedNodeToolchain({
+      platform: "linux",
+      architecture: "x64",
+      env,
+      home,
+      exec: async (_command, args) => {
+        if (args[0] === "--version") return { stdout: `v${MANAGED_NODE_VERSION}\n`, stderr: "" };
+        throw Object.assign(new Error("Command failed"), { killed: true, signal: "SIGTERM" });
+      },
+    });
+
+    assert.equal(probe.status, "unusable");
+    assert.match(probe.detail, /Managed npm probe timed out after 15000ms/);
+    assert.match(probe.detail, /Retry setup/);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("managed Node probe preserves non-timeout errors", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "coven-managed-node-error-"));
+  const env = { NODE_ENV: "test" } satisfies NodeJS.ProcessEnv;
+  const paths = managedNodePaths("linux", "x64", env, home);
+  assert.ok(paths);
+  await mkdir(path.dirname(paths.node), { recursive: true });
+  await mkdir(path.dirname(paths.npmCli), { recursive: true });
+  await writeFile(paths.node, "");
+  await writeFile(paths.npmCli, "");
+
+  try {
+    const probe = await probeManagedNodeToolchain({
+      platform: "linux",
+      architecture: "x64",
+      env,
+      home,
+      exec: async (_command, args) => {
+        if (args[0] === "--version") return { stdout: `v${MANAGED_NODE_VERSION}\n`, stderr: "" };
+        throw new Error("npm package metadata is corrupt");
+      },
+    });
+
+    assert.deepEqual(probe, {
+      status: "unusable",
+      detail: "npm package metadata is corrupt",
+      paths,
+    });
   } finally {
     await rm(home, { recursive: true, force: true });
   }
