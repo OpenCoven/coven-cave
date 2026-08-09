@@ -76,6 +76,33 @@ test("a forged storedId is discarded rather than fetched", () => {
   assert.equal(chatAttachmentSrc(forged), null, "and nothing is fetched for them");
 });
 
+test("a media attachment gains a storedId the same way", async () => {
+  const clip = Buffer.from("fake-mp4-bytes-through-the-send-path");
+  const attachments = normalizeChatAttachments([
+    {
+      name: "teaser.mp4",
+      type: "video/mp4",
+      mimeType: "video/mp4",
+      size: clip.byteLength,
+      dataUrl: `data:video/mp4;base64,${clip.toString("base64")}`,
+    },
+  ]);
+  assert.ok(attachments[0].dataUrl, "the media payload survives normalization");
+  const [persisted] = await persistImageAttachments(
+    stripPreviewOnlyAttachmentFields(attachments),
+    attachments,
+  );
+  assert.ok(persisted.storedId, "the clip records where its durable copy lives");
+  assert.match(persisted.storedId, /\.mp4$/);
+  assert.equal(persisted.dataUrl, undefined, "the payload stays out of the transcript");
+  assert.deepEqual(
+    readFileSync(join(ROOT, persisted.storedId)),
+    clip,
+    "the stored bytes are the attached bytes",
+  );
+  assert.ok(chatAttachmentSrc(persisted), "the player resolves to the serving route");
+});
+
 test("a turn with no images does no store work", async () => {
   const attachments = normalizeChatAttachments([TEXT_FILE]);
   const before = readdirSync(ROOT).length;
