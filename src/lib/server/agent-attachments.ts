@@ -4,9 +4,11 @@ import {
   cleanImageDataUrl,
   extractAgentAttachmentMarkers,
   MAX_ATTACHMENT_IMAGE_BYTES,
+  MAX_ATTACHMENT_MEDIA_BYTES,
   MAX_ATTACHMENT_TEXT_CHARS,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
+import { saveChatMediaAttachmentFromFileSync } from "@/lib/server/chat-attachment-store";
 
 /**
  * Server-side parser for agent-produced inline attachments.
@@ -41,6 +43,20 @@ const IMAGE_EXT_MIME: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".gif": "image/gif",
   ".webp": "image/webp",
+};
+
+/** Playable media a familiar can surface inline. Copied into the durable
+ * attachment store (not inlined as a data URL — a data URL would bloat the
+ * stream 4/3 and the media cap is 10× the image cap) and referenced by
+ * `storedId`; keep in lockstep with MEDIA_EXT_BY_MIME in chat-attachments.ts. */
+const MEDIA_EXT_MIME: Record<string, string> = {
+  ".mp3": "audio/mpeg",
+  ".m4a": "audio/mp4",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
 };
 
 const TEXT_EXTS = new Set([
@@ -125,11 +141,24 @@ function buildAttachment(marker: AttachmentMarker, options: AgentAttachmentParse
   } catch {
     return null;
   }
-  if (!stat.isFile() || stat.size > MAX_AGENT_ATTACHMENT_BYTES) return null;
+  const ext = path.extname(resolved).toLowerCase();
+  const mediaMime = MEDIA_EXT_MIME[ext];
+  const maxBytes = mediaMime ? MAX_ATTACHMENT_MEDIA_BYTES : MAX_AGENT_ATTACHMENT_BYTES;
+  if (!stat.isFile() || stat.size > maxBytes) return null;
 
   const name = marker.name ?? sanitizeAttachmentName(path.basename(resolved));
-  const ext = path.extname(resolved).toLowerCase();
   const size = stat.size;
+
+  if (mediaMime) {
+    // Copy into the durable store and reference by storedId: the client's
+    // chatAttachmentSrc resolves it to /api/chat/attachment for playback, and
+    // the transcript keeps the id so the player survives a reload.
+    const storedId = saveChatMediaAttachmentFromFileSync(resolved, mediaMime);
+    if (storedId) {
+      return { name, size, type: mediaMime, mimeType: mediaMime, storedId };
+    }
+    return { name, size, type: mediaMime, mimeType: mediaMime };
+  }
 
   const imageMime = IMAGE_EXT_MIME[ext];
   if (imageMime) {

@@ -302,7 +302,7 @@ import {
 import { streamFamiliarText } from "@/lib/familiar-stream";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
-import { AttachmentList, AttachmentThumb, InlineImageAttachments, formatAttachmentBytes, isInlineImageAttachment } from "./chat-attachment-cards";
+import { AttachmentList, AttachmentThumb, InlineImageAttachments, InlineMediaAttachments, formatAttachmentBytes, isInlineImageAttachment, isInlineMediaAttachment } from "./chat-attachment-cards";
 import { preloadMarkdownPreview } from "@/lib/markdown-preview";
 import {
   type CreationRefreshState,
@@ -549,6 +549,7 @@ const CHUNK_FLUSH_MS = 40;
 const CHAT_ATTACHMENT_ACCEPT = [
   "image/*",
   "video/*",
+  "audio/*",
   "application/pdf",
   "application/json",
   "text/*",
@@ -8611,14 +8612,15 @@ function TurnRowImpl({
                 onOpenUrl={onOpenUrl}
                 branchNav={branchNav}
               />
-              {/* An image you attached renders as the image, matching the
-                  assistant path — the chip list only carries what has no
-                  pixels to show (text files, oversize/undelivered images). */}
+              {/* An image or playable clip you attached renders as itself,
+                  matching the assistant path — the chip list only carries what
+                  has nothing to show (text files, oversize/undelivered). */}
               {turn.attachments?.length ? (
                 <>
                   <InlineImageAttachments attachments={turn.attachments} />
-                  {turn.attachments.some((a) => !isInlineImageAttachment(a)) ? (
-                    <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a))} />
+                  <InlineMediaAttachments attachments={turn.attachments} />
+                  {turn.attachments.some((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a)) ? (
+                    <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a))} />
                   ) : null}
                 </>
               ) : null}
@@ -8881,13 +8883,14 @@ function TurnRowImpl({
               </div>
             ) : null}
             {/* Agent-produced inline attachments: images render full-bleed
-                (e.g. /image generations), everything else stays a file chip
-                that opens the lightbox. */}
+                (e.g. /image generations), audio/video mount as players, and
+                everything else stays a file chip that opens the lightbox. */}
             {turn.attachments?.length ? (
               <>
                 <InlineImageAttachments attachments={turn.attachments} />
-                {turn.attachments.some((a) => !isInlineImageAttachment(a)) ? (
-                  <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a))} />
+                <InlineMediaAttachments attachments={turn.attachments} />
+                {turn.attachments.some((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a)) ? (
+                  <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a))} />
                 ) : null}
               </>
             ) : null}
