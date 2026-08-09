@@ -100,9 +100,16 @@ struct ChatsHomeView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { homeSearchBar }
             .sheet(
                 isPresented: $showNewChat,
-                onDismiss: { fixedNewChatFamiliarId = nil }
+                onDismiss: {
+                    fixedNewChatFamiliarId = nil
+                    app.cancelTerminalFamiliarHandoff()
+                }
             ) {
-                NewChatView(fixedFamiliarId: fixedNewChatFamiliarId) { thread in
+                NewChatView(
+                    fixedFamiliarId: fixedNewChatFamiliarId,
+                    initialProjectRoot: app.terminalFamiliarHandoff?.cwd
+                ) { thread in
+                    app.applyTerminalFamiliarHandoff(to: thread)
                     showNewChat = false
                     open(.thread(thread))
                 }
