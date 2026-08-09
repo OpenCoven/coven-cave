@@ -2130,7 +2130,8 @@
 .fa-pulse-panel {
   position: absolute;
   right: var(--space-4);
-  left: 41%;
+  left: auto;
+  width: min(760px, calc(100% - var(--space-4) - var(--space-4)));
   top: var(--space-4);
   z-index: 35;
   display: flex;
@@ -2552,7 +2553,7 @@
   .fa-scope__rule { display: none; }
   .fa-scope__summary { flex: 1 1 100%; order: 9; }
   .fa-foot__meta { display: none; }
-  .fa-pulse-panel { left: var(--space-4); }
+  .fa-pulse-panel { left: var(--space-4); width: auto; }
   .fa-contract-panel { width: calc(100% - var(--space-6)); }
 }
 
