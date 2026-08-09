@@ -221,12 +221,16 @@ assert.match(view, /action: "claim", id, assignee: familiar\.id, projectRoot/, "
 // `--claim`; an assignee becomes explicit --assignee/--status flags (both
 // verified against `bd update -h`).
 const beadsRoute = readFileSync(new URL("../app/api/beads/route.ts", import.meta.url), "utf8");
-assert.match(beadsRoute, /assignee\?: string/, "BeadsPostBody grew the optional assignee");
 assert.match(
   beadsRoute,
-  /\["update", id, "--assignee", assignee, "--status", "in_progress", "--json"\]/,
+  /const assignee = readOptionalString\(parsed\.body\.assignee, "assignee"\);/,
+  "Beads claim reads the optional assignee through the validator",
+);
+assert.match(
+  beadsRoute,
+  /\["update", id\.value, "--assignee", assignee\.value, "--status", "in_progress", "--json"\]/,
   "assignee claim builds explicit update flags",
 );
-assert.match(beadsRoute, /\["update", id, "--claim", "--json"\]/, "bare claim is unchanged");
+assert.match(beadsRoute, /\["update", id\.value, "--claim", "--json"\]/, "bare claim is unchanged");
 
 console.log("familiar-work-queue-view.test.ts: ok");

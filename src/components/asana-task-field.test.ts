@@ -57,7 +57,7 @@ assert.match(asanaTasks, /externalRef: item\.url/, "fileAsanaItemAsBead links th
 assert.doesNotMatch(taskAsana, /next\/server|node:fs|node:child_process/, "task-asana helpers stay isomorphic");
 
 // ── Beads bridge ─────────────────────────────────────────────────────────────
-assert.match(beadsApi, /parsed\.body\.action === "create"/, "Beads API handles a create action");
+assert.match(beadsApi, /if \(action\.value === "create"\)/, "Beads API handles a create action");
 assert.match(beadsApi, /"--external-ref"/, "Beads create passes --external-ref for the source ticket");
 
 // ── Live data routes gate on the connected PAT ───────────────────────────────
