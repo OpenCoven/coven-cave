@@ -3083,7 +3083,7 @@
   display: grid;
   grid-auto-flow: column;
   grid-template-rows: repeat(7, 1fr);
-  grid-auto-columns: 1fr;
+  grid-auto-columns: minmax(6px, 1fr);
   gap: 2px;
   min-width: 0;
   overflow-x: auto;
@@ -3092,7 +3092,7 @@
 .fa-lattice__grid::-webkit-scrollbar { display: none; }
 .fa-lattice__day {
   aspect-ratio: 1;
-  border-radius: var(--radius-sm);
+  border-radius: 2px;
   background: var(--bg-hover);
 }
 .fa-lattice__day[data-step="1"] { background: color-mix(in oklch, var(--accent-presence) 28%, transparent); }
@@ -3106,8 +3106,18 @@
   outline-offset: 1px;
 }
 
-/* Quarter: weekly totals. */
-.fa-lattice__trend,
+/* Quarter: the Sparkline and its caption stack vertically. */
+.fa-lattice__trend {
+  display: block;
+  min-width: 0;
+  margin: 0;
+}
+.fa-lattice__trend figcaption {
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+}
+/* Fortnight: daily bars share one fixed-height baseline. */
 .fa-lattice__pulse {
   display: flex;
   align-items: flex-end;
