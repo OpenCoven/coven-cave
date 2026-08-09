@@ -7,7 +7,7 @@ import "@/styles/cave-composer.css";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { ChatList } from "@/components/chat-list";
 import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
-import { ChatView } from "@/components/chat-view";
+import { ChatView, DEFAULT_CHAT_COMPOSER_DRAFT_KEY } from "@/components/chat-view";
 import { ChatSplitHost, CHAT_SPLIT_PANE_ATTR, type ChatSplitTile } from "@/components/chat-split-host";
 import { NewChatLaunch } from "@/components/new-chat-launch";
 import { FamiliarChatoutCodexSurface } from "@/components/familiar-chatout-codex";
@@ -110,6 +110,7 @@ type Props = {
    *  full-width main chat surface opts in — the compact companion rail has no
    *  room, and two mounts must not fight over the persisted layout. */
   enableSplitPanes?: boolean;
+  composerDraftKey?: string;
   /** Workspace's current sidebar familiar filter, forwarded to every ChatView
    *  mount (primary and split panes) so attention-clear provenance uses the
    *  list scope that can actually prove absence, not each pane's own
@@ -168,6 +169,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onOpenProjectsTab,
     onActiveSessionChange,
     enableSplitPanes = false,
+    composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY,
     activeFamiliarId,
   },
   ref,
@@ -809,6 +811,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     <FamiliarChatoutCodexSurface />
   ) : (
     <ChatView
+      composerDraftKey={composerDraftKey}
       key={`chat-compose-${composeInstance}`}
       ref={viewHandle}
       familiar={chatFamiliar}
@@ -904,6 +907,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           title: sessionRailTitle(paneSession),
           content: (
             <ChatView
+              composerDraftKey={`${composerDraftKey}:split:${paneId}`}
               familiar={paneFamiliar}
               sessionId={paneId}
               session={paneSession}
