@@ -1,4 +1,5 @@
 import type { ChatProjectGroup } from "@/lib/chat-projects";
+import { organizationExpansionKey } from "./project-organizations.ts";
 
 /** "all" = all projects, "none" = the null-project group, otherwise a project id.
  *  Unknown non-null roots fall back to a root-scoped key so they remain
@@ -18,7 +19,14 @@ export function selectionKey(projectId: string | null, projectRoot?: string | nu
 }
 
 export function projectSelectionKeys(groups: ChatProjectGroup[]): string[] {
-  return groups.map((group) => selectionKey(group.projectId, group.projectRoot));
+  return [
+    ...new Set(
+      groups.flatMap((group) => [
+        organizationExpansionKey(group.organization.key),
+        selectionKey(group.projectId, group.projectRoot),
+      ]),
+    ),
+  ];
 }
 
 /** "all" → groups unchanged (same reference, lets memoized consumers bail);
@@ -84,9 +92,9 @@ export function autoExpandKeysForNewSessions(args: {
     const newGroup = !args.knownGroupKeys.has(key) && hasRecentFresh;
     const activeIsFresh =
       args.activeSessionId !== null && fresh.some((s) => s.id === args.activeSessionId);
-    if (newGroup || activeIsFresh) keys.push(key);
+    if (newGroup || activeIsFresh) keys.push(organizationExpansionKey(group.organization.key), key);
   }
-  return keys;
+  return [...new Set(keys)];
 }
 
 /** localStorage JSON read that survives SSR (no window) and corrupt values. */
