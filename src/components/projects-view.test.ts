@@ -63,9 +63,34 @@ test("rows cycle a direct grant against /api/project-grants", () => {
   assert.match(view, /resolveEffectiveAccess\(\{/, "pills show the effective level (direct ∪ groups)");
   assert.match(view, /setOptimistic\(/, "mutations render optimistically");
   assert.match(view, /await loadGrants\(\)/, "server snapshot is re-fetched after a mutation");
-  assert.match(view, /sectionModels\(filtered, true\)/, "the grid keeps the workspace/repository split; rows and tree impose their own order");
   assert.match(view, /setAllOps\(/, "bulk actions compute the minimal op set");
   assert.match(view, /keeps \$\{accessStateMeta\(row\.state\)\.label\} via/, "group-held access explains itself instead of firing a no-op revoke");
+});
+
+test("the grid groups project cards by organization without changing their kind", () => {
+  assert.match(
+    view,
+    /const organizationSections = useMemo\(\s*\(\) => projectOrganizationGroups\(filtered\),\s*\[filtered\],\s*\)/,
+    "Grid sections derive from canonical project organizations",
+  );
+  assert.match(view, /organizationSections\.map\(\(section\) => \{/, "Grid renders the organization sections");
+  assert.match(view, /const organization = section\.organization;/, "each section reads its organization metadata");
+  assert.match(
+    view,
+    /section\.items\s*\.map\(\(project\) => rowsById\.get\(project\.id\)\)/,
+    "organization projects resolve through the existing access rows",
+  );
+  assert.match(
+    view,
+    /<section key=\{organization\.key\}[\s\S]{0,120}aria-label=\{organization\.label\}/,
+    "section identity and accessible label come from the organization",
+  );
+  assert.match(
+    view,
+    /title=\{`Set every project in \$\{organization\.label\} to \$\{accessStateMeta\(target\)\.label\}`\}/,
+    "section controls name the organization label",
+  );
+  assert.match(view, /projectKind\(project\.root\)/, "cards retain repository/workspace kind semantics");
 });
 
 test("stale project permissions are visible and repaired only after an explicit human confirmation", () => {
