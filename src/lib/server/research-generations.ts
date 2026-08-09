@@ -1044,7 +1044,11 @@ function contestedSectionsFirst(units: NarrationUnit[]): NarrationUnit[] {
  * through distinct editorial jobs (orient / define / challenge / connect /
  * turn-to-practice) instead of repeating one generic line, and every section
  * ends on a short host synthesis turn rather than the guest's last list item
- * (cave-jckyz, Charm review #2/#5). Style guidance for dense research:
+ * (cave-jckyz, Charm review #2/#5). Closers are content-bearing: when the
+ * section's lead sentence is short enough, the host restates it verbatim as
+ * the takeaway instead of a bare acknowledgment (cave-upkaf, Charm
+ * re-review — measured host share was 16.2% against a 20–30% target and
+ * "got it" closers never synthesized). Style guidance for dense research:
  * breakdown (default) > interview (host as listener proxy) > recap > debate
  * (only when the source has genuinely competing interpretations).
  */
@@ -1068,16 +1072,25 @@ const PODCAST_DIALOGUE_TEMPLATES: Record<
         ],
         section,
       ),
-    closer: (section) =>
-      rotated(
-        [
-          "Okay — that one's on the board.",
-          "Good. Let's keep moving.",
-          "That's the takeaway there.",
-          "Noted — that piece matters.",
-        ],
-        section,
-      ),
+    closer: (section, takeaway) =>
+      takeaway
+        ? rotated(
+            [
+              `So if you keep one piece of that, keep this: ${takeaway}`,
+              `The takeaway there — ${takeaway}`,
+              `Put that one on the board: ${takeaway}`,
+            ],
+            section,
+          )
+        : rotated(
+            [
+              "Okay — that one's on the board.",
+              "Good. Let's keep moving.",
+              "That's the takeaway there.",
+              "Noted — that piece matters.",
+            ],
+            section,
+          ),
   }),
   debate: (missionTitle) => ({
     opening: `Welcome to the debate — today we're stress-testing “${spokenTitle(missionTitle)}”, starting where the findings are most contested.`,
@@ -1091,40 +1104,74 @@ const PODCAST_DIALOGUE_TEMPLATES: Record<
         ],
         section,
       ),
-    closer: (section) =>
-      rotated(
-        [
-          "So the jury's still out on that one.",
-          "Fair — I'll grant that point.",
-          "We'll have to leave that one contested.",
-          "That lands. Next round.",
-        ],
-        section,
-      ),
+    closer: (section, takeaway) =>
+      takeaway
+        ? rotated(
+            [
+              `Where that leaves us: ${takeaway}`,
+              `Then the record shows it: ${takeaway}`,
+              `If that holds, it holds on this: ${takeaway}`,
+            ],
+            section,
+          )
+        : rotated(
+            [
+              "So the jury's still out on that one.",
+              "Fair — I'll grant that point.",
+              "We'll have to leave that one contested.",
+              "That lands. Next round.",
+            ],
+            section,
+          ),
   }),
   interview: (missionTitle) => ({
-    opening: `Today my guest walks us through “${spokenTitle(missionTitle)}”. Let's get into it.`,
+    opening: `My guest has spent real time inside “${spokenTitle(missionTitle)}” — and I want to know what actually holds up. Let's get into it.`,
     framing: (title, section) =>
       rotated(
         [
           `Walk me through this part — ${speakable(title)}`,
           `For listeners just joining us, what does this actually mean? ${speakable(title)}`,
-          `Push back on me for a second here. ${speakable(title)}`,
+          `Where did this one surprise you? ${speakable(title)}`,
           `How does that square with what you said earlier? ${speakable(title)}`,
           `And for someone who wants to apply this tomorrow? ${speakable(title)}`,
         ],
         section,
       ),
-    closer: (section) =>
+    closer: (section, takeaway) =>
+      takeaway
+        ? rotated(
+            [
+              `So if I'm hearing you right: ${takeaway}`,
+              `Let me play that back — ${takeaway}`,
+              `So the version I'd repeat to a friend: ${takeaway}`,
+            ],
+            section,
+          )
+        : rotated(
+            [
+              "Got it — that's much clearer now.",
+              "That's a really useful way to put it.",
+              "Right — I hadn't thought of it that way.",
+              "Okay, that helps. Let's go on.",
+            ],
+            section,
+          ),
+    // Interview's own turn shape (cave-9wkyq): the guest never monologues —
+    // long answers split into short conversational turns with the host
+    // reacting in between, and exactly one real challenge lands per episode.
+    maxGuestTurnWords: 100,
+    interjection: (index) =>
       rotated(
         [
-          "Got it — that's much clearer now.",
-          "That's a really useful way to put it.",
-          "Right — I hadn't thought of it that way.",
-          "Okay, that helps. Let's go on.",
+          "Okay — keep going.",
+          "Right, so there's more to it.",
+          "Stay on this one — what else?",
+          "And that's not the whole story, is it?",
         ],
-        section,
+        index,
       ),
+    challenge: (title) =>
+      `You knew I'd push back somewhere — here's where. Make the case for this one. ${speakable(title)}`,
   }),
 };
 
@@ -1160,9 +1207,77 @@ type DialogueTemplate = {
   opening: string;
   /** Templated host bridge into a titled section; structure, never findings. */
   framing: (title: string, section: number) => string;
-  /** Templated host synthesis turn closing a titled section. */
-  closer: (section: number) => string;
+  /**
+   * Templated host synthesis turn closing a titled section. When the section
+   * yields a short declarative lead sentence, it arrives as `takeaway` and the
+   * closer restates it verbatim (cave-upkaf) — content-bearing synthesis, not
+   * an acknowledgment, without inventing a word.
+   */
+  closer: (section: number, takeaway?: string) => string;
+  /**
+   * Cap on guest-turn length in words. Longer answers split at sentence
+   * boundaries into separate turns so the guest never monologues (cave-9wkyq).
+   */
+  maxGuestTurnWords?: number;
+  /** Short templated host reaction slotted between split guest turns. */
+  interjection?: (index: number) => string;
+  /**
+   * One-per-episode challenge bridge, spent on the first contested section
+   * (never on furniture headings) in place of the rotating framing line.
+   */
+  challenge?: (title: string) => string;
 };
+
+const MAX_TAKEAWAY_CHARS = 160;
+
+/** First sentence of a chunk, when whole (terminator + trailing quotes). */
+const FIRST_SENTENCE_RE = /^[\s\S]*?[.!?…]["'”’)\]]*(?=\s|$)/;
+
+/**
+ * The section's lead sentence, restated verbatim by content-bearing closers.
+ * Declarative sentences only — a question restated as "the takeaway" is not a
+ * synthesis — and only when short enough to work as a spoken bookend.
+ */
+function sectionTakeaway(chunks: string[]): string | undefined {
+  const lead = chunks[0]?.trimStart();
+  if (!lead) return undefined;
+  const sentence = lead.match(FIRST_SENTENCE_RE)?.[0]?.trim();
+  if (!sentence || sentence.length > MAX_TAKEAWAY_CHARS) return undefined;
+  return /\.["'”’)\]]*$/.test(sentence) ? sentence : undefined;
+}
+
+/**
+ * Splits a chunk into sentence-bounded turns of at most `maxWords` words. A
+ * single sentence over the cap stays whole — a turn never opens or closes
+ * mid-sentence (cave-2emgc).
+ */
+function splitTurnByWordCap(text: string, maxWords: number): string[] {
+  const sentences: string[] = [];
+  let last = 0;
+  for (const match of text.matchAll(SENTENCE_BREAK_RE)) {
+    const end = match.index + match[0].length;
+    sentences.push(text.slice(last, end).trim());
+    last = end;
+  }
+  const tail = text.slice(last).trim();
+  if (tail) sentences.push(tail);
+  const turns: string[] = [];
+  let current = "";
+  let words = 0;
+  for (const sentence of sentences) {
+    const count = sentence.split(/\s+/).length;
+    if (current && words + count > maxWords) {
+      turns.push(current);
+      current = sentence;
+      words = count;
+    } else {
+      current = current ? `${current} ${sentence}` : sentence;
+      words += count;
+    }
+  }
+  if (current) turns.push(current);
+  return turns;
+}
 
 /**
  * Turns narration units into alternating host/guest turns. Framing lines are
@@ -1181,10 +1296,25 @@ function draftDialogueScript(
   if (units.length === 0 || template.opening.length > template.budget) {
     return [];
   }
+  // The episode's single challenge lands on the first contested real section;
+  // when nothing is contested it falls to the last real section — but never
+  // to an episode's only one, which carries the whole rapport.
+  let challengeUnit: NarrationUnit | null = null;
+  if (template.challenge) {
+    const eligible = units.filter(
+      (unit) =>
+        unit.title !== null &&
+        furnitureQuestion(unit.title.replace(/^\d+[.)]\s*/, "")) === null,
+    );
+    challengeUnit =
+      eligible.find((unit) => CONTESTED_TITLE_RE.test(unit.title ?? "")) ??
+      (eligible.length > 1 ? eligible[eligible.length - 1] : null);
+  }
   push(template.opening, "host");
   // Heading-less lines have no title to frame, so delivery alternates.
   let alternate: ResearchPodcastSpeaker = "guest";
   let section = 0;
+  let interjections = 0;
   outer: for (const unit of units) {
     const chunks = splitMediaDraftText(unit.text);
     if (chunks.length === 0) continue;
@@ -1192,18 +1322,40 @@ function draftDialogueScript(
       // Document furniture becomes a listener question; real headings get the
       // style's rotating bridge (list numbering never gets spoken).
       const heading = unit.title.replace(/^\d+[.)]\s*/, "");
-      const framing = furnitureQuestion(heading) ?? template.framing(heading, section);
+      const framing =
+        furnitureQuestion(heading) ??
+        (unit === challengeUnit && template.challenge
+          ? template.challenge(heading)
+          : template.framing(heading, section));
       // Never leave an orphan host question: the framing line only enters
       // when at least its first findings chunk also fits the budget.
       if (used + framing.length + chunks[0].length > template.budget) break;
       push(framing, "host");
+      let guestTurnsInSection = 0;
       for (const chunk of chunks) {
-        if (used + chunk.length > template.budget) break outer;
-        push(chunk, "guest");
+        const guestTurns = template.maxGuestTurnWords
+          ? splitTurnByWordCap(chunk, template.maxGuestTurnWords)
+          : [chunk];
+        for (const turn of guestTurns) {
+          if (guestTurnsInSection > 0 && template.interjection) {
+            // A host reaction between guest turns only enters when the guest
+            // turn it introduces also fits — no orphan interjections.
+            const interjection = template.interjection(interjections);
+            if (used + interjection.length + turn.length > template.budget) {
+              break outer;
+            }
+            push(interjection, "host");
+            interjections += 1;
+          } else if (used + turn.length > template.budget) {
+            break outer;
+          }
+          push(turn, "guest");
+          guestTurnsInSection += 1;
+        }
       }
       // Host synthesis bookend — a section ends on the host's turn, not the
       // guest's last list item. Skipped only when the budget is spent.
-      const closer = template.closer(section);
+      const closer = template.closer(section, sectionTakeaway(chunks));
       if (used + closer.length <= template.budget) {
         push(closer, "host");
       }
