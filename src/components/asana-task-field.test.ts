@@ -49,6 +49,7 @@ assert.match(
   "createBoardCardFromAsanaItem seeds the card's asana field",
 );
 assert.match(asanaTasks, /action: "create"/, "fileAsanaItemAsBead routes through the beads create action");
+assert.match(asanaTasks, /surface: "shared"/, "fileAsanaItemAsBead marks shared platform ownership");
 assert.match(asanaTasks, /externalRef: item\.url/, "fileAsanaItemAsBead links the Asana permalink as external-ref");
 
 // task-asana helpers must stay isomorphic (importable from client + server), so

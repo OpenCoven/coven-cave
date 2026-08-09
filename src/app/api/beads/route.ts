@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server.js";
+import { PLATFORM_SURFACE_LABELS, type PlatformSurface } from "@/lib/beads-delivery";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { runBdCommand } from "@/lib/server/beads-cli";
 import { MAX_SESSION_JSON_BYTES } from "@/lib/server/session-security";
@@ -26,7 +27,14 @@ type BeadsPostBody = {
   externalRef?: string;
   /** create action: labels to tag the bead with. */
   labels?: string[];
+  /** create action: exactly one canonical platform owner. */
+  surface?: "ios" | "desktop" | "shared";
 };
+
+const PLATFORM_LABEL_SET = new Set<string>(PLATFORM_SURFACE_LABELS);
+const PLATFORM_SURFACE_SET = new Set<PlatformSurface>(
+  PLATFORM_SURFACE_LABELS.map((label) => label.slice("surface:".length) as PlatformSurface),
+);
 
 function jsonFromStdout(stdout: string): unknown {
   const trimmed = stdout.trim();
@@ -56,6 +64,34 @@ function projectRootErrorResponse(root: { status: number; error: string }) {
     return NextResponse.json({ ok: false, error }, { status: 403 });
   }
   return NextResponse.json({ ok: false, error }, { status: root.status });
+}
+
+function normalizeCreateSurface(surface: string | undefined): PlatformSurface | null {
+  const trimmed = surface?.trim();
+  if (!trimmed) return null;
+  return PLATFORM_SURFACE_SET.has(trimmed as PlatformSurface) ? trimmed as PlatformSurface : null;
+}
+
+function normalizeCreateLabels(
+  labels: string[] | undefined,
+  surface: PlatformSurface,
+): { ok: true; labels: string[] } | { ok: false; error: string } {
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+
+  for (const raw of labels ?? []) {
+    const label = raw.trim();
+    if (!label) continue;
+    if (PLATFORM_LABEL_SET.has(label)) {
+      return { ok: false, error: "platform ownership labels must be passed through surface, not labels" };
+    }
+    if (seen.has(label)) continue;
+    seen.add(label);
+    normalized.push(label);
+  }
+
+  normalized.push(`surface:${surface}`);
+  return { ok: true, labels: normalized };
 }
 
 export async function GET(req: Request) {
@@ -116,13 +152,23 @@ export async function POST(req: Request) {
   if (parsed.body.action === "create") {
     const title = parsed.body.title?.trim();
     if (!title) return NextResponse.json({ ok: false, error: "title required" }, { status: 400 });
+    const rawSurface = parsed.body.surface?.trim();
+    if (!rawSurface) return NextResponse.json({ ok: false, error: "surface required" }, { status: 400 });
+    const surface = normalizeCreateSurface(rawSurface);
+    if (!surface) {
+      return NextResponse.json(
+        { ok: false, error: "surface must be one of ios, desktop, or shared" },
+        { status: 400 },
+      );
+    }
     const createArgs = ["create", title, "--json"];
     const description = parsed.body.description?.trim();
     if (description) createArgs.push("-d", description);
     const externalRef = parsed.body.externalRef?.trim();
     if (externalRef) createArgs.push("--external-ref", externalRef);
-    const labels = (parsed.body.labels ?? []).map((label) => label.trim()).filter(Boolean);
-    if (labels.length) createArgs.push("--labels", labels.join(","));
+    const labels = normalizeCreateLabels(parsed.body.labels, surface);
+    if (!labels.ok) return NextResponse.json({ ok: false, error: labels.error }, { status: 400 });
+    createArgs.push("--labels", labels.labels.join(","));
 
     const created = await runBdCommand(root.repoRoot, root.beadsDir, createArgs);
     if (!created.ok) {

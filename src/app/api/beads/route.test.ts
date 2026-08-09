@@ -3,18 +3,18 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
   chmod,
-  mkdtemp,
   mkdir,
   readFile,
   realpath,
   rm,
   writeFile,
 } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { refreshCovenSpawnEnv } from "@/lib/coven-bin";
 
-const temp = await mkdtemp(path.join(os.tmpdir(), "cave-beads-route-"));
+const scratchRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), ".scratch-beads-route-test");
+const temp = path.join(scratchRoot, `${process.pid}-${Date.now()}`);
 const projectA = path.join(temp, "project-a");
 const projectB = path.join(temp, "project-b");
 const unrelatedCwd = path.join(temp, "unrelated-cwd");
@@ -38,10 +38,11 @@ function localRequest(url: string, init?: RequestInit) {
 
 try {
   await Promise.all([
+    mkdir(temp, { recursive: true }),
     mkdir(path.join(projectA, ".beads"), { recursive: true }),
     mkdir(path.join(projectB, ".beads"), { recursive: true }),
-    mkdir(unrelatedCwd),
-    mkdir(fakeBin),
+    mkdir(unrelatedCwd, { recursive: true }),
+    mkdir(fakeBin, { recursive: true }),
   ]);
   execFileSync("git", ["init", "-q"], { cwd: projectA });
   execFileSync("git", ["init", "-q"], { cwd: projectB });
@@ -93,8 +94,8 @@ fi
     { action: "claim", id: "cave-shared" },
     { action: "comment", id: "cave-shared", comment: "Verified in project A." },
     { action: "close", id: "cave-shared", reason: "Completed" },
-    { action: "create", title: "PR-created bead", description: "PR #7", externalRef: "gh-7", labels: ["from-pr"] },
-    { action: "create", title: "Asana-created bead", description: "Asana task", externalRef: "https://app.asana.com/0/7", labels: ["asana"] },
+    { action: "create", title: "PR-created bead", surface: "shared", description: "PR #7", externalRef: "gh-7", labels: [" from-pr ", "", "from-pr"] },
+    { action: "create", title: "Asana-created bead", surface: "shared", description: "Asana task", externalRef: "https://app.asana.com/0/7", labels: ["asana"] },
   ];
   for (const body of mutations) {
     const response = await beads.POST(localRequest("http://127.0.0.1/api/beads", {
@@ -104,6 +105,19 @@ fi
     }));
     assert.equal(response.status, 200, `${body.action} is scoped to selected project A`);
     assert.equal((await response.json()).projectRoot, canonicalProjectA);
+  }
+
+  for (const invalid of [
+    { title: "Missing surface", description: "bad", labels: ["from-pr"] },
+    { title: "Invalid surface", surface: "daemon", description: "bad", labels: ["from-pr"] },
+    { title: "Platform label in labels", surface: "shared", description: "bad", labels: ["from-pr", "surface:shared"] },
+  ]) {
+    const response = await beads.POST(localRequest("http://127.0.0.1/api/beads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "create", ...invalid, projectRoot: projectA }),
+    }));
+    assert.equal(response.status, 400, `${invalid.title} should be rejected`);
   }
 
   const commands = (await readFile(commandLog, "utf8"))
@@ -122,6 +136,15 @@ fi
       );
     }
   }
+  const bdCreateArgs = commands.filter((entry) => entry.command === "bd" && String(entry.args).startsWith("create "));
+  assert.ok(
+    bdCreateArgs.some((entry) => String(entry.args).includes("--labels from-pr,surface:shared")),
+    "PR filing appends exactly one generated shared platform label",
+  );
+  assert.ok(
+    bdCreateArgs.some((entry) => String(entry.args).includes("--labels asana,surface:shared")),
+    "Asana filing appends exactly one generated shared platform label",
+  );
 } finally {
   process.chdir(previous.cwd);
   if (previous.path === undefined) delete process.env.PATH;
@@ -134,6 +157,7 @@ fi
   if (previous.token === undefined) delete process.env.COVEN_CAVE_AUTH_TOKEN;
   else process.env.COVEN_CAVE_AUTH_TOKEN = previous.token;
   await rm(temp, { recursive: true, force: true });
+  await rm(scratchRoot, { recursive: true, force: true });
 }
 
 console.log("beads route.test.ts: ok");

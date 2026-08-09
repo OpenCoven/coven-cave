@@ -138,7 +138,11 @@ assert.match(
 // The create payload links the bead back to the PR twice over: externalRef
 // gh-<n> for the visibility layer, and the PR URL in the description for the
 // ready-output ref join (external_ref is absent from `bd ready --json`).
-assert.match(view, /action: "create",\s*title: pr\.title/, "bead titled after the PR");
+assert.match(
+  view,
+  /action: "create",\s*surface: "shared",\s*title: pr\.title/,
+  "PR filing sets shared platform ownership and titles the bead after the PR",
+);
 assert.match(view, /description: `Filed from unlinked PR #\$\{pr\.number\} — \$\{pr\.url\}`/);
 assert.match(view, /externalRef: `gh-\$\{pr\.number\}`/, "externalRef uses the gh-<n> form");
 assert.match(view, /labels: \["from-pr"\]/);

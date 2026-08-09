@@ -311,6 +311,25 @@ bd prime                # Refresh Beads context
 - Close with `bd close <id>` only after merge or explicit completion criteria are satisfied.
 - Never put secrets in bead text, and never treat `.beads/issues.jsonl` as the sync source of truth.
 
+Create new Beads through the canonical wrapper so ownership is set exactly once:
+
+```bash
+pnpm beads:create --surface shared "Short title" \
+  --description "Why this exists and what needs to be done" \
+  --type task --priority 2
+```
+
+- Choose exactly one ownership surface: `ios`, `desktop`, or `shared`.
+- `surface:shared` covers API, backend, workflow, and other cross-platform work.
+- Narrower non-platform labels may coexist, but they do **not** satisfy ownership.
+- Do not pass `surface:ios`, `surface:desktop`, or `surface:shared` manually in
+  `--labels`; canonical creation appends the single ownership label for you.
+- `pnpm beads:surfaces` is the non-mutating audit for raw-CLI or legacy rows
+  that introduce new missing/conflicting ownership labels.
+- Existing backlog rows are grandfathered only through
+  `config/beads-surface-grandfather.json`; do not backfill the old queue as
+  part of routine implementation work.
+
 ### `in_progress` means actively worked *right now* (cave-1mxw4)
 
 Set the status honestly **at creation and at handoff**. Everything that is not

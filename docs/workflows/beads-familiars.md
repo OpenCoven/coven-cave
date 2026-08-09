@@ -15,6 +15,32 @@ bd update <id> --claim
 
 One familiar claims one ready bead at a time. The bead notes should record the branch or worktree path, related GitHub PR, related Linear issue when present, current session, and verification evidence. If a familiar discovers new work while implementing, create a linked bead with `discovered-from:<parent-id>` instead of burying the follow-up in chat.
 
+Create new Beads through the canonical wrapper so ownership is explicit exactly
+once:
+
+```bash
+pnpm beads:create --surface shared "Short title" \
+  --description "Why this exists and what needs to be done" \
+  --type task --priority 2
+```
+
+Choose exactly one ownership surface per new Bead:
+
+- `ios` — native iOS-only delivery.
+- `desktop` — desktop-only delivery.
+- `shared` — API, backend, workflow, and any cross-platform work.
+
+Non-platform labels such as `familiar:cody`, `from-pr`, `asana`, or
+`verification-required` may coexist, but they do **not** satisfy ownership. Do
+not pass `surface:ios`, `surface:desktop`, or `surface:shared` manually through
+`--labels`; the wrapper appends the single canonical ownership label for you.
+
+Raw `bd create` cannot be universally intercepted, so `pnpm beads:surfaces` is
+the non-mutating audit for newly introduced missing/conflicting ownership
+labels. Existing backlog rows stay valid only through
+`config/beads-surface-grandfather.json`; do not backfill the old queue as part
+of routine work.
+
 For sibling work under the same epic, prefer `--defer` for simple sequencing unless you have verified the exact `bd dep` direction with `bd dep list` and `bd ready --json`. During the initial Cave dogfood, `--deps blocks:<sibling>` created the opposite edge from what the familiar expected, so the follow-ups were deferred and annotated instead of forced through a questionable dependency graph.
 
 Close only after the work is genuinely done:
@@ -28,7 +54,8 @@ bd close <id> --reason "Merged in PR #123 after pnpm typecheck and pnpm test:app
 Use labels and metadata consistently so Cave can render the graph without guessing:
 
 - `familiar:cody`, `familiar:kitty`, `familiar:nova`, or the owning familiar.
-- `surface:ios`, `surface:daemon`, `surface:chat`, `surface:github`, `surface:release`, or another concrete Cave surface.
+- Exactly one ownership label from `surface:ios`, `surface:desktop`, or `surface:shared` on new canonical Beads.
+- Narrower non-platform labels for area, workflow, or verification when they help triage, without replacing ownership.
 - `release-blocker`, `needs-human`, `verification-required`, and `dogfood` when those states apply.
 - `external-ref` for GitHub PRs, GitHub issues, Linear tickets, or App Store Connect links.
 - `--design` for the chosen implementation shape and `--acceptance` for the exact done criteria.
@@ -51,6 +78,8 @@ The package shortcuts are the stable entrypoints for familiars:
 ```bash
 pnpm beads:prime
 pnpm beads:ready
+pnpm beads:create --surface shared "Short title" --description "Why this exists and what needs to be done" --type task --priority 2
+pnpm beads:surfaces
 pnpm beads:prs
 pnpm beads:prs:apply
 pnpm beads:doctor

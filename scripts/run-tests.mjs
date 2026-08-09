@@ -62,6 +62,8 @@ export const SUITES = {
     "scripts/check-beads-jsonl-duplicates.test.mjs",
     "scripts/check-conflict-markers.test.mjs",
     "scripts/beads-jsonl-merge-driver.test.mjs",
+    "scripts/beads-create.test.mjs",
+    "scripts/beads-surface-audit.test.mjs",
     "scripts/install-git-hooks.test.mjs",
     "scripts/worktree-lifecycle-retirement.test.mjs",
     "scripts/worktree-lifecycle-patrol.test.mjs",
