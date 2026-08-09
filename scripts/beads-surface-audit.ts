@@ -4,9 +4,17 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { classifyPlatform } from "../src/lib/beads-delivery.ts";
+import { classifyPlatform, type PlatformClassification } from "../src/lib/beads-delivery.ts";
 
-type BaselineFile = { grandfathered: string[] };
+type InvalidClassification = Extract<PlatformClassification, "missing" | "conflicting">;
+type BaselineFile = {
+  grandfathered: string[];
+  classifications?: Record<string, InvalidClassification>;
+};
+type BaselineState = {
+  grandfathered: Set<string>;
+  classifications: Map<string, InvalidClassification> | null;
+};
 type AuditOptions = {
   baselinePath: string;
   writeBaseline: boolean;
@@ -91,28 +99,56 @@ function parseRows(stdout: string): Array<{ id: string; labels?: readonly string
   }
 }
 
-function readBaseline(file: string, allowMissing: boolean): Set<string> {
+function isInvalidClassification(value: unknown): value is InvalidClassification {
+  return value === "missing" || value === "conflicting";
+}
+
+function readBaseline(file: string, allowMissing: boolean): BaselineState {
   let raw: string;
   try {
     raw = readFileSync(file, "utf8");
   } catch (error) {
     const code = error && typeof error === "object" && "code" in error ? String((error as NodeJS.ErrnoException).code) : "";
-    if (allowMissing && code === "ENOENT") return new Set();
+    if (allowMissing && code === "ENOENT") {
+      return { grandfathered: new Set(), classifications: null };
+    }
     const message = error instanceof Error ? error.message : String(error);
     throw new CliError(`beads-surface-audit: failed to read baseline (${message})`);
   }
 
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as BaselineFile).grandfathered)) {
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       throw new Error('expected {"grandfathered":[...]}');
     }
-    return new Set(
-      (parsed as BaselineFile).grandfathered
+    const baseline = parsed as Record<string, unknown>;
+    if (!Array.isArray(baseline.grandfathered)) throw new Error('expected {"grandfathered":[...]}');
+
+    const grandfathered = new Set(
+      baseline.grandfathered
         .filter((value): value is string => typeof value === "string")
         .map((value) => value.trim())
         .filter(Boolean),
     );
+
+    if (baseline.classifications === undefined) {
+      return { grandfathered, classifications: null };
+    }
+    if (!baseline.classifications || typeof baseline.classifications !== "object" || Array.isArray(baseline.classifications)) {
+      throw new Error('expected optional "classifications" object');
+    }
+
+    const classifications = new Map<string, InvalidClassification>();
+    for (const [id, classification] of Object.entries(baseline.classifications)) {
+      const trimmedId = id.trim();
+      if (!trimmedId) continue;
+      if (!isInvalidClassification(classification)) {
+        throw new Error(`invalid classification for ${trimmedId}`);
+      }
+      classifications.set(trimmedId, classification);
+    }
+
+    return { grandfathered, classifications };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new CliError(`beads-surface-audit: failed to parse baseline (${message})`);
@@ -122,12 +158,26 @@ function readBaseline(file: string, allowMissing: boolean): Set<string> {
 function findViolations(rows: Array<{ id: string; labels?: readonly string[] | null }>) {
   return rows
     .map((row) => ({ id: row.id, classification: classifyPlatform(row.labels) }))
-    .filter((row) => row.classification === "missing" || row.classification === "conflicting");
+    .filter((row): row is { id: string; classification: InvalidClassification } => isInvalidClassification(row.classification));
 }
 
-function writeBaseline(file: string, ids: string[]) {
+function writeBaseline(file: string, violations: Array<{ id: string; classification: InvalidClassification }>) {
+  const sortedViolations = [...violations].sort((left, right) => left.id.localeCompare(right.id));
+  const baseline: BaselineFile = {
+    grandfathered: sortedViolations.map((row) => row.id),
+    classifications: Object.fromEntries(sortedViolations.map((row) => [row.id, row.classification])),
+  };
   mkdirSync(path.dirname(file), { recursive: true });
-  writeFileSync(file, JSON.stringify({ grandfathered: ids }, null, 2) + "\n", "utf8");
+  writeFileSync(file, JSON.stringify(baseline, null, 2) + "\n", "utf8");
+}
+
+function isGrandfathered(
+  baseline: BaselineState,
+  violation: { id: string; classification: InvalidClassification },
+): boolean {
+  if (!baseline.grandfathered.has(violation.id)) return false;
+  if (!baseline.classifications) return true;
+  return baseline.classifications.get(violation.id) === violation.classification;
 }
 
 try {
@@ -136,15 +186,12 @@ try {
   const violations = findViolations(rows);
 
   if (options.writeBaseline) {
-    writeBaseline(
-      options.baselinePath,
-      violations.map((row) => row.id).sort((left, right) => left.localeCompare(right)),
-    );
+    writeBaseline(options.baselinePath, violations);
     process.exit(0);
   }
 
   const grandfathered = readBaseline(options.baselinePath, false);
-  const newViolations = violations.filter((row) => !grandfathered.has(row.id));
+  const newViolations = violations.filter((row) => !isGrandfathered(grandfathered, row));
   if (newViolations.length > 0) {
     for (const row of newViolations) process.stderr.write(`${row.id}: ${row.classification}\n`);
     process.exit(1);

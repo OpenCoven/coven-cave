@@ -111,6 +111,9 @@ fi
     { title: "Missing surface", description: "bad", labels: ["from-pr"] },
     { title: "Invalid surface", surface: "daemon", description: "bad", labels: ["from-pr"] },
     { title: "Platform label in labels", surface: "shared", description: "bad", labels: ["from-pr", "surface:shared"] },
+    { title: "Non-string surface", surface: 1, description: "bad", labels: ["from-pr"] },
+    { title: "Labels must be an array", surface: "shared", description: "bad", labels: "from-pr" },
+    { title: "Labels must contain only strings", surface: "shared", description: "bad", labels: ["from-pr", 1] },
   ]) {
     const response = await beads.POST(localRequest("http://127.0.0.1/api/beads", {
       method: "POST",
@@ -137,6 +140,7 @@ fi
     }
   }
   const bdCreateArgs = commands.filter((entry) => entry.command === "bd" && String(entry.args).startsWith("create "));
+  assert.equal(bdCreateArgs.length, 2, "malformed create payloads must fail before invoking bd create");
   assert.ok(
     bdCreateArgs.some((entry) => String(entry.args).includes("--labels from-pr,surface:shared")),
     "PR filing appends exactly one generated shared platform label",

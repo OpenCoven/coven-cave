@@ -38,8 +38,9 @@ not pass `surface:ios`, `surface:desktop`, or `surface:shared` manually through
 Raw `bd create` cannot be universally intercepted, so `pnpm beads:surfaces` is
 the non-mutating audit for newly introduced missing/conflicting ownership
 labels. Existing backlog rows stay valid only through
-`config/beads-surface-grandfather.json`; do not backfill the old queue as part
-of routine work.
+`config/beads-surface-grandfather.json`, which records each grandfathered row's
+current `missing`/`conflicting` state; do not backfill the old queue as part of
+routine work.
 
 For sibling work under the same epic, prefer `--defer` for simple sequencing unless you have verified the exact `bd dep` direction with `bd dep list` and `bd ready --json`. During the initial Cave dogfood, `--deps blocks:<sibling>` created the opposite edge from what the familiar expected, so the follow-ups were deferred and annotated instead of forced through a questionable dependency graph.
 

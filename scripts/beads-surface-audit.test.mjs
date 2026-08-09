@@ -56,8 +56,10 @@ function readLog(log) {
     .map((line) => JSON.parse(line));
 }
 
-function writeBaseline(file, grandfathered) {
-  writeFileSync(file, JSON.stringify({ grandfathered }, null, 2) + "\n", "utf8");
+function writeBaseline(file, grandfathered, classifications) {
+  const payload = { grandfathered };
+  if (classifications) payload.classifications = classifications;
+  writeFileSync(file, JSON.stringify(payload, null, 2) + "\n", "utf8");
 }
 
 try {
@@ -99,6 +101,22 @@ try {
   }
 
   {
+    const fixture = makeFixture("classified-grandfather");
+    try {
+      writeBaseline(fixture.baseline, ["cave-old"], { "cave-old": "missing" });
+      const result = run(["--baseline", fixture.baseline], fixture, {
+        BD_FAKE_STDOUT: JSON.stringify([
+          { id: "cave-old", labels: ["surface:desktop", "surface:shared"] },
+        ]),
+      });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /cave-old: conflicting/);
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  }
+
+  {
     const fixture = makeFixture("write-baseline");
     try {
       writeBaseline(fixture.baseline, ["cave-old"]);
@@ -113,6 +131,11 @@ try {
       assert.equal(result.status, 0, result.stderr);
       assert.deepEqual(JSON.parse(readFileSync(fixture.baseline, "utf8")), {
         grandfathered: ["cave-a", "cave-m", "cave-z"],
+        classifications: {
+          "cave-a": "conflicting",
+          "cave-m": "missing",
+          "cave-z": "missing",
+        },
       });
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
