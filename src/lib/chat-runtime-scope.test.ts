@@ -108,6 +108,47 @@ await assert.rejects(
   assert.match(preamble, /remote runtime boundary/);
 }
 
+{
+  const docs = path.join(home, "docs");
+  const readOnlyChild = path.join(home, "docs", "public");
+  const preamble = buildRuntimeScopePreamble({
+    kind: "local",
+    root: repo,
+    allowedProjectRoots: [repo, docs, readOnlyChild],
+    projectRootAccess: { [docs]: "write", [readOnlyChild]: "read" },
+  });
+  assert.match(
+    preamble,
+    new RegExp(`${docs.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\(read \\+ write\\)`),
+    "write-granted roots should render their level",
+  );
+  assert.match(
+    preamble,
+    new RegExp(`${readOnlyChild.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\(read-only\\)`),
+    "read-only roots should be annotated so the familiar doesn't assume write access",
+  );
+  assert.match(
+    preamble,
+    /Roots marked \(read-only\) above permit reading, browsing, and chatting only/,
+    "a read-only root should trigger the caveat line",
+  );
+}
+
+{
+  const docs = path.join(home, "docs");
+  const preamble = buildRuntimeScopePreamble({
+    kind: "local",
+    root: repo,
+    allowedProjectRoots: [repo, docs],
+    projectRootAccess: { [docs]: "write" },
+  });
+  assert.doesNotMatch(
+    preamble,
+    /read-only/,
+    "an all-write grant set should not emit the read-only caveat line",
+  );
+}
+
 assert.equal(
   buildPromptWithRuntimeScope("hello", { kind: "local", root: repo }),
   `${buildRuntimeScopePreamble({ kind: "local", root: repo })}\n\nCurrent user message:\nhello`,

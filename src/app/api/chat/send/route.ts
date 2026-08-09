@@ -228,8 +228,9 @@ import {
 import {
   ProjectAccessDeniedError,
   assertProjectAccess,
-  filterProjectsForFamiliar,
+  listAccessibleProjects,
 } from "@/lib/project-permissions";
+import type { ProjectAccessLevel } from "@/lib/project-access-levels";
 import {
   buildTaskContext,
   buildTaskAwarePrompt,
@@ -2396,14 +2397,26 @@ export async function POST(req: Request) {
   const hermesVerbosity = controlCapabilities.some(
     (capability) => capability.parameter === "text.verbosity",
   ) ? controlValidation.values.verbosity : undefined;
-  const grantedProjectRoots = sshRuntime
+  // listAccessibleProjects (not just filterProjectsForFamiliar) so the
+  // per-root read/write level survives into the runtime-scope preamble
+  // below instead of collapsing to "has any access".
+  const accessibleProjects = sshRuntime
     ? []
-    : (await filterProjectsForFamiliar(projects, body.familiarId)).map((project) => project.root);
+    : await listAccessibleProjects(projects, body.familiarId);
+  const grantedProjectRoots = accessibleProjects.map((entry) => entry.project.root);
+  const grantedProjectRootAccess: Record<string, ProjectAccessLevel> = Object.fromEntries(
+    accessibleProjects.map((entry) => [entry.project.root, entry.access]),
+  );
   // The selected project is always the runtime root. Familiar identity files
   // are injected separately and remain an allowed side directory below.
   const runtimeScope: RuntimeScope = sshRuntime
     ? { kind: "ssh", host: sshRuntime.host, root: sshRuntime.cwd }
-    : { kind: "local", root: cwd, allowedProjectRoots: grantedProjectRoots };
+    : {
+        kind: "local",
+        root: cwd,
+        allowedProjectRoots: grantedProjectRoots,
+        projectRootAccess: grantedProjectRootAccess,
+      };
   // Boundary sentinel: watches the harness's streamed tool calls for paths
   // outside the granted roots. Never blocks the stream — violations surface
   // as a progress notice at turn end and steer the NEXT turn via a prompt
