@@ -4,6 +4,15 @@ export type TranscriptVoiceGroup = { kind: "call"; callId: string; turns: Turn[]
 export type TranscriptSingleItem = { kind: "single"; turn: Turn };
 export type TranscriptGroup = TranscriptVoiceGroup | TranscriptSingleItem;
 
+/** Count actual turns excluded when the transcript mounts only its newest groups. */
+export function countHiddenTranscriptTurns(groups: readonly TranscriptGroup[], renderCap: number): number {
+  const hiddenGroupCount = Math.max(0, groups.length - Math.max(0, renderCap));
+  return groups.slice(0, hiddenGroupCount).reduce(
+    (count, group) => count + (group.kind === "call" ? group.turns.length : 1),
+    0,
+  );
+}
+
 /** Build the visible transcript's voice-call groups and stable row index map. */
 export function groupTranscriptTurns(activePath: Turn[]): {
   groupedTurns: TranscriptGroup[];

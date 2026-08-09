@@ -481,3 +481,54 @@
   color: var(--text-muted);
   white-space: nowrap;
 }
+
+/* ── Earlier-turn fold ("Chat Session - Prototype.dc.html") ───────────────
+   The transcript's render cap already withholds the oldest groups while a
+   live session follows its newest turn. Make that boundary explicit, with the
+   exact count of underlying turns rather than an opaque loading limit. */
+.cave-chat-earlier-turns {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-6) var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.cave-chat-earlier-turns__rule {
+  flex: 1;
+  min-width: var(--space-2);
+  height: 1px;
+  background: var(--border-hairline);
+}
+.cave-chat-earlier-turns__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--space-6);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--bg-panel) 55%, transparent);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.cave-chat-earlier-turns:hover .cave-chat-earlier-turns__pill {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.cave-chat-earlier-turns__caret {
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+.cave-chat-earlier-turns__caret.is-open {
+  transform: rotate(180deg);
+}

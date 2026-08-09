@@ -83,7 +83,11 @@ import {
   type ToolEvent,
   type Turn,
 } from "@/lib/chat-turn-state";
-import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat-transcript-groups";
+import {
+  countHiddenTranscriptTurns,
+  groupTranscriptTurns,
+  type TranscriptGroup,
+} from "@/lib/chat-transcript-groups";
 import { generateChatTitle } from "@/lib/chat-title-generation";
 import { chatTurnGapLabel } from "@/lib/chat-turn-gap";
 import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
@@ -3762,6 +3766,33 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // re-render ChatView but leave `turns` untouched (this was an O(n) rebuild
   // per render).
   const { groupedTurns, turnIndexMap } = useMemo(() => groupTranscriptTurns(activePath), [activePath]);
+  // The live handoff's "N earlier turns" control reflects the existing render
+  // cap. Count underlying turns rather than display groups so a folded voice
+  // call is described truthfully.
+  const hiddenTranscriptTurnCount = useMemo(
+    () => countHiddenTranscriptTurns(groupedTurns, TRANSCRIPT_RENDER_CAP),
+    [groupedTurns],
+  );
+  const hasEarlierTurnsFold = session?.status.toLowerCase() === "running" && hiddenTranscriptTurnCount > 0;
+  const earlierTurnsLabel = historyExpanded
+    ? "Hide earlier turns"
+    : `${hiddenTranscriptTurnCount} earlier ${hiddenTranscriptTurnCount === 1 ? "turn" : "turns"}`;
+
+  const toggleEarlierTurns = useCallback(() => {
+    if (historyExpanded) {
+      updateFollowing(true);
+      setHistoryExpanded(false);
+      requestAnimationFrame(() => {
+        const el = scrollRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+      return;
+    }
+
+    const el = scrollRef.current;
+    expandAnchorRef.current = el ? el.scrollHeight - el.scrollTop : null;
+    setHistoryExpanded(true);
+  }, [historyExpanded, updateFollowing]);
 
   // The slash-menu index/dismissal resets live in useInlineSlashMenus; the
   // @-mention picker re-arms here (same any-edit-brings-it-back contract).
@@ -7563,6 +7594,27 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               familiarName={familiar.display_name}
             />
           </>
+        ) : null}
+        {hasEarlierTurnsFold ? (
+          <button
+            type="button"
+            className="cave-chat-earlier-turns focus-ring"
+            onClick={toggleEarlierTurns}
+            aria-expanded={historyExpanded}
+            title="Toggle earlier turns"
+          >
+            <span className="cave-chat-earlier-turns__rule" />
+            <span className="cave-chat-earlier-turns__pill">
+              <Icon
+                name="ph:caret-up"
+                width={9}
+                className={`cave-chat-earlier-turns__caret${historyExpanded ? " is-open" : ""}`}
+                aria-hidden
+              />
+              {earlierTurnsLabel}
+            </span>
+            <span className="cave-chat-earlier-turns__rule" />
+          </button>
         ) : null}
         <div
           ref={threadRef}
