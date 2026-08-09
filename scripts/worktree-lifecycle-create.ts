@@ -13,7 +13,10 @@ import {
   type WorktreeLifecycleBudgets,
   type WorktreeLifecycleItem,
 } from "../src/lib/worktree-lifecycle.ts";
-import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
+import {
+  collectWorktreeLifecycleInventory,
+  type WorktreeMetadataClaimError,
+} from "./worktree-lifecycle-inventory.ts";
 import {
   heartbeatWriterIntent,
   registerWriterIntent,
@@ -774,6 +777,41 @@ function exceptionForPath(
  */
 function inventoryErrors(items: WorktreeLifecycleItem[]): string[] {
   return [...new Set(items.flatMap((item) => item.metadataErrors))];
+}
+
+/**
+ * The malformed metadata records that stand in the way of *this* creation.
+ *
+ * A record that fails validation still names the branch and path it claims, so
+ * it can be charged to the unit it describes instead of to the repository. That
+ * scoping is the whole point of cave-g9byt — one bead's bad `disposition` had
+ * been failing `--bead` for every other bead in the checkout — but it must not
+ * become a way to create *over* a claim: a record already holding this branch
+ * or this path is exactly the collision the abort was protecting, and a
+ * malformed one is no less a claim than a valid one. A record naming neither a
+ * usable branch nor a usable path claims something unnameable, so it keeps
+ * blocking everything until someone repairs it.
+ */
+function claimErrorsForRequest(
+  claims: WorktreeMetadataClaimError[],
+  branch: string,
+  worktreePath: string,
+): string[] {
+  const requested = normalizeCandidate(worktreePath);
+  return [
+    ...new Set(
+      claims
+        .filter((claim) => {
+          const unattributable = claim.branch.trim().length === 0 && claim.path === null;
+          return (
+            unattributable ||
+            claim.branch === branch ||
+            (claim.path !== null && normalizeCandidate(claim.path) === requested)
+          );
+        })
+        .flatMap((claim) => claim.errors),
+    ),
+  ];
 }
 
 function existingOwnedPaths(
@@ -1602,8 +1640,13 @@ function execute(
   // Global failures still abort: if GitHub was unreachable or the canonical
   // repository could not be resolved, the run did not see the repository at all
   // and no admission decision it makes is trustworthy. Per-unit probe errors do
-  // not abort — see {@link inventoryErrors}.
-  const errors = [...inventory.globalErrors, ...inventoryErrors(inventory.items)];
+  // not abort — see {@link inventoryErrors} — and neither do malformed metadata
+  // records describing some other unit; see {@link claimErrorsForRequest}.
+  const errors = [
+    ...inventory.globalErrors,
+    ...inventoryErrors(inventory.items),
+    ...claimErrorsForRequest(inventory.metadataClaimErrors, options.branch, worktreePath),
+  ];
   if (errors.length > 0) {
     throw new CliError(`lifecycle inventory is incomplete: ${errors.join("; ")}`);
   }

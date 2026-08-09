@@ -57,8 +57,12 @@
     So the order is **check quota → rerun → only then fall back**. Genuinely
     structural failures name the repository itself (`canonical repository
     identity mismatch`, `canonical repository identity changed between pages`);
-    those do not improve with a retry. Reach for the fallback only after a
-    retry failed:
+    those do not improve with a retry. A malformed worktree record on a bead
+    (`Bead cave-… worktree metadata: …`) is structural too, but since
+    `cave-g9byt` it is charged only to the unit it names — so if one reaches
+    you, it claims the exact branch or path you asked for. Pick another branch
+    or have its owner repair it; do not hand-edit someone else's record. Reach
+    for the fallback only after a retry failed:
 
     ```bash
     git worktree add -b <branch> .worktrees/<branch> origin/main   # last resort

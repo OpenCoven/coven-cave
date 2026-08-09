@@ -1796,4 +1796,110 @@ await withFixture(
   },
 );
 
+// A malformed structured record used to deny creation to EVERY bead, because
+// every task's record errors were folded into every unit's metadata errors.
+// cave-l11sw wrote `disposition: "removed-externally-after-merge"` — outside the
+// accepted set — and `pnpm beads:worktrees:create` then failed deterministically
+// for every bead in the checkout with "lifecycle inventory is incomplete", with
+// no repair available that the worktree rules permit: correcting another owner's
+// lifecycle record is exactly the hand-edit they forbid. A record names the
+// branch and path it claims even when the rest of it is invalid, so it
+// disqualifies that unit and no other (cave-g9byt).
+function writeMalformedRecord(fixture, { beadId, branch, worktreePath }) {
+  const state = readJson(fixture.stateFile);
+  const issue = state.issues.find((candidate) => candidate.id === beadId);
+  assert.ok(issue, `fixture must carry ${beadId}`);
+  issue.metadata = {
+    ...issue.metadata,
+    coven: {
+      ...issue.metadata?.coven,
+      worktree: {
+        branch,
+        path: worktreePath,
+        owner: "kitty",
+        purpose: "Malformed record fixture",
+        createdAt: "2026-08-09T09:09:52.185Z",
+        // The exact value from cave-l11sw. Every other field is valid, so the
+        // record fails on this alone and the assertions below cannot pass by
+        // accident on some unrelated validation error.
+        disposition: "removed-externally-after-merge",
+      },
+    },
+  };
+  writeJson(fixture.stateFile, state);
+}
+
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    writeMalformedRecord(fixture, {
+      beadId: "cave-unit2",
+      branch: "feat/cave-unit2-orphan",
+      // No worktree is ever registered here — the shape cave-l11sw was in, its
+      // managed worktree having been removed outside the lifecycle after merge.
+      worktreePath: path.join(fixture.repo, ".worktrees", "cave-unit2-orphan"),
+    });
+
+    const created = runCreate(fixture, createArgs());
+    assert.doesNotMatch(
+      created.stderr,
+      /lifecycle inventory is incomplete/,
+      "another bead's malformed record must not block an unrelated creation",
+    );
+    assert.equal(created.status, 0, `create must succeed: ${created.stderr}`);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example") !== null,
+      true,
+      "the requested branch is actually created",
+    );
+  },
+);
+
+// The scoping above must not become a way to create *over* a claim. A record
+// already naming this branch is the collision the abort was protecting, and a
+// malformed record is no less a claim than a valid one.
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    writeMalformedRecord(fixture, {
+      beadId: "cave-unit2",
+      branch: "feat/cave-unit1-example",
+      worktreePath: path.join(fixture.repo, ".worktrees", "cave-unit1-example"),
+    });
+
+    const refused = runCreate(fixture, createArgs());
+    assert.notEqual(refused.status, 0, "a claimed branch must not be created over");
+    assert.match(refused.stderr, /lifecycle inventory is incomplete/);
+    assert.match(refused.stderr, /disposition is invalid/);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example"),
+      null,
+      "no branch is created when the request collides with a claim",
+    );
+  },
+);
+
+// Same for the path, which a differently-named branch can still land on: the
+// creator slugifies `feat/`, `fix/`, `docs/` and `chore/` away, so `fix/x` and
+// `feat/x` both resolve to `.worktrees/x`.
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    writeMalformedRecord(fixture, {
+      beadId: "cave-unit2",
+      branch: "fix/cave-unit1-example",
+      worktreePath: path.join(fixture.repo, ".worktrees", "cave-unit1-example"),
+    });
+
+    const refused = runCreate(fixture, createArgs());
+    assert.notEqual(refused.status, 0, "a claimed path must not be created over");
+    assert.match(refused.stderr, /lifecycle inventory is incomplete/);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example"),
+      null,
+      "no branch is created when the request collides with a claimed path",
+    );
+  },
+);
+
 console.log("worktree-lifecycle-create.test.mjs: ok");

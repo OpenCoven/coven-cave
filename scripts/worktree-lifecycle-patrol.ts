@@ -186,17 +186,56 @@ function summarizeInventory(inventory: PatrolInventory): PatrolSummary {
   return summarizeWorktreeLifecycle(inventory.items, inventory.budgets);
 }
 
+/**
+ * Malformed metadata records that describe no unit the patrol can see.
+ *
+ * A record is charged to the branch and path it names (cave-g9byt), so one
+ * whose worktree was removed outside the lifecycle lands on nothing and would
+ * report as clean. It is still a defect on someone's bead — and the record that
+ * caused cave-g9byt was exactly this shape — so the patrol names it without
+ * moving any unit into a lane over it.
+ */
+function orphanedMetadataClaims(inventory: PatrolInventory): string[] {
+  return [
+    ...new Set(
+      inventory.metadataClaimErrors
+        .filter(
+          (claim) =>
+            !inventory.items.some(
+              (item) =>
+                (claim.branch.length > 0 && item.branch === claim.branch) ||
+                (claim.path !== null && item.path === claim.path),
+            ),
+        )
+        .flatMap((claim) => claim.errors),
+    ),
+  ];
+}
+
+function renderOrphanedMetadataClaims(inventory: PatrolInventory): string {
+  const claims = orphanedMetadataClaims(inventory);
+  if (claims.length === 0) return "";
+  return [
+    "",
+    "Malformed worktree metadata on beads whose units are gone (no unit is blocked by these;",
+    "the owning bead should repair or drop the record):",
+    ...claims.map((claim) => `- ${claim}`),
+  ].join("\n");
+}
+
 function buildJsonReport(
   options: Options,
   inventory: PatrolInventory,
   summary: PatrolSummary,
   extras: Record<string, unknown> = {},
 ) {
+  const orphanedClaims = orphanedMetadataClaims(inventory);
   return {
     ok: true,
     generatedAt: new Date(options.nowMs).toISOString(),
     ...summary,
     inventoryFingerprint: inventory.inventoryFingerprint,
+    ...(orphanedClaims.length > 0 ? { orphanedMetadataClaims: orphanedClaims } : {}),
     ...extras,
   };
 }
@@ -540,12 +579,12 @@ export function main(argv = process.argv.slice(2)): number {
             ...(postInventoryError ? { postInventoryError } : {}),
             retirement,
           })
-        : renderApplyReport(
+        : `${renderApplyReport(
             postSummary,
             retirement,
             warning,
             postInventoryError,
-          ),
+          )}${renderOrphanedMetadataClaims(reportingInventory)}`,
     );
     return outcome.status;
   }
@@ -553,7 +592,7 @@ export function main(argv = process.argv.slice(2)): number {
   console.log(
     options.json
       ? renderJsonReport(options, inventory, summary)
-      : renderWorktreeLifecycleReport(summary),
+      : `${renderWorktreeLifecycleReport(summary)}${renderOrphanedMetadataClaims(inventory)}`,
   );
   return 0;
 }
