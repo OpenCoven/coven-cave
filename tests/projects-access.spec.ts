@@ -1,11 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // The Chat → Projects surface is the "Project access" page: one familiar's
-// access map over every registered project, split into WORKSPACES (familiar
-// workspace roots) and REPOSITORIES, where clicking a row cycles its direct
-// grant none → read → full → none against /api/project-grants. Runs
-// daemonless: all data arrives via page.route mocks, and the grants store is
-// simulated statefully so the page's post-mutation refetch sees its writes.
+// access map over every registered project, grouped by derived organization,
+// where clicking a row cycles its direct grant none → read → full → none
+// against /api/project-grants. Runs daemonless: all data arrives via page.route
+// mocks, and the grants store is simulated statefully so the page's
+// post-mutation refetch sees its writes.
 
 const NOW = new Date().toISOString();
 
@@ -17,8 +17,22 @@ const PROJECTS = [
     createdAt: NOW,
     updatedAt: NOW,
   },
-  { id: "repo-cave", name: "Coven Cave", root: "/workspace/coven-cave", createdAt: NOW, updatedAt: NOW },
-  { id: "repo-docs", name: "Coven Docs", root: "/workspace/coven-docs", createdAt: NOW, updatedAt: NOW },
+  {
+    id: "repo-cave",
+    name: "Coven Cave",
+    root: "/workspace/coven-cave",
+    repoUrl: "https://github.com/OpenCoven/coven-cave",
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    id: "repo-docs",
+    name: "Coven Docs",
+    root: "/workspace/coven-docs",
+    repoUrl: "https://github.com/OpenCoven/coven-docs",
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
 ];
 
 type GrantRow = { familiarId: string; projectId: string; access: "read" | "write" };
@@ -77,11 +91,12 @@ test("cards are sectioned and their pill cycles no access → read → full → 
     { familiarId: "nova", projectId: "repo-docs", access: "read" },
   ]);
 
-  // Sections split by root: familiar workspaces vs everything else.
-  const workspaces = page.locator(".projects-access-section", { hasText: "Workspaces" });
-  const repositories = page.locator(".projects-access-section", { hasText: "Repositories" });
-  await expect(workspaces.locator(".projects-access-card")).toHaveCount(1);
-  await expect(repositories.locator(".projects-access-card")).toHaveCount(2);
+  // Sections split by derived organization: OpenCoven repositories and the
+  // familiars workspace leaf.
+  const opencoven = page.locator(".projects-access-section", { hasText: "OpenCoven" });
+  const familiars = page.locator(".projects-access-section", { hasText: "familiars" });
+  await expect(opencoven.locator(".projects-access-card")).toHaveCount(2);
+  await expect(familiars.locator(".projects-access-card")).toHaveCount(1);
 
   // Seeded grant renders as a Read pill.
   const docsCard = page.locator(".projects-access-card", { hasText: "Coven Docs" });
@@ -148,7 +163,7 @@ test("search filters cards and the ledger still spans the whole map", async ({ p
 
   await page.getByLabel("Find a project").fill("docs");
   await expect(page.locator(".projects-access-card")).toHaveCount(1);
-  await expect(page.locator(".projects-access-section", { hasText: "Workspaces" })).toHaveCount(0);
+  await expect(page.locator(".projects-access-section", { hasText: "familiars" })).toHaveCount(0);
 
   // The ledger still describes the whole map, not the filtered subset.
   await expect(page.locator(".projects-access-ledger-key > span").nth(1)).toHaveText(/1 Read/);
@@ -160,12 +175,12 @@ test("search filters cards and the ledger still spans the whole map", async ({ p
 test("a collapsed section keeps reporting what is granted inside it", async ({ page }) => {
   await openProjectAccess(page, [{ familiarId: "nova", projectId: "repo-cave", access: "write" }]);
 
-  const repositories = page.locator(".projects-access-section", { hasText: "Repositories" });
+  const opencoven = page.locator(".projects-access-section", { hasText: "OpenCoven" });
   // Address the section toggle by name — `{ expanded: true }` also matches any
   // open card disclosure inside the section.
-  await repositories.getByRole("button", { name: "Repositories" }).click();
-  await expect(repositories.locator(".projects-access-card")).toHaveCount(0);
+  await opencoven.getByRole("button", { name: "OpenCoven" }).click();
+  await expect(opencoven.locator(".projects-access-card")).toHaveCount(0);
   // Folding must not hide that something in there is granted.
-  await expect(repositories.locator(".projects-access-mix-chip.is-write")).toHaveText("1");
-  await expect(repositories.locator(".projects-access-peek")).toContainText("Coven Cave");
+  await expect(opencoven.locator(".projects-access-mix-chip.is-write")).toHaveText("1");
+  await expect(opencoven.locator(".projects-access-peek")).toContainText("Coven Cave");
 });
