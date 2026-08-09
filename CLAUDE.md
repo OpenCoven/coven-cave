@@ -531,6 +531,40 @@ to `.claude/worktree-autolock.log` (gitignored, JSON lines). Disable for a
 command with `WT_AUTOLOCK_DISABLE=1`. It never blocks a tool call and always
 exits 0 — if it cannot read a worktree, it leaves it alone.
 
+**Retention push (automatic, NON-blocking).** A PostToolUse hook —
+`scripts/worktree-retention-push.mjs`, matcher Bash — pushes any worktree
+whose HEAD holds commits reachable from no remote ref, so a local actor cannot
+destroy them. This is the enforcement of the "push your branch to origin after
+every commit" discipline above, which as advice did not hold: a 2026-08-09
+sweep found **174 commits across five branches on no remote ref at all**,
+including 135 on `docs/cave-zs85n-chat-sidebar-attention`. Two of those
+branches were back at risk **25 minutes** after a manual push, because live
+sessions kept committing locally — it is a continuous leak, not a backlog.
+
+It complements rather than duplicates the two hooks above, and neither of them
+covers this: the guard blocks destructive Bash *from a Claude session*, and the
+auto-lock defends against GitHub Desktop. A lock is a delay, not a backup — a
+second `--force` still takes the worktree, and neither hook moves a single
+commit off this machine.
+
+It pushes the **branch** first, because a remote branch is what every other
+surface here reads as retention and a fast-forward push cannot rewrite anyone's
+work. When that is refused — a diverged branch, or `branch-cap.yml` rolling
+back a newly created branch above 40 — it falls back to a tag named for the
+exact commit (`retention/<flattened-branch>-<short-sha>`). That tag is
+immutable and unique, so it never force-updates, never collides, and
+`branch-cap.yml` ignores it (`ref_type == 'branch'` only). It never merges,
+never opens a PR, never deletes or rewrites a ref, and **skips `main`** —
+pushing that is the direct-to-main move this file forbids.
+
+Throttled to once a minute (`.claude/worktree-retention-push.stamp`) and capped
+at 3 pushes per pass to bound the latency added to one tool call; pushed
+worktrees drop out of the at-risk set, so successive passes reach the rest.
+Every push and every failure is appended to
+`.claude/worktree-retention-push.log` (gitignored, JSON lines). Disable for a
+command with `WT_RETENTION_PUSH_DISABLE=1`. It never blocks a tool call and
+always exits 0.
+
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
 ## Beads Issue Tracker
