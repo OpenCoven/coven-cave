@@ -116,6 +116,11 @@ assert.match(
   /aria-label=\{\s*silent/,
   "the year's label states the silent case rather than reading an empty grid",
 );
+assert.match(
+  css,
+  /\.fa-lattice__grid\s*\{[^}]*grid-auto-columns:\s*minmax\(6px,\s*1fr\);/,
+  "narrow containers scroll instead of collapsing lattice cells into circles",
+);
 
 // ── Density shades come from the model, never recomputed here ────────────────
 // buildActivityLattice guarantees a day carries the same count in all three
