@@ -812,7 +812,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   ) : (
     <ChatView
       composerDraftKey={composerDraftKey}
-      key={`chat-compose-${composeInstance}`}
+      key={`chat-compose-${composerDraftKey}-${composeInstance}`}
       ref={viewHandle}
       familiar={chatFamiliar}
       familiars={familiars}
@@ -908,6 +908,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           content: (
             <ChatView
               composerDraftKey={`${composerDraftKey}:split:${paneId}`}
+              key={`${composerDraftKey}:split:${paneId}`}
               familiar={paneFamiliar}
               sessionId={paneId}
               session={paneSession}
