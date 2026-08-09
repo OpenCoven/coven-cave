@@ -210,6 +210,34 @@ assert.match(
   "The rail mode hydrates from its persisted key",
 );
 
+// Open project mode nests the existing project folders beneath organization
+// disclosures without changing the folders' own interaction contracts.
+assert.match(
+  source,
+  /const organizationGroups = useMemo\(\(\) => chatProjectOrganizationGroups\(groups\), \[groups\]\)/,
+  "The rail memoizes organization groups derived from the existing project groups",
+);
+assert.match(
+  source,
+  /organizationExpansionKey\(organization\.key\)/,
+  "Organization disclosure state shares the persisted expanded-key list",
+);
+assert.match(
+  source,
+  /aria-label=\{`\$\{organizationExpanded \? "Collapse" : "Expand"\} \$\{organization\.label\} projects`\}/,
+  "Organization disclosure buttons announce their next action and label",
+);
+assert.match(
+  source,
+  /organizationGroup\.items\.map\(\(group\) => renderProjectGroup\(group\)\)/,
+  "Organization descendants reuse the unchanged project-group renderer",
+);
+assert.match(
+  source,
+  /\{hasSearch \|\| organizationExpanded \? \([\s\S]*organizationGroup\.items\.map\(\(group\) => renderProjectGroup\(group\)\)/,
+  "Search reveals organization descendants even when their disclosure is collapsed",
+);
+
 // The open conversation row announces itself to assistive tech (was visual-only:
 // a background tint + accent bar with no aria-current).
 assert.match(

@@ -71,6 +71,12 @@ assert.match(
 
 assert.match(
   chatProjectSidebar,
+  /<section[\s\S]*aria-label=\{organization\.label\}[\s\S]*<button[\s\S]*type="button"[\s\S]*className="focus-ring[\s\S]*aria-expanded=\{organizationExpanded\}/,
+  "Open project mode should render accessible organization sections with full-row disclosure buttons",
+);
+
+assert.match(
+  chatProjectSidebar,
   /onOpenProjectsTab\?: \(\) => void/,
   "Chat project rail should accept a Projects-tab jump callback",
 );
