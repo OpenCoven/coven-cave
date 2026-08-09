@@ -235,6 +235,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [selection, setSelection] = useState<ProjectSelection>("all");
   const [sidebarHydrated, setSidebarHydrated] = useState(false);
   const sidebarPrefsLoadedRef = useRef(false);
+  const sidebarOrganizationMigrationPendingRef = useRef(false);
   const sidebarDefaultExpandedRef = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const sortAnchorRef = useRef<HTMLButtonElement>(null);
@@ -344,7 +345,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   useEffect(() => {
     if (sidebarPrefsLoadedRef.current) return;
     if (sessionsLoaded === false) return;
-    if (!projectsLoadedSuccessfully) return;
     sidebarPrefsLoadedRef.current = true;
     try {
       setGroupBy(normalizeChatGroupBy(window.localStorage.getItem(CHAT_GROUP_BY_KEY)));
@@ -356,19 +356,24 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       typeof window !== "undefined" && window.localStorage.getItem(PROJECT_SIDEBAR_KEYS.expanded) !== null;
     sidebarDefaultExpandedRef.current = !hasStoredExpanded;
     const storedExpanded = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.expanded, null);
-    setExpandedKeys(
-      Array.isArray(storedExpanded)
-        ? migrateOrganizationExpansionKeys(
-            storedExpanded.filter((k): k is string => typeof k === "string"),
-            sidebarGroups,
-          )
-        : projectSelectionKeys(sidebarGroups),
-    );
+    if (Array.isArray(storedExpanded)) {
+      setExpandedKeys(storedExpanded.filter((k): k is string => typeof k === "string"));
+      sidebarOrganizationMigrationPendingRef.current = true;
+    } else {
+      setExpandedKeys(projectSelectionKeys(sidebarGroups));
+    }
     const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
     setSelection(typeof storedSelection === "string" ? storedSelection : "all");
     setSessionOrder(readSessionOrder());
     setSidebarHydrated(true);
-  }, [sessionsLoaded, projectsLoadedSuccessfully, sidebarGroups]);
+  }, [sessionsLoaded, sidebarGroups]);
+  useEffect(() => {
+    if (!sidebarHydrated || !sidebarOrganizationMigrationPendingRef.current) return;
+    if (sessionsLoaded === false || sessionsError) return;
+    if (!projectsLoadedSuccessfully) return;
+    setExpandedKeys((current) => migrateOrganizationExpansionKeys(current, sidebarGroups));
+    sidebarOrganizationMigrationPendingRef.current = false;
+  }, [sidebarHydrated, sessionsLoaded, sessionsError, projectsLoadedSuccessfully, sidebarGroups]);
   useEffect(() => {
     if (!sidebarHydrated || !sidebarDefaultExpandedRef.current) return;
     const nextExpandedKeys = projectSelectionKeys(sidebarGroups);

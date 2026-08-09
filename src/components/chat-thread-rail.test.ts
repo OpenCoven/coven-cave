@@ -140,13 +140,18 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /readPersisted<unknown>\(PROJECT_SIDEBAR_KEYS\.expanded, null\)[\s\S]*migrateOrganizationExpansionKeys\([\s\S]*projectSelectionKeys\(sidebarGroups\)/,
-  "ChatRouter migrates legacy project-only arrays and still defaults every group open when no value exists",
+  /if \(sessionsLoaded === false\) return;\s*sidebarPrefsLoadedRef\.current = true;/,
+  "ChatRouter hydrates raw sidebar preferences after the first session attempt without waiting for projects",
 );
 assert.match(
   chatRouter,
-  /const \{\s*projects,\s*loadedSuccessfully: projectsLoadedSuccessfully,\s*\} = useProjects\(\);[\s\S]*if \(sessionsLoaded === false\) return;\s*if \(!projectsLoadedSuccessfully\) return;\s*sidebarPrefsLoadedRef\.current = true;[\s\S]*\}, \[sessionsLoaded, projectsLoadedSuccessfully, sidebarGroups\]\);/,
-  "ChatRouter hydrates and migrates sidebar preferences only after sessions and project metadata load successfully",
+  /if \(Array\.isArray\(storedExpanded\)\) \{\s*setExpandedKeys\(storedExpanded\.filter\(\(k\): k is string => typeof k === "string"\)\);\s*sidebarOrganizationMigrationPendingRef\.current = true;\s*\} else \{\s*setExpandedKeys\(projectSelectionKeys\(sidebarGroups\)\);\s*\}/,
+  "ChatRouter keeps stored raw expansion keys unchanged and marks organization migration pending",
+);
+assert.match(
+  chatRouter,
+  /useEffect\(\(\) => \{\s*if \(!sidebarHydrated \|\| !sidebarOrganizationMigrationPendingRef\.current\) return;\s*if \(sessionsLoaded === false \|\| sessionsError\) return;\s*if \(!projectsLoadedSuccessfully\) return;\s*setExpandedKeys\(\(current\) => migrateOrganizationExpansionKeys\(current, sidebarGroups\)\);\s*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}, \[sidebarHydrated, sessionsLoaded, sessionsError, projectsLoadedSuccessfully, sidebarGroups\]\);/,
+  "ChatRouter defers one-shot organization migration until sessions and projects recover successfully",
 );
 assert.match(
   chatRouter,
@@ -165,13 +170,18 @@ assert.match(
 );
 assert.match(
   chatList,
-  /readPersisted<unknown>\(PROJECT_SIDEBAR_KEYS\.expanded, null\)[\s\S]*migrateOrganizationExpansionKeys\([\s\S]*projectSelectionKeys\(sidebarGroups\)/,
-  "ChatList migrates legacy project-only arrays and still defaults every group open when no value exists",
+  /if \(sessionsLoaded === false\) return;\s*sidebarPrefsLoadedRef\.current = true;/,
+  "ChatList hydrates raw sidebar preferences after the first session attempt without waiting for projects",
 );
 assert.match(
   chatList,
-  /const \{\s*projects,\s*loadedSuccessfully: projectsLoadedSuccessfully,\s*\} = useProjects\(\{ familiarId: familiar\?\.id \?\? null \}\);[\s\S]*if \(sessionsLoaded === false\) return;\s*if \(!projectsLoadedSuccessfully\) return;\s*sidebarPrefsLoadedRef\.current = true;[\s\S]*\}, \[sessionsLoaded, projectsLoadedSuccessfully, sidebarGroups\]\);/,
-  "ChatList hydrates and migrates sidebar preferences only after sessions and project metadata load successfully",
+  /if \(Array\.isArray\(storedExpanded\)\) \{\s*setExpandedKeys\(storedExpanded\.filter\(\(k\): k is string => typeof k === "string"\)\);\s*sidebarOrganizationMigrationPendingRef\.current = true;\s*\} else \{\s*setExpandedKeys\(projectSelectionKeys\(sidebarGroups\)\);\s*\}/,
+  "ChatList keeps stored raw expansion keys unchanged and marks organization migration pending",
+);
+assert.match(
+  chatList,
+  /useEffect\(\(\) => \{\s*if \(!sidebarHydrated \|\| !sidebarOrganizationMigrationPendingRef\.current\) return;\s*if \(sessionsLoaded === false \|\| sessionsError\) return;\s*if \(!projectsLoadedSuccessfully\) return;\s*setExpandedKeys\(\(current\) => migrateOrganizationExpansionKeys\(current, sidebarGroups\)\);\s*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}, \[sidebarHydrated, sessionsLoaded, sessionsError, projectsLoadedSuccessfully, sidebarGroups\]\);/,
+  "ChatList defers one-shot organization migration until sessions and projects recover successfully",
 );
 
 // ── Preserved contracts other suites rely on ─────────────────────────────────

@@ -248,6 +248,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
   }, [onOpenProjectsTab]);
   const sidebarPrefsLoadedRef = useRef(false);
+  const sidebarOrganizationMigrationPendingRef = useRef(false);
   const sidebarDefaultExpandedRef = useRef(false);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const [selection, setSelection] = useState<ProjectSelection>("all");
@@ -315,24 +316,28 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   useEffect(() => {
     if (sidebarPrefsLoadedRef.current) return;
     if (sessionsLoaded === false) return;
-    if (!projectsLoadedSuccessfully) return;
     sidebarPrefsLoadedRef.current = true;
     const hasStoredExpanded =
       typeof window !== "undefined" && window.localStorage.getItem(PROJECT_SIDEBAR_KEYS.expanded) !== null;
     sidebarDefaultExpandedRef.current = !hasStoredExpanded;
     const storedExpanded = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.expanded, null);
-    setExpandedKeys(
-      Array.isArray(storedExpanded)
-        ? migrateOrganizationExpansionKeys(
-            storedExpanded.filter((k): k is string => typeof k === "string"),
-            sidebarGroups,
-          )
-        : projectSelectionKeys(sidebarGroups),
-    );
+    if (Array.isArray(storedExpanded)) {
+      setExpandedKeys(storedExpanded.filter((k): k is string => typeof k === "string"));
+      sidebarOrganizationMigrationPendingRef.current = true;
+    } else {
+      setExpandedKeys(projectSelectionKeys(sidebarGroups));
+    }
     const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
     setSelection(typeof storedSelection === "string" ? storedSelection : "all");
     setSidebarHydrated(true);
-  }, [sessionsLoaded, projectsLoadedSuccessfully, sidebarGroups]);
+  }, [sessionsLoaded, sidebarGroups]);
+  useEffect(() => {
+    if (!sidebarHydrated || !sidebarOrganizationMigrationPendingRef.current) return;
+    if (sessionsLoaded === false || sessionsError) return;
+    if (!projectsLoadedSuccessfully) return;
+    setExpandedKeys((current) => migrateOrganizationExpansionKeys(current, sidebarGroups));
+    sidebarOrganizationMigrationPendingRef.current = false;
+  }, [sidebarHydrated, sessionsLoaded, sessionsError, projectsLoadedSuccessfully, sidebarGroups]);
   useEffect(() => {
     if (!sidebarHydrated || !sidebarDefaultExpandedRef.current) return;
     setExpandedKeys(projectSelectionKeys(sidebarGroups));
