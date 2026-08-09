@@ -168,7 +168,23 @@
   scroll-margin-top: var(--space-5);
 }
 
+/* Heading scale by level — the shared reader renders h2–h6, so deeper
+   headings must step down or every section reads as a sibling of the last. */
+h3.document-reader__heading {
+  margin-top: var(--space-6);
+  font-size: var(--text-md);
+}
+
+h4.document-reader__heading,
+h5.document-reader__heading,
+h6.document-reader__heading {
+  margin-top: var(--space-5);
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+}
+
 .document-reader__section-toggle {
+  position: relative;
   display: flex;
   width: 100%;
   align-items: center;
@@ -182,13 +198,19 @@
   cursor: pointer;
 }
 
+/* The accent tick hangs into the left margin so heading TEXT sits on the
+   same edge as body copy — the inline-flex tick used to push every heading
+   ~12px right of its own paragraphs. */
 .document-reader__section-toggle::before {
+  position: absolute;
+  top: 50%;
+  left: calc(-1 * (var(--space-1) + var(--space-2)));
   width: var(--space-1);
   height: var(--space-4);
   border-radius: var(--radius-pill);
   background: var(--document-reader-accent);
   content: "";
-  flex: none;
+  transform: translateY(-50%);
 }
 
 .document-reader__section-caret {
