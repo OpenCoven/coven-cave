@@ -148,6 +148,11 @@ assert.match(
 );
 assert.match(
   pill,
+  /open=\{menu === "worktree"\}[\s\S]*?ariaLabel="Worktree actions"[\s\S]*?menuLabel="Worktree actions"/,
+  "the worktree chip opens a menu whose accessible labels match the trigger",
+);
+assert.match(
+  pill,
   /ComposerContextView\s*=\s*null\s*\|[\s\S]*?"worktree"/,
   "ComposerContextView supports the worktree picker state",
 );
