@@ -869,9 +869,13 @@ function maintenanceSuggestion(
 ): string[] {
   if (capabilities?.complete) return ["Suggestion: pnpm beads:worktrees:apply"];
   const planes = ["coven", "beads", "github", "local"] as const;
-  const missing = planes.filter((plane) => capabilities?.[plane]?.enforced === false);
+  const missing = capabilities
+    ? planes.filter((plane) => capabilities[plane]?.enforced === false)
+    : [];
+  const planeSummary =
+    missing.length > 0 ? missing.join(", ") : "unknown (capabilities unavailable)";
   const lines: string[] = [
-    `Note: pnpm beads:worktrees:apply cannot run here — unenforced maintenance planes: ${missing.join(", ")}.`,
+    `Note: pnpm beads:worktrees:apply cannot run here — unenforced maintenance planes: ${planeSummary}.`,
   ];
   if (includeRetireByHand) {
     lines.push(
