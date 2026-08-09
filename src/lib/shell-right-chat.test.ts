@@ -18,6 +18,8 @@ test("normalizes corrupt open preference to closed", () => {
 
 test("normalizes width fallback and clamping", () => {
   assert.equal(normalizeRightChatWidth(null), RIGHT_CHAT_DEFAULT_PX);
+  assert.equal(normalizeRightChatWidth(""), RIGHT_CHAT_DEFAULT_PX);
+  assert.equal(normalizeRightChatWidth(" \t\n"), RIGHT_CHAT_DEFAULT_PX);
   assert.equal(normalizeRightChatWidth("nope"), RIGHT_CHAT_DEFAULT_PX);
   assert.equal(normalizeRightChatWidth("200"), RIGHT_CHAT_MIN_PX);
   assert.equal(normalizeRightChatWidth("900"), RIGHT_CHAT_MAX_PX);
@@ -48,5 +50,22 @@ test("auto-collapses only when nav plus chat plus detail cannot fit", () => {
       rightChatWidth: 360,
     }),
     false,
+  );
+});
+
+test("accounts for an optional list pane when deciding whether to collapse nav", () => {
+  const noListSurface = {
+    viewportWidth: 1210,
+    navWidth: 240,
+    rightChatWidth: 360,
+  };
+
+  assert.equal(shouldAutoCollapseNavForRightChat(noListSurface), false);
+  assert.equal(
+    shouldAutoCollapseNavForRightChat({
+      ...noListSurface,
+      listWidth: 280,
+    }),
+    true,
   );
 });
