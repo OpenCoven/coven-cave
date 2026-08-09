@@ -743,6 +743,47 @@ test("podcast closers restate the section's lead finding verbatim as the takeawa
   );
 });
 
+test("podcast closers never restate a list enumerator as the takeaway", () => {
+  // cave-8ksv1: real artifacts open sections with numbered lists, and the
+  // enumerator's own dot matched as a complete "sentence" — closers rendered
+  // "The takeaway there — 1." Strip the marker and take the real sentence.
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — decision criteria" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Decision criteria",
+      "",
+      "1. Scope of evolution decides the safeguard family. Prompts want spec regression; weights want drift benchmarks.",
+      "2. Reversibility budget comes second.",
+      "",
+      "## Numeric leads",
+      "",
+      "42. 17 3.5. The rest of this section is prose.",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const hosts = content.script.filter((segment) => segment.speaker === "host");
+  assert.ok(
+    !hosts.some((segment) => /[—:] ?\d{1,3}\.$/.test(segment.text)),
+    "no closer ends on a bare enumerator",
+  );
+  assert.ok(
+    hosts.some((segment) =>
+      segment.text.includes("Scope of evolution decides the safeguard family."),
+    ),
+    "the sentence after the enumerator is the takeaway",
+  );
+  // A "sentence" with no letters is structure, not synthesis — that section
+  // falls back to the acknowledgment closer instead of restating "17 3.5."
+  assert.ok(
+    !hosts.some((segment) => segment.text.includes("17 3.5.")),
+    "letterless numeric fragments never become the takeaway",
+  );
+});
+
 test("podcast host carries at least 20% of dialogue characters on realistic findings", () => {
   // Charm re-review (cave-upkaf): host/guest balance measured 16.2%/83.8%
   // against a 20–30% target. Content-bearing closers are the lever; this pins
