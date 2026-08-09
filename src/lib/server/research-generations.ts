@@ -1234,16 +1234,31 @@ const MAX_TAKEAWAY_CHARS = 160;
 const FIRST_SENTENCE_RE = /^[\s\S]*?[.!?…]["'”’)\]]*(?=\s|$)/;
 
 /**
+ * A list enumerator or bullet marker opening a chunk (`1.`, `2)`, `a.`, `-`,
+ * `*`, `•`). Stripped before sentence extraction: on real artifacts a section
+ * often leads with a numbered list, and the enumerator's own dot otherwise
+ * matches as a complete "sentence" — closers then restate "1." as the
+ * takeaway (cave-8ksv1).
+ */
+const LEAD_LIST_MARKER_RE = /^(?:[-*•]|(?:\d{1,3}|[a-z])[.)])\s+/i;
+
+/** Spoken-substance gate: at least three words, at least one with letters. */
+const TAKEAWAY_SUBSTANCE_RE = /(?:\S+\s+){2}\S/;
+
+/**
  * The section's lead sentence, restated verbatim by content-bearing closers.
  * Declarative sentences only — a question restated as "the takeaway" is not a
  * synthesis — and only when short enough to work as a spoken bookend. Any
- * non-question terminator qualifies; only `?` disqualifies.
+ * non-question terminator qualifies; only `?` disqualifies. A leading list
+ * marker is not part of the sentence, and a match without real word content
+ * (three words, one carrying letters) is structure, not a takeaway.
  */
 function sectionTakeaway(chunks: string[]): string | undefined {
-  const lead = chunks[0]?.trimStart();
+  const lead = chunks[0]?.trimStart().replace(LEAD_LIST_MARKER_RE, "");
   if (!lead) return undefined;
   const sentence = lead.match(FIRST_SENTENCE_RE)?.[0]?.trim();
   if (!sentence || sentence.length > MAX_TAKEAWAY_CHARS) return undefined;
+  if (!TAKEAWAY_SUBSTANCE_RE.test(sentence) || !/\p{L}/u.test(sentence)) return undefined;
   return /\?["'”’)\]]*$/.test(sentence) ? undefined : sentence;
 }
 
