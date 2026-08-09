@@ -853,30 +853,47 @@ function exceptionSuggestion(options: ManagedCreateOptions, worktreePath: string
  * bare `git worktree add`, which yields a permanently `uncertain` unit, or
  * hand-editing the bead, which is the forgery cave-l52dt rules out.
  *
- * Derived from the gate rather than restated, so this cannot drift: when those
- * planes do land, the suggestion starts appearing again on its own.
+ * Uses `capabilities.complete` to gate the suggestion — the same field the
+ * patrol itself uses — rather than counting per-plane `enforced === false`.
+ * A newly added unenforced plane, or any other condition that sets
+ * `complete=false`, will suppress the suggestion even if the listed-plane scan
+ * would have wrongly cleared it.
+ *
+ * `includeRetireByHand` controls whether the hand-retirement route is printed.
+ * It is only relevant for budget refusals; non-budget refusals (duplicate
+ * metadata, missing primary registration) should omit it.
  */
 function maintenanceSuggestion(
   capabilities = repositoryMaintenanceCapabilities(),
+  includeRetireByHand = true,
 ): string[] {
+  if (capabilities?.complete) return ["Suggestion: pnpm beads:worktrees:apply"];
   const planes = ["coven", "beads", "github", "local"] as const;
   const missing = planes.filter((plane) => capabilities?.[plane]?.enforced === false);
-  if (missing.length === 0) return ["Suggestion: pnpm beads:worktrees:apply"];
-  return [
+  const lines: string[] = [
     `Note: pnpm beads:worktrees:apply cannot run here — unenforced maintenance planes: ${missing.join(", ")}.`,
-    "Retire by hand instead: prove retention (a remote branch, or a pushed archive tag —",
-    "a merged PR is not retention, since a squash leaves the branch's commits on no remote ref),",
-    "then `git worktree unlock <path> && git worktree remove <path> && git branch -d <branch>`.",
   ];
+  if (includeRetireByHand) {
+    lines.push(
+      "Retire by hand instead: prove retention (a remote branch, or a pushed archive tag —",
+      "a merged PR is not retention, since a squash leaves the branch's commits on no remote ref),",
+      "then `git worktree unlock <path> && git worktree remove <path> && git branch -d <branch>`.",
+    );
+  }
+  return lines;
 }
 
-function refusalOutcome(reasons: string[], suggestion: string[] = []): Outcome {
+function refusalOutcome(
+  reasons: string[],
+  suggestion: string[] = [],
+  includeRetireByHand = true,
+): Outcome {
   return {
     status: 2,
     stdout: null,
     stderr: [
       ...reasons.map((reason) => `worktree-lifecycle-create: ${reason}`),
-      ...maintenanceSuggestion(),
+      ...maintenanceSuggestion(undefined, includeRetireByHand),
       ...suggestion,
     ],
     createdReport: null,
@@ -1602,12 +1619,15 @@ function execute(
         `Bead ${options.beadId} already has structured worktree metadata; a current worktree exception is required to append another record`,
       ],
       exceptionSuggestion(options, worktreePath),
+      false,
     );
   }
   if (primaryRegistrationMissing) {
-    return refusalOutcome([
-      `Bead ${options.beadId} primary structured worktree metadata is not currently registered`,
-    ]);
+    return refusalOutcome(
+      [`Bead ${options.beadId} primary structured worktree metadata is not currently registered`],
+      [],
+      false,
+    );
   }
   const existingPaths = existingOwnedPaths(inventory.items, options.beadId);
 
