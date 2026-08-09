@@ -22,6 +22,12 @@ import {
   runRetirementApply,
 } from "./worktree-lifecycle-patrol.ts";
 import { probeRecordedPathAbsence } from "./worktree-lifecycle-inventory.ts";
+import {
+  createMetadataRepairOperations,
+  probeMetadataRepairPathPresence,
+  removeLifecycleRecord,
+  repairOrphanedWorktreeMetadata,
+} from "./worktree-lifecycle-metadata-repair.ts";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(sourceRoot, "scripts", "worktree-lifecycle-patrol.ts");
@@ -31,6 +37,7 @@ const fixtureRoot = realpathSync(
 const repo = path.join(fixtureRoot, "repo");
 const origin = path.join(fixtureRoot, "origin.git");
 const bin = path.join(fixtureRoot, "bin");
+const repairBin = path.join(fixtureRoot, "repair-bin");
 const gitBin = path.join(fixtureRoot, "git-bin");
 const registeredDrift = path.join(fixtureRoot, "registered-drift");
 const duplicateRegisteredPath = path.join(fixtureRoot, "duplicate-registered");
@@ -78,7 +85,399 @@ function executable(file, contents) {
   chmodSync(file, 0o755);
 }
 
+const orphanRecord = {
+  branch: "fix/cave-orphan-old",
+  path: "/repo/.worktrees/cave-orphan-old",
+  owner: "Kitty",
+  purpose: "Old managed worktree",
+  disposition: "active",
+  createdAt: "2026-08-01T12:00:00.000Z",
+};
+
+function repairCandidate(overrides = {}) {
+  return {
+    beadId: "cave-orphan",
+    beadStatus: "open",
+    location: "primary",
+    branch: orphanRecord.branch,
+    path: orphanRecord.path,
+    record: orphanRecord,
+    repairable: true,
+    reasons: [],
+    ...overrides,
+  };
+}
+
+function repairOperations({
+  coven = { theme: "moon", worktree: orphanRecord },
+  gateResults = [{ ok: true }, { ok: true }, { ok: true }],
+  branch = { ok: true, present: false },
+  registered = { ok: true, present: false },
+  filesystem = { ok: true, present: false },
+  persist = { ok: true },
+  verificationMetadata,
+} = {}) {
+  let storedCoven = coven;
+  let reads = 0;
+  let gates = 0;
+  const calls = [];
+  return {
+    calls,
+    operations: {
+      heartbeatAndVerifyGate() {
+        calls.push("gate");
+        const result = gateResults[gates] ?? gateResults.at(-1) ?? { ok: true };
+        gates += 1;
+        return result;
+      },
+      readBead(beadId) {
+        calls.push(`read:${beadId}`);
+        reads += 1;
+        return {
+          ok: true,
+          bead: {
+            id: beadId,
+            metadata:
+              reads > 1 && verificationMetadata !== undefined
+                ? verificationMetadata
+                : { label: "preserve", coven: storedCoven },
+          },
+        };
+      },
+      probeLocalBranch() {
+        calls.push("branch");
+        return branch;
+      },
+      probeRegisteredPath() {
+        calls.push("registered");
+        return registered;
+      },
+      probeFilesystemPath() {
+        calls.push("filesystem");
+        return filesystem;
+      },
+      persistCoven(beadId, nextCoven) {
+        calls.push(`persist:${beadId}`);
+        if (persist.ok) storedCoven = nextCoven;
+        return persist;
+      },
+    },
+  };
+}
+
 try {
+  {
+    const denied = probeMetadataRepairPathPresence("/fixture/denied", () => {
+      throw Object.assign(new Error("fixture denied"), { code: "EACCES" });
+    });
+    assert.equal(denied.ok, false);
+    assert.match(
+      denied.reason,
+      /could not establish path absence \(EACCES\): fixture denied/,
+      "production path probing fails closed for errors other than ENOENT and ENOTDIR",
+    );
+  }
+
+  {
+    const primary = { ...orphanRecord, purpose: "Primary" };
+    const firstAdditional = {
+      ...orphanRecord,
+      branch: "fix/cave-next",
+      path: "/repo/.worktrees/cave-next",
+      purpose: "Next",
+    };
+    const secondAdditional = {
+      ...orphanRecord,
+      branch: "fix/cave-last",
+      path: "/repo/.worktrees/cave-last",
+      purpose: "Last",
+    };
+    assert.deepEqual(
+      removeLifecycleRecord(
+        {
+          theme: "moon",
+          worktree: primary,
+          worktrees: [firstAdditional, secondAdditional],
+        },
+        "primary",
+        primary,
+      ),
+      {
+        theme: "moon",
+        worktree: firstAdditional,
+        worktrees: [secondAdditional],
+      },
+      "removing primary promotes the first additional record",
+    );
+    assert.deepEqual(
+      removeLifecycleRecord(
+        {
+          theme: "moon",
+          worktree: primary,
+          worktrees: [firstAdditional, secondAdditional],
+        },
+        "additional:0",
+        firstAdditional,
+      ),
+      {
+        theme: "moon",
+        worktree: primary,
+        worktrees: [secondAdditional],
+      },
+      "removing an additional record preserves the primary and sibling order",
+    );
+    assert.throws(
+      () =>
+        removeLifecycleRecord(
+          { worktree: { ...primary, purpose: "Changed" } },
+          "primary",
+          primary,
+        ),
+      /changed/,
+      "the transform refuses a changed fresh record",
+    );
+    assert.deepEqual(
+      removeLifecycleRecord({ worktree: primary }, "primary", primary),
+      {},
+      "removing the last lifecycle record leaves an empty coven object",
+    );
+    assert.throws(
+      () => removeLifecycleRecord({}, "primary", primary),
+      /missing/,
+      "the transform explicitly rejects a missing record",
+    );
+    assert.throws(
+      () =>
+        removeLifecycleRecord(
+          { worktree: firstAdditional, worktrees: [primary] },
+          "primary",
+          primary,
+        ),
+      /moved/,
+      "the transform explicitly rejects a moved record",
+    );
+    assert.throws(
+      () =>
+        removeLifecycleRecord(
+          {
+            worktree: primary,
+            worktrees: [{ ...primary, purpose: "Conflicting sibling" }],
+          },
+          "primary",
+          primary,
+        ),
+      /ambiguous/,
+      "the transform rejects a fresh branch/path identity collision",
+    );
+  }
+
+  {
+    const fixture = repairOperations();
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 3,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired.map((item) => item.beadId), ["cave-orphan"]);
+    assert.deepEqual(report.blocked, []);
+    assert.deepEqual(report.pending, []);
+    assert.deepEqual(fixture.calls, [
+      "gate",
+      "read:cave-orphan",
+      "branch",
+      "registered",
+      "filesystem",
+      "gate",
+      "persist:cave-orphan",
+      "gate",
+      "read:cave-orphan",
+    ]);
+  }
+
+  {
+    const primary = { ...orphanRecord, purpose: "Primary" };
+    const promoted = {
+      ...orphanRecord,
+      branch: "fix/cave-promoted",
+      path: "/repo/.worktrees/cave-promoted",
+      purpose: "Promoted",
+    };
+    const fixture = repairOperations({
+      coven: {
+        sibling: "preserved",
+        worktree: primary,
+        worktrees: [promoted],
+      },
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate({ record: primary })],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired.map((item) => item.beadId), ["cave-orphan"]);
+    assert.deepEqual(report.blocked, []);
+  }
+
+  {
+    const primary = { ...orphanRecord, purpose: "Primary" };
+    const additional = {
+      ...orphanRecord,
+      branch: "fix/cave-additional",
+      path: "/repo/.worktrees/cave-additional",
+      purpose: "Additional",
+    };
+    const fixture = repairOperations({
+      coven: {
+        sibling: "preserved",
+        worktree: primary,
+        worktrees: [additional],
+      },
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [
+        repairCandidate({
+          location: "additional:0",
+          branch: additional.branch,
+          path: additional.path,
+          record: additional,
+        }),
+      ],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired.map((item) => item.beadId), ["cave-orphan"]);
+    assert.deepEqual(report.blocked, []);
+  }
+
+  for (const [name, options, reason] of [
+    ["new local branch", { branch: { ok: true, present: true } }, /local branch/i],
+    [
+      "new registered path",
+      { registered: { ok: true, present: true } },
+      /registered path/i,
+    ],
+    [
+      "present directory path",
+      { filesystem: { ok: true, present: true } },
+      /exists on disk/i,
+    ],
+    [
+      "dangling symlink path",
+      { filesystem: { ok: true, present: true } },
+      /exists on disk/i,
+    ],
+    [
+      "filesystem path probe error",
+      { filesystem: { ok: false, reason: "EACCES fixture denied" } },
+      /EACCES fixture denied/,
+    ],
+    ["update failure", { persist: { ok: false, reason: "fixture update failed" } }, /fixture update failed/],
+    [
+      "verification failure",
+      { verificationMetadata: { label: "preserve", coven: { worktree: orphanRecord } } },
+      /verification/i,
+    ],
+  ]) {
+    const fixture = repairOperations(options);
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired, [], `${name} must not report success`);
+    assert.match(report.blocked[0]?.reason ?? "", reason, name);
+  }
+
+  {
+    const changed = repairOperations({
+      coven: { worktree: { ...orphanRecord, purpose: "Changed during reread" } },
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: changed.operations,
+    });
+    assert.deepEqual(report.repaired, []);
+    assert.match(report.blocked[0]?.reason ?? "", /changed/);
+  }
+
+  for (const [phase, index] of [
+    ["before exact Bead reread", 0],
+    ["before metadata persistence", 1],
+    ["before post-persistence verification", 2],
+  ]) {
+    for (const failure of ["heartbeat", "ownership verification"]) {
+      const gateResults = [{ ok: true }, { ok: true }, { ok: true }];
+      gateResults[index] = {
+        ok: false,
+        reason: `${failure} failed at ${phase}`,
+      };
+      const fixture = repairOperations({ gateResults });
+      const report = repairOrphanedWorktreeMetadata({
+        candidates: [repairCandidate()],
+        maxRepairs: 1,
+        gateHandle: { generation: 7, token: "token" },
+        operations: fixture.operations,
+      });
+      assert.deepEqual(report.repaired, []);
+      assert.match(report.blocked[0]?.reason ?? "", new RegExp(failure));
+      assert.match(report.blocked[0]?.reason ?? "", new RegExp(phase));
+      assert.equal(
+        fixture.calls.includes("persist:cave-orphan"),
+        index === 2,
+        `${failure} failure ${phase} must ${index === 2 ? "" : "not "}follow persistence`,
+      );
+      assert.equal(
+        fixture.calls.filter((call) => call === "read:cave-orphan").length,
+        index === 0 ? 0 : 1,
+        `${failure} failure ${phase} must stop before the next exact Bead read`,
+      );
+    }
+  }
+
+  {
+    const first = repairCandidate();
+    const second = repairCandidate({
+      beadId: "cave-second",
+      branch: "fix/cave-second-old",
+      path: "/repo/.worktrees/cave-second-old",
+      record: {
+        ...orphanRecord,
+        branch: "fix/cave-second-old",
+        path: "/repo/.worktrees/cave-second-old",
+      },
+    });
+    const notRepairable = repairCandidate({
+      beadId: "cave-unsafe",
+      repairable: false,
+      reasons: ["path is present"],
+    });
+    const fixture = repairOperations();
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [first, second, notRepairable],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired, [first]);
+    assert.deepEqual(report.pending, [second]);
+    assert.equal(
+      report.pending.includes(notRepairable),
+      false,
+      "non-repairable diagnostics are never selected or queued for mutation",
+    );
+    assert.equal(
+      fixture.calls.filter((call) => call === "persist:cave-orphan").length,
+      1,
+      "the batch cap permits exactly one repair attempt",
+    );
+  }
+
   const packageJson = JSON.parse(
     readFileSync(path.join(sourceRoot, "package.json"), "utf8"),
   );
@@ -127,6 +526,7 @@ try {
   mkdirSync(repo);
   mkdirSync(origin);
   mkdirSync(bin);
+  mkdirSync(repairBin);
   mkdirSync(gitBin);
 
   git(["init", "-q", "-b", "main"], repo);
@@ -144,6 +544,206 @@ try {
   git(["remote", "add", "origin", origin], repo);
   git(["push", "-q", "-u", "origin", "main"], repo);
   git(["--git-dir", origin, "symbolic-ref", "HEAD", "refs/heads/main"], fixtureRoot);
+
+  const repairState = path.join(fixtureRoot, "metadata-repair-state.json");
+  const repairLog = path.join(fixtureRoot, "metadata-repair-commands.jsonl");
+  const adapterRecord = {
+    ...orphanRecord,
+    branch: "fix/cave-adapter-old",
+    path: path.join(repo, ".worktrees", "cave-adapter-old"),
+  };
+  writeFileSync(
+    repairState,
+    JSON.stringify({
+      id: "cave-adapter",
+      status: "open",
+      metadata: {
+        unrelated: "preserved",
+        coven: { sibling: "preserved", worktree: adapterRecord },
+      },
+    }),
+  );
+  executable(
+    path.join(repairBin, "bd"),
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+const statePath = process.env.METADATA_REPAIR_STATE;
+const logPath = process.env.METADATA_REPAIR_LOG;
+if (!statePath || !logPath) {
+  console.error("metadata repair fixture paths are required");
+  process.exit(90);
+}
+fs.appendFileSync(logPath, JSON.stringify(args) + "\\n");
+const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+const mode = process.env.METADATA_REPAIR_BD_MODE ?? "";
+if (args[0] === "show") {
+  if (mode === "show-stderr") {
+    console.error("fixture show warning");
+  }
+  if (mode === "show-ambiguous") {
+    console.log(JSON.stringify([state, state]));
+    process.exit(0);
+  }
+  console.log(JSON.stringify([state]));
+  process.exit(0);
+}
+if (args[0] === "update") {
+  if (
+    args.length !== 5 ||
+    args[2] !== "--metadata" ||
+    args[4] !== "--json"
+  ) {
+    console.error("unexpected bd update arguments");
+    process.exit(91);
+  }
+  if (mode === "update-failure") {
+    console.error("fixture update failed");
+    process.exit(92);
+  }
+  const patch = JSON.parse(args[3]);
+  state.metadata = { ...state.metadata, ...patch };
+  fs.writeFileSync(statePath, JSON.stringify(state));
+  if (mode === "update-stderr") {
+    console.error("fixture update warning");
+  }
+  console.log(JSON.stringify([state]));
+  process.exit(0);
+}
+console.error("unexpected bd command");
+process.exit(93);
+`,
+  );
+
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${repairBin}${path.delimiter}${originalPath ?? ""}`;
+  process.env.METADATA_REPAIR_STATE = repairState;
+  process.env.METADATA_REPAIR_LOG = repairLog;
+  try {
+    const operations = createMetadataRepairOperations({ root: repo });
+    assert.deepEqual(operations.probeLocalBranch("main"), {
+      ok: true,
+      present: true,
+    });
+    assert.deepEqual(operations.probeLocalBranch("fix/cave-adapter-missing"), {
+      ok: true,
+      present: false,
+    });
+    assert.equal(
+      operations.probeLocalBranch("refs/heads/main").ok,
+      false,
+      "the branch adapter rejects full refs instead of probing a different name",
+    );
+
+    assert.deepEqual(operations.probeRegisteredPath(repo), {
+      ok: true,
+      present: true,
+    });
+    assert.deepEqual(
+      operations.probeRegisteredPath(path.join(repo, ".worktrees", "missing")),
+      { ok: true, present: false },
+    );
+    assert.equal(
+      operations.probeRegisteredPath("relative/worktree").ok,
+      false,
+      "the registered-path adapter requires an absolute path",
+    );
+
+    const adapterDanglingPath = path.join(fixtureRoot, "adapter-dangling");
+    symlinkSync(
+      path.join(fixtureRoot, "adapter-missing-target"),
+      adapterDanglingPath,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    assert.deepEqual(operations.probeFilesystemPath(repo), {
+      ok: true,
+      present: true,
+    });
+    assert.deepEqual(operations.probeFilesystemPath(adapterDanglingPath), {
+      ok: true,
+      present: true,
+    });
+    assert.deepEqual(
+      operations.probeFilesystemPath(path.join(repo, "adapter-missing")),
+      { ok: true, present: false },
+    );
+    assert.deepEqual(
+      operations.probeFilesystemPath(path.join(repo, "README.md", "child")),
+      { ok: true, present: false },
+      "ENOTDIR is trustworthy path absence",
+    );
+    const invalidPath = operations.probeFilesystemPath(`${repo}\0invalid`);
+    assert.equal(invalidPath.ok, false);
+    assert.match(
+      invalidPath.reason,
+      /contain no NUL bytes/,
+      "invalid paths are never treated as absent",
+    );
+
+    const read = operations.readBead("cave-adapter");
+    assert.equal(read.ok, true);
+    assert.deepEqual(read.ok ? read.bead.metadata : null, {
+      unrelated: "preserved",
+      coven: { sibling: "preserved", worktree: adapterRecord },
+    });
+    assert.deepEqual(
+      operations.persistCoven("cave-adapter", { sibling: "updated" }),
+      { ok: true },
+    );
+    const reread = operations.readBead("cave-adapter");
+    assert.deepEqual(reread.ok ? reread.bead.metadata : null, {
+      unrelated: "preserved",
+      coven: { sibling: "updated" },
+    });
+    const commandLog = readFileSync(repairLog, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(commandLog, [
+      ["show", "cave-adapter", "--json"],
+      [
+        "update",
+        "cave-adapter",
+        "--metadata",
+        JSON.stringify({ coven: { sibling: "updated" } }),
+        "--json",
+      ],
+      ["show", "cave-adapter", "--json"],
+    ]);
+
+    process.env.METADATA_REPAIR_BD_MODE = "show-stderr";
+    const warnedRead = operations.readBead("cave-adapter");
+    assert.equal(warnedRead.ok, false);
+    assert.match(warnedRead.reason, /wrote to stderr despite reporting success/);
+
+    process.env.METADATA_REPAIR_BD_MODE = "show-ambiguous";
+    const ambiguousRead = operations.readBead("cave-adapter");
+    assert.equal(ambiguousRead.ok, false);
+    assert.match(ambiguousRead.reason, /must contain one issue/);
+
+    process.env.METADATA_REPAIR_BD_MODE = "update-failure";
+    const failedUpdate = operations.persistCoven("cave-adapter", {});
+    assert.equal(failedUpdate.ok, false);
+    assert.match(failedUpdate.reason, /fixture update failed/);
+
+    process.env.METADATA_REPAIR_BD_MODE = "update-stderr";
+    const warnedUpdate = operations.persistCoven("cave-adapter", {});
+    assert.equal(warnedUpdate.ok, false);
+    assert.match(warnedUpdate.reason, /wrote to stderr despite reporting success/);
+
+    delete process.env.METADATA_REPAIR_BD_MODE;
+    const invalidGate = operations.heartbeatAndVerifyGate({
+      generation: 7,
+      token: "token",
+    });
+    assert.equal(invalidGate.ok, false);
+    assert.match(invalidGate.reason, /heartbeat failed: invalid-handle/);
+  } finally {
+    process.env.PATH = originalPath;
+    delete process.env.METADATA_REPAIR_STATE;
+    delete process.env.METADATA_REPAIR_LOG;
+    delete process.env.METADATA_REPAIR_BD_MODE;
+  }
 
   const old = path.join(repo, ".worktrees", "old");
   git(["worktree", "add", "-q", "-b", "feat/old", old], repo);
