@@ -35,9 +35,12 @@ assert.match(
 // the wrapper builds and PROVES the embedded web bundles exist before the scan,
 // because xcodegen scans the tree and a missing bundle otherwise yields a
 // project that builds clean and ships a blank markdown view (cave-d8ma3).
+// Anchored to a real `run:` step for the same reason as the xcodebuild check
+// above — an unanchored match is satisfied by the comment four lines up, which
+// is precisely the mistake that check was already rewritten to avoid.
 assert.match(
   workflow,
-  /bash scripts\/ios-xcodegen\.sh/,
+  /^ +run: bash scripts\/ios-xcodegen\.sh$/m,
   "the project is generated through the wrapper that proves the web bundles exist first",
 );
 assert.doesNotMatch(
