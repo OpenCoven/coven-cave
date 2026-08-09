@@ -8,6 +8,7 @@ import {
   autoExpandKeysForNewSessions,
   normalizeSelection,
   readPersisted,
+  PROJECT_SIDEBAR_EXPANSION_VERSION,
   PROJECT_SIDEBAR_KEYS,
 } from "./chat-project-selection.ts";
 import {
@@ -130,7 +131,12 @@ assert.deepEqual(readPersisted("cave:test:key", []), []);
 // storage keys are stable contract values
 assert.equal(PROJECT_SIDEBAR_KEYS.open, "cave:chat:project-sidebar-open");
 assert.equal(PROJECT_SIDEBAR_KEYS.expanded, "cave:chat:project-sidebar-expanded");
+assert.equal(
+  PROJECT_SIDEBAR_KEYS.expandedVersion,
+  "cave:chat:project-sidebar-expanded-version",
+);
 assert.equal(PROJECT_SIDEBAR_KEYS.selected, "cave:chat:project-selected");
+assert.equal(PROJECT_SIDEBAR_EXPANSION_VERSION, 1);
 
 // ── autoExpandKeysForNewSessions (cave-mllp, recency guard cave-a9w9) ────────
 

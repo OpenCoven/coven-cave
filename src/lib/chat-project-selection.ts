@@ -6,9 +6,12 @@ import { organizationExpansionKey } from "./project-organizations.ts";
  *  selectable without colliding with the "none" bucket. */
 export type ProjectSelection = "all" | "none" | string;
 
+export const PROJECT_SIDEBAR_EXPANSION_VERSION = 1;
+
 export const PROJECT_SIDEBAR_KEYS = {
   open: "cave:chat:project-sidebar-open",
   expanded: "cave:chat:project-sidebar-expanded",
+  expandedVersion: "cave:chat:project-sidebar-expanded-version",
   selected: "cave:chat:project-selected",
 } as const;
 

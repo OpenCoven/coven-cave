@@ -40,6 +40,7 @@ import {
   normalizeSelection,
   projectSelectionKeys,
   readPersisted,
+  PROJECT_SIDEBAR_EXPANSION_VERSION,
   PROJECT_SIDEBAR_KEYS,
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
@@ -352,28 +353,35 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     } catch {
       // storage unavailable — default grouping and sort stand
     }
-    const hasStoredExpanded =
-      typeof window !== "undefined" && window.localStorage.getItem(PROJECT_SIDEBAR_KEYS.expanded) !== null;
-    sidebarDefaultExpandedRef.current = !hasStoredExpanded;
     const storedExpanded = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.expanded, null);
+    const storedExpansionVersion = readPersisted<unknown>(
+      PROJECT_SIDEBAR_KEYS.expandedVersion,
+      null,
+    );
+    sidebarDefaultExpandedRef.current = !Array.isArray(storedExpanded);
     if (Array.isArray(storedExpanded)) {
       setExpandedKeys(storedExpanded.filter((k): k is string => typeof k === "string"));
-      sidebarOrganizationMigrationPendingRef.current = true;
+      sidebarOrganizationMigrationPendingRef.current =
+        storedExpansionVersion !== PROJECT_SIDEBAR_EXPANSION_VERSION;
     } else {
       setExpandedKeys(projectSelectionKeys(sidebarGroups));
+      sidebarOrganizationMigrationPendingRef.current = false;
+    }
+    if (!sidebarOrganizationMigrationPendingRef.current) {
+      try {
+        window.localStorage.setItem(
+          PROJECT_SIDEBAR_KEYS.expandedVersion,
+          JSON.stringify(PROJECT_SIDEBAR_EXPANSION_VERSION),
+        );
+      } catch {
+        // persistence is best-effort
+      }
     }
     const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
     setSelection(typeof storedSelection === "string" ? storedSelection : "all");
     setSessionOrder(readSessionOrder());
     setSidebarHydrated(true);
   }, [sessionsLoaded, sidebarGroups]);
-  useEffect(() => {
-    if (!sidebarHydrated || !sidebarOrganizationMigrationPendingRef.current) return;
-    if (sessionsLoaded === false || sessionsError) return;
-    if (!projectsLoadedSuccessfully) return;
-    setExpandedKeys((current) => migrateOrganizationExpansionKeys(current, sidebarGroups));
-    sidebarOrganizationMigrationPendingRef.current = false;
-  }, [sidebarHydrated, sessionsLoaded, sessionsError, projectsLoadedSuccessfully, sidebarGroups]);
   useEffect(() => {
     if (!sidebarHydrated || !sidebarDefaultExpandedRef.current) return;
     const nextExpandedKeys = projectSelectionKeys(sidebarGroups);
@@ -394,11 +402,43 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     }
   }, [sidebarHydrated, groupBy, sessionSort]);
   useEffect(() => {
-    if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.expanded, JSON.stringify(expandedKeys));
+    if (!sidebarHydrated || sidebarOrganizationMigrationPendingRef.current) return;
+    try {
+      window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.expanded, JSON.stringify(expandedKeys));
+    } catch {
+      // persistence is best-effort
+    }
   }, [sidebarHydrated, expandedKeys]);
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.selected, JSON.stringify(selection));
   }, [sidebarHydrated, selection]);
+  useEffect(() => {
+    if (!sidebarHydrated || !sidebarOrganizationMigrationPendingRef.current) return;
+    if (sessionsLoaded === false || sessionsError) return;
+    if (!projectsLoadedSuccessfully) return;
+    const migratedExpandedKeys = migrateOrganizationExpansionKeys(expandedKeys, sidebarGroups);
+    setExpandedKeys(migratedExpandedKeys);
+    try {
+      window.localStorage.setItem(
+        PROJECT_SIDEBAR_KEYS.expanded,
+        JSON.stringify(migratedExpandedKeys),
+      );
+      window.localStorage.setItem(
+        PROJECT_SIDEBAR_KEYS.expandedVersion,
+        JSON.stringify(PROJECT_SIDEBAR_EXPANSION_VERSION),
+      );
+    } catch {
+      // persistence is best-effort
+    }
+    sidebarOrganizationMigrationPendingRef.current = false;
+  }, [
+    sidebarHydrated,
+    sessionsLoaded,
+    sessionsError,
+    projectsLoadedSuccessfully,
+    expandedKeys,
+    sidebarGroups,
+  ]);
   // First chat in a fresh project folder (or this surface's just-started
   // chat) must not hide inside a collapsed group (cave-mllp).
   useAutoExpandNewGroups({

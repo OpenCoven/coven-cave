@@ -145,13 +145,13 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /if \(Array\.isArray\(storedExpanded\)\) \{\s*setExpandedKeys\(storedExpanded\.filter\(\(k\): k is string => typeof k === "string"\)\);\s*sidebarOrganizationMigrationPendingRef\.current = true;\s*\} else \{\s*setExpandedKeys\(projectSelectionKeys\(sidebarGroups\)\);\s*\}/,
-  "ChatRouter keeps stored raw expansion keys unchanged and marks organization migration pending",
+  /const storedExpansionVersion = readPersisted<unknown>\(\s*PROJECT_SIDEBAR_KEYS\.expandedVersion,\s*null,\s*\);[\s\S]*if \(Array\.isArray\(storedExpanded\)\) \{\s*setExpandedKeys\(storedExpanded\.filter\(\(k\): k is string => typeof k === "string"\)\);\s*sidebarOrganizationMigrationPendingRef\.current =\s*storedExpansionVersion !== PROJECT_SIDEBAR_EXPANSION_VERSION;\s*\} else \{\s*setExpandedKeys\(projectSelectionKeys\(sidebarGroups\)\);\s*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}[\s\S]*if \(!sidebarOrganizationMigrationPendingRef\.current\) \{[\s\S]*PROJECT_SIDEBAR_KEYS\.expandedVersion,[\s\S]*JSON\.stringify\(PROJECT_SIDEBAR_EXPANSION_VERSION\)/,
+  "ChatRouter migrates only stored arrays from an older expansion version and marks defaults/current arrays current",
 );
 assert.match(
   chatRouter,
-  /useEffect\(\(\) => \{\s*if \(!sidebarHydrated \|\| !sidebarOrganizationMigrationPendingRef\.current\) return;\s*if \(sessionsLoaded === false \|\| sessionsError\) return;\s*if \(!projectsLoadedSuccessfully\) return;\s*setExpandedKeys\(\(current\) => migrateOrganizationExpansionKeys\(current, sidebarGroups\)\);\s*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}, \[sidebarHydrated, sessionsLoaded, sessionsError, projectsLoadedSuccessfully, sidebarGroups\]\);/,
-  "ChatRouter defers one-shot organization migration until sessions and projects recover successfully",
+  /useEffect\(\(\) => \{\s*if \(!sidebarHydrated \|\| !sidebarOrganizationMigrationPendingRef\.current\) return;\s*if \(sessionsLoaded === false \|\| sessionsError\) return;\s*if \(!projectsLoadedSuccessfully\) return;\s*const migratedExpandedKeys = migrateOrganizationExpansionKeys\(expandedKeys, sidebarGroups\);\s*setExpandedKeys\(migratedExpandedKeys\);[\s\S]*PROJECT_SIDEBAR_KEYS\.expanded,\s*JSON\.stringify\(migratedExpandedKeys\),[\s\S]*PROJECT_SIDEBAR_KEYS\.expandedVersion,\s*JSON\.stringify\(PROJECT_SIDEBAR_EXPANSION_VERSION\),[\s\S]*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}, \[[^\]]*expandedKeys[^\]]*\]\);/,
+  "ChatRouter persists migrated keys before marking the deferred organization migration current",
 );
 assert.match(
   chatRouter,
@@ -175,13 +175,13 @@ assert.match(
 );
 assert.match(
   chatList,
-  /if \(Array\.isArray\(storedExpanded\)\) \{\s*setExpandedKeys\(storedExpanded\.filter\(\(k\): k is string => typeof k === "string"\)\);\s*sidebarOrganizationMigrationPendingRef\.current = true;\s*\} else \{\s*setExpandedKeys\(projectSelectionKeys\(sidebarGroups\)\);\s*\}/,
-  "ChatList keeps stored raw expansion keys unchanged and marks organization migration pending",
+  /const storedExpansionVersion = readPersisted<unknown>\(\s*PROJECT_SIDEBAR_KEYS\.expandedVersion,\s*null,\s*\);[\s\S]*if \(Array\.isArray\(storedExpanded\)\) \{\s*setExpandedKeys\(storedExpanded\.filter\(\(k\): k is string => typeof k === "string"\)\);\s*sidebarOrganizationMigrationPendingRef\.current =\s*storedExpansionVersion !== PROJECT_SIDEBAR_EXPANSION_VERSION;\s*\} else \{\s*setExpandedKeys\(projectSelectionKeys\(sidebarGroups\)\);\s*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}[\s\S]*if \(!sidebarOrganizationMigrationPendingRef\.current\) \{[\s\S]*PROJECT_SIDEBAR_KEYS\.expandedVersion,[\s\S]*JSON\.stringify\(PROJECT_SIDEBAR_EXPANSION_VERSION\)/,
+  "ChatList migrates only stored arrays from an older expansion version and marks defaults/current arrays current",
 );
 assert.match(
   chatList,
-  /useEffect\(\(\) => \{\s*if \(!sidebarHydrated \|\| !sidebarOrganizationMigrationPendingRef\.current\) return;\s*if \(sessionsLoaded === false \|\| sessionsError\) return;\s*if \(!projectsLoadedSuccessfully\) return;\s*setExpandedKeys\(\(current\) => migrateOrganizationExpansionKeys\(current, sidebarGroups\)\);\s*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}, \[sidebarHydrated, sessionsLoaded, sessionsError, projectsLoadedSuccessfully, sidebarGroups\]\);/,
-  "ChatList defers one-shot organization migration until sessions and projects recover successfully",
+  /useEffect\(\(\) => \{\s*if \(!sidebarHydrated \|\| !sidebarOrganizationMigrationPendingRef\.current\) return;\s*if \(sessionsLoaded === false \|\| sessionsError\) return;\s*if \(!projectsLoadedSuccessfully\) return;\s*const migratedExpandedKeys = migrateOrganizationExpansionKeys\(expandedKeys, sidebarGroups\);\s*setExpandedKeys\(migratedExpandedKeys\);[\s\S]*PROJECT_SIDEBAR_KEYS\.expanded,\s*JSON\.stringify\(migratedExpandedKeys\),[\s\S]*PROJECT_SIDEBAR_KEYS\.expandedVersion,\s*JSON\.stringify\(PROJECT_SIDEBAR_EXPANSION_VERSION\),[\s\S]*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}, \[[^\]]*expandedKeys[^\]]*\]\);/,
+  "ChatList persists migrated keys before marking the deferred organization migration current",
 );
 
 // ── Preserved contracts other suites rely on ─────────────────────────────────
