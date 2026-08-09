@@ -12,16 +12,16 @@ import {
 test("normalizes corrupt open preference to closed", () => {
   assert.equal(normalizeRightChatOpen("1"), true);
   assert.equal(normalizeRightChatOpen("0"), false);
-  assert.equal(normalizeRightChatOpen("garbage"), false);
+  assert.equal(normalizeRightChatOpen("yes"), false);
   assert.equal(normalizeRightChatOpen(null), false);
 });
 
 test("normalizes width fallback and clamping", () => {
   assert.equal(normalizeRightChatWidth(null), RIGHT_CHAT_DEFAULT_PX);
-  assert.equal(normalizeRightChatWidth("garbage"), RIGHT_CHAT_DEFAULT_PX);
-  assert.equal(normalizeRightChatWidth("319.4"), RIGHT_CHAT_MIN_PX);
-  assert.equal(normalizeRightChatWidth("640.6"), RIGHT_CHAT_MAX_PX);
-  assert.equal(normalizeRightChatWidth("481.2"), 481);
+  assert.equal(normalizeRightChatWidth("nope"), RIGHT_CHAT_DEFAULT_PX);
+  assert.equal(normalizeRightChatWidth("200"), RIGHT_CHAT_MIN_PX);
+  assert.equal(normalizeRightChatWidth("900"), RIGHT_CHAT_MAX_PX);
+  assert.equal(normalizeRightChatWidth("480"), 480);
 });
 
 test("auto-collapses only when nav plus chat plus detail cannot fit", () => {
