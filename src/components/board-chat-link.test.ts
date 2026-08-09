@@ -155,7 +155,7 @@ assert.match(
 );
 assert.match(
   taskWorkCockpit,
-  /initialPrompt && familiar[\s\S]{0,600}autoSendInitialPrompt/,
+  /initialPrompt\s*\?\s*\{[\s\S]{0,400}autoSend: true/,
   "Task cockpit sends a reserved bridge task through ChatView rather than waiting for a daemon row",
 );
 assert.match(
@@ -185,7 +185,7 @@ assert.match(
 );
 assert.match(
   taskWorkCockpit,
-  /autoSendInitialPrompt\s+startNewConversation/,
+  /autoSendInitialPrompt=\{conversation\.autoSend\}\s*\n\s*startNewConversation=\{conversation\.autoSend\}/,
   "A reserved Board conversation marks its first ChatView send as a fresh native session",
 );
 assert.match(

@@ -73,7 +73,10 @@ const WORK_SESSION = {
   updated_at: ISO,
 };
 
-async function openBoard(page: Page, cards: unknown[], sessions: unknown[]) {
+/** Every POST the page made to /api/chat/send, so a re-send is countable. */
+type SendLog = { count: number };
+
+async function openBoard(page: Page, cards: unknown[], sessions: unknown[], sends?: SendLog) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
@@ -114,7 +117,10 @@ async function openBoard(page: Page, cards: unknown[], sessions: unknown[]) {
       },
     }),
   );
-  await page.route("**/api/chat/send**", (route) => route.fulfill({ json: { ok: true } }));
+  await page.route("**/api/chat/send**", (route) => {
+    if (sends && route.request().method() === "POST") sends.count += 1;
+    return route.fulfill({ json: { ok: true } });
+  });
 
   await page.setViewportSize(WIDE);
   // `#card-<id>` is the board's own deep link into a card drawer — steadier
@@ -226,5 +232,51 @@ test.describe("Task Work cockpit fit", () => {
     // No horizontal overflow off the cockpit.
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
+  });
+
+  // cave-6une3: the reopen strip used to be a dead end on the bridge-start
+  // path — that branch mounted no rail Panel, so clicking Code hid the strip
+  // and showed nothing, for the whole first work session.
+  test("the code rail opens during a bridge-start work session", async ({ page }) => {
+    await openBoard(page, [FRESH_CARD], []);
+    await openCockpit(page, "Start work");
+
+    const strip = page.locator(".task-work-cockpit .workspace-rail-reopen");
+    await expect(strip).toBeVisible();
+    await strip.click();
+
+    // The rail actually mounts, and the strip yields to it.
+    await expect(page.locator(".task-work-cockpit .workspace-rail")).toBeVisible({ timeout: 15_000 });
+    await expect(strip).toHaveCount(0);
+
+    // The conversation still fills what is left of the row — the rail reserves
+    // its own width beside it rather than covering it.
+    const { body, chat, chatHost, rowRight } = await fit(page);
+    expect(chat!.width).toBe(chatHost!.width);
+    expect(chatHost!.left).toBe(body!.left);
+    expect(rowRight).toBe(body!.right);
+    expect(chatHost!.width).toBeLessThan(body!.width);
+  });
+
+  // The Group is keyed by the pane set, so opening the rail REMOUNTS ChatView.
+  // Its auto-send guard is an instance ref, so before the remount-proof handoff
+  // latch that remount re-sent the task's first prompt.
+  test("opening the code rail does not re-send the task's first prompt", async ({ page }) => {
+    const sends: SendLog = { count: 0 };
+    await openBoard(page, [FRESH_CARD], [], sends);
+    await openCockpit(page, "Start work");
+
+    await expect.poll(() => sends.count, { timeout: 15_000 }).toBe(1);
+
+    await page.locator(".task-work-cockpit .workspace-rail-reopen").click();
+    await expect(page.locator(".task-work-cockpit .workspace-rail")).toBeVisible({ timeout: 15_000 });
+    // Collapse again, then reopen: three remounts of the same live handoff.
+    await page.getByLabel("Collapse code rail").click();
+    await expect(page.locator(".task-work-cockpit .workspace-rail-reopen")).toBeVisible({ timeout: 15_000 });
+    await page.locator(".task-work-cockpit .workspace-rail-reopen").click();
+    await expect(page.locator(".task-work-cockpit .workspace-rail")).toBeVisible({ timeout: 15_000 });
+    await page.waitForTimeout(800);
+
+    expect(sends.count, "the first prompt is sent exactly once across rail remounts").toBe(1);
   });
 });
