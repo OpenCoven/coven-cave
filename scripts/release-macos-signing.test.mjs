@@ -307,6 +307,30 @@ test("release packages and checksum manifest receive GitHub artifact attestation
   );
 });
 
+test("Windows release publication treats an absent release as a recoverable probe result", () => {
+  const buildJob = getWorkflowJob("build");
+  const publishStep = buildJob.slice(
+    buildJob.indexOf("name: Publish validated Windows MSI"),
+    buildJob.indexOf("name: Sign Linux/Windows updater artifact"),
+  );
+
+  assert.match(
+    publishStep,
+    /function Test-GitHubRelease[\s\S]*ErrorActionPreference = "SilentlyContinue"[\s\S]*gh release view \$env:RELEASE_TAG \*> \$null[\s\S]*return \$LASTEXITCODE -eq 0/,
+    "the expected not-found probe must not terminate the PowerShell step",
+  );
+  assert.match(
+    publishStep,
+    /ErrorActionPreference = "Continue"[\s\S]*gh release create \$env:RELEASE_TAG[\s\S]*\$createExitCode = \$LASTEXITCODE/,
+    "a concurrent create race must be handled by exit code and a follow-up probe",
+  );
+  assert.match(
+    publishStep,
+    /if \(-not \(Test-GitHubRelease\)\)[\s\S]*if \(\$createExitCode -ne 0\)[\s\S]*if \(-not \(Test-GitHubRelease\)\)/,
+    "both initial absence and a losing create race must use the non-terminating probe",
+  );
+});
+
 test("sidecar bundle prunes foreign native packages before release bundling", () => {
   assert.match(sidecarScript, /prune_foreign_native_packages\(\)/);
   assert.match(sidecarScript, /process\.platform/);

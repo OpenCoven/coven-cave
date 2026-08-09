@@ -92,7 +92,7 @@ permissions:
 
 jobs:
   daemon-package:
-    name: Verify matching Coven daemon package
+    name: Verify available Coven daemon package
     runs-on: ubuntu-24.04
     steps:
       - name: Validate Windows diagnostics mode
@@ -112,56 +112,25 @@ jobs:
           node-version: 24
 
       # Cave updates the user's local daemon through @opencoven/cli before
-      # replacing itself. Refuse to publish a Cave version until the matching
-      # daemon package exists, or the client could only reinstall an older
-      # daemon while presenting a successful desktop update.
-      - name: Require matching @opencoven/cli release
+      # replacing itself. Cave and the daemon have independent release lines:
+      # require a published package, but never compare its version to Cave's.
+      - name: Require published @opencoven/cli release
         shell: bash
-        env:
-          RAW_RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          TAG="$RAW_RELEASE_TAG"
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Invalid release tag. Expected format: vMAJOR.MINOR.PATCH[-PRERELEASE]"
+          if ! LATEST=$(npm view "@opencoven/cli@latest" version); then
+            echo "::error::@opencoven/cli@latest must resolve before publishing Coven Cave."
             exit 1
           fi
-          VERSION="${TAG#v}"
-          LATEST=$(npm view "@opencoven/cli@latest" version)
-          if ! node - "$LATEST" "$VERSION" <<'NODE'
-          const parse = value => {
-            const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(value);
-            return match && { core: match.slice(1, 4).map(Number), pre: match[4]?.split(".") ?? [] };
-          };
-          const compare = (left, right) => {
-            const a = parse(left);
-            const b = parse(right);
-            if (!a || !b) return null;
-            for (let index = 0; index < 3; index += 1) {
-              if (a.core[index] !== b.core[index]) return a.core[index] < b.core[index] ? -1 : 1;
-            }
-            if (!a.pre.length || !b.pre.length) return a.pre.length === b.pre.length ? 0 : a.pre.length ? -1 : 1;
-            for (let index = 0; index < Math.max(a.pre.length, b.pre.length); index += 1) {
-              const av = a.pre[index];
-              const bv = b.pre[index];
-              if (av === undefined || bv === undefined) return av === undefined ? -1 : 1;
-              if (av === bv) continue;
-              const an = /^\d+$/.test(av);
-              const bn = /^\d+$/.test(bv);
-              if (an && bn) return Number(av) < Number(bv) ? -1 : 1;
-              if (an !== bn) return an ? -1 : 1;
-              return av < bv ? -1 : 1;
-            }
-            return 0;
-          };
-          process.exit(compare(process.argv[2], process.argv[3]) >= 0 ? 0 : 1);
+          LATEST="$LATEST" node <<'NODE'
+          const version = process.env.LATEST ?? "";
+          const strictSemver = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+          if (version.includes("\n") || !strictSemver.test(version)) {
+            console.error(`::error::@opencoven/cli@latest resolved to an invalid version: ${JSON.stringify(version)}`);
+            process.exit(1);
+          }
           NODE
-          then
-            echo "::error::Coven Cave $VERSION requires an @opencoven/cli release >= $VERSION, but npm latest is '${LATEST:-nothing}'."
-            echo "::error::Promote @opencoven/cli $VERSION (or newer) to latest before retrying this Cave release."
-            exit 1
-          fi
-          echo "Verified @opencoven/cli@latest ($LATEST) satisfies the Cave daemon update for version $VERSION."
+          echo "Verified @opencoven/cli@latest resolves to published daemon version $LATEST."
 
   source-version:
     name: Verify tag matches stamped source
@@ -651,17 +620,39 @@ jobs:
             throw "Expected exactly one budget-approved MSI, found $($msis.Count)"
           }
 
-          gh release view $env:RELEASE_TAG *> $null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create $env:RELEASE_TAG `
-              --verify-tag `
-              --title "CovenCave $env:RELEASE_TAG" `
-              --notes "Release artifacts are still being assembled by the release workflow."
-            if ($LASTEXITCODE -ne 0) {
+          # Windows PowerShell promotes native stderr to an ErrorRecord. Probe
+          # failures are expected while the first matrix leg creates a release,
+          # so isolate that non-zero result from the step-wide Stop policy.
+          function Test-GitHubRelease {
+            $previousErrorActionPreference = $ErrorActionPreference
+            try {
+              $ErrorActionPreference = "SilentlyContinue"
+              gh release view $env:RELEASE_TAG *> $null
+              return $LASTEXITCODE -eq 0
+            } finally {
+              $ErrorActionPreference = $previousErrorActionPreference
+            }
+          }
+
+          if (-not (Test-GitHubRelease)) {
+            $createExitCode = 1
+            $previousErrorActionPreference = $ErrorActionPreference
+            try {
+              # A concurrent matrix leg can win this create race. Preserve the
+              # exit code so the verified follow-up probe decides the outcome.
+              $ErrorActionPreference = "Continue"
+              gh release create $env:RELEASE_TAG `
+                --verify-tag `
+                --title "CovenCave $env:RELEASE_TAG" `
+                --notes "Release artifacts are still being assembled by the release workflow."
+              $createExitCode = $LASTEXITCODE
+            } finally {
+              $ErrorActionPreference = $previousErrorActionPreference
+            }
+            if ($createExitCode -ne 0) {
               # Another matrix leg may have created the release concurrently.
               Start-Sleep -Seconds 5
-              gh release view $env:RELEASE_TAG *> $null
-              if ($LASTEXITCODE -ne 0) {
+              if (-not (Test-GitHubRelease)) {
                 throw "Could not create or find release $env:RELEASE_TAG"
               }
             }
