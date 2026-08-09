@@ -77,8 +77,8 @@ function classifyStaleState(row: BeadDeliveryRow, nowMs: number): BeadStaleState
   if (updatedAtMs === null) return "none";
 
   const ageMs = nowMs - updatedAtMs;
-  if (ageMs < STALE_AFTER_MS) return "none";
-  if (ageMs >= SEVERELY_STALE_AFTER_MS) return "older_than_7d";
+  if (ageMs <= STALE_AFTER_MS) return "none";
+  if (ageMs > SEVERELY_STALE_AFTER_MS) return "older_than_7d";
   return "older_than_24h";
 }
 

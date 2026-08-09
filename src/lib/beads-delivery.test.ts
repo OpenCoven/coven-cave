@@ -69,6 +69,33 @@ const rows = {
   ),
 } satisfies Record<string, BeadDeliveryRow>;
 
+const staleBoundaryRows = {
+  exact24h: row(
+    "progress-exact-24h",
+    "in_progress",
+    new Date(NOW_MS - DAY_MS).toISOString(),
+    [],
+  ),
+  justOver24h: row(
+    "progress-just-over-24h",
+    "in_progress",
+    new Date(NOW_MS - DAY_MS - 1).toISOString(),
+    [],
+  ),
+  exact7d: row(
+    "progress-exact-7d",
+    "in_progress",
+    new Date(NOW_MS - 7 * DAY_MS).toISOString(),
+    [],
+  ),
+  justOver7d: row(
+    "progress-just-over-7d",
+    "in_progress",
+    new Date(NOW_MS - 7 * DAY_MS - 1).toISOString(),
+    [],
+  ),
+} satisfies Record<string, BeadDeliveryRow>;
+
 describe("beads delivery classification", () => {
   it("classifies platform ownership labels", () => {
     assert.equal(classifyPlatform(rows.open.labels), "ios");
@@ -83,6 +110,10 @@ describe("beads delivery classification", () => {
     assert.equal(classifyStale(rows.progress23h, NOW_MS), "none");
     assert.equal(classifyStale(rows.progress25h, NOW_MS), "older_than_24h");
     assert.equal(classifyStale(rows.progress8d, NOW_MS), "older_than_7d");
+    assert.equal(classifyStale(staleBoundaryRows.exact24h, NOW_MS), "none");
+    assert.equal(classifyStale(staleBoundaryRows.justOver24h, NOW_MS), "older_than_24h");
+    assert.equal(classifyStale(staleBoundaryRows.exact7d, NOW_MS), "older_than_24h");
+    assert.equal(classifyStale(staleBoundaryRows.justOver7d, NOW_MS), "older_than_7d");
     assert.equal(classifyStale(rows.blocked, NOW_MS), "none");
     assert.equal(classifyStale(rows.closed, NOW_MS), "none");
   });
