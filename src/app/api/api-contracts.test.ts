@@ -20,6 +20,12 @@ type RouteContract = {
 const contracts: RouteContract[] = [
   { route: "/access-groups", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/access-groups/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  // AFS routes expose a session's working tree, so every one is same-user
+  // local IPC (specs/coven-agent-fs/DESIGN.md section 3).
+  { route: "/afs", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/afs/[id]/commit", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/afs/[id]/diff", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/afs/[id]/timeline", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/app/build-info", methods: ["GET"], kind: "json" },
   { route: "/app/latest-release", methods: ["GET"], kind: "json" },
   { route: "/asana/assigned", methods: ["GET"], kind: "json" },

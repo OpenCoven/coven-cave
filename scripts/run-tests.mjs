@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 /** Suite name -> ordered list of repo-relative test file paths. */
 export const SUITES = {
   app: [
+    "src/lib/afs.test.ts",
     "src/lib/array-content-equal.test.ts",
     "src/lib/native-notify.test.ts",
     "src/lib/session-list-equal.test.ts",
