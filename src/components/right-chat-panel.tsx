@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { Button } from "@/components/ui/button";
@@ -97,29 +97,39 @@ export function RightChatPanel(props: Props) {
   // Tracks which familiar's latest session we've already resolved for, so a
   // same-familiar close/reopen never clobbers a manual thread selection —
   // only an actual familiar change (or the very first open) re-resolves.
+  // Updated by the resolution effect below regardless of `open`: a familiar
+  // switch while the panel is closed must still be tracked (cave-rl980 Task 4
+  // review) — the router beneath stays mounted while hidden, and leaving
+  // this stale would desync the header/router the moment the panel reopens.
   const resolvedFamiliarRef = useRef<string | null>(null);
   // Session ids we've actually observed appear in the eligible roster at
   // least once. A freshly promoted session (null → id, reported the instant
   // ChatRouter starts a chat from a blank compose) can arrive here before the
   // `sessions` roster prop has been refetched to include it. Without this,
-  // the ineligible-selection effect below would immediately mistake "not yet
-  // in the roster" for "removed from the roster" and stomp the brand-new
-  // session with a replacement. Gating reconciliation on prior observation
-  // fixes that promotion race with no timing/delay hack — it also lets the
-  // *same* effect correctly reconcile a genuine later removal (archive/
-  // delete) of a session it did previously observe. Committed from an effect
-  // below, never inline during render (cave-rl980 Task 4 review): a render
-  // React abandons before commit must never leave a mark here.
+  // the reconcile branch below would immediately mistake "not yet in the
+  // roster" for "removed from the roster" and stomp the brand-new session
+  // with a replacement. Gating reconciliation on prior observation fixes
+  // that promotion race with no timing/delay hack — it also lets the *same*
+  // branch correctly reconcile a genuine later removal (archive/delete) of a
+  // session it did previously observe. Committed from an effect below, never
+  // inline during render (cave-rl980 Task 4 review): a render React abandons
+  // before commit must never leave a mark here.
   const observedSessionIdsRef = useRef<Set<string>>(new Set());
-  // Armed the instant handleSessionsChanged/handleSessionsDeleted below run,
-  // consumed (read, then reset) by the very next handleActiveSessionChange
-  // report of any kind. ChatView calls exactly one of those two mutation
-  // callbacks and then, synchronously in the same tick, either onBack or
-  // onVoiceSessionDiscarded for every confirmed archive, delete, and
-  // discarded voice pre-session — never for an ordinary back navigation
-  // (e.g. "Back to sessions" on a transcript-history load failure). That
-  // order is the only signal available here for "this null follows a real
-  // roster mutation" versus "this null is just the user navigating away."
+  // Armed the instant handleSessionRemoved below runs, consumed (read, then
+  // reset) by the very next handleActiveSessionChange report of any kind.
+  // handleSessionRemoved is ChatView's own narrow, purpose-built removal
+  // signal (see its `onSessionRemoved` doc in chat-view.tsx) — fired only for
+  // a confirmed archive/delete/discard of the exact session this panel is
+  // showing, and always immediately followed, synchronously in the same
+  // tick, by the null that navigates away (onBack, or onVoiceSessionDiscarded
+  // for a discarded pre-session). Deliberately NOT armed by the generic
+  // onSessionsChanged/onSessionsDeleted refresh callbacks: those also fire
+  // for refreshes that have nothing to do with THIS session's removal (a
+  // canonical-session reconcile after a stream settles, a *different*
+  // thread auto-archiving on reflection, a Board handoff refresh, …), so
+  // treating their firing as a removal signal would misclassify an ordinary
+  // "Back to sessions" that merely happens to land after one of those
+  // unrelated refreshes (cave-rl980 Task 4 review).
   const pendingRemovalRef = useRef(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const resolvedFamiliars = useResolvedFamiliars(familiars);
@@ -154,29 +164,19 @@ export function RightChatPanel(props: Props) {
   // ordinary "list" transition (the ChatHistoryNotice "Back to sessions"
   // affordance after a transcript load failure — the session itself is still
   // fully eligible; only its transcript failed to fetch) and a genuine
-  // removal (archive's onBack after the PATCH, delete's onBack after the
-  // DELETE, or a discarded empty voice pre-session's onVoiceSessionDiscarded).
-  // The first must clear the stale selection immediately. The second must
-  // retain it long enough for the reconcile effect below to confirm the
-  // removal once the roster refreshes and resolve the same familiar's latest
-  // session (or a new compose) instead of flashing "New chat" the instant
-  // this fires, ahead of the roster actually catching up.
+  // removal (archive/delete's onBack, or a discarded empty voice
+  // pre-session's onVoiceSessionDiscarded). The first must clear the stale
+  // selection immediately. The second must retain it long enough for the
+  // reconcile branch below to confirm the removal once the roster refreshes
+  // and resolve the same familiar's latest session (or a new compose)
+  // instead of flashing "New chat" the instant this fires, ahead of the
+  // roster actually catching up.
   //
-  // pendingRemovalRef — armed by handleSessionsChanged/handleSessionsDeleted,
-  // exactly the two calls every removal path makes immediately before its
-  // null — distinguishes the two. That alone is not sufficient, though: a
-  // discarded voice pre-session also reports through onSessionsChanged
-  // (discardVoiceSessionIfEmpty refreshes the list once the empty session is
-  // deleted server-side) despite never having appeared in the roster to
-  // begin with. Retaining that id would leave a permanent ghost — the
-  // reconcile effect's own observed-gate can never confirm the removal of an
-  // id the roster never listed in the first place. Requiring the id to have
-  // been previously observed eligible closes that gap: only a real,
-  // previously visible session is ever retained; a discarded, never-observed
-  // promotion clears just like an ordinary back. Explicit New chat actions
-  // (the button, the thread switcher, and both resolution effects) bypass
-  // this handler entirely — they already call setSelectedSessionId(null)
-  // directly at the moment they act.
+  // pendingRemovalRef — armed only by handleSessionRemoved, below, for the
+  // exact session it names — distinguishes the two. Explicit New chat
+  // actions (the button, the thread switcher, and both resolution branches
+  // below) bypass this handler entirely — they already call
+  // setSelectedSessionId(null) directly at the moment they act.
   const handleActiveSessionChange = (sessionId: string | null) => {
     const removalConfirmed = pendingRemovalRef.current;
     pendingRemovalRef.current = false;
@@ -189,16 +189,18 @@ export function RightChatPanel(props: Props) {
     );
   };
 
-  // Arms pendingRemovalRef for the very next handleActiveSessionChange report,
-  // then forwards to the real callback unchanged — RightChatPanel observes
-  // the mutation, it never forks it.
-  const handleSessionsChanged = () => {
-    pendingRemovalRef.current = true;
-    props.onSessionsChanged();
-  };
-  const handleSessionsDeleted = (sessionIds: readonly string[]) => {
-    pendingRemovalRef.current = true;
-    props.onSessionsDeleted(sessionIds);
+  // Arms pendingRemovalRef only when the removed session is the one this
+  // panel currently has selected AND has previously observed eligible — the
+  // narrow "selected, observed session" signal cave-rl980 Task 4 review calls
+  // for. Sourced from ChatView's own onSessionRemoved (see its doc), fired
+  // only at the exact archive/delete/discard call sites, never inferred from
+  // onSessionsChanged/onSessionsDeleted — those are forwarded to ChatRouter
+  // entirely unwrapped below, preserving their existing behavior for every
+  // other consumer instead of intercepting every call to guess at removal.
+  const handleSessionRemoved = (removedSessionId: string) => {
+    if (removedSessionId === selectedSessionId && observedSessionIdsRef.current.has(removedSessionId)) {
+      pendingRemovalRef.current = true;
+    }
   };
 
   useEffect(() => {
@@ -208,45 +210,75 @@ export function RightChatPanel(props: Props) {
     setSelectedSessionId(null);
   }, [activeFamiliar]);
 
-  // First open (or a genuine familiar change): resolve that familiar's latest
-  // eligible session, or start a familiar-bound blank compose. Deliberately a
-  // no-op on same-familiar close/reopen — resolvedFamiliarRef already holds
-  // this familiar's id, so a manual mid-conversation selection survives.
-  // Gated on familiars *and* sessions readiness (loaded, error-free) so this
-  // never fires — and never marks resolvedFamiliarRef resolved — on a render
-  // where the router isn't actually mounted (routerRef would be null and the
-  // resolution would silently no-op, permanently skipping the real one).
-  useEffect(() => {
-    if (!open || !activeFamiliar || !familiarsLoaded || familiarsError || !sessionsLoaded || sessionsError) return;
-    if (resolvedFamiliarRef.current === activeFamiliar.id) return;
-    resolvedFamiliarRef.current = activeFamiliar.id;
-    const latestId = resolveLatestRightChatSessionId(sessions, activeFamiliar.id);
-    if (latestId) routerRef.current?.openSession(latestId);
-    else routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
-    setSelectedSessionId(latestId);
-    announce(
-      latestId
-        ? `${activeFamiliar.display_name} chat opened`
-        : `New chat with ${activeFamiliar.display_name}`,
-    );
-  }, [activeFamiliar, announce, familiarsError, familiarsLoaded, open, sessions, sessionsError, sessionsLoaded]);
-
-  // If the selected session stops being eligible (deleted, archived, or
-  // otherwise dropped from the visible list) re-resolve the same familiar's
-  // latest remaining session, or fall back to a familiar-bound blank compose.
-  // Never falls back to another familiar. Reconciles only ids previously
-  // observed in the eligible roster (see observedSessionIdsRef above) so a
-  // just-promoted session the roster hasn't caught up to yet is never
-  // mistaken for one that was removed.
-  useEffect(() => {
-    if (!open || !activeFamiliar || !sessionsLoaded || sessionsError || !selectedSessionId) return;
+  // Resolves the active familiar's latest eligible session (or starts a
+  // familiar-bound blank compose) on first open and on every subsequent
+  // familiar change, and reconciles the selection when it stops being
+  // eligible for the SAME familiar (archived/deleted). One `useLayoutEffect`
+  // handling both, not two separate effects, and not gated on `open` for the
+  // resolution itself (cave-rl980 Task 4 review — see the two reasons below):
+  //
+  // 1. Familiar transitions must be tracked even while the panel is closed.
+  //    ChatRouter/ChatView stay mounted underneath — a persistent controller,
+  //    per the design doc — so pausing resolution while hidden would let a
+  //    closed A -> B -> A sequence leave the header and the actually-mounted
+  //    router disagreeing about which familiar/session is showing by the
+  //    time the panel reopens. `open` still gates the *announcement* below —
+  //    a screen reader has no reason to hear about a change to a panel
+  //    nobody can currently see — but never the resolution itself.
+  // 2. A familiar change must issue EXACTLY ONE imperative openSession/
+  //    newChat call. Splitting this into two effects (one keyed on the
+  //    familiar changing, a second reconciling an ineligible selection) races
+  //    them: on the very render the familiar changes, a second, separate
+  //    effect would still see the OUTGOING familiar's stale
+  //    `selectedSessionId` — never eligible for the new familiar's
+  //    `eligibleSessions`, and (having been observed under the old familiar)
+  //    passing the observed-gate too — so it would ALSO reconcile, firing a
+  //    second, redundant action. Handling "familiar changed" first and
+  //    returning keeps that stale selection from ever reaching the
+  //    eligibility check below; only a same-familiar removal reaches it.
+  //    `useLayoutEffect`, not `useEffect`, so this also wins the ordering
+  //    race against ChatRouter's own internal familiar-switch effect (a
+  //    passive effect): every layout effect across the tree commits before
+  //    any passive effect runs, so by the time ChatRouter's own effect sees
+  //    the new familiar, the view it reads back is already the one this
+  //    effect just set — its own transition becomes a same-value no-op
+  //    instead of a second, independently guessed one.
+  useLayoutEffect(() => {
+    if (!activeFamiliar || !familiarsLoaded || familiarsError || !sessionsLoaded || sessionsError) return;
+    if (resolvedFamiliarRef.current !== activeFamiliar.id) {
+      // First open, or a genuine familiar change: resolve fresh. The
+      // outgoing familiar's selection, if any, belongs to a different
+      // familiar entirely and must never be compared against this
+      // familiar's eligible roster below — ownership, not eligibility, is
+      // what just changed.
+      resolvedFamiliarRef.current = activeFamiliar.id;
+      const latestId = resolveLatestRightChatSessionId(sessions, activeFamiliar.id);
+      if (latestId) routerRef.current?.openSession(latestId);
+      else routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
+      setSelectedSessionId(latestId);
+      if (open) {
+        announce(
+          latestId
+            ? `${activeFamiliar.display_name} chat opened`
+            : `New chat with ${activeFamiliar.display_name}`,
+        );
+      }
+      return;
+    }
+    // Same familiar: only reconcile if the selected session stopped being
+    // eligible (deleted, archived, or otherwise dropped from the visible
+    // list) — and only an id previously observed in the eligible roster (see
+    // observedSessionIdsRef above), so a just-promoted session the roster
+    // hasn't caught up to yet is never mistaken for one that was removed.
+    // Never falls back to another familiar.
+    if (!selectedSessionId) return;
     if (eligibleSessions.some((session) => session.id === selectedSessionId)) return;
     if (!observedSessionIdsRef.current.has(selectedSessionId)) return;
     const replacement = resolveLatestRightChatSessionId(sessions, activeFamiliar.id);
     if (replacement) routerRef.current?.openSession(replacement);
     else routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
     setSelectedSessionId(replacement);
-  }, [activeFamiliar, eligibleSessions, open, selectedSessionId, sessions, sessionsError, sessionsLoaded]);
+  }, [activeFamiliar, announce, eligibleSessions, familiarsError, familiarsLoaded, open, selectedSessionId, sessions, sessionsError, sessionsLoaded]);
 
   if (!familiarsLoaded || !sessionsLoaded) {
     return (
@@ -407,8 +439,9 @@ export function RightChatPanel(props: Props) {
           onRetryFamiliars={props.onRetryFamiliars}
           onSetActiveFamiliar={props.onSetActiveFamiliar}
           onSessionStarted={props.onSessionStarted}
-          onSessionsChanged={handleSessionsChanged}
-          onSessionsDeleted={handleSessionsDeleted}
+          onSessionsChanged={props.onSessionsChanged}
+          onSessionsDeleted={props.onSessionsDeleted}
+          onSessionRemoved={handleSessionRemoved}
           onSlashFromChat={props.onSlashFromChat}
           onOpenOnboarding={props.onOpenOnboarding}
           onOpenTask={props.onOpenTask}

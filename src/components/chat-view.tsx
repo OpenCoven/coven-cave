@@ -124,6 +124,7 @@ import { FamiliarInlineCard } from "@/components/familiar-inline-card";
 import { ArtifactComments } from "@/components/artifact-comments";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
 import { ChatArchiveNudge } from "@/components/chat-archive-nudge";
+import type { SessionRemovalReason } from "@/lib/chat-session-removal";
 import {
   isChatArchiveNudgeDismissed,
   markChatArchiveNudgeDismissed,
@@ -434,6 +435,13 @@ type Props = {
   onVoiceSessionDiscarded?: () => void;
   onSessionsChanged?: () => void;
   onSessionsDeleted: (sessionIds: readonly string[]) => void;
+  /** Fires exactly when THIS view's own session is confirmed removed —
+   *  archived, deleted, or a discarded empty voice/pre-session — immediately
+   *  before onBack/onVoiceSessionDiscarded navigates away. Unlike
+   *  onSessionsChanged/onSessionsDeleted (which also fire for unrelated
+   *  refreshes), a consumer can treat this as an unambiguous removal signal
+   *  for the exact session named, with no need to infer it from call order. */
+  onSessionRemoved?: (sessionId: string, reason: SessionRemovalReason) => void;
   onBack?: () => void;
   onSlashCommand?: (command: string, args: string) => boolean;
   onOpenOnboarding?: () => void;
@@ -1842,7 +1850,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -6695,13 +6703,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
       onSessionsChanged?.();
+      onSessionRemoved?.(sessionId, "archived");
       onBack?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "archive failed");
     } finally {
       setArchivingChat(false);
     }
-  }, [sessionId, archivingChat, onSessionsChanged, onBack]);
+  }, [sessionId, archivingChat, onSessionsChanged, onSessionRemoved, onBack]);
 
   const deleteChat = async () => {
     if (!sessionId || deleting) return;
@@ -6715,6 +6724,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
       onSessionsDeleted([sessionId]);
+      onSessionRemoved?.(sessionId, "deleted");
       onBack?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "delete failed");
@@ -6820,7 +6830,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       announce(archived ? "Chat archived — it won't appear in the rail." : "Chat restored to the rail.");
       onSessionsChanged?.();
       // Leaving mirrors delete only for archive; unarchive keeps you in place.
-      if (archived) onBack?.();
+      if (archived) {
+        onSessionRemoved?.(sessionId, "archived");
+        onBack?.();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
     } finally {
@@ -8038,7 +8051,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   // Only yank the view back to compose when it's still
                   // parked on the session we just discarded — if the user
                   // has already switched away, leave them where they are.
-                  if (target === sessionId) onVoiceSessionDiscarded?.();
+                  if (target === sessionId) {
+                    onSessionRemoved?.(target, "discarded");
+                    onVoiceSessionDiscarded?.();
+                  }
                 }
               });
             }

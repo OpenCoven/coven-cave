@@ -39,21 +39,52 @@ assert.doesNotMatch(
   "the dedicated wrapper does not restore generic companion concepts",
 );
 
-// Resolution must be scoped to `open` + the active familiar + a loaded,
-// error-free session list. The first-resolution effect additionally gates on
-// familiars readiness/errors (cave-rl980 Task 4 review): resolving — and
-// marking resolvedFamiliarRef resolved — on a render where the router isn't
-// actually mounted would silently no-op the openSession/newChat call and
-// then permanently skip the real resolution once the router does mount.
+// Resolution must be scoped to the active familiar + a loaded, error-free
+// session list, but deliberately NOT to `open` (cave-rl980 Task 4 review): a
+// familiar transition (or a same-familiar removal) must be tracked even
+// while the panel is closed, since ChatRouter/ChatView stay mounted
+// underneath as a persistent controller — pausing resolution while hidden
+// would leave the header and the actually-mounted router desynchronized the
+// moment the panel reopens. The effect additionally gates on familiars
+// readiness/errors: resolving — and marking resolvedFamiliarRef resolved —
+// on a render where the router isn't actually mounted would silently no-op
+// the openSession/newChat call and then permanently skip the real
+// resolution once the router does mount.
 assert.match(
   source,
-  /if \(!open \|\| !activeFamiliar \|\| !familiarsLoaded \|\| familiarsError \|\| !sessionsLoaded \|\| sessionsError\) return;/,
-  "the first-resolution effect gates on both familiar and session readiness/errors so a null router can never be marked resolved",
+  /if \(!activeFamiliar \|\| !familiarsLoaded \|\| familiarsError \|\| !sessionsLoaded \|\| sessionsError\) return;/,
+  "the merged resolution/reconcile effect gates on familiar and session readiness/errors so a null router can never be marked resolved, but never on `open`",
+);
+// One `useLayoutEffect`, not two separate `useEffect`s (cave-rl980 Task 4
+// review): a familiar change must issue exactly one imperative openSession/
+// newChat call. Two effects race on the render the familiar changes — a
+// second, separate reconcile effect would still see the outgoing familiar's
+// stale selectedSessionId (never eligible for the new familiar, and, having
+// been observed under the old familiar, passing the observed-gate too) and
+// redundantly resolve a second time. `useLayoutEffect` also wins the
+// ordering race against ChatRouter's own internal familiar-switch effect (a
+// passive `useEffect`): every layout effect across the tree commits before
+// any passive effect runs, so ChatRouter's own effect always sees the view
+// this one already set, and its own transition becomes a no-op.
+assert.match(
+  source,
+  /useLayoutEffect\(\(\) => \{\s*\n\s*if \(!activeFamiliar \|\| !familiarsLoaded \|\| familiarsError \|\| !sessionsLoaded \|\| sessionsError\) return;/,
+  "the merged effect is a useLayoutEffect so it always commits before ChatRouter's own internal familiar-switch effect can independently guess a second transition",
 );
 assert.match(
   source,
-  /if \(!open \|\| !activeFamiliar \|\| !sessionsLoaded \|\| sessionsError \|\| !selectedSessionId\) return;/,
-  "the ineligible-selection reconcile effect keeps its open/familiar/loaded-sessions/no-error/selected-id guard",
+  /if \(resolvedFamiliarRef\.current !== activeFamiliar\.id\) \{/,
+  "a familiar change (or first open) is handled first and returns, before any eligibility check ever sees the outgoing familiar's stale selection",
+);
+assert.match(
+  source,
+  /if \(open\) \{\s*\n\s*announce\(/,
+  "only the announcement, not the resolution itself, is gated on `open` — a hidden panel's transitions are still tracked, just not narrated to a screen reader",
+);
+assert.match(
+  source,
+  /if \(!selectedSessionId\) return;\s*\n\s*if \(eligibleSessions\.some\(\(session\) => session\.id === selectedSessionId\)\) return;\s*\n\s*if \(!observedSessionIdsRef\.current\.has\(selectedSessionId\)\) return;/,
+  "the same-familiar reconcile branch keeps its selected-id/eligibility/observed guard",
 );
 
 // A newly promoted session id (null → id, reported the instant a message
@@ -85,15 +116,15 @@ assert.match(
 // sessions" after a transcript load failure — the session is still fully
 // eligible) and a genuine removal (archive/delete's onBack, or a discarded
 // voice pre-session's onVoiceSessionDiscarded). Only the second may retain
-// the prior selectedSessionId so the reconcile effect above can resolve it
+// the prior selectedSessionId so the reconcile branch above can resolve it
 // once the roster confirms removal; the first must clear immediately.
-// pendingRemovalRef (armed by handleSessionsChanged/handleSessionsDeleted,
-// the two calls every removal path makes immediately before its null)
-// distinguishes them, gated additionally on prior observation so a
-// discarded, never-observed promotion (which also reports through
-// onSessionsChanged) clears instead of leaving a permanent ghost. Explicit
-// New chat actions bypass this handler entirely: they call
-// setSelectedSessionId(null) directly at the moment they act.
+// pendingRemovalRef distinguishes them, armed only by handleSessionRemoved
+// (ChatView's own narrow, purpose-built removal signal — see its doc in
+// chat-view.tsx — fired at the exact archive/delete/discard call sites, NOT
+// inferred from the generic onSessionsChanged/onSessionsDeleted refresh
+// callbacks, which also fire for refreshes unrelated to this session's
+// removal). Explicit New chat actions bypass this handler entirely: they
+// call setSelectedSessionId(null) directly at the moment they act.
 assert.match(
   source,
   /const pendingRemovalRef = useRef\(false\);/,
@@ -109,15 +140,17 @@ assert.match(
   /removalConfirmed && prev !== null && observedSessionIdsRef\.current\.has\(prev\) \? prev : null/,
   "an organic null only retains the prior selection when a removal was just confirmed AND that id was previously observed eligible — every other null (ordinary back, or a never-observed discarded promotion) clears immediately",
 );
+// The narrow removal signal (fix 1, cave-rl980 Task 4 review): arms
+// pendingRemovalRef only for a removal of the exact session currently
+// selected and previously observed eligible — never inferred from the
+// generic onSessionsChanged/onSessionsDeleted refresh callbacks, which also
+// fire for reasons that have nothing to do with this session's removal (a
+// canonical-session reconcile after a stream settles, a *different* thread
+// auto-archiving on reflection, a Board handoff refresh, …).
 assert.match(
   source,
-  /const handleSessionsChanged = \(\) => \{\s*\n\s*pendingRemovalRef\.current = true;\s*\n\s*props\.onSessionsChanged\(\);\s*\n\s*\};/,
-  "onSessionsChanged is wrapped to arm the removal flag before forwarding, never forked",
-);
-assert.match(
-  source,
-  /const handleSessionsDeleted = \(sessionIds: readonly string\[\]\) => \{\s*\n\s*pendingRemovalRef\.current = true;\s*\n\s*props\.onSessionsDeleted\(sessionIds\);\s*\n\s*\};/,
-  "onSessionsDeleted is wrapped to arm the removal flag before forwarding, never forked",
+  /const handleSessionRemoved = \(removedSessionId: string\) => \{\s*\n\s*if \(removedSessionId === selectedSessionId && observedSessionIdsRef\.current\.has\(removedSessionId\)\) \{\s*\n\s*pendingRemovalRef\.current = true;\s*\n\s*\}\s*\n\s*\};/,
+  "handleSessionRemoved arms pendingRemovalRef only for a removal of the exact selected, previously observed session",
 );
 assert.match(
   source,
@@ -131,23 +164,28 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /onSessionsChanged=\{handleSessionsChanged\}/,
-  "ChatRouter's onSessionsChanged is routed through the arming wrapper, not the raw prop",
+  /onSessionRemoved=\{handleSessionRemoved\}/,
+  "ChatRouter's narrow removal signal is routed through the arming handler",
 );
 assert.match(
   source,
-  /onSessionsDeleted=\{handleSessionsDeleted\}/,
-  "ChatRouter's onSessionsDeleted is routed through the arming wrapper, not the raw prop",
-);
-assert.doesNotMatch(
-  source,
   /onSessionsChanged=\{props\.onSessionsChanged\}/,
-  "ChatRouter must not wire directly into the raw onSessionsChanged prop — the wrapper needs to observe every call",
+  "ChatRouter's onSessionsChanged is forwarded to the raw prop unchanged — RightChatPanel no longer intercepts every call to guess at removal, preserving existing behavior for every other consumer",
 );
-assert.doesNotMatch(
+assert.match(
   source,
   /onSessionsDeleted=\{props\.onSessionsDeleted\}/,
-  "ChatRouter must not wire directly into the raw onSessionsDeleted prop — the wrapper needs to observe every call",
+  "ChatRouter's onSessionsDeleted is forwarded to the raw prop unchanged — RightChatPanel no longer intercepts every call to guess at removal, preserving existing behavior for every other consumer",
+);
+assert.doesNotMatch(
+  source,
+  /const handleSessionsChanged = /,
+  "onSessionsChanged must no longer be wrapped to arm the removal flag — it also fires for unrelated refreshes, which would misclassify an ordinary back as a confirmed removal",
+);
+assert.doesNotMatch(
+  source,
+  /const handleSessionsDeleted = /,
+  "onSessionsDeleted must no longer be wrapped to arm the removal flag — the narrow onSessionRemoved signal owns that job instead",
 );
 
 // Transient roster errors (a failed refresh, not a first load) must not tear
