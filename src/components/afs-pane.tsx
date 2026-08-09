@@ -217,7 +217,7 @@ function ChangesPane({ sessionId }: { sessionId: string }) {
       ) : (
         <ul className="list-none">
           {tree.map((node) => (
-            <TreeRow key={node.path} node={node} depth={0} />
+            <TreeRow key={node.path} node={node} />
           ))}
         </ul>
       )}
@@ -231,13 +231,15 @@ const CHANGE_BADGE: Record<AfsChange["change"], string> = {
   deleted: "D",
 };
 
-function TreeRow({ node, depth }: { node: AfsTreeNode; depth: number }) {
+/**
+ * Depth is expressed by the nested `<ul>` itself rather than a computed
+ * `paddingLeft`, so indentation stays on the spacing scale and this component
+ * contributes no inline style for the design-token drift ratchet to count.
+ */
+function TreeRow({ node }: { node: AfsTreeNode }) {
   return (
     <li>
-      <div
-        className="flex items-center gap-2 text-[length:var(--text-xs)]"
-        style={{ paddingLeft: `${depth * 12}px` }}
-      >
+      <div className="flex items-center gap-2 text-[length:var(--text-xs)]">
         {node.change ? (
           <span
             aria-label={node.change.change}
@@ -263,9 +265,9 @@ function TreeRow({ node, depth }: { node: AfsTreeNode; depth: number }) {
         ) : null}
       </div>
       {node.children.length > 0 ? (
-        <ul className="list-none">
+        <ul className="list-none pl-3">
           {node.children.map((child) => (
-            <TreeRow key={child.path} node={child} depth={depth + 1} />
+            <TreeRow key={child.path} node={child} />
           ))}
         </ul>
       ) : null}
