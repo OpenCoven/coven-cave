@@ -1530,6 +1530,7 @@ export const SUITES = {
     "src/lib/mobile-handoff.test.ts",
     "src/lib/mobile-mode-reconcile.test.ts",
     "src/lib/mobile-token-refresh.test.ts",
+    "scripts/ios-build-ci.test.mjs",
     "scripts/ios-app-store-assets.test.mjs",
     "scripts/ios-chat-project-contract.test.mjs",
     "scripts/ios-chat-familiars-home.test.mjs",
