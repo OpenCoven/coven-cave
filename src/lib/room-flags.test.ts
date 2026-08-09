@@ -12,8 +12,9 @@ import {
   type RoomVisibilityEnv,
 } from "./room-flags.ts";
 import { FAMILIAR_TYPES } from "./familiar-types.ts";
+import { CODE_SURFACE_ID } from "../components/role-surfaces/ids.ts";
 
-const CODE = "code";
+const CODE = CODE_SURFACE_ID;
 const RESEARCH = "researcher-desk";
 const CHART = "navigator-chart-room";
 
@@ -31,7 +32,7 @@ test("a production build ships the Research Desk and the Chart Room, and nothing
 
 test("a dev build shows every registered room, including the Coding familiar's", () => {
   assert.deepEqual(filterEnabledRoomIds(dev, KNOWN_ROOM_IDS), [...KNOWN_ROOM_IDS]);
-  assert.equal(resolveRoomVisibility(dev)(CODE), true, "the Coding Room is workable in dev");
+  assert.equal(resolveRoomVisibility(dev)(CODE), true, "the Coding Desk is workable in dev");
   assert.equal(resolveRoomVisibility(prod)(CODE), false, "…and under construction in production");
 });
 
@@ -136,9 +137,17 @@ test("the Coding familiar's room is registered for the coder role", () => {
   assert.match(
     register,
     /id: CODE_SURFACE_ID,\s*role: "coder",/,
-    "the Code room is registered under the coder role",
+    "the Coding Desk is registered under the coder role",
   );
   assert.match(register, /render: \(context\) => <CodeRoom context=\{context\} \/>/);
+  // The room answers to one name (cave-smaji) — it has carried three.
+  assert.match(
+    register,
+    /id: CODE_SURFACE_ID,[\s\S]{0,200}?title: "Coding Desk",/,
+    "the room is titled Coding Desk",
+  );
+  // …while its id stays the persisted `surface:code` mode the aliases resolve into.
+  assert.equal(CODE_SURFACE_ID, "code", "renaming the room must not rename its stored mode");
 
   const types = repoFile("src/lib/familiar-types.ts");
   assert.match(

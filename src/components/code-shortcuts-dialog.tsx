@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * CodeShortcutsDialog — rebindable Coding Room shortcuts (cave-0rcku).
+ * CodeShortcutsDialog — rebindable Coding Desk shortcuts (cave-0rcku).
  *
  * The `Cody Code Reading v2` frame does not just *list* keys, it lets you take
  * them: press Rebind, press the combo, done, saved on this device. The rule its
@@ -92,7 +92,7 @@ export function CodeShortcutsDialog({ open, onClose, keymap, onChange }: CodeSho
     <Modal
       open={open}
       onClose={onClose}
-      breadcrumb={["Coding Room", "Keyboard shortcuts"]}
+      breadcrumb={["Coding Desk", "Keyboard shortcuts"]}
       dismissOnEscape={!capturing}
       footerPills={
         <span className="code-keys__footnote">

@@ -103,7 +103,7 @@ type Props = {
   initialTarget?: GitHubItemTarget | null;
   /** Called after the view captures a host target into local detail state. */
   onInitialTargetHandled?: () => void;
-  /** When set, the host owns the content filter (e.g. the Code Workshop's
+  /** When set, the host owns the content filter (e.g. the Coding Desk's
    *  PRs/Issues/Reviews top tabs). The view is driven to this filter and hides
    *  its own filter control to avoid a redundant second switch. */
   initialFilter?: Filter | null;
@@ -2836,7 +2836,7 @@ export function GitHubView({
     onRestore: setFilter,
     coalesceMs: 700,
   });
-  // Host-driven filter (Code Workshop's PRs/Issues/Reviews tabs): follow the
+  // Host-driven filter (Coding Desk's PRs/Issues/Reviews tabs): follow the
   // prop whenever it changes so switching tabs re-filters the same mounted view.
   useEffect(() => {
     if (initialFilter && initialFilter !== filter) setFilter(initialFilter);
@@ -3352,7 +3352,7 @@ export function GitHubView({
           {activity?.rateLimit && <GhBudgetMeter rateLimit={activity.rateLimit} />}
         </div>
 
-        {/* Host-driven filter (Code Workshop tabs) owns the switch — hide the
+        {/* Host-driven filter (Coding Desk tabs) owns the switch — hide the
             in-view chips so there is only one control. */}
         {initialFilter ? null : (
           <Tabs

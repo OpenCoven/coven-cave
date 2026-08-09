@@ -3,7 +3,7 @@
 /**
  * Live working-tree changes for one project root (cave-0rcku).
  *
- * The Coding Room needs the same `/api/changes` summary in three places at
+ * The Coding Desk needs the same `/api/changes` summary in three places at
  * once — the file tree's status marks, the tree's "N changed" filter, and the
  * review rail's diffstat header — and the frame shows them agreeing. A single
  * hook over the shared, deduped summary gate (`changes-summary-fetch`) is what

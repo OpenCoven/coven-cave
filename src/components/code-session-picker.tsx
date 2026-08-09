@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * CodeSessionPicker — the Coding Room's session switcher (cave-0rcku).
+ * CodeSessionPicker — the Coding Desk's session switcher (cave-0rcku).
  *
  * The `Cody Code Reading v2` frame replaces the permanently-docked session rail
  * with a header control: the current session's name in a button, opening a
