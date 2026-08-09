@@ -35,13 +35,7 @@ enum TerminalCommand: Equatable {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .empty }
 
-        let token = trimmed
-            .split(maxSplits: 1, whereSeparator: \.isWhitespace)
-            .first
-            .map(String.init)?
-            .lowercased()
-
-        switch token {
+        switch trimmed.lowercased() {
         case "/help", "/?":
             return .local(.help)
         case "/clear", "/cls":

@@ -10,8 +10,8 @@ const chats = await read("apps/ios/CovenCave/CovenCave/Views/ChatsHomeView.swift
 
 assert.match(
   parser,
-  /case "\/help", "\/\?":[\s\S]*?case "\/clear", "\/cls":[\s\S]*?case "\/cwd":/,
-  "the parser should own exactly the terminal's local command vocabulary",
+  /switch trimmed\.lowercased\(\) \{[\s\S]*?case "\/help", "\/\?":[\s\S]*?case "\/clear", "\/cls":[\s\S]*?case "\/cwd":/,
+  "the parser should locally handle only exact terminal command strings",
 );
 assert.match(
   parser,

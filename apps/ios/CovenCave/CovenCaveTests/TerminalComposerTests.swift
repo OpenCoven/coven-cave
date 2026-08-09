@@ -14,6 +14,7 @@ final class TerminalComposerTests: XCTestCase {
             TerminalCommand.parse("/usr/bin/env swift --version"),
             .send("/usr/bin/env swift --version")
         )
+        XCTAssertEqual(TerminalCommand.parse("/clear now"), .send("/clear now"))
         XCTAssertEqual(TerminalCommand.parse("/workspace/scripts/check"), .send("/workspace/scripts/check"))
     }
 
