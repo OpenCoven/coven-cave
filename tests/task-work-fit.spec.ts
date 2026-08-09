@@ -86,6 +86,17 @@ async function openBoard(page: Page, cards: unknown[], sessions: unknown[], send
     route.fulfill({ json: { ok: true, familiars: [FAMILIAR] } }),
   );
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions } }));
+  // ChatView refuses to auto-send until the card's root resolves to a project
+  // this familiar can access (`projectLaunchReady`). Without this the bridge
+  // handoff silently never sends — and a re-send assertion would be vacuous.
+  await page.route("**/api/projects**", (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        projects: [{ id: "repo-alpha", name: "alpha", root: "/repo/alpha", access: "write", createdAt: ISO, updatedAt: ISO }],
+      },
+    }),
+  );
   await page.route("**/api/board", (route) =>
     route.request().method() === "GET"
       ? route.fulfill({ json: { ok: true, cards } })
@@ -159,8 +170,8 @@ function fit(page: Page) {
     return {
       body: rect(body),
       chat: rect(chat),
-      // Whatever directly hosts the chat: the body row itself on the
-      // bridge-start branch, the conversation Panel when a Group is mounted.
+      // Whatever directly hosts the chat — the Group's conversation Panel for
+      // both entry paths since cave-6une3 unified them.
       chatHost: rect(chat?.parentElement),
       header: box(".task-work-cockpit__header"),
       reopen: box(".task-work-cockpit .workspace-rail-reopen"),
@@ -177,12 +188,14 @@ test.describe("Task Work cockpit fit", () => {
     const { body, chat, chatHost, header, reopen, rowRight } = await fit(page);
     expect(body).not.toBeNull();
     expect(chat).not.toBeNull();
-    // On this branch ChatView mounts straight into the body row.
-    expect(chatHost!.width).toBe(body!.width);
+    // ChatView mounts inside the Group's conversation Panel (cave-6une3 unified
+    // both entry paths onto one tree), so its host is the Panel — the body row
+    // minus whatever the collapsed rail strip reserves.
+    const reserved = reopen ? reopen.width : 0;
+    expect(chatHost!.width).toBe(body!.width - reserved);
     // The chat starts at the body's left edge and ends at the body's right edge
     // (minus the reopen strip, when it is showing). Before the fix the chat was
     // ~1090px inside a ~1900px body — a ~800px dead gutter.
-    const reserved = reopen ? reopen.width : 0;
     expect(chat!.left).toBe(body!.left);
     expect(body!.width - chat!.width).toBe(reserved);
     // Nothing is left over on the right.
