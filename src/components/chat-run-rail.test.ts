@@ -23,6 +23,32 @@ assert.match(
   /activePath\.length > 0 && instrumentsVisible \? \(\s*\n\s*<ChatRunRail/,
   "the rail shares the instruments toggle rather than adding a second setting for one idea",
 );
+// ── DOM order IS reading order (review catch on #4460) ──────────────────────
+// The rail was briefly the row's first child, placed visually with `order: 1`.
+// That reads correctly on screen and wrongly to a screen reader: `order` moves
+// boxes, never reading order, so assistive tech met the annotation before the
+// conversation. The mount now follows the transcript in the DOM.
+{
+  const transcript = chatView.indexOf('className="cave-chat-transcript');
+  const rail = chatView.indexOf("<ChatRunRail");
+  assert.ok(transcript > 0 && rail > 0, "both the transcript and the rail are mounted");
+  assert.ok(
+    rail > transcript,
+    "the rail is mounted AFTER the transcript — DOM order is the accessible order",
+  );
+}
+// Comments are stripped first: the rule's own comment explains the `order: 1`
+// it no longer has, and an unanchored search happily matched that prose — the
+// same "satisfied by a comment" trap this file already guards elsewhere.
+{
+  const rule = css.match(/\.cave-runrail \{[^}]*\}/)?.[0] ?? "";
+  const declarations = rule.replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.doesNotMatch(
+    declarations,
+    /^\s*order\s*:/m,
+    "no CSS `order` on the rail: reordering visually would decouple it from reading order again",
+  );
+}
 assert.match(facade, /^@import "\.\/cave-chat\/run-rail\.css";$/m, "the stylesheet is imported by the cave-chat facade");
 
 // ── the omissions are the feature ───────────────────────────────────────────
@@ -62,7 +88,14 @@ assert.match(
 // The rail is a column beside the transcript, never a second horizontal scroller
 // inside it (cave-l2hkx).
 assert.match(css, /\.cave-runrail \{[\s\S]*?overflow-x:\s*hidden/, "the rail never scrolls sideways");
-assert.match(css, /\.cave-runrail \{[\s\S]*?order:\s*1/, "the rail is ordered after the transcript it annotates");
+// The gate must spend the rail's own width before comparing — see the review
+// catch: a bare row comparison admits the rail at ~1360px, leaving the
+// transcript below the threshold its sibling instruments measure.
+assert.match(
+  component,
+  /THREAD_INSTRUMENTS_MIN_WIDTH \+ RAIL_MAX_WIDTH/,
+  "the width gate accounts for the rail's own footprint, not just the row",
+);
 
 // ── wide-pane gate ─────────────────────────────────────────────────────────
 // The rail is LAYOUT, unlike the spine and minimap which are overlays. Without

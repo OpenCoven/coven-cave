@@ -7652,16 +7652,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           the transcript alone and the layout is unchanged. Overlay and modal
           are fixed-position and escape this row on their own. */}
       <div className="flex min-h-0 flex-1">
-              {/* Run rail (Coven Cave - Chat Session handoff, cave-w716g): the
-                  timeline, tool mix and live step, derived from the SAME
-                  activePath the transcript renders. Shares the instruments
-                  toggle — it is the same class of furniture as the spine and
-                  minimap, and two settings for one idea is a choice nobody
-                  asked for. Ordered after the transcript by CSS so this mount
-                  point can stay at the row's unambiguous opening tag. */}
-              {activePath.length > 0 && instrumentsVisible ? (
-                <ChatRunRail turns={activePath} conversationCreatedAt={session?.created_at} />
-              ) : null}
       <div
         ref={scrollRef}
         tabIndex={0}
@@ -7890,6 +7880,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }}
         />
       ) : null}
+              {/* Run rail (Coven Cave - Chat Session handoff, cave-w716g): the
+                  timeline, tool mix and live step, derived from the SAME
+                  activePath the transcript renders. Shares the instruments
+                  toggle — it is the same class of furniture as the spine and
+                  minimap, and two settings for one idea is a choice nobody
+                  asked for.
+
+                  Mounted AFTER the transcript on purpose. It was briefly the
+                  row's first child with CSS `order` doing the visual placement,
+                  which put the rail ahead of the conversation for screen
+                  readers — `order` moves boxes, never reading order. DOM order
+                  is the accessible order, so the annotation follows the log. */}
+              {activePath.length > 0 && instrumentsVisible ? (
+                <ChatRunRail turns={activePath} conversationCreatedAt={session?.created_at} />
+              ) : null}
       </div>
       </CodeReadingContext.Provider>
       </FileLinkResolverContext.Provider>

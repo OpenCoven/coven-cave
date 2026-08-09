@@ -33,6 +33,11 @@ const LIVE_TICK_MS = 1000;
  *  re-render an idle transcript 60x more often for an identical string. */
 const IDLE_TICK_MS = 60_000;
 
+/** Widest the rail ever gets (mirrors --runrail-max-w in run-rail.css). The
+ *  gate spends this before comparing, so admitting the rail can never push the
+ *  transcript under the threshold its sibling instruments measure. */
+const RAIL_MAX_WIDTH = 300;
+
 /**
  * Local clock for the elapsed readouts. Deliberately a raw interval rather
  * than usePausablePoll: this makes no network request, so the hook's
@@ -70,7 +75,13 @@ function useWideEnough(ref: React.RefObject<HTMLElement | null>): boolean {
   useLayoutEffect(() => {
     const row = ref.current?.parentElement;
     if (!row || typeof ResizeObserver === "undefined") return;
-    const measure = () => setWide(row.clientWidth >= THREAD_INSTRUMENTS_MIN_WIDTH);
+    // The row must clear the instruments threshold WITH the rail's own width
+    // already spent. Comparing the bare row admits the rail at ~1360px, which
+    // leaves the transcript ~1100px — below the threshold the spine and minimap
+    // measure, so they would disappear while the rail that displaced them
+    // stayed. Keep the mirror of RAIL_MAX_WIDTH in run-rail.css in step.
+    const measure = () =>
+      setWide(row.clientWidth >= THREAD_INSTRUMENTS_MIN_WIDTH + RAIL_MAX_WIDTH);
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(row);

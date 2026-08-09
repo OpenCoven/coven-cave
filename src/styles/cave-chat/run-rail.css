@@ -8,13 +8,21 @@
    (thread-instruments.css) rather than a component-local palette, so the rail's
    legend and the transcript's gutters can never drift apart. */
 
+:root {
+  /* Shared with the component: the width gate must know what the rail costs,
+     or it admits the rail at widths that push the transcript below the
+     instruments threshold — the spine and minimap would vanish while the rail
+     that displaced them stayed. */
+  --runrail-min-w: 232px;
+  --runrail-max-w: 300px;
+}
+
 .cave-runrail {
-  /* Mounted as the row's FIRST child (an unambiguous anchor in a 9.7k-line
-     component) and ordered after the transcript here, so the DOM position and
-     the visual position are decoupled on purpose. Reading order is unaffected:
-     the transcript is the log, this is annotation beside it. */
-  order: 1;
-  flex: 0 0 clamp(232px, 22%, 300px);
+  /* No `order`: the rail is the row's LAST child in the DOM, so the visual
+     order and the reading order are the same one. It was briefly first-child +
+     `order: 1`, which reads correctly on screen and wrongly to a screen reader —
+     `order` moves boxes, never reading order. */
+  flex: 0 0 clamp(var(--runrail-min-w), 22%, var(--runrail-max-w));
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
