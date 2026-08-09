@@ -382,6 +382,7 @@ async function ensureNativeAppServeReady(
       backendUrl: backend,
       serveError: fallbackWarning ?? serveWarning,
       statusError: status.stderr,
+      routeReason: discovery.reason,
     });
     const routeDetail = routeFailure.error;
     return NextResponse.json(
@@ -535,6 +536,7 @@ async function mobileHandoffReady(
       backendUrl: backend,
       serveError: serveWarning,
       statusError: status.stderr,
+      routeReason: discovery.reason,
     });
     // Nothing usable — surface the most actionable error we have.
     return NextResponse.json(

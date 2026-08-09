@@ -25,17 +25,20 @@ export function serveRouteFailure({
   backendUrl,
   serveError,
   statusError,
+  routeReason,
 }: {
   backendUrl: string;
   serveError?: string | null;
   statusError?: string | null;
+  routeReason?: string | null;
 }) {
   const guidance =
     `Tailscale Serve did not publish ${backendUrl}. ` +
     "Enable HTTPS for this tailnet at https://login.tailscale.com/admin/dns, then retry.";
   const stderr = serveError?.trim() || statusError?.trim() || undefined;
+  const reason = routeReason?.trim();
   return {
-    error: stderr ? `${stderr} ${guidance}` : guidance,
+    error: [stderr, reason, guidance].filter(Boolean).join(" "),
     stderr,
   };
 }

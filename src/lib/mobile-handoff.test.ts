@@ -46,15 +46,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       statusOk: false,
     }),
     false,
-    "a failed Serve mutation must not become a MagicDNS success when status is unreadable",
-  );
-  assert.equal(
-    shouldAllowMagicDnsFallback({
-      serveOk: false,
-      statusOk: false,
-    }),
-    false,
-    "macOS CLIError 3 needs a matching route in Serve status before a handoff can succeed",
+    "a failed Serve mutation, including macOS CLIError 3, needs a matching route in status before a handoff can succeed",
   );
   assert.equal(
     shouldAllowMagicDnsFallback({
@@ -80,6 +72,13 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.match(failure.error, /serve config unavailable/);
   assert.match(failure.error, /Enable HTTPS for this tailnet at https:\/\/login\.tailscale\.com\/admin\/dns/);
   assert.equal(failure.stderr, "serve config unavailable");
+
+  const missingRoute = serveRouteFailure({
+    backendUrl: "http://127.0.0.1:3000",
+    routeReason: "tailscale serve route not found for http://127.0.0.1:3000",
+  });
+  assert.match(missingRoute.error, /tailscale serve route not found/);
+  assert.equal(missingRoute.stderr, undefined);
 }
 
 {
