@@ -62,7 +62,12 @@ assert.match(
   "Help probes report an incomplete probe separately from an unmatched flag",
 );
 for (const failure of [
-  /did not respond within \$\{openCodeCapabilityProbeTimeoutMs\(\)\}ms/,
+  // The deadline is hoisted into ONE binding that both arms the timer and
+  // names itself in the reason. Pinning the shape rather than a bare call is
+  // the point: a message that re-invoked the helper could quote a different
+  // number than the timer actually waited, which is precisely the confusion a
+  // timeout report exists to prevent.
+  /const timeoutMs = openCodeCapabilityProbeTimeoutMs\(\);[\s\S]*?did not respond within \$\{timeoutMs\}ms[\s\S]*?\}, timeoutMs\);/,
   /child\.on\("error", \(error: Error\) => \{[\s\S]*?ok: false, reason: `\\`\$\{command\}\\` could not be started: \$\{error\.message\}`/,
 ]) {
   assert.match(

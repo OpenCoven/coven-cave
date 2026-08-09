@@ -286,7 +286,7 @@ import {
 } from "@/lib/thread-self-report";
 import { streamFamiliarText } from "@/lib/familiar-stream";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
-import { EnhanceStrip } from "@/components/composer-enhance";
+import { EnhanceControl, EnhanceStrip } from "@/components/composer-enhance";
 import { AttachmentList, AttachmentThumb, InlineImageAttachments, formatAttachmentBytes, isInlineImageAttachment } from "./chat-attachment-cards";
 import { preloadMarkdownPreview } from "@/lib/markdown-preview";
 import {
@@ -1429,6 +1429,20 @@ function ContextMeterChip({ usage, model }: { usage?: TurnUsage; model?: string 
         <span className="block h-full rounded-full" style={{ width: `${Math.max(3, meter.percent)}%`, background: fill }} />
       </span>
       <span aria-label={`Context ${meter.percent} percent full`}>{`${meter.percent}%`}</span>
+    </span>
+  );
+}
+
+function ComposerContextMeter({ usage, model }: { usage?: TurnUsage; model?: string }) {
+  const meter = computeContextMeter(usage, model);
+  if (!meter) return null;
+  const title = `Context ${meter.percent}% full — ${meter.usedTokens.toLocaleString()} of ${meter.windowTokens.toLocaleString()} tokens${meter.known ? "" : " (window size estimated)"}`;
+  return (
+    <span className="cave-composer-context-meter" data-level={meter.level} title={title}>
+      <meter className="cave-composer-context-meter__track" min={0} max={100} value={meter.percent}>
+        {meter.percent}%
+      </meter>
+      <span>{`Context ${meter.percent}%`}</span>
     </span>
   );
 }
@@ -7078,6 +7092,88 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             />
 
             <div className="cave-composer-panel">
+              <div className="cave-composer-edge-actions">
+                <ComposerActionsMenu
+                  attach={{
+                    onSelect: () => fileInputRef.current?.click(),
+                    disabled: attachments.length >= 10,
+                    hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
+                  }}
+                  skills={{
+                    onPickSkill: (skill) => {
+                      setInput(`/skill ${skill.id} `);
+                      inputRef.current?.focus();
+                    },
+                  }}
+                  context={{
+                    projects,
+                    projectValue: resolvedProjectId,
+                    onProjectChange: setProjectIdDraft,
+                    familiarId: familiar.id ?? null,
+                    createProject,
+                    createProjectOrThrow,
+                    runtime: modelHarness,
+                    modelValue: composerModelValue,
+                    modelOptions: composerModelOptions,
+                    onPickRuntime: handleSelectRuntime,
+                    onPickModel: handleSelectModel,
+                    modelDisabled: busy,
+                    projectRoot: activeProjectRoot,
+                    onOpenUrl,
+                    popoverPlacement: composerPopoverPlacement,
+                  }}
+                  linkedWork={{
+                    linkedContext,
+                    onOpenTask,
+                    sessionId,
+                    onLinkedContextChange: setLinkedContext,
+                    handoff: { turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft },
+                    sessionSettled: !activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error,
+                  }}
+                  improve={{
+                    dictation: dictation.available
+                      ? {
+                          listening: dictation.listening,
+                          toggle: dictation.toggle,
+                          disabled: busy && !dictation.listening,
+                        }
+                      : undefined,
+                    promptSnippets: {
+                      onSelect: () => setPromptSnippetsOpen(true),
+                    },
+                    enhance: {
+                      onEnhance: promptEnhance.enhance,
+                      disabled: busy || !input.trim(),
+                      loading: promptEnhance.state.phase === "loading",
+                    },
+                  }}
+                  response={{
+                    hostValue: composerHostValue,
+                    onHostPick: setRuntimeHost,
+                    sections: composerResponseSections,
+                    onSaveAsTemplate: () => setSaveTemplateSeed(input),
+                    saveAsTemplateDisabled: !input.trim(),
+                    indicator:
+                      composerHostValue !== LOCAL_HOST_ID ||
+                      permissionMode !== DEFAULT_PERMISSION_MODE ||
+                      thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
+                      responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
+                  }}
+                  triggerVariant="tools"
+                />
+                {linkedContext?.task && onOpenTask ? (
+                  <button
+                    type="button"
+                    className="cave-composer-task-tab focus-ring"
+                    onClick={() => onOpenTask(linkedContext.task!.id)}
+                    title={`Open task: ${linkedContext.task.title}`}
+                    aria-label={`Open linked task: ${linkedContext.task.title}`}
+                  >
+                    <Icon name="ph:kanban" width={12} aria-hidden />
+                    <span>Task</span>
+                  </button>
+                ) : null}
+              </div>
               {attachments.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 border-b border-[var(--border-hairline)]/70 px-3 py-2">
                   {attachments.map((attachment) => (
@@ -7230,75 +7326,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     >
                       <Icon name="ph:phone" width="var(--icon-md)" aria-hidden />
                     </button>
-                    <ComposerActionsMenu
-                      attach={{
-                        onSelect: () => fileInputRef.current?.click(),
-                        disabled: attachments.length >= 10,
-                        hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
-                      }}
-                      skills={{
-                        onPickSkill: (skill) => {
-                          setInput(`/skill ${skill.id} `);
-                          inputRef.current?.focus();
-                        },
-                      }}
-                      context={{
-                        projects,
-                        projectValue: resolvedProjectId,
-                        onProjectChange: setProjectIdDraft,
-                        familiarId: familiar.id ?? null,
-                        createProject,
-                        createProjectOrThrow,
-                        runtime: modelHarness,
-                        modelValue: composerModelValue,
-                        modelOptions: composerModelOptions,
-                        onPickRuntime: handleSelectRuntime,
-                        onPickModel: handleSelectModel,
-                        modelDisabled: busy,
-                        projectRoot: activeProjectRoot,
-                        onOpenUrl,
-                        popoverPlacement: composerPopoverPlacement,
-                      }}
-                      linkedWork={{
-                        linkedContext,
-                        onOpenTask,
-                        sessionId,
-                        onLinkedContextChange: setLinkedContext,
-                        handoff: { turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft },
-                        sessionSettled: !activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error,
-                      }}
-                      improve={{
-                        dictation: dictation.available
-                          ? {
-                              listening: dictation.listening,
-                              toggle: dictation.toggle,
-                              disabled: busy && !dictation.listening,
-                            }
-                          : undefined,
-                        promptSnippets: {
-                          onSelect: () => setPromptSnippetsOpen(true),
-                        },
-                        enhance: {
-                          onEnhance: promptEnhance.enhance,
-                          disabled: busy || !input.trim(),
-                          loading: promptEnhance.state.phase === "loading",
-                        },
-                      }}
-                      response={{
-                        hostValue: composerHostValue,
-                        onHostPick: setRuntimeHost,
-                        sections: composerResponseSections,
-                        onSaveAsTemplate: () => setSaveTemplateSeed(input),
-                        saveAsTemplateDisabled: !input.trim(),
-                        indicator:
-                          composerHostValue !== LOCAL_HOST_ID ||
-                          permissionMode !== DEFAULT_PERMISSION_MODE ||
-                          thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
-                          responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
-                      }}
-                    />
                   </div>
+                  <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
                   <div className="cave-composer-submit-row">
+                    <EnhanceControl
+                      state={promptEnhance.state}
+                      onEnhance={promptEnhance.enhance}
+                      onCancel={promptEnhance.cancel}
+                      disabled={busy || !input.trim()}
+                    />
                     {/* The compact send keeps its queue/cancel behavior in one
                         stable action slot. */}
                     {busy ? (
