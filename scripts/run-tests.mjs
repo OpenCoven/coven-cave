@@ -485,6 +485,7 @@ export const SUITES = {
     "src/components/chat-list-collapse.test.ts",
     "src/components/chat-router-hide-archived.test.ts",
     "src/components/chat-router-switching.test.ts",
+    "src/components/right-chat-panel.test.ts",
     "src/components/chat-compose-instance.test.ts",
     "src/components/chat-split-host.test.ts",
     "src/lib/chat-split.test.ts",
