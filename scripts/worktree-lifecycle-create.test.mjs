@@ -1855,6 +1855,45 @@ await withFixture(
   },
 );
 
+// Scoping is about the malformed record, not whether its worktree still
+// exists. An active malformed unit remains uncertain in the patrol, but it
+// cannot deny an unrelated managed creation.
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    const existingBranch = "feat/cave-unit2-existing";
+    const existingPath = path.join(
+      fixture.repo,
+      ".worktrees",
+      "cave-unit2-existing",
+    );
+    const existing = runCreate(
+      fixture,
+      createArgs({ bead: "cave-unit2", branch: existingBranch }),
+    );
+    assert.equal(existing.status, 0, `fixture create must succeed: ${existing.stderr}`);
+
+    writeMalformedRecord(fixture, {
+      beadId: "cave-unit2",
+      branch: existingBranch,
+      worktreePath: existingPath,
+    });
+
+    const created = runCreate(fixture, createArgs());
+    assert.doesNotMatch(
+      created.stderr,
+      /lifecycle inventory is incomplete/,
+      "an active malformed unit must not block an unrelated creation",
+    );
+    assert.equal(created.status, 0, `create must succeed: ${created.stderr}`);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example") !== null,
+      true,
+      "the unrelated branch is actually created",
+    );
+  },
+);
+
 // The scoping above must not become a way to create *over* a claim. A record
 // already naming this branch is the collision the abort was protecting, and a
 // malformed record is no less a claim than a valid one.
@@ -1901,5 +1940,51 @@ await withFixture(
     );
   },
 );
+
+// A record that names neither a usable branch nor a usable path claims
+// something unnameable, so it cannot be charged to any unit and has to keep
+// blocking everything. The trap is that `branch` is kept verbatim for
+// diagnostics: `refs/heads/…` and a whitespace-padded name are both non-blank
+// strings that NO unit will ever equal, so a "non-blank means it names a unit"
+// test would drop the record out of the repository-wide set and into a unit
+// that never matches — reaching no surface at all. Attribution reads the
+// validated flag instead.
+for (const unusableBranch of ["refs/heads/feat/cave-unit2-unnameable", " feat/cave-unit2-padded"]) {
+  await withFixture(
+    { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+    async (fixture) => {
+      const state = readJson(fixture.stateFile);
+      const issue = state.issues.find((candidate) => candidate.id === "cave-unit2");
+      issue.metadata = {
+        coven: {
+          worktree: {
+            branch: unusableBranch,
+            // Not a string, so no usable path either — the record names nothing.
+            path: 17,
+            owner: "kitty",
+            purpose: "Unnameable record fixture",
+            createdAt: "2026-08-09T09:09:52.185Z",
+            disposition: "active",
+          },
+        },
+      };
+      writeJson(fixture.stateFile, state);
+
+      const refused = runCreate(fixture, createArgs());
+      assert.notEqual(
+        refused.status,
+        0,
+        `an unnameable record (${JSON.stringify(unusableBranch)}) must keep blocking creation`,
+      );
+      assert.match(refused.stderr, /lifecycle inventory is incomplete/);
+      assert.match(refused.stderr, /branch must be an? .*exact local branch name/);
+      assert.equal(
+        refState(fixture.repo, "refs/heads/feat/cave-unit1-example"),
+        null,
+        "no branch is created while an unnameable record stands",
+      );
+    },
+  );
+}
 
 console.log("worktree-lifecycle-create.test.mjs: ok");

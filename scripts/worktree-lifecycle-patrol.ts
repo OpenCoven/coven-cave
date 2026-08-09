@@ -199,14 +199,18 @@ function orphanedMetadataClaims(inventory: PatrolInventory): string[] {
   return [
     ...new Set(
       inventory.metadataClaimErrors
-        .filter(
-          (claim) =>
-            !inventory.items.some(
-              (item) =>
-                (claim.branch.length > 0 && item.branch === claim.branch) ||
-                (claim.path !== null && item.path === claim.path),
-            ),
-        )
+        .filter((claim) => {
+          // A record naming neither a usable branch nor a usable path is not
+          // orphaned — it is unnameable, so it stays charged to every unit and
+          // is already visible in their lanes. Reporting it here would say the
+          // opposite of what the header promises: that nothing is blocked by it.
+          if (claim.branch.length === 0 && claim.path === null) return false;
+          return !inventory.items.some(
+            (item) =>
+              (claim.branch.length > 0 && item.branch === claim.branch) ||
+              (claim.path !== null && item.path === claim.path),
+          );
+        })
         .flatMap((claim) => claim.errors),
     ),
   ];

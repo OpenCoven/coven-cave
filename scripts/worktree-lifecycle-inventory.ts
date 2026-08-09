@@ -54,7 +54,12 @@ export interface WorktreeLifecycleInventory {
 }
 
 export interface WorktreeMetadataClaimError {
-  /** The branch the record claims; empty when the record does not name a usable one. */
+  /**
+   * The branch the record claims, empty when it does not name one a unit could
+   * match. A record keeps its branch string verbatim for diagnostics even when
+   * that string is `refs/heads/foo` or ` foo`, which no unit ever equals; this
+   * field is already normalized so readers do not have to know that.
+   */
   branch: string;
   /** The absolute path the record claims; null when it does not name a usable one. */
   path: string | null;
@@ -150,6 +155,17 @@ type BeadTask = {
 
 type StructuredMetadataRecord = {
   branch: string;
+  /**
+   * Whether `branch` is an exact local branch name, and so can match a unit.
+   *
+   * `branch` is kept verbatim for diagnostics, which means it can hold a value
+   * no unit will ever equal — `" foo"`, `refs/heads/foo`, `feat/bad..name`.
+   * Treating "non-blank" as "names a unit" would let such a record be charged
+   * to a unit that never matches it and drop out of the repository-wide set at
+   * the same time, so its error would reach no surface at all. Attribution has
+   * to read this flag, not the string.
+   */
+  branchUsable: boolean;
   path: string | null;
   metadata: WorktreeLifecycleMetadata | null;
   errors: string[];
@@ -1574,6 +1590,7 @@ function parseStructuredRecord(
   if (!isRecord(value)) {
     return {
       branch: "",
+      branchUsable: false,
       path: null,
       metadata: null,
       errors: [`${prefix}: record must be an object`],
@@ -1587,6 +1604,9 @@ function parseStructuredRecord(
       : null;
   const errors: string[] = [];
   const metadataErrors = (message: string) => errors.push(`${prefix}: ${message}`);
+  // Tracks the same two checks below, so attribution can ask whether this
+  // branch could match a unit rather than whether the string is non-blank.
+  let branchUsable = false;
   if (
     branch.trim().length === 0 ||
     branch.startsWith("refs/heads/") ||
@@ -1597,6 +1617,8 @@ function parseStructuredRecord(
     const branchCheck = git(root, ["check-ref-format", "--branch", branch]);
     if (!branchCheck.ok || branchCheck.stdout.trim() !== branch) {
       metadataErrors("branch must be a valid exact local branch name");
+    } else {
+      branchUsable = true;
     }
   }
   if (metadataPath === null) {
@@ -1640,9 +1662,12 @@ function parseStructuredRecord(
   const exception = parseException(worktree.exception, exceptionErrors);
   for (const error of exceptionErrors) metadataErrors(error);
 
-  if (errors.length > 0) return { branch, path: metadataPath, metadata: null, errors };
+  if (errors.length > 0) {
+    return { branch, branchUsable, path: metadataPath, metadata: null, errors };
+  }
   return {
     branch,
+    branchUsable,
     path: metadataPath,
     metadata: {
       beadId: taskId.toLowerCase(),
@@ -2273,10 +2298,7 @@ function matchingTasks(
  * cannot name, so no unit can be cleared of it and it stays repository-wide.
  */
 function recordIsAttributable(record: StructuredMetadataRecord): boolean {
-  return (
-    record.branch.trim().length > 0 ||
-    normalizeAbsoluteWorktreePath(record.path) !== null
-  );
+  return record.branchUsable || normalizeAbsoluteWorktreePath(record.path) !== null;
 }
 
 function metadataFor(
@@ -2929,7 +2951,11 @@ export function collectWorktreeLifecycleInventory(
     metadataClaimErrors: structuredRecords
       .filter((record) => record.errors.length > 0)
       .map((record) => ({
-        branch: record.branch,
+        // Blank unless the branch could actually match a unit, so a reader can
+        // treat "no branch and no path" as unnameable without re-deriving what
+        // makes a branch usable. A verbatim `refs/heads/foo` here would read as
+        // a claim on `foo` that nothing can ever match.
+        branch: record.branchUsable ? record.branch : "",
         path: normalizeAbsoluteWorktreePath(record.path),
         errors: record.errors,
       })),

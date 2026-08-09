@@ -759,10 +759,12 @@ function exceptionForPath(
  *
  * Creation reads exactly two things out of the inventory: the paths this bead
  * already owns ({@link existingOwnedPaths}) and the budget counts. The first is
- * derived from each item's path, taskIds and bead metadata, so a metadata error
- * can hide an owned path and let creation past a budget it should have hit —
- * that stays a hard stop, repo-wide. The second comes from local git facts
- * (worktree count, branch count, exception counts) and no probe touches it.
+ * derived from each item's path, taskIds and bead metadata. Errors that cannot
+ * be attributed to a branch or path can hide an owned path and remain a hard
+ * stop repo-wide. Errors on an attributable record are handled separately by
+ * {@link claimErrorsForRequest}: they block the unit they name, not every
+ * creation in the checkout. The second comes from local git facts (worktree
+ * count, branch count, exception counts) and no probe touches it.
  *
  * `probeErrors` are deliberately NOT included. They answer "is this unit safe to
  * RETIRE" — landing time, PR association, ref recency — which creation never
@@ -775,8 +777,22 @@ function exceptionForPath(
  * unit in `uncertain`; this makes the create gate agree with that posture instead
  * of re-aborting the whole run (cave-c4f97).
  */
-function inventoryErrors(items: WorktreeLifecycleItem[]): string[] {
-  return [...new Set(items.flatMap((item) => item.metadataErrors))];
+function inventoryErrors(
+  items: WorktreeLifecycleItem[],
+  claims: WorktreeMetadataClaimError[],
+): string[] {
+  const unitScopedErrors = new Set(
+    claims
+      .filter((claim) => claim.branch.length > 0 || claim.path !== null)
+      .flatMap((claim) => claim.errors),
+  );
+  return [
+    ...new Set(
+      items
+        .flatMap((item) => item.metadataErrors)
+        .filter((error) => !unitScopedErrors.has(error)),
+    ),
+  ];
 }
 
 /**
@@ -791,6 +807,10 @@ function inventoryErrors(items: WorktreeLifecycleItem[]): string[] {
  * malformed one is no less a claim than a valid one. A record naming neither a
  * usable branch nor a usable path claims something unnameable, so it keeps
  * blocking everything until someone repairs it.
+ *
+ * `claim.branch` is already blank unless the branch is one a unit could match,
+ * so a record carrying `refs/heads/foo` or ` foo` is unnameable here rather
+ * than a claim on `foo` — see {@link WorktreeMetadataClaimError}.
  */
 function claimErrorsForRequest(
   claims: WorktreeMetadataClaimError[],
@@ -1644,7 +1664,7 @@ function execute(
   // records describing some other unit; see {@link claimErrorsForRequest}.
   const errors = [
     ...inventory.globalErrors,
-    ...inventoryErrors(inventory.items),
+    ...inventoryErrors(inventory.items, inventory.metadataClaimErrors),
     ...claimErrorsForRequest(inventory.metadataClaimErrors, options.branch, worktreePath),
   ];
   if (errors.length > 0) {
