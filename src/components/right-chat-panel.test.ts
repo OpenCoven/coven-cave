@@ -40,16 +40,103 @@ assert.doesNotMatch(
 );
 
 // Resolution must be scoped to `open` + the active familiar + a loaded,
-// error-free session list — the plan's four gating conditions. This pins the
-// *identical* four-way guard on both the first-open/familiar-change effect and
-// the ineligible-selection re-resolve effect, so neither one accidentally
-// resolves while the panel is closed, no familiar is active, sessions
-// haven't loaded, or the last session load failed.
-const gate = /!open \|\| !activeFamiliar \|\| !sessionsLoaded \|\| sessionsError/g;
+// error-free session list. The first-resolution effect additionally gates on
+// familiars readiness/errors (cave-rl980 Task 4 review): resolving — and
+// marking resolvedFamiliarRef resolved — on a render where the router isn't
+// actually mounted would silently no-op the openSession/newChat call and
+// then permanently skip the real resolution once the router does mount.
+assert.match(
+  source,
+  /if \(!open \|\| !activeFamiliar \|\| !familiarsLoaded \|\| familiarsError \|\| !sessionsLoaded \|\| sessionsError\) return;/,
+  "the first-resolution effect gates on both familiar and session readiness/errors so a null router can never be marked resolved",
+);
+assert.match(
+  source,
+  /if \(!open \|\| !activeFamiliar \|\| !sessionsLoaded \|\| sessionsError \|\| !selectedSessionId\) return;/,
+  "the ineligible-selection reconcile effect keeps its open/familiar/loaded-sessions/no-error/selected-id guard",
+);
+
+// A newly promoted session id (null → id, reported the instant a message
+// starts a chat from a blank compose) can arrive before the `sessions`
+// roster prop has been refetched to include it. The reconcile effect must
+// not classify that as a deletion — it may only replace a selected id once
+// that id had previously been observed present in the eligible roster.
+assert.match(
+  source,
+  /const observedSessionIdsRef = useRef<Set<string>>\(new Set\(\)\);/,
+  "the panel tracks every session id it has actually observed in the eligible roster",
+);
+assert.match(
+  source,
+  /for \(const session of eligibleSessions\) observedSessionIdsRef\.current\.add\(session\.id\);/,
+  "every render folds the current eligible roster into the observed-ids record",
+);
+assert.match(
+  source,
+  /if \(!observedSessionIdsRef\.current\.has\(selectedSessionId\)\) return;/,
+  "the reconcile effect only replaces a selected id once it was previously observed eligible — never a just-promoted id the roster hasn't caught up to yet",
+);
+
+// ChatRouter reports a null active session organically (archive's onBack,
+// delete, a discarded voice pre-session) with no accompanying explicit
+// action. That must retain the prior selectedSessionId — not null it out —
+// so the reconcile effect above can still detect the confirmed removal once
+// the roster refreshes and resolve the same familiar's latest session or a
+// new compose. Explicit New chat actions bypass this handler entirely: they
+// call setSelectedSessionId(null) directly at the moment they act.
+assert.match(
+  source,
+  /const handleActiveSessionChange = \(sessionId: string \| null\) => \{\s*\n\s*if \(sessionId !== null\) setSelectedSessionId\(sessionId\);\s*\n\s*\};/,
+  "an organic null from ChatRouter is retained (not nulled out) so the reconcile effect can resolve it once the roster confirms removal",
+);
+assert.match(
+  source,
+  /onActiveSessionChange=\{handleActiveSessionChange\}/,
+  "ChatRouter's active-session reports are routed through the retaining handler",
+);
+assert.doesNotMatch(
+  source,
+  /onActiveSessionChange=\{setSelectedSessionId\}/,
+  "ChatRouter must not wire directly into setSelectedSessionId — an organic null would wipe the retained selection",
+);
+
+// Transient roster errors (a failed refresh, not a first load) must not tear
+// down an already-mounted ChatRouter's transcript/stream/scroll state.
+// hasResolvedRouter distinguishes "never resolved this familiar" (blocking
+// error is safe — nothing is mounted yet) from "already resolved, error is
+// transient" (keep the router mounted; surface the error inline instead).
+assert.match(
+  source,
+  /const hasResolvedRouter = activeFamiliar !== null && resolvedFamiliarRef\.current === activeFamiliar\.id;/,
+  "hasResolvedRouter tracks whether this exact familiar's router has already resolved/mounted",
+);
+assert.match(source, /familiarsError && !hasResolvedRouter/, "a familiars-roster error only blocks rendering before the router has resolved");
+assert.match(source, /sessionsError && !hasResolvedRouter/, "a sessions-roster error only blocks rendering before the router has resolved");
+
+// Every loading/error/chooser state must expose a discoverable Close action
+// — crucial in a focus-trapped mobile modal — via one shared frame instead
+// of four hand-duplicated headers.
 assert.equal(
-  (source.match(gate) ?? []).length,
-  2,
-  "both the initial-resolve and re-resolve effects gate on open, active familiar, loaded sessions, and no session error",
+  (source.match(/<RightChatPanelFrame\b/g) ?? []).length,
+  4,
+  "loading, the familiars error, the no-active-familiar chooser, and the sessions error all share one Close-carrying frame",
+);
+assert.ok(
+  (source.match(/aria-label="Close Chat panel"/g) ?? []).length >= 2,
+  "Close is rendered by both the shared frame and the fully resolved header",
+);
+
+// The familiar chooser must offer only the filtered, resolved roster —
+// archived/hidden familiars must never be selectable there.
+assert.match(
+  source,
+  /\{resolvedFamiliars\.map\(\(familiar\) => \(/,
+  "the no-active-familiar chooser iterates the filtered resolved roster",
+);
+assert.doesNotMatch(
+  source,
+  /\{familiars\.map\(/,
+  "the chooser must not iterate the raw, unfiltered familiars prop",
 );
 
 // When the active familiar becomes null, the retained resolution and manual
