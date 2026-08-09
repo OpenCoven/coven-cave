@@ -443,7 +443,7 @@ function command(
   return {
     status: result.status,
     stdout: typeof result.stdout === "string" ? result.stdout : "",
-    stderr: typeof result.stderr === "string" ? result.stderr.trim() : "",
+    stderr: typeof result.stderr === "string" ? result.stderr : "",
     error: result.error instanceof Error ? result.error.message : "",
   };
 }

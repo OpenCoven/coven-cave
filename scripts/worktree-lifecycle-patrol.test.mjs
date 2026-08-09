@@ -716,6 +716,25 @@ process.exit(93);
     assert.equal(warnedRead.ok, false);
     assert.match(warnedRead.reason, /wrote to stderr despite reporting success/);
 
+    process.env.METADATA_REPAIR_BD_MODE = "show-whitespace-stderr";
+    const whitespaceRead = operations.readBead("cave-adapter");
+    assert.equal(whitespaceRead.ok, false);
+    assert.match(whitespaceRead.reason, /wrote to stderr despite reporting success/);
+    const whitespaceRepair = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: {
+        ...repairOperations().operations,
+        readBead: operations.readBead,
+      },
+    });
+    assert.deepEqual(whitespaceRepair.repaired, []);
+    assert.match(
+      whitespaceRepair.blocked[0]?.reason ?? "",
+      /wrote to stderr despite reporting success/,
+    );
+
     process.env.METADATA_REPAIR_BD_MODE = "show-ambiguous";
     const ambiguousRead = operations.readBead("cave-adapter");
     assert.equal(ambiguousRead.ok, false);
