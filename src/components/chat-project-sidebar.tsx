@@ -598,9 +598,13 @@ export function ChatProjectSidebar({
 
   function renderProjectGroup(group: ChatProjectGroup) {
     const key = selectionKey(group.projectId, group.projectRoot);
-    const expanded = expandedKeys.includes(key);
+    const projectExpanded = expandedKeys.includes(key);
+    const projectVisible = hasSearch || projectExpanded;
     const isSelected = selection === key;
     const label = repoLabel(group);
+    const projectLabel = hasSearch
+      ? `${label} sessions shown for search`
+      : `${projectVisible ? "Collapse" : "Expand"} ${label} sessions`;
     const orderedSessions = applyManualOrder(group.sessions, order);
     const showAll = showMoreKeys.has(key);
     const { shown, hiddenCount } = railGroupPreview(orderedSessions, showAll);
@@ -623,21 +627,22 @@ export function ChatProjectSidebar({
           {isSelected ? <AccentBar tall /> : null}
           <button
             type="button"
-            onClick={() => {
+            onClick={hasSearch ? undefined : () => {
               onSelect(key);
               onToggleExpanded(key);
             }}
-            aria-expanded={expanded}
-            aria-label={`${expanded ? "Collapse" : "Expand"} ${label} sessions`}
+            disabled={hasSearch}
+            aria-expanded={projectVisible}
+            aria-label={projectLabel}
             aria-current={isSelected ? "true" : undefined}
             className={[
-              "focus-ring flex min-h-[38px] min-w-0 flex-1 items-center gap-1.5 rounded py-2 pl-1.5 pr-2 text-left text-[length:var(--text-sm)] transition-colors",
+              "focus-ring flex min-h-[38px] min-w-0 flex-1 items-center gap-1.5 rounded py-2 pl-1.5 pr-2 text-left text-[length:var(--text-sm)] transition-colors disabled:cursor-default",
               isSelected
                 ? "text-[var(--text-primary)]"
                 : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
             ].join(" ")}
           >
-            <Icon name={expanded ? "ph:caret-down" : "ph:caret-right"} width={10} aria-hidden className="shrink-0 text-[var(--text-muted)]" />
+            <Icon name={projectVisible ? "ph:caret-down" : "ph:caret-right"} width={10} aria-hidden className="shrink-0 text-[var(--text-muted)]" />
             <ProjectAvatar
               name={label}
               root={group.projectRoot}
@@ -667,7 +672,7 @@ export function ChatProjectSidebar({
             <Icon name="ph:plus" width={11} aria-hidden />
           </button>
         </div>
-        {expanded ? (
+        {projectVisible ? (
           <SortableContext items={orderedIds} strategy={verticalListSortingStrategy}>
             <ul>
               {shown.map((session) => (

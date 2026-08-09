@@ -169,7 +169,22 @@ test("bulk select sets several projects at once", () => {
 test("collapsing a section still reports what is granted inside it", () => {
   assert.match(view, /sectionMix\(rows\.map\(\(row\) => row\.state\)\)/, "collapsed sections show their access mix");
   assert.match(view, /sectionPeek\(rows\.map\(\(row\) => row\.name\)\)/, "and a name peek");
-  assert.match(view, /aria-expanded=\{!isCollapsed\}/, "the section toggle reports its state");
+  assert.match(view, /const hasSearch = query\.trim\(\)\.length > 0;/, "search state ignores whitespace-only queries");
+  assert.match(
+    view,
+    /const organizationCollapsed = collapsed\.has\(organization\.key\);[\s\S]*const organizationVisible = hasSearch \|\| !organizationCollapsed;/,
+    "search visibility is effective state layered over the stored collapsed preference",
+  );
+  assert.match(
+    view,
+    /const organizationLabel = hasSearch[\s\S]*projects shown for search[\s\S]*onClick=\{hasSearch \? undefined : \(\) => toggleSection\(organization\.key\)\}[\s\S]*disabled=\{hasSearch\}[\s\S]*aria-expanded=\{organizationVisible\}[\s\S]*aria-label=\{organizationLabel\}/,
+    "search-forced organization disclosures are truthful, expanded, and unable to mutate stored state",
+  );
+  assert.match(
+    view,
+    /\{!organizationVisible \? \([\s\S]*sectionMix[\s\S]*sectionPeek[\s\S]*\) : null\}[\s\S]*\{organizationVisible \? \([\s\S]*rows\.map\(renderCard\)/,
+    "effective visibility drives both the collapsed summary and matching card rendering",
+  );
   assert.match(css, /\.projects-access-mix \{/, "the mix chips are styled");
 });
 

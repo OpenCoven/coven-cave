@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   selectionKey,
   projectSelectionKeys,
+  migrateOrganizationExpansionKeys,
   applyProjectScope,
   autoExpandKeysForNewSessions,
   normalizeSelection,
@@ -50,6 +51,43 @@ assert.deepEqual(projectSelectionKeys(groups), [
   organizationExpansionKey(NO_PROJECT_ORGANIZATION.key),
   "none",
 ]);
+
+const migrationGroups = [
+  group("alpha", "/alpha"),
+  group("beta", "/beta"),
+  group(
+    "gamma",
+    "/gamma",
+    1,
+    RECENT,
+    { key: "elsewhere", label: "Elsewhere", source: "github" },
+  ),
+  group(null, null, 1, RECENT, NO_PROJECT_ORGANIZATION),
+];
+assert.deepEqual(
+  migrateOrganizationExpansionKeys(["alpha"], migrationGroups),
+  ["org:opencoven", "alpha"],
+);
+assert.deepEqual(
+  migrateOrganizationExpansionKeys(["alpha", "beta"], migrationGroups),
+  ["org:opencoven", "alpha", "beta"],
+);
+assert.deepEqual(
+  migrateOrganizationExpansionKeys(["org:opencoven", "alpha"], migrationGroups),
+  ["org:opencoven", "alpha"],
+);
+assert.deepEqual(
+  migrateOrganizationExpansionKeys(["stale", "beta"], migrationGroups),
+  ["stale", "org:opencoven", "beta"],
+);
+assert.deepEqual(
+  migrateOrganizationExpansionKeys(["stale", "stale", "org:elsewhere"], migrationGroups),
+  ["stale", "org:elsewhere"],
+);
+assert.deepEqual(
+  migrateOrganizationExpansionKeys(["none"], migrationGroups),
+  [organizationExpansionKey(NO_PROJECT_ORGANIZATION.key), "none"],
+);
 assert.equal(applyProjectScope(groups, "all"), groups);
 
 const projectScopeGroups = [group("a", "/a"), group("b", "/b", 2), group(null, "/orphan/root"), group(null, null)];

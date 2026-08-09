@@ -164,12 +164,28 @@ test("search filters cards and the ledger still spans the whole map", async ({ p
     { familiarId: "nova", projectId: "ws-nova", access: "write" },
   ]);
 
+  const opencoven = organizationSection(page, "OpenCoven");
+  const disclosure = opencoven.getByRole("button", { name: "OpenCoven" });
+  await disclosure.click();
+  await expect(opencoven.locator(".projects-access-card")).toHaveCount(0);
+
   await page.getByLabel("Find a project").fill("docs");
   await expect(page.locator(".projects-access-card")).toHaveCount(1);
+  await expect(page.getByText("Coven Docs", { exact: true })).toBeVisible();
   await expect(organizationSection(page, "familiars")).toHaveCount(0);
+  const searchDisclosure = opencoven.getByRole("button", {
+    name: "OpenCoven projects shown for search",
+  });
+  await expect(searchDisclosure).toBeDisabled();
+  await expect(searchDisclosure).toHaveAttribute("aria-expanded", "true");
 
   // The ledger still describes the whole map, not the filtered subset.
   await expect(page.locator(".projects-access-ledger-key > span").nth(1)).toHaveText(/1 Read/);
+
+  await page.getByLabel("Find a project").fill("");
+  await expect(disclosure).toBeEnabled();
+  await expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  await expect(opencoven.locator(".projects-access-card")).toHaveCount(0);
 
   await page.getByLabel("Find a project").fill("zzz");
   await expect(page.getByText(/No projects match/)).toBeVisible();

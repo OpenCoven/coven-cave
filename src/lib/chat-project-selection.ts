@@ -29,6 +29,34 @@ export function projectSelectionKeys(groups: ChatProjectGroup[]): string[] {
   ];
 }
 
+export function migrateOrganizationExpansionKeys(
+  storedKeys: readonly string[],
+  groups: readonly ChatProjectGroup[],
+): string[] {
+  const organizationByProjectKey = new Map(
+    groups.map((group) => [
+      selectionKey(group.projectId, group.projectRoot),
+      organizationExpansionKey(group.organization.key),
+    ]),
+  );
+  const migrated: string[] = [];
+  const added = new Set<string>();
+
+  for (const key of new Set(storedKeys)) {
+    const organizationKey = organizationByProjectKey.get(key);
+    if (organizationKey && !added.has(organizationKey)) {
+      migrated.push(organizationKey);
+      added.add(organizationKey);
+    }
+    if (!added.has(key)) {
+      migrated.push(key);
+      added.add(key);
+    }
+  }
+
+  return migrated;
+}
+
 /** "all" → groups unchanged (same reference, lets memoized consumers bail);
  *  otherwise the single matching group, or [] when the selection is stale. */
 export function applyProjectScope(

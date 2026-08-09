@@ -47,6 +47,7 @@ import { useProjects } from "@/lib/use-projects";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
+  migrateOrganizationExpansionKeys,
   normalizeSelection,
   projectSelectionKeys,
   readPersisted,
@@ -54,6 +55,7 @@ import {
   selectionKey,
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
+import { organizationExpansionKey } from "@/lib/project-organizations";
 import { shouldRouterPromoteSession } from "@/lib/chat-router-promotion";
 import { useAutoExpandNewGroups } from "@/lib/use-auto-expand-new-groups";
 import type { InitialCommandControls } from "@/lib/command-controls";
@@ -293,8 +295,17 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const syncSidebarProjectRoot = useCallback((nextProjectRoot: string | null) => {
     const nextSelection = selectionForProjectRoot(nextProjectRoot, sidebarGroups);
     setSelection(nextSelection);
-    if (nextSelection !== "all") {
-      setExpandedKeys((prev) => (prev.includes(nextSelection) ? prev : [...prev, nextSelection]));
+    const group = sidebarGroups.find(
+      (entry) => selectionKey(entry.projectId, entry.projectRoot) === nextSelection,
+    );
+    if (nextSelection !== "all" && group) {
+      const organizationKey = organizationExpansionKey(group.organization.key);
+      setExpandedKeys((prev) => {
+        const next = [...prev];
+        if (!next.includes(organizationKey)) next.push(organizationKey);
+        if (!next.includes(nextSelection)) next.push(nextSelection);
+        return next.length === prev.length ? prev : next;
+      });
     }
   }, [sidebarGroups]);
 
@@ -308,7 +319,10 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     const storedExpanded = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.expanded, null);
     setExpandedKeys(
       Array.isArray(storedExpanded)
-        ? storedExpanded.filter((k): k is string => typeof k === "string")
+        ? migrateOrganizationExpansionKeys(
+            storedExpanded.filter((k): k is string => typeof k === "string"),
+            sidebarGroups,
+          )
         : projectSelectionKeys(sidebarGroups),
     );
     const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");

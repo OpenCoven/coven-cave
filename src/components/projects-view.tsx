@@ -410,6 +410,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     [announce],
   );
   const filtered = useMemo(() => filterProjectsByQuery(projects, query), [projects, query]);
+  const hasSearch = query.trim().length > 0;
   const organizationSections = useMemo(
     () => projectOrganizationGroups(filtered),
     [filtered],
@@ -987,18 +988,24 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
           const rows = section.items
             .map((project) => rowsById.get(project.id))
             .filter((row): row is (typeof viewRows)[number] => Boolean(row));
-          const isCollapsed = collapsed.has(organization.key);
+          const organizationCollapsed = collapsed.has(organization.key);
+          const organizationVisible = hasSearch || !organizationCollapsed;
+          const organizationLabel = hasSearch
+            ? `${organization.label} projects shown for search`
+            : organization.label;
           return (
             <section key={organization.key} className="projects-access-section" aria-label={organization.label}>
               <header className="projects-access-section-head">
                 <button
                   type="button"
                   className="projects-access-section-toggle focus-ring"
-                  aria-expanded={!isCollapsed}
-                  onClick={() => toggleSection(organization.key)}
+                  onClick={hasSearch ? undefined : () => toggleSection(organization.key)}
+                  disabled={hasSearch}
+                  aria-expanded={organizationVisible}
+                  aria-label={organizationLabel}
                 >
                   <Icon
-                    className={`projects-access-caret${isCollapsed ? " is-closed" : ""}`}
+                    className={`projects-access-caret${organizationVisible ? "" : " is-closed"}`}
                     name="ph:caret-down"
                     width={10}
                     aria-hidden
@@ -1006,7 +1013,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
                   <span className="projects-access-section-title">{organization.label}</span>
                   <span className="projects-access-section-count">{rows.length}</span>
                   {/* Folding a section must never hide that something in it is granted. */}
-                  {isCollapsed ? (
+                  {!organizationVisible ? (
                     <>
                       <span className="projects-access-mix">
                         {sectionMix(rows.map((row) => row.state)).map((chip) => (
@@ -1044,7 +1051,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
                   ))}
                 </span>
               </header>
-              {!isCollapsed ? (
+              {organizationVisible ? (
                 <ul className="projects-access-grid">{rows.map(renderCard)}</ul>
               ) : null}
             </section>

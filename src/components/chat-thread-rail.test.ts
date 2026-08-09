@@ -140,8 +140,8 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /readPersisted<unknown>\(PROJECT_SIDEBAR_KEYS\.expanded, null\)[\s\S]*projectSelectionKeys\(sidebarGroups\)/,
-  "ChatRouter defaults project folders open when there is no persisted expanded-state value",
+  /readPersisted<unknown>\(PROJECT_SIDEBAR_KEYS\.expanded, null\)[\s\S]*migrateOrganizationExpansionKeys\([\s\S]*projectSelectionKeys\(sidebarGroups\)/,
+  "ChatRouter migrates legacy project-only arrays and still defaults every group open when no value exists",
 );
 assert.match(
   chatRouter,
@@ -150,8 +150,8 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /const syncSidebarProjectRoot = useCallback\([\s\S]*setSelection\(nextSelection\)[\s\S]*setExpandedKeys/,
-  "ChatRouter keeps the selected rail folder aligned with the ChatView project dropdown root",
+  /const syncSidebarProjectRoot = useCallback\([\s\S]*setSelection\(nextSelection\)[\s\S]*organizationExpansionKey\(group\.organization\.key\)[\s\S]*if \(!next\.includes\(organizationKey\)\) next\.push\(organizationKey\);[\s\S]*if \(!next\.includes\(nextSelection\)\) next\.push\(nextSelection\);/,
+  "ChatRouter opens both the organization ancestor and project without toggling already-expanded keys",
 );
 assert.match(
   chatRouter,
@@ -160,15 +160,25 @@ assert.match(
 );
 assert.match(
   chatList,
-  /readPersisted<unknown>\(PROJECT_SIDEBAR_KEYS\.expanded, null\)[\s\S]*projectSelectionKeys\(sidebarGroups\)/,
-  "ChatList defaults project folders open when there is no persisted expanded-state value",
+  /readPersisted<unknown>\(PROJECT_SIDEBAR_KEYS\.expanded, null\)[\s\S]*migrateOrganizationExpansionKeys\([\s\S]*projectSelectionKeys\(sidebarGroups\)/,
+  "ChatList migrates legacy project-only arrays and still defaults every group open when no value exists",
 );
 
 // ── Preserved contracts other suites rely on ─────────────────────────────────
 assert.match(
   source,
-  /onClick=\{\(\) => \{[\s\S]*onSelect\(key\);[\s\S]*onToggleExpanded\(key\);[\s\S]*\}\}[\s\S]*aria-expanded=\{expanded\}/,
-  "Project folder rows must keep the label/count collapse trigger contract",
+  /const projectExpanded = expandedKeys\.includes\(key\);[\s\S]*const projectVisible = hasSearch \|\| projectExpanded;[\s\S]*const projectLabel = hasSearch[\s\S]*sessions shown for search/,
+  "Project folders distinguish stored expansion from search-forced visibility",
+);
+assert.match(
+  source,
+  /onClick=\{hasSearch \? undefined : \(\) => \{[\s\S]*onSelect\(key\);[\s\S]*onToggleExpanded\(key\);[\s\S]*\}\}[\s\S]*disabled=\{hasSearch\}[\s\S]*aria-expanded=\{projectVisible\}[\s\S]*aria-label=\{projectLabel\}/,
+  "Search-forced project disclosures are disabled and cannot mutate persisted expansion",
+);
+assert.match(
+  source,
+  /name=\{projectVisible \? "ph:caret-down" : "ph:caret-right"\}[\s\S]*\{projectVisible \? \([\s\S]*<SortableContext/,
+  "Effective project visibility drives the caret and session rendering together",
 );
 assert.match(
   source,

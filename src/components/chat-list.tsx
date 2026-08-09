@@ -36,6 +36,7 @@ import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
 import { useProjects } from "@/lib/use-projects";
 import {
   applyProjectScope,
+  migrateOrganizationExpansionKeys,
   normalizeSelection,
   projectSelectionKeys,
   readPersisted,
@@ -353,7 +354,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     const storedExpanded = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.expanded, null);
     setExpandedKeys(
       Array.isArray(storedExpanded)
-        ? storedExpanded.filter((k): k is string => typeof k === "string")
+        ? migrateOrganizationExpansionKeys(
+            storedExpanded.filter((k): k is string => typeof k === "string"),
+            sidebarGroups,
+          )
         : projectSelectionKeys(sidebarGroups),
     );
     const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
