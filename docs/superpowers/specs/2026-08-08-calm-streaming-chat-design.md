@@ -78,13 +78,19 @@ type StreamingTurnStatus =
   | "failed";
 
 type StreamingContentBlock =
-  | { id: string; kind: "markdown"; source: string }
+  | {
+      id: string;
+      kind: "markdown";
+      source: string;
+      renderMode: "markdown" | "plain";
+    }
   | {
       id: string;
       kind: "list";
       ordered: boolean;
       committedItems: Array<{ id: string; source: string }>;
       activeItem?: { id: string; source: string };
+      source: string;
     };
 
 type TurnResultState =
