@@ -7,6 +7,13 @@ trust boundary. This is *not* a webview wrapper around the web app.
 See [`docs/ios-native-rebuild.md`](../../../docs/ios-native-rebuild.md) for the full
 phased plan and architecture.
 
+## Distribution
+
+Maintainer release builds use TestFlight, but Coven Cave does not currently
+publish a public TestFlight or App Store enrollment link. End users cannot
+install the native iOS client publicly yet; the source-build path below is the
+available contributor route.
+
 ## Requirements
 
 - Xcode 16+ (developed against Xcode 26)
@@ -18,7 +25,8 @@ phased plan and architecture.
 ```bash
 # from the repo root: build the web bundles the app embeds (Resources/markdown.html
 # and Resources/terminal.html — generated & gitignored, the Xcode build can't run
-# node). Needs `pnpm install`. Skipping the terminal bundle ships a blank Terminal tab.
+# node). Run `pnpm install --frozen-lockfile` first. Skipping the terminal bundle
+# ships a blank Terminal tab.
 bash scripts/ios-xcodegen.sh   # builds the bundles, verifies them, then
                                # runs xcodegen — in that order, which matters
 
