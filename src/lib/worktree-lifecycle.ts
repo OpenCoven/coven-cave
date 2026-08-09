@@ -150,15 +150,32 @@ export type WorktreeLifecycleRenderOptions = {
 // lifecycle metadata and can therefore never be retired (cave-l52dt) — the
 // exact sprawl this number exists to bound.
 //
-// 20 is chosen to sit above the observed working set rather than above the
-// peak. Bursts past it are expected and are what the attributed, expiring
+// The budget is chosen to sit above the observed working set rather than above
+// the peak. Bursts past it are expected and are what the attributed, expiring
 // `--exception-*` path is for; the refusal prints that invocation (cave-no5nr).
 // If this needs raising again, check first whether the concurrent-session count
 // has genuinely grown or whether units are simply not being retired on merge —
 // the second is the failure this number is meant to surface, and raising it
 // would hide exactly the signal worth having.
-export const WORKTREE_WARNING_BUDGET = 20;
-export const BRANCH_WARNING_BUDGET = 30;
+//
+// 2026-08-09 (cave-gzks3): 20 -> 28, after running that check rather than
+// asserting it. The patrol reported 18 attached worktrees with **zero** merged
+// PRs across the entire set, zero classified `cleanup-ready`, and zero
+// `uncertain`; two held live process cwds and nine held uncommitted changes.
+// Nothing was retirable and being left unretired — every unit was live work, so
+// this is the first branch of that check (genuine growth), not the second. Four
+// of the eighteen were created by concurrent sessions during a single session,
+// which is the growth rate the number now has to absorb.
+//
+// BRANCH_WARNING_BUDGET moves with it, and must. Managed creation always makes a
+// branch, so local branches track worktrees plus whatever is not currently
+// checked out; leaving branches at 30 under a 28-worktree budget would just move
+// the refusal to the branch gate and reproduce the outage one line down. 38
+// keeps the worktree gate the binding one while staying under the 40-branch cap
+// `branch-cap.yml` enforces on the remote — above that, CI rolls a newly created
+// branch back and the local gate would be admitting what the remote rejects.
+export const WORKTREE_WARNING_BUDGET = 28;
+export const BRANCH_WARNING_BUDGET = 38;
 
 // Only branch-attached worktrees count against the admission budget.
 //

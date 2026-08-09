@@ -1091,7 +1091,7 @@ await withFixture({ fixturePrefix: "cave-worktree-create-o'reilly-" }, async (fi
   const existingPath = addWorktree(fixture, "feat/cave-unit1-existing", "cave-unit1-existing");
   // Drive the registration count to exactly WORKTREE_WARNING_BUDGET so admission
   // refuses at `count >= budget`. The count includes the primary checkout, so the
-  // arithmetic is: 18 attached + 1 existing (above) + 1 primary = 20. If the
+  // arithmetic is: 26 attached + 1 existing (above) + 1 primary = 28. If the
   // budget moves again, this loop moves with it (budget - 2).
   //
   // These MUST be branch-attached (cave-oenag). They were `--detach` until the
@@ -1099,7 +1099,7 @@ await withFixture({ fixturePrefix: "cave-worktree-create-o'reilly-" }, async (fi
   // reaching the budget at all and the refusal below silently disappeared — the
   // fixture was simulating sprawl with exactly the scratch space the budget now
   // ignores. The separate detached case is asserted below.
-  for (let index = 0; index < 18; index += 1) {
+  for (let index = 0; index < 26; index += 1) {
     git(
       [
         "worktree",
@@ -1145,8 +1145,8 @@ await withFixture({ fixturePrefix: "cave-worktree-create-o'reilly-" }, async (fi
   const refused = runCreate(fixture, createArgs({ bead, branch, owner, purpose }));
   assert.equal(refused.status, 2, refused.stderr);
   assert.match(refused.stderr, /already owns a registered worktree/);
-  assert.match(refused.stderr, /20-worktree budget/);
-  assert.match(refused.stderr, /30-local-branch budget/);
+  assert.match(refused.stderr, /28-worktree budget/);
+  assert.match(refused.stderr, /38-local-branch budget/);
   // A refusal must not send the operator to a command that cannot run. Today,
   // three of the four maintenance planes are hard-coded unenforced, so `--apply`
   // exits 2 before assessing anything — yet this line was printed on EVERY

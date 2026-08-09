@@ -296,18 +296,29 @@ Read the exit code.
 **Exit 2 — refused by the admission gate. Use an exception, not the fallback.**
 
 ```text
-worktree-lifecycle-create: creating a worktree would exceed the 20-worktree budget
+worktree-lifecycle-create: creating a worktree would exceed the 28-worktree budget
 ```
 
-`WORKTREE_WARNING_BUDGET = 20` (`src/lib/worktree-lifecycle.ts`) counts **every
+`WORKTREE_WARNING_BUDGET = 28` (`src/lib/worktree-lifecycle.ts`) counts **every
 registered worktree in the checkout**, not yours, so cleaning up your own units
 may not lift it and waiting does not either.
 
 Raised from 12 on 2026-08-04 (`cave-qpwx0`) because 12 no longer described this
 checkout — over one session the count moved 22 → 17 → 22 → 34 → 13 → 17. A gate
 that refuses on every invocation is not a budget, it is an outage, and it taught
-sessions to reach for the unmanaged fallback below. Bursts past 20 are still
-expected; that is what the exception is for.
+sessions to reach for the unmanaged fallback below. Bursts past the budget are
+still expected; that is what the exception is for.
+
+Raised again to 28 on 2026-08-09 (`cave-gzks3`) at 18 attached units. The
+constant's own comment demands a check before any raise — has the session count
+grown, or are merged units simply not being retired? — and the patrol answered
+it: **zero** of the 18 had a merged PR, zero classified `cleanup-ready`, zero
+`uncertain`, two held live process cwds and nine held uncommitted changes. All
+of it was live work, and four units were created by other sessions during a
+single session. `BRANCH_WARNING_BUDGET` moved 30 → 38 in the same change,
+because every managed worktree makes a branch and leaving branches at 30 would
+merely move the refusal one gate down. 38 stays under the 40-branch cap
+`branch-cap.yml` enforces on the remote.
 
 Every refusal from this path is lifted by an attributed, expiring exception, and
 since `cave-no5nr` the refusal prints the exact admissible rerun:
@@ -329,8 +340,8 @@ exception is stored on the bead next to the worktree record, so the unit lands w
 not a bypass — the same gate admits it.
 
 Note the deliberate asymmetry between the two surfaces that read this number:
-the patrol reports `exceeded` as `count > 20`, while creation refuses at
-`count >= 20`, because one more unit is what would take it over. At exactly 20
+the patrol reports `exceeded` as `count > 28`, while creation refuses at
+`count >= 28`, because one more unit is what would take it over. At exactly 28
 the patrol is quiet and creation is refused; that is "*would* exceed", not an
 off-by-one.
 
