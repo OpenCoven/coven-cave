@@ -239,6 +239,7 @@ export const SUITES = {
     "src/lib/gfm-autolink.test.ts",
     "src/lib/gh-diff.test.ts",
     "src/lib/gh-review-html.test.ts",
+    "src/lib/project-organizations.test.ts",
     "src/lib/chat-projects.test.ts",
     "src/lib/chat-pr-link.test.ts",
     "src/lib/changes-review.test.ts",
