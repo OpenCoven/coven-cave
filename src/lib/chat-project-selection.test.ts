@@ -65,6 +65,16 @@ const migrationGroups = [
   ),
   group(null, null, 1, RECENT, NO_PROJECT_ORGANIZATION),
 ];
+const migrationProjects = [
+  {
+    id: "archived",
+    name: "Archived",
+    root: "/work/archived",
+    repoUrl: "https://github.com/ArchiveOrg/archived",
+    createdAt: OLD,
+    updatedAt: OLD,
+  },
+];
 assert.deepEqual(
   migrateOrganizationExpansionKeys(["alpha"], migrationGroups),
   ["org:opencoven", "alpha"],
@@ -98,6 +108,21 @@ assert.deepEqual(
 );
 assert.deepEqual(
   migrateOrganizationExpansionKeys(["none"], migrationGroups),
+  [organizationExpansionKey(NO_PROJECT_ORGANIZATION.key), "none"],
+);
+assert.deepEqual(
+  migrateOrganizationExpansionKeys(["archived"], migrationGroups, migrationProjects),
+  ["org:archiveorg", "archived"],
+);
+assert.deepEqual(
+  migrateOrganizationExpansionKeys(["root:/archived/unregistered"], [], migrationProjects),
+  [
+    organizationExpansionKey(NO_PROJECT_ORGANIZATION.key),
+    "root:/archived/unregistered",
+  ],
+);
+assert.deepEqual(
+  migrateOrganizationExpansionKeys(["none"], [], migrationProjects),
   [organizationExpansionKey(NO_PROJECT_ORGANIZATION.key), "none"],
 );
 assert.equal(applyProjectScope(groups, "all"), groups);

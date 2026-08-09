@@ -379,7 +379,11 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     if (!sidebarHydrated || !sidebarOrganizationMigrationPendingRef.current) return;
     if (sessionsLoaded === false || sessionsError) return;
     if (!projectsLoadedSuccessfully) return;
-    const migratedExpandedKeys = migrateOrganizationExpansionKeys(expandedKeys, migrationGroups);
+    const migratedExpandedKeys = migrateOrganizationExpansionKeys(
+      expandedKeys,
+      migrationGroups,
+      projects,
+    );
     setExpandedKeys(migratedExpandedKeys);
     try {
       window.localStorage.setItem(
@@ -401,6 +405,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     projectsLoadedSuccessfully,
     expandedKeys,
     migrationGroups,
+    projects,
   ]);
   // First chat in a fresh project folder (or this surface's just-started
   // chat) must not hide inside a collapsed group (cave-mllp).

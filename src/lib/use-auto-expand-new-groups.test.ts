@@ -1,9 +1,10 @@
 // @ts-nocheck
 // Wiring pins for useAutoExpandNewGroups (cave-mllp): the hook must baseline
-// before expanding, expand exactly once per key, and both rail owners
-// (ChatRouter, ChatList) must feed it RAW sessions so filter reveals never
-// read as new chats. Behavior of the key-selection logic itself is covered in
-// chat-project-selection.test.ts (autoExpandKeysForNewSessions).
+// before expanding and expand exactly once per key. ChatRouter is the sole
+// disclosure-state owner and must feed it RAW sessions so filter reveals never
+// read as new chats; ChatList only consumes Router-owned state. Behavior of the
+// key-selection logic itself is covered in chat-project-selection.test.ts
+// (autoExpandKeysForNewSessions).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -46,8 +47,8 @@ assert.match(
   "hook merges new keys into prev expanded state with dedupe and a no-op bail",
 );
 
-// Both rail owners wire the hook with the raw sessions array (not the
-// familiar-filtered rows) and their own active-session source.
+// The sole rail-state owner wires the hook with the raw sessions array (not
+// the familiar-filtered rows) and its view-derived active-session source.
 const chatRouter = readFileSync(new URL("../components/chat-router.tsx", import.meta.url), "utf8");
 assert.match(
   chatRouter,
@@ -55,10 +56,15 @@ assert.match(
   "ChatRouter auto-expands folders for new chats (raw sessions + view-derived active id)",
 );
 const chatList = readFileSync(new URL("../components/chat-list.tsx", import.meta.url), "utf8");
-assert.match(
+assert.doesNotMatch(
   chatList,
-  /useAutoExpandNewGroups\(\{\s*hydrated: sidebarHydrated,\s*sessions,\s*groups: sidebarGroups,\s*activeSessionId: activeId,\s*setExpandedKeys,\s*\}\)/,
-  "ChatList auto-expands folders for new chats (raw sessions + activeId)",
+  /useAutoExpandNewGroups/,
+  "ChatList does not call the Router-owned auto-expansion hook",
+);
+assert.doesNotMatch(
+  chatList,
+  /PROJECT_SIDEBAR_KEYS|migrateOrganizationExpansionKeys|localStorage\.setItem\([^)]*project-sidebar-expanded/,
+  "ChatList does not own expanded-state hydration, migration, or persistence",
 );
 
 console.log("use-auto-expand-new-groups tests passed");

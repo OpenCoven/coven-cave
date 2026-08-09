@@ -155,8 +155,8 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /const migratedExpandedKeys = migrateOrganizationExpansionKeys\(expandedKeys, migrationGroups\);[\s\S]*PROJECT_SIDEBAR_KEYS\.expanded,\s*JSON\.stringify\(migratedExpandedKeys\),[\s\S]*PROJECT_SIDEBAR_KEYS\.expandedVersion,\s*JSON\.stringify\(PROJECT_SIDEBAR_EXPANSION_VERSION\),[\s\S]*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}, \[[^\]]*migrationGroups[^\]]*\]\);/,
-  "ChatRouter persists a globally-derived migration before marking the global organization version current",
+  /const migratedExpandedKeys = migrateOrganizationExpansionKeys\(\s*expandedKeys,\s*migrationGroups,\s*projects,\s*\);[\s\S]*PROJECT_SIDEBAR_KEYS\.expanded,\s*JSON\.stringify\(migratedExpandedKeys\),[\s\S]*PROJECT_SIDEBAR_KEYS\.expandedVersion,\s*JSON\.stringify\(PROJECT_SIDEBAR_EXPANSION_VERSION\),[\s\S]*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}, \[[^\]]*migrationGroups[^\]]*projects[^\]]*\]\);/,
+  "ChatRouter migrates against all-session groups plus the unscoped project registry before marking the global organization version current",
 );
 assert.match(
   chatRouter,

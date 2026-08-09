@@ -1,5 +1,10 @@
 import type { ChatProjectGroup } from "@/lib/chat-projects";
-import { organizationExpansionKey } from "./project-organizations.ts";
+import type { CaveProject } from "./cave-projects-types.ts";
+import {
+  NO_PROJECT_ORGANIZATION,
+  organizationExpansionKey,
+  projectOrganization,
+} from "./project-organizations.ts";
 
 /** "all" = all projects, "none" = the null-project group, otherwise a project id.
  *  Unknown non-null roots fall back to a root-scoped key so they remain
@@ -35,20 +40,31 @@ export function projectSelectionKeys(groups: ChatProjectGroup[]): string[] {
 export function migrateOrganizationExpansionKeys(
   storedKeys: readonly string[],
   groups: readonly ChatProjectGroup[],
+  projects: readonly CaveProject[] = [],
 ): string[] {
-  const organizationByProjectKey = new Map(
+  const organizationByProjectKey = new Map<string, string>(
     groups.map((group) => [
       selectionKey(group.projectId, group.projectRoot),
       organizationExpansionKey(group.organization.key),
     ]),
   );
+  for (const project of projects) {
+    organizationByProjectKey.set(
+      project.id,
+      organizationExpansionKey(projectOrganization(project).key),
+    );
+  }
   const originalKeys = new Set(storedKeys);
   const migrated: string[] = [];
   const added = new Set<string>();
 
   for (const key of storedKeys) {
     if (added.has(key)) continue;
-    const organizationKey = organizationByProjectKey.get(key);
+    const organizationKey =
+      organizationByProjectKey.get(key) ??
+      (key === "none" || key.startsWith("root:")
+        ? organizationExpansionKey(NO_PROJECT_ORGANIZATION.key)
+        : undefined);
     if (organizationKey && !originalKeys.has(organizationKey) && !added.has(organizationKey)) {
       migrated.push(organizationKey);
       added.add(organizationKey);
