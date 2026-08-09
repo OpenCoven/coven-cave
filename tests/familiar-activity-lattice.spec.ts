@@ -218,9 +218,9 @@ test("activity lattice keeps its browser geometry in wide and narrow layouts", a
 
   const wide = await latticeMetrics(page);
   expect(wide.yearCellRadius).toBe("2px");
-  expect(wide.caption.top, "quarter figcaption should start at or below the Sparkline").toBeGreaterThanOrEqual(wide.spark.bottom - 1);
+  expect(wide.caption.top, "quarter figcaption should start at or below the Sparkline").toBeGreaterThanOrEqual(wide.spark.bottom);
   expect(Math.abs(wide.quarter.top - wide.fortnight.top), "quarter and fortnight should align on the same row in wide layout").toBeLessThanOrEqual(2);
-  expect(wide.fortnight.left, "fortnight should sit to the right of the quarter in wide layout").toBeGreaterThanOrEqual(wide.quarter.right - 2);
+  expect(wide.fortnight.left, "fortnight should sit to the right of the quarter in wide layout").toBeGreaterThanOrEqual(wide.quarter.right);
 
   await setLatticeHostWidth(page, "320px");
   await expect.poll(async () => (await latticeMetrics(page)).gridColumnCount).toBe(1);
@@ -228,7 +228,7 @@ test("activity lattice keeps its browser geometry in wide and narrow layouts", a
 
   const narrow = await latticeMetrics(page);
   expect(Math.abs(narrow.quarter.left - narrow.fortnight.left), "quarter and fortnight should share the same left edge in narrow layout").toBeLessThanOrEqual(2);
-  expect(narrow.fortnight.top, "fortnight should stack below the quarter in narrow layout").toBeGreaterThanOrEqual(narrow.quarter.bottom - 2);
+  expect(narrow.fortnight.top, "fortnight should stack below the quarter in narrow layout").toBeGreaterThanOrEqual(narrow.quarter.bottom);
   expect(narrow.viewsFits, "the lattice views container should not overflow when stacked").toBe(true);
   expect(narrow.yearGridScrollWidth, "the year grid should scroll horizontally instead of collapsing cells").toBeGreaterThan(narrow.yearGridClientWidth);
   expect(narrow.yearCellWidth, "year cells should keep the reviewed minimum width").toBeGreaterThanOrEqual(6);
