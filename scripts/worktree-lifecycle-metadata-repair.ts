@@ -24,6 +24,7 @@ export type MetadataRepairGateHandle = {
 
 export type ExactMetadataBead = {
   id: string;
+  status: BeadStatus;
   metadata: JsonRecord;
 };
 
@@ -58,9 +59,27 @@ type CommandResult = {
 type GateFunctionResult = { ok: true } | { ok: false; reason?: string };
 
 const COMMAND_TIMEOUT_MS = 120_000;
+const BEAD_STATUSES = [
+  "open",
+  "in_progress",
+  "blocked",
+  "deferred",
+  "closed",
+] as const;
+type BeadStatus = (typeof BEAD_STATUSES)[number];
+const BEAD_STATUS_SET = new Set<string>(BEAD_STATUSES);
 
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseBeadStatus(value: unknown): BeadStatus {
+  if (typeof value !== "string" || !BEAD_STATUS_SET.has(value)) {
+    throw new Error(
+      `exact Bead status is malformed or unknown: ${JSON.stringify(value)}`,
+    );
+  }
+  return value as BeadStatus;
 }
 
 function errorMessage(error: unknown): string {
@@ -275,6 +294,12 @@ function readFreshBead(
       reason: `exact Bead reread returned ${result.bead.id} instead of ${candidate.beadId}`,
     };
   }
+  let status: BeadStatus;
+  try {
+    status = parseBeadStatus(result.bead.status);
+  } catch (error) {
+    return { ok: false, reason: errorMessage(error) };
+  }
   if (!isRecord(result.bead.metadata)) {
     return { ok: false, reason: "exact Bead reread returned malformed metadata" };
   }
@@ -283,7 +308,7 @@ function readFreshBead(
   }
   return {
     ok: true,
-    bead: result.bead,
+    bead: { ...result.bead, status },
     coven: result.bead.metadata.coven,
   };
 }
@@ -321,6 +346,12 @@ function repairOne(
   if (result.ok) {
     fresh = readFreshBead(operations, candidate);
     if (!fresh.ok) result = fresh;
+  }
+  if (result.ok && fresh?.ok && fresh.bead.status === "closed") {
+    result = {
+      ok: false,
+      reason: `exact Bead reread found ${candidate.beadId} closed before metadata persistence`,
+    };
   }
   if (result.ok && fresh?.ok) {
     try {
@@ -380,6 +411,11 @@ function repairOne(
       result = {
         ok: false,
         reason: `metadata persistence verification failed: ${verification.reason}`,
+      };
+    } else if (verification.bead.status === "closed") {
+      result = {
+        ok: false,
+        reason: `metadata persistence verification failed: ${candidate.beadId} closed after persistence; repair is partial`,
       };
     } else {
       const expectedMetadata = {
@@ -560,6 +596,7 @@ function parseExactBead(value: unknown, beadId: string): ExactMetadataBead {
   }
   return {
     id: beadId,
+    status: parseBeadStatus(candidate.status),
     metadata: isRecord(candidate.metadata) ? candidate.metadata : {},
   };
 }

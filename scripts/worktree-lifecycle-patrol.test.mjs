@@ -110,6 +110,7 @@ function repairCandidate(overrides = {}) {
 
 function repairOperations({
   coven = { theme: "moon", worktree: orphanRecord },
+  statuses = ["open", "open"],
   gateResults = [{ ok: true }, { ok: true }, { ok: true }],
   branch = { ok: true, present: false },
   registered = { ok: true, present: false },
@@ -137,6 +138,12 @@ function repairOperations({
           ok: true,
           bead: {
             id: beadId,
+            status:
+              reads <= statuses.length
+                ? statuses[reads - 1]
+                : statuses.length > 0
+                  ? statuses.at(-1)
+                  : "open",
             metadata:
               reads > 1 && verificationMetadata !== undefined
                 ? verificationMetadata
@@ -406,6 +413,67 @@ try {
     assert.match(report.blocked[0]?.reason ?? "", /changed/);
   }
 
+  {
+    const closedBeforePersistence = repairOperations({
+      statuses: ["closed"],
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: closedBeforePersistence.operations,
+    });
+    assert.deepEqual(report.repaired, []);
+    assert.match(
+      report.blocked[0]?.reason ?? "",
+      /closed before metadata persistence/,
+    );
+    assert.equal(
+      closedBeforePersistence.calls.includes("persist:cave-orphan"),
+      false,
+      "a Bead closed after inventory is never mutated",
+    );
+  }
+
+  {
+    const closedDuringVerification = repairOperations({
+      statuses: ["open", "closed"],
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: closedDuringVerification.operations,
+    });
+    assert.deepEqual(report.repaired, []);
+    assert.match(
+      report.blocked[0]?.reason ?? "",
+      /verification failed.*closed after persistence.*partial/,
+    );
+    assert.equal(
+      closedDuringVerification.calls.includes("persist:cave-orphan"),
+      true,
+      "closure discovered during verification is reported after persistence",
+    );
+  }
+
+  for (const status of ["unknown", null]) {
+    const invalidStatus = repairOperations({ statuses: [status] });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: invalidStatus.operations,
+    });
+    assert.deepEqual(report.repaired, []);
+    assert.match(report.blocked[0]?.reason ?? "", /status is malformed or unknown/);
+    assert.equal(
+      invalidStatus.calls.includes("persist:cave-orphan"),
+      false,
+      "unknown or malformed Bead status blocks mutation",
+    );
+  }
+
   for (const [phase, index] of [
     ["before exact Bead reread", 0],
     ["before metadata persistence", 1],
@@ -588,6 +656,14 @@ if (args[0] === "show") {
     console.log(JSON.stringify([state, state]));
     process.exit(0);
   }
+  if (mode === "show-unknown-status") {
+    console.log(JSON.stringify([{ ...state, status: "unknown" }]));
+    process.exit(0);
+  }
+  if (mode === "show-malformed-status") {
+    console.log(JSON.stringify([{ ...state, status: null }]));
+    process.exit(0);
+  }
   console.log(JSON.stringify([state]));
   process.exit(0);
 }
@@ -685,6 +761,7 @@ process.exit(93);
 
     const read = operations.readBead("cave-adapter");
     assert.equal(read.ok, true);
+    assert.equal(read.ok ? read.bead.status : null, "open");
     assert.deepEqual(read.ok ? read.bead.metadata : null, {
       unrelated: "preserved",
       coven: { sibling: "preserved", worktree: adapterRecord },
@@ -742,6 +819,16 @@ process.exit(93);
     const ambiguousRead = operations.readBead("cave-adapter");
     assert.equal(ambiguousRead.ok, false);
     assert.match(ambiguousRead.reason, /must contain one issue/);
+
+    process.env.METADATA_REPAIR_BD_MODE = "show-unknown-status";
+    const unknownStatusRead = operations.readBead("cave-adapter");
+    assert.equal(unknownStatusRead.ok, false);
+    assert.match(unknownStatusRead.reason, /status is malformed or unknown/);
+
+    process.env.METADATA_REPAIR_BD_MODE = "show-malformed-status";
+    const malformedStatusRead = operations.readBead("cave-adapter");
+    assert.equal(malformedStatusRead.ok, false);
+    assert.match(malformedStatusRead.reason, /status is malformed or unknown/);
 
     process.env.METADATA_REPAIR_BD_MODE = "update-failure";
     const failedUpdate = operations.persistCoven("cave-adapter", {});
