@@ -23,7 +23,14 @@ import {
 } from "@/lib/workspace-pane-request";
 import { navSectionForMode, type NavSection } from "@/lib/nav-section";
 import { useIsMobile } from "@/lib/use-viewport";
-import { clearChatHash, clearModeParam, readChatHash, readModeParam } from "@/lib/workspace-url-state";
+import {
+  clearChatHash,
+  clearModeParam,
+  readChatHash,
+  readModeParam,
+  readSplitPageParam,
+  readSplitSideParam,
+} from "@/lib/workspace-url-state";
 import {
   canMoveWorkspaceNavigation,
   createWorkspaceNavigationHistory,
@@ -394,6 +401,7 @@ export function Workspace() {
   // deep links (?mode=, #chat-…) and cave:navigate-mode override this as
   // before, so restored sessions and share links still land where they point.
   const [mode, setModeRaw] = useState<CaveMode>("home");
+  const [primaryPaneRequest, setPrimaryPaneRequest] = useState<WorkspacePaneRequest | null>(null);
   const modeRef = useRef<CaveMode>("home");
   const navigationRestoreRef = useRef(false);
   const suppressInitialChatHistoryPushRef = useRef(false);
@@ -407,6 +415,7 @@ export function Workspace() {
   const pendingChatNavigationDirectionRef = useRef<number | null>(null);
   const chatHashRestoredForCurrentModeRef = useRef(false);
   const commitMode = useCallback((next: CaveMode, historyDestination: CaveMode = next) => {
+    setPrimaryPaneRequest(null);
     modeRef.current = next;
     setModeRaw(next);
     // The rendered surface can be canonical while the navigation intent selects
@@ -1136,14 +1145,28 @@ export function Workspace() {
     return () => window.removeEventListener("cave:onboarding-open", openCreate);
   }, []);
 
-  // `?mode=<WorkspaceMode>` deep link: external links can land directly on a
-  // surface. Runs once on mount,
-  // mirrors the hash deep-link idiom — switch then strip the param so reloads
-  // and back/forward stay clean.
   useEffect(() => {
     const target = readModeParam();
-    if (!target) return;
-    setMode(target);
+    const splitTarget = readSplitPageParam();
+    if (!target && !splitTarget) return;
+
+    const primary = target
+      ? normalizeWorkspacePaneRequest("workspace-primary-link", target)
+      : null;
+    if (primary && target) {
+      if (isWorkspaceMode(target) || isRoleSurfaceMode(target)) setMode(target);
+      else setPrimaryPaneRequest(primary);
+    }
+
+    if (splitTarget) {
+      const secondary = normalizeWorkspacePaneRequest("workspace-secondary-link", splitTarget);
+      if (
+        secondary &&
+        (!primary || workspacePaneRequestKey(primary) !== workspacePaneRequestKey(secondary))
+      ) {
+        addSplitTarget(secondary, readSplitSideParam());
+      }
+    }
     clearModeParam();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -3554,9 +3577,9 @@ export function Workspace() {
       />
     ) : null;
 
-  const primaryDefinition = workspacePageDefinition(mode);
+  const primaryDefinition = workspacePageDefinition(primaryPaneRequest?.requestedPageId ?? mode);
   const detailContent = renderSurface(mode);
-  const detail = (
+  const defaultDetail = (
     <WorkspacePanePage
       instanceId="workspace-primary"
       landmark={primaryDefinition?.landmark ?? "Workspace"}
@@ -3588,7 +3611,10 @@ export function Workspace() {
     </WorkspacePanePage>
   );
 
-  const renderSplitTargetContent = (request: WorkspacePaneRequest): ReactNode => {
+  function renderPaneRequest(
+    request: WorkspacePaneRequest,
+    onUnavailable: () => void,
+  ): ReactNode {
     const definition = workspacePageDefinition(request.requestedPageId);
     if (!definition) return null;
 
@@ -3652,18 +3678,22 @@ export function Workspace() {
         landmark={definition.landmark}
         unavailable={{
           reason: `${definition.title} is not available in this workspace yet.`,
-          recoveryLabel: "Close split",
-          onRecover: () => closeSplitTile(workspacePaneRequestKey(request)),
+          recoveryLabel: "Show workspace",
+          onRecover: onUnavailable,
         }}
       />
     );
-  };
+  }
+
+  const detail = primaryPaneRequest
+    ? renderPaneRequest(primaryPaneRequest, () => setPrimaryPaneRequest(null))
+    : defaultDetail;
 
   const splitTiles: DetailSplitTile[] = splitTargets
     .map((request) => ({
       id: workspacePaneRequestKey(request),
       title: splitTargetTitle(request),
-      content: renderSplitTargetContent(request),
+      content: renderPaneRequest(request, () => closeSplitTile(workspacePaneRequestKey(request))),
     }))
     .filter((tile) => tile.content != null);
 

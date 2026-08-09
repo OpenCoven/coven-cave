@@ -14,7 +14,15 @@ test("workspace stores normalized split pane requests", () => {
 
 test("workspace titles and split state derive from the page registry", () => {
   assert.match(source, /workspacePageDefinition\(request\.requestedPageId\)/);
-  assert.match(source, /workspacePageDefinition\(mode\)/);
+  assert.match(source, /workspacePageDefinition\(primaryPaneRequest\?\.requestedPageId \?\? mode\)/);
   assert.match(source, /renderSurface\(request\.pageId, \{ variant: request\.variant, instanceId: request\.instanceId \}\)/);
   assert.doesNotMatch(source, /const WORKSPACE_MODE_TITLES: Record/);
+});
+
+test("workspace deep links use the same pane request path for both sides", () => {
+  assert.match(source, /const \[primaryPaneRequest, setPrimaryPaneRequest\] = useState<WorkspacePaneRequest \| null>\(null\)/);
+  assert.match(source, /readModeParam\(\)[\s\S]*readSplitPageParam\(\)/);
+  assert.match(source, /normalizeWorkspacePaneRequest\("workspace-primary-link", target\)/);
+  assert.match(source, /normalizeWorkspacePaneRequest\("workspace-secondary-link", splitTarget\)/);
+  assert.match(source, /renderPaneRequest\(primaryPaneRequest, \(\) => setPrimaryPaneRequest\(null\)\)/);
 });
