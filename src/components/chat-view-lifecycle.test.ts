@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const routerSource = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const turnStateSource = readFileSync(new URL("../lib/chat-turn-state.ts", import.meta.url), "utf8");
 const draftHook = readFileSync(new URL("../lib/use-composer-draft.ts", import.meta.url), "utf8");
 const streamEvents = readFileSync(new URL("../lib/stream-events.ts", import.meta.url), "utf8");
@@ -680,13 +681,53 @@ assert.match(
 // these pins hold the call sites, the hook test holds the semantics.
 assert.match(
   source,
-  /const \[input, setInput\] = useState\(\(\) => readComposerDraft\(COMPOSER_DRAFT_KEY\)\)/,
-  "composer input initialises from the persisted draft",
+  /export const DEFAULT_CHAT_COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1"/,
+  "ChatView exports the existing draft key as its safe default",
 );
 assert.match(
   source,
-  /const \{ clearNow: clearDraft \} = useDraftPersistence\(COMPOSER_DRAFT_KEY, input, COMPOSER_DRAFT_WRITE_DELAY_MS\)/,
-  "the draft persists through the shared debounced hook (no per-keystroke localStorage writes)",
+  /composerDraftKey\?: string/,
+  "ChatView accepts a caller-owned draft namespace",
+);
+assert.match(
+  source,
+  /composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY/,
+  "ChatView preserves the existing draft slot when no override is provided",
+);
+assert.match(
+  source,
+  /const \[input, setInput\] = useState\(\(\) => readComposerDraft\(composerDraftKey\)\)/,
+  "composer input initialises from the selected draft namespace",
+);
+assert.match(
+  source,
+  /const \{ clearNow: clearDraft \} = useDraftPersistence\(composerDraftKey, input, COMPOSER_DRAFT_WRITE_DELAY_MS\)/,
+  "the selected draft namespace persists through the shared debounced hook",
+);
+assert.match(
+  routerSource,
+  /import \{ ChatView, DEFAULT_CHAT_COMPOSER_DRAFT_KEY \} from "@\/components\/chat-view"/,
+  "ChatRouter shares ChatView's compatibility default",
+);
+assert.match(
+  routerSource,
+  /composerDraftKey\?: string/,
+  "ChatRouter accepts an independent draft namespace",
+);
+assert.match(
+  routerSource,
+  /composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY/,
+  "ChatRouter keeps the legacy draft namespace by default",
+);
+assert.match(
+  routerSource,
+  /<ChatView[\s\S]*?composerDraftKey=\{composerDraftKey\}[\s\S]*?key=\{`chat-compose-\$\{composeInstance\}`\}/,
+  "ChatRouter forwards its namespace to the primary ChatView",
+);
+assert.match(
+  routerSource,
+  /<ChatView[\s\S]*?composerDraftKey=\{`\$\{composerDraftKey\}:split:\$\{paneId\}`\}[\s\S]*?sessionId=\{paneId\}/,
+  "ChatRouter gives every split pane a unique draft namespace",
 );
 assert.match(
   draftHook,
