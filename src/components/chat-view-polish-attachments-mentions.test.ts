@@ -24,8 +24,8 @@ assert.match(
 
 assert.match(
   attachmentsLib,
-  /if \(file\.size > MAX_ATTACHMENT_IMAGE_BYTES\) \{[\s\S]*?attachment\.truncated = true;/,
-  "Oversized image attachments should be capped at capture time and marked like truncated text",
+  /const cap = mediaMime \? MAX_ATTACHMENT_MEDIA_BYTES : MAX_ATTACHMENT_IMAGE_BYTES;[\s\S]*?if \(file\.size > cap\) \{[\s\S]*?attachment\.truncated = true;/,
+  "Oversized image and media attachments should be capped at capture time and marked like truncated text",
 );
 
 assert.match(
