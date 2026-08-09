@@ -1677,9 +1677,9 @@ exit 0
   );
   assert.deepEqual(report.budgets, {
     // cave-oenag: 8 registered, one of them detached, so 7 are assessed.
-    worktrees: { count: 7, registered: 8, detached: 1, warning: 20, exceeded: false },
+    worktrees: { count: 7, registered: 8, detached: 1, warning: 28, exceeded: false },
 
-    branches: { count: 11, warning: 30, exceeded: false },
+    branches: { count: 11, warning: 38, exceeded: false },
     exceptions: { active: 0, expired: 0 },
   }, "the exact budget object survives patrol JSON serialization");
   const nullExceptionReport = JSON.parse(
@@ -1807,12 +1807,12 @@ exit 0
     // cave-oenag: this fixture registers one detached unit, so the assessed
     // count is 7 of 8 and the line says which one it dropped. Anchored end-of-line
     // so the note has to be present and exact, not merely tolerated.
-    /^Worktree budget: 7\/20 \(within budget\) — 1 detached unit not counted \(8 registered\)$/m,
+    /^Worktree budget: 7\/28 \(within budget\) — 1 detached unit not counted \(8 registered\)$/m,
     "the routine report uses the lifecycle renderer's exact worktree budget line",
   );
   assert.match(
     humanReport,
-    /^Local branch budget: 11\/30 \(within budget\)$/m,
+    /^Local branch budget: 11\/38 \(within budget\)$/m,
     "the routine report uses the lifecycle renderer's exact local branch budget line",
   );
   assert.doesNotMatch(
