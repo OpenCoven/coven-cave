@@ -2,6 +2,7 @@ import { NextResponse } from "next/server.js";
 import { PLATFORM_SURFACE_LABELS, type PlatformSurface } from "@/lib/beads-delivery";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { runBdCommand } from "@/lib/server/beads-cli";
+import { invalidateBeadsDeliveryOverview } from "@/lib/server/beads-delivery-source";
 import { MAX_SESSION_JSON_BYTES } from "@/lib/server/session-security";
 import { resolveRepoRoot } from "@/lib/server/issue-worktree-provision";
 import { resolveSafeBeadsWorkspace } from "@/lib/server/beads-workspace";
@@ -194,6 +195,7 @@ export async function POST(req: Request) {
         { status: created.status },
       );
     }
+    invalidateBeadsDeliveryOverview(root.repoRoot);
     return NextResponse.json({
       ok: true,
       action: "create",
@@ -245,6 +247,7 @@ export async function POST(req: Request) {
     );
   }
 
+  invalidateBeadsDeliveryOverview(root.repoRoot);
   return NextResponse.json({
     ok: true,
     action: action.value,

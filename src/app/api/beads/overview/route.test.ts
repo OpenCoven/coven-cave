@@ -65,6 +65,14 @@ async function readCommands() {
   }
 }
 
+function countOverviewCommands(commands: Array<{ cwd: string; args: string[] }>, cwd: string) {
+  return commands.filter((command) => {
+    if (command.cwd !== cwd) return false;
+    const key = command.args.join(" ");
+    return key === "list --all --json" || key === "ready --json";
+  }).length;
+}
+
 try {
   await Promise.all([
     mkdir(temp, { recursive: true }),
@@ -341,6 +349,25 @@ process.exit(response.exitCode || 0);
   assert.equal((await otherRootResponse.json()).projectRoot, canonicalGoodB);
   commands = await readCommands();
   assert.equal(commands.length, 4, "a second canonical repo root gets its own cache entry");
+  assert.equal(countOverviewCommands(commands, canonicalGoodA), 2);
+  assert.equal(countOverviewCommands(commands, canonicalGoodB), 2);
+
+  source.invalidateBeadsDeliveryOverview(canonicalGoodA);
+  const invalidatedProjectAResponse = await route.GET(
+    localRequest(`http://127.0.0.1/api/beads/overview?projectRoot=${encodeProjectRoot(goodProjectA)}`),
+  );
+  assert.equal(invalidatedProjectAResponse.status, 200);
+  commands = await readCommands();
+  assert.equal(countOverviewCommands(commands, canonicalGoodA), 4, "invalidated roots execute bd again");
+  assert.equal(countOverviewCommands(commands, canonicalGoodB), 2, "other roots keep their warm cache");
+
+  const stillWarmProjectBResponse = await route.GET(
+    localRequest(`http://127.0.0.1/api/beads/overview?projectRoot=${encodeProjectRoot(goodProjectB)}`),
+  );
+  assert.equal(stillWarmProjectBResponse.status, 200);
+  commands = await readCommands();
+  assert.equal(countOverviewCommands(commands, canonicalGoodA), 4);
+  assert.equal(countOverviewCommands(commands, canonicalGoodB), 2);
 
   source.__clearBeadsDeliveryOverviewCacheForTests();
   const afterResetResponse = await route.GET(
@@ -348,7 +375,7 @@ process.exit(response.exitCode || 0);
   );
   assert.equal(afterResetResponse.status, 200);
   commands = await readCommands();
-  assert.equal(commands.length, 6, "tests can deterministically reset the overview cache");
+  assert.equal(commands.length, 8, "tests can deterministically reset the overview cache");
 
   const missingProjectRoot = await route.GET(localRequest("http://127.0.0.1/api/beads/overview"));
   assert.equal(missingProjectRoot.status, 400);

@@ -726,6 +726,32 @@ for (const contract of contracts) {
 }
 
 {
+  const beadsRouteSource = readFileSync(
+    path.join(apiRoot, "beads", "route.ts"),
+    "utf8",
+  );
+  const beadsOverviewSource = readFileSync(
+    path.join(apiRoot, "..", "..", "lib", "server", "beads-delivery-source.ts"),
+    "utf8",
+  );
+  assert.match(
+    beadsOverviewSource,
+    /export function invalidateBeadsDeliveryOverview\(repoRoot: string\): void \{\s*\n\s*overviewCache\.delete\(repoRoot\);/,
+    "beads-delivery-source: production invalidation should evict only the named canonical repo root",
+  );
+  assert.match(
+    beadsRouteSource,
+    /if \(!created\.ok\) \{[\s\S]*?return NextResponse\.json\([\s\S]*?\);\s*\}\s*invalidateBeadsDeliveryOverview\(root\.repoRoot\);/,
+    "/beads create: invalidate the delivery overview only after a successful write",
+  );
+  assert.match(
+    beadsRouteSource,
+    /if \(!result\.ok\) \{[\s\S]*?return NextResponse\.json\([\s\S]*?\);\s*\}\s*invalidateBeadsDeliveryOverview\(root\.repoRoot\);/,
+    "/beads mutations: invalidate the delivery overview only after a successful write",
+  );
+}
+
+{
   const githubTasksSource = readFileSync(
     path.join(apiRoot, "github", "tasks", "route.ts"),
     "utf8",

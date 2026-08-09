@@ -44,6 +44,10 @@ export async function readBeadsDeliveryOverview(repoRoot: string): Promise<Beads
   return overview;
 }
 
+export function invalidateBeadsDeliveryOverview(repoRoot: string): void {
+  overviewCache.delete(repoRoot);
+}
+
 export function __clearBeadsDeliveryOverviewCacheForTests(): void {
   overviewCache.clear();
 }
