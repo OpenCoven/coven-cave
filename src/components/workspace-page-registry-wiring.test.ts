@@ -15,5 +15,6 @@ test("workspace stores normalized split pane requests", () => {
 test("workspace titles and split state derive from the page registry", () => {
   assert.match(source, /workspacePageDefinition\(request\.requestedPageId\)/);
   assert.match(source, /workspacePageDefinition\(mode\)/);
+  assert.match(source, /renderSurface\(request\.pageId, \{ variant: request\.variant, instanceId: request\.instanceId \}\)/);
   assert.doesNotMatch(source, /const WORKSPACE_MODE_TITLES: Record/);
 });

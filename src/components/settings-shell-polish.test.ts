@@ -706,4 +706,20 @@ for (const selector of [
   );
 }
 
+assert.match(
+  source,
+  /export function SettingsShell\(\{ embedded = false \}: \{ embedded\?: boolean \}\)/,
+  "SettingsShell accepts an embedded pane mode",
+);
+assert.match(
+  source,
+  /settings-shell--embedded/,
+  "embedded Settings has an explicit styling hook",
+);
+assert.match(
+  source,
+  /data-tauri-drag-region=\{embedded \? undefined : "deep"\}/,
+  "embedded Settings never claims the native titlebar drag region",
+);
+
 console.log("settings-shell-polish.test.ts OK");

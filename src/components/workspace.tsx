@@ -15,7 +15,7 @@ import {
   isWorkspaceMode,
   type WorkspaceMode as WorkspaceModeFromDaemon,
 } from "@/lib/workspace-mode";
-import { workspacePageDefinition } from "@/lib/workspace-page-registry";
+import { workspacePageDefinition, type WorkspacePageVariant } from "@/lib/workspace-page-registry";
 import {
   normalizeWorkspacePaneRequest,
   workspacePaneRequestKey,
@@ -57,6 +57,9 @@ import { MagicTriggers } from "@/components/magic-triggers";
 import { Shell, type ShellHandle } from "@/components/shell";
 import type { DetailSplitTile } from "@/components/detail-split-host";
 import { WorkspacePanePage } from "@/components/workspace-pane-page";
+import { RailTerminalPanel } from "@/components/rail-terminal-panel";
+import { SettingsShell } from "@/components/settings-shell";
+import { DashboardSurface } from "@/components/dashboard/dashboard-surface";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
@@ -3316,7 +3319,10 @@ export function Workspace() {
   // renderSurface maps a workspace mode to its surface element. Extracted so the
   // same machinery renders both the primary detail and a dragged-in split
   // secondary.
-  const renderSurface = (mode: CaveMode): ReactNode =>
+  const renderSurface = (
+    mode: CaveMode,
+    { variant = "default", instanceId }: { variant?: WorkspacePageVariant; instanceId?: string } = {},
+  ): ReactNode =>
     isRoleSurfaceMode(mode) ? (
       // Generic Role Surface host — the registry decides what renders here.
       <RoleSurfaceHost
@@ -3388,6 +3394,8 @@ export function Workspace() {
         onSessionsDeleted={handleSessionsDeleted}
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         onOpenUrl={openUrlInApp}
+        initialScope={variant === "group" ? "coven" : "conversation"}
+        scopeHistoryId={instanceId ? `chat:scope:${instanceId}` : undefined}
       />
     ) : mode === "board" || mode === "familiar-work-queue" ? (
       // Tasks and the Work Queue are one surface (cave-oa1z, the Schedules
@@ -3395,7 +3403,7 @@ export function Workspace() {
       // opens that tab; keying on the mode remounts so deep links land on it.
       <BoardView
         key={mode}
-        initialTab={mode === "familiar-work-queue" ? "queue" : "tasks"}
+        initialTab={mode === "familiar-work-queue" || variant === "queue" ? "queue" : "tasks"}
         queueSlot={<FamiliarWorkQueueView familiars={resolvedFamiliars} onOpenUrl={openUrlInAppBrowser} embedded activeFamiliarId={activeId} />}
         familiars={familiars}
         sessions={sessions}
@@ -3413,7 +3421,7 @@ export function Workspace() {
       />
     ) : mode === "grimoire" ? (
       <GrimoireView
-        view={grimoireView}
+        view={variant === "journal" ? "journal" : grimoireView}
         onViewChange={selectGrimoireView}
         familiars={familiars}
         activeFamiliarId={activeId}
@@ -3425,7 +3433,7 @@ export function Workspace() {
       // remounts so the deep link lands on it.
       <InboxEscalationsView
         key={mode}
-        initialTab={mode === "calendar" ? "calendar" : "overview"}
+        initialTab={mode === "calendar" || variant === "calendar" ? "calendar" : "overview"}
         familiars={familiars}
         onNewReminder={() => openReminderModal()}
         onEditReminder={(item) => {
@@ -3483,7 +3491,13 @@ export function Workspace() {
       // so deep links land.
       <MarketplaceView
         key={mode}
-        initialSection={mode === "roles" ? "roles" : mode === "capabilities" ? "capabilities" : "browse"}
+        initialSection={
+          mode === "roles" || variant === "roles"
+            ? "roles"
+            : mode === "capabilities" || variant === "capabilities"
+              ? "capabilities"
+              : "browse"
+        }
         activeFamiliarId={activeId}
         onOpenChat={(familiarId) => startFamiliarChat(familiarId)}
       />
@@ -3590,11 +3604,43 @@ export function Workspace() {
       );
     }
 
+    if (request.pageId === "terminal") {
+      const session = activeChatSessionId
+        ? sessions.find((candidate) => candidate.id === activeChatSessionId) ?? null
+        : null;
+      return (
+        <WorkspacePanePage instanceId={request.instanceId} landmark={definition.landmark}>
+          <RailTerminalPanel
+            sessionId={activeChatSessionId}
+            projectRoot={session?.project_root ?? null}
+            active
+            paneInstanceId={request.instanceId}
+          />
+        </WorkspacePanePage>
+      );
+    }
+
+    if (request.pageId === "settings") {
+      return (
+        <WorkspacePanePage instanceId={request.instanceId} landmark={definition.landmark}>
+          <SettingsShell embedded />
+        </WorkspacePanePage>
+      );
+    }
+
+    if (request.pageId === "dashboard") {
+      return (
+        <WorkspacePanePage instanceId={request.instanceId} landmark={definition.landmark}>
+          <DashboardSurface />
+        </WorkspacePanePage>
+      );
+    }
+
     if (isWorkspaceMode(request.pageId) || isRoleSurfaceMode(request.pageId)) {
       return (
         <WorkspacePanePage instanceId={request.instanceId} landmark={definition.landmark}>
           <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
-            {renderSurface(request.pageId)}
+            {renderSurface(request.pageId, { variant: request.variant, instanceId: request.instanceId })}
           </div>
         </WorkspacePanePage>
       );

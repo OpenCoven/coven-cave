@@ -1160,6 +1160,7 @@ export const SUITES = {
     "src/components/calendar-view-primitives.test.ts",
     "src/components/familiar-summoning-model.test.ts",
     "src/components/bento-dashboard.test.ts",
+    "src/components/dashboard/dashboard-surface.test.ts",
     "src/components/github-view-data.test.ts",
     "src/components/grimoire-nav-state.test.ts",
     "src/components/marketplace/marketplace-view-model.test.ts",

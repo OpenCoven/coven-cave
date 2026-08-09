@@ -12,8 +12,11 @@ assert.match(
   /import \{ BottomTerminal \} from "@\/components\/bottom-terminal"/,
   "hosts the reusable BottomTerminal",
 );
-// A stable, per-session pty identity so the shell re-adopts across tab switches.
-assert.match(src, /threadId=\{`cave\.rail\.\$\{sessionId\}`\}/, "builds cave.rail.<sessionId> threadId");
+// Rail fallback stays stable, while split instances receive their own PTY
+// identity so they never steal a sibling terminal's process.
+assert.match(src, /paneInstanceId\?: string/, "accepts a workspace pane instance");
+assert.match(src, /const threadId = paneInstanceId \? `cave\.pane\.\$\{paneInstanceId\}\.\$\{sessionId\}` : `cave\.rail\.\$\{sessionId\}`/, "uses pane-stable PTY identities with the rail fallback");
+assert.match(src, /threadId=\{threadId\}/, "passes the derived identity to BottomTerminal");
 assert.match(src, /projectRoot=\{projectRoot \?\? undefined\}/, "threads projectRoot as the cwd");
 assert.match(src, /active=\{active\}/, "forwards the active flag (fit/focus only when visible)");
 // Null-session empty state — no pty without a session.
