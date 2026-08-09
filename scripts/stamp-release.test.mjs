@@ -1048,9 +1048,39 @@ function workflowJob(source, jobName) {
   return source.slice(startIndex, nextMatch?.index ?? source.length);
 }
 
-assert.match(yml, /daemon-package:\s*\n\s+name: Verify matching Coven daemon package/, "release has a daemon package gate");
-assert.match(yml, /npm view "@opencoven\/cli@latest" version/, "daemon gate verifies the package installed by the client");
-assert.match(yml, /process\.argv\[2\], process\.argv\[3\]\) >= 0/, "daemon gate requires latest CLI to satisfy the Cave version");
+assert.match(yml, /daemon-package:\s*\n\s+name: Verify available Coven daemon package/, "release has a daemon package gate");
+const daemonPackageJob = workflowJob(yml, "daemon-package");
+assert.match(
+  daemonPackageJob,
+  /if ! LATEST=\$\(npm view "@opencoven\/cli@latest" version\); then/,
+  "daemon gate requires the package installed by the client to resolve",
+);
+assert.match(
+  daemonPackageJob,
+  /const strictSemver = \/\^.+\$\//,
+  "daemon gate validates the registry response as strict SemVer",
+);
+const strictSemverLiteral = daemonPackageJob.match(
+  /const strictSemver = (\/\^.+\$\/);/,
+)?.[1];
+assert.ok(strictSemverLiteral, "daemon gate exposes its strict SemVer contract");
+const strictSemver = new RegExp(strictSemverLiteral.slice(1, -1));
+for (const version of ["0.2.4", "1.2.3-rc.1", "1.2.3+build.7", "1.2.3-rc.1+build.7"]) {
+  assert.match(version, strictSemver, `daemon gate accepts published SemVer ${version}`);
+}
+for (const version of ["", "v1.2.3", "01.2.3", "1.2.3-01", "1.2.3-", "1.2.3\n2.0.0"]) {
+  assert.doesNotMatch(version, strictSemver, `daemon gate rejects invalid registry response ${JSON.stringify(version)}`);
+}
+assert.match(
+  daemonPackageJob,
+  /version\.includes\("\\n"\)/,
+  "daemon gate rejects a multi-version registry response",
+);
+assert.doesNotMatch(
+  daemonPackageJob,
+  /RAW_RELEASE_TAG|VERSION="\$\{TAG#v\}"|process\.argv\[3\]|requires an @opencoven\/cli release >=/,
+  "daemon and Cave releases have independent version lines",
+);
 const sourceVersionJob = workflowJob(yml, "source-version");
 assert.match(
   yml,
