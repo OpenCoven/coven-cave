@@ -1210,6 +1210,7 @@ export const SUITES = {
     "src/lib/server/global-npm-install-lane.test.ts",
     "src/app/api/cave-home-migration/route.test.ts",
     "src/app/api/beads/route.test.ts",
+    "src/app/api/beads/overview/route.test.ts",
     "src/app/api/queue/readiness/route.test.ts",
     "src/lib/server/agent-attachments.test.ts",
     "src/lib/server/voice-chat-create.test.ts",
