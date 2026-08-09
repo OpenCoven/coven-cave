@@ -56,6 +56,8 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
     fingerprintMission: async () => "checkpoint-before",
     missionWorkspacePath: (id) => `/tmp/research-missions/${id}`,
     resolveProjectRoot: async (root) => root,
+    ensureResearchAccess: async () => {},
+    checkFamiliarRootAccess: async () => null,
     now: () => NOW,
     randomId: () => "mission-1",
     ...overrides,
