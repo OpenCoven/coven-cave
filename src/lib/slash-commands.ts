@@ -131,6 +131,18 @@ export function inlineSlashInvocation(
   return null;
 }
 
+export function inlineSlashCommandPrompt(
+  text: string,
+  caret: number,
+  command: string,
+): string {
+  const invocation = inlineSlashInvocation(text, caret);
+  if (!invocation) return command;
+
+  const args = invocation.input.slice(invocation.commandToken.length).trim();
+  return args ? `${command} ${args}` : command;
+}
+
 export function replaceInlineSlashRange(
   text: string,
   start: number,
