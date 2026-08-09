@@ -18,6 +18,7 @@ import {
   heartbeatWriterIntent,
   registerWriterIntent,
   releaseWriterIntent,
+  repositoryMaintenanceCapabilities,
 } from "./maintenance-gate.mjs";
 
 const REPOSITORY = "OpenCoven/coven-cave";
@@ -836,13 +837,46 @@ function exceptionSuggestion(options: ManagedCreateOptions, worktreePath: string
   ];
 }
 
+/**
+ * Only suggest the patrol's `--apply` when it can actually run.
+ *
+ * This line used to be unconditional, on EVERY refusal this script emits —
+ * budget, duplicate metadata, orphaned record alike. But `--apply` refuses
+ * outright whenever any maintenance plane is unenforced, and
+ * `repositoryMaintenanceCapabilities()` has three of the four hard-coded to
+ * `false` against unbuilt work, so the suggestion has never been runnable in
+ * this repository (cave-wmkn4).
+ *
+ * A refusal that prints an impossible next step is worse than one that prints
+ * none: it sends the operator through a command that exits 2, and the documented
+ * escapes they reach for next are the ones the guard rules exist to forbid — a
+ * bare `git worktree add`, which yields a permanently `uncertain` unit, or
+ * hand-editing the bead, which is the forgery cave-l52dt rules out.
+ *
+ * Derived from the gate rather than restated, so this cannot drift: when those
+ * planes do land, the suggestion starts appearing again on its own.
+ */
+function maintenanceSuggestion(
+  capabilities = repositoryMaintenanceCapabilities(),
+): string[] {
+  const planes = ["coven", "beads", "github", "local"] as const;
+  const missing = planes.filter((plane) => capabilities?.[plane]?.enforced === false);
+  if (missing.length === 0) return ["Suggestion: pnpm beads:worktrees:apply"];
+  return [
+    `Note: pnpm beads:worktrees:apply cannot run here — unenforced maintenance planes: ${missing.join(", ")}.`,
+    "Retire by hand instead: prove retention (a remote branch, or a pushed archive tag —",
+    "a merged PR is not retention, since a squash leaves the branch's commits on no remote ref),",
+    "then `git worktree unlock <path> && git worktree remove <path> && git branch -d <branch>`.",
+  ];
+}
+
 function refusalOutcome(reasons: string[], suggestion: string[] = []): Outcome {
   return {
     status: 2,
     stdout: null,
     stderr: [
       ...reasons.map((reason) => `worktree-lifecycle-create: ${reason}`),
-      "Suggestion: pnpm beads:worktrees:apply",
+      ...maintenanceSuggestion(),
       ...suggestion,
     ],
     createdReport: null,
