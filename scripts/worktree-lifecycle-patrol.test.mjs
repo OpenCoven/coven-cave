@@ -581,6 +581,9 @@ if (args[0] === "show") {
   if (mode === "show-stderr") {
     console.error("fixture show warning");
   }
+  if (mode === "show-whitespace-stderr") {
+    process.stderr.write(" \\n\\t\\n");
+  }
   if (mode === "show-ambiguous") {
     console.log(JSON.stringify([state, state]));
     process.exit(0);
