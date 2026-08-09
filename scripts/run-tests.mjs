@@ -232,6 +232,7 @@ export const SUITES = {
     "src/lib/github-subscriptions.test.ts",
     "src/lib/beads-pr-management.test.ts",
     "src/lib/beads-pr-patrol.test.ts",
+    "src/lib/beads-delivery.test.ts",
     "src/lib/worktree-lifecycle.test.ts",
     "src/lib/beads-work-queue.test.ts",
     "src/components/familiar-work-queue-view.test.ts",
