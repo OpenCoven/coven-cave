@@ -1,0 +1,300 @@
+/**
+ * AFS (agent filesystem) wire shapes and the pure logic behind Cave's
+ * filesystem pane — bead cave-je2q9, tracked upstream as coven-gr1.
+ *
+ * Cave reads AFS exclusively through the daemon's `/api/v1/afs/*` routes. It
+ * holds no SQLite handle on a delta and reimplements no diff or overlay
+ * logic, so the Rust authority boundary in
+ * `specs/coven-agent-fs/DESIGN.md` §6 applies unchanged. Everything here is
+ * either a shape the daemon owns or a decision about how to *present* what it
+ * returned.
+ */
+
+/** Capability flags from `GET /api/v1/health`. */
+export type AfsCapabilities = {
+  /** AFS routes exist at all. When false the pane does not render. */
+  afs: boolean;
+  /** A mount backend name, or false when none is available. */
+  afsMount: string | false;
+  /** Whether the daemon can materialize a delta into a git branch. */
+  afsCommit: boolean;
+};
+
+export type AfsChangeKind = "added" | "modified" | "deleted";
+
+/** `"recorded"` when a provenance row explains the change, else `"unknown"`. */
+export type AfsAttribution = "recorded" | "unknown";
+
+export type AfsChange = {
+  path: string;
+  change: AfsChangeKind;
+  bytes: number;
+  attribution: AfsAttribution;
+  ino?: number | null;
+  baseIno?: number | null;
+  mode?: number | null;
+};
+
+export type AfsChangeCounts = {
+  added: number;
+  modified: number;
+  deleted: number;
+  bytes: number;
+};
+
+export type AfsDiff = {
+  changes: AfsChange[];
+  counts: AfsChangeCounts;
+  /** The daemon truncated the change set; never render a silently short diff. */
+  truncated: boolean;
+};
+
+export type AfsTimelineEntry = {
+  seq: number;
+  op: string;
+  path: string;
+  toPath?: string | null;
+  bytes: number;
+  at: number;
+  sessionId?: string | null;
+  familiarId?: string | null;
+  beadId?: string | null;
+  turn?: number | null;
+  toolCallId?: number | null;
+};
+
+export type AfsTimeline = {
+  entries: AfsTimelineEntry[];
+  nextCursor?: number | null;
+  hasMore: boolean;
+};
+
+export type AfsSession = {
+  id: string;
+  name?: string | null;
+  state: "open" | "committing" | "committed" | "discarded" | string;
+  base: { fingerprint: string; commit?: string | null; files: number; skipped: number };
+  binding: {
+    sessionId?: string | null;
+    familiarId?: string | null;
+    beadId?: string | null;
+  };
+  changes: AfsChangeCounts;
+};
+
+/**
+ * Read capabilities defensively.
+ *
+ * Cave and the daemon ship on decoupled versions (#4450), so a daemon with no
+ * AFS support at all is a normal state, not an error — it simply reports
+ * nothing, and every flag reads false.
+ */
+export function readAfsCapabilities(payload: unknown): AfsCapabilities {
+  const caps =
+    payload && typeof payload === "object"
+      ? ((payload as { capabilities?: Record<string, unknown> }).capabilities ?? {})
+      : {};
+  const mount = caps.afsMount;
+  return {
+    afs: caps.afs === true,
+    afsMount: typeof mount === "string" && mount.length > 0 ? mount : false,
+    afsCommit: caps.afsCommit === true,
+  };
+}
+
+/**
+ * Find the AFS delta bound to a Cave session.
+ *
+ * Most Cave sessions have no delta — AFS is opt-in per session — so absence is
+ * the common case and must not read as a failure. Discarded deltas are
+ * ignored: they are audit records, not live working state.
+ */
+export function afsSessionForCovenSession(
+  sessions: readonly AfsSession[],
+  covenSessionId: string,
+): AfsSession | null {
+  if (!covenSessionId) return null;
+  const live = sessions.filter(
+    (session) => session.binding.sessionId === covenSessionId && session.state !== "discarded",
+  );
+  if (live.length === 0) return null;
+  // An open delta is the one an operator can still act on; prefer it over a
+  // committed one from an earlier round on the same session.
+  return live.find((session) => session.state === "open") ?? live[0];
+}
+
+export type CommitAvailability =
+  | { enabled: true }
+  | { enabled: false; reason: string };
+
+/**
+ * Whether the Commit action can run, and if not, why — in the operator's
+ * words rather than a bare disabled control.
+ */
+export function commitAvailability(
+  capabilities: AfsCapabilities,
+  session: Pick<AfsSession, "state" | "changes"> | null,
+): CommitAvailability {
+  if (!capabilities.afsCommit) {
+    return {
+      enabled: false,
+      reason:
+        "This daemon does not support commit materialization (health reports afsCommit: false). Upgrade the daemon to enable it.",
+    };
+  }
+  if (!session) {
+    return { enabled: false, reason: "This session has no agent filesystem delta." };
+  }
+  if (session.state !== "open") {
+    return {
+      enabled: false,
+      reason: `The delta is ${session.state}; commit requires an open session.`,
+    };
+  }
+  if (changeTotal(session.changes) === 0) {
+    return { enabled: false, reason: "No changes to materialize." };
+  }
+  return { enabled: true };
+}
+
+export type MountAvailability = { enabled: false; reason: string } | { enabled: true; backend: string };
+
+/** Mount controls are shown but disabled when no backend is advertised. */
+export function mountAvailability(capabilities: AfsCapabilities): MountAvailability {
+  if (capabilities.afsMount === false) {
+    return {
+      enabled: false,
+      reason: "No mount backend is available on this platform (health reports afsMount: false).",
+    };
+  }
+  return { enabled: true, backend: capabilities.afsMount };
+}
+
+/** File-count total. Deliberately excludes bytes, which is a separate axis. */
+export function changeTotal(counts: AfsChangeCounts): number {
+  return counts.added + counts.modified + counts.deleted;
+}
+
+/** Default branch the daemon would pick, mirroring DESIGN.md §5 step 3. */
+export function defaultCommitBranch(session: Pick<AfsSession, "id" | "name">): string {
+  return `afs/${session.name && session.name.length > 0 ? session.name : session.id}`;
+}
+
+/**
+ * The commit preview.
+ *
+ * This is derived from the diff change set, NOT from a daemon dry run — the
+ * commit route has no dryRun mode yet (upstream bead coven-y7a). The
+ * distinction matters and is surfaced rather than hidden: counts describe the
+ * change set, but they do not exercise base verification, path-escape
+ * rejection, the copy-up cap, or branch conflicts, so a clean-looking preview
+ * can still be refused. `exact: false` is what the UI uses to say so.
+ */
+export type CommitPreview = {
+  branch: string;
+  counts: AfsChangeCounts;
+  exact: boolean;
+  caveat: string;
+};
+
+export function commitPreview(
+  session: Pick<AfsSession, "id" | "name">,
+  diff: Pick<AfsDiff, "counts">,
+  branchOverride?: string,
+): CommitPreview {
+  const branch =
+    branchOverride && branchOverride.trim().length > 0
+      ? branchOverride.trim()
+      : defaultCommitBranch(session);
+  return {
+    branch,
+    counts: diff.counts,
+    exact: false,
+    caveat:
+      "Preview is derived from the change set. It does not check whether the base has moved, whether a path would escape the repository, or whether the branch already exists — commit can still be refused.",
+  };
+}
+
+/** Unattributed changes are marked, never hidden (DESIGN.md §4.4). */
+export function unattributedPaths(diff: Pick<AfsDiff, "changes">): string[] {
+  return diff.changes.filter((change) => change.attribution === "unknown").map((change) => change.path);
+}
+
+export type TimelineTurn = {
+  /** null groups every entry the daemon could not bind to a turn. */
+  turn: number | null;
+  entries: AfsTimelineEntry[];
+};
+
+/**
+ * Group timeline entries by turn, preserving daemon order within each group.
+ *
+ * Entries with no turn are kept in their own trailing group rather than
+ * dropped: an operation nobody can account for is exactly what an audit
+ * timeline exists to show.
+ */
+export function groupTimelineByTurn(entries: readonly AfsTimelineEntry[]): TimelineTurn[] {
+  const groups: TimelineTurn[] = [];
+  const index = new Map<number | null, TimelineTurn>();
+  for (const entry of entries) {
+    const turn = typeof entry.turn === "number" ? entry.turn : null;
+    let group = index.get(turn);
+    if (!group) {
+      group = { turn, entries: [] };
+      index.set(turn, group);
+      groups.push(group);
+    }
+    group.entries.push(entry);
+  }
+  // Unbound entries sort last; bound turns keep first-seen order.
+  return groups.sort((left, right) => {
+    if (left.turn === right.turn) return 0;
+    if (left.turn === null) return 1;
+    if (right.turn === null) return -1;
+    return left.turn - right.turn;
+  });
+}
+
+/** A tree node for the Changes pane. */
+export type AfsTreeNode = {
+  name: string;
+  path: string;
+  children: AfsTreeNode[];
+  change: AfsChange | null;
+};
+
+/**
+ * Build a directory tree from flat change paths.
+ *
+ * Directories are synthesized from the paths themselves; the daemon reports
+ * files, and git does not track empty directories.
+ */
+export function buildChangeTree(changes: readonly AfsChange[]): AfsTreeNode[] {
+  const root: AfsTreeNode = { name: "", path: "", children: [], change: null };
+  for (const change of changes) {
+    const parts = change.path.split("/").filter((part) => part.length > 0);
+    let node = root;
+    parts.forEach((part, depth) => {
+      const path = `/${parts.slice(0, depth + 1).join("/")}`;
+      let next = node.children.find((child) => child.name === part);
+      if (!next) {
+        next = { name: part, path, children: [], change: null };
+        node.children.push(next);
+      }
+      if (depth === parts.length - 1) next.change = change;
+      node = next;
+    });
+  }
+  sortTree(root.children);
+  return root.children;
+}
+
+function sortTree(nodes: AfsTreeNode[]): void {
+  nodes.sort((left, right) => {
+    const leftIsDir = left.children.length > 0;
+    const rightIsDir = right.children.length > 0;
+    if (leftIsDir !== rightIsDir) return leftIsDir ? -1 : 1;
+    return left.name.localeCompare(right.name);
+  });
+  for (const node of nodes) sortTree(node.children);
+}

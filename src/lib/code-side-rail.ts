@@ -13,8 +13,13 @@
  * the diff is.
  */
 
-/** Rail tabs. `changes` is the working tree; `pr` is the pull request. */
-export const CODE_RAIL_TABS = ["changes", "pr"] as const;
+/**
+ * Rail tabs. `changes` is the working tree; `pr` is the pull request;
+ * `filesystem` is the AFS delta (cave-je2q9) — a session's agent-filesystem
+ * change set, provenance timeline, and commit action, which is a different
+ * thing from the checkout's working tree.
+ */
+export const CODE_RAIL_TABS = ["changes", "pr", "filesystem"] as const;
 export type CodeRailTab = (typeof CODE_RAIL_TABS)[number];
 
 export function isCodeRailTab(value: string | null | undefined): value is CodeRailTab {
