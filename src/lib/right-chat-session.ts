@@ -5,7 +5,7 @@ export function eligibleRightChatSessions(
   sessions: SessionRow[],
   familiarId: string | null,
 ): SessionRow[] {
-  if (!familiarId) return [];
+  if (familiarId === null) return [];
   return filterVisibleChatSessions(sessions, familiarId);
 }
 

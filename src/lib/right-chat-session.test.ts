@@ -119,4 +119,25 @@ function row(
   );
 }
 
+{
+  const sessions = [
+    row("empty-string", {
+      familiarId: "",
+      created_at: "2026-06-16T00:00:00.000Z",
+      updated_at: "2026-06-16T00:00:00.000Z",
+    }),
+  ];
+
+  assert.deepEqual(
+    eligibleRightChatSessions(sessions, ""),
+    filterVisibleChatSessions(sessions, ""),
+    "an empty string must still delegate to the canonical filter instead of short-circuiting like null",
+  );
+  assert.deepEqual(
+    eligibleRightChatSessions(sessions, "").map((session) => session.id),
+    ["empty-string"],
+    "an empty-string familiar id should keep matching sessions instead of returning an empty list",
+  );
+}
+
 console.log("right-chat-session.test.ts: ok");
