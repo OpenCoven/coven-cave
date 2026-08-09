@@ -39,19 +39,19 @@ export function migrateOrganizationExpansionKeys(
       organizationExpansionKey(group.organization.key),
     ]),
   );
+  const originalKeys = new Set(storedKeys);
   const migrated: string[] = [];
   const added = new Set<string>();
 
-  for (const key of new Set(storedKeys)) {
+  for (const key of storedKeys) {
+    if (added.has(key)) continue;
     const organizationKey = organizationByProjectKey.get(key);
-    if (organizationKey && !added.has(organizationKey)) {
+    if (organizationKey && !originalKeys.has(organizationKey) && !added.has(organizationKey)) {
       migrated.push(organizationKey);
       added.add(organizationKey);
     }
-    if (!added.has(key)) {
-      migrated.push(key);
-      added.add(key);
-    }
+    migrated.push(key);
+    added.add(key);
   }
 
   return migrated;

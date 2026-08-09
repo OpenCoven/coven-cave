@@ -77,6 +77,17 @@ assert.deepEqual(
   ["org:opencoven", "alpha"],
 );
 assert.deepEqual(
+  migrateOrganizationExpansionKeys(["alpha", "org:opencoven"], migrationGroups),
+  ["alpha", "org:opencoven"],
+);
+assert.deepEqual(
+  migrateOrganizationExpansionKeys(
+    ["alpha", "alpha", "org:opencoven", "alpha"],
+    migrationGroups,
+  ),
+  ["alpha", "org:opencoven"],
+);
+assert.deepEqual(
   migrateOrganizationExpansionKeys(["stale", "beta"], migrationGroups),
   ["stale", "org:opencoven", "beta"],
 );

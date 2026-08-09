@@ -145,6 +145,11 @@ assert.match(
 );
 assert.match(
   chatRouter,
+  /const \{\s*projects,\s*loadedSuccessfully: projectsLoadedSuccessfully,\s*\} = useProjects\(\);[\s\S]*if \(sessionsLoaded === false\) return;\s*if \(!projectsLoadedSuccessfully\) return;\s*sidebarPrefsLoadedRef\.current = true;[\s\S]*\}, \[sessionsLoaded, projectsLoadedSuccessfully, sidebarGroups\]\);/,
+  "ChatRouter hydrates and migrates sidebar preferences only after sessions and project metadata load successfully",
+);
+assert.match(
+  chatRouter,
   /function selectionForProjectRoot\([\s\S]*normalizeChatProjectRoot\(projectRoot\)[\s\S]*selectionKey\(group\.projectId, group\.projectRoot\)/,
   "ChatRouter can map the active chat project root to the matching rail folder selection",
 );
@@ -163,17 +168,27 @@ assert.match(
   /readPersisted<unknown>\(PROJECT_SIDEBAR_KEYS\.expanded, null\)[\s\S]*migrateOrganizationExpansionKeys\([\s\S]*projectSelectionKeys\(sidebarGroups\)/,
   "ChatList migrates legacy project-only arrays and still defaults every group open when no value exists",
 );
+assert.match(
+  chatList,
+  /const \{\s*projects,\s*loadedSuccessfully: projectsLoadedSuccessfully,\s*\} = useProjects\(\{ familiarId: familiar\?\.id \?\? null \}\);[\s\S]*if \(sessionsLoaded === false\) return;\s*if \(!projectsLoadedSuccessfully\) return;\s*sidebarPrefsLoadedRef\.current = true;[\s\S]*\}, \[sessionsLoaded, projectsLoadedSuccessfully, sidebarGroups\]\);/,
+  "ChatList hydrates and migrates sidebar preferences only after sessions and project metadata load successfully",
+);
 
 // ── Preserved contracts other suites rely on ─────────────────────────────────
 assert.match(
   source,
-  /const projectExpanded = expandedKeys\.includes\(key\);[\s\S]*const projectVisible = hasSearch \|\| projectExpanded;[\s\S]*const projectLabel = hasSearch[\s\S]*sessions shown for search/,
+  /const projectExpanded = expandedKeys\.includes\(key\);[\s\S]*const projectVisible = hasSearch \|\| projectExpanded;[\s\S]*const projectLabel = hasSearch[\s\S]*Select \$\{label\}; sessions shown for search/,
   "Project folders distinguish stored expansion from search-forced visibility",
 );
 assert.match(
   source,
-  /onClick=\{hasSearch \? undefined : \(\) => \{[\s\S]*onSelect\(key\);[\s\S]*onToggleExpanded\(key\);[\s\S]*\}\}[\s\S]*disabled=\{hasSearch\}[\s\S]*aria-expanded=\{projectVisible\}[\s\S]*aria-label=\{projectLabel\}/,
-  "Search-forced project disclosures are disabled and cannot mutate persisted expansion",
+  /onClick=\{\(\) => \{\s*onSelect\(key\);\s*if \(!hasSearch\) onToggleExpanded\(key\);\s*\}\}[\s\S]*aria-expanded=\{projectVisible\}[\s\S]*aria-label=\{projectLabel\}/,
+  "Project rows stay selectable during search while suppressing persisted expansion toggles",
+);
+assert.doesNotMatch(
+  source,
+  /onClick=\{\(\) => \{\s*onSelect\(key\);\s*if \(!hasSearch\) onToggleExpanded\(key\);\s*\}\}[\s\S]{0,160}disabled=\{hasSearch\}/,
+  "Search-visible project rows remain enabled and keyboard-focusable",
 );
 assert.match(
   source,

@@ -174,7 +174,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const minuteTick = useMinuteTick();
   // Scope the project rail to what the active familiar is granted; with no
   // active familiar (all-familiars view) this loads every project as before.
-  const { projects } = useProjects({ familiarId: familiar?.id ?? null });
+  const {
+    projects,
+    loadedSuccessfully: projectsLoadedSuccessfully,
+  } = useProjects({ familiarId: familiar?.id ?? null });
   const projectOverrides = useProjectOverrides();
   const dtPrefs = useDateTimePrefs();
   const [error, setError] = useState<string | null>(null);
@@ -341,6 +344,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   useEffect(() => {
     if (sidebarPrefsLoadedRef.current) return;
     if (sessionsLoaded === false) return;
+    if (!projectsLoadedSuccessfully) return;
     sidebarPrefsLoadedRef.current = true;
     try {
       setGroupBy(normalizeChatGroupBy(window.localStorage.getItem(CHAT_GROUP_BY_KEY)));
@@ -364,7 +368,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     setSelection(typeof storedSelection === "string" ? storedSelection : "all");
     setSessionOrder(readSessionOrder());
     setSidebarHydrated(true);
-  }, [sessionsLoaded, sidebarGroups]);
+  }, [sessionsLoaded, projectsLoadedSuccessfully, sidebarGroups]);
   useEffect(() => {
     if (!sidebarHydrated || !sidebarDefaultExpandedRef.current) return;
     const nextExpandedKeys = projectSelectionKeys(sidebarGroups);

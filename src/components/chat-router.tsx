@@ -277,7 +277,10 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     ? familiars.find((entry) => entry.id === activeSession.familiarId) ?? null
     : null;
   const chatFamiliar = selectedViewFamiliar ?? sessionFamiliar ?? familiar ?? null;
-  const { projects } = useProjects();
+  const {
+    projects,
+    loadedSuccessfully: projectsLoadedSuccessfully,
+  } = useProjects();
   const projectOverrides = useProjectOverrides();
 
   const sidebarSessions = useMemo(
@@ -312,6 +315,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   useEffect(() => {
     if (sidebarPrefsLoadedRef.current) return;
     if (sessionsLoaded === false) return;
+    if (!projectsLoadedSuccessfully) return;
     sidebarPrefsLoadedRef.current = true;
     const hasStoredExpanded =
       typeof window !== "undefined" && window.localStorage.getItem(PROJECT_SIDEBAR_KEYS.expanded) !== null;
@@ -328,7 +332,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
     setSelection(typeof storedSelection === "string" ? storedSelection : "all");
     setSidebarHydrated(true);
-  }, [sessionsLoaded, sidebarGroups]);
+  }, [sessionsLoaded, projectsLoadedSuccessfully, sidebarGroups]);
   useEffect(() => {
     if (!sidebarHydrated || !sidebarDefaultExpandedRef.current) return;
     setExpandedKeys(projectSelectionKeys(sidebarGroups));
