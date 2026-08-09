@@ -64,9 +64,6 @@ import { MagicTriggers } from "@/components/magic-triggers";
 import { Shell, type ShellHandle } from "@/components/shell";
 import type { DetailSplitTile } from "@/components/detail-split-host";
 import { WorkspacePanePage } from "@/components/workspace-pane-page";
-import { RailTerminalPanel } from "@/components/rail-terminal-panel";
-import { SettingsShell } from "@/components/settings-shell";
-import { DashboardSurface } from "@/components/dashboard/dashboard-surface";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
@@ -155,6 +152,9 @@ import {
   RailInspector,
   AskSalemView,
   ShortcutsSheet,
+  DashboardSurface,
+  SettingsShell,
+  RailTerminalPanel,
 } from "@/components/lazy-surfaces";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
@@ -2606,13 +2606,13 @@ export function Workspace() {
   const openSplitPage = useCallback(
     (m: string, side: "left" | "right") => {
       const request = normalizeWorkspacePaneRequest(nextPaneInstanceId(), m);
-      const primary = normalizeWorkspacePaneRequest("primary", mode);
+      const primary = primaryPaneRequest ?? normalizeWorkspacePaneRequest("primary", mode);
       if (!request || (primary && workspacePaneRequestKey(request) === workspacePaneRequestKey(primary))) {
         return;
       }
       addSplitTarget(request, side);
     },
-    [addSplitTarget, mode, nextPaneInstanceId],
+    [addSplitTarget, mode, nextPaneInstanceId, primaryPaneRequest],
   );
 
   const closeSplit = useCallback(() => {
@@ -2632,11 +2632,11 @@ export function Workspace() {
   );
 
   useEffect(() => {
-    const primary = normalizeWorkspacePaneRequest("primary", mode);
+    const primary = primaryPaneRequest ?? normalizeWorkspacePaneRequest("primary", mode);
     if (!primary) return;
     const primaryKey = workspacePaneRequestKey(primary);
     setSplitTargets((prev) => prev.filter((target) => workspacePaneRequestKey(target) !== primaryKey));
-  }, [mode]);
+  }, [mode, primaryPaneRequest]);
 
   const onPaletteIntent = (intent: PaletteIntent) => {
     if (intent.kind === "switch-familiar") {

@@ -25,4 +25,5 @@ test("workspace deep links use the same pane request path for both sides", () =>
   assert.match(source, /normalizeWorkspacePaneRequest\("workspace-primary-link", target\)/);
   assert.match(source, /normalizeWorkspacePaneRequest\("workspace-secondary-link", splitTarget\)/);
   assert.match(source, /renderPaneRequest\(primaryPaneRequest, \(\) => setPrimaryPaneRequest\(null\)\)/);
+  assert.match(source, /const primary = primaryPaneRequest \?\? normalizeWorkspacePaneRequest\("primary", mode\)/);
 });

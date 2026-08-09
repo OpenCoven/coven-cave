@@ -72,10 +72,10 @@ test("workspace owns normalized split state and renders every registered request
   assert.match(src, /function splitTargetRendersMode\(target: WorkspacePaneRequest, mode: WorkspaceMode\): boolean \{[\s\S]*target\.pageId === mode/);
   assert.match(src, /const openSplitPage = useCallback/);
   assert.match(src, /if \(!request \|\| \(primary && workspacePaneRequestKey\(request\) === workspacePaneRequestKey\(primary\)\)\)/, "split drops reject unknown and exact duplicate pages");
-  assert.match(src, /const renderSurface = \(mode: CaveMode\): ReactNode =>/);
+  assert.match(src, /const renderSurface = \(\s*mode: CaveMode,/);
   assert.match(src, /workspacePageDefinition\(request\.requestedPageId\)/, "secondary title and state come from the registry");
   assert.match(src, /WorkspacePanePage[\s\S]*unavailable=/, "unsupported runtime dependencies have an honest pane-local state");
-  assert.match(src, /renderSurface\(request\.pageId\)/, "secondary pages reuse the canonical renderer");
+  assert.match(src, /renderSurface\(request\.pageId, \{ variant: request\.variant, instanceId: request\.instanceId \}\)/, "secondary pages reuse the canonical renderer");
   assert.match(src, /onDropSplitPage=\{openSplitPage\}/);
   assert.match(src, /const promoteSplitTile = useCallback/, "workspace owns the promote handler");
   assert.match(src, /if \(target && isWorkspaceMode\(target\.requestedPageId\)\) setMode\(target\.requestedPageId\)/, "promoting a workspace page switches the primary mode");

@@ -147,7 +147,8 @@ export function DetailSplitHost({
     if (hostWidth <= 0) return;
     const separatorWidth = group.querySelector(".split-host__sep")?.getBoundingClientRect().width ?? 0;
     const geometry = halfSplitGeometry(hostWidth, separatorWidth);
-    secRef.current?.resize(secondarySide === "left" ? geometry.left : geometry.right);
+    if (Math.abs(geometry.left - geometry.right) > 1) return;
+    secRef.current?.resize(PCT(SPLIT_DEFAULT_RATIO));
   }, [secondarySide, secRef]);
 
   // Reset the live divider tracking whenever a fresh split opens.
