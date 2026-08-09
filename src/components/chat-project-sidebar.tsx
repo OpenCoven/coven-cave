@@ -904,6 +904,9 @@ export function ChatProjectSidebar({
                       const organizationKey = organizationExpansionKey(organization.key);
                       const organizationExpanded = expandedKeys.includes(organizationKey);
                       const organizationVisible = hasSearch || organizationExpanded;
+                      const organizationLabel = hasSearch
+                        ? `${organization.label} projects shown for search`
+                        : `${organizationVisible ? "Collapse" : "Expand"} ${organization.label} projects`;
                       const projectCount = organizationGroup.items.length;
                       return (
                         <section
@@ -913,10 +916,11 @@ export function ChatProjectSidebar({
                         >
                           <button
                             type="button"
-                            onClick={() => onToggleExpanded(organizationKey)}
-                            className="focus-ring flex w-full items-center gap-1.5 bg-[var(--bg-panel)] px-2 py-1.5 text-left text-[length:var(--text-xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                            onClick={hasSearch ? undefined : () => onToggleExpanded(organizationKey)}
+                            disabled={hasSearch}
+                            className="focus-ring flex w-full items-center gap-1.5 bg-[var(--bg-panel)] px-2 py-1.5 text-left text-[length:var(--text-xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:cursor-default"
                             aria-expanded={organizationVisible}
-                            aria-label={`${organizationVisible ? "Collapse" : "Expand"} ${organization.label} projects`}
+                            aria-label={organizationLabel}
                           >
                             <Icon
                               name={organizationVisible ? "ph:caret-down" : "ph:caret-right"}

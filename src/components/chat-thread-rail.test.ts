@@ -224,8 +224,13 @@ assert.match(
 );
 assert.match(
   source,
-  /aria-label=\{`\$\{organizationVisible \? "Collapse" : "Expand"\} \$\{organization\.label\} projects`\}/,
-  "Organization disclosure buttons announce their next action and label",
+  /const organizationKey = organizationExpansionKey\(organization\.key\);[\s\S]*const organizationVisible = hasSearch \|\| organizationExpanded;[\s\S]*const organizationLabel = hasSearch[\s\S]*projects shown for search[\s\S]*<button[\s\S]*onClick=\{hasSearch \? undefined : \(\) => onToggleExpanded\(organizationKey\)\}[\s\S]*disabled=\{hasSearch\}[\s\S]*aria-expanded=\{organizationVisible\}[\s\S]*aria-label=\{organizationLabel\}/,
+  "Search-forced organization disclosures should be disabled and labelled as search results",
+);
+assert.match(
+  source,
+  /onClick=\{hasSearch \? undefined : \(\) => onToggleExpanded\(organizationKey\)\}/,
+  "Normal organization disclosures should still toggle persisted expanded state",
 );
 assert.match(
   source,
@@ -239,7 +244,7 @@ assert.match(
 );
 assert.match(
   source,
-  /aria-expanded=\{organizationVisible\}[\s\S]*aria-label=\{`\$\{organizationVisible \? "Collapse" : "Expand"\} \$\{organization\.label\} projects`\}[\s\S]*name=\{organizationVisible \? "ph:caret-down" : "ph:caret-right"\}[\s\S]*\{organizationVisible \? \([\s\S]*organizationGroup\.items\.map\(\(group\) => renderProjectGroup\(group\)\)/,
+  /aria-expanded=\{organizationVisible\}[\s\S]*aria-label=\{organizationLabel\}[\s\S]*name=\{organizationVisible \? "ph:caret-down" : "ph:caret-right"\}[\s\S]*\{organizationVisible \? \([\s\S]*organizationGroup\.items\.map\(\(group\) => renderProjectGroup\(group\)\)/,
   "Search visibility should drive descendant rendering and disclosure semantics together",
 );
 
