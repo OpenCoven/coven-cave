@@ -1743,11 +1743,14 @@ exit 0
     { active: 1, expired: 0 },
     "semantically shared exceptions across flattened records count once",
   );
+  // Each of these disqualifies `feat/old` on its own terms: the first is a
+  // failure in the shape of the bead's metadata, naming no branch and no path,
+  // so nothing can scope it and it stays repository-wide; the other two are
+  // records that name `feat/old` or its path.
   for (const [environment, expectedError] of [
     ["LIFECYCLE_MALFORMED_WORKTREES", /worktrees must be an array/i],
     ["LIFECYCLE_DUPLICATE_WORKTREE_BRANCH", /duplicate.*(?:branch|records)/i],
     ["LIFECYCLE_DUPLICATE_WORKTREE_PATH", /conflicting structured path ownership/i],
-    ["LIFECYCLE_UNUSABLE_ADDITIONAL_BRANCH", /branch/i],
   ]) {
     const malformedMultiReport = JSON.parse(
       patrol(["--json"], { [environment]: "1" }),
@@ -1761,6 +1764,40 @@ exit 0
       expectedError,
     );
   }
+  // Which unit a malformed record disqualifies is the whole question. Charging
+  // every task's record errors to every unit is what let one bead's invalid
+  // `disposition` deny the entire checkout, `beads:worktrees:create` included,
+  // with no repair available that the worktree rules permit (cave-g9byt).
+  //
+  // Here the unusable branch sits on the *additional* record, which names path
+  // `${live}`. A record names the branch and path it claims even when the rest
+  // of it is invalid, so it disqualifies that unit — and leaves `feat/old`,
+  // whose own record is valid, alone. `feat/live` is dirty in this fixture, so
+  // it lands in `active` before metadata is consulted at all; assert on where
+  // the error landed rather than on the lane it produced.
+  const unusableBranchReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_UNUSABLE_ADDITIONAL_BRANCH: "1" }),
+  );
+  assert.match(
+    unusableBranchReport.items
+      .find((item) => item.branch === "feat/live")
+      .metadataErrors.join("\n"),
+    /conflicting structured path ownership/i,
+    "the malformed record disqualifies the unit whose path it claims",
+  );
+  const unusableBranchBystander = unusableBranchReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.deepEqual(
+    unusableBranchBystander.metadataErrors,
+    [],
+    "a malformed record naming another unit's path leaves this unit's metadata intact",
+  );
+  assert.notEqual(
+    unusableBranchBystander.lane,
+    "uncertain",
+    "a malformed record describing another unit must not hold this one out of its lane",
+  );
   assert.equal(typeof report.inventoryFingerprint, "string");
   assert.ok(report.inventoryFingerprint.length > 0);
   const humanReport = patrol();

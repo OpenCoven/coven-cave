@@ -364,6 +364,25 @@ Failures that really are structural name the repository identity instead —
 `canonical repository identity mismatch`, `canonical repository identity
 changed between pages` — and a retry will not help those.
 
+One more structural cause, and the one that reads most like someone else's
+problem: **a malformed worktree record on a bead that claims your branch or
+your path** — `Bead cave-… worktree metadata: disposition is invalid`, or any
+of the sibling `… metadata:` messages. Since `cave-g9byt` such a record is
+charged to the unit it names and to no other, so a bad record elsewhere in the
+checkout no longer touches you. Seeing one here means it claims the exact
+branch or path you asked for, which is a genuine collision: pick a different
+branch, or get the record's owner to repair it. A record naming neither a
+usable branch nor a usable path claims something unnameable and still blocks
+everything until it is fixed.
+
+Before `cave-g9byt` this was repository-wide: `cave-l11sw` wrote
+`disposition: "removed-externally-after-merge"`, outside the accepted
+`active | pr | recovery | archive` set, and every bead's creation failed
+deterministically until a human hand-edited another owner's lifecycle record —
+the one repair the worktree rules forbid. The patrol now names such a record
+under *"Malformed worktree metadata on beads whose units are gone"* rather than
+failing every unit closed over it.
+
 So: **check quota, rerun, and only then** consider
 
 ```bash
