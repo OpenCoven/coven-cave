@@ -38,6 +38,7 @@ export const SUITES = {
     "src/lib/chat-router-promotion.test.ts",
     "src/lib/code-rail.test.ts",
     "src/lib/use-code-rail.test.ts",
+    "src/lib/initial-prompt-handoff.test.ts",
     "src/lib/workspace-tiles.test.ts",
     "src/lib/page-drag.test.ts",
     "src/lib/familiar-drag.test.ts",

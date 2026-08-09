@@ -73,7 +73,10 @@ const WORK_SESSION = {
   updated_at: ISO,
 };
 
-async function openBoard(page: Page, cards: unknown[], sessions: unknown[]) {
+/** Every POST the page made to /api/chat/send, so a re-send is countable. */
+type SendLog = { count: number };
+
+async function openBoard(page: Page, cards: unknown[], sessions: unknown[], sends?: SendLog) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
@@ -83,6 +86,17 @@ async function openBoard(page: Page, cards: unknown[], sessions: unknown[]) {
     route.fulfill({ json: { ok: true, familiars: [FAMILIAR] } }),
   );
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions } }));
+  // ChatView refuses to auto-send until the card's root resolves to a project
+  // this familiar can access (`projectLaunchReady`). Without this the bridge
+  // handoff silently never sends — and a re-send assertion would be vacuous.
+  await page.route("**/api/projects**", (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        projects: [{ id: "repo-alpha", name: "alpha", root: "/repo/alpha", access: "write", createdAt: ISO, updatedAt: ISO }],
+      },
+    }),
+  );
   await page.route("**/api/board", (route) =>
     route.request().method() === "GET"
       ? route.fulfill({ json: { ok: true, cards } })
@@ -114,7 +128,10 @@ async function openBoard(page: Page, cards: unknown[], sessions: unknown[]) {
       },
     }),
   );
-  await page.route("**/api/chat/send**", (route) => route.fulfill({ json: { ok: true } }));
+  await page.route("**/api/chat/send**", (route) => {
+    if (sends && route.request().method() === "POST") sends.count += 1;
+    return route.fulfill({ json: { ok: true } });
+  });
 
   await page.setViewportSize(WIDE);
   // `#card-<id>` is the board's own deep link into a card drawer — steadier
@@ -153,8 +170,8 @@ function fit(page: Page) {
     return {
       body: rect(body),
       chat: rect(chat),
-      // Whatever directly hosts the chat: the body row itself on the
-      // bridge-start branch, the conversation Panel when a Group is mounted.
+      // Whatever directly hosts the chat — the Group's conversation Panel for
+      // both entry paths since cave-6une3 unified them.
       chatHost: rect(chat?.parentElement),
       header: box(".task-work-cockpit__header"),
       reopen: box(".task-work-cockpit .workspace-rail-reopen"),
@@ -171,12 +188,14 @@ test.describe("Task Work cockpit fit", () => {
     const { body, chat, chatHost, header, reopen, rowRight } = await fit(page);
     expect(body).not.toBeNull();
     expect(chat).not.toBeNull();
-    // On this branch ChatView mounts straight into the body row.
-    expect(chatHost!.width).toBe(body!.width);
+    // ChatView mounts inside the Group's conversation Panel (cave-6une3 unified
+    // both entry paths onto one tree), so its host is the Panel — the body row
+    // minus whatever the collapsed rail strip reserves.
+    const reserved = reopen ? reopen.width : 0;
+    expect(chatHost!.width).toBe(body!.width - reserved);
     // The chat starts at the body's left edge and ends at the body's right edge
     // (minus the reopen strip, when it is showing). Before the fix the chat was
     // ~1090px inside a ~1900px body — a ~800px dead gutter.
-    const reserved = reopen ? reopen.width : 0;
     expect(chat!.left).toBe(body!.left);
     expect(body!.width - chat!.width).toBe(reserved);
     // Nothing is left over on the right.
@@ -226,5 +245,51 @@ test.describe("Task Work cockpit fit", () => {
     // No horizontal overflow off the cockpit.
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
+  });
+
+  // cave-6une3: the reopen strip used to be a dead end on the bridge-start
+  // path — that branch mounted no rail Panel, so clicking Code hid the strip
+  // and showed nothing, for the whole first work session.
+  test("the code rail opens during a bridge-start work session", async ({ page }) => {
+    await openBoard(page, [FRESH_CARD], []);
+    await openCockpit(page, "Start work");
+
+    const strip = page.locator(".task-work-cockpit .workspace-rail-reopen");
+    await expect(strip).toBeVisible();
+    await strip.click();
+
+    // The rail actually mounts, and the strip yields to it.
+    await expect(page.locator(".task-work-cockpit .workspace-rail")).toBeVisible({ timeout: 15_000 });
+    await expect(strip).toHaveCount(0);
+
+    // The conversation still fills what is left of the row — the rail reserves
+    // its own width beside it rather than covering it.
+    const { body, chat, chatHost, rowRight } = await fit(page);
+    expect(chat!.width).toBe(chatHost!.width);
+    expect(chatHost!.left).toBe(body!.left);
+    expect(rowRight).toBe(body!.right);
+    expect(chatHost!.width).toBeLessThan(body!.width);
+  });
+
+  // The Group is keyed by the pane set, so opening the rail REMOUNTS ChatView.
+  // Its auto-send guard is an instance ref, so before the remount-proof handoff
+  // latch that remount re-sent the task's first prompt.
+  test("opening the code rail does not re-send the task's first prompt", async ({ page }) => {
+    const sends: SendLog = { count: 0 };
+    await openBoard(page, [FRESH_CARD], [], sends);
+    await openCockpit(page, "Start work");
+
+    await expect.poll(() => sends.count, { timeout: 15_000 }).toBe(1);
+
+    await page.locator(".task-work-cockpit .workspace-rail-reopen").click();
+    await expect(page.locator(".task-work-cockpit .workspace-rail")).toBeVisible({ timeout: 15_000 });
+    // Collapse again, then reopen: three remounts of the same live handoff.
+    await page.getByLabel("Collapse code rail").click();
+    await expect(page.locator(".task-work-cockpit .workspace-rail-reopen")).toBeVisible({ timeout: 15_000 });
+    await page.locator(".task-work-cockpit .workspace-rail-reopen").click();
+    await expect(page.locator(".task-work-cockpit .workspace-rail")).toBeVisible({ timeout: 15_000 });
+    await page.waitForTimeout(800);
+
+    expect(sends.count, "the first prompt is sent exactly once across rail remounts").toBe(1);
   });
 });
