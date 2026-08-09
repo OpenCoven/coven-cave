@@ -1811,7 +1811,11 @@ function execute(
         ...freshAssessment.reasons.map(
           (reason) => `worktree-lifecycle-create: ${reason}`,
         ),
-        "Suggestion: pnpm beads:worktrees:apply",
+        // Same gate as refusalOutcome (cave-wmkn4): never advertise a command
+        // the maintenance planes make unrunnable. This is the compensate path —
+        // a refusal found AFTER the worktree was created — so it reaches the
+        // user in exactly the situation where a dead next step is most costly.
+        ...maintenanceSuggestion(),
         ...exceptionSuggestion(options, worktreePath),
       ],
     );
@@ -1852,7 +1856,11 @@ function execute(
       exitCode === 2
         ? [
             `worktree-lifecycle-create: ${message}`,
-            "Suggestion: pnpm beads:worktrees:apply",
+            // Gated for the same reason as above. `includeRetireByHand` is
+            // false here: this is compensate's generic exit-2 message, which
+            // covers refusals that are not about the worktree budget, and
+            // retire-by-hand advice is only a remedy for the budget ones.
+            ...maintenanceSuggestion(undefined, false),
           ]
         : [],
     );
