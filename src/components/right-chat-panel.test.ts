@@ -66,10 +66,13 @@ assert.match(
   /const observedSessionIdsRef = useRef<Set<string>>\(new Set\(\)\);/,
   "the panel tracks every session id it has actually observed in the eligible roster",
 );
+// Recorded from an effect, not inline during render (cave-rl980 Task 4
+// review): a render React abandons before commit must never leave a mark on
+// reconciliation state.
 assert.match(
   source,
-  /for \(const session of eligibleSessions\) observedSessionIdsRef\.current\.add\(session\.id\);/,
-  "every render folds the current eligible roster into the observed-ids record",
+  /useEffect\(\(\) => \{\s*\n\s*for \(const session of eligibleSessions\) observedSessionIdsRef\.current\.add\(session\.id\);\s*\n\s*\}, \[eligibleSessions\]\);/,
+  "the observed-ids record is only ever updated from an effect keyed on eligibleSessions, after a render actually commits",
 );
 assert.match(
   source,
@@ -77,27 +80,74 @@ assert.match(
   "the reconcile effect only replaces a selected id once it was previously observed eligible — never a just-promoted id the roster hasn't caught up to yet",
 );
 
-// ChatRouter reports a null active session organically (archive's onBack,
-// delete, a discarded voice pre-session) with no accompanying explicit
-// action. That must retain the prior selectedSessionId — not null it out —
-// so the reconcile effect above can still detect the confirmed removal once
-// the roster refreshes and resolve the same familiar's latest session or a
-// new compose. Explicit New chat actions bypass this handler entirely: they
-// call setSelectedSessionId(null) directly at the moment they act.
+// ChatRouter reports a null active session in two shapes that read
+// identically from here: an ordinary "list" transition (e.g. "Back to
+// sessions" after a transcript load failure — the session is still fully
+// eligible) and a genuine removal (archive/delete's onBack, or a discarded
+// voice pre-session's onVoiceSessionDiscarded). Only the second may retain
+// the prior selectedSessionId so the reconcile effect above can resolve it
+// once the roster confirms removal; the first must clear immediately.
+// pendingRemovalRef (armed by handleSessionsChanged/handleSessionsDeleted,
+// the two calls every removal path makes immediately before its null)
+// distinguishes them, gated additionally on prior observation so a
+// discarded, never-observed promotion (which also reports through
+// onSessionsChanged) clears instead of leaving a permanent ghost. Explicit
+// New chat actions bypass this handler entirely: they call
+// setSelectedSessionId(null) directly at the moment they act.
 assert.match(
   source,
-  /const handleActiveSessionChange = \(sessionId: string \| null\) => \{\s*\n\s*if \(sessionId !== null\) setSelectedSessionId\(sessionId\);\s*\n\s*\};/,
-  "an organic null from ChatRouter is retained (not nulled out) so the reconcile effect can resolve it once the roster confirms removal",
+  /const pendingRemovalRef = useRef\(false\);/,
+  "a ref tracks whether a removal mutation was just reported, for the very next active-session report to consume",
+);
+assert.match(
+  source,
+  /const removalConfirmed = pendingRemovalRef\.current;\s*\n\s*pendingRemovalRef\.current = false;/,
+  "handleActiveSessionChange reads then resets the armed removal flag exactly once per report — never leaves it to leak into a later, unrelated transition",
+);
+assert.match(
+  source,
+  /removalConfirmed && prev !== null && observedSessionIdsRef\.current\.has\(prev\) \? prev : null/,
+  "an organic null only retains the prior selection when a removal was just confirmed AND that id was previously observed eligible — every other null (ordinary back, or a never-observed discarded promotion) clears immediately",
+);
+assert.match(
+  source,
+  /const handleSessionsChanged = \(\) => \{\s*\n\s*pendingRemovalRef\.current = true;\s*\n\s*props\.onSessionsChanged\(\);\s*\n\s*\};/,
+  "onSessionsChanged is wrapped to arm the removal flag before forwarding, never forked",
+);
+assert.match(
+  source,
+  /const handleSessionsDeleted = \(sessionIds: readonly string\[\]\) => \{\s*\n\s*pendingRemovalRef\.current = true;\s*\n\s*props\.onSessionsDeleted\(sessionIds\);\s*\n\s*\};/,
+  "onSessionsDeleted is wrapped to arm the removal flag before forwarding, never forked",
 );
 assert.match(
   source,
   /onActiveSessionChange=\{handleActiveSessionChange\}/,
-  "ChatRouter's active-session reports are routed through the retaining handler",
+  "ChatRouter's active-session reports are routed through the retain-or-clear handler",
 );
 assert.doesNotMatch(
   source,
   /onActiveSessionChange=\{setSelectedSessionId\}/,
-  "ChatRouter must not wire directly into setSelectedSessionId — an organic null would wipe the retained selection",
+  "ChatRouter must not wire directly into setSelectedSessionId — an organic null needs the retain-or-clear decision",
+);
+assert.match(
+  source,
+  /onSessionsChanged=\{handleSessionsChanged\}/,
+  "ChatRouter's onSessionsChanged is routed through the arming wrapper, not the raw prop",
+);
+assert.match(
+  source,
+  /onSessionsDeleted=\{handleSessionsDeleted\}/,
+  "ChatRouter's onSessionsDeleted is routed through the arming wrapper, not the raw prop",
+);
+assert.doesNotMatch(
+  source,
+  /onSessionsChanged=\{props\.onSessionsChanged\}/,
+  "ChatRouter must not wire directly into the raw onSessionsChanged prop — the wrapper needs to observe every call",
+);
+assert.doesNotMatch(
+  source,
+  /onSessionsDeleted=\{props\.onSessionsDeleted\}/,
+  "ChatRouter must not wire directly into the raw onSessionsDeleted prop — the wrapper needs to observe every call",
 );
 
 // Transient roster errors (a failed refresh, not a first load) must not tear
@@ -139,13 +189,14 @@ assert.doesNotMatch(
   "the chooser must not iterate the raw, unfiltered familiars prop",
 );
 
-// When the active familiar becomes null, the retained resolution and manual
-// selection must both be cleared instead of quietly pointing at a stale
-// familiar's session the next time a familiar becomes active again.
+// When the active familiar becomes null, the retained resolution, any armed
+// removal flag, and the manual selection must all be cleared instead of
+// quietly pointing at a stale familiar's session (or consuming a stale
+// removal flag) the next time a familiar becomes active again.
 assert.match(
   source,
-  /if \(activeFamiliar\) return;\s*resolvedFamiliarRef\.current = null;\s*setSelectedSessionId\(null\);/,
-  "clearing the active familiar clears the retained resolution and selection",
+  /if \(activeFamiliar\) return;\s*resolvedFamiliarRef\.current = null;\s*pendingRemovalRef\.current = false;\s*setSelectedSessionId\(null\);/,
+  "clearing the active familiar clears the retained resolution, the armed removal flag, and the selection",
 );
 
 // Never default to familiars[0] when no familiar is active.

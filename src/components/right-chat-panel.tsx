@@ -107,8 +107,20 @@ export function RightChatPanel(props: Props) {
   // session with a replacement. Gating reconciliation on prior observation
   // fixes that promotion race with no timing/delay hack — it also lets the
   // *same* effect correctly reconcile a genuine later removal (archive/
-  // delete) of a session it did previously observe.
+  // delete) of a session it did previously observe. Committed from an effect
+  // below, never inline during render (cave-rl980 Task 4 review): a render
+  // React abandons before commit must never leave a mark here.
   const observedSessionIdsRef = useRef<Set<string>>(new Set());
+  // Armed the instant handleSessionsChanged/handleSessionsDeleted below run,
+  // consumed (read, then reset) by the very next handleActiveSessionChange
+  // report of any kind. ChatView calls exactly one of those two mutation
+  // callbacks and then, synchronously in the same tick, either onBack or
+  // onVoiceSessionDiscarded for every confirmed archive, delete, and
+  // discarded voice pre-session — never for an ordinary back navigation
+  // (e.g. "Back to sessions" on a transcript-history load failure). That
+  // order is the only signal available here for "this null follows a real
+  // roster mutation" versus "this null is just the user navigating away."
+  const pendingRemovalRef = useRef(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const resolvedActiveFamiliar =
@@ -117,7 +129,6 @@ export function RightChatPanel(props: Props) {
     () => eligibleRightChatSessions(sessions, activeFamiliar?.id ?? null),
     [activeFamiliar?.id, sessions],
   );
-  for (const session of eligibleSessions) observedSessionIdsRef.current.add(session.id);
   // True once this exact familiar's router has actually resolved/mounted —
   // independent of any *current* familiarsError/sessionsError. Lets a
   // transient roster refresh failure surface loading/error UI without
@@ -127,25 +138,73 @@ export function RightChatPanel(props: Props) {
   const hasResolvedRouter = activeFamiliar !== null && resolvedFamiliarRef.current === activeFamiliar.id;
   const { announce } = useAnnouncer();
 
-  // ChatRouter can report a null active session organically — an in-place
-  // archive (ChatView's onBack after the archive PATCH), a delete, or a
-  // discarded empty voice pre-session — with no accompanying explicit action
-  // from this panel. That null carries no session identity, so overwriting
-  // `selectedSessionId` here would drop the very id the reconcile effect
-  // below needs in order to detect the confirmed removal once the roster
-  // refreshes and resolve the same familiar's latest session (or a new
-  // compose). Every *explicit* transition to a blank compose (the New chat
-  // button, the thread switcher's New chat option, and both resolution
-  // effects when no session is left) already calls `setSelectedSessionId(null)`
-  // itself at the moment it acts, so this handler only ever needs to forward
-  // a real, non-null id.
+  // Fold the current eligible roster into the observed-ids record after
+  // commit, not inline during render (cave-rl980 Task 4 review): an id only
+  // ever needs to be *in* this set once its owning render has actually
+  // landed, since the reconcile effects below only ever consult it for an id
+  // that is absent from the *current* eligibleSessions — which, if it was
+  // ever eligible, was necessarily recorded by an earlier, already-committed
+  // render's copy of this same effect.
+  useEffect(() => {
+    for (const session of eligibleSessions) observedSessionIdsRef.current.add(session.id);
+  }, [eligibleSessions]);
+
+  // ChatRouter reports a null active session in two shapes that read
+  // identically from here (both simply become `activeSessionId: null`): an
+  // ordinary "list" transition (the ChatHistoryNotice "Back to sessions"
+  // affordance after a transcript load failure — the session itself is still
+  // fully eligible; only its transcript failed to fetch) and a genuine
+  // removal (archive's onBack after the PATCH, delete's onBack after the
+  // DELETE, or a discarded empty voice pre-session's onVoiceSessionDiscarded).
+  // The first must clear the stale selection immediately. The second must
+  // retain it long enough for the reconcile effect below to confirm the
+  // removal once the roster refreshes and resolve the same familiar's latest
+  // session (or a new compose) instead of flashing "New chat" the instant
+  // this fires, ahead of the roster actually catching up.
+  //
+  // pendingRemovalRef — armed by handleSessionsChanged/handleSessionsDeleted,
+  // exactly the two calls every removal path makes immediately before its
+  // null — distinguishes the two. That alone is not sufficient, though: a
+  // discarded voice pre-session also reports through onSessionsChanged
+  // (discardVoiceSessionIfEmpty refreshes the list once the empty session is
+  // deleted server-side) despite never having appeared in the roster to
+  // begin with. Retaining that id would leave a permanent ghost — the
+  // reconcile effect's own observed-gate can never confirm the removal of an
+  // id the roster never listed in the first place. Requiring the id to have
+  // been previously observed eligible closes that gap: only a real,
+  // previously visible session is ever retained; a discarded, never-observed
+  // promotion clears just like an ordinary back. Explicit New chat actions
+  // (the button, the thread switcher, and both resolution effects) bypass
+  // this handler entirely — they already call setSelectedSessionId(null)
+  // directly at the moment they act.
   const handleActiveSessionChange = (sessionId: string | null) => {
-    if (sessionId !== null) setSelectedSessionId(sessionId);
+    const removalConfirmed = pendingRemovalRef.current;
+    pendingRemovalRef.current = false;
+    if (sessionId !== null) {
+      setSelectedSessionId(sessionId);
+      return;
+    }
+    setSelectedSessionId((prev) =>
+      removalConfirmed && prev !== null && observedSessionIdsRef.current.has(prev) ? prev : null,
+    );
+  };
+
+  // Arms pendingRemovalRef for the very next handleActiveSessionChange report,
+  // then forwards to the real callback unchanged — RightChatPanel observes
+  // the mutation, it never forks it.
+  const handleSessionsChanged = () => {
+    pendingRemovalRef.current = true;
+    props.onSessionsChanged();
+  };
+  const handleSessionsDeleted = (sessionIds: readonly string[]) => {
+    pendingRemovalRef.current = true;
+    props.onSessionsDeleted(sessionIds);
   };
 
   useEffect(() => {
     if (activeFamiliar) return;
     resolvedFamiliarRef.current = null;
+    pendingRemovalRef.current = false;
     setSelectedSessionId(null);
   }, [activeFamiliar]);
 
@@ -348,8 +407,8 @@ export function RightChatPanel(props: Props) {
           onRetryFamiliars={props.onRetryFamiliars}
           onSetActiveFamiliar={props.onSetActiveFamiliar}
           onSessionStarted={props.onSessionStarted}
-          onSessionsChanged={props.onSessionsChanged}
-          onSessionsDeleted={props.onSessionsDeleted}
+          onSessionsChanged={handleSessionsChanged}
+          onSessionsDeleted={handleSessionsDeleted}
           onSlashFromChat={props.onSlashFromChat}
           onOpenOnboarding={props.onOpenOnboarding}
           onOpenTask={props.onOpenTask}
