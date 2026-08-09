@@ -90,7 +90,7 @@ function parseRows(stdout: string): Array<{ id: string; labels?: readonly string
       if (!row || typeof row !== "object") throw new Error("bd list JSON rows must be objects");
       const id = typeof row.id === "string" ? row.id : "";
       if (!id) throw new Error("bd list JSON rows must include an id");
-      const labels = Array.isArray(row.labels) ? row.labels.filter((label): label is string => typeof label === "string") : row.labels === null || row.labels === undefined ? row.labels : null;
+      const labels = Array.isArray(row.labels) ? row.labels.filter((label: unknown): label is string => typeof label === "string") : row.labels === null || row.labels === undefined ? row.labels : null;
       return { id, labels };
     });
   } catch (error) {
