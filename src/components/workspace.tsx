@@ -13,10 +13,14 @@ import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import {
   isWorkspaceMode,
-  resolveWorkspaceModeAlias,
-  type CanonicalWorkspaceMode,
   type WorkspaceMode as WorkspaceModeFromDaemon,
 } from "@/lib/workspace-mode";
+import { workspacePageDefinition } from "@/lib/workspace-page-registry";
+import {
+  normalizeWorkspacePaneRequest,
+  workspacePaneRequestKey,
+  type WorkspacePaneRequest,
+} from "@/lib/workspace-pane-request";
 import { navSectionForMode, type NavSection } from "@/lib/nav-section";
 import { useIsMobile } from "@/lib/use-viewport";
 import { clearChatHash, clearModeParam, readChatHash, readModeParam } from "@/lib/workspace-url-state";
@@ -52,6 +56,7 @@ import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-t
 import { MagicTriggers } from "@/components/magic-triggers";
 import { Shell, type ShellHandle } from "@/components/shell";
 import type { DetailSplitTile } from "@/components/detail-split-host";
+import { WorkspacePanePage } from "@/components/workspace-pane-page";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
@@ -138,7 +143,6 @@ import {
   OnboardingOverlay,
   OpenCovenSubmissionPage,
   RailInspector,
-  SalemChatPanel,
   AskSalemView,
   ShortcutsSheet,
 } from "@/components/lazy-surfaces";
@@ -166,7 +170,6 @@ import {
 } from "@/lib/daily-narrative";
 import type { Familiar, SessionRow } from "@/lib/types";
 import {
-  getRoleSurface,
   isRoleSurfaceMode,
   parseRoleSurfaceMode,
   roleSurfaceMode,
@@ -236,31 +239,12 @@ type WorkspaceMode = WorkspaceModeFromDaemon;
 // plus registered Role Surfaces via the generic `surface:<id>` mode.
 type CaveMode = WorkspaceMode | RoleSurfaceMode;
 
-// What the drag-to-split secondary pane is showing: either a draggable page
-// (a workspace mode) or one of the companion surfaces (Salem / Memory /
-// Browser) that were re-homed here when the right rail was removed.
-type SplitTarget =
-  | { kind: "page"; mode: WorkspaceMode }
-  | { kind: "salem" }
-  | { kind: "memory" }
-  | { kind: "browser" };
-
-const SPLIT_COMPANION_TITLES: Record<Exclude<SplitTarget["kind"], "page">, string> = {
-  salem: "Salem",
-  memory: "Memory",
-  browser: "Browser",
-};
-
-function splitTargetKey(target: SplitTarget): string {
-  return target.kind === "page" ? `page:${target.mode}` : target.kind;
+function splitTargetTitle(target: WorkspacePaneRequest): string {
+  return workspacePageDefinition(target.requestedPageId)?.title ?? target.requestedPageId;
 }
 
-function splitTargetTitle(target: SplitTarget): string {
-  return target.kind === "page" ? WORKSPACE_MODE_TITLES[target.mode] : SPLIT_COMPANION_TITLES[target.kind];
-}
-
-function splitTargetRendersMode(target: SplitTarget, mode: CanonicalWorkspaceMode): boolean {
-  return target.kind === "page" && resolveWorkspaceModeAlias(target.mode) === mode;
+function splitTargetRendersMode(target: WorkspacePaneRequest, mode: WorkspaceMode): boolean {
+  return target.pageId === mode;
 }
 
 // CHAT-D13-05 (axe page-has-heading-one): the shell renders no visible page
@@ -268,28 +252,6 @@ function splitTargetRendersMode(target: SplitTarget, mode: CanonicalWorkspaceMod
 // surface. Labels mirror the sidebar's canonical vocabulary (issue #3283 —
 // one surface, one name): alias modes that render another surface's view
 // (calendar, familiar-work-queue) reuse that surface's name.
-const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
-  agents: "Familiars",
-  home: "Home",
-  chat: "Chat",
-  groupchat: "Group Chat",
-  board: "Tasks",
-  calendar: "Rituals",
-  inbox: "Rituals",
-  browser: "Browser",
-  github: "GitHub",
-  code: "Code",
-  roles: "Roles",
-  marketplace: "Marketplace",
-  flow: "Flow",
-  submissions: "Submissions",
-  capabilities: "Capabilities",
-  "familiar-work-queue": "Tasks",
-  journal: "Journal",
-  grimoire: "Memories",
-  salem: "Ask Salem",
-};
-
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
 // thread, same in-app hash idiom as `#card-<id>`.
 // ChatRouter writes the hash (syncUrlHash); Workspace owns restore + popstate.
@@ -799,19 +761,22 @@ export function Workspace() {
     }
   }, []);
 
-  // Drag-to-split: up to three secondary surfaces opened beside the primary
-  // one (four visible pages total). Targets are draggable pages or companion
-  // surfaces (Salem / Memory / Browser) re-homed from the removed right rail.
-  // `splitSide` preserves the familiar 2-page left/right snap behavior.
-  const [splitTargets, setSplitTargets] = useState<SplitTarget[]>([]);
+  // Drag-to-split: every registered request gets a stable instance so aliases
+  // can coexist and stateful surfaces never collide with their sibling.
+  const paneInstanceCounterRef = useRef(0);
+  const nextPaneInstanceId = useCallback(() => {
+    paneInstanceCounterRef.current += 1;
+    return `workspace-pane-${paneInstanceCounterRef.current}`;
+  }, []);
+  const [splitTargets, setSplitTargets] = useState<WorkspacePaneRequest[]>([]);
   const [splitSide, setSplitSide] = useState<"left" | "right">("right");
-  const addSplitTarget = useCallback((target: SplitTarget, side: "left" | "right" = "right") => {
+  const addSplitTarget = useCallback((target: WorkspacePaneRequest, side: "left" | "right" = "right") => {
     if (chatProjectBlockedRef.current && splitTargetRendersMode(target, "chat")) {
       setMode("home");
       return;
     }
     setSplitSide(side);
-    setSplitTargets((prev) => addSecondaryWorkspaceTile(prev, target, splitTargetKey));
+    setSplitTargets((prev) => addSecondaryWorkspaceTile(prev, target, workspacePaneRequestKey));
   }, []);
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
   const [pendingChatAction, setPendingChatAction] = useState<PendingChatAction>(null);
@@ -1145,14 +1110,13 @@ export function Workspace() {
   }, [activeFamiliarHydrated, familiarsLoaded, familiarRosterLoadedSuccessfully, requestedActiveId, loadedActiveId]);
 
   useEffect(() => {
-    // Salem was re-homed from the (removed) right rail into the drag-to-split
-    // pane — its launcher now opens Salem beside the current surface.
     const openSalem = () => {
-      addSplitTarget({ kind: "salem" });
+      const request = normalizeWorkspacePaneRequest(nextPaneInstanceId(), "salem");
+      if (request) addSplitTarget(request);
     };
     window.addEventListener("cave:salem-open", openSalem);
     return () => window.removeEventListener("cave:salem-open", openSalem);
-  }, [addSplitTarget]);
+  }, [addSplitTarget, nextPaneInstanceId]);
 
   // Cross-surface "create a familiar" bridge. The dock (and any deep surface
   // that can't reach openOnboarding directly) announces intent and the
@@ -2615,39 +2579,37 @@ export function Workspace() {
   // Open a page in the split beside the current surface (drag-to-split drop).
   const openSplitPage = useCallback(
     (m: string, side: "left" | "right") => {
-      if (!m || m === mode || !isWorkspaceMode(m)) return;
-      addSplitTarget({ kind: "page", mode: m }, side);
+      const request = normalizeWorkspacePaneRequest(nextPaneInstanceId(), m);
+      const primary = normalizeWorkspacePaneRequest("primary", mode);
+      if (!request || (primary && workspacePaneRequestKey(request) === workspacePaneRequestKey(primary))) {
+        return;
+      }
+      addSplitTarget(request, side);
     },
-    [addSplitTarget, mode],
+    [addSplitTarget, mode, nextPaneInstanceId],
   );
 
-  // (cave-gg5d) The old "cave:salem-undock" dispatches here had NO listener
-  // anywhere — SalemChatPanel's unmount does the real teardown.
   const closeSplit = useCallback(() => {
     setSplitTargets([]);
   }, []);
 
   const closeSplitTile = useCallback((id: string) => {
-    setSplitTargets((prev) => removeSecondaryWorkspaceTile(prev, id, splitTargetKey));
+    setSplitTargets((prev) => removeSecondaryWorkspaceTile(prev, id, workspacePaneRequestKey));
   }, []);
 
-  // Promote a split tile to the sole surface (its divider was dragged past the
-  // far edge, collapsing the primary). Only page tiles map to a primary mode —
-  // switching to it makes the redundant-split effect below clear the tile.
-  // Companion tiles (Salem / Memory / Browser) have no primary mode, so they
-  // stay put (the host leaves them at max width instead).
   const promoteSplitTile = useCallback(
     (id: string) => {
-      const target = splitTargets.find((t) => splitTargetKey(t) === id);
-      if (target?.kind === "page") setMode(target.mode);
+      const target = splitTargets.find((request) => workspacePaneRequestKey(request) === id);
+      if (target && isWorkspaceMode(target.requestedPageId)) setMode(target.requestedPageId);
     },
-    [splitTargets],
+    [setMode, splitTargets],
   );
 
-  // Page splits showing the same page as the primary are redundant — clear them
-  // (e.g. the user navigated the primary surface to a page in the split).
   useEffect(() => {
-    setSplitTargets((prev) => prev.filter((target) => target.kind !== "page" || target.mode !== mode));
+    const primary = normalizeWorkspacePaneRequest("primary", mode);
+    if (!primary) return;
+    const primaryKey = workspacePaneRequestKey(primary);
+    setSplitTargets((prev) => prev.filter((target) => workspacePaneRequestKey(target) !== primaryKey));
   }, [mode]);
 
   const onPaletteIntent = (intent: PaletteIntent) => {
@@ -3184,13 +3146,15 @@ export function Workspace() {
   // "open in split" so the active highlight stays honest after drag-to-split
   // (dropping opens the page beside the primary WITHOUT changing `mode`).
   const splitPageModes = useMemo(
-    () => splitTargets.filter((t): t is Extract<SplitTarget, { kind: "page" }> => t.kind === "page").map((t) => t.mode),
+    () => splitTargets
+      .map((request) => request.requestedPageId)
+      .filter((pageId): pageId is WorkspaceMode => isWorkspaceMode(pageId)),
     [splitTargets],
   );
   const browserVisible = useMemo(
     () =>
       mode === "browser" ||
-      splitTargets.some((target) => target.kind === "browser" || (target.kind === "page" && target.mode === "browser")),
+      splitTargets.some((target) => target.pageId === "browser"),
     [mode, splitTargets],
   );
 
@@ -3576,70 +3540,84 @@ export function Workspace() {
       />
     ) : null;
 
+  const primaryDefinition = workspacePageDefinition(mode);
   const detailContent = renderSurface(mode);
   const detail = (
-    <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
-      <h1 className="sr-only">
-        {(isRoleSurfaceMode(mode)
-          ? getRoleSurface(parseRoleSurfaceMode(mode) ?? "")?.title
-          : WORKSPACE_MODE_TITLES[mode]) ?? "CovenCave"}
-      </h1>
-      {firstProjectGateOpen ? (
-        <FirstProjectGate
-          open={firstProjectGateOpen}
-          familiarId={projectGateFamiliarId}
-          pendingGrant={reconciledPendingFirstProjectGrant}
-          onPendingGrantChange={setPendingFirstProjectGrant}
-          loadingProjects={projectsLoading}
-          projectsError={projectsError}
-          registeredProjects={registeredProjects}
-          createProjectOrThrow={createProjectOrThrow}
-          reloadProjects={reloadProjects}
-        />
-      ) : null}
-      <div
-        className="workspace-detail-content flex h-full min-h-0 min-w-0 flex-1 flex-col"
-        aria-hidden={firstProjectGateOpen ? true : undefined}
-        inert={firstProjectGateOpen || undefined}
-      >
-        {detailContent}
+    <WorkspacePanePage
+      instanceId="workspace-primary"
+      landmark={primaryDefinition?.landmark ?? "Workspace"}
+    >
+      <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
+        <h1 className="sr-only">{primaryDefinition?.title ?? "CovenCave"}</h1>
+        {firstProjectGateOpen ? (
+          <FirstProjectGate
+            open={firstProjectGateOpen}
+            familiarId={projectGateFamiliarId}
+            pendingGrant={reconciledPendingFirstProjectGrant}
+            onPendingGrantChange={setPendingFirstProjectGrant}
+            loadingProjects={projectsLoading}
+            projectsError={projectsError}
+            registeredProjects={registeredProjects}
+            createProjectOrThrow={createProjectOrThrow}
+            reloadProjects={reloadProjects}
+          />
+        ) : null}
+        <div
+          className="workspace-detail-content flex h-full min-h-0 min-w-0 flex-1 flex-col"
+          aria-hidden={firstProjectGateOpen ? true : undefined}
+          inert={firstProjectGateOpen || undefined}
+        >
+          {detailContent}
+        </div>
+        {firstProjectGateOpen ? null : statusBar}
       </div>
-      {/* Phase-D status strip: a flex sibling of the flex-1 content above, so
-          it claims its 28px and the surface shrinks around it. Hidden while
-          the first-project gate holds the surface inert. */}
-      {firstProjectGateOpen ? null : statusBar}
-    </div>
+    </WorkspacePanePage>
   );
 
-  // Split tiles: dragged-in pages (heavy/stateful surfaces like terminal are
-  // excluded from drag) or re-homed companion surfaces (Salem / Memory / Browser).
-  const renderSplitTargetContent = (target: SplitTarget): ReactNode =>
-    target.kind === "page" ? (
-      target.mode !== mode ? (
-        <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
-          {renderSurface(target.mode)}
-        </div>
-      ) : null
-    ) : target.kind === "salem" ? (
-      <SalemChatPanel
-        familiarId={active?.id ?? familiars.find((f) => f.id === "salem")?.id ?? "salem"}
-        model={active?.model ?? familiars.find((f) => f.id === "salem")?.model ?? null}
+  const renderSplitTargetContent = (request: WorkspacePaneRequest): ReactNode => {
+    const definition = workspacePageDefinition(request.requestedPageId);
+    if (!definition) return null;
+
+    if (request.pageId === "memory") {
+      return (
+        <WorkspacePanePage instanceId={request.instanceId} landmark={definition.landmark}>
+          <RailInspector
+            familiar={active}
+            localDaemonReady={localDaemonReady}
+            onOpenFullView={() => setMode("agents")}
+          />
+        </WorkspacePanePage>
+      );
+    }
+
+    if (isWorkspaceMode(request.pageId) || isRoleSurfaceMode(request.pageId)) {
+      return (
+        <WorkspacePanePage instanceId={request.instanceId} landmark={definition.landmark}>
+          <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
+            {renderSurface(request.pageId)}
+          </div>
+        </WorkspacePanePage>
+      );
+    }
+
+    return (
+      <WorkspacePanePage
+        instanceId={request.instanceId}
+        landmark={definition.landmark}
+        unavailable={{
+          reason: `${definition.title} is not available in this workspace yet.`,
+          recoveryLabel: "Close split",
+          onRecover: () => closeSplitTile(workspacePaneRequestKey(request)),
+        }}
       />
-    ) : target.kind === "memory" ? (
-      <RailInspector
-        familiar={active}
-        localDaemonReady={localDaemonReady}
-        onOpenFullView={() => setMode("agents")}
-      />
-    ) : (
-      <BrowserPane label="companion" active={browserVisible} />
     );
+  };
 
   const splitTiles: DetailSplitTile[] = splitTargets
-    .map((target) => ({
-      id: splitTargetKey(target),
-      title: splitTargetTitle(target),
-      content: renderSplitTargetContent(target),
+    .map((request) => ({
+      id: workspacePaneRequestKey(request),
+      title: splitTargetTitle(request),
+      content: renderSplitTargetContent(request),
     }))
     .filter((tile) => tile.content != null);
 

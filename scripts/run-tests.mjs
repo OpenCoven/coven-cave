@@ -78,6 +78,7 @@ export const SUITES = {
     "src/components/workspace-canonical-memory-navigation-behavior.test.tsx",
     "src/components/workspace-canonical-memory-lazy-familiar.test.tsx",
     "src/components/workspace-pane-page.test.ts",
+    "src/components/workspace-page-registry-wiring.test.ts",
     "src/lib/workspace-github-task-context.test.ts",
     "src/lib/role-surfaces.test.ts",
     "src/lib/room-flags.test.ts",

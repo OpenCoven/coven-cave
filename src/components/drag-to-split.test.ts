@@ -64,23 +64,23 @@ test("Shell hosts the split inside the detail main with a drop zone", () => {
   assert.match(src, /enableDrop=\{!isMobile\}/, "drop zone is desktop-only");
 });
 
-test("workspace owns split state and the drop handler, and reuses renderSurface", () => {
+test("workspace owns normalized split state and renders every registered request", () => {
   const src = read("./workspace.tsx");
-  assert.match(src, /const \[splitTargets, setSplitTargets\] = useState<SplitTarget\[\]>\(\[\]\)/);
-  assert.match(src, /function splitTargetRendersMode\(target: SplitTarget, mode: CanonicalWorkspaceMode\): boolean \{[\s\S]*resolveWorkspaceModeAlias\(target\.mode\) === mode/, "split-target mode guards canonicalize aliases before matching");
-  assert.match(src, /const addSplitTarget = useCallback\(\(target: SplitTarget, side: "left" \| "right" = "right"\) => \{[\s\S]*if \(chatProjectBlockedRef\.current && splitTargetRendersMode\(target, "chat"\)\) \{[\s\S]*setMode\("home"\);[\s\S]*return;[\s\S]*\}[\s\S]*addSecondaryWorkspaceTile/, "blocked chat surfaces bounce to Home instead of entering the split");
+  assert.match(src, /const \[splitTargets, setSplitTargets\] = useState<WorkspacePaneRequest\[\]>\(\[\]\)/);
+  assert.match(src, /normalizeWorkspacePaneRequest\(nextPaneInstanceId\(\), m\)/);
+  assert.match(src, /addSecondaryWorkspaceTile\(prev, target, workspacePaneRequestKey\)/);
+  assert.match(src, /function splitTargetRendersMode\(target: WorkspacePaneRequest, mode: WorkspaceMode\): boolean \{[\s\S]*target\.pageId === mode/);
   assert.match(src, /const openSplitPage = useCallback/);
-  assert.match(src, /if \(!m \|\| m === mode \|\| !isWorkspaceMode\(m\)\) return;[\s\S]*addSplitTarget\(\{ kind: "page", mode: m \}, side\);/, "split drops validate the workspace mode before adding a page tile");
-  assert.match(src, /addSecondaryWorkspaceTile/, "workspace appends split pages up to the secondary tile cap");
+  assert.match(src, /if \(!request \|\| \(primary && workspacePaneRequestKey\(request\) === workspacePaneRequestKey\(primary\)\)\)/, "split drops reject unknown and exact duplicate pages");
   assert.match(src, /const renderSurface = \(mode: CaveMode\): ReactNode =>/);
-  assert.match(src, /const detailContent = renderSurface\(mode\);[\s\S]*\{detailContent\}/, "primary renders the direct detail child from renderSurface");
-  assert.match(src, /renderSurface\(target\.mode\)/, "secondary tiles reuse the same machinery");
+  assert.match(src, /workspacePageDefinition\(request\.requestedPageId\)/, "secondary title and state come from the registry");
+  assert.match(src, /WorkspacePanePage[\s\S]*unavailable=/, "unsupported runtime dependencies have an honest pane-local state");
+  assert.match(src, /renderSurface\(request\.pageId\)/, "secondary pages reuse the canonical renderer");
   assert.match(src, /onDropSplitPage=\{openSplitPage\}/);
-  assert.match(src, /addSplitTarget\(\{ kind: "salem" \}\)/, "Salem re-homed into the split (not the removed rail)");
-  // Far-edge collapse promotes a page split to the primary via setMode.
   assert.match(src, /const promoteSplitTile = useCallback/, "workspace owns the promote handler");
-  assert.match(src, /if \(target\?\.kind === "page"\) setMode\(target\.mode\)/, "promoting a page switches the primary mode");
+  assert.match(src, /if \(target && isWorkspaceMode\(target\.requestedPageId\)\) setMode\(target\.requestedPageId\)/, "promoting a workspace page switches the primary mode");
   assert.match(src, /onPromoteSplitTile=\{promoteSplitTile\}/, "promote handler is passed to Shell");
+  assert.doesNotMatch(src, /type SplitTarget/);
 });
 
 test("the right companion (agent) panel is no longer mounted", () => {
