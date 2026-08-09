@@ -19,6 +19,7 @@ import {
   MOBILE_INVITE_TTL_MS,
   nativeAppDiscoveryProof,
   resolveIosInstallUrl,
+  serveRouteFailure,
   shouldAllowMagicDnsFallback,
   tailnetDiscoveryProof,
   tailscaleBin,
@@ -343,7 +344,6 @@ async function ensureNativeAppServeReady(
     // the loopback backend.
     allowMagicDnsFallback: shouldAllowMagicDnsFallback({
       serveOk: serve.ok,
-      serveError: serveWarning ?? "",
       statusOk: status.ok,
     }),
   });
@@ -378,12 +378,17 @@ async function ensureNativeAppServeReady(
   }
 
   if (!discovery.ok) {
-    const routeDetail = fallbackWarning ?? serveWarning ?? discovery.reason;
+    const routeFailure = serveRouteFailure({
+      backendUrl: backend,
+      serveError: fallbackWarning ?? serveWarning,
+      statusError: status.stderr,
+    });
+    const routeDetail = routeFailure.error;
     return NextResponse.json(
       {
         ok: false,
         error: routeDetail,
-        stderr: fallbackWarning ?? serveWarning ?? status.stderr,
+        stderr: routeFailure.stderr,
         backendUrl: backend,
         steps: buildPairingSteps({
           access: { ok: true },
@@ -521,18 +526,22 @@ async function mobileHandoffReady(
     backendUrl: backend,
     allowMagicDnsFallback: shouldAllowMagicDnsFallback({
       serveOk: serve.ok,
-      serveError: serveWarning ?? "",
       statusOk: status.ok,
     }),
   });
 
   if (!discovery.ok) {
+    const routeFailure = serveRouteFailure({
+      backendUrl: backend,
+      serveError: serveWarning,
+      statusError: status.stderr,
+    });
     // Nothing usable — surface the most actionable error we have.
     return NextResponse.json(
       {
         ok: false,
-        error: serveWarning ?? discovery.reason,
-        stderr: serveWarning ?? status.stderr,
+        error: routeFailure.error,
+        stderr: routeFailure.stderr,
         backendUrl: backend,
       },
       { status: 500 },

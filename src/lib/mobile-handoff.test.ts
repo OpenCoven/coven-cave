@@ -13,6 +13,7 @@ import {
   OFFICIAL_IOS_INSTALL_URL,
   resolveIosInstallUrl,
   resolveTailscaleBin,
+  serveRouteFailure,
   shouldAllowMagicDnsFallback,
   tailnetDiscoveryProof,
   tailscaleIpHost,
@@ -42,26 +43,43 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.equal(
     shouldAllowMagicDnsFallback({
       serveOk: false,
-      serveError: "sending serve config: Access denied: serve config denied",
       statusOk: false,
     }),
     false,
-    "permission denial must not become a MagicDNS success when Serve status is also unreadable",
+    "a failed Serve mutation must not become a MagicDNS success when status is unreadable",
   );
   assert.equal(
     shouldAllowMagicDnsFallback({
       serveOk: false,
-      serveError: "GUI failed to start (CLIError 3)",
+      statusOk: false,
+    }),
+    false,
+    "macOS CLIError 3 needs a matching route in Serve status before a handoff can succeed",
+  );
+  assert.equal(
+    shouldAllowMagicDnsFallback({
+      serveOk: true,
       statusOk: false,
     }),
     true,
-    "non-permission CLI failures may still use MagicDNS when daemon status is unreadable",
+    "a successful Serve mutation may use MagicDNS when its follow-up status read is unavailable",
   );
   assert.equal(
-    shouldAllowMagicDnsFallback({ serveOk: true, serveError: "", statusOk: true }),
+    shouldAllowMagicDnsFallback({ serveOk: true, statusOk: true }),
     false,
     "a readable Serve status remains authoritative",
   );
+}
+
+{
+  const failure = serveRouteFailure({
+    backendUrl: "http://127.0.0.1:3000",
+    serveError: "serve config unavailable",
+    statusError: "status should not replace Serve stderr",
+  });
+  assert.match(failure.error, /serve config unavailable/);
+  assert.match(failure.error, /Enable HTTPS for this tailnet at https:\/\/login\.tailscale\.com\/admin\/dns/);
+  assert.equal(failure.stderr, "serve config unavailable");
 }
 
 {
@@ -212,6 +230,26 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       reason: "tailscale serve route not found for http://127.0.0.1:3000",
     },
     "a readable empty Serve status must not promote a bare MagicDNS name to a live route",
+  );
+  const linuxMismatchedServeStatus = {
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: { "/": { Proxy: "http://127.0.0.1:4242" } },
+      },
+    },
+  };
+  assert.deepEqual(
+    tailnetDiscoveryProof({
+      selfStatus: self,
+      serveStatus: linuxMismatchedServeStatus,
+      backendUrl: "http://127.0.0.1:3000",
+      allowMagicDnsFallback: false,
+    }),
+    {
+      ok: false,
+      reason: "tailscale serve route not found for http://127.0.0.1:3000",
+    },
+    "a Linux Serve status for another loopback backend must not promote MagicDNS to a live route",
   );
   assert.deepEqual(
     nativeAppDiscoveryProof({

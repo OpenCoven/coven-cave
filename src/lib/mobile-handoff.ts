@@ -4,22 +4,40 @@ import path from "node:path";
 import { signMobileAccessToken } from "./mobile-access-token.ts";
 import { scrubSidecarInternalEnv } from "./coven-bin.ts";
 import { appTokenTtlMs } from "./mobile-token-refresh.ts";
-import { classifyTailscaleFailureKind } from "./tailscale-failure.ts";
 
 export const MOBILE_INVITE_TTL_MS = 8 * 60 * 60 * 1000;
 
 export function shouldAllowMagicDnsFallback({
   serveOk,
-  serveError,
   statusOk,
 }: {
   serveOk: boolean;
-  serveError: string;
   statusOk: boolean;
 }) {
-  if (statusOk) return false;
-  if (!serveOk && classifyTailscaleFailureKind(serveError) === "serve-permission") return false;
-  return true;
+  // A successful `serve` mutation proves the requested backend was published,
+  // even when a follow-up status read is unavailable. A failed mutation,
+  // including macOS CLIError 3, needs a matching route in status before it can
+  // be used; a MagicDNS name only identifies the machine, not a Serve route.
+  return serveOk && !statusOk;
+}
+
+export function serveRouteFailure({
+  backendUrl,
+  serveError,
+  statusError,
+}: {
+  backendUrl: string;
+  serveError?: string | null;
+  statusError?: string | null;
+}) {
+  const guidance =
+    `Tailscale Serve did not publish ${backendUrl}. ` +
+    "Enable HTTPS for this tailnet at https://login.tailscale.com/admin/dns, then retry.";
+  const stderr = serveError?.trim() || statusError?.trim() || undefined;
+  return {
+    error: stderr ? `${stderr} ${guidance}` : guidance,
+    stderr,
+  };
 }
 
 type TailscaleServeStatus = {
