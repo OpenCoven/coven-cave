@@ -44,8 +44,8 @@ import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
 import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
 import {
-  shouldApplyStartupOnboardingStatus,
-  type OnboardingStatusPayload,
+  shouldApplyStartupOnboardingBootstrap,
+  type OnboardingBootstrapStatusPayload,
 } from "@/lib/onboarding-gate";
 import { draftFromSlashArgs } from "@/lib/reminder-slash-draft";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
@@ -831,8 +831,8 @@ export function Workspace() {
   const [onboardingResolved, setOnboardingResolved] = useState(false);
   const [autoFinishOnboarding, setAutoFinishOnboarding] = useState(false);
   // Lazy-load onboarding on first use, then keep its host mounted while closed.
-  // Its refs and job polling intentionally survive close/reopen cycles so an
-  // in-flight install is not forgotten and daemon auto-start stays one-shot.
+  // Server-owned bootstrap progress persists independently; keeping the host
+  // mounted makes close/reopen cheap and retains local focus/announcement refs.
   const [onboardingMounted, setOnboardingMounted] = useState(false);
   const [projectsInitiallyResolved, setProjectsInitiallyResolved] = useState(false);
   const [pendingFirstProjectGrant, setPendingFirstProjectGrant] = useState<PendingFirstProjectAccessSnapshot | null>(() => readPendingFirstProjectAccessSnapshot());
@@ -1867,28 +1867,25 @@ export function Workspace() {
     setPendingFirstProjectGrant(null);
   }, [canReconcilePendingFirstProjectGrant, pendingFirstProjectGrant, reconciledPendingFirstProjectGrant]);
 
-  // First-run: auto-open onboarding if setup is missing and the user hasn't
-  // explicitly skipped or finished it. The decision lives in the shared
-  // shouldAutoOpenOnboarding gate so it can't diverge from the wizard's
-  // finish-state (cave-219): both read bare server `complete` now that Coven
-  // Code is an optional runtime rather than a requirement. See
-  // onboarding-gate.ts for the structural-steps vs daemon-down rationale.
+  // First-run uses the staged bootstrap state instead of the legacy technical
+  // readiness checklist. A confirmed interrupted job always resumes; before
+  // confirmation the existing dismissal flag still suppresses auto-open.
   useEffect(() => {
     let cancelled = false;
     const skipped =
       typeof window !== "undefined" && window.localStorage.getItem("cave:onboarding:dismissed") === "1";
     void (async () => {
       try {
-        const res = await fetch("/api/onboarding/status", { cache: "no-store" });
+        const res = await fetch("/api/onboarding/bootstrap", { cache: "no-store" });
         if (!res.ok || cancelled) return;
-        const json = (await res.json()) as OnboardingStatusPayload;
+        const json = (await res.json()) as OnboardingBootstrapStatusPayload;
         if (
-          shouldApplyStartupOnboardingStatus({
+          shouldApplyStartupOnboardingBootstrap({
             status: json,
             cancelled,
             manuallyOpened: manualOnboardingOpenedRef.current,
           }) &&
-          !skipped
+          (!skipped || json.confirmed === true)
         ) {
           setAutoFinishOnboarding(true);
           setOnboardingOpen(true);

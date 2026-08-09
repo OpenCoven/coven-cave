@@ -208,7 +208,9 @@ export const CommandPalette = dynamic(
 
 export const OnboardingOverlay = dynamic(
   timed("onboarding", () =>
-    import("@/components/onboarding-overlay").then((m) => m.OnboardingOverlay),
+    import("@/components/onboarding-bootstrap-overlay").then(
+      (m) => m.OnboardingOverlay,
+    ),
   ),
   { ssr: false, loading: () => null },
 );

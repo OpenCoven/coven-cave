@@ -1,186 +1,94 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 
-// Behavioral coverage for the first-run onboarding wizard — previously the
-// only e2e mentions of onboarding were specs BYPASSING it. All daemon-shaped
-// endpoints are stubbed (CI runs daemon-less), and /api/onboarding/status is
-// stubbed to a fresh-machine shape so the wizard auto-opens.
-//
-// The focus assertions exist because of a live-reproduced bug: the home
-// composer's mount autofocus stole focus out of the wizard, and the focus
-// trap never recaptured it, so Tab silently walked the workspace BEHIND the
-// full-screen modal.
-
-const FRESH_STATUS = {
-  ok: true,
-  complete: false,
-  steps: {
-    covenCli: { ok: false, detail: "coven not found on PATH" },
-    covenHome: { ok: false, detail: "~/.coven missing" },
-    git: { ok: true, optional: true, detail: "/usr/bin/git" },
-    adapters: { ok: false, detail: "no adapters detected" },
-    daemon: { ok: false, detail: "daemon socket not reachable" },
-    // Advisory since familiar creation moved to the in-app summoning circle.
-    familiars: { ok: false, optional: true, detail: "no familiars" },
-    binding: { ok: false, optional: true, detail: "no binding configured" },
-  },
-  tools: [],
+const BOUNDARIES = {
+  credentials:
+    "Provider sign-in is deferred until you first use a familiar that needs it.",
+  elevation:
+    "Setup writes only to your user account and never asks for an administrator password.",
+  git: "Git is optional. Install it later only when you want project and Queue features.",
 };
 
-const UNAVAILABLE_STATUS = {
-  ok: true,
-  complete: false,
-  mayContinue: true,
-  steps: {
-    covenCli: { ok: false, state: "checking" },
-    covenHome: { ok: true, state: "ready", detail: "~/.coven" },
-    adapters: {
-      ok: false,
-      state: "unavailable",
-      hint: "Couldn’t verify every available runtime. You can continue and retry later.",
-    },
-    daemon: { ok: true, state: "ready", detail: "running" },
-    git: {
-      ok: false,
-      optional: true,
-      state: "action-required",
-      hint: "Git is required to select and use a Queue project. Install Git from https://git-scm.com, then re-check.",
-    },
-    familiars: { ok: false, optional: true, state: "unavailable" },
-    binding: { ok: false, optional: true, state: "unavailable" },
-  },
-  // Deliberately omit tools: unknown local evidence must not invent an install.
+type StageStatus = "pending" | "running" | "complete" | "skipped" | "failed";
+
+type BootstrapState = {
+  confirmed: boolean;
+  complete: boolean;
+  needsSetup: boolean;
+  status: "idle" | "running" | "failed" | "complete";
+  activeStage: "core-tools" | "workspace" | "daemon" | null;
+  stages: Array<{
+    id: "core-tools" | "workspace" | "daemon";
+    label: string;
+    status: StageStatus;
+    detail: string;
+  }>;
+  failure: null | {
+    stage: "core-tools" | "workspace" | "daemon";
+    stageLabel: string;
+    message: string;
+    recoveryLabel: "Retry setup";
+  };
 };
 
-const CONFIRMED_REQUIRED_FAILURE_STATUS = {
-  ...UNAVAILABLE_STATUS,
-  mayContinue: false,
-  steps: {
-    ...UNAVAILABLE_STATUS.steps,
-    covenCli: {
-      ok: false,
-      state: "action-required",
-      hint: "Install the Coven CLI, then retry.",
-    },
-  },
-  tools: [
-    {
-      id: "coven-cli",
-      label: "Coven CLI",
-      packageName: "@opencoven/cli",
-      binary: "coven",
-      installed: false,
-      path: null,
-      current: null,
-      latest: null,
-      latestCheck: null,
-      outdated: false,
-      compatible: false,
-      minimumVersion: "0.1.1",
-    },
-  ],
-};
+function state(overrides: Partial<BootstrapState> = {}): BootstrapState {
+  return {
+    confirmed: false,
+    complete: false,
+    needsSetup: true,
+    status: "idle",
+    activeStage: null,
+    stages: [
+      {
+        id: "core-tools",
+        label: "Prepare local components",
+        status: "pending",
+        detail: "Cave will verify the local components it needs.",
+      },
+      {
+        id: "workspace",
+        label: "Create Cave defaults",
+        status: "pending",
+        detail: "Cave will create user-scoped folders and defaults.",
+      },
+      {
+        id: "daemon",
+        label: "Start local services",
+        status: "pending",
+        detail: "Cave will start its local background service.",
+      },
+    ],
+    failure: null,
+    ...overrides,
+  };
+}
 
-// A machine that finished setup once but whose daemon is currently stopped:
-// structural steps are healthy, daemon-dependent ones are not.
-const DAEMON_DOWN_VETERAN_STATUS = {
-  ok: true,
-  complete: false,
-  steps: {
-    covenCli: { ok: true, detail: "0.0.53" },
-    covenHome: { ok: true, detail: "~/.coven" },
-    git: { ok: true, optional: true, detail: "/usr/bin/git" },
-    adapters: { ok: true, detail: "Codex" },
-    daemon: { ok: false, detail: "daemon socket not reachable" },
-    familiars: { ok: false, optional: true, detail: "daemon offline" },
-    binding: { ok: false, optional: true, detail: "Waiting for the daemon" },
-  },
-  tools: [],
-};
+function payload(value: BootstrapState) {
+  return {
+    ok: true,
+    version: 1,
+    updatedAt: "2026-08-09T00:00:00.000Z",
+    boundaries: BOUNDARIES,
+    ...value,
+  };
+}
 
-const OPTIONAL_GIT_FAILURE_STATUS = {
-  ok: true,
-  complete: false,
-  mayContinue: true,
-  steps: {
-    covenCli: { ok: true, detail: "0.0.60" },
-    covenHome: { ok: true, detail: "~/.coven" },
-    adapters: {
-      ok: false,
-      state: "unavailable",
-      hint: "Couldn’t verify every available runtime. You can continue and retry later.",
-    },
-    daemon: { ok: true, detail: "running" },
-    git: {
-      ok: false,
-      optional: true,
-      state: "action-required",
-      detail: "Git is required to select and use a Queue project.",
-      hint: "Install Git from https://git-scm.com, then re-check.",
-    },
-    familiars: { ok: false, optional: true, detail: "no familiars" },
-    binding: { ok: false, optional: true, detail: "no binding configured" },
-  },
-  tools: [
-    {
-      id: "coven-cli",
-      label: "Coven CLI",
-      packageName: "@opencoven/cli",
-      binary: "coven",
-      installed: true,
-      path: "/usr/local/bin/coven",
-      current: "0.0.60",
-      latest: "0.0.60",
-      outdated: false,
-      compatible: true,
-      minimumVersion: "0.0.50",
-      latestCheck: { status: "verified", checkedAt: "2026-07-12T00:00:00.000Z", latest: "0.0.60" },
-    },
-  ],
-};
+async function baseRoutes(page: Page) {
+  await page.route("**/api/familiars**", (route) =>
+    route.fulfill({ json: { ok: true, familiars: [] } }),
+  );
+  await page.route("**/api/sessions/list**", (route) =>
+    route.fulfill({ json: { ok: true, sessions: [] } }),
+  );
+}
 
-// Every step healthy but the roster empty — the state the finish CTA's
-// "summon your familiar" promise is about. Server `complete` alone drives the
-// wizard's finish state: Coven Code is an optional runtime adapter, so it is
-// deliberately ABSENT from tools[] here — the banner must still appear.
-const COMPLETE_NO_FAMILIARS_STATUS = {
-  ok: true,
-  complete: true,
-  steps: {
-    covenCli: { ok: true, detail: "0.0.60" },
-    covenHome: { ok: true, detail: "~/.coven" },
-    git: { ok: true, optional: true, detail: "/usr/bin/git" },
-    adapters: { ok: true, detail: "Codex" },
-    daemon: { ok: true, detail: "running" },
-    familiars: { ok: false, optional: true, detail: "no familiars" },
-    binding: { ok: false, optional: true, detail: "no binding configured" },
-  },
-  tools: [
-    {
-      id: "coven-cli",
-      label: "Coven CLI",
-      packageName: "@opencoven/cli",
-      binary: "coven",
-      installed: true,
-      path: "/usr/local/bin/coven",
-      current: "0.0.60",
-      latest: "0.0.60",
-      outdated: false,
-      compatible: true,
-      minimumVersion: "0.0.50",
-      // Display-only now: the tools card shows verified freshness, but
-      // completion is the server's `complete` — no client-side tool AND.
-      latestCheck: { status: "verified", checkedAt: "2026-07-12T00:00:00.000Z", latest: "0.0.60" },
-    },
-  ],
-};
-
-async function gotoApp(page: Page, status: unknown, opts?: { dismissed?: boolean }) {
-  await page.route("**/api/onboarding/status**", (r) => r.fulfill({ json: status }));
-  await page.route("**/api/familiars**", (r) => r.fulfill({ json: { ok: true, familiars: [] } }));
-  await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions: [] } }));
-  await page.route("**/api/harnesses**", (r) => r.fulfill({ json: { ok: true, harnesses: [] } }));
-  await page.route("**/api/openclaw-agents**", (r) => r.fulfill({ json: { ok: true, agents: [] } }));
-  if (opts?.dismissed) {
+async function gotoApp(
+  page: Page,
+  handler: (route: Route) => Promise<unknown> | unknown,
+  options?: { dismissed?: boolean },
+) {
+  await baseRoutes(page);
+  await page.route("**/api/onboarding/bootstrap**", handler);
+  if (options?.dismissed) {
     await page.addInitScript(() => {
       window.localStorage.setItem("cave:onboarding:dismissed", "1");
     });
@@ -188,301 +96,199 @@ async function gotoApp(page: Page, status: unknown, opts?: { dismissed?: boolean
   await page.goto("/");
 }
 
-const wizard = (page: Page) => page.getByRole("dialog", { name: "Onboarding" });
+const setup = (page: Page) => page.getByRole("dialog", { name: "Set up Cave" });
 
-// cave-m3a8: the workspace registers its cave:onboarding-open listener in a
-// mount effect that can land AFTER the searchbox paints — on a cold CI
-// machine a single dispatch fires into the void and the dialog never opens.
-// Re-dispatch until the dialog exists; each attempt is cheap and idempotent.
-async function openWizardManually(page: Page) {
-  await expect(async () => {
-    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:onboarding-open")));
-    await expect(wizard(page)).toBeVisible({ timeout: 1_000 });
-  }).toPass({ timeout: 20_000 });
-}
+test.describe("onboarding bootstrap", () => {
+  test("auto-opens on first run and traps keyboard focus", async ({ page }) => {
+    await gotoApp(page, (route) => route.fulfill({ json: payload(state()) }));
+    await expect(setup(page)).toBeVisible({ timeout: 30_000 });
+    await expect(
+      setup(page).getByRole("button", { name: "Set up Cave", exact: true }),
+    ).toBeVisible();
 
-test.describe("onboarding wizard", () => {
-  test("auto-opens on a fresh machine and keeps keyboard focus trapped inside", async ({ page }) => {
-    await gotoApp(page, FRESH_STATUS);
-    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
-    await expect(wizard(page).getByText("Set up CovenCave, step by step.")).toBeVisible();
-
-    // Give the home composer's 80ms mount-autofocus a chance to (wrongly)
-    // steal focus, then require that keyboard interaction stays in the modal.
     await page.waitForTimeout(1_000);
-    for (let i = 0; i < 8; i++) {
+    for (let index = 0; index < 6; index += 1) {
       await page.keyboard.press("Tab");
       const inDialog = await page.evaluate(() =>
-        Boolean(document.activeElement?.closest('[role="dialog"][aria-label="Onboarding"]')),
+        Boolean(
+          document.activeElement?.closest(
+            '[role="dialog"][aria-label="Set up Cave"]',
+          ),
+        ),
       );
-      expect(inDialog, `Tab press ${i + 1} must stay inside the wizard`).toBe(true);
+      expect(inDialog).toBe(true);
     }
   });
 
-  test("keeps setup-header focus indicators visible inside the horizontal scroller", async ({
+  test("keeps setup controls focus-visible in WebKit", async ({
     page,
     browserName,
   }) => {
-    // Keep this assertion on the desktop-shell side of the responsive boundary;
-    // the mobile project owns the narrower navigation layout.
-    await page.setViewportSize({ width: 1024, height: 700 });
-    await gotoApp(page, FRESH_STATUS);
-    await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
-    await openWizardManually(page);
-
-    const recheck = wizard(page).getByRole("button", { name: "Re-check" });
-    // Enter through a real keyboard transition so Chromium/WebKit apply
-    // :focus-visible for the same modality this regression protects. WebKit's
-    // macOS keyboard-access convention uses Option+Tab for control focus.
-    await wizard(page).focus();
+    await gotoApp(page, (route) => route.fulfill({ json: payload(state()) }));
+    const dialog = setup(page);
+    await expect(dialog).toBeVisible({ timeout: 30_000 });
+    await dialog.focus();
     await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
-    await expect(recheck).toBeFocused();
 
-    const focusStyle = await recheck.evaluate((button) => {
-      const style = getComputedStyle(button);
+    const focused = dialog.locator(":focus");
+    await expect(focused).toHaveCount(1);
+    const focusStyle = await focused.evaluate((element) => {
+      const style = getComputedStyle(element);
       return {
-        visible: button.matches(":focus-visible"),
+        visible: element.matches(":focus-visible"),
         outlineStyle: style.outlineStyle,
-        outlineWidth: style.outlineWidth,
-        outlineOffset: Number.parseFloat(style.outlineOffset),
+        outlineWidth: Number.parseFloat(style.outlineWidth),
       };
     });
     expect(focusStyle.visible).toBe(true);
     expect(focusStyle.outlineStyle).toBe("solid");
-    expect(Number.parseFloat(focusStyle.outlineWidth)).toBeGreaterThan(0);
-    expect(focusStyle.outlineOffset).toBeLessThanOrEqual(0);
+    expect(focusStyle.outlineWidth).toBeGreaterThan(0);
   });
 
-  test("marks the first incomplete step as the current step", async ({ page }) => {
-    await gotoApp(page, FRESH_STATUS);
-    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
-    const current = wizard(page).locator('li[aria-current="step"]');
-    await expect(current).toHaveCount(1);
-    await expect(current.first()).toContainText("Install the Coven CLI");
-  });
-
-  test("pending and unavailable checks allow continuing without inventing an install", async ({ page }) => {
-    await gotoApp(page, UNAVAILABLE_STATUS);
-    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
-
-    await wizard(page).getByRole("button", { name: /Install the Coven CLI/ }).click();
-    await expect(wizard(page).getByText("Checking local installation…")).toBeVisible();
-    await expect(
-      wizard(page).getByRole("button", { name: "Install the Coven CLI", exact: true }),
-    ).toHaveCount(0);
-    await expect(wizard(page).getByRole("button", { name: "Continue to Cave" })).toBeEnabled();
-    await expect(wizard(page).locator('li[aria-current="step"]')).toHaveCount(0);
-  });
-
-  test("a confirmed required failure blocks normal continuation", async ({ page }) => {
-    await gotoApp(page, CONFIRMED_REQUIRED_FAILURE_STATUS);
-    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
-
-    await expect(
-      wizard(page).getByRole("button", { name: "Install the Coven CLI", exact: true }),
-    ).toBeEnabled();
-    await expect(wizard(page).getByRole("button", { name: "Continue to Cave" })).toHaveCount(0);
-    await expect(wizard(page).getByText("Finish required setup")).toBeVisible();
-  });
-
-  test("surfaces optional Git remediation without blocking Cave", async ({ page }) => {
-    await gotoApp(page, OPTIONAL_GIT_FAILURE_STATUS);
-    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
-    await expect(wizard(page).locator('li[aria-current="step"]')).toHaveCount(0);
-    await expect(wizard(page).getByRole("button", { name: "Continue to Cave" })).toBeEnabled();
-
-    await wizard(page).getByRole("button", { name: /Find Git/ }).click();
-    const gitStep = wizard(page).getByRole("listitem").filter({ hasText: "Find Git" });
-    await expect(gitStep).toContainText("Git is required before choosing a Queue project on the Tasks page.");
-    await expect(gitStep).toContainText("Install Git from https://git-scm.com");
-  });
-
-  test("Escape closes for the session without permanently skipping", async ({ page }) => {
-    await gotoApp(page, FRESH_STATUS);
-    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
-    await page.keyboard.press("Escape");
-    await expect(wizard(page)).toHaveCount(0);
-    // Escape must NOT write the permanent opt-out — a fresh visit still guides.
-    const dismissed = await page.evaluate(() => window.localStorage.getItem("cave:onboarding:dismissed"));
-    expect(dismissed).toBeNull();
-  });
-
-  test("stays hidden once dismissed", async ({ page }) => {
-    // A stored dismissal keeps the wizard closed on a set-up machine. Use a
-    // genuinely complete setup so this exercises the dismissal path rather
-    // than masking a prerequisite regression.
-    await gotoApp(page, COMPLETE_NO_FAMILIARS_STATUS, { dismissed: true });
-    await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
-    await page.waitForTimeout(1_000);
-    await expect(wizard(page)).toHaveCount(0);
-  });
-
-  test("does not relaunch for a set-up machine whose daemon is merely stopped", async ({ page }) => {
-    await gotoApp(page, DAEMON_DOWN_VETERAN_STATUS);
-    await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
-    await page.waitForTimeout(1_000);
-    await expect(wizard(page)).toHaveCount(0);
-  });
-
-  test("shows the first-run journey strip with setup as the current beat", async ({ page }) => {
-    await gotoApp(page, FRESH_STATUS);
-    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
-    const strip = wizard(page).getByLabel("First-run journey");
-    await expect(strip).toBeVisible();
-    await expect(strip.getByText("Set up Cave")).toBeVisible();
-    await expect(strip.getByText("Summon a familiar")).toBeVisible();
-    await expect(strip.getByText("First chat")).toBeVisible();
-    await expect(strip.locator('[aria-current="step"]')).toHaveText(/Set up Cave/);
-  });
-
-  test("completed setup surfaces an above-the-fold banner whose CTA opens the Summoning Circle", async ({ page }) => {
-    // Complete machines never auto-open; drive the wizard via the manual-open
-    // event every setup entry point dispatches.
-    await gotoApp(page, COMPLETE_NO_FAMILIARS_STATUS);
-    await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
-    await openWizardManually(page);
-
-    // The banner renders at the top — reachable without scrolling a long page.
-    await expect(wizard(page).getByText("Setup complete — Cave is ready.")).toBeVisible();
-
-    // Its CTA keeps the promise: the Summoning Circle itself opens (not just
-    // the Familiars roster with a second button to find).
-    await wizard(page).getByRole("button", { name: "Summon your familiar", exact: true }).click();
-    await expect(wizard(page)).toHaveCount(0);
-    await expect(page.getByRole("dialog", { name: "Summoning circle" })).toBeVisible({ timeout: 15_000 });
-  });
-
-  test("a failed CLI install (managed Node missing) shows the hint and stays retryable", async ({ page }) => {
-    // The install route's managed-node-missing shape: the wizard must surface
-    // the hint (NodeSetupNotice + per-tool failure note) and keep the install
-    // button enabled — a machine without its managed toolchain can never be a dead end.
-    let installCalls = 0;
-    await page.route("**/api/onboarding/install", (r) => {
-      if (r.request().method() !== "POST") return r.fallback();
-      installCalls += 1;
-      return r.fulfill({
-        status: 422,
-        json: {
-          ok: false,
-          managedNodeMissing: true,
-          error: "Cave-managed Node.js and npm are not ready",
-          hint: "Install Cave-managed Node.js and npm first. Cave keeps this toolchain in its user data and does not modify your system PATH.",
-        },
-      });
-    });
-    await gotoApp(page, FRESH_STATUS);
-    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
-
-    const install = wizard(page).getByRole("button", { name: "Install the Coven CLI", exact: true });
-    await install.click();
-    await expect(
-      wizard(page).getByText("Install Cave-managed Node.js and npm first. Cave keeps this toolchain in its user data and does not modify your system PATH."),
-    ).toBeVisible({ timeout: 10_000 });
-    expect(installCalls).toBeGreaterThanOrEqual(1);
-
-    // Retryable: the primary action is enabled again, and clicking it hits
-    // the route a second time.
-    await expect(install).toBeEnabled();
-    await install.click();
-    await expect.poll(() => installCalls, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
-  });
-
-  test("a completed failed CLI install keeps its redacted tail visible and copyable", async ({ page }) => {
-    const terminalTail =
-      "node: error while loading shared libraries: libatomic.so.1: cannot open shared object file";
-    await page.addInitScript(() => {
-      Object.defineProperty(navigator, "clipboard", {
-        configurable: true,
-        value: {
-          writeText: async (text: string) => {
-            (window as Window & { __copiedDiagnostics?: string }).__copiedDiagnostics = text;
-          },
-        },
-      });
-    });
-    await page.route("**/api/onboarding/install**", (r) => {
-      const request = r.request();
-      if (request.method() === "POST") {
-        return r.fulfill({
-          status: 202,
-          json: { started: true, target: "coven-cli", npmBusy: true },
+  test("one confirmation starts a visible serialized stage flow", async ({
+    page,
+  }) => {
+    let current = state();
+    let confirmations = 0;
+    await gotoApp(page, async (route) => {
+      if (route.request().method() === "POST") {
+        confirmations += 1;
+        current = state({
+          confirmed: true,
+          status: "running",
+          activeStage: "core-tools",
+          stages: [
+            {
+              id: "core-tools",
+              label: "Prepare local components",
+              status: "running",
+              detail: "Preparing Cave’s local runtime…",
+            },
+            ...state().stages.slice(1),
+          ],
         });
       }
-      const target = new URL(request.url()).searchParams.get("target");
-      if (target === "coven-cli") {
-        return r.fulfill({
-          json: {
-            status: "done",
-            elapsedMs: 671,
-            tail: terminalTail,
-            ok: false,
-            code: 127,
-            binaryPath: "/redacted/coven",
-            error: "installer exited with code 127",
-            npmBusy: false,
-            npmBusyTarget: null,
-          },
-        });
-      }
-      return r.fulfill({
-        json: { status: "idle", npmBusy: false, npmBusyTarget: null },
-      });
+      await route.fulfill({ json: payload(current) });
     });
-    await gotoApp(page, FRESH_STATUS);
-    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
 
-    await wizard(page)
-      .getByRole("button", { name: "Install the Coven CLI", exact: true })
-      .click();
-    await expect(wizard(page).getByText("installer exited with code 127")).toBeVisible({
-      timeout: 10_000,
-    });
-    await expect(wizard(page).getByText(terminalTail)).toBeVisible();
+    const dialog = setup(page);
+    await dialog.getByRole("button", { name: "Set up Cave", exact: true }).click();
+    await expect(dialog.getByText("Preparing Cave’s local runtime…")).toBeVisible();
+    await expect(dialog.locator('[aria-current="step"]')).toContainText(
+      "Prepare local components",
+    );
+    expect(confirmations).toBe(1);
 
-    await wizard(page).getByRole("button", { name: /Copy diagnostics/ }).click();
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () =>
-            (window as Window & { __copiedDiagnostics?: string }).__copiedDiagnostics ?? "",
-        ),
-      )
-      .toContain(terminalTail);
+    const visibleText = await dialog.innerText();
+    for (const hidden of [
+      "Node.js",
+      "npm",
+      "Coven CLI",
+      "Codex",
+      "Claude",
+      "Copilot",
+      "OpenClaw",
+    ]) {
+      expect(visibleText).not.toContain(hidden);
+    }
+    await expect(dialog.getByText(/Provider sign-in is deferred/)).toBeVisible();
+    await expect(dialog.getByText(/never asks for an administrator password/)).toBeVisible();
+    await expect(dialog.getByText(/Git is optional/)).toBeVisible();
   });
 
-  test("a failed daemon start shows message + hint and recovers through the banner's retry", async ({ page }) => {
-    // Structural steps healthy + daemon down: opening the wizard fires its
-    // one automatic daemon start. Fail every start until the flag flips —
-    // deterministic no matter which surface (wizard or workspace) calls
-    // first — then prove the banner's retry clears it on success.
-    let daemonStartShouldFail = true;
-    let startCalls = 0;
-    await page.route("**/api/daemon/start", (r) => {
-      startCalls += 1;
-      return daemonStartShouldFail
-        ? r.fulfill({
-            status: 504,
-            json: { ok: false, error: "timeout", stderr: "daemon did not answer health checks" },
-          })
-        : r.fulfill({ json: { ok: true, exitCode: 0, restart: false, stdout: "", stderr: "" } });
+  test("names the blocked stage and offers one recovery action", async ({
+    page,
+  }) => {
+    let retries = 0;
+    const failed = state({
+      confirmed: true,
+      status: "failed",
+      activeStage: "workspace",
+      stages: state().stages.map((stage) =>
+        stage.id === "workspace"
+          ? {
+              ...stage,
+              status: "failed",
+              detail:
+                "Setup stopped at Create Cave defaults. Check that ~/.coven is writable, then retry setup.",
+            }
+          : stage.id === "core-tools"
+            ? { ...stage, status: "complete", detail: "Local components are ready." }
+            : stage,
+      ),
+      failure: {
+        stage: "workspace",
+        stageLabel: "Create Cave defaults",
+        message:
+          "Setup stopped at Create Cave defaults. Check that ~/.coven is writable, then retry setup.",
+        recoveryLabel: "Retry setup",
+      },
     });
-    await gotoApp(page, DAEMON_DOWN_VETERAN_STATUS);
-    await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
-    await openWizardManually(page);
+    await gotoApp(
+      page,
+      async (route) => {
+        if (route.request().method() === "POST") retries += 1;
+        await route.fulfill({ json: payload(failed) });
+      },
+      { dismissed: true },
+    );
 
-    // The failure banner carries the verbatim error, the derived hint, and a
-    // retry naming the failed action.
-    const banner = wizard(page).getByRole("alert").filter({ hasText: "timeout" });
-    await expect(banner).toBeVisible({ timeout: 15_000 });
-    await expect(banner.getByText(/didn't come up within its start window/)).toBeVisible();
-    const retry = banner.getByRole("button", { name: "Retry daemon start" });
-    await expect(retry).toBeVisible();
-    expect(startCalls).toBeGreaterThanOrEqual(1);
+    const alert = setup(page).getByRole("alert");
+    await expect(alert).toContainText("Create Cave defaults is blocked");
+    await expect(alert.getByRole("button", { name: "Retry setup" })).toHaveCount(1);
+    await alert.getByRole("button", { name: "Retry setup" }).click();
+    expect(retries).toBe(1);
+  });
 
-    // Recovery: flip the route to success, retry from the banner, banner
-    // clears — the user never has to hunt for the original button.
-    daemonStartShouldFail = false;
-    await retry.click();
-    await expect(banner).toHaveCount(0, { timeout: 10_000 });
+  test("skips onboarding when an existing setup is already ready", async ({
+    page,
+  }) => {
+    const complete = state({
+      complete: true,
+      needsSetup: false,
+      status: "complete",
+      stages: state().stages.map((stage) => ({
+        ...stage,
+        status: "skipped",
+        detail: "Existing setup was kept.",
+      })),
+    });
+    await gotoApp(page, (route) =>
+      route.fulfill({ json: payload(complete) }),
+    );
+    await page.getByRole("searchbox").first().waitFor({
+      state: "visible",
+      timeout: 30_000,
+    });
+    await expect(setup(page)).toHaveCount(0);
+  });
+
+  test("confirmed interrupted setup resumes even after an earlier dismissal", async ({
+    page,
+  }) => {
+    let resumes = 0;
+    let current = state({
+      confirmed: true,
+      status: "idle",
+      activeStage: null,
+    });
+    await gotoApp(
+      page,
+      async (route) => {
+        if (route.request().method() === "POST") {
+          resumes += 1;
+          current = state({
+            confirmed: true,
+            status: "running",
+            activeStage: "core-tools",
+          });
+        }
+        await route.fulfill({ json: payload(current) });
+      },
+      { dismissed: true },
+    );
+
+    await expect(setup(page)).toBeVisible({ timeout: 30_000 });
+    await expect.poll(() => resumes).toBe(1);
   });
 });
