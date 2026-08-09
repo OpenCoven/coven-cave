@@ -273,6 +273,8 @@ export const SUITES = {
     "src/lib/chat-session-activity.test.ts",
     "src/lib/chat-session-sort.test.ts",
     "src/lib/chat-turn-gap.test.ts",
+    "src/lib/chat-run-rail.test.ts",
+    "src/components/chat-run-rail.test.ts",
     "src/lib/chat-transcript-fold.test.ts",
     "src/lib/chat-project-overrides.test.ts",
     "src/lib/chat-add-project.test.ts",

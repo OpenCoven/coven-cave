@@ -40,6 +40,7 @@ import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { ChatSessionContextRow } from "@/components/chat-session-context-row";
 import { ChatThreadMinimap, ChatThreadSpine } from "@/components/chat-thread-instruments";
+import { ChatRunRail } from "@/components/chat-run-rail";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
@@ -7879,6 +7880,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }}
         />
       ) : null}
+              {/* Run rail (Coven Cave - Chat Session handoff, cave-w716g): the
+                  timeline, tool mix and live step, derived from the SAME
+                  activePath the transcript renders. Shares the instruments
+                  toggle — it is the same class of furniture as the spine and
+                  minimap, and two settings for one idea is a choice nobody
+                  asked for.
+
+                  Mounted AFTER the transcript on purpose. It was briefly the
+                  row's first child with CSS `order` doing the visual placement,
+                  which put the rail ahead of the conversation for screen
+                  readers — `order` moves boxes, never reading order. DOM order
+                  is the accessible order, so the annotation follows the log. */}
+              {activePath.length > 0 && instrumentsVisible ? (
+                <ChatRunRail turns={activePath} conversationCreatedAt={session?.created_at} />
+              ) : null}
       </div>
       </CodeReadingContext.Provider>
       </FileLinkResolverContext.Provider>

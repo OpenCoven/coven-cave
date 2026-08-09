@@ -37,6 +37,7 @@ const RAW_INTERVAL_ALLOWLIST = new Map([
   ["components/home/home-feed.tsx", "minute ticker for relative timestamps; no network"],
   ["components/calendar-view-primitives.tsx", "wall-clock minute ticker for the now-line; no network"],
   ["components/chat-view.tsx", "1s elapsed ticker on the streaming meta line; no network"],
+  ["components/chat-run-rail.tsx", "run-rail elapsed + session-age ticker (1s while a call runs, 60s idle); no network"],
   ["components/familiar-studio-projects-tab.tsx", "30s grant-undo countdown while an accepting row is visible; no network"],
   ["components/update-available.tsx", "6-hour recheck cadence; a hidden-tab skip would defer updates for days"],
   ["components/onboarding-overlay.tsx", "modal-scoped 2s install polls; only run while the overlay is open mid-setup"],
