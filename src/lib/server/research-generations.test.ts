@@ -712,6 +712,10 @@ test("podcast closers restate the section's lead finding verbatim as the takeawa
       "## Consolidation levers",
       "",
       "- Does goal-guarding generalize?",
+      "",
+      "## Promotion safeguards",
+      "",
+      "- Holdouts catch the regression every time! The promotion step never saw it.",
     ].join("\n"),
   }, "standard");
   assert.equal(content.kind, "podcast");
@@ -729,6 +733,13 @@ test("podcast closers restate the section's lead finding verbatim as the takeawa
   assert.ok(
     !hosts.some((segment) => segment.text.includes(": Does goal-guarding generalize?")),
     "question-lead sections never get a question restated as the takeaway",
+  );
+  // Non-question terminators all qualify — an exclamation is still declarative.
+  assert.ok(
+    hosts.some((segment) =>
+      segment.text.includes("Holdouts catch the regression every time!"),
+    ),
+    "an exclamation-terminated lead sentence still becomes the takeaway",
   );
 });
 
