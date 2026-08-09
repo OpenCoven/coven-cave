@@ -37,6 +37,9 @@ const PROJECTS = [
 
 type GrantRow = { familiarId: string; projectId: string; access: "read" | "write" };
 
+const organizationSection = (page: Page, name: string) =>
+  page.locator(`.projects-access-section[aria-label="${name}"]`);
+
 async function openProjectAccess(page: Page, seed: GrantRow[]): Promise<GrantRow[]> {
   const grants: GrantRow[] = [...seed];
   await page.addInitScript(() => {
@@ -93,8 +96,8 @@ test("cards are sectioned and their pill cycles no access → read → full → 
 
   // Sections split by derived organization: OpenCoven repositories and the
   // familiars workspace leaf.
-  const opencoven = page.locator(".projects-access-section", { hasText: "OpenCoven" });
-  const familiars = page.locator(".projects-access-section", { hasText: "familiars" });
+  const opencoven = organizationSection(page, "OpenCoven");
+  const familiars = organizationSection(page, "familiars");
   await expect(opencoven.locator(".projects-access-card")).toHaveCount(2);
   await expect(familiars.locator(".projects-access-card")).toHaveCount(1);
 
@@ -163,7 +166,7 @@ test("search filters cards and the ledger still spans the whole map", async ({ p
 
   await page.getByLabel("Find a project").fill("docs");
   await expect(page.locator(".projects-access-card")).toHaveCount(1);
-  await expect(page.locator(".projects-access-section", { hasText: "familiars" })).toHaveCount(0);
+  await expect(organizationSection(page, "familiars")).toHaveCount(0);
 
   // The ledger still describes the whole map, not the filtered subset.
   await expect(page.locator(".projects-access-ledger-key > span").nth(1)).toHaveText(/1 Read/);
@@ -175,7 +178,7 @@ test("search filters cards and the ledger still spans the whole map", async ({ p
 test("a collapsed section keeps reporting what is granted inside it", async ({ page }) => {
   await openProjectAccess(page, [{ familiarId: "nova", projectId: "repo-cave", access: "write" }]);
 
-  const opencoven = page.locator(".projects-access-section", { hasText: "OpenCoven" });
+  const opencoven = organizationSection(page, "OpenCoven");
   // Address the section toggle by name — `{ expanded: true }` also matches any
   // open card disclosure inside the section.
   await opencoven.getByRole("button", { name: "OpenCoven" }).click();
