@@ -1179,6 +1179,7 @@ export const SUITES = {
     "scripts/surface-claim-guard.test.mjs",
     "scripts/worktree-guard.test.mjs",
     "scripts/worktree-autolock.test.mjs",
+    "scripts/worktree-retention-push.test.mjs",
     "scripts/branch-curator-manual-cleanup-contract.test.mjs",
     "scripts/branch-to-merge-contract.test.mjs",
     "scripts/git-hooks-pre-commit.test.mjs",
