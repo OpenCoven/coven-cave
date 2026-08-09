@@ -469,6 +469,22 @@
   background: var(--border-hairline);
 }
 
+.cnav__organization + .cnav__organization {
+  margin-top: var(--space-1);
+}
+.cnav__organization-toggle {
+  width: 100%;
+  text-align: left;
+}
+.cnav__organization-toggle:disabled {
+  cursor: default;
+}
+.cnav__organization-projects {
+  margin-inline-start: var(--space-2);
+  padding-inline-start: var(--space-1);
+  border-inline-start: 1px solid var(--border-hairline);
+}
+
 /* Project group header — sticky so context stays while scrolling long lists.
    Two lines: bold name over a muted activity meta ("2 running · 12m"). */
 .cnav__group-head {
