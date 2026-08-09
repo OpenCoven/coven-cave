@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,40 @@ import {
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { Familiar, SessionRow } from "@/lib/types";
+
+/**
+ * Shared frame for every loading/error/chooser state: a named `<aside>` plus
+ * a header carrying a title and a Close action. The panel can render inside a
+ * focus-trapped mobile modal, so every one of those states — not just the
+ * fully resolved chat — must expose a discoverable way out instead of
+ * trapping focus with no escape affordance.
+ */
+function RightChatPanelFrame({
+  onClose,
+  title = "Chat",
+  children,
+}: {
+  onClose: () => void;
+  title?: string;
+  children: ReactNode;
+}) {
+  return (
+    <aside className="right-chat" aria-label="Chat panel">
+      <header className="right-chat__header">
+        <strong>{title}</strong>
+        <button
+          type="button"
+          className="focus-ring right-chat__icon-button"
+          aria-label="Close Chat panel"
+          onClick={onClose}
+        >
+          <Icon name="ph:x" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
+        </button>
+      </header>
+      {children}
+    </aside>
+  );
+}
 
 type Props = {
   open: boolean;
@@ -64,6 +98,17 @@ export function RightChatPanel(props: Props) {
   // same-familiar close/reopen never clobbers a manual thread selection —
   // only an actual familiar change (or the very first open) re-resolves.
   const resolvedFamiliarRef = useRef<string | null>(null);
+  // Session ids we've actually observed appear in the eligible roster at
+  // least once. A freshly promoted session (null → id, reported the instant
+  // ChatRouter starts a chat from a blank compose) can arrive here before the
+  // `sessions` roster prop has been refetched to include it. Without this,
+  // the ineligible-selection effect below would immediately mistake "not yet
+  // in the roster" for "removed from the roster" and stomp the brand-new
+  // session with a replacement. Gating reconciliation on prior observation
+  // fixes that promotion race with no timing/delay hack — it also lets the
+  // *same* effect correctly reconcile a genuine later removal (archive/
+  // delete) of a session it did previously observe.
+  const observedSessionIdsRef = useRef<Set<string>>(new Set());
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const resolvedActiveFamiliar =
@@ -72,7 +117,31 @@ export function RightChatPanel(props: Props) {
     () => eligibleRightChatSessions(sessions, activeFamiliar?.id ?? null),
     [activeFamiliar?.id, sessions],
   );
+  for (const session of eligibleSessions) observedSessionIdsRef.current.add(session.id);
+  // True once this exact familiar's router has actually resolved/mounted —
+  // independent of any *current* familiarsError/sessionsError. Lets a
+  // transient roster refresh failure surface loading/error UI without
+  // unmounting the already-live ChatRouter (transcript/stream/scroll), and
+  // (via the gate on the first-resolution effect below) keeps a null,
+  // not-yet-mounted router from ever being marked resolved.
+  const hasResolvedRouter = activeFamiliar !== null && resolvedFamiliarRef.current === activeFamiliar.id;
   const { announce } = useAnnouncer();
+
+  // ChatRouter can report a null active session organically — an in-place
+  // archive (ChatView's onBack after the archive PATCH), a delete, or a
+  // discarded empty voice pre-session — with no accompanying explicit action
+  // from this panel. That null carries no session identity, so overwriting
+  // `selectedSessionId` here would drop the very id the reconcile effect
+  // below needs in order to detect the confirmed removal once the roster
+  // refreshes and resolve the same familiar's latest session (or a new
+  // compose). Every *explicit* transition to a blank compose (the New chat
+  // button, the thread switcher's New chat option, and both resolution
+  // effects when no session is left) already calls `setSelectedSessionId(null)`
+  // itself at the moment it acts, so this handler only ever needs to forward
+  // a real, non-null id.
+  const handleActiveSessionChange = (sessionId: string | null) => {
+    if (sessionId !== null) setSelectedSessionId(sessionId);
+  };
 
   useEffect(() => {
     if (activeFamiliar) return;
@@ -84,8 +153,12 @@ export function RightChatPanel(props: Props) {
   // eligible session, or start a familiar-bound blank compose. Deliberately a
   // no-op on same-familiar close/reopen — resolvedFamiliarRef already holds
   // this familiar's id, so a manual mid-conversation selection survives.
+  // Gated on familiars *and* sessions readiness (loaded, error-free) so this
+  // never fires — and never marks resolvedFamiliarRef resolved — on a render
+  // where the router isn't actually mounted (routerRef would be null and the
+  // resolution would silently no-op, permanently skipping the real one).
   useEffect(() => {
-    if (!open || !activeFamiliar || !sessionsLoaded || sessionsError) return;
+    if (!open || !activeFamiliar || !familiarsLoaded || familiarsError || !sessionsLoaded || sessionsError) return;
     if (resolvedFamiliarRef.current === activeFamiliar.id) return;
     resolvedFamiliarRef.current = activeFamiliar.id;
     const latestId = resolveLatestRightChatSessionId(sessions, activeFamiliar.id);
@@ -97,15 +170,19 @@ export function RightChatPanel(props: Props) {
         ? `${activeFamiliar.display_name} chat opened`
         : `New chat with ${activeFamiliar.display_name}`,
     );
-  }, [activeFamiliar, announce, open, sessions, sessionsError, sessionsLoaded]);
+  }, [activeFamiliar, announce, familiarsError, familiarsLoaded, open, sessions, sessionsError, sessionsLoaded]);
 
   // If the selected session stops being eligible (deleted, archived, or
   // otherwise dropped from the visible list) re-resolve the same familiar's
   // latest remaining session, or fall back to a familiar-bound blank compose.
-  // Never falls back to another familiar.
+  // Never falls back to another familiar. Reconciles only ids previously
+  // observed in the eligible roster (see observedSessionIdsRef above) so a
+  // just-promoted session the roster hasn't caught up to yet is never
+  // mistaken for one that was removed.
   useEffect(() => {
     if (!open || !activeFamiliar || !sessionsLoaded || sessionsError || !selectedSessionId) return;
     if (eligibleSessions.some((session) => session.id === selectedSessionId)) return;
+    if (!observedSessionIdsRef.current.has(selectedSessionId)) return;
     const replacement = resolveLatestRightChatSessionId(sessions, activeFamiliar.id);
     if (replacement) routerRef.current?.openSession(replacement);
     else routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
@@ -114,41 +191,34 @@ export function RightChatPanel(props: Props) {
 
   if (!familiarsLoaded || !sessionsLoaded) {
     return (
-      <aside className="right-chat" aria-label="Chat panel">
+      <RightChatPanelFrame onClose={props.onClose}>
         <div className="right-chat__loading" role="status">
           Loading Chat…
         </div>
-      </aside>
+      </RightChatPanelFrame>
     );
   }
 
-  if (familiarsError) {
+  // Only blocks on a familiars-roster failure the first time this familiar's
+  // router hasn't resolved yet — once resolved, hasResolvedRouter keeps the
+  // mounted ChatRouter (and its transcript/stream/scroll) on screen through a
+  // later transient failure instead of unmounting it into this ErrorState.
+  if (familiarsError && !hasResolvedRouter) {
     return (
-      <aside className="right-chat" aria-label="Chat panel">
+      <RightChatPanelFrame onClose={props.onClose}>
         <ErrorState
           compact
           headline="Couldn't load familiars"
           subtitle={familiarsError}
           actions={<Button onClick={props.onRetryFamiliars}>Retry</Button>}
         />
-      </aside>
+      </RightChatPanelFrame>
     );
   }
 
   if (!activeFamiliar) {
     return (
-      <aside className="right-chat" aria-label="Chat panel">
-        <header className="right-chat__header">
-          <strong>Chat</strong>
-          <button
-            type="button"
-            className="focus-ring right-chat__icon-button"
-            aria-label="Close Chat panel"
-            onClick={props.onClose}
-          >
-            <Icon name="ph:x" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
-          </button>
-        </header>
+      <RightChatPanelFrame onClose={props.onClose}>
         <EmptyState
           compact
           icon="ph:users-three"
@@ -156,7 +226,7 @@ export function RightChatPanel(props: Props) {
           subtitle="The Chat panel won't choose one for you."
           actions={
             <div className="right-chat__familiar-grid">
-              {familiars.map((familiar) => (
+              {resolvedFamiliars.map((familiar) => (
                 <Button
                   key={familiar.id}
                   variant="secondary"
@@ -168,25 +238,35 @@ export function RightChatPanel(props: Props) {
             </div>
           }
         />
-      </aside>
+      </RightChatPanelFrame>
     );
   }
 
-  if (sessionsError && resolvedFamiliarRef.current !== activeFamiliar.id) {
+  // Same transient-vs-mounted distinction as familiarsError above.
+  if (sessionsError && !hasResolvedRouter) {
     return (
-      <aside className="right-chat" aria-label="Chat panel">
+      <RightChatPanelFrame onClose={props.onClose}>
         <ErrorState
           compact
           headline="Couldn't load chats"
           subtitle="Your conversations are still safe."
           actions={<Button onClick={props.onRetrySessions}>Retry</Button>}
         />
-      </aside>
+      </RightChatPanelFrame>
     );
   }
 
   const title =
     eligibleSessions.find((session) => session.id === selectedSessionId)?.title ?? "New chat";
+  // Surfaced *alongside* the mounted router below rather than replacing it —
+  // familiarsError/sessionsError already passed the blocking branches above
+  // (hasResolvedRouter is true), so this is a transient refresh failure, not
+  // a first-load failure, and must not disturb the live chat.
+  const transientErrorHeadline = familiarsError
+    ? "Couldn't refresh familiars"
+    : sessionsError
+      ? "Couldn't refresh chats"
+      : null;
 
   return (
     <aside className="right-chat" aria-label="Chat panel" data-session-id={selectedSessionId ?? "new"}>
@@ -242,6 +322,18 @@ export function RightChatPanel(props: Props) {
           <Icon name="ph:x" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
         </button>
       </header>
+      {transientErrorHeadline ? (
+        <ErrorState
+          compact
+          headline={transientErrorHeadline}
+          subtitle={familiarsError ?? "Your conversations are still safe."}
+          actions={
+            <Button onClick={familiarsError ? props.onRetryFamiliars : props.onRetrySessions}>
+              Retry
+            </Button>
+          }
+        />
+      ) : null}
       <div className="right-chat__content">
         <ChatRouter
           ref={routerRef}
@@ -262,7 +354,7 @@ export function RightChatPanel(props: Props) {
           onOpenOnboarding={props.onOpenOnboarding}
           onOpenTask={props.onOpenTask}
           onOpenUrl={props.onOpenUrl}
-          onActiveSessionChange={setSelectedSessionId}
+          onActiveSessionChange={handleActiveSessionChange}
           composerDraftKey={`cave:right-chat-composer-draft:v1:${activeFamiliar.id}`}
           compact
           hideRail

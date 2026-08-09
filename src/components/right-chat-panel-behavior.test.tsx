@@ -1,0 +1,420 @@
+// @ts-nocheck — react-test-renderer ships no types; matches the convention in
+// chat-title-sparkle-behavior.test.tsx and workspace-canonical-memory-navigation-behavior.test.tsx.
+//
+// Behavioral companion to right-chat-panel.test.ts. That file pins the source
+// contract with fast text assertions; this file actually mounts the panel
+// (ChatRouter mocked to a thin imperative-handle stub, so we exercise
+// RightChatPanel's own session-selection logic in isolation) to prove the
+// five cave-rl980 Task 4 review fixes behave, not just that certain
+// substrings exist in source:
+//   1. a promotion race never misclassifies a brand-new session as deleted,
+//      and an organic null retains the prior selection until the roster
+//      confirms removal — while an explicit New chat still clears instantly.
+//   2. a transient roster error keeps an already-resolved ChatRouter mounted,
+//      and never marks a not-yet-mounted ("null") router resolved.
+//   3. every loading/error/chooser state exposes a working Close action.
+//   4. the familiar chooser only offers the filtered, resolved roster.
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+const router = vi.hoisted(() => ({
+  calls: {
+    openSession: [] as unknown[][],
+    newChat: [] as unknown[][],
+  },
+  latestProps: null as Record<string, unknown> | null,
+  reset() {
+    this.calls.openSession = [];
+    this.calls.newChat = [];
+    this.latestProps = null;
+  },
+}));
+
+// A thin stand-in for the real (982-line) ChatRouter: exposes the same
+// imperative handle shape, records every openSession/newChat call, and hands
+// the test direct access to the latest onActiveSessionChange callback so it
+// can simulate what the real router reports (promotions, organic nulls)
+// without re-implementing its internal view state machine. This suite is
+// about RightChatPanel's own session-selection contract, not ChatRouter's.
+vi.mock("@/components/chat-router", async () => {
+  const { forwardRef, useImperativeHandle } = await import("react");
+  const ChatRouter = forwardRef(function MockChatRouter(props: Record<string, unknown>, ref: unknown) {
+    router.latestProps = props;
+    useImperativeHandle(ref, () => ({
+      goToList: () => {},
+      newChat: (...args: unknown[]) => {
+        router.calls.newChat.push(args);
+      },
+      openSession: (...args: unknown[]) => {
+        router.calls.openSession.push(args);
+      },
+      openSessionInSplit: () => {},
+      currentSessionId: () => null,
+      clearTranscript: () => {},
+      runSlash: () => {},
+    }));
+    return null;
+  });
+  return { ChatRouter };
+});
+
+vi.mock("@/components/familiar-avatar", () => ({
+  FamiliarAvatar: () => null,
+}));
+
+vi.mock("@/components/ui/live-region", () => ({
+  useAnnouncer: () => ({ announce: vi.fn() }),
+}));
+
+const archivedIds = vi.hoisted(() => new Set<string>());
+// A stand-in for the real resolver: filters out "archived" familiars exactly
+// like useResolvedFamiliars does with includeArchived defaulting to false,
+// without needing the real hook's overrides/images/order dependencies.
+vi.mock("@/lib/familiar-resolve", () => ({
+  useResolvedFamiliars: (familiars: Array<{ id: string; display_name: string }>) =>
+    familiars.filter((familiar) => !archivedIds.has(familiar.id)).map((familiar) => ({ ...familiar })),
+}));
+
+import { Button } from "@/components/ui/button";
+import { ChatRouter as MockChatRouter } from "@/components/chat-router";
+import { RightChatPanel } from "./right-chat-panel";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+function familiar(id: string, display_name = id) {
+  return { id, display_name, role: "familiar" };
+}
+
+function sessionRow(
+  id: string,
+  overrides: { familiarId: string; created_at: string; updated_at: string } & Record<string, unknown>,
+) {
+  return {
+    id,
+    project_root: "/work/right-chat",
+    harness: "codex",
+    title: id,
+    status: "completed",
+    exit_code: null,
+    archived_at: null,
+    attention: { state: "none", since: null, reason: null },
+    origin: "chat",
+    hasLocalConversation: false,
+    ...overrides,
+  };
+}
+
+function baseProps(overrides: Record<string, unknown> = {}) {
+  const cody = familiar("cody", "Cody");
+  return {
+    open: true,
+    familiars: [cody],
+    activeFamiliar: cody,
+    sessions: [],
+    sessionsLoaded: true,
+    sessionsError: false,
+    familiarsLoaded: true,
+    familiarsError: null as string | null,
+    daemonRunning: true,
+    onClose: vi.fn(),
+    onSetActiveFamiliar: vi.fn(),
+    onRetryFamiliars: vi.fn(),
+    onRetrySessions: vi.fn(),
+    onSessionStarted: vi.fn(),
+    onSessionsChanged: vi.fn(),
+    onSessionsDeleted: vi.fn(),
+    onSlashFromChat: vi.fn(),
+    onOpenOnboarding: vi.fn(),
+    onOpenTask: vi.fn(),
+    onOpenUrl: vi.fn(),
+    ...overrides,
+  };
+}
+
+async function renderPanel(props: Record<string, unknown>) {
+  let renderer!: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(<RightChatPanel {...(props as never)} />);
+  });
+  return renderer;
+}
+
+async function update(renderer: ReactTestRenderer, props: Record<string, unknown>) {
+  await act(async () => {
+    renderer.update(<RightChatPanel {...(props as never)} />);
+  });
+}
+
+function sessionIdAttr(renderer: ReactTestRenderer): string | null {
+  return renderer.root.findByType("aside" as never).props["data-session-id"] ?? null;
+}
+
+function findByAria(renderer: ReactTestRenderer, label: string) {
+  return renderer.root.find((node) => node.type === "button" && node.props["aria-label"] === label);
+}
+
+beforeEach(() => {
+  router.reset();
+});
+
+afterEach(() => {
+  archivedIds.clear();
+});
+
+test("initial resolve opens the active familiar's newest eligible session", async () => {
+  const cody = familiar("cody", "Cody");
+  const sessions = [
+    sessionRow("cody-older", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" }),
+    sessionRow("cody-newer", { familiarId: "cody", created_at: "2026-01-05T00:00:00.000Z", updated_at: "2026-01-05T00:00:00.000Z" }),
+  ];
+  const renderer = await renderPanel(baseProps({ activeFamiliar: cody, familiars: [cody], sessions }));
+
+  expect(router.calls.openSession.at(-1)?.[0]).toBe("cody-newer");
+  expect(sessionIdAttr(renderer)).toBe("cody-newer");
+});
+
+describe("promotion race (fix 1: a newly promoted session is never misclassified as deleted)", () => {
+  test("a promoted session id absent from the sessions prop is retained, not replaced, until the roster refresh", async () => {
+    const cody = familiar("cody", "Cody");
+    const older = sessionRow("cody-old", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    let props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions: [older] });
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-old");
+
+    // ChatRouter promotes a brand-new session the `sessions` roster prop
+    // hasn't been refetched to include yet.
+    await act(async () => {
+      (router.latestProps!.onActiveSessionChange as (id: string | null) => void)("cody-promoted");
+    });
+    expect(sessionIdAttr(renderer)).toBe("cody-promoted");
+    const callsSoFar = router.calls.openSession.length + router.calls.newChat.length;
+
+    // Re-render with the *same*, still-stale roster — must not be treated as
+    // a deletion (no extra openSession/newChat, selection unchanged).
+    await update(renderer, props);
+    expect(router.calls.openSession.length + router.calls.newChat.length).toBe(callsSoFar);
+    expect(sessionIdAttr(renderer)).toBe("cody-promoted");
+
+    // Roster refreshes to include the promoted session: still no extra
+    // reconciliation call, since it is now legitimately eligible.
+    props = { ...props, sessions: [older, sessionRow("cody-promoted", { familiarId: "cody", created_at: "2026-01-02T00:00:00.000Z", updated_at: "2026-01-02T00:00:00.000Z" })] };
+    await update(renderer, props);
+    expect(router.calls.openSession.length + router.calls.newChat.length).toBe(callsSoFar);
+    expect(sessionIdAttr(renderer)).toBe("cody-promoted");
+
+    // Only *after* having been observed eligible does a genuine removal
+    // (e.g. deleted) correctly fall back to the remaining session.
+    props = { ...props, sessions: [older] };
+    await update(renderer, props);
+    expect(sessionIdAttr(renderer)).toBe("cody-old");
+    expect(router.calls.openSession.at(-1)?.[0]).toBe("cody-old");
+  });
+});
+
+describe("archive/back null retention (fix 1: organic nulls keep prior selection state)", () => {
+  test("an organic null retains the current selection, then resolves to the familiar's next session once the roster confirms removal", async () => {
+    const cody = familiar("cody", "Cody");
+    const older = sessionRow("cody-older", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    const newer = sessionRow("cody-newer", { familiarId: "cody", created_at: "2026-01-05T00:00:00.000Z", updated_at: "2026-01-05T00:00:00.000Z" });
+    let props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions: [older, newer] });
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-newer");
+
+    // Simulates ChatRouter's onBack firing after an in-place archive — no
+    // explicit RightChatPanel action preceded this.
+    await act(async () => {
+      (router.latestProps!.onActiveSessionChange as (id: string | null) => void)(null);
+    });
+    expect(sessionIdAttr(renderer)).toBe("cody-newer"); // retained, not cleared
+    expect(router.calls.newChat.length).toBe(0);
+
+    // Roster refresh confirms cody-newer is actually gone.
+    props = { ...props, sessions: [older] };
+    await update(renderer, props);
+    expect(sessionIdAttr(renderer)).toBe("cody-older");
+    expect(router.calls.openSession.at(-1)?.[0]).toBe("cody-older");
+  });
+
+  test("an organic null resolves to a blank familiar-bound compose when no eligible session remains", async () => {
+    const cody = familiar("cody", "Cody");
+    const only = sessionRow("cody-only", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    let props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions: [only] });
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-only");
+
+    await act(async () => {
+      (router.latestProps!.onActiveSessionChange as (id: string | null) => void)(null);
+    });
+    expect(sessionIdAttr(renderer)).toBe("cody-only");
+
+    props = { ...props, sessions: [] };
+    await update(renderer, props);
+    expect(sessionIdAttr(renderer)).toBe("new");
+    expect(router.calls.newChat.at(-1)).toEqual([undefined, undefined, "cody"]);
+  });
+
+  test("an explicit New chat click still clears the selection immediately, unaffected by null retention", async () => {
+    const cody = familiar("cody", "Cody");
+    const only = sessionRow("cody-only", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    const props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions: [only] });
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-only");
+
+    const newChatButton = findByAria(renderer, "New Chat panel chat");
+    await act(async () => {
+      newChatButton.props.onClick();
+    });
+    expect(sessionIdAttr(renderer)).toBe("new");
+    expect(router.calls.newChat.at(-1)).toEqual([undefined, undefined, "cody"]);
+
+    // The router's own later echo of this exact transition must not disturb
+    // the already-cleared selection.
+    await act(async () => {
+      (router.latestProps!.onActiveSessionChange as (id: string | null) => void)(null);
+    });
+    expect(sessionIdAttr(renderer)).toBe("new");
+  });
+});
+
+describe("transient roster errors keep a resolved router mounted (fix 2)", () => {
+  test("a transient sessions error keeps an already-resolved ChatRouter mounted and offers an inline retry", async () => {
+    const cody = familiar("cody", "Cody");
+    const sessions = [sessionRow("cody-1", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" })];
+    let props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions });
+    const renderer = await renderPanel(props);
+    expect(renderer.root.findAllByType(MockChatRouter)).toHaveLength(1);
+    expect(sessionIdAttr(renderer)).toBe("cody-1");
+
+    props = { ...props, sessionsError: true };
+    await update(renderer, props);
+
+    expect(renderer.root.findAllByType(MockChatRouter)).toHaveLength(1); // still mounted
+    expect(sessionIdAttr(renderer)).toBe("cody-1"); // selection undisturbed
+    expect(findByAria(renderer, "Close Chat panel")).toBeTruthy();
+    const retryButtons = renderer.root
+      .findAllByType(Button)
+      .filter((node) => node.props.children === "Retry" && node.props.onClick === props.onRetrySessions);
+    expect(retryButtons.length).toBeGreaterThan(0);
+
+    props = { ...props, sessionsError: false };
+    await update(renderer, props);
+    expect(renderer.root.findAllByType(MockChatRouter)).toHaveLength(1);
+  });
+
+  test("a transient familiars error keeps an already-resolved ChatRouter mounted and offers an inline retry", async () => {
+    const cody = familiar("cody", "Cody");
+    const sessions = [sessionRow("cody-1", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" })];
+    let props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions });
+    const renderer = await renderPanel(props);
+    expect(renderer.root.findAllByType(MockChatRouter)).toHaveLength(1);
+
+    props = { ...props, familiarsError: "network blip" };
+    await update(renderer, props);
+
+    expect(renderer.root.findAllByType(MockChatRouter)).toHaveLength(1); // still mounted
+    expect(sessionIdAttr(renderer)).toBe("cody-1");
+    const retryButtons = renderer.root
+      .findAllByType(Button)
+      .filter((node) => node.props.children === "Retry" && node.props.onClick === props.onRetryFamiliars);
+    expect(retryButtons.length).toBeGreaterThan(0);
+  });
+
+  test("a familiars error before first resolution blocks rendering and never marks a null router resolved", async () => {
+    const cody = familiar("cody", "Cody");
+    const sessions = [sessionRow("cody-1", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" })];
+    let props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions, familiarsError: "network down" });
+    const renderer = await renderPanel(props);
+
+    expect(renderer.root.findAllByType(MockChatRouter)).toHaveLength(0);
+    expect(router.calls.openSession).toHaveLength(0);
+    expect(router.calls.newChat).toHaveLength(0);
+    expect(findByAria(renderer, "Close Chat panel")).toBeTruthy();
+
+    // Clearing the error must trigger the real first resolution — it must
+    // NOT have been silently marked resolved while the router was null.
+    props = { ...props, familiarsError: null };
+    await update(renderer, props);
+    expect(renderer.root.findAllByType(MockChatRouter)).toHaveLength(1);
+    expect(router.calls.openSession.at(-1)?.[0]).toBe("cody-1");
+  });
+});
+
+describe("every loading/error/chooser state exposes a discoverable Close action (fix 3)", () => {
+  test("loading", async () => {
+    const onClose = vi.fn();
+    const renderer = await renderPanel(baseProps({ familiarsLoaded: false, onClose }));
+    await act(async () => {
+      findByAria(renderer, "Close Chat panel").props.onClick();
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  test("familiars error", async () => {
+    const onClose = vi.fn();
+    const renderer = await renderPanel(baseProps({ familiarsError: "boom", onClose }));
+    await act(async () => {
+      findByAria(renderer, "Close Chat panel").props.onClick();
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  test("no active familiar chooser", async () => {
+    const onClose = vi.fn();
+    const renderer = await renderPanel(baseProps({ activeFamiliar: null, onClose }));
+    await act(async () => {
+      findByAria(renderer, "Close Chat panel").props.onClick();
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  test("sessions error before first resolution", async () => {
+    const onClose = vi.fn();
+    const renderer = await renderPanel(baseProps({ sessionsError: true, onClose }));
+    await act(async () => {
+      findByAria(renderer, "Close Chat panel").props.onClick();
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  test("fully resolved chat", async () => {
+    const onClose = vi.fn();
+    const cody = familiar("cody", "Cody");
+    const sessions = [sessionRow("cody-1", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" })];
+    const renderer = await renderPanel(baseProps({ activeFamiliar: cody, familiars: [cody], sessions, onClose }));
+    await act(async () => {
+      findByAria(renderer, "Close Chat panel").props.onClick();
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the familiar chooser uses the filtered resolved roster (fix 4)", () => {
+  test("an archived/hidden familiar is absent from the chooser and cannot be selected", async () => {
+    const cody = familiar("cody", "Cody");
+    const nova = familiar("nova", "Nova");
+    archivedIds.add("nova");
+    const onSetActiveFamiliar = vi.fn();
+    const renderer = await renderPanel(
+      baseProps({ activeFamiliar: null, familiars: [cody, nova], onSetActiveFamiliar }),
+    );
+
+    // Button renders a spinner <span> alongside its text children, so only
+    // the string entries make up the visible label.
+    const buttonText = (node: { children: unknown[] }) =>
+      node.children.filter((child): child is string => typeof child === "string").join("");
+    const chooserButtons = renderer.root.findAll(
+      (node) => node.type === "button" && node.props["aria-label"] !== "Close Chat panel",
+    );
+    const visibleNames = chooserButtons.map(buttonText);
+    expect(visibleNames).toContain("Cody");
+    expect(visibleNames).not.toContain("Nova");
+
+    const codyButton = renderer.root.find(
+      (node) => node.type === "button" && buttonText(node) === "Cody",
+    );
+    await act(async () => {
+      codyButton.props.onClick();
+    });
+    expect(onSetActiveFamiliar).toHaveBeenCalledWith("cody");
+  });
+});
