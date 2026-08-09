@@ -721,13 +721,13 @@ assert.match(
 );
 assert.match(
   routerSource,
-  /<ChatView[\s\S]*?composerDraftKey=\{composerDraftKey\}[\s\S]*?key=\{`chat-compose-\$\{composeInstance\}`\}/,
-  "ChatRouter forwards its namespace to the primary ChatView",
+  /<ChatView[\s\S]*?composerDraftKey=\{composerDraftKey\}[\s\S]*?key=\{`chat-compose-\$\{composerDraftKey\}-\$\{composeInstance\}`\}/,
+  "ChatRouter keys the primary ChatView by draft namespace and compose lineage so namespace changes restore the matching draft",
 );
 assert.match(
   routerSource,
-  /<ChatView[\s\S]*?composerDraftKey=\{`\$\{composerDraftKey\}:split:\$\{paneId\}`\}[\s\S]*?sessionId=\{paneId\}/,
-  "ChatRouter gives every split pane a unique draft namespace",
+  /<ChatView[\s\S]*?composerDraftKey=\{`\$\{composerDraftKey\}:split:\$\{paneId\}`\}[\s\S]*?key=\{`\$\{composerDraftKey\}:split:\$\{paneId\}`\}[\s\S]*?sessionId=\{paneId\}/,
+  "ChatRouter keys every split ChatView by its draft namespace so namespace changes safely remount persisted panes",
 );
 assert.match(
   draftHook,
