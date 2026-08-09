@@ -1,5 +1,8 @@
 import type { ChatProjectGroup } from "@/lib/chat-projects";
-import type { CaveProject } from "./cave-projects-types.ts";
+import {
+  normalizeProjectRoot,
+  type CaveProject,
+} from "./cave-projects-types.ts";
 import {
   NO_PROJECT_ORGANIZATION,
   organizationExpansionKey,
@@ -42,16 +45,33 @@ export function migrateOrganizationExpansionKeys(
   groups: readonly ChatProjectGroup[],
   projects: readonly CaveProject[] = [],
 ): string[] {
-  const organizationByProjectKey = new Map<string, string>(
-    groups.map((group) => [
-      selectionKey(group.projectId, group.projectRoot),
-      organizationExpansionKey(group.organization.key),
-    ]),
+  const migrationByStoredKey = new Map<
+    string,
+    { targetKey: string; organizationKey: string }
+  >(
+    groups.map((group) => {
+      const targetKey = selectionKey(group.projectId, group.projectRoot);
+      return [
+        targetKey,
+        {
+          targetKey,
+          organizationKey: organizationExpansionKey(group.organization.key),
+        },
+      ];
+    }),
   );
   for (const project of projects) {
-    organizationByProjectKey.set(
+    const mapping = {
+      targetKey: project.id,
+      organizationKey: organizationExpansionKey(projectOrganization(project).key),
+    };
+    migrationByStoredKey.set(
       project.id,
-      organizationExpansionKey(projectOrganization(project).key),
+      mapping,
+    );
+    migrationByStoredKey.set(
+      `root:${normalizeProjectRoot(project.root)}`,
+      mapping,
     );
   }
   const originalKeys = new Set(storedKeys);
@@ -59,9 +79,11 @@ export function migrateOrganizationExpansionKeys(
   const added = new Set<string>();
 
   for (const key of storedKeys) {
-    if (added.has(key)) continue;
+    const mapping = migrationByStoredKey.get(key);
+    const targetKey = mapping?.targetKey ?? key;
+    if (added.has(targetKey)) continue;
     const organizationKey =
-      organizationByProjectKey.get(key) ??
+      mapping?.organizationKey ??
       (key === "none" || key.startsWith("root:")
         ? organizationExpansionKey(NO_PROJECT_ORGANIZATION.key)
         : undefined);
@@ -69,8 +91,8 @@ export function migrateOrganizationExpansionKeys(
       migrated.push(organizationKey);
       added.add(organizationKey);
     }
-    migrated.push(key);
-    added.add(key);
+    migrated.push(targetKey);
+    added.add(targetKey);
   }
 
   return migrated;
@@ -103,8 +125,8 @@ export function normalizeSelection(
  *  unless stored — so the first chat in a fresh project folder lands inside a
  *  collapsed group and reads as "my new chat never showed up". A key
  *  qualifies when its group gained a session id missing from the baseline
- *  (`knownSessionIds`, captured from the UNFILTERED session list at hydration
- *  and grown per refresh) and either:
+ *  (`knownSessionIds`, captured from the raw session rows within the current
+ *  server-provided scope at hydration and grown per refresh) and either:
  *  - the group key itself is new (`knownGroupKeys`) AND the fresh session was
  *    created at/after `newSinceMs` — a brand-new project folder whose content
  *    is a genuinely new chat, or
@@ -113,11 +135,10 @@ export function normalizeSelection(
  *    land the active chat's row minutes after it began).
  *  The recency gate is what keeps "first seen by this client" from being
  *  confused with "new" (cave-a9w9): a failed/partial first load poisons the
- *  baseline, and error recovery, daemon backfill, or a familiar switch to a
- *  differently-granted scope then delivers OLD chats under unseen keys —
- *  those must not mass-expand (and persist over) the user's collapsed
- *  folders. Background sessions landing in existing collapsed folders don't
- *  force them open either, however recent. */
+ *  baseline, and error recovery or daemon backfill then delivers OLD chats
+ *  under unseen keys — those must not mass-expand (and persist over) the
+ *  user's collapsed folders. Background sessions landing in existing
+ *  collapsed folders don't force them open either, however recent. */
 export function autoExpandKeysForNewSessions(args: {
   groups: ChatProjectGroup[];
   knownSessionIds: ReadonlySet<string>;

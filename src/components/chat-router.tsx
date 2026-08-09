@@ -411,6 +411,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   // chat) must not hide inside a collapsed group (cave-mllp).
   useAutoExpandNewGroups({
     hydrated: sidebarHydrated,
+    scopeKey: familiar?.id ?? "all",
     sessions,
     groups: sidebarGroups,
     activeSessionId: view.kind === "chat" ? view.sessionId : null,

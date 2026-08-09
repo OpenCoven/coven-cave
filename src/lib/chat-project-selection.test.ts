@@ -75,6 +75,14 @@ const migrationProjects = [
     updatedAt: OLD,
   },
 ];
+const registeredAlphaProject = {
+  id: "alpha",
+  name: "Alpha",
+  root: "/work/OpenCoven/alpha/",
+  repoUrl: "https://github.com/OpenCoven/alpha",
+  createdAt: OLD,
+  updatedAt: OLD,
+};
 assert.deepEqual(
   migrateOrganizationExpansionKeys(["alpha"], migrationGroups),
   ["org:opencoven", "alpha"],
@@ -119,6 +127,41 @@ assert.deepEqual(
   [
     organizationExpansionKey(NO_PROJECT_ORGANIZATION.key),
     "root:/archived/unregistered",
+  ],
+);
+assert.deepEqual(
+  migrateOrganizationExpansionKeys(
+    ["root:/work/OpenCoven/alpha"],
+    [],
+    [registeredAlphaProject],
+  ),
+  ["org:opencoven", "alpha"],
+);
+assert.deepEqual(
+  migrateOrganizationExpansionKeys(
+    ["root:C:/work/OpenCoven/alpha"],
+    [],
+    [{ ...registeredAlphaProject, root: " C:\\work\\OpenCoven\\alpha\\ " }],
+  ),
+  ["org:opencoven", "alpha"],
+);
+assert.deepEqual(
+  migrateOrganizationExpansionKeys(
+    ["root:/work/OpenCoven/alpha", "alpha"],
+    [],
+    [registeredAlphaProject],
+  ),
+  ["org:opencoven", "alpha"],
+);
+assert.deepEqual(
+  migrateOrganizationExpansionKeys(
+    ["root:/work/Elsewhere/unregistered"],
+    [],
+    [registeredAlphaProject],
+  ),
+  [
+    organizationExpansionKey(NO_PROJECT_ORGANIZATION.key),
+    "root:/work/Elsewhere/unregistered",
   ],
 );
 assert.deepEqual(
