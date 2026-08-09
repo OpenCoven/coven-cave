@@ -41,7 +41,7 @@ test("the divider is seamless: no ratio buttons, magnetic even-split, double-cli
   assert.doesNotMatch(src, /snapTo\(/, "no per-ratio snap button handler");
   // Double-click the divider resets to an even split (replaces the ½ button).
   assert.match(src, /addEventListener\("dblclick"/, "double-click handled");
-  assert.match(src, /closest\(".split-host__sep"\)[\s\S]*resize\(PCT\(SPLIT_DEFAULT_RATIO\)\)/, "double-click resets to even");
+  assert.match(src, /closest\(".split-host__sep"\)[\s\S]*resizeToEvenSplit\(\)/, "double-click resets to exact even geometry");
   // A hover/drag grip affordance on the seam.
   assert.match(src, /split-host__grip/, "divider shows a grip affordance");
   assert.match(src, /data-resizing=/, "group flags an active resize for grip feedback");
@@ -89,7 +89,7 @@ test("the right companion (agent) panel is no longer mounted", () => {
   assert.doesNotMatch(src, /<CompanionRail/, "CompanionRail is not rendered");
 });
 
-test("split tiles keep a usability floor (cave-hivd)", () => {
+test("split panes use their container instead of generic overflow floors", () => {
   const host = read("./detail-split-host.tsx");
   // The pane-body rules' owning split module behind the globals.css facade
   // (cave-xd2kg: source contracts read owning modules, not the facade).
@@ -97,15 +97,10 @@ test("split tiles keep a usability floor (cave-hivd)", () => {
     new URL("../styles/globals/surface-chat-overlays.css", import.meta.url),
     "utf8",
   );
-  // Multi-tile panels floor at 300px — a 12% min let dividers crush a tile to
-  // ~110px letter soup on wide windows (tiles close via ✕, not drag-past-edge).
-  assert.match(host, /id=\{`split-tile-\$\{tile\.id\}`\}[\s\S]{0,500}minSize="300px"/, "multi-tile panels have a pixel min");
-  // The legacy two-pane path keeps its ratio min (the drag-to-close zone needs
-  // it) — its CONTENT floors instead: pane bodies scroll horizontally under 300px.
+  assert.doesNotMatch(host, /minSize="300px"/, "tiles must adapt rather than force an overflow floor");
   assert.match(host, /id="split-secondary"[\s\S]{0,300}minSize="10%"/, "legacy secondary keeps the ratio min for the close gesture");
-  assert.match(css, /\.split-host__pane-body \{[\s\S]{0,220}overflow-x: auto/, "pane bodies scroll instead of crushing");
-  assert.match(css, /\.split-host__pane-body > \* \{[\s\S]{0,400}min-width: 300px/, "pane content has the 300px floor");
-  // The legacy primary shares the same body treatment.
+  assert.doesNotMatch(css, /\.split-host__pane-body \{[\s\S]{0,220}overflow-x: auto/, "generic pane bodies do not claim horizontal scrolling");
+  assert.doesNotMatch(css, /\.split-host__pane-body > \* \{[\s\S]{0,400}min-width: 300px/, "generic pane content has no minimum-width floor");
   assert.match(host, /<div className="split-host__pane-body">\{primary\}<\/div>/, "legacy primary content uses the pane body class");
 });
 
