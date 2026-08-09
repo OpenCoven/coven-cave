@@ -329,6 +329,88 @@ try {
 
   {
     const primary = { ...orphanRecord, purpose: "Primary" };
+    const fixture = repairOperations({
+      coven: {
+        worktree: primary,
+        worktrees: [
+          {
+            ...orphanRecord,
+            branch: "fix/cave-malformed-additional",
+            path: "/repo/.worktrees/cave-malformed-additional",
+            owner: " ",
+          },
+        ],
+      },
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate({ record: primary })],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired, []);
+    assert.match(report.blocked[0]?.reason ?? "", /additional:0.*owner.*nonblank/i);
+    assert.equal(
+      fixture.calls.includes("persist:cave-orphan"),
+      false,
+      "a malformed additional sibling blocks primary repair before persistence",
+    );
+  }
+
+  for (const [name, first, second, reason] of [
+    [
+      "duplicate sibling branch",
+      {
+        ...orphanRecord,
+        branch: "fix/cave-duplicate-sibling",
+        path: "/repo/.worktrees/cave-duplicate-sibling-a",
+      },
+      {
+        ...orphanRecord,
+        branch: "fix/cave-duplicate-sibling",
+        path: "/repo/.worktrees/cave-duplicate-sibling-b",
+      },
+      /duplicate branch/i,
+    ],
+    [
+      "duplicate normalized sibling path",
+      {
+        ...orphanRecord,
+        branch: "fix/cave-duplicate-path-a",
+        path: "/repo/.worktrees/cave-duplicate-sibling-path",
+      },
+      {
+        ...orphanRecord,
+        branch: "fix/cave-duplicate-path-b",
+        path: "/repo/.worktrees/cave-duplicate-sibling-path/",
+      },
+      /duplicate normalized path/i,
+    ],
+  ]) {
+    const primary = { ...orphanRecord, purpose: "Primary" };
+    const fixture = repairOperations({
+      coven: {
+        worktree: primary,
+        worktrees: [first, second],
+      },
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate({ record: primary })],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired, [], `${name} must not report success`);
+    assert.match(report.blocked[0]?.reason ?? "", reason, name);
+    assert.equal(
+      fixture.calls.includes("persist:cave-orphan"),
+      false,
+      `${name} blocks primary repair before persistence`,
+    );
+  }
+
+  {
+    const primary = { ...orphanRecord, purpose: "Primary" };
     const additional = {
       ...orphanRecord,
       branch: "fix/cave-additional",

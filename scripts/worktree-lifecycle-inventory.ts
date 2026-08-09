@@ -1661,6 +1661,25 @@ function parseStructuredRecord(
   };
 }
 
+export function validateStructuredLifecycleRecord(
+  value: unknown,
+  label: string,
+  root: string,
+): Pick<StructuredMetadataRecord, "branch" | "path" | "errors"> {
+  const parsed = parseStructuredRecord(
+    label,
+    value,
+    "lifecycle",
+    "primary",
+    root,
+  );
+  return {
+    branch: parsed.branch,
+    path: parsed.path,
+    errors: parsed.errors,
+  };
+}
+
 function parseStructuredMetadata(
   taskId: string,
   value: unknown,

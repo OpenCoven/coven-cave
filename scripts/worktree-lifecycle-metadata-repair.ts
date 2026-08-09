@@ -6,7 +6,10 @@ import {
   verifyMaintenanceGateOwnership,
 } from "./maintenance-gate.mjs";
 import { normalizeAbsoluteWorktreePath } from "../src/lib/worktree-lifecycle.ts";
-import type { OrphanedWorktreeMetadataRecord } from "./worktree-lifecycle-inventory.ts";
+import {
+  validateStructuredLifecycleRecord,
+  type OrphanedWorktreeMetadataRecord,
+} from "./worktree-lifecycle-inventory.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -112,75 +115,90 @@ function matchingLocations(coven: JsonRecord, expected: JsonRecord): string[] {
 
 function currentLifecycleRecords(
   coven: JsonRecord,
+  root: string,
 ): Array<{
   location: OrphanedWorktreeMetadataRecord["location"];
   record: JsonRecord;
+  branch: string;
+  path: string;
 }> {
   const records: Array<{
     location: OrphanedWorktreeMetadataRecord["location"];
     record: JsonRecord;
+    branch: string;
+    path: string;
   }> = [];
-  if (coven.worktree !== undefined && coven.worktree !== null) {
-    if (!isRecord(coven.worktree)) {
-      throw new Error("fresh primary lifecycle metadata is malformed");
+  const primaryPresent =
+    coven.worktree !== undefined && coven.worktree !== null;
+  const addRecord = (
+    location: OrphanedWorktreeMetadataRecord["location"],
+    record: unknown,
+  ) => {
+    const validation = validateStructuredLifecycleRecord(
+      record,
+      `fresh ${location}`,
+      root,
+    );
+    if (
+      validation.errors.length > 0 ||
+      !isRecord(record) ||
+      validation.path === null
+    ) {
+      throw new Error(
+        `fresh ${location} lifecycle metadata is malformed: ${validation.errors.join("; ")}`,
+      );
     }
-    records.push({ location: "primary", record: coven.worktree });
+    records.push({
+      location,
+      record,
+      branch: validation.branch,
+      path: validation.path,
+    });
+  };
+  if (primaryPresent) {
+    addRecord("primary", coven.worktree);
   }
   if (coven.worktrees !== undefined && coven.worktrees !== null) {
     if (!Array.isArray(coven.worktrees)) {
       throw new Error("fresh additional lifecycle metadata is malformed");
     }
+    if (!primaryPresent && coven.worktrees.length > 0) {
+      throw new Error(
+        "fresh additional lifecycle metadata is malformed: additional records require a primary",
+      );
+    }
     for (const [index, record] of coven.worktrees.entries()) {
-      if (!isRecord(record)) {
-        throw new Error(`fresh additional lifecycle metadata ${index} is malformed`);
-      }
-      records.push({ location: `additional:${index}`, record });
+      addRecord(`additional:${index}`, record);
     }
   }
-  return records;
-}
-
-function assertUnambiguousLifecycleIdentity(
-  records: ReturnType<typeof currentLifecycleRecords>,
-  location: OrphanedWorktreeMetadataRecord["location"],
-  expected: JsonRecord,
-): void {
-  const expectedBranch =
-    typeof expected.branch === "string" ? expected.branch : null;
-  const expectedPath =
-    typeof expected.path === "string"
-      ? normalizeAbsoluteWorktreePath(expected.path)
-      : null;
-  const conflicts = records
-    .filter((candidate) => candidate.location !== location)
-    .filter((candidate) => {
-      const candidateBranch =
-        typeof candidate.record.branch === "string"
-          ? candidate.record.branch
-          : null;
-      const candidatePath =
-        typeof candidate.record.path === "string"
-          ? normalizeAbsoluteWorktreePath(candidate.record.path)
-          : null;
-      return (
-        (expectedBranch !== null && candidateBranch === expectedBranch) ||
-        (expectedPath !== null && candidatePath === expectedPath)
+  const branches = new Map<string, string>();
+  const paths = new Map<string, string>();
+  for (const record of records) {
+    const branchOwner = branches.get(record.branch);
+    if (branchOwner !== undefined) {
+      throw new Error(
+        `fresh lifecycle metadata is ambiguous: duplicate branch ${record.branch} at ${branchOwner} and ${record.location}`,
       );
-    })
-    .map((candidate) => candidate.location);
-  if (conflicts.length > 0) {
-    throw new Error(
-      `fresh lifecycle metadata is ambiguous with ${conflicts.join(", ")}`,
-    );
+    }
+    const pathOwner = paths.get(record.path);
+    if (pathOwner !== undefined) {
+      throw new Error(
+        `fresh lifecycle metadata is ambiguous: duplicate normalized path ${record.path} at ${pathOwner} and ${record.location}`,
+      );
+    }
+    branches.set(record.branch, record.location);
+    paths.set(record.path, record.location);
   }
+  return records;
 }
 
 export function removeLifecycleRecord(
   coven: JsonRecord,
   location: OrphanedWorktreeMetadataRecord["location"],
   expected: JsonRecord,
+  root = process.cwd(),
 ): JsonRecord {
-  const records = currentLifecycleRecords(coven);
+  currentLifecycleRecords(coven, root);
   const current = exactRecordAt(coven, location);
   if (current === undefined) {
     const moved = matchingLocations(coven, expected);
@@ -202,7 +220,6 @@ export function removeLifecycleRecord(
     }
     throw new Error(`orphaned lifecycle record changed at ${location}`);
   }
-  assertUnambiguousLifecycleIdentity(records, location, expected);
 
   const next = cloneRecord(coven);
   if (location === "primary") {
@@ -359,6 +376,7 @@ function repairOne(
         fresh.coven,
         candidate.location,
         candidate.record,
+        gateHandle.root ?? process.cwd(),
       );
     } catch (error) {
       result = { ok: false, reason: errorMessage(error) };
