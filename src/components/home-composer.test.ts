@@ -233,6 +233,11 @@ assert.match(
 );
 assert.match(
   source,
+  /onRunCommand: \(cmd\) => \{\s*void handleSubmit\(inlineSlashCommandPrompt\(text, composerCaret, cmd\.name\)\);\s*\}/,
+  "Home should execute the active inline command instead of submitting surrounding prose",
+);
+assert.match(
+  source,
   /onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{\s*initialControls: initialChatControls,[\s\S]*?\}\)/,
   "HomeComposer should hand the selected agent chat prompt, attachments, host, and model intent to the workspace",
 );
