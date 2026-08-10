@@ -332,7 +332,21 @@ jobs:
         # exhausting the org Actions limit and queuing indefinitely, stalling
         # every required check. macOS is still covered by the release pipeline
         # (release.yml). Restore macos-latest here once macOS budget is sorted.
-        os: [ubuntu-latest, windows-latest]
+        #
+        # Windows now follows macOS off the pull_request path, for the same
+        # failure and one measurement: on 2026-08-10 the repository held 39
+        # queued runs with ZERO in progress, the oldest stuck since 2026-07-18,
+        # while GitHub Actions was globally operational and a hosted runner
+        # completed an unrelated job mid-stall. The queue, not the suite, was
+        # the blocker — so every required check on every open PR sat pending.
+        #
+        # Windows bills at 2x and was three of the fifteen PR-time jobs. It
+        # still runs in full on push to main and on release, so `main` keeps
+        # identical platform coverage; only the per-PR fan-out shrinks. The
+        # windows-latest leg is deliberately dropped from branch protection in
+        # the same change — a required context that never reports is exactly
+        # how a PR ends up BLOCKED with nothing failing (see CLAUDE.md).
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -364,7 +378,7 @@ jobs:
             echo "::error::Cross-environment matrix result: ${{ needs.conformance.result }}"
             exit 1
           fi
-          echo "Cross-environment matrix passed on ubuntu-latest and windows-latest."
+          echo "Cross-environment matrix passed on every leg scheduled for this event."
 
   sidecar-runtime:
     name: Sidecar runtime (${{ matrix.os }})
@@ -376,7 +390,10 @@ jobs:
       matrix:
         # macOS removed from PR CI (see conformance matrix note). Release
         # pipeline still exercises macOS. Restore once macOS budget is sorted.
-        os: [ubuntu-latest, windows-latest]
+        # Windows likewise runs on push/main and release only — same queue
+        # saturation, and this is the slowest Windows leg of the three
+        # (timeout-minutes: 40 against conformance's 15).
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -431,7 +448,11 @@ jobs:
   # edit for this job to be able to fail a PR.
   windows-native:
     name: Windows native tests
-    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
+    # Windows runs on push/main and release only (see the conformance matrix
+    # note). `sidecar-runtime-required` below treats a `skipped` result here as
+    # acceptable, so a pull_request still gets a reporting rollup rather than a
+    # rollup that fails on the absence of a job it deliberately did not run.
+    if: (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha) && github.event_name != 'pull_request'
     runs-on: windows-latest
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~2.5min incl. cold cargo build).
     timeout-minutes: 20
@@ -561,20 +582,31 @@ jobs:
       # without adding a context to branch protection. Both results are
       # reported before exiting so one red job does not mask the other.
       - name: Require every sidecar runtime matrix leg
+        env:
+          EVENT: ${{ github.event_name }}
+          SIDECAR_RESULT: ${{ needs.sidecar-runtime.result }}
+          WINDOWS_RESULT: ${{ needs.windows-native.result }}
         run: |
           failed=0
-          if [ "${{ needs.sidecar-runtime.result }}" != "success" ]; then
-            echo "::error::Sidecar runtime matrix result: ${{ needs.sidecar-runtime.result }}"
+          if [ "$SIDECAR_RESULT" != "success" ]; then
+            echo "::error::Sidecar runtime matrix result: $SIDECAR_RESULT"
             failed=1
           fi
-          if [ "${{ needs.windows-native.result }}" != "success" ]; then
-            echo "::error::Windows native tests result: ${{ needs.windows-native.result }}"
+          # Windows native tests do not run on pull_request (they cost a 2x
+          # runner and the queue could not absorb them; see the conformance
+          # matrix note). A `skipped` result is therefore expected THERE AND
+          # ONLY THERE — on push/main a skip is still a hard failure, because
+          # that is the event whose coverage this rollup exists to guarantee.
+          if [ "$WINDOWS_RESULT" = "skipped" ] && [ "$EVENT" = "pull_request" ]; then
+            echo "Windows native tests skipped on pull_request by design; they gate push to main."
+          elif [ "$WINDOWS_RESULT" != "success" ]; then
+            echo "::error::Windows native tests result: $WINDOWS_RESULT"
             failed=1
           fi
           if [ "$failed" -ne 0 ]; then
             exit 1
           fi
-          echo "Sidecar runtime matrix passed on ubuntu-latest and windows-latest, and Windows native tests passed."
+          echo "Sidecar runtime matrix passed on every leg scheduled for this event."
 
   # ── iOS ─────────────────────────────────────────────────────────────────────
   # The Swift app is compiled NOWHERE in CI. Verified across every workflow:

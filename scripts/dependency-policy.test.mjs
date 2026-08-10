@@ -52,8 +52,10 @@ assert.equal(
 // under the other version's JS → native/JS ABI mismatch → on win32 `format()`
 // returns a table with no `heif`, so `sharp/dist/utility.cjs` throws at load and
 // the avatar route 500s. macOS/Linux tolerate the mismatch, so ONLY the
-// `Sidecar runtime (windows-latest)` CI leg catches it. This guard fails fast in
-// the required Frontend-build check instead. Fix a divergence by aligning `sharp`
+// `Sidecar runtime (windows-latest)` CI leg catches it — and since 2026-08-10 that
+// leg runs on push to `main` and on release, NOT on pull requests. So this guard is
+// now the only pre-merge signal for the skew; it fails fast in the required
+// Frontend-build check. Fix a divergence by aligning `sharp`
 // to next's pin, or by adding `pnpm.overrides.sharp` so next's transitive copy is
 // forced to the same version. (PR #2263 dug out this root cause.)
 const lockfile = parse(await readFile(new URL("../pnpm-lock.yaml", import.meta.url), "utf8"));

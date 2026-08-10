@@ -8,7 +8,7 @@ description: Use when finishing work on a Coven Cave branch and landing it on pr
 Take a finished branch to a merged commit on `main` without ever writing to
 `main` directly and without destroying another session's work.
 
-`main` in this repository is protected: pull request required, nine required
+`main` in this repository is protected: pull request required, seven required
 status checks, no force-push, no deletion. A pull request is
 the **only** path an agent may use. This skill is the Cave-specific replacement
 for generic "finish a branch" workflows that offer a local merge into the base
@@ -202,7 +202,7 @@ count.
 
 ## Phase 5: Checks and review
 
-Nine required checks must pass:
+Seven required checks must pass:
 
 ```bash
 expected_head=$(git rev-parse HEAD)
@@ -215,10 +215,8 @@ gh pr view <#> --json headRefOid,mergeable,mergeStateStatus,statusCheckRollup
 - `Rust check`
 - `E2E (Playwright)`
 - `Cross-environment (ubuntu-latest)`
-- `Cross-environment (windows-latest)`
 - `Cross-environment required`
 - `Sidecar runtime (ubuntu-latest)`
-- `Sidecar runtime (windows-latest)`
 - `Sidecar runtime required`
 
 CodeQL is retired, and code scanning is fully off — nothing scans in its place.
@@ -226,7 +224,15 @@ If a required context never reports, the PR sits `BLOCKED` with nothing failing.
 Before and after the watch, require `headRefOid` to equal `$expected_head` and
 each listed context to be complete and successful. A pass tied to an earlier
 SHA, or a pending, cancelled, stale, missing, or failed context, is incomplete;
-do not merge until the exact current head has all nine passes.
+do not merge until the exact current head has all seven passes.
+
+Windows no longer runs on pull requests, so there is no
+`Cross-environment (windows-latest)` or `Sidecar runtime (windows-latest)`
+context to wait for. Windows still gates `main`: the two `*-required` rollups
+stay required, and the Windows legs run in full on push to `main` and on
+release. Do not re-add the windows contexts to protection without first
+re-adding the jobs to the pull_request path — a required context that never
+reports is the classic `BLOCKED`-with-nothing-failing wedge.
 
 The `E2E (Playwright)` leg runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs
 must dismiss onboarding and mock APIs via `page.route(...)` rather than expect a

@@ -28,7 +28,7 @@ function backticked(source) {
 
 function documentedChecks() {
   const bullet =
-    /- Required status checks — \*\*all ([A-Z]+)\*\* must pass[^:]*:(.*?)\. The four matrix legs/s.exec(
+    /- Required status checks — \*\*all ([A-Z]+)\*\* must pass[^:]*:(.*?)\. The two ubuntu matrix legs/s.exec(
       claude,
     );
   assert.ok(bullet, "CLAUDE.md no longer states the required status checks in the expected shape");
