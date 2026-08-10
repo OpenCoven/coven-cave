@@ -37,9 +37,25 @@ import {
   type RankedResult,
 } from "./search-ranking.ts";
 
-const FILTER_OPERATORS = new Set(["is", "has", "after", "before"]);
-const FILTER_ORIGINS = new Set(["syntax", "natural-language", "picker", "context"]);
-const SCOPE_DIMENSIONS = new Set(["project", "familiar", "room", "session", "runtime"]);
+// Typed as ReadonlySet<unknown> on purpose: these are membership tests against
+// values straight off JSON.parse, so the argument IS unknown at the call site.
+// Inferred as Set<string> they do not compile — `.has(unknown)` is an error —
+// and narrowing the argument first would just be an extra typeof guard saying
+// what `.has` already answers.
+const FILTER_OPERATORS: ReadonlySet<unknown> = new Set(["is", "has", "after", "before"]);
+const FILTER_ORIGINS: ReadonlySet<unknown> = new Set([
+  "syntax",
+  "natural-language",
+  "picker",
+  "context",
+]);
+const SCOPE_DIMENSIONS: ReadonlySet<unknown> = new Set([
+  "project",
+  "familiar",
+  "room",
+  "session",
+  "runtime",
+]);
 
 /** Hard cap on a first page, per the spec's performance budget. */
 export const MAX_PAGE = 50;
