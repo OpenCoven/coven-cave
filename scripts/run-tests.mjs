@@ -465,6 +465,7 @@ export const SUITES = {
     "src/lib/search-index-store.test.ts",
     "src/lib/search-provider.test.ts",
     "src/lib/search-indexed-providers.test.ts",
+    "src/lib/search-coordinator.test.ts",
     "src/lib/command-palette-salem-context.test.ts",
     "src/lib/command-palette-scope.test.ts",
     "src/lib/recent-searches.test.ts",
