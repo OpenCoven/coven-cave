@@ -425,3 +425,99 @@ export function covenRunPill(args: {
     elapsedMs: 0,
   };
 }
+
+/**
+ * The earlier-runs history fold (design proposal §6, frame lines 288–318).
+ *
+ * A conversation accumulates runs, and older ones are context rather than the
+ * thing being read. The frame folds them above the transcript: a labelled
+ * divider ("Yesterday · 2 earlier runs"), one collapsed card for the most
+ * recent of them, and its turns on expand.
+ *
+ * Two deliberate departures from the frame's fixtures, both because the model
+ * has no such concept and inventing one would be a surface that lies:
+ *
+ * - The frame names runs ("Standup sweep", "Signature sweep"). Nothing names a
+ *   run here, so the title is the instruction that started it, trimmed.
+ * - The frame's turns are all "Complete". Real turns can have failed or been
+ *   stopped, so each row carries its own status from the run model.
+ */
+export type CovenHistoryTurn = {
+  replyId: string;
+  familiarId: string;
+  status: CovenAgentRunStatus;
+  createdAt: string;
+  text: string;
+};
+
+export type CovenHistoryFold = {
+  /** "Yesterday · 2 earlier runs" — the divider above the fold. */
+  label: string;
+  /** The instruction that started the most recent earlier run. */
+  title: string;
+  /** Its summary line, e.g. "Round robin · 3 of 3 · 1m 48s". */
+  meta: string;
+  tone: CovenStatusTone;
+  icon: IconName;
+  turns: CovenHistoryTurn[];
+  /** How many runs the fold stands for, including the one it summarises. */
+  count: number;
+};
+
+/** Whole days between two instants, by local calendar date. */
+function calendarDaysAgo(then: number, now: number): number {
+  const a = new Date(then);
+  const b = new Date(now);
+  a.setHours(0, 0, 0, 0);
+  b.setHours(0, 0, 0, 0);
+  return Math.round((b.getTime() - a.getTime()) / 86_400_000);
+}
+
+/** "Yesterday · 2 earlier runs" / "Earlier today · 1 run" / "3 days ago · …". */
+export function covenHistoryLabel(count: number, mostRecentAt: number, now: number): string {
+  const runs = `${count} earlier run${count === 1 ? "" : "s"}`;
+  const days = calendarDaysAgo(mostRecentAt, now);
+  if (days <= 0) return `Earlier today · ${count} run${count === 1 ? "" : "s"}`;
+  if (days === 1) return `Yesterday · ${runs}`;
+  return `${days} days ago · ${runs}`;
+}
+
+/**
+ * Build the fold from runs already derived for the transcript.
+ *
+ * `runs` is in transcript order; the LAST one is the live conversation and is
+ * never folded. Returns null when there is nothing earlier to fold, so the
+ * divider never appears over an empty card.
+ */
+export function covenHistoryFold(
+  runs: readonly CovenRun[],
+  opts: { now: number },
+): CovenHistoryFold | null {
+  if (runs.length < 2) return null;
+  const earlier = runs.slice(0, -1);
+  const newest = earlier[earlier.length - 1];
+  // A run still in flight is not history, even with a newer turn beneath it.
+  if (newest.active || !newest.summary) return null;
+
+  const startedAt = Date.parse(newest.user.createdAt);
+  const title = newest.user.text.replace(/\s+/g, " ").trim();
+  return {
+    label: covenHistoryLabel(
+      earlier.length,
+      Number.isFinite(startedAt) ? startedAt : opts.now,
+      opts.now,
+    ),
+    title: title.length > 72 ? `${title.slice(0, 71).trimEnd()}…` : title,
+    meta: newest.summary.meta,
+    tone: newest.summary.tone,
+    icon: newest.summary.icon,
+    count: earlier.length,
+    turns: newest.started.map((agent) => ({
+      replyId: agent.reply.id,
+      familiarId: agent.familiarId,
+      status: agent.status,
+      createdAt: agent.reply.createdAt,
+      text: agent.reply.text,
+    })),
+  };
+}

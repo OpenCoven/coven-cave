@@ -132,4 +132,30 @@ assert.match(
   "the pulse has a reduced-motion story",
 );
 
+// ── Earlier-runs history fold (proposal §6, frame lines 288-318) ────────────
+const historyFold = readFileSync(new URL("./coven-history-fold.tsx", import.meta.url), "utf8");
+assert.match(
+  groupChat,
+  /const historyFold = useMemo\(\s*\n\s*\(\) => covenHistoryFold\(runs, \{ now: Date\.now\(\) \}\)/,
+  "the fold is derived from the runs already built, not a second transcript pass",
+);
+assert.match(
+  groupChat,
+  /historyFold \? runs\.slice\(historyFold\.count\) : runs/,
+  "only the runs the fold does NOT stand for are rendered in full",
+);
+assert.match(groupChat, /<CovenHistoryFoldView/, "the fold renders above the run list");
+// The frame hardcodes "Complete" on every history row. Real turns can have
+// failed, and folding one must not launder it into a success.
+assert.match(
+  historyFold,
+  /COVEN_RUN_STATUS\[turn\.status\]/,
+  "each folded turn carries its own status",
+);
+assert.doesNotMatch(
+  historyFold,
+  />Complete</,
+  "no hardcoded Complete label on history rows",
+);
+
 console.log("coven-run-pill-wiring.test.ts: ok");
