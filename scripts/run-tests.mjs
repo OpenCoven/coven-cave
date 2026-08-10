@@ -1287,6 +1287,7 @@ export const SUITES = {
     "src/lib/daemon-socket-occupancy.test.ts",
     "src/lib/daemon-endpoint-faults.test.ts",
     "src/lib/daemon-endpoint-churn.test.ts",
+    "src/lib/maintenance-plane-admission.test.ts",
     "src/lib/daemon-startup-contract.test.ts",
     "src/lib/runtime-startup-throttle.test.ts",
     "src/lib/daemon-update-lifecycle.test.ts",
