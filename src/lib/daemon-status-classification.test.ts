@@ -4,7 +4,73 @@ import {
   classifyDaemonConnectionTravelCadence,
   classifyDaemonFailureAvailability,
   classifyDaemonStatusPoll,
+  describeDaemonAvailability,
 } from "./daemon-status-classification.ts";
+
+for (const [name, input, expected] of [
+  [
+    "online",
+    { running: true, availability: "online" },
+    { label: "Running", tone: "success" },
+  ],
+  [
+    "offline",
+    { running: false, availability: "offline" },
+    { label: "Offline", tone: "danger" },
+  ],
+  [
+    "unreachable",
+    { running: false, availability: "unreachable" },
+    { label: "Unreachable", tone: "danger" },
+  ],
+  [
+    "unhealthy",
+    { running: false, availability: "unhealthy" },
+    { label: "Unhealthy", tone: "danger" },
+  ],
+  [
+    "unauthorized",
+    { running: false, availability: "unauthorized" },
+    { label: "Authorization required", tone: "danger" },
+  ],
+  [
+    "misconfigured",
+    { running: false, availability: "misconfigured" },
+    { label: "Configuration required", tone: "warning" },
+  ],
+  [
+    "status unavailable",
+    { running: false, availability: "status-unavailable" },
+    { label: "Status unavailable", tone: "warning" },
+  ],
+  [
+    "incompatible",
+    { running: false, availability: "incompatible" },
+    { label: "Incompatible", tone: "danger" },
+  ],
+  [
+    "legacy running payload",
+    { running: true },
+    { label: "Running", tone: "success" },
+  ],
+  [
+    "legacy stopped payload",
+    { running: false },
+    { label: "Offline", tone: "danger" },
+  ],
+  [
+    "online classification without running proof",
+    { running: false, availability: "online" },
+    { label: "Unhealthy", tone: "danger" },
+  ],
+  [
+    "running flag contradicted by failure classification",
+    { running: true, availability: "incompatible" },
+    { label: "Unhealthy", tone: "danger" },
+  ],
+] as const) {
+  assert.deepEqual(describeDaemonAvailability(input), expected, name);
+}
 
 assert.equal(
   classifyDaemonFailureAvailability({
@@ -214,6 +280,23 @@ assert.deepEqual(
   { kind: "running", targetMode: "hub" },
   "a healthy hub target preserves its mode",
 );
+
+for (const availability of ["offline", "unreachable", "unhealthy", "unauthorized", "misconfigured", "status-unavailable", "incompatible"]) {
+  assert.equal(
+    classifyDaemonStatusPoll({
+      responseStatus: 200,
+      responseOk: true,
+      payload: {
+        running: true,
+        availability,
+        reason: `contradictory ${availability} status`,
+        target: { mode: "hub" },
+      },
+    }).kind,
+    "unavailable",
+    `running cannot override ${availability}`,
+  );
+}
 
 for (const [name, target] of [
   ["missing target", undefined],
