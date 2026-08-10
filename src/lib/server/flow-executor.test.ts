@@ -33,6 +33,11 @@ assert.match(
   /body: \{\s*projectRoot,\s*harness: binding\.harness,\s*prompt,\s*launchMode: "nonInteractive",\s*\.\.\.\(launchPolicy \? \{ launchPolicy \} : \{\}\),\s*\},/,
   "flow session spawn must not pass familiarId natively to the daemon",
 );
+assert.match(
+  source,
+  /if \(options\.offlinePolicy === "reject"\)[\s\S]*?was not queued for later replay/,
+  "Research can refuse travel replay before any placeholder run or queue item is created",
+);
 assert.match(source, /launchMode: "nonInteractive"/, "flow session output should be plain assistant text, not harness TUI output");
 assert.match(source, /recordSessionFamiliar\(sessionId, familiarId\)/, "familiar is still mirrored into cave-state");
 assert.match(
@@ -78,7 +83,7 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(capabilityFailure\)[\s\S]*?return \{[\s\S]*?status: 409[\s\S]*?startCopilotFlowRun\(/,
+  /if \(capabilityFailure\)[\s\S]*?return \{[\s\S]*?status: 409[\s\S]*?startCopilotFlowRunWithTransportBoundary\(/,
   "a failed capability gate cannot start a direct flow session",
 );
 
@@ -89,8 +94,13 @@ assert.match(
 // missions) can grant additional roots such as the mission workspace.
 assert.match(
   source,
-  /startCopilotFlowRun\(\{[\s\S]*?addDirs: \[[\s\S]*?\.\.\.\(options\.addDirs \?\? \[\]\),[\s\S]*?\.\.\.await flowFamiliarAddDirs\(familiarId, projectRoot\),[\s\S]*?\],[\s\S]*?\}\);/,
+  /startCopilotFlowRunWithTransportBoundary\(\{[\s\S]*?addDirs: \[[\s\S]*?\.\.\.\(options\.addDirs \?\? \[\]\),[\s\S]*?\.\.\.await flowFamiliarAddDirs\(familiarId, projectRoot\),[\s\S]*?\],[\s\S]*?\}, finishStart\);/,
   "direct copilot flow spawn must trust caller grants and the familiar's own workspace via addDirs",
+);
+assert.match(
+  source,
+  /return startCopilotFlowRunWithTransportBoundary\(\{[\s\S]*?permissionMode:[\s\S]*?\}, finishStart\)/,
+  "a typed pre-spawn Windows prompt refusal must return through the ordinary launch-result contract",
 );
 assert.match(
   source,
@@ -265,7 +275,7 @@ try {
 }
 assert.match(
   researchRunner,
-  /startFlowSession\(flow, \{\s*projectRoot: options\.projectRoot,\s*addDirs: options\.addDirs,\s*trustedLocalResearch: true,\s*\}\)/,
+  /startFlowSession\(flow, \{\s*projectRoot: options\.projectRoot,\s*addDirs: options\.addDirs,\s*trustedLocalResearch: true,\s*offlinePolicy: options\.offlinePolicy,\s*\}\)/,
   "only the production Research mission adapter requests the internal trusted launch policy",
 );
 

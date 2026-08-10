@@ -157,14 +157,9 @@ type PtySession = {
 };
 
 const sessions = new Map<string, PtySession>();
+const PACKAGED_CHILD_SHUTDOWN_BUDGET_MS = 1_200;
 
-// Packaged Unix sidecars receive stdin as a private pipe whose write end is
-// owned only by the Tauri GUI. EOF therefore identifies the exact parent
-// lifetime without polling a reusable PID. The sidecar is also launched as
-// its own process-group leader, so one signal removes the root and ordinary
-// descendants; node-pty sessions are asked to stop explicitly because a PTY
-// may create a separate session/process group.
-function terminatePackagedUnixSidecarTree(): void {
+function terminatePtySessions(): void {
   for (const session of sessions.values()) {
     try {
       session.pty.kill();
@@ -173,10 +168,45 @@ function terminatePackagedUnixSidecarTree(): void {
     }
   }
   sessions.clear();
+}
+
+// Packaged Unix sidecars receive stdin as a private pipe whose write end is
+// owned only by the Tauri GUI. EOF therefore identifies the exact parent
+// lifetime without polling a reusable PID. The sidecar is also launched as
+// its own process-group leader, so one signal removes the root and ordinary
+// descendants; node-pty sessions are asked to stop explicitly because a PTY
+// may create a separate session/process group.
+async function terminatePackagedUnixSidecarTree(): Promise<void> {
+  // PTYs may own sessions/groups outside the server group. Stop them before
+  // awaiting any JavaScript cleanup, and repeat in finally so an exception or
+  // hung persistence path can never skip this OS boundary.
+  terminatePtySessions();
   try {
-    process.kill(-process.pid, "SIGKILL");
-  } catch {
-    process.exit(1);
+    const terminateDirectRuns = globalThis.__covenCaveTerminateCopilotFlowRuns;
+    if (terminateDirectRuns) {
+      await Promise.race([
+        terminateDirectRuns(),
+        new Promise<never>((_resolve, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error("direct Copilot shutdown exceeded its native parent lease")),
+            PACKAGED_CHILD_SHUTDOWN_BUDGET_MS,
+          );
+          timer.unref?.();
+        }),
+      ]);
+    }
+  } catch (error) {
+    // Direct runs are each owned by a native supervisor whose stdin closes when
+    // this server dies. Report the failed graceful proof, then let that exact
+    // EOF/Job boundary finish cleanup instead of waiting past Tauri's lease.
+    console.error("[cave] direct Copilot process-tree shutdown could not be proved", error);
+  } finally {
+    terminatePtySessions();
+    try {
+      process.kill(-process.pid, "SIGKILL");
+    } catch {
+      process.exit(1);
+    }
   }
 }
 
@@ -184,8 +214,14 @@ if (
   process.platform !== "win32" &&
   process.env.COVEN_CAVE_PARENT_WATCHDOG === "stdin-eof"
 ) {
-  process.stdin.once("end", terminatePackagedUnixSidecarTree);
-  process.stdin.once("error", terminatePackagedUnixSidecarTree);
+  let parentShutdownStarted = false;
+  const onParentShutdown = () => {
+    if (parentShutdownStarted) return;
+    parentShutdownStarted = true;
+    void terminatePackagedUnixSidecarTree();
+  };
+  process.stdin.once("end", onParentShutdown);
+  process.stdin.once("error", onParentShutdown);
   process.stdin.resume();
 }
 

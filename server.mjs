@@ -70,7 +70,8 @@ const LEGACY_ACCESS_COOKIE = "coven_access_token";
 const ACCESS_QUERY_PARAM = "coven_access_token";
 const SIDECAR_QUERY_PARAM = "covenCaveToken";
 const sessions = /* @__PURE__ */ new Map();
-function terminatePackagedUnixSidecarTree() {
+const PACKAGED_CHILD_SHUTDOWN_BUDGET_MS = 1200;
+function terminatePtySessions() {
   for (const session of sessions.values()) {
     try {
       session.pty.kill();
@@ -78,15 +79,43 @@ function terminatePackagedUnixSidecarTree() {
     }
   }
   sessions.clear();
+}
+async function terminatePackagedUnixSidecarTree() {
+  terminatePtySessions();
   try {
-    process.kill(-process.pid, "SIGKILL");
-  } catch {
-    process.exit(1);
+    const terminateDirectRuns = globalThis.__covenCaveTerminateCopilotFlowRuns;
+    if (terminateDirectRuns) {
+      await Promise.race([
+        terminateDirectRuns(),
+        new Promise((_resolve, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error("direct Copilot shutdown exceeded its native parent lease")),
+            PACKAGED_CHILD_SHUTDOWN_BUDGET_MS
+          );
+          timer.unref?.();
+        })
+      ]);
+    }
+  } catch (error) {
+    console.error("[cave] direct Copilot process-tree shutdown could not be proved", error);
+  } finally {
+    terminatePtySessions();
+    try {
+      process.kill(-process.pid, "SIGKILL");
+    } catch {
+      process.exit(1);
+    }
   }
 }
 if (process.platform !== "win32" && process.env.COVEN_CAVE_PARENT_WATCHDOG === "stdin-eof") {
-  process.stdin.once("end", terminatePackagedUnixSidecarTree);
-  process.stdin.once("error", terminatePackagedUnixSidecarTree);
+  let parentShutdownStarted = false;
+  const onParentShutdown = () => {
+    if (parentShutdownStarted) return;
+    parentShutdownStarted = true;
+    void terminatePackagedUnixSidecarTree();
+  };
+  process.stdin.once("end", onParentShutdown);
+  process.stdin.once("error", onParentShutdown);
   process.stdin.resume();
 }
 const SCROLLBACK_LIMIT_BYTES = 256 * 1024;

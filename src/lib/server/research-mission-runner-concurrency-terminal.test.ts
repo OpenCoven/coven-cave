@@ -165,12 +165,26 @@ test("reconciliation and actions share one read-modify-write lock", async () => 
 });
 
 test("cancel treats an already-gone session as stopped (cave-malz)", () => {
-  // Verified against the live daemon: an already-exited session kills as 409;
-  // unknown/pruned (and Cave-direct) sessions are 404/410; 0 = no daemon.
-  assert.equal(sessionAlreadyGone({ ok: false, status: 404 }), true);
-  assert.equal(sessionAlreadyGone({ ok: false, status: 409 }), true);
-  assert.equal(sessionAlreadyGone({ ok: false, status: 410 }), true);
-  assert.equal(sessionAlreadyGone({ ok: false, status: 0 }), true);
+  // Only an explicit not-found/gone response proves the addressed session is
+  // absent. Transport and state-conflict responses remain uncertain.
+  assert.equal(sessionAlreadyGone({
+    ok: false,
+    status: 404,
+    data: { error: { code: "session_not_found", message: "gone" } },
+  }), true);
+  assert.equal(sessionAlreadyGone({
+    ok: false,
+    status: 409,
+    data: { error: { code: "session_not_live", message: "finished" } },
+  }), true);
+  assert.equal(sessionAlreadyGone({ ok: false, status: 404 }), false);
+  assert.equal(sessionAlreadyGone({ ok: false, status: 410 }), false);
+  assert.equal(sessionAlreadyGone({
+    ok: false,
+    status: 404,
+    data: { error: { code: "proxy_not_found", message: "proxy route missing" } },
+  }), false);
+  assert.equal(sessionAlreadyGone({ ok: false, status: 0 }), false);
   // Auth/rate-limit rejections: the daemon or hub is alive and the session
   // may still be running — cancel stays blocked.
   assert.equal(sessionAlreadyGone({ ok: false, status: 401 }), false);
@@ -234,6 +248,41 @@ test("a finished session reconciles from its transcript while the flow run still
   // source-ledger, research-log — cave research-final-artifacts Task 3);
   // every standard file resolves above, so all four publish.
   assert.equal(published.length, 4);
+});
+
+test("a persisted timeout/error turn fails the run even with valid-looking control output", async () => {
+  const runner = makeResearchMissionRunner(deps({
+    loadFlowRun: async () => ({ ...RUN, status: "running" }),
+    sessionState: async () => "finished",
+    readSessionTranscript: async () => [
+      "@@research-control",
+      '{"decision":"complete","reason":"must not win","confidence":1}',
+      "@@research-artifacts-written",
+    ].join("\n"),
+    loadConversation: async () => ({
+      sessionId: "session-1",
+      familiarId: "sage",
+      harness: "copilot",
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+      turns: [{
+        id: "turn-timeout",
+        role: "assistant",
+        text: "partial output\n\nCopilot flow exceeded its execution timeout and was stopped.",
+        isError: true,
+        createdAt: NOW.toISOString(),
+      }],
+    }),
+    readMissionFile: async (_id, relativePath) => (
+      relativePath === "artifacts/primary.md" ? "# Partial artifact\n" : null
+    ),
+  }));
+  const started = await runner.createAndStart(INPUT);
+  const result = await runner.reconcile(started);
+  assert.equal(result.status, "failed");
+  assert.equal(result.iterations[0].status, "failed");
+  assert.match(result.lastError ?? "", /failed or timed out.*Retry/i);
+  assert.ok(allowedResearchActions(result).includes("retry"));
 });
 
 test("a dead session fails the mission with Retry enabled instead of hanging", async () => {

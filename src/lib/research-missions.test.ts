@@ -10,8 +10,14 @@ import {
   ensureStandardArtifactRefs,
   normalizeResearchBounds,
   parseResearchMission,
+  RESEARCH_AUDIENCE_MAX_LENGTH,
   RESEARCH_BOUND_LIMITS,
+  RESEARCH_CONSTRAINT_MAX_COUNT,
+  RESEARCH_CONSTRAINT_MAX_LENGTH,
+  RESEARCH_DELIVERABLE_MAX_LENGTH,
   RESEARCH_INTENT_MIN_LENGTH,
+  RESEARCH_PROJECT_ROOT_MAX_LENGTH,
+  RESEARCH_TITLE_MAX_LENGTH,
   researchArtifactKindForMode,
   researchBoundReadings,
   researchContinueLabel,
@@ -61,6 +67,11 @@ test("mission parser validates shared-state fields and reconstructs safe data", 
   assert.equal(parseResearchMission({
     ...validMission(),
     sources: [{ id: "x", title: "X", sourceType: "x", status: "invented" }],
+  }), null);
+  assert.equal(parseResearchMission({ ...validMission(), projectRoot: "/tmp/root\0hidden" }), null);
+  assert.equal(parseResearchMission({
+    ...validMission(),
+    constraints: ["x".repeat(RESEARCH_CONSTRAINT_MAX_LENGTH + 1)],
   }), null);
 });
 
@@ -174,6 +185,93 @@ test("mission creation validates familiar, intent, mode, and bounded input", () 
     }).ok,
     false,
   );
+});
+
+test("mission input rejects lossful and NUL-bearing prompt fields", () => {
+  const valid = {
+    familiarId: "sage",
+    intent: "Compare two databases",
+    mode: "brief",
+    modeSource: "auto",
+    deliverable: "brief",
+    constraints: [],
+    bounds: {
+      wallClockMinutes: 20,
+      maxIterations: 1,
+      sourceTarget: 6,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: false,
+    },
+  };
+  for (const patch of [
+    { intent: "Compare\0 hidden intent" },
+    { deliverable: "brief\0 hidden deliverable" },
+    { title: "title\0 hidden" },
+    { audience: "audience\0 hidden" },
+    { projectRoot: "/tmp/project\0hidden" },
+    { constraints: ["safe", "unsafe\0hidden"] },
+  ]) {
+    assert.equal(validateCreateResearchMissionInput({ ...valid, ...patch }).ok, false);
+  }
+
+  for (const patch of [
+    { intent: `Compare ${"\ud800"} databases` },
+    { deliverable: `brief${"\udfff"}` },
+    { title: `title${"\ud800"}` },
+    { audience: `audience${"\udfff"}` },
+    { projectRoot: `/tmp/${"\ud800"}` },
+    { constraints: [`safe${"\udfff"}`] },
+  ]) {
+    const rejected = validateCreateResearchMissionInput({ ...valid, ...patch });
+    assert.equal(rejected.ok, false, "unpaired UTF-16 surrogates are rejected before JSON/process transport");
+  }
+
+  for (const text of [
+    "plain BMP text",
+    "astral 😀 text",
+    "combining e\u0301 text",
+  ]) {
+    assert.equal(
+      validateCreateResearchMissionInput({ ...valid, intent: `Compare ${text}` }).ok,
+      true,
+      `${text} remains lossless and valid`,
+    );
+  }
+
+  assert.equal(validateCreateResearchMissionInput({
+    ...valid,
+    constraints: Array.from({ length: RESEARCH_CONSTRAINT_MAX_COUNT + 1 }, () => "bounded"),
+  }).ok, false, "excess constraints are rejected instead of sliced");
+  assert.equal(validateCreateResearchMissionInput({
+    ...valid,
+    constraints: ["valid", 42],
+  }).ok, false, "non-string constraints are rejected instead of discarded");
+  assert.equal(validateCreateResearchMissionInput({
+    ...valid,
+    constraints: ["x".repeat(RESEARCH_CONSTRAINT_MAX_LENGTH + 1)],
+  }).ok, false, "overlong constraints are rejected instead of truncated");
+
+  for (const patch of [
+    { title: "t".repeat(RESEARCH_TITLE_MAX_LENGTH + 1) },
+    { deliverable: "d".repeat(RESEARCH_DELIVERABLE_MAX_LENGTH + 1) },
+    { audience: "a".repeat(RESEARCH_AUDIENCE_MAX_LENGTH + 1) },
+    { projectRoot: `/${"p".repeat(RESEARCH_PROJECT_ROOT_MAX_LENGTH)}` },
+  ]) {
+    assert.equal(validateCreateResearchMissionInput({ ...valid, ...patch }).ok, false);
+  }
+
+  const boundary = validateCreateResearchMissionInput({
+    ...valid,
+    title: "t".repeat(RESEARCH_TITLE_MAX_LENGTH),
+    deliverable: "d".repeat(RESEARCH_DELIVERABLE_MAX_LENGTH),
+    audience: "a".repeat(RESEARCH_AUDIENCE_MAX_LENGTH),
+    constraints: ["c".repeat(RESEARCH_CONSTRAINT_MAX_LENGTH)],
+  });
+  assert.equal(boundary.ok, true);
+  if (boundary.ok) {
+    assert.equal(boundary.value.title?.length, RESEARCH_TITLE_MAX_LENGTH);
+    assert.equal(boundary.value.constraints?.[0]?.length, RESEARCH_CONSTRAINT_MAX_LENGTH);
+  }
 });
 
 test("intent below the minimum never launches a real session", () => {

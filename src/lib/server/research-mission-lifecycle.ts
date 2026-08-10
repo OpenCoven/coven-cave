@@ -10,17 +10,21 @@ import type { FlowRunRecord } from "../flows.ts";
 
 export type ResearchFlowStartResult = {
   ok: boolean;
+  /** Typed client-input/transport status preserved by Research HTTP routes. */
+  status?: number;
   executor?: "session" | "travel-queue";
   sessionId?: string;
   run?: FlowRunRecord;
   queued?: boolean;
   unavailable?: boolean;
+  /** A start failed after launch and its process owner could not prove cleanup. */
+  cleanupUnconfirmed?: boolean;
   error?: string;
 };
 
 function missionTitle(input: CreateResearchMissionInput): string {
   const explicit = input.title?.trim();
-  if (explicit) return explicit.slice(0, 160);
+  if (explicit) return explicit;
   const intent = input.intent.trim().replace(/\s+/g, " ");
   return intent.length <= 80 ? intent : `${intent.slice(0, 77)}…`;
 }
@@ -81,6 +85,22 @@ export function applyStartResult(
   const iterationIndex = mission.iterations.length - 1;
   const current = mission.iterations[iterationIndex];
   if (!result.ok) {
+    if (result.cleanupUnconfirmed && result.sessionId) {
+      return {
+        ...mission,
+        status: "running",
+        startedAt: mission.startedAt ?? timestamp,
+        updatedAt: timestamp,
+        lastError: result.error || "Research session cleanup could not be confirmed",
+        iterations: mission.iterations.map((item, index) => index === iterationIndex ? {
+          ...current,
+          status: "running",
+          sessionId: result.sessionId,
+          startedAt: current?.startedAt ?? timestamp,
+          summary: result.error || "Research session cleanup could not be confirmed",
+        } : item),
+      };
+    }
     return {
       ...mission,
       status: "failed",

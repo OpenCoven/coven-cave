@@ -2,6 +2,8 @@ import type { ConversationFile } from "../cave-conversations.ts";
 import type { FlowDoc } from "../flow/flow-doc.ts";
 import type { FlowRunRecord } from "../flows.ts";
 import type { AutomationRunRecord } from "../automation-runs.ts";
+import { hasUnpairedUtf16Surrogate } from "../utf16.ts";
+import { daemonSessionAlreadyGone } from "./daemon-session-error.ts";
 import type { KnowledgeEntry } from "./knowledge-vault.ts";
 import {
   normalizeResearchSource,
@@ -14,6 +16,8 @@ import {
 import { buildResearchMissionFlow } from "../research-mission-flow.ts";
 import {
   allowedResearchActions,
+  RESEARCH_DIRECTION_MAX_LENGTH,
+  RESEARCH_PROJECT_ROOT_MAX_LENGTH,
   researchArtifactKindForMode,
   STANDARD_RESEARCH_ARTIFACTS,
   type CreateResearchMissionInput,
@@ -23,6 +27,7 @@ import {
   type ResearchAutomationLink,
   type ResearchSourcePatch,
   type ResearchSourceRef,
+  validateCreateResearchMissionInput,
 } from "../research-missions.ts";
 import {
   createResearchMissionWorkspace,
@@ -45,6 +50,23 @@ export {
   withinStartupGrace,
 } from "./research-mission-lifecycle.ts";
 export type { ResearchFlowStartResult } from "./research-mission-lifecycle.ts";
+
+/**
+ * The mission record is already durable when this is thrown. The HTTP layer
+ * can therefore preserve a typed 400/413 response without losing the failed,
+ * retryable mission that explains what the user must change.
+ */
+export class ResearchMissionLaunchInputError extends Error {
+  readonly status: 400 | 413;
+  readonly mission: ResearchMission;
+
+  constructor(status: 400 | 413, mission: ResearchMission, message: string) {
+    super(message);
+    this.name = "ResearchMissionLaunchInputError";
+    this.status = status;
+    this.mission = mission;
+  }
+}
 
 /**
  * Settled mission statuses — mirrors the settled set in
@@ -98,7 +120,11 @@ export type ResearchMissionRunnerDeps = {
   saveMission(mission: ResearchMission): Promise<void>;
   startFlow(
     flow: FlowDoc,
-    options: { projectRoot: string | null; addDirs?: string[] },
+    options: {
+      projectRoot: string | null;
+      addDirs?: string[];
+      offlinePolicy?: "queue" | "reject";
+    },
   ): Promise<ResearchFlowStartResult>;
   loadFlowRun(id: string): Promise<FlowRunRecord | null>;
   loadConversation(sessionId: string): Promise<ConversationFile | null>;
@@ -407,18 +433,8 @@ async function reconcileCompletedRun(
   const conversation = iteration.sessionId
     ? await deps.loadConversation(iteration.sessionId)
     : null;
-  const control = parseResearchControl(transcriptOverride ?? conversationTranscript(conversation));
   const costUsd = conversationCost(conversation);
   const timestamp = deps.now().toISOString();
-  const nextIteration = {
-    ...iteration,
-    status: control.decision === "complete" ? "completed" as const : "checkpoint" as const,
-    finishedAt: timestamp,
-    decision: control.decision,
-    decisionReason: control.reason,
-    summary: control.reason,
-    ...(costUsd === undefined ? {} : { costUsd }),
-  };
   // A missing or unreadable primary artifact is an execution failure, not a
   // review checkpoint. A checkpoint means the agent completed a bounded pass
   // and left a reviewable draft behind. Without that draft (often alongside a
@@ -429,6 +445,32 @@ async function reconcileCompletedRun(
     status: "failed" as const,
     finishedAt: timestamp,
     summary: "Research output unavailable",
+    ...(costUsd === undefined ? {} : { costUsd }),
+  };
+  const latestAssistant = [...(conversation?.turns ?? [])]
+    .reverse()
+    .find((turn) => turn.role === "assistant");
+  if (latestAssistant?.isError) {
+    // Direct-run transport, protocol, exit, and timeout failures are persisted
+    // on the assistant turn. Even if partial output contains valid-looking
+    // control markers or artifacts, it cannot turn that failed run into a
+    // successful checkpoint. Keep diagnostics fixed and prompt-free.
+    return {
+      ...mission,
+      status: "failed",
+      updatedAt: timestamp,
+      lastError: "Research session failed or timed out. Retry starts a fresh iteration.",
+      iterations: mission.iterations.map((item, index) => index === iterationIndex ? failedIteration : item),
+    };
+  }
+  const control = parseResearchControl(transcriptOverride ?? conversationTranscript(conversation));
+  const nextIteration = {
+    ...iteration,
+    status: control.decision === "complete" ? "completed" as const : "checkpoint" as const,
+    finishedAt: timestamp,
+    decision: control.decision,
+    decisionReason: control.reason,
+    summary: control.reason,
     ...(costUsd === undefined ? {} : { costUsd }),
   };
   let markdown: string | null;
@@ -553,6 +595,76 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
   };
 
   /**
+   * Persist the launch result or compensate the newly-started owner before
+   * returning. A mission must never lose the only session id while its child or
+   * daemon session keeps running merely because the final JSON write failed.
+   */
+  const persistLaunchResult = async (
+    beforeResult: ResearchMission,
+    result: ResearchFlowStartResult,
+  ): Promise<ResearchMission> => {
+    const applied = applyStartResult(beforeResult, result, deps.now());
+    try {
+      await saveMission(applied);
+      if (!result.ok && (result.status === 400 || result.status === 413)) {
+        throw new ResearchMissionLaunchInputError(
+          result.status,
+          applied,
+          result.error || "Research launch input was rejected",
+        );
+      }
+      return applied;
+    } catch (saveError) {
+      if (saveError instanceof ResearchMissionLaunchInputError) throw saveError;
+      const sessionId = result.sessionId ?? result.run?.sessionId;
+      // A failed start can still carry a live owned session when its first
+      // cleanup attempt was unconfirmed. Treat that exactly like a successful
+      // launch whose result write failed: retry termination before allowing
+      // the only durable session id to disappear with this exception.
+      if (!result.ok && !(result.cleanupUnconfirmed && sessionId)) throw saveError;
+      if (!sessionId) {
+        throw new AggregateError(
+          [saveError],
+          "Research launch state could not be saved and no session owner was returned for cleanup",
+        );
+      }
+
+      let cleanupError: unknown = null;
+      try {
+        await deps.killSession(sessionId);
+      } catch (error) {
+        cleanupError = error;
+      }
+
+      const recoveryResult: ResearchFlowStartResult = cleanupError === null
+        ? {
+            ok: false,
+            error: "The Research session was stopped because Cave could not save its launch state. Retry starts a fresh iteration.",
+          }
+        : {
+            ok: false,
+            sessionId,
+            cleanupUnconfirmed: true,
+            error: "Cave could not save the Research launch state or confirm session cleanup. Cancel this owned session before retrying.",
+          };
+      const recovered = applyStartResult(beforeResult, recoveryResult, deps.now());
+      try {
+        await saveMission(recovered);
+      } catch (recoverySaveError) {
+        throw new AggregateError(
+          cleanupError === null
+            ? [saveError, recoverySaveError]
+            : [saveError, cleanupError, recoverySaveError],
+          cleanupError === null
+            ? "Research session cleanup succeeded, but its failed launch state could not be saved"
+            : "Research launch state and cleanup could not be confirmed or saved",
+        );
+      }
+      return recovered;
+    }
+  };
+
+  /**
    * Resolve the project root an iteration will run in before any session is
    * spawned. A configured-but-unallowed root fails fast with an actionable
    * message (the flow executor would only say "invalid project root"); the
@@ -594,13 +706,16 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
    * Start options for one iteration. A configured project may be the research
    * context while artifacts still belong in Cave's canonical mission
    * workspace, so that verified workspace is the one narrow secondary grant.
-  */
+   */
   const missionStartOptions = (
     projectRoot: string,
     missionWorkspace: string,
-  ): { projectRoot: string; addDirs: string[] } => ({
+  ): { projectRoot: string; addDirs: string[]; offlinePolicy: "reject" } => ({
     projectRoot,
     addDirs: missionWorkspace === projectRoot ? [] : [missionWorkspace],
+    // A queued Research iteration has no live session handle to terminate.
+    // Replaying it after Cancel would revive work against a terminal mission.
+    offlinePolicy: "reject",
   });
 
   /**
@@ -612,9 +727,15 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     mission: ResearchMission,
     override: string | null,
   ): Promise<ResearchMission> => {
+    if (override !== null && typeof override !== "string") {
+      throw new Error("invalid project root override");
+    }
+    if (override?.includes("\0") || (override && hasUnpairedUtf16Surrogate(override))) {
+      throw new Error("invalid project root override");
+    }
     const trimmed = override?.trim() ?? "";
     if (!trimmed) return { ...mission, projectRoot: undefined };
-    if (trimmed.length > 2_000 || trimmed.includes("\0")) {
+    if (trimmed.length > RESEARCH_PROJECT_ROOT_MAX_LENGTH) {
       throw new Error("invalid project root override");
     }
     const resolved = await deps.resolveProjectRoot(trimmed);
@@ -680,9 +801,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         missionStartOptions(target.projectRoot, target.missionWorkspace),
       )
       : { ok: false, error: target.error };
-    next = applyStartResult(next, result, deps.now());
-    await saveMission(next);
-    return next;
+    return persistLaunchResult(next, result);
   };
 
   const pauseAutomation = async (
@@ -725,9 +844,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         missionStartOptions(target.projectRoot, target.missionWorkspace),
       )
       : { ok: false, error: target.error };
-    retried = applyStartResult(retried, result, deps.now());
-    await saveMission(retried);
-    return retried;
+    return persistLaunchResult(retried, result);
   };
 
   const act = (id: string, input: ResearchMissionActionInput): Promise<ResearchMission> => (
@@ -823,8 +940,15 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         throw new Error("pause the linked automation before running manually");
       }
       if (input.action === "refine") {
-        const direction = input.direction?.trim().slice(0, 2_000) ?? "";
+        if (typeof input.direction !== "string") throw new Error("refined direction required");
+        if (input.direction.includes("\0") || hasUnpairedUtf16Surrogate(input.direction)) {
+          throw new Error("invalid refined direction");
+        }
+        const direction = input.direction.trim();
         if (!direction) throw new Error("refined direction required");
+        if (direction.length > RESEARCH_DIRECTION_MAX_LENGTH) {
+          throw new Error(`refined direction must be at most ${RESEARCH_DIRECTION_MAX_LENGTH} characters`);
+        }
         mission = { ...mission, direction };
         return startNextIteration(mission);
       }
@@ -1200,6 +1324,24 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     };
 
     if (!iteration.flowRunId) {
+      // A bookkeeping failure can leave the exact session id durably owned
+      // without a Flow-run row. Never age that mission to failed while the
+      // owner still reports a live or uncertain process. If it settled, consume
+      // the same transcript/artifact boundary as an ordinary completed run.
+      if (iteration.sessionId) {
+        const state = await deps.sessionState(iteration.sessionId);
+        if (state === "running" || state === "unknown") return mission;
+        if (state === "finished") {
+          const transcript = await deps.readSessionTranscript(iteration.sessionId);
+          const reconciled = await reconcileCompletedRun(mission, iterationIndex, deps, transcript);
+          await saveMission(reconciled);
+          return reconciled;
+        }
+        return failOrphan(
+          "The unrecorded Research session ended without reporting — Retry starts a fresh iteration.",
+          "Unrecorded session ended",
+        );
+      }
       if (pastRecoveryGrace) {
         return failOrphan(
           "Startup was interrupted before a research session was recorded — Retry starts a fresh iteration.",
@@ -1296,7 +1438,12 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
 
   return {
     async createAndStart(input: CreateResearchMissionInput): Promise<ResearchMission> {
-      let mission = createMissionRecord(input, deps.randomId(), deps.now());
+      // Keep the runner safe when called outside the HTTP route (tests,
+      // automation, future internal entry points). Validation is lossless:
+      // overlong/NUL fields are refused, never silently sliced before launch.
+      const validated = validateCreateResearchMissionInput(input);
+      if (!validated.ok) throw new Error(validated.error);
+      let mission = createMissionRecord(validated.value, deps.randomId(), deps.now());
       mission = await deps.createWorkspace(mission);
       await saveMission(mission);
       // The start sequence shares the per-mission action lock: without it, a
@@ -1312,9 +1459,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
             missionStartOptions(target.projectRoot, target.missionWorkspace),
           )
           : { ok: false, error: target.error };
-        current = applyStartResult(current, result, deps.now());
-        await saveMission(current);
-        return current;
+        return persistLaunchResult(current, result);
       });
     },
 
@@ -1404,21 +1549,53 @@ export function parseResearchSourcesFile(raw: string): ResearchSourceRef[] {
 }
 
 /**
- * True when a failed kill response means the session is already not running.
- * Verified against the live daemon: killing an already-exited session returns
- * 409; a session the daemon never knew (pruned, or a Cave-direct session that
- * never existed daemon-side) is 404/410; status 0 means there is no daemon to
- * be running it at all. Cancel's goal state is "nothing running", which is
- * already true in each of those cases. Auth/rate-limit rejections (401/403/
- * 429) and daemon errors (5xx) stay blocking — the daemon or hub is alive and
- * the session may genuinely still be running (cave-malz).
+ * True only when a failed kill response definitively says the addressed
+ * session does not exist. A status-0 transport failure cannot distinguish a
+ * stopped local daemon from an unreachable hub that still owns live work; 409
+ * is likewise an ambiguous state conflict. Both must keep cancellation blocked.
  */
-export function sessionAlreadyGone(response: { ok: boolean; status: number }): boolean {
-  if (response.ok) return false;
-  return response.status === 0
-    || response.status === 404
-    || response.status === 409
-    || response.status === 410;
+export const sessionAlreadyGone = daemonSessionAlreadyGone;
+
+type ResearchSessionCancellationDependencies = {
+  cancelDirect?: (
+    sessionId: string,
+  ) => Promise<"not-owned" | "terminated" | "already-finished">;
+  callDaemonImpl?: (request: {
+    method: "POST";
+    path: string;
+    timeoutMs: number;
+  }) => Promise<{ ok: boolean; status: number; data?: unknown; error?: string }>;
+};
+
+/**
+ * Stop the process owner before changing mission state. Cave-direct Copilot
+ * sessions never exist in the daemon; a daemon 404 therefore cannot prove
+ * their child tree stopped. Only fall back to the daemon when the direct-run
+ * registry confirms it never owned this id.
+ */
+export async function cancelResearchSession(
+  sessionId: string,
+  dependencies: ResearchSessionCancellationDependencies = {},
+): Promise<void> {
+  const cancelDirect = dependencies.cancelDirect ?? (await import("./flow-copilot-session.ts")).cancelCopilotFlowRun;
+  const directResult = await cancelDirect(sessionId);
+  if (directResult !== "not-owned") return;
+
+  const callDaemonImpl = dependencies.callDaemonImpl ?? (await import("../coven-daemon.ts")).callDaemon;
+  const response = await callDaemonImpl({
+    method: "POST",
+    path: `/api/v1/sessions/${encodeURIComponent(sessionId)}/kill`,
+    timeoutMs: 4_000,
+  });
+  if (!response.ok && !sessionAlreadyGone(response)) {
+    const reason = response.status === 0
+      ? "the daemon or hub was unreachable"
+      : `the daemon or hub returned HTTP ${response.status}`;
+    throw new Error(
+      `Research session cancellation could not be confirmed because ${reason}. ` +
+      "The mission remains running; retry Cancel after connectivity and session state are verified.",
+    );
+  }
 }
 
 export function makeProductionResearchMissionRunner() {
@@ -1432,6 +1609,7 @@ export function makeProductionResearchMissionRunner() {
         projectRoot: options.projectRoot,
         addDirs: options.addDirs,
         trustedLocalResearch: true,
+        offlinePolicy: options.offlinePolicy,
       });
     },
     loadFlowRun: async (id) => {
@@ -1458,17 +1636,7 @@ export function makeProductionResearchMissionRunner() {
       const { writeKnowledgeEntry } = await import("./knowledge-vault.ts");
       return writeKnowledgeEntry(entry);
     },
-    killSession: async (sessionId) => {
-      const { callDaemon } = await import("../coven-daemon.ts");
-      const response = await callDaemon({
-        method: "POST",
-        path: `/api/v1/sessions/${encodeURIComponent(sessionId)}/kill`,
-        timeoutMs: 4_000,
-      });
-      if (!response.ok && !sessionAlreadyGone(response)) {
-        throw new Error(response.error ?? "Research session could not be cancelled");
-      }
-    },
+    killSession: cancelResearchSession,
     sessionState: async (sessionId) => {
       // Cave-direct copilot runs never exist on the daemon — the in-process
       // registry is their only live signal (flow-copilot-session, cave-lhc0).

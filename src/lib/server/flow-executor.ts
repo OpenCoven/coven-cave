@@ -32,7 +32,9 @@ import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import type { FlowRunRecord, FlowRunStepStatus } from "@/lib/flows";
 import { recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
-import { startCopilotFlowRun } from "@/lib/server/flow-copilot-session";
+import {
+  startCopilotFlowRunWithTransportBoundary,
+} from "@/lib/server/flow-copilot-session";
 import {
   copilotCapabilityFailureMessage,
   probeCopilotCapability,
@@ -55,6 +57,7 @@ import {
   dispatchResearchDaemonRequest,
   validatedResearchLaunchAddDirs,
 } from "@/lib/server/research-launch-policy";
+import { daemonSessionAlreadyGone } from "@/lib/server/daemon-session-error";
 
 export type StartFlowSessionResult = {
   ok: boolean;
@@ -65,8 +68,25 @@ export type StartFlowSessionResult = {
   queued?: boolean;
   queueItem?: CaveTravelQueueItem;
   unavailable?: boolean;
+  cleanupUnconfirmed?: boolean;
   error?: string;
 };
+
+const FLOW_BOOKKEEPING_FAILURE =
+  "The agent session started, but Cave could not record its Flow run. The session was stopped before the start returned.";
+const FLOW_BOOKKEEPING_CLEANUP_UNCONFIRMED =
+  "The agent session started, but Cave could not record its Flow run or confirm process cleanup. The session remains owned and must be cancelled before retrying.";
+
+async function stopDaemonSessionAfterBookkeepingFailure(
+  sessionId: string,
+): Promise<boolean> {
+  const response = await callDaemon<unknown>({
+    method: "POST",
+    path: `/api/v1/sessions/${encodeURIComponent(sessionId)}/kill`,
+    timeoutMs: 4_000,
+  });
+  return response.ok || daemonSessionAlreadyGone(response);
+}
 
 /** First familiar referenced anywhere in the flow, to attribute the session. */
 function flowFamiliar(flow: FlowDoc): string | null {
@@ -142,6 +162,8 @@ export async function startFlowSession(
      * the explicit launch-policy capability before receiving the policy.
      */
     trustedLocalResearch?: true;
+    /** Research must start now; replaying it later races durable cancellation. */
+    offlinePolicy?: "queue" | "reject";
   } = {},
 ): Promise<StartFlowSessionResult> {
   const blocked = flowRunBlockReason(flow, options.targetNodeId);
@@ -173,6 +195,14 @@ export async function startFlowSession(
   if (hermesProfileBlock) return { ok: false, status: 409, error: hermesProfileBlock };
   const travelStatus = await travelLocalQueueStatus(config);
   if (travelStatus) {
+    if (options.offlinePolicy === "reject") {
+      return {
+        ok: false,
+        status: 409,
+        unavailable: true,
+        error: "Research requires an active execution connection and was not queued for later replay.",
+      };
+    }
     const order = options.targetNodeId ? flowPartialExecutionOrder(flow, options.targetNodeId) : flowExecutionOrder(flow);
     const byId = new Map(flow.nodes.map((node) => [node.id, node]));
     // Record the queued placeholder run BEFORE enqueueing so its id can ride
@@ -305,7 +335,7 @@ export async function startFlowSession(
       capability.launchCommand,
     );
     if (spec) {
-      const { sessionId } = startCopilotFlowRun({
+      return startCopilotFlowRunWithTransportBoundary({
         spec,
         prompt,
         projectRoot,
@@ -317,8 +347,7 @@ export async function startFlowSession(
           ...await flowFamiliarAddDirs(familiarId, projectRoot),
         ],
         permissionMode: options.triggerInput?.source === "webhook" ? "read" : "unattended",
-      });
-      return finishStart(sessionId);
+      }, finishStart);
     }
     return {
       ok: false,
@@ -419,5 +448,23 @@ export async function startFlowSession(
   }
 
   const sessionId = res.data.id;
-  return finishStart(sessionId);
+  try {
+    return await finishStart(sessionId);
+  } catch {
+    let stopped = false;
+    try {
+      stopped = await stopDaemonSessionAfterBookkeepingFailure(sessionId);
+    } catch {
+      // Transport and malformed-response failures retain the session id below.
+    }
+    return stopped
+      ? { ok: false, status: 500, error: FLOW_BOOKKEEPING_FAILURE }
+      : {
+          ok: false,
+          status: 500,
+          error: FLOW_BOOKKEEPING_CLEANUP_UNCONFIRMED,
+          sessionId,
+          cleanupUnconfirmed: true,
+        };
+  }
 }
