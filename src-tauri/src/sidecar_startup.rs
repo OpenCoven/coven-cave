@@ -199,50 +199,114 @@ struct NativeReadinessRuntime {
 }
 
 #[cfg(desktop)]
-fn authenticated_readiness_handshake(port: u16, auth_token: &str) -> Result<(), String> {
+fn readiness_refusal(
+    failure_class: ReliabilityFailureClass,
+    message: impl Into<String>,
+) -> SidecarReadinessRefusal {
+    SidecarReadinessRefusal {
+        message: message.into(),
+        failure_class,
+    }
+}
+
+#[cfg(desktop)]
+fn authenticated_readiness_handshake(
+    port: u16,
+    auth_token: &str,
+) -> Result<(), SidecarReadinessRefusal> {
     use std::io::{Read, Write};
     use std::net::{SocketAddr, TcpStream};
 
     const MAX_RESPONSE_BYTES: usize = 64 * 1024;
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(300))
-        .map_err(|error| format!("readiness connection failed: {error}"))?;
+    let mut stream =
+        TcpStream::connect_timeout(&addr, Duration::from_millis(300)).map_err(|error| {
+            readiness_refusal(
+                ReliabilityFailureClass::Transport,
+                format!("readiness connection failed: {error}"),
+            )
+        })?;
     stream
         .set_read_timeout(Some(Duration::from_millis(500)))
-        .map_err(|error| format!("could not bound readiness response: {error}"))?;
+        .map_err(|error| {
+            readiness_refusal(
+                ReliabilityFailureClass::Transport,
+                format!("could not bound readiness response: {error}"),
+            )
+        })?;
     stream
         .set_write_timeout(Some(Duration::from_millis(500)))
-        .map_err(|error| format!("could not bound readiness request: {error}"))?;
+        .map_err(|error| {
+            readiness_refusal(
+                ReliabilityFailureClass::Transport,
+                format!("could not bound readiness request: {error}"),
+            )
+        })?;
     write!(
         stream,
         "GET /api/app/native-readiness HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nx-coven-cave-token: {auth_token}\r\nConnection: close\r\n\r\n"
     )
-    .map_err(|error| format!("readiness request failed: {error}"))?;
+    .map_err(|error| {
+        readiness_refusal(
+            ReliabilityFailureClass::Transport,
+            format!("readiness request failed: {error}"),
+        )
+    })?;
 
     let mut response = Vec::new();
     stream
         .take((MAX_RESPONSE_BYTES + 1) as u64)
         .read_to_end(&mut response)
-        .map_err(|error| format!("readiness response failed: {error}"))?;
+        .map_err(|error| {
+            readiness_refusal(
+                ReliabilityFailureClass::Transport,
+                format!("readiness response failed: {error}"),
+            )
+        })?;
     if response.len() > MAX_RESPONSE_BYTES {
-        return Err("readiness response exceeded 64 KiB".to_string());
+        return Err(readiness_refusal(
+            ReliabilityFailureClass::Transport,
+            "readiness response exceeded 64 KiB",
+        ));
     }
-    validate_readiness_response(&response)
+    validate_readiness_response_classified(&response)
 }
 
 #[cfg(desktop)]
 pub(super) fn validate_readiness_response(response: &[u8]) -> Result<(), String> {
+    validate_readiness_response_classified(response).map_err(|error| error.message)
+}
+
+#[cfg(desktop)]
+pub(super) fn validate_readiness_response_classified(
+    response: &[u8],
+) -> Result<(), SidecarReadinessRefusal> {
     let separator = b"\r\n\r\n";
     let header_end = response
         .windows(separator.len())
         .position(|window| window == separator)
-        .ok_or_else(|| "readiness endpoint returned a malformed HTTP response".to_string())?;
-    let headers = std::str::from_utf8(&response[..header_end])
-        .map_err(|_| "readiness endpoint returned non-UTF-8 headers".to_string())?;
+        .ok_or_else(|| {
+            readiness_refusal(
+                ReliabilityFailureClass::Transport,
+                "readiness endpoint returned a malformed HTTP response",
+            )
+        })?;
+    let headers = std::str::from_utf8(&response[..header_end]).map_err(|_| {
+        readiness_refusal(
+            ReliabilityFailureClass::Transport,
+            "readiness endpoint returned non-UTF-8 headers",
+        )
+    })?;
     let status = headers.lines().next().unwrap_or_default();
     if status != "HTTP/1.1 200 OK" && status != "HTTP/1.0 200 OK" {
-        return Err(format!(
-            "readiness endpoint refused the authenticated request ({status})"
+        let status_code = status.split_whitespace().nth(1);
+        return Err(readiness_refusal(
+            if matches!(status_code, Some("401" | "403")) {
+                ReliabilityFailureClass::Authentication
+            } else {
+                ReliabilityFailureClass::Transport
+            },
+            format!("readiness endpoint refused the authenticated request ({status})"),
         ));
     }
     let encoded_body = &response[header_end + separator.len()..];
@@ -254,33 +318,53 @@ pub(super) fn validate_readiness_response(response: &[u8]) -> Result<(), String>
                     .any(|encoding| encoding.trim().eq_ignore_ascii_case("chunked"))
         })
     }) {
-        decode_chunked_body(encoded_body)?
+        decode_chunked_body(encoded_body)
+            .map_err(|message| readiness_refusal(ReliabilityFailureClass::Transport, message))?
     } else {
         encoded_body.to_vec()
     };
-    let readiness: NativeReadiness = serde_json::from_slice(&body)
-        .map_err(|error| format!("readiness endpoint returned malformed JSON: {error}"))?;
+    let readiness: NativeReadiness = serde_json::from_slice(&body).map_err(|error| {
+        readiness_refusal(
+            ReliabilityFailureClass::Compatibility,
+            format!("readiness endpoint returned malformed JSON: {error}"),
+        )
+    })?;
     if readiness.service != "CovenCave" {
-        return Err("readiness endpoint belongs to an unexpected service".to_string());
+        return Err(readiness_refusal(
+            ReliabilityFailureClass::Compatibility,
+            "readiness endpoint belongs to an unexpected service",
+        ));
     }
     if readiness.protocol.name != "coven-cave-native-readiness" || readiness.protocol.version != 1 {
-        return Err(format!(
-            "unsupported native readiness protocol {} v{}",
-            readiness.protocol.name, readiness.protocol.version
+        return Err(readiness_refusal(
+            ReliabilityFailureClass::Compatibility,
+            format!(
+                "unsupported native readiness protocol {} v{}",
+                readiness.protocol.name, readiness.protocol.version
+            ),
         ));
     }
     if readiness.version != env!("CARGO_PKG_VERSION") {
-        return Err(format!(
-            "sidecar version {} is incompatible with desktop version {}",
-            readiness.version,
-            env!("CARGO_PKG_VERSION")
+        return Err(readiness_refusal(
+            ReliabilityFailureClass::Compatibility,
+            format!(
+                "sidecar version {} is incompatible with desktop version {}",
+                readiness.version,
+                env!("CARGO_PKG_VERSION")
+            ),
         ));
     }
     if !cfg!(debug_assertions) && !readiness.runtime.bundle {
-        return Err("release desktop reached a non-bundled sidecar runtime".to_string());
+        return Err(readiness_refusal(
+            ReliabilityFailureClass::Compatibility,
+            "release desktop reached a non-bundled sidecar runtime",
+        ));
     }
     if readiness.runtime.api != "ready" {
-        return Err("sidecar API dependencies are not ready".to_string());
+        return Err(readiness_refusal(
+            ReliabilityFailureClass::Compatibility,
+            "sidecar API dependencies are not ready",
+        ));
     }
     Ok(())
 }
@@ -711,12 +795,16 @@ pub(super) fn start_sidecar_runtime(
             let failure_class = match &result {
                 PortWaitResult::Exited => ReliabilityFailureClass::ProcessExit,
                 PortWaitResult::TimedOut => ReliabilityFailureClass::Timeout,
+                PortWaitResult::Refused(refusal) => refusal.failure_class,
                 _ => ReliabilityFailureClass::Unknown,
             };
             let reason = match result {
                 PortWaitResult::Exited => "exited before becoming ready".to_string(),
-                PortWaitResult::Refused(error) => {
-                    format!("failed its authenticated readiness handshake: {error}")
+                PortWaitResult::Refused(refusal) => {
+                    format!(
+                        "failed its authenticated readiness handshake: {}",
+                        refusal.message
+                    )
                 }
                 PortWaitResult::TimedOut => format!(
                     "did not become ready within {}s",

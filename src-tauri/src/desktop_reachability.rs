@@ -1477,7 +1477,7 @@ fn background_availability_supported() -> bool {
 /// and this daemon scanned 3000..=3010, so the two essentially never agreed.
 ///
 /// The old scan survives only as a last resort. Here, unlike the GUI path, not
-/// starting is worse than moving: the GUI can show the user an error, whereas a
+/// starting is worse than moving: the GUI can show the user an refusal.message, whereas a
 /// background daemon that refuses to bind leaves the phone silently unreachable
 /// with nothing on screen to explain it. The fallback logs loudly, and the
 /// serve-repair pass re-points Tailscale at whatever port was actually taken.
@@ -1722,12 +1722,13 @@ fn run_sidecar_daemon() -> Result<i32, String> {
                 sidecar_output_text(&sidecar_output)
             ));
         }
-        PortWaitResult::Refused(error) => {
+        PortWaitResult::Refused(refusal) => {
             let _ = child.kill();
             let _ = child.wait();
             let _ = std::fs::remove_file(&state_path);
             return Err(format!(
-                "background sidecar failed its authenticated readiness handshake on port {port}: {error}. Bounded sidecar output tail:\n{}",
+                "background sidecar failed its authenticated readiness handshake on port {port}: {}. Bounded sidecar output tail:\n{}",
+                refusal.message,
                 sidecar_output_text(&sidecar_output)
             ));
         }

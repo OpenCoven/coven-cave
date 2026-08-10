@@ -97,8 +97,15 @@ pub(super) enum PortWaitResult {
     Ready,
     Cancelled,
     Exited,
-    Refused(String),
+    Refused(SidecarReadinessRefusal),
     TimedOut,
+}
+
+#[cfg(desktop)]
+#[derive(Clone)]
+pub(super) struct SidecarReadinessRefusal {
+    pub(super) message: String,
+    pub(super) failure_class: ReliabilityFailureClass,
 }
 
 #[cfg(all(desktop, target_os = "windows"))]
@@ -188,8 +195,14 @@ pub(super) struct SidecarStartupControl {
 }
 
 #[cfg(all(desktop, any(target_os = "windows", test)))]
+struct SidecarStartupTerminal {
+    evidence: NativeStartupTerminalEvidence,
+    completed_at: std::time::Instant,
+}
+
+#[cfg(all(desktop, any(target_os = "windows", test)))]
 #[derive(Default)]
-struct SidecarStartupTerminalSlot(Mutex<Option<NativeStartupTerminalEvidence>>);
+struct SidecarStartupTerminalSlot(Mutex<Option<SidecarStartupTerminal>>);
 
 #[cfg(all(desktop, any(target_os = "windows", test)))]
 impl SidecarStartupTerminalSlot {
@@ -201,14 +214,17 @@ impl SidecarStartupTerminalSlot {
         if terminal.is_some() {
             return Err("sidecar startup terminal result is awaiting consumption".to_string());
         }
-        *terminal = Some(evidence);
+        *terminal = Some(SidecarStartupTerminal {
+            evidence,
+            completed_at: std::time::Instant::now(),
+        });
         Ok(())
     }
 
     fn consume(&self) -> Result<Option<NativeStartupTerminalEvidence>, String> {
         self.0
             .lock()
-            .map(|mut terminal| terminal.take())
+            .map(|mut terminal| terminal.take().map(|terminal| terminal.evidence))
             .map_err(|_| "sidecar startup terminal lock is poisoned".to_string())
     }
 
@@ -216,6 +232,13 @@ impl SidecarStartupTerminalSlot {
         self.0
             .lock()
             .map(|terminal| terminal.is_some())
+            .map_err(|_| "sidecar startup terminal lock is poisoned".to_string())
+    }
+
+    fn completed_at(&self) -> Result<Option<std::time::Instant>, String> {
+        self.0
+            .lock()
+            .map(|terminal| terminal.as_ref().map(|terminal| terminal.completed_at))
             .map_err(|_| "sidecar startup terminal lock is poisoned".to_string())
     }
 }
@@ -262,6 +285,10 @@ impl SidecarStartupControl {
 
     pub(super) fn has_terminal(&self) -> Result<bool, String> {
         self.terminal.is_pending()
+    }
+
+    pub(super) fn terminal_completed_at(&self) -> Result<Option<std::time::Instant>, String> {
+        self.terminal.completed_at()
     }
 
     pub(super) fn is_running(&self) -> bool {
@@ -319,6 +346,13 @@ mod sidecar_startup_terminal_tests {
         terminal
             .publish(evidence)
             .expect("publish terminal evidence");
+        assert!(
+            terminal
+                .completed_at()
+                .expect("read terminal completion")
+                .is_some(),
+            "published terminal evidence must retain its completion time"
+        );
         assert_eq!(
             terminal.consume().expect("consume terminal evidence"),
             Some(evidence)

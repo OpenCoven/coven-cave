@@ -611,6 +611,17 @@ fn sleep_with_recovery_measurement(
         let step = SLICE.min(total - waited);
         std::thread::sleep(step);
         waited += step;
+        #[cfg(target_os = "windows")]
+        let terminal_precedes_deadline = episode.as_ref().is_some_and(|current| {
+            supervised_startup_terminal_completed_at(app).is_some_and(|completed_at| {
+                terminal_completed_before_recovery_deadline(current.started, completed_at)
+            })
+        });
+        #[cfg(not(target_os = "windows"))]
+        let terminal_precedes_deadline = false;
+        if terminal_precedes_deadline {
+            return true;
+        }
         if rotate_timed_out_recovery_episode(app, episode) {
             #[cfg(target_os = "windows")]
             if startup_in_progress(app) || supervised_startup_terminal_pending(app) {
@@ -843,6 +854,20 @@ fn consume_supervised_startup_terminal(
 fn supervised_startup_terminal_pending(app: &tauri::AppHandle) -> bool {
     app.try_state::<Arc<SidecarStartupControl>>()
         .is_some_and(|control| control.has_terminal().unwrap_or(false))
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+fn supervised_startup_terminal_completed_at(app: &tauri::AppHandle) -> Option<std::time::Instant> {
+    app.try_state::<Arc<SidecarStartupControl>>()
+        .and_then(|control| control.terminal_completed_at().ok().flatten())
+}
+
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+fn terminal_completed_before_recovery_deadline(
+    episode_started: std::time::Instant,
+    terminal_completed_at: std::time::Instant,
+) -> bool {
+    terminal_completed_at <= episode_started + RECOVERY_MEASUREMENT_TIMEOUT
 }
 
 #[cfg(all(desktop, any(target_os = "windows", test)))]
@@ -1138,6 +1163,19 @@ mod tests {
         assert_eq!(measurement.duration_ms, 90_000);
         assert_eq!(measurement.attempts, 1);
         assert_eq!(measurement.backoff_ms, 250);
+    }
+
+    #[test]
+    fn terminal_completion_is_arbitrated_against_the_episode_deadline() {
+        let started = std::time::Instant::now();
+        assert!(terminal_completed_before_recovery_deadline(
+            started,
+            started + RECOVERY_MEASUREMENT_TIMEOUT,
+        ));
+        assert!(!terminal_completed_before_recovery_deadline(
+            started,
+            started + RECOVERY_MEASUREMENT_TIMEOUT + Duration::from_nanos(1),
+        ));
     }
 
     #[test]
