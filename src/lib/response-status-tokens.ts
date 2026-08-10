@@ -87,6 +87,7 @@ export function decorateResponseHtml(html: string): string {
       const badge = doc.createElement("span");
       badge.className = "cave-response-status";
       badge.dataset.tone = segment.tone;
+      badge.setAttribute("aria-label", `Status: ${segment.label.toLowerCase()}`);
       badge.textContent = segment.text;
       fragment.append(badge);
     }

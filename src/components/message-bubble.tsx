@@ -892,6 +892,7 @@ function MarkdownContent({
       return (
         <span className={`whitespace-pre-wrap break-words text-[length:var(--text-md)] leading-relaxed${className ? ` ${className}` : ""}`}>
           {text}
+          {pending ? "▌" : ""}
         </span>
       );
     }

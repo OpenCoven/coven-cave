@@ -242,13 +242,11 @@ assert.doesNotMatch(
   "a delayed render must not issue a fresh post-settlement stamp when its timer fires",
 );
 
-// The detached cursor glyph remains removed (cave-1yslk). Streaming state is a
-// deliberately separate status indicator rather than text pretending to trail
-// the final rendered line.
-assert.doesNotMatch(
+// Non-response fallbacks stay literal text with the trailing cursor.
+assert.match(
   markdownContent,
-  /▌/u,
-  "no streaming cursor glyph is rendered — it detached onto its own line (cave-1yslk)",
+  /if \(!html\) \{[\s\S]*?if \(!decorateResponse\) \{[\s\S]*?\{text\}[\s\S]*?\{pending \? "▌" : ""\}/u,
+  "non-response markdown fallback renders literal text plus the trailing cursor",
 );
 // Streaming indicator: with rendered HTML during pending, the typing affordance
 // renders as a sibling after the markdown container.
