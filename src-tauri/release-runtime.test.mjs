@@ -976,6 +976,16 @@ test("Windows first launch paints progress and supports recovery while the sidec
     "Windows shutdown must stop supervision before cancelling startup and the process job",
   );
   assert.match(
+    launcher,
+    /GET \/api\/app\/native-readiness HTTP\/1\.1[\s\S]*x-coven-cave-token: \{auth_token\}/,
+    "native readiness must authenticate an end-to-end API handshake before navigation",
+  );
+  assert.match(
+    launcher,
+    /readiness\.protocol\.name != "coven-cave-native-readiness"[\s\S]*readiness\.version != env!\("CARGO_PKG_VERSION"\)/,
+    "native readiness must verify protocol and packaged runtime compatibility",
+  );
+  assert.match(
     startupPage,
     /role="progressbar"[\s\S]*aria-live="polite"/,
     "startup page must expose accessible progress",

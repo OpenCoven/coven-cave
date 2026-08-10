@@ -997,6 +997,7 @@ export const SUITES = {
     "src/components/chat-view-first-class.test.ts",
     "src/components/labels-and-live-regions.test.ts",
     "src/components/workspace-inspector-mount.test.ts",
+    "src/app/api/app/native-readiness/route.test.ts",
     "src/middleware.test.ts",
     "src/tailnet-identity.test.ts",
     "src/lib/font-settings.test.ts",
