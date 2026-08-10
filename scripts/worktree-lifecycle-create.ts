@@ -20,6 +20,7 @@ import {
 } from "./worktree-lifecycle-inventory.ts";
 import {
   acquireMaintenanceGate,
+  createFenceRenewal,
   heartbeatMaintenanceGate,
   MAX_FENCED_MUTATION_TIMEOUT_MS,
   releaseMaintenanceGate,
@@ -1746,6 +1747,11 @@ function execute(
     repo: REPOSITORY,
     root,
     nowMs: Date.now(),
+    // The inventory outlives the Coven lease on a large checkout, so renew it
+    // as the inventory works instead of only after it finishes (cave-cs9g1).
+    onProgress: createFenceRenewal(() =>
+      heartbeatBoth(leases, "during lifecycle inventory"),
+    ),
   });
   heartbeatBoth(leases, "after lifecycle inventory");
   // Global failures still abort: if GitHub was unreachable or the canonical

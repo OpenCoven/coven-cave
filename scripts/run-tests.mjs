@@ -69,6 +69,7 @@ export const SUITES = {
     "scripts/install-git-hooks.test.mjs",
     "scripts/worktree-lifecycle-retirement.test.mjs",
     "scripts/worktree-lifecycle-patrol.test.mjs",
+    "scripts/worktree-lifecycle-fence-renewal.test.mjs",
     "scripts/worktree-status.test.mjs",
     "scripts/worktree-session-exit-retirement.test.mjs",
     "src/lib/board-cache-events.test.ts",
@@ -164,6 +165,7 @@ export const SUITES = {
     "src/lib/daemon-desktop-auto-start.test.ts",
     "src/lib/daemon-recovery-presentation.test.ts",
     "src/lib/about-diagnostics.test.ts",
+    "src/lib/server/daemon-diagnostics.test.ts",
     "src/lib/backup-passphrase-strength.test.ts",
     "src/lib/settings-general-summary.test.ts",
     "src/lib/browser-navigation-queue.test.ts",
@@ -1290,6 +1292,7 @@ export const SUITES = {
     "src/lib/daemon-socket-occupancy.test.ts",
     "src/lib/daemon-endpoint-faults.test.ts",
     "src/lib/daemon-endpoint-churn.test.ts",
+    "src/lib/maintenance-plane-admission.test.ts",
     "src/lib/daemon-startup-contract.test.ts",
     "src/lib/runtime-startup-throttle.test.ts",
     "src/lib/daemon-update-lifecycle.test.ts",
@@ -1669,6 +1672,7 @@ const STRIP_TYPES_MJS = new Set([
   "scripts/research-media-ffmpeg.integration.test.mjs",
   // imports ./worktree-lifecycle-inventory.ts
   "scripts/worktree-lifecycle-retirement.test.mjs",
+  "scripts/worktree-lifecycle-fence-renewal.test.mjs",
 ]);
 
 // Tests whose import graph reaches the "@/..." path alias and therefore need

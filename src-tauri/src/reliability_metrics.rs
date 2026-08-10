@@ -489,7 +489,7 @@ where
     Ok(())
 }
 
-fn write_private_atomic(path: &Path, contents: &[u8]) -> Result<(), String> {
+pub(super) fn write_private_atomic(path: &Path, contents: &[u8]) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| "reliability path has no parent".to_string())?;
