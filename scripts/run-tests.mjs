@@ -1327,6 +1327,7 @@ export const SUITES = {
     "src/lib/server/runtime-compatibility-registry.test.ts",
     "src/app/api/board/enrich-steps/route.test.ts",
     "src/app/api/board/route.test.ts",
+    "src/app/api/board/orchestration-route.test.ts",
     "src/app/api/board/[id]/chat/route.test.ts",
     "src/app/api/sessions/route.test.ts",
     "src/app/api/sessions/list/route.test.ts",
@@ -1689,6 +1690,7 @@ const ALIAS_LOADER = new Set([
   "src/components/role-surfaces/research-studio-providers.test.ts",
   "src/lib/daemon-desktop-auto-start.test.ts",
   "src/lib/cave-board-orchestration.test.ts",
+  "src/app/api/board/orchestration-route.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
   "src/lib/podcast-script.test.ts",
   // resolves "@/lib/tool-visual" for the batch band's tint

@@ -183,6 +183,9 @@ at the offending field:
 | `dependency_cycle` | I4, task edge closes a cycle |
 | `dependency_dangling` | I4, unknown `taskId` or `primaryBlockerId` |
 | `dependency_needs_evidence` | I5 |
+| `dependency_invalid` | Dependency payload is malformed or repeats an id |
+| `primary_blocker_invalid` | Primary blocker is neither null nor a non-empty id |
+| `next_step_invalid` | Next-step payload is missing required structured fields |
 | `dependency_authorship` | I6, automation tried to overwrite a human dependency |
 | `next_step_authorship` | I6, automation tried to overwrite a human next step |
 

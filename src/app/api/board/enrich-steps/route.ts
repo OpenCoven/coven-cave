@@ -1,4 +1,8 @@
-import { loadBoard, updateCard } from "@/lib/cave-board";
+import {
+  loadBoard,
+  OrchestrationValidationError,
+  updateCard,
+} from "@/lib/cave-board";
 import {
   LIFECYCLES,
   PRIORITIES,
@@ -534,7 +538,47 @@ export async function POST(req: Request) {
             push({ kind: "skip", cardId: card.id, reason: "no_task_metadata_parsed" });
             continue;
           }
-          const updated = await updateCard(card.id, {
+          let updated;
+          try {
+            updated = await updateCard(card.id, {
+              notes: normalized.notes,
+              steps: normalized.steps,
+              status: normalized.status,
+              lifecycle: normalized.lifecycle,
+              priority: normalized.priority,
+              startDate: normalized.startDate,
+              endDate: normalized.endDate,
+              links: normalized.links,
+              github: normalized.github,
+              sessionId: normalized.sessionId,
+              needsHuman: normalized.needsHuman,
+              lifecycleReason: normalized.lifecycleReason,
+              lifecycleAt: normalized.lifecycleAt,
+            }, { automated: true });
+          } catch (error) {
+            if (error instanceof OrchestrationValidationError) {
+              push({
+                kind: "skip",
+                cardId: card.id,
+                reason: "orchestration_invalid",
+                errors: error.errors,
+              });
+              continue;
+            }
+            throw error;
+          }
+          if (!updated) {
+            push({ kind: "skip", cardId: card.id, reason: "card_missing" });
+            continue;
+          }
+          push({ kind: "done", cardId: card.id, count: normalized.steps.length });
+          continue;
+        }
+
+        const normalized = applyGitHubState(card, normalizeTaskEnrichment(card, enrichment, now), githubState, now);
+        let updated;
+        try {
+          updated = await updateCard(card.id, {
             notes: normalized.notes,
             steps: normalized.steps,
             status: normalized.status,
@@ -549,30 +593,18 @@ export async function POST(req: Request) {
             lifecycleReason: normalized.lifecycleReason,
             lifecycleAt: normalized.lifecycleAt,
           }, { automated: true });
-          if (!updated) {
-            push({ kind: "skip", cardId: card.id, reason: "card_missing" });
+        } catch (error) {
+          if (error instanceof OrchestrationValidationError) {
+            push({
+              kind: "skip",
+              cardId: card.id,
+              reason: "orchestration_invalid",
+              errors: error.errors,
+            });
             continue;
           }
-          push({ kind: "done", cardId: card.id, count: normalized.steps.length });
-          continue;
+          throw error;
         }
-
-        const normalized = applyGitHubState(card, normalizeTaskEnrichment(card, enrichment, now), githubState, now);
-        const updated = await updateCard(card.id, {
-          notes: normalized.notes,
-          steps: normalized.steps,
-          status: normalized.status,
-          lifecycle: normalized.lifecycle,
-          priority: normalized.priority,
-          startDate: normalized.startDate,
-          endDate: normalized.endDate,
-          links: normalized.links,
-          github: normalized.github,
-          sessionId: normalized.sessionId,
-          needsHuman: normalized.needsHuman,
-          lifecycleReason: normalized.lifecycleReason,
-          lifecycleAt: normalized.lifecycleAt,
-        }, { automated: true });
         if (!updated) {
           push({ kind: "skip", cardId: card.id, reason: "card_missing" });
           continue;

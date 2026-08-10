@@ -35,10 +35,7 @@ import {
 } from "@/lib/chat-attachments";
 import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
-import {
-  assertValidOrchestration,
-  OrchestrationValidationError,
-} from "@/lib/task-orchestration";
+import { assertValidOrchestration } from "@/lib/task-orchestration";
 
 export {
   DEFAULT_MAX_RETRIES,
@@ -213,6 +210,9 @@ function backfillCard(c: Card | LegacyCard): Card {
     maxRetries: c.maxRetries ?? DEFAULT_MAX_RETRIES,
     steps: c.steps ?? [],
     dependencies: c.dependencies ?? [],
+    primaryBlockerId: c.primaryBlockerId ?? null,
+    primaryBlockerPinned: c.primaryBlockerPinned ?? false,
+    nextStep: c.nextStep ?? null,
   } as Card;
 }
 
@@ -533,6 +533,36 @@ function failureNextStep(now: string): TaskNextStep {
   };
 }
 
+function applyExecutionBlocker(
+  current: Card,
+  next: Card,
+  blocker: TaskDependency,
+  now: string,
+): void {
+  const currentDependencies = Array.isArray(current.dependencies)
+    ? current.dependencies
+    : [];
+  const pinnedPrimary = current.primaryBlockerPinned
+    ? currentDependencies.find(
+        (dependency) =>
+          dependency?.id === current.primaryBlockerId &&
+          dependency.state === "unresolved",
+      )
+    : undefined;
+
+  next.dependencies = [...currentDependencies, blocker];
+  if (pinnedPrimary) {
+    next.primaryBlockerId = pinnedPrimary.id;
+  } else {
+    next.primaryBlockerId = blocker.id;
+    if (current.primaryBlockerPinned) next.primaryBlockerPinned = false;
+  }
+  next.nextStep =
+    current.nextStep?.origin === "human" ? current.nextStep : failureNextStep(now);
+  next.status = "blocked";
+  next.needsHuman = true;
+}
+
 export async function transitionCard(
   id: string,
   { to, reason, retry }: TransitionInput,
@@ -571,20 +601,8 @@ export async function transitionCard(
     next.status = "done";
     next.needsHuman = false;
   } else if (to === "failed") {
-    const exhausted = current.retryCount >= current.maxRetries;
     const blocker = executionDependency(to, reason, now);
-    next.dependencies = [...(current.dependencies ?? []), blocker];
-    next.primaryBlockerId = blocker.id;
-    next.nextStep = current.nextStep?.origin === "human" ? current.nextStep : failureNextStep(now);
-    if (exhausted) {
-      // Auto-rollback: failed without remaining retries → Blocked with
-      // `needs human` flag. Spec section 3 (rollback behavior).
-      next.status = "blocked";
-      next.needsHuman = true;
-    } else {
-      next.status = "blocked";
-      next.needsHuman = true;
-    }
+    applyExecutionBlocker(current, next, blocker, now);
   } else if (to === "queued") {
     if (retry) {
       next.retryCount = current.retryCount + 1;
@@ -593,13 +611,10 @@ export async function transitionCard(
     next.needsHuman = false;
   } else if (to === "cancelled") {
     const blocker = executionDependency(to, reason, now);
-    next.dependencies = [...(current.dependencies ?? []), blocker];
-    next.primaryBlockerId = blocker.id;
-    next.nextStep = current.nextStep?.origin === "human" ? current.nextStep : failureNextStep(now);
-    next.status = "blocked";
-    next.needsHuman = true;
+    applyExecutionBlocker(current, next, blocker, now);
   }
 
+  if (next.nextStep?.requiresApproval) next.needsHuman = true;
   assertValidOrchestration(next, {
     cards: board.cards,
     previous: current,

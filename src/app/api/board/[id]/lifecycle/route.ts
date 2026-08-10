@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { transitionCard, type CardLifecycle, LIFECYCLES } from "@/lib/cave-board";
+import {
+  LIFECYCLES,
+  OrchestrationValidationError,
+  transitionCard,
+  type CardLifecycle,
+} from "@/lib/cave-board";
 import { handleTaskCompletion } from "@/lib/task-archive-nudge-emit";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +43,12 @@ export async function POST(
     }
     return NextResponse.json({ ok: true, card });
   } catch (err) {
+    if (err instanceof OrchestrationValidationError) {
+      return NextResponse.json(
+        { ok: false, error: "orchestration_invalid", errors: err.errors },
+        { status: 422 },
+      );
+    }
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : "transition failed" },
       { status: 409 },

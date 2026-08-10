@@ -94,6 +94,9 @@ export type OrchestrationErrorCode =
   | "dependency_cycle"
   | "dependency_dangling"
   | "dependency_needs_evidence"
+  | "dependency_invalid"
+  | "primary_blocker_invalid"
+  | "next_step_invalid"
   | "dependency_authorship"
   | "next_step_authorship";
 

@@ -77,6 +77,45 @@ function codes(errors) {
   return errors.map((error) => error.code).sort();
 }
 
+// Runtime callers cross a JSON boundary. Malformed records must be rejected
+// with field errors instead of crashing or persisting type-invalid data.
+{
+  const malformedDependency = card("malformed-dependency", {
+    dependencies: [null],
+  });
+  assert.deepEqual(
+    codes(validateOrchestration(malformedDependency, { cards: [malformedDependency] })),
+    ["dependency_invalid"],
+  );
+
+  const malformedNextStep = card("malformed-next-step", {
+    nextStep: { summary: "Rerun tests" },
+  });
+  assert.deepEqual(
+    codes(validateOrchestration(malformedNextStep, { cards: [malformedNextStep] })),
+    ["next_step_invalid"],
+  );
+
+  const malformedPrimary = card("malformed-primary", {
+    primaryBlockerId: 42,
+  });
+  assert.deepEqual(
+    codes(validateOrchestration(malformedPrimary, { cards: [malformedPrimary] })),
+    ["primary_blocker_invalid"],
+  );
+
+  const duplicateDependencies = card("duplicate-dependencies", {
+    dependencies: [
+      dep("same", { kind: "human" }),
+      dep("same", { kind: "human" }),
+    ],
+  });
+  assert.deepEqual(
+    codes(validateOrchestration(duplicateDependencies, { cards: [duplicateDependencies] })),
+    ["dependency_invalid"],
+  );
+}
+
 // ── I1: the blocked triple ───────────────────────────────────────────────────
 
 {
