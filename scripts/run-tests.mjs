@@ -1206,6 +1206,7 @@ export const SUITES = {
     "scripts/beads-familiar-workflow.test.mjs",
     "scripts/beads-pr-bridge.test.mjs",
     "scripts/beads-pr-patrol.test.mjs",
+    "scripts/ci-paths.test.mjs",
     "scripts/ci-recovery.test.mjs",
     "scripts/ci-recovery-workflow.test.mjs",
     "scripts/worktree-lifecycle-retirement.test.mjs",

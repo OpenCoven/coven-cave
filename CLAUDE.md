@@ -24,7 +24,7 @@ yours. Use a PR.
 **Current settings** (verified live; `gh api repos/OpenCoven/coven-cave/branches/main/protection`):
 
 - PR required before merging — **0 approvals** (you can self-merge once checks pass; no second human needed for solo work).
-- Required status checks — **all NINE** must pass (widened 2026-08-01 from five): `Frontend build`, `Rust check`, `E2E (Playwright)`, `Cross-environment (ubuntu-latest)`, `Cross-environment (windows-latest)`, `Cross-environment required`, `Sidecar runtime (ubuntu-latest)`, `Sidecar runtime (windows-latest)`, `Sidecar runtime required`. The four matrix legs were added alongside their `*-required` rollups. The rollups already fail unless `needs.<job>.result == 'success'`, so this is defense in depth rather than a gap being closed — it removes the dependency on those aggregation scripts staying correct. Classic branch protection is the active enforcement layer. Ruleset `19123333` lists the same nine checks but is currently disabled, so it does not provide a second gate. Only `ci.yml` runs on `pull_request` and no job carries a skippable `if:`, which is why requiring the legs is safe — a required context that never reports is what leaves a PR stuck `BLOCKED` with nothing failing. **`CodeQL` is retired** (2026-07-31): the ruleset's `code_scanning` rule went first, then the required context in classic branch protection, and now the workflow itself. Code scanning is fully off — GitHub default setup is `not-configured`, so nothing scans in its place. If you ever see a PR stuck `BLOCKED` with `mergeable: MERGEABLE`, no failing check and every conversation resolved, check two things: a required context that no longer reports (compare `gh api repos/OpenCoven/coven-cave/branches/main/protection --jq .required_status_checks.contexts` against the checks the PR actually runs), and `required_signatures` (see the signatures bullet below — it produced exactly this symptom on three PRs and is now off). The `E2E (Playwright)` job runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs must be self-contained — dismiss onboarding (`cave:onboarding:dismissed=1`) and drive surfaces via `page.route(...)` API mocks rather than a live daemon.
+- Required status checks — **ONE** must pass: `Frontend build`. Routine PR CI is one always-reporting, path-aware job: documentation-only changes run the baseline workflow contracts, frontend changes add lint/typecheck/unit/build validation, Rust changes add native checks/tests, and user-facing changes add daemon-less Playwright coverage. Cross-environment, sidecar-runtime, Windows-native, iOS, and full release validation run in `release.yml` instead of fanning out on every PR. Classic branch protection is the active enforcement layer. Ruleset `19123333` is disabled, so it does not provide a second gate. A required context that never reports leaves every PR stuck `BLOCKED` with nothing visibly failing. **`CodeQL` is retired** (2026-07-31): the ruleset's `code_scanning` rule went first, then the required context in classic branch protection, and now the workflow itself. Code scanning is fully off — GitHub default setup is `not-configured`, so nothing scans in its place. If you ever see a PR stuck `BLOCKED` with `mergeable: MERGEABLE`, no failing check and every conversation resolved, compare `gh api repos/OpenCoven/coven-cave/branches/main/protection --jq .required_status_checks.contexts` against the PR's checks and inspect `required_signatures`. Playwright remains daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs must dismiss onboarding (`cave:onboarding:dismissed=1`) and drive surfaces via `page.route(...)` API mocks rather than a live daemon.
 
   A separate scheduled workflow detects GitHub event-delivery gaps: after a
   15-minute grace period from the PR's latest update it dispatches a fresh
@@ -50,8 +50,8 @@ yours. Use a PR.
 
   Prefer this fresh dispatch to rerunning a queued run with zero jobs: there is
   no job to rerun, and the stalled run can remain queued. Recovery does not
-  bypass branch protection; all nine required contexts still have to report and
-  pass on the exact PR head.
+  bypass branch protection; the required `Frontend build` context still has to
+  report and pass on the exact PR head.
 - Review conversations are **no longer required to be resolved**
   (`required_conversation_resolution` was turned OFF on 2026-08-01, at the
   user's direction). A PR with green checks merges with open threads.
@@ -136,7 +136,7 @@ yours. Use a PR.
   If you believe it should change, say so to the owner and leave it alone.
 
   Nothing here changes how **agents** land work. Every rule below still binds
-  us: work on a branch, open a PR, wait for the nine required checks. The
+  us: work on a branch, open a PR, wait for the required check. The
   `--admin` flag `gh` dangles at you on a blocked merge is still not the fix —
   fix the actual blocker.
 - Force-pushes and deletion of `main` are blocked. `allow_deletions = false`
@@ -158,7 +158,7 @@ merging feature branches into `main` locally and pushing straight to it. On
 conflict-resolution on those merges. Every one of those pushes bypassed every
 required check, because a push from an admin was exempt while a *PR* from
 anyone was not. `main` sat red as a result — one of the failures was a
-regression that a PR's `E2E (Playwright)` run would have caught before it
+regression that the PR's path-aware Playwright validation would have caught before it
 landed. The same sweep also ran `git worktree remove --force` and
 `git push origin :<branch>` on the branches it merged, destroying a live
 session's worktree mid-verification (see the worktree-guard section below —
