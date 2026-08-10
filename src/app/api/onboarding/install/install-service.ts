@@ -640,7 +640,9 @@ async function finishInstallJob(
           // forever; when cleanup is unsafe, surface its manual hint.
           const resolution = await resolveStaleOpenCovenLaunchers(
             targetName,
-            verification.latest,
+            targetName === "coven-cli"
+              ? reviewedPackageManifest("coven-cli").version
+              : verification.latest,
           );
           for (const line of resolution.log) appendOutput(job, `${line}\n`);
           resolutionHint = resolution.hint;

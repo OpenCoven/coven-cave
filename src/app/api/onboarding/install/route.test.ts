@@ -52,6 +52,11 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
+  /resolveStaleOpenCovenLaunchers\([\s\S]*targetName === "coven-cli"[\s\S]*reviewedPackageManifest\("coven-cli"\)\.version/,
+  "stale-launcher repair verifies the pinned replacement against the reviewed version",
+);
+assert.match(
+  source,
   /hostNpmSpawnEnv\([\s\S]*NPM_CONFIG_PREFIX/,
   "the Coven CLI update targets the detected CLI's npm prefix",
 );
