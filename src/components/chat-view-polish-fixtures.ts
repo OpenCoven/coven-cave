@@ -16,6 +16,7 @@ export const styles = [
   "cave-chat/activity",
   "cave-chat/transcript",
   "cave-chat/auxiliary-surfaces",
+  "globals/shell-cards-and-controls",
 ]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
