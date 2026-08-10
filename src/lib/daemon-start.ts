@@ -1,7 +1,7 @@
 import { execFile, spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { promisify } from "node:util";
 import { callDaemonTarget, localDaemonTarget, socketPath } from "./coven-daemon.ts";
-import { covenBin, covenLaunchCommand } from "./coven-bin.ts";
+import { covenLaunchCommand } from "./coven-bin.ts";
 import { covenCliMissingError, isMissingExecutableError } from "./coven-spawn-error.ts";
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 import { waitForDaemonReadiness } from "./daemon-readiness.ts";
@@ -213,7 +213,7 @@ type StartLocalDaemonOptions = {
   /** Injectable address-occupancy seam for deterministic already-bound tests. */
   inspectAddress?: () => Promise<DaemonAddressOccupancy>;
   /** Injectable command seam keeps fault scenarios independent of host PATH state. */
-  launchCommand?: () => { command: string; args: string[] };
+  launchCommand?: () => { command: string; args: string[]; shell?: boolean };
   /** Injectable environment seam keeps fault scenarios independent of credential stores. */
   spawnEnvironment?: () => NodeJS.ProcessEnv;
   spawnImpl?: (command: string, args: string[], options: SpawnOptions) => ChildProcess;
@@ -313,7 +313,17 @@ async function runLocalDaemonStart({
   readHealthDocument: readHealthDocumentOverride,
   installedVersion,
   inspectAddress = () => inspectDaemonAddress({ socketPath: socketPath() }),
-  launchCommand = () => ({ command: covenBin(), args: ["daemon", "start"] }),
+  launchCommand = () => {
+    const launch = covenLaunchCommand();
+    return {
+      command: launch.command,
+      args: [...launch.fixedArgs, "daemon", "start"],
+      // An unreadable third-party batch shim cannot be safely decomposed.
+      // Preserve the legacy fallback for that one case; verified npm shims
+      // launch their target directly so paths with spaces remain one argv.
+      shell: launch.unresolvedWindowsShim === true,
+    };
+  },
   spawnEnvironment = harnessSpawnEnv,
   spawnImpl = spawn,
   terminateLaunchTree = terminateDaemonLaunchTree,
@@ -421,7 +431,7 @@ async function runLocalDaemonStart({
     // sessions would inherit them wholesale. Scoped keys flow only through
     // Cave's own per-familiar spawn path (cave-4nu6).
     env: spawnEnvironment(),
-    shell: launchMode === "shell",
+    shell: launch.shell ?? false,
   });
   let stdout = "";
   let stderr = "";

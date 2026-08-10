@@ -189,6 +189,27 @@ test("permission ambiguity remains retryable and unusual paths are not exposed",
   assert.match(diagnostic, /\[local path omitted\]|\[redacted\]/);
 });
 
+test("resolved Windows launch paths stay structured instead of passing through cmd.exe", async () => {
+  const command = String.raw`C:\Program Files\Coven Runtime\node.exe`;
+  const args = [String.raw`C:\Users\Example Person\App Data\coven.js`, "daemon", "start"];
+  let observed: { command: string; args: string[]; shell: unknown } | null = null;
+  let probes = 0;
+  const result = await startLocalDaemon({
+    restart: true,
+    probe: async () => ({ ok: ++probes >= 2 }),
+    launchCommand: () => ({ command, args }),
+    spawnEnvironment: fixtureEnvironment,
+    spawnImpl: (spawnCommand, spawnArgs, options) => {
+      observed = { command: spawnCommand, args: spawnArgs, shell: options.shell };
+      return fakeChild();
+    },
+    platform: "win32",
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(observed, { command, args, shell: false });
+});
+
 test("duplicate launches coalesce and repeated failures consume one bounded lane", async () => {
   const throttle = new RuntimeStartupThrottle(2, 60_000);
   const coordinator = new RuntimeStartupCoordinator<{ ok: boolean; code: string }>(throttle);
