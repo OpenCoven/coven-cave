@@ -391,7 +391,7 @@ test("managed Node installer honors cancellation before any installation work", 
 
 test("managed Node installer fences cancellation between staged runtime commit operations", async (t) => {
   const artifact = nodeArchiveFor("linux", "x64");
-  assert.ok(artifact);
+  if (!artifact) throw new Error("expected approved Linux x64 Node artifact");
 
   async function runCancellationAtRemoval(
     removal: "temporary" | "installed",
@@ -430,9 +430,10 @@ test("managed Node installer fences cancellation between staged runtime commit o
               : { status: "ready", version: MANAGED_NODE_VERSION, paths };
           },
           remove: async (target, options) => {
+            const targetPath = String(target);
             const shouldPause = removal === "temporary"
-              ? target.includes(".tmp-")
-              : target === paths.installDir;
+              ? targetPath.includes(".tmp-")
+              : targetPath === paths.installDir;
             if (shouldPause) {
               removalStarted();
               await removalPending;
