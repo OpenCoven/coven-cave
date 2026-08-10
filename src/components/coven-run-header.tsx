@@ -67,6 +67,13 @@ function AgentStep({
   const meta = COVEN_RUN_STATUS[agent.status];
   const name = familiar?.display_name ?? agent.familiarId;
   const detail = agent.reply.activity ? ` · ${agent.reply.activity}` : "";
+  // Authoritative accessible name. The visible name is `display: none` below
+  // 960px, which removes it from the accessibility tree — without this the chip
+  // would announce only its status at exactly the widths where the visual label
+  // is already gone.
+  const label = focused
+    ? `${name} — ${meta.label} · focused — click to show all`
+    : `${name} — ${meta.label}${detail} · click to focus their replies`;
   return (
     <li className="coven-step">
       {showArrow ? (
@@ -78,11 +85,8 @@ function AgentStep({
         data-tone={meta.tone}
         data-live={meta.live && !paused ? "true" : "false"}
         aria-pressed={focused}
-        title={
-          focused
-            ? `${name} — ${meta.label} · focused — click to show all`
-            : `${name} — ${meta.label}${detail} · click to focus their replies`
-        }
+        aria-label={label}
+        title={label}
         onClick={onFocus}
       >
         {familiar ? (
@@ -92,8 +96,6 @@ function AgentStep({
         )}
         <span className="coven-step__name">{name}</span>
         <Icon name={meta.icon} width={11} height={11} className="coven-step__glyph" aria-hidden />
-        {/* Colour is never the only channel: the label rides along for AT. */}
-        <span className="sr-only">{meta.label}</span>
       </button>
     </li>
   );

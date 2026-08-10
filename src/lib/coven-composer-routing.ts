@@ -67,7 +67,7 @@ export function covenComposerRouting(args: {
     const names = mentioned.map((m) => m.name);
     const target = joinNames(names, "and");
     return {
-      lead: mentioned.length === 1 ? "Replies only to" : "Replies only to",
+      lead: "Replies only to",
       chips: mentioned.map((m) => ({ id: m.id, name: m.name, arrow: false, dot: false })),
       placeholder: `Reply to ${target}…`,
       // A mention is a side conversation: it must not look like it advances the
