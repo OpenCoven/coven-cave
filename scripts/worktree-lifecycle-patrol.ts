@@ -18,6 +18,10 @@ import {
   parseMaxRetire,
   retireLifecycleUnits,
 } from "./worktree-lifecycle-retirement.ts";
+import {
+  createMetadataRepairOperations,
+  repairOrphanedWorktreeMetadata,
+} from "./worktree-lifecycle-metadata-repair.ts";
 
 type Options = {
   repo: string | null;
@@ -32,6 +36,7 @@ type PatrolInventory = ReturnType<typeof collectWorktreeLifecycleInventory>;
 type PatrolSummary = ReturnType<typeof summarizeWorktreeLifecycle>;
 type MaintenanceCapabilities = ReturnType<typeof repositoryMaintenanceCapabilities>;
 type RetirementReport = ReturnType<typeof retireLifecycleUnits>;
+type MetadataRepairReport = ReturnType<typeof repairOrphanedWorktreeMetadata>;
 type PatrolItem = PatrolSummary["items"][number];
 type RetirementBlock = RetirementReport["blocked"][number];
 type RemoteDeletionProposal = RetirementReport["remoteDeletionProposals"][number];
@@ -71,11 +76,13 @@ type RetirementApplyDependencies = {
   };
   createGitRetirementOperations: typeof createGitRetirementOperations;
   retireLifecycleUnits: typeof retireLifecycleUnits;
+  createMetadataRepairOperations: typeof createMetadataRepairOperations;
+  repairOrphanedWorktreeMetadata: typeof repairOrphanedWorktreeMetadata;
   collectWorktreeLifecycleInventory: typeof collectWorktreeLifecycleInventory;
 };
 
 const APPLY_OWNER_ID = "worktree-lifecycle-patrol";
-const APPLY_PURPOSE = "worktree lifecycle retirement apply";
+const APPLY_PURPOSE = "worktree lifecycle metadata repair and retirement apply";
 const defaultRetirementApplyDependencies: RetirementApplyDependencies = {
   acquireMaintenanceGate,
   heartbeatMaintenanceGate,
@@ -83,24 +90,26 @@ const defaultRetirementApplyDependencies: RetirementApplyDependencies = {
   verifyMaintenanceGateOwnership,
   createGitRetirementOperations,
   retireLifecycleUnits,
+  createMetadataRepairOperations,
+  repairOrphanedWorktreeMetadata,
   collectWorktreeLifecycleInventory,
 };
 
 type RetirementApplyResult = {
+  metadataRepair: MetadataRepairReport;
   retirement: RetirementReport;
   postInventory?: PatrolInventory;
   postInventoryError?: string;
   warning?: string;
 };
 
-type RetirementApplyOutcomeReason =
+type ApplyFailureReason =
+  | "metadata-repair-blocked"
   | "retirement-blocked"
   | "maintenance-gate-release-failed"
-  | "post-apply-inventory-failed"
-  | "retirement-blocked-and-maintenance-gate-release-failed"
-  | "retirement-blocked-and-post-apply-inventory-failed"
-  | "maintenance-gate-release-failed-and-post-apply-inventory-failed"
-  | "retirement-blocked-and-maintenance-gate-release-failed-and-post-apply-inventory-failed";
+  | "post-apply-inventory-failed";
+
+type RetirementApplyOutcomeReason = string;
 
 type RetirementApplyOutcome = {
   ok: boolean;
@@ -169,7 +178,7 @@ function printHelp() {
 Builds a read-only lifecycle report for every registered worktree and direct
 local branch. The patrol correlates local state with claims, Beads, Coven
 sessions, pull requests, workflow runs, and live process cwd ownership. It never
-removes worktrees or branches unless --apply becomes available after all
+repairs metadata, removes worktrees, or removes branches unless --apply becomes
 maintenance planes are enforced.
 
 --apply is currently unusable: the coven, beads and github planes are hard-coded
@@ -238,6 +247,10 @@ function buildJsonReport(
     ok: true,
     generatedAt: new Date(options.nowMs).toISOString(),
     ...summary,
+    orphanedMetadata: inventory.orphanedMetadata,
+    orphanedMetadataCount: inventory.orphanedMetadata.length,
+    orphanedMetadataErrors: inventory.orphanedMetadataErrors,
+    orphanedMetadataErrorCount: inventory.orphanedMetadataErrors.length,
     inventoryFingerprint: inventory.inventoryFingerprint,
     ...(orphanedClaims.length > 0 ? { orphanedMetadataClaims: orphanedClaims } : {}),
     ...extras,
@@ -304,9 +317,19 @@ function renderApplyUnavailable(
 }
 
 export function evaluateRetirementApplyOutcome(
-  result: RetirementApplyResult,
+  result: Pick<
+    RetirementApplyResult,
+    "retirement" | "metadataRepair" | "warning" | "postInventoryError"
+  > & { metadataRepair?: MetadataRepairReport },
 ): RetirementApplyOutcome {
-  const failures: string[] = [];
+  const failures: ApplyFailureReason[] = [];
+  if (
+    result.metadataRepair &&
+    (result.metadataRepair.blocked.length > 0 ||
+      result.metadataRepair.partial.length > 0)
+  ) {
+    failures.push("metadata-repair-blocked");
+  }
   if (result.retirement.blocked.length > 0) failures.push("retirement-blocked");
   if (result.warning) failures.push("maintenance-gate-release-failed");
   if (result.postInventoryError) failures.push("post-apply-inventory-failed");
@@ -325,8 +348,10 @@ export function renderApplyReport(
   retirement: RetirementReport,
   warning?: string,
   postInventoryError?: string,
+  metadataRepair: MetadataRepairReport = emptyMetadataRepairReport(),
 ) {
   const outcome = evaluateRetirementApplyOutcome({
+    metadataRepair,
     retirement,
     warning,
     postInventoryError,
@@ -339,6 +364,10 @@ export function renderApplyReport(
   const remoteDeletionProposals = [...retirement.remoteDeletionProposals]
     .sort(compareRemoteDeletionProposals)
     .map(formatRemoteDeletionProposal);
+  const repairedMetadata = metadataRepair.repaired.map(formatMetadataRepairCandidate);
+  const blockedMetadata = metadataRepair.blocked.map(formatMetadataRepairBlock);
+  const partialMetadata = metadataRepair.partial.map(formatMetadataRepairBlock);
+  const pendingMetadata = metadataRepair.pending.map(formatMetadataRepairCandidate);
   const lines = [
     ...(postInventoryError
       ? [
@@ -350,12 +379,18 @@ export function renderApplyReport(
     renderWorktreeLifecycleReport(summary, { includeFooter: false }),
     "",
     `Apply result: ${outcome.ok ? "ok" : `failed (${outcome.reason})`}`,
+    `Metadata repaired: ${metadataRepair.repaired.length}`,
+    `Metadata blocked: ${metadataRepair.blocked.length + metadataRepair.partial.length}`,
     `Retired: ${retirement.retired.length}`,
     `Blocked: ${retirement.blocked.length}`,
     `Cleanup-ready remaining: ${
       postInventoryError ? "unknown" : summary.counts["retire-after-gate"]
     }`,
   ];
+  pushSection(lines, "Orphaned metadata repaired", repairedMetadata);
+  pushSection(lines, "Orphaned metadata blocked", blockedMetadata);
+  pushSection(lines, "Orphaned metadata partial", partialMetadata);
+  pushSection(lines, "Orphaned metadata pending", pendingMetadata);
   pushSection(lines, "Locally retired", retired);
   pushSection(lines, "Cleanup-ready but not processed", cleanupReady);
   pushSection(lines, "Blocked during apply", blocked);
@@ -390,6 +425,47 @@ function formatRemoteDeletionProposal(proposal: RemoteDeletionProposal): string 
   const mergedPr =
     proposal.mergedPr === null ? "merged PR none" : `merged PR #${proposal.mergedPr}`;
   return `- ${proposal.ref} remote oid ${proposal.oid}; local retirement oid ${proposal.localRetirementOid}; ${mergedPr}; separate authorization required before any remote deletion`;
+}
+
+function emptyMetadataRepairReport(): MetadataRepairReport {
+  return {
+    repaired: [],
+    blocked: [],
+    partial: [],
+    pending: [],
+  };
+}
+
+function formatMetadataRepairCandidate(
+  candidate: PatrolInventory["orphanedMetadata"][number],
+): string {
+  return `- ${candidate.beadId} ${candidate.location} ${candidate.branch} at ${candidate.path}`;
+}
+
+function formatMetadataRepairBlock(
+  blocked: MetadataRepairReport["blocked"][number] | MetadataRepairReport["partial"][number],
+): string {
+  return `- ${blocked.beadId} ${blocked.location}: ${blocked.reason}`;
+}
+
+function renderPatrolReport(
+  summary: PatrolSummary,
+  inventory: PatrolInventory,
+): string {
+  const lines = [renderWorktreeLifecycleReport(summary, { includeFooter: false })];
+  const orphaned = inventory.orphanedMetadata.map((candidate) => {
+    const disposition = candidate.repairable
+      ? "repairable by gated apply"
+      : `not repairable: ${candidate.reasons.join("; ")}`;
+    return `${formatMetadataRepairCandidate(candidate)}; ${disposition}`;
+  });
+  pushSection(lines, "Orphaned metadata", orphaned);
+  const malformedClaims = renderOrphanedMetadataClaims(inventory);
+  if (malformedClaims) {
+    lines.push(malformedClaims);
+  }
+  lines.push("", "Report only. No worktree, branch, or Bead metadata was changed.");
+  return lines.join("\n");
 }
 
 function compareText(left: string, right: string): number {
@@ -450,26 +526,52 @@ export function runRetirementApply(
     throw new Error(formatGateFailure("acquire", acquired.reason));
   }
 
+  let metadataRepair: MetadataRepairReport | undefined;
   let retirement: RetirementReport | undefined;
   let postInventory: PatrolInventory | undefined;
   let postInventoryError: string | undefined;
   let thrown: unknown;
   try {
+    const repairableOrphans = (inventory.orphanedMetadata ?? []).filter(
+      (candidate) => candidate.repairable,
+    );
+    const repairLimit = Math.min(options.maxRetire, repairableOrphans.length);
+    metadataRepair = dependencies.repairOrphanedWorktreeMetadata({
+      candidates: inventory.orphanedMetadata ?? [],
+      maxRepairs: repairLimit,
+      gateHandle: acquired.handle,
+      repositoryRoot: options.root,
+      operations: dependencies.createMetadataRepairOperations({
+        root: options.root,
+      }),
+    });
+    const gitLimit = options.maxRetire - repairLimit;
     const operations = dependencies.createGitRetirementOperations({
       root: options.root,
       repo: options.repo!,
       gateHandle: acquired.handle,
       nowMs: options.nowMs,
     });
-    retirement = dependencies.retireLifecycleUnits({
-      items: inventory.items,
-      gateHandle: {
-        generation: acquired.handle.generation,
-        token: acquired.handle.token,
-      },
-      operations,
-      maxRetire: String(options.maxRetire),
-    });
+    retirement =
+      gitLimit > 0
+        ? dependencies.retireLifecycleUnits({
+            items: inventory.items,
+            gateHandle: {
+              generation: acquired.handle.generation,
+              token: acquired.handle.token,
+            },
+            operations,
+            maxRetire: String(gitLimit),
+          })
+        : {
+            retired: [],
+            blocked: [],
+            cleanupReady: inventory.items
+              .filter((item) => item.lane === "retire-after-gate")
+              .sort(comparePatrolItems),
+            attempts: [],
+            remoteDeletionProposals: [],
+          };
     const heartbeat = dependencies.heartbeatMaintenanceGate(acquired.handle);
     if (!heartbeat.ok) {
       postInventoryError =
@@ -500,7 +602,23 @@ export function runRetirementApply(
                 ownershipAfter.reason ?? "unknown ownership error"
               }`;
           } else {
-            postInventory = candidatePostInventory;
+            const unreconciled = metadataRepair.repaired.filter((repaired) =>
+              (candidatePostInventory.orphanedMetadata ?? []).some(
+                (candidate) =>
+                  candidate.beadId === repaired.beadId &&
+                  candidate.location === repaired.location &&
+                  candidate.branch === repaired.branch &&
+                  candidate.path === repaired.path,
+              ),
+            );
+            if (unreconciled.length > 0) {
+              postInventoryError =
+                `post-apply inventory still reports repaired orphaned metadata: ${unreconciled
+                  .map((candidate) => `${candidate.beadId}:${candidate.location}`)
+                  .join(", ")}`;
+            } else {
+              postInventory = candidatePostInventory;
+            }
           }
         } catch (error) {
           postInventoryError =
@@ -531,11 +649,12 @@ export function runRetirementApply(
     throw thrown;
   }
 
-  if (retirement === undefined) {
-    throw new Error("retirement apply completed without a retirement result");
+  if (metadataRepair === undefined || retirement === undefined) {
+    throw new Error("apply completed without metadata repair and retirement results");
   }
 
   return {
+    metadataRepair,
     retirement,
     ...(postInventory ? { postInventory } : {}),
     ...(postInventoryError ? { postInventoryError } : {}),
@@ -561,12 +680,14 @@ export function main(argv = process.argv.slice(2)): number {
 
   if (options.apply) {
     const {
+      metadataRepair,
       retirement,
       postInventory,
       postInventoryError,
       warning,
     } = runRetirementApply(options, inventory);
     const outcome = evaluateRetirementApplyOutcome({
+      metadataRepair,
       retirement,
       postInventoryError,
       warning,
@@ -581,6 +702,7 @@ export function main(argv = process.argv.slice(2)): number {
             ...(warning ? { warning } : {}),
             inventoryPhase: postInventory ? "post-apply" : "pre-apply-fallback",
             ...(postInventoryError ? { postInventoryError } : {}),
+            metadataRepair,
             retirement,
           })
         : `${renderApplyReport(
@@ -588,6 +710,7 @@ export function main(argv = process.argv.slice(2)): number {
             retirement,
             warning,
             postInventoryError,
+            metadataRepair,
           )}${renderOrphanedMetadataClaims(reportingInventory)}`,
     );
     return outcome.status;
@@ -596,7 +719,7 @@ export function main(argv = process.argv.slice(2)): number {
   console.log(
     options.json
       ? renderJsonReport(options, inventory, summary)
-      : `${renderWorktreeLifecycleReport(summary)}${renderOrphanedMetadataClaims(inventory)}`,
+      : renderPatrolReport(summary, inventory),
   );
   return 0;
 }
