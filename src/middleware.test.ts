@@ -26,9 +26,9 @@ assert.match(source, /req\.headers\.get\("origin"\)/, "middleware should reject 
 assert.match(source, /req\.headers\.get\("host"\)/, "middleware should reject unsafe hosts");
 assert.match(source, /const requestHost = req\.headers\.get\("host"\)/, "proxy should capture the forwarded request host once");
 // Remote ingress is a verified mobile invite OR an allowlisted tailnet device
-// (cave-zm6pn). Both are proven credentials; neither is the bare
-// COVEN_CAVE_TAILNET_TRUST flag, which must never relax a gate on its own.
-assert.match(source, /const remoteIngress = mobileAccessAuthenticated \|\| tailnetPeerVerified/, "remote ingress is a verified invite or a verified tailnet device");
+// Tailnet forwarding metadata is not a credential: a local process can forge
+// it. Remote ingress requires a bearer credential (mobile or sidecar).
+assert.match(source, /const remoteIngress =\s*mobileAccessAuthenticated \|\| \(sidecarAuthenticatedAtGate && !trustedLocalPeer\)/, "remote ingress requires a verified bearer credential");
 assert.match(source, /isAllowedApiHost\(requestHost, remoteIngress\)/, "verified remote ingress should satisfy the API host gate");
 assert.doesNotMatch(source, /isAllowedApiHost\([^)]*tailnetTrusted[^)]*\)/, "tailnet membership alone must not relax the API host gate");
 assert.match(source, /const tailnetTrusted = process\.env\.COVEN_CAVE_TAILNET_TRUST === "1"/, "the tailnet-trust flag should survive only as a taint marker that further restricts automation ingress");
@@ -91,12 +91,12 @@ assert.match(source, /missing request source/, "tokenless GET webhooks should re
 // extend to mobile-cookie-authenticated requests in exchange.
 assert.match(
   source,
-  /if \(!sidecarAuthenticated && !remoteIngress\) \{/,
-  "the sidecar gate must admit verified remote ingress — neither a packaged phone nor an allowlisted tailnet device holds the sidecar token",
+  /if \(!sidecarAuthenticated && !mobileAccessVerified\) \{/,
+  "the final sidecar gate must independently admit a verified access token",
 );
 assert.match(
   source,
-  /\(!sidecarToken \|\| mobileAccessAuthenticated\) &&\s*isProductionWebhookGet/,
+  /\(!sidecarToken \|\| mobileAccessVerified\) &&\s*isProductionWebhookGet/,
   "the webhook-GET missing-source guard must cover tokenless servers and mobile-cookie-authenticated requests",
 );
 
@@ -175,24 +175,29 @@ assert.match(source, /if \(queryVerification\.ok\)/, "invalid query tokens shoul
 assert.match(source, /maxAge/, "signed mobile cookie lifetime should track token expiry");
 assert.match(source, /req\.method === "GET" \|\| req\.method === "HEAD"/, "mobile token bootstrap should avoid redirects for mutating requests");
 
-// ── Direct-loopback exemption from the mobile gate (cave-vn2r) ────────────
-// The exemption must be keyed to the per-boot secret server.ts stamps after
-// verifying the actual TCP peer — never to a bare header value or a Host,
-// both of which any client can send.
+// ── User-bound local authentication (cave-ruw4z) ──────────────────────────
+// The local-peer stamp still distinguishes direct from forwarded ingress, but
+// cannot bypass authentication because TCP loopback does not identify an OS
+// user. Only the per-launch sidecar credential exempts the owning Tauri app.
 assert.match(
   source,
   /isTrustedLocalPeer\(\s*req\.headers\.get\(LOCAL_PEER_HEADER\),\s*process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET,?\s*\)/,
-  "the local-peer exemption must verify the server-stamped per-boot secret",
+  "local-peer classification must verify the server-stamped per-boot secret",
 );
 assert.doesNotMatch(
   source,
   /LOCAL_PEER_HEADER\)\s*===\s*"1"/,
-  "a bare marker value must never satisfy the local-peer exemption (spoofable without server.ts)",
+  "a bare marker value must never satisfy local-peer classification",
 );
 assert.match(
   source,
-  /shouldRequireMobileAccessCredential\(\s*req\.headers\.get\("host"\),\s*suppliedTokens\.length > 0,\s*trustedLocalPeer,\s*tailnetPeerVerified,?\s*\)/,
-  "the mobile gate must consult the verified local-peer stamp and the verified tailnet device",
+  /shouldRequireMobileAccessCredential\(\s*req\.headers\.get\("host"\),\s*suppliedTokens\.length > 0,\s*trustedLocalPeer,\s*tailnetPeerVerified,\s*sidecarAuthenticated,?\s*\)/,
+  "the mobile gate must require user-bound sidecar or mobile credentials even for local peers",
+);
+assert.match(
+  source,
+  /const sidecarAuthenticatedAtGate = sidecarTokenMatches\(\s*req\.headers\.get\(TOKEN_HEADER\) \?\? req\.nextUrl\.searchParams\.get\(TOKEN_PARAM\),?\s*\)/,
+  "the Tauri bypass must validate its per-launch sidecar credential",
 );
 // The marker classifies mobile INGRESS, not credential possession: a mobile
 // invite cookie in a local desktop browser (auto-sent after a pairing link
@@ -201,13 +206,13 @@ assert.match(
 // (research missions/links, automations) for a genuinely local user.
 assert.match(
   source,
-  /const mobileAccessAuthenticated =\s*!trustedLocalPeer && mobileAccessToken\s*\?/,
+  /const mobileAccessVerified = mobileAccessToken\s*\?[\s\S]*?const mobileAccessAuthenticated = !trustedLocalPeer && mobileAccessVerified/,
   "a trusted local peer must never be marked as mobile ingress, even when a mobile access cookie rides along",
 );
 assert.match(
   source,
-  /mobileAccessGate\(req, trustedLocalPeer, tailnetPeerVerified\)/,
-  "the local-peer and tailnet stamps are verified once in proxy() and shared with the mobile gate",
+  /mobileAccessGate\(\s*req,\s*trustedLocalPeer,\s*tailnetPeerVerified,\s*sidecarAuthenticatedAtGate,?\s*\)/,
+  "the local-peer, tailnet, and sidecar evidence is shared with the mobile gate",
 );
 
 // ── HTML access gate for unauthenticated browser navigations ──────────────

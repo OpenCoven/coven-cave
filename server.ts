@@ -1102,13 +1102,9 @@ server.on("upgrade", (req, socket, head) => {
   // non-loopback Host and must pass the source gate on the strength of its
   // token — mirroring proxy.ts's isAllowedApiHost relaxation on REST.
   //
-  // An allowlisted tailnet node is a credential in its own right (cave-zm6pn):
-  // its WireGuard-backed device identity is strictly stronger evidence than the
-  // shared bearer token this branch was built for, so it satisfies both the
-  // source gate below and the auth requirement after it.
-  const tailnetAuthenticated = resolveTailnetPeer(req) !== null;
-  const tokenAuthenticated =
-    tailnetAuthenticated || (isPtyAuthRequired() ? isAuthorized(req, query) : false);
+  // Forwarded tailnet identity is not sufficient authentication here: another
+  // local process can forge forwarding headers on a loopback connection.
+  const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
 
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
@@ -1124,11 +1120,11 @@ server.on("upgrade", (req, socket, head) => {
   // server-pty-ws.test.ts warns about). Native mobile mode configures only
   // COVEN_CAVE_AUTH_TOKEN; require that sidecar token here too so
   // Tailscale-forwarded PTY upgrades cannot become credential-less shells.
-  // A direct loopback peer (verified off the socket, never forwarded — see
-  // isDirectLoopbackRequest) is the local app or a local browser and is
-  // exempt, mirroring proxy.ts's local-peer exemption on REST (cave-vn2r);
-  // Tailscale-forwarded upgrades carry forwarding headers and stay gated.
-  if (isPtyAuthRequired() && !tokenAuthenticated && !isDirectLoopbackRequest(req)) {
+  // TCP loopback proves only that the caller is on this machine, not that it
+  // is the owning OS user. The Tauri app has its per-launch sidecar token, and
+  // a local browser in access-token-only mode receives the existing access
+  // gate, so an armed PTY credential can fail closed for every peer.
+  if (isPtyAuthRequired() && !tokenAuthenticated) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;

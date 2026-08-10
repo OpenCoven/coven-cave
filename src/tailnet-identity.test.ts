@@ -78,12 +78,13 @@ assert.equal(
 );
 
 // ─── shouldRequireMobileAccessCredential ───────────────────────────────────
-// A verified tailnet device has already presented stronger evidence than the
-// shared invite token, so it must not be challenged for one.
+// Forwarded addresses are useful only after bearer authentication; a direct
+// loopback process can forge forwarding headers, so identity alone cannot
+// bypass the shared invite token.
 assert.equal(
   shouldRequireMobileAccessCredential("cave.tailnet.example.ts.net", false, false, true),
-  false,
-  "a verified tailnet peer needs no pairing token",
+  true,
+  "a tailnet identity still needs a user-bound credential",
 );
 assert.equal(
   shouldRequireMobileAccessCredential("cave.tailnet.example.ts.net", false, false, false),
@@ -92,8 +93,8 @@ assert.equal(
 );
 assert.equal(
   shouldRequireMobileAccessCredential("127.0.0.1:3000", false, true, false),
-  false,
-  "the socket-verified local peer exemption is unchanged",
+  true,
+  "socket-verified loopback is not OS-user identity",
 );
 assert.equal(
   shouldRequireMobileAccessCredential("127.0.0.1:3000", false, false, false),

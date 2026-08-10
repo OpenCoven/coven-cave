@@ -692,14 +692,13 @@ server.on("upgrade", (req, socket, head) => {
     });
     return;
   }
-  const tailnetAuthenticated = resolveTailnetPeer(req) !== null;
-  const tokenAuthenticated = tailnetAuthenticated || (isPtyAuthRequired() ? isAuthorized(req, query) : false);
+  const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     socket.destroy();
     return;
   }
-  if (isPtyAuthRequired() && !tokenAuthenticated && !isDirectLoopbackRequest(req)) {
+  if (isPtyAuthRequired() && !tokenAuthenticated) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;

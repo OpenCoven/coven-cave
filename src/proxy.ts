@@ -84,6 +84,7 @@ async function mobileAccessGate(
   req: NextRequest,
   trustedLocalPeer: boolean,
   tailnetPeerVerified: boolean,
+  sidecarAuthenticated: boolean,
 ) {
   const expected = configuredMobileAccessToken();
   if (!expected) return null;
@@ -95,6 +96,7 @@ async function mobileAccessGate(
       suppliedTokens.length > 0,
       trustedLocalPeer,
       tailnetPeerVerified,
+      sidecarAuthenticated,
     )
   ) {
     return null;
@@ -183,26 +185,37 @@ function nextWithMobileAccessMarker(req: NextRequest, mobileAccessAuthenticated:
 
 export async function proxy(req: NextRequest) {
   const mobileAccessToken = configuredMobileAccessToken();
-  // A direct loopback connection (server.ts verified the TCP peer and the
-  // absence of forwarding headers, then stamped the per-boot secret) is the
-  // local desktop app or a local browser — it needs no mobile invite even
-  // while the pairing secret is armed. Tailscale-Serve-forwarded phones also
-  // arrive over loopback but always carry x-forwarded-* headers, so they are
-  // never stamped and stay token-gated.
+  const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN;
+  const sidecarTokenMatches = (supplied: string | null | undefined) => {
+    if (!sidecarToken || !supplied) return false;
+    return timingSafeEqualString(supplied, sidecarToken);
+  };
+  const sidecarAuthenticatedAtGate = sidecarTokenMatches(
+    req.headers.get(TOKEN_HEADER) ?? req.nextUrl.searchParams.get(TOKEN_PARAM),
+  );
+  // The local-peer stamp distinguishes direct from forwarded traffic, but TCP
+  // loopback is not OS-user identity. When mobile access is armed, the Tauri
+  // app must also present its per-launch sidecar credential and a plain local
+  // browser must use the same access-token gate as remote browsers.
   const trustedLocalPeer = isTrustedLocalPeer(
     req.headers.get(LOCAL_PEER_HEADER),
     process.env.COVEN_CAVE_LOCAL_PEER_SECRET,
   );
-  // The allowlisted tailnet device behind a Tailscale-Serve-forwarded request
-  // (cave-zm6pn), resolved by server.ts off the raw socket and stamped with a
-  // per-boot secret. This REPLACES the shared pairing token for remote access:
-  // a device proven by WireGuard identity needs no invite to paste.
+  // Tailnet device context behind a Tailscale-Serve-forwarded request. This is
+  // never sufficient authentication because direct loopback clients can forge
+  // forwarding headers; it is consumed only after bearer authentication for
+  // optional passkey-presence binding.
   const tailnetNodeId = verifiedTailnetNode(
     req.headers.get(TAILNET_PEER_HEADER),
     process.env.COVEN_CAVE_TAILNET_PEER_SECRET,
   );
   const tailnetPeerVerified = tailnetNodeId !== null;
-  const mobileRes = await mobileAccessGate(req, trustedLocalPeer, tailnetPeerVerified);
+  const mobileRes = await mobileAccessGate(
+    req,
+    trustedLocalPeer,
+    tailnetPeerVerified,
+    sidecarAuthenticatedAtGate,
+  );
   if (mobileRes) return mobileRes;
 
   if (!req.nextUrl.pathname.startsWith("/api/")) {
@@ -233,10 +246,10 @@ export async function proxy(req: NextRequest) {
   // auto-sent access cookie) must not reclassify it as a phone — that marker
   // makes isLocalOrigin() 403 every desktop-only route (research missions,
   // links, automations) for a genuinely local user.
-  const mobileAccessAuthenticated =
-    !trustedLocalPeer && mobileAccessToken
-      ? Boolean(await mobileAccessVerification(req, mobileAccessToken))
-      : false;
+  const mobileAccessVerified = mobileAccessToken
+    ? Boolean(await mobileAccessVerification(req, mobileAccessToken))
+    : false;
+  const mobileAccessAuthenticated = !trustedLocalPeer && mobileAccessVerified;
   // Tailscale app mode (`pnpm mobile:tailscale:app`) now always provisions the
   // mobile access credential, so a remote-looking (Tailscale Serve) Host is
   // accepted only when that credential verifies. COVEN_CAVE_TAILNET_TRUST no
@@ -244,11 +257,11 @@ export async function proxy(req: NextRequest) {
   // but the flag still marks tailnet ingress below so local-only automation
   // runs stay off that path.
   const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
-  // Remote ingress is now EITHER a verified mobile invite or an allowlisted
-  // tailnet device. Both are non-local by construction, so both relax the host
-  // gate (a Serve-forwarded <host>.ts.net Host) and both must carry the mobile
-  // marker below so desktop-only routes keep 403ing.
-  const remoteIngress = mobileAccessAuthenticated || tailnetPeerVerified;
+  // Forwarded tailnet identity alone is spoofable by another local process.
+  // Remote ingress therefore requires a bearer credential; the tailnet node
+  // remains useful only as additional device context for passkey presence.
+  const remoteIngress =
+    mobileAccessAuthenticated || (sidecarAuthenticatedAtGate && !trustedLocalPeer);
   if (!isAllowedApiHost(requestHost, remoteIngress)) {
     return jsonError(403, "forbidden host");
   }
@@ -293,7 +306,6 @@ export async function proxy(req: NextRequest) {
     }
   }
 
-  const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN;
   // A request bearing the sidecar token in the CUSTOM HEADER (x-coven-cave-token)
   // can be sent by native/mobile clients over Tailscale Serve, where the proxy
   // forwards `Host: 127.0.0.1` but preserves the real ts.net source in Origin.
@@ -307,10 +319,6 @@ export async function proxy(req: NextRequest) {
   // allowlisted mobile endpoints.
   // Match PTY auth: constant-time compare so token checks stay consistent across
   // the REST proxy and server.ts upgrade path.
-  const sidecarTokenMatches = (supplied: string | null | undefined) => {
-    if (!sidecarToken || !supplied) return false;
-    return timingSafeEqualString(supplied, sidecarToken);
-  };
   const headerCsrfTrusted =
     sidecarTokenMatches(req.headers.get(TOKEN_HEADER)) &&
     isHeaderCsrfTrustedApiPath(req.nextUrl.pathname);
@@ -334,7 +342,7 @@ export async function proxy(req: NextRequest) {
     // same-origin source header for that narrow state-changing GET surface so
     // absent headers cannot bypass the CSRF gate.
     if (
-      (!sidecarToken || mobileAccessAuthenticated) &&
+      (!sidecarToken || mobileAccessVerified) &&
       isProductionWebhookGet(req.nextUrl.pathname, req.method) &&
       !origin &&
       !referer
@@ -358,7 +366,7 @@ export async function proxy(req: NextRequest) {
       : nextWithMobileAccessMarker(req, remoteIngress);
   }
 
-  if (!sidecarAuthenticated && !remoteIngress) {
+  if (!sidecarAuthenticated && !mobileAccessVerified) {
     // A verified signed mobile invite is the paired phone's credential: the
     // token is minted by this desktop from its access secret and already
     // passed mobileAccessGate above. Requiring the webview's per-launch

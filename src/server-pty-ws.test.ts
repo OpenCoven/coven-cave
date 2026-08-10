@@ -59,7 +59,12 @@ assert.match(
 // that guard and 401'd every local terminal. Native mobile mode configures
 // only COVEN_CAVE_AUTH_TOKEN, so it must also trigger auth.
 assert.match(src, /function isPtyAuthRequired\(\): boolean \{\s*return Boolean\(accessToken\(\) \|\| SIDECAR_TOKEN\);\s*\}/, "PTY auth is required when either the mobile access token or sidecar token is configured");
-assert.match(src, /if \(isPtyAuthRequired\(\) && !tokenAuthenticated && !isDirectLoopbackRequest\(req\)\)/, "PTY upgrade 401s on missing credentials when any PTY auth token is configured, except for a socket-verified direct loopback peer (cave-vn2r)");
+assert.match(src, /if \(isPtyAuthRequired\(\) && !tokenAuthenticated\)/, "PTY upgrade 401s on missing credentials whenever any PTY auth token is configured, including direct loopback peers");
+assert.doesNotMatch(
+  src,
+  /isPtyAuthRequired\(\) && !tokenAuthenticated && !isDirectLoopbackRequest\(req\)/,
+  "TCP loopback must not bypass user-bound PTY authentication",
+);
 // Direct-loopback classification (cave-vn2r): trusted only because ALL three
 // hold — the socket peer is loopback, no forwarding markers are present
 // (tailscale serve delivers remote phones over loopback WITH x-forwarded-*),
@@ -100,16 +105,13 @@ assert.match(src, /SIDECAR_QUERY_PARAM = "covenCaveToken"/, "PTY WebSocket auth 
 // tab never connects" bug (cave-iz1j).
 assert.match(
   src,
-  /const tokenAuthenticated =\s*tailnetAuthenticated \|\| \(isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false\);/,
-  "PTY upgrade verifies the access/sidecar token, or an allowlisted tailnet device, before the source gate",
+  /const tokenAuthenticated = isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false;/,
+  "PTY upgrade verifies only cryptographic access/sidecar credentials before the source gate",
 );
-// An allowlisted tailnet device is a credential in its own right (cave-zm6pn):
-// resolved off the raw socket, it is stronger evidence than the shared bearer
-// token, so the terminal must not 403 a device the REST surface already admits.
-assert.match(
+assert.doesNotMatch(
   src,
-  /const tailnetAuthenticated = resolveTailnetPeer\(req\) !== null;/,
-  "PTY upgrade treats an allowlisted tailnet device as authenticated",
+  /tailnetAuthenticated \|\|/,
+  "forgeable forwarding metadata must not authenticate PTY access",
 );
 assert.match(
   src,
@@ -226,7 +228,7 @@ assert.match(src, /isLoopbackAddress\(req\.socket\.remoteAddress\)/, "server ver
 // Tailscale Serve forwards the <host>.ts.net Host. The iOS terminal may use
 // that host only after the mobile access token authenticates the upgrade;
 // tailnet membership alone must not relax the host gate.
-assert.match(src, /const tokenAuthenticated =\s*tailnetAuthenticated \|\| \(isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false\)/, "the upgrade credential — token or allowlisted tailnet device — is verified before the host gate");
+assert.match(src, /const tokenAuthenticated = isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false/, "the cryptographic upgrade credential is verified before the host gate");
 assert.match(
   src,
   /if \(tokenAuthenticated\) return sameOrigin\(req\.headers\.origin, `http:\/\/\$\{host\}`\);\s*\n\s*return false;/,
