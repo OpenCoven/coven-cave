@@ -194,6 +194,10 @@ impl SidecarStartupControl {
         self.running.store(false, Ordering::Release);
     }
 
+    pub(super) fn is_running(&self) -> bool {
+        self.running.load(Ordering::Acquire)
+    }
+
     pub(super) fn request_cancel(&self) -> Result<(), String> {
         if !self.running.load(Ordering::Acquire) {
             return Err("sidecar startup is not running".to_string());
@@ -210,6 +214,10 @@ impl SidecarStartupControl {
     pub(super) fn request_shutdown(&self) {
         self.shutdown_requested.store(true, Ordering::Release);
         self.cancel_requested.store(true, Ordering::Release);
+    }
+
+    pub(super) fn is_shutdown_requested(&self) -> bool {
+        self.shutdown_requested.load(Ordering::Acquire)
     }
 
     pub(super) fn status(&self) -> Result<SidecarStartupStatus, String> {
@@ -272,6 +280,22 @@ impl SidecarState {
             .0
             .lock()
             .map_err(|_| "sidecar process lock is poisoned".to_string())?;
+        let Some(child) = guard.take() else {
+            return Ok(());
+        };
+        drop(guard);
+        stop_sidecar_child(child)
+    }
+
+    #[cfg(target_os = "windows")]
+    pub(super) fn stop_after_startup_attempt(&self) -> Result<(), String> {
+        // Startup failure runs on the worker thread, not the UI/exit path.
+        // Wait for the supervisor's brief liveness probe so cleanup cannot
+        // leave a failed child holding the selected port.
+        let mut guard = match self.0.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         let Some(child) = guard.take() else {
             return Ok(());
         };
@@ -349,6 +373,9 @@ pub(super) fn stop_sidecar_child(mut process: SidecarProcess) -> Result<(), Stri
 
 #[cfg(all(desktop, target_os = "windows"))]
 pub(super) fn shutdown_owned_processes(app: &tauri::AppHandle) {
+    if let Some(supervisor) = app.try_state::<Arc<SidecarSupervisor>>() {
+        supervisor.request_stop();
+    }
     if let Some(control) = app.try_state::<Arc<SidecarStartupControl>>() {
         control.request_shutdown();
     }

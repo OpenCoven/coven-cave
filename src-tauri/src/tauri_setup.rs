@@ -366,6 +366,7 @@ pub fn run() {
                     let startup_control =
                         Arc::clone(app.state::<Arc<SidecarStartupControl>>().inner());
                     spawn_sidecar_startup(app.handle().clone(), startup_control)?;
+                    spawn_sidecar_supervisor(app.handle().clone());
                     None
                 }
                 #[cfg(not(target_os = "windows"))]

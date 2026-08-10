@@ -915,7 +915,12 @@ test("Windows packaged sidecar starts without a console window", async () => {
 
 test("Windows first launch paints progress and supports recovery while the sidecar starts", async () => {
   const [launcher, startupPage] = await Promise.all([
-    readNativeHost("tauri_setup.rs", "sidecar_startup.rs"),
+    readNativeHost(
+      "tauri_setup.rs",
+      "sidecar_startup.rs",
+      "sidecar_supervisor.rs",
+      "sidecar_lifecycle.rs",
+    ),
     readFile(new URL("./frontend-stub/startup.html", import.meta.url), "utf8"),
     access(new URL("./frontend-stub/cave-icon.png", import.meta.url)),
   ]);
@@ -939,6 +944,36 @@ test("Windows first launch paints progress and supports recovery while the sidec
     launcher,
     /window\.location\.replace\(/,
     "readiness must replace startup.html in session history so history.back() cannot return to the splash screen",
+  );
+  assert.match(
+    launcher,
+    /spawn_sidecar_startup\(app\.handle\(\)\.clone\(\), startup_control\)\?;\s*spawn_sidecar_supervisor\(app\.handle\(\)\.clone\(\)\)/,
+    "Windows must start post-ready supervision beside the startup owner",
+  );
+  assert.match(
+    launcher,
+    /spawn_sidecar_startup\(app\.clone\(\), Arc::clone\(control\.inner\(\)\)\)/,
+    "automatic Windows recovery must reuse SidecarStartupControl instead of racing it",
+  );
+  assert.match(
+    launcher,
+    /recovery_observation\(\s*recovery_pending,\s*sidecar_liveness\(&app\),\s*startup_in_progress\(&app\)/,
+    "the supervisor must wait for an owned startup and observe the resulting child",
+  );
+  assert.match(
+    launcher,
+    /stop_after_startup_attempt\(\)/,
+    "failed Windows startup workers must wait for the liveness probe and release their process job",
+  );
+  assert.match(
+    launcher,
+    /refreshed_sidecar_window_url[\s\S]*QUICK_CHAT_WINDOW_LABEL,\s*NOTCH_WINDOW_LABEL/,
+    "sidecar recovery must rotate auth for already-open auxiliary windows",
+  );
+  assert.match(
+    launcher,
+    /supervisor\.request_stop\(\)[\s\S]*control\.request_shutdown\(\)/,
+    "Windows shutdown must stop supervision before cancelling startup and the process job",
   );
   assert.match(
     startupPage,
