@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { filterVisibleChatSessions } from "./chat-projects.ts";
 import {
   eligibleRightChatSessions,
+  isCurrentRightChatSessionsScope,
   resolveLatestRightChatSessionId,
 } from "./right-chat-session.ts";
 import type { SessionRow } from "./types.ts";
@@ -137,6 +138,49 @@ function row(
     eligibleRightChatSessions(sessions, "").map((session) => session.id),
     ["empty-string"],
     "an empty-string familiar id should keep matching sessions instead of returning an empty list",
+  );
+}
+
+// isCurrentRightChatSessionsScope (cave-rl980 Task 4 review): `undefined`
+// always reports current so a caller that has not adopted the applied-scope
+// contract yet (Workspace's own wiring lands in Task 7) keeps today's
+// behavior, trusting `sessions` unconditionally.
+{
+  assert.equal(
+    isCurrentRightChatSessionsScope(undefined, "cody"),
+    true,
+    "an unset scope (the pre-scope-aware contract) is always treated as current",
+  );
+  assert.equal(
+    isCurrentRightChatSessionsScope(undefined, null),
+    true,
+    "an unset scope is current even when no familiar is active",
+  );
+}
+
+// A concrete applied scope is compared directly against the familiar being
+// resolved -- a match is current, anything else (including the still-in-
+// flight OUTGOING familiar) is not.
+{
+  assert.equal(
+    isCurrentRightChatSessionsScope("cody", "cody"),
+    true,
+    "a scope naming the exact active familiar is current",
+  );
+  assert.equal(
+    isCurrentRightChatSessionsScope("cody", "nova"),
+    false,
+    "a scope still naming the OUTGOING familiar (sessions hasn't caught up to the switch yet) is not current",
+  );
+  assert.equal(
+    isCurrentRightChatSessionsScope(null, "cody"),
+    false,
+    "an explicit null scope (e.g. an unscoped/all-familiars load) never matches a specific active familiar",
+  );
+  assert.equal(
+    isCurrentRightChatSessionsScope(null, null),
+    true,
+    "an explicit null scope matches no active familiar",
   );
 }
 

@@ -39,42 +39,73 @@ assert.doesNotMatch(
   "the dedicated wrapper does not restore generic companion concepts",
 );
 
-// Resolution must be scoped to the active familiar + a loaded, error-free
-// session list, AND to `open` for the actual imperative resolve itself
-// (cave-rl980 Task 4 spec review): first-open semantics require resolving
-// against whichever session is newest at the moment the panel actually
-// becomes visible, never one resolved earlier while hidden. But every
-// familiar-identity TRANSITION is still tracked regardless of `open`, via
-// trackedFamiliarIdRef, since ChatRouter/ChatView stay mounted underneath as
-// a persistent controller — a closed A -> B -> A round trip must still
-// invalidate whatever was resolved for the earlier A so the panel resolves
-// fresh, against then-current sessions, the moment it reopens, rather than
-// wrongly concluding nothing had changed. The effect additionally gates on
-// familiars readiness/errors: resolving — and marking resolvedFamiliarRef
-// resolved — on a render where the router isn't actually mounted would
-// silently no-op the openSession/newChat call and then permanently skip the
-// real resolution once the router does mount.
+// Applied-session-scope contract (cave-rl980 Task 4 review, bullet 1): the
+// narrowest explicit contract that lets a future caller (Workspace, wired in
+// Task 7) tell this panel which familiar `sessions` actually corresponds to,
+// so a familiar switch never resolves against another familiar's still-in-
+// flight roster. See right-chat-session.ts's isCurrentRightChatSessionsScope.
 assert.match(
   source,
-  /if \(!activeFamiliar \|\| !familiarsLoaded \|\| familiarsError \|\| !sessionsLoaded \|\| sessionsError\) return;/,
-  "the merged resolution/reconcile effect gates on familiar and session readiness/errors so a null router can never be marked resolved",
+  /sessionsScopeFamiliarId\?: RightChatSessionsScope;/,
+  "the panel exposes an optional applied-session-scope prop, ready for Workspace to wire in Task 7",
 );
-// One `useLayoutEffect`, not two separate `useEffect`s (cave-rl980 Task 4
-// review): a familiar change must issue exactly one imperative openSession/
-// newChat call. Two effects race on the render the familiar changes — a
-// second, separate reconcile effect would still see the outgoing familiar's
-// stale selectedSessionId (never eligible for the new familiar, and, having
-// been observed under the old familiar, passing the observed-gate too) and
-// redundantly resolve a second time. `useLayoutEffect` also wins the
-// ordering race against ChatRouter's own internal familiar-switch effect (a
-// passive `useEffect`): every layout effect across the tree commits before
-// any passive effect runs, so ChatRouter's own effect always sees the view
-// this one already set, and its own transition becomes a no-op.
 assert.match(
   source,
-  /useLayoutEffect\(\(\) => \{\s*\n\s*if \(!activeFamiliar \|\| !familiarsLoaded \|\| familiarsError \|\| !sessionsLoaded \|\| sessionsError\) return;/,
-  "the merged effect is a useLayoutEffect so it always commits before ChatRouter's own internal familiar-switch effect can independently guess a second transition",
+  /import \{\s*\n\s*eligibleRightChatSessions,\s*\n\s*isCurrentRightChatSessionsScope,\s*\n\s*resolveLatestRightChatSessionId,\s*\n\s*type RightChatSessionsScope,\s*\n\s*\} from "@\/lib\/right-chat-session";/,
+  "the scope check reuses the shared right-chat-session helper/type rather than inventing a parallel one",
 );
+assert.match(
+  source,
+  /const sessionsScopeCurrent =\s*\n\s*activeFamiliar === null \|\|\s*\n\s*isCurrentRightChatSessionsScope\(sessionsScopeFamiliarId, activeFamiliar\.id\);/,
+  "scope currency is derived once and reused by both the resolve effect and the render-blocking gate",
+);
+assert.match(
+  source,
+  /!sessionsScopeCurrent && !hasResolvedRouter/,
+  "an unconfirmed scope only blocks rendering (and ChatRouter's own mount) before this familiar has ever resolved -- exactly like the familiarsError/sessionsError transient-vs-first-load distinction",
+);
+
+// Resolution must be scoped to the active familiar + a loaded, error-free,
+// scope-confirmed session list, AND to `open` for the actual imperative
+// resolve itself (cave-rl980 Task 4 spec review): first-open semantics
+// require resolving against whichever session is newest at the moment the
+// panel actually becomes visible, never one resolved earlier while hidden.
+// But every familiar-identity TRANSITION is still tracked regardless of
+// `open`, readiness, errors, or scope, via trackedFamiliarIdRef, since
+// ChatRouter/ChatView stay mounted underneath as a persistent controller —
+// a closed A -> B -> A round trip, even one that happens entirely while a
+// roster error is active throughout, must still invalidate whatever was
+// resolved for the earlier A so the panel resolves fresh, against
+// then-current sessions, the moment it reopens, rather than wrongly
+// concluding nothing had changed (cave-rl980 Task 4 review: identity
+// tracking/invalidation happens BEFORE the loading/error readiness guard,
+// not merged with it). The effect additionally gates the actual resolve on
+// familiars/session readiness/errors: resolving — and marking
+// resolvedFamiliarRef resolved — on a render where the router isn't
+// actually mounted would silently no-op the openSession/newChat call and
+// then permanently skip the real resolution once the router does mount.
+assert.match(
+  source,
+  /useLayoutEffect\(\(\) => \{\s*\n\s*if \(!activeFamiliar\) return;/,
+  "the merged effect's very first statement is the plain !activeFamiliar guard, unconditional on readiness/errors/scope, so identity tracking below it always runs",
+);
+assert.match(
+  source,
+  /if \(trackedFamiliarIdRef\.current !== activeFamiliar\.id\) \{[\s\S]*?\n\s*\}\n\n\s*if \(!familiarsLoaded \|\| familiarsError \|\| !sessionsLoaded \|\| sessionsError\) return;/,
+  "familiar-identity tracking/invalidation runs BEFORE the loading/error readiness guard (cave-rl980 Task 4 review), so a transition during an active error is never missed",
+);
+// Applied-session-scope contract (cave-rl980 Task 4 review): `sessions` can
+// still be the OUTGOING familiar's roster for a render or more after
+// `activeFamiliar` itself has already changed (Workspace's session list is
+// fetched scoped to a single active familiar and refetches asynchronously
+// on every switch). The resolve/reconcile below must never run against it
+// until the caller confirms `sessions` corresponds to THIS familiar.
+assert.match(
+  source,
+  /if \(!familiarsLoaded \|\| familiarsError \|\| !sessionsLoaded \|\| sessionsError\) return;\s*\n\s*if \(!sessionsScopeCurrent\) return;/,
+  "the resolve/reconcile is additionally gated on the applied-session-scope contract, checked immediately after readiness/errors",
+);
+
 // Every familiar-identity transition invalidates retained resolution and
 // selection ownership regardless of `open` (cave-rl980 Task 4 spec review),
 // so a closed A -> B -> A round trip is still detected as needing a fresh
