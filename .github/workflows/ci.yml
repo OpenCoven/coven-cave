@@ -14,8 +14,6 @@ on:
     branches: [main]
 
 concurrency:
-  # A recovered workflow_dispatch and a late pull_request delivery for the
-  # same commit must supersede one another instead of running two full suites.
   group: ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
@@ -23,115 +21,51 @@ permissions:
   contents: read
 
 jobs:
-  # This was ONE job running lint → typecheck → tests → build in sequence, for
-  # 11m07s (cave-awu). Nothing in that chain consumed anything the previous
-  # step produced, so the ordering bought nothing but wall clock. Measured on
-  # run 31229051374: install 18s, lint 11s, typecheck 41s, check:tests-wired
-  # 0s, test:app 5m03s, test:api 2m44s, test:mobile 4s, build 1m55s.
-  #
-  # Split three ways below; the critical path becomes the test:app leg plus its
-  # own ~25s setup, so ~5m30s rather than 11m. Each leg re-pays checkout +
-  # install, which is the ~25s price of the parallelism.
-  frontend-static:
-    name: Frontend lint & types
+  build:
+    name: Frontend build
     if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     runs-on: ubuntu-latest
-    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~1min).
-    timeout-minutes: 10
+    timeout-minutes: 60
+    env:
+      NEXT_PUBLIC_CAVE_CRAFTS: "1"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
-      # Guard: no committed merge-conflict markers anywhere in the tree.
-      # 23316da3 landed two unresolved conflict blocks in a component; the file
-      # stopped parsing, every route 500'd, and main stayed broken until
-      # 4ea88862. Nothing in this workflow would have caught it — `git diff
-      # --check` runs only in release.yml, by which point the artifact is
-      # already on main. Per-file guards exist and are worth keeping, but they
-      # only protect files someone already thought to protect.
-      #
-      # Deliberately not a new job or a required context: an added context that
-      # does not report is how a PR ends up BLOCKED with nothing failing. It
-      # rides the existing static-check job and runs before install, since a
-      # tree with markers cannot lint or typecheck meaningfully — but after
-      # setup-node, so it runs on the pinned Node rather than whatever the
-      # runner image happens to ship.
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
+          cache: pnpm
+
+      - id: paths
+        name: Select path-aware validation
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
+        run: node scripts/ci-paths.mjs --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
       - run: node scripts/check-conflict-markers.mjs
+      - run: node --test scripts/ci-paths.test.mjs
 
-      - run: pnpm install --frozen-lockfile
+      - name: Install JavaScript dependencies
+        if: steps.paths.outputs.frontend == 'true' || steps.paths.outputs.e2e == 'true'
+        run: pnpm install --frozen-lockfile
 
-      - run: pnpm lint
-
-      - run: pnpm typecheck
-
-      # Guard: every *.test.ts/.mjs on disk must be wired into a CI test
-      # script (test:app/api/mobile) — authored tests can't silently never
-      # run. See scripts/check-tests-wired.mjs for the allowlist.
-      #
-      # This guard belongs with the static checks rather than with any one
-      # suite: it asserts across ALL THREE suite scripts, so pinning it to a
-      # single matrix leg below would imply a scope it does not have.
-      - run: pnpm check:tests-wired
-
-  frontend-tests:
-    name: Frontend tests (${{ matrix.suite }})
-    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
-    runs-on: ubuntu-latest
-    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~5min for the app suite).
-    timeout-minutes: 20
-    strategy:
-      # One suite failing must not cancel the others; a partial report cannot
-      # distinguish an isolated break from a systemic one.
-      fail-fast: false
-      matrix:
-        # Split by the existing script boundaries rather than by any new
-        # partitioning, so a failure still names the same suite it always did.
-        # api and mobile stay separate legs even though mobile takes 4s — the
-        # mobile smokes (drawer wiring, no-zoom input font sizes, safe-area
-        # tokens; see docs/mobile-readiness.md) are the checklist's entry point
-        # and are easier to find as their own check than buried behind api.
-        suite: [app, api, mobile]
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm test:${{ matrix.suite }}
-
-  frontend-bundle:
-    name: Frontend bundle
-    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
-    runs-on: ubuntu-latest
-    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~2min, up to 3 attempts).
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24
-
-      - run: pnpm install --frozen-lockfile
-
-      # Next 16.2.6 / Turbopack has non-deterministic chunking errors on
-      # the same SHA (~50% pass rate observed on this codebase). Retry up
-      # to 3 times with a clean .next between attempts. Remove once we
-      # upgrade past the buggy Turbopack release.
-      - name: pnpm build (with Turbopack flake retry)
+      - name: Validate frontend
+        if: steps.paths.outputs.frontend == 'true'
+        shell: bash
         run: |
+          set -euo pipefail
+          pnpm lint
+          pnpm typecheck
+          pnpm check:tests-wired
+          pnpm test:app
+          pnpm test:api
+          pnpm test:mobile
           for attempt in 1 2 3; do
             if pnpm build; then
               exit 0
@@ -139,62 +73,13 @@ jobs:
             echo "::warning::pnpm build attempt $attempt failed; retrying with clean .next"
             rm -rf .next
           done
-          echo "::error::pnpm build failed 3 times — not a flake"
           exit 1
 
-  # `Frontend build` is a REQUIRED status check on main. Branch protection
-  # matches contexts by name, and a required context that never reports leaves
-  # every PR stuck BLOCKED with nothing visibly failing (see CLAUDE.md). So the
-  # name stays here, on the aggregation job, rather than moving to any one of
-  # the three legs above — which also keeps its meaning intact: this check is
-  # still "the frontend is green", not "the bundle compiled". No branch
-  # protection edit is needed to land this.
-  build:
-    name: Frontend build
-    runs-on: ubuntu-latest
-    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (aggregation no-op).
-    timeout-minutes: 5
-    needs: [frontend-static, frontend-tests, frontend-bundle]
-    if: always()
-    steps:
-      # Every leg is reported before exiting, so one red leg does not hide the
-      # others — the same reason the matrices above set fail-fast: false.
-      - name: Require every frontend leg
-        run: |
-          failed=0
-          if [ "${{ needs.frontend-static.result }}" != "success" ]; then
-            echo "::error::Frontend lint & types result: ${{ needs.frontend-static.result }}"
-            failed=1
-          fi
-          if [ "${{ needs.frontend-tests.result }}" != "success" ]; then
-            echo "::error::Frontend test matrix result: ${{ needs.frontend-tests.result }}"
-            failed=1
-          fi
-          if [ "${{ needs.frontend-bundle.result }}" != "success" ]; then
-            echo "::error::Frontend bundle result: ${{ needs.frontend-bundle.result }}"
-            failed=1
-          fi
-          if [ "$failed" -ne 0 ]; then
-            exit 1
-          fi
-          echo "Frontend lint/types, all test suites, and the bundle passed."
-
-  cargo-check:
-    name: Rust check
-    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
-    runs-on: ubuntu-latest
-    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~1-5min (cold cargo cache)).
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: src-tauri
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-03-27
+        if: steps.paths.outputs.rust == 'true'
 
-      # Tauri 2 prerequisites for Ubuntu 24.04 (ubuntu-latest).
-      - name: Install Tauri system deps
+      - name: Install Tauri system dependencies
+        if: steps.paths.outputs.rust == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -209,480 +94,33 @@ jobs:
             librsvg2-dev
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        if: steps.paths.outputs.rust == 'true'
         with:
           workspaces: src-tauri -> target
 
-      # tauri-build validates bundle resource globs during cargo check.
-      # resources/server/ and resources/node/ are generated by
-      # scripts/sidecar-bundle.sh at real build time and are gitignored, so
-      # create placeholders so the globs in tauri.conf.json match at least
-      # one file.
-      - run: |
+      - name: Validate Rust
+        if: steps.paths.outputs.rust == 'true'
+        working-directory: src-tauri
+        shell: bash
+        run: |
+          set -euo pipefail
           mkdir -p resources/server resources/node
           touch resources/server/.cargo-check-placeholder
           touch resources/node/.cargo-check-placeholder
+          cargo check --locked
+          cargo test --locked --lib
 
-      - run: cargo check --locked
+      - name: Install Playwright browsers
+        if: steps.paths.outputs.e2e == 'true'
+        run: pnpm exec playwright install --with-deps chromium webkit
 
-      # Persisted mobile pairing secret (cave-y482): a desktop restart must
-      # not rotate the secret phones signed their tokens against.
-      - run: cargo test --locked --lib app_lifecycle_tests::mobile_access_token -- --nocapture
+      - name: Validate end-to-end behavior
+        if: steps.paths.outputs.e2e == 'true'
+        run: pnpm exec playwright test
 
-      # Second-GUI ownership (cave-4wnxo): launching a second copy must resolve
-      # to an ordinary outcome. Reported as an error it unwinds out of Tauri's
-      # setup hook, which on macOS sits inside a non-unwinding Objective-C
-      # frame, so the process aborted with SIGABRT instead of naming the GUI
-      # already running. No CI runner is macOS, so the conflict decision is
-      # deliberately cfg(desktop) rather than macOS-only to be executable here.
-      - run: cargo test --locked --lib desktop_reachability::tests::gui_conflict -- --nocapture
-
-      # Dev-launcher startup handshake (cave-g8n5v): `tauri dev` returns 0 when
-      # the app dies from a signal, so scripts/dev-app.sh reads this marker
-      # rather than that status. An empty or unwritten marker must mean startup
-      # never finished — nothing else may produce one.
-      - run: cargo test --locked --lib app_lifecycle_tests::dev_startup_marker -- --nocapture
-
-  # Sharded across THREE runners (cave-5pa). This was one job running the whole
-  # suite serially, and it was the CI critical path: 14m09s total, of which
-  # 12m56s was the single `playwright test` call. Each shard pays the fixed
-  # ~72s setup (install + browser download) and the dev server's first compile
-  # again, so the win is sublinear — expect roughly half, not a third.
-  #
-  # Shard assignment is Playwright's own (`--shard=i/N`), which splits by test
-  # rather than by file. Project `dependencies` are re-run inside every shard,
-  # so the serial `preferences-*` chain that mutates process-wide scale still
-  # runs to completion ahead of the parallel projects in each shard, against
-  # that shard's own dev server. That chain is what makes it safe to shard at
-  # all; if you add another order-dependent project, give it dependencies too
-  # rather than assuming shard boundaries will separate it.
-  e2e-shard:
-    name: E2E shard ${{ matrix.shard }}/3
-    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
-    runs-on: ubuntu-latest
-    env:
-      NEXT_PUBLIC_CAVE_CRAFTS: "1"
-    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95
-    # (observed ~5-15min unsharded; kept at 25 until sharded p95 is measured).
-    timeout-minutes: 25
-    strategy:
-      # One shard failing must not cancel the others — a half-reported suite
-      # cannot tell you whether the failure is isolated or systemic.
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3]
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24
-
-      - run: pnpm install --frozen-lockfile
-
-      # Browsers + their Linux system libraries. The e2e projects use chromium
-      # (desktop, pixel-5) and webkit (iphone-13); --with-deps installs the apt
-      # packages those engines need on the runner.
-      - run: pnpm exec playwright install --with-deps chromium webkit
-
-      # The Playwright config self-starts `next dev` on :3100 (COVEN_CAVE_E2E=1)
-      # and runs the three viewport projects. CI=true makes the config use
-      # workers:2 + retries:1; per-test timeout is 60s for dev-server compile.
-      # Each shard starts its own dev server; they are separate runners, so the
-      # fixed e2e port in scripts/ports.mjs cannot collide between them.
-      - run: pnpm exec playwright test --shard=${{ matrix.shard }}/3
-
-  # `E2E (Playwright)` is a REQUIRED status check on main. Branch protection
-  # matches contexts by name, and a required context that never reports leaves
-  # every PR stuck BLOCKED with nothing visibly failing (see CLAUDE.md). So the
-  # name stays on this aggregation job rather than moving to the shards, and
-  # protection needs no edit to land this change.
-  e2e:
-    name: E2E (Playwright)
-    runs-on: ubuntu-latest
-    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (aggregation no-op).
-    timeout-minutes: 5
-    needs: e2e-shard
-    if: always()
-    steps:
-      - name: Require every E2E shard
+      - name: Report skipped suites
+        if: steps.paths.outputs.frontend != 'true' || steps.paths.outputs.rust != 'true' || steps.paths.outputs.e2e != 'true'
         run: |
-          if [ "${{ needs.e2e-shard.result }}" != "success" ]; then
-            echo "::error::E2E shard matrix result: ${{ needs.e2e-shard.result }}"
-            exit 1
-          fi
-          echo "E2E passed on all 3 shards."
-
-  # Cross-environment conformance (#1990). The SAME conformance suite runs on
-  # all three target OSes, so "it works here" is verified per-platform — not
-  # just on the neutral Linux baseline above. Anchored on the platform-divergent
-  # logic that has bitten the packaged app (coven .cmd spawn #2011, sidecar
-  # native prune #2010). fail-fast:false so one OS failing still reports the
-  # others. Neutral defaults + per-OS deltas: docs/cross-environment.md.
-  conformance:
-    name: Cross-environment (${{ matrix.os }})
-    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
-    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~0.5-2min).
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        # macOS runners removed from PR CI: GitHub-hosted macOS minutes were
-        # exhausting the org Actions limit and queuing indefinitely, stalling
-        # every required check. macOS is still covered by the release pipeline
-        # (release.yml). Restore macos-latest here once macOS budget is sorted.
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24
-
-      - run: pnpm install --frozen-lockfile
-
-      # Same assertions on every OS; per-OS branches run for real on their host
-      # and are explicit skips elsewhere (see the suite). No silent no-ops.
-      - name: Run cross-environment conformance
-        run: pnpm test:conformance
-
-  conformance-required:
-    name: Cross-environment required
-    runs-on: ubuntu-latest
-    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (aggregation no-op).
-    timeout-minutes: 5
-    needs: conformance
-    if: always()
-    steps:
-      - name: Require every cross-environment matrix leg
-        run: |
-          if [ "${{ needs.conformance.result }}" != "success" ]; then
-            echo "::error::Cross-environment matrix result: ${{ needs.conformance.result }}"
-            exit 1
-          fi
-          echo "Cross-environment matrix passed on ubuntu-latest and windows-latest."
-
-  sidecar-runtime:
-    name: Sidecar runtime (${{ matrix.os }})
-    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
-    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (windows runner is the flaky/slow one).
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        # macOS removed from PR CI (see conformance matrix note). Release
-        # pipeline still exercises macOS. Restore once macOS budget is sorted.
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24
-
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-03-27
-        if: matrix.os == 'windows-latest'
-
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        if: matrix.os == 'windows-latest'
-        with:
-          workspaces: src-tauri -> target
-
-      - run: pnpm install --frozen-lockfile
-
-      # Slice B runtime proof for #1990: build the OS-specific packaged Node
-      # sidecar on each target, boot the bundled server with sidecar auth, and
-      # prove a seeded raster familiar avatar transcodes through the real HTTP
-      # route. This catches native sharp/libvips prune and packaged-server boot
-      # regressions that pure conformance assertions cannot.
-      - name: Build packaged sidecar bundle
-        shell: bash
-        run: bash scripts/sidecar-bundle.sh
-
-      - run: pnpm test:sidecar-runtime
-
-      # Exercise the production archive verifier/extractor on its actual OS;
-      # the Node smoke above intentionally treats the archive as a black box.
-      - name: Test Windows sidecar cache extraction
-        if: matrix.os == 'windows-latest'
-        run: cargo test --manifest-path src-tauri/Cargo.toml --locked sidecar_archive
-
-  # Split out of the sidecar-runtime windows leg (cave-b3d). These seven steps
-  # are pure `cargo test` / PowerShell-fixture work: none of them reads the
-  # packaged sidecar bundle, so making them queue behind a 4m23s bundle build
-  # only delayed their signal. On run 31229051374 they started at 6m36s into
-  # the job and took 48s between them; as their own job they report at ~3m.
-  #
-  # The one Windows cargo step that does NOT move is `Test Windows sidecar
-  # cache extraction`. Its `extracts_the_built_windows_archive_when_available`
-  # case returns early when src-tauri/resources/server-archive is absent, so
-  # running it here would still pass — while silently testing nothing. It stays
-  # behind the bundle build that produces that archive.
-  #
-  # Enforcement rides the existing `Sidecar runtime required` rollup below,
-  # which is already a required status check, so branch protection needs no
-  # edit for this job to be able to fail a PR.
-  windows-native:
-    name: Windows native tests
-    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
-    runs-on: windows-latest
-    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~2.5min incl. cold cargo build).
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-03-27
-
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          workspaces: src-tauri -> target
-
-      # tauri-build validates bundle resource globs while building the crate,
-      # and this job deliberately does not build the real resources. Same
-      # placeholder trick the Rust check job uses so the globs in
-      # tauri.conf.json match at least one file.
-      - shell: bash
-        run: |
-          mkdir -p src-tauri/resources/server src-tauri/resources/node
-          touch src-tauri/resources/server/.cargo-test-placeholder
-          touch src-tauri/resources/node/.cargo-test-placeholder
-
-      # Exercise the same native browser reducer and kernel-owned process-tree
-      # paths used by the desktop shell. Each filter is its own step because
-      # PowerShell does not stop after a failed native command by default. The
-      # output guard also rejects Cargo's successful "0 tests" result when a
-      # cfg gate or renamed test makes a filter stale.
-      - name: Test Windows native Browser lifecycle reducer
-        shell: pwsh
-        run: |
-          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib browser::lifecycle_tests -- --nocapture 2>&1)
-          $testExitCode = $LASTEXITCODE
-          $testOutput | ForEach-Object { Write-Host $_ }
-          if ($testExitCode -ne 0) { exit $testExitCode }
-          $testSummary = $testOutput -join "`n"
-          if ($testSummary -notmatch '(?m)^test result: ok\. [1-9][0-9]* passed;') {
-            throw 'Browser lifecycle filter completed without running any tests.'
-          }
-
-      - name: Test Windows PTY callback isolation
-        shell: pwsh
-        run: |
-          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib pty::tests::pty_start_worker_returns_dependency_panics_as_errors -- --exact --nocapture 2>&1)
-          $testExitCode = $LASTEXITCODE
-          $testOutput | ForEach-Object { Write-Host $_ }
-          if ($testExitCode -ne 0) { exit $testExitCode }
-          $testSummary = $testOutput -join "`n"
-          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
-            throw 'PTY callback-isolation filter did not run exactly one test.'
-          }
-
-      - name: Test Windows owned-process Job Object lifecycle
-        shell: pwsh
-        run: |
-          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib windows_process_job::tests -- --nocapture 2>&1)
-          $testExitCode = $LASTEXITCODE
-          $testOutput | ForEach-Object { Write-Host $_ }
-          if ($testExitCode -ne 0) { exit $testExitCode }
-          $testSummary = $testOutput -join "`n"
-          if ($testSummary -notmatch '(?m)^test result: ok\. [1-9][0-9]* passed;') {
-            throw 'Job Object lifecycle filter completed without running any tests.'
-          }
-
-      - name: Test Windows raw main close fallback
-        shell: pwsh
-        run: |
-          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::raw_main_close_fallback_recognizes_only_native_close_messages -- --exact --nocapture 2>&1)
-          $testExitCode = $LASTEXITCODE
-          $testOutput | ForEach-Object { Write-Host $_ }
-          if ($testExitCode -ne 0) { exit $testExitCode }
-          $testSummary = $testOutput -join "`n"
-          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
-            throw 'Raw main close fallback filter did not run exactly one test.'
-          }
-
-      - name: Test Windows close hard deadline
-        shell: pwsh
-        run: |
-          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::close_hard_deadline_terminates_the_exact_stalled_process -- --exact --nocapture 2>&1)
-          $testExitCode = $LASTEXITCODE
-          $testOutput | ForEach-Object { Write-Host $_ }
-          if ($testExitCode -ne 0) { exit $testExitCode }
-          $testSummary = $testOutput -join "`n"
-          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
-            throw 'Close hard-deadline filter did not run exactly one test.'
-          }
-
-      - name: Test Windows idempotent sidecar cleanup
-        shell: pwsh
-        run: |
-          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::sidecar_cleanup_is_idempotent_when_no_child_is_running -- --exact --nocapture 2>&1)
-          $testExitCode = $LASTEXITCODE
-          $testOutput | ForEach-Object { Write-Host $_ }
-          if ($testExitCode -ne 0) { exit $testExitCode }
-          $testSummary = $testOutput -join "`n"
-          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
-            throw 'Idempotent sidecar cleanup filter did not run exactly one test.'
-          }
-
-      - name: Test Windows sidecar descendant cleanup
-        shell: pwsh
-        run: |
-          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::sidecar_state_terminates_root_and_descendant_within_deadline -- --exact --nocapture 2>&1)
-          $testExitCode = $LASTEXITCODE
-          $testOutput | ForEach-Object { Write-Host $_ }
-          if ($testExitCode -ne 0) { exit $testExitCode }
-          $testSummary = $testOutput -join "`n"
-          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
-            throw 'Sidecar descendant cleanup filter did not run exactly one test.'
-          }
-
-      - name: Test Windows upgrade diagnostics fixture
-        shell: powershell
-        run: .\scripts\windows-upgrade-diagnostics.test.ps1
-
-  sidecar-runtime-required:
-    name: Sidecar runtime required
-    runs-on: ubuntu-latest
-    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (aggregation no-op).
-    timeout-minutes: 5
-    needs: [sidecar-runtime, windows-native]
-    if: always()
-    steps:
-      # Also gates the Windows native tests split out above (cave-b3d). This
-      # rollup is already a required status check, so routing the new job
-      # through it is what keeps those tests blocking rather than advisory,
-      # without adding a context to branch protection. Both results are
-      # reported before exiting so one red job does not mask the other.
-      - name: Require every sidecar runtime matrix leg
-        run: |
-          failed=0
-          if [ "${{ needs.sidecar-runtime.result }}" != "success" ]; then
-            echo "::error::Sidecar runtime matrix result: ${{ needs.sidecar-runtime.result }}"
-            failed=1
-          fi
-          if [ "${{ needs.windows-native.result }}" != "success" ]; then
-            echo "::error::Windows native tests result: ${{ needs.windows-native.result }}"
-            failed=1
-          fi
-          if [ "$failed" -ne 0 ]; then
-            exit 1
-          fi
-          echo "Sidecar runtime matrix passed on ubuntu-latest and windows-latest, and Windows native tests passed."
-
-  # ── iOS ─────────────────────────────────────────────────────────────────────
-  # The Swift app is compiled NOWHERE in CI. Verified across every workflow:
-  # ci.yml builds the web app and the Rust shell, and release.yml's macOS
-  # runners build the desktop Tauri bundle — neither touches apps/ios. The only
-  # things reading Swift are source-TEXT assertions (scripts/ios-*.test.mjs and
-  # several src/** tests), and a regex matches perfectly well inside a file no
-  # compiler accepts.
-  #
-  # That is not hypothetical here. 398b18b left a ChatProjectPicker call closed
-  # with '}' instead of ')', plus a memberwise-init argument-order mismatch, and
-  # it survived THREE DAYS and every PR in between (cave-kwv57, found while
-  # cutting v0.2.4). Measured against that exact defect pair while building this:
-  #
-  #   swiftc -parse   catches the '}' — misses the argument order
-  #   xcodebuild      catches BOTH ("argument 'familiarIds' must precede …")
-  #
-  # so only a real build closes the gap parse-only would leave half-open.
-  #
-  # WHY THIS IS GATED rather than always-on: macOS runners were pulled from the
-  # conformance matrix above because GitHub-hosted macOS minutes exhausted the
-  # org Actions limit and queued indefinitely, stalling EVERY required check.
-  # An unconditional macOS leg risks repeating that outage. So a cheap Linux job
-  # decides first, and macOS only spins when something that can actually affect
-  # the Swift build changed. Most PRs touch no iOS path and pay nothing.
-  #
-  # Deliberately NOT a required status check, and deliberately skippable: a
-  # required context that does not report is exactly how a PR ends up BLOCKED
-  # with nothing failing (see CLAUDE.md). This is advisory until the macOS
-  # budget question is settled — a red X here still means the app is broken.
-  ios-changed:
-    name: iOS change detection
-    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      ios: ${{ steps.detect.outputs.ios }}
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          # The three-dot diff below needs the merge base, which a shallow
-          # clone does not have.
-          fetch-depth: 0
-
-      - id: detect
-        name: Decide whether the iOS build must run
-        env:
-          EVENT: ${{ github.event_name }}
-          BASE: ${{ github.base_ref }}
-        run: |
-          set -euo pipefail
-          # push to main and manual recovery runs always build: main staying
-          # honest matters more than the minutes, and neither has a base ref to
-          # diff against.
-          if [ "$EVENT" != "pull_request" ]; then
-            echo "ios=true" >> "$GITHUB_OUTPUT"
-            echo "$EVENT run — building unconditionally."
-            exit 0
-          fi
-          changed="$(git diff --name-only "origin/${BASE}...HEAD")"
-          # Everything that can change what xcodebuild compiles or embeds:
-          # the Swift and project.yml under apps/ios, the generator scripts
-          # whose output is baked into the bundle, and this workflow itself.
-          if printf '%s\n' "$changed" | grep -qE '^(apps/ios/|scripts/ios-|scripts/build-ios-|\.github/workflows/ci\.yml$)'; then
-            echo "ios=true" >> "$GITHUB_OUTPUT"
-            echo "iOS-affecting paths changed:"
-            printf '%s\n' "$changed" | grep -E '^(apps/ios/|scripts/ios-|scripts/build-ios-|\.github/workflows/ci\.yml$)'
-          else
-            echo "ios=false" >> "$GITHUB_OUTPUT"
-            echo "No iOS-affecting paths changed — skipping the macOS build."
-          fi
-
-  ios-build:
-    name: iOS build
-    needs: ios-changed
-    if: needs.ios-changed.outputs.ios == 'true'
-    runs-on: macos-latest
-    # Measured locally on Apple silicon: xcodegen 2s, xcodebuild 56s. A cold
-    # hosted runner also pays checkout + pnpm install + brew, so this is well
-    # above 3x the expected p95 — generous on purpose, because a hung macOS job
-    # burns minutes at 10x while it hangs.
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24
-
-      # scripts/ios-xcodegen.sh inlines vendored assets from node_modules into
-      # the embedded markdown/terminal bundles, so it hard-fails without a
-      # populated install rather than shipping a blank web view (cave-d8ma3).
-      - run: pnpm install --frozen-lockfile
-
-      - name: Install xcodegen
-        run: brew install xcodegen
-
-      # Generates CovenCave.xcodeproj. Never run `xcodegen generate` directly:
-      # the script builds and PROVES the web bundles exist before the scan,
-      # because xcodegen scans the source tree and a missing bundle otherwise
-      # produces a project that builds clean and ships a dead terminal.
-      - name: Generate the Xcode project
-        run: bash scripts/ios-xcodegen.sh
-
-      # CODE_SIGNING_ALLOWED=NO because this proves the code COMPILES; signing
-      # identities belong to the release pipeline, not to a PR check.
-      - name: Build the iOS app
-        working-directory: apps/ios/CovenCave
-        run: xcodebuild -scheme CovenCave -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+          echo "frontend=${{ steps.paths.outputs.frontend }}"
+          echo "rust=${{ steps.paths.outputs.rust }}"
+          echo "e2e=${{ steps.paths.outputs.e2e }}"
