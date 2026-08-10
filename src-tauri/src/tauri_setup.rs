@@ -336,6 +336,15 @@ pub fn run() {
                 app.state::<Arc<ReliabilityRecorder>>()
                     .configure(app_data_dir);
             }
+            if let Ok(app_local_data_dir) = app.path().app_local_data_dir() {
+                let diagnostics_path =
+                    app_local_data_dir.join(sidecar_diagnostics::NATIVE_DIAGNOSTICS_FILE_NAME);
+                if let Err(error) =
+                    sidecar_diagnostics::reset_native_diagnostics_file(&diagnostics_path)
+                {
+                    log::warn!("[cave] could not reset native diagnostics for this launch: {error}");
+                }
+            }
             // The updater's Windows pre-exit path clears the application
             // resource table after validating the package and before starting
             // msiexec. Dropping this guard stops/reaps the sidecar even though

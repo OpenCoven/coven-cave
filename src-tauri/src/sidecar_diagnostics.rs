@@ -1,3 +1,4 @@
+use super::reliability_metrics::write_private_atomic;
 use rand::{rngs::OsRng, RngCore};
 use serde_json::{json, Value};
 use std::fs;
@@ -161,11 +162,15 @@ impl SidecarDiagnosticContext {
     }
 }
 
-fn append_bounded_event(path: &Path, event: &Value) -> Result<(), std::io::Error> {
+pub(super) fn reset_native_diagnostics_file(path: &Path) -> Result<(), String> {
+    let _guard = DIAGNOSTIC_FILE_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    write_private_atomic(path, b"")
+}
+
+fn append_bounded_event(path: &Path, event: &Value) -> Result<(), String> {
     let _guard = DIAGNOSTIC_FILE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
     let mut bytes = fs::read(path).unwrap_or_default();
     bytes.extend_from_slice(event.to_string().as_bytes());
     bytes.push(b'\n');
@@ -178,9 +183,7 @@ fn append_bounded_event(path: &Path, event: &Value) -> Result<(), std::io::Error
             .unwrap_or(target);
         bytes.drain(..start);
     }
-    let tmp_path = path.with_extension("jsonl.tmp");
-    fs::write(&tmp_path, &bytes)?;
-    fs::rename(&tmp_path, path)
+    write_private_atomic(path, &bytes)
 }
 
 #[cfg(test)]
@@ -246,6 +249,22 @@ mod tests {
         assert!(retained.len() <= MAX_NATIVE_DIAGNOSTIC_BYTES);
         assert_eq!(retained.first(), Some(&b'{'));
         assert_eq!(retained.last(), Some(&b'\n'));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn app_start_resets_native_events_from_prior_processes() {
+        let path = std::env::temp_dir().join(format!(
+            "coven-sidecar-diagnostics-reset-{}-{}.jsonl",
+            std::process::id(),
+            NEXT_GENERATION.fetch_add(1, Ordering::Relaxed),
+        ));
+        append_bounded_event(&path, &json!({ "eventId": "prior-launch" }))
+            .expect("write prior launch event");
+
+        reset_native_diagnostics_file(&path).expect("reset native diagnostics");
+
+        assert_eq!(fs::read(&path).expect("read reset diagnostics"), b"");
         let _ = fs::remove_file(path);
     }
 }
