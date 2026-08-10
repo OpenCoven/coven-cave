@@ -143,9 +143,13 @@ export function safePersistedState(
   return {
     version: 1,
     confirmed: state.confirmed === true,
-    complete: state.complete === true,
-    needsSetup: state.needsSetup !== false,
-    status: BOOTSTRAP_STATUS.has(state.status) ? state.status : "idle",
+    // A reconstructed failure must remain retryable even when a malformed
+    // persisted state incorrectly combines it with completed-state flags.
+    complete: failure ? false : state.complete === true,
+    needsSetup: failure ? true : state.needsSetup !== false,
+    status: failure
+      ? "failed"
+      : BOOTSTRAP_STATUS.has(state.status) ? state.status : "idle",
     stages: stages.map((stage) =>
       failure && stage.id === failure.stage
         ? { ...stage, status: "failed", detail: failure.message }

@@ -139,6 +139,7 @@ const pathCases = [
   "C:/Users/name/file",
   String.raw`\\server\share\file`,
   "file:///C:/Users/name/file",
+  "file://server/share/secret",
   "/root/file",
   "/opt/app/file",
 ];
@@ -156,6 +157,13 @@ for (const [index, localPath] of pathCases.entries()) {
     `quoted path form ${index} preserves unambiguous trailing prose`,
   );
 }
+
+const terminalSafe = sanitizeAboutDiagnosticText(
+  "npm ERR! \u001b[31mfailed\u001b[0m \u001b]8;;file://server/share/secret\u0007open docs\u001b]8;;\u0007",
+);
+assert.equal(terminalSafe.includes("file://server/share/secret"), false, "OSC file URLs are removed");
+assert.equal(/[\u0000-\u001F\u007F-\u009F]/.test(terminalSafe), false, "terminal controls are removed");
+assert.match(terminalSafe, /npm ERR! failed open docs/, "plain diagnostic text remains useful");
 
 for (const assignment of [
   "cwd=/home/sage/private/project",

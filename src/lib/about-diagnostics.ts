@@ -70,9 +70,12 @@ type InstallResultDiagnostic = { ok: boolean; detail: string };
 
 const SAFE_WEB_URL = /https?:\/\/[^\s"'<>]+/gi;
 const QUOTED_LOCAL_PATH =
-  /(["'`])(?:file:\/{2,3}(?:[A-Za-z]:[\\/]|\/)|\\\\|[A-Za-z]:[\\/]|\/(?!\/))[^"'`\r\n]*\1/g;
+  /(["'`])(?:file:\/{2,3}(?:(?:[A-Za-z]:[\\/]|\/)[^"'`\r\n]*|[^\/"'`\r\n]+(?:\/[^"'`\r\n]*)?)|\\\\|[A-Za-z]:[\\/]|\/(?!\/))[^"'`\r\n]*\1/g;
 const LOCAL_PATH =
-  /(^|[:=\s"'`(<\[])(?:file:\/{2,3}(?:[A-Za-z]:[\\/]|\/)[^\s"'`<>\])}]+|\\\\[^\s"'`<>\])}]+[\\/][^\s"'`<>\])}]+|[A-Za-z]:[\\/][^\s"'`<>\])}]+|\/(?!\/)[^\s/"'`<>\])}]+(?:\/[^\s"'`<>\])}]+)*)/i;
+  /(^|[:=\s"'`(<\[])(?:file:\/{2,3}(?:(?:[A-Za-z]:[\\/]|\/)[^\s"'`<>\])}]+|[^\/\s"'`<>\])}]+(?:\/[^\s"'`<>\])}]+)*)|\\\\[^\s"'`<>\])}]+[\\/][^\s"'`<>\])}]+|[A-Za-z]:[\\/][^\s"'`<>\])}]+|\/(?!\/)[^\s/"'`<>\])}]+(?:\/[^\s"'`<>\])}]+)*)/i;
+const TERMINAL_ESCAPE_SEQUENCE =
+  /(?:\u001B\][^\u0007\u001B\r\n]*(?:\u0007|\u001B\\)|\u009D[^\u0007\u009C\r\n]*(?:\u0007|\u009C)|(?:\u001B\[|\u009B)[0-?]*[ -/]*[@-~]|\u001B[PX^_][^\u001B\r\n]*(?:\u001B\\)|\u001B[()][0-2AB]|\u001B[@-_])/g;
+const REMAINING_CONTROL_CHARACTERS = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
 
 function withoutQueryOrFragment(value: string): string {
   try {
@@ -112,10 +115,17 @@ function redactLocalPaths(value: string): string {
   return redacted;
 }
 
+function withoutTerminalControls(value: string): string {
+  return value
+    .replace(TERMINAL_ESCAPE_SEQUENCE, "")
+    .replace(REMAINING_CONTROL_CHARACTERS, "");
+}
+
 /** Remove secrets, URL query values, and machine-local paths from short status text. */
 export function sanitizeAboutDiagnosticText(value: string): string {
+  const controlSafe = withoutTerminalControls(value);
   const webUrls: string[] = [];
-  const querySafe = value.replace(SAFE_WEB_URL, (url) => {
+  const querySafe = controlSafe.replace(SAFE_WEB_URL, (url) => {
     webUrls.push(withoutQueryOrFragment(url));
     return `__ABOUT_WEB_URL_${webUrls.length - 1}__`;
   });

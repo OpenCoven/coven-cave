@@ -29,6 +29,23 @@ test("diagnostic installer output removes secrets and machine-local paths", () =
   assert.match(text, /local path omitted|redacted/i);
 });
 
+test("diagnostic installer output strips ANSI and OSC control sequences", () => {
+  const lines = sanitizeOnboardingDiagnosticLines([
+    "npm ERR! \u001b[31mfailed\u001b[0m",
+    "\u001b]8;;file://server/share/secret\u0007open support docs\u001b]8;;\u0007",
+  ].join("\n"));
+  const text = lines.join("\n");
+
+  assert.match(text, /npm ERR! failed/);
+  assert.match(text, /open support docs/);
+  assert.doesNotMatch(text, /file:\/\/server\/share\/secret/);
+  assert.equal(
+    /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/.test(lines.join("")),
+    false,
+    "copied diagnostic lines contain no terminal control characters",
+  );
+});
+
 test("fail-closed paths retain only allowlisted trailing installer codes", () => {
   const lines = sanitizeOnboardingDiagnosticLines([
     "/home/sage/private/tool failed with EUNKNOWN",

@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import {
   createOnboardingBootstrapState,
+  runOnboardingBootstrapStages,
   type OnboardingSetupDiagnostics,
 } from "../onboarding-bootstrap.ts";
 import {
@@ -110,6 +111,40 @@ test("legacy permission prose without a failed probe is replaced with neutral re
   assert.doesNotMatch(safe.failure?.message ?? "", /application-data folder|writable/i);
   assert.doesNotMatch(safe.stages[0]?.detail ?? "", /application-data folder|writable/i);
   assert.match(safe.stages[0]?.detail ?? "", /files needed for setup/i);
+});
+
+test("a contradictory persisted failure normalizes to a resumable setup run", async () => {
+  const state = failedDownloadState();
+  state.complete = true;
+  state.needsSetup = false;
+  state.status = "complete";
+
+  const safe = safePersistedState(state);
+  assert.equal(safe.complete, false);
+  assert.equal(safe.needsSetup, true);
+  assert.equal(safe.status, "failed");
+
+  let coreToolsRuns = 0;
+  const published = [] as string[];
+  const resumed = await runOnboardingBootstrapStages(
+    safe,
+    {
+      "core-tools": async () => {
+        coreToolsRuns += 1;
+        return { ok: true, skipped: false, detail: "Local components are ready." };
+      },
+      workspace: async () => ({ ok: true, skipped: false, detail: "Workspace is ready." }),
+      daemon: async () => ({ ok: true, skipped: false, detail: "Local service is ready." }),
+    },
+    async (next) => {
+      published.push(next.status);
+    },
+  );
+
+  assert.equal(coreToolsRuns, 1, "retry runs the reconstructed failed stage");
+  assert.equal(published[0], "running", "resume no longer returns the contradictory complete state");
+  assert.equal(resumed.complete, true);
+  assert.equal(resumed.failure, null);
 });
 
 test("a persistence error never replaces an existing structured stage failure", async () => {

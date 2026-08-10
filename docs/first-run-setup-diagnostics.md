@@ -21,8 +21,9 @@ may contain the failed stage, stable code, canned summary and next step, capture
 time, Cave version, platform/architecture, symbolic application-data location,
 write-probe outcome, component readiness, and a bounded installer summary. It
 must never contain raw `Error` objects, environment dumps, authorization
-headers, credentials, URL query values, usernames, home paths, or arbitrary
-filesystem paths.
+headers, credentials, URL query values, usernames, home paths, arbitrary
+filesystem paths (including UNC and host-based `file:` URLs), or terminal
+control sequences.
 
 Installer output is sanitized centrally, then bounded independently from
 lifecycle trace facts so a long stdout/stderr tail cannot erase the useful
