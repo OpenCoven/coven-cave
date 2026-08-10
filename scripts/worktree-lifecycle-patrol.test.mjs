@@ -915,6 +915,51 @@ console.error("unexpected bd command");
 process.exit(93);
 `,
   );
+  executable(
+    path.join(repairBin, "coven"),
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const statePath = ${JSON.stringify(path.join(fixtureRoot, "metadata-repair-coven.json"))};
+const args = process.argv.slice(2);
+if (args[0] === "--version") {
+  console.log("coven 0.2.5");
+  process.exit(0);
+}
+const state = fs.existsSync(statePath)
+  ? JSON.parse(fs.readFileSync(statePath, "utf8"))
+  : { owner: null, writers: [] };
+const save = () => fs.writeFileSync(statePath, JSON.stringify(state));
+const print = () => console.log(JSON.stringify(state));
+if (args[0] !== "maintenance") process.exit(2);
+if (args[1] === "acquire") {
+  state.owner = {
+    owner_id: args[2],
+    generation: "metadata-repair-generation",
+    expires_at: Math.floor(Date.now() / 1000) + 120,
+    phase: "held",
+  };
+  save();
+  print();
+  process.exit(0);
+}
+if (args[1] === "status") {
+  print();
+  process.exit(0);
+}
+if (args[1] === "heartbeat") {
+  state.owner.expires_at = Math.floor(Date.now() / 1000) + 120;
+  save();
+  print();
+  process.exit(0);
+}
+if (args[1] === "release") {
+  state.owner = null;
+  save();
+  process.exit(0);
+}
+process.exit(2);
+`,
+  );
 
   const originalPath = process.env.PATH;
   process.env.PATH = `${repairBin}${path.delimiter}${originalPath ?? ""}`;
