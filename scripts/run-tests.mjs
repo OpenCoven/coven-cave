@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 export const SUITES = {
   app: [
     "src/lib/afs.test.ts",
+    "src/components/afs-pane.test.ts",
     "src/lib/array-content-equal.test.ts",
     "src/lib/native-notify.test.ts",
     "src/lib/session-list-equal.test.ts",
@@ -1175,6 +1176,7 @@ export const SUITES = {
     "src/components/settings-multihost.test.ts",
   ],
   api: [
+    "src/app/api/afs/afs-routes.test.ts",
     "scripts/dependency-policy.test.mjs",
     "scripts/build-sandbox-runtime.test.mjs",
     "scripts/dev-app.test.mjs",
