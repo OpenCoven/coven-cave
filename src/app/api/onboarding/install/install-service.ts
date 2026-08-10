@@ -12,8 +12,10 @@ import {
 } from "@/lib/server/global-npm-install-lane";
 import {
   covenBin,
+  covenLaunchCommand,
   caveToolSpawnEnv,
   covenSpawnEnv,
+  covenWrapperSpawnEnv,
   pickWindowsLauncher,
   refreshCovenBin,
   refreshCovenSpawnEnv,
@@ -255,8 +257,15 @@ async function spawnPlanFor(
 > {
   if (target.kind === "npm") {
     if (targetName === "coven-cli") {
-      const detected = covenBin();
-      if (path.isAbsolute(detected)) {
+      let detected: string | null = null;
+      try {
+        detected = covenBin();
+      } catch {
+        // A missing Windows CLI is exactly what this installer can repair.
+        // Continue onto Cave's reviewed managed npm toolchain; never replace
+        // the miss with a bare `coven`/`coven.exe` process lookup.
+      }
+      if (detected && path.isAbsolute(detected)) {
         const npm = await npmForDetectedCoven(detected);
         if (!npm) return { npmMissing: true };
         const launch = npmLaunchCommandForPath(npm.npmPath);
@@ -450,9 +459,14 @@ function daemonLifecycleDependencies(job: InstallJob): DaemonUpdateDependencies 
       };
     },
     stop: async (): Promise<DaemonCommandResult> => {
-      const stop = await runInstallProcess(covenBin(), ["daemon", "stop"], {
-        shell: process.platform === "win32",
+      const { command, fixedArgs, unresolvedWindowsShim } = covenLaunchCommand();
+      if (unresolvedWindowsShim) {
+        return { ok: false, detail: "Cave could not safely resolve the Coven Windows command shim." };
+      }
+      const stop = await runInstallProcess(command, [...fixedArgs, "daemon", "stop"], {
+        shell: false,
         timeoutMs: 8_000,
+        env: covenWrapperSpawnEnv(),
       });
       return { ok: stop.code === 0, detail: commandResultDetail(stop) };
     },

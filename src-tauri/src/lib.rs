@@ -84,6 +84,8 @@ mod tauri_setup;
 mod window_geometry;
 #[cfg(all(desktop, target_os = "windows"))]
 mod windows_process_job;
+#[cfg(all(desktop, target_os = "windows"))]
+mod windows_command;
 
 #[cfg(desktop)]
 use desktop_reachability::*;

@@ -129,7 +129,10 @@ pub(super) fn find_node(resource_dir: &Path) -> Option<PathBuf> {
         }
 
         // Last ditch: where.exe (Windows equivalent of `which`)
-        if let Ok(out) = std::process::Command::new("where.exe").arg("node").output() {
+        if let Ok(out) = windows_command::hidden_system32_command("where.exe")
+            .arg("node")
+            .output()
+        {
             let path = String::from_utf8_lossy(&out.stdout)
                 .lines()
                 .next()
@@ -230,7 +233,7 @@ pub(super) fn find_coven() -> Option<PathBuf> {
                 return Some(c.clone());
             }
         }
-        if let Ok(out) = std::process::Command::new("where.exe")
+        if let Ok(out) = windows_command::hidden_system32_command("where.exe")
             .arg("coven")
             .output()
         {
