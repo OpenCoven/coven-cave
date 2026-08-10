@@ -29,6 +29,18 @@ test("diagnostic installer output removes secrets and machine-local paths", () =
   assert.match(text, /local path omitted|redacted/i);
 });
 
+test("fail-closed paths retain only allowlisted trailing installer codes", () => {
+  const lines = sanitizeOnboardingDiagnosticLines([
+    "/home/sage/private/tool failed with EUNKNOWN",
+    "/home/sage/private/tool token SUPERSECRET",
+  ].join("\n"));
+  const text = lines.join("\n");
+
+  assert.match(text, /EUNKNOWN/);
+  assert.doesNotMatch(text, /\/home\/sage|failed with|SUPERSECRET/);
+  assert.ok(lines.every((line) => line.length <= 280));
+});
+
 test("diagnostic output enforces independent line and character budgets", () => {
   const value = Array.from(
     { length: 20 },

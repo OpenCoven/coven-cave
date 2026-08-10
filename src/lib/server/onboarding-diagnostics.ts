@@ -12,6 +12,8 @@ const DIAGNOSTIC_LINE_CAP = 8;
 const DIAGNOSTIC_TEXT_CAP = 1_600;
 const SENSITIVE_HEADER_LINE =
   /^\s*(?:authorization|proxy-authorization|cookie|set-cookie|x-api-key|x-auth-token)\s*:/i;
+const SAFE_INSTALL_ERROR_CODE =
+  /\b(?:EACCES|EAGAIN|EAI_AGAIN|EBUSY|ECONNREFUSED|ECONNRESET|EEXIST|EHOSTUNREACH|EINTEGRITY|EISDIR|EMFILE|ENFILE|ENOENT|ENOSPC|ENOTDIR|ENETUNREACH|EPERM|EPIPE|EROFS|ETIMEDOUT|EXDEV|EUNKNOWN)\b/g;
 const FAILURE_CODES = new Set<OnboardingSetupFailureCode>([
   "application_data_not_writable",
   "filesystem_failed",
@@ -118,7 +120,13 @@ function sanitizedDiagnosticLines(
   const sanitized = value
     .split(/\r?\n/)
     .filter((line) => !SENSITIVE_HEADER_LINE.test(line))
-    .map((line) => sanitizeAboutDiagnosticText(line).trim())
+    .map((line) => {
+      const safeCodes = [...new Set(line.match(SAFE_INSTALL_ERROR_CODE) ?? [])];
+      const safeText = sanitizeAboutDiagnosticText(line).trim();
+      const missingCodes = safeCodes.filter((code) => !safeText.includes(code));
+      return `${missingCodes.join(" ")}${missingCodes.length > 0 && safeText ? " " : ""}${safeText}`
+        .slice(0, 280);
+    })
     .filter(Boolean)
     .slice(-lineCap);
   const retained: string[] = [];
