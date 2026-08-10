@@ -132,6 +132,14 @@ assert.throws(
   const familiarDoc = { ...doc, permissions: [{ kind: "familiar", id: "cody" }], projectId: null };
   assert.equal(permitsByProject(familiarDoc, { ...unrestricted, familiarId: "nova" }), false);
   assert.equal(permitsByProject(familiarDoc, { ...unrestricted, familiarId: "cody" }), true);
+  // No active familiar fails CLOSED. `familiarId: null` means this surface has
+  // no familiar, not "every familiar" — reading it as unrestricted is how a
+  // familiar-scoped row leaks into an unscoped search.
+  assert.equal(
+    permitsByProject(familiarDoc, { ...unrestricted, familiarId: null }),
+    false,
+    "a familiar-scoped document is hidden when there is no active familiar",
+  );
 }
 
 /* ---------------------------------------------------------------------- */
@@ -284,7 +292,14 @@ assert.throws(
     activeProjectRoot: () => "/tmp",
     activeProjectId: () => "proj",
     sessionRoots: () => ["/tmp"],
-    runSearch: async () => { throw new Error("spawn rg ENOENT /secret/path"); },
+    runSearch: async () => {
+      // The real shape: Node puts ENOENT on the error object, and the message
+      // can carry a path. Detection reads code; the assertion below proves the
+      // message never reaches the diagnostic.
+      const error = new Error("spawn rg ENOENT /secret/path");
+      error.code = "ENOENT";
+      throw error;
+    },
   });
   const { documents, diagnostics } = await p.query(
     { text: "needle", phrases: [], filters: [], projectIds: [], familiarIds: [], entityTypes: [], limit: 10 },
@@ -311,6 +326,86 @@ assert.throws(
     }),
     false,
   );
+}
+
+/* ---------------------------------------------------------------------- */
+/* File provider fails closed on an unresolvable identity                  */
+/* ---------------------------------------------------------------------- */
+
+// A restricted requester and a project the provider cannot identify must be a
+// DENIAL, not a search. An earlier version skipped the id check whenever
+// activeProjectId() returned null, so the restriction applied only when there
+// was something to apply it against.
+{
+  let ran = false;
+  const p = createFileSearchProvider({
+    activeProjectRoot: () => "/tmp",
+    activeProjectId: () => null,
+    sessionRoots: () => ["/tmp"],
+    runSearch: async () => { ran = true; return { stdout: "", code: 0 }; },
+  });
+  const { documents, diagnostics } = await p.query(
+    { text: "needle", phrases: [], filters: [], projectIds: [], familiarIds: [], entityTypes: [], limit: 10 },
+    { allowedProjectIds: ["proj"], allowedProjectRoots: null, familiarId: null },
+  );
+  assert.equal(ran, false, "an unidentifiable project must not be searched under a restriction");
+  assert.deepEqual(documents, []);
+  assert.equal(diagnostics[0].code, "permission-denied");
+}
+
+// allowedProjectRoots is enforced, not merely declared. A caller limited to
+// specific roots must not search one it was never granted.
+{
+  let ran = false;
+  const p = createFileSearchProvider({
+    activeProjectRoot: () => "/tmp",
+    activeProjectId: () => "proj",
+    sessionRoots: () => ["/tmp"],
+    runSearch: async () => { ran = true; return { stdout: "", code: 0 }; },
+  });
+  const { documents, diagnostics } = await p.query(
+    { text: "needle", phrases: [], filters: [], projectIds: [], familiarIds: [], entityTypes: [], limit: 10 },
+    { allowedProjectIds: null, allowedProjectRoots: ["/somewhere/else"], familiarId: null },
+  );
+  assert.equal(ran, false, "a root outside the granted list must not be searched");
+  assert.deepEqual(documents, []);
+  assert.equal(diagnostics[0].code, "permission-denied");
+}
+
+// A granted root still works, so the check above is not simply refusing
+// everything.
+{
+  const p = createFileSearchProvider({
+    activeProjectRoot: () => "/tmp",
+    activeProjectId: () => "proj",
+    sessionRoots: () => ["/tmp"],
+    runSearch: async () => ({ stdout: "", code: 1 }),
+  });
+  const { diagnostics } = await p.query(
+    { text: "needle", phrases: [], filters: [], projectIds: [], familiarIds: [], entityTypes: [], limit: 10 },
+    { allowedProjectIds: ["proj"], allowedProjectRoots: ["/tmp"], familiarId: null },
+  );
+  assert.deepEqual(diagnostics, [], "a granted root and id searches normally");
+}
+
+// ENOENT is read off error.code, not the message — message formats are not a
+// stable contract, and a path can appear in them.
+{
+  const p = createFileSearchProvider({
+    activeProjectRoot: () => "/tmp",
+    activeProjectId: () => "proj",
+    sessionRoots: () => ["/tmp"],
+    runSearch: async () => {
+      const error = new Error("some message with no marker");
+      error.code = "ENOENT";
+      throw error;
+    },
+  });
+  const { diagnostics } = await p.query(
+    { text: "needle", phrases: [], filters: [], projectIds: [], familiarIds: [], entityTypes: [], limit: 10 },
+    unrestricted,
+  );
+  assert.equal(diagnostics[0].message, "ripgrep is not installed");
 }
 
 console.log("search-provider.test.ts: ok");

@@ -180,21 +180,34 @@ export function createFileSearchProvider(options: FileProviderOptions): SearchPr
       }
 
       const projectId = options.activeProjectId();
-      if (
-        context.allowedProjectIds !== null &&
-        projectId !== null &&
-        !context.allowedProjectIds.includes(projectId)
-      ) {
-        return {
-          documents: [],
-          diagnostics: [
-            {
-              providerId: FILE_PROVIDER_ID,
-              code: "permission-denied",
-              message: "project is not readable by this requester",
-            },
-          ],
-        };
+      const denied = {
+        documents: [] as SearchDocument[],
+        diagnostics: [
+          {
+            providerId: FILE_PROVIDER_ID,
+            code: "permission-denied" as const,
+            message: "project is not readable by this requester",
+          },
+        ],
+      };
+
+      // Both checks fail CLOSED on an unresolvable identity. An earlier version
+      // skipped the id check whenever `activeProjectId()` returned null, which
+      // meant an unidentifiable project searched successfully in a restricted
+      // context — the restriction was enforced only when there was something to
+      // enforce it against.
+      if (context.allowedProjectIds !== null) {
+        if (projectId === null) return denied;
+        if (!context.allowedProjectIds.includes(projectId)) return denied;
+      }
+      // And the root restriction was previously not enforced at all. A caller
+      // limited to specific roots must not search one it was never granted,
+      // whatever the project id says.
+      if (context.allowedProjectRoots !== null) {
+        const granted = context.allowedProjectRoots.some(
+          (candidate) => path.resolve(candidate) === path.resolve(root),
+        );
+        if (!granted) return denied;
       }
 
       let stdout: string;
@@ -207,8 +220,10 @@ export function createFileSearchProvider(options: FileProviderOptions): SearchPr
             {
               providerId: FILE_PROVIDER_ID,
               code: "unavailable",
-              // Category only. The underlying error can carry a path.
-              message: error instanceof Error && /ENOENT/.test(error.message)
+              // Category only — the underlying error can carry a path.
+              // Read `code`, not the message: Node sets ENOENT on the error
+              // object itself, and message formats are not a stable contract.
+              message: (error as { code?: unknown } | null)?.code === "ENOENT"
                 ? "ripgrep is not installed"
                 : "file search failed",
             },

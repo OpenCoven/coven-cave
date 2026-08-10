@@ -154,7 +154,14 @@ export function permitsByProject(
       }
     }
     if (permission.kind === "familiar") {
-      if (context.familiarId !== null && context.familiarId !== permission.id) return false;
+      // Exact match, and no active familiar fails CLOSED.
+      //
+      // `allowedProjectIds: null` means "unrestricted", but `familiarId: null`
+      // means "this surface has no active familiar" — not "every familiar".
+      // Reading the second like the first is how a familiar-scoped row leaks
+      // into an unscoped search: the requirement simply cannot be satisfied
+      // when there is no familiar to satisfy it.
+      if (context.familiarId !== permission.id) return false;
     }
   }
   return true;
