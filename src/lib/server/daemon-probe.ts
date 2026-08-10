@@ -27,7 +27,7 @@ export function classifyHubFailure(res: DaemonResponse<unknown>): string {
   return `hub unreachable: ${detail}`;
 }
 
-export type DaemonProbeOptions = {
+export type ProbeDaemonUrlOptions = {
   call?: CallDaemonTarget;
   now?: () => number;
   diagnostics?: DaemonDiagnosticContext;
@@ -35,9 +35,12 @@ export type DaemonProbeOptions = {
 
 export async function probeDaemonUrl(
   url: string,
-  options: DaemonProbeOptions = {},
+  {
+    call = callDaemonTarget,
+    now = Date.now,
+    diagnostics,
+  }: ProbeDaemonUrlOptions = {},
 ): Promise<DaemonProbeResult> {
-  const { call = callDaemonTarget, now = Date.now, diagnostics } = options;
   const resolvedTarget = daemonTargetForConfig({
     multiHost: { mode: "hub", hubUrl: url, executorUrls: [] },
   });

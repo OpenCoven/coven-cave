@@ -241,7 +241,8 @@ export function daemonDiagnosticContextFromRequest(request: Request): DaemonDiag
     request.headers.get(DAEMON_DIAGNOSTIC_CORRELATION_HEADER),
   );
   const matchingNativeCorrelationId =
-    safeCorrelationId(request.headers.get(DAEMON_DIAGNOSTIC_CORRELATION_HEADER))?.toLowerCase() === nativeCorrelationId?.toLowerCase()
+    safeCorrelationId(request.headers.get(DAEMON_DIAGNOSTIC_CORRELATION_HEADER))?.toLowerCase()
+      === nativeCorrelationId?.toLowerCase()
       ? nativeCorrelationId
       : null;
   return createDaemonDiagnosticContext({
