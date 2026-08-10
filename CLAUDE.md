@@ -458,8 +458,10 @@ each one to stderr *before* the first unit is touched, so the record survives a
 run that dies midway.
 
 Note the admission test reads `enforced !== true`, not `=== false`: a plane
-whose entry is missing or malformed counts as unenforced. That direction is
-deliberate — a safety gate that reads absent data as "fine" fails open.
+whose entry is missing or malformed counts as unenforced, so the gate **fails
+closed** on absent data. `=== false` would be the bug — it would treat a
+missing or malformed entry as "not disabled, therefore fine" and waive the
+exclusion silently. Don't tidy it in that direction.
 
 **So retirement is either the degraded apply above or hand-retirement — both
 are sanctioned, neither is a workaround.** For a unit the patrol already
