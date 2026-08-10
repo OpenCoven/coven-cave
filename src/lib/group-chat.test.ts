@@ -1081,28 +1081,6 @@ test("applyGroupEvent: prose clears the activity label and its kind", () => {
   assert.deepEqual(reply.toolCalls, ["bash"]);
 });
 
-test("runCovenReplySchedule: the gate can skip one familiar without ending the run", async () => {
-  const controller = new AbortController();
-  const replies = ["a", "b", "c"].map((id) => baseReply({ id, familiarId: id }));
-  const started: string[] = [];
-  const skipped: string[] = [];
-  const settled = await runCovenReplySchedule({
-    mode: "round-robin",
-    replies,
-    signal: controller.signal,
-    gate: async (reply) => (reply.familiarId === "b" ? "skip" : "run"),
-    onSkipped: (reply) => skipped.push(reply.familiarId),
-    runReply: async (candidate) => {
-      started.push(candidate.familiarId);
-      return { ...candidate, status: "done", text: candidate.familiarId };
-    },
-  });
-  assert.deepEqual(started, ["a", "c"]);
-  assert.deepEqual(skipped, ["b"]);
-  assert.equal(settled[1].outcome, "skipped");
-  assert.equal(settled[2].text, "c");
-});
-
 test("runCovenReplySchedule: the gate can hold the queue, then release it", async () => {
   const controller = new AbortController();
   const replies = ["a", "b"].map((id) => baseReply({ id, familiarId: id }));

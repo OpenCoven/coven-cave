@@ -413,14 +413,24 @@ export function resolveGroupMessageTargets(
   groupFamiliarIds: string[],
   participants: MentionableFamiliar[],
   explicitTargetFamiliarIds?: string[],
+  /**
+   * Who an *untargeted* message fans out to — the roster minus anyone sitting
+   * the next run out. Defaults to the whole coven.
+   *
+   * Deliberately not applied to the targeted branch: addressing a familiar by
+   * name is the explicit override of their sit-out, and silently dropping an
+   * @mention would be the surface disagreeing with what the user typed.
+   */
+  includedFamiliarIds?: string[],
 ): { targetIds: string[]; targeted: boolean } {
   const mentioned = explicitTargetFamiliarIds === undefined ? parseMentions(text, participants) : [];
   const requested = explicitTargetFamiliarIds ?? mentioned;
   const targeted = explicitTargetFamiliarIds !== undefined || mentioned.length > 0;
+  const included = includedFamiliarIds ?? groupFamiliarIds;
   return {
     targetIds: targeted
       ? groupFamiliarIds.filter((id) => requested.includes(id))
-      : [...groupFamiliarIds],
+      : groupFamiliarIds.filter((id) => included.includes(id)),
     targeted,
   };
 }
@@ -883,13 +893,13 @@ export type CovenReplyRunner = (
 ) => Promise<GroupReply>;
 
 /** What the operator decided about the next queued familiar in a rotation. */
-export type CovenTurnDecision = "run" | "skip" | "stop";
+export type CovenTurnDecision = "run" | "stop";
 
 /**
  * Consulted immediately before each round-robin turn starts, so Pause can hold
- * the queue between turns and Skip can advance past one familiar without
- * ending the run. Resolving `"run"` (the default when no gate is supplied) is
- * the previous behaviour exactly.
+ * the queue between turns. Resolving `"run"` (the default when no gate is
+ * supplied) is the previous behaviour exactly; a gate that never resolves is a
+ * paused queue, and resolving `"stop"` ends the run without starting the turn.
  *
  * Broadcast never consults it: every familiar in a broadcast has already
  * started, so there is no "before the next turn" for a decision to land in —
@@ -911,8 +921,6 @@ export async function runCovenReplySchedule(args: {
   onCancelled?: (reply: GroupReply) => void;
   /** Round robin only — see {@link CovenTurnGate}. */
   gate?: CovenTurnGate;
-  /** Called when the gate skips a familiar, so the view can mark the section. */
-  onSkipped?: (reply: GroupReply) => void;
 }): Promise<GroupReply[]> {
   if (args.mode === "broadcast") {
     return Promise.all(args.replies.map((reply) => args.runReply(reply, [])));
@@ -946,12 +954,6 @@ export async function runCovenReplySchedule(args: {
       const cancelled = cancel(reply, "skipped");
       settled.push(cancelled);
       args.onCancelled?.(cancelled);
-      continue;
-    }
-    if (decision === "skip") {
-      const skipped = cancel(reply, "skipped");
-      settled.push(skipped);
-      args.onSkipped?.(skipped);
       continue;
     }
     settled.push(await args.runReply(reply, [...settled]));
