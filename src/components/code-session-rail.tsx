@@ -91,10 +91,17 @@ export function CodeSessionRail({
       </div>
     );
   }
+  // onExpand is only supplied when this rail is hosted inside SurfaceRail
+  // (cave-iixug): that wrapper's own .surface-rail__content already scrolls,
+  // so owning overflow here too would nest a second scroll container. The
+  // non-hosted narrow/list-first path (no onExpand, no SurfaceRail around it)
+  // keeps its own scroll.
   return (
     <nav
       aria-label="Coding sessions"
-      className={`flex h-full min-h-0 flex-col ${open ? openRailClassName : "items-center gap-1"}`}
+      className={`flex h-full min-h-0 flex-col ${
+        open ? openRailClassName : "items-center gap-1"
+      }`}
     >
       {newButton}
       {groups.map((group) => (
