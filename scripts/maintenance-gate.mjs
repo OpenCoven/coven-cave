@@ -33,11 +33,18 @@ export {
 /**
  * How often a long fenced READ should renew its lease.
  *
- * A quarter of the shorter lease (Coven's, below), so one renewal can fail and
- * the next still land before expiry. This exists because a fenced read can
- * outlive its lease: the worktree lifecycle inventory measured 120.8s and 149s
- * on a 39-worktree checkout against a 120s Coven lease, and nothing renewed it
- * while it ran (cave-cs9g1).
+ * Exists because a fenced read can outlive its lease: the worktree lifecycle
+ * inventory measured 120.8s and 149s on a 39-worktree checkout against a 120s
+ * Coven lease, and nothing renewed it while it ran (cave-cs9g1).
+ *
+ * A quarter of the shorter lease (Coven's, below). The headroom is NOT there to
+ * survive a failed renewal — renewal is fail-closed, so a failure aborts the
+ * read rather than waiting for a next attempt. It is there because renewal
+ * fires on progress, not on a clock: the hook is only reached between external
+ * commands, and a single command can itself run for tens of seconds (`command`
+ * in the inventory defaults to a 30s timeout, and some calls allow longer). So
+ * the true interval between renewals is 30s plus however long the command that
+ * crosses the boundary takes, and the lease has to tolerate that overshoot.
  */
 export const FENCE_RENEWAL_INTERVAL_MS = 30_000;
 
@@ -55,8 +62,12 @@ export const FENCE_RENEWAL_INTERVAL_MS = 30_000;
  * work, which is what actually got slower as the checkout grew.
  *
  * The first call after construction is always throttled — the lease was just
- * taken or renewed, so there is nothing to renew yet. Errors from `renew`
- * propagate; a caller that has lost its fence should stop.
+ * taken or renewed, so there is nothing to renew yet.
+ *
+ * Fail-closed: errors from `renew` propagate and are expected to abort the
+ * work. There is deliberately no retry or swallow here, because the only
+ * reason renewal fails is that the fence is gone, and work that continues past
+ * that point is no longer excluding the writers it believes it is.
  */
 export function createFenceRenewal(
   renew,

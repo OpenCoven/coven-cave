@@ -57,11 +57,16 @@ test("a failing renewal propagates so the fenced read stops", () => {
   assert.throws(() => hook(), (error) => error === boom);
 });
 
-test("the renewal interval leaves room for a failed renewal inside the Coven lease", () => {
+test("the renewal interval leaves headroom for command-boundary overshoot", () => {
+  // Renewal fires between external commands, never mid-command, so the real
+  // gap between renewals is the interval PLUS the command that crosses it —
+  // and commands can run for tens of seconds. The margin covers that overshoot.
+  // It is not there to survive a failed renewal: renewal is fail-closed, so a
+  // failure aborts the read instead of waiting for a next attempt.
   assert.ok(
     FENCE_RENEWAL_INTERVAL_MS * 2 < COVEN_OWNER_LEASE_MS,
-    `renewal every ${FENCE_RENEWAL_INTERVAL_MS}ms must allow one failure and a retry ` +
-      `inside the ${COVEN_OWNER_LEASE_MS}ms Coven lease`,
+    `renewal every ${FENCE_RENEWAL_INTERVAL_MS}ms must still land well inside the ` +
+      `${COVEN_OWNER_LEASE_MS}ms Coven lease once a slow command is added to it`,
   );
 });
 
