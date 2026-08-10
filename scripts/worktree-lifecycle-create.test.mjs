@@ -1987,4 +1987,93 @@ for (const unusableBranch of ["refs/heads/feat/cave-unit2-unnameable", " feat/ca
   );
 }
 
+// cave-1x9pz — the same outage as cave-g9byt, through an error it did not
+// cover. Every record here is VALID; what conflicts is which unit owns a path.
+//
+// The live shape: a managed worktree was created for one branch, then a session
+// checked a different branch out inside it. The bead's record still names the
+// original branch, so `metadataFor` resolving the unit at that path finds a
+// record claiming the path under another branch and reports "conflicting
+// structured path ownership".
+//
+// That error names exactly one unit. It reached `create` as repository-wide
+// anyway, because `create` recovered scoping by subtracting the record-level
+// claim errors — and this is not one; every record is well-formed. So an
+// unrelated bead could not create a worktree at all, and no exception could
+// rescue it: the inventory throws before admission is assessed.
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    const ownedBranch = "feat/cave-unit2-owned";
+    const ownedPath = path.join(fixture.repo, ".worktrees", "cave-unit2-owned");
+    const owned = runCreate(
+      fixture,
+      createArgs({ bead: "cave-unit2", branch: ownedBranch }),
+    );
+    assert.equal(owned.status, 0, `fixture create must succeed: ${owned.stderr}`);
+
+    // Check a DIFFERENT branch out inside that worktree, leaving the bead's
+    // record pointing at the branch it was created for.
+    const swapped = spawnSync(
+      "git",
+      ["-C", ownedPath, "checkout", "-b", "feat/cave-unit2-swapped"],
+      { encoding: "utf8" },
+    );
+    assert.equal(swapped.status, 0, `fixture checkout must succeed: ${swapped.stderr}`);
+
+    const created = runCreate(fixture, createArgs());
+    assert.doesNotMatch(
+      created.stderr,
+      /lifecycle inventory is incomplete/,
+      "a contested path on another unit must not block an unrelated creation",
+    );
+    assert.doesNotMatch(
+      created.stderr,
+      /conflicting structured path ownership/,
+      "the conflict belongs to the unit whose path is contested, not to this request",
+    );
+    assert.equal(created.status, 0, `create must succeed: ${created.stderr}`);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example") !== null,
+      true,
+      "the unrelated branch is actually created",
+    );
+  },
+);
+
+// …and the other half, so the scoping does not become a way to create over a
+// contested path. Requesting the very path whose ownership is in dispute must
+// still refuse: a second worktree there is how the dispute becomes unresolvable.
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    const contestedPath = path.join(fixture.repo, ".worktrees", "cave-unit1-example");
+    const state = readJson(fixture.stateFile);
+    const issue = state.issues.find((candidate) => candidate.id === "cave-unit2");
+    // A fully VALID record — it simply claims the path this request wants,
+    // under a branch that is not the one being requested.
+    issue.metadata = {
+      coven: {
+        worktree: {
+          branch: "feat/cave-unit2-elsewhere",
+          path: contestedPath,
+          owner: "kitty",
+          purpose: "Contested path fixture",
+          createdAt: "2026-08-09T09:09:52.185Z",
+          disposition: "active",
+        },
+      },
+    };
+    writeJson(fixture.stateFile, state);
+
+    const refused = runCreate(fixture, createArgs());
+    assert.notEqual(refused.status, 0, "a contested path must not be created over");
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example"),
+      null,
+      "no branch is created when the request lands on a contested path",
+    );
+  },
+);
+
 console.log("worktree-lifecycle-create.test.mjs: ok");

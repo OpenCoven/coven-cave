@@ -76,7 +76,23 @@ export type WorktreeLifecycleObservation = {
   updatedAtMs: number | null;
   probeErrors: string[];
   metadata: WorktreeLifecycleMetadata | null;
+  /**
+   * Everything disqualifying this unit's metadata. The unit fails closed on all
+   * of it.
+   */
   metadataErrors: string[];
+  /**
+   * The subset of {@link metadataErrors} that is repository-wide — true no
+   * matter which unit is being resolved, because it is derived from the beads
+   * alone rather than from this branch or path.
+   *
+   * Only these may abort an operation on a DIFFERENT unit. Everything else in
+   * `metadataErrors` names one unit and belongs to it: an ownership conflict, a
+   * duplicate record or path, a path that does not match its branch. Treating
+   * those as repository-wide is what made one bead's bad record refuse creation
+   * for every other bead (cave-1x9pz, and cave-g9byt before it).
+   */
+  metadataGlobalErrors: string[];
   remoteRef: WorktreeRemoteRef | null;
   sessionIds: string[];
 };
@@ -108,7 +124,16 @@ type LegacyWorktreeObservation = Pick<
 type WorktreeObservationCompatibilityFields = Partial<
   Pick<
     WorktreeLifecycleObservation,
-    "kind" | "ref" | "metadata" | "metadataErrors" | "remoteRef" | "sessionIds"
+    | "kind"
+    | "ref"
+    | "metadata"
+    | "metadataErrors"
+    // Optional alongside `metadataErrors` so a legacy observation that predates
+    // the split still parses; it reads as "nothing here is repository-wide",
+    // which is the conservative answer for a caller that never classified.
+    | "metadataGlobalErrors"
+    | "remoteRef"
+    | "sessionIds"
   >
 >;
 
@@ -620,6 +645,7 @@ function normalizeWorktreeObservation(
       probeErrors: observation.probeErrors,
       metadata: observation.metadata ?? null,
       metadataErrors: observation.metadataErrors ?? [],
+      metadataGlobalErrors: observation.metadataGlobalErrors ?? [],
       remoteRef: observation.remoteRef ?? null,
       sessionIds: observation.sessionIds ?? [],
     },

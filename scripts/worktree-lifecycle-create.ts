@@ -15,6 +15,7 @@ import {
 } from "../src/lib/worktree-lifecycle.ts";
 import {
   collectWorktreeLifecycleInventory,
+  type OrphanedWorktreeMetadataRecord,
   type WorktreeMetadataClaimError,
 } from "./worktree-lifecycle-inventory.ts";
 import {
@@ -777,20 +778,90 @@ function exceptionForPath(
  * unit in `uncertain`; this makes the create gate agree with that posture instead
  * of re-aborting the whole run (cave-c4f97).
  */
-function inventoryErrors(
-  items: WorktreeLifecycleItem[],
-  claims: WorktreeMetadataClaimError[],
+function inventoryErrors(items: WorktreeLifecycleItem[]): string[] {
+  // Read the inventory's own classification rather than re-deriving it. This
+  // used to fold EVERY unit's `metadataErrors` together and then subtract the
+  // record-level claim errors by string equality, on the theory that whatever
+  // survived was repository-wide. It was not: `metadataFor` produces five kinds
+  // of error and only one of them is a record-level claim, so an ownership
+  // conflict, a duplicate record, a duplicate path and a path/branch mismatch
+  // all survived the subtraction and aborted creation for every unrelated bead
+  // (cave-1x9pz).
+  //
+  // The live case that exposed it: one worktree had a different branch checked
+  // out than its bead's record claimed. A real defect, on exactly one unit —
+  // and it refused `--bead` for the whole checkout, which is precisely the
+  // outage cave-g9byt was written to end.
+  return [...new Set(items.flatMap((item) => item.metadataGlobalErrors))];
+}
+
+/**
+ * The per-unit metadata failures that stand in the way of THIS creation.
+ *
+ * A unit-scoped error belongs to the unit it names and to no other — but if the
+ * unit it names is the branch or the path being requested, it is this request's
+ * problem too. Creating a second worktree over a path whose ownership is
+ * already contested is how the contest becomes unresolvable.
+ */
+/**
+ * Well-formed records from OTHER beads that already claim this branch or path.
+ *
+ * `claimErrorsForRequest` refuses when the record claiming your path is
+ * malformed. Without this, a VALID record claiming the same path did not —
+ * which is backwards: a well-formed claim is the stronger claim, and the
+ * malformed one is only visible because its validation errors happen to travel
+ * with it. Creating into a path another bead already names produces a unit with
+ * two records claiming it, which is precisely the contested state the ownership
+ * conflict reports and nothing can resolve automatically.
+ *
+ * Scoped to the exact branch or path requested, so a stale record elsewhere
+ * still cannot refuse an unrelated creation — the whole point of cave-1x9pz.
+ */
+function orphanedClaimsForRequest(
+  orphaned: readonly OrphanedWorktreeMetadataRecord[],
+  beadId: string,
+  branch: string,
+  worktreePath: string,
 ): string[] {
-  const unitScopedErrors = new Set(
-    claims
-      .filter((claim) => claim.branch.length > 0 || claim.path !== null)
-      .flatMap((claim) => claim.errors),
-  );
+  const requested = normalizeCandidate(worktreePath);
+  const normalizedBead = beadId.toLowerCase();
+  return [
+    ...new Set(
+      orphaned
+        // The requesting bead's own records are handled upstream, where
+        // re-creating a unit the same bead used to own is a legitimate flow.
+        .filter((record) => record.beadId.toLowerCase() !== normalizedBead)
+        .filter(
+          (record) =>
+            record.branch === branch || normalizeCandidate(record.path) === requested,
+        )
+        .map(
+          (record) =>
+            `bead ${record.beadId} already claims ${
+              record.branch === branch ? `branch ${branch}` : `path ${record.path}`
+            }`,
+        ),
+    ),
+  ];
+}
+
+function contestedUnitErrors(
+  items: WorktreeLifecycleItem[],
+  branch: string,
+  worktreePath: string,
+): string[] {
+  const requested = normalizeCandidate(worktreePath);
   return [
     ...new Set(
       items
-        .flatMap((item) => item.metadataErrors)
-        .filter((error) => !unitScopedErrors.has(error)),
+        .filter(
+          (item) =>
+            item.branch === branch ||
+            (item.path !== null && normalizeCandidate(item.path) === requested),
+        )
+        .flatMap((item) =>
+          item.metadataErrors.filter((error) => !item.metadataGlobalErrors.includes(error)),
+        ),
     ),
   ];
 }
@@ -1664,8 +1735,15 @@ function execute(
   // records describing some other unit; see {@link claimErrorsForRequest}.
   const errors = [
     ...inventory.globalErrors,
-    ...inventoryErrors(inventory.items, inventory.metadataClaimErrors),
+    ...inventoryErrors(inventory.items),
+    ...contestedUnitErrors(inventory.items, options.branch, worktreePath),
     ...claimErrorsForRequest(inventory.metadataClaimErrors, options.branch, worktreePath),
+    ...orphanedClaimsForRequest(
+      inventory.orphanedMetadata,
+      options.beadId,
+      options.branch,
+      worktreePath,
+    ),
   ];
   if (errors.length > 0) {
     throw new CliError(`lifecycle inventory is incomplete: ${errors.join("; ")}`);
