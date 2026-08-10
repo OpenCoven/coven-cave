@@ -358,7 +358,10 @@ export async function proxy(req: NextRequest) {
       return jsonError(500, "missing sidecar auth token");
     }
     if (!isTokenlessApiPeerAllowed(trustedLocalPeer, remoteIngress)) {
-      return jsonError(403, "forbidden peer");
+      return jsonError(
+        403,
+        "forbidden peer: missing trusted local peer proof (x-coven-cave-local-peer not stamped by server.ts) and no remote-ingress credential — is Next running without the custom server?",
+      );
     }
     return nextWithMobileAccessMarker(req, remoteIngress);
   }

@@ -444,7 +444,7 @@ export function DaemonSection({
       return;
     }
     if (!isValidHubUrl(url)) {
-      setConnectionError("Enter a full HTTP URL, such as http://server.tailnet:8787.");
+      setConnectionError("Enter a full HTTPS URL, such as https://server.tailnet:8787.");
       return;
     }
     probeCtlRef.current?.abort();
@@ -828,7 +828,7 @@ export function DaemonSection({
             </div>
           ) : null}
 
-          {!loading && !daemonOnline && status?.reason ? (
+          {!loading && !daemonOnline && !starting && !restarting && status?.reason ? (
             <p className="settings-daemon-inline-error" role="alert">
               {statusFailureLead}
               {status.target?.url ? ` · ${status.target.url}` : ""}
