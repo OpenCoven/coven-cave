@@ -227,6 +227,97 @@ test("composite release is ordered and reports either release failure", () => {
   assert.deepEqual(released.recoveryHandle, handle);
 });
 
+// cave-nom3z. A failed Coven release used to leave the local fence held for its
+// full 600s TTL, refusing every acquisition in the repository — and then
+// refusing them as `gate-stale`. The commonest cause was a lease that had
+// already expired, i.e. a Coven fence that was not standing at all.
+function releaseCoordinator({ verify, onLocalRelease = () => ({ ok: true }) }) {
+  const calls = [];
+  const coordinator = createRepositoryMaintenanceCoordinator({
+    localFence: {
+      acquire: () => assert.fail("not used"),
+      heartbeat: () => ({ ok: true }),
+      verify: () => ({ ok: true }),
+      release: () => {
+        calls.push("local");
+        return onLocalRelease();
+      },
+    },
+    covenClient: {
+      acquire: () => assert.fail("not used"),
+      heartbeat: () => ({ ok: true }),
+      verify,
+      release: () => {
+        calls.push("coven");
+        return { ok: false, reason: "coven-release-unavailable" };
+      },
+    },
+  });
+  return { coordinator, calls };
+}
+
+const releaseHandle = {
+  local: { generation: 1 },
+  coven: { ownerId: "cave-maintenance", generation: "coven-generation", repoDir },
+};
+
+for (const reason of ["coven-owner-missing", "coven-not-owner", "coven-expired"]) {
+  test(`a failed Coven release still frees the local fence when verify proves ${reason}`, () => {
+    const { coordinator, calls } = releaseCoordinator({
+      verify: () => ({ ok: false, reason }),
+    });
+    const released = coordinator.release(releaseHandle);
+    assert.equal(released.ok, false, "the caller asked for both fences down; Coven did not comply");
+    assert.equal(released.reason, "coven-release-failed: coven-release-unavailable");
+    assert.equal(released.covenFenceGone, reason);
+    assert.equal(released.localReleased, true);
+    assert.deepEqual(calls, ["coven", "local"], "order is unchanged: Coven first, then local");
+    assert.equal(
+      released.recoveryHandle,
+      undefined,
+      "nothing is left held, so there is nothing to recover",
+    );
+  });
+}
+
+for (const reason of ["coven-still-draining", "coven-writers-active", "coven-status-unavailable"]) {
+  test(`a failed Coven release keeps the local fence when verify reports ${reason}`, () => {
+    // These are the cases where the Coven fence may still be standing, or where
+    // we simply cannot tell. Releasing local here would split the two writer
+    // populations, which is the thing `acquire` deliberately refuses to do.
+    const { coordinator, calls } = releaseCoordinator({
+      verify: () => ({ ok: false, reason }),
+    });
+    const released = coordinator.release(releaseHandle);
+    assert.equal(released.ok, false);
+    assert.deepEqual(calls, ["coven"], "local stays fenced while the Coven state is unproven");
+    assert.deepEqual(released.recoveryHandle, releaseHandle);
+  });
+}
+
+test("a still-held Coven fence keeps the local fence even when verify succeeds", () => {
+  // verify ok means we DO still own it, so the release genuinely failed.
+  const { coordinator, calls } = releaseCoordinator({ verify: () => ({ ok: true }) });
+  const released = coordinator.release(releaseHandle);
+  assert.equal(released.ok, false);
+  assert.deepEqual(calls, ["coven"]);
+  assert.deepEqual(released.recoveryHandle, releaseHandle);
+});
+
+test("a local release that itself fails is reported with an exact recovery handle", () => {
+  const { coordinator } = releaseCoordinator({
+    verify: () => ({ ok: false, reason: "coven-expired" }),
+    onLocalRelease: () => ({ ok: false, reason: "state-busy" }),
+  });
+  const released = coordinator.release(releaseHandle);
+  assert.equal(released.localReleased, false);
+  assert.deepEqual(
+    released.recoveryHandle,
+    { local: releaseHandle.local },
+    "only the fence still held is offered for recovery",
+  );
+});
+
 test("maintenance capabilities name the released Coven protocol without claiming completeness", () => {
   assert.deepEqual(repositoryMaintenanceCapabilities({
     repoDir,

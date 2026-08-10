@@ -47,8 +47,59 @@ import {
 import { createHash, randomBytes } from "node:crypto";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { hostname } from "node:os";
 
 export const DEFAULT_GATE_TTL_MS = 10 * 60_000;
+
+/**
+ * Identity of the machine that wrote a record, so a recorded pid can be
+ * interpreted.
+ *
+ * A pid alone is meaningless: the gate lives under the git common dir, which
+ * may be on a shared or synced filesystem, and pid 66300 on this machine has
+ * nothing to do with pid 66300 on another. Liveness is therefore only ever
+ * inferred when the recorded host matches this one.
+ *
+ * Records written before this field existed simply lack it, and are treated as
+ * un-probeable rather than as belonging to this host — the conservative
+ * direction, since the alternative would reclaim another machine's live fence.
+ */
+function currentHost() {
+  try {
+    const name = hostname();
+    return typeof name === "string" && name.length > 0 && name.length <= 255 ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Is the process that wrote this record provably gone?
+ *
+ * Returns false whenever it cannot tell — a foreign or absent host, an
+ * unusable pid, or a probe that errors. Only a definite "no such process"
+ * answer counts, because the caller uses this to skip a TTL that exists to
+ * protect a live owner.
+ *
+ * Note which direction pid reuse fails in: a recycled pid belongs to some
+ * *other* live process, so the probe reports ALIVE and the caller waits out
+ * the TTL. Reuse can therefore cost patience, never exclusion.
+ */
+function ownerProcessGone(record) {
+  const host = currentHost();
+  if (host === null || record.host !== host) return false;
+  if (!Number.isSafeInteger(record.pid) || record.pid <= 0) return false;
+  if (record.pid === process.pid) return false;
+  try {
+    // Signal 0 performs the permission and existence checks without delivering
+    // anything. ESRCH is the only answer that proves absence; EPERM means the
+    // process exists under another uid, which is emphatically not gone.
+    process.kill(record.pid, 0);
+    return false;
+  } catch (error) {
+    return error?.code === "ESRCH";
+  }
+}
 export const DEFAULT_INTENT_TTL_MS = 2 * 60_000;
 export const DEFAULT_QUIESCE_TIMEOUT_MS = 30_000;
 export const MAX_LEASE_TTL_MS = 24 * 60 * 60_000;
@@ -149,8 +200,17 @@ function validateGate(value) {
     validTtl(value.ttlMs) &&
     validPurpose(value.purpose) &&
     Number.isSafeInteger(value.pid) &&
-    value.pid > 0
+    value.pid > 0 &&
+    // Optional: absent on records written before hosts were recorded. Present
+    // and unusable is a malformed record rather than an ignorable field —
+    // a garbage host would otherwise sit next to a pid and invite the wrong
+    // liveness inference.
+    validOptionalHost(value.host)
   );
+}
+
+function validOptionalHost(value) {
+  return value === undefined || (typeof value === "string" && value.length > 0 && value.length <= 255);
 }
 
 function validateIntent(value) {
@@ -497,6 +557,13 @@ export function acquireMaintenanceGate({
   const started = mutateState(root, () => {
     const now = Date.now();
     const existing = readJsonState(gateFile, validateGate);
+    // The TTL still governs an UNEXPIRED gate, even when the owning process is
+    // gone. A process can acquire the gate and exit while work it started
+    // continues, or die midway through a mutation; "the owner exited" is
+    // therefore not the same claim as "nothing is in flight". Reclaiming on
+    // liveness alone breaks mutual exclusion outright — the concurrent-acquirer
+    // test produced three simultaneous winners when this was tried, because
+    // each short-lived winner's exit let the next acquirer straight in.
     if (existing.ok && !gateExpired(existing.value, now)) {
       return { ok: false, reason: "gate-held", holder: existing.value.ownerId };
     }
@@ -504,7 +571,18 @@ export function acquireMaintenanceGate({
       audit(root, "acquire-rejected", { ownerId, reason: "malformed-gate" });
       return { ok: false, reason: "malformed-gate" };
     }
-    if (existing.ok && !takeoverStale) {
+    // Past the TTL, liveness decides who has to ask. An expired lease whose
+    // owner is PROVABLY gone is abandoned, and holding the repository closed
+    // over it helps nobody: nothing in shipping code passes `takeoverStale`, so
+    // that state refused every acquisition indefinitely rather than for the ten
+    // minutes the TTL describes (cave-w049l).
+    //
+    // Narrower than it looks: `ownerProcessGone` answers true only for a record
+    // written by THIS host whose pid returns ESRCH. A foreign host, an older
+    // record with no host field, or a pid that still resolves all keep the
+    // explicit opt-in requirement.
+    const abandoned = existing.ok && ownerProcessGone(existing.value);
+    if (existing.ok && !takeoverStale && !abandoned) {
       return { ok: false, reason: "gate-stale", holder: existing.value.ownerId };
     }
 
@@ -520,6 +598,10 @@ export function acquireMaintenanceGate({
       ttlMs,
       purpose: purpose ?? "",
       pid: process.pid,
+      // Written so a later reader can tell whether `pid` is even addressable
+      // from where it is standing. Omitted rather than guessed when the host
+      // name is unavailable, which keeps the record valid and un-probeable.
+      ...(currentHost() === null ? {} : { host: currentHost() }),
     };
     if (existing.ok) {
       const staleName = `${gateFile}.stale-${existing.value.generation}-${randomBytes(4).toString("hex")}`;
@@ -532,6 +614,7 @@ export function acquireMaintenanceGate({
       ok: true,
       gate,
       previous: existing.ok ? existing.value : null,
+      previousAbandoned: abandoned,
     };
   });
   if (!started.ok) return started;
@@ -543,6 +626,14 @@ export function acquireMaintenanceGate({
       ownerId,
       from: started.previous.ownerId,
       generation: started.previous.generation,
+      // Distinguish the two reclaims in the trail. "expired" means a lease ran
+      // out and someone opted into taking it; "abandoned" means the owner
+      // process was proven gone, which is the stronger claim and the one worth
+      // being able to audit after the fact.
+      basis: started.previousAbandoned ? "owner-process-gone" : "expired-lease",
+      ...(started.previousAbandoned
+        ? { fromPid: started.previous.pid, fromHost: started.previous.host ?? null }
+        : {}),
     });
   }
   audit(root, "gate-draining", { ownerId, generation });
@@ -885,6 +976,11 @@ export function maintenanceGateStatus(repoDir = process.cwd()) {
           ...gate.value,
           expired: gateExpired(gate.value, now),
           clockRegressed: clockRegressed(gate.value, now),
+          // The question an operator staring at a refusal actually has: is
+          // anyone there? `false` covers both "alive" and "cannot tell from
+          // here" (foreign host, no host recorded), so read it as "provably
+          // gone" rather than as "running".
+          ownerProcessGone: ownerProcessGone(gate.value),
         }
       : gate.missing
         ? null
