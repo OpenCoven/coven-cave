@@ -70,14 +70,61 @@ export function retentionTag(branch, sha) {
   return `retention/${slug || "detached"}-${String(sha).slice(0, 9)}`;
 }
 
-// Commits reachable from HEAD but from no remote-tracking ref — the same
-// "retained on a remote" test the guard and the autolock hook apply.
+// Commits reachable from HEAD but from no remote-tracking ref.
+//
+// `--remotes` is refs/remotes/*, which is remote-tracking BRANCHES only. Git
+// keeps no remote-tracking refs for tags at all, so a branch archived as a
+// pushed tag still counts as unpushed here — see remoteTagCommits below, which
+// supplies the half this cannot see.
 export function unpushedCount(worktreePath) {
   try {
     const n = Number(git(["rev-list", "--count", "HEAD", "--not", "--remotes"], worktreePath).trim());
     return Number.isFinite(n) ? n : 0;
   } catch {
     return 0; // unborn HEAD, or unreadable mid-creation — leave it alone
+  }
+}
+
+export function headSha(worktreePath) {
+  try {
+    return git(["rev-parse", "HEAD"], worktreePath).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Commit ids the remote currently advertises as tags.
+ *
+ * The guard already treats "a remote branch OR a tag pushed to a remote" as
+ * retention. This hook did not, so it re-pushed branches whose heads were
+ * already archived: on 2026-08-10 twelve merged branches were tagged, verified
+ * on the remote and deleted, and eight were re-created within minutes — every
+ * one of them a branch whose worktree still existed. The two surfaces disagreed
+ * about the same repository state, and the archive-tag retirement route in
+ * CLAUDE.md could not work while they did (cave-nw3hq).
+ *
+ * Both ref forms are collected. An annotated tag advertises the tag object at
+ * `refs/tags/x` and its commit at `refs/tags/x^{}`; a lightweight tag
+ * advertises the commit directly. Taking both means the peeled commit is always
+ * present, and the extra tag-object ids can never collide with a commit id.
+ *
+ * Returns null when the remote cannot be reached, which the caller treats as
+ * "no proof" and pushes — the safe direction. Wrongly pushing costs a redundant
+ * ref; wrongly skipping leaves commits on one machine, which is the leak this
+ * hook exists to stop.
+ */
+export function remoteTagCommits(worktreePath) {
+  try {
+    const output = git(["ls-remote", "--tags", "origin"], worktreePath, PUSH_TIMEOUT_MS);
+    const oids = new Set();
+    for (const line of output.split("\n")) {
+      const oid = line.slice(0, 40);
+      if (/^[0-9a-f]{40}$/.test(oid)) oids.add(oid);
+    }
+    return oids;
+  } catch {
+    return null;
   }
 }
 
@@ -155,7 +202,18 @@ function main() {
     return; // not a git repo, or git unavailable — nothing to do
   }
 
+  // Resolved lazily and at most once per pass: only worktrees that look at
+  // risk need it, and a pass where nothing is at risk should stay offline.
+  let tagCommits;
+  const tagRetained = (worktreePath) => {
+    if (tagCommits === undefined) tagCommits = remoteTagCommits(root);
+    if (!tagCommits || tagCommits.size === 0) return false;
+    const head = headSha(worktreePath);
+    return head !== null && tagCommits.has(head);
+  };
+
   let pushes = 0;
+  const skipped = [];
   for (const wt of worktrees) {
     if (pushes >= MAX_PUSHES_PER_PASS) break;
     if (wt.bare) continue;
@@ -165,6 +223,20 @@ function main() {
     // `main` is protected and never the thing at risk; pushing it is exactly
     // the direct-to-main move the repository forbids.
     if (branch === "main") continue;
+
+    // Already archived: the remote advertises a tag at exactly this HEAD, which
+    // is the guard's own definition of retained. Re-creating the branch here is
+    // what undid twelve deliberate archive-and-delete retirements (cave-nw3hq).
+    //
+    // Exact HEAD only. A tag that merely CONTAINS this head would also be
+    // retention, but proving it needs the tag's commit locally and therefore a
+    // fetch — too much for a hook on every tool call. That case still pushes,
+    // which costs a redundant ref rather than a lost commit.
+    if (tagRetained(wt.path)) {
+      skipped.push(branch ?? wt.path);
+      continue;
+    }
+
     pushes += 1;
     try {
       record(root, { worktree: wt.path, unpushed, ...retain(wt.path, root, branch) });
@@ -177,6 +249,18 @@ function main() {
         error: String(error?.message ?? error).slice(0, 300),
       });
     }
+  }
+
+  // One summary line, not one per worktree. A skip is a steady state — an
+  // archived branch whose worktree still exists stays skipped every pass — so
+  // logging each one individually would write a line a minute per worktree
+  // forever. The count is what tells you the rule is doing something.
+  if (skipped.length > 0) {
+    record(root, {
+      verdict: "skipped-tag-retained",
+      count: skipped.length,
+      branches: skipped.slice(0, 10),
+    });
   }
 }
 
