@@ -379,7 +379,7 @@ export async function createCard(input: NewCardInput): Promise<Card> {
     dependencies: input.dependencies ?? [],
     primaryBlockerId: input.primaryBlockerId ?? null,
     primaryBlockerPinned:
-      "primaryBlockerPinned" in input ? input.primaryBlockerPinned! : false,
+      input.primaryBlockerPinned === undefined ? false : input.primaryBlockerPinned,
     nextStep: input.nextStep ?? null,
   };
   if (card.nextStep?.requiresApproval) card.needsHuman = true;
@@ -487,7 +487,9 @@ export async function updateCard(
       ? patch.primaryBlockerId ?? null
       : current.primaryBlockerId ?? null,
     primaryBlockerPinned: "primaryBlockerPinned" in patch
-      ? patch.primaryBlockerPinned!
+      ? patch.primaryBlockerPinned === undefined
+        ? current.primaryBlockerPinned ?? false
+        : patch.primaryBlockerPinned
       : current.primaryBlockerPinned ?? false,
     nextStep: "nextStep" in patch ? patch.nextStep ?? null : current.nextStep ?? null,
   };

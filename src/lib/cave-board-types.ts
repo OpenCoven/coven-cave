@@ -104,7 +104,7 @@ export type OrchestrationErrorCode =
 export type OrchestrationError = {
   code: OrchestrationErrorCode;
   /** Card field the error belongs to, for inspector focus. */
-  field: "dependencies" | "primaryBlockerId" | "nextStep";
+  field: "dependencies" | "primaryBlockerId" | "primaryBlockerPinned" | "nextStep";
   message: string;
   /** The dependency at fault, when the error is about one. */
   dependencyId?: string;

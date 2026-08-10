@@ -111,6 +111,10 @@ function codes(errors) {
     codes(validateOrchestration(malformedPin, { cards: [malformedPin] })),
     ["primary_blocker_invalid"],
   );
+  assert.equal(
+    validateOrchestration(malformedPin, { cards: [malformedPin] })[0]?.field,
+    "primaryBlockerPinned",
+  );
 
   const duplicateDependencies = card("duplicate-dependencies", {
     dependencies: [

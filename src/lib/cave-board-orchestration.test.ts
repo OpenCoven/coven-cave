@@ -80,6 +80,11 @@ await assert.rejects(
 );
 
 const malformedPinTarget = await board.createCard({ title: "Malformed pin target" });
+const defaultedPin = await board.createCard({
+  title: "Undefined pin defaults",
+  primaryBlockerPinned: undefined,
+});
+assert.equal(defaultedPin.primaryBlockerPinned, false);
 await assert.rejects(
   board.updateCard(malformedPinTarget.id, {
     primaryBlockerPinned: "false" as never,
@@ -89,6 +94,10 @@ await assert.rejects(
     return true;
   },
 );
+const undefinedPinPatch = await board.updateCard(malformedPinTarget.id, {
+  primaryBlockerPinned: undefined,
+});
+assert.equal(undefinedPinPatch?.primaryBlockerPinned, false);
 await assert.rejects(
   board.updateCard(malformedPinTarget.id, {
     primaryBlockerPinned: null as never,

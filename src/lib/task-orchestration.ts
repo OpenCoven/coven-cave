@@ -378,7 +378,7 @@ export function validateOrchestration(
   if (rawPinned !== undefined && typeof rawPinned !== "boolean") {
     errors.push({
       code: "primary_blocker_invalid",
-      field: "primaryBlockerId",
+      field: "primaryBlockerPinned",
       message: "The primary blocker pin must be true or false.",
     });
   }
