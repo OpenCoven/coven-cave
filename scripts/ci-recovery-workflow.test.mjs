@@ -70,7 +70,7 @@ function assertShaGuarded(jobName, condition) {
   const prefix = `(${SHA_GUARD}) && `;
   assert.ok(
     condition.startsWith(prefix),
-    `${jobName} must not run a recovery dispatch after the branch head moves`,
+    `${jobName} if: condition must start with the SHA guard prefix before adding extra conditions`,
   );
   const suffix = condition.slice(prefix.length);
   assert.ok(suffix.length > 0, `${jobName} must not AND the guard against an empty condition`);
