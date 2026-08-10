@@ -118,3 +118,17 @@ export function mergeTraceEvents(
   for (const event of incoming) bySeq.set(event.seq, event);
   return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
 }
+
+/** Return the latest retained event at or before a requested event cursor. */
+export function findNearestTraceEvent(
+  events: readonly SessionTraceEvent[],
+  focusSeq: number,
+): SessionTraceEvent | null {
+  let nearest: SessionTraceEvent | null = null;
+  for (const event of events) {
+    if (event.seq <= focusSeq && (nearest === null || event.seq > nearest.seq)) {
+      nearest = event;
+    }
+  }
+  return nearest;
+}
