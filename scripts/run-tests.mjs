@@ -459,6 +459,7 @@ export const SUITES = {
     "src/lib/command-palette-search.test.ts",
     "src/lib/search-query.test.ts",
     "src/lib/search-index-store.test.ts",
+    "src/lib/search-provider.test.ts",
     "src/lib/command-palette-salem-context.test.ts",
     "src/lib/command-palette-scope.test.ts",
     "src/lib/recent-searches.test.ts",
@@ -1649,6 +1650,9 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  // the file provider wraps server/project-paths.ts, which resolves "@/lib/..."
+  // for the project allow-list; the suite cannot load without the resolver.
+  "src/lib/search-provider.test.ts",
   // cave-board.ts resolves "@/lib/cave-board-types", "@/lib/task-github" and
   // friends, so the retention suite cannot load without the alias resolver.
   "src/lib/cave-board-retention.test.ts",
