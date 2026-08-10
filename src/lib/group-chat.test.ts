@@ -11,6 +11,9 @@ import {
   setGroupSession,
   setGroupProject,
   setGroupParticipants,
+  setGroupParticipantIncluded,
+  includedGroupParticipants,
+  moveGroupParticipant,
   setGroupResponseMode,
   setGroupDetails,
   orderRoundRobinFamiliarIds,
@@ -1050,4 +1053,175 @@ test("capTranscript: an all-reply tail (no user turn survives) collapses to empt
     reply("r2", "charm", "u1", "b"),
   ];
   assert.deepEqual(capTranscript(turns, 2), []);
+});
+
+// --- Coven redesign: run legibility (cave-95urm) ----------------------------
+
+test("applyGroupEvent: a tool call is distinguishable from a progress note", () => {
+  let reply = baseReply({ id: "a", familiarId: "a" });
+  reply = applyGroupEvent(reply, { kind: "progress", label: "Reading files" });
+  assert.equal(reply.activityKind, "progress");
+  reply = applyGroupEvent(reply, { kind: "tool_use", name: "bash", status: "running" });
+  assert.equal(reply.activityKind, "tool");
+  assert.deepEqual(reply.toolCalls, ["bash"]);
+  // The same call reports again on completion — that is one tool call, not two.
+  reply = applyGroupEvent(reply, { kind: "tool_use", name: "bash", status: "ok" });
+  assert.deepEqual(reply.toolCalls, ["bash"]);
+  reply = applyGroupEvent(reply, { kind: "tool_use", name: "grep", status: "running" });
+  assert.deepEqual(reply.toolCalls, ["bash", "grep"]);
+});
+
+test("applyGroupEvent: prose clears the activity label and its kind", () => {
+  let reply = baseReply({ id: "a", familiarId: "a" });
+  reply = applyGroupEvent(reply, { kind: "tool_use", name: "bash", status: "running" });
+  reply = applyGroupEvent(reply, { kind: "assistant_chunk", text: "Checked." });
+  assert.equal(reply.activity, undefined);
+  assert.equal(reply.activityKind, undefined);
+  // The call still counts — it happened, and the tool row reports it.
+  assert.deepEqual(reply.toolCalls, ["bash"]);
+});
+
+test("runCovenReplySchedule: the gate can skip one familiar without ending the run", async () => {
+  const controller = new AbortController();
+  const replies = ["a", "b", "c"].map((id) => baseReply({ id, familiarId: id }));
+  const started: string[] = [];
+  const skipped: string[] = [];
+  const settled = await runCovenReplySchedule({
+    mode: "round-robin",
+    replies,
+    signal: controller.signal,
+    gate: async (reply) => (reply.familiarId === "b" ? "skip" : "run"),
+    onSkipped: (reply) => skipped.push(reply.familiarId),
+    runReply: async (candidate) => {
+      started.push(candidate.familiarId);
+      return { ...candidate, status: "done", text: candidate.familiarId };
+    },
+  });
+  assert.deepEqual(started, ["a", "c"]);
+  assert.deepEqual(skipped, ["b"]);
+  assert.equal(settled[1].outcome, "skipped");
+  assert.equal(settled[2].text, "c");
+});
+
+test("runCovenReplySchedule: the gate can hold the queue, then release it", async () => {
+  const controller = new AbortController();
+  const replies = ["a", "b"].map((id) => baseReply({ id, familiarId: id }));
+  const hold = deferred<"run">();
+  const started: string[] = [];
+  const running = runCovenReplySchedule({
+    mode: "round-robin",
+    replies,
+    signal: controller.signal,
+    gate: async (reply) => (reply.familiarId === "b" ? hold.promise : "run"),
+    runReply: async (candidate) => {
+      started.push(candidate.familiarId);
+      return { ...candidate, status: "done", text: candidate.familiarId };
+    },
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(started, ["a"], "b must wait behind the pause");
+  hold.resolve("run");
+  await running;
+  assert.deepEqual(started, ["a", "b"]);
+});
+
+test("runCovenReplySchedule: Stop during a pause never starts the held turn", async () => {
+  const controller = new AbortController();
+  const replies = ["a", "b"].map((id) => baseReply({ id, familiarId: id }));
+  const hold = deferred<"run">();
+  const started: string[] = [];
+  const running = runCovenReplySchedule({
+    mode: "round-robin",
+    replies,
+    signal: controller.signal,
+    gate: async (reply) => (reply.familiarId === "b" ? hold.promise : "run"),
+    runReply: async (candidate) => {
+      started.push(candidate.familiarId);
+      return { ...candidate, status: "done", text: candidate.familiarId };
+    },
+  });
+  await Promise.resolve();
+  controller.abort();
+  hold.resolve("run");
+  const settled = await running;
+  assert.deepEqual(started, ["a"]);
+  assert.equal(settled[1].outcome, "skipped");
+});
+
+test("runCovenReplySchedule: one stop decision skips the whole remaining queue", async () => {
+  const controller = new AbortController();
+  const replies = ["a", "b", "c"].map((id) => baseReply({ id, familiarId: id }));
+  let gated = 0;
+  const settled = await runCovenReplySchedule({
+    mode: "round-robin",
+    replies,
+    signal: controller.signal,
+    gate: async () => {
+      gated += 1;
+      return "stop";
+    },
+    runReply: async (candidate) => ({ ...candidate, status: "done", text: "x" }),
+  });
+  assert.equal(gated, 1, "asking again per familiar would prompt N times for one decision");
+  assert.deepEqual(settled.map((r) => r.outcome), ["skipped", "skipped", "skipped"]);
+});
+
+test("runCovenReplySchedule: broadcast ignores the gate — everyone already started", async () => {
+  const controller = new AbortController();
+  const replies = ["a", "b"].map((id) => baseReply({ id, familiarId: id }));
+  let gated = 0;
+  const settled = await runCovenReplySchedule({
+    mode: "broadcast",
+    replies,
+    signal: controller.signal,
+    gate: async () => {
+      gated += 1;
+      return "stop";
+    },
+    runReply: async (candidate) => ({ ...candidate, status: "done", text: "x" }),
+  });
+  assert.equal(gated, 0);
+  assert.deepEqual(settled.map((r) => r.text), ["x", "x"]);
+});
+
+test("includedGroupParticipants: sitting out keeps membership and order", () => {
+  let g = makeGroup("Coven", ["a", "b", "c"], "2026-08-09T00:00:00.000Z", "g1");
+  g = setGroupParticipantIncluded(g, "b", false, "2026-08-09T00:01:00.000Z");
+  assert.deepEqual(includedGroupParticipants(g), ["a", "c"]);
+  assert.deepEqual(g.familiarIds, ["a", "b", "c"], "still a member");
+  g = setGroupParticipantIncluded(g, "b", true, "2026-08-09T00:02:00.000Z");
+  assert.deepEqual(includedGroupParticipants(g), ["a", "b", "c"]);
+  assert.equal(g.excludedFamiliarIds, undefined);
+});
+
+test("setGroupParticipantIncluded: a no-op toggle does not bump updatedAt", () => {
+  const g = makeGroup("Coven", ["a"], "2026-08-09T00:00:00.000Z", "g1");
+  assert.equal(setGroupParticipantIncluded(g, "a", true, "2026-08-09T09:00:00.000Z"), g);
+  assert.equal(setGroupParticipantIncluded(g, "ghost", false, "2026-08-09T09:00:00.000Z"), g);
+});
+
+test("setGroupParticipants: removing a familiar clears its sit-out flag", () => {
+  let g = makeGroup("Coven", ["a", "b"], "2026-08-09T00:00:00.000Z", "g1");
+  g = setGroupParticipantIncluded(g, "b", false, "2026-08-09T00:01:00.000Z");
+  g = setGroupParticipants(g, ["a"], "2026-08-09T00:02:00.000Z");
+  assert.equal(g.excludedFamiliarIds, undefined);
+  // Re-adding must not silently sit it out again.
+  g = setGroupParticipants(g, ["a", "b"], "2026-08-09T00:03:00.000Z");
+  assert.deepEqual(includedGroupParticipants(g), ["a", "b"]);
+});
+
+test("moveGroupParticipant: reorders the rotation, and no-ops at the ends", () => {
+  const g = makeGroup("Coven", ["a", "b", "c"], "2026-08-09T00:00:00.000Z", "g1");
+  assert.deepEqual(
+    moveGroupParticipant(g, "c", -1, "2026-08-09T00:01:00.000Z").familiarIds,
+    ["a", "c", "b"],
+  );
+  assert.deepEqual(
+    moveGroupParticipant(g, "a", 1, "2026-08-09T00:01:00.000Z").familiarIds,
+    ["b", "a", "c"],
+  );
+  assert.equal(moveGroupParticipant(g, "a", -1, "2026-08-09T00:01:00.000Z"), g);
+  assert.equal(moveGroupParticipant(g, "c", 1, "2026-08-09T00:01:00.000Z"), g);
+  assert.equal(moveGroupParticipant(g, "ghost", 1, "2026-08-09T00:01:00.000Z"), g);
 });
