@@ -29,6 +29,7 @@ import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
 import {
   normalizeSearchDocument,
+  rawDocumentIdentity,
   searchDocumentKey,
   type SearchDocument,
 } from "./search-document.ts";
@@ -386,9 +387,19 @@ export async function openSearchIndex(
 
         for (const raw of collect()) {
           const document = normalizeSearchDocument(raw);
-          // One malformed row loses its own fidelity; it does not abort the
-          // refresh and leave every other document stale.
-          if (!document || document.providerId !== providerId) continue;
+          if (!document || document.providerId !== providerId) {
+            // One malformed row loses its own fidelity — but ONLY its own. It
+            // must still count as "the source produced this id", or the
+            // deletion pass below reads it as withdrawn and drops the
+            // last good copy; a provider whose rows all fail to normalize
+            // would otherwise clear itself entirely. Identify it from the raw
+            // row so it can be protected even though it cannot be rewritten.
+            const identity = rawDocumentIdentity(raw);
+            if (identity && identity.providerId === providerId) {
+              seen.add(searchDocumentKey(identity));
+            }
+            continue;
+          }
           seen.add(searchDocumentKey(document));
 
           const prior = existingVersion.get(providerId, document.id) as

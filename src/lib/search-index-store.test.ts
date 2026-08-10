@@ -144,6 +144,40 @@ assert.notEqual(
   index.close();
 }
 
+// A row that fails to normalize must lose ONLY its own fidelity. It still
+// counts as "the source produced this id", or the deletion pass reads it as
+// withdrawn and drops the last good copy — and a provider whose rows all fail
+// would clear itself entirely.
+{
+  const index = await openSearchIndex(dbPath("malformed"));
+  index.refreshProvider("tasks", "fp-1", () => [doc(), doc({ id: "task-2", title: "Sidebar polish", body: "Adjust the rail", excerpt: "Adjust the rail", sourceVersion: "z" })]);
+  assert.equal(index.documentCount(), 2);
+
+  // entityType missing => normalizeSearchDocument returns null, but the row
+  // still identifies itself.
+  const outcome = index.refreshProvider("tasks", "fp-2", () => [
+    { id: "task-1", providerId: "tasks" },
+    doc({ id: "task-2", title: "Sidebar polish", body: "Adjust the rail", excerpt: "Adjust the rail", sourceVersion: "z" }),
+  ]);
+  assert.equal(outcome.removed, 0, "a malformed row must not be read as a deletion");
+  assert.equal(index.documentCount(), 2, "the previously indexed copy survives");
+  assert.equal(index.match({ text: "composer" }).length, 1, "and stays searchable");
+
+  // Every row malformed must not empty the provider.
+  const allBad = index.refreshProvider("tasks", "fp-3", () => [
+    { id: "task-1", providerId: "tasks" },
+    { id: "task-2", providerId: "tasks" },
+  ]);
+  assert.equal(allBad.removed, 0);
+  assert.equal(index.documentCount(), 2, "a wholly malformed scan must not clear the provider");
+
+  // A row that identifies nothing cannot be protected, and a genuine
+  // withdrawal still deletes.
+  const withdrawn = index.refreshProvider("tasks", "fp-4", () => [doc()]);
+  assert.equal(withdrawn.removed, 1, "a genuinely withdrawn document is still removed");
+  index.close();
+}
+
 /* ---------------------------------------------------------------------- */
 /* Failed refresh keeps the last verified snapshot and marks it stale      */
 /* ---------------------------------------------------------------------- */

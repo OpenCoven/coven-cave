@@ -73,6 +73,22 @@ export function searchDocumentKey(document: Pick<SearchDocument, "providerId" | 
   return `${document.providerId}${SEARCH_DOCUMENT_KEY_SEPARATOR}${document.id}`;
 }
 
+/**
+ * Recover just the index identity from a row that failed to normalize.
+ *
+ * A refresh needs to know that the source still PRODUCED an id even when the
+ * row around it is unusable, so the deletion pass does not read a malformed
+ * row as a withdrawn one and drop the last good copy of that document.
+ */
+export function rawDocumentIdentity(
+  input: unknown,
+): Pick<SearchDocument, "providerId" | "id"> | null {
+  if (!isPlainObject(input)) return null;
+  const id = stringOrNull(input.id);
+  const providerId = stringOrNull(input.providerId);
+  return id && providerId ? { providerId, id } : null;
+}
+
 export type SearchMatchReason =
   | "exact-title"
   | "phrase"
