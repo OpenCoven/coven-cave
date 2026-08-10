@@ -4627,7 +4627,16 @@ exit 0
   const gateRoot = maintenanceGateRoot(repo);
   const applyResult = patrolResult(["--apply", "--json"]);
   assert.equal(applyResult.status, 2);
-  assert.equal(applyResult.stderr.trim(), "");
+  const unexpectedApplyStderr = applyResult.stderr
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter(
+      (line) =>
+        !line.includes("cannot set terminal process group") &&
+        line !== "bash: no job control in this shell",
+    );
+  assert.deepEqual(unexpectedApplyStderr, []);
   const applyJson = JSON.parse(applyResult.stdout);
   assert.equal(applyJson.ok, false);
   assert.equal(applyJson.reason, "gate-incomplete");
