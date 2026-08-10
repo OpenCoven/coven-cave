@@ -68,7 +68,11 @@ const GUARDED_CONCURRENCY =
   "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
 const GUARDED_JOB_IF =
   "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
-const GUARDED_JOB_NAMES = ["build"];
+const GUARDED_JOB_IFS = {
+  paths: GUARDED_JOB_IF,
+  ios: `needs.paths.outputs.ios == 'true' && (${GUARDED_JOB_IF})`,
+  build: `always() && (${GUARDED_JOB_IF})`,
+};
 const GUARDED_CI_WORKFLOW = [
   "name: CI",
   `run-name: ${GUARDED_RUN_NAME}`,
@@ -81,9 +85,9 @@ const GUARDED_CI_WORKFLOW = [
   "concurrency:",
   `  group: ${GUARDED_CONCURRENCY}`,
   "jobs:",
-  ...GUARDED_JOB_NAMES.flatMap((name) => [
+  ...Object.entries(GUARDED_JOB_IFS).flatMap(([name, condition]) => [
     `  ${name}:`,
-    `    if: ${GUARDED_JOB_IF}`,
+    `    if: ${condition}`,
   ]),
   "",
 ].join("\n");
@@ -244,7 +248,7 @@ test("apply fails closed when the required job lacks the expected SHA guard", as
     pulls: [pr],
     workflowsBySha: {
       [pr.head.sha]: GUARDED_CI_WORKFLOW.replace(
-        `  build:\n    if: ${GUARDED_JOB_IF}`,
+        `  build:\n    if: ${GUARDED_JOB_IFS.build}`,
         "  build:\n    if: success()",
       ),
     },

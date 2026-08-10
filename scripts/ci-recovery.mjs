@@ -11,7 +11,11 @@ const EXPECTED_CONCURRENCY_GROUP =
   "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
 const EXPECTED_JOB_GUARD =
   "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
-const GUARDED_JOB_NAMES = ["build"];
+const EXPECTED_JOB_GUARDS = {
+  paths: EXPECTED_JOB_GUARD,
+  ios: `needs.paths.outputs.ios == 'true' && (${EXPECTED_JOB_GUARD})`,
+  build: `always() && (${EXPECTED_JOB_GUARD})`,
+};
 
 export async function runCiRecovery({
   apply = false,
@@ -280,7 +284,9 @@ async function workflowSupportsExpectedSha(context, sha) {
     hasCompleteExpectedInput &&
     workflow["run-name"] === EXPECTED_RUN_NAME &&
     workflow?.concurrency?.group === EXPECTED_CONCURRENCY_GROUP &&
-    GUARDED_JOB_NAMES.every((name) => workflow?.jobs?.[name]?.if === EXPECTED_JOB_GUARD);
+    Object.entries(EXPECTED_JOB_GUARDS).every(
+      ([name, guard]) => workflow?.jobs?.[name]?.if === guard,
+    );
   if (hasCompleteGuardedContract) return true;
 
   const hasGuardedProtocolMarker =
