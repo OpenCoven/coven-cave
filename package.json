@@ -41,6 +41,7 @@
     "lint:design": "eslint \"src/components/**/*.tsx\" --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "check:tests-wired": "node scripts/check-tests-wired.mjs",
+    "check:ui-consistency": "node scripts/ui-consistency.mjs",
     "check:beads-jsonl": "node scripts/check-beads-jsonl-duplicates.mjs",
     "check:conflict-markers": "node scripts/check-conflict-markers.mjs",
     "test": "node scripts/run-tests.mjs app",
