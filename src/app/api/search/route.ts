@@ -59,7 +59,7 @@ export async function POST(req: Request) {
         // safe because no provider is registered below.
         allowedProjectIds: null,
         allowedProjectRoots: null,
-        familiarId: typeof payload.familiarId === "string" ? payload.familiarId : null,
+        familiarId: null,
       },
       limit,
       now: Date.now(),

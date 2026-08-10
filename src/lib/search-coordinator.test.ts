@@ -66,6 +66,29 @@ assert.equal(validateQuery("nope").code, "malformed-query");
 assert.equal(validateQuery(null).ok, false);
 assert.equal(validateQuery({ ...query(), text: "x".repeat(2000) }).code, "query-too-long");
 assert.equal(validateQuery(query()).ok, true);
+{
+  const validated = validateQuery({
+    ...query(),
+    filters: [
+      { key: "status", operator: "is", value: "blocked", origin: "syntax" },
+      { key: "status", operator: "maybe", value: "blocked", origin: "syntax" },
+      { key: "status", operator: "is", value: { nope: true }, origin: "syntax" },
+      { key: "status", operator: "is", value: "blocked", origin: "whoops" },
+    ],
+    scopes: [
+      { dimension: "project", id: "p1", label: "P1", implicit: false },
+      { dimension: "project", id: "p2" },
+      { dimension: "unknown", id: "p3", label: "P3", implicit: false },
+    ],
+  });
+  assert.equal(validated.ok, true);
+  assert.deepEqual(validated.query.filters, [
+    { key: "status", operator: "is", value: "blocked", origin: "syntax" },
+  ]);
+  assert.deepEqual(validated.query.scopes, [
+    { dimension: "project", id: "p1", label: "P1", implicit: false },
+  ]);
+}
 
 /* ---------------------------------------------------------------------- */
 /* Ranking: the spec's order of evidence                                   */

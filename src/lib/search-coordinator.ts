@@ -36,6 +36,10 @@ import {
   type RankedResult,
 } from "./search-ranking.ts";
 
+const FILTER_OPERATORS = new Set(["is", "has", "after", "before"]);
+const FILTER_ORIGINS = new Set(["syntax", "natural-language", "picker", "context"]);
+const SCOPE_DIMENSIONS = new Set(["project", "familiar", "room", "session", "runtime"]);
+
 /** Hard cap on a first page, per the spec's performance budget. */
 export const MAX_PAGE = 50;
 const MAX_TEXT = 1024;
@@ -78,6 +82,26 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isSearchFilter(value: unknown): value is SearchQueryState["filters"][number] {
+  return (
+    isPlainObject(value) &&
+    typeof value.key === "string" &&
+    FILTER_OPERATORS.has(value.operator) &&
+    (typeof value.value === "string" || typeof value.value === "boolean") &&
+    FILTER_ORIGINS.has(value.origin)
+  );
+}
+
+function isSearchScope(value: unknown): value is SearchQueryState["scopes"][number] {
+  return (
+    isPlainObject(value) &&
+    SCOPE_DIMENSIONS.has(value.dimension) &&
+    typeof value.id === "string" &&
+    typeof value.label === "string" &&
+    typeof value.implicit === "boolean"
+  );
+}
+
 /**
  * Validate an incoming query AST.
  *
@@ -110,18 +134,8 @@ export function validateQuery(value: unknown): QueryValidation {
     phrases: Array.isArray(value.phrases)
       ? value.phrases.filter((p): p is string => typeof p === "string")
       : [],
-    filters: Array.isArray(value.filters)
-      ? value.filters.filter(
-          (f): f is SearchQueryState["filters"][number] =>
-            isPlainObject(f) && typeof f.key === "string",
-        )
-      : [],
-    scopes: Array.isArray(value.scopes)
-      ? value.scopes.filter(
-          (s): s is SearchQueryState["scopes"][number] =>
-            isPlainObject(s) && typeof s.dimension === "string" && typeof s.id === "string",
-        )
-      : [],
+    filters: Array.isArray(value.filters) ? value.filters.filter(isSearchFilter) : [],
+    scopes: Array.isArray(value.scopes) ? value.scopes.filter(isSearchScope) : [],
     presentation: value.presentation === "grouped" ? "grouped" : "top",
   };
   return { ok: true, query };
