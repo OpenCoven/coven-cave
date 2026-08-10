@@ -91,6 +91,16 @@ assert.match(
   /private static func adjudicateDiscoveryResults[\s\S]*?for \(index, result\) in results\.enumerated\(\)[\s\S]*?case \.ok: return \.found\(candidates\[index\]\)[\s\S]*?case \.unauthorized: return \.unauthorized/,
   "results must be adjudicated in candidate order with 401/403 still terminal (sibling-port safety)",
 );
+assert.match(
+  model,
+  /if sendCredential \{[\s\S]*?do \{[\s\S]*?try CaveConnection\.credentialForRequest[\s\S]*?catch \{[\s\S]*?return \.credentialFailure\(error\.localizedDescription\)/,
+  "paired discovery must fail visibly when the stored credential cannot be sent to a candidate",
+);
+assert.doesNotMatch(
+  model,
+  /try\? CaveConnection\.credentialForRequest\(to: req\.url!\)/,
+  "paired discovery must not suppress credential-origin or transport failures and adopt a tokenless sibling",
+);
 
 // --- Relocation keeps discovery alive --------------------------------------
 assert.match(

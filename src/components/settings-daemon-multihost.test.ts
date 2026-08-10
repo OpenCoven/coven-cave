@@ -29,6 +29,16 @@ assert.match(daemon, /className="settings-daemon-chip-list"/, "the hero should s
 assert.match(daemon, />\s*Refresh\s*</, "the hero should expose an explicit status refresh");
 assert.match(daemon, /Restart daemon/, "the hero should expose the daemon restart action");
 assert.match(daemon, /Start daemon/, "the hero should make an offline local daemon actionable");
+assert.match(
+  daemon,
+  /const canStartDaemon =[\s\S]*?status\?\.availability === undefined \|\| status\.availability === "offline"/,
+  "start should be offered only for explicit offline or legacy local status",
+);
+assert.match(
+  daemon,
+  /\{canStartDaemon && \([\s\S]*?>\s*Start daemon\s*</,
+  "incompatible and unhealthy states must not offer a guaranteed-failing start action",
+);
 
 assert.match(daemon, /className="settings-daemon-status-card"/, "daemon state should render as the approved status card");
 assert.match(daemon, /className="settings-daemon-status-strip"/, "the primary daemon state should lead the status card");

@@ -2,6 +2,12 @@
 
 Status: active reliability program (`cave-58eoq`)
 
+Last updated: 2026-08-10
+
+Implementation note: Windows supervision shipped in PR #4485. Authenticated
+native readiness is complete and validated in its separate managed worktree,
+but remains unmerged under the repository's conservative profile.
+
 This document maps the current desktop connectivity stack, records verified
 failure modes, and defines the target lifecycle contract. It separates facts
 that are already enforced from follow-up work; a PID, socket, open port, or
@@ -37,7 +43,7 @@ configured remote hub and perform daemon health and API requests.
 
 | Boundary | Existing proof | Remaining requirement |
 | --- | --- | --- |
-| Rust shell -> Node sidecar | Exact child ready log plus TCP connect; owned child/process job | Authenticated health, identity, protocol, runtime version, and dependency readiness before navigation |
+| Rust shell -> Node sidecar | Exact owned-child ready log plus a bounded sidecar-token-authenticated API handshake that verifies service identity, native protocol v1, exact app version, bundle mode, and API dependency readiness | Merge `cave-58eoq.2`; extend the same correlation ID through later daemon and CLI work |
 | Webview -> Node sidecar | Per-launch token passed in startup URL and enforced by the sidecar bridge | Correlated handshake evidence and bounded recovery transcript |
 | Mobile/tailnet -> Node sidecar | Separate persisted access token and request classification | Continue validating forwarded-peer assumptions and token lifecycle |
 | Next routes -> local daemon | Socket/named-pipe request with bounded timeout; health document and compatibility checks in status/start paths | Endpoint ownership/permission evidence and one shared handshake contract |
@@ -67,8 +73,12 @@ Primary implementation seams:
    bundled Node, server, speech runtimes, and the fixed Cave port.
 4. Windows renders `startup.html` and performs sidecar preparation on a worker.
    macOS/Linux block setup while starting the sidecar.
-5. The Rust readiness loop requires the launched child's exact ready line and a
-   successful TCP connection to the fixed loopback port.
+5. The implemented native readiness loop requires the launched child's exact
+   ready line, then sends a bounded authenticated
+   `GET /api/app/native-readiness` request with the per-launch sidecar token.
+   It rejects non-200 responses, malformed or oversized HTTP/JSON, wrong
+   service identity, unsupported protocol, app-version mismatch, release builds
+   attached to a development runtime, and incomplete API dependencies.
 6. The webview navigates to a token-bearing loopback URL.
 7. The web application polls `/api/daemon/status`.
 8. The status route resolves local socket versus remote hub, sends a bounded
@@ -77,9 +87,11 @@ Primary implementation seams:
 9. Only the status route's `running: true` plus `availability: "online"`
    represents verified daemon readiness.
 
-Steps 5 and 8 are currently separate readiness decisions. The native shell can
-navigate after transport readiness even when the later authenticated daemon
-health or compatibility check will fail.
+Steps 5 and 8 remain separate layers by design: step 5 now proves the owned
+Node sidecar and its application API are authentic, compatible, and initialized
+before navigation; step 8 proves the downstream Coven daemon or remote hub is
+healthy and compatible. The shell no longer navigates on listening-only
+evidence. Full cross-layer correlation remains `cave-58eoq.3`.
 
 ## Ranked issue inventory
 
@@ -89,8 +101,8 @@ health or compatibility check will fail.
 | 2 | High | Fixed in this branch | Any local process could open the packaged sidecar's PTY WebSocket without the per-launch token and spawn or adopt a shell as the app user | The upgrade gate treated direct loopback as identity; allowlisted-tailnet handling also trusted forgeable forwarding headers as a PTY credential | Require the sidecar token even on loopback whenever it is configured, permit only cryptographically authenticated credentials to relax the PTY source gate, preserve tokenless development explicitly, and pin the decision matrix plus generated-server parity |
 | 3 | High | Fixed in this branch | An inherited non-loopback `HOSTNAME` could expose tokenless development APIs to remote callers who spoofed a loopback `Host` and omitted source headers | The listener trusted ambient `HOSTNAME`, while the final tokenless proxy path treated client-controlled authority as sufficient after host/CSRF checks | Restrict bind selection to validated loopback aliases, default invalid ambient values to `127.0.0.1`, and require the custom server's verified local-peer stamp or verified remote ingress before tokenless API access |
 | 4 | High | Fixed in this branch | Remote HTTP hubs could receive bearer credentials in plaintext, and ad-hoc HTTPS probes could forward the process-wide hub token to a caller-selected authority | Node and iOS attached stored credentials based on target mode/transport but did not consistently require secure transport plus exact credential origin; the probe route reused global custody for arbitrary URLs | Refuse remote plaintext bearer transport before networking, bind iOS credentials to exact normalized origins shared by HTTPS/WSS, probe sibling authorities without credentials, and limit ad-hoc Node probes to tokens embedded by the caller in that exact URL |
-| 5 | High | Open: `cave-58eoq.1` | A packaged Windows sidecar that dies after startup remains dead until a later UI/manual recovery path acts | Native supervisor is compiled only for non-Windows; `SidecarStartupControl::finish()` ends startup ownership without a post-ready observer | Add one Windows-safe owner using the existing process job/startup control; fault-test crash, failed revive, cooldown/refill, shutdown, and navigation |
-| 6 | High | Open: `cave-58eoq.2` | The window can open onto a sidecar that is listening but incompatible or only partially initialized | Rust readiness proves child log + TCP only; authenticated health/version compatibility occurs later in Next status code | Move a bounded authenticated identity/protocol/runtime/dependency handshake into native adoption before navigation |
+| 5 | High | Shipped in PR #4485: `cave-58eoq.1` | A packaged Windows sidecar that dies after startup previously remained dead until a later UI/manual recovery path acted | Windows had startup ownership but no post-ready observer | Windows now launches the shared bounded supervisor beside `SidecarStartupControl`; automatic/manual startup share atomic ownership, budget resets only after a finished startup with an observed live child, shutdown stops supervision first, and failed/cancelled/navigation-failed workers synchronously release the owned process job |
+| 6 | High | Implemented, unmerged: `cave-58eoq.2` | The window previously could open onto a sidecar that was listening but incompatible or only partially initialized | Rust readiness proved child log + TCP only | Native GUI and background-daemon startup now require the same bounded sidecar-token-authenticated identity/protocol/version/bundle/dependency handshake before navigation, publication, or retained daemon state |
 | 7 | Medium | Fixed in this branch | Incompatible, unauthorized, unhealthy, unreachable, misconfigured, and status-unavailable responses appeared as generic “Offline” | Settings ignored the route's machine-readable `availability`; the shared type omitted the route's `incompatible` value | Complete the shared taxonomy, fail closed on contradictory fields, render distinct labels/tones, and expose sanitized reason text |
 | 8 | Medium | Open: `cave-58eoq.3` | Support cannot follow one startup/recovery across Rust, sidecar, daemon requests, and CLI children | Logs are component-local and no shared correlation/diagnostic-bundle contract was found | Add correlation IDs, structured lifecycle events, bounded retention, and a redacted export manifest |
 | 9 | Medium | Open: `cave-58eoq.4` | Green happy-path tests can miss races, stale endpoints, hangs, resets, and orphaned children | Coverage is strong for helpers but sparse for full post-ready crash/revive and cross-component fault sequences | Add deterministic OS-matrix fault injection and repeated lifecycle stress |
@@ -136,12 +148,13 @@ Illegal transitions:
 | Child exits before ready | Owned-child `try_wait` during readiness | Startup fails and cleanup runs | Retry after classified evidence | Tail is bounded but not correlated across components |
 | Child hangs before ready | Condition timeout | Fails after 60/90 seconds | Cancel or retry; preserve bounded output tail | Timeout budget is not yet measured by platform |
 | Child dies after ready, macOS/Linux | Native liveness poll | Bounded refillable revive and webview re-navigation | Automatic | Full end-to-end revive test is still missing |
-| Child dies after ready, Windows | No native post-ready observer | UI becomes unavailable; optional web auto-restart/manual action may recover | Add Windows-safe native supervisor | Open `cave-58eoq.1` |
+| Child dies after ready, Windows | Shared native liveness poll using `SidecarStartupControl` and the owned process job | Bounded refillable recovery without concurrent startup | Automatic | Windows release-host crash injection remains required |
 | Stale hub probe | Superseding input/mode/device choice | Previously could repaint/save old endpoint | Abort + generation guard + exact snapshot | Fixed in this branch |
 | Hub unauthorized | Authenticated HTTP response 401/403 | Previously generic Offline | Show Authorization required and reason | One-click credential repair remains future work |
 | Hub unreachable | Transport failure, no HTTP answer | Configured target unavailable | Bounded GET retry; travel/replay policy | Network classification still needs correlated timing |
-| Daemon unhealthy | Endpoint answers but health is invalid/non-2xx | No verified running state | Retry health or restart exact owner | Native shell still adopts Node sidecar before this check |
-| Runtime/API mismatch | Health compatibility check | Status/start refuse adoption | Update/repair then restart | Must move into native pre-navigation handshake |
+| Sidecar readiness unauthorized/malformed | Authenticated native readiness returns non-200, malformed HTTP/chunks/JSON, or exceeds 64 KiB | Native startup refuses navigation and preserves a bounded output/error chain | Retry exact owned startup; do not adopt the endpoint | Implemented in `cave-58eoq.2`, pending merge |
+| Daemon unhealthy | Endpoint answers but health is invalid/non-2xx | No verified daemon-running state | Retry health or restart exact owner | Sidecar readiness is now proven separately; downstream daemon correlation remains open |
+| Runtime/API mismatch | Native sidecar handshake plus downstream daemon health compatibility check | Native adoption or daemon status refuses the incompatible layer | Update/repair then restart | Implemented sidecar check is exact-version by design for one packaged artifact |
 | Cave state lock/permission busy | Structured status-unavailable/incompatible response | Status cannot be confirmed | Automatic later poll; show Status unavailable | Needs OS error evidence in diagnostics |
 | Socket/pipe missing | Transport error normalization | Local daemon classified offline | Bounded start policy | Endpoint ownership/ACL audit remains open |
 | Response reset/partial body | Response error handler | Request resolves as transport failure | GET may retry once; mutations do not | Cross-component partial-write tests remain open |
@@ -192,7 +205,7 @@ Local diagnostics and opt-in telemetry remain separate systems.
 | --- | --- | --- | --- |
 | Temporary transport loss | Bounded reconnect/read retry | None while recovering | Retry |
 | Sidecar crash on macOS/Linux | Native bounded revive | None | Restart daemon/app |
-| Sidecar crash on Windows | Current UI/manual policy only | Restart daemon | Restart app; native automation tracked in `cave-58eoq.1` |
+| Sidecar crash on Windows | Bounded native supervisor revival | None | Restart app if the recovery budget/cooldown cannot restore readiness |
 | Port conflict | Refuse duplicate start | Quit the named/verified owner | Set an explicit free Cave port |
 | Unauthorized hub | Do not retry credentials | Reconnect/repair authorization | Re-enter verified hub invite/token |
 | Incompatible runtime | Refuse adoption | Update Coven, then restart | Repair/reinstall Coven |
@@ -217,6 +230,25 @@ Current branch:
 - TypeScript typecheck passes.
 - Tauri lifecycle baseline: 24 targeted tests pass. A cold local compile took
   42.46 seconds; the tests themselves completed in 0.62 seconds.
+
+Completed follow-up subsets:
+
+- `cave-58eoq.1` Windows supervision: 95 native Rust library tests, 9 focused
+  supervisor tests, and 24 release-runtime contracts pass. Independent review
+  found and the implementation fixed premature recovery while startup still
+  owned a live child and best-effort cleanup that could leave a failed process
+  job retaining the port. Local Windows cross-compilation remains blocked
+  before project Rust by missing Windows C headers/toolchains, so repository
+  Windows CI remains mandatory.
+- `cave-58eoq.2` authenticated readiness: 94 native Rust library tests, all
+  1,151 app test files, all 363 API test files, TypeScript typecheck, 1,592-file
+  test-wiring validation, and 24 release-runtime contracts pass. The real Next
+  custom server returned authenticated chunked readiness JSON in approximately
+  216 ms and returned 401 without the token. The parser handles bounded chunked
+  framing and rejects malformed, oversized, unauthorized, wrong-service,
+  unsupported-protocol, incompatible-version, non-bundled release, and
+  dependency-not-ready responses. Independent security and correctness reviews
+  reported no significant issues.
 
 The attempted native startup measurement encountered an already-running GUI
 and active development origin. It is recorded as contention, not as startup
@@ -245,8 +277,8 @@ work.
 
 | Risk | Owner |
 | --- | --- |
-| Windows packaged sidecar has no native post-ready revive loop | `cave-58eoq.1` |
-| Native sidecar adoption is transport-ready rather than authenticated/protocol-ready | `cave-58eoq.2` |
+| Windows post-ready supervision is shipped; release-host fault injection is still required | `cave-58eoq.4` |
+| Authenticated native sidecar adoption is implemented and validated but unmerged | `cave-58eoq.2` |
 | No cross-component correlation/export contract | `cave-58eoq.3` |
 | Full OS fault-injection and lifecycle stress matrix is incomplete | `cave-58eoq.4` |
 | Startup/recovery reliability budgets and distributions are not established | `cave-58eoq.5` |

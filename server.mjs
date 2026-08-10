@@ -345,12 +345,10 @@ function isPtyAuthRequired() {
 function shouldRejectUnauthenticatedPtyUpgrade({
   sidecarTokenConfigured = false,
   accessTokenConfigured = false,
-  tokenAuthenticated = false,
-  directLoopback = false
+  tokenAuthenticated = false
 } = {}) {
   if (tokenAuthenticated) return false;
-  if (sidecarTokenConfigured) return true;
-  return accessTokenConfigured && !directLoopback;
+  return sidecarTokenConfigured || accessTokenConfigured;
 }
 function isAuthorized(req, query) {
   if (!isPtyAuthRequired()) return false;
@@ -717,8 +715,7 @@ server.on("upgrade", (req, socket, head) => {
   if (shouldRejectUnauthenticatedPtyUpgrade({
     sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
     accessTokenConfigured: Boolean(accessToken()),
-    tokenAuthenticated,
-    directLoopback: isDirectLoopbackRequest(req)
+    tokenAuthenticated
   })) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();

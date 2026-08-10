@@ -54,15 +54,14 @@ assert.match(
   "PTY WebSocket access-token auth fails closed when no access token is configured, reading the token lazily so mid-session arming (cave-os73) reaches the gate",
 );
 // The 401 applies when a remote/mobile credential is configured. With neither
-// token (the local desktop app / dev server) the loopback host+origin gate is
-// the protection, preserving credential-less local connections — #714 dropped
-// that guard and 401'd every local terminal. Native mobile mode configures
-// only COVEN_CAVE_AUTH_TOKEN, so it must also trigger auth.
+// token (plain local development) the loopback host+origin gate is the
+// protection. Once either credential exists, even loopback callers must prove
+// they hold it before the server will spawn or adopt a shell.
 assert.match(src, /function isPtyAuthRequired\(\): boolean \{\s*return Boolean\(accessToken\(\) \|\| SIDECAR_TOKEN\);\s*\}/, "PTY auth is required when either the mobile access token or sidecar token is configured");
 assert.match(
   src,
-  /sidecarTokenConfigured: Boolean\(SIDECAR_TOKEN\),\s*accessTokenConfigured: Boolean\(accessToken\(\)\),\s*tokenAuthenticated,\s*directLoopback: isDirectLoopbackRequest\(req\),/,
-  "PTY upgrade authentication distinguishes the packaged webview credential from tokenless local development",
+  /sidecarTokenConfigured: Boolean\(SIDECAR_TOKEN\),\s*accessTokenConfigured: Boolean\(accessToken\(\)\),\s*tokenAuthenticated,/,
+  "PTY upgrade authentication closes the credential-less path whenever either token is configured",
 );
 // Direct-loopback classification (cave-vn2r): trusted only because ALL three
 // hold — the socket peer is loopback, no forwarding markers are present

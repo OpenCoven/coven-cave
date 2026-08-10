@@ -704,6 +704,11 @@ export function DaemonSection({
   ];
 
   const tailscaleFailure = devicesError ? describeTailscaleFailure(devicesError) : null;
+  const canStartDaemon =
+    !loading &&
+    mode === "local" &&
+    status?.running !== true &&
+    (status?.availability === undefined || status.availability === "offline");
 
   return (
     <section className="settings-daemon" aria-labelledby="settings-daemon-title">
@@ -734,7 +739,7 @@ export function DaemonSection({
           >
             Refresh
           </Button>
-          {!loading && !status?.running && mode === "local" && (
+          {canStartDaemon && (
             <Button
               variant="primary"
               size="sm"

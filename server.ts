@@ -628,11 +628,9 @@ function shouldRejectUnauthenticatedPtyUpgrade({
   sidecarTokenConfigured = false,
   accessTokenConfigured = false,
   tokenAuthenticated = false,
-  directLoopback = false,
 } = {}) {
   if (tokenAuthenticated) return false;
-  if (sidecarTokenConfigured) return true;
-  return accessTokenConfigured && !directLoopback;
+  return sidecarTokenConfigured || accessTokenConfigured;
 }
 
 function isAuthorized(req: IncomingMessage, query: Record<string, string | string[] | undefined>): boolean {
@@ -1130,15 +1128,13 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  // The per-launch sidecar token identifies the Tauri webview, so its presence
-  // removes the direct-loopback exemption: another local account or process is
-  // not the desktop app. Plain development remains credential-less, and the
-  // access-token-only local-browser contract keeps its loopback exemption.
+  // Any configured PTY credential closes the credential-less path, including
+  // direct loopback: another local account or process is not the paired app.
+  // Plain development remains credential-less only when neither token exists.
   if (shouldRejectUnauthenticatedPtyUpgrade({
     sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
     accessTokenConfigured: Boolean(accessToken()),
     tokenAuthenticated,
-    directLoopback: isDirectLoopbackRequest(req),
   })) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();

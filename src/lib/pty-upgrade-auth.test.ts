@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 const serverSource = readFileSync(new URL("../../server.ts", import.meta.url), "utf8");
 const helperSource = serverSource.match(
-  /function shouldRejectUnauthenticatedPtyUpgrade\([\s\S]*?return accessTokenConfigured && !directLoopback;\n}/,
+  /function shouldRejectUnauthenticatedPtyUpgrade\([\s\S]*?return sidecarTokenConfigured \|\| accessTokenConfigured;\n}/,
 )?.[0];
 
 assert.ok(helperSource, "server defines one testable PTY upgrade authentication decision");
@@ -45,14 +45,14 @@ for (const [name, input, expected] of [
     false,
   ],
   [
-    "access-token-only local development keeps the direct browser exemption",
+    "access-token-only servers reject credential-less loopback clients",
     {
       sidecarTokenConfigured: false,
       accessTokenConfigured: true,
       tokenAuthenticated: false,
       directLoopback: true,
     },
-    false,
+    true,
   ],
   [
     "access-token-only forwarded clients still need authentication",

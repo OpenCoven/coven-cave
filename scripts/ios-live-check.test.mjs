@@ -82,8 +82,8 @@ assert.match(
 );
 assert.match(
   model,
-  /if sendCredential,\s*\n\s*let token = try\? CaveConnection\.credentialForRequest\(to: req\.url!\) \{/,
-  "the Authorization header is gated on sendCredential and exact credential origin",
+  /if sendCredential \{[\s\S]*?try CaveConnection\.credentialForRequest\(to: req\.url!\)[\s\S]*?return \.credentialFailure\(error\.localizedDescription\)/,
+  "paired discovery gates Authorization on exact credential origin and stops on policy failure",
 );
 
 console.log("ios-live-check: OK");
