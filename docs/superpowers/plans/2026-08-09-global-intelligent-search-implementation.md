@@ -27,21 +27,31 @@ Findings that change or de-risk the plan:
 | Is the ripgrep file boundary still as described? | Yes. `src/app/api/project/search/route.ts` still spawns `rg --json` via `execFile` with an argument array, query after `--`, through `resolveAllowedProjectPath` plus daemon session roots. | Unit 3's file provider wraps this route's guards rather than reimplementing them. |
 | Is there a SQLite driver? | No third-party dependency. The repo uses Node's built-in `node:sqlite` `DatabaseSync` (`src/lib/local-encrypted-vault.ts`, `src/lib/threads-adapters.ts`), Node pinned `>=24.18.0 <25`. | Unit 2 adds **no** dependency. |
 | **Does that build support FTS5?** | **Yes** — verified empirically, not assumed: `CREATE VIRTUAL TABLE … USING fts5(title, body)`, an insert, and a `MATCH … ORDER BY rank` query all succeed on SQLite 3.53.1 via `node:sqlite`. | The spec's chosen foundation is viable as written. This was the single largest technical risk in the design and it is now retired. |
-| How big is the surface being migrated? | `command-palette.tsx` is 1258 lines; `command-palette-search.ts` is 93. Duplicate global fields live in `familiar-menu-bar.tsx` and `top-bar.tsx`. | Unit 5 is a large-file refactor and needs its own slice, separate from Unit 6's relocation work. |
+| How big is the surface being migrated? | `src/components/command-palette.tsx` is well over a thousand lines; `src/lib/command-palette-search.ts` is small by comparison. Duplicate global fields live in `src/components/familiar-menu-bar.tsx` and `src/components/top-bar.tsx`. | Unit 5 is a large-file refactor and needs its own slice, separate from Unit 6's relocation work. |
 | Does chat content search already exist? | Yes, `/api/chat/search` over stored transcripts via `searchConversations`. | The session/chat provider adapts an existing corpus rather than inventing one. |
 
 Two notes for whoever implements, both from the spec's own text: `node:sqlite`
-is still flagged experimental, and `threads-adapters.ts:522` already documents
-the lazy-import pattern used to keep that flag contained — Unit 2 should follow
-it rather than importing at module top level.
+is still flagged experimental, and `src/lib/threads-adapters.ts` already
+documents the lazy-import pattern used to keep that flag contained — Unit 2
+should follow it rather than importing at module top level.
+
+Sizes above are deliberately approximate and paths are fully qualified. An exact
+line count in a plan is stale the week after it is written, and a reader who
+finds one number wrong has no way to tell which of the others still hold.
 
 ## Unit decomposition
 
 The spec lists a seven-step delivery sequence. Each becomes one bead, sized to
-be independently testable and PR-shaped. Dependencies are strict: every unit
-below depends on the one above it unless stated otherwise.
+be independently testable and PR-shaped.
+
+The numbering is a reading order, **not** a dependency chain. Each unit states
+its own dependencies, and [Sequencing and parallelism](#sequencing-and-parallelism)
+below is the authority — notably Units 1 and 2 do not depend on each other and
+can run at the same time.
 
 ### Unit 1 — Query state, filter registry, and deterministic parser (`cave-ychtl.1`)
+
+*Depends on: nothing. Runs in parallel with Unit 2.*
 
 Pure TypeScript, no I/O, no React. Implements `SearchQueryState`, `SearchFilter`,
 and `SearchScope` exactly as the spec types them; the declarative filter
@@ -60,6 +70,8 @@ first PR.
 
 ### Unit 2 — Document/result contracts and the SQLite store (`cave-ychtl.2`)
 
+*Depends on: nothing. Runs in parallel with Unit 1.*
+
 `SearchDocument`, the result contract, and the derivative index: mode-0600 file
 under Cave local state, separate from the daemon database, symlinked paths
 refused, transactional provider refreshes, deletable and rebuildable without
@@ -74,6 +86,8 @@ Tests: migration, incremental refresh, deletion propagation, stale snapshot,
 corruption rebuild, and the 0600/symlink refusals.
 
 ### Unit 3 — The five MVP providers (`cave-ychtl.3`)
+
+*Depends on: Unit 2.*
 
 Projects, familiars, tasks, sessions/chats, and current-project files, each
 implementing collection/fingerprinting, normalization, supported filters,
@@ -90,6 +104,8 @@ memories land here too, so no palette capability disappears during migration.
 
 ### Unit 4 — Coordinator and `POST /api/search` (`cave-ychtl.4`)
 
+*Depends on: Units 1, 2, and 3.*
+
 Versioned AST validation, provider selection, hard scope enforcement before
 scoring, permission re-check at the coordinator boundary, deterministic ranking
 in the spec's stated order of evidence, provider score normalization, dedup,
@@ -103,27 +119,35 @@ expose provider ids and safe categories only.
 
 ### Unit 5 — The persistent search surface (`cave-ychtl.5`)
 
+*Depends on: Unit 4.*
+
 The expanded overlay anchored under the existing centered top chrome: chips for
 implicit context and explicit filters, the Top/Grouped mode row, action-oriented
-result rows, and the keyboard footer. `command-palette.tsx` becomes this surface
-rather than being replaced by a second overlay.
+result rows, and the keyboard footer. `src/components/command-palette.tsx`
+becomes this surface rather than being replaced by a second overlay.
 
-At 1258 lines, this is the riskiest single unit. It should land behind the
-existing palette entry point with the new coordinator wired but old behavior
-preserved where the new providers do not yet cover a corpus.
+That file is the largest single thing this program touches, which makes this the
+riskiest unit. It should land behind the existing palette entry point with the
+new coordinator wired but old behavior preserved where the new providers do not
+yet cover a corpus.
 
 ### Unit 6 — Context, keyboard, URL sharing, and relocation (`cave-ychtl.6`)
+
+*Depends on: Unit 5.*
 
 Implicit scope derivation from workspace state; Cmd/Ctrl+Enter removing only
 implicit scopes; transient typing with canonical URL state on share/navigate;
 shared-link restoration; and relocation of the duplicate inputs in
-`familiar-menu-bar.tsx` and `top-bar.tsx` plus the chat/tasks/files/familiars
+`src/components/familiar-menu-bar.tsx` and `src/components/top-bar.tsx`, plus
+the chat/tasks/files/familiars
 shortcuts to focus global search with the right `type:` filter.
 
 Relocation, not removal — a control that only narrows already-rendered data may
 stay if it uses the canonical `Filter <items>…` copy.
 
 ### Unit 7 — Performance, accessibility, and Tauri verification (`cave-ychtl.7`)
+
+*Depends on: Unit 6.*
 
 The spec's targets measured by fixtures rather than asserted: 150 ms warm
 indexed first page, 500 ms current-project files, 50-result first page, bounded
