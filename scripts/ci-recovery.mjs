@@ -172,15 +172,21 @@ async function getPull(context, number) {
  */
 const APPROVAL_GATED = "action_required";
 
+/** A run GitHub stopped before it reported a verdict. */
+const CANCELLED = "cancelled";
+
 /**
  * Whether a run counts as CI having actually covered this head.
  *
- * Deliberately narrow. A FAILED run is coverage — it reported a verdict. A
- * `cancelled` run is normally superseded by a newer push that has its own run,
- * and recovering it would fight that. `startup_failure` genuinely produced no
- * coverage, but re-dispatching a workflow that cannot start would just loop, so
- * it is left to a human. Only the approval gate is both no-coverage AND fixed
- * by a fresh dispatch.
+ * Deliberately narrow. A FAILED run is coverage — it reported a verdict.
+ * `startup_failure` genuinely produced no coverage, but re-dispatching a
+ * workflow that cannot start would just loop, so it is left to a human.
+ *
+ * `cancelled` is judged by POSITION rather than here, in {@link decideRecovery}:
+ * a cancelled run underneath a newer one was superseded and is nobody's
+ * problem, while a cancelled run that is the newest for a static head is a
+ * wedge (cave-geaji). This predicate cannot see position, so it deliberately
+ * does not try to answer that.
  */
 function isCoverage(run) {
   if (run.status === "in_progress") return true;
@@ -198,6 +204,28 @@ async function decideRecovery(context, runs, now) {
   );
   if (recentRecovery) return { recover: false, reason: "recovery_cooldown" };
 
+  // `runs` is fetched filtered by head_sha and sorted newest-first, so runs[0]
+  // is the newest run for THIS exact head.
+  const latest = runs[0];
+
+  // A cancelled run is normally superseded by a newer push that carries its own
+  // run — which is why cave-qshvl classified `cancelled` as coverage. That
+  // holds right up until the cancelled run is the NEWEST one for a head that
+  // has not moved: nothing is coming to replace it, the required context
+  // reports `cancelled` rather than `success` forever, and the pull request is
+  // wedged with no path to green.
+  //
+  // Checked against the LATEST run rather than "every run is cancelled",
+  // because GitHub's rollup shows the most recent check-run per name. An older
+  // success underneath a newer cancellation does not unblock the PR, so it must
+  // not suppress recovery either.
+  //
+  // Observed on #4514: head 02f74118ff carried exactly one run, cancelled, and
+  // `pnpm ci:recovery` reported it as covered and declined to help (cave-geaji).
+  if (latest.status === "completed" && latest.conclusion === CANCELLED) {
+    return { recover: true, reason: "cancelled_latest_run" };
+  }
+
   if (runs.some(isCoverage)) {
     return { recover: false, reason: "ci_present" };
   }
@@ -209,7 +237,6 @@ async function decideRecovery(context, runs, now) {
     return { recover: true, reason: "approval_gated_run" };
   }
 
-  const latest = runs[0];
   if (latest.status !== "queued") return { recover: false, reason: "ci_present" };
   if (latest.createdAt > now - RECOVERY_GRACE_MS) {
     return { recover: false, reason: "ci_queued" };
