@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import { readJsonBody } from "@/lib/server/api-security";
 import { runSearch, validateQuery, MAX_PAGE } from "@/lib/search-coordinator";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+/** Bounded request body — a query AST is small; anything larger is not one. */
+const MAX_BODY_BYTES = 64 * 1024;
 
 /**
  * POST /api/search — the search coordinator's HTTP surface (cave-ychtl.4).
@@ -22,26 +26,22 @@ export const runtime = "nodejs";
  * remain injectable and testable without a server.
  */
 export async function POST(req: Request) {
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json(
-      { ok: false, code: "malformed-query", message: "body must be JSON" },
-      { status: 400 },
-    );
-  }
+  // The shared helper, not a hand-rolled req.json(): it enforces
+  // application/json, caps the body size, and returns the repo's standard
+  // invalid-JSON response. Rolling our own skipped all three — notably the
+  // size cap the spec requires of every search request.
+  const body = await readJsonBody<Record<string, unknown>>(req, MAX_BODY_BYTES);
+  if (!body.ok) return body.response;
 
-  if (typeof body !== "object" || body === null) {
+  const payload = body.body;
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
     return NextResponse.json(
       { ok: false, code: "malformed-query", message: "body must be an object" },
       { status: 400 },
     );
   }
-
-  const payload = body as Record<string, unknown>;
   const validated = validateQuery(payload.query);
-  if ("code" in validated) {
+  if (!validated.ok) {
     // 400 for a malformed or oversized query; an unsupported VERSION is also a
     // client-side fact, and the client already knows to fall back to plain text.
     return NextResponse.json(validated, { status: 400 });
