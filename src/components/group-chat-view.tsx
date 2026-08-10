@@ -1413,9 +1413,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   // state survives scrolling deep into history. Cleared on unmount and on
   // coven switch by the effect below — a pill that outlives its surface would
   // keep claiming a run is live after the reader has navigated away.
+  // The LATEST run, not just a live one: `covenRunPill` reports a settled run's
+  // summary and final duration, and §11 asks the bar to keep that last word
+  // ("● Run complete"). Publishing only `activeRun` made the pill vanish the
+  // instant a run finished, which left that whole branch unreachable.
+  const pillRun = activeRun ?? runs[runs.length - 1] ?? null;
   useEffect(() => {
-    publishCovenRunPill(covenRunPill({ run: activeRun, paused }));
-  }, [activeRun, paused]);
+    publishCovenRunPill(covenRunPill({ run: pillRun, paused }));
+  }, [pillRun, paused]);
   useEffect(() => () => publishCovenRunPill(null), []);
   useEffect(() => {
     if (!activeId) publishCovenRunPill(null);

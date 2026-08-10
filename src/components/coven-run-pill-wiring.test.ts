@@ -18,8 +18,23 @@ const css = readFileSync(new URL("../styles/status-bar.css", import.meta.url), "
 // ── Publisher ────────────────────────────────────────────────────────────────
 assert.match(
   groupChat,
-  /publishCovenRunPill\(covenRunPill\(\{ run: activeRun, paused \}\)\)/,
+  /publishCovenRunPill\(covenRunPill\(\{ run: pillRun, paused \}\)\)/,
   "the coven publishes the run the model already derived, not a second source of truth",
+);
+// Regression (review of #4493): publishing `activeRun` alone made the pill
+// VANISH the moment a run settled, because activeRun is `runs.find(r => r.active)`.
+// covenRunPill reports a settled run's summary and final duration and §11 asks
+// the bar to keep that last word — so the whole settled branch was unreachable
+// while its own unit test passed. The pill must follow the LATEST run.
+assert.match(
+  groupChat,
+  /const pillRun = activeRun \?\? runs\[runs\.length - 1\] \?\? null;/,
+  "the pill follows the latest run, so a settled run keeps its last word",
+);
+assert.doesNotMatch(
+  groupChat,
+  /publishCovenRunPill\(covenRunPill\(\{ run: activeRun/,
+  "publishing only the ACTIVE run is the bug this replaced",
 );
 // A pill that outlives its surface would keep claiming a run is live after the
 // reader has navigated away. Both exits must clear it.
