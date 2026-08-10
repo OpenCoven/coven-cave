@@ -63,11 +63,12 @@ export function supportsCovenMaintenanceVersion(value) {
   const actual = parseCovenVersion(value);
   const minimum = parseCovenVersion(COVEN_MAINTENANCE_MINIMUM_VERSION);
   if (!actual || !minimum) return false;
+  if (actual.prerelease) return false;
   for (let index = 0; index < minimum.parts.length; index += 1) {
     if (actual.parts[index] > minimum.parts[index]) return true;
     if (actual.parts[index] < minimum.parts[index]) return false;
   }
-  return !actual.prerelease;
+  return true;
 }
 
 function validOwner(owner) {

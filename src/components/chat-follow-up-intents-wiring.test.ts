@@ -18,14 +18,22 @@ assert.match(chatView, /onCreated=\{handleTaskCreated\}/, "created tasks update 
 assert.doesNotMatch(chatView, /onClick=\{\(\) => void send\(s\)\}/, "assistant suggestions never direct-send from the composer row");
 assert.doesNotMatch(chatView, /onSuggestion=\{\(sug\) => void handlers\(\)\.send\(sug\)\}/, "assistant suggestions never direct-send from transcript rows");
 
+// The coven redesign renders suggestions as typed chips through
+// CovenAgentSection, but the filter is unchanged and still upstream of both
+// rendering and sending: a coven bubble has no task or action router, so a
+// click here must only ever send an ordinary message.
 assert.match(
   groupChat,
-  /const suggestions = typedSuggestions[\s\S]*?\.filter\(\(path\) => path\.kind === "reply"\)[\s\S]*?\.map\(\(path\) => path\.prompt\);/,
+  /const suggestions: CovenSuggestion\[\] =[\s\S]*?\.filter\(\(path\) => path\.kind === "reply"\)/,
   "group chat filters non-reply paths before rendering reply text",
 );
-assert.match(groupChat, /suggestions\.map\(\(s, i\) => \{[\s\S]*?sendSuggestion\(s, r\.familiarId/, "only filtered reply text reaches the group send path");
-assert.doesNotMatch(groupChat, /typedSuggestions\.map\(/, "raw typed task/action paths never reach group rendering or sendSuggestion");
-assert.doesNotMatch(groupChat, /broadcast\(typedSuggestions|sendSuggestion\(typedSuggestions/, "task/action paths never reach group broadcast/send routing");
+assert.match(
+  groupChat,
+  /\.filter\(\(path\) => path\.kind === "reply"\)[\s\S]*?sendSuggestion\(\s*\n\s*path\.prompt,\s*\n\s*agent\.familiarId,/,
+  "only filtered reply text reaches the group send path",
+);
+assert.doesNotMatch(groupChat, /typed\.map\(/, "raw typed task/action paths never reach group rendering or sendSuggestion");
+assert.doesNotMatch(groupChat, /broadcast\(typed\b|sendSuggestion\(typed\b/, "task/action paths never reach group broadcast/send routing");
 assert.match(
   quickChat,
   /const suggestions = typedSuggestions[\s\S]*?\.filter\(\(path\) => path\.kind === "reply"\)[\s\S]*?\.map\(\(path\) => path\.prompt\);/,

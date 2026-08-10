@@ -4,6 +4,10 @@ import { readFileSync } from "node:fs";
 
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const groupChatView = readFileSync(new URL("./group-chat-view.tsx", import.meta.url), "utf8");
+const rosterPopover = readFileSync(
+  new URL("./coven-roster-popover.tsx", import.meta.url),
+  "utf8",
+);
 const sessionHeader = readFileSync(new URL("./chat-session-header.tsx", import.meta.url), "utf8");
 const activityCss = readFileSync(new URL("../styles/cave-chat/activity.css", import.meta.url), "utf8");
 
@@ -77,15 +81,23 @@ assert.match(
   /saveGroups\(groups\);\s*\n\s*markCovenTabPending\(\);\s*\n\s*markCovenGroupPending\(group\.id\);\s*\n\s*window\.dispatchEvent\(new CustomEvent\(CHAT_OPEN_COVEN_EVENT\)\);/,
   "solo promotion must persist the coven and hand off to its tab",
 );
+// The header's roster trigger opens the participant picker. It replaced a
+// dashed "+ Add" pill: the same popover now also carries order and the
+// in-the-next-run switch, so one trigger owns the whole roster.
 assert.match(
   groupChatView,
-  /<button[\s\S]{0,400}?aria-label="Add familiars to this coven"[\s\S]{0,300}?onClick=\{\(\) => setPickerOpen\(\(v\) => !v\)\}/,
-  "Group chat's add-familiar control must open its picker",
+  /<button[\s\S]{0,400}?className="coven-tab__roster-trigger focus-ring"[\s\S]{0,300}?onClick=\{\(\) => setPickerOpen\(\(v\) => !v\)\}/,
+  "Group chat's roster control must open its picker",
 );
 assert.match(
   groupChatView,
-  /familiars\.map\(\(f\) => \{[\s\S]{0,1000}?<button[\s\S]{0,500}?onClick=\{\(\) => toggleParticipant\(f\.id\)\}/,
+  /<CovenRosterPopover[\s\S]{0,600}?onAdd=\{toggleParticipant\}[\s\S]{0,200}?onRemove=\{toggleParticipant\}/,
   "Group chat's picker rows must toggle the selected familiar",
+);
+assert.match(
+  rosterPopover,
+  /onClick=\{\(\) => onAdd\(familiar\.id\)\}/,
+  "the roster's Add rows call through to the membership toggle",
 );
 
 console.log("chat-header-chrome.test.ts: ok");

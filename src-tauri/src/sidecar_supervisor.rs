@@ -23,13 +23,10 @@
 //! Windows startup path already uses so the dead page does not linger in
 //! session history.
 //!
-//! ## Scope
-//!
-//! Deliberately not wired on Windows. There, `spawn_sidecar_startup` owns
-//! startup through `SidecarStartupControl` (a cancellable state machine with
-//! its own status events), and a second actor calling `start_sidecar_runtime`
-//! concurrently would race it. Windows keeps its manual retry until that
-//! control learns to own the automatic path too.
+//! On Windows every revival is scheduled through `SidecarStartupControl`, the
+//! same owner used by initial and manual startup. The supervisor observes that
+//! control and never calls `start_sidecar_runtime` beside it, so automatic,
+//! manual, and shutdown paths cannot start duplicate process jobs.
 //!
 //! Startup diagnostics, readiness handshakes and version coherence are NOT
 //! this module's business — that is cave-3qas7.6 (#4318), whose design note
@@ -167,10 +164,9 @@ impl SidecarSupervisor {
 
 /// Watch the running sidecar and bring it back when it dies unexpectedly.
 ///
-/// Not wired on Windows — see the module docs: `SidecarStartupControl` owns
-/// startup there and a second actor calling `start_sidecar_runtime` would race
-/// its state machine.
-#[cfg(all(desktop, not(target_os = "windows")))]
+/// Windows recovery is delegated to `SidecarStartupControl`; other platforms
+/// retain the synchronous startup path.
+#[cfg(desktop)]
 pub(super) fn spawn_sidecar_supervisor(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         let mut budget = ReviveBudget::defaults();
@@ -179,7 +175,11 @@ pub(super) fn spawn_sidecar_supervisor(app: tauri::AppHandle) {
             if !sleep_unless_stopping(&app, SUPERVISOR_POLL_INTERVAL) {
                 return;
             }
-            match recovery_observation(recovery_pending, sidecar_liveness(&app)) {
+            match recovery_observation(
+                recovery_pending,
+                sidecar_liveness(&app),
+                startup_in_progress(&app),
+            ) {
                 RecoveryObservation::Recovered => {
                     // Forget any earlier crash history so an unrelated failure
                     // weeks into a session gets a full budget.
@@ -212,8 +212,13 @@ pub(super) fn spawn_sidecar_supervisor(app: tauri::AppHandle) {
             if !sleep_unless_stopping(&app, delay) {
                 return;
             }
+            if startup_in_progress(&app) {
+                recovery_pending = true;
+                continue;
+            }
             match revive(&app) {
                 ReviveOutcome::Revived => recovery_pending = false,
+                ReviveOutcome::Scheduled => recovery_pending = true,
                 ReviveOutcome::Failed => {}
                 ReviveOutcome::Cancelled => return,
             }
@@ -223,7 +228,7 @@ pub(super) fn spawn_sidecar_supervisor(app: tauri::AppHandle) {
 
 /// True unless the app asked to stop while we were waiting. Polled in short
 /// slices so a fifteen-minute cooldown never delays quitting.
-#[cfg(all(desktop, not(target_os = "windows")))]
+#[cfg(desktop)]
 fn sleep_unless_stopping(app: &tauri::AppHandle, total: Duration) -> bool {
     const SLICE: Duration = Duration::from_millis(250);
     let mut waited = Duration::ZERO;
@@ -238,7 +243,7 @@ fn sleep_unless_stopping(app: &tauri::AppHandle, total: Duration) -> bool {
     !is_stopping(app)
 }
 
-#[cfg(all(desktop, not(target_os = "windows")))]
+#[cfg(desktop)]
 fn is_stopping(app: &tauri::AppHandle) -> bool {
     app.try_state::<Arc<SidecarSupervisor>>()
         .is_some_and(|supervisor| supervisor.is_stopping())
@@ -252,7 +257,22 @@ fn is_stopping(app: &tauri::AppHandle) -> bool {
 /// would silently RESET the revive budget, so a respawn that failed and left no
 /// child behind would look like a recovery and never be retried. Unknown means
 /// "do nothing": neither revive, nor forgive the crash history.
-#[cfg(all(desktop, not(target_os = "windows")))]
+#[cfg(desktop)]
+fn startup_in_progress(app: &tauri::AppHandle) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        return app
+            .try_state::<Arc<SidecarStartupControl>>()
+            .is_some_and(|control| control.is_running());
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        false
+    }
+}
+
+#[cfg(desktop)]
 #[derive(Debug, PartialEq, Eq)]
 enum SidecarLiveness {
     Alive,
@@ -260,7 +280,7 @@ enum SidecarLiveness {
     Unknown,
 }
 
-#[cfg(all(desktop, not(target_os = "windows")))]
+#[cfg(desktop)]
 #[derive(Debug, PartialEq, Eq)]
 enum RecoveryObservation {
     Recovered,
@@ -272,10 +292,21 @@ enum RecoveryObservation {
 /// child from `SidecarState`. Without this episode bit, `Unknown` would make
 /// the supervisor wait forever. Conversely, only a later live probe proves a
 /// successful revive remained healthy long enough to restore the budget.
-#[cfg(all(desktop, not(target_os = "windows")))]
-fn recovery_observation(recovery_pending: bool, liveness: SidecarLiveness) -> RecoveryObservation {
+#[cfg(desktop)]
+fn recovery_observation(
+    recovery_pending: bool,
+    liveness: SidecarLiveness,
+    startup_running: bool,
+) -> RecoveryObservation {
+    if startup_running {
+        return RecoveryObservation::Wait;
+    }
     if recovery_pending {
-        return RecoveryObservation::Revive;
+        return if liveness == SidecarLiveness::Alive {
+            RecoveryObservation::Recovered
+        } else {
+            RecoveryObservation::Revive
+        };
     }
     match liveness {
         SidecarLiveness::Alive => RecoveryObservation::Recovered,
@@ -284,7 +315,7 @@ fn recovery_observation(recovery_pending: bool, liveness: SidecarLiveness) -> Re
     }
 }
 
-#[cfg(all(desktop, not(target_os = "windows")))]
+#[cfg(desktop)]
 fn sidecar_liveness(app: &tauri::AppHandle) -> SidecarLiveness {
     let Some(state) = app.try_state::<SidecarState>() else {
         return SidecarLiveness::Unknown;
@@ -306,9 +337,10 @@ fn sidecar_liveness(app: &tauri::AppHandle) -> SidecarLiveness {
     }
 }
 
-#[cfg(all(desktop, not(target_os = "windows")))]
+#[cfg(desktop)]
 enum ReviveOutcome {
     Revived,
+    Scheduled,
     Failed,
     Cancelled,
 }
@@ -343,6 +375,7 @@ fn revive(app: &tauri::AppHandle) -> ReviveOutcome {
                     log::info!("[cave] sidecar revived and the window was reopened");
                     ReviveOutcome::Revived
                 }
+
                 Err(error) => {
                     log::warn!("[cave] sidecar revived but the window did not follow: {error}");
                     cleanup_failed_revival(app);
@@ -360,6 +393,32 @@ fn revive(app: &tauri::AppHandle) -> ReviveOutcome {
         Err(SidecarStartError::Failed(error)) => {
             log::warn!("[cave] sidecar revive failed: {error}");
             cleanup_failed_revival(app);
+            ReviveOutcome::Failed
+        }
+    }
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+fn revive(app: &tauri::AppHandle) -> ReviveOutcome {
+    let Some(control) = app.try_state::<Arc<SidecarStartupControl>>() else {
+        log::warn!("[cave] sidecar revive failed: startup control is unavailable");
+        return ReviveOutcome::Failed;
+    };
+    if control.is_shutdown_requested() || is_stopping(app) {
+        return ReviveOutcome::Cancelled;
+    }
+    match sidecar_startup::spawn_sidecar_startup(app.clone(), Arc::clone(control.inner())) {
+        Ok(()) => ReviveOutcome::Scheduled,
+        Err(_error) if control.is_running() => {
+            log::info!("[cave] sidecar recovery joined an existing startup");
+            ReviveOutcome::Scheduled
+        }
+        Err(error) if control.is_shutdown_requested() => {
+            log::info!("[cave] sidecar recovery cancelled during shutdown: {error}");
+            ReviveOutcome::Cancelled
+        }
+        Err(error) => {
+            log::warn!("[cave] sidecar revive could not start: {error}");
             ReviveOutcome::Failed
         }
     }
@@ -433,26 +492,71 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(target_os = "windows"))]
     fn failed_revival_stays_pending_when_child_state_is_unknown() {
         assert_eq!(
-            recovery_observation(true, SidecarLiveness::Unknown),
+            recovery_observation(true, SidecarLiveness::Unknown, false),
             RecoveryObservation::Revive,
             "cleanup leaves no recorded child, but a failed revival still needs its next attempt"
         );
     }
 
     #[test]
-    #[cfg(not(target_os = "windows"))]
     fn only_an_observed_live_revival_restores_the_budget() {
         assert_eq!(
-            recovery_observation(false, SidecarLiveness::Alive),
+            recovery_observation(false, SidecarLiveness::Alive, false),
             RecoveryObservation::Recovered,
         );
         assert_eq!(
-            recovery_observation(false, SidecarLiveness::Unknown),
+            recovery_observation(false, SidecarLiveness::Unknown, false),
             RecoveryObservation::Wait,
             "unknown is not proof that a successful revival stayed alive"
+        );
+    }
+
+    #[test]
+    fn an_owned_startup_suppresses_duplicate_revival() {
+        assert_eq!(
+            recovery_observation(false, SidecarLiveness::Unknown, true),
+            RecoveryObservation::Wait,
+            "initial and manual startup own recovery until they finish"
+        );
+        assert_eq!(
+            recovery_observation(true, SidecarLiveness::Dead, true),
+            RecoveryObservation::Wait,
+            "a retained dead child must not start a second worker concurrently"
+        );
+        assert_eq!(
+            recovery_observation(true, SidecarLiveness::Alive, true),
+            RecoveryObservation::Wait,
+            "process liveness alone is not readiness while startup still owns the child"
+        );
+    }
+
+    #[test]
+    fn a_scheduled_revival_recovers_only_after_the_child_is_live() {
+        assert_eq!(
+            recovery_observation(true, SidecarLiveness::Alive, false),
+            RecoveryObservation::Recovered,
+        );
+    }
+
+    #[test]
+    fn recovery_rotates_auxiliary_window_auth_without_losing_presentation_state() {
+        let startup = Url::parse(
+            "http://127.0.0.1:43123/?covenCaveToken=new-sidecar&coven_access_token=new-mobile",
+        )
+        .unwrap();
+        let current = Url::parse(
+            "http://127.0.0.1:43123/quick-chat?notch=1&fit=1&covenCaveToken=old-sidecar",
+        )
+        .unwrap();
+
+        let refreshed = sidecar_startup::refreshed_sidecar_window_url(&startup, &current);
+
+        assert_eq!(refreshed.path(), "/quick-chat");
+        assert_eq!(
+            refreshed.query(),
+            Some("covenCaveToken=new-sidecar&coven_access_token=new-mobile&notch=1&fit=1")
         );
     }
 }

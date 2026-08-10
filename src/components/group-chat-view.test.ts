@@ -10,6 +10,12 @@ const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url),
 const mode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const transcript = readFileSync(new URL("../lib/group-chat-transcript.ts", import.meta.url), "utf8");
 const covenStyles = readFileSync(new URL("../styles/coven-tab.css", import.meta.url), "utf8");
+const inspector = readFileSync(new URL("./coven-inspector.tsx", import.meta.url), "utf8");
+const composerBar = readFileSync(new URL("./coven-composer-bar.tsx", import.meta.url), "utf8");
+const runHeader = readFileSync(new URL("./coven-run-header.tsx", import.meta.url), "utf8");
+const agentSection = readFileSync(new URL("./coven-agent-section.tsx", import.meta.url), "utf8");
+const routingModule = readFileSync(new URL("../lib/coven-composer-routing.ts", import.meta.url), "utf8");
+const roster = readFileSync(new URL("./coven-roster-popover.tsx", import.meta.url), "utf8");
 
 test("GroupChatView schedules Broadcast and Round robin replies through /api/chat/send", () => {
   assert.match(view, /export function GroupChatView/, "exports GroupChatView");
@@ -25,7 +31,16 @@ test("GroupChatView schedules Broadcast and Round robin replies through /api/cha
   // Per-familiar session pinning so each thread resumes.
   assert.match(view, /recordSession\(group\.id, reply\.familiarId/, "pins each familiar's session id");
   // A Stop control aborts the in-flight broadcast.
-  assert.match(view, /await stopScopeRuns\(runScopeRef\.current\)/, "Stop posts cancellation for every active run in the current scope");
+  assert.match(
+    view,
+    /stopScopeRuns\(runScopeRef\.current\)/,
+    "Stop everything posts cancellation for every active run in the current scope",
+  );
+  assert.match(
+    view,
+    /const entries = listActiveGroupReplyRuns\(activeRunsRef\.current, runScopeRef\.current\)\.filter\(\s*\n\s*\(entry\) => entry\.replyId === replyId,/,
+    "Stop <familiar> is scoped to that one reply's run, so the rotation continues",
+  );
   assert.match(view, /stopActiveGroupReplyRuns\(\{/, "local abort waits for the shared stop-dispatch helper");
   // Broadcast injects the roster but remains an independent first pass.
   assert.match(view, /renderCovenRoundtablePrompt\(\{/, "builds the per-familiar roundtable prompt");
@@ -40,18 +55,18 @@ test("GroupChatView schedules Broadcast and Round robin replies through /api/cha
   // compact coven bubble cannot execute or send task/action suggestions.
   assert.match(
     view,
-    /typedSuggestions[\s\S]*?\.filter\(\(path\) => path\.kind === "reply"\)[\s\S]*?\.map\(\(path\) => path\.prompt\)/,
+    /typed\s*\n?\s*\.filter\(\(path\) => path\.kind === "reply"\)/,
     "filters non-reply intents before group-chat suggestions can render or send",
   );
   // Parsed suggestions render as click-to-send chips targeted to their author.
   assert.match(
     view,
-    /className="cave-next-paths mt-1\.5" data-count=\{suggestions\.length\}/,
-    "renders the next-paths chip row, stamping its count for the uniform-rows layout",
+    /const suggestions: CovenSuggestion\[\] =/,
+    "parsed suggestions become click-to-send chips targeted to their author",
   );
   assert.match(
     view,
-    /sendSuggestion\(s, r\.familiarId, f\?\.display_name \?\? r\.familiarId\)/,
+    /sendSuggestion\(\s*\n\s*path\.prompt,\s*\n\s*agent\.familiarId,\s*\n\s*familiar\?\.display_name \?\? agent\.familiarId,/,
     "clicking a chip targets the familiar who authored it",
   );
   assert.match(
@@ -105,7 +120,7 @@ test("Group Chat requires one project every participant can access", () => {
   );
   assert.match(
     view,
-    /disabled=\{participants\.length === 0 \|\| !draft\.trim\(\) \|\| !projectLaunchReady\}/,
+    /participants\.length === 0 \|\| !draft\.trim\(\) \|\| !projectLaunchReady/,
     "the group send action remains disabled until its project intersection is verified",
   );
 });
@@ -174,17 +189,35 @@ test("completed @mentions close autocomplete and render as standout targets", ()
     /function CovenMentionPills[\s\S]{0,700}<div[\s\S]{0,200}role="note"[\s\S]{0,200}aria-label=/,
     "exposes the pill summary through a valid named ARIA role",
   );
-  assert.match(view, /Use @ to tag a familiar/, "keeps the @ instruction visible outside the placeholder");
+  // The @ instruction is no longer an empty-state hint on the pill strip: the
+  // composer's enter-note states it permanently, alongside what Enter does.
+  assert.match(
+    view,
+    /<p id=\{mentionGuidanceId\} className="coven-composer__note">/,
+    "the composer states what Enter does right now, outside the placeholder",
+  );
+  assert.match(
+    routingModule,
+    /@name routes to one familiar without advancing the rotation\./,
+    "keeps the @ instruction visible outside the placeholder",
+  );
   assert.match(view, /const mentionGuidanceId = useId\(\)/, "gives the persistent guidance a stable local id");
   assert.match(
     view,
-    /aria-describedby=\{participants\.length > 0 \? mentionGuidanceId : undefined\}/,
-    "connects the textarea only when persistent @ guidance is rendered",
+    /aria-describedby=\{mentionGuidanceId\}/,
+    "connects the textarea to the guidance, which is now always rendered",
   );
+  // Parsed @mention targets show in the composer's routing preview, which also
+  // states that a mention does not advance the rotation.
   assert.match(
     view,
-    /<CovenMentionPills[\s\S]*familiars=\{composerTargets\}/,
+    /mentioned: composerTargets\.map\(\(f\) => \(\{ id: f\.id, name: f\.display_name \}\)\)/,
     "shows parsed targets in the composer",
+  );
+  assert.match(
+    composerBar,
+    /routing\.chips\.map\(\(chip\) => \{/,
+    "the routing preview renders one chip per recipient",
   );
   assert.match(
     view,
@@ -196,10 +229,23 @@ test("completed @mentions close autocomplete and render as standout targets", ()
     /<CovenMentionPills familiars=\{replyTargets\} \/>/,
     "shows familiar tags on assistant turns",
   );
-  assert.match(
+  // The placeholder is generated from mode + roster and names the order or the
+  // set — never a bare count, which said nothing about what Enter would do.
+  assert.match(view, /routing\.placeholder/, "the composer placeholder comes from the routing model");
+  assert.doesNotMatch(
     view,
-    /`Message \$\{participants\.length\} familiar\$\{participants\.length === 1 \? "" : "s"\}…`/,
-    "keeps the populated placeholder focused on composition",
+    /`Message \$\{participants\.length\} familiar/,
+    "the bare-count placeholder is gone",
+  );
+  assert.match(
+    routingModule,
+    /`Send to \$\{joinNames\(names, "then"\)\}…`/,
+    "a rotation's placeholder names the order",
+  );
+  assert.match(
+    routingModule,
+    /`Broadcast to \$\{joinNames\(names, "and"\)\}…`/,
+    "a broadcast's placeholder names the set",
   );
   assert.doesNotMatch(view, /\(@ to tag one\)/, "does not hide required mention guidance in the placeholder");
 
@@ -242,13 +288,36 @@ test("completed familiar delegation trailers route bounded, attributable follow-
 });
 
 test("response mode is configured per Coven and locked while a turn is running", () => {
-  assert.match(view, /options=\{COVEN_RESPONSE_MODES\}/, "offers the two canonical response modes");
-  assert.match(view, /ariaLabel="Coven response mode"/, "labels the mode selector for assistive technology");
-  assert.match(view, /<fieldset disabled=\{busy\}/, "prevents mid-turn mode changes");
+  assert.match(composerBar, /options=\{COVEN_RESPONSE_MODES\}/, "offers the two canonical response modes");
+  assert.match(composerBar, /ariaLabel="Coven response mode"/, "labels the mode selector for assistive technology");
+  // A run owns its mode: the schedule captured it at start and each user turn
+  // snapshots its own, so switching mid-run can only reach the NEXT message.
+  // The selector therefore stays live and the composer says what it will do —
+  // blocking it until Stop would punish planning ahead (design proposal §9).
+  assert.match(view, /modeLocked=\{busy\}/, "the composer is told a run is in flight");
+  assert.match(
+    composerBar,
+    /This run keeps its mode — the switch applies to your next message\./,
+    "a mid-run switch states that it applies to the next message",
+  );
+  assert.match(
+    view,
+    /"Broadcast mode for your next message\. This run keeps its mode\."/,
+    "the mid-run switch announces the same contract to assistive technology",
+  );
+  assert.doesNotMatch(view, /<fieldset disabled=\{busy\}/, "the selector is no longer dead during a run");
   assert.match(view, /setGroupResponseMode\(group, responseMode, nowIso\(\)\)/, "persists the setting on the active Coven");
   assert.match(view, /responseMode: group\.responseMode/, "snapshots mode on each user turn for stable retries");
   assert.match(view, /nextRoundRobinLeadId\(current\.familiarIds, leadId\)/, "rotates the next round-robin lead");
-  assert.match(view, /leads next/, "shows who will lead the next round");
+  // Who leads is no longer a sentence fragment in the header: the rotation is
+  // shown as order — arrows between recipient chips in the composer preview,
+  // numbered positions in the roster, and the run header's stepper.
+  assert.match(
+    routingModule,
+    /arrow: roundRobin && index > 0/,
+    "the composer preview renders the rotation as an ordered chain",
+  );
+  assert.match(roster, /\{entry\.included \? entry\.position : "–"\}/, "the roster numbers the rotation");
 });
 
 test("Group chat transcript uses avatar author rows with recency", () => {
@@ -265,11 +334,26 @@ test("Group chat transcript uses avatar author rows with recency", () => {
   assert.match(view, /<UserChatAvatar className="cave-group-chat-avatar cave-group-chat-avatar--human"/, "human turns retain the user avatar");
   assert.match(view, /delegator\?\.display_name \?\? operatorDisplayName/, "human turns retain the operator display name while handoffs show the familiar");
   assert.match(view, /delegator \? "HANDOFF" : "OP"/, "human and familiar-authored turns have distinct badges");
-  assert.match(view, /formatChatRecency\(user\.createdAt, dtPrefs\)/, "group prompt turns retain recency");
+  assert.match(view, /formatChatRecency\(run\.user\.createdAt, dtPrefs\)/, "group prompt turns retain recency");
   assert.match(
     view,
-    /className="cave-group-chat-turn cave-group-chat-turn--assistant"[\s\S]*<FamiliarAvatar familiar=\{f\} size="xl"[\s\S]*cave-group-chat-name[\s\S]*f\?\.display_name[\s\S]*formatChatRecency\(r\.createdAt, dtPrefs\)/,
-    "group assistant replies render large avatars, author names, and recency",
+    /timestamp=\{formatChatRecency\(agent\.reply\.createdAt, dtPrefs\)\}/,
+    "group assistant replies retain recency",
+  );
+  assert.match(
+    agentSection,
+    /<FamiliarAvatar familiar=\{familiar\} size="lg"/,
+    "group assistant replies render an avatar",
+  );
+  assert.match(
+    agentSection,
+    /<span className="coven-section__name" title=\{familiar\?\.role\}>/,
+    "group assistant replies name their author",
+  );
+  assert.match(
+    agentSection,
+    /<time className="coven-section__time" dateTime=\{reply\.createdAt\}>/,
+    "the reply timestamp is a real <time> with a machine-readable datetime",
   );
 });
 
@@ -330,7 +414,15 @@ test("Group Chat is a tab inside the Chat surface, not a standalone page", () =>
 test("Group chat stop cleanup targets only the retired scope on switch and unmount", () => {
   assert.match(view, /const activeRunsRef = useRef\(new Map<string, ActiveGroupReplyRun>\(\)\)/, "tracks every in-flight familiar reply in a local active-run registry");
   assert.match(view, /const runScopeRef = useRef\(0\)/, "assigns every turn a scope token");
-  assert.match(view, /const retiringScopeId = runScopeRef\.current;[\s\S]{0,200}runScopeRef\.current \+= 1;[\s\S]{0,200}void stopScopeRuns\(retiringScopeId, \{ quiet: false \}\);/, "coven switches retire the old scope before best-effort stop cleanup");
+  // A pause is an awaited promise inside the retiring schedule. Leaving it held
+  // on a coven switch would strand that schedule forever and carry the paused
+  // state into a coven that has no run at all.
+  assert.match(
+    view,
+    /const retiringScopeId = runScopeRef\.current;[\s\S]{0,600}pauseReleaseRef\.current\?\.\(\);/,
+    "switching covens releases any held rotation on the way out",
+  );
+  assert.match(view, /const retiringScopeId = runScopeRef\.current;[\s\S]{0,900}runScopeRef\.current \+= 1;[\s\S]{0,900}void stopScopeRuns\(retiringScopeId, \{ quiet: false \}\);/, "coven switches retire the old scope before best-effort stop cleanup");
   assert.match(view, /useEffect\(\(\) => \(\) => \{[\s\S]{0,300}const retiringScopeId = runScopeRef\.current;[\s\S]{0,120}runScopeRef\.current \+= 1;[\s\S]{0,220}void stopScopeRuns\(retiringScopeId, \{ quiet: true \}\);[\s\S]{0,120}\}, \[flushPendingSave\]\);/, "unmount cleanup posts stops without touching a future scope");
   assert.match(view, /scopeId !== runScopeRef\.current/, "late completions from a retired scope are ignored");
   assert.match(view, /registerActiveGroupReplyRun\(/, "each reply registers itself when its stream starts");
@@ -353,29 +445,39 @@ test("Group surface follows the design handoff: SurfaceRail covens + details dra
   assert.match(view, /aria-label="New coven"/, "the rail header keeps the create-coven action");
   assert.match(view, /requestDeleteGroup\(g\.id, g\.name\)/, "rows keep the confirmed delete affordance");
 
-  // Details drawer: subject + running summary on the local group model,
-  // committed on blur through the same saveGroups path as other mutations.
+  // Subject + running summary still live on the local group model and still
+  // commit on blur through the same saveGroups path — they moved out of a
+  // strip above the transcript and into the toggled inspector, so the
+  // transcript no longer pays vertical space for fields read rarely.
   assert.match(view, /setGroupDetails\(group, patch, nowIso\(\)\)/, "details commits go through the pure helper");
   assert.match(view, /if \(next === group\) return;/, "an untouched blur neither persists nor reorders the rail");
-  assert.match(view, /placeholder="What is this coven about\?"/, "subject field uses the handoff placeholder");
+  assert.match(inspector, /placeholder="What is this coven about\?"/, "subject field uses the handoff placeholder");
   assert.match(
-    view,
+    inspector,
     /placeholder="Short running summary of the conversation…"/,
     "summary field uses the handoff placeholder",
   );
-  assert.match(view, /aria-expanded=\{detailsOpen\}/, "the details strip is a disclosure button");
+  assert.match(view, /aria-pressed=\{inspectorOpen\}/, "the inspector is a toggled disclosure");
+  assert.doesNotMatch(
+    view,
+    /coven-tab__details-toggle/,
+    "the old always-present details strip is gone from above the transcript",
+  );
 
-  // Header grammar: double-click rename (keyboard parity kept), member chips
-  // + dashed "+ Add" pill anchoring the existing roster picker.
+  // Header grammar: double-click rename (keyboard parity kept), an avatar
+  // stack for identity, and one roster trigger that opens the participant
+  // picker — not five interchangeable hairline pills.
   assert.match(view, /onDoubleClick=\{\(\) => setRenaming\(true\)\}/, "pointer rename is double-click");
-  assert.match(view, /coven-tab__member-chip/, "members render as header chips");
-  assert.match(view, /coven-tab__add-member/, "the dashed add pill opens the roster picker");
+  assert.match(view, /coven-tab__avatars/, "members render as an avatar stack");
+  assert.match(view, /coven-tab__roster-trigger/, "one trigger opens the roster popover");
+  assert.match(view, /<CovenRosterPopover/, "the roster popover owns order and inclusion");
 
-  // Composer affordances from the mock: mention kicker + explicit empty state,
-  // and a typing line while replies are in flight.
+  // Composer affordances from the mock: mention kicker + explicit empty state.
+  // The old "N replying…" typing line is gone — the run header's stepper says
+  // who is working, and a queued familiar is no longer counted as replying.
   assert.match(view, /coven-tab__mention-kicker">Tag a familiar</, "mention popover keeps its kicker");
   assert.match(view, /No matching familiar in this coven/, "mention popover has an explicit empty state");
-  assert.match(view, /replyingNames\.join\(", "\)\} replying…/, "in-flight replies surface the typing line");
+  assert.doesNotMatch(view, /replying…/, "the ambiguous typing line is replaced by the stepper");
 });
 
 test("Group chat is a world-class chat surface (a11y + resilience)", () => {
@@ -396,7 +498,11 @@ test("Group chat is a world-class chat surface (a11y + resilience)", () => {
   assert.match(view, /aria-current=\{isActive \? "true" : undefined\}/, "the active coven row is marked aria-current");
   // A failed familiar reply can be retried in place.
   assert.match(view, /const retryReply = useCallback/, "failed replies can be retried");
-  assert.match(view, /onClick=\{\(\) => void retryReply\(r\)\}/, "the Retry control re-runs a single familiar");
+  assert.match(
+    view,
+    /onRetry=\{\(\) => void retryReply\(agent\.reply\)\}/,
+    "the Retry control re-runs a single familiar",
+  );
 
   // cave-z4s (1): a broadcast streams every familiar concurrently, so recordSession
   // must compose on the LATEST groups via a functional setGroups (persisting
@@ -413,16 +519,24 @@ test("Group chat is a world-class chat surface (a11y + resilience)", () => {
   // abort/busy wiring when they still own the active controller.
   assert.match(
     view,
-    /swap transcript when the active group changes[\s\S]*?const retiringScopeId = runScopeRef\.current;\s*\n\s*runScopeRef\.current \+= 1;\s*\n\s*abortRef\.current = null;\s*\n\s*setBusy\(false\);\s*\n\s*void stopScopeRuns\(retiringScopeId, \{ quiet: false \}\);/,
+    /swap transcript when the active group changes[\s\S]*?const retiringScopeId = runScopeRef\.current;\s*\n\s*runScopeRef\.current \+= 1;\s*\n\s*abortRef\.current = null;\s*\n\s*setBusy\(false\);[\s\S]{0,900}void stopScopeRuns\(retiringScopeId, \{ quiet: false \}\);/,
     "changing the active coven retires and stops the in-flight scope before loading the new transcript",
   );
   {
-    const guarded = view.match(
-      /if \(abortRef\.current === controller\) \{\s*\n\s*abortRef\.current = null;\s*\n\s*setBusy\(false\);\s*\n\s*\}/g,
-    );
+    // Both broadcast and retryReply must only clear the shared abort/busy
+    // wiring while they still own it — a coven switch or a newer run may have
+    // replaced abortRef, and clearing unconditionally kills the newer stream's
+    // Stop. Broadcast additionally clears its pause flags, so match the guard
+    // opening rather than one exact body.
+    const guarded = view.match(/if \(abortRef\.current === controller\) \{/g);
     assert.ok(
       guarded && guarded.length === 2,
       "both broadcast and retryReply guard their abort/busy cleanup on still owning the controller",
+    );
+    assert.match(
+      view,
+      /if \(abortRef\.current === controller\) \{\s*\n\s*abortRef\.current = null;\s*\n\s*setBusy\(false\);\s*\n\s*setPaused\(false\);/,
+      "a finished run also clears its pause state, so the next run never starts held",
     );
   }
 
@@ -496,7 +610,10 @@ test("Group chat is a world-class chat surface (a11y + resilience)", () => {
   {
     // Every button inside the familiar picker and @mention popovers must carry
     // the shared focus-ring class so keyboard focus is visible.
-    const options = view.match(/className="(?:focus-ring )?flex w-full items-center gap-2 rounded px-2 py-1\.5 text-left[^"]*"/g) ?? [];
+    const options = [
+      ...(view.match(/className="(?:focus-ring )?flex w-full items-center gap-2 rounded px-2 py-1\.5 text-left[^"]*"/g) ?? []),
+      ...(roster.match(/className="coven-roster__(?:add-row|move|remove|switch) focus-ring"/g) ?? []),
+    ];
     assert.ok(options.length >= 2, "found the picker and mention option buttons");
     assert.ok(
       options.every((c) => c.includes("focus-ring")),
@@ -524,18 +641,23 @@ test("coven Details drawer offers per-participant Debug (A5: no debug affordance
     "GroupChatView accepts an onDebugSession handler",
   );
   assert.match(
-    view,
-    /participants\.some\(\(f\) => activeGroup\.sessions\[f\.id\]\)/,
-    "the Threads section only renders when a participant has a pinned session",
+    inspector,
+    /participants\.filter\(\(familiar\) => group\.sessions\[familiar\.id\]\)/,
+    "the Threads section only renders participants that have a pinned session",
   );
   assert.match(
-    view,
-    /onClick=\{\(\) => onDebugSession\(sessionId, f\.id\)\}/,
+    inspector,
+    /onDebugSession && threaded\.length > 0/,
+    "the Threads section is omitted entirely when nothing is pinned",
+  );
+  assert.match(
+    inspector,
+    /onClick=\{\(\) => onDebugSession\(group\.sessions\[familiar\.id\], familiar\.id\)\}/,
     "Debug passes the pinned session AND its familiar so the host can scope the conversation",
   );
   assert.match(
-    view,
-    /className="coven-tab__thread-debug focus-ring"/,
+    inspector,
+    /className="coven-inspector__debug focus-ring"/,
     "the Debug action keeps the shared focus-ring class",
   );
   // Host wiring: chat-surface switches to the conversation scope, opens the
@@ -589,12 +711,19 @@ test("coven bubbles strip attention markers before next-paths/delegations/Messag
   // feed delegation extraction and MessageBubble.
   assert.match(
     view,
-    /extractNextPaths\(r\.text\)[\s\S]*?extractCovenDelegations\(withoutNextPaths\)/,
+    /extractNextPaths\(agent\.reply\.text\)[\s\S]*?extractCovenDelegations\(withoutNextPaths\)/,
     "delegation extraction runs after next-paths, preserving the existing marker-protocol order",
   );
+  // The stripped text is what reaches the section, and the section is the only
+  // thing that renders a bubble — so the order holds across the split.
   assert.match(
     view,
-    /extractCovenDelegations\(withoutNextPaths\)[\s\S]{0,2000}<MessageBubble/,
+    /extractCovenDelegations\(withoutNextPaths\)[\s\S]{0,4000}visibleText=\{/,
+    "only the fully stripped text is handed to the section",
+  );
+  assert.match(
+    agentSection,
+    /visibleText\.trim\(\) \? \([\s\S]{0,400}<MessageBubble[\s\S]{0,200}content=\{visibleText\}/,
     "MessageBubble renders only after attention/next-paths/delegations have all been stripped",
   );
 });

@@ -2026,9 +2026,11 @@ function StepCovenCli({
                             ? `Installing… ${formatElapsed(toolJob.elapsedMs)}`
                             : toolBlockedByNpm
                               ? `Waiting for ${npmBusyLabel}`
-                            : !tool.compatible
-                              ? "Update"
-                              : "Install"}
+: !tool.installed
+  ? "Install"
+  : !tool.compatible
+    ? "Update"
+    : "Install"}
                         </button>
                       ) : null}
                     </div>
