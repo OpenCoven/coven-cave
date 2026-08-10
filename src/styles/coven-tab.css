@@ -2095,7 +2095,7 @@ textarea.coven-inspector__input {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  margin-bottom: 2px;
+  margin-bottom: var(--space-1);
 }
 
 .coven-history__name {
