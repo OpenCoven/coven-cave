@@ -103,19 +103,25 @@ function asText(value) {
  * Turn a failed `coven maintenance <op>` into a reason string.
  *
  * The suffix stays `-unavailable` because callers and tests match on it, but it
- * now carries the client's own first line of stderr. Without that, EVERY
- * non-zero exit read as "the subcommand is unavailable" — so an expired owner
- * lease, which is the common failure, looked like a missing or too-old client.
- * That cost a wrong root cause on cave-7w5cu: the reported version skew was
- * real on PATH and entirely irrelevant, because the gate launches a different
- * binary. One line of stderr would have said so.
+ * now carries the client's own first NON-EMPTY line of stderr. Without that,
+ * EVERY non-zero exit read as "the subcommand is unavailable" — so an expired
+ * owner lease, which is the common failure, looked like a missing or too-old
+ * client. That cost a wrong root cause on cave-7w5cu: the reported version skew
+ * was real on PATH and entirely irrelevant, because the gate launches a
+ * different binary. One line of stderr would have said so.
+ *
+ * Matched rather than split: a failing client can emit a long backtrace, and
+ * only the first line is ever used, so there is no reason to allocate an array
+ * for the rest of it.
  */
 function commandFailure(operation, result) {
-  const detail = asText(result?.stderr).split("\n").find((line) => line.trim().length > 0);
+  // Horizontal whitespace only in the leading class — `\s` would span newlines
+  // and let the match start on a blank line, defeating the "non-empty" part.
+  const detail = asText(result?.stderr).match(/^[^\S\n]*(\S[^\n]*)/m)?.[1];
   return {
     ok: false,
     reason: detail
-      ? `coven-${operation}-unavailable: ${detail.trim().slice(0, 200)}`
+      ? `coven-${operation}-unavailable: ${detail.trimEnd().slice(0, 200)}`
       : `coven-${operation}-unavailable`,
   };
 }
