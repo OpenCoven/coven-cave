@@ -15,9 +15,10 @@ import {
 } from "../src/lib/worktree-lifecycle.ts";
 import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
 import {
-  heartbeatWriterIntent,
-  registerWriterIntent,
-  releaseWriterIntent,
+  acquireMaintenanceGate,
+  heartbeatMaintenanceGate,
+  MAX_FENCED_MUTATION_TIMEOUT_MS,
+  releaseMaintenanceGate,
   repositoryMaintenanceCapabilities,
 } from "./maintenance-gate.mjs";
 
@@ -121,20 +122,14 @@ type Outcome = {
   createdReport: CreatedReport | null;
 };
 
-type WriterLease = {
-  writerId: string;
-  token: string;
-  root: string;
+type MaintenanceFence = {
+  local: object;
+  coven: {
+    ownerId: string;
+    generation: string;
+    repoDir: string;
+  };
 };
-
-const registerIntent = registerWriterIntent as unknown as (options: {
-  writerId: string;
-  purpose: string;
-  repoDir: string;
-  ttlMs: number;
-}) =>
-  | { ok: true; lease: WriterLease }
-  | { ok: false; reason: string };
 
 class CliError extends Error {
   readonly exitCode: number;
@@ -843,9 +838,9 @@ function exceptionSuggestion(options: ManagedCreateOptions, worktreePath: string
  * This line used to be unconditional, on EVERY refusal this script emits —
  * budget, duplicate metadata, orphaned record alike. But `--apply` refuses
  * outright whenever any maintenance plane is unenforced, and
- * `repositoryMaintenanceCapabilities()` has three of the four hard-coded to
- * `false` against unbuilt work, so the suggestion has never been runnable in
- * this repository (cave-wmkn4).
+ * `repositoryMaintenanceCapabilities()` remains incomplete while the Beads
+ * and GitHub planes are unbuilt, so the suggestion is not runnable yet
+ * (cave-wmkn4).
  *
  * A refusal that prints an impossible next step is worse than one that prints
  * none: it sends the operator through a command that exits 2, and the documented
@@ -926,17 +921,13 @@ function createdOutcome(
   };
 }
 
-function heartbeatBoth(leases: WriterLease[], stage: string): void {
-  if (leases.length !== 2) {
-    throw new CliError(`writer leases unavailable during ${stage}`);
+function heartbeatBoth(leases: MaintenanceFence[], stage: string): void {
+  if (leases.length !== 1) {
+    throw new CliError(`maintenance fence unavailable during ${stage}`);
   }
-  const failures: string[] = [];
-  for (const lease of leases) {
-    const result = heartbeatWriterIntent(lease);
-    if (!result.ok) failures.push(`${lease.writerId}: ${result.reason}`);
-  }
-  if (failures.length > 0) {
-    throw new CliError(`writer lease heartbeat failed during ${stage}: ${failures.join(", ")}`);
+  const result = heartbeatMaintenanceGate(leases[0]);
+  if (!result.ok) {
+    throw new CliError(`maintenance fence heartbeat failed during ${stage}: ${result.reason}`);
   }
 }
 
@@ -1222,7 +1213,7 @@ function compensate(
   fullRef: string,
   worktreePath: string,
   createdOid: string,
-  leases: WriterLease[],
+  leases: MaintenanceFence[],
   originalMessage: string,
   completedStatus = 1,
   completedStderr: string[] = [],
@@ -1266,7 +1257,22 @@ function compensate(
     );
   }
 
-  const remove = git(root, ["worktree", "remove", worktreePath]);
+  try {
+    heartbeatBoth(leases, "before worktree compensation");
+  } catch (error) {
+    return partialOutcome(
+      `${originalMessage}; ${
+        error instanceof Error ? error.message : "writer lease heartbeat failed"
+      }`,
+      probePartialState(root, worktreePath, fullRef),
+      original,
+    );
+  }
+  const remove = git(
+    root,
+    ["worktree", "remove", worktreePath],
+    MAX_FENCED_MUTATION_TIMEOUT_MS,
+  );
   if (!remove.ok) {
     return partialOutcome(
       `${originalMessage}; worktree compensation failed: ${
@@ -1315,13 +1321,28 @@ function compensate(
       original,
     );
   }
-  const deleteRef = git(root, [
-    "update-ref",
-    "--no-deref",
-    "-d",
-    fullRef,
-    createdOid,
-  ]);
+  try {
+    heartbeatBoth(leases, "immediately before local ref compensation");
+  } catch (error) {
+    return partialOutcome(
+      `${originalMessage}; ${
+        error instanceof Error ? error.message : "writer lease heartbeat failed"
+      }`,
+      probePartialState(root, worktreePath, fullRef),
+      original,
+    );
+  }
+  const deleteRef = git(
+    root,
+    [
+      "update-ref",
+      "--no-deref",
+      "-d",
+      fullRef,
+      createdOid,
+    ],
+    MAX_FENCED_MUTATION_TIMEOUT_MS,
+  );
   if (!deleteRef.ok) {
     return partialOutcome(
       `${originalMessage}; local ref compensation failed: ${
@@ -1529,33 +1550,27 @@ function expectedMetadataPreserved(
 
 function execute(
   options: ManagedCreateOptions,
-  leases: WriterLease[],
+  leases: MaintenanceFence[],
 ): Outcome {
   const root = realpathSync(path.resolve(options.root));
   const { fullRef, worktreePath } = validateBranchAndPath(root, options.branch);
   assertRefAndPathAbsent(root, fullRef, worktreePath);
 
   const purpose = `beads:worktrees:create for Bead ${options.beadId}`;
-  const global = registerIntent({
-    writerId: "worktree-create",
+  const acquired = acquireMaintenanceGate({
+    ownerId: `worktree-lifecycle-create:${options.beadId}`,
     purpose,
     repoDir: root,
     ttlMs: INTENT_TTL_MS,
+    quiesceTimeoutMs: 30_000,
   });
-  if (!global.ok) {
-    throw new CliError(`global writer intent failed: ${global.reason}`);
+  if (!acquired.ok) {
+    throw new CliError(`maintenance fence acquisition failed: ${acquired.reason}`);
   }
-  leases.push(global.lease as WriterLease);
-  const specific = registerIntent({
-    writerId: `worktree-create:${options.beadId}`,
-    purpose,
-    repoDir: root,
-    ttlMs: INTENT_TTL_MS,
-  });
-  if (!specific.ok) {
-    throw new CliError(`Bead writer intent failed: ${specific.reason}`);
-  }
-  leases.push(specific.lease as WriterLease);
+  leases.push(acquired.handle as MaintenanceFence);
+  // The preflight above reduces needless drain time; this second proof is the
+  // authoritative one because the composite fence now excludes participants.
+  assertRefAndPathAbsent(root, fullRef, worktreePath);
 
   const initialBead = loadExactBead(root, options.beadId);
   const initialCoven = parseCoven(initialBead.metadata, root);
@@ -1655,14 +1670,18 @@ function execute(
 
   assertRefAndPathAbsent(root, fullRef, worktreePath);
   heartbeatBoth(leases, "before git worktree add");
-  const add = git(root, [
-    "worktree",
-    "add",
-    "-b",
-    options.branch,
-    worktreePath,
-    options.startPoint,
-  ]);
+  const add = git(
+    root,
+    [
+      "worktree",
+      "add",
+      "-b",
+      options.branch,
+      worktreePath,
+      options.startPoint,
+    ],
+    MAX_FENCED_MUTATION_TIMEOUT_MS,
+  );
   let addHeartbeatError: string | null = null;
   try {
     heartbeatBoth(leases, "after git worktree add");
@@ -1877,6 +1896,7 @@ function execute(
       "--json",
     ],
     root,
+    MAX_FENCED_MUTATION_TIMEOUT_MS,
   );
   let updateHeartbeatError: string | null = null;
   try {
@@ -2038,7 +2058,7 @@ function render(outcome: Outcome): never {
 }
 
 function main(): never {
-  const leases: WriterLease[] = [];
+  const leases: MaintenanceFence[] = [];
   let outcome: Outcome;
   try {
     outcome = execute(parseArgs(process.argv.slice(2)), leases);
@@ -2059,13 +2079,13 @@ function main(): never {
 
   const releaseFailures: string[] = [];
   for (const lease of [...leases].reverse()) {
-    const released = releaseWriterIntent(lease);
+    const released = releaseMaintenanceGate(lease);
     if (!released.ok) {
-      releaseFailures.push(`${lease.writerId}: ${released.reason}`);
+      releaseFailures.push(released.reason ?? "unknown release failure");
     }
   }
   if (releaseFailures.length > 0) {
-    const warning = `writer intent release failed: ${releaseFailures.join(", ")}`;
+    const warning = `maintenance fence release failed: ${releaseFailures.join(", ")}`;
     outcome.status = 1;
     outcome.stderr.push(`worktree-lifecycle-create: ${warning}`);
     if (outcome.createdReport !== null) {

@@ -10,16 +10,16 @@ const installOutput = await readFile(new URL("./install-job-output.ts", import.m
 assert.match(source, /"managed-node": \{[\s\S]*kind: "managed-node"/);
 assert.match(
   source,
-  /"coven-cli": \{[\s\S]*packageName: "@opencoven\/cli@latest"/,
-  "the Coven CLI update action installs the latest published package",
+  /"coven-cli": \{[\s\S]*packageName: reviewedPackage\("coven-cli"\)/,
+  "the Coven CLI update action installs the reviewed maintenance-compatible package",
 );
 for (const id of ["runtime-codex", "runtime-claude", "runtime-copilot", "runtime-openclaw"]) {
   assert.match(source, new RegExp(`reviewedPackage\\("${id}"\\)`));
 }
 assert.equal(
-  source.match(/@latest/g)?.length,
-  1,
-  "only the Coven CLI self-update action may use a mutable package target",
+  (source.match(/@latest/g) ?? []).length,
+  0,
+  "installer targets must not bypass the reviewed prerequisite manifest",
 );
 assert.match(
   source,

@@ -18,6 +18,7 @@ import {
   acquireMaintenanceGate,
   releaseMaintenanceGate,
 } from "./maintenance-gate.mjs";
+import { refreshCovenBin } from "../src/lib/coven-bin.ts";
 import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -180,11 +181,17 @@ function executable(file, contents) {
 
 function withPathPrefix(bin, fn) {
   const originalPath = process.env.PATH;
+  const originalCovenBin = process.env.COVEN_BIN;
   process.env.PATH = `${bin}${path.delimiter}${originalPath}`;
+  process.env.COVEN_BIN = path.join(bin, "coven");
+  refreshCovenBin();
   try {
     return fn();
   } finally {
     process.env.PATH = originalPath;
+    if (originalCovenBin === undefined) delete process.env.COVEN_BIN;
+    else process.env.COVEN_BIN = originalCovenBin;
+    refreshCovenBin();
   }
 }
 
@@ -193,9 +200,11 @@ function createGitFixture() {
   const repoEntry = path.join(fixtureRoot, "repo");
   const origin = path.join(fixtureRoot, "origin.git");
   const bin = path.join(fixtureRoot, "bin");
+  const state = path.join(fixtureRoot, "state");
   mkdirSync(repoEntry, { recursive: true });
   mkdirSync(origin, { recursive: true });
   mkdirSync(bin, { recursive: true });
+  mkdirSync(state, { recursive: true });
   const repo = realpathSync(repoEntry);
 
   git(["init", "-q", "-b", "main"], repo);
@@ -247,15 +256,56 @@ esac
 
   executable(
     path.join(bin, "coven"),
-    `#!/bin/sh
-case "$1" in
-  sessions) printf '%s\\n' '{"sessions":[]}' ;;
-  claim) printf '%s\\n' '{"claims":[]}' ;;
-  *)
-    printf 'unexpected coven command: %s\\n' "$*" >&2
-    exit 2
-    ;;
-esac
+    `#!/usr/bin/env node
+const { readFileSync, writeFileSync } = require("node:fs");
+const path = require("node:path");
+const stateFile = path.join(__dirname, "..", "state", "coven-maintenance.json");
+const state = (() => {
+  try { return JSON.parse(readFileSync(stateFile, "utf8")); }
+  catch { return { owner: null, writers: [] }; }
+})();
+const save = () => writeFileSync(stateFile, JSON.stringify(state));
+const json = () => process.stdout.write(JSON.stringify({ owner: state.owner, writers: state.writers }) + "\\n");
+const [, , group, command, ownerId, generation] = process.argv;
+if (group === "sessions") {
+  process.stdout.write('{"sessions":[]}\\n');
+  process.exit(0);
+}
+if (group === "claim") {
+  process.stdout.write('{"claims":[]}\\n');
+  process.exit(0);
+}
+if (group !== "maintenance") process.exit(2);
+if (command === "acquire") {
+  if (state.owner !== null) process.exit(1);
+  state.owner = {
+    owner_id: ownerId,
+    generation: "fixture-generation",
+    expires_at: Math.floor(Date.now() / 1000) + 120,
+    phase: state.writers.length === 0 ? "held" : "draining",
+  };
+  save();
+  json();
+  process.exit(0);
+}
+if (command === "heartbeat") {
+  if (!state.owner || state.owner.owner_id !== ownerId || state.owner.generation !== generation) process.exit(1);
+  state.owner.expires_at = Math.floor(Date.now() / 1000) + 120;
+  save();
+  json();
+  process.exit(0);
+}
+if (command === "release") {
+  if (!state.owner || state.owner.owner_id !== ownerId || state.owner.generation !== generation) process.exit(1);
+  state.owner = null;
+  save();
+  process.exit(0);
+}
+if (command === "status") {
+  json();
+  process.exit(0);
+}
+process.exit(2);
 `,
   );
 

@@ -58,6 +58,7 @@ export const SUITES = {
     "scripts/canonical-memory-smoke-lifecycle.test.mjs",
     "scripts/test-alias-loader.test.mjs",
     "scripts/maintenance-gate.test.mjs",
+    "scripts/local-maintenance-gate.test.mjs",
     "scripts/check-beads-jsonl-duplicates.test.mjs",
     "scripts/check-conflict-markers.test.mjs",
     "scripts/beads-jsonl-merge-driver.test.mjs",

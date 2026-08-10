@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { lstatSync, realpathSync, rmSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
 import {
   isDisposableIgnoredPath,
@@ -10,7 +10,7 @@ import {
 import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
 import {
   heartbeatMaintenanceGate,
-  maintenanceGateRoot,
+  MAX_FENCED_MUTATION_TIMEOUT_MS,
   verifyMaintenanceGateOwnership,
 } from "./maintenance-gate.mjs";
 
@@ -54,10 +54,7 @@ const UNSAFE_GIT_ENVIRONMENT = new Set([
   "GIT_CONFIG_NOSYSTEM",
 ]);
 
-export type RetirementGateHandle = {
-  generation: number;
-  token: string;
-};
+export type RetirementGateHandle = object;
 
 export type RetirementBlock = {
   branch: string | null;
@@ -124,10 +121,7 @@ type RetirementState = {
   localRefAbsent: boolean;
 };
 
-type GitRetirementHandle = RetirementGateHandle & {
-  ownerId: string;
-  root?: string;
-};
+type GitRetirementHandle = RetirementGateHandle;
 
 type CommandResult = {
   ok: boolean;
@@ -431,11 +425,7 @@ export function createGitRetirementOperations({
   nowMs?: number | (() => number);
 }): RetirementOperations {
   const normalizedRoot = realpathSync(root);
-  const maintenanceHandle = {
-    ...gateHandle,
-    ownerId: gateHandle.ownerId,
-    root: gateHandle.root ?? maintenanceGateRoot(normalizedRoot),
-  };
+  const maintenanceHandle = gateHandle;
 
   const readNowMs = (): number =>
     typeof nowMs === "function" ? nowMs() : (nowMs ?? Date.now());
@@ -509,18 +499,22 @@ export function createGitRetirementOperations({
       for (const rawCandidate of [...new Set(item.ignoredPaths)]) {
         const resolved = resolveDisposableIgnoredTarget(worktreePath, rawCandidate);
         if (!resolved.ok) return resolved;
-        try {
-          rmSync(resolved.target, {
-            recursive: true,
-            force: false,
-            maxRetries: 8,
-            retryDelay: 100,
-          });
-        } catch (error) {
-          if (isErrno(error, "ENOENT")) continue;
+        const removed = command(
+          process.execPath,
+          [
+            "-e",
+            "try { require('node:fs').rmSync(process.argv[1], { recursive: true, force: false, maxRetries: 8, retryDelay: 100 }) } catch (error) { if (error?.code !== 'ENOENT') throw error }",
+            resolved.target,
+          ],
+          normalizedRoot,
+          MAX_FENCED_MUTATION_TIMEOUT_MS,
+        );
+        if (!removed.ok) {
           return {
             ok: false,
-            reason: `disposable ignored cleanup failed for ${rawCandidate}: ${errorMessage(error)}`,
+            reason: `disposable ignored cleanup failed for ${rawCandidate}: ${
+              removed.stderr || "bounded cleanup command failed"
+            }`,
           };
         }
       }
@@ -529,7 +523,11 @@ export function createGitRetirementOperations({
     removeWorktree(item) {
       const worktreePath = normalizeAbsoluteWorktreePath(item.path);
       if (worktreePath === null) return { ok: true };
-      const removed = git(normalizedRoot, ["worktree", "remove", worktreePath], 120_000);
+      const removed = git(
+        normalizedRoot,
+        ["worktree", "remove", worktreePath],
+        MAX_FENCED_MUTATION_TIMEOUT_MS,
+      );
       return removed.ok
         ? { ok: true }
         : {

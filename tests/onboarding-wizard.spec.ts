@@ -75,7 +75,7 @@ const CONFIRMED_REQUIRED_FAILURE_STATUS = {
       latestCheck: null,
       outdated: false,
       compatible: false,
-      minimumVersion: "0.1.1",
+      minimumVersion: "0.2.5",
     },
   ],
 };

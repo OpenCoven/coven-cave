@@ -13,9 +13,9 @@ import {
 import { devNull } from "node:os";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { maintenanceGateRoot } from "./maintenance-gate.mjs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { maintenanceGateRoot } from "./maintenance-gate.mjs";
 import {
   evaluateRetirementApplyOutcome,
   renderApplyReport,
@@ -3291,12 +3291,15 @@ exit 0
   const applyJson = JSON.parse(applyResult.stdout);
   assert.equal(applyJson.ok, false);
   assert.equal(applyJson.reason, "gate-incomplete");
-  assert.deepEqual(applyJson.missingPlanes, ["coven", "beads", "github"]);
+  assert.deepEqual(applyJson.missingPlanes, ["beads", "github"]);
   assert.deepEqual(applyJson.local, {
     enforced: true,
-    source: "scripts/maintenance-gate.mjs",
+    source: "scripts/local-maintenance-gate.mjs via composite coordinator",
   });
-  assert.deepEqual(applyJson.coven, { enforced: false, source: "cave-wqa0b.2" });
+  assert.deepEqual(applyJson.coven, {
+    enforced: true,
+    source: "@opencoven/cli@0.2.5 maintenance",
+  });
   assert.deepEqual(applyJson.beads, { enforced: false, source: "cave-wqa0b.3" });
   assert.deepEqual(applyJson.github, { enforced: false, source: "cave-wqa0b.4" });
   assert.equal(applyJson.complete, false);

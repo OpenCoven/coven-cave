@@ -56,7 +56,12 @@ export const runtime = "nodejs";
 
 const execFileAsync = promisify(execFile);
 
-function reviewedPackage(id: Extract<PrerequisiteId, "runtime-codex" | "runtime-claude" | "runtime-copilot" | "runtime-openclaw">): string {
+function reviewedPackage(
+  id: Extract<
+    PrerequisiteId,
+    "coven-cli" | "runtime-codex" | "runtime-claude" | "runtime-copilot" | "runtime-openclaw"
+  >,
+): string {
   const install = prerequisiteById(id).install;
   if (install.kind !== "managed-npm") throw new Error(`${id} must use the managed npm manifest lane`);
   return `${install.package.packageName}@${install.package.version}`;
@@ -84,7 +89,7 @@ const INSTALL_TARGETS = {
   "coven-cli": {
     kind: "npm",
     label: "Coven CLI",
-    packageName: "@opencoven/cli@latest",
+    packageName: reviewedPackage("coven-cli"),
     binary: "coven",
     timeoutMs: 240_000,
   },
