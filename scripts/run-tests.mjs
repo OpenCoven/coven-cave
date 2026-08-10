@@ -1064,6 +1064,7 @@ export const SUITES = {
 	    "src/components/ui/color-picker.test.ts",
 	    "src/components/ui/button.test.ts",
 	    "src/components/ui/field.test.ts",
+	    "src/app/aesthetic/aesthetic-fields.test.ts",
 	    "src/components/ui/popover.test.ts",
     "src/components/ui/popover-submenu.test.ts",
     "src/lib/submenu-position.test.ts",
