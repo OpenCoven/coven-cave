@@ -32,6 +32,14 @@ const E2E_CAVE_HOME = join(tmpdir(), `cave-e2e-cave-${E2E_RUN_ID}`);
 const E2E_COVEN_SOCKET = join(tmpdir(), `cave-e2e-socket-${E2E_RUN_ID}.sock`);
 const E2E_LOCAL_PEER_FIXTURE = "cave-e2e-local-peer-fixture";
 const E2E_MOBILE_ACCESS_FIXTURE = "test-fixture";
+
+// Headers for the one e2e chain that MUTATES a privileged surface. Project
+// `use` REPLACES a top-level key rather than merging into it, so the local-peer
+// stamp is repeated here on purpose — dropping it would change what is tested.
+const PREFERENCES_HTTP_HEADERS = {
+  "x-coven-cave-local-peer": E2E_LOCAL_PEER_FIXTURE,
+  authorization: `Bearer ${E2E_MOBILE_ACCESS_FIXTURE}`,
+};
 const PERSISTED_SCREEN_SCALE_TEST = /persisted screen magnification scales the app without window scroll$/;
 const SETUP_FOCUS_VISIBILITY_TEST = /keeps setup controls focus-visible in WebKit$/;
 const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
@@ -100,6 +108,23 @@ export default defineConfig({
     },
   },
   projects: [
+    // The `preferences-*` chain below is the only e2e work that MUTATES a
+    // privileged surface (PATCH /api/preferences), and it is the only chain
+    // that runs with COVEN_CAVE_ACCESS_TOKEN armed (see webServer env). Once
+    // loopback stopped counting as identity (cave-ruw4z), the local-peer stamp
+    // in `use.extraHTTPHeaders` no longer authorizes that write — it marks the
+    // request as direct rather than forwarded, which is routing, not a
+    // credential. So these projects present the access credential the same way
+    // any other access-gated client does.
+    //
+    // Scoped to this chain deliberately. Putting the bearer in the top-level
+    // `use` would hand a valid credential to every spec, including the ones
+    // that assert UNAUTHORIZED behaviour at this exact boundary, and those
+    // would then pass for the wrong reason.
+    //
+    // Project `use` REPLACES a top-level key rather than merging into it, so
+    // the local-peer stamp is repeated here on purpose; dropping it would
+    // change what is being tested.
     // Canonical preferences are process-wide rather than browser-origin state.
     // Run the one mutating persistence case in an explicit chain, restore its
     // prior value, then release the normal fully-parallel projects. This keeps
@@ -109,21 +134,21 @@ export default defineConfig({
       name: "preferences-desktop",
       testMatch: MOBILE_FOUNDATIONS_SPEC,
       grep: PERSISTED_SCREEN_SCALE_TEST,
-      use: { ...devices["Desktop Chrome"] },
+      use: { ...devices["Desktop Chrome"], extraHTTPHeaders: PREFERENCES_HTTP_HEADERS },
     },
     {
       name: "preferences-pixel-5",
       dependencies: ["preferences-desktop"],
       testMatch: MOBILE_FOUNDATIONS_SPEC,
       grep: PERSISTED_SCREEN_SCALE_TEST,
-      use: { ...devices["Pixel 5"] },
+      use: { ...devices["Pixel 5"], extraHTTPHeaders: PREFERENCES_HTTP_HEADERS },
     },
     {
       name: "preferences-iphone-13",
       dependencies: ["preferences-pixel-5"],
       testMatch: MOBILE_FOUNDATIONS_SPEC,
       grep: PERSISTED_SCREEN_SCALE_TEST,
-      use: { ...devices["iPhone 13"] },
+      use: { ...devices["iPhone 13"], extraHTTPHeaders: PREFERENCES_HTTP_HEADERS },
     },
     {
       name: "desktop",
