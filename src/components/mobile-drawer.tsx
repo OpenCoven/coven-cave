@@ -38,6 +38,20 @@ type MobileDrawerProps = {
  */
 export function MobileDrawer({ open, onClose, rightChat }: MobileDrawerProps) {
   const rightChatRef = useRef<HTMLElement | null>(null);
+  // nav/list panels are Shell's own persistent nav/list landmarks (rendered
+  // in shell.tsx, not by this portal) that CSS merely slides into an
+  // overlay at mobile widths — same cross-boundary reach as the `.shell-
+  // frame` query below, since this component has no direct render access to
+  // them. Refreshed on every render (not a dedicated effect) so useFocusTrap's
+  // own activation effect always reads the live node; assigning a ref's
+  // `.current` directly in the render body is the same pattern chat-router.tsx
+  // uses for its always-current `viewRef`.
+  const navContainerRef = useRef<HTMLElement | null>(null);
+  const listContainerRef = useRef<HTMLElement | null>(null);
+  if (typeof document !== "undefined") {
+    navContainerRef.current = document.querySelector<HTMLElement>(".shell-nav-panel");
+    listContainerRef.current = document.querySelector<HTMLElement>(".shell-list-panel");
+  }
 
   // Make the shell chrome behind the right Chat modal inert so Tab/AT users
   // can't reach it while the dialog is up. `.shell-frame` is Shell's own
@@ -75,6 +89,23 @@ export function MobileDrawer({ open, onClose, rightChat }: MobileDrawerProps) {
   // listener below is scoped away from it so Escape never fires two close
   // paths for this slot.
   useFocusTrap(open === "right-chat", rightChatRef, { onEscape: onClose });
+
+  // nav/list drawers previously had NO focus management beyond the legacy
+  // standalone Escape listener below — capture-on-open/restore-on-close and
+  // Tab containment reuse the SAME shared hook right-chat and Modal already
+  // use (cave-rl980 Task 5 finding). Deliberately NOT given an `onEscape`
+  // here: nav/list keep Escape owned by the legacy listener below exactly as
+  // before (unlike right-chat, which owns Escape solely through its own
+  // trap), so this addition changes nothing about WHEN nav/list dismiss —
+  // only that every dismissal path (Escape, the backdrop button, or any
+  // other programmatic close) now restores focus to whatever opened the
+  // drawer, and Tab stays contained inside it while open. Also deliberately
+  // NOT given role="dialog"/aria-modal — nav/list are persistent shell
+  // landmarks that merely slide over content at mobile widths, not
+  // transient dialogs, so only this BEHAVIORAL trap is reused, never modal
+  // semantics.
+  useFocusTrap(open === "nav", navContainerRef);
+  useFocusTrap(open === "list", listContainerRef);
 
   useEffect(() => {
     if (!open) return;

@@ -384,6 +384,38 @@ assert.match(
   "the fully resolved aside applies the same truthful aria-hidden/inert pairing",
 );
 
+// cave-rl980 Task 5 finding #2: `inert` alone only reaches DOM descendants,
+// but a child Chat modal (ChatArtifactViewer's fullscreen view, ChatSpecCard,
+// ImageCarousel's lightbox) opened from within ChatRouter's transcript
+// portals to document.body directly — a DOM SIBLING of this panel, never a
+// descendant — so this panel's own `inert` never reaches it. Every one of
+// those dialogs calls the shared useFocusTrap, which consumes
+// FocusTrapOwnerHiddenContext automatically, so wrapping ChatRouter's own
+// render branch (and, defensively, every loading/error/chooser branch too)
+// in the same context is what actually closes a still-open child the
+// instant this panel becomes hidden — no DOM relocation hack, no new event
+// bus, and no change needed to any of those components themselves.
+assert.match(
+  source,
+  /import \{ FocusTrapOwnerHiddenContext \} from "@\/lib\/use-focus-trap";/,
+  "imports the shared owner-hidden context rather than inventing a parallel mechanism",
+);
+assert.match(
+  source,
+  /<FocusTrapOwnerHiddenContext\.Provider value=\{!open\}>\{children\}<\/FocusTrapOwnerHiddenContext\.Provider>/,
+  "the shared loading/error/chooser frame marks its children's owner hidden the instant it isn't open",
+);
+assert.match(
+  source,
+  /<FocusTrapOwnerHiddenContext\.Provider value=\{!open\}>\s*\n\s*\{transientErrorHeadline/,
+  "the fully resolved aside — the branch that actually mounts ChatRouter — wraps its content in the same owner-hidden boundary",
+);
+assert.match(
+  source,
+  /<\/ChatRouter>|\/>\s*\n\s*<\/div>\s*\n\s*<\/FocusTrapOwnerHiddenContext\.Provider>/,
+  "ChatRouter (and any child dialog it renders) sits INSIDE the owner-hidden boundary, not beside it",
+);
+
 // cave-rl980 Task 5: MobileDrawer grows a dedicated right-chat modal slot so
 // the global right Chat panel gets an accessible mobile/tablet presentation
 // instead of a fourth ad hoc overlay. Pinned here (not a render test): this
@@ -541,6 +573,45 @@ assert.doesNotMatch(
   drawerSource,
   /document\.body\.inert/,
   "the inert effect must never target document.body — that is the portal's own mount point",
+);
+
+// cave-rl980 Task 5 modal/focus findings: nav/list drawers previously had no
+// focus management at all beyond the legacy standalone Escape listener above
+// — they now reuse the SAME shared useFocusTrap hook for capture-on-open /
+// restore-on-close / Tab containment, without adopting Escape ownership
+// (still the legacy listener's job, unchanged above) or modal semantics
+// (no role="dialog"/aria-modal on nav/list — only right-chat is a transient
+// dialog; nav/list are persistent shell landmarks that merely slide over
+// content at mobile widths).
+assert.match(
+  drawerSource,
+  /navContainerRef\.current = document\.querySelector<HTMLElement>\("\.shell-nav-panel"\);/,
+  "nav's focus-trap container is resolved the same cross-boundary way .shell-frame is",
+);
+assert.match(
+  drawerSource,
+  /listContainerRef\.current = document\.querySelector<HTMLElement>\("\.shell-list-panel"\);/,
+  "list's focus-trap container is resolved the same cross-boundary way .shell-frame is",
+);
+assert.match(
+  drawerSource,
+  /useFocusTrap\(open === "nav", navContainerRef\);/,
+  "the nav drawer captures/restores focus and contains Tab via the shared hook",
+);
+assert.match(
+  drawerSource,
+  /useFocusTrap\(open === "list", listContainerRef\);/,
+  "the list drawer captures/restores focus and contains Tab via the shared hook",
+);
+assert.doesNotMatch(
+  drawerSource,
+  /useFocusTrap\(open === "nav", navContainerRef, \{ onEscape/,
+  "nav must not adopt Escape ownership through the trap — Escape stays the legacy listener's job",
+);
+assert.doesNotMatch(
+  drawerSource,
+  /useFocusTrap\(open === "list", listContainerRef, \{ onEscape/,
+  "list must not adopt Escape ownership through the trap — Escape stays the legacy listener's job",
 );
 
 console.log("right-chat-panel.test.ts OK");

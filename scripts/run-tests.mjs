@@ -1009,6 +1009,7 @@ export const SUITES = {
     "src/components/backdrop-scrim.test.ts",
     "src/lib/url-safety.test.ts",
     "src/lib/use-focus-trap.test.ts",
+    "src/lib/use-focus-trap-stack.test.tsx",
     "src/lib/use-prefers-reduced-motion.test.ts",
     "src/lib/use-undo-delete-keyboard.test.ts",
     "src/lib/use-roving-tabindex.test.ts",
@@ -1669,6 +1670,7 @@ export const SUITES = {
     "src/components/mobile-handoff.test.ts",
     "src/components/shell-drawer-smoke.test.ts",
     "src/components/mobile-drawer-inert-focus-order.test.tsx",
+    "src/components/mobile-drawer-nav-list-focus.test.tsx",
     "src/app/composer-zoom-smoke.test.ts",
     "src/app/safe-area-smoke.test.ts",
     "src/lib/use-viewport.test.ts",
@@ -1975,10 +1977,12 @@ const VITEST_TESTS = new Set([
   "src/components/right-chat-panel-behavior.test.tsx",
   "src/components/chat-router-removal-race.test.tsx",
   "src/components/mobile-drawer-inert-focus-order.test.tsx",
+  "src/components/mobile-drawer-nav-list-focus.test.tsx",
   // vi.fn() for the subscriber assertions
   "src/lib/surface-history.test.ts",
   // renders the hook through react-test-renderer
   "src/lib/use-surface-history.test.tsx",
+  "src/lib/use-focus-trap-stack.test.tsx",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */

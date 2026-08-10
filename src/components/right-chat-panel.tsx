@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { FocusTrapOwnerHiddenContext } from "@/lib/use-focus-trap";
 import {
   eligibleRightChatSessions,
   isCurrentRightChatSessionsScope,
@@ -37,6 +38,22 @@ import type { Familiar, SessionRow } from "@/lib/types";
  * "hidden rather than unmounted" drawer) make every frame/root truthfully
  * absent from both when `open` is false, while an `open` state stays fully
  * accessible.
+ *
+ * `FocusTrapOwnerHiddenContext.Provider value={!open}` (cave-rl980 Task 5
+ * finding #2) covers the gap `inert` alone leaves open: `inert` is a DOM
+ * attribute, so it only reaches DESCENDANTS in the DOM tree — but a child
+ * dialog rendered from deep inside `children` (e.g. ChatRouter's transcript
+ * opening ChatArtifactViewer's fullscreen view, ChatSpecCard, or
+ * ImageCarousel's lightbox) portals to `document.body` directly via
+ * `createPortal`, landing as a DOM SIBLING of this `<aside>`, never a
+ * descendant — so this element's own `inert` never reaches it. The context
+ * still does, because `createPortal` only relocates the DOM node; it never
+ * changes REACT ancestry. Every one of those dialogs already calls
+ * `useFocusTrap`, which consumes this context automatically, so closing this
+ * panel now asks any such still-open child to close too, through the SAME
+ * onEscape callback it already wires up for the Escape key — no DOM
+ * relocation hack, no new event bus, no changes needed to any of those
+ * components themselves.
  */
 function RightChatPanelFrame({
   open,
@@ -62,7 +79,7 @@ function RightChatPanelFrame({
           <Icon name="ph:x" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
         </button>
       </header>
-      {children}
+      <FocusTrapOwnerHiddenContext.Provider value={!open}>{children}</FocusTrapOwnerHiddenContext.Provider>
     </aside>
   );
 }
@@ -635,48 +652,59 @@ export function RightChatPanel(props: Props) {
           <Icon name="ph:x" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
         </button>
       </header>
-      {transientErrorHeadline ? (
-        <ErrorState
-          compact
-          headline={transientErrorHeadline}
-          subtitle={familiarsError ?? "Your conversations are still safe."}
-          actions={
-            <Button onClick={familiarsError ? props.onRetryFamiliars : props.onRetrySessions}>
-              Retry
-            </Button>
-          }
-        />
-      ) : null}
-      <div className="right-chat__content">
-        <ChatRouter
-          ref={routerRef}
-          familiar={activeFamiliar}
-          familiars={familiars}
-          sessions={sessions}
-          daemonRunning={daemonRunning}
-          sessionsLoaded={sessionsLoaded}
-          sessionsError={sessionsError}
-          familiarsLoaded={familiarsLoaded}
-          familiarsError={familiarsError}
-          onRetryFamiliars={props.onRetryFamiliars}
-          onSetActiveFamiliar={props.onSetActiveFamiliar}
-          onSessionStarted={props.onSessionStarted}
-          onSessionsChanged={props.onSessionsChanged}
-          onSessionsDeleted={props.onSessionsDeleted}
-          onSessionRemoved={handleSessionRemoved}
-          onSlashFromChat={props.onSlashFromChat}
-          onOpenOnboarding={props.onOpenOnboarding}
-          onOpenTask={props.onOpenTask}
-          onOpenUrl={props.onOpenUrl}
-          onActiveSessionChange={handleActiveSessionChange}
-          composerDraftKey={`cave:right-chat-composer-draft:v1:${activeFamiliar.id}`}
-          compact
-          hideRail
-          syncUrlHash={false}
-          enableSplitPanes={false}
-          activeFamiliarId={activeFamiliar.id}
-        />
-      </div>
+      {/*
+        FocusTrapOwnerHiddenContext.Provider value={!open} (cave-rl980 Task 5
+        finding #2) — see RightChatPanelFrame's doc comment above for the
+        full rationale. This is the branch that actually mounts ChatRouter,
+        so it's the one that matters most: a still-open ChatArtifactViewer
+        fullscreen view, ChatSpecCard, or ImageCarousel lightbox opened from
+        the transcript below is asked to close the instant this panel
+        becomes hidden/inert, through its own existing onEscape callback.
+      */}
+      <FocusTrapOwnerHiddenContext.Provider value={!open}>
+        {transientErrorHeadline ? (
+          <ErrorState
+            compact
+            headline={transientErrorHeadline}
+            subtitle={familiarsError ?? "Your conversations are still safe."}
+            actions={
+              <Button onClick={familiarsError ? props.onRetryFamiliars : props.onRetrySessions}>
+                Retry
+              </Button>
+            }
+          />
+        ) : null}
+        <div className="right-chat__content">
+          <ChatRouter
+            ref={routerRef}
+            familiar={activeFamiliar}
+            familiars={familiars}
+            sessions={sessions}
+            daemonRunning={daemonRunning}
+            sessionsLoaded={sessionsLoaded}
+            sessionsError={sessionsError}
+            familiarsLoaded={familiarsLoaded}
+            familiarsError={familiarsError}
+            onRetryFamiliars={props.onRetryFamiliars}
+            onSetActiveFamiliar={props.onSetActiveFamiliar}
+            onSessionStarted={props.onSessionStarted}
+            onSessionsChanged={props.onSessionsChanged}
+            onSessionsDeleted={props.onSessionsDeleted}
+            onSessionRemoved={handleSessionRemoved}
+            onSlashFromChat={props.onSlashFromChat}
+            onOpenOnboarding={props.onOpenOnboarding}
+            onOpenTask={props.onOpenTask}
+            onOpenUrl={props.onOpenUrl}
+            onActiveSessionChange={handleActiveSessionChange}
+            composerDraftKey={`cave:right-chat-composer-draft:v1:${activeFamiliar.id}`}
+            compact
+            hideRail
+            syncUrlHash={false}
+            enableSplitPanes={false}
+            activeFamiliarId={activeFamiliar.id}
+          />
+        </div>
+      </FocusTrapOwnerHiddenContext.Provider>
     </aside>
   );
 }
