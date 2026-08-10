@@ -36,6 +36,12 @@ assert.match(detector.run, /node scripts\/ci-recovery\.mjs --apply/);
 
 const ciSource = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
 const ciWorkflow = parse(ciSource);
+assert.deepEqual(
+  Object.keys(ciWorkflow.jobs),
+  ["build"],
+  "routine CI must keep exactly one always-reporting required job",
+);
+assert.equal(ciWorkflow.jobs.build.name, "Frontend build");
 assert.equal(
   ciWorkflow["run-name"],
   "CI ${{ github.event_name }} ${{ inputs.expected_sha || github.sha }}",
@@ -55,21 +61,38 @@ assert.equal(
   "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}",
   "late pull_request delivery and its recovery dispatch must share one concurrency key",
 );
-for (const jobName of [
-  "frontend-static",
-  "frontend-tests",
-  "frontend-bundle",
-  "cargo-check",
-  "e2e-shard",
-  "conformance",
-  "sidecar-runtime",
-  "windows-native",
-]) {
+for (const jobName of ["build"]) {
   assert.equal(
     ciWorkflow.jobs[jobName].if,
     "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha",
     `${jobName} must not run a recovery dispatch after the branch head moves`,
   );
 }
+
+const releaseSource = await readFile(
+  new URL("../.github/workflows/release.yml", import.meta.url),
+  "utf8",
+);
+const releaseWorkflow = parse(releaseSource);
+for (const jobName of [
+  "release-web-validation",
+  "release-platform-validation",
+  "release-windows-native",
+  "release-ios-build",
+]) {
+  assert.ok(releaseWorkflow.jobs[jobName], `release workflow defines ${jobName}`);
+}
+assert.deepEqual(
+  releaseWorkflow.jobs.build.needs,
+  [
+    "daemon-package",
+    "source-version",
+    "release-web-validation",
+    "release-platform-validation",
+    "release-windows-native",
+    "release-ios-build",
+  ],
+  "artifact builds must wait for every comprehensive release validation job",
+);
 
 console.log("ci-recovery-workflow.test.mjs: ok");

@@ -11,16 +11,7 @@ const EXPECTED_CONCURRENCY_GROUP =
   "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
 const EXPECTED_JOB_GUARD =
   "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
-const GUARDED_JOB_NAMES = [
-  "frontend-static",
-  "frontend-tests",
-  "frontend-bundle",
-  "cargo-check",
-  "e2e-shard",
-  "conformance",
-  "sidecar-runtime",
-  "windows-native",
-];
+const GUARDED_JOB_NAMES = ["build"];
 
 export async function runCiRecovery({
   apply = false,
