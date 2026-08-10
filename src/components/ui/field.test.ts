@@ -5,7 +5,10 @@ import { readFileSync } from "node:fs";
 const field = readFileSync(new URL("./field.tsx", import.meta.url), "utf8");
 const input = readFileSync(new URL("./text-input.tsx", import.meta.url), "utf8");
 const area = readFileSync(new URL("./text-area.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
+const css = readFileSync(
+  new URL("../../styles/globals/primitives.css", import.meta.url),
+  "utf8",
+);
 
 assert.match(field, /createContext<FieldContextValue \| null>/, "Field owns typed context");
 assert.match(field, /const generatedId = useId\(\)/, "Field generates a stable React id");

@@ -1,0 +1,6 @@
+.aesthetic-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-5);
+  padding: var(--space-5);
+}
