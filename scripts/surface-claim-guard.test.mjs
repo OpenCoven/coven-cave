@@ -111,8 +111,12 @@ function readClaims(dir) {
   runHook({ projectDir: dir, sessionId: "sessA", filePath: path.join(dir, ".worktrees/alpha/src/shared.ts") });
   const res = runHook({ projectDir: dir, sessionId: "sessB", filePath: path.join(dir, ".worktrees/beta/src/shared.ts") });
   assert.equal(res.status, 0, "still advisory");
-  assert.match(res.stdout, /Multi-session collision on .src\/shared\.ts./, "collides across worktrees");
-  assert.match(res.stdout, /in worktree alpha/, "names the other session's worktree");
+  // Parse rather than regex the raw stdout: it is JSON, and matching the
+  // envelope would be sensitive to escaping rather than to the message.
+  const out = JSON.parse(res.stdout);
+  assert.match(out.systemMessage, /Multi-session collision/, "collides across worktrees");
+  assert.match(out.systemMessage, /src\/shared\.ts/, "names the canonical surface, not a worktree path");
+  assert.match(out.systemMessage, /in worktree alpha/, "names the other session's worktree");
 }
 
 // ── 5c. A worktree edit collides with a primary-checkout edit of the same file ─
@@ -120,8 +124,10 @@ function readClaims(dir) {
   const dir = freshProject();
   runHook({ projectDir: dir, sessionId: "primarySess", filePath: path.join(dir, "src/shared.ts") });
   const res = runHook({ projectDir: dir, sessionId: "wtSess", filePath: path.join(dir, ".worktrees/gamma/src/shared.ts") });
-  assert.match(res.stdout, /Multi-session collision/, "primary and worktree edits are the same surface");
-  assert.match(res.stdout, /on the primary checkout/, "names where the other session is working");
+  const out = JSON.parse(res.stdout);
+  assert.match(out.systemMessage, /Multi-session collision/, "primary and worktree edits are the same surface");
+  assert.match(out.systemMessage, /src\/shared\.ts/, "names the canonical surface");
+  assert.match(out.systemMessage, /on the primary checkout/, "names where the other session is working");
 }
 
 // ── 5d. The ledger stays in the primary checkout, never inside a worktree ─────
