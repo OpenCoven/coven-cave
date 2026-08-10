@@ -43,8 +43,8 @@ import { buildReflectionPrompt, generateReflection } from "./journal-generate.ts
   );
   assert.match(
     source,
-    /const trimmed = extractNextPaths\(error === "cancelled" \? attentionText\.cancelled\(\) : attentionText\.settled\(\)\)\.visible\.trim\(\);/,
-    "the directive block is stripped after attention markers are hidden from the final reflection text, including cancelled partial tails",
+    /const trimmed = extractNextPaths\(error !== null \? attentionText\.terminal\(\) : attentionText\.settled\(\)\)\.visible\.trim\(\);/,
+    "failed streams terminally strip partial attention markers before next-path directives are removed",
   );
 }
 
@@ -206,6 +206,65 @@ import { buildReflectionPrompt, generateReflection } from "./journal-generate.ts
     for (const value of seen) {
       assert.doesNotMatch(value, /<cov/, "onText hides partial attention marker prefixes mid-stream");
     }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+// Failed direct generations keep useful preceding text but must not restore a
+// partial attention directive that had been hidden while the stream was live.
+for (const [event, expectedError] of [
+  [{ kind: "error", message: "generation failed" }, "generation failed"],
+  [{ kind: "done", isError: true }, "the familiar reported an error"],
+] as const) {
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('data: {"kind":"assistant_chunk","text":"Useful text.<coven:atten"}\n\n'));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+          controller.close();
+        },
+      }),
+      { status: 200 },
+    );
+    const result = await generateReflection({ familiarId: "nova", context: "ctx" });
+    assert.equal(result.text, "Useful text.");
+    assert.equal(result.error, expectedError);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  const abortController = new AbortController();
+  let pulls = 0;
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        pull(controller) {
+          pulls += 1;
+          if (pulls === 1) {
+            controller.enqueue(encoder.encode('data: {"kind":"assistant_chunk","text":"Useful text.<coven:atten"}\n\n'));
+            abortController.abort();
+            return;
+          }
+          controller.error(new Error("request aborted"));
+        },
+      }),
+      { status: 200 },
+    );
+    const result = await generateReflection({
+      familiarId: "nova",
+      context: "ctx",
+      signal: abortController.signal,
+    });
+    assert.equal(result.text, "Useful text.");
+    assert.equal(result.error, "cancelled");
   } finally {
     globalThis.fetch = originalFetch;
   }

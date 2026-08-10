@@ -174,7 +174,7 @@ export type HelpProbeOutcome =
   | { ok: true; matched: boolean }
   | { ok: false; reason: string };
 
-function probeHelpOutcome(
+export function probeHelpOutcome(
   command: string,
   args: string[],
   matches: (help: string) => boolean,
@@ -218,7 +218,7 @@ function probeHelpOutcome(
         if (code === null) {
           done({
             ok: false,
-            reason: `\`${command} ${args.join(" ")}\` exited with code null.`,
+            reason: `\`${command} ${args.join(" ")}\` exited without an exit code.`,
           });
           return;
         }
@@ -230,11 +230,11 @@ function probeHelpOutcome(
           return;
         }
         try {
-          done({ ok: true, matched: matches(output) });
-        } catch {
+          done({ ok: true, matched: (acceptNonZeroExit || code === 0) && matches(output) });
+        } catch (error) {
           done({
             ok: false,
-            reason: `\`${command} ${args.join(" ")}\` help output could not be matched.`,
+            reason: `\`${command} ${args.join(" ")}\` help output could not be evaluated: ${error instanceof Error ? error.message : String(error)}`,
           });
         }
       });
@@ -251,6 +251,14 @@ function probeHelpOutcome(
   });
 }
 
+<<<<<<< HEAD
+=======
+/** Exported for chat-send-capabilities.test.ts, which drives it against real
+ *  child processes — a timeout, a spawn failure and a non-zero exit each have
+ *  to be exercised for real, not simulated. The boolean face of
+ *  probeHelpOutcome; prefer the outcome form in product code so a failed probe
+ *  stays distinguishable from an unmatched flag. */
+>>>>>>> c2d45598b7ab124a176d1cb83b7ee37e5f9811cf
 export function probeHelp(
   command: string,
   args: string[],

@@ -127,9 +127,9 @@ struct XtermWebView: UIViewRepresentable {
             _ controller: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
-            guard let body = message.body as? [String: Any],
-                  let type = body["type"] as? String else { return }
             Task { @MainActor in
+                guard let body = message.body as? [String: Any],
+                      let type = body["type"] as? String else { return }
                 switch type {
                 case "input":
                     if let data = body["data"] as? String { self.onInput(data) }

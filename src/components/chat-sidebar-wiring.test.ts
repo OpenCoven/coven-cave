@@ -19,8 +19,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const contextualNav = navSection === "code" \? chatSidebar : sidebar;/,
-  "workspace should select the session-list rail for the whole Code section",
+  /const contextualNav =\s*\n\s*navSection === "code" && \(navOpen \|\| isMobile\) \? chatSidebar : sidebar;/,
+  "workspace selects the session-list rail across the Code section while expanded, and the destination rail once collapsed",
 );
 assert.doesNotMatch(workspace, /const list = mode === "chat" \? chatSidebar : undefined;/);
 assert.match(

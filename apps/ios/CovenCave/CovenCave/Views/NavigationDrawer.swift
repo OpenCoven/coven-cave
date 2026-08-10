@@ -13,7 +13,7 @@ struct CaveNavigationDrawer: View {
     var openFamiliars: () -> Void
     var openThread: (ChatThread) -> Void
     var newChat: () -> Void
-    var searchChats: () -> Void
+    var openSearch: () -> Void
 
     @State private var recentsExpanded = true
 
@@ -154,14 +154,14 @@ struct CaveNavigationDrawer: View {
             Spacer()
             Button {
                 close()
-                searchChats()
+                openSearch()
             } label: {
                 Image(systemName: "magnifyingglass")
                     .frame(width: 44, height: 44)
                     .contentShape(Circle())
             }
             .buttonStyle(.glassPress)
-            .accessibilityLabel("Search chats")
+            .accessibilityLabel("Search everything")
         }
     }
 

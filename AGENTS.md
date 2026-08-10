@@ -40,13 +40,25 @@
     Bead alongside the worktree, so the unit still lands with full lifecycle metadata
     and stays retirable — this is a sanctioned path, not a bypass.
   - **Exit 1 — errored because the lifecycle inventory is incomplete.** The command
-    could not build a **complete** inventory, which needs live GitHub queries, so
-    it fails when the GraphQL quota is exhausted (`API rate limit already
-    exceeded`) and when any commit's PR association comes back malformed (`pull
-    request node returned malformed fields or a mismatched head OID`) — a
-    repo-state condition no amount of waiting clears. An exception cannot rescue
-    this: the inventory throws before admission is ever assessed. Only here is
-    the fallback justified:
+    could not build a **complete** inventory, which needs live GitHub queries. An
+    exception cannot rescue this: the inventory throws before admission is ever
+    assessed. **Almost every exit 1 is transient — retry before you conclude
+    otherwise.** Two failures dominate, and both clear on their own:
+    - the GraphQL quota is exhausted (`API rate limit already exceeded`) — that
+      pool is separate from REST and refills hourly, so `gh api rate_limit --jq
+      .resources.graphql` tells you when to retry;
+    - a commit's PR association comes back malformed or absent (`commit
+      association connection is unavailable`, `pull request node returned
+      malformed fields or a mismatched head OID`) — usually a degraded or
+      throttled GitHub response rather than repository state. Observed
+      2026-08-06: a warning of exactly this shape vanished on a rerun minutes
+      later, once quota had recovered, with nothing else changed.
+
+    So the order is **check quota → rerun → only then fall back**. Genuinely
+    structural failures name the repository itself (`canonical repository
+    identity mismatch`, `canonical repository identity changed between pages`);
+    those do not improve with a retry. Reach for the fallback only after a
+    retry failed:
 
     ```bash
     git worktree add -b <branch> .worktrees/<branch> origin/main   # last resort

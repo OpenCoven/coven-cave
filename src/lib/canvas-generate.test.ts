@@ -149,6 +149,46 @@ try {
   assert.ok(streamed.every((value) => !value.includes("<cov")));
 
   globalThis.fetch = async () => responseFor([
+   { kind: "assistant_chunk", text: "Useful text.<coven:atten" },
+   { kind: "error", message: "generation failed" },
+  ]);
+  const erroredAttention = await generateArtifactCode({ familiarId: "nova", prompt: "build" });
+  assert.equal(erroredAttention.text, "Useful text.");
+  assert.equal(erroredAttention.error, "generation failed");
+
+  globalThis.fetch = async () => responseFor([
+   { kind: "assistant_chunk", text: "Useful text.<coven:atten" },
+   { kind: "done", isError: true },
+  ]);
+  const failedDoneAttention = await generateArtifactCode({ familiarId: "nova", prompt: "build" });
+  assert.equal(failedDoneAttention.text, "Useful text.");
+  assert.equal(failedDoneAttention.error, "the familiar reported an error");
+
+  const abortController = new AbortController();
+  let cancellationPulls = 0;
+  globalThis.fetch = async () => new Response(
+    new ReadableStream({
+      pull(controller) {
+        cancellationPulls += 1;
+        if (cancellationPulls === 1) {
+          controller.enqueue(encoder.encode('data: {"kind":"assistant_chunk","text":"Useful text.<coven:atten"}\n\n'));
+          abortController.abort();
+          return;
+        }
+        controller.error(new Error("request aborted"));
+      },
+    }),
+    { status: 200 },
+  );
+  const cancelledAttention = await generateArtifactCode({
+    familiarId: "nova",
+    prompt: "build",
+    signal: abortController.signal,
+  });
+  assert.equal(cancelledAttention.text, "Useful text.");
+  assert.equal(cancelledAttention.error, "cancelled");
+
+  globalThis.fetch = async () => responseFor([
    { kind: "assistant_chunk", text: '<coven:attention" reason="decision">AFTER\n```html\n<div>safe</div>\n```' },
    { kind: "done", sessionId: "canvas-malformed-quote" },
   ]);

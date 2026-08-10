@@ -18,6 +18,7 @@ import {
   type WorkspaceMode as WorkspaceModeFromDaemon,
 } from "@/lib/workspace-mode";
 import { navSectionForMode, type NavSection } from "@/lib/nav-section";
+import { useIsMobile } from "@/lib/use-viewport";
 import { clearChatHash, clearModeParam, readChatHash, readModeParam } from "@/lib/workspace-url-state";
 import {
   canMoveWorkspaceNavigation,
@@ -3055,15 +3056,11 @@ export function Workspace() {
       clearPendingCodeNavigation();
       return;
     }
-    if (!roleSurfaceSession.context) {
-      if (
-        !activeFamiliarHydrated
-        || !familiarsLoaded
-        || !familiarRosterLoadedSuccessfully
-      ) return;
-      clearPendingCodeNavigation();
-      return;
-    }
+    if (
+      !activeFamiliarHydrated
+      || !familiarsLoaded
+      || !familiarRosterLoadedSuccessfully
+    ) return;
     if (!roleSurfaceSession.rolesLoaded) return;
     if (!roleSurfaceSession.rolesLoadedSuccessfully) return;
     if (!roleSurfaceSession.visibleSurfaces.some((surface) => surface.id === CODE_SURFACE_ID)) {
@@ -3127,6 +3124,13 @@ export function Workspace() {
   // rather than stored, so the rail and the surface can never disagree — deep
   // links, ⌘K and restored last-surface strings all land in the right room.
   const navSection = navSectionForMode(mode);
+  // Mirrors the Shell's nav panel open/collapsed state (Shell already fires
+  // onNavOpenChange; this is the first consumer). Drives which component the
+  // nav hosts when collapsed — see contextualNav below. Starts open to match
+  // the Shell's own pre-hydration assumption for the Code room.
+  const [navOpen, setNavOpen] = useState(true);
+  // Same breakpoint the Shell uses; on mobile the nav is a drawer, not a rail.
+  const isMobile = useIsMobile();
   const handleSectionChange = useCallback(
     (next: NavSection) => {
       if (navSectionForMode(modeRef.current) === next) return;
@@ -3246,7 +3250,25 @@ export function Workspace() {
 
   // The Code room keeps the session-list rail across all of its surfaces (Chat,
   // the workbench, the browser); Home uses the destination rail.
-  const contextualNav = navSection === "code" ? chatSidebar : sidebar;
+  //
+  // ...but only while the nav is EXPANDED. The session list has no icon-rail
+  // form, so a collapsed Code room used to render it at zero width and the
+  // sidebar vanished outright — no rail, no peek target, no way to reach any
+  // other destination. Collapsed, fall back to SidebarMinimal, which does have
+  // rail chrome; it carries `section`, so the rail shows the Code room's own
+  // destinations and its Home/Chat section tabs.
+  //
+  // Deliberately keyed on navOpen and NOT on hover-peek: peek is an overlay
+  // that leaves the collapse state alone, so keying on it would remount this
+  // subtree on every mouse pass.
+  //
+  // Mobile is exempt: there is no rail there — the nav is a full-width overlay
+  // drawer — so the session list is always the right content, and navOpen
+  // tracks the desktop panel rather than the drawer (it reads false while the
+  // drawer is open). Without this the mobile Chat drawer rendered the
+  // destination sidebar and lost its search field.
+  const contextualNav =
+    navSection === "code" && (navOpen || isMobile) ? chatSidebar : sidebar;
 
   // renderSurface maps a workspace mode to its surface element. Extracted so the
   // same machinery renders both the primary detail and a dragged-in split
@@ -3580,6 +3602,7 @@ export function Workspace() {
         onPromoteSplitTile={promoteSplitTile}
         onDropSplitPage={openSplitPage}
         navPolicy={mode === "chat" ? "chat-contextual" : "remembered"}
+        onNavOpenChange={setNavOpen}
         topBar={({ navDrawerOpen }) => (
           <>
             <FamiliarMenuBar

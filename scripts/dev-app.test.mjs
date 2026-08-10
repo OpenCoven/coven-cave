@@ -1,21 +1,71 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const source = readFileSync(
-  fileURLToPath(new URL("./dev-app.sh", import.meta.url)),
-  "utf8",
-);
+const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
+const source = readFileSync(path.join(scriptsDir, "dev-app.sh"), "utf8");
 
 assert.match(
   source,
   /source scripts\/whisper-runtime-dev-env\.sh/,
   "the development launcher must stage and export Whisper before starting Tauri",
 );
+// The launcher takes the DEDICATED dev port from the shared contract rather
+// than scanning 3000-3010 for whatever is free. Scanning is what made the
+// address depend on whatever else happened to be running; see scripts/ports.mjs.
 assert.match(
   source,
-  /if \[ -n "\$\{PORT:-\}" \]; then[\s\S]*?dev_port="\$PORT"[\s\S]*?for candidate in \$\(seq 3000 3010\)/,
-  "explicit PORT and automatic 3000-3010 discovery must remain part of the launcher contract",
+  /resolvePort\('dev', process\.env\)/,
+  "the launcher must resolve its port from the shared contract",
+);
+assert.doesNotMatch(
+  source,
+  /for candidate in \$\(seq 3000 3010\)/,
+  "the free-port scan is retired — a dedicated port that relocates is not dedicated",
+);
+
+// The captured port must be bare digits under FORCE_COLOR. `console.log` on a
+// Number renders through util.inspect, which colourises it; the ANSI escapes
+// survive command substitution, fail dev-app-origin-health's /^\d+$/ port
+// check, and make the launcher exit instantly while blaming a readiness
+// timeout it never waited for. Agent harnesses and CI runners set FORCE_COLOR
+// routinely, so run the launcher's own capture rather than trusting its shape.
+const portCapture = source.match(/^dev_port="\$\((node -e "[\s\S]*?")\)"$/m);
+assert.ok(portCapture, "the launcher must capture its dev port from a node one-liner");
+const capturedPort = execFileSync("bash", ["-c", portCapture[1]], {
+  cwd: path.dirname(scriptsDir),
+  encoding: "utf8",
+  env: { ...process.env, FORCE_COLOR: "3", COVEN_CAVE_PORT: "", PORT: "" },
+});
+// Trailing newlines are what command substitution itself strips, so trim to
+// assert the contract the launcher actually depends on rather than pinning
+// whether the one-liner happens to terminate its line.
+assert.match(
+  capturedPort.trim(),
+  /^\d+$/,
+  "the resolved dev port must be bare digits even when FORCE_COLOR decorates Node's output",
+);
+
+// A port that does arrive decorated has to say so. Silently handing it to the
+// readiness probe is what disguised this as an intermittent bind timeout.
+assert.match(
+  source,
+  /dev_port="\$\([\s\S]*?\)"\s*case "\$dev_port" in[\s\S]*?\|\*\[!0-9\]\*\)[\s\S]*?exit 1/,
+  "a non-numeric resolved port must fail loudly at capture, not downstream",
+);
+// Busy is answered by identity, not by moving: attach to our own dev server,
+// refuse anything else by name.
+assert.match(
+  source,
+  /port_owner="\$\(node scripts\/dev-port-owner\.mjs --port "\$dev_port"[\s\S]*?ours\)[\s\S]*?should_start_server=false/,
+  "a dedicated port already served by CovenCave must be attached to, not restarted",
+);
+assert.match(
+  source,
+  /stranger\)[\s\S]*?is held by something that is not CovenCave[\s\S]*?exit 1/,
+  "a stranger on the dedicated port must fail loudly instead of relocating",
 );
 assert.match(
   source,

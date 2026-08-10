@@ -1,9 +1,11 @@
+import { execFile } from "node:child_process";
 import { createHmac, randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 
 import next from "next";
@@ -11,6 +13,7 @@ import { WebSocket, WebSocketServer, type RawData } from "ws";
 
 const require = createRequire(import.meta.url);
 const pty: typeof import("node-pty") = require("node-pty");
+const execFileAsync = promisify(execFile);
 
 // Packaged desktop builds (the Tauri sidecar) run this server from inside the
 // .app bundle, where next.config.ts is not shipped. The standalone build
@@ -37,8 +40,43 @@ if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDAL
 // Serve route stays token-gated. Mirrors src/lib/server/mobile-access-
 // provision.ts, inlined because the standalone server.mjs cannot import from
 // src/.
+// The port contract, inlined for the same reason as everything else in this
+// block: `build:server` runs esbuild with `--bundle=false`, so any import here
+// must still resolve at runtime from wherever server.mjs is unpacked — and the
+// packaged bundle ships server.mjs without scripts/. scripts/ports.mjs is the
+// source of truth and scripts/port-contract.test.mjs fails if this copy drifts.
+const CAVE_DEV_PORT = 3000;
+const CAVE_PRODUCTION_PORT = 3020;
+
+function parseCavePort(raw: string | undefined): number | null {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535 ? parsed : null;
+}
+
+/**
+ * COVEN_CAVE_PORT wins over PORT so Cave can be pinned without disturbing a
+ * PORT that some parent set for its own reasons — pnpm exports its config to
+ * children as env vars, and inheriting one by accident is how the port stopped
+ * being dependable before. The packaged bundle takes the production port; a
+ * `pnpm dev` server takes the dev port, so the two can run side by side.
+ */
+function cavePort(): number {
+  const channelDefault =
+    process.env.COVEN_CAVE_BUNDLE === "1" ? CAVE_PRODUCTION_PORT : CAVE_DEV_PORT;
+  return (
+    parseCavePort(process.env.COVEN_CAVE_PORT) ??
+    parseCavePort(process.env.PORT) ??
+    channelDefault
+  );
+}
+
 function persistedMobileAccessSecretFile(): string {
-  const port = (process.env.PORT || "3000").trim() || "3000";
+  // Keyed by the port on purpose (it mirrors scripts/mobile-tailscale.sh), which
+  // is precisely why the port had to stop moving: a per-launch port meant a
+  // per-launch secret directory, so every desktop restart re-paired every phone.
+  const port = String(cavePort());
   const stateRoot =
     process.env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim() ||
     join(
@@ -295,6 +333,135 @@ function isLoopbackAddress(value: string | undefined): boolean {
   if (value === "::1" || value === "127.0.0.1") return true;
   if (value.startsWith("::ffff:")) return value.slice("::ffff:".length) === "127.0.0.1";
   return false;
+}
+
+/**
+ * True for a Tailscale CGNAT address: 100.64.0.0/10 (v4) or the fd7a:115c:a1e0::/48
+ * ULA range (v6). Mirrors isTailscaleIpHost in src/proxy-helpers.ts.
+ */
+function isTailscaleAddress(value: string): boolean {
+  const address = value.startsWith("::ffff:") ? value.slice("::ffff:".length) : value;
+  if (address.includes(".")) {
+    const parts = address.split(".").map((part) => Number(part));
+    return (
+      parts.length === 4 &&
+      parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) &&
+      parts[0] === 100 &&
+      parts[1] >= 64 &&
+      parts[1] <= 127
+    );
+  }
+  return address.toLowerCase().startsWith("fd7a:115c:a1e0:");
+}
+
+/**
+ * Normalizes an x-forwarded-for hop into a bare address: strips IPv6 brackets
+ * and any `:port` suffix, and unwraps IPv4-mapped IPv6.
+ */
+function normalizeForwardedAddress(value: string): string {
+  let address = value.trim();
+  if (address.startsWith("[")) {
+    const close = address.indexOf("]");
+    if (close > 0) return address.slice(1, close).toLowerCase();
+  }
+  // A bare IPv6 literal contains multiple colons and carries no port here; only
+  // strip a trailing :port from IPv4 (or bracket-less host:port) forms.
+  if ((address.match(/:/g) ?? []).length === 1) address = address.split(":")[0];
+  if (address.startsWith("::ffff:")) address = address.slice("::ffff:".length);
+  return address.toLowerCase();
+}
+
+// Tailnet identity gate (cave-zm6pn). Remote (phone) access is authorized by
+// per-device Tailscale identity rather than a shared bearer secret. Only stable
+// node IDs named in COVEN_CAVE_TAILNET_ALLOWED_NODES are admitted; an empty
+// allowlist disables the feature entirely (fail closed — no allowlist, no
+// tailnet access).
+//
+// Why x-forwarded-for is trustworthy HERE specifically: the TCP peer must
+// already be loopback, because `tailscale serve` terminates TLS and forwards to
+// 127.0.0.1. A local process able to forge this header could instead connect
+// directly to loopback, which grants strictly MORE authority (full local-peer
+// trust via isDirectLoopbackRequest). So reading it adds no new exposure while
+// upgrading remote auth from a shared secret to WireGuard-backed device
+// identity.
+const TAILNET_PEER_HEADER = "x-coven-cave-tailnet-peer";
+const TAILNET_PEER_SECRET = randomUUID();
+process.env.COVEN_CAVE_TAILNET_PEER_SECRET = TAILNET_PEER_SECRET;
+const TAILNET_STATUS_REFRESH_MS = 30_000;
+
+function allowedTailnetNodeIds(): Set<string> {
+  const raw = process.env.COVEN_CAVE_TAILNET_ALLOWED_NODES ?? "";
+  return new Set(
+    raw
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+  );
+}
+
+/**
+ * address -> stable node ID, for allowlisted peers only. Refreshed off a
+ * `tailscale status --json` poll rather than resolved per request: the request
+ * handler below is synchronous and a per-request subprocess would add tens of
+ * milliseconds to every request. A stale entry can only ever name a node that
+ * was allowlisted anyway, and the refresh interval bounds how long a revoked
+ * device keeps working.
+ */
+let tailnetPeerAddresses = new Map<string, string>();
+let tailnetRefreshInFlight = false;
+
+async function refreshTailnetPeers(): Promise<void> {
+  const allowed = allowedTailnetNodeIds();
+  if (allowed.size === 0) {
+    tailnetPeerAddresses = new Map();
+    return;
+  }
+  if (tailnetRefreshInFlight) return;
+  tailnetRefreshInFlight = true;
+  try {
+    const { stdout } = await execFileAsync(
+      process.env.COVEN_CAVE_TAILSCALE_BIN ?? "tailscale",
+      ["status", "--json"],
+      { timeout: 10_000, maxBuffer: 16 * 1024 * 1024 },
+    );
+    const status = JSON.parse(stdout) as {
+      Peer?: Record<string, { ID?: string; TailscaleIPs?: string[] }>;
+    };
+    const next = new Map<string, string>();
+    for (const peer of Object.values(status.Peer ?? {})) {
+      const nodeId = peer.ID;
+      if (!nodeId || !allowed.has(nodeId)) continue;
+      for (const ip of peer.TailscaleIPs ?? []) {
+        next.set(normalizeForwardedAddress(ip), nodeId);
+      }
+    }
+    tailnetPeerAddresses = next;
+  } catch (err) {
+    // Fail closed: an unreadable tailnet status must never leave a previously
+    // built allowlist standing, or a revoked device would keep its access for
+    // as long as `tailscale` stayed broken.
+    tailnetPeerAddresses = new Map();
+    console.warn("[cave] tailnet peer refresh failed:", (err as Error)?.message ?? err);
+  } finally {
+    tailnetRefreshInFlight = false;
+  }
+}
+
+/**
+ * The allowlisted stable node ID behind a Tailscale-Serve-forwarded request, or
+ * null. Requires a loopback TCP peer (Serve always forwards over loopback) and
+ * a forwarded-for hop that is both a Tailscale CGNAT address and currently
+ * mapped to an allowlisted node.
+ */
+function resolveTailnetPeer(req: IncomingMessage): string | null {
+  if (tailnetPeerAddresses.size === 0) return null;
+  if (!isLoopbackAddress(req.socket.remoteAddress)) return null;
+  const forwarded = req.headers["x-forwarded-for"];
+  const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(",")[0];
+  if (!first) return null;
+  const address = normalizeForwardedAddress(first);
+  if (!isTailscaleAddress(address)) return null;
+  return tailnetPeerAddresses.get(address) ?? null;
 }
 
 /**
@@ -878,7 +1045,7 @@ function handlePtyConnection(
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME ?? "127.0.0.1";
-const port = Number.parseInt(process.env.PORT ?? "3000", 10);
+const port = cavePort();
 
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
@@ -888,11 +1055,16 @@ await app.prepare();
 const nextUpgradeHandler = app.getUpgradeHandler();
 
 const server = createServer((req, res) => {
-  // The local-peer stamp is trustworthy only because any client-supplied copy
-  // dies here, before Next (and proxy.ts) ever see the request.
+  // Both stamps are trustworthy only because any client-supplied copy dies
+  // here, before Next (and proxy.ts) ever see the request.
   delete req.headers[LOCAL_PEER_HEADER];
+  delete req.headers[TAILNET_PEER_HEADER];
   if (isDirectLoopbackRequest(req)) {
     req.headers[LOCAL_PEER_HEADER] = LOCAL_PEER_SECRET;
+  }
+  const tailnetNodeId = resolveTailnetPeer(req);
+  if (tailnetNodeId) {
+    req.headers[TAILNET_PEER_HEADER] = `${TAILNET_PEER_SECRET}:${tailnetNodeId}`;
   }
   void handle(req, res);
 });
@@ -921,7 +1093,14 @@ server.on("upgrade", (req, socket, head) => {
   // forwards the `<host>.ts.net` Host) legitimately arrives with a
   // non-loopback Host and must pass the source gate on the strength of its
   // token — mirroring proxy.ts's isAllowedApiHost relaxation on REST.
-  const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
+  //
+  // An allowlisted tailnet node is a credential in its own right (cave-zm6pn):
+  // its WireGuard-backed device identity is strictly stronger evidence than the
+  // shared bearer token this branch was built for, so it satisfies both the
+  // source gate below and the auth requirement after it.
+  const tailnetAuthenticated = resolveTailnetPeer(req) !== null;
+  const tokenAuthenticated =
+    tailnetAuthenticated || (isPtyAuthRequired() ? isAuthorized(req, query) : false);
 
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
@@ -990,6 +1169,13 @@ server.headersTimeout = 80_000;
 server.listen(port, hostname, () => {
   console.log(`> Ready on http://${hostname}:${port}`);
 });
+
+// Prime the tailnet allowlist immediately, then keep it fresh. unref() so the
+// poll never holds the process open on its own.
+if (allowedTailnetNodeIds().size > 0) {
+  void refreshTailnetPeers();
+  setInterval(() => void refreshTailnetPeers(), TAILNET_STATUS_REFRESH_MS).unref();
+}
 
 server.once("error", (err: NodeJS.ErrnoException) => {
   console.error(err);

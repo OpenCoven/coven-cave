@@ -62,7 +62,37 @@ assert.match(
   "Help probes report an incomplete probe separately from an unmatched flag",
 );
 for (const failure of [
-  /did not respond within \$\{openCodeCapabilityProbeTimeoutMs\(\)\}ms/,
+  // The deadline is hoisted into ONE binding that both arms the timer and
+  // names itself in the reason. Pinning the shape rather than a bare call is
+  // the point: a message that re-invoked the helper could quote a different
+  // number than the timer actually waited, which is precisely the confusion a
+  // timeout report exists to prevent.
+  /const timeoutMs = openCodeCapabilityProbeTimeoutMs\(\);[\s\S]*?did not respond within \$\{timeoutMs\}ms[\s\S]*?\}, timeoutMs\);/,
+  /child\.on\("error", \(error: Error\) => \{[\s\S]*?ok: false, reason: `\\`\$\{command\}\\` could not be started: \$\{error\.message\}`/,
+]) {
+  assert.match(
+    capabilityProbes,
+    failure,
+    "Timeouts and spawn errors carry the underlying reason instead of resolving false",
+  );
+}
+assert.match(
+  capabilityProbes,
+  /const probe = start\(\)\.then\(\(outcome\) => \{[\s\S]*?if \(!outcome\.ok\) write\(null\);/,
+  "Only answered capability probes are cached; a failed probe must not pin itself for the process lifetime",
+);
+assert.match(
+  capabilityProbes,
+  /export function covenRunModelFlagOutcome\(\): Promise<HelpProbeOutcome>[\s\S]*?export function covenRunSupportsModel\(\): Promise<boolean> \{[\s\S]*?outcome\.ok && outcome\.matched/,
+  "The boolean model capability is derived from the outcome rather than replacing it",
+);
+assert.match(
+  capabilityProbes,
+  /export type HelpProbeOutcome =[\s\S]*?\{ ok: true; matched: boolean \}[\s\S]*?\{ ok: false; reason: string \}/,
+  "Help probes report an incomplete probe separately from an unmatched flag",
+);
+for (const failure of [
+  /did not respond within \$\{timeoutMs\}ms/,
   /child\.on\("error", \(error: Error\) => \{[\s\S]*?ok: false, reason: `\\`\$\{command\}\\` could not be started: \$\{error\.message\}`/,
 ]) {
   assert.match(

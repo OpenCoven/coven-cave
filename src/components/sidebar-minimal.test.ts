@@ -10,6 +10,10 @@ const styles = [
   readFileSync(new URL("../styles/sidebar-minimal/activity-rail.css", import.meta.url), "utf8"),
 ].join("\n");
 const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+// The scope switcher + New chat are SHARED with the Chat rail (SidebarRailHeader),
+// so their markup and chrome are pinned against the shared files, not this one.
+const railHeaderSource = readFileSync(new URL("./sidebar-rail-header.tsx", import.meta.url), "utf8");
+const railHeaderCss = readFileSync(new URL("../styles/globals/rail-header.css", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 // The footer (Dashboard + Settings + version) lives in a shared component so it
@@ -368,12 +372,12 @@ assert.match(
 // affordance on every breakpoint.
 assert.match(
   source,
-  /<div className="sidebar-actions">\s*<button type="button" className="sidebar-action-row focus-ring" onClick=\{onNewChat\}[^>]*>/,
+  /<SidebarRailHeader[\s\S]*?onNewChat=\{onNewChat\}/,
   "the sidebar renders a New chat CTA at the top, wired to onNewChat",
 );
 assert.match(
-  source,
-  /<Icon[\s\S]{0,180}name="ph:note-pencil"[\s\S]*?<span>New chat<\/span>/,
+  railHeaderSource,
+  /<Icon[\s\S]{0,240}name="ph:note-pencil"[\s\S]*?<span className="rail-header__new-label">New chat<\/span>/,
   "the New chat CTA is labelled and iconed",
 );
 
@@ -389,7 +393,7 @@ assert.doesNotMatch(
 // wordmark gave it the slot; the collapsed rail keeps the avatar-only trigger.
 assert.match(
   source,
-  /<div className="sidebar-familiar-switch">[\s\S]{0,600}<FamiliarQuickSwitch/,
+  /<SidebarRailHeader[\s\S]{0,600}familiars=\{familiars\}/,
   "the sidenav header mounts the familiar switcher",
 );
 assert.match(
@@ -399,8 +403,8 @@ assert.match(
 );
 const sidebarCss = styles;
 assert.match(
-  sidebarCss,
-  /\.shell-nav--rail \.sidebar-familiar-switch \.familiar-switcher__trigger-label \{\s*\n\s*display: none/,
+  railHeaderCss,
+  /\.shell-nav--rail \.rail-header__scope \.familiar-switcher__trigger-label,[\s\S]*?display: none/,
   "the rail keeps the avatar-only trigger (label drops)",
 );
 assert.doesNotMatch(
@@ -420,7 +424,7 @@ assert.match(
 );
 assert.match(
   styles,
-  /@media \(max-width: 1023px\) \{[\s\S]*\.sidebar-header,[\s\S]*\.sidebar-action-row,[\s\S]*\.sidebar-folder-row,[\s\S]*\.sidebar-foot-btn,[\s\S]*\.sidebar-familiar-filter__select[\s\S]*min-height:\s*var\(--touch-target\)/,
+  /@media \(max-width: 1023px\) \{[\s\S]*\.sidebar-header,[\s\S]*\.sidebar-folder-row,[\s\S]*\.sidebar-foot-btn,[\s\S]*\.sidebar-familiar-filter__select[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Mobile sidebar drawer rows and familiar select should meet the shared touch target",
 );
 

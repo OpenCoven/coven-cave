@@ -315,7 +315,7 @@ export function mergeSessionRows({
         titleOverride ??
         sanitizeSessionTitle(session.title) ??
         defaultChatTitleForSession(session.id),
-      titleRevision: state.sessionTitleRevision?.[session.id] ?? 0,
+      titleRevision: state.sessionTitleRevision?.[stateSessionId] ?? 0,
       archived_at,
       attention,
       attentionAfterOperationId: attentionAfterOperationId(local?.attentionEvidence),

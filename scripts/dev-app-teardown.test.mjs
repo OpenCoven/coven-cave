@@ -71,6 +71,8 @@ mkdirSync(fakeBin, { recursive: true });
 
 copyFileSync(path.join(scriptsDir, "dev-app.sh"), path.join(fakeScripts, "dev-app.sh"));
 copyFileSync(path.join(scriptsDir, "dev-app-origin-health.mjs"), path.join(fakeScripts, "dev-app-origin-health.mjs"));
+copyFileSync(path.join(scriptsDir, "dev-port-owner.mjs"), path.join(fakeScripts, "dev-port-owner.mjs"));
+copyFileSync(path.join(scriptsDir, "ports.mjs"), path.join(fakeScripts, "ports.mjs"));
 chmodSync(path.join(fakeScripts, "dev-app.sh"), 0o755);
 writeFileSync(path.join(fakeScripts, "whisper-runtime-dev-env.sh"), "# stub for tests\n");
 

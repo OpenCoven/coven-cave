@@ -299,6 +299,18 @@ test("slice/strip: fenced markers are example text — literal, no cards, fence 
   assert.equal(stripGitHubMarkers(streaming), streaming);
 });
 
+<<<<<<< HEAD
+=======
+test("slice/strip: an empty top-level fence closes before a following live GitHub marker", () => {
+  const fenced = "```\n```";
+  const text = `${fenced}\n<coven:github kind="issue" repo="o/r" number="8" />`;
+  const pieces = sliceGitHubBlocks(text);
+  assert.equal(pieces.filter((piece) => piece.kind === "card").length, 1);
+  assert.equal(pieces.find((piece) => piece.kind === "card")?.descriptor.number, 8);
+  assert.equal(stripGitHubMarkers(text), `${fenced}\n`);
+});
+
+>>>>>>> c2d45598b7ab124a176d1cb83b7ee37e5f9811cf
 test("slice/strip: a list-contained renderer fence ends before a following live GitHub marker", () => {
   const fenced = '- ```xml\n  <coven:github kind="pr" repo="o/r" number="7" />\n  ```';
   const live = '<coven:github kind="issue" repo="o/r" number="8" />';

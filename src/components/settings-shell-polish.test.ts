@@ -395,7 +395,16 @@ assert.match(
   /<DirectoryPickerModal\s+open=\{pickerOpen\}/,
   "Browse opens the shared in-app folder browser",
 );
-assert.match(workspacePathField, /onClick=\{\(\) => setPickerOpen\(true\)\}/, "the Browse button opens the picker");
+assert.match(
+  workspacePathField,
+  /setFieldError\(""\);\s*setPickerOpen\(true\);/,
+  "the Browse button clears a stale failure before reopening the picker",
+);
+assert.doesNotMatch(
+  workspacePathField,
+  /openError/,
+  "the shared alert slot is not named for only one of the two failures it carries",
+);
 assert.match(
   workspacePathField,
   /method: "POST",[\s\S]*body: JSON\.stringify\(\{ dir \}\)/,

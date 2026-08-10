@@ -85,12 +85,23 @@ pub(super) fn sidecar_output_text(output: &Arc<Mutex<SidecarOutputTail>>) -> Str
     }
 }
 
+/// Whether anything is already listening on the dedicated loopback port.
+///
+/// Replaces `find_free_port()`, which bound `127.0.0.1:0` and let the kernel
+/// pick — that is what made the packaged app's port different on every launch.
+/// See src-tauri/src/sidecar_ports.rs and scripts/ports.mjs for why a moving
+/// port is more than an inconvenience.
+///
+/// A busy port is NOT worked around by relocating. The desktop app already
+/// refuses to run a second GUI (the reachability owner check), so a stranger on
+/// the dedicated port is an operator-visible conflict, not something to route
+/// around silently — relocating is exactly how the address stopped being
+/// dependable in the first place.
 #[cfg(desktop)]
-pub(super) fn find_free_port() -> Option<u16> {
-    TcpListener::bind("127.0.0.1:0")
-        .ok()
-        .and_then(|l| l.local_addr().ok())
-        .map(|a| a.port())
+pub(super) fn port_is_occupied(port: u16) -> bool {
+    use std::net::{SocketAddr, TcpStream};
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok()
 }
 
 /// Dev builds only: the dev-server URL from tauri.conf.json `build.devUrl`,
@@ -187,6 +198,21 @@ pub(super) fn node_arg_path(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
+/// Replace the main webview's dead/startup page without leaving it in session
+/// history. Both first startup and later supervisor revivals use this exact
+/// path so URL escaping and the native-navigation fallback cannot drift.
+#[cfg(desktop)]
+pub(super) fn replace_main_window_url(app: &tauri::AppHandle, url: Url) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window is unavailable".to_string())?;
+    let escaped = url.to_string().replace('"', "%22");
+    window
+        .eval(format!("window.location.replace(\"{escaped}\");"))
+        .or_else(|_| window.navigate(url))
+        .map_err(|error| format!("could not navigate the main window: {error}"))
+}
+
 #[cfg(desktop)]
 pub(super) fn start_sidecar_runtime(
     app: &tauri::AppHandle,
@@ -226,8 +252,20 @@ pub(super) fn start_sidecar_runtime(
         )));
     };
 
-    let port = find_free_port()
-        .ok_or_else(|| SidecarStartError::Failed("no free local port available".to_string()))?;
+    let port = sidecar_ports::dedicated_port();
+    if port_is_occupied(port) {
+        // Name the conflict instead of relocating. The old behaviour asked the
+        // kernel for any free port, which always "worked" and left the app on a
+        // different address every launch — including in the pairing-secret path
+        // (`mobile-tailscale-${port}`), so phones could not find it twice.
+        return Err(SidecarStartError::Failed(format!(
+            "Port {port} is already in use, so CovenCave cannot start its local server.\n\n\
+             This is usually another CovenCave that is still running, or a dev server \
+             started with `pnpm dev`. Quit that one and re-launch, or start CovenCave with \
+             {} set to a free port.",
+            sidecar_ports::CAVE_PORT_ENV,
+        )));
+    }
     let auth_token = sidecar_auth_token();
     let mobile_access_token = mobile_access_token_for_app(app);
     log::info!("[cave] starting sidecar on port {port}");
@@ -541,23 +579,10 @@ pub(super) fn spawn_sidecar_startup(
                 Ok(url) => {
                     pty::trust_main_origin(&url);
                     remember_main_startup_url(&url);
-                    let navigation = app
-                        .get_webview_window("main")
-                        .ok_or_else(|| "startup window is unavailable".to_string())
-                        .and_then(|window| {
-                            // location.replace() swaps startup.html out of the
-                            // webview's session history; window.navigate() pushes
-                            // a new entry instead, so the shell's Back control
-                            // (history.back) could land users on the dead splash
-                            // screen. Fall back to navigate() if eval cannot
-                            // reach the page — a stale history entry beats a
-                            // startup failure.
-                            let escaped = url.to_string().replace('"', "%22");
-                            window
-                                .eval(format!("window.location.replace(\"{escaped}\");"))
-                                .or_else(|_| window.navigate(url))
-                                .map_err(|error| format!("could not open CovenCave: {error}"))
-                        });
+                    // location.replace() swaps startup.html out of session
+                    // history; native navigation is the shared fallback when
+                    // the page's JS context is unreachable.
+                    let navigation = replace_main_window_url(&app, url);
                     match navigation {
                         Ok(()) => SidecarStartupStatus::ready(),
                         Err(error) => {

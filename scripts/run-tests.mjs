@@ -269,6 +269,7 @@ export const SUITES = {
     "src/lib/chat-session-activity.test.ts",
     "src/lib/chat-session-sort.test.ts",
     "src/lib/chat-turn-gap.test.ts",
+    "src/lib/chat-transcript-fold.test.ts",
     "src/lib/chat-project-overrides.test.ts",
     "src/lib/chat-add-project.test.ts",
     "src/lib/project-setup-offer.test.ts",
@@ -544,6 +545,7 @@ export const SUITES = {
     "src/components/chat-usage-plan-ui.test.ts",
     "src/components/nav-section-tabs.test.ts",
     "src/components/sidebar-minimal.test.ts",
+    "src/components/sidebar-rail-header.test.ts",
     "src/components/nav-section-tabs.test.ts",
     "src/components/shell-chrome-revamp.test.ts",
     "src/components/shell-inset-layout.test.ts",
@@ -979,6 +981,7 @@ export const SUITES = {
     "src/components/labels-and-live-regions.test.ts",
     "src/components/workspace-inspector-mount.test.ts",
     "src/middleware.test.ts",
+    "src/tailnet-identity.test.ts",
     "src/lib/font-settings.test.ts",
     "src/lib/font-wiring.test.ts",
     "src/lib/cave-config.test.ts",
@@ -1163,6 +1166,8 @@ export const SUITES = {
     "scripts/dev-app.test.mjs",
     "scripts/dev-app-origin-health.test.mjs",
     "scripts/dev-app-teardown.test.mjs",
+    "scripts/dev-port-owner.test.mjs",
+    "scripts/port-contract.test.mjs",
     "scripts/sync-runtimes.test.mjs",
     "scripts/surface-claim-guard.test.mjs",
     "scripts/worktree-guard.test.mjs",
@@ -1289,6 +1294,7 @@ export const SUITES = {
     "src/app/api/chat/send/harness-routing-host-session.test.ts",
     "src/app/api/chat/send/ios-first-turn-project-contract.test.ts",
     "src/app/api/chat/send/chat-attention-persistence.test.ts",
+    "src/app/api/chat/send/openclaw-gateway-outcome.test.ts",
     "src/app/api/chat/send/harness-routing-attachments.test.ts",
     "src/app/api/chat/send/harness-routing-tool-events.test.ts",
     "src/app/api/chat/send/harness-routing-model-capabilities.test.ts",
@@ -1431,6 +1437,8 @@ export const SUITES = {
     "src/server-pty-ws.test.ts",
     "src/server-heap-monitor.test.ts",
     "src/lib/pty-ws-bridge.test.ts",
+    "src/lib/websocket-url.test.ts",
+    "src/lib/familiar-liveness.test.ts",
     "scripts/release-macos-signing.test.mjs",
     "scripts/release-notes.test.mjs",
     "scripts/generate-latest-json.test.mjs",
@@ -1613,6 +1621,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/daemon-desktop-auto-start.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
   "src/lib/podcast-script.test.ts",
   // the foil-plate store resolves "@/lib/avatar-idb" for its IndexedDB driver

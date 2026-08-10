@@ -10,6 +10,7 @@ import {
   isInsideAllowedRoots,
   SIDECAR_FORBIDDEN_ROOTS,
   SIDECAR_NEXT_RUNTIME_FILES,
+  SIDECAR_RUNTIME_BUDGET_FILE,
   SIDECAR_RUNTIME_BUDGETS,
   verifySidecarRuntime,
 } from "./sidecar-runtime-closure.mjs";
@@ -102,12 +103,28 @@ try {
 
   await assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination);
   const metrics = await verifySidecarRuntime(destination);
-  assert.ok(metrics.fileCount <= 5_926);
+  // The fixture closure is tiny; this only asserts the verifier measures it
+  // against the real budget rather than a stub.
+  assert.ok(metrics.fileCount <= SIDECAR_RUNTIME_BUDGETS.fileCount);
   assert.ok(metrics.unpackedBytes < 200 * 1024 * 1024);
-  assert.deepEqual(SIDECAR_RUNTIME_BUDGETS, {
-    fileCount: 5_926,
-    unpackedBytes: 200 * 1024 * 1024 - 1,
-  });
+  // cave-0ia8h: the file count is no longer pinned to a literal here. It is
+  // read from scripts/sidecar-runtime-budget.json, so pinning the value in this
+  // file would just recreate one of the six hand-synced copies that motivated
+  // the change. What is worth asserting is that the wiring HOLDS: the budget
+  // actually comes from that file, and it is a usable positive integer rather
+  // than an undefined that would make every `<=` comparison false and leave the
+  // gate silently passing.
+  const declaredBudget = JSON.parse(await readFile(SIDECAR_RUNTIME_BUDGET_FILE, "utf8"));
+  assert.equal(
+    SIDECAR_RUNTIME_BUDGETS.fileCount,
+    declaredBudget.fileCount,
+    "the runtime budget must be the number declared in sidecar-runtime-budget.json",
+  );
+  assert.ok(
+    Number.isSafeInteger(SIDECAR_RUNTIME_BUDGETS.fileCount) && SIDECAR_RUNTIME_BUDGETS.fileCount > 0,
+    "a non-integer budget would disable the gate rather than fail it",
+  );
+  assert.equal(SIDECAR_RUNTIME_BUDGETS.unpackedBytes, 200 * 1024 * 1024 - 1);
 
   assert.equal(JSON.parse(await readFile(path.join(destination, "package.json"), "utf8")).version, "9.8.7");
   assert.equal(await readFile(path.join(destination, "marketplace/catalog.json"), "utf8"), "{}\n");

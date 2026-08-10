@@ -88,6 +88,23 @@ assert.match(
   /let refreshToken: Int[\s\S]*var onManageAccess: \(\(\) -> Void\)\?/,
   "the picker must require a caller-driven refresh token and keep access repair optional",
 );
+
+// Fail fast if a merge conflict marker was accidentally checked in. Match any
+// of the three conflict marker kinds at the start of a line: <<<<<<<, =======, >>>>>>>
+assert.doesNotMatch(
+  picker,
+  /^(?:<{7}|={7}|>{7})/m,
+  "the picker must not contain unresolved Git conflict markers",
+);
+
+// Enforce the memberwise-declared property sequence so call sites continue to
+// use the memberwise initializer in the expected order: refreshToken, the
+// defaulted requiresExplicitSelection flag, then the optional callbacks.
+assert.match(
+  picker,
+  /let refreshToken: Int[\s\S]*var requiresExplicitSelection = false[\s\S]*var onResolved: \(\(\) -> Void\)\?[\s\S]*var onManageAccess: \(\(\) -> Void\)\?/,
+  "the picker must declare refreshToken, requiresExplicitSelection, onResolved, onManageAccess in that order",
+);
 assert.match(
   picker,
   /private struct LoadIdentity: Hashable \{[\s\S]*let key: LoadKey[\s\S]*let generation: Int[\s\S]*\}/,

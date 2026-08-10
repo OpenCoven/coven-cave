@@ -295,6 +295,7 @@ import {
 } from "@/lib/model-control-capabilities";
 import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
 import { conversationCwd, daemonSessionCwd, resolveFamiliarWorkspace } from "./chat-send-runtime";
+import { resolveOpenClawGatewayOutcome } from "./openclaw-gateway-outcome";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -1025,19 +1026,32 @@ function openClawChatResponse(args: {
           }
           return created;
         }).catch(() => false);
-        const stopGateway = () => {
-          settleOpenGatewayTools("[tool cancelled by user]");
+        const abortGateway = (toolOutcome: string) => {
+          settleOpenGatewayTools(toolOutcome);
           void gatewayDispatch.abort();
         };
+<<<<<<< HEAD
         const abortGatewayTransport = () => {
           settleOpenGatewayTools("[tool connection lost before the Gateway turn ended]");
           void gatewayDispatch.abortTransport();
         };
+=======
+        const stopGateway = () => abortGateway("[tool cancelled by user]");
+        const stopDetachedGateway = () => abortGateway("[tool did not settle before the Gateway turn ended]");
+>>>>>>> c2d45598b7ab124a176d1cb83b7ee37e5f9811cf
         const runHandle = registerChatRun([args.body.runId, conversationId], stopGateway);
         let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
+        let detachTimeoutFired = false;
         const armDetachKill = () => {
           if (runHandle.stopRequested || detachKillTimer != null) return;
+<<<<<<< HEAD
           detachKillTimer = setTimeout(abortGatewayTransport, CHAT_DETACH_MAX_MS);
+=======
+          detachKillTimer = setTimeout(() => {
+            detachTimeoutFired = true;
+            stopDetachedGateway();
+          }, CHAT_DETACH_MAX_MS);
+>>>>>>> c2d45598b7ab124a176d1cb83b7ee37e5f9811cf
         };
         runBuffer = openRunBuffer([args.body.runId, conversationId], {
           attach: () => {
@@ -1056,13 +1070,18 @@ function openClawChatResponse(args: {
         const gatewayResult = await gatewayDispatch.done;
         const cancelledByUser = runHandle.stopRequested;
         settleOpenGatewayTools(
+<<<<<<< HEAD
           cancelledByUser
+=======
+          runHandle.stopRequested
+>>>>>>> c2d45598b7ab124a176d1cb83b7ee37e5f9811cf
             ? "[tool cancelled by user]"
             : "[tool did not settle before the Gateway turn ended]",
         );
         args.req.signal.removeEventListener("abort", onAbort);
         if (detachKillTimer != null) clearTimeout(detachKillTimer);
         const durationMs = Date.now() - startedAt;
+<<<<<<< HEAD
         const transportAborted = gatewayResult.state === "aborted";
         const gatewayFailureMessage = transportAborted && !cancelledByUser
           ? gatewayResult.message && !/cancelled by user/i.test(gatewayResult.message)
@@ -1076,12 +1095,27 @@ function openClawChatResponse(args: {
             ? "(cancelled)"
             : gatewayFailureMessage ?? "_The OpenClaw Gateway returned no text._";
           if (!cancelledByUser) isError = true;
+=======
+        const gatewayOutcome = resolveOpenClawGatewayOutcome(
+          gatewayResult,
+          runHandle.stopRequested,
+          detachTimeoutFired,
+        );
+        const { cancelledByUser } = gatewayOutcome;
+        let { isError } = gatewayOutcome;
+        if (!gatewayAssistantText.trim()) {
+          gatewayAssistantText = gatewayOutcome.emptyText;
+>>>>>>> c2d45598b7ab124a176d1cb83b7ee37e5f9811cf
         }
         pushProgress(
           "openclaw-response",
           isError ? "OpenClaw Gateway response failed" : "OpenClaw Gateway response received",
           isError ? "error" : "done",
+<<<<<<< HEAD
           gatewayFailureMessage,
+=======
+          gatewayOutcome.progressMessage,
+>>>>>>> c2d45598b7ab124a176d1cb83b7ee37e5f9811cf
           durationMs,
         );
         const terminalOutcome = cancelledByUser

@@ -1371,6 +1371,7 @@ assert.equal(
     state: {
       sessionFamiliar: { [caveId]: "charm" },
       sessionTitles: { [caveId]: "Canonical Cave title" },
+      sessionTitleRevision: { [caveId]: 7 },
       sessionArchived: {},
       sessionSacrificed: {},
     },
@@ -1385,6 +1386,11 @@ assert.equal(
     "the harness-id match is the authoritative daemon row when both ids are present",
   );
   assert.equal(duplicateMappedRows[0]?.title, "Canonical Cave title");
+  assert.equal(
+    duplicateMappedRows[0]?.titleRevision,
+    7,
+    "a replayed daemon row carries the title CAS revision for its displayed Cave id",
+  );
 }
 
 {
