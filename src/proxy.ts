@@ -11,6 +11,7 @@ import {
   timingSafeEqualString,
   isLoopbackHost,
   isAllowedApiHost,
+  isTokenlessApiPeerAllowed,
   sameOrigin,
   isAllowedRequestSource,
   isAllowedRequestSourceAny,
@@ -353,9 +354,13 @@ export async function proxy(req: NextRequest) {
   const sidecarAuthenticated = sidecarTokenMatches(suppliedToken);
 
   if (!sidecarToken) {
-    return process.env.COVEN_CAVE_BUNDLE === "1"
-      ? jsonError(500, "missing sidecar auth token")
-      : nextWithMobileAccessMarker(req, remoteIngress);
+    if (process.env.COVEN_CAVE_BUNDLE === "1") {
+      return jsonError(500, "missing sidecar auth token");
+    }
+    if (!isTokenlessApiPeerAllowed(trustedLocalPeer, remoteIngress)) {
+      return jsonError(403, "forbidden peer");
+    }
+    return nextWithMobileAccessMarker(req, remoteIngress);
   }
 
   if (!sidecarAuthenticated && !remoteIngress) {

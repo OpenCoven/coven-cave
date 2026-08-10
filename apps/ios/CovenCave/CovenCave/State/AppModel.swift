@@ -1240,10 +1240,14 @@ final class AppModel {
             ? (connection?.baseURL == conn.baseURL)
             : (connection?.baseURL?.host?.lowercased() == conn.baseURL?.host?.lowercased())
         if let token {
-            CaveConnection.saveAccessToken(token)
-        } else if !isSameEndpoint {
-            // Tokens are stored globally, so never carry an old desktop's
-            // credential to a newly configured host from an uncredentialed input.
+            CaveConnection.saveAccessToken(token, for: conn.baseURL)
+        } else if CaveConnection.shouldClearStoredCredential(
+            suppliedToken: token,
+            isSameEndpoint: isSameEndpoint,
+            nextURL: conn.baseURL
+        ) {
+            // Never retain a credential when an uncredentialed configuration
+            // changes authority or downgrades the same authority to remote HTTP.
             CaveConnection.saveAccessToken(nil)
         }
         if !isSameEndpoint {
@@ -1742,7 +1746,8 @@ final class AppModel {
         var req = URLRequest(url: base.appendingPathComponent("api/familiars"))
         req.timeoutInterval = 6
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        if sendCredential, let token = CaveConnection.accessToken {
+        if sendCredential,
+           let token = try? CaveConnection.credentialForRequest(to: req.url!) {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         let data: Data

@@ -1460,6 +1460,7 @@ export const SUITES = {
     "src/app/api/voice/transcript/route.test.ts",
     "src/server-pty-ws.test.ts",
     "src/server-heap-monitor.test.ts",
+    "src/lib/pty-upgrade-auth.test.ts",
     "src/lib/pty-ws-bridge.test.ts",
     "src/lib/websocket-url.test.ts",
     "src/lib/familiar-liveness.test.ts",

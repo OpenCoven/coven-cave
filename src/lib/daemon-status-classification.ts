@@ -5,7 +5,13 @@ export type DaemonAvailability =
   | "unhealthy"
   | "unauthorized"
   | "misconfigured"
-  | "status-unavailable";
+  | "status-unavailable"
+  | "incompatible";
+
+export type DaemonAvailabilityPresentation = {
+  label: string;
+  tone: "danger" | "success" | "warning";
+};
 
 export type DaemonTargetMode = "local" | "hub" | "unconfigured-hub";
 export type DaemonConnectionTravelCadence =
@@ -22,7 +28,38 @@ const AVAILABILITY_VALUES = new Set<DaemonAvailability>([
   "unauthorized",
   "misconfigured",
   "status-unavailable",
+  "incompatible",
 ]);
+
+export function describeDaemonAvailability(input: {
+  running: boolean;
+  availability?: DaemonAvailability;
+}): DaemonAvailabilityPresentation {
+  const availabilityAgreesWithRunning =
+    input.availability === undefined || input.availability === "online";
+  if (input.running && availabilityAgreesWithRunning) {
+    return { label: "Running", tone: "success" };
+  }
+  if (input.running || input.availability === "online") {
+    return { label: "Unhealthy", tone: "danger" };
+  }
+  switch (input.availability) {
+    case "unreachable":
+      return { label: "Unreachable", tone: "danger" };
+    case "unhealthy":
+      return { label: "Unhealthy", tone: "danger" };
+    case "unauthorized":
+      return { label: "Authorization required", tone: "danger" };
+    case "misconfigured":
+      return { label: "Configuration required", tone: "warning" };
+    case "status-unavailable":
+      return { label: "Status unavailable", tone: "warning" };
+    case "incompatible":
+      return { label: "Incompatible", tone: "danger" };
+    default:
+      return { label: "Offline", tone: "danger" };
+  }
+}
 
 export function classifyDaemonFailureAvailability(input: {
   targetMode: DaemonTargetMode;
@@ -125,6 +162,13 @@ export function classifyDaemonStatusPoll(input: {
     return { kind: "unavailable", reason: "status service returned an invalid response" };
   }
   if (payload.running) {
+    const availability = payloadAvailability(payload);
+    if (payload.availability !== undefined && availability !== "online") {
+      return {
+        kind: "unavailable",
+        reason: payloadReason(payload) ?? "daemon status returned contradictory health evidence",
+      };
+    }
     const targetMode = payloadTargetMode(payload);
     if (targetMode === "local" || targetMode === "hub") {
       return { kind: "running", targetMode };

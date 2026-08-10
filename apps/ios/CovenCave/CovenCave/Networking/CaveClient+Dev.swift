@@ -43,7 +43,7 @@ extension CaveClient {
 
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let token = CaveConnection.accessToken {
+        if let token = try CaveConnection.credentialForRequest(to: url) {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         let (data, response) = try await data(for: request)

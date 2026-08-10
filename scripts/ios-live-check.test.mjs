@@ -82,8 +82,8 @@ assert.match(
 );
 assert.match(
   model,
-  /if sendCredential, let token = CaveConnection\.accessToken \{/,
-  "the Authorization header is gated on sendCredential",
+  /if sendCredential,\s*\n\s*let token = try\? CaveConnection\.credentialForRequest\(to: req\.url!\) \{/,
+  "the Authorization header is gated on sendCredential and exact credential origin",
 );
 
 console.log("ios-live-check: OK");

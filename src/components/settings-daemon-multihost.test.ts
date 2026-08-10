@@ -57,8 +57,8 @@ assert.match(daemon, /optional · multi-machine setups/, "executor disclosure sh
 assert.match(daemon, /const connectionDirty =/, "connection changes should remain drafts until explicitly saved");
 assert.match(
   daemon,
-  /const normalizedHubUrl = hubUrl\.trim\(\)/,
-  "saving a connection should normalize surrounding whitespace from the hub URL",
+  /const normalizedHubUrl = \(override\?\.hubUrl \?\? hubUrl\)\.trim\(\)/,
+  "saving a connection should normalize the verified override or current hub URL",
 );
 assert.match(
   daemon,
@@ -107,19 +107,79 @@ assert.match(
 
 assert.match(
   shell,
-  /placeholder="http:\/\/server\.tailnet:8787"/,
-  "Hub URL input should make the expected private-network HTTP target concrete",
+  /placeholder="https:\/\/server\.tailnet:8787"/,
+  "Hub URL input should make the secure remote target concrete",
 );
 
 assert.match(shell, /fetch\("\/api\/tailscale\/devices"/, "hub mode should discover tailnet devices");
 assert.match(shell, /devicesCtlRef\.current\?\.abort\(\)/, "device discovery refreshes should abort stale requests");
 assert.match(shell, /Tailnet devices/, "hub mode should label the discovery picker");
 assert.match(shell, /device\.isSelf \? " · This device"/, "the self device should be visibly identified");
-assert.match(shell, /http:\/\/\$\{host\}:8787/, "selecting a device should build the standard hub URL");
+assert.match(shell, /suggestedHubEndpoint\(host\)/, "selecting a device should apply the shared TLS-aware hub URL policy");
 assert.match(shell, /fetch\("\/api\/daemon\/probe"/, "hub URL saves should probe daemon health first");
+assert.match(
+  daemon,
+  /createDaemonStatusRequestGate/,
+  "hub probes should use the shared monotonic request gate so stale responses cannot publish",
+);
+assert.match(
+  daemon,
+  /probeCtlRef\.current\?\.abort\(\)/,
+  "a new hub probe should cancel the previous request",
+);
+assert.match(
+  daemon,
+  /fetch\("\/api\/daemon\/probe",[\s\S]*signal: ctl\.signal/,
+  "hub probe requests should carry the active abort signal",
+);
+assert.match(
+  daemon,
+  /if \(!probeRequestGateRef\.current\.isLatest\(requestId\)\) return;/,
+  "hub probe results should be discarded unless they are still the latest request",
+);
+assert.match(
+  daemon,
+  /persistConnection\("hub", \{ hubUrl: url, executorUrls \}\)/,
+  "a successful probe should persist the exact connection draft it verified instead of newer state",
+);
+assert.match(
+  daemon,
+  /const connectionBusy = probing \|\| savingConnection;/,
+  "connection controls should freeze while a probe or save owns the draft",
+);
+assert.match(
+  daemon,
+  /disabled=\{connectionBusy\}/,
+  "connection controls should not accept edits while the verified snapshot is being saved",
+);
+assert.match(
+  daemon,
+  /leadingIcon="ph:warning"[\s\S]*?disabled=\{connectionBusy\}[\s\S]*?onClick=\{\(\) => void persistConnection\("hub"\)\}/,
+  "save-anyway must not overlap a replacement probe or another persistence request",
+);
 assert.match(shell, /Save anyway/, "an unreachable hub should require an explicit override");
 assert.match(shell, /Configured but unreachable/, "hub status should distinguish configured from connected");
+assert.match(
+  daemon,
+  /describeDaemonAvailability/,
+  "daemon status copy should preserve the route's verified availability classification",
+);
+assert.match(
+  daemon,
+  /const daemonOnline = !manualOffline && availabilityPresentation\.tone === "success";/,
+  "every online indicator should use the same fail-closed availability proof as the state label",
+);
+assert.match(
+  daemon,
+  /!daemonOnline && status\?\.reason/,
+  "contradictory running evidence should keep its diagnostic reason visible",
+);
 assert.match(phone, /Use this device as hub/, "phone pairing should offer its known tailnet host to Server Hub");
+assert.match(
+  phone,
+  /onUseAsHub\(suggestedHubEndpoint\(handoff\.nativeHost \?\? ""\)\)/,
+  "phone pairing should apply the shared TLS-aware hub URL policy",
+);
 assert.match(
   daemon,
   /import \{ classifyTailscaleFailureKind \} from "@\/lib\/tailscale-failure"/,
