@@ -81,7 +81,7 @@ function CovenRunPillChip({
   const elapsed =
     run.startedAtMs !== null
       ? formatCovenDuration(now - run.startedAtMs)
-      : run.elapsedMs > 0
+      : !run.live
         ? formatCovenDuration(run.elapsedMs)
         : null;
   const label = elapsed ? `${run.label} · ${elapsed}` : run.label;
