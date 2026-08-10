@@ -193,4 +193,41 @@ for (const [name, provider] of Object.entries(providers)) {
   assert.equal(await empty.fingerprint(), await empty.fingerprint());
 }
 
+// Fingerprints and per-document sourceVersion must move when any emitted document would.
+{
+  let roster = [
+    { id: "cody", display_name: "Cody", description: "coding familiar", familiarType: "coding" },
+  ];
+  const familiars = createFamiliarsProvider({ listFamiliars: async () => roster });
+  const first = await familiars.fingerprint();
+  const [before] = await familiars.collect(unrestricted);
+  const beforeDoc = normalizeSearchDocument(before);
+  assert.ok(beforeDoc);
+
+  roster = [{ ...roster[0], description: "CHANGED" }];
+  assert.notEqual(await familiars.fingerprint(), first, "a familiar description edit moves the fingerprint");
+  const [after] = await familiars.collect(unrestricted);
+  const afterDoc = normalizeSearchDocument(after);
+  assert.ok(afterDoc);
+  assert.notEqual(afterDoc.sourceVersion, beforeDoc.sourceVersion, "a familiar description edit moves sourceVersion");
+}
+
+{
+  let rows = [
+    { id: "m1", kind: "memory", title: "A memory row", body: "remembered" },
+  ];
+  const compatibility = createCompatibilityProvider({ loadRows: async () => rows });
+  const first = await compatibility.fingerprint();
+  const [before] = await compatibility.collect(unrestricted);
+  const beforeDoc = normalizeSearchDocument(before);
+  assert.ok(beforeDoc);
+
+  rows = [{ ...rows[0], body: "CHANGED" }];
+  assert.notEqual(await compatibility.fingerprint(), first, "a compatibility body edit moves the fingerprint");
+  const [after] = await compatibility.collect(unrestricted);
+  const afterDoc = normalizeSearchDocument(after);
+  assert.ok(afterDoc);
+  assert.notEqual(afterDoc.sourceVersion, beforeDoc.sourceVersion, "a compatibility body edit moves sourceVersion");
+}
+
 console.log("search-indexed-providers.test.ts: ok");
