@@ -507,7 +507,9 @@ export async function installManagedNodeToolchain(options: {
     await move(/* turbopackIgnore: true */ runtime, installTemporary);
     throwIfManagedNodeInstallCancelled(options.signal);
     await remove(/* turbopackIgnore: true */ paths.installDir, { recursive: true, force: true });
-    throwIfManagedNodeInstallCancelled(options.signal);
+    // Once the previous runtime starts being removed, complete the staged
+    // replacement before observing cancellation again. Stopping here would
+    // leave an aborted setup with neither the old nor the new runtime.
     await move(/* turbopackIgnore: true */ installTemporary, paths.installDir);
     throwIfManagedNodeInstallCancelled(options.signal);
     writeProbeTarget = paths.npmPrefix;

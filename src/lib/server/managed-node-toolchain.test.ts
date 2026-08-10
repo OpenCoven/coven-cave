@@ -412,6 +412,10 @@ test("managed Node installer fences cancellation between staged runtime commit o
     });
     let probes = 0;
     try {
+      if (removal === "installed") {
+        await mkdir(paths.installDir, { recursive: true });
+        await writeFile(path.join(paths.installDir, "previous-runtime"), "old");
+      }
       const pending = installManagedNodeToolchain({
         platform: "linux",
         architecture: "x64",
@@ -422,7 +426,9 @@ test("managed Node installer fences cancellation between staged runtime commit o
         dependencies: {
           digest: () => artifact.sha256,
           extractArchive: async (_format, _archive, destination) => {
-            await mkdir(path.join(destination, `node-v${MANAGED_NODE_VERSION}-linux-x64`), { recursive: true });
+            const runtime = path.join(destination, `node-v${MANAGED_NODE_VERSION}-linux-x64`);
+            await mkdir(runtime, { recursive: true });
+            await writeFile(path.join(runtime, "reviewed-runtime"), "new");
           },
           probe: async () => {
             probes += 1;
@@ -452,6 +458,13 @@ test("managed Node installer fences cancellation between staged runtime commit o
       releaseRemoval();
       const result = await pending;
       assert.equal(result.ok, false);
+      if (removal === "installed") {
+        assert.equal(
+          await readFile(path.join(paths.installDir, "reviewed-runtime"), "utf8"),
+          "new",
+          "cancellation completes the replacement instead of leaving the managed runtime absent",
+        );
+      }
       return renames;
     } finally {
       await rm(home, { recursive: true, force: true });
@@ -463,7 +476,7 @@ test("managed Node installer fences cancellation between staged runtime commit o
   });
   await t.test("before final replacement rename", async () => {
     const renames = await runCancellationAtRemoval("installed");
-    assert.equal(renames.length, 1, "only the already-completed staging move may run");
+    assert.equal(renames.length, 2, "the destructive replacement finishes as one non-cancellable commit");
   });
 
   await t.test("after runtime-directory inspection and before parent creation", async () => {
