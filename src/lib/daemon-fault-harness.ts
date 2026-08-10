@@ -153,10 +153,16 @@ export async function startDaemonFaultHarness(
       if (closed) return;
       closed = true;
       // Destroy each socket and WAIT for its "close" event, which is what
-      // removes it from the registry. Clearing the set here instead would make
-      // openSocketCount() return 0 unconditionally — the leak assertions in the
-      // tests, and stressDaemonLifecycle's leakedSockets, would then be true by
-      // construction and could never catch a real orphan.
+      // removes it from the registry.
+      //
+      // Two ways to get this wrong, and the autofix in b8d540e0cc fixed one of
+      // them: clearing the set outright makes openSocketCount() report 0
+      // unconditionally. But destroying without awaiting has the same effect at
+      // the moment a test looks — `destroy()` is asynchronous, so the "close"
+      // event that removes the socket may not have fired when close() resolves.
+      // Either way the leak assertions, and stressDaemonLifecycle's
+      // leakedSockets, become true by construction. Awaiting is what makes a
+      // zero count mean the sockets genuinely closed.
       const pending = [...sockets];
       await Promise.all(
         pending.map(
