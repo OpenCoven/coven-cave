@@ -384,4 +384,161 @@ assert.match(
   "the fully resolved aside applies the same truthful aria-hidden/inert pairing",
 );
 
+// cave-rl980 Task 5: MobileDrawer grows a dedicated right-chat modal slot so
+// the global right Chat panel gets an accessible mobile/tablet presentation
+// instead of a fourth ad hoc overlay. Pinned here (not a render test): this
+// suite's Node environment has no DOM/jsdom, matching the convention already
+// used for this hook's other consumers (see use-focus-trap.test.ts,
+// modal.test.ts) — behavior is proven by pinning the implementing source,
+// not by executing it against a real document.
+const drawerSource = await readFile(new URL("./mobile-drawer.tsx", import.meta.url), "utf8");
+
+assert.match(
+  drawerSource,
+  /export type MobileDrawerSlot = "nav" \| "list" \| "right-chat" \| null;/,
+  "the right Chat panel gets a dedicated drawer slot alongside nav/list",
+);
+assert.match(
+  drawerSource,
+  /rightChat\?: ReactNode;/,
+  "MobileDrawer accepts the right Chat panel's modal content",
+);
+assert.match(
+  drawerSource,
+  /useFocusTrap\(open === "right-chat", rightChatRef, \{ onEscape: onClose \}\)/,
+  "the right Chat drawer traps and returns focus via the shared hook, consistent with Modal's own usage",
+);
+assert.match(
+  drawerSource,
+  /role="dialog"[\s\S]{0,80}aria-modal="true"[\s\S]{0,80}aria-label="Chat panel"/,
+  "the right Chat drawer is a labelled modal dialog",
+);
+assert.match(
+  drawerSource,
+  /id="shell-right-chat-drawer"/,
+  "the right Chat drawer exposes a stable id for Shell/CSS to target",
+);
+assert.match(
+  drawerSource,
+  /className="mobile-right-chat-drawer"/,
+  "the right Chat drawer exposes a stable class hook for Task 8 styling",
+);
+assert.match(
+  drawerSource,
+  /aria-hidden=\{open !== "right-chat"\}/,
+  "closing marks the right Chat drawer aria-hidden rather than unmounting it",
+);
+assert.match(
+  drawerSource,
+  /hidden=\{open !== "right-chat"\}/,
+  "closing hides the right Chat drawer rather than unmounting it",
+);
+assert.match(
+  drawerSource,
+  /inert=\{open !== "right-chat"\}/,
+  "closing makes the right Chat drawer inert rather than unmounting it",
+);
+assert.match(
+  drawerSource,
+  /tabIndex=\{-1\}/,
+  "the right Chat drawer is a reachable focus-trap fallback container per useFocusTrap's contract",
+);
+
+// Retained mount: the drawer's presence is gated on the rightChat NODE only,
+// never on `open` — so React never unmounts/remounts the subtree (and the
+// auxiliary ChatRouter it wraps) across opens/closes, only its hidden/inert
+// state changes.
+assert.match(
+  drawerSource,
+  /\{rightChat \? \(/,
+  "the right Chat drawer's presence is gated on the rightChat node only, so it stays mounted across opens/closes",
+);
+assert.doesNotMatch(
+  drawerSource,
+  /\{open === "right-chat" && rightChat/,
+  "the right Chat drawer must not be conditionally MOUNTED on open — only hidden/inert — or the retained-router contract breaks",
+);
+assert.match(
+  drawerSource,
+  /if \(!open && !rightChat\) return null;/,
+  "the component itself stays mounted (portal included) whenever the rightChat node exists, even while every drawer is closed",
+);
+
+// Backdrop renders only while a drawer (nav, list, OR right-chat) is open —
+// never for a merely-retained, closed right-chat modal.
+assert.match(
+  drawerSource,
+  /\{open \? \(\s*\n\s*<div\s*\n\s*className="mobile-drawer-backdrop"/,
+  "the backdrop renders only while any drawer is open",
+);
+
+// Escape ownership: the legacy standalone listener must step aside for the
+// right Chat drawer, which owns Escape entirely through useFocusTrap's
+// onEscape — otherwise Escape would fire onClose twice for that slot.
+assert.match(
+  drawerSource,
+  /const ownsEscape = open !== "right-chat";/,
+  "the legacy Escape listener is scoped away from the right Chat drawer",
+);
+assert.match(
+  drawerSource,
+  /if \(ownsEscape\) window\.addEventListener\("keydown", onKey\);/,
+  "only nav/list register the legacy Escape listener — the right Chat drawer's Escape is owned solely by useFocusTrap",
+);
+assert.match(
+  drawerSource,
+  /if \(ownsEscape\) window\.removeEventListener\("keydown", onKey\);/,
+  "the legacy Escape listener teardown mirrors its scoped registration",
+);
+
+// Body/root scroll + overscroll lock must still apply for EVERY open drawer
+// (nav, list, and right-chat alike) — the lock effect's gate stays the plain
+// `if (!open) return;`, never narrowed to exclude right-chat.
+assert.match(
+  drawerSource,
+  /document\.body\.style\.overflow = "hidden"/,
+  "every open drawer (nav/list/right-chat) keeps body scroll locked",
+);
+assert.match(
+  drawerSource,
+  /document\.documentElement\.style\.overflow = "hidden"/,
+  "every open drawer (nav/list/right-chat) keeps root scroll locked",
+);
+assert.doesNotMatch(
+  drawerSource,
+  /if \(open === "right-chat"\) return;\s*\n\s*const ownsEscape/,
+  "the scroll-lock effect must never early-return before locking for the right Chat drawer",
+);
+
+// Background inert: while the right Chat modal is open, the shell chrome
+// behind it must become inert — targeting `.shell-frame` specifically
+// (Shell's own root, see shell.tsx), never `document.body`, since the
+// backdrop/modal portal mounts to document.body itself and inerting that
+// would swallow the very modal we're trying to keep interactive.
+assert.match(
+  drawerSource,
+  /const shell = document\.querySelector<HTMLElement>\("\.shell-frame"\);/,
+  "the background-inert effect targets .shell-frame, which sits outside the portal's DOM subtree",
+);
+assert.match(
+  drawerSource,
+  /const prevInert = shell\.inert;/,
+  "the effect captures .shell-frame's prior inert state before overriding it",
+);
+assert.match(
+  drawerSource,
+  /shell\.inert = true;/,
+  "the right Chat modal makes the shell background inert while open",
+);
+assert.match(
+  drawerSource,
+  /shell\.inert = prevInert;/,
+  "closing restores .shell-frame's actual prior inert state rather than hard-coding false",
+);
+assert.doesNotMatch(
+  drawerSource,
+  /document\.body\.inert/,
+  "the inert effect must never target document.body — that is the portal's own mount point",
+);
+
 console.log("right-chat-panel.test.ts OK");

@@ -1,32 +1,57 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 
-export type MobileDrawerSlot = "nav" | "list" | null;
+export type MobileDrawerSlot = "nav" | "list" | "right-chat" | null;
 
 type MobileDrawerProps = {
   /** Which shell panel is currently open as a drawer, or null when closed. */
   open: MobileDrawerSlot;
   onClose: () => void;
+  /**
+   * The global right Chat panel's mobile/tablet modal content. Stays
+   * portal-mounted whenever this is non-null, even while `open` is not
+   * "right-chat" — closing only hides/inerts it (aria-hidden + hidden +
+   * inert), never unmounts it, so ChatRouter's transcript/stream/scroll
+   * position/draft survive a close exactly like the desktop persistent
+   * panel. See right-chat-panel.tsx's own "truthful accessibility, not a
+   * mount gate" rationale for the same pattern on the desktop side.
+   */
+  rightChat?: ReactNode;
 };
 
 /**
  * Mobile drawer overlay. Renders a portal-mounted backdrop and handles
- * Escape / tap-outside dismissal. The actual panel slide is CSS-driven by
- * the `[data-mobile-drawer]` attribute on `.shell-root` (see globals.css);
- * this component only owns the dismiss surface and the body-scroll lock.
+ * Escape / tap-outside dismissal for the nav/list drawers, plus a dedicated
+ * accessible modal slot for the global right Chat panel. The nav/list slide
+ * itself is CSS-driven by the `[data-mobile-drawer]` attribute on
+ * `.shell-root` (see globals.css); this component owns the dismiss surface,
+ * the body-scroll lock, and — for the right Chat modal — the focus trap and
+ * background inert state.
  *
  * Mount once at shell-level — not per panel — because only one drawer is
- * open at a time and we only want one backdrop in the layer tree.
+ * open at a time and we only want one backdrop in the layer tree. The right
+ * Chat modal renders into the SAME portal so it shares that one backdrop
+ * instead of stacking a second overlay.
  */
-export function MobileDrawer({ open, onClose }: MobileDrawerProps) {
+export function MobileDrawer({ open, onClose, rightChat }: MobileDrawerProps) {
+  const rightChatRef = useRef<HTMLElement | null>(null);
+
+  // The right Chat modal owns Escape + focus trap/return entirely through
+  // the shared hook (the same contract Modal uses) — the legacy standalone
+  // listener below is scoped away from it so Escape never fires two close
+  // paths for this slot.
+  useFocusTrap(open === "right-chat", rightChatRef, { onEscape: onClose });
+
   useEffect(() => {
     if (!open) return;
+    const ownsEscape = open !== "right-chat";
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    window.addEventListener("keydown", onKey);
+    if (ownsEscape) window.addEventListener("keydown", onKey);
     const prevRootOverflow = document.documentElement.style.overflow;
     const prevRootOverscroll = document.documentElement.style.overscrollBehavior;
     const prevOverflow = document.body.style.overflow;
@@ -36,7 +61,7 @@ export function MobileDrawer({ open, onClose }: MobileDrawerProps) {
     document.body.style.overflow = "hidden";
     document.body.style.overscrollBehavior = "none";
     return () => {
-      window.removeEventListener("keydown", onKey);
+      if (ownsEscape) window.removeEventListener("keydown", onKey);
       document.documentElement.style.overflow = prevRootOverflow;
       document.documentElement.style.overscrollBehavior = prevRootOverscroll;
       document.body.style.overflow = prevOverflow;
@@ -44,15 +69,53 @@ export function MobileDrawer({ open, onClose }: MobileDrawerProps) {
     };
   }, [open, onClose]);
 
-  if (!open || typeof document === "undefined") return null;
+  // Make the shell chrome behind the right Chat modal inert so Tab/AT users
+  // can't reach it while the dialog is up. `.shell-frame` is Shell's own
+  // root (shell.tsx) — this portal mounts to document.body, OUTSIDE that
+  // subtree, so making it inert never reaches the modal we're keeping
+  // interactive. Restores whatever inert state `.shell-frame` actually had
+  // before, rather than assuming it was false.
+  useEffect(() => {
+    if (open !== "right-chat") return;
+    const shell = document.querySelector<HTMLElement>(".shell-frame");
+    if (!shell) return;
+    const prevInert = shell.inert;
+    shell.inert = true;
+    return () => {
+      shell.inert = prevInert;
+    };
+  }, [open]);
+
+  if (typeof document === "undefined") return null;
+  if (!open && !rightChat) return null;
 
   return createPortal(
-    <div
-      className="mobile-drawer-backdrop"
-      data-drawer-slot={open}
-      onClick={onClose}
-      role="presentation"
-    />,
+    <>
+      {open ? (
+        <div
+          className="mobile-drawer-backdrop"
+          data-drawer-slot={open}
+          onClick={onClose}
+          role="presentation"
+        />
+      ) : null}
+      {rightChat ? (
+        <section
+          id="shell-right-chat-drawer"
+          ref={rightChatRef}
+          className="mobile-right-chat-drawer"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Chat panel"
+          aria-hidden={open !== "right-chat"}
+          hidden={open !== "right-chat"}
+          inert={open !== "right-chat"}
+          tabIndex={-1}
+        >
+          {rightChat}
+        </section>
+      ) : null}
+    </>,
     document.body,
   );
 }
