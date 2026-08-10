@@ -348,7 +348,14 @@ function parsePull(value) {
 function parseRun(value) {
   const id = value?.id;
   const status = value?.status;
-  // Null while a run is queued or in progress; a string once it completes.
+  // Normally null while a run is queued or in progress and a string once it
+  // completes, but validated as string-or-null against ANY status rather than
+  // keyed to `status === "completed"`. A completed run that reports no
+  // conclusion is odd, not malformed, and the only consumer below asks whether
+  // the conclusion IS the approval gate — a null answers "no" and the run is
+  // treated as coverage. Throwing there would turn a harmless API quirk into a
+  // dead recovery tool, which is a worse failure than reading one odd run
+  // conservatively.
   const conclusion = value?.conclusion ?? null;
   const event = value?.event;
   const createdAt = Date.parse(value?.created_at);
