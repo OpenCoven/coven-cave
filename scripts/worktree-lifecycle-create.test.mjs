@@ -36,6 +36,33 @@ const realGit = process.env.PATH.split(path.delimiter)
 assert.ok(realGit, "the test requires git on PATH");
 assert.equal(existsSync(script), true, "managed worktree creator module must exist");
 
+// Every emitter of the `--apply` suggestion must go through maintenanceSuggestion(),
+// which gates it on capabilities.complete. The suggestion is unrunnable while any
+// maintenance plane is unenforced, and a refusal that names an impossible next step
+// pushes the operator toward the unmanaged fallbacks the guard rules forbid.
+//
+// Structural, not a count. cave-wmkn4 fixed refusalOutcome and left two compensate
+// paths emitting the literal directly (cave-e4n3l); the miss survived verification
+// because grepping the literal returns a nonzero count either way — the gated branch
+// legitimately contains it. So assert on WHERE it appears: exactly one occurrence,
+// on the line that returns it from behind the capabilities check.
+{
+  const createSource = readFileSync(script, "utf8");
+  const suggestionLines = createSource
+    .split("\n")
+    .filter((line) => line.includes('"Suggestion: pnpm beads:worktrees:apply"'));
+  assert.equal(
+    suggestionLines.length,
+    1,
+    `the --apply suggestion must have exactly one emitter; found ${suggestionLines.length}:\n${suggestionLines.join("\n")}`,
+  );
+  assert.match(
+    suggestionLines[0],
+    /capabilities\?\.complete/,
+    "the sole emitter must be the branch gated on capabilities.complete",
+  );
+}
+
 function run(command, args, cwd, options = {}) {
   return spawnSync(command, args, {
     cwd,
@@ -1064,7 +1091,7 @@ await withFixture({ fixturePrefix: "cave-worktree-create-o'reilly-" }, async (fi
   const existingPath = addWorktree(fixture, "feat/cave-unit1-existing", "cave-unit1-existing");
   // Drive the registration count to exactly WORKTREE_WARNING_BUDGET so admission
   // refuses at `count >= budget`. The count includes the primary checkout, so the
-  // arithmetic is: 18 attached + 1 existing (above) + 1 primary = 20. If the
+  // arithmetic is: 26 attached + 1 existing (above) + 1 primary = 28. If the
   // budget moves again, this loop moves with it (budget - 2).
   //
   // These MUST be branch-attached (cave-oenag). They were `--detach` until the
@@ -1072,7 +1099,7 @@ await withFixture({ fixturePrefix: "cave-worktree-create-o'reilly-" }, async (fi
   // reaching the budget at all and the refusal below silently disappeared — the
   // fixture was simulating sprawl with exactly the scratch space the budget now
   // ignores. The separate detached case is asserted below.
-  for (let index = 0; index < 18; index += 1) {
+  for (let index = 0; index < 26; index += 1) {
     git(
       [
         "worktree",
@@ -1118,9 +1145,24 @@ await withFixture({ fixturePrefix: "cave-worktree-create-o'reilly-" }, async (fi
   const refused = runCreate(fixture, createArgs({ bead, branch, owner, purpose }));
   assert.equal(refused.status, 2, refused.stderr);
   assert.match(refused.stderr, /already owns a registered worktree/);
-  assert.match(refused.stderr, /20-worktree budget/);
-  assert.match(refused.stderr, /30-local-branch budget/);
-  assert.match(refused.stderr, /Suggestion: pnpm beads:worktrees:apply/);
+  assert.match(refused.stderr, /28-worktree budget/);
+  assert.match(refused.stderr, /38-local-branch budget/);
+  // A refusal must not send the operator to a command that cannot run. Today,
+  // three of the four maintenance planes are hard-coded unenforced, so `--apply`
+  // exits 2 before assessing anything — yet this line was printed on EVERY
+  // refusal (cave-wmkn4). If the maintenance planes later become enforced and
+  // `--apply` becomes runnable, this assertion should be updated accordingly.
+  assert.doesNotMatch(
+    refused.stderr,
+    /Suggestion: pnpm beads:worktrees:apply/,
+    "an unrunnable command must not be suggested",
+  );
+  assert.match(refused.stderr, /cannot run here — unenforced maintenance planes: .*coven/);
+  assert.match(
+    refused.stderr,
+    /a merged PR is not retention/,
+    "the hand-retirement route must state the trap that makes it lossy",
+  );
   assert.match(refused.stderr, /This admission refusal can be lifted/i);
   assert.doesNotMatch(refused.stderr, /worth exceeding the budget/i);
   // The refusal must name the escape hatch it would accept. Without this the
@@ -1753,5 +1795,196 @@ await withFixture(
     // reason and the assertion would prove nothing about the inventory gate.
   },
 );
+
+// A malformed structured record used to deny creation to EVERY bead, because
+// every task's record errors were folded into every unit's metadata errors.
+// cave-l11sw wrote `disposition: "removed-externally-after-merge"` — outside the
+// accepted set — and `pnpm beads:worktrees:create` then failed deterministically
+// for every bead in the checkout with "lifecycle inventory is incomplete", with
+// no repair available that the worktree rules permit: correcting another owner's
+// lifecycle record is exactly the hand-edit they forbid. A record names the
+// branch and path it claims even when the rest of it is invalid, so it
+// disqualifies that unit and no other (cave-g9byt).
+function writeMalformedRecord(fixture, { beadId, branch, worktreePath }) {
+  const state = readJson(fixture.stateFile);
+  const issue = state.issues.find((candidate) => candidate.id === beadId);
+  assert.ok(issue, `fixture must carry ${beadId}`);
+  issue.metadata = {
+    ...issue.metadata,
+    coven: {
+      ...issue.metadata?.coven,
+      worktree: {
+        branch,
+        path: worktreePath,
+        owner: "kitty",
+        purpose: "Malformed record fixture",
+        createdAt: "2026-08-09T09:09:52.185Z",
+        // The exact value from cave-l11sw. Every other field is valid, so the
+        // record fails on this alone and the assertions below cannot pass by
+        // accident on some unrelated validation error.
+        disposition: "removed-externally-after-merge",
+      },
+    },
+  };
+  writeJson(fixture.stateFile, state);
+}
+
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    writeMalformedRecord(fixture, {
+      beadId: "cave-unit2",
+      branch: "feat/cave-unit2-orphan",
+      // No worktree is ever registered here — the shape cave-l11sw was in, its
+      // managed worktree having been removed outside the lifecycle after merge.
+      worktreePath: path.join(fixture.repo, ".worktrees", "cave-unit2-orphan"),
+    });
+
+    const created = runCreate(fixture, createArgs());
+    assert.doesNotMatch(
+      created.stderr,
+      /lifecycle inventory is incomplete/,
+      "another bead's malformed record must not block an unrelated creation",
+    );
+    assert.equal(created.status, 0, `create must succeed: ${created.stderr}`);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example") !== null,
+      true,
+      "the requested branch is actually created",
+    );
+  },
+);
+
+// Scoping is about the malformed record, not whether its worktree still
+// exists. An active malformed unit remains uncertain in the patrol, but it
+// cannot deny an unrelated managed creation.
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    const existingBranch = "feat/cave-unit2-existing";
+    const existingPath = path.join(
+      fixture.repo,
+      ".worktrees",
+      "cave-unit2-existing",
+    );
+    const existing = runCreate(
+      fixture,
+      createArgs({ bead: "cave-unit2", branch: existingBranch }),
+    );
+    assert.equal(existing.status, 0, `fixture create must succeed: ${existing.stderr}`);
+
+    writeMalformedRecord(fixture, {
+      beadId: "cave-unit2",
+      branch: existingBranch,
+      worktreePath: existingPath,
+    });
+
+    const created = runCreate(fixture, createArgs());
+    assert.doesNotMatch(
+      created.stderr,
+      /lifecycle inventory is incomplete/,
+      "an active malformed unit must not block an unrelated creation",
+    );
+    assert.equal(created.status, 0, `create must succeed: ${created.stderr}`);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example") !== null,
+      true,
+      "the unrelated branch is actually created",
+    );
+  },
+);
+
+// The scoping above must not become a way to create *over* a claim. A record
+// already naming this branch is the collision the abort was protecting, and a
+// malformed record is no less a claim than a valid one.
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    writeMalformedRecord(fixture, {
+      beadId: "cave-unit2",
+      branch: "feat/cave-unit1-example",
+      worktreePath: path.join(fixture.repo, ".worktrees", "cave-unit1-example"),
+    });
+
+    const refused = runCreate(fixture, createArgs());
+    assert.notEqual(refused.status, 0, "a claimed branch must not be created over");
+    assert.match(refused.stderr, /lifecycle inventory is incomplete/);
+    assert.match(refused.stderr, /disposition is invalid/);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example"),
+      null,
+      "no branch is created when the request collides with a claim",
+    );
+  },
+);
+
+// Same for the path, which a differently-named branch can still land on: the
+// creator slugifies `feat/`, `fix/`, `docs/` and `chore/` away, so `fix/x` and
+// `feat/x` both resolve to `.worktrees/x`.
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    writeMalformedRecord(fixture, {
+      beadId: "cave-unit2",
+      branch: "fix/cave-unit1-example",
+      worktreePath: path.join(fixture.repo, ".worktrees", "cave-unit1-example"),
+    });
+
+    const refused = runCreate(fixture, createArgs());
+    assert.notEqual(refused.status, 0, "a claimed path must not be created over");
+    assert.match(refused.stderr, /lifecycle inventory is incomplete/);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example"),
+      null,
+      "no branch is created when the request collides with a claimed path",
+    );
+  },
+);
+
+// A record that names neither a usable branch nor a usable path claims
+// something unnameable, so it cannot be charged to any unit and has to keep
+// blocking everything. The trap is that `branch` is kept verbatim for
+// diagnostics: `refs/heads/…` and a whitespace-padded name are both non-blank
+// strings that NO unit will ever equal, so a "non-blank means it names a unit"
+// test would drop the record out of the repository-wide set and into a unit
+// that never matches — reaching no surface at all. Attribution reads the
+// validated flag instead.
+for (const unusableBranch of ["refs/heads/feat/cave-unit2-unnameable", " feat/cave-unit2-padded"]) {
+  await withFixture(
+    { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+    async (fixture) => {
+      const state = readJson(fixture.stateFile);
+      const issue = state.issues.find((candidate) => candidate.id === "cave-unit2");
+      issue.metadata = {
+        coven: {
+          worktree: {
+            branch: unusableBranch,
+            // Not a string, so no usable path either — the record names nothing.
+            path: 17,
+            owner: "kitty",
+            purpose: "Unnameable record fixture",
+            createdAt: "2026-08-09T09:09:52.185Z",
+            disposition: "active",
+          },
+        },
+      };
+      writeJson(fixture.stateFile, state);
+
+      const refused = runCreate(fixture, createArgs());
+      assert.notEqual(
+        refused.status,
+        0,
+        `an unnameable record (${JSON.stringify(unusableBranch)}) must keep blocking creation`,
+      );
+      assert.match(refused.stderr, /lifecycle inventory is incomplete/);
+      assert.match(refused.stderr, /branch must be an? .*exact local branch name/);
+      assert.equal(
+        refState(fixture.repo, "refs/heads/feat/cave-unit1-example"),
+        null,
+        "no branch is created while an unnameable record stands",
+      );
+    },
+  );
+}
 
 console.log("worktree-lifecycle-create.test.mjs: ok");

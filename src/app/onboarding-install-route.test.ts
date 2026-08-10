@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const route = readFileSync(
-  new URL("./api/onboarding/install/route.ts", import.meta.url),
+  new URL("./api/onboarding/install/install-service.ts", import.meta.url),
   "utf8",
 );
 const npmLane = readFileSync(
@@ -72,14 +72,14 @@ assert.doesNotMatch(
 
 assert.match(
   route,
-  /reserveGlobalNpmInstall\(targetName\)[\s\S]*?return npmBusyResponse\(owner\)/,
+  /reserveGlobalNpmInstall\(targetName\)[\s\S]*?return npmBusyResult\(owner\)/,
   "all npm installers reserve the shared global npm lane before starting",
 );
 
 assert.match(
   route,
-  /function npmBusyResponse\([\s\S]*?status: 409/,
-  "a competing npm installer receives an actionable busy response",
+  /function npmBusyResult\([\s\S]*?status: 409/,
+  "a competing npm installer receives a reusable actionable busy result",
 );
 
 assert.match(

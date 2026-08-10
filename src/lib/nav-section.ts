@@ -3,7 +3,7 @@
  *
  * The Cave's destinations divide into two rooms rather than one flat list:
  *
- *   - "code" — the working room: Chat, the Code Workshop, the browser, and the
+ *   - "code" — the working room: Chat, the Coding Desk, the browser, and the
  *     session list. Everything that is a live conversation with a familiar or a
  *     view of the repository it is working in.
  *   - "home" — everything else: the overview, Tasks, Rituals, Memories, and

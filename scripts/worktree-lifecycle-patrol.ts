@@ -179,7 +179,12 @@ Builds a read-only lifecycle report for every registered worktree and direct
 local branch. The patrol correlates local state with claims, Beads, Coven
 sessions, pull requests, workflow runs, and live process cwd ownership. It never
 repairs metadata, removes worktrees, or removes branches unless --apply becomes
-available after all maintenance planes are enforced.`);
+maintenance planes are enforced.
+
+--apply is currently unusable: the coven, beads and github planes are hard-coded
+off in scripts/maintenance-gate.mjs pending unbuilt work, so it refuses with
+exit 2 before assessing any unit. Retire cleanup-ready units by hand through the
+archive-tag route in CLAUDE.md until that changes (cave-3aqvr).`);
 }
 
 function errorMessage(error: unknown): string {
@@ -190,12 +195,54 @@ function summarizeInventory(inventory: PatrolInventory): PatrolSummary {
   return summarizeWorktreeLifecycle(inventory.items, inventory.budgets);
 }
 
+/**
+ * Malformed metadata records that describe no unit the patrol can see.
+ *
+ * A record is charged to the branch and path it names (cave-g9byt), so one
+ * whose worktree was removed outside the lifecycle lands on nothing and would
+ * report as clean. It is still a defect on someone's bead — and the record that
+ * caused cave-g9byt was exactly this shape — so the patrol names it without
+ * moving any unit into a lane over it.
+ */
+function orphanedMetadataClaims(inventory: PatrolInventory): string[] {
+  return [
+    ...new Set(
+      inventory.metadataClaimErrors
+        .filter((claim) => {
+          // A record naming neither a usable branch nor a usable path is not
+          // orphaned — it is unnameable, so it stays charged to every unit and
+          // is already visible in their lanes. Reporting it here would say the
+          // opposite of what the header promises: that nothing is blocked by it.
+          if (claim.branch.length === 0 && claim.path === null) return false;
+          return !inventory.items.some(
+            (item) =>
+              (claim.branch.length > 0 && item.branch === claim.branch) ||
+              (claim.path !== null && item.path === claim.path),
+          );
+        })
+        .flatMap((claim) => claim.errors),
+    ),
+  ];
+}
+
+function renderOrphanedMetadataClaims(inventory: PatrolInventory): string {
+  const claims = orphanedMetadataClaims(inventory);
+  if (claims.length === 0) return "";
+  return [
+    "",
+    "Malformed worktree metadata on beads whose units are gone (no unit is blocked by these;",
+    "the owning bead should repair or drop the record):",
+    ...claims.map((claim) => `- ${claim}`),
+  ].join("\n");
+}
+
 function buildJsonReport(
   options: Options,
   inventory: PatrolInventory,
   summary: PatrolSummary,
   extras: Record<string, unknown> = {},
 ) {
+  const orphanedClaims = orphanedMetadataClaims(inventory);
   return {
     ok: true,
     generatedAt: new Date(options.nowMs).toISOString(),
@@ -205,6 +252,7 @@ function buildJsonReport(
     orphanedMetadataErrors: inventory.orphanedMetadataErrors,
     orphanedMetadataErrorCount: inventory.orphanedMetadataErrors.length,
     inventoryFingerprint: inventory.inventoryFingerprint,
+    ...(orphanedClaims.length > 0 ? { orphanedMetadataClaims: orphanedClaims } : {}),
     ...extras,
   };
 }
@@ -237,8 +285,32 @@ function renderApplyUnavailable(
       }),
     );
   } else {
+    // Name the blocking work and the route that does function. Bare
+    // "missing maintenance planes" reads as a local fault, so sessions retry
+    // it, then reach for `git worktree add` -- the unmanaged fallback whose
+    // worktrees carry no lifecycle metadata and can never be retired at all
+    // (cave-l52dt). The planes are unimplemented, not unavailable (cave-3aqvr).
+    // The blocking Bead per plane is read from the capability's own `source`
+    // rather than a second map here, so this cannot drift from the gate.
     console.error(
-      `worktree-lifecycle-patrol: --apply unavailable; missing maintenance planes: ${missingPlanes.join(", ")}`,
+      [
+        `worktree-lifecycle-patrol: --apply unavailable; missing maintenance planes: ${missingPlanes.join(", ")}`,
+        "",
+        "This is not a local fault and a retry will not clear it. These planes are",
+        "hard-coded off in scripts/maintenance-gate.mjs pending unbuilt work:",
+        ...missingPlanes.map(
+          (plane) => `  ${plane.padEnd(7)} blocked on ${capabilities[plane].source || "an unfiled Bead"}`,
+        ),
+        "",
+        "Until those land, automated retirement is unavailable and hand-retirement",
+        "is the expected path -- NOT a workaround. Retire a cleanup-ready unit via",
+        "the archive-tag route in CLAUDE.md (worktree-guard section), and prove",
+        "retention BEFORE removing anything: a merged PR is not retention, because",
+        "a squash-merge leaves the branch commits on no remote ref. Tag the exact",
+        "head, push the tag, confirm it is on the REMOTE, then remove.",
+        "",
+        "Tracked by cave-3aqvr.",
+      ].join("\n"),
     );
   }
   return 2;
@@ -388,6 +460,10 @@ function renderPatrolReport(
     return `${formatMetadataRepairCandidate(candidate)}; ${disposition}`;
   });
   pushSection(lines, "Orphaned metadata", orphaned);
+  const malformedClaims = renderOrphanedMetadataClaims(inventory);
+  if (malformedClaims) {
+    lines.push(malformedClaims);
+  }
   lines.push("", "Report only. No worktree, branch, or Bead metadata was changed.");
   return lines.join("\n");
 }
@@ -629,13 +705,13 @@ export function main(argv = process.argv.slice(2)): number {
             metadataRepair,
             retirement,
           })
-        : renderApplyReport(
+        : `${renderApplyReport(
             postSummary,
             retirement,
             warning,
             postInventoryError,
             metadataRepair,
-          ),
+          )}${renderOrphanedMetadataClaims(reportingInventory)}`,
     );
     return outcome.status;
   }

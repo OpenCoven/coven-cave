@@ -42,6 +42,30 @@ export interface WorktreeLifecycleInventory {
    * read them here (cave-t9tlm).
    */
   globalErrors: string[];
+  /**
+   * Every structured worktree record across every bead that failed validation,
+   * with the branch and path it claims.
+   *
+   * A malformed record is charged to the unit it names rather than to the whole
+   * repository (cave-g9byt), so a record whose worktree no longer exists lands
+   * on no unit at all and would otherwise disappear silently. It is still a
+   * defect on someone's bead, and creation still has to refuse a request the
+   * record already claims, so both readers get it from here.
+   */
+  metadataClaimErrors: WorktreeMetadataClaimError[];
+}
+
+export interface WorktreeMetadataClaimError {
+  /**
+   * The branch the record claims, empty when it does not name one a unit could
+   * match. A record keeps its branch string verbatim for diagnostics even when
+   * that string is `refs/heads/foo` or ` foo`, which no unit ever equals; this
+   * field is already normalized so readers do not have to know that.
+   */
+  branch: string;
+  /** The absolute path the record claims; null when it does not name a usable one. */
+  path: string | null;
+  errors: string[];
 }
 
 type CommandResult = {
@@ -119,6 +143,15 @@ type BeadTask = {
   status: string;
   text: string;
   structured: StructuredMetadataRecord[];
+  /**
+   * Errors in the *shape* of the bead's `coven` metadata rather than in any one
+   * record — `worktrees` not being an array, additional records without a
+   * primary. Nothing identifies a branch or a path, so nothing can scope them
+   * to a unit and they stay repository-wide.
+   *
+   * Errors inside a record live on that record's `errors` instead, so they can
+   * be charged to the branch and path it names — see {@link metadataFor}.
+   */
   structuredErrors: string[];
 };
 
@@ -127,6 +160,17 @@ type StructuredMetadataLocation = "primary" | `additional:${number}`;
 type StructuredMetadataRecord = {
   location: StructuredMetadataLocation;
   branch: string;
+  /**
+   * Whether `branch` is an exact local branch name, and so can match a unit.
+   *
+   * `branch` is kept verbatim for diagnostics, which means it can hold a value
+   * no unit will ever equal — `" foo"`, `refs/heads/foo`, `feat/bad..name`.
+   * Treating "non-blank" as "names a unit" would let such a record be charged
+   * to a unit that never matches it and drop out of the repository-wide set at
+   * the same time, so its error would reach no surface at all. Attribution has
+   * to read this flag, not the string.
+   */
+  branchUsable: boolean;
   path: string | null;
   rawRecord: Record<string, unknown> | null;
   metadata: WorktreeLifecycleMetadata | null;
@@ -1576,6 +1620,7 @@ function parseStructuredRecord(
     return {
       location,
       branch: "",
+      branchUsable: false,
       path: null,
       rawRecord: null,
       metadata: null,
@@ -1591,6 +1636,9 @@ function parseStructuredRecord(
       : null;
   const errors: string[] = [];
   const metadataErrors = (message: string) => errors.push(`${prefix}: ${message}`);
+  // Tracks the same two checks below, so attribution can ask whether this
+  // branch could match a unit rather than whether the string is non-blank.
+  let branchUsable = false;
   if (
     branch.trim().length === 0 ||
     branch.startsWith("refs/heads/") ||
@@ -1601,6 +1649,8 @@ function parseStructuredRecord(
     const branchCheck = git(root, ["check-ref-format", "--branch", branch]);
     if (!branchCheck.ok || branchCheck.stdout.trim() !== branch) {
       metadataErrors("branch must be a valid exact local branch name");
+    } else {
+      branchUsable = true;
     }
   }
   if (metadataPath === null) {
@@ -1648,6 +1698,7 @@ function parseStructuredRecord(
     return {
       location,
       branch,
+      branchUsable,
       path: metadataPath,
       rawRecord,
       metadata: null,
@@ -1657,6 +1708,7 @@ function parseStructuredRecord(
   return {
     location,
     branch,
+    branchUsable,
     path: metadataPath,
     rawRecord,
     metadata: {
@@ -1729,7 +1781,6 @@ function parseStructuredMetadata(
       root,
     );
     records.push(primary);
-    errors.push(...primary.errors);
   }
 
   if (value.coven.worktrees !== undefined) {
@@ -1750,7 +1801,6 @@ function parseStructuredMetadata(
           root,
         );
         records.push(parsed);
-        errors.push(...parsed.errors);
       });
     }
   }
@@ -2308,32 +2358,44 @@ function matchingTasks(
     .map((task) => task.id);
 }
 
+/**
+ * Whether a record identifies *some* unit, however invalid the rest of it is.
+ *
+ * A record names the branch and path it claims even when the rest of it fails
+ * validation — {@link parseStructuredRecord} keeps both fields and reports the
+ * failures separately — and that is what makes scoping possible: a record whose
+ * `disposition` is misspelled still says exactly which unit it describes. The
+ * branch and path matching below then charges it there and nowhere else.
+ *
+ * A record with neither a usable branch nor a usable path claims something we
+ * cannot name, so no unit can be cleared of it and it stays repository-wide.
+ */
+function recordIsAttributable(record: StructuredMetadataRecord): boolean {
+  return record.branchUsable || normalizeAbsoluteWorktreePath(record.path) !== null;
+}
+
 function metadataFor(
   branch: string | null,
   worktreePath: string | null,
   tasks: BeadTask[],
 ): { metadata: WorktreeLifecycleMetadata | null; errors: string[] } {
   if (!branch) return { metadata: null, errors: [] };
-  const normalizedWorktreePath = normalizeAbsoluteWorktreePath(worktreePath);
-  const scopedStructuredErrors = tasks.flatMap((task) => {
-    if (task.structuredErrors.length === 0) return [];
-    const scopeableRecords = task.structured.filter(
-      (record) =>
-        record.branch.length > 0 ||
-        normalizeAbsoluteWorktreePath(record.path) !== null,
-    );
-    if (scopeableRecords.length === 0) return [];
-    return scopeableRecords.some(
-      (record) =>
-        record.branch === branch ||
-        (normalizedWorktreePath !== null &&
-          normalizeAbsoluteWorktreePath(record.path) === normalizedWorktreePath),
-    )
-      ? task.structuredErrors
-      : [];
-  });
   const allRecords = tasks.flatMap((task) => task.structured);
+  // One malformed record used to deny every unit in the repository, because
+  // every task's record errors were folded in here wholesale. cave-l11sw wrote
+  // a `disposition` outside the accepted set and creation then failed for EVERY
+  // bead with "lifecycle inventory is incomplete", deterministically, until a
+  // human corrected another owner's record — the one repair the worktree rules
+  // forbid. A record that names its branch and path disqualifies that unit; it
+  // has nothing to say about anyone else's (cave-g9byt).
+  const globalErrors = [
+    ...tasks.flatMap((task) => task.structuredErrors),
+    ...allRecords
+      .filter((record) => !recordIsAttributable(record))
+      .flatMap((record) => record.errors),
+  ];
   const records = allRecords.filter((record) => record.branch === branch);
+  const normalizedWorktreePath = normalizeAbsoluteWorktreePath(worktreePath);
   const conflictingPathRecords =
     normalizedWorktreePath === null
       ? []
@@ -2350,9 +2412,7 @@ function metadataFor(
             ...new Set(conflictingPathRecords.map((record) => record.branch || "<invalid branch>")),
           ].join(", ")}`,
         ];
-  const inventoryErrors = [
-    ...new Set([...scopedStructuredErrors, ...ownershipErrors]),
-  ];
+  const inventoryErrors = [...new Set([...globalErrors, ...ownershipErrors])];
   if (inventoryErrors.length > 0) {
     return { metadata: null, errors: inventoryErrors };
   }
@@ -2472,7 +2532,10 @@ function collectOrphanedMetadata(
       }
       if (normalizedRecordPath === null || hasLifecycleUnit) continue;
 
-      const reasons = [...task.structuredErrors];
+      const reasons = [
+        ...task.structuredErrors,
+        ...task.structured.flatMap((candidate) => candidate.errors),
+      ];
       const branchOwners = branchOwnershipCounts.get(record.branch) ?? 0;
       if (branchOwners !== 1) {
         reasons.push(
@@ -3030,11 +3093,15 @@ export function collectWorktreeLifecycleInventory(
       (record): record is StructuredMetadataRecord & { metadata: WorktreeLifecycleMetadata } =>
         record.errors.length === 0 && record.metadata !== null,
     )
-    .filter((record) =>
-      tasks.tasks.some(
+    // Exception validity stays repository-wide and fail-closed: a malformed
+    // record anywhere means the exception inventory is not known to be complete,
+    // and an exception wrongly believed present *loosens* a budget. Scoping in
+    // cave-g9byt applies to blocking a unit, not to relaxing one.
+    .filter(() =>
+      tasks.tasks.every(
         (task) =>
           task.structuredErrors.length === 0 &&
-          task.structured.includes(record),
+          task.structured.every((candidate) => candidate.errors.length === 0),
       ),
     )
     .filter(
@@ -3123,6 +3190,17 @@ export function collectWorktreeLifecycleInventory(
     orphanedMetadataErrors: orphanedMetadata.errors,
     budgets,
     globalErrors: [...new Set(branchGlobalErrors)],
+    metadataClaimErrors: structuredRecords
+      .filter((record) => record.errors.length > 0)
+      .map((record) => ({
+        // Blank unless the branch could actually match a unit, so a reader can
+        // treat "no branch and no path" as unnameable without re-deriving what
+        // makes a branch usable. A verbatim `refs/heads/foo` here would read as
+        // a claim on `foo` that nothing can ever match.
+        branch: record.branchUsable ? record.branch : "",
+        path: normalizeAbsoluteWorktreePath(record.path),
+        errors: record.errors,
+      })),
     inventoryFingerprint: fingerprint(
       initialWorktreeRaw,
       initialRefsRaw,

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * CodeWorkbench — the Coding Room's per-session workbench (cave-k0ua,
+ * CodeWorkbench — the Coding Desk's per-session workbench (cave-k0ua,
  * recomposed for cave-98o51, rebuilt from the design frame for cave-0rcku).
  *
  * The `Cody Code Reading v2` frame's shape:

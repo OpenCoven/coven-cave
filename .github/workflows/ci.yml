@@ -1,14 +1,22 @@
 name: CI
+run-name: CI ${{ github.event_name }} ${{ inputs.expected_sha || github.sha }}
 
 on:
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Expected pull request head SHA
+        required: true
+        type: string
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # A recovered workflow_dispatch and a late pull_request delivery for the
+  # same commit must supersede one another instead of running two full suites.
+  group: ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -26,17 +34,34 @@ jobs:
   # install, which is the ~25s price of the parallelism.
   frontend-static:
     name: Frontend lint & types
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     runs-on: ubuntu-latest
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~1min).
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
+      # Guard: no committed merge-conflict markers anywhere in the tree.
+      # 23316da3 landed two unresolved conflict blocks in a component; the file
+      # stopped parsing, every route 500'd, and main stayed broken until
+      # 4ea88862. Nothing in this workflow would have caught it — `git diff
+      # --check` runs only in release.yml, by which point the artifact is
+      # already on main. Per-file guards exist and are worth keeping, but they
+      # only protect files someone already thought to protect.
+      #
+      # Deliberately not a new job or a required context: an added context that
+      # does not report is how a PR ends up BLOCKED with nothing failing. It
+      # rides the existing static-check job and runs before install, since a
+      # tree with markers cannot lint or typecheck meaningfully — but after
+      # setup-node, so it runs on the pinned Node rather than whatever the
+      # runner image happens to ship.
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
+
+      - run: node scripts/check-conflict-markers.mjs
 
       - run: pnpm install --frozen-lockfile
 
@@ -55,6 +80,7 @@ jobs:
 
   frontend-tests:
     name: Frontend tests (${{ matrix.suite }})
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     runs-on: ubuntu-latest
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~5min for the app suite).
     timeout-minutes: 20
@@ -85,6 +111,7 @@ jobs:
 
   frontend-bundle:
     name: Frontend bundle
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     runs-on: ubuntu-latest
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~2min, up to 3 attempts).
     timeout-minutes: 15
@@ -154,6 +181,7 @@ jobs:
 
   cargo-check:
     name: Rust check
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     runs-on: ubuntu-latest
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~1-5min (cold cargo cache)).
     timeout-minutes: 15
@@ -229,6 +257,7 @@ jobs:
   # rather than assuming shard boundaries will separate it.
   e2e-shard:
     name: E2E shard ${{ matrix.shard }}/3
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     runs-on: ubuntu-latest
     env:
       NEXT_PUBLIC_CAVE_CRAFTS: "1"
@@ -293,6 +322,7 @@ jobs:
   # others. Neutral defaults + per-OS deltas: docs/cross-environment.md.
   conformance:
     name: Cross-environment (${{ matrix.os }})
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~0.5-2min).
     timeout-minutes: 15
     strategy:
@@ -338,6 +368,7 @@ jobs:
 
   sidecar-runtime:
     name: Sidecar runtime (${{ matrix.os }})
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (windows runner is the flaky/slow one).
     timeout-minutes: 40
     strategy:
@@ -400,6 +431,7 @@ jobs:
   # edit for this job to be able to fail a PR.
   windows-native:
     name: Windows native tests
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     runs-on: windows-latest
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~2.5min incl. cold cargo build).
     timeout-minutes: 20
@@ -543,3 +575,114 @@ jobs:
             exit 1
           fi
           echo "Sidecar runtime matrix passed on ubuntu-latest and windows-latest, and Windows native tests passed."
+
+  # ── iOS ─────────────────────────────────────────────────────────────────────
+  # The Swift app is compiled NOWHERE in CI. Verified across every workflow:
+  # ci.yml builds the web app and the Rust shell, and release.yml's macOS
+  # runners build the desktop Tauri bundle — neither touches apps/ios. The only
+  # things reading Swift are source-TEXT assertions (scripts/ios-*.test.mjs and
+  # several src/** tests), and a regex matches perfectly well inside a file no
+  # compiler accepts.
+  #
+  # That is not hypothetical here. 398b18b left a ChatProjectPicker call closed
+  # with '}' instead of ')', plus a memberwise-init argument-order mismatch, and
+  # it survived THREE DAYS and every PR in between (cave-kwv57, found while
+  # cutting v0.2.4). Measured against that exact defect pair while building this:
+  #
+  #   swiftc -parse   catches the '}' — misses the argument order
+  #   xcodebuild      catches BOTH ("argument 'familiarIds' must precede …")
+  #
+  # so only a real build closes the gap parse-only would leave half-open.
+  #
+  # WHY THIS IS GATED rather than always-on: macOS runners were pulled from the
+  # conformance matrix above because GitHub-hosted macOS minutes exhausted the
+  # org Actions limit and queued indefinitely, stalling EVERY required check.
+  # An unconditional macOS leg risks repeating that outage. So a cheap Linux job
+  # decides first, and macOS only spins when something that can actually affect
+  # the Swift build changed. Most PRs touch no iOS path and pay nothing.
+  #
+  # Deliberately NOT a required status check, and deliberately skippable: a
+  # required context that does not report is exactly how a PR ends up BLOCKED
+  # with nothing failing (see CLAUDE.md). This is advisory until the macOS
+  # budget question is settled — a red X here still means the app is broken.
+  ios-changed:
+    name: iOS change detection
+    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ios: ${{ steps.detect.outputs.ios }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # The three-dot diff below needs the merge base, which a shallow
+          # clone does not have.
+          fetch-depth: 0
+
+      - id: detect
+        name: Decide whether the iOS build must run
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          # push to main and manual recovery runs always build: main staying
+          # honest matters more than the minutes, and neither has a base ref to
+          # diff against.
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "ios=true" >> "$GITHUB_OUTPUT"
+            echo "$EVENT run — building unconditionally."
+            exit 0
+          fi
+          changed="$(git diff --name-only "origin/${BASE}...HEAD")"
+          # Everything that can change what xcodebuild compiles or embeds:
+          # the Swift and project.yml under apps/ios, the generator scripts
+          # whose output is baked into the bundle, and this workflow itself.
+          if printf '%s\n' "$changed" | grep -qE '^(apps/ios/|scripts/ios-|scripts/build-ios-|\.github/workflows/ci\.yml$)'; then
+            echo "ios=true" >> "$GITHUB_OUTPUT"
+            echo "iOS-affecting paths changed:"
+            printf '%s\n' "$changed" | grep -E '^(apps/ios/|scripts/ios-|scripts/build-ios-|\.github/workflows/ci\.yml$)'
+          else
+            echo "ios=false" >> "$GITHUB_OUTPUT"
+            echo "No iOS-affecting paths changed — skipping the macOS build."
+          fi
+
+  ios-build:
+    name: iOS build
+    needs: ios-changed
+    if: needs.ios-changed.outputs.ios == 'true'
+    runs-on: macos-latest
+    # Measured locally on Apple silicon: xcodegen 2s, xcodebuild 56s. A cold
+    # hosted runner also pays checkout + pnpm install + brew, so this is well
+    # above 3x the expected p95 — generous on purpose, because a hung macOS job
+    # burns minutes at 10x while it hangs.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      # scripts/ios-xcodegen.sh inlines vendored assets from node_modules into
+      # the embedded markdown/terminal bundles, so it hard-fails without a
+      # populated install rather than shipping a blank web view (cave-d8ma3).
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      # Generates CovenCave.xcodeproj. Never run `xcodegen generate` directly:
+      # the script builds and PROVES the web bundles exist before the scan,
+      # because xcodegen scans the source tree and a missing bundle otherwise
+      # produces a project that builds clean and ships a dead terminal.
+      - name: Generate the Xcode project
+        run: bash scripts/ios-xcodegen.sh
+
+      # CODE_SIGNING_ALLOWED=NO because this proves the code COMPILES; signing
+      # identities belong to the release pipeline, not to a PR check.
+      - name: Build the iOS app
+        working-directory: apps/ios/CovenCave
+        run: xcodebuild -scheme CovenCave -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build

@@ -1,7 +1,7 @@
 /**
  * Pure model for the full PR reader (cave-l82dm).
  *
- * Frame: `Coven Pr.dc.html`, which the Coding Room's review rail links to as
+ * Frame: `Coven Pr.dc.html`, which the Coding Desk's review rail links to as
  * "Full PR view". This module owns the arithmetic the reader's chrome is built
  * from — tab vocabulary, the check rollup behind the donut, and the landing
  * gates — so the component stays a renderer and the honesty rules below are

@@ -10,6 +10,7 @@ import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { WorkspaceRailSheet } from "@/components/workspace-rail-sheet";
 import { Icon } from "@/lib/icon";
 import { resolveTaskWorkTarget } from "@/lib/task-work-target";
+import { CHAT_VIEW_HANDOFF_SCOPE, releaseInitialPromptHandoff } from "@/lib/initial-prompt-handoff";
 import { useWorkspaceRailController } from "@/lib/use-workspace-rail-controller";
 import type { Card } from "@/lib/cave-board-types";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -115,6 +116,48 @@ export function TaskWorkCockpit({
     }
   }, [lookupState, refreshMissingSession, target.kind]);
 
+  // One descriptor for both ways into a task's conversation, so they share a
+  // single Group/Panel tree. Before this, the bridge-backed first send rendered
+  // a bare ChatView with no Group — which is how it ended up with no code rail
+  // at all (cave-6une3) and, earlier, no width (cave-itm75).
+  const conversation = !familiar
+    ? null
+    : initialPrompt
+      ? {
+          sessionId: card.sessionId,
+          session: railSession,
+          projectRoot: railProjectRoot ?? undefined,
+          initialPrompt,
+          initialModelOverride,
+          autoSend: true,
+          // Stable across the Group's pane-set remount, and specific to THIS
+          // handoff: a later task, or this task started again, gets a different
+          // reserved conversation id and may send again.
+          handoffId: card.sessionId ?? card.id,
+          railSessionId: railSession?.id ?? card.sessionId ?? null,
+        }
+      : target.kind === "ready"
+        ? {
+            sessionId: target.session.id,
+            session: target.session,
+            projectRoot: undefined,
+            initialPrompt: undefined,
+            initialModelOverride: undefined,
+            autoSend: false,
+            handoffId: null,
+            railSessionId: target.session.id,
+          }
+        : null;
+
+  // The handoff latch outlives this component on purpose (that is what makes it
+  // remount-proof), so leaving the task has to release it — otherwise reopening
+  // the same card would sit on a claimed id and never send its first prompt.
+  const handoffId = conversation?.handoffId ?? null;
+  useEffect(() => {
+    if (!handoffId) return;
+    return () => releaseInitialPromptHandoff(CHAT_VIEW_HANDOFF_SCOPE, handoffId);
+  }, [handoffId]);
+
   const unlinkMissingSession = async () => {
     if (unlinking) return;
     setUnlinking(true);
@@ -170,29 +213,7 @@ export function TaskWorkCockpit({
       <TaskWorkGitHub links={card.github} onOpenUrl={onOpenUrl} onManage={onOpenDetails} />
 
       <div className="task-work-cockpit__body">
-        {initialPrompt && familiar ? (
-          <ChatView
-            familiar={familiar}
-            sessionId={card.sessionId}
-            session={railSession}
-            projectRoot={railProjectRoot ?? undefined}
-            initialPrompt={initialPrompt}
-            initialModelOverride={initialModelOverride}
-            autoSendInitialPrompt
-            startNewConversation
-            daemonRunning={daemonRunning}
-            sessions={sessions}
-            onSessionsChanged={onRefreshSessions}
-            onSessionsDeleted={(sessionIds) => {
-              onSessionsDeleted(sessionIds);
-              if (card.sessionId && sessionIds.includes(card.sessionId)) onSessionDeleted();
-            }}
-            onBack={onClose}
-            onSlashCommand={onSlashCommand}
-            onOpenOnboarding={onOpenOnboarding}
-            onOpenUrl={onOpenUrl}
-          />
-        ) : target.kind === "ready" && familiar ? (
+        {conversation && familiar ? (
           <Group
             className="task-work-cockpit__group"
             orientation="horizontal"
@@ -202,19 +223,32 @@ export function TaskWorkCockpit({
             // at ~half the cockpit beside dead space. Remount the Group per
             // pane set (the chat-split-host convention) so each set lays out
             // fresh and a solo conversation always fills the cockpit.
+            //
+            // That remount is why ChatView carries `initialPromptHandoffId`
+            // here: without it the bridge handoff's auto-send guard — an
+            // instance ref — re-armed on every rail toggle and re-sent the
+            // task's first prompt (cave-6une3).
             key={railController.showInline ? "conversation-rail" : "conversation"}
           >
             <Panel id="task-conversation" className="flex min-h-0 min-w-0" minSize="45%">
               <ChatView
                 familiar={familiar}
-                sessionId={target.session.id}
-                session={target.session}
+                sessionId={conversation.sessionId}
+                session={conversation.session}
+                projectRoot={conversation.projectRoot}
+                initialPrompt={conversation.initialPrompt}
+                initialModelOverride={conversation.initialModelOverride}
+                initialPromptHandoffId={conversation.handoffId}
+                autoSendInitialPrompt={conversation.autoSend}
+                startNewConversation={conversation.autoSend}
                 daemonRunning={daemonRunning}
                 sessions={sessions}
                 onSessionsChanged={onRefreshSessions}
                 onSessionsDeleted={(sessionIds) => {
                   onSessionsDeleted(sessionIds);
-                  if (sessionIds.includes(target.session.id)) onSessionDeleted();
+                  if (conversation.sessionId && sessionIds.includes(conversation.sessionId)) {
+                    onSessionDeleted();
+                  }
                 }}
                 onBack={onClose}
                 onSlashCommand={onSlashCommand}
@@ -222,7 +256,11 @@ export function TaskWorkCockpit({
                 onOpenUrl={onOpenUrl}
               />
             </Panel>
-            {railController.showInline ? (
+            {/* The rail now mounts for BOTH entry paths. It used to live only
+                on the resumed-session branch, so during a bridge-start session
+                the collapsed reopen strip showed but opened nothing — the
+                whole first work session had no reachable Code rail. */}
+            {railController.showInline && conversation.railSessionId ? (
               <>
                 <Separator className="shell-separator hidden lg:flex">
                   <SeparatorHandle orientation="col" />
@@ -240,7 +278,7 @@ export function TaskWorkCockpit({
                     pinned={railController.rail.pinned}
                     projectRoot={railController.effectiveProjectRoot}
                     familiarId={familiar.id}
-                    sessionId={target.session.id}
+                    sessionId={conversation.railSessionId}
                     focus={railController.focus}
                     onSelectTab={railController.rail.setActiveTab}
                     onTogglePin={railController.rail.togglePin}
@@ -284,22 +322,29 @@ export function TaskWorkCockpit({
             </span>
           </div>
         )}
+        {/* Collapsed code rail: a full-height reopen rail on the cockpit's
+            right edge, mirroring the chat surface. It must sit INSIDE the body
+            row — the cockpit root is a flex column, so as a root child the
+            rail collapsed into a 44px stub in the bottom-left corner under the
+            composer instead of a full-height edge rail. In flow here it
+            reserves its own width, so the conversation ends beside it rather
+            than underneath. */}
+        {railController.rail.available
+        && !railController.rail.open
+        && !railController.isMobile
+        && !railController.paneNarrow ? (
+          <button
+            type="button"
+            aria-label="Show code rail"
+            title="Show code rail"
+            className="workspace-rail-reopen focus-ring"
+            onClick={railController.rail.reopen}
+          >
+            <Icon name="ph:sidebar-simple" width={15} aria-hidden />
+            <span className="workspace-rail-reopen__label">Code</span>
+          </button>
+        ) : null}
       </div>
-      {railController.rail.available
-      && !railController.rail.open
-      && !railController.isMobile
-      && !railController.paneNarrow ? (
-        <button
-          type="button"
-          aria-label="Show code rail"
-          title="Show code rail"
-          className="workspace-rail-reopen focus-ring"
-          onClick={railController.rail.reopen}
-        >
-          <Icon name="ph:sidebar-simple" width={15} aria-hidden />
-          <span className="workspace-rail-reopen__label">Code</span>
-        </button>
-      ) : null}
       <WorkspaceRailSheet controller={railController} familiar={familiar} sessionId={railSession?.id ?? null} />
     </section>
   );

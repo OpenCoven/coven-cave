@@ -13,11 +13,15 @@ import {
   type WorktreeLifecycleBudgets,
   type WorktreeLifecycleItem,
 } from "../src/lib/worktree-lifecycle.ts";
-import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
+import {
+  collectWorktreeLifecycleInventory,
+  type WorktreeMetadataClaimError,
+} from "./worktree-lifecycle-inventory.ts";
 import {
   heartbeatWriterIntent,
   registerWriterIntent,
   releaseWriterIntent,
+  repositoryMaintenanceCapabilities,
 } from "./maintenance-gate.mjs";
 
 const REPOSITORY = "OpenCoven/coven-cave";
@@ -755,10 +759,12 @@ function exceptionForPath(
  *
  * Creation reads exactly two things out of the inventory: the paths this bead
  * already owns ({@link existingOwnedPaths}) and the budget counts. The first is
- * derived from each item's path, taskIds and bead metadata, so a metadata error
- * can hide an owned path and let creation past a budget it should have hit —
- * that stays a hard stop, repo-wide. The second comes from local git facts
- * (worktree count, branch count, exception counts) and no probe touches it.
+ * derived from each item's path, taskIds and bead metadata. Errors that cannot
+ * be attributed to a branch or path can hide an owned path and remain a hard
+ * stop repo-wide. Errors on an attributable record are handled separately by
+ * {@link claimErrorsForRequest}: they block the unit they name, not every
+ * creation in the checkout. The second comes from local git facts (worktree
+ * count, branch count, exception counts) and no probe touches it.
  *
  * `probeErrors` are deliberately NOT included. They answer "is this unit safe to
  * RETIRE" — landing time, PR association, ref recency — which creation never
@@ -771,8 +777,61 @@ function exceptionForPath(
  * unit in `uncertain`; this makes the create gate agree with that posture instead
  * of re-aborting the whole run (cave-c4f97).
  */
-function inventoryErrors(items: WorktreeLifecycleItem[]): string[] {
-  return [...new Set(items.flatMap((item) => item.metadataErrors))];
+function inventoryErrors(
+  items: WorktreeLifecycleItem[],
+  claims: WorktreeMetadataClaimError[],
+): string[] {
+  const unitScopedErrors = new Set(
+    claims
+      .filter((claim) => claim.branch.length > 0 || claim.path !== null)
+      .flatMap((claim) => claim.errors),
+  );
+  return [
+    ...new Set(
+      items
+        .flatMap((item) => item.metadataErrors)
+        .filter((error) => !unitScopedErrors.has(error)),
+    ),
+  ];
+}
+
+/**
+ * The malformed metadata records that stand in the way of *this* creation.
+ *
+ * A record that fails validation still names the branch and path it claims, so
+ * it can be charged to the unit it describes instead of to the repository. That
+ * scoping is the whole point of cave-g9byt — one bead's bad `disposition` had
+ * been failing `--bead` for every other bead in the checkout — but it must not
+ * become a way to create *over* a claim: a record already holding this branch
+ * or this path is exactly the collision the abort was protecting, and a
+ * malformed one is no less a claim than a valid one. A record naming neither a
+ * usable branch nor a usable path claims something unnameable, so it keeps
+ * blocking everything until someone repairs it.
+ *
+ * `claim.branch` is already blank unless the branch is one a unit could match,
+ * so a record carrying `refs/heads/foo` or ` foo` is unnameable here rather
+ * than a claim on `foo` — see {@link WorktreeMetadataClaimError}.
+ */
+function claimErrorsForRequest(
+  claims: WorktreeMetadataClaimError[],
+  branch: string,
+  worktreePath: string,
+): string[] {
+  const requested = normalizeCandidate(worktreePath);
+  return [
+    ...new Set(
+      claims
+        .filter((claim) => {
+          const unattributable = claim.branch.trim().length === 0 && claim.path === null;
+          return (
+            unattributable ||
+            claim.branch === branch ||
+            (claim.path !== null && normalizeCandidate(claim.path) === requested)
+          );
+        })
+        .flatMap((claim) => claim.errors),
+    ),
+  ];
 }
 
 function existingOwnedPaths(
@@ -836,13 +895,67 @@ function exceptionSuggestion(options: ManagedCreateOptions, worktreePath: string
   ];
 }
 
-function refusalOutcome(reasons: string[], suggestion: string[] = []): Outcome {
+/**
+ * Only suggest the patrol's `--apply` when it can actually run.
+ *
+ * This line used to be unconditional, on EVERY refusal this script emits —
+ * budget, duplicate metadata, orphaned record alike. But `--apply` refuses
+ * outright whenever any maintenance plane is unenforced, and
+ * `repositoryMaintenanceCapabilities()` has three of the four hard-coded to
+ * `false` against unbuilt work, so the suggestion has never been runnable in
+ * this repository (cave-wmkn4).
+ *
+ * A refusal that prints an impossible next step is worse than one that prints
+ * none: it sends the operator through a command that exits 2, and the documented
+ * escapes they reach for next are the ones the guard rules exist to forbid — a
+ * bare `git worktree add`, which yields a permanently `uncertain` unit, or
+ * hand-editing the bead, which is the forgery cave-l52dt rules out.
+ *
+ * Uses `capabilities.complete` to gate the suggestion — the same field the
+ * patrol itself uses — rather than counting per-plane `enforced === false`.
+ * A newly added unenforced plane, or any other condition that sets
+ * `complete=false`, will suppress the suggestion even if the listed-plane scan
+ * would have wrongly cleared it.
+ *
+ * `includeRetireByHand` controls whether the hand-retirement route is printed.
+ * It is only relevant for budget refusals; non-budget refusals (duplicate
+ * metadata, missing primary registration) should omit it.
+ */
+function maintenanceSuggestion(
+  capabilities = repositoryMaintenanceCapabilities(),
+  includeRetireByHand = true,
+): string[] {
+  if (capabilities?.complete) return ["Suggestion: pnpm beads:worktrees:apply"];
+  const planes = ["coven", "beads", "github", "local"] as const;
+  const missing = capabilities
+    ? planes.filter((plane) => capabilities[plane]?.enforced === false)
+    : [];
+  const planeSummary =
+    missing.length > 0 ? missing.join(", ") : "unknown (capabilities unavailable)";
+  const lines: string[] = [
+    `Note: pnpm beads:worktrees:apply cannot run here — unenforced maintenance planes: ${planeSummary}.`,
+  ];
+  if (includeRetireByHand) {
+    lines.push(
+      "Retire by hand instead: prove retention (a remote branch, or a pushed archive tag —",
+      "a merged PR is not retention, since a squash leaves the branch's commits on no remote ref),",
+      "then `git worktree unlock <path> && git worktree remove <path> && git branch -d <branch>`.",
+    );
+  }
+  return lines;
+}
+
+function refusalOutcome(
+  reasons: string[],
+  suggestion: string[] = [],
+  includeRetireByHand = true,
+): Outcome {
   return {
     status: 2,
     stdout: null,
     stderr: [
       ...reasons.map((reason) => `worktree-lifecycle-create: ${reason}`),
-      "Suggestion: pnpm beads:worktrees:apply",
+      ...maintenanceSuggestion(undefined, includeRetireByHand),
       ...suggestion,
     ],
     createdReport: null,
@@ -1547,8 +1660,13 @@ function execute(
   // Global failures still abort: if GitHub was unreachable or the canonical
   // repository could not be resolved, the run did not see the repository at all
   // and no admission decision it makes is trustworthy. Per-unit probe errors do
-  // not abort — see {@link inventoryErrors}.
-  const errors = [...inventory.globalErrors, ...inventoryErrors(inventory.items)];
+  // not abort — see {@link inventoryErrors} — and neither do malformed metadata
+  // records describing some other unit; see {@link claimErrorsForRequest}.
+  const errors = [
+    ...inventory.globalErrors,
+    ...inventoryErrors(inventory.items, inventory.metadataClaimErrors),
+    ...claimErrorsForRequest(inventory.metadataClaimErrors, options.branch, worktreePath),
+  ];
   if (errors.length > 0) {
     throw new CliError(`lifecycle inventory is incomplete: ${errors.join("; ")}`);
   }
@@ -1568,12 +1686,15 @@ function execute(
         `Bead ${options.beadId} already has structured worktree metadata; a current worktree exception is required to append another record`,
       ],
       exceptionSuggestion(options, worktreePath),
+      false,
     );
   }
   if (primaryRegistrationMissing) {
-    return refusalOutcome([
-      `Bead ${options.beadId} primary structured worktree metadata is not currently registered`,
-    ]);
+    return refusalOutcome(
+      [`Bead ${options.beadId} primary structured worktree metadata is not currently registered`],
+      [],
+      false,
+    );
   }
   const existingPaths = existingOwnedPaths(inventory.items, options.beadId);
 
@@ -1753,7 +1874,11 @@ function execute(
         ...freshAssessment.reasons.map(
           (reason) => `worktree-lifecycle-create: ${reason}`,
         ),
-        "Suggestion: pnpm beads:worktrees:apply",
+        // Same gate as refusalOutcome (cave-wmkn4): never advertise a command
+        // the maintenance planes make unrunnable. This is the compensate path —
+        // a refusal found AFTER the worktree was created — so it reaches the
+        // user in exactly the situation where a dead next step is most costly.
+        ...maintenanceSuggestion(),
         ...exceptionSuggestion(options, worktreePath),
       ],
     );
@@ -1794,7 +1919,11 @@ function execute(
       exitCode === 2
         ? [
             `worktree-lifecycle-create: ${message}`,
-            "Suggestion: pnpm beads:worktrees:apply",
+            // Gated for the same reason as above. `includeRetireByHand` is
+            // false here: this is compensate's generic exit-2 message, which
+            // covers refusals that are not about the worktree budget, and
+            // retire-by-hand advice is only a remedy for the budget ones.
+            ...maintenanceSuggestion(undefined, false),
           ]
         : [],
     );

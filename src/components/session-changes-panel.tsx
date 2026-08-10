@@ -60,7 +60,7 @@ export function SessionChangesInner({
   focusPath?: string | null;
   focusNonce?: number;
   /**
-   * Per-file review state, owned by the Coding Room's rail (cave-0rcku). Both
+   * Per-file review state, owned by the Coding Desk's rail (cave-0rcku). Both
    * props are required together to light the Viewed column; the chat panel
    * passes neither and renders exactly as before.
    */
@@ -135,7 +135,7 @@ export function SessionChangesInner({
     }
   }, [projectRoot]);
 
-  // Let a host (the Coding Room's rail) render its own diffstat header off the
+  // Let a host (the Coding Desk's rail) render its own diffstat header off the
   // same list this panel is showing, so the two can never disagree.
   useEffect(() => {
     onFilesChange?.(files);

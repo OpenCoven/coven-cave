@@ -16,7 +16,7 @@ import { extractSafeTarGz, extractSafeZip } from "./managed-node-archive.ts";
 const execFileAsync = promisify(execFile);
 const INSTALL_TIMEOUT_MS = 5 * 60_000;
 const NODE_PROBE_TIMEOUT_MS = 1_500;
-const NPM_PROBE_TIMEOUT_MS = 10_000;
+const NPM_PROBE_TIMEOUT_MS = 15_000;
 
 export type ManagedNodePaths = {
   platform: ManagedNodePlatform;
@@ -42,6 +42,30 @@ type ManagedNodeProbeExec = (
   args: readonly string[],
   options: { env: NodeJS.ProcessEnv; timeout: number },
 ) => Promise<{ stdout: string; stderr: string }>;
+
+function isProbeTimeout(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const processError = error as { code?: unknown; killed?: unknown };
+  return processError.killed === true || processError.code === "ETIMEDOUT";
+}
+
+async function runManagedNodeProbe(
+  run: ManagedNodeProbeExec,
+  label: "Node.js" | "npm",
+  file: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+  timeout: number,
+): Promise<{ stdout: string; stderr: string }> {
+  try {
+    return await run(file, args, { env, timeout });
+  } catch (error) {
+    if (!isProbeTimeout(error)) throw error;
+    throw new Error(
+      `Managed ${label} probe timed out after ${timeout}ms. Retry setup; on Windows, antivirus scanning may delay the first launch.`,
+    );
+  }
+}
 
 function supportedPlatform(platform: NodeJS.Platform): platform is ManagedNodePlatform {
   return platform === "win32" || platform === "darwin" || platform === "linux";
@@ -137,8 +161,8 @@ export async function probeManagedNodeToolchain(
   const run = options.exec ?? execFileAsync;
   try {
     const [{ stdout }, npm] = await Promise.all([
-      run(paths.node, ["--version"], { env, timeout: NODE_PROBE_TIMEOUT_MS }),
-      run(paths.node, [paths.npmCli, "--version"], { env, timeout: NPM_PROBE_TIMEOUT_MS }),
+      runManagedNodeProbe(run, "Node.js", paths.node, ["--version"], env, NODE_PROBE_TIMEOUT_MS),
+      runManagedNodeProbe(run, "npm", paths.node, [paths.npmCli, "--version"], env, NPM_PROBE_TIMEOUT_MS),
     ]);
     if (!npm.stdout.trim()) return { status: "unusable", detail: "npm did not report a version", paths };
     const version = stdout.trim().replace(/^v/, "");

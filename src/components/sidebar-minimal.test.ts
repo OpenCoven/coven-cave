@@ -116,7 +116,7 @@ assert.doesNotMatch(
 assert.match(
   source,
   /const sectionRooms = React\.useMemo\(\s*\(\) => \(props\.roleSurfaces \?\? \[\]\)\.filter\(/,
-  "Code Workshop remains registry-driven through the active familiar's rooms",
+  "Coding Desk remains registry-driven through the active familiar's rooms",
 );
 assert.match(
   source,

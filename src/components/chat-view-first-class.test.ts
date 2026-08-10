@@ -71,8 +71,8 @@ assert.match(
 
 assert.match(
   source,
-  /const CHAT_ATTACHMENT_ACCEPT = \[[\s\S]*"image\/\*"[\s\S]*"video\/\*"[\s\S]*"application\/pdf"[\s\S]*"\.md"[\s\S]*"\.json"[\s\S]*\]\.join\(","\)/,
-  "Chat attachments should explicitly accept images, videos, documents, and common text/code files",
+  /const CHAT_ATTACHMENT_ACCEPT = \[[\s\S]*"image\/\*"[\s\S]*"video\/\*"[\s\S]*"audio\/\*"[\s\S]*"application\/pdf"[\s\S]*"\.md"[\s\S]*"\.json"[\s\S]*\]\.join\(","\)/,
+  "Chat attachments should explicitly accept images, videos, audio, documents, and common text/code files",
 );
 
 assert.match(

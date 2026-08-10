@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * CodeWorkbenchTree — the Coding Room's left column (cave-0rcku).
+ * CodeWorkbenchTree — the Coding Desk's left column (cave-0rcku).
  *
  * The `Cody Code Reading v2` frame gives the tree a job beyond browsing: it is
  * where you see what this session touched. Every file carries its working-tree

@@ -94,6 +94,24 @@ test("any activity is visibly distinct from silence", () => {
   assert.equal(densityStep(1, 50), 1);
 });
 
+test("density uses the full ramp when one day is an extreme outlier", () => {
+  const counts = [0, 1, 4, 12, 24, 100];
+  assert.deepEqual(
+    counts.map((count) => densityStep(count, 100)),
+    [0, 1, 2, 3, 3, 4],
+  );
+});
+
+test("density remains monotonic across the full window", () => {
+  const steps = Array.from({ length: 101 }, (_, count) =>
+    densityStep(count, 100),
+  );
+  assert.equal(
+    steps.every((step, index) => index === 0 || step >= steps[index - 1]),
+    true,
+  );
+});
+
 test("density saturates at the peak and never exceeds the step count", () => {
   assert.equal(densityStep(50, 50), DENSITY_STEPS);
   assert.equal(densityStep(99, 50), DENSITY_STEPS);

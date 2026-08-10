@@ -2364,7 +2364,7 @@ elif [ "\${LIFECYCLE_MULTI_WORKTREE_METADATA:-0}" = "1" ]; then
 elif [ "\${LIFECYCLE_ORPHANED_METADATA_UNSCOPED:-0}" = "1" ]; then
 printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-orphan-unscoped","status":"open","title":"Unscoped malformed orphan fixture","metadata":{"coven":"malformed"}}]'
 elif [ "\${LIFECYCLE_ORPHANED_METADATA_AMBIGUOUS:-0}" = "1" ]; then
-printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-orphan-malformed-sibling","status":"open","title":"Malformed sibling orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-malformed","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Malformed sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-malformed-sibling","path":"relative/orphaned","owner":"Kitty","purpose":"Malformed sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}},{"id":"cave-orphan-duplicate-branch","status":"open","title":"Duplicate branch orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-duplicate-branch","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Duplicate branch fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-duplicate-branch","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Duplicate branch fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}},{"id":"cave-orphan-duplicate-path","status":"open","title":"Duplicate path orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-duplicate-path","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Duplicate path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-duplicate-path-sibling","path":"${orphanedMissingPath}/","owner":"Kitty","purpose":"Duplicate path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}}]'
+printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-orphan-malformed-sibling","status":"open","title":"Malformed sibling orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-malformed","path":"${path.join(fixtureRoot, "missing-orphan-malformed")}","owner":"Kitty","purpose":"Malformed sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-malformed-sibling","path":"relative/orphaned","owner":"Kitty","purpose":"Malformed sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}},{"id":"cave-orphan-duplicate-branch","status":"open","title":"Duplicate branch orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-duplicate-branch","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Duplicate branch fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-duplicate-branch","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Duplicate branch fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}},{"id":"cave-orphan-duplicate-path","status":"open","title":"Duplicate path orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-duplicate-path","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Duplicate path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-duplicate-path-sibling","path":"${orphanedMissingPath}/","owner":"Kitty","purpose":"Duplicate path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_ORPHANED_METADATA:-0}" = "1" ]; then
 printf '%s\n' '[{"id":"cave-orphan","status":"open","title":"Orphaned metadata fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/orphaned","path":"${orphanedMissingPath}/","owner":"Kitty","purpose":"Orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z","futureField":{"preserve":true}}}}},{"id":"cave-present-path","status":"open","title":"Present path fixture","metadata":{"coven":{"worktree":{"branch":"feat/present-path","path":"${orphanedPresentPath}","owner":"Kitty","purpose":"Present path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-dangling-path","status":"open","title":"Dangling path fixture","metadata":{"coven":{"worktree":{"branch":"feat/dangling-path","path":"${orphanedDanglingPath}","owner":"Kitty","purpose":"Dangling path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-closed-orphan","status":"closed","title":"Closed orphaned metadata fixture","metadata":{"coven":{"worktree":{"branch":"feat/closed-orphan","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Closed orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_MALFORMED_WORKTREES:-0}" = "1" ]; then
@@ -2769,11 +2769,14 @@ exit 0
   const unscopedOldItem = unscopedOrphanedMetadataReport.items.find(
     (item) => item.branch === "feat/old",
   );
-  assert.equal(unscopedOldItem.lane, "retire-after-gate");
+  assert.equal(
+    unscopedOldItem.lane,
+    "uncertain",
+    "unscoped malformed metadata remains a repository-wide fail-closed error",
+  );
   assert.deepEqual(
     unscopedOldItem.metadataErrors,
-    [],
-    "unscoped malformed orphan metadata stays diagnostic instead of poisoning a lifecycle item",
+    ["Bead cave-orphan-unscoped coven metadata: coven must be an object"],
   );
   const racedOrphanedMetadataReport = JSON.parse(
     patrol(["--json"], {
@@ -2842,9 +2845,9 @@ exit 0
   );
   assert.deepEqual(report.budgets, {
     // cave-oenag: 8 registered, one of them detached, so 7 are assessed.
-    worktrees: { count: 7, registered: 8, detached: 1, warning: 20, exceeded: false },
+    worktrees: { count: 7, registered: 8, detached: 1, warning: 28, exceeded: false },
 
-    branches: { count: 11, warning: 30, exceeded: false },
+    branches: { count: 11, warning: 38, exceeded: false },
     exceptions: { active: 0, expired: 0 },
   }, "the exact budget object survives patrol JSON serialization");
   const nullExceptionReport = JSON.parse(
@@ -2908,11 +2911,14 @@ exit 0
     { active: 1, expired: 0 },
     "semantically shared exceptions across flattened records count once",
   );
+  // Each of these disqualifies `feat/old` on its own terms: the first is a
+  // failure in the shape of the bead's metadata, naming no branch and no path,
+  // so nothing can scope it and it stays repository-wide; the other two are
+  // records that name `feat/old` or its path.
   for (const [environment, expectedError] of [
     ["LIFECYCLE_MALFORMED_WORKTREES", /worktrees must be an array/i],
     ["LIFECYCLE_DUPLICATE_WORKTREE_BRANCH", /duplicate.*(?:branch|records)/i],
     ["LIFECYCLE_DUPLICATE_WORKTREE_PATH", /conflicting structured path ownership/i],
-    ["LIFECYCLE_UNUSABLE_ADDITIONAL_BRANCH", /branch/i],
   ]) {
     const malformedMultiReport = JSON.parse(
       patrol(["--json"], { [environment]: "1" }),
@@ -2926,6 +2932,40 @@ exit 0
       expectedError,
     );
   }
+  // Which unit a malformed record disqualifies is the whole question. Charging
+  // every task's record errors to every unit is what let one bead's invalid
+  // `disposition` deny the entire checkout, `beads:worktrees:create` included,
+  // with no repair available that the worktree rules permit (cave-g9byt).
+  //
+  // Here the unusable branch sits on the *additional* record, which names path
+  // `${live}`. A record names the branch and path it claims even when the rest
+  // of it is invalid, so it disqualifies that unit — and leaves `feat/old`,
+  // whose own record is valid, alone. `feat/live` is dirty in this fixture, so
+  // it lands in `active` before metadata is consulted at all; assert on where
+  // the error landed rather than on the lane it produced.
+  const unusableBranchReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_UNUSABLE_ADDITIONAL_BRANCH: "1" }),
+  );
+  assert.match(
+    unusableBranchReport.items
+      .find((item) => item.branch === "feat/live")
+      .metadataErrors.join("\n"),
+    /conflicting structured path ownership/i,
+    "the malformed record disqualifies the unit whose path it claims",
+  );
+  const unusableBranchBystander = unusableBranchReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.deepEqual(
+    unusableBranchBystander.metadataErrors,
+    [],
+    "a malformed record naming another unit's path leaves this unit's metadata intact",
+  );
+  assert.notEqual(
+    unusableBranchBystander.lane,
+    "uncertain",
+    "a malformed record describing another unit must not hold this one out of its lane",
+  );
   assert.equal(typeof report.inventoryFingerprint, "string");
   assert.ok(report.inventoryFingerprint.length > 0);
   const humanReport = patrol();
@@ -2935,12 +2975,12 @@ exit 0
     // cave-oenag: this fixture registers one detached unit, so the assessed
     // count is 7 of 8 and the line says which one it dropped. Anchored end-of-line
     // so the note has to be present and exact, not merely tolerated.
-    /^Worktree budget: 7\/20 \(within budget\) — 1 detached unit not counted \(8 registered\)$/m,
+    /^Worktree budget: 7\/28 \(within budget\) — 1 detached unit not counted \(8 registered\)$/m,
     "the routine report uses the lifecycle renderer's exact worktree budget line",
   );
   assert.match(
     humanReport,
-    /^Local branch budget: 11\/30 \(within budget\)$/m,
+    /^Local branch budget: 11\/38 \(within budget\)$/m,
     "the routine report uses the lifecycle renderer's exact local branch budget line",
   );
   assert.doesNotMatch(

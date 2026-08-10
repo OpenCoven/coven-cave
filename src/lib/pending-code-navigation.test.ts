@@ -22,7 +22,7 @@ const issue = {
   url: "https://github.com/OpenCoven/coven-cave/issues/43",
 };
 
-test("GitHub item targets select their matching Code Workshop tabs", () => {
+test("GitHub item targets select their matching Coding Desk tabs", () => {
   assert.equal(codeTopTabForGitHubTarget(pr), "prs");
   assert.equal(codeTopTabForGitHubTarget(issue), "issues");
 });

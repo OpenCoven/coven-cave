@@ -1,7 +1,7 @@
 // @ts-nocheck
-// cave-qcsv: GitHub-event inbox notifications open natively in Code Workshop.
+// cave-qcsv: GitHub-event inbox notifications open natively in Coding Desk.
 // github-watcher writes `link: { kind: "url", ref: <github html_url> }` on its
-// items; every open path must route PR/issue URLs into Code Workshop with a
+// items; every open path must route PR/issue URLs into Coding Desk with a
 // pending GitHub-item target — never a browser tab. Non-item GitHub URLs
 // (actions runs, repo roots) keep the in-app browser fallback.
 import assert from "node:assert/strict";
@@ -21,7 +21,7 @@ const githubView = [
 assert.match(
   workspace,
   /const openGitHubTarget = useCallback\(\(url: string \| null \| undefined\): boolean => \{[\s\S]*?parseGitHubItemUrl\(url\)[\s\S]*?enqueuePendingCodeNavigation\(\{\s*kind: "github-item",\s*target,\s*nonce: Date\.now\(\),?\s*\}\);[\s\S]*?setMode\("code"\);[\s\S]*?return true;/,
-  "PR/issue URLs enqueue native detail and enter Code Workshop",
+  "PR/issue URLs enqueue native detail and enter Coding Desk",
 );
 assert.match(
   workspace,
@@ -46,12 +46,12 @@ assert.match(
 assert.match(
   workspace,
   /if \(modeRef\.current !== roleSurfaceMode\(CODE_SURFACE_ID\)\) \{[\s\S]{0,80}?clearPendingCodeNavigation\(\);[\s\S]{0,40}?\}/,
-  "leaving Code Workshop discards an unavailable room's unconsumed target",
+  "leaving Coding Desk discards an unavailable room's unconsumed target",
 );
 assert.match(
   workspace,
   /useEffect\(\(\) => \{[\s\S]{0,300}?if \(modeRef\.current !== roleSurfaceMode\(CODE_SURFACE_ID\)\) \{[\s\S]*?clearPendingCodeNavigation\(\);[\s\S]*?return;\s*\}\s*if \(\s*!activeFamiliarHydrated\s*\|\|\s*!familiarsLoaded\s*\|\|\s*!familiarRosterLoadedSuccessfully\s*\) return;\s*if \(!roleSurfaceSession\.rolesLoaded\) return;\s*if \(!roleSurfaceSession\.rolesLoadedSuccessfully\) return;\s*if \(!roleSurfaceSession\.visibleSurfaces\.some\(\(surface\) => surface\.id === CODE_SURFACE_ID\)\) \{[\s\S]*?clearPendingCodeNavigation\(\);[\s\S]*?\}\s*\}, \[\s*mode,\s*roleSurfaceSession\.context,\s*roleSurfaceSession\.rolesLoaded,\s*roleSurfaceSession\.rolesLoadedSuccessfully,\s*roleSurfaceSession\.visibleSurfaces,\s*activeFamiliarHydrated,\s*familiarsLoaded,\s*familiarRosterLoadedSuccessfully,\s*\]\);/,
-  "pending Code navigation survives room hydration and only clears once the committed mode or loaded room visibility proves Code Workshop is unavailable",
+  "pending Code navigation survives room hydration and only clears once the committed mode or loaded room visibility proves Coding Desk is unavailable",
 );
 assert.doesNotMatch(workspace, /setGithubTarget|githubTarget/, "Workspace owns no standalone GitHub detail state");
 assert.doesNotMatch(workspace, /<GitHubView/, "Workspace never renders GitHubView directly");

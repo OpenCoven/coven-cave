@@ -18,7 +18,7 @@
   the fallback.** Telling them apart is the whole game, because the wrong choice
   creates a worktree nothing can ever retire.
   - **Exit 2 — refused by the admission gate** (`creating a worktree would
-    exceed the 20-worktree budget`, or `Bead … already owns a registered
+    exceed the 28-worktree budget`, or `Bead … already owns a registered
     worktree`). The gate ran fine and declined. **Do not fall back to `git worktree add` here.** Every refusal
     from this path is lifted by an attributed, expiring exception, and the
     refusal itself now prints the exact rerun. The budget counts every
@@ -57,8 +57,12 @@
     So the order is **check quota → rerun → only then fall back**. Genuinely
     structural failures name the repository itself (`canonical repository
     identity mismatch`, `canonical repository identity changed between pages`);
-    those do not improve with a retry. Reach for the fallback only after a
-    retry failed:
+    those do not improve with a retry. A malformed worktree record on a bead
+    (`Bead cave-… worktree metadata: …`) is structural too, but since
+    `cave-g9byt` it is charged only to the unit it names — so if one reaches
+    you, it claims the exact branch or path you asked for. Pick another branch
+    or have its owner repair it; do not hand-edit someone else's record. Reach
+    for the fallback only after a retry failed:
 
     ```bash
     git worktree add -b <branch> .worktrees/<branch> origin/main   # last resort
@@ -70,10 +74,16 @@
     never retire it. Retire it by hand through the archive-tag route in
     [`CLAUDE.md`](CLAUDE.md), and never hand-write the missing metadata onto the
     Bead — that record is the evidence the retirement gate checks.
-- After a PR merges, run `pnpm beads:worktrees`, record the merged unit's
-  disposition, and use `pnpm beads:worktrees:apply` only when it reports a
-  complete repository maintenance transaction. Local cleanup is bounded and
-  exact-OID guarded; remote deletion remains proposal-only.
+- After a PR merges, run `pnpm beads:worktrees` and record the merged unit's
+  disposition. **`pnpm beads:worktrees:apply` cannot retire anything today** — it
+  exits 2 with `missing maintenance planes: coven, beads, github`, which
+  `scripts/maintenance-gate.mjs` hard-codes off pending `cave-wqa0b.2/.3/.4`
+  (all BLOCKED). That is not a local fault and a retry will not clear it, so
+  hand-retirement through the archive-tag route in [`CLAUDE.md`](CLAUDE.md) is
+  the expected path until those land (`cave-3aqvr`). Prove retention first: a
+  squash-merge leaves the branch commits on no remote ref, so a merged PR is not
+  retention and a pushed archive tag is. Local cleanup is bounded and exact-OID
+  guarded; remote deletion remains proposal-only.
 - Run `pnpm beads:worktrees` before closing PR-backed work. Record each local
   worktree as removed and verified or intentionally preserved with an owner and
   reason; `retire-after-gate` is a classification, not automatic deletion

@@ -25,6 +25,33 @@ yours. Use a PR.
 
 - PR required before merging — **0 approvals** (you can self-merge once checks pass; no second human needed for solo work).
 - Required status checks — **all NINE** must pass (widened 2026-08-01 from five): `Frontend build`, `Rust check`, `E2E (Playwright)`, `Cross-environment (ubuntu-latest)`, `Cross-environment (windows-latest)`, `Cross-environment required`, `Sidecar runtime (ubuntu-latest)`, `Sidecar runtime (windows-latest)`, `Sidecar runtime required`. The four matrix legs were added alongside their `*-required` rollups. The rollups already fail unless `needs.<job>.result == 'success'`, so this is defense in depth rather than a gap being closed — it removes the dependency on those aggregation scripts staying correct. Classic branch protection is the active enforcement layer. Ruleset `19123333` lists the same nine checks but is currently disabled, so it does not provide a second gate. Only `ci.yml` runs on `pull_request` and no job carries a skippable `if:`, which is why requiring the legs is safe — a required context that never reports is what leaves a PR stuck `BLOCKED` with nothing failing. **`CodeQL` is retired** (2026-07-31): the ruleset's `code_scanning` rule went first, then the required context in classic branch protection, and now the workflow itself. Code scanning is fully off — GitHub default setup is `not-configured`, so nothing scans in its place. If you ever see a PR stuck `BLOCKED` with `mergeable: MERGEABLE`, no failing check and every conversation resolved, check two things: a required context that no longer reports (compare `gh api repos/OpenCoven/coven-cave/branches/main/protection --jq .required_status_checks.contexts` against the checks the PR actually runs), and `required_signatures` (see the signatures bullet below — it produced exactly this symptom on three PRs and is now off). The `E2E (Playwright)` job runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs must be self-contained — dismiss onboarding (`cave:onboarding:dismissed=1`) and drive surfaces via `page.route(...)` API mocks rather than a live daemon.
+
+  A separate scheduled workflow detects GitHub event-delivery gaps: after a
+  15-minute grace period from the PR's latest update it dispatches a fresh
+  `ci.yml` run for an open, same-repository PR head only when that SHA has no CI
+  run, or when its queued run has remained jobless. Apply mode completes its
+  read-only scan and revalidates every candidate head before the first
+  dispatch. It inspects the workflow at each exact head: current definitions
+  receive the expected SHA guard, while legacy definitions receive a no-input
+  dispatch so older PR branches remain recoverable. A partial guard contract
+  aborts the whole apply before mutation. A legacy dispatch resolves its mutable
+  branch ref and may test a newer head; only the complete guarded contract
+  promises exact-SHA refusal. `ci.yml` refuses a guarded run if the branch no
+  longer resolves to the expected SHA, and mismatched or malformed guarded runs
+  do not count as CI coverage. A recent recovery
+  enforces a one-hour cooldown; drafts and fork heads are skipped. Diagnose
+  without mutation first:
+
+  ```bash
+  GITHUB_TOKEN="$(gh auth token)" GITHUB_REPOSITORY=OpenCoven/coven-cave pnpm ci:recovery
+  # Explicit operator recovery, if the report names an eligible PR:
+  GITHUB_TOKEN="$(gh auth token)" GITHUB_REPOSITORY=OpenCoven/coven-cave pnpm ci:recovery:apply
+  ```
+
+  Prefer this fresh dispatch to rerunning a queued run with zero jobs: there is
+  no job to rerun, and the stalled run can remain queued. Recovery does not
+  bypass branch protection; all nine required contexts still have to report and
+  pass on the exact PR head.
 - Review conversations are **no longer required to be resolved**
   (`required_conversation_resolution` was turned OFF on 2026-08-01, at the
   user's direction). A PR with green checks merges with open threads.
@@ -269,18 +296,29 @@ Read the exit code.
 **Exit 2 — refused by the admission gate. Use an exception, not the fallback.**
 
 ```text
-worktree-lifecycle-create: creating a worktree would exceed the 20-worktree budget
+worktree-lifecycle-create: creating a worktree would exceed the 28-worktree budget
 ```
 
-`WORKTREE_WARNING_BUDGET = 20` (`src/lib/worktree-lifecycle.ts`) counts **every
+`WORKTREE_WARNING_BUDGET = 28` (`src/lib/worktree-lifecycle.ts`) counts **every
 registered worktree in the checkout**, not yours, so cleaning up your own units
 may not lift it and waiting does not either.
 
 Raised from 12 on 2026-08-04 (`cave-qpwx0`) because 12 no longer described this
 checkout — over one session the count moved 22 → 17 → 22 → 34 → 13 → 17. A gate
 that refuses on every invocation is not a budget, it is an outage, and it taught
-sessions to reach for the unmanaged fallback below. Bursts past 20 are still
-expected; that is what the exception is for.
+sessions to reach for the unmanaged fallback below. Bursts past the budget are
+still expected; that is what the exception is for.
+
+Raised again to 28 on 2026-08-09 (`cave-gzks3`) at 18 attached units. The
+constant's own comment demands a check before any raise — has the session count
+grown, or are merged units simply not being retired? — and the patrol answered
+it: **zero** of the 18 had a merged PR, zero classified `cleanup-ready`, zero
+`uncertain`, two held live process cwds and nine held uncommitted changes. All
+of it was live work, and four units were created by other sessions during a
+single session. `BRANCH_WARNING_BUDGET` moved 30 → 38 in the same change,
+because every managed worktree makes a branch and leaving branches at 30 would
+merely move the refusal one gate down. 38 stays under the 40-branch cap
+`branch-cap.yml` enforces on the remote.
 
 Every refusal from this path is lifted by an attributed, expiring exception, and
 since `cave-no5nr` the refusal prints the exact admissible rerun:
@@ -302,8 +340,8 @@ exception is stored on the bead next to the worktree record, so the unit lands w
 not a bypass — the same gate admits it.
 
 Note the deliberate asymmetry between the two surfaces that read this number:
-the patrol reports `exceeded` as `count > 20`, while creation refuses at
-`count >= 20`, because one more unit is what would take it over. At exactly 20
+the patrol reports `exceeded` as `count > 28`, while creation refuses at
+`count >= 28`, because one more unit is what would take it over. At exactly 28
 the patrol is quiet and creation is refused; that is "*would* exceed", not an
 off-by-one.
 
@@ -337,6 +375,25 @@ Failures that really are structural name the repository identity instead —
 `canonical repository identity mismatch`, `canonical repository identity
 changed between pages` — and a retry will not help those.
 
+One more structural cause, and the one that reads most like someone else's
+problem: **a malformed worktree record on a bead that claims your branch or
+your path** — `Bead cave-… worktree metadata: disposition is invalid`, or any
+of the sibling `… metadata:` messages. Since `cave-g9byt` such a record is
+charged to the unit it names and to no other, so a bad record elsewhere in the
+checkout no longer touches you. Seeing one here means it claims the exact
+branch or path you asked for, which is a genuine collision: pick a different
+branch, or get the record's owner to repair it. A record naming neither a
+usable branch nor a usable path claims something unnameable and still blocks
+everything until it is fixed.
+
+Before `cave-g9byt` this was repository-wide: `cave-l11sw` wrote
+`disposition: "removed-externally-after-merge"`, outside the accepted
+`active | pr | recovery | archive` set, and every bead's creation failed
+deterministically until a human hand-edited another owner's lifecycle record —
+the one repair the worktree rules forbid. The patrol now names such a record
+under *"Malformed worktree metadata on beads whose units are gone"* rather than
+failing every unit closed over it.
+
 So: **check quota, rerun, and only then** consider
 
 ```bash
@@ -364,11 +421,47 @@ out. See `cave-l52dt`.
 - `git worktree remove --force` when status is dirty — investigate first; uncommitted edits may belong to another live session.
 
 **After an exact-head squash merge:** normal completion uses the lifecycle patrol.
-Run `pnpm beads:worktrees`; when the full maintenance
-transaction is available, `pnpm beads:worktrees:apply` retires proven-safe
-local state. If it reports active, recovery, cooldown, uncertain, or
-gate-incomplete, preserve the unit and record its owner/reason. Never bypass
+Run `pnpm beads:worktrees`. If it reports active, recovery, cooldown, uncertain,
+or gate-incomplete, preserve the unit and record its owner/reason. Never bypass
 the worktree guard to force completion.
+
+⚠️ **`pnpm beads:worktrees:apply` does not work today, and this is not a local
+fault.** It exits 2 before assessing a single unit:
+
+```text
+worktree-lifecycle-patrol: --apply unavailable; missing maintenance planes: coven, beads, github
+```
+
+`scripts/maintenance-gate.mjs` hard-codes three of the four planes to
+`enforced: false`, each pointing at unbuilt work — `coven` → `cave-wqa0b.2`,
+`beads` → `cave-wqa0b.3`, `github` → `cave-wqa0b.4`. All three are **BLOCKED**,
+so `--apply` is unreachable for the foreseeable future and no retry, credential
+or daemon will change that. Tracked by `cave-3aqvr`.
+
+**So hand-retirement is the norm right now, not the exception.** For a unit the
+patrol already classified `cleanup-ready`, use the archive-tag route in the
+worktree-guard section below.
+
+⚠️ **Prove retention before removing anything — a merged PR is NOT retention.**
+A squash-merge leaves the branch's own commits on no remote ref, so
+`git branch -r --contains <head>` comes back empty even though the work shipped.
+Check for an existing archive tag first, and create one if there is none:
+
+```bash
+git ls-remote --tags origin | grep <branch-slug>          # already archived?
+gh pr list --head <branch> --state all --json number,state,mergedAt
+git tag -s archive/<branch-with-slashes-as-dashes>-<date> <exact-head> -m "…"
+git push origin archive/<…>                               # a LOCAL-only tag does not count
+git worktree unlock <path> && git worktree remove <path>
+git branch -D <branch>
+```
+
+Verified 2026-08-08 retiring `cave-93jz1` / `cave-g8n5v` / `cave-na7oc`: two
+already had pushed archive tags, and `cave-g8n5v` had none — its two commits
+existed only inside GitHub's PR record for #4426, so removing it without tagging
+first would have been lossy. Also note `git log @{u}..HEAD` is worthless as an
+"is it pushed" check on these branches: the upstream ref is gone, so the command
+errors and a naive `| wc -l` reports a reassuring `0`.
 
 ## Starting the Tauri desktop app
 
@@ -467,6 +560,40 @@ to once a minute via `.claude/worktree-autolock.stamp`. Every lock is appended
 to `.claude/worktree-autolock.log` (gitignored, JSON lines). Disable for a
 command with `WT_AUTOLOCK_DISABLE=1`. It never blocks a tool call and always
 exits 0 — if it cannot read a worktree, it leaves it alone.
+
+**Retention push (automatic, NON-blocking).** A PostToolUse hook —
+`scripts/worktree-retention-push.mjs`, matcher Bash — pushes any worktree
+whose HEAD holds commits reachable from no remote ref, so a local actor cannot
+destroy them. This is the enforcement of the "push your branch to origin after
+every commit" discipline above, which as advice did not hold: a 2026-08-09
+sweep found **174 commits across five branches on no remote ref at all**,
+including 135 on `docs/cave-zs85n-chat-sidebar-attention`. Two of those
+branches were back at risk **25 minutes** after a manual push, because live
+sessions kept committing locally — it is a continuous leak, not a backlog.
+
+It complements rather than duplicates the two hooks above, and neither of them
+covers this: the guard blocks destructive Bash *from a Claude session*, and the
+auto-lock defends against GitHub Desktop. A lock is a delay, not a backup — a
+second `--force` still takes the worktree, and neither hook moves a single
+commit off this machine.
+
+It pushes the **branch** first, because a remote branch is what every other
+surface here reads as retention and a fast-forward push cannot rewrite anyone's
+work. When that is refused — a diverged branch, or `branch-cap.yml` rolling
+back a newly created branch above 40 — it falls back to a tag named for the
+exact commit (`retention/<flattened-branch>-<short-sha>`). That tag is
+immutable and unique, so it never force-updates, never collides, and
+`branch-cap.yml` ignores it (`ref_type == 'branch'` only). It never merges,
+never opens a PR, never deletes or rewrites a ref, and **skips `main`** —
+pushing that is the direct-to-main move this file forbids.
+
+Throttled to once a minute (`.claude/worktree-retention-push.stamp`) and capped
+at 3 pushes per pass to bound the latency added to one tool call; pushed
+worktrees drop out of the at-risk set, so successive passes reach the rest.
+Every push and every failure is appended to
+`.claude/worktree-retention-push.log` (gitignored, JSON lines). Disable for a
+command with `WT_RETENTION_PUSH_DISABLE=1`. It never blocks a tool call and
+always exits 0.
 
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->

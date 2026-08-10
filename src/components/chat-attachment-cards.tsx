@@ -2,7 +2,8 @@ import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ImageCarousel } from "@/components/image-carousel";
 import { AuthedImage } from "@/components/ui/authed-image";
-import { attachmentIcon, chatAttachmentSrc, type ChatAttachment } from "@/lib/chat-attachments";
+import { useAuthedImageState } from "@/lib/authed-image";
+import { attachmentIcon, attachmentMediaKind, chatAttachmentSrc, type ChatAttachment } from "@/lib/chat-attachments";
 import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 
@@ -108,6 +109,82 @@ export function isInlineImageAttachment(attachment: ChatAttachment): boolean {
   return Boolean(
     (attachment.mimeType ?? attachment.type)?.startsWith("image/") &&
       chatAttachmentSrc(attachment),
+  );
+}
+
+/**
+ * True when the attachment is playable media we can actually mount — an
+ * allowlisted audio/video mime with either an in-memory payload (the turn you
+ * just sent) or a durable stored copy. Anything else stays a chip.
+ */
+export function isInlineMediaAttachment(attachment: ChatAttachment): boolean {
+  return Boolean(attachmentMediaKind(attachment) && chatAttachmentSrc(attachment));
+}
+
+/**
+ * One inline player. The stored copy lives behind `/api/chat/attachment`,
+ * which the packaged sidecar gates on a header only the patched
+ * `window.fetch` carries — a native `<video src="/api/…">` would 401
+ * (cave-wgc2). So the bytes come through the shared authed fetch→blob cache;
+ * a `blob:` source also gives WebKit free seeking, which the whole-file
+ * serving route does not. Native controls only — no autoplay, no motion
+ * until the user asks for it.
+ */
+function InlineMediaPlayer({ attachment }: { attachment: ChatAttachment }) {
+  const kind = attachmentMediaKind(attachment);
+  const { url, status } = useAuthedImageState(chatAttachmentSrc(attachment));
+  if (!kind) return null;
+  if (status === "error") return null;
+  if (!url) {
+    return (
+      <div
+        className="flex h-12 w-72 max-w-full items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 text-[length:var(--text-xs)] text-[var(--text-muted)]"
+        role="status"
+        aria-label={`Loading ${attachment.name}`}
+      >
+        <Icon name={attachmentIcon(attachment)} width={13} className="shrink-0" />
+        <span className="truncate">{attachment.name}</span>
+      </div>
+    );
+  }
+  if (kind === "audio") {
+    return (
+      <figure className="max-w-full">
+        <figcaption className="mb-1 flex items-center gap-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+          <Icon name="ph:waveform" width={12} className="shrink-0" />
+          <span className="truncate">{attachment.name}</span>
+        </figcaption>
+        <audio controls preload="metadata" src={url} className="block w-80 max-w-full" aria-label={attachment.name} />
+      </figure>
+    );
+  }
+  return (
+    <figure className="max-w-full overflow-hidden rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40">
+      <video controls preload="metadata" src={url} className="block max-h-80 max-w-full" aria-label={attachment.name} />
+      <figcaption className="flex items-center gap-1.5 px-3 py-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+        <Icon name="ph:video" width={12} className="shrink-0" />
+        <span className="truncate">{attachment.name}</span>
+        <span className="ml-auto shrink-0">{formatAttachmentBytes(attachment.size)}</span>
+      </figcaption>
+    </figure>
+  );
+}
+
+/**
+ * Full-bleed inline players for audio/video attachments — a familiar's
+ * generated teaser mp4, a user's voice memo — mirroring how
+ * {@link InlineImageAttachments} mounts pictures. Attachments that fail the
+ * media allowlist (or hold no payload) stay in the chip list instead.
+ */
+export function InlineMediaAttachments({ attachments }: { attachments: ChatAttachment[] }) {
+  const media = attachments.filter(isInlineMediaAttachment);
+  if (media.length === 0) return null;
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      {media.map((attachment, index) => (
+        <InlineMediaPlayer key={`${attachment.name}-${index}`} attachment={attachment} />
+      ))}
+    </div>
   );
 }
 

@@ -81,6 +81,8 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
     fingerprintMission: async () => "checkpoint-before",
     missionWorkspacePath: (id) => `/tmp/research-missions/${id}`,
     resolveProjectRoot: async (root) => root,
+    ensureResearchAccess: async () => {},
+    checkFamiliarRootAccess: async () => null,
     now: () => NOW,
     randomId: () => "mission-1",
     ...overrides,
@@ -213,6 +215,52 @@ test("an unallowed configured project root fails fast with an actionable error",
   assert.match(result.lastError ?? "", /"\/missing\/repo" is not an allowed project path/);
   assert.match(result.lastError ?? "", /mission workspace/);
   assert.ok(allowedResearchActions(result).includes("retry"));
+});
+
+test("run start ensures the familiar's standard research landing access", async () => {
+  const ensured: string[] = [];
+  const runner = makeResearchMissionRunner(deps({
+    ensureResearchAccess: async (familiarId) => {
+      ensured.push(familiarId);
+    },
+  }));
+  const result = await runner.createAndStart(INPUT);
+  assert.deepEqual(ensured, ["sage"]);
+  assert.equal(result.status, "running");
+});
+
+test("a configured project root the familiar cannot access fails fast before launch", async () => {
+  let starts = 0;
+  const checked: Array<[string, string]> = [];
+  const runner = makeResearchMissionRunner(deps({
+    checkFamiliarRootAccess: async (familiarId, projectRoot) => {
+      checked.push([familiarId, projectRoot]);
+      return `Familiar "${familiarId}" does not have access to project root "${projectRoot}".`;
+    },
+    startFlow: async () => {
+      starts += 1;
+      return { ok: true, run: RUN, sessionId: "session-1", executor: "session" };
+    },
+  }));
+  const result = await runner.createAndStart({ ...INPUT, projectRoot: "/allowed/repo" });
+  assert.equal(starts, 0, "no session may launch against a root the familiar cannot use");
+  assert.deepEqual(checked, [["sage", "/allowed/repo"]]);
+  assert.equal(result.status, "failed");
+  assert.match(result.lastError ?? "", /does not have access to project root "\/allowed\/repo"/);
+  assert.ok(allowedResearchActions(result).includes("retry"));
+});
+
+test("the default mission workspace never requires a familiar root-access check", async () => {
+  let checks = 0;
+  const runner = makeResearchMissionRunner(deps({
+    checkFamiliarRootAccess: async () => {
+      checks += 1;
+      return "should never be consulted";
+    },
+  }));
+  const result = await runner.createAndStart(INPUT);
+  assert.equal(checks, 0);
+  assert.equal(result.status, "running");
 });
 
 test("travel launch remains honestly queued", async () => {

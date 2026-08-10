@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * CodeReviewRail — the Coding Room's right column (cave-0rcku).
+ * CodeReviewRail — the Coding Desk's right column (cave-0rcku).
  *
  * The `Cody Code Reading v2` frame docks review beside the source: two tabs
  * (Changes, PR), a drag handle, double-click to swap between a reading width
@@ -20,6 +20,7 @@ import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { SessionChangesInner } from "@/components/session-changes-panel";
+import { AfsPane } from "@/components/afs-pane";
 import {
   clampCodeRailWidth,
   codeRailDiffBar,
@@ -221,6 +222,19 @@ export function CodeReviewRail({
           >
             Pull request
           </button>
+          {/* The agent filesystem delta, which is not the checkout's working
+              tree. The pane hides itself when the daemon reports afs: false,
+              so the tab can lead to an empty surface on an older daemon. */}
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "filesystem"}
+            data-selected={tab === "filesystem" ? "true" : undefined}
+            className="focus-ring code-rail__tab"
+            onClick={() => onTabChange("filesystem")}
+          >
+            Filesystem
+          </button>
         </div>
         <span className="code-rail__spacer" />
         {/* The rail is a sidebar; a conversation, a commit list and a unified
@@ -296,6 +310,10 @@ export function CodeReviewRail({
             />
           </div>
         </>
+      ) : tab === "filesystem" ? (
+        <div className="code-rail__body">
+          <AfsPane key={row.id} sessionId={row.id} />
+        </div>
       ) : (
         <div className="code-rail__body">
           <LazyPr key={row.id} row={row} />

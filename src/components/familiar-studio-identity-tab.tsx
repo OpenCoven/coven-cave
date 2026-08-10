@@ -11,7 +11,8 @@ import {
   useFamiliarOverrides,
   type FamiliarOverride,
 } from "@/lib/cave-familiar-overrides";
-import { FAMILIAR_TYPES, parseFamiliarTypeIds } from "@/lib/familiar-types";
+import { FAMILIAR_TYPES, parseFamiliarTypeIds, type FamiliarTypeSpec } from "@/lib/familiar-types";
+import { roomEnabledInBuild } from "@/lib/room-flags";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { FamiliarStudioLookTab } from "@/components/familiar-studio-look-tab";
@@ -236,6 +237,19 @@ function FamiliarGrimoireFiles({ familiarId }: { familiarId: string }) {
 }
 
 /**
+ * A type's unlock line. Every type still grants its role token, but a build
+ * that doesn't ship the promised room would otherwise leave the picker
+ * advertising a door that opens onto nothing — so say so here rather than let
+ * the user find out by clicking (`src/lib/room-flags.ts`).
+ */
+function familiarTypeHint(spec: FamiliarTypeSpec): string {
+  if (spec.roomId && !roomEnabledInBuild(spec.roomId)) {
+    return `${spec.description} That room is still under construction and isn't part of this build.`;
+  }
+  return spec.description;
+}
+
+/**
  * The explicit familiar Type picker (cave-cc5r / cave-gud8): a chip
  * checkbox-row over the static FAMILIAR_TYPES table. Multiple types may be
  * selected; the choice is stored comma-separated in the same `familiarType`
@@ -270,7 +284,7 @@ function FamiliarTypePicker({ familiar }: { familiar: ResolvedFamiliar }) {
               type="button"
               role="checkbox"
               aria-checked={isChecked}
-              title={t.description}
+              title={familiarTypeHint(t)}
               className={`focus-ring familiar-studio-type-chip${isChecked ? " familiar-studio-type-chip--active" : ""}`}
               onClick={() => {
                 if (t.id === "general") {
@@ -297,10 +311,10 @@ function FamiliarTypePicker({ familiar }: { familiar: ResolvedFamiliar }) {
         })}
       </div>
       {selectedIds.length === 0 ? (
-        <p className="familiar-studio-identity__hint">{FAMILIAR_TYPES[0].description}</p>
+        <p className="familiar-studio-identity__hint">{familiarTypeHint(FAMILIAR_TYPES[0])}</p>
       ) : (
         FAMILIAR_TYPES.filter((s) => selectedIds.includes(s.id)).map((s) => (
-          <p key={s.id} className="familiar-studio-identity__hint">{s.description}</p>
+          <p key={s.id} className="familiar-studio-identity__hint">{familiarTypeHint(s)}</p>
         ))
       )}
     </div>

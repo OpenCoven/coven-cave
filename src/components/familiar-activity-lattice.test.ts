@@ -116,6 +116,11 @@ assert.match(
   /aria-label=\{\s*silent/,
   "the year's label states the silent case rather than reading an empty grid",
 );
+assert.match(
+  css,
+  /\.fa-lattice__grid\s*\{[^}]*grid-auto-columns:\s*minmax\(6px,\s*1fr\);/,
+  "narrow containers scroll instead of collapsing lattice cells into circles",
+);
 
 // ── Density shades come from the model, never recomputed here ────────────────
 // buildActivityLattice guarantees a day carries the same count in all three
@@ -124,6 +129,31 @@ assert.match(
   lattice,
   /data-step=\{densityStep\(day\.count, lattice\.peak\)\}/,
   "shade steps come from the shared densityStep against the year's peak",
+);
+assert.match(
+  css,
+  /\.fa-lattice__day\s*\{[^}]*border-radius:\s*2px;/,
+  "year cells keep a 2px micro-radius so the square grid never becomes circles",
+);
+assert.doesNotMatch(
+  css,
+  /\.fa-lattice__trend,\s*\n?\.fa-lattice__pulse\s*\{/,
+  "the quarter Sparkline does not inherit the fortnight bar layout",
+);
+assert.match(
+  css,
+  /\.fa-lattice__trend\s*\{[^}]*display:\s*block;[^}]*margin:\s*0;/,
+  "the quarter figure stacks its Sparkline and caption vertically",
+);
+assert.match(
+  css,
+  /\.fa-lattice__pulse\s*\{[^}]*display:\s*flex;[^}]*height:\s*72px;/,
+  "the fortnight alone retains the fixed-height flex bar layout",
+);
+assert.match(
+  css,
+  /\.fa-lattice__trend figcaption\s*\{[^}]*margin-top:\s*var\(--space-1\);/,
+  "the quarter caption has explicit space below the Sparkline",
 );
 // Call syntax, not bare names: the header comment legitimately cites
 // `sessionDayKey` when explaining why weeks are not selectable, and a pin that

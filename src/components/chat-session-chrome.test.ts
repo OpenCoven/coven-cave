@@ -114,9 +114,15 @@ test("2a ③ — the instrument strip keeps every metric reachable at narrow wid
   assert.match(styles, /\.cave-chat-context-stat--action/, "detail metrics have trigger styling");
   assert.match(styles, /\.cave-chat-context-popover/, "breakdown cards have a scoped surface");
   assert.match(styles, /\.cave-chat-context-breakdown__bar/, "context detail includes a segmented bar");
+  // The rule BODY is [^}]* rather than [\s\S]*?: `styles` is the whole expanded
+  // facade, so a body that may cross `}` matches an @media here, this selector
+  // there, and a `display: none` from an unrelated rule in a different imported
+  // file — which is exactly what it did when cave-w716g added
+  // `.cave-runrail--narrow { display: none }`. The intent is unchanged and still
+  // pinned below: display:none INSIDE this rule, inside that media query.
   assert.doesNotMatch(
     styles,
-    /@media \(max-width: 900px\)[\s\S]*?\.cave-chat-context-row__stats\s*\{[\s\S]*?display:\s*none/,
+    /@media \(max-width: 900px\)[\s\S]*?\.cave-chat-context-row__stats\s*\{[^}]*display:\s*none/,
     "narrow panes do not hide the right-side metrics",
   );
 });

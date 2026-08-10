@@ -1,5 +1,5 @@
 /**
- * Session-picker model for the Coding Room header (cave-0rcku).
+ * Session-picker model for the Coding Desk header (cave-0rcku).
  *
  * The `Cody Code Reading v2` frame replaces the always-on session rail with a
  * header picker: one button carrying the current session, opening a filterable,

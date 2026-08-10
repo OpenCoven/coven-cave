@@ -1,0 +1,175 @@
+/* ── Chat run rail (Coven Cave - Chat Session handoff, cave-w716g) ──────────
+   The right-hand instrument column: timeline, tool mix, the live/last step and
+   the call counters. Four panels, not the frame's eight — see
+   lib/chat-run-rail.ts for why PLAN, LEFT, CONTEXT WINDOW and COST are absent
+   rather than stubbed.
+
+   Category colors come from the SAME semantic tokens the spine and minimap use
+   (thread-instruments.css) rather than a component-local palette, so the rail's
+   legend and the transcript's gutters can never drift apart. */
+
+:root {
+  /* Shared with the component: the width gate must know what the rail costs,
+     or it admits the rail at widths that push the transcript below the
+     instruments threshold — the spine and minimap would vanish while the rail
+     that displaced them stayed. */
+  --runrail-min-w: 232px;
+  --runrail-max-w: 300px;
+}
+
+.cave-runrail {
+  /* No `order`: the rail is the row's LAST child in the DOM, so the visual
+     order and the reading order are the same one. It was briefly first-child +
+     `order: 1`, which reads correctly on screen and wrongly to a screen reader —
+     `order` moves boxes, never reading order. */
+  flex: 0 0 clamp(var(--runrail-min-w), 22%, var(--runrail-max-w));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-3);
+  border-left: 1px solid var(--border-hairline);
+  background: var(--bg-subtle);
+  /* The rail scrolls with its own overflow; the transcript beside it keeps its
+     own scroll. Cards inside stack vertically and fill the width — no second
+     horizontal axis (cave-l2hkx). */
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  /* Single fallback tint for every instrument mark. Declared on the ROOT, not
+     on .cave-runrail__seg / __dot: a default on the element itself lands after
+     the .--read/.--shell modifiers at equal specificity and silently wins,
+     which greyed out the whole legend while the bars stayed coloured. */
+  --tim: var(--text-muted);
+}
+
+/* Collapsed rather than unmounted: the component observes its parent row to
+   decide, and a removed node cannot measure its way back. display:none also
+   takes it out of layout entirely, so the row width it reads never depends on
+   its own presence. */
+.cave-runrail--narrow { display: none; }
+
+.cave-runrail__head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+.cave-runrail__label {
+  font: 600 10px var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.cave-runrail__rule { flex: 1; height: 1px; background: var(--border-hairline); }
+.cave-runrail__trailing { font: 400 10px var(--font-mono); color: var(--text-muted); white-space: nowrap; }
+
+/* ── counters ── */
+.cave-runrail__counters {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.cave-runrail__counter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-1);
+  background: var(--bg-raised);
+}
+.cave-runrail__counter + .cave-runrail__counter { border-left: 1px solid var(--border-hairline); }
+.cave-runrail__count { font: 600 18px var(--font-mono); color: var(--text-primary); line-height: 1; }
+.cave-runrail__countlabel {
+  font: 600 9px var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+/* Only a non-zero failure tints — a red "0 failed" reads as an alarm for the
+   healthy case, which is the opposite of what the colour is for. */
+.cave-runrail__counter--failed .cave-runrail__count { color: var(--color-danger); }
+
+/* ── timeline + mix bars ── */
+.cave-runrail__timeline,
+.cave-runrail__mixbar {
+  display: flex;
+  gap: var(--space-1);
+  height: 8px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.cave-runrail__seg {
+  min-width: 2px;
+  background: var(--tim);
+  border-radius: var(--radius-sm);
+  flex-basis: 0;
+}
+.cave-runrail__seg--error { background: var(--color-danger); }
+
+.cave-runrail__seg--read,
+.cave-runrail__dot--read { --tim: var(--color-info); }
+.cave-runrail__seg--shell,
+.cave-runrail__dot--shell { --tim: var(--color-success); }
+.cave-runrail__seg--edit,
+.cave-runrail__dot--edit { --tim: var(--color-warning); }
+.cave-runrail__seg--search,
+.cave-runrail__dot--search { --tim: var(--accent-presence); }
+.cave-runrail__seg--web,
+.cave-runrail__dot--web { --tim: var(--color-info); }
+.cave-runrail__seg--agent,
+.cave-runrail__dot--agent { --tim: var(--accent-presence); }
+.cave-runrail__seg--wait,
+.cave-runrail__dot--wait { --tim: var(--color-warning); }
+
+.cave-runrail__axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--space-1);
+  font: 400 9px var(--font-mono);
+  color: var(--text-muted);
+}
+
+/* ── legend ── */
+.cave-runrail__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  font: 400 10px var(--font-mono);
+  color: var(--text-muted);
+}
+.cave-runrail__legend li { display: inline-flex; align-items: center; gap: var(--space-1); }
+.cave-runrail__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-sm);
+  background: var(--tim);
+}
+
+/* ── doing now ── */
+.cave-runrail__now {
+  padding: var(--space-2) var(--space-2);
+  border-left: 2px solid var(--border-strong);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: var(--bg-raised);
+  font: 400 11px var(--font-mono);
+  line-height: 1.55;
+  color: var(--text-secondary);
+  /* Commands are long and unbreakable; wrap them rather than widening the rail
+     or introducing a horizontal scroller. */
+  overflow-wrap: anywhere;
+}
+.cave-runrail__now--live { border-left-color: var(--accent-presence); color: var(--text-primary); }
+.cave-runrail__now--error { border-left-color: var(--color-danger); }
+
+.cave-runrail__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+}
+.cave-runrail__foot .cave-runrail__trailing { margin-left: auto; color: var(--text-secondary); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .cave-runrail__now--live { transition: border-color var(--duration-fast); }
+}

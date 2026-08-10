@@ -7,7 +7,7 @@
  *
  * Phase 3+ (this shape): top-level Sessions/Activity/PRs/Issues/Reviews tabs, the session rail
  * (grouped by project, git-attribution badges, + New session) and the
- * per-session Coding Room — a persistent terminal center beside a resizable
+ * per-session Coding Desk — a persistent terminal center beside a resizable
  * context dock (Changes | Files | Pull request | Inspector | GitHub | Browser)
  * with the follow-up composer (code-composer.tsx) under both. New sessions
  * start via code-new-session.tsx — project + familiar + optional fresh
@@ -22,6 +22,7 @@ import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import {
   CODE_GITHUB_TABS,
+  CODE_ROOM_RAIL_WIDTH_PX,
   codeRoomFitsRail,
   codeSessionWorkRoot,
   groupCodeRailSessions,
@@ -36,6 +37,7 @@ import { CodeWorkbench } from "@/components/code-workbench";
 import { CodeNewSession } from "@/components/code-new-session";
 import { CodeSourceContext } from "@/components/code-source-context";
 import { GithubOrganizationSettings } from "@/components/settings-github";
+import { SurfaceRail } from "@/components/ui/surface-rail";
 import type { GitHubItemTarget } from "@/lib/github-item-url";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
 import { codeTopTabForGitHubTarget, type PendingCodeNavigation } from "@/lib/pending-code-navigation";
@@ -229,6 +231,12 @@ export function CodeView({
       ? workbenchTarget.open.origin
       : null;
   const originSessionId = workbenchTarget?.open.sessionId ?? null;
+  const selectSession = (sessionId: string) => {
+    // A manual switch is a context change — drop any pending file focus so it
+    // cannot replay into the newly picked workbench.
+    setWorkbenchTarget(null);
+    setSelectedId(sessionId);
+  };
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
@@ -316,28 +324,53 @@ export function CodeView({
               rail beside the workbench, the rail is the landing screen and the
               workbench replaces it once a session is picked (Back returns).
               Driven by the Room's measured width, not the viewport — this
-              surface can sit in a split beside another page (cave-k3a9u).
-              w-64 is CODE_ROOM_RAIL_WIDTH_PX. */}
-          <div
-            className={`${
-              fitsRail ? "block w-64 border-r" : selected ? "hidden" : "block w-full"
-            } shrink-0 border-[var(--border-hairline)]`}
-          >
-            <CodeSessionRail
-              sessions={sessions}
-              selectedId={selectedId ?? null}
-              onSelect={(id) => {
-                // A manual switch is a context change — drop any pending file
-                // focus so it can't replay into the newly picked workbench.
-                setWorkbenchTarget(null);
-                setSelectedId(id);
-              }}
-              onNewSession={() => {
-                setNewSessionSeed("");
-                setNewSessionOpen(true);
-              }}
-            />
-          </div>
+              surface can sit in a split beside another page (cave-k3a9u). */}
+          {fitsRail ? (
+            <SurfaceRail
+              storageKey="cave:code:sessions-rail"
+              title="Sessions"
+              ariaLabel="Coding sessions"
+              defaultWidth={CODE_ROOM_RAIL_WIDTH_PX}
+              actions={
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewSessionSeed("");
+                    setNewSessionOpen(true);
+                  }}
+                  title="New session"
+                  aria-label="New session"
+                  className="focus-ring text-[var(--accent-presence)]"
+                >
+                  <Icon name="ph:plus-bold" width={14} aria-hidden />
+                </button>
+              }
+            >
+              {(open, setOpen) => (
+                <CodeSessionRail
+                  sessions={sessions}
+                  selectedId={selectedId ?? null}
+                  onSelect={selectSession}
+                  open={open}
+                  onExpand={() => setOpen(true)}
+                />
+              )}
+            </SurfaceRail>
+          ) : (
+            <div
+              className={`${selected ? "hidden" : "block w-full"} shrink-0 border-[var(--border-hairline)]`}
+            >
+              <CodeSessionRail
+                sessions={sessions}
+                selectedId={selectedId ?? null}
+                onSelect={selectSession}
+                onNewSession={() => {
+                  setNewSessionSeed("");
+                  setNewSessionOpen(true);
+                }}
+              />
+            </div>
+          )}
           <div
             className={`${selected || fitsRail ? "flex" : "hidden"} min-w-0 flex-1 flex-col`}
           >

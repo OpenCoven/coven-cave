@@ -1,5 +1,5 @@
 /**
- * Rebindable Coding Room shortcuts (cave-0rcku).
+ * Rebindable Coding Desk shortcuts (cave-0rcku).
  *
  * The `Cody Code Reading v2` frame ships a shortcuts dialog you can actually
  * rebind from — "press the new combo — saved on this device" — with one rule
