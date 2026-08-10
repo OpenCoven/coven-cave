@@ -152,14 +152,10 @@ export async function startDaemonFaultHarness(
     async close() {
       if (closed) return;
       closed = true;
-      for (const socket of sockets) socket.destroy();
-      sockets.clear();
       await new Promise<void>((resolve) => {
-        // Already-closed is not an error here: `crash-after` closes the server
-        // itself, and a harness whose cleanup threw for doing its job would
-        // make every test using it fail in teardown rather than assertion.
+        // Stop accepting new connections, then force-close anything still open.
         server.close(() => resolve());
-        if (!server.listening) resolve();
+        for (const socket of [...sockets]) socket.destroy();
       });
     },
   };
