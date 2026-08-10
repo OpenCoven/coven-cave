@@ -9,7 +9,7 @@
  * yesterday's work is a choice rather than the default.
  */
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -25,12 +25,13 @@ export function CovenHistoryFoldView({
   formatTime: (iso: string) => string;
 }) {
   const [open, setOpen] = useState(false);
+  const turnsId = useId();
   return (
     <div className="coven-history">
-      <div className="coven-history__divider" aria-hidden>
-        <span className="coven-history__rule" />
+      <div className="coven-history__divider">
+        <span className="coven-history__rule" aria-hidden />
         {fold.label}
-        <span className="coven-history__rule" />
+        <span className="coven-history__rule" aria-hidden />
       </div>
       <div className="coven-history__card">
         <div className="coven-history__head">
@@ -50,13 +51,15 @@ export function CovenHistoryFoldView({
             type="button"
             className="coven-history__toggle focus-ring"
             aria-expanded={open}
+            aria-controls={turnsId}
+            aria-label={`${open ? "Collapse" : "Expand"} ${fold.title}`}
             onClick={() => setOpen((value) => !value)}
           >
             {open ? "Collapse" : "Expand"}
           </button>
         </div>
         {open ? (
-          <div className="coven-history__turns">
+          <div className="coven-history__turns" id={turnsId}>
             {fold.turns.map((turn) => {
               const familiar = byId.get(turn.familiarId);
               const meta = COVEN_RUN_STATUS[turn.status];
