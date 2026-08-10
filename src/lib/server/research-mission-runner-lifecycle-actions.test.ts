@@ -3,12 +3,77 @@ import test from "node:test";
 import type { ConversationFile } from "../cave-conversations.ts";
 import type { FlowRunRecord } from "../flows.ts";
 import { allowedResearchActions, type ResearchMission, type ResearchSourcePatch } from "../research-missions.ts";
+import {
+  CopilotArgvTransportError,
+  CopilotPromptTransportError,
+  copilotPromptTransportFailure,
+} from "./flow-copilot-session.ts";
 import { ResearchFileIntegrityError } from "./research-mission-store.ts";
 import {
+  cancelResearchSession,
   makeResearchMissionRunner,
   parseResearchSourcesFile,
+  ResearchMissionLaunchInputError,
   type ResearchMissionRunnerDeps,
 } from "./research-mission-runner.ts";
+
+test("Research cancellation stops a Cave-direct run before considering the daemon", async () => {
+  const calls: string[] = [];
+  await cancelResearchSession("direct-session", {
+    cancelDirect: async (sessionId) => {
+      calls.push(`direct:${sessionId}`);
+      return "terminated";
+    },
+    callDaemonImpl: async () => {
+      calls.push("daemon");
+      return { ok: false, status: 404 };
+    },
+  });
+  assert.deepEqual(calls, ["direct:direct-session"]);
+});
+
+test("Research cancellation uses the daemon only when no direct owner exists", async () => {
+  const calls: string[] = [];
+  await cancelResearchSession("daemon/session", {
+    cancelDirect: async () => "not-owned",
+    callDaemonImpl: async (request) => {
+      calls.push(`${request.method}:${request.path}`);
+      return { ok: true, status: 200 };
+    },
+  });
+  assert.deepEqual(calls, ["POST:/api/v1/sessions/daemon%2Fsession/kill"]);
+});
+
+test("a direct cancellation failure never falls through to a misleading daemon kill", async () => {
+  let daemonCalls = 0;
+  await assert.rejects(
+    cancelResearchSession("still-running-direct-session", {
+      cancelDirect: async () => { throw new Error("process tree could not be proved stopped"); },
+      callDaemonImpl: async () => {
+        daemonCalls += 1;
+        return { ok: true, status: 200 };
+      },
+    }),
+    /process tree could not be proved stopped/,
+  );
+  assert.equal(daemonCalls, 0);
+});
+
+test("daemon transport uncertainty never masquerades as an already-stopped session", async () => {
+  for (const response of [
+    { ok: false, status: 0, error: "local daemon offline" },
+    { ok: false, status: 0, error: "hub request timed out" },
+    { ok: false, status: 408, error: "request timeout" },
+  ]) {
+    await assert.rejects(
+      cancelResearchSession("possibly-live-session", {
+        cancelDirect: async () => "not-owned",
+        callDaemonImpl: async () => response,
+      }),
+      /could not be confirmed.*mission remains running.*retry Cancel/i,
+    );
+  }
+});
 
 test("sources file parsing rejects malformed ledgers", () => {
   assert.throws(() => parseResearchSourcesFile("not json"), /sources\.json is malformed/);
@@ -156,6 +221,110 @@ test("create/start persists before launch and records the real session", async (
   assert.equal(result.status, "running");
 });
 
+test("every Research start path stops a launched session when the final mission save fails", async () => {
+  const cases = [
+    {
+      name: "create",
+      initial: null,
+      run: (runner: ReturnType<typeof makeResearchMissionRunner>) => runner.createAndStart(INPUT),
+    },
+    {
+      name: "retry",
+      initial: checkpointMission({
+        status: "failed",
+        lastError: "previous failure",
+        iterations: [{ number: 1, status: "failed", finishedAt: NOW.toISOString() }],
+      }),
+      run: (runner: ReturnType<typeof makeResearchMissionRunner>) => (
+        runner.act("mission-actions", { action: "retry" })
+      ),
+    },
+    {
+      name: "continue",
+      initial: checkpointMission(),
+      run: (runner: ReturnType<typeof makeResearchMissionRunner>) => (
+        runner.act("mission-actions", { action: "continue" })
+      ),
+    },
+  ];
+
+  for (const scenario of cases) {
+    let stored = scenario.initial ? structuredClone(scenario.initial) : null;
+    let saveCount = 0;
+    const killed: string[] = [];
+    const runner = makeResearchMissionRunner(deps({
+      loadMission: async () => stored ? structuredClone(stored) : null,
+      saveMission: async (mission) => {
+        saveCount += 1;
+        // Every path first saves its pre-launch planning record. Fail only the
+        // first post-launch result write, then allow compensation to persist.
+        if (saveCount === 2) throw new Error(`${scenario.name} result save failed`);
+        stored = structuredClone(mission);
+      },
+      startFlow: async (_flow, options) => {
+        assert.equal(options.offlinePolicy, "reject", "Research never enters the travel replay queue");
+        return { ok: true, run: RUN, sessionId: `session-${scenario.name}`, executor: "session" };
+      },
+      killSession: async (sessionId) => { killed.push(sessionId); },
+    }));
+
+    const result = await scenario.run(runner);
+    assert.deepEqual(killed, [`session-${scenario.name}`]);
+    assert.equal(result.status, "failed", `${scenario.name} returns a durably retryable failure`);
+    assert.match(result.lastError ?? "", /stopped because Cave could not save its launch state/);
+    assert.equal(stored?.status, "failed");
+    assert.equal(stored?.iterations.at(-1)?.sessionId, undefined, "a proved-stopped owner is not retained as live");
+  }
+});
+
+test("a failed post-launch save retains the exact session when cleanup cannot be proved", async () => {
+  let stored: ResearchMission | null = null;
+  let saveCount = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => stored ? structuredClone(stored) : null,
+    saveMission: async (mission) => {
+      saveCount += 1;
+      if (saveCount === 2) throw new Error("result save failed");
+      stored = structuredClone(mission);
+    },
+    startFlow: async () => ({ ok: true, run: RUN, sessionId: "owned-session", executor: "session" }),
+    killSession: async () => { throw new Error("termination not proved"); },
+  }));
+
+  const result = await runner.createAndStart(INPUT);
+  assert.equal(result.status, "running", "unproved cleanup is never mislabeled failed or cancelled");
+  assert.equal(result.iterations[0]?.sessionId, "owned-session");
+  assert.match(result.lastError ?? "", /could not.*confirm session cleanup/i);
+  assert.deepEqual(allowedResearchActions(result), ["cancel"]);
+});
+
+test("a failed save retries an owner whose launch cleanup was already unconfirmed", async () => {
+  let stored: ResearchMission | null = null;
+  let saveCount = 0;
+  const killed: string[] = [];
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => stored ? structuredClone(stored) : null,
+    saveMission: async (mission) => {
+      saveCount += 1;
+      if (saveCount === 2) throw new Error("cleanup-unconfirmed result save failed");
+      stored = structuredClone(mission);
+    },
+    startFlow: async () => ({
+      ok: false,
+      sessionId: "still-owned-session",
+      cleanupUnconfirmed: true,
+      error: "initial termination was not proved",
+    }),
+    killSession: async (sessionId) => { killed.push(sessionId); },
+  }));
+
+  const result = await runner.createAndStart(INPUT);
+  assert.deepEqual(killed, ["still-owned-session"], "the only exact owner is retried before its id can be lost");
+  assert.equal(result.status, "failed");
+  assert.equal(result.iterations[0]?.sessionId, undefined);
+  assert.equal((stored as ResearchMission | null)?.status, "failed");
+});
+
 test("launch failure remains persisted and retryable", async () => {
   const saved: ResearchMission[] = [];
   const runner = makeResearchMissionRunner(deps({
@@ -169,6 +338,126 @@ test("launch failure remains persisted and retryable", async () => {
   assert.equal(result.lastError, "daemon offline");
   assert.ok(allowedResearchActions(result).includes("retry"));
   assert.equal(saved.at(-1)?.status, "failed");
+});
+
+test("typed Windows prompt refusal is persisted immediately across create, retry, and refine", async () => {
+  const saved: ResearchMission[] = [];
+  let starts = 0;
+  const transportError = new CopilotPromptTransportError(30_001, 30_000);
+  const transportFailure = copilotPromptTransportFailure(transportError);
+  assert.ok(transportFailure, "the direct-Copilot seam maps only the typed transport refusal");
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => saved.length > 0 ? structuredClone(saved.at(-1)!) : null,
+    saveMission: async (mission) => { saved.push(structuredClone(mission)); },
+    startFlow: async () => {
+      starts += 1;
+      return transportFailure;
+    },
+  }));
+
+  const typedMission = async (operation: Promise<ResearchMission>): Promise<ResearchMission> => {
+    try {
+      await operation;
+      assert.fail("typed prompt refusal must reject through the HTTP-facing status contract");
+    } catch (error) {
+      assert.ok(error instanceof ResearchMissionLaunchInputError);
+      assert.equal(error.status, 413);
+      assert.equal(error.message, transportError.message);
+      return error.mission;
+    }
+  };
+
+  const created = await typedMission(runner.createAndStart(INPUT));
+  assert.equal(created.status, "failed");
+  assert.equal(created.iterations[0].status, "failed");
+  assert.equal(created.lastError, transportError.message);
+  assert.equal(saved.at(-1)?.status, "failed", "creation never leaves a planning orphan");
+  assert.ok(allowedResearchActions(created).includes("retry"));
+
+  const retried = await typedMission(runner.act(created.id, { action: "retry" }));
+  assert.equal(retried.status, "failed");
+  assert.equal(retried.iterations[0].status, "failed");
+  assert.equal(retried.lastError, transportError.message);
+  assert.equal(saved.at(-1)?.status, "failed", "retry records the same actionable refusal immediately");
+  assert.equal(starts, 2);
+
+  let refinedStored = checkpointMission();
+  const refineRunner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(refinedStored),
+    saveMission: async (mission) => { refinedStored = structuredClone(mission); },
+    startFlow: async () => transportFailure,
+  }));
+  const refined = await typedMission(refineRunner.act(refinedStored.id, {
+    action: "refine",
+    direction: "Use a valid but transport-heavy evidence framing",
+  }));
+  assert.equal(refined.status, "failed");
+  assert.equal(refined.iterations.length, 2);
+  assert.equal(refined.iterations.at(-1)?.status, "failed");
+  assert.equal(refined.lastError, transportError.message);
+  assert.ok(allowedResearchActions(refined).includes("retry"));
+});
+
+test("malformed argv transport is persisted and remains a typed 400", async () => {
+  const transportFailure = copilotPromptTransportFailure(
+    new CopilotArgvTransportError("argument 4", "contains unpaired UTF-16 surrogate"),
+  );
+  assert.ok(transportFailure);
+  let stored: ResearchMission | null = null;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => stored ? structuredClone(stored) : null,
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    startFlow: async () => transportFailure,
+  }));
+
+  await assert.rejects(
+    runner.createAndStart(INPUT),
+    (error: unknown) => {
+      assert.ok(error instanceof ResearchMissionLaunchInputError);
+      assert.equal(error.status, 400);
+      assert.equal(error.mission.status, "failed");
+      assert.equal(stored?.status, "failed", "typed response does not trade away durable retry state");
+      return true;
+    },
+  );
+});
+
+test("create and refine reject invalid prompt data before any launch or lossy persistence", async () => {
+  let starts = 0;
+  let saves = 0;
+  const runner = makeResearchMissionRunner(deps({
+    saveMission: async () => { saves += 1; },
+    startFlow: async () => {
+      starts += 1;
+      return { ok: true, run: RUN, sessionId: "must-not-start" };
+    },
+  }));
+  await assert.rejects(
+    runner.createAndStart({ ...INPUT, intent: "invalid\0hidden" }),
+    /invalid NUL character/,
+  );
+  assert.deepEqual({ starts, saves }, { starts: 0, saves: 0 });
+
+  let stored = checkpointMission();
+  const refineRunner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    startFlow: async () => {
+      starts += 1;
+      return { ok: true, run: RUN, sessionId: "must-not-refine" };
+    },
+  }));
+  await assert.rejects(
+    refineRunner.act(stored.id, { action: "refine", direction: `x${"y".repeat(2_000)}` }),
+    /at most 2000 characters/,
+  );
+  await assert.rejects(
+    refineRunner.act(stored.id, { action: "refine", direction: "valid prefix\0hidden" }),
+    /invalid refined direction/,
+  );
+  assert.equal(starts, 0);
+  assert.equal(stored.status, "checkpoint");
+  assert.equal(stored.direction, undefined);
 });
 
 test("the default project root is the pre-resolved mission workspace", async () => {
@@ -465,6 +754,85 @@ test("cancel kills the active session and preserves artifacts", async () => {
   assert.deepEqual(killed, ["session-1"]);
   assert.equal(result.status, "cancelled");
   assert.equal(result.artifacts.length, 1);
+});
+
+test("cancel does not mark the mission cancelled until process termination is acknowledged", async () => {
+  let stored = checkpointMission({
+    status: "running",
+    iterations: [{
+      ...checkpointMission().iterations[0],
+      status: "running",
+      finishedAt: undefined,
+    }],
+  });
+  let releaseKill!: () => void;
+  const killGate = new Promise<void>((resolve) => { releaseKill = resolve; });
+  let killStarted!: () => void;
+  const observedKill = new Promise<void>((resolve) => { killStarted = resolve; });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    killSession: async () => {
+      killStarted();
+      await killGate;
+    },
+  }));
+
+  const cancelling = runner.act(stored.id, { action: "cancel" });
+  await observedKill;
+  assert.equal(stored.status, "running", "mission state stays live while its child tree may still run");
+  releaseKill();
+  const result = await cancelling;
+  assert.equal(result.status, "cancelled");
+});
+
+test("a failed process-tree termination leaves the mission and iteration running", async () => {
+  let stored = checkpointMission({
+    status: "running",
+    iterations: [{
+      ...checkpointMission().iterations[0],
+      status: "running",
+      finishedAt: undefined,
+    }],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    killSession: async () => { throw new Error("process tree remains live"); },
+  }));
+
+  await assert.rejects(
+    runner.act(stored.id, { action: "cancel" }),
+    /process tree remains live/,
+  );
+  assert.equal(stored.status, "running");
+  assert.equal(stored.iterations[0].status, "running");
+  assert.equal(stored.finishedAt, undefined);
+});
+
+test("daemon offline and hub timeout cancellation preserve durable running state", async () => {
+  for (const message of [
+    "Research session cancellation could not be confirmed because the daemon or hub was unreachable.",
+    "Research session cancellation could not be confirmed because the daemon or hub returned HTTP 408.",
+  ]) {
+    let stored = checkpointMission({
+      status: "running",
+      iterations: [{
+        ...checkpointMission().iterations[0],
+        status: "running",
+        finishedAt: undefined,
+      }],
+    });
+    const runner = makeResearchMissionRunner(deps({
+      loadMission: async () => structuredClone(stored),
+      saveMission: async (mission) => { stored = structuredClone(mission); },
+      killSession: async () => { throw new Error(`${message} The mission remains running; retry Cancel.`); },
+    }));
+    await assert.rejects(runner.act(stored.id, { action: "cancel" }), /mission remains running; retry Cancel/i);
+    assert.equal(stored.status, "running");
+    assert.equal(stored.iterations[0].status, "running");
+    assert.equal(stored.finishedAt, undefined);
+  }
 });
 
 test("manual sources normalize, dedupe, and remain revisable", async () => {
