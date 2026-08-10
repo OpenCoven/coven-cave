@@ -68,6 +68,8 @@ mod sidecar_auth;
 #[cfg(desktop)]
 mod sidecar_discovery;
 #[cfg(desktop)]
+mod sidecar_diagnostics;
+#[cfg(desktop)]
 mod sidecar_lifecycle;
 #[cfg(desktop)]
 mod sidecar_ports;

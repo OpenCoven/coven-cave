@@ -24,8 +24,8 @@ assert.match(
 
 assert.match(
   source,
-  /snapshot = await loadDaemonStatusSnapshot\(\)[\s\S]*?return caveHomeStatusUnavailable\(error\)/,
-  "Cave home lock failures should return a structured status response instead of HTTP 500",
+  /snapshot = await loadDaemonStatusSnapshot\(\)[\s\S]*?return respond\(caveHomeStatusUnavailable\(error\)\)/,
+  "Cave home lock failures should return a correlated structured status response instead of HTTP 500",
 );
 
 assert.match(
@@ -42,8 +42,8 @@ assert.match(
 
 assert.match(
   source,
-  /callDaemonTarget<Health>\(target, daemonHealthRequest\(\)\)/,
-  "the health request and status metadata should use the same resolved daemon target",
+  /callDaemonTarget<Health>\(target, \{[\s\S]*?daemonHealthRequest\(\)[\s\S]*?diagnostics[\s\S]*?\}\)/,
+  "the health request, status metadata, and correlation should use the same resolved daemon target",
 );
 
 assert.match(
