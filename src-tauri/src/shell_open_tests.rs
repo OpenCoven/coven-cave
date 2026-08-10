@@ -25,6 +25,14 @@ fn windows_system32_binary_uses_an_absolute_system_path() {
     let path = path.to_string_lossy();
     assert!(path.starts_with(r"C:\") || path.contains(r":\"));
     assert!(path.ends_with(r"System32\rundll32.exe") || path.ends_with("System32/rundll32.exe"));
+
+    let powershell = super::windows_system32_binary(r"WindowsPowerShell\v1.0\powershell.exe");
+    let powershell = powershell.to_string_lossy();
+    assert!(powershell.starts_with(r"C:\") || powershell.contains(r":\"));
+    assert!(
+        powershell.ends_with(r"System32\WindowsPowerShell\v1.0\powershell.exe")
+            || powershell.ends_with("System32/WindowsPowerShell/v1.0/powershell.exe")
+    );
 }
 
 #[test]

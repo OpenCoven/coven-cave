@@ -1,7 +1,11 @@
 import { execFile, spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { promisify } from "node:util";
 import { callDaemonTarget, localDaemonTarget, socketPath } from "./coven-daemon.ts";
-import { covenLaunchCommand } from "./coven-bin.ts";
+import {
+  covenLaunchCommand,
+  covenWrapperSpawnEnv,
+  type CovenLaunchCommand,
+} from "./coven-bin.ts";
 import { covenCliMissingError, isMissingExecutableError } from "./coven-spawn-error.ts";
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 import { waitForDaemonReadiness } from "./daemon-readiness.ts";
@@ -148,7 +152,7 @@ async function waitForProcessGroupExit(pid: number, timeoutMs: number): Promise<
 
 /**
  * Terminates only the process tree Cave started after readiness has failed a
- * final health check. Windows taskkill owns the shell and all descendants;
+ * final health check. Windows taskkill owns the launcher and all descendants;
  * POSIX launches use an isolated process group so a foreground shell cannot
  * strand its daemon child. This is intentionally not used for a healthy
  * daemon, even if its launcher is still foregrounded.
@@ -229,6 +233,28 @@ type StartLocalDaemonOptions = {
   diagnostics?: DaemonDiagnosticContext;
 };
 
+const WINDOWS_SHIM_LAUNCH_DIAGNOSTIC =
+  "Cave could not safely resolve the Coven Windows command shim. Reinstall or update Coven, then restart Cave and try again.";
+
+/**
+ * Convert Coven discovery into a daemon command that never asks a command
+ * shell to reinterpret paths or arguments. An unknown .cmd/.bat target is not
+ * launchable: cmd.exe would both reintroduce the console popup and make
+ * dynamic argv subject to shell parsing.
+ */
+export function directDaemonLaunchCommand(
+  launch: CovenLaunchCommand = covenLaunchCommand(),
+): { command: string; args: string[]; shell: false } {
+  if (launch.unresolvedWindowsShim) {
+    throw new Error(WINDOWS_SHIM_LAUNCH_DIAGNOSTIC);
+  }
+  return {
+    command: launch.command,
+    args: [...launch.fixedArgs, "daemon", "start"],
+    shell: false,
+  };
+}
+
 export type DaemonLifecycleInspection = {
   status: "running" | "stopped" | "stale" | "unknown";
 };
@@ -255,7 +281,7 @@ async function inspectDaemonLifecycle(
       [...fixedArgs, "daemon", "status", "--json"],
       {
         encoding: "utf8",
-        env: {
+        env: covenWrapperSpawnEnv({
           ...harnessSpawnEnv(),
           ...(diagnostics ? {
             COVEN_CAVE_CORRELATION_ID: diagnostics.correlationId,
@@ -263,7 +289,7 @@ async function inspectDaemonLifecycle(
             ...(operation != null ? { COVEN_CAVE_DIAGNOSTIC_OPERATION: operation } : {}),
             ...(attempt != null ? { COVEN_CAVE_DIAGNOSTIC_ATTEMPT: String(attempt) } : {}),
           } : {}),
-        },
+        }),
         timeout: 2_500,
         windowsHide: true,
       },
@@ -432,17 +458,7 @@ async function runLocalDaemonStartCore({
   readHealthDocument: readHealthDocumentOverride,
   installedVersion,
   inspectAddress = () => inspectDaemonAddress({ socketPath: socketPath() }),
-  launchCommand = () => {
-    const launch = covenLaunchCommand();
-    return {
-      command: launch.command,
-      args: [...launch.fixedArgs, "daemon", "start"],
-      // An unreadable third-party batch shim cannot be safely decomposed.
-      // Preserve the legacy fallback for that one case; verified npm shims
-      // launch their target directly so paths with spaces remain one argv.
-      shell: launch.unresolvedWindowsShim === true,
-    };
-  },
+  launchCommand = directDaemonLaunchCommand,
   spawnEnvironment = harnessSpawnEnv,
   spawnImpl = spawn,
   terminateLaunchTree = terminateDaemonLaunchTree,
@@ -541,25 +557,47 @@ async function runLocalDaemonStartCore({
     }
   }
 
-  const launchMode = platform === "win32" ? "shell" : "direct";
-  const launch = launchCommand();
+  const launchMode = "direct";
+  let launch: ReturnType<NonNullable<StartLocalDaemonOptions["launchCommand"]>>;
+  try {
+    launch = launchCommand();
+    if (launch.shell) {
+      throw new Error(WINDOWS_SHIM_LAUNCH_DIAGNOSTIC);
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      code: "spawn_failed",
+      error: sanitizeDaemonStartDiagnostic(
+        error instanceof Error ? error.message : WINDOWS_SHIM_LAUNCH_DIAGNOSTIC,
+      ),
+      stdout: "",
+      stderr: "",
+      status: 500,
+      readinessAttempts: restart ? 0 : automatic ? 2 : 1,
+      elapsedMs: Date.now() - startedAt,
+      launchMode,
+    };
+  }
+  const spawnEnv = spawnEnvironment();
   const child = spawnImpl(launch.command, launch.args, {
     stdio: ["ignore", "pipe", "pipe"],
     // POSIX uses an owned process group so timeout cleanup cannot strand a
-    // foreground shell's daemon descendant. Windows owns its shell tree via
+    // foreground launcher's daemon descendant. Windows owns its launch tree via
     // taskkill /T instead, where detached process groups do not provide this.
-    detached: launchMode === "direct",
+    detached: platform !== "win32",
     // The daemon must never hold scoped vault secrets: daemon-launched
     // sessions would inherit them wholesale. Scoped keys flow only through
     // Cave's own per-familiar spawn path (cave-4nu6).
-    env: {
-      ...spawnEnvironment(),
+    env: covenWrapperSpawnEnv({
+      ...spawnEnv,
       COVEN_CAVE_CORRELATION_ID: diagnostics.correlationId,
       COVEN_CAVE_DIAGNOSTIC_GENERATION: String(diagnostics.generation),
       COVEN_CAVE_DIAGNOSTIC_OPERATION: automatic ? "daemon-recovery" : "daemon-start",
       COVEN_CAVE_DIAGNOSTIC_ATTEMPT: "1",
-    },
-    shell: launch.shell ?? false,
+    }, platform),
+    shell: false,
+    windowsHide: true,
   });
   let stdout = "";
   let stderr = "";

@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { readFile } from "node:fs/promises";
 import { sanitizeAboutDiagnosticText } from "./about-diagnostics.ts";
 import {
+  directDaemonLaunchCommand,
   parseDaemonLifecycleInspection,
   startLocalDaemon,
   terminateDaemonLaunchTree,
@@ -24,7 +25,9 @@ const covenDaemon = await readFile(new URL("./coven-daemon.ts", import.meta.url)
 assert.match(covenDaemon, /export function localDaemonTarget\(\)[\s\S]*mode: "local"[\s\S]*socketPath: socketPath\(\)/);
 assert.match(daemonStart, /waitForDaemonReadiness/);
 assert.match(daemonStart, /path: "\/api\/v1\/health"/);
-assert.match(daemonStart, /detached: launchMode === "direct"/, "POSIX launch owns a process group");
+assert.match(daemonStart, /detached: platform !== "win32"/, "POSIX launch owns a process group");
+assert.match(daemonStart, /windowsHide: true/, "daemon launch suppresses Windows console allocation");
+assert.doesNotMatch(daemonStart, /shell: launch\.unresolvedWindowsShim/, "unresolved Windows shims never fall back to cmd.exe");
 assert.match(daemonStart, /taskkill/, "Windows timeout cleanup owns the shell process tree");
 assert.match(daemonStart, /const cleanup = await terminateLaunchTree\(child\)/, "timeout cleanup is executed, not merely declared");
 assert.match(readinessSource, /A final probe closes the race/);
@@ -236,6 +239,70 @@ test("automatic recovery still starts after lifecycle proves stopped", async () 
   assert.equal(result.ok, true);
 });
 
+test("daemon command resolution launches a proven shim target directly", () => {
+  assert.deepEqual(
+    directDaemonLaunchCommand({ command: process.execPath, fixedArgs: ["C:\\tools\\coven.js"] }),
+    {
+      command: process.execPath,
+      args: ["C:\\tools\\coven.js", "daemon", "start"],
+      shell: false,
+    },
+  );
+  assert.throws(
+    () => directDaemonLaunchCommand({
+      command: "C:\\Users\\example\\AppData\\Roaming\\npm\\coven.cmd",
+      fixedArgs: [],
+      unresolvedWindowsShim: true,
+    }),
+    /could not safely resolve the Coven Windows command shim/i,
+  );
+});
+
+test("Windows daemon launch is hidden, shell-free, and signals the native wrapper", async () => {
+  const child = fakeChild();
+  let seen: { command: string; args: string[]; options: Record<string, unknown> } | undefined;
+  const result = await startLocalDaemon({
+    restart: true,
+    probe: async () => ({ ok: true }),
+    platform: "win32",
+    launchCommand: () => ({ command: process.execPath, args: ["coven.js", "daemon", "start"], shell: false }),
+    spawnEnvironment: () => ({ PATH: "C:\\Windows\\System32" }),
+    spawnImpl: (command, args, options) => {
+      seen = { command, args, options: options as Record<string, unknown> };
+      return child;
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.launchMode, "direct");
+  assert.equal(seen?.options.windowsHide, true);
+  assert.equal(seen?.options.shell, false);
+  assert.equal(seen?.options.detached, false);
+  assert.equal(
+    (seen?.options.env as NodeJS.ProcessEnv).COVEN_WINDOWS_HIDE_NATIVE_WINDOW,
+    "1",
+  );
+});
+
+test("an injected shell fallback is refused before spawn", async () => {
+  let spawnCalls = 0;
+  const result = await startLocalDaemon({
+    restart: true,
+    probe: async () => ({ ok: false }),
+    platform: "win32",
+    launchCommand: () => ({ command: "coven.cmd", args: ["daemon", "start"], shell: true }),
+    spawnImpl: () => {
+      spawnCalls += 1;
+      return fakeChild();
+    },
+  });
+  assert.equal(spawnCalls, 0);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "spawn_failed");
+  assert.equal(result.launchMode, "direct");
+  assert.match(result.error, /could not safely resolve the Coven Windows command shim/i);
+});
+
 test("a readiness timeout terminates the Windows launch tree", async () => {
   const child = fakeChild();
   let cleanupCalls = 0;
@@ -261,7 +328,7 @@ test("a readiness timeout terminates the Windows launch tree", async () => {
     status: 504,
     readinessAttempts: 3,
     elapsedMs: result.elapsedMs,
-    launchMode: "shell",
+    launchMode: "direct",
     cleanup: { attempted: true, completed: true, mode: "windows-tree" },
   });
 });

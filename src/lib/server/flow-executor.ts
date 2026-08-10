@@ -6,7 +6,12 @@ import {
   setSessionTitle,
   type CaveTravelQueueItem,
 } from "@/lib/cave-config";
-import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
+import {
+  callDaemon,
+  callDaemonTarget,
+  extractDaemonError,
+  localDaemonTarget,
+} from "@/lib/coven-daemon";
 import { catalogNode } from "@/lib/flow/flow-catalog";
 import {
   flowRunRedactsData,
@@ -38,6 +43,18 @@ import { isSshRuntime } from "@/lib/familiar-runtime";
 import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
 import { travelLocalQueueStatus } from "@/lib/travel-offline-queue";
+import { daemonHealthRequest } from "@/lib/server/daemon-health-request";
+import {
+  INVALID_RESEARCH_WRITE_GRANT_DIAGNOSTIC,
+  isOwnerLocalResearchDaemonTarget,
+  OWNER_LOCAL_RESEARCH_DAEMON_REQUIRED_DIAGNOSTIC,
+  researchSessionLaunchPolicy,
+  SESSION_LAUNCH_POLICY_REQUIRED_DIAGNOSTIC,
+  shouldRequestResearchSessionLaunchPolicy,
+  supportsSessionLaunchPolicy,
+  dispatchResearchDaemonRequest,
+  validatedResearchLaunchAddDirs,
+} from "@/lib/server/research-launch-policy";
 
 export type StartFlowSessionResult = {
   ok: boolean;
@@ -119,6 +136,12 @@ export async function startFlowSession(
      * prompt, so an untrusted workspace write hard-fails.
      */
     addDirs?: string[];
+    /**
+     * Internal trust marker set only by the Research mission runner. It is not
+     * accepted from flow API request bodies. Local daemon sessions must prove
+     * the explicit launch-policy capability before receiving the policy.
+     */
+    trustedLocalResearch?: true;
   } = {},
 ): Promise<StartFlowSessionResult> {
   const blocked = flowRunBlockReason(flow, options.targetNodeId);
@@ -304,7 +327,58 @@ export async function startFlowSession(
     };
   }
 
-  const res = await callDaemon<{ id: string; status: string }>({
+  let launchPolicy: ReturnType<typeof researchSessionLaunchPolicy> | undefined;
+  let pinnedResearchDaemonTarget: ReturnType<typeof localDaemonTarget> | undefined;
+  if (shouldRequestResearchSessionLaunchPolicy({
+    trustedLocalResearch: options.trustedLocalResearch === true,
+    harness: binding.harness,
+    sshBound,
+    hubAuthority,
+  })) {
+    const addDirs = await validatedResearchLaunchAddDirs(options.addDirs ?? [], projectRoot);
+    if (!addDirs) {
+      return {
+        ok: false,
+        status: 409,
+        error: INVALID_RESEARCH_WRITE_GRANT_DIAGNOSTIC,
+      };
+    }
+    // Pin one authority before the capability probe. `callDaemon()` reloads
+    // config for every request; a concurrent local -> hub config change must
+    // never move the later policy-bearing POST across that trust boundary.
+    pinnedResearchDaemonTarget = localDaemonTarget();
+    if (!isOwnerLocalResearchDaemonTarget(pinnedResearchDaemonTarget)) {
+      return {
+        ok: false,
+        status: 409,
+        error: OWNER_LOCAL_RESEARCH_DAEMON_REQUIRED_DIAGNOSTIC,
+      };
+    }
+    const health = await callDaemonTarget<Record<string, unknown>>(
+      pinnedResearchDaemonTarget,
+      daemonHealthRequest(),
+    );
+    if (!health.ok) {
+      if (health.status === 0) {
+        return { ok: false, unavailable: true, error: "daemon offline" };
+      }
+      return {
+        ok: false,
+        error: extractDaemonError(health) ?? health.error ?? `daemon http ${health.status}`,
+        status: health.status || 502,
+      };
+    }
+    if (!supportsSessionLaunchPolicy(health.data)) {
+      return {
+        ok: false,
+        status: 409,
+        error: SESSION_LAUNCH_POLICY_REQUIRED_DIAGNOSTIC,
+      };
+    }
+    launchPolicy = researchSessionLaunchPolicy(addDirs);
+  }
+
+  const sessionRequest = {
     method: "POST",
     path: "/api/v1/sessions",
     // Spawn a plain harness session (no native `familiarId`), the same way task
@@ -316,9 +390,22 @@ export async function startFlowSession(
     // harness TUI. The familiar is already described in the compiled prompt and
     // is mirrored into cave-state below via recordSessionFamiliar, so attribution
     // and the run→familiar link survive.
-    body: { projectRoot, harness: binding.harness, prompt, launchMode: "nonInteractive" },
+    body: {
+      projectRoot,
+      harness: binding.harness,
+      prompt,
+      launchMode: "nonInteractive",
+      ...(launchPolicy ? { launchPolicy } : {}),
+    },
     timeoutMs: 8000,
-  });
+  } as const;
+  const res = await dispatchResearchDaemonRequest<{ id: string; status: string }>(
+    sessionRequest,
+    launchPolicy
+      ? { launchPolicy, pinnedTarget: pinnedResearchDaemonTarget! }
+      : undefined,
+    { callDaemon, callDaemonTarget },
+  );
 
   if (!res.ok || !res.data?.id) {
     if (res.status === 0) {

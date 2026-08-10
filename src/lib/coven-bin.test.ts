@@ -4,16 +4,73 @@
 // that shape when launched as a desktop app, otherwise /api/onboarding/status
 // can find `coven` while later spawns still fail with ENOENT.
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { caveToolSpawnEnv, covenAdapterDirsEnvValue, covenLaunchCommandForBinary, covenSpawnEnv, pickWindowsLauncher, refreshCovenSpawnEnv, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery } from "./coven-bin.ts";
+import { COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV, caveToolSpawnEnv, covenAdapterDirsEnvValue, covenBinaryFromEnvironment, covenLaunchCommandForBinary, covenSpawnEnv, covenWrapperSpawnEnv, pickWindowsLauncher, refreshCovenSpawnEnv, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery, withCovenWrapperWindowPolicy } from "./coven-bin.ts";
+import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 
 const source = await readFile(new URL("./coven-bin.ts", import.meta.url), "utf8");
 const childSpawnEnvSource = await readFile(
   new URL("./child-spawn-env.ts", import.meta.url),
   "utf8",
 );
+
+assert.equal(
+  withCovenWrapperWindowPolicy({}, "win32")[COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV],
+  "1",
+  "every Cave-owned Coven wrapper invocation opts into hidden native Windows children",
+);
+assert.equal(
+  withCovenWrapperWindowPolicy(
+    { [COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV]: "1" },
+    "linux",
+  )[COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV],
+  undefined,
+  "the wrapper opt-in is Windows-only",
+);
+assert.deepEqual(
+  withCovenWrapperWindowPolicy(
+    { coven_windows_hide_native_window: "1" },
+    "win32",
+    false,
+  ),
+  {},
+  "user-selected project tools never inherit Cave's wrapper window policy",
+);
+assert.equal(
+  covenWrapperSpawnEnv({}, "win32")[COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV],
+  "1",
+  "the semantic helper opts one exact Coven wrapper launch into native window suppression",
+);
+
+{
+  const previous = process.env[COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV];
+  process.env[COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV] = "inherited";
+  try {
+    refreshCovenSpawnEnv({ discoveryDeadline: 0, now: () => 0 });
+    assert.equal(
+      covenSpawnEnv()[COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV],
+      undefined,
+      "the generic Coven-derived environment scrubs an inherited wrapper signal",
+    );
+    assert.equal(
+      harnessSpawnEnv()[COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV],
+      undefined,
+      "direct harnesses never inherit the Coven-wrapper-only signal",
+    );
+    assert.equal(
+      caveToolSpawnEnv()[COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV],
+      undefined,
+      "project tools never inherit the Coven-wrapper-only signal",
+    );
+  } finally {
+    if (previous === undefined) delete process.env[COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV];
+    else process.env[COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV] = previous;
+    refreshCovenSpawnEnv();
+  }
+}
 
 assert.match(
   source,
@@ -178,8 +235,13 @@ assert.match(
 );
 assert.match(
   source,
-  /return scrubSidecarInternalEnv\(env\);\s*\}/,
-  "covenSpawnEnv routes through the shared scrub, so agents/CLI probes/installers are all covered",
+  /return withCovenWrapperWindowPolicy\(\s*scrubSidecarInternalEnv\(env\),[\s\S]*process\.platform,[\s\S]*false,[\s\S]*\);/,
+  "the shared spawn baseline scrubs the wrapper-only Windows signal",
+);
+assert.match(
+  source,
+  /export function covenWrapperSpawnEnv\([\s\S]*return withCovenWrapperWindowPolicy\(env, platform, true\)/,
+  "only the exact Coven wrapper helper restores the Windows no-window opt-in",
 );
 {
   const env = scrubSidecarInternalEnv({
@@ -723,11 +785,87 @@ assert.equal(
 
 assert.equal(pickWindowsLauncher([]), null, "empty `where` output yields null");
 
+assert.doesNotMatch(
+  source,
+  /execFileSync\("where(?:\.exe)?", \["coven"\]/,
+  "Coven resolution never delegates to where.exe, whose search includes cwd",
+);
+assert.doesNotMatch(
+  source,
+  /execFileSync\("reg(?:\.exe)?"/,
+  "Windows PATH refresh never runs a cwd-searchable registry utility",
+);
 assert.match(
   source,
-  /execFileSync\("where", \["coven"\][\s\S]*pickWindowsLauncher/,
-  "covenBin falls back to `where` + launcher picking before the literal name on Windows",
+  /path\.join\([^\n]*systemRoot, "System32", "reg\.exe"\)/,
+  "Windows PATH refresh pins reg.exe to the verified system directory",
 );
+assert.match(
+  source,
+  /process\.platform === "win32"\) throw new Error\(COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC\)/,
+  "a missing Windows Coven CLI fails closed instead of returning a bare executable name",
+);
+
+if (process.platform === "win32") {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "cave-coven-cwd-plant-"));
+  const verifiedDirectory = await mkdtemp(path.join(os.tmpdir(), "cave-coven-path-"));
+  try {
+    await copyFile(process.execPath, path.join(directory, "coven.exe"));
+    await copyFile(process.execPath, path.join(verifiedDirectory, "coven.exe"));
+    assert.equal(
+      covenBinaryFromEnvironment({ Path: ".", COVEN_BIN: "coven.exe" }),
+      null,
+      "an explicit relative override and relative PATH never consult the process cwd",
+    );
+    assert.equal(
+      covenBinaryFromEnvironment({ Path: verifiedDirectory }),
+      path.join(verifiedDirectory, "coven.exe"),
+      "an existing launcher in an explicit absolute PATH directory is eligible",
+    );
+    assert.equal(
+      covenBinaryFromEnvironment({ Path: "\\\\remote-host\\share" }),
+      null,
+      "remote UNC search roots cannot supply Cave's owner-local Coven CLI",
+    );
+    const env = { ...process.env };
+    for (const key of Object.keys(env)) {
+      if (key.toUpperCase() === "PATH" || key === "COVEN_BIN") delete env[key];
+    }
+    Object.assign(env, {
+      Path: ".",
+      COVEN_BIN: "coven.exe",
+      HOME: directory,
+      USERPROFILE: directory,
+      APPDATA: path.join(directory, "appdata"),
+      LOCALAPPDATA: path.join(directory, "localappdata"),
+    });
+    const moduleHref = new URL(`./coven-bin.ts?cwd-plant=${Date.now()}`, import.meta.url).href;
+    const probe = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--input-type=module",
+        "-e",
+        `import { covenBin } from ${JSON.stringify(moduleHref)}; try { console.log(covenBin()); } catch (error) { console.error(error.message); }`,
+      ],
+      { cwd: directory, env, encoding: "utf8", windowsHide: true, shell: false },
+    );
+    assert.equal(probe.status, 0, probe.stderr || probe.error?.message);
+    const selected = probe.stdout.trim();
+    assert.ok(
+      selected || /Coven CLI was not found/i.test(probe.stderr),
+      "discovery either selects a verified system/user installation or fails closed",
+    );
+    assert.notEqual(
+      selected.toLowerCase(),
+      path.join(directory, "coven.exe").toLowerCase(),
+      "neither Windows cwd search nor a relative override can select cwd-planted coven.exe",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await rm(verifiedDirectory, { recursive: true, force: true });
+  }
+}
 
 // Released Coven CLIs only auto-trust recipe-installed manifests inside
 // COVEN_HOME/adapters (hermes); Cave-scaffolded copilot/opencode manifests

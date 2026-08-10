@@ -36,7 +36,12 @@ import {
   toPersistedTools,
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
-import { covenLaunchCommand, type CovenLaunchCommand } from "@/lib/coven-bin";
+import {
+  COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC,
+  covenLaunchCommand,
+  covenWrapperSpawnEnv,
+  type CovenLaunchCommand,
+} from "@/lib/coven-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
 import {
@@ -1844,7 +1849,18 @@ export async function POST(req: Request) {
       : null;
   const codexSpawnEnv =
     !sshRuntime && binding.harness === "codex" ? harnessSpawnEnv(body.familiarId) : null;
-  const codexDirectLaunch = codexSpawnEnv ? codexLaunchCommand() : null;
+  const codexDirectLaunch = codexSpawnEnv
+    ? (() => {
+        try {
+          return codexLaunchCommand();
+        } catch {
+          // A missing Windows CLI has no safe bare-name fallback. Preserve the
+          // existing Coven-backed route, whose adapter preflight reports the
+          // actionable missing-runtime diagnostic without spawning from cwd.
+          return null;
+        }
+      })()
+    : null;
   // The same passive availability contract every direct runner uses. The
   // bounded capability probe below only runs against a launch-ready plan,
   // mirroring how Copilot gates its capability probe on launch readiness.
@@ -1928,8 +1944,20 @@ export async function POST(req: Request) {
         ...(codexLaunchAvailability ? { availability: codexLaunchAvailability } : {}),
       });
     } else if (!hermesDirect) {
-      const env = harnessSpawnEnv(body.familiarId);
-      const launch = covenLaunchCommand();
+      const env = covenWrapperSpawnEnv(harnessSpawnEnv(body.familiarId));
+      let launch: CovenLaunchCommand;
+      try {
+        launch = covenLaunchCommand();
+      } catch {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC,
+            code: RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing,
+          }),
+          { status: 409, headers: { "content-type": "application/json" } },
+        );
+      }
       localRuntimePlan = createLocalRuntimePlan({
         runner: "coven",
         launch,

@@ -135,6 +135,11 @@ assert.match(source, /onboardingStatusPayload\(steps, openCovenTools\)/);
 assert.doesNotMatch(source, /Install the Coven CLI from OpenCoven\/coven/);
 assert.match(
   source,
+  /process\.platform === "win32" && binary\.toLowerCase\(\) === "coven"[\s\S]{0,180}covenBinaryFromEnvironment\(env\)/,
+  "Windows onboarding resolves Coven from explicit absolute PATH entries without cwd-searching where.exe",
+);
+assert.match(
+  source,
   /async function checkGit\(\s*env: NodeJS\.ProcessEnv,\s*deadline: number,\s*discoveryState: EnvironmentDiscoveryState,\s*\): Promise<Step>/,
   "preflight checks for git within the request-scoped environment and deadline",
 );

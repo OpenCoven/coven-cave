@@ -564,12 +564,17 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
    */
   const missionStartTarget = async (
     mission: ResearchMission,
-  ): Promise<{ ok: true; projectRoot: string } | { ok: false; error: string }> => {
+  ): Promise<
+    { ok: true; projectRoot: string; missionWorkspace: string }
+    | { ok: false; error: string }
+  > => {
     // Standard landing access: research artifacts always land in the mission
     // workspace under the research landing root — make sure the mission's
     // familiar can reach them from later sessions before this run produces
     // anything. Best-effort by contract: implementations never throw.
     await deps.ensureResearchAccess(mission.familiarId);
+    const workspacePath = deps.missionWorkspacePath(mission.id);
+    const workspace = await deps.resolveProjectRoot(workspacePath) ?? workspacePath;
     if (mission.projectRoot) {
       const resolved = await deps.resolveProjectRoot(mission.projectRoot);
       if (!resolved) {
@@ -580,27 +585,22 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       }
       const denied = await deps.checkFamiliarRootAccess(mission.familiarId, resolved);
       if (denied) return { ok: false, error: denied };
-      return { ok: true, projectRoot: resolved };
+      return { ok: true, projectRoot: resolved, missionWorkspace: workspace };
     }
-    const workspace = deps.missionWorkspacePath(mission.id);
-    const resolved = await deps.resolveProjectRoot(workspace);
-    return { ok: true, projectRoot: resolved ?? workspace };
+    return { ok: true, projectRoot: workspace, missionWorkspace: workspace };
   };
 
   /**
-   * Start options for one iteration: the resolved run root plus the mission
-   * workspace as a harness-level trust grant. When a configured project root
-   * makes the spawn cwd differ from the workspace, a non-interactive run
-   * cannot prompt for permission — without the grant every workspace write
-   * hard-fails and the iteration ends without artifacts/primary.md. A grant
-   * equal to the spawn cwd is dropped by the flow spawn itself.
-   */
+   * Start options for one iteration. A configured project may be the research
+   * context while artifacts still belong in Cave's canonical mission
+   * workspace, so that verified workspace is the one narrow secondary grant.
+  */
   const missionStartOptions = (
-    mission: ResearchMission,
     projectRoot: string,
+    missionWorkspace: string,
   ): { projectRoot: string; addDirs: string[] } => ({
     projectRoot,
-    addDirs: [deps.missionWorkspacePath(mission.id)],
+    addDirs: missionWorkspace === projectRoot ? [] : [missionWorkspace],
   });
 
   /**
@@ -675,7 +675,10 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     await saveMission(next);
     const target = await missionStartTarget(next);
     const result = target.ok
-      ? await deps.startFlow(buildResearchMissionFlow(next, number), missionStartOptions(next, target.projectRoot))
+      ? await deps.startFlow(
+        buildResearchMissionFlow(next, number),
+        missionStartOptions(target.projectRoot, target.missionWorkspace),
+      )
       : { ok: false, error: target.error };
     next = applyStartResult(next, result, deps.now());
     await saveMission(next);
@@ -719,7 +722,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     const result = target.ok
       ? await deps.startFlow(
         buildResearchMissionFlow(retried, current.number),
-        missionStartOptions(retried, target.projectRoot),
+        missionStartOptions(target.projectRoot, target.missionWorkspace),
       )
       : { ok: false, error: target.error };
     retried = applyStartResult(retried, result, deps.now());
@@ -1304,7 +1307,10 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         if (TERMINAL_RESEARCH_MISSION_STATUSES.includes(current.status)) return current;
         const target = await missionStartTarget(current);
         const result = target.ok
-          ? await deps.startFlow(buildResearchMissionFlow(current, 1), missionStartOptions(current, target.projectRoot))
+          ? await deps.startFlow(
+            buildResearchMissionFlow(current, 1),
+            missionStartOptions(target.projectRoot, target.missionWorkspace),
+          )
           : { ok: false, error: target.error };
         current = applyStartResult(current, result, deps.now());
         await saveMission(current);
@@ -1425,6 +1431,7 @@ export function makeProductionResearchMissionRunner() {
       return startFlowSession(flow, {
         projectRoot: options.projectRoot,
         addDirs: options.addDirs,
+        trustedLocalResearch: true,
       });
     },
     loadFlowRun: async (id) => {
