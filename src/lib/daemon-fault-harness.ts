@@ -16,7 +16,7 @@ import type { Socket } from "node:net";
  *  - **Bounded.** Every accepted socket is tracked and destroyed on `close()`.
  *    Node's `server.close()` only stops new connections and waits for existing
  *    ones to drain; a deliberately hung response never drains. Without the
- *    socket registry, `hang` and `slow-body` would leak a handle and hold the
+ *    socket registry, `hang` would leak a handle and hold the
  *    process open past the test.
  *  - **Deterministic.** Faults are driven by request count, not wall-clock
  *    timing, so `delayedReadyAfter: 3` means the fourth request succeeds on a
@@ -148,7 +148,7 @@ export async function startDaemonFaultHarness(
     url: `http://127.0.0.1:${port}`,
     port,
     requestCount: () => requests,
-    openSocketCount: () => sockets.size,
+    openSocketCount: () => [...sockets].filter((socket) => !socket.destroyed).length,
     async close() {
       if (closed) return;
       closed = true;
