@@ -5,7 +5,10 @@ import {
   type ResearchMissionStatus,
 } from "@/lib/research-missions";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
-import { makeProductionResearchMissionRunner } from "@/lib/server/research-mission-runner";
+import {
+  makeProductionResearchMissionRunner,
+  ResearchMissionLaunchInputError,
+} from "@/lib/server/research-mission-runner";
 import {
   isResearchFileIntegrityError,
   isValidResearchMissionId,
@@ -41,6 +44,8 @@ const VALIDATION_ERRORS = new Set([
   "research artifact not found",
   "research source not found",
   "refined direction required",
+  "invalid refined direction",
+  "refined direction must be at most 2000 characters",
   "invalid project root override",
   "research mission is not settled yet",
   "rejected artifacts need a new working version before publishing",
@@ -90,6 +95,12 @@ export async function POST(
     const mission = await runner.act(id, parsed.body);
     return NextResponse.json({ ok: true, mission });
   } catch (error) {
+    if (error instanceof ResearchMissionLaunchInputError) {
+      return NextResponse.json(
+        { ok: false, error: error.message, mission: error.mission },
+        { status: error.status },
+      );
+    }
     // Workspace-containment failures (symlinked/oversized/escaping artifact
     // reached during a manual publish/finish) are 4xx — the request was valid,
     // the target file fails the sandbox — never a 500 (cave-v73d).

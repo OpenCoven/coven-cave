@@ -201,4 +201,10 @@ assert.match(
   "flow replay must update the queued placeholder run in place (mission iterations keep its id), falling back to a fresh record only for legacy/evicted items",
 );
 
+assert.match(
+  replay,
+  /if \(isResearchMissionFlowSnapshot\(flow\)\)[\s\S]*?Queued Research work is not replayed[\s\S]*?const options = record\(payload\.options\)/,
+  "legacy Research queue entries are refused before replay can spawn a new session",
+);
+
 console.log("travel-offline-replay.test.ts: placeholder-run pin ok");
