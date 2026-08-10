@@ -936,12 +936,12 @@ test("Windows first launch paints progress and supports recovery while the sidec
   );
   assert.match(
     launcher,
-    /spawn_sidecar_startup\(app\.handle\(\)\.clone\(\), startup_control\)\?;\s*spawn_sidecar_supervisor\(app\.handle\(\)\.clone\(\)\)/,
+    /spawn_sidecar_startup\(\s*app\.handle\(\)\.clone\(\),\s*startup_control,\s*NativeStartupTerminalPolicy::RecordAtLifecycleTerminal,\s*\)\?;\s*spawn_sidecar_supervisor\(app\.handle\(\)\.clone\(\)\)/,
     "Windows must start post-ready supervision beside the startup owner",
   );
   assert.match(
     launcher,
-    /spawn_sidecar_startup\(app\.clone\(\), Arc::clone\(control\.inner\(\)\)\)/,
+    /spawn_sidecar_startup\(\s*app\.clone\(\),\s*Arc::clone\(control\.inner\(\)\),\s*sidecar_startup::NativeStartupTerminalPolicy::DeferredToSupervisor,\s*\)/,
     "automatic Windows recovery must reuse SidecarStartupControl instead of racing it",
   );
   assert.match(

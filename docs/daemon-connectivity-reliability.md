@@ -4,9 +4,8 @@ Status: active reliability program (`cave-58eoq`)
 
 Last updated: 2026-08-10
 
-Implementation note: Windows supervision shipped in PR #4485. Authenticated
-native readiness is complete and validated in its separate managed worktree,
-but remains unmerged under the repository's conservative profile.
+Implementation note: Windows supervision shipped in PR #4485 and authenticated
+native readiness shipped in PR #4495.
 
 This document maps the current desktop connectivity stack, records verified
 failure modes, and defines the target lifecycle contract. It separates facts
@@ -43,7 +42,7 @@ configured remote hub and perform daemon health and API requests.
 
 | Boundary | Existing proof | Remaining requirement |
 | --- | --- | --- |
-| Rust shell -> Node sidecar | Exact owned-child ready log plus a bounded sidecar-token-authenticated API handshake that verifies service identity, native protocol v1, exact app version, bundle mode, and API dependency readiness | Merge `cave-58eoq.2`; extend the same correlation ID through later daemon and CLI work |
+| Rust shell -> Node sidecar | Exact owned-child ready log plus a bounded sidecar-token-authenticated API handshake that verifies service identity, native protocol v1, exact app version, bundle mode, and API dependency readiness | Extend the same correlation ID through later daemon and CLI work |
 | Webview -> Node sidecar | Per-launch token passed in startup URL and enforced by the sidecar bridge | Correlated handshake evidence and bounded recovery transcript |
 | Mobile/tailnet -> Node sidecar | Separate persisted access token and request classification | Continue validating forwarded-peer assumptions and token lifecycle |
 | Next routes -> local daemon | Socket/named-pipe request with bounded timeout; health document and compatibility checks in status/start paths | Endpoint ownership/permission evidence and one shared handshake contract |
@@ -102,11 +101,11 @@ evidence. Full cross-layer correlation remains `cave-58eoq.3`.
 | 3 | High | Fixed in this branch | An inherited non-loopback `HOSTNAME` could expose tokenless development APIs to remote callers who spoofed a loopback `Host` and omitted source headers | The listener trusted ambient `HOSTNAME`, while the final tokenless proxy path treated client-controlled authority as sufficient after host/CSRF checks | Restrict bind selection to validated loopback aliases, default invalid ambient values to `127.0.0.1`, and require the custom server's verified local-peer stamp or verified remote ingress before tokenless API access |
 | 4 | High | Fixed in this branch | Remote HTTP hubs could receive bearer credentials in plaintext, and ad-hoc HTTPS probes could forward the process-wide hub token to a caller-selected authority | Node and iOS attached stored credentials based on target mode/transport but did not consistently require secure transport plus exact credential origin; the probe route reused global custody for arbitrary URLs | Refuse remote plaintext bearer transport before networking, bind iOS credentials to exact normalized origins shared by HTTPS/WSS, probe sibling authorities without credentials, and limit ad-hoc Node probes to tokens embedded by the caller in that exact URL |
 | 5 | High | Shipped in PR #4485: `cave-58eoq.1` | A packaged Windows sidecar that dies after startup previously remained dead until a later UI/manual recovery path acted | Windows had startup ownership but no post-ready observer | Windows now launches the shared bounded supervisor beside `SidecarStartupControl`; automatic/manual startup share atomic ownership, budget resets only after a finished startup with an observed live child, shutdown stops supervision first, and failed/cancelled/navigation-failed workers synchronously release the owned process job |
-| 6 | High | Implemented, unmerged: `cave-58eoq.2` | The window previously could open onto a sidecar that was listening but incompatible or only partially initialized | Rust readiness proved child log + TCP only | Native GUI and background-daemon startup now require the same bounded sidecar-token-authenticated identity/protocol/version/bundle/dependency handshake before navigation, publication, or retained daemon state |
+| 6 | High | Shipped in PR #4495: `cave-58eoq.2` | The window previously could open onto a sidecar that was listening but incompatible or only partially initialized | Rust readiness proved child log + TCP only | Native GUI and background-daemon startup now require the same bounded sidecar-token-authenticated identity/protocol/version/bundle/dependency handshake before navigation, publication, or retained daemon state |
 | 7 | Medium | Fixed in this branch | Incompatible, unauthorized, unhealthy, unreachable, misconfigured, and status-unavailable responses appeared as generic “Offline” | Settings ignored the route's machine-readable `availability`; the shared type omitted the route's `incompatible` value | Complete the shared taxonomy, fail closed on contradictory fields, render distinct labels/tones, and expose sanitized reason text |
 | 8 | Medium | Open: `cave-58eoq.3` | Support cannot follow one startup/recovery across Rust, sidecar, daemon requests, and CLI children | Logs are component-local and no shared correlation/diagnostic-bundle contract was found | Add correlation IDs, structured lifecycle events, bounded retention, and a redacted export manifest |
 | 9 | Medium | Open: `cave-58eoq.4` | Green happy-path tests can miss races, stale endpoints, hangs, resets, and orphaned children | Coverage is strong for helpers but sparse for full post-ready crash/revive and cross-component fault sequences | Add deterministic OS-matrix fault injection and repeated lifecycle stress |
-| 10 | Medium | Open: `cave-58eoq.5` | Startup/recovery improvements cannot be compared rigorously | No shared definitions or retained distributions for authenticated time-to-ready and recovery success | Instrument local privacy-safe metrics and reproducible baseline/fault runs |
+| 10 | Medium | Implemented in this branch: `cave-58eoq.5` | Startup/recovery improvements could not be compared rigorously | No shared definitions or retained distributions for authenticated time-to-ready and recovery success | Local privacy-safe metrics and reproducible baseline/fault runs establish the measurement contract and budgets |
 | 11 | Medium | Open: `cave-58eoq.6` | An unreviewed CLI/socket path could inherit secrets, hang, overrun output, or mis-handle unusual paths | The high-impact PTY, remote tokenless-development, and bearer-transport bypasses are closed, but the remaining spawn and endpoint touch-set has not been proven exhaustive | Audit every remaining spawn/socket boundary and pin environment, quoting, timeout, size, cancellation, permission, and compatibility contracts |
 
 ## Lifecycle and connection state machine
@@ -152,7 +151,7 @@ Illegal transitions:
 | Stale hub probe | Superseding input/mode/device choice | Previously could repaint/save old endpoint | Abort + generation guard + exact snapshot | Fixed in this branch |
 | Hub unauthorized | Authenticated HTTP response 401/403 | Previously generic Offline | Show Authorization required and reason | One-click credential repair remains future work |
 | Hub unreachable | Transport failure, no HTTP answer | Configured target unavailable | Bounded GET retry; travel/replay policy | Network classification still needs correlated timing |
-| Sidecar readiness unauthorized/malformed | Authenticated native readiness returns non-200, malformed HTTP/chunks/JSON, or exceeds 64 KiB | Native startup refuses navigation and preserves a bounded output/error chain | Retry exact owned startup; do not adopt the endpoint | Implemented in `cave-58eoq.2`, pending merge |
+| Sidecar readiness unauthorized/malformed | Authenticated native readiness returns non-200, malformed HTTP/chunks/JSON, or exceeds 64 KiB | Native startup refuses navigation and preserves a bounded output/error chain | Retry exact owned startup; do not adopt the endpoint | Shipped in PR #4495 |
 | Daemon unhealthy | Endpoint answers but health is invalid/non-2xx | No verified daemon-running state | Retry health or restart exact owner | Sidecar readiness is now proven separately; downstream daemon correlation remains open |
 | Runtime/API mismatch | Native sidecar handshake plus downstream daemon health compatibility check | Native adoption or daemon status refuses the incompatible layer | Update/repair then restart | Implemented sidecar check is exact-version by design for one packaged artifact |
 | Cave state lock/permission busy | Structured status-unavailable/incompatible response | Status cannot be confirmed | Automatic later poll; show Status unavailable | Needs OS error evidence in diagnostics |
@@ -252,9 +251,9 @@ Completed follow-up subsets:
 
 The attempted native startup measurement encountered an already-running GUI
 and active development origin. It is recorded as contention, not as startup
-success or failure, and no unrelated process was terminated. Reproducible
-authenticated time-to-ready and recovery-rate measurements remain
-`cave-58eoq.5`.
+success or failure, and no unrelated process was terminated. This branch adds
+the reproducible authenticated time-to-ready and recovery-rate measurement
+contract tracked by `cave-58eoq.5`.
 
 Behavioral delta in this branch:
 
@@ -278,11 +277,150 @@ work.
 | Risk | Owner |
 | --- | --- |
 | Windows post-ready supervision is shipped; release-host fault injection is still required | `cave-58eoq.4` |
-| Authenticated native sidecar adoption is implemented and validated but unmerged | `cave-58eoq.2` |
 | No cross-component correlation/export contract | `cave-58eoq.3` |
 | Full OS fault-injection and lifecycle stress matrix is incomplete | `cave-58eoq.4` |
-| Startup/recovery reliability budgets and distributions are not established | `cave-58eoq.5` |
 | Exhaustive remaining CLI spawn and socket/pipe security proof is incomplete after closing the PTY and remote tokenless-development authentication bypasses | `cave-58eoq.6` |
 | Access-token-only loopback mode still treats a verified local TCP peer as sufficient for REST and PTY, which does not distinguish OS users on shared machines | `cave-ruw4z` |
 | One-click repairs are not yet implemented for every classified failure | Follow from the issue whose evidence identifies the repair boundary |
 | Hardware-only Windows installer/Defender and macOS signing/quarantine behavior still require release-host validation | Release validation checklist |
+## Reliability measurement contract
+This contract measures local reliability without turning diagnostics into an
+activity log. It covers packaged sidecar startup, frontend reconnection, and
+supervised sidecar recovery. It does not create a broad diagnostics export or
+cross-component correlation system.
+
+## Measurement definitions
+
+Every record uses schema version `1` and one stable operation:
+
+- `native_startup`: elapsed time from the packaged sidecar start call until it
+  reaches a terminal startup result.
+- `frontend_reconnect`: elapsed time from the first visible connection poll in
+  an initial, fresh, or failed episode until one terminal result. Failed polls
+  remain inside the episode; a later authenticated response emits one success
+  record with cumulative attempts and backoff for retry timers that were
+  actually armed while the episode remained active. Contention emits one
+  blocked record with no speculative post-terminal backoff. An unrecovered
+  episode closes as one timeout failure after **30 seconds**, then measurement
+  resets while operational polling continues. Routine healthy cadence is
+  omitted so it cannot crowd recovery history out of bounded retention.
+- `supervised_recovery`: elapsed time from observing an unexpected sidecar exit
+  until one terminal recovery result. Failed revives remain inside the episode;
+  later authenticated readiness plus a confirming liveness probe emits one
+  success record. Transport-only evidence remains unverified. An unrecovered
+  episode closes as one timeout failure after **90 seconds**, then measurement
+  resets while supervision, cooldowns, and retries continue.
+
+Outcomes are:
+
+- `success`: counted only when `readiness=authenticated`.
+- `unverified`: transport/process liveness was observed, but authenticated
+  readiness was not. It is eligible in the success-rate denominator and is not
+  success.
+- `failure`: an eligible operation failed.
+- `blocked`: the operation could not start because of contention, such as the
+  dedicated port already being occupied. Blocked records are reported
+  separately and excluded from both success and failure rates.
+- `cancelled`: shutdown or explicit cancellation ended the operation. It is
+  reported separately and excluded from the success-rate denominator.
+
+Failure classes are `contention`, `compatibility`, `permissions`, `transport`,
+`authentication`, `timeout`, `process_exit`, `cancellation`, and `unknown`.
+Records also contain bounded numeric fields for duration, attempts, scheduled
+backoff, timeout budget, crash count, and restart count.
+`backoffMs` is the cumulative backoff scheduled during the episode.
+`attempts` counts scheduled retry attempts. `restartCount` counts only confirmed
+completed sidecar restarts: a non-Windows synchronous revival increments after
+the live child and window navigation succeed, while Windows increments only
+after a later supervisor liveness observation confirms the scheduled startup
+produced a recovered child. Worker scheduling, calling a start function, waits,
+cooldown checks, failed starts, and cancellations do not increment it.
+
+Native sidecar startup records authenticated success only after the owned
+child's ready line and the bounded token-authenticated native-readiness
+handshake both pass. Non-Windows startup keeps that evidence pending until the
+main window builds; a window construction failure emits one failure terminal
+before fatal exit. Windows remains terminal after startup navigation or
+cancellation. Native lifecycle code calls `record_native_startup_terminal`
+exactly once.
+
+## Privacy and retention
+
+The native recorder stores `daemon-reliability-v1.json` under the Tauri app
+data directory. Records can contain only the enums and bounded integers defined
+above. The IPC input rejects unknown fields. URLs, tokens, local paths, process
+output, arbitrary error strings, request payloads, and user identifiers are
+never accepted or persisted. Browser and Tauri-mobile workspaces use a no-op
+observer because the desktop-local recorder is not available there.
+
+Retention is enforced when the recorder is configured at startup and on every
+append:
+
+- maximum age: **30 days**;
+- maximum records: **512**;
+- maximum serialized file size: **256 KiB**;
+- maximum duration: **7 days**;
+- maximum backoff or timeout value: **24 hours**;
+- maximum attempts, crashes, or restarts per record: **1,000**.
+
+Only a missing file is treated as an empty store. Oversized files are rejected
+before reading; read, parse, and schema errors preserve the existing file and
+surface through the same warn-once path. Writes use a unique `create_new`
+staging file plus replacement, clean staging files after failure, and create
+and reassert Unix mode `0600`. Windows moves the existing file aside and
+restores it if replacement fails. Stale backup and crash-left staging siblings
+are age- and count-bounded without touching files young enough to belong to an
+active writer. Persistence is best-effort: startup and
+reconnection continue if the record cannot be written, and the process emits
+at most one generic warning.
+
+## Automated benchmark and fault baseline
+
+Run:
+
+```bash
+pnpm --silent bench:daemon-reliability
+```
+
+The command emits machine-readable JSON and exits nonzero when a budget fails.
+It reports, per operation:
+
+- total, eligible, success, failure, unverified, blocked, and cancelled counts;
+- authenticated success rate;
+- duration and authenticated-success duration distributions (`count`, nearest
+  rank `p50`, nearest-rank `p95`, and `max`);
+- failure-class counts;
+- budget checks and aggregate pass/fail.
+
+The default run generates deterministic terminal startup, reconnect, and
+recovery episodes with the same 30-second reconnect and 90-second recovery
+timeouts as production. It includes contention, compatibility, permissions,
+authentication, transport-only readiness, process exit, cumulative retries,
+confirmed completed restarts, and cumulative actually-armed backoff. A JSON
+array can be supplied with:
+
+```bash
+pnpm --silent bench:daemon-reliability --fixture path/to/records.json
+```
+
+These deterministic fault baselines establish contract behavior and regression
+comparability. They are not measured macOS, Windows, or Linux production
+baselines. Representative platform baselines remain future collection work.
+
+## Acceptance budgets
+
+Budgets apply to authenticated successes. Blocked and cancelled records remain
+visible but are excluded from the success-rate denominator; unverified
+transport readiness remains eligible and therefore lowers the rate.
+
+| Operation | Minimum authenticated success rate | Maximum authenticated-success p95 |
+| --- | ---: | ---: |
+| Native startup | 95% | 60 seconds |
+| Frontend reconnect | 99% | 30 seconds |
+| Supervised recovery | 90% | 90 seconds |
+
+An operation with no authenticated successes fails its latency check. Do not
+raise a budget from deterministic data alone. Collect representative,
+privacy-safe local records on each supported platform after authenticated
+native readiness lands, then compare the same benchmark output before and after
+a change.

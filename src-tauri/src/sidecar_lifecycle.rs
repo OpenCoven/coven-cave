@@ -72,16 +72,40 @@ pub(super) enum SidecarStartupStep {
 #[cfg(desktop)]
 pub(super) enum SidecarStartError {
     Cancelled,
-    Failed(String),
+    Failed {
+        message: String,
+        failure_class: ReliabilityFailureClass,
+    },
 }
 
 #[cfg(desktop)]
+impl SidecarStartError {
+    pub(super) fn failed(
+        failure_class: ReliabilityFailureClass,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::Failed {
+            message: message.into(),
+            failure_class,
+        }
+    }
+}
+
+#[cfg(desktop)]
+#[derive(Clone)]
 pub(super) enum PortWaitResult {
     Ready,
     Cancelled,
     Exited,
-    Refused(String),
+    Refused(SidecarReadinessRefusal),
     TimedOut,
+}
+
+#[cfg(desktop)]
+#[derive(Clone)]
+pub(super) struct SidecarReadinessRefusal {
+    pub(super) message: String,
+    pub(super) failure_class: ReliabilityFailureClass,
 }
 
 #[cfg(all(desktop, target_os = "windows"))]
@@ -164,9 +188,59 @@ impl SidecarStartupStatus {
 #[cfg(all(desktop, target_os = "windows"))]
 pub(super) struct SidecarStartupControl {
     status: Mutex<SidecarStartupStatus>,
+    terminal: SidecarStartupTerminalSlot,
     running: AtomicBool,
     cancel_requested: AtomicBool,
     shutdown_requested: AtomicBool,
+}
+
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+struct SidecarStartupTerminal {
+    evidence: NativeStartupTerminalEvidence,
+    completed_at: std::time::Instant,
+}
+
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+#[derive(Default)]
+struct SidecarStartupTerminalSlot(Mutex<Option<SidecarStartupTerminal>>);
+
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+impl SidecarStartupTerminalSlot {
+    fn publish(&self, evidence: NativeStartupTerminalEvidence) -> Result<(), String> {
+        let mut terminal = self
+            .0
+            .lock()
+            .map_err(|_| "sidecar startup terminal lock is poisoned".to_string())?;
+        if terminal.is_some() {
+            return Err("sidecar startup terminal result is awaiting consumption".to_string());
+        }
+        *terminal = Some(SidecarStartupTerminal {
+            evidence,
+            completed_at: std::time::Instant::now(),
+        });
+        Ok(())
+    }
+
+    fn consume(&self) -> Result<Option<NativeStartupTerminalEvidence>, String> {
+        self.0
+            .lock()
+            .map(|mut terminal| terminal.take().map(|terminal| terminal.evidence))
+            .map_err(|_| "sidecar startup terminal lock is poisoned".to_string())
+    }
+
+    fn is_pending(&self) -> Result<bool, String> {
+        self.0
+            .lock()
+            .map(|terminal| terminal.is_some())
+            .map_err(|_| "sidecar startup terminal lock is poisoned".to_string())
+    }
+
+    fn completed_at(&self) -> Result<Option<std::time::Instant>, String> {
+        self.0
+            .lock()
+            .map(|terminal| terminal.as_ref().map(|terminal| terminal.completed_at))
+            .map_err(|_| "sidecar startup terminal lock is poisoned".to_string())
+    }
 }
 
 #[cfg(all(desktop, target_os = "windows"))]
@@ -174,6 +248,7 @@ impl SidecarStartupControl {
     pub(super) fn new() -> Self {
         Self {
             status: Mutex::new(SidecarStartupStatus::preparing()),
+            terminal: SidecarStartupTerminalSlot::default(),
             running: AtomicBool::new(false),
             cancel_requested: AtomicBool::new(false),
             shutdown_requested: AtomicBool::new(false),
@@ -193,6 +268,27 @@ impl SidecarStartupControl {
 
     pub(super) fn finish(&self) {
         self.running.store(false, Ordering::Release);
+    }
+
+    pub(super) fn finish_with_terminal(
+        &self,
+        evidence: NativeStartupTerminalEvidence,
+    ) -> Result<(), String> {
+        let result = self.terminal.publish(evidence);
+        self.finish();
+        result
+    }
+
+    pub(super) fn consume_terminal(&self) -> Result<Option<NativeStartupTerminalEvidence>, String> {
+        self.terminal.consume()
+    }
+
+    pub(super) fn has_terminal(&self) -> Result<bool, String> {
+        self.terminal.is_pending()
+    }
+
+    pub(super) fn terminal_completed_at(&self) -> Result<Option<std::time::Instant>, String> {
+        self.terminal.completed_at()
     }
 
     pub(super) fn is_running(&self) -> bool {
@@ -235,6 +331,37 @@ impl SidecarStartupControl {
             .map_err(|_| "sidecar startup status lock is poisoned".to_string())?;
         *current = status;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod sidecar_startup_terminal_tests {
+    use super::*;
+
+    #[test]
+    fn startup_terminal_evidence_is_published_and_consumed_once() {
+        let terminal = SidecarStartupTerminalSlot::default();
+        let evidence = NativeStartupTerminalEvidence::Failed(ReliabilityFailureClass::Contention);
+
+        terminal
+            .publish(evidence)
+            .expect("publish terminal evidence");
+        assert!(
+            terminal
+                .completed_at()
+                .expect("read terminal completion")
+                .is_some(),
+            "published terminal evidence must retain its completion time"
+        );
+        assert_eq!(
+            terminal.consume().expect("consume terminal evidence"),
+            Some(evidence)
+        );
+        assert_eq!(
+            terminal.consume().expect("consume empty terminal slot"),
+            None
+        );
+        assert!(!terminal.is_pending().expect("inspect terminal slot"));
     }
 }
 

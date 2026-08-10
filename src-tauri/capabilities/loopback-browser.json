@@ -28,6 +28,7 @@
     "allow-browser-close-all",
     "allow-browser-reload",
     "allow-desktop-reachability-status",
-    "allow-desktop-reachability-configure"
+    "allow-desktop-reachability-configure",
+    "allow-record-daemon-reliability-measurement"
   ]
 }

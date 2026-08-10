@@ -459,6 +459,43 @@ fn native_readiness_rejects_wrong_identity_protocol_version_and_dependencies() {
 }
 
 #[test]
+fn native_readiness_failures_retain_stable_reliability_classes() {
+    let response = |body: &str| {
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .into_bytes()
+    };
+
+    let unauthorized = b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n";
+    assert_eq!(
+        validate_readiness_response_classified(unauthorized)
+            .expect_err("unauthorized readiness must fail")
+            .failure_class,
+        ReliabilityFailureClass::Authentication
+    );
+
+    let incompatible = response(
+        r#"{"service":"CovenCave","version":"999.0.0","protocol":{"name":"coven-cave-native-readiness","version":1},"runtime":{"bundle":true,"api":"ready"}}"#,
+    );
+    assert_eq!(
+        validate_readiness_response_classified(&incompatible)
+            .expect_err("incompatible readiness must fail")
+            .failure_class,
+        ReliabilityFailureClass::Compatibility
+    );
+
+    assert_eq!(
+        validate_readiness_response_classified(b"not-http")
+            .expect_err("malformed transport response must fail")
+            .failure_class,
+        ReliabilityFailureClass::Transport
+    );
+}
+
+#[test]
 fn native_readiness_accepts_chunked_http_and_rejects_malformed_chunks() {
     let body = format!(
         r#"{{"service":"CovenCave","version":"{}","protocol":{{"name":"coven-cave-native-readiness","version":1}},"runtime":{{"bundle":true,"api":"ready"}}}}"#,

@@ -45,6 +45,7 @@ function pull({
 function workflowRun({
   id = 9001,
   status = "completed",
+  conclusion = status === "completed" ? "success" : null,
   event = "pull_request",
   createdAt = new Date(NOW - RECOVERY_GRACE_MS - 1).toISOString(),
   headSha = "a".repeat(40),
@@ -53,6 +54,7 @@ function workflowRun({
   return {
     id,
     status,
+    conclusion,
     event,
     created_at: createdAt,
     head_sha: headSha,
@@ -531,4 +533,56 @@ test("pull pagination never forwards the token to a cross-origin Link URL", asyn
   assert.deepEqual(requests, [
     `https://api.github.test/repos/${REPOSITORY}/pulls?state=open&per_page=100`,
   ]);
+});
+
+test("an approval-gated run is not CI coverage and is recovered", async () => {
+  // GitHub parks a first-time-contributor run behind manual approval: the run
+  // reports status=completed with conclusion=action_required and ZERO jobs, so
+  // the PR shows no checks at all. Reading only `status` mistook that for
+  // finished CI and wedged Copilot-authored PRs indefinitely (cave-qshvl).
+  const pr = pull();
+  const gated = workflowRun({
+    id: 9100,
+    status: "completed",
+    conclusion: "action_required",
+    headSha: pr.head.sha,
+  });
+  const fixture = githubFixture({ pulls: [pr], runsBySha: { [pr.head.sha]: [gated] } });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, false));
+
+  assert.equal(result.recoveries.length, 1, "an approval-gated head must be recoverable");
+  assert.equal(result.recoveries[0].reason, "approval_gated_run");
+});
+
+test("a completed run that actually ran is still coverage, including a failure", async () => {
+  // The fix must not turn every completed run into a recovery candidate. A
+  // FAILED run reported a verdict, so CI covered this head and re-dispatching
+  // would just re-run a known failure.
+  for (const conclusion of ["success", "failure", "cancelled", "timed_out"]) {
+    const pr = pull();
+    const ran = workflowRun({ id: 9200, status: "completed", conclusion, headSha: pr.head.sha });
+    const fixture = githubFixture({ pulls: [pr], runsBySha: { [pr.head.sha]: [ran] } });
+
+    const result = await runCiRecovery(options(fixture.fetchImpl, false));
+
+    assert.deepEqual(
+      result.recoveries,
+      [],
+      `conclusion=${conclusion} is coverage and must not be recovered`,
+    );
+  }
+});
+
+test("one real run alongside an approval-gated one still counts as coverage", async () => {
+  // Only when EVERY run is gated is the head genuinely uncovered. A gated run
+  // sitting beside a real one must not trigger a redundant dispatch.
+  const pr = pull();
+  const gated = workflowRun({ id: 9300, status: "completed", conclusion: "action_required", headSha: pr.head.sha });
+  const real = workflowRun({ id: 9301, status: "completed", conclusion: "success", headSha: pr.head.sha });
+  const fixture = githubFixture({ pulls: [pr], runsBySha: { [pr.head.sha]: [gated, real] } });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, false));
+
+  assert.deepEqual(result.recoveries, []);
 });

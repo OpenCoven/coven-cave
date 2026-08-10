@@ -231,18 +231,22 @@ assert.doesNotMatch(
   "a delayed render must not issue a fresh post-settlement stamp when its timer fires",
 );
 
-// Streaming cursor: with rendered HTML during pending, the ▌ affordance must
-// render as a SIBLING after the markdown container — never injected into the
-// sanitized HTML string.
-assert.match(
+// Streaming cursor: removed (cave-1yslk). The only placement that kept it out
+// of the sanitized HTML string was as a sibling of the markdown container, and
+// that container is a block-level <div> — so the cursor could never trail the
+// last rendered line and wrapped onto a row of its own, reading as a detached
+// grey bar after every streaming message. Restoring it means injecting into
+// the sanitized HTML, which is the thing the sibling placement existed to
+// avoid, so these assert its ABSENCE at both sites rather than its position.
+assert.doesNotMatch(
   markdownContent,
-  /dangerouslySetInnerHTML=\{\{ __html: html \}\}\s*\/>\s*\{\/\*[\s\S]*?\*\/\}\s*\{pending \? \(\s*<span[^>]*>▌<\/span>/,
-  "While pending, the streaming cursor renders as a sibling element after the markdown container",
+  /▌/u,
+  "no streaming cursor glyph is rendered — it detached onto its own line (cave-1yslk)",
 );
-assert.match(
+assert.doesNotMatch(
   markdownContent,
-  /\{pending && text \? \(\s*<span[^>]*>▌<\/span>/,
-  "The plain-text fallback keeps its cursor for the window before the first render lands",
+  /dangerouslySetInnerHTML=\{\{ __html: html \}\}\s*\/>[\s\S]{0,400}?\{pending \? \(\s*<span/,
+  "nothing pending-gated renders as a bare sibling span after the markdown container",
 );
 
 // ── CHAT-D3-03: renderCache must not grow unboundedly ─────────────────────
