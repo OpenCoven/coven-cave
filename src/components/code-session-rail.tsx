@@ -100,7 +100,7 @@ export function CodeSessionRail({
     <nav
       aria-label="Coding sessions"
       className={`flex h-full min-h-0 flex-col ${
-        open ? (onExpand ? "py-2" : openRailClassName) : "items-center gap-1"
+        open ? openRailClassName : "items-center gap-1"
       }`}
     >
       {newButton}
