@@ -15,6 +15,18 @@ assert.deepEqual(assessDaemonStartupCompatibility(healthy, "1.2.3"), {
   apiVersion: "v1",
 });
 
+assert.deepEqual(assessDaemonStartupCompatibility({ ...healthy, apiVersion: "coven.daemon.v1" }, "1.2.3"), {
+  ok: true,
+  daemonVersion: "1.2.3",
+  apiVersion: "coven.daemon.v1",
+});
+
+assert.deepEqual(assessDaemonStartupCompatibility({ ...healthy, covenVersion: "0.0.0" }, "1.2.3"), {
+  ok: true,
+  daemonVersion: "1.2.3",
+  apiVersion: "v1",
+});
+
 assert.deepEqual(assessDaemonStartupCompatibility({ ...healthy, apiVersion: "v2" }, "1.2.3"), {
   ok: false,
   code: "unsupported_api",
