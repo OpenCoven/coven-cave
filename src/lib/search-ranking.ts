@@ -262,7 +262,7 @@ export function dedupeResults(results: readonly RankedResult[]): RankedResult[] 
   const seen = new Set<string>();
   const out: RankedResult[] = [];
   for (const result of results) {
-    const key = `${result.providerId}\0${result.document.id}`;
+    const key = `${result.providerId}\u0000${result.document.id}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(result);

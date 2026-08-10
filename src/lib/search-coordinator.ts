@@ -22,6 +22,7 @@
 import { SEARCH_QUERY_VERSION, type SearchQueryState } from "./search-filters.ts";
 import { normalizeSearchDocument, type SearchDocument } from "./search-document.ts";
 import {
+  permitsByProject,
   selectProviders,
   type SearchProvider,
   type SearchProviderDiagnostic,
@@ -274,6 +275,10 @@ export async function runSearch(
     // The second permission check. A provider already ran its own; this one
     // cannot be skipped, and it is what makes a provider bug a missing result
     // rather than a leak.
+    if (!permitsByProject(document, request.context)) {
+      deniedAny = true;
+      continue;
+    }
     if (provider && !provider.permits(document, request.context)) {
       deniedAny = true;
       continue;

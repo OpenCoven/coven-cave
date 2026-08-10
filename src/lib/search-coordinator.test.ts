@@ -238,6 +238,8 @@ assert.equal(satisfiesHardConstraints(doc({ updatedAt: "2026-08-09T00:00:00Z" })
   // permitsByProject is bypassed by the leaky provider, but hard scopes and the
   // coordinator's own re-check still apply — the document must not appear.
   const strictOut = await runSearch({ query: query({ text: "widget" }), context: restricted, now: NOW }, deps([strict], rows));
+  assert.deepEqual(leakyOut.results, [], "the coordinator's baseline check hides an unreadable project");
+  assert.equal(leakyOut.emptyReason, "permission-denied");
   assert.deepEqual(strictOut.results, [], "the coordinator's re-check hides an unreadable project");
   assert.equal(strictOut.emptyReason, "permission-denied", "and says WHY it is empty");
   assert.equal(leakyOut.ok, true);
