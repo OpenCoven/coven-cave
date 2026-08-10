@@ -565,11 +565,11 @@ export function classifyOnboardingInstallFailure(input: {
 }): OnboardingInstallFailureCode {
   const detail = `${input.error ?? ""}\n${input.output}`;
   if (input.recoveryFailed) return "local_service_failed";
-  if (/timed out/i.test(detail)) return "install_timeout";
-  if (input.launchFailed) return "installer_start_failed";
   // A zero exit followed by any failure is a post-install verification
   // outcome. Historical success output must not override that known phase.
   if (input.code === 0) return "verification_failed";
+  if (/timed out/i.test(detail)) return "install_timeout";
+  if (input.launchFailed) return "installer_start_failed";
   if (/(EBUSY|resource busy|locked)/i.test(detail)) {
     return "install_busy";
   }

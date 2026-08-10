@@ -44,6 +44,11 @@ const cases = [
     expected: "verification_failed",
   },
   {
+    name: "verification despite historical timeout output",
+    input: { code: 0, output: "installer warning: request timed out; verification failed" },
+    expected: "verification_failed",
+  },
+  {
     name: "busy executable conflict",
     input: { code: 1, output: "EBUSY: coven.exe is locked" },
     expected: "install_busy",
