@@ -25,6 +25,23 @@ export interface WorktreeLifecycleInventoryOptions {
   repo: string;
   root: string;
   nowMs: number;
+  /**
+   * Called after every external command this inventory runs.
+   *
+   * A caller holding a lease over the inventory cannot renew it with a timer:
+   * this function is synchronous and every second of it is spent inside
+   * `spawnSync`, so the event loop never turns and no `setInterval` fires. The
+   * hook is the only place renewal can happen, and anchoring it to commands
+   * rather than to wall-clock means renewal tracks work actually done — the
+   * inventory gets slower as the checkout grows, and so does the renewal.
+   *
+   * Throwing from the hook aborts the inventory. That is deliberate: a caller
+   * whose fence has been lost should stop reading a repository it no longer
+   * excludes writers from, rather than finishing and reporting a snapshot
+   * taken without exclusion. Callers that merely want progress should not
+   * throw.
+   */
+  onProgress?: () => void;
 }
 
 export interface WorktreeLifecycleInventory {
@@ -274,12 +291,55 @@ function isIsoCalendarDate(value: string): boolean {
   );
 }
 
+/**
+ * Progress hook for the in-flight inventory, or null when none is running.
+ *
+ * Module state rather than a threaded parameter because `command` is called
+ * from well over a hundred sites; threading it would be a large diff for no
+ * added safety. `collectWorktreeLifecycleInventory` is synchronous and
+ * single-threaded, so the only way two inventories could interleave is
+ * re-entrance from inside the hook, which `runProgressHook` refuses.
+ */
+let activeProgressHook: (() => void) | null = null;
+let insideProgressHook = false;
+
+function runProgressHook(): void {
+  // A hook that ran a command would re-enter this and recurse without bound.
+  // Note the reach of this guard: anything the hook does — including starting
+  // a whole nested inventory — runs with progress reporting suppressed, so a
+  // nested read never drives its own hook. That is intended (the outer fence
+  // is the one being held) but it means a nested inventory cannot abort
+  // through its own hook.
+  if (activeProgressHook === null || insideProgressHook) return;
+  insideProgressHook = true;
+  try {
+    activeProgressHook();
+  } finally {
+    insideProgressHook = false;
+  }
+}
+
 function command(
   executable: string,
   args: string[],
   cwd: string,
   timeout = 30_000,
   env: NodeJS.ProcessEnv = process.env,
+): CommandResult {
+  const result = runCommand(executable, args, cwd, timeout, env);
+  // Deliberately OUTSIDE runCommand's catch: a hook that throws is reporting a
+  // lost fence, and swallowing it there would turn that into an ordinary
+  // "invocation failed" result and let the inventory continue unfenced.
+  runProgressHook();
+  return result;
+}
+
+function runCommand(
+  executable: string,
+  args: string[],
+  cwd: string,
+  timeout: number,
+  env: NodeJS.ProcessEnv,
 ): CommandResult {
   try {
     const result = spawnSync(executable, args, {
@@ -2797,6 +2857,20 @@ function classifyInventoryObservation(
 }
 
 export function collectWorktreeLifecycleInventory(
+  options: WorktreeLifecycleInventoryOptions,
+): WorktreeLifecycleInventory {
+  const previousHook = activeProgressHook;
+  activeProgressHook = options.onProgress ?? null;
+  try {
+    return collectInventory(options);
+  } finally {
+    // Restore rather than null out, so a nested call (tests, tooling) cannot
+    // silently disarm an outer inventory's fence renewal.
+    activeProgressHook = previousHook;
+  }
+}
+
+function collectInventory(
   options: WorktreeLifecycleInventoryOptions,
 ): WorktreeLifecycleInventory {
   const requestedRoot = normalizeAbsoluteWorktreePath(options.root);

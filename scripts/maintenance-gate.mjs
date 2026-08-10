@@ -30,6 +30,62 @@ export {
   releaseWriterIntent,
 };
 
+/**
+ * How often a long fenced READ should renew its lease.
+ *
+ * Exists because a fenced read can outlive its lease: the worktree lifecycle
+ * inventory measured 120.8s and 149s on a 39-worktree checkout against a 120s
+ * Coven lease, and nothing renewed it while it ran (cave-cs9g1).
+ *
+ * A quarter of the shorter lease (Coven's, below). The headroom is NOT there to
+ * survive a failed renewal — renewal is fail-closed, so a failure aborts the
+ * read rather than waiting for a next attempt. It is there because renewal
+ * fires on progress, not on a clock: the hook is only reached between external
+ * commands, and a single command can itself run for tens of seconds (`command`
+ * in the inventory defaults to a 30s timeout, and some calls allow longer). So
+ * the true interval between renewals is 30s plus however long the command that
+ * crosses the boundary takes, and the lease has to tolerate that overshoot.
+ */
+export const FENCE_RENEWAL_INTERVAL_MS = 30_000;
+
+/**
+ * Wrap a renew function so it runs at most once per interval.
+ *
+ * Intended for work that reports progress far more often than a lease needs
+ * renewing — the inventory calls its hook once per external command, hundreds
+ * of times — where renewing on every call would spawn a fence process per
+ * command.
+ *
+ * Renewal is driven by progress rather than a timer on purpose: the callers
+ * that need this are synchronous, so they never yield and no timer callback
+ * would ever run. Anchoring to progress also means renewal scales with the
+ * work, which is what actually got slower as the checkout grew.
+ *
+ * The first call after construction is always throttled — the lease was just
+ * taken or renewed, so there is nothing to renew yet.
+ *
+ * Fail-closed: errors from `renew` propagate and are expected to abort the
+ * work. There is deliberately no retry or swallow here, because the only
+ * reason renewal fails is that the fence is gone, and work that continues past
+ * that point is no longer excluding the writers it believes it is.
+ */
+export function createFenceRenewal(
+  renew,
+  { intervalMs = FENCE_RENEWAL_INTERVAL_MS, now = () => Date.now() } = {},
+) {
+  if (typeof renew !== "function") throw new TypeError("renew must be a function");
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+    throw new RangeError("intervalMs must be a positive finite number");
+  }
+  let last = now();
+  return () => {
+    const current = now();
+    if (current - last < intervalMs) return;
+    last = current;
+    renew();
+  };
+}
+
 export const COVEN_MAINTENANCE_MINIMUM_VERSION = "0.2.5";
 export const DEFAULT_COVEN_DRAIN_TIMEOUT_MS = 30_000;
 export const COVEN_OWNER_LEASE_MS = 120_000;
@@ -43,8 +99,31 @@ function asText(value) {
   return typeof value === "string" ? value : "";
 }
 
-function commandFailure(operation) {
-  return { ok: false, reason: `coven-${operation}-unavailable` };
+/**
+ * Turn a failed `coven maintenance <op>` into a reason string.
+ *
+ * The suffix stays `-unavailable` because callers and tests match on it, but it
+ * now carries the client's own first NON-EMPTY line of stderr. Without that,
+ * EVERY non-zero exit read as "the subcommand is unavailable" — so an expired
+ * owner lease, which is the common failure, looked like a missing or too-old
+ * client. That cost a wrong root cause on cave-7w5cu: the reported version skew
+ * was real on PATH and entirely irrelevant, because the gate launches a
+ * different binary. One line of stderr would have said so.
+ *
+ * Matched rather than split: a failing client can emit a long backtrace, and
+ * only the first line is ever used, so there is no reason to allocate an array
+ * for the rest of it.
+ */
+function commandFailure(operation, result) {
+  // Horizontal whitespace only in the leading class — `\s` would span newlines
+  // and let the match start on a blank line, defeating the "non-empty" part.
+  const detail = asText(result?.stderr).match(/^[^\S\n]*(\S[^\n]*)/m)?.[1];
+  return {
+    ok: false,
+    reason: detail
+      ? `coven-${operation}-unavailable: ${detail.trimEnd().slice(0, 200)}`
+      : `coven-${operation}-unavailable`,
+  };
 }
 
 function parseCovenVersion(value) {
@@ -149,7 +228,7 @@ export function createCovenMaintenanceClient({
       args: ["--version"],
       cwd: repoDir,
     });
-    if (!result.ok) return commandFailure("version");
+    if (!result.ok) return commandFailure("version", result);
     const parsed = parseCovenVersion(result.stdout);
     if (!parsed) return { ok: false, reason: "coven-version-malformed" };
     if (!supportsCovenMaintenanceVersion(result.stdout)) {
@@ -169,7 +248,7 @@ export function createCovenMaintenanceClient({
       args: ["maintenance", "status", "--json"],
       cwd: repoDir,
     });
-    if (!result.ok) return commandFailure("status");
+    if (!result.ok) return commandFailure("status", result);
     const parsed = parseStatus(result.stdout);
     return parsed ? { ok: true, status: parsed } : { ok: false, reason: "coven-status-malformed" };
   }
@@ -182,7 +261,7 @@ export function createCovenMaintenanceClient({
       args: ["maintenance", "release", handle.ownerId, handle.generation],
       cwd: handle.repoDir,
     });
-    return result.ok ? { ok: true } : commandFailure("release");
+    return result.ok ? { ok: true } : commandFailure("release", result);
   }
 
   return {
@@ -205,7 +284,7 @@ export function createCovenMaintenanceClient({
         args: ["maintenance", "acquire", ownerId, "--wait-ms", String(waitMs), "--json"],
         cwd: repoDir,
       });
-      if (!result.ok) return commandFailure("acquire");
+      if (!result.ok) return commandFailure("acquire", result);
 
       const parsed = parseStatus(result.stdout);
       if (!parsed || !parsed.owner) {
@@ -253,7 +332,7 @@ export function createCovenMaintenanceClient({
         ],
         cwd: handle.repoDir,
       });
-      if (!result.ok) return commandFailure("heartbeat");
+      if (!result.ok) return commandFailure("heartbeat", result);
       const parsed = parseStatus(result.stdout);
       if (!parsed) return { ok: false, reason: "coven-heartbeat-output-malformed" };
       return heldBy(parsed, handle, Math.floor(now() / 1_000));
@@ -271,6 +350,22 @@ export function createCovenMaintenanceClient({
     },
   };
 }
+
+/**
+ * `heldBy` reasons that PROVE the Coven fence is no longer held by this handle.
+ *
+ * Deliberately a small allow-list rather than "anything that is not ok". The
+ * two reasons excluded are the ones where the fence may still be standing:
+ * `coven-still-draining` (the lease exists, it just has not finished draining)
+ * and `coven-writers-active` (we hold it and writers are still inside). A
+ * failure to reach Coven at all is likewise not proof of anything, so it is
+ * absent here too and leaves the local fence held.
+ */
+const COVEN_FENCE_PROVABLY_GONE = new Set([
+  "coven-owner-missing", // no owner record at all
+  "coven-not-owner", // someone else owns it; ours is gone
+  "coven-expired", // the lease ran out
+]);
 
 const defaultLocalFence = {
   acquire: acquireLocalMaintenanceGate,
@@ -371,11 +466,45 @@ export function createRepositoryMaintenanceCoordinator({
     release(handle) {
       if (!handle?.local || !handle?.coven) return { ok: false, reason: "invalid-composite-handle" };
       const coven = covenClient.release(handle.coven);
+
       if (!coven.ok) {
+        // The Coven release failed, but that does not by itself mean the Coven
+        // fence is still held — the commonest cause is a lease that already
+        // expired, in which case there is nothing left to split. Ask.
+        //
+        // Holding the local fence on an unknown Coven state is deliberate
+        // (`acquire` reasons about it above). Holding it when the Coven fence
+        // is provably gone protects nothing and strands the local fence for
+        // its full TTL, refusing every acquisition in the repository until it
+        // expires — and then refusing them as `gate-stale`. That was a
+        // repo-wide outage per failed run (cave-nom3z).
+        const verified = covenClient.verify(handle.coven);
+        const covenGone = !verified.ok && COVEN_FENCE_PROVABLY_GONE.has(verified.reason);
+        if (!covenGone) {
+          return {
+            ok: false,
+            reason: `coven-release-failed: ${coven.reason ?? "unknown"}`,
+            recoveryHandle: handle,
+          };
+        }
+        const local = localFence.release(handle.local);
         return {
           ok: false,
+          // Still not ok: the caller asked for both fences to come down and
+          // the Coven side did not do so cleanly. But the local fence is now
+          // released, so this reports a failed release rather than a held one.
           reason: `coven-release-failed: ${coven.reason ?? "unknown"}`,
-          recoveryHandle: handle,
+          covenFenceGone: verified.reason,
+          localReleased: local.ok,
+          // Carry WHY local is still held. This is the recovery path — the
+          // caller is holding a handle it has to do something about — and
+          // "false" without a reason is the least useful thing to hand it.
+          ...(local.ok
+            ? {}
+            : {
+                localReleaseFailed: local.reason ?? "unknown",
+                recoveryHandle: { local: handle.local },
+              }),
         };
       }
       const local = localFence.release(handle.local);

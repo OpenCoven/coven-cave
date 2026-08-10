@@ -68,7 +68,11 @@ const GUARDED_CONCURRENCY =
   "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
 const GUARDED_JOB_IF =
   "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
-const GUARDED_JOB_NAMES = ["build"];
+const GUARDED_JOB_IFS = {
+  paths: GUARDED_JOB_IF,
+  ios: `needs.paths.outputs.ios == 'true' && (${GUARDED_JOB_IF})`,
+  build: `always() && (${GUARDED_JOB_IF})`,
+};
 const GUARDED_CI_WORKFLOW = [
   "name: CI",
   `run-name: ${GUARDED_RUN_NAME}`,
@@ -81,10 +85,26 @@ const GUARDED_CI_WORKFLOW = [
   "concurrency:",
   `  group: ${GUARDED_CONCURRENCY}`,
   "jobs:",
-  ...GUARDED_JOB_NAMES.flatMap((name) => [
+  ...Object.entries(GUARDED_JOB_IFS).flatMap(([name, condition]) => [
     `  ${name}:`,
-    `    if: ${GUARDED_JOB_IF}`,
+    `    if: ${condition}`,
   ]),
+  "",
+].join("\n");
+const PREVIOUS_GUARDED_CI_WORKFLOW = [
+  "name: CI",
+  `run-name: ${GUARDED_RUN_NAME}`,
+  "on:",
+  "  workflow_dispatch:",
+  "    inputs:",
+  "      expected_sha:",
+  "        required: true",
+  "        type: string",
+  "concurrency:",
+  `  group: ${GUARDED_CONCURRENCY}`,
+  "jobs:",
+  "  build:",
+  `    if: ${GUARDED_JOB_IF}`,
   "",
 ].join("\n");
 
@@ -190,6 +210,30 @@ test("apply dispatches one fresh CI run for a qualifying same-repository head", 
   );
 });
 
+test("apply preserves expected_sha for the previous complete guarded workflow", async () => {
+  const pr = pull();
+  const fixture = githubFixture({
+    pulls: [pr],
+    workflowsBySha: {
+      [pr.head.sha]: PREVIOUS_GUARDED_CI_WORKFLOW,
+    },
+  });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+  assert.equal(result.recoveries[0].dispatched, true);
+  assert.deepEqual(
+    fixture.requests.filter((request) => request.method === "POST"),
+    [
+      {
+        method: "POST",
+        path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
+        body: { ref: pr.head.ref, inputs: { expected_sha: pr.head.sha } },
+      },
+    ],
+  );
+});
+
 test("apply omits expected_sha only for a legacy head workflow without that input", async () => {
   const pr = pull();
   const fixture = githubFixture({
@@ -244,7 +288,7 @@ test("apply fails closed when the required job lacks the expected SHA guard", as
     pulls: [pr],
     workflowsBySha: {
       [pr.head.sha]: GUARDED_CI_WORKFLOW.replace(
-        `  build:\n    if: ${GUARDED_JOB_IF}`,
+        `  build:\n    if: ${GUARDED_JOB_IFS.build}`,
         "  build:\n    if: success()",
       ),
     },

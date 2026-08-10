@@ -21,25 +21,21 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Frontend build
+  paths:
+    name: Select validation
     if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      NEXT_PUBLIC_CAVE_CRAFTS: "1"
+    timeout-minutes: 5
+    outputs:
+      frontend: ${{ steps.paths.outputs.frontend }}
+      rust: ${{ steps.paths.outputs.rust }}
+      e2e: ${{ steps.paths.outputs.e2e }}
+      ios: ${{ steps.paths.outputs.ios }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
           persist-credentials: false
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24
-          cache: pnpm
 
       - id: paths
         name: Select path-aware validation
@@ -51,12 +47,70 @@ jobs:
       - run: node scripts/check-conflict-markers.mjs
       - run: node --test scripts/ci-paths.test.mjs
 
+  ios:
+    name: iOS build
+    needs: paths
+    if: needs.paths.outputs.ios == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: brew install xcodegen
+      - run: bash scripts/ios-xcodegen.sh
+
+      - name: Compile the iOS app
+        working-directory: apps/ios/CovenCave
+        run: xcodebuild -scheme CovenCave -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+
+  build:
+    name: Frontend build
+    needs: [paths, ios]
+    if: always() && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NEXT_PUBLIC_CAVE_CRAFTS: "1"
+    steps:
+      - name: Require selected validation
+        env:
+          PATHS_RESULT: ${{ needs.paths.result }}
+          IOS_ENABLED: ${{ needs.paths.outputs.ios }}
+          IOS_RESULT: ${{ needs.ios.result }}
+        run: |
+          set -euo pipefail
+          test "$PATHS_RESULT" = "success"
+          if [ "$IOS_ENABLED" = "true" ]; then
+            test "$IOS_RESULT" = "success"
+          fi
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
       - name: Install JavaScript dependencies
-        if: steps.paths.outputs.frontend == 'true' || steps.paths.outputs.e2e == 'true'
+        if: needs.paths.outputs.frontend == 'true' || needs.paths.outputs.e2e == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Validate frontend
-        if: steps.paths.outputs.frontend == 'true'
+        if: needs.paths.outputs.frontend == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -76,10 +130,10 @@ jobs:
           exit 1
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-03-27
-        if: steps.paths.outputs.rust == 'true'
+        if: needs.paths.outputs.rust == 'true'
 
       - name: Install Tauri system dependencies
-        if: steps.paths.outputs.rust == 'true'
+        if: needs.paths.outputs.rust == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -94,12 +148,12 @@ jobs:
             librsvg2-dev
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        if: steps.paths.outputs.rust == 'true'
+        if: needs.paths.outputs.rust == 'true'
         with:
           workspaces: src-tauri -> target
 
       - name: Validate Rust
-        if: steps.paths.outputs.rust == 'true'
+        if: needs.paths.outputs.rust == 'true'
         working-directory: src-tauri
         shell: bash
         run: |
@@ -111,16 +165,17 @@ jobs:
           cargo test --locked --lib
 
       - name: Install Playwright browsers
-        if: steps.paths.outputs.e2e == 'true'
+        if: needs.paths.outputs.e2e == 'true'
         run: pnpm exec playwright install --with-deps chromium webkit
 
       - name: Validate end-to-end behavior
-        if: steps.paths.outputs.e2e == 'true'
+        if: needs.paths.outputs.e2e == 'true'
         run: pnpm exec playwright test
 
       - name: Report skipped suites
-        if: steps.paths.outputs.frontend != 'true' || steps.paths.outputs.rust != 'true' || steps.paths.outputs.e2e != 'true'
+        if: needs.paths.outputs.frontend != 'true' || needs.paths.outputs.rust != 'true' || needs.paths.outputs.e2e != 'true' || needs.paths.outputs.ios != 'true'
         run: |
-          echo "frontend=${{ steps.paths.outputs.frontend }}"
-          echo "rust=${{ steps.paths.outputs.rust }}"
-          echo "e2e=${{ steps.paths.outputs.e2e }}"
+          echo "frontend=${{ needs.paths.outputs.frontend }}"
+          echo "rust=${{ needs.paths.outputs.rust }}"
+          echo "e2e=${{ needs.paths.outputs.e2e }}"
+          echo "ios=${{ needs.paths.outputs.ios }} (${{ needs.ios.result }})"
