@@ -688,20 +688,34 @@
   background: var(--danger-text);
 }
 .cnav__thread.is-active {
+  --cnav-active-background: var(--bg-raised);
+  isolation: isolate;
   border-radius: var(--radius-card);
   background: var(--bg-raised);
   color: var(--text-primary);
 }
 .cnav__thread.is-active[data-attention="left-hanging"] {
+  --cnav-active-background: color-mix(in oklch, var(--color-warning) 7%, var(--bg-raised));
   background: color-mix(in oklch, var(--color-warning) 7%, var(--bg-raised));
 }
 .cnav__thread.is-active[data-attention="awaiting-human"] {
+  --cnav-active-background: color-mix(in oklch, var(--color-warning) 14%, var(--bg-raised));
   border-color: color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
   background: color-mix(in oklch, var(--color-warning) 14%, var(--bg-raised));
 }
 .cnav__thread.is-active[data-attention="overdue-human"] {
+  --cnav-active-background: var(--danger-bg);
   border-color: var(--danger-border);
   background: var(--danger-bg);
+}
+.cnav__thread.is-active::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset-block: 0;
+  inset-inline: calc(var(--rail-pad) * -1);
+  background: var(--cnav-active-background);
+  pointer-events: none;
 }
 .cnav__thread.is-active::before {
   content: "";
