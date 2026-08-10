@@ -3,6 +3,12 @@ import { spawn } from "node:child_process";
 import { stripAnsi } from "@/lib/ansi";
 import { covenLaunchCommand, covenSpawnEnv } from "@/lib/coven-bin";
 import { covenCliMissingError, isMissingExecutableError } from "@/lib/coven-spawn-error";
+import {
+  daemonDiagnosticContextFromRequest,
+  DAEMON_DIAGNOSTIC_CORRELATION_HEADER,
+  diagnosticError,
+  recordDaemonDiagnosticEvent,
+} from "@/lib/server/daemon-diagnostics";
 
 export const dynamic = "force-dynamic";
 
@@ -15,61 +21,117 @@ const SUBCOMMAND_ARGS: Record<string, string[]> = {
 };
 
 export async function POST(req: Request) {
+  const diagnostics = daemonDiagnosticContextFromRequest(req);
+  const respond = (body: Record<string, unknown>, status = 200) =>
+    NextResponse.json(
+      { ...body, correlationId: diagnostics.correlationId },
+      {
+        status,
+        headers: {
+          [DAEMON_DIAGNOSTIC_CORRELATION_HEADER]: diagnostics.correlationId,
+        },
+      },
+    );
   let body: { command?: string };
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ ok: false, error: "invalid json body" }, { status: 400 });
+    return respond({ ok: false, error: "invalid json body" }, 400);
   }
   if (!body.command || !ALLOWED.has(body.command)) {
-    return NextResponse.json(
-      { ok: false, error: "command not allowed" },
-      { status: 400 },
-    );
+    return respond({ ok: false, error: "command not allowed" }, 400);
   }
 
   const args = [body.command, ...(SUBCOMMAND_ARGS[body.command] ?? [])];
+  const operation = `coven-${body.command}`;
+  const startedAt = Date.now();
+  recordDaemonDiagnosticEvent(diagnostics, {
+    component: "cli",
+    operation,
+    phase: "execution",
+    outcome: "started",
+    process: { pid: process.pid },
+    endpoint: { kind: "cli", classification: "allowlisted-command" },
+  });
 
   return new Promise<Response>((resolve) => {
     const { command, fixedArgs } = covenLaunchCommand();
     const child = spawn(command, [...fixedArgs, ...args], {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
-      env: covenSpawnEnv(),
+      env: {
+        ...covenSpawnEnv(),
+        COVEN_CAVE_CORRELATION_ID: diagnostics.correlationId,
+        COVEN_CAVE_DIAGNOSTIC_GENERATION: String(diagnostics.generation),
+        COVEN_CAVE_DIAGNOSTIC_OPERATION: operation,
+        COVEN_CAVE_DIAGNOSTIC_ATTEMPT: "1",
+      },
     });
     let out = "";
     let err = "";
+    let settled = false;
+    const settle = (
+      body: Record<string, unknown>,
+      status: number,
+      outcome: "succeeded" | "failed" | "timed-out",
+      classification: string,
+      error?: unknown,
+    ) => {
+      if (settled) return;
+      settled = true;
+      recordDaemonDiagnosticEvent(diagnostics, {
+        component: "cli",
+        operation,
+        phase: "execution",
+        durationMs: Date.now() - startedAt,
+        outcome,
+        process: { pid: child.pid },
+        endpoint: {
+          kind: "cli",
+          classification,
+          status,
+        },
+        error: error ? diagnosticError(error, classification) : null,
+      });
+      resolve(respond(body, status));
+    };
     child.stdout.on("data", (d) => (out += d.toString()));
     child.stderr.on("data", (d) => (err += d.toString()));
     const t = setTimeout(() => {
       child.kill("SIGTERM");
-      resolve(
-        NextResponse.json(
-          { ok: false, error: "timeout", stdout: stripAnsi(out), stderr: stripAnsi(err) },
-          { status: 504 },
-        ),
+      settle(
+        { ok: false, error: "timeout", stdout: stripAnsi(out), stderr: stripAnsi(err) },
+        504,
+        "timed-out",
+        "cli-timeout",
+        "timeout",
       );
     }, 6000);
     child.on("error", (e) => {
       clearTimeout(t);
-      resolve(
-        NextResponse.json(
-          isMissingExecutableError(e)
-            ? covenCliMissingError()
-            : { ok: false, error: e.message },
-          { status: 500 },
-        ),
+      settle(
+        isMissingExecutableError(e)
+          ? covenCliMissingError()
+          : { ok: false, error: e.message },
+        500,
+        "failed",
+        "cli-spawn-error",
+        e,
       );
     });
     child.on("close", (code) => {
       clearTimeout(t);
-      resolve(
-        NextResponse.json({
+      settle(
+        {
           ok: code === 0,
           exitCode: code,
           stdout: stripAnsi(out),
           stderr: stripAnsi(err),
-        }),
+        },
+        200,
+        code === 0 ? "succeeded" : "failed",
+        code === 0 ? "completed" : "cli-error",
+        code === 0 ? undefined : `CLI exited with status ${code ?? "unknown"}`,
       );
     });
   });

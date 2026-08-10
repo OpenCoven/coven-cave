@@ -328,7 +328,7 @@ pub(super) fn spawn_sidecar_supervisor(app: tauri::AppHandle) {
                 recovery_pending = true;
                 continue;
             }
-            let revive_outcome = revive(&app);
+            let revive_outcome = revive(&app, budget.attempt());
             #[cfg(not(target_os = "windows"))]
             let revive_crossed_measurement_deadline =
                 rotate_timed_out_recovery_episode(&app, &mut recovery_episode);
@@ -751,12 +751,18 @@ fn cleanup_failed_revival(app: &tauri::AppHandle) {
 }
 
 #[cfg(all(desktop, not(target_os = "windows")))]
-fn revive(app: &tauri::AppHandle) -> ReviveOutcome {
+fn revive(app: &tauri::AppHandle, attempt: u32) -> ReviveOutcome {
     let should_cancel = {
         let app = app.clone();
         move || is_stopping(&app)
     };
-    match sidecar_startup::start_sidecar_runtime(app, |_| {}, should_cancel) {
+    match sidecar_startup::start_sidecar_runtime(
+        app,
+        "sidecar-recovery",
+        attempt,
+        |_| {},
+        should_cancel,
+    ) {
         Ok(url) => {
             pty::trust_main_origin(&url);
             remember_main_startup_url(&url);
@@ -800,7 +806,7 @@ fn revive(app: &tauri::AppHandle) -> ReviveOutcome {
 }
 
 #[cfg(all(desktop, target_os = "windows"))]
-fn revive(app: &tauri::AppHandle) -> ReviveOutcome {
+fn revive(app: &tauri::AppHandle, attempt: u32) -> ReviveOutcome {
     let Some(control) = app.try_state::<Arc<SidecarStartupControl>>() else {
         log::warn!("[cave] sidecar revive failed: startup control is unavailable");
         return ReviveOutcome::Failed {
@@ -814,6 +820,8 @@ fn revive(app: &tauri::AppHandle) -> ReviveOutcome {
         app.clone(),
         Arc::clone(control.inner()),
         sidecar_startup::NativeStartupTerminalPolicy::DeferredToSupervisor,
+        "sidecar-recovery",
+        attempt,
     ) {
         Ok(()) => ReviveOutcome::Scheduled,
         Err(_error) if control.is_running() => {

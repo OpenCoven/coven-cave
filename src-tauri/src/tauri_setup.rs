@@ -336,6 +336,15 @@ pub fn run() {
                 app.state::<Arc<ReliabilityRecorder>>()
                     .configure(app_data_dir);
             }
+            if let Ok(app_local_data_dir) = app.path().app_local_data_dir() {
+                let diagnostics_path =
+                    app_local_data_dir.join(sidecar_diagnostics::NATIVE_DIAGNOSTICS_FILE_NAME);
+                if let Err(error) =
+                    sidecar_diagnostics::reset_native_diagnostics_file(&diagnostics_path)
+                {
+                    log::warn!("[cave] could not reset native diagnostics for this launch: {error}");
+                }
+            }
             // The updater's Windows pre-exit path clears the application
             // resource table after validating the package and before starting
             // msiexec. Dropping this guard stops/reaps the sidecar even though
@@ -415,6 +424,8 @@ pub fn run() {
                         app.handle().clone(),
                         startup_control,
                         NativeStartupTerminalPolicy::RecordAtLifecycleTerminal,
+                        "sidecar-startup",
+                        1,
                     )?;
                     spawn_sidecar_supervisor(app.handle().clone());
                     None
@@ -422,7 +433,13 @@ pub fn run() {
                 #[cfg(not(target_os = "windows"))]
                 {
                     let startup_started = std::time::Instant::now();
-                    let sidecar_url = match start_sidecar_runtime(app.handle(), |_| {}, || false) {
+                    let sidecar_url = match start_sidecar_runtime(
+                        app.handle(),
+                        "sidecar-startup",
+                        1,
+                        |_| {},
+                        || false,
+                    ) {
                         Ok(url) => {
                             pending_native_startup_terminal = Some((
                                 startup_started,
