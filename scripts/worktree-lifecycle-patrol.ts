@@ -40,12 +40,7 @@ type MetadataRepairReport = ReturnType<typeof repairOrphanedWorktreeMetadata>;
 type PatrolItem = PatrolSummary["items"][number];
 type RetirementBlock = RetirementReport["blocked"][number];
 type RemoteDeletionProposal = RetirementReport["remoteDeletionProposals"][number];
-type MaintenanceGateHandle = {
-  root: string;
-  ownerId: string;
-  generation: number;
-  token: string;
-};
+type MaintenanceGateHandle = object;
 type AcquireMaintenanceGateResult =
   | {
       ok: true;
@@ -84,10 +79,10 @@ type RetirementApplyDependencies = {
 const APPLY_OWNER_ID = "worktree-lifecycle-patrol";
 const APPLY_PURPOSE = "worktree lifecycle metadata repair and retirement apply";
 const defaultRetirementApplyDependencies: RetirementApplyDependencies = {
-  acquireMaintenanceGate,
-  heartbeatMaintenanceGate,
-  releaseMaintenanceGate,
-  verifyMaintenanceGateOwnership,
+  acquireMaintenanceGate: acquireMaintenanceGate as unknown as RetirementApplyDependencies["acquireMaintenanceGate"],
+  heartbeatMaintenanceGate: heartbeatMaintenanceGate as unknown as RetirementApplyDependencies["heartbeatMaintenanceGate"],
+  releaseMaintenanceGate: releaseMaintenanceGate as unknown as RetirementApplyDependencies["releaseMaintenanceGate"],
+  verifyMaintenanceGateOwnership: verifyMaintenanceGateOwnership as unknown as RetirementApplyDependencies["verifyMaintenanceGateOwnership"],
   createGitRetirementOperations,
   retireLifecycleUnits,
   createMetadataRepairOperations,
@@ -181,9 +176,10 @@ sessions, pull requests, workflow runs, and live process cwd ownership. It never
 repairs metadata, removes worktrees, or removes branches unless --apply becomes
 maintenance planes are enforced.
 
---apply is currently unusable: the coven, beads and github planes are hard-coded
-off in scripts/maintenance-gate.mjs pending unbuilt work, so it refuses with
-exit 2 before assessing any unit. Retire cleanup-ready units by hand through the
+--apply is currently unusable until the Beads and GitHub maintenance planes
+land. Cave already coordinates its local fence with Coven's released maintenance
+protocol, but it refuses with exit 2 before assessing any unit while either
+remaining plane is unenforced. Retire cleanup-ready units by hand through the
 archive-tag route in CLAUDE.md until that changes (cave-3aqvr).`);
 }
 
@@ -297,7 +293,7 @@ function renderApplyUnavailable(
         `worktree-lifecycle-patrol: --apply unavailable; missing maintenance planes: ${missingPlanes.join(", ")}`,
         "",
         "This is not a local fault and a retry will not clear it. These planes are",
-        "hard-coded off in scripts/maintenance-gate.mjs pending unbuilt work:",
+        "not yet enforced by their listed maintenance-plane owners:",
         ...missingPlanes.map(
           (plane) => `  ${plane.padEnd(7)} blocked on ${capabilities[plane].source || "an unfiled Bead"}`,
         ),
@@ -556,10 +552,7 @@ export function runRetirementApply(
       gitLimit > 0
         ? dependencies.retireLifecycleUnits({
             items: inventory.items,
-            gateHandle: {
-              generation: acquired.handle.generation,
-              token: acquired.handle.token,
-            },
+            gateHandle: acquired.handle,
             operations,
             maxRetire: String(gitLimit),
           })

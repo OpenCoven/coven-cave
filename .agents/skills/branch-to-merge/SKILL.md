@@ -8,8 +8,8 @@ description: Use when finishing work on a Coven Cave branch and landing it on pr
 Take a finished branch to a merged commit on `main` without ever writing to
 `main` directly and without destroying another session's work.
 
-`main` in this repository is protected: pull request required, nine required
-status checks, no force-push, no deletion. A pull request is
+`main` in this repository is protected: pull request required, one required
+status check, no force-push, no deletion. A pull request is
 the **only** path an agent may use. This skill is the Cave-specific replacement
 for generic "finish a branch" workflows that offer a local merge into the base
 branch — that option does not exist here.
@@ -104,7 +104,7 @@ Every path in the diff must belong to this Bead. Unrelated files mean you
 committed someone else's work — split them out before continuing.
 
 If verification fails, **STOP** and fix it. A red PR wastes the reviewer and
-burns nine CI legs.
+burns the required CI run.
 
 ## Phase 2: Base branch
 
@@ -202,7 +202,7 @@ count.
 
 ## Phase 5: Checks and review
 
-Nine required checks must pass:
+One required check must pass:
 
 ```bash
 expected_head=$(git rev-parse HEAD)
@@ -212,25 +212,17 @@ gh pr view <#> --json headRefOid,mergeable,mergeStateStatus,statusCheckRollup
 ```
 
 - `Frontend build`
-- `Rust check`
-- `E2E (Playwright)`
-- `Cross-environment (ubuntu-latest)`
-- `Cross-environment (windows-latest)`
-- `Cross-environment required`
-- `Sidecar runtime (ubuntu-latest)`
-- `Sidecar runtime (windows-latest)`
-- `Sidecar runtime required`
 
 CodeQL is retired, and code scanning is fully off — nothing scans in its place.
 If a required context never reports, the PR sits `BLOCKED` with nothing failing.
 Before and after the watch, require `headRefOid` to equal `$expected_head` and
 each listed context to be complete and successful. A pass tied to an earlier
 SHA, or a pending, cancelled, stale, missing, or failed context, is incomplete;
-do not merge until the exact current head has all nine passes.
+do not merge until the exact current head has the required pass.
 
-The `E2E (Playwright)` leg runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs
-must dismiss onboarding and mock APIs via `page.route(...)` rather than expect a
-live daemon.
+The path-aware `Frontend build` job runs Playwright daemon-less
+(`COVEN_CAVE_E2E=1`) when user-facing paths change, so e2e specs must dismiss
+onboarding and mock APIs via `page.route(...)` rather than expect a live daemon.
 
 Then read the review threads. Conversation resolution is **no longer** a merge
 gate, which makes reading them a discipline rather than a requirement — and the

@@ -45,6 +45,7 @@ function pull({
 function workflowRun({
   id = 9001,
   status = "completed",
+  conclusion = status === "completed" ? "success" : null,
   event = "pull_request",
   createdAt = new Date(NOW - RECOVERY_GRACE_MS - 1).toISOString(),
   headSha = "a".repeat(40),
@@ -53,6 +54,7 @@ function workflowRun({
   return {
     id,
     status,
+    conclusion,
     event,
     created_at: createdAt,
     head_sha: headSha,
@@ -66,16 +68,7 @@ const GUARDED_CONCURRENCY =
   "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
 const GUARDED_JOB_IF =
   "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
-const GUARDED_JOB_NAMES = [
-  "frontend-static",
-  "frontend-tests",
-  "frontend-bundle",
-  "cargo-check",
-  "e2e-shard",
-  "conformance",
-  "sidecar-runtime",
-  "windows-native",
-];
+const GUARDED_JOB_NAMES = ["build"];
 const GUARDED_CI_WORKFLOW = [
   "name: CI",
   `run-name: ${GUARDED_RUN_NAME}`,
@@ -245,14 +238,14 @@ test("apply fails closed when expected_sha exists without the REST-visible run s
   assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
 });
 
-test("apply fails closed when one recovery leaf job lacks the expected SHA guard", async () => {
+test("apply fails closed when the required job lacks the expected SHA guard", async () => {
   const pr = pull();
   const fixture = githubFixture({
     pulls: [pr],
     workflowsBySha: {
       [pr.head.sha]: GUARDED_CI_WORKFLOW.replace(
-        `  windows-native:\n    if: ${GUARDED_JOB_IF}`,
-        "  windows-native:\n    if: success()",
+        `  build:\n    if: ${GUARDED_JOB_IF}`,
+        "  build:\n    if: success()",
       ),
     },
   });
@@ -540,4 +533,56 @@ test("pull pagination never forwards the token to a cross-origin Link URL", asyn
   assert.deepEqual(requests, [
     `https://api.github.test/repos/${REPOSITORY}/pulls?state=open&per_page=100`,
   ]);
+});
+
+test("an approval-gated run is not CI coverage and is recovered", async () => {
+  // GitHub parks a first-time-contributor run behind manual approval: the run
+  // reports status=completed with conclusion=action_required and ZERO jobs, so
+  // the PR shows no checks at all. Reading only `status` mistook that for
+  // finished CI and wedged Copilot-authored PRs indefinitely (cave-qshvl).
+  const pr = pull();
+  const gated = workflowRun({
+    id: 9100,
+    status: "completed",
+    conclusion: "action_required",
+    headSha: pr.head.sha,
+  });
+  const fixture = githubFixture({ pulls: [pr], runsBySha: { [pr.head.sha]: [gated] } });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, false));
+
+  assert.equal(result.recoveries.length, 1, "an approval-gated head must be recoverable");
+  assert.equal(result.recoveries[0].reason, "approval_gated_run");
+});
+
+test("a completed run that actually ran is still coverage, including a failure", async () => {
+  // The fix must not turn every completed run into a recovery candidate. A
+  // FAILED run reported a verdict, so CI covered this head and re-dispatching
+  // would just re-run a known failure.
+  for (const conclusion of ["success", "failure", "cancelled", "timed_out"]) {
+    const pr = pull();
+    const ran = workflowRun({ id: 9200, status: "completed", conclusion, headSha: pr.head.sha });
+    const fixture = githubFixture({ pulls: [pr], runsBySha: { [pr.head.sha]: [ran] } });
+
+    const result = await runCiRecovery(options(fixture.fetchImpl, false));
+
+    assert.deepEqual(
+      result.recoveries,
+      [],
+      `conclusion=${conclusion} is coverage and must not be recovered`,
+    );
+  }
+});
+
+test("one real run alongside an approval-gated one still counts as coverage", async () => {
+  // Only when EVERY run is gated is the head genuinely uncovered. A gated run
+  // sitting beside a real one must not trigger a redundant dispatch.
+  const pr = pull();
+  const gated = workflowRun({ id: 9300, status: "completed", conclusion: "action_required", headSha: pr.head.sha });
+  const real = workflowRun({ id: 9301, status: "completed", conclusion: "success", headSha: pr.head.sha });
+  const fixture = githubFixture({ pulls: [pr], runsBySha: { [pr.head.sha]: [gated, real] } });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, false));
+
+  assert.deepEqual(result.recoveries, []);
 });

@@ -70,8 +70,8 @@ export function openCovenToolPresentation(
       return {
         state,
         versionText: `${tool.current} → ${tool.latest}`,
-        statusText: "Update available.",
-        action: "update",
+        statusText: "Newer release available; the installed version remains compatible.",
+        action: null,
       };
     case "latest-unknown":
       return {

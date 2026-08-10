@@ -76,9 +76,10 @@
     Bead — that record is the evidence the retirement gate checks.
 - After a PR merges, run `pnpm beads:worktrees` and record the merged unit's
   disposition. **`pnpm beads:worktrees:apply` cannot retire anything today** — it
-  exits 2 with `missing maintenance planes: coven, beads, github`, which
-  `scripts/maintenance-gate.mjs` hard-codes off pending `cave-wqa0b.2/.3/.4`
-  (all BLOCKED). That is not a local fault and a retry will not clear it, so
+  exits 2 with `missing maintenance planes: beads, github`. Cave now holds its
+  local writer-intent fence together with Coven's released 0.2.5 maintenance
+  protocol; the remaining Beads and GitHub planes are still unenforced. That is
+  not a local fault and a retry will not clear it, so
   hand-retirement through the archive-tag route in [`CLAUDE.md`](CLAUDE.md) is
   the expected path until those land (`cave-3aqvr`). Prove retention first: a
   squash-merge leaves the branch commits on no remote ref, so a merged PR is not
