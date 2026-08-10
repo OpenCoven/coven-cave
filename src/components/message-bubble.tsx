@@ -872,9 +872,6 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [], className }
     return (
       <span className={`whitespace-pre-wrap break-words text-[length:var(--text-md)] leading-relaxed${className ? ` ${className}` : ""}`}>
         {text}
-        {pending && text ? (
-          <span aria-hidden className="ml-1 inline-block animate-pulse text-[var(--text-secondary)]">▌</span>
-        ) : null}
       </span>
     );
   }
@@ -888,11 +885,20 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [], className }
         // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: html }}
       />
-      {/* Streaming cursor as a SIBLING of the markdown container — never
-          injected into the sanitized HTML string. */}
-      {pending ? (
-        <span aria-hidden="true" className="ml-1 inline-block animate-pulse text-[var(--text-secondary)]">▌</span>
-      ) : null}
+      {/* No streaming cursor here. It used to render as a sibling of the
+          container above — the one placement that keeps it out of the
+          sanitized HTML string — but that container is a block-level <div>,
+          so the span could never trail the last rendered line and instead
+          wrapped onto a row of its own. What the reader saw was a detached
+          grey bar sitting between the message and whatever followed it,
+          after EVERY streaming message that had rendered markdown, which
+          reads as a rendering artifact rather than as a caret (cave-1yslk).
+
+          Putting it back requires appending it INSIDE the last inline
+          descendant of the sanitized HTML, which is exactly the injection
+          this placement was chosen to avoid. Progress is already legible
+          from the text growing, so the affordance is gone rather than
+          wrong. `pending` still drives progressive rendering below. */}
       <InlineCitationPreviews
         citations={citations}
         containerRef={containerRef}
