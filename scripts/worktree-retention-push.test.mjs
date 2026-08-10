@@ -7,7 +7,14 @@ import test from "node:test";
 
 const NULL_DEVICE = process.platform === "win32" ? "NUL" : "/dev/null";
 
-import { parseWorktrees, retain, retentionTag, unpushedCount } from "./worktree-retention-push.mjs";
+import {
+  headSha,
+  parseWorktrees,
+  remoteTagCommits,
+  retain,
+  retentionTag,
+  unpushedCount,
+} from "./worktree-retention-push.mjs";
 
 // Fixtures must not inherit machine-level git config. A global
 // `core.hooksPath` points every repo on this machine at one hook directory,
@@ -159,6 +166,72 @@ test("retain retains a detached HEAD, which has no branch to push", () => {
 
     assert.equal(result.verdict, "pushed-tag");
     assert.equal(bare(["rev-parse", `refs/tags/${result.tag}^{commit}`], remote).trim(), sha);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remoteTagCommits sees a pushed tag, which --remotes never can", () => {
+  // The exact shape of the cave-nw3hq incident: a merged branch is archived as
+  // a pushed tag and deleted from the remote. `git rev-list --not --remotes`
+  // still calls its commits unpushed, because remote-tracking refs exist for
+  // branches and never for tags — so the hook re-created twelve branches it had
+  // just been asked to retire.
+  const { root, work } = scaffold();
+  try {
+    git(["checkout", "-b", "fix/archived"], work);
+    commit(work, "one");
+    git(["push", "origin", "fix/archived"], work);
+    const head = headSha(work);
+
+    // Archive exactly as the retirement route does, then drop the branch.
+    git(["tag", "-a", "archive/fix-archived-2026-08-10", "-m", "archive", head], work);
+    git(["push", "origin", "archive/fix-archived-2026-08-10"], work);
+    git(["push", "origin", "--delete", "fix/archived"], work);
+    git(["fetch", "--prune", "origin"], work);
+
+    assert.ok(
+      unpushedCount(work) > 0,
+      "precondition: with the branch gone, --remotes alone calls this unpushed",
+    );
+
+    const tags = remoteTagCommits(work);
+    assert.ok(tags instanceof Set, "the remote answered");
+    assert.ok(
+      tags.has(head),
+      "the archived head is advertised as a tag, so it is retained after all",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remoteTagCommits collects the peeled commit of an annotated tag", () => {
+  // An annotated tag advertises the TAG OBJECT at refs/tags/x and the commit at
+  // refs/tags/x^{}. Reading only the first would compare a tag-object id against
+  // a commit id and never match — the check would silently never fire.
+  const { root, work } = scaffold();
+  try {
+    commit(work, "two");
+    git(["push", "origin", "main"], work);
+    const head = headSha(work);
+    git(["tag", "-a", "annotated-example", "-m", "annotated", head], work);
+    git(["push", "origin", "annotated-example"], work);
+
+    const tags = remoteTagCommits(work);
+    assert.ok(tags.has(head), "the peeled commit is present, not just the tag object");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remoteTagCommits returns null when the remote cannot be reached", () => {
+  // No proof means push, which is the safe direction: a redundant ref costs
+  // nothing, a skipped push leaves commits on one machine.
+  const { root, work } = scaffold();
+  try {
+    git(["remote", "set-url", "origin", path.join(root, "does-not-exist.git")], work);
+    assert.equal(remoteTagCommits(work), null);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

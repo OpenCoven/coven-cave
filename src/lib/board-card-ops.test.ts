@@ -18,6 +18,17 @@ assert.equal(hasCardOps(undefined), false);
 assert.equal(hasCardOps({}), false);
 assert.equal(hasCardOps({ stepOps: [] }), false, "empty op arrays are not ops");
 assert.equal(hasCardOps({ labelOps: [{ op: "add", value: "x" }] }), true);
+const malformedCollections = {
+  stepOps: { length: 1 },
+  labelOps: { length: 1 },
+  linkOps: { length: 1 },
+  attachmentOps: { length: 1 },
+};
+assert.equal(
+  hasCardOps(malformedCollections),
+  false,
+  "array-like collection objects do not count as ops",
+);
 
 // ── step ops ──────────────────────────────────────────────────────────────────
 let out = applyCardOps(base, { stepOps: [{ op: "toggle", id: "s1" }] }, NOW);
@@ -75,6 +86,28 @@ out = applyCardOps(base, { labelOps: [{ op: "remove", value: "alpha" }] }, NOW);
 assert.deepEqual(out.labels, []);
 out = applyCardOps(base, { linkOps: [{ op: "add", value: "https://b.example" }, { op: "remove", value: "https://a.example" }] }, NOW);
 assert.deepEqual(out.links, ["https://b.example"], "link ops apply in order");
+out = applyCardOps(
+  { ...base, links: ["https://example.com/docs", "https://example.com/human-note"] },
+  {
+    linkOps: [
+      { op: "add", value: "https://example.com/docs" },
+      { op: "add", value: "https://example.com/new" },
+    ],
+  },
+  NOW,
+);
+assert.deepEqual(
+  out.links,
+  ["https://example.com/docs", "https://example.com/human-note", "https://example.com/new"],
+  "duplicate add is ignored and the new link appends through public applyCardOps",
+);
+assert.equal(out.links[1], "https://example.com/human-note", "unrelated existing links stay byte-for-byte unchanged");
+
+const longUrl = `https://example.com/${"a".repeat(2_000)}`;
+out = applyCardOps(base, { linkOps: [{ op: "add", value: longUrl }] }, NOW);
+assert.equal(out.links[1].length, 2_000, "stored link values are capped at the list max");
+assert.equal(out.links[1], longUrl.slice(0, 2_000), "the capped value is stored exactly as accepted");
+assert.doesNotThrow(() => new URL(out.links[1]), "the capped stored value remains a valid HTTP URL");
 
 // ── attachment ops ────────────────────────────────────────────────────────────
 out = applyCardOps(base, { attachmentOps: [{ op: "add", attachments: [{ name: "b.txt", type: "text/plain", size: 1, text: "b" }] }] }, NOW);
@@ -91,5 +124,25 @@ out = applyCardOps(base, {
 }, NOW);
 assert.deepEqual(out.steps.map((s) => s.id), ["s1", "s2"], "junk step ops no-op");
 assert.deepEqual(out.labels, ["alpha"], "junk label ops no-op");
+
+const baseSnapshot = structuredClone(base);
+assert.doesNotThrow(
+  () => applyCardOps(base, malformedCollections, NOW),
+  "malformed op collections are ignored instead of throwing",
+);
+out = applyCardOps(base, malformedCollections, NOW);
+assert.deepEqual(out, {}, "all-malformed collections produce no resolved patch");
+assert.deepEqual(base, baseSnapshot, "ignoring malformed collections preserves the source card");
+
+out = applyCardOps(base, {
+  stepOps: { length: 1 },
+  linkOps: [{ op: "add", value: "https://b.example" }],
+}, NOW);
+assert.equal(out.steps, undefined, "malformed step collections are skipped entirely");
+assert.deepEqual(
+  out.links,
+  ["https://a.example", "https://b.example"],
+  "valid collections still apply when sibling collections are malformed",
+);
 
 console.log("board-card-ops: ok");

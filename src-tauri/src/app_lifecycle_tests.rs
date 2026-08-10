@@ -339,6 +339,7 @@ fn sidecar_port_wait_is_cancellable_and_detects_readiness() {
     assert!(matches!(
         wait_for_sidecar_ready(
             port,
+            "test-token",
             &output,
             Duration::from_millis(600),
             || false,
@@ -348,7 +349,14 @@ fn sidecar_port_wait_is_cancellable_and_detects_readiness() {
     ));
 
     assert!(matches!(
-        wait_for_sidecar_ready(port, &output, Duration::from_secs(1), || false, || true),
+        wait_for_sidecar_ready(
+            port,
+            "test-token",
+            &output,
+            Duration::from_secs(1),
+            || false,
+            || true
+        ),
         PortWaitResult::Exited
     ));
 
@@ -356,16 +364,167 @@ fn sidecar_port_wait_is_cancellable_and_detects_readiness() {
         .lock()
         .expect("output tail")
         .push(format!("> Ready on http://127.0.0.1:{}\n", port).as_bytes());
+    let responder = std::thread::spawn(move || {
+        use std::io::{Read, Write};
+        let (mut stream, _) = listener.accept().expect("accept readiness request");
+        let mut request = Vec::new();
+        let mut chunk = [0_u8; 256];
+        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+            let read = stream.read(&mut chunk).expect("read readiness request");
+            assert!(read > 0, "readiness request ended before its headers");
+            request.extend_from_slice(&chunk[..read]);
+        }
+        let request = String::from_utf8_lossy(&request);
+        assert!(request.contains("GET /api/app/native-readiness HTTP/1.1"));
+        assert!(request.contains("x-coven-cave-token: test-token"));
+        let body = format!(
+            r#"{{"service":"CovenCave","version":"{}","protocol":{{"name":"coven-cave-native-readiness","version":1}},"runtime":{{"bundle":true,"api":"ready"}}}}"#,
+            env!("CARGO_PKG_VERSION")
+        );
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .expect("write readiness response");
+    });
     assert!(matches!(
-        wait_for_sidecar_ready(port, &output, Duration::from_secs(1), || false, || false),
+        wait_for_sidecar_ready(
+            port,
+            "test-token",
+            &output,
+            Duration::from_secs(1),
+            || false,
+            || false
+        ),
         PortWaitResult::Ready
     ));
-    drop(listener);
+    responder.join().expect("readiness responder");
 
     assert!(matches!(
-        wait_for_sidecar_ready(port, &output, Duration::from_secs(1), || true, || false),
+        wait_for_sidecar_ready(
+            port,
+            "test-token",
+            &output,
+            Duration::from_secs(1),
+            || true,
+            || false
+        ),
         PortWaitResult::Cancelled
     ));
+}
+
+#[test]
+fn native_readiness_rejects_wrong_identity_protocol_version_and_dependencies() {
+    fn response(body: &str) -> Vec<u8> {
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .into_bytes()
+    }
+
+    let wrong_service = response(&format!(
+        r#"{{"service":"NotCoven","version":"{}","protocol":{{"name":"coven-cave-native-readiness","version":1}},"runtime":{{"bundle":true,"api":"ready"}}}}"#,
+        env!("CARGO_PKG_VERSION")
+    ));
+    assert!(validate_readiness_response(&wrong_service)
+        .expect_err("wrong service must fail")
+        .contains("unexpected service"));
+
+    let wrong_protocol = response(&format!(
+        r#"{{"service":"CovenCave","version":"{}","protocol":{{"name":"coven-cave-native-readiness","version":2}},"runtime":{{"bundle":true,"api":"ready"}}}}"#,
+        env!("CARGO_PKG_VERSION")
+    ));
+    assert!(validate_readiness_response(&wrong_protocol)
+        .expect_err("wrong protocol must fail")
+        .contains("unsupported native readiness protocol"));
+
+    let incompatible = response(
+        r#"{"service":"CovenCave","version":"999.0.0","protocol":{"name":"coven-cave-native-readiness","version":1},"runtime":{"bundle":true,"api":"ready"}}"#,
+    );
+    assert!(validate_readiness_response(&incompatible)
+        .expect_err("wrong app version must fail")
+        .contains("incompatible"));
+
+    let partial = response(&format!(
+        r#"{{"service":"CovenCave","version":"{}","protocol":{{"name":"coven-cave-native-readiness","version":1}},"runtime":{{"bundle":true,"api":"starting"}}}}"#,
+        env!("CARGO_PKG_VERSION")
+    ));
+    assert!(validate_readiness_response(&partial)
+        .expect_err("partial runtime must fail")
+        .contains("dependencies are not ready"));
+}
+
+#[test]
+fn native_readiness_failures_retain_stable_reliability_classes() {
+    let response = |body: &str| {
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .into_bytes()
+    };
+
+    let unauthorized = b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n";
+    assert_eq!(
+        validate_readiness_response_classified(unauthorized)
+            .expect_err("unauthorized readiness must fail")
+            .failure_class,
+        ReliabilityFailureClass::Authentication
+    );
+
+    let incompatible = response(
+        r#"{"service":"CovenCave","version":"999.0.0","protocol":{"name":"coven-cave-native-readiness","version":1},"runtime":{"bundle":true,"api":"ready"}}"#,
+    );
+    assert_eq!(
+        validate_readiness_response_classified(&incompatible)
+            .expect_err("incompatible readiness must fail")
+            .failure_class,
+        ReliabilityFailureClass::Compatibility
+    );
+
+    assert_eq!(
+        validate_readiness_response_classified(b"not-http")
+            .expect_err("malformed transport response must fail")
+            .failure_class,
+        ReliabilityFailureClass::Transport
+    );
+}
+
+#[test]
+fn native_readiness_accepts_chunked_http_and_rejects_malformed_chunks() {
+    let body = format!(
+        r#"{{"service":"CovenCave","version":"{}","protocol":{{"name":"coven-cave-native-readiness","version":1}},"runtime":{{"bundle":true,"api":"ready"}}}}"#,
+        env!("CARGO_PKG_VERSION")
+    );
+    let midpoint = body.len() / 2;
+    let chunked = format!(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+        midpoint,
+        &body[..midpoint],
+        body.len() - midpoint,
+        &body[midpoint..]
+    );
+    validate_readiness_response(chunked.as_bytes()).expect("valid chunked readiness");
+
+    let malformed =
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n20\r\n{}\r\n0\r\n\r\n";
+    assert!(validate_readiness_response(malformed)
+        .expect_err("truncated chunks must fail")
+        .contains("truncated chunk"));
+
+    let truncated_terminator = format!(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n",
+        body.len(),
+        body
+    );
+    assert!(validate_readiness_response(truncated_terminator.as_bytes())
+        .expect_err("truncated terminal chunks must fail")
+        .contains("malformed chunk terminator"));
 }
 
 #[cfg(target_os = "windows")]

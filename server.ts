@@ -624,6 +624,15 @@ function isPtyAuthRequired(): boolean {
   return Boolean(accessToken() || SIDECAR_TOKEN);
 }
 
+function shouldRejectUnauthenticatedPtyUpgrade({
+  sidecarTokenConfigured = false,
+  accessTokenConfigured = false,
+  tokenAuthenticated = false,
+} = {}) {
+  if (tokenAuthenticated) return false;
+  return sidecarTokenConfigured || accessTokenConfigured;
+}
+
 function isAuthorized(req: IncomingMessage, query: Record<string, string | string[] | undefined>): boolean {
   if (!isPtyAuthRequired()) return false;
 
@@ -1051,8 +1060,15 @@ function handlePtyConnection(
   });
 }
 
+function loopbackHostname(raw = process.env.HOSTNAME) {
+  if (raw === "127.0.0.1" || raw === "localhost" || raw === "::1") {
+    return raw;
+  }
+  return "127.0.0.1";
+}
+
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME ?? "127.0.0.1";
+const hostname = loopbackHostname();
 const port = cavePort();
 
 const app = next({ dev, hostname, port });
@@ -1101,9 +1117,9 @@ server.on("upgrade", (req, socket, head) => {
   // forwards the `<host>.ts.net` Host) legitimately arrives with a
   // non-loopback Host and must pass the source gate on the strength of its
   // token — mirroring proxy.ts's isAllowedApiHost relaxation on REST.
-  //
-  // Forwarded tailnet identity is not sufficient authentication here: another
-  // local process can forge forwarding headers on a loopback connection.
+  // Forwarding headers are not credentials at this boundary: a local process
+  // can forge them, so allowlisted tailnet identity alone must never authorize
+  // spawning or adopting a shell.
   const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
 
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
@@ -1112,19 +1128,22 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  // Enforce token auth whenever the server has a remote/mobile credential.
-  // With no token set — the local desktop app and dev server — the loopback
-  // host+origin gate above is the protection, and credential-less connections
-  // are the local app itself. #714 dropped this and 401'd every local terminal
-  // (reintroducing the v0.0.72 "Terminal connection failed" regression that
-  // server-pty-ws.test.ts warns about). Native mobile mode configures only
-  // COVEN_CAVE_AUTH_TOKEN; require that sidecar token here too so
-  // Tailscale-forwarded PTY upgrades cannot become credential-less shells.
-  // TCP loopback proves only that the caller is on this machine, not that it
-  // is the owning OS user. The Tauri app has its per-launch sidecar token, and
-  // a local browser in access-token-only mode receives the existing access
-  // gate, so an armed PTY credential can fail closed for every peer.
-  if (isPtyAuthRequired() && !tokenAuthenticated) {
+  // Any configured PTY credential closes the credential-less path, including
+  // direct loopback: another local account or process is not the paired app.
+  // Plain development remains credential-less only when neither token exists.
+  //
+  // Keep the credential-less case exactly that narrow. #714 removed it and
+  // 401'd every local terminal, reintroducing the v0.0.72 "Terminal connection
+  // failed" regression that server-pty-ws.test.ts still guards. What makes
+  // closing it safe HERE is that both peers now have a credential to present:
+  // the Tauri shell its per-launch sidecar token, and a local browser the
+  // access gate. TCP loopback proves only that the caller is on this machine,
+  // never which OS user it is.
+  if (shouldRejectUnauthenticatedPtyUpgrade({
+    sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
+    accessTokenConfigured: Boolean(accessToken()),
+    tokenAuthenticated,
+  })) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;

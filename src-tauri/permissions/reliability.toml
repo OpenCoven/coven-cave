@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-record-daemon-reliability-measurement"
+description = "Allows the trusted desktop UI to persist privacy-safe daemon reliability measurements."
+commands.allow = ["record_daemon_reliability_measurement"]

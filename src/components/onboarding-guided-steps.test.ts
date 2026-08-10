@@ -372,8 +372,8 @@ assert.match(
 
 assert.match(
   source,
-  /const needsAction = !tool\.installed \|\| tool\.outdated \|\| !tool\.compatible/,
-  "the startup tools step treats below-floor tools as actionable updates",
+  /const needsAction = actionTargets\.includes\(tool\.id\)/,
+  "the startup tools step uses reviewed action targets instead of npm freshness alone",
 );
 
 assert.match(

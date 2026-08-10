@@ -25,6 +25,23 @@ export interface WorktreeLifecycleInventoryOptions {
   repo: string;
   root: string;
   nowMs: number;
+  /**
+   * Called after every external command this inventory runs.
+   *
+   * A caller holding a lease over the inventory cannot renew it with a timer:
+   * this function is synchronous and every second of it is spent inside
+   * `spawnSync`, so the event loop never turns and no `setInterval` fires. The
+   * hook is the only place renewal can happen, and anchoring it to commands
+   * rather than to wall-clock means renewal tracks work actually done — the
+   * inventory gets slower as the checkout grows, and so does the renewal.
+   *
+   * Throwing from the hook aborts the inventory. That is deliberate: a caller
+   * whose fence has been lost should stop reading a repository it no longer
+   * excludes writers from, rather than finishing and reporting a snapshot
+   * taken without exclusion. Callers that merely want progress should not
+   * throw.
+   */
+  onProgress?: () => void;
 }
 
 export interface WorktreeLifecycleInventory {
@@ -274,12 +291,55 @@ function isIsoCalendarDate(value: string): boolean {
   );
 }
 
+/**
+ * Progress hook for the in-flight inventory, or null when none is running.
+ *
+ * Module state rather than a threaded parameter because `command` is called
+ * from well over a hundred sites; threading it would be a large diff for no
+ * added safety. `collectWorktreeLifecycleInventory` is synchronous and
+ * single-threaded, so the only way two inventories could interleave is
+ * re-entrance from inside the hook, which `runProgressHook` refuses.
+ */
+let activeProgressHook: (() => void) | null = null;
+let insideProgressHook = false;
+
+function runProgressHook(): void {
+  // A hook that ran a command would re-enter this and recurse without bound.
+  // Note the reach of this guard: anything the hook does — including starting
+  // a whole nested inventory — runs with progress reporting suppressed, so a
+  // nested read never drives its own hook. That is intended (the outer fence
+  // is the one being held) but it means a nested inventory cannot abort
+  // through its own hook.
+  if (activeProgressHook === null || insideProgressHook) return;
+  insideProgressHook = true;
+  try {
+    activeProgressHook();
+  } finally {
+    insideProgressHook = false;
+  }
+}
+
 function command(
   executable: string,
   args: string[],
   cwd: string,
   timeout = 30_000,
   env: NodeJS.ProcessEnv = process.env,
+): CommandResult {
+  const result = runCommand(executable, args, cwd, timeout, env);
+  // Deliberately OUTSIDE runCommand's catch: a hook that throws is reporting a
+  // lost fence, and swallowing it there would turn that into an ordinary
+  // "invocation failed" result and let the inventory continue unfenced.
+  runProgressHook();
+  return result;
+}
+
+function runCommand(
+  executable: string,
+  args: string[],
+  cwd: string,
+  timeout: number,
+  env: NodeJS.ProcessEnv,
 ): CommandResult {
   try {
     const result = spawnSync(executable, args, {
@@ -2374,12 +2434,39 @@ function recordIsAttributable(record: StructuredMetadataRecord): boolean {
   return record.branchUsable || normalizeAbsoluteWorktreePath(record.path) !== null;
 }
 
+/**
+ * Resolve one unit's lifecycle metadata.
+ *
+ * Returns errors in TWO buckets, and the split is the whole point:
+ *
+ *   - `errors` — everything that disqualifies THIS unit. The unit fails closed
+ *     on all of it, exactly as before.
+ *   - `globalErrors` — the subset of `errors` that is repository-wide, i.e.
+ *     true regardless of which unit is being resolved. Only these may abort an
+ *     operation on some OTHER unit.
+ *
+ * Before cave-1x9pz the two were returned as one list, and `create.ts` tried to
+ * recover the distinction downstream by subtracting the record-level claim
+ * errors from it by string equality. That only ever identified one of the five
+ * kinds produced here, so an ownership conflict, a duplicate record, a
+ * duplicate path or a path/branch mismatch — all of them attributable to a
+ * single named unit — leaked out as repository-wide and refused creation for
+ * every unrelated bead. Which is the same outage cave-g9byt fixed for
+ * record-level errors, resurfacing through the four cases it did not cover.
+ *
+ * Nothing downstream has to guess now: the classification is made here, where
+ * the reason each error exists is still in scope.
+ */
 function metadataFor(
   branch: string | null,
   worktreePath: string | null,
   tasks: BeadTask[],
-): { metadata: WorktreeLifecycleMetadata | null; errors: string[] } {
-  if (!branch) return { metadata: null, errors: [] };
+): {
+  metadata: WorktreeLifecycleMetadata | null;
+  errors: string[];
+  globalErrors: string[];
+} {
+  if (!branch) return { metadata: null, errors: [], globalErrors: [] };
   const allRecords = tasks.flatMap((task) => task.structured);
   // One malformed record used to deny every unit in the repository, because
   // every task's record errors were folded in here wholesale. cave-l11sw wrote
@@ -2412,18 +2499,24 @@ function metadataFor(
             ...new Set(conflictingPathRecords.map((record) => record.branch || "<invalid branch>")),
           ].join(", ")}`,
         ];
+  // `globalErrors` above does not read `branch` or `worktreePath` at all — it is
+  // derived from `tasks` alone and is therefore identical for every unit. That
+  // is what makes it safe to abort someone else's operation on. The ownership
+  // conflict beside it names THIS unit's contested path, so it is not.
+  const repositoryWide = [...new Set(globalErrors)];
   const inventoryErrors = [...new Set([...globalErrors, ...ownershipErrors])];
   if (inventoryErrors.length > 0) {
-    return { metadata: null, errors: inventoryErrors };
+    return { metadata: null, errors: inventoryErrors, globalErrors: repositoryWide };
   }
   if (records.length > 1) {
     return {
       metadata: null,
       errors: [`duplicate structured worktree metadata records for ${branch}`],
+      globalErrors: [],
     };
   }
   const record = records[0];
-  if (!record) return { metadata: null, errors: [] };
+  if (!record) return { metadata: null, errors: [], globalErrors: [] };
   const normalizedRecordPath = normalizeAbsoluteWorktreePath(record.path);
   if (
     normalizedRecordPath !== null &&
@@ -2435,10 +2528,11 @@ function metadataFor(
     return {
       metadata: null,
       errors: [`duplicate structured worktree metadata paths for ${record.path}`],
+      globalErrors: [],
     };
   }
   if (record.errors.length > 0 || !record.metadata) {
-    return { metadata: null, errors: record.errors };
+    return { metadata: null, errors: record.errors, globalErrors: [] };
   }
   if (
     normalizedWorktreePath !== null &&
@@ -2447,9 +2541,10 @@ function metadataFor(
     return {
       metadata: null,
       errors: [`structured worktree metadata path does not match ${branch}`],
+      globalErrors: [],
     };
   }
-  return { metadata: record.metadata, errors: [] };
+  return { metadata: record.metadata, errors: [], globalErrors: [] };
 }
 
 export function probeRecordedPathAbsence(
@@ -2764,6 +2859,20 @@ function classifyInventoryObservation(
 export function collectWorktreeLifecycleInventory(
   options: WorktreeLifecycleInventoryOptions,
 ): WorktreeLifecycleInventory {
+  const previousHook = activeProgressHook;
+  activeProgressHook = options.onProgress ?? null;
+  try {
+    return collectInventory(options);
+  } finally {
+    // Restore rather than null out, so a nested call (tests, tooling) cannot
+    // silently disarm an outer inventory's fence renewal.
+    activeProgressHook = previousHook;
+  }
+}
+
+function collectInventory(
+  options: WorktreeLifecycleInventoryOptions,
+): WorktreeLifecycleInventory {
   const requestedRoot = normalizeAbsoluteWorktreePath(options.root);
   if (requestedRoot === null) throw new Error("root must be an absolute worktree path");
   const root = realpathSync(requestedRoot);
@@ -3020,6 +3129,7 @@ export function collectWorktreeLifecycleInventory(
       probeErrors,
       metadata: metadata.metadata,
       metadataErrors: metadata.errors,
+      metadataGlobalErrors: metadata.globalErrors,
       remoteRef: remote.remoteRef,
       sessionIds: unit.path
         ? (sessionOwnership.sessionIdsByPath.get(unit.path) ?? [])

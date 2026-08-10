@@ -247,7 +247,11 @@ const assistSource = read("./server/assist-runner.ts");
 assert.match(assistSource, /env: harnessSpawnEnv\(\)/, "assist runs no longer inherit the full process env");
 
 const daemonStartSource = read("./daemon-start.ts");
-assert.match(daemonStartSource, /env: harnessSpawnEnv\(\)/, "the daemon is started without scoped vault secrets");
+assert.match(
+  daemonStartSource,
+  /spawnEnvironment = harnessSpawnEnv[\s\S]*?env: \{\s*\.\.\.spawnEnvironment\(\),[\s\S]*?COVEN_CAVE_CORRELATION_ID/,
+  "the daemon defaults to a scoped environment seam and adds only diagnostic metadata",
+);
 assert.doesNotMatch(daemonStartSource, /covenSpawnEnv/);
 
 const vaultRouteSource = read("../app/api/vault/route.ts");

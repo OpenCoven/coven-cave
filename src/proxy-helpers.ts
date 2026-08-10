@@ -58,6 +58,13 @@ export function isAllowedApiHost(
   return isLoopbackHost(host) || (tailnetTrusted && isTailscaleServeHost(host));
 }
 
+export function isTokenlessApiPeerAllowed(
+  trustedLocalPeer: boolean,
+  remoteIngress: boolean,
+) {
+  return trustedLocalPeer || remoteIngress;
+}
+
 export function sameOrigin(value: string | null, expectedOrigin: string) {
   if (!value) return true;
   try {

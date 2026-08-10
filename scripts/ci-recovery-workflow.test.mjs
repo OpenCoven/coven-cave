@@ -36,6 +36,14 @@ assert.match(detector.run, /node scripts\/ci-recovery\.mjs --apply/);
 
 const ciSource = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
 const ciWorkflow = parse(ciSource);
+assert.deepEqual(
+  Object.keys(ciWorkflow.jobs),
+  ["paths", "ios", "build"],
+  "routine CI classifies once, runs path-aware iOS validation, then reports through the required job",
+);
+assert.equal(ciWorkflow.jobs.build.name, "Frontend build");
+assert.deepEqual(ciWorkflow.jobs.build.needs, ["paths", "ios"]);
+assert.equal(ciWorkflow.jobs.ios.name, "iOS build");
 assert.equal(
   ciWorkflow["run-name"],
   "CI ${{ github.event_name }} ${{ inputs.expected_sha || github.sha }}",
@@ -55,21 +63,60 @@ assert.equal(
   "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}",
   "late pull_request delivery and its recovery dispatch must share one concurrency key",
 );
-for (const jobName of [
-  "frontend-static",
-  "frontend-tests",
-  "frontend-bundle",
-  "cargo-check",
-  "e2e-shard",
-  "conformance",
-  "sidecar-runtime",
-  "windows-native",
-]) {
+const expectedJobGuards = {
+  paths: "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha",
+  ios:
+    "needs.paths.outputs.ios == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
+  build:
+    "always() && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
+};
+for (const [jobName, guard] of Object.entries(expectedJobGuards)) {
   assert.equal(
     ciWorkflow.jobs[jobName].if,
-    "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha",
+    guard,
     `${jobName} must not run a recovery dispatch after the branch head moves`,
   );
 }
+assert.equal(
+  ciWorkflow.jobs.ios.steps.some((step) => step.run === "bash scripts/ios-xcodegen.sh"),
+  true,
+  "PR iOS validation uses the canonical generator",
+);
+assert.equal(
+  ciWorkflow.jobs.ios.steps.some((step) => step.run?.startsWith("xcodebuild ")),
+  true,
+  "PR iOS validation compiles the app without signing",
+);
+const prerequisite = ciWorkflow.jobs.build.steps.find(
+  (step) => step.name === "Require selected validation",
+);
+assert.ok(prerequisite, "the required Frontend build aggregates prerequisite job results");
+assert.match(prerequisite.run, /test "\$IOS_RESULT" = "success"/);
+
+const releaseSource = await readFile(
+  new URL("../.github/workflows/release.yml", import.meta.url),
+  "utf8",
+);
+const releaseWorkflow = parse(releaseSource);
+for (const jobName of [
+  "release-web-validation",
+  "release-platform-validation",
+  "release-windows-native",
+  "release-ios-build",
+]) {
+  assert.ok(releaseWorkflow.jobs[jobName], `release workflow defines ${jobName}`);
+}
+assert.deepEqual(
+  releaseWorkflow.jobs.build.needs,
+  [
+    "daemon-package",
+    "source-version",
+    "release-web-validation",
+    "release-platform-validation",
+    "release-windows-native",
+    "release-ios-build",
+  ],
+  "artifact builds must wait for every comprehensive release validation job",
+);
 
 console.log("ci-recovery-workflow.test.mjs: ok");

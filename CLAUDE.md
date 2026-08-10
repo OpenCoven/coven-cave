@@ -24,7 +24,7 @@ yours. Use a PR.
 **Current settings** (verified live; `gh api repos/OpenCoven/coven-cave/branches/main/protection`):
 
 - PR required before merging — **0 approvals** (you can self-merge once checks pass; no second human needed for solo work).
-- Required status checks — **all NINE** must pass (widened 2026-08-01 from five): `Frontend build`, `Rust check`, `E2E (Playwright)`, `Cross-environment (ubuntu-latest)`, `Cross-environment (windows-latest)`, `Cross-environment required`, `Sidecar runtime (ubuntu-latest)`, `Sidecar runtime (windows-latest)`, `Sidecar runtime required`. The four matrix legs were added alongside their `*-required` rollups. The rollups already fail unless `needs.<job>.result == 'success'`, so this is defense in depth rather than a gap being closed — it removes the dependency on those aggregation scripts staying correct. Classic branch protection is the active enforcement layer. Ruleset `19123333` lists the same nine checks but is currently disabled, so it does not provide a second gate. Only `ci.yml` runs on `pull_request` and no job carries a skippable `if:`, which is why requiring the legs is safe — a required context that never reports is what leaves a PR stuck `BLOCKED` with nothing failing. **`CodeQL` is retired** (2026-07-31): the ruleset's `code_scanning` rule went first, then the required context in classic branch protection, and now the workflow itself. Code scanning is fully off — GitHub default setup is `not-configured`, so nothing scans in its place. If you ever see a PR stuck `BLOCKED` with `mergeable: MERGEABLE`, no failing check and every conversation resolved, check two things: a required context that no longer reports (compare `gh api repos/OpenCoven/coven-cave/branches/main/protection --jq .required_status_checks.contexts` against the checks the PR actually runs), and `required_signatures` (see the signatures bullet below — it produced exactly this symptom on three PRs and is now off). The `E2E (Playwright)` job runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs must be self-contained — dismiss onboarding (`cave:onboarding:dismissed=1`) and drive surfaces via `page.route(...)` API mocks rather than a live daemon.
+- Required status checks — **ONE** must pass: `Frontend build`. Routine PR CI is one always-reporting, path-aware job: documentation-only changes run the baseline workflow contracts, frontend changes add lint/typecheck/unit/build validation, Rust changes add native checks/tests, and user-facing changes add daemon-less Playwright coverage. Cross-environment, sidecar-runtime, Windows-native, iOS, and full release validation run in `release.yml` instead of fanning out on every PR. Classic branch protection is the active enforcement layer. Ruleset `19123333` is disabled, so it does not provide a second gate. A required context that never reports leaves every PR stuck `BLOCKED` with nothing visibly failing. **`CodeQL` is retired** (2026-07-31): the ruleset's `code_scanning` rule went first, then the required context in classic branch protection, and now the workflow itself. Code scanning is fully off — GitHub default setup is `not-configured`, so nothing scans in its place. If you ever see a PR stuck `BLOCKED` with `mergeable: MERGEABLE`, no failing check and every conversation resolved, compare `gh api repos/OpenCoven/coven-cave/branches/main/protection --jq .required_status_checks.contexts` against the PR's checks and inspect `required_signatures`. Playwright remains daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs must dismiss onboarding (`cave:onboarding:dismissed=1`) and drive surfaces via `page.route(...)` API mocks rather than a live daemon.
 
   A separate scheduled workflow detects GitHub event-delivery gaps: after a
   15-minute grace period from the PR's latest update it dispatches a fresh
@@ -50,8 +50,8 @@ yours. Use a PR.
 
   Prefer this fresh dispatch to rerunning a queued run with zero jobs: there is
   no job to rerun, and the stalled run can remain queued. Recovery does not
-  bypass branch protection; all nine required contexts still have to report and
-  pass on the exact PR head.
+  bypass branch protection; the required `Frontend build` context still has to
+  report and pass on the exact PR head.
 - Review conversations are **no longer required to be resolved**
   (`required_conversation_resolution` was turned OFF on 2026-08-01, at the
   user's direction). A PR with green checks merges with open threads.
@@ -136,7 +136,7 @@ yours. Use a PR.
   If you believe it should change, say so to the owner and leave it alone.
 
   Nothing here changes how **agents** land work. Every rule below still binds
-  us: work on a branch, open a PR, wait for the nine required checks. The
+  us: work on a branch, open a PR, wait for the required check. The
   `--admin` flag `gh` dangles at you on a blocked merge is still not the fix —
   fix the actual blocker.
 - Force-pushes and deletion of `main` are blocked. `allow_deletions = false`
@@ -158,7 +158,7 @@ merging feature branches into `main` locally and pushing straight to it. On
 conflict-resolution on those merges. Every one of those pushes bypassed every
 required check, because a push from an admin was exempt while a *PR* from
 anyone was not. `main` sat red as a result — one of the failures was a
-regression that a PR's `E2E (Playwright)` run would have caught before it
+regression that the PR's path-aware Playwright validation would have caught before it
 landed. The same sweep also ran `git worktree remove --force` and
 `git push origin :<branch>` on the branches it merged, destroying a live
 session's worktree mid-verification (see the worktree-guard section below —
@@ -425,22 +425,48 @@ Run `pnpm beads:worktrees`. If it reports active, recovery, cooldown, uncertain,
 or gate-incomplete, preserve the unit and record its owner/reason. Never bypass
 the worktree guard to force completion.
 
-⚠️ **`pnpm beads:worktrees:apply` does not work today, and this is not a local
+⚠️ **A plain `pnpm beads:worktrees:apply` refuses, and this is not a local
 fault.** It exits 2 before assessing a single unit:
 
 ```text
-worktree-lifecycle-patrol: --apply unavailable; missing maintenance planes: coven, beads, github
+worktree-lifecycle-patrol: --apply unavailable; missing maintenance planes: beads, github
 ```
 
-`scripts/maintenance-gate.mjs` hard-codes three of the four planes to
-`enforced: false`, each pointing at unbuilt work — `coven` → `cave-wqa0b.2`,
-`beads` → `cave-wqa0b.3`, `github` → `cave-wqa0b.4`. All three are **BLOCKED**,
-so `--apply` is unreachable for the foreseeable future and no retry, credential
-or daemon will change that. Tracked by `cave-3aqvr`.
+`scripts/maintenance-gate.mjs` composes Cave's local writer-intent fence with
+the released Coven 0.2.5 maintenance protocol. The Beads (`cave-wqa0b.3`) and
+GitHub (`cave-wqa0b.4`) planes remain `enforced: false`, so a plain `--apply`
+refuses; no retry, credential, or daemon will change that. Both are blocked
+outside this repository — `cave-wqa0b.3` on an upstream Beads pre-write hook
+(`gastownhall/beads#5193`), `cave-wqa0b.4` on provisioning a dedicated GitHub
+App — so neither is agent-actionable here. The metadata residue this leaves
+behind is `cave-xbc87`. Don't follow the parent `cave-3aqvr`: it is closed
+(option 3 landed as PR #4432; options 1 and 2 were split out).
 
-**So hand-retirement is the norm right now, not the exception.** For a unit the
-patrol already classified `cleanup-ready`, use the archive-tag route in the
-worktree-guard section below.
+**But `--apply` is no longer a dead end.** `--allow-unenforced-planes`
+(`cave-s03wp`) opts into running it while those known-pending planes are
+unenforced:
+
+```bash
+pnpm beads:worktrees:apply --allow-unenforced-planes
+```
+
+The `local` plane is still required and is **never** waivable — it performs the
+exclusion that stops two actors retiring the same unit, so waiving it would be
+an unguarded run rather than a degraded one, and it is refused with its own
+distinct message. Every degraded run prints the waived planes and what blocks
+each one to stderr *before* the first unit is touched, so the record survives a
+run that dies midway.
+
+Note the admission test reads `enforced !== true`, not `=== false`: a plane
+whose entry is missing or malformed counts as unenforced, so the gate **fails
+closed** on absent data. `=== false` would be the bug — it would treat a
+missing or malformed entry as "not disabled, therefore fine" and waive the
+exclusion silently. Don't tidy it in that direction.
+
+**So retirement is either the degraded apply above or hand-retirement — both
+are sanctioned, neither is a workaround.** For a unit the patrol already
+classified `cleanup-ready`, use the archive-tag route in the worktree-guard
+section below.
 
 ⚠️ **Prove retention before removing anything — a merged PR is NOT retention.**
 A squash-merge leaves the branch's own commits on no remote ref, so
@@ -463,7 +489,50 @@ first would have been lossy. Also note `git log @{u}..HEAD` is worthless as an
 "is it pushed" check on these branches: the upstream ref is gone, so the command
 errors and a naive `| wc -l` reports a reassuring `0`.
 
+### Reading worktree state fast — `pnpm wt:status`
+
+`scripts/worktree-status.mjs` is the network-free companion to the patrol. The
+patrol is authoritative but slow and GitHub-bound; this reads local git only and
+prints a verdict per worktree in well under a second.
+
+```bash
+pnpm wt:status          # human table
+pnpm wt:status:json     # machine-readable
+pnpm wt:prune           # print unlock+remove commands for SAFE-RETIRE trees (executes nothing)
+```
+
+Verdicts run `WEDGED` → `SAFE-RETIRE` → `SALVAGE` → `SCRATCH` → `DIRTY` →
+`ACTIVE` → `PRIMARY`, and `--prune` only ever emits commands for `SAFE-RETIRE`.
+
+**`WEDGED` means an unfinished git operation is paused in that tree** — a merge,
+rebase, cherry-pick, revert, or bisect that was never completed or aborted. It
+exists because that state was previously invisible: nothing in `src/lib` or
+`scripts` looked at `MERGE_HEAD`, so a wedged worktree showed up as nothing more
+than "137 dirty", which reads exactly like a session editing right now. An
+abandoned merge on `docs/cave-zs85n-chat-sidebar-attention` therefore sat
+unresolved from 2026-08-07 to 2026-08-10 while session after session found it,
+assumed in-flight work, and backed off rather than clobber a colleague
+(`cave-97svy`).
+
+The report answers the question that backing off leaves open — **is anyone
+actually working on this?** — by comparing every dirty path's mtime against the
+moment the operation stalled:
+
+- **No tracked file touched since** → no hand resolution exists. The tree is raw
+  merge output, reproducible from the two parents, and an abort costs nothing.
+  The report also says whether both sides are reachable from a remote-tracking
+  ref or tag, and prints the archive-tag command when one is not.
+- **Tracked files touched since** → someone is mid-resolution. The report says
+  `do NOT abort` and marks the abort command *"only with the owner's say-so"*.
+  An unreadable tree fails closed to the same warning.
+
+Both remedies (`git commit` style finish, or the matching `--abort`)
+print with the worktree's real path, so resolving one takes a copy-paste rather
+than a fresh investigation. A `WEDGED` tree is never `SAFE-RETIRE`, so neither
+`--prune` nor `pnpm wt:retire-on-exit` can remove one.
+
 ## Starting the Tauri desktop app
+
 
 Use the desktop shell when validating native-only surfaces such as the terminal,
 browser pane, window chrome, sidecar behavior, updater wiring, or Tauri

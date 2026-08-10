@@ -11,16 +11,11 @@ const EXPECTED_CONCURRENCY_GROUP =
   "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
 const EXPECTED_JOB_GUARD =
   "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
-const GUARDED_JOB_NAMES = [
-  "frontend-static",
-  "frontend-tests",
-  "frontend-bundle",
-  "cargo-check",
-  "e2e-shard",
-  "conformance",
-  "sidecar-runtime",
-  "windows-native",
-];
+const EXPECTED_JOB_GUARDS = {
+  paths: EXPECTED_JOB_GUARD,
+  ios: `needs.paths.outputs.ios == 'true' && (${EXPECTED_JOB_GUARD})`,
+  build: `always() && (${EXPECTED_JOB_GUARD})`,
+};
 
 export async function runCiRecovery({
   apply = false,
@@ -169,6 +164,40 @@ async function getPull(context, number) {
   return parsePull(await response.json());
 }
 
+/**
+ * GitHub's manual-approval gate. A run parked behind it reports
+ * `status: "completed"` with `conclusion: "action_required"` and ZERO jobs, so
+ * the pull request shows no checks whatsoever.
+ *
+ * Reading only `status` therefore mistook it for finished CI and refused to
+ * recover, leaving Copilot-authored PRs wedged with an empty check rollup
+ * (cave-qshvl). `conclusion` was not merely unused — parseRun dropped it, so
+ * this decision could not have consulted it.
+ */
+const APPROVAL_GATED = "action_required";
+
+/** A run GitHub stopped before it reported a verdict. */
+const CANCELLED = "cancelled";
+
+/**
+ * Whether a run counts as CI having actually covered this head.
+ *
+ * Deliberately narrow. A FAILED run is coverage — it reported a verdict.
+ * `startup_failure` genuinely produced no coverage, but re-dispatching a
+ * workflow that cannot start would just loop, so it is left to a human.
+ *
+ * `cancelled` is judged by POSITION rather than here, in {@link decideRecovery}:
+ * a cancelled run underneath a newer one was superseded and is nobody's
+ * problem, while a cancelled run that is the newest for a static head is a
+ * wedge (cave-geaji). This predicate cannot see position, so it deliberately
+ * does not try to answer that.
+ */
+function isCoverage(run) {
+  if (run.status === "in_progress") return true;
+  if (run.status !== "completed") return false;
+  return run.conclusion !== APPROVAL_GATED;
+}
+
 async function decideRecovery(context, runs, now) {
   if (runs.length === 0) return { recover: true, reason: "missing_ci_run" };
 
@@ -179,11 +208,39 @@ async function decideRecovery(context, runs, now) {
   );
   if (recentRecovery) return { recover: false, reason: "recovery_cooldown" };
 
-  if (runs.some((run) => run.status === "completed" || run.status === "in_progress")) {
+  // `runs` is fetched filtered by head_sha and sorted newest-first, so runs[0]
+  // is the newest run for THIS exact head.
+  const latest = runs[0];
+
+  // A cancelled run is normally superseded by a newer push that carries its own
+  // run — which is why cave-qshvl classified `cancelled` as coverage. That
+  // holds right up until the cancelled run is the NEWEST one for a head that
+  // has not moved: nothing is coming to replace it, the required context
+  // reports `cancelled` rather than `success` forever, and the pull request is
+  // wedged with no path to green.
+  //
+  // Checked against the LATEST run rather than "every run is cancelled",
+  // because GitHub's rollup shows the most recent check-run per name. An older
+  // success underneath a newer cancellation does not unblock the PR, so it must
+  // not suppress recovery either.
+  //
+  // Observed on #4514: head 02f74118ff carried exactly one run, cancelled, and
+  // `pnpm ci:recovery` reported it as covered and declined to help (cave-geaji).
+  if (latest.status === "completed" && latest.conclusion === CANCELLED) {
+    return { recover: true, reason: "cancelled_latest_run" };
+  }
+
+  if (runs.some(isCoverage)) {
     return { recover: false, reason: "ci_present" };
   }
 
-  const latest = runs[0];
+  // Every run is parked behind the manual-approval gate, so the PR has no
+  // checks at all and never will until someone approves or a fresh run is
+  // dispatched. Recovering is exactly right here.
+  if (runs.length > 0 && runs.every((run) => run.conclusion === APPROVAL_GATED)) {
+    return { recover: true, reason: "approval_gated_run" };
+  }
+
   if (latest.status !== "queued") return { recover: false, reason: "ci_present" };
   if (latest.createdAt > now - RECOVERY_GRACE_MS) {
     return { recover: false, reason: "ci_queued" };
@@ -254,8 +311,17 @@ async function workflowSupportsExpectedSha(context, sha) {
     hasCompleteExpectedInput &&
     workflow["run-name"] === EXPECTED_RUN_NAME &&
     workflow?.concurrency?.group === EXPECTED_CONCURRENCY_GROUP &&
-    GUARDED_JOB_NAMES.every((name) => workflow?.jobs?.[name]?.if === EXPECTED_JOB_GUARD);
-  if (hasCompleteGuardedContract) return true;
+    Object.entries(EXPECTED_JOB_GUARDS).every(
+      ([name, guard]) => workflow?.jobs?.[name]?.if === guard,
+    );
+  const hasPreviousGuardedContract =
+    hasCompleteExpectedInput &&
+    workflow["run-name"] === EXPECTED_RUN_NAME &&
+    workflow?.concurrency?.group === EXPECTED_CONCURRENCY_GROUP &&
+    workflow?.jobs?.build?.if === EXPECTED_JOB_GUARD &&
+    !Object.hasOwn(workflow?.jobs ?? {}, "paths") &&
+    !Object.hasOwn(workflow?.jobs ?? {}, "ios");
+  if (hasCompleteGuardedContract || hasPreviousGuardedContract) return true;
 
   const hasGuardedProtocolMarker =
     hasExpectedInput || JSON.stringify(workflow).includes("inputs.expected_sha");
@@ -313,6 +379,15 @@ function parsePull(value) {
 function parseRun(value) {
   const id = value?.id;
   const status = value?.status;
+  // Normally null while a run is queued or in progress and a string once it
+  // completes, but validated as string-or-null against ANY status rather than
+  // keyed to `status === "completed"`. A completed run that reports no
+  // conclusion is odd, not malformed, and the only consumer below asks whether
+  // the conclusion IS the approval gate — a null answers "no" and the run is
+  // treated as coverage. Throwing there would turn a harmless API quirk into a
+  // dead recovery tool, which is a worse failure than reading one odd run
+  // conservatively.
+  const conclusion = value?.conclusion ?? null;
   const event = value?.event;
   const createdAt = Date.parse(value?.created_at);
   const headSha = value?.head_sha;
@@ -328,7 +403,8 @@ function parseRun(value) {
     typeof headSha !== "string" ||
     !/^[0-9a-f]{40}$/i.test(headSha) ||
     typeof displayTitle !== "string" ||
-    displayTitle.length === 0
+    displayTitle.length === 0 ||
+    (conclusion !== null && typeof conclusion !== "string")
   ) {
     throw new Error("CI workflow run response contained a malformed entry");
   }
@@ -343,6 +419,7 @@ function parseRun(value) {
   return {
     id,
     status,
+    conclusion,
     event,
     createdAt,
     headSha,

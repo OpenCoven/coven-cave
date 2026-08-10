@@ -22,6 +22,11 @@ assert.match(source, /export async function proxy\(req: NextRequest\)/, "Next 16
 assert.match(source, /matcher:\s*\["\/\(\(\?!_next\/static\|_next\/image\|favicon\.ico\)\.\*\)"\]/, "proxy should guard API and mobile browser routes");
 assert.match(source, /process\.env\.COVEN_CAVE_AUTH_TOKEN/, "proxy should require the per-launch sidecar token");
 assert.match(source, /process\.env\.COVEN_CAVE_BUNDLE === "1"[\s\S]*missing sidecar auth token/, "bundled sidecar mode should fail closed when its auth token is missing");
+assert.match(
+  source,
+  /forbidden peer: missing trusted local peer or verified remote ingress/,
+  "tokenless peer failures should identify the missing authorization proof",
+);
 assert.match(source, /req\.headers\.get\("origin"\)/, "middleware should reject unsafe origins");
 assert.match(source, /req\.headers\.get\("host"\)/, "middleware should reject unsafe hosts");
 assert.match(source, /const requestHost = req\.headers\.get\("host"\)/, "proxy should capture the forwarded request host once");
@@ -133,8 +138,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /HEADER_CSRF_TRUSTED_API_PATHS = new Set\(\["\/api\/mobile-handoff", "\/api\/mobile-token\/refresh"\]\)/,
-  "header-token CSRF relaxation must be limited to explicitly mobile-capable APIs",
+  /HEADER_CSRF_TRUSTED_API_PATHS = new Set\(\[\s*"\/api\/app\/native-readiness",\s*"\/api\/mobile-handoff",\s*"\/api\/mobile-token\/refresh",\s*\]\)/,
+  "header-token CSRF relaxation must be limited to explicitly sidecar-token-authenticated native/mobile APIs",
 );
 assert.doesNotMatch(
   source,
@@ -267,8 +272,18 @@ assert.match(
 );
 assert.match(
   tauriSource,
-  /wait_for_sidecar_ready\(\s*port,\s*&sidecar_output,\s*sidecar_start_timeout,\s*&should_cancel,\s*child_exited,\s*\)/,
-  "Tauri sidecar should require bounded launch output and a live child before trusting the URL",
+  /wait_for_sidecar_ready\(\s*port,\s*&auth_token,\s*&sidecar_output,\s*sidecar_start_timeout,\s*&should_cancel,\s*child_exited,\s*\)/,
+  "Tauri sidecar should require its launch evidence, token, live child, and bounded authenticated handshake",
+);
+assert.match(
+  tauriSource,
+  /GET \/api\/app\/native-readiness HTTP\/1\.1[\s\S]*x-coven-cave-token: \{auth_token\}/,
+  "Tauri readiness must make an authenticated end-to-end API request",
+);
+assert.match(
+  tauriSource,
+  /readiness\.version != env!\("CARGO_PKG_VERSION"\)/,
+  "Tauri readiness must reject a sidecar from an incompatible app version",
 );
 assert.match(
   tauriSource,

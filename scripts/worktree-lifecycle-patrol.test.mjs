@@ -915,6 +915,51 @@ console.error("unexpected bd command");
 process.exit(93);
 `,
   );
+  executable(
+    path.join(repairBin, "coven"),
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const statePath = ${JSON.stringify(path.join(fixtureRoot, "metadata-repair-coven.json"))};
+const args = process.argv.slice(2);
+if (args[0] === "--version") {
+  console.log("coven 0.2.5");
+  process.exit(0);
+}
+const state = fs.existsSync(statePath)
+  ? JSON.parse(fs.readFileSync(statePath, "utf8"))
+  : { owner: null, writers: [] };
+const save = () => fs.writeFileSync(statePath, JSON.stringify(state));
+const print = () => console.log(JSON.stringify(state));
+if (args[0] !== "maintenance") process.exit(2);
+if (args[1] === "acquire") {
+  state.owner = {
+    owner_id: args[2],
+    generation: "metadata-repair-generation",
+    expires_at: Math.floor(Date.now() / 1000) + 120,
+    phase: "held",
+  };
+  save();
+  print();
+  process.exit(0);
+}
+if (args[1] === "status") {
+  print();
+  process.exit(0);
+}
+if (args[1] === "heartbeat") {
+  state.owner.expires_at = Math.floor(Date.now() / 1000) + 120;
+  save();
+  print();
+  process.exit(0);
+}
+if (args[1] === "release") {
+  state.owner = null;
+  save();
+  process.exit(0);
+}
+process.exit(2);
+`,
+  );
 
   const originalPath = process.env.PATH;
   process.env.PATH = `${repairBin}${path.delimiter}${originalPath ?? ""}`;
@@ -1143,7 +1188,7 @@ process.exit(93);
       token: "token",
     });
     assert.equal(invalidGate.ok, false);
-    assert.match(invalidGate.reason, /heartbeat failed: invalid-handle/);
+    assert.match(invalidGate.reason, /heartbeat failed: invalid-composite-handle/);
   } finally {
     process.env.PATH = originalPath;
     delete process.env.METADATA_REPAIR_STATE;
@@ -2412,7 +2457,9 @@ fi
   executable(
     path.join(bin, "coven"),
     `#!/bin/sh
-if [ "$1" = "sessions" ] && [ "$2" = "--json" ]; then
+if [ "$1" = "--version" ]; then
+  printf '%s\n' 'coven 0.2.5'
+elif [ "$1" = "sessions" ] && [ "$2" = "--json" ]; then
   if [ "\${LIFECYCLE_WORKTREE_DRIFT:-0}" = "1" ] && [ ! -e "${path.join(fixtureRoot, "worktree-drift-once")}" ]; then
     touch "${path.join(fixtureRoot, "worktree-drift-once")}"
     git -C "${repo}" worktree add -q --detach "${registeredDrift}" origin/main
@@ -4580,16 +4627,28 @@ exit 0
   const gateRoot = maintenanceGateRoot(repo);
   const applyResult = patrolResult(["--apply", "--json"]);
   assert.equal(applyResult.status, 2);
-  assert.equal(applyResult.stderr.trim(), "");
+  const unexpectedApplyStderr = applyResult.stderr
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter(
+      (line) =>
+        !line.includes("cannot set terminal process group") &&
+        line !== "bash: no job control in this shell",
+    );
+  assert.deepEqual(unexpectedApplyStderr, []);
   const applyJson = JSON.parse(applyResult.stdout);
   assert.equal(applyJson.ok, false);
   assert.equal(applyJson.reason, "gate-incomplete");
-  assert.deepEqual(applyJson.missingPlanes, ["coven", "beads", "github"]);
+  assert.deepEqual(applyJson.missingPlanes, ["beads", "github"]);
   assert.deepEqual(applyJson.local, {
     enforced: true,
-    source: "scripts/maintenance-gate.mjs",
+    source: "scripts/local-maintenance-gate.mjs via composite coordinator",
   });
-  assert.deepEqual(applyJson.coven, { enforced: false, source: "cave-wqa0b.2" });
+  assert.deepEqual(applyJson.coven, {
+    enforced: true,
+    source: "@opencoven/cli@0.2.5 maintenance",
+  });
   assert.deepEqual(applyJson.beads, { enforced: false, source: "cave-wqa0b.3" });
   assert.deepEqual(applyJson.github, { enforced: false, source: "cave-wqa0b.4" });
   assert.equal(applyJson.complete, false);

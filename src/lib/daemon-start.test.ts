@@ -11,6 +11,11 @@ import {
   terminateDaemonLaunchTree,
 } from "./daemon-start.ts";
 import { waitForDaemonReadiness } from "./daemon-readiness.ts";
+import {
+  clearDaemonDiagnosticEventsForTests,
+  createDaemonDiagnosticContext,
+  listDaemonDiagnosticEvents,
+} from "./server/daemon-diagnostics.ts";
 
 const daemonStart = await readFile(new URL("./daemon-start.ts", import.meta.url), "utf8");
 const readinessSource = await readFile(new URL("./daemon-readiness.ts", import.meta.url), "utf8");
@@ -28,10 +33,10 @@ assert.match(daemonStart, /sanitizeDaemonStartDiagnostic\(stdout\)/, "launcher s
 assert.match(daemonStart, /sanitizeDaemonStartDiagnostic\(stderr\)/, "launcher stderr is redacted before it reaches a client");
 assert.match(daemonStart, /assessDaemonStartupCompatibility/, "readiness must validate runtime coherence, not only socket reachability");
 assert.match(daemonStart, /code: "runtime_incompatible"/, "a stale or incompatible runtime has a stable actionable outcome");
-assert.match(daemonStart, /RuntimeStartupThrottle/, "repeated failed starts must be bounded to prevent a restart storm");
+assert.match(daemonStart, /RuntimeStartupCoordinator/, "duplicate launches and repeated failures share one bounded startup lane");
 assert.match(daemonStart, /code: "address_in_use"/, "an address someone else holds has its own actionable outcome");
 assert.match(daemonStart, /inspectDaemonAddress/, "occupancy is proven by connecting, not inferred from a failed health probe");
-assert.match(daemonStart, /activeDaemonStart/, "concurrent start requests must share one owned launch");
+assert.match(daemonStart, /daemonStartCoordinator\.run/, "production starts enter the shared coordinator");
 
 for (const [payload, expected] of [
   [{ status: "running", ok: true }, { status: "running" }],
@@ -75,6 +80,57 @@ test("a foreground launcher is successful as soon as health becomes ready", asyn
     sleep: async (ms) => { now += ms; },
   });
   assert.deepEqual(result, { ready: true, attempts: 3, elapsedMs: 200, runnerExited: false });
+});
+
+test("daemon startup propagates one correlation into the CLI child and lifecycle events", async () => {
+  clearDaemonDiagnosticEventsForTests();
+  const diagnostics = createDaemonDiagnosticContext({
+    correlationId: "55555555-5555-4555-8555-555555555555",
+    generation: 4,
+  });
+  let spawnEnv: NodeJS.ProcessEnv | undefined;
+  const result = await startLocalDaemon({
+    restart: true,
+    diagnostics,
+    startTimeoutMs: 50,
+    readinessPollMs: 1,
+    probe: async () => ({ ok: true }),
+    spawnImpl: (_command, _args, options) => {
+      spawnEnv = options.env;
+      return fakeChild();
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(spawnEnv?.COVEN_CAVE_CORRELATION_ID, diagnostics.correlationId);
+  assert.equal(spawnEnv?.COVEN_CAVE_DIAGNOSTIC_GENERATION, "4");
+  assert.equal(spawnEnv?.COVEN_CAVE_DIAGNOSTIC_OPERATION, "daemon-start");
+  const events = listDaemonDiagnosticEvents();
+  assert.deepEqual(
+    events.map(({ correlationId, generation, operation, phase, outcome }) => ({
+      correlationId,
+      generation,
+      operation,
+      phase,
+      outcome,
+    })),
+    [
+      {
+        correlationId: "55555555-5555-4555-8555-555555555555",
+        generation: 4,
+        operation: "daemon-start",
+        phase: "startup",
+        outcome: "started",
+      },
+      {
+        correlationId: "55555555-5555-4555-8555-555555555555",
+        generation: 4,
+        operation: "daemon-start",
+        phase: "startup",
+        outcome: "succeeded",
+      },
+    ],
+  );
 });
 
 test("the deadline performs one final health probe before reporting timeout", async () => {
@@ -430,11 +486,12 @@ test("Windows cleanup delegates the complete owned tree to taskkill", async () =
 test("POSIX cleanup escalates an owned process group when the launcher does not exit", async () => {
   const child = fakeChild(5200);
   const signals = [];
-  let waits = 0;
   const result = await terminateDaemonLaunchTree(child, {
     platform: "linux",
     killProcessGroup: (pid, signal) => signals.push([pid, signal]),
-    waitForExit: async () => ++waits === 2,
+    waitForExit: async () => true,
+    processGroupAlive: () => true,
+    waitForProcessGroupExit: async () => true,
   });
   assert.deepEqual(signals, [[5200, "SIGTERM"], [5200, "SIGKILL"]]);
   assert.deepEqual(result, { attempted: true, completed: true, mode: "process-group" });
