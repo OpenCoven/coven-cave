@@ -254,6 +254,16 @@ test("duplicate launches coalesce and repeated failures consume one bounded lane
     (result) => result.ok,
   );
   assert.equal(throttled.code, "restart_throttled");
+  const asynchronousFailure = coordinator.run(
+    async () => {
+      assert.fail("a spent restart budget must not launch");
+    },
+    () => {
+      throw new Error("throttled result construction failed");
+    },
+    (result) => result.ok,
+  );
+  await assert.rejects(asynchronousFailure, /throttled result construction failed/);
 });
 
 test("sleep, wake, cancellation, and stale completions keep only the newest endpoint", async () => {
@@ -308,7 +318,7 @@ test("sleep, wake, cancellation, and stale completions keep only the newest endp
 });
 
 test("repeated actual startup cleanup leaves no root or descendant process", async () => {
-  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "coven cave faults "));
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "coven cave faults-"));
   const fixture = path.join(fixtureRoot, "owned tree.cjs");
   const marker = path.join(fixtureRoot, "descendant.pid");
   await writeFile(

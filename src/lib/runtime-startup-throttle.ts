@@ -60,7 +60,7 @@ export class RuntimeStartupCoordinator<T> {
 
     const decision = this.throttle.allow();
     if (!decision.allowed) {
-      return Promise.resolve(throttled(decision.retryAfterMs));
+      return Promise.resolve().then(() => throttled(decision.retryAfterMs));
     }
 
     let pending: Promise<T>;
