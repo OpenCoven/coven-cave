@@ -159,7 +159,11 @@ function isLocalOnlyAutomationRun(pathname: string, method: string) {
   return method === "POST" && /^\/api\/codex-automations\/[^/]+\/run$/.test(pathname);
 }
 
-const HEADER_CSRF_TRUSTED_API_PATHS = new Set(["/api/mobile-handoff", "/api/mobile-token/refresh"]);
+const HEADER_CSRF_TRUSTED_API_PATHS = new Set([
+  "/api/app/native-readiness",
+  "/api/mobile-handoff",
+  "/api/mobile-token/refresh",
+]);
 
 function isHeaderCsrfTrustedApiPath(pathname: string) {
   return HEADER_CSRF_TRUSTED_API_PATHS.has(pathname);

@@ -1701,6 +1701,7 @@ fn run_sidecar_daemon() -> Result<i32, String> {
 
     match wait_for_sidecar_ready(
         port,
+        &auth_token,
         &sidecar_output,
         Duration::from_secs(30),
         || gui_is_active(&app_data_dir) || daemon_shutdown_requested(),
@@ -1718,6 +1719,15 @@ fn run_sidecar_daemon() -> Result<i32, String> {
             let _ = std::fs::remove_file(&state_path);
             return Err(format!(
                 "background sidecar exited before becoming ready on port {port}. Bounded sidecar output tail:\n{}",
+                sidecar_output_text(&sidecar_output)
+            ));
+        }
+        PortWaitResult::Refused(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = std::fs::remove_file(&state_path);
+            return Err(format!(
+                "background sidecar failed its authenticated readiness handshake on port {port}: {error}. Bounded sidecar output tail:\n{}",
                 sidecar_output_text(&sidecar_output)
             ));
         }
