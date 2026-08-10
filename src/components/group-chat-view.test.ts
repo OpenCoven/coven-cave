@@ -66,6 +66,11 @@ test("GroupChatView schedules Broadcast and Round robin replies through /api/cha
   );
   assert.match(
     view,
+    /const isLatestRun = runIndex === visibleRuns\.length - 1;[\s\S]*?isLatestRun && agent\.status === "complete"/,
+    "renders next-path actions only for the newest coven run",
+  );
+  assert.match(
+    view,
     /sendSuggestion\(\s*\n\s*path\.prompt,\s*\n\s*agent\.familiarId,\s*\n\s*familiar\?\.display_name \?\? agent\.familiarId,/,
     "clicking a chip targets the familiar who authored it",
   );

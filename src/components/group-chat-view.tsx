@@ -1792,7 +1792,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                             formatTime={(iso) => formatChatRecency(iso, dtPrefs)}
                           />
                         ) : null}
-                        {visibleRuns.map((run) => {
+                        {visibleRuns.map((run, runIndex) => {
                           const targets = run.user.targetFamiliarIds
                             ?.map((id) => byId.get(id))
                             .filter((f): f is ResolvedFamiliar => Boolean(f));
@@ -1800,6 +1800,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                             ? byId.get(run.user.delegatedByFamiliarId)
                             : undefined;
                           const collapsed = collapsedRuns.has(run.id);
+                          const isLatestRun = runIndex === visibleRuns.length - 1;
                           // While one familiar is live, settled replies soft-clamp
                           // so the turn in progress owns the viewport (§4).
                           const someoneLive = run.agents.some(
@@ -1942,7 +1943,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                                       // click here sends an ordinary message, never
                                       // a side effect, so only replies are offered.
                                       const suggestions: CovenSuggestion[] =
-                                        agent.status === "complete"
+                                        isLatestRun && agent.status === "complete"
                                           ? typed
                                               .filter((path) => path.kind === "reply")
                                               .map((path) => ({
