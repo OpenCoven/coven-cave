@@ -43,7 +43,7 @@ test("decorateResponseHtml only rewrites prose text nodes", () => {
 });
 
 test("decorateResponseHtml marks a lead paragraph only when headings exist", () => {
-  assert.match(source, /firstBlock\?\.tagName === "P"/);
-  assert.match(source, /some\(\(element\) => \/\^H\[1-6\]\$\/\.test\(element\.tagName\)\)/);
-  assert.match(source, /firstBlock\.classList\.add\("cave-response-lead"\)/);
+  assert.match(source, /const firstHeadingIndex = blocks\.findIndex\(\(element\) => \/\^H\[1-6\]\$\/\.test\(element\.tagName\)\)/);
+  assert.match(source, /if \(firstHeadingIndex > 0\)/);
+  assert.match(source, /lead\?\.classList\.add\("cave-response-lead"\)/);
 });
