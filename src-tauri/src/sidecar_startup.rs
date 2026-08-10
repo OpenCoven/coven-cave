@@ -517,7 +517,7 @@ pub(super) fn start_sidecar_runtime(
         Err(SidecarStartError::Cancelled) => {
             diagnostics.record(lifecycle_phase, "cancelled", "cancelled", None, None)
         }
-        Err(SidecarStartError::Failed(_)) => {
+        Err(SidecarStartError::Failed { .. }) => {
             let failed_phase = diagnostics.current_phase();
             diagnostics.record(
                 failed_phase,

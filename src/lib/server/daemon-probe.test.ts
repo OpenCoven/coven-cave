@@ -94,10 +94,12 @@ test("never forwards the process-wide credential to an ad-hoc probe origin", asy
   const previous = process.env[HUB_ACCESS_TOKEN_KEY];
   process.env[HUB_ACCESS_TOKEN_KEY] = "global-secret";
   try {
-    await probeDaemonUrl("https://attacker.example.test:8443", async (target) => {
-      assert.equal(target.mode, "hub");
-      assert.equal(target.accessToken, undefined);
-      return { ok: true, status: 200, data: { ok: true } };
+    await probeDaemonUrl("https://attacker.example.test:8443", {
+      call: async (target) => {
+        assert.equal(target.mode, "hub");
+        assert.equal(target.accessToken, undefined);
+        return { ok: true, status: 200, data: { ok: true } };
+      },
     });
   } finally {
     if (previous === undefined) delete process.env[HUB_ACCESS_TOKEN_KEY];
