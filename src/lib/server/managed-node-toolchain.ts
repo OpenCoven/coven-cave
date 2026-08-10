@@ -391,6 +391,7 @@ export async function installManagedNodeToolchain(options: {
     ) => Promise<void>;
     remove?: typeof rm;
     rename?: typeof rename;
+    runtimeDirectory?: typeof onlyRuntimeDirectory;
   };
 } = {}): Promise<ManagedNodeInstallResult> {
   const platform = options.platform ?? process.platform;
@@ -425,6 +426,7 @@ export async function installManagedNodeToolchain(options: {
   const fetcher = options.fetch ?? fetch;
   const remove = options.dependencies?.remove ?? rm;
   const move = options.dependencies?.rename ?? rename;
+  const runtimeDirectory = options.dependencies?.runtimeDirectory ?? onlyRuntimeDirectory;
   const stage = path.join(/* turbopackIgnore: true */ paths.stagingRoot, `node-${randomUUID()}`);
   const installTemporary = `${paths.installDir}.tmp-${randomUUID()}`;
   let downloadTimedOut = false;
@@ -494,9 +496,10 @@ export async function installManagedNodeToolchain(options: {
       await extractSafeTarGz(archive, extracted);
     }
     throwIfManagedNodeInstallCancelled(options.signal);
-    const runtime = await onlyRuntimeDirectory(extracted);
+    const runtime = await runtimeDirectory(extracted);
     phase = "filesystem";
     writeProbeTarget = path.dirname(paths.installDir);
+    throwIfManagedNodeInstallCancelled(options.signal);
     await mkdir(/* turbopackIgnore: true */ path.dirname(paths.installDir), { recursive: true });
     throwIfManagedNodeInstallCancelled(options.signal);
     await remove(/* turbopackIgnore: true */ installTemporary, { recursive: true, force: true });

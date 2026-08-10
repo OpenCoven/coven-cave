@@ -390,8 +390,9 @@ test("managed Node installer honors cancellation before any installation work", 
 });
 
 test("managed Node installer fences cancellation between staged runtime commit operations", async (t) => {
-  const artifact = nodeArchiveFor("linux", "x64");
-  if (!artifact) throw new Error("expected approved Linux x64 Node artifact");
+  const candidateArtifact = nodeArchiveFor("linux", "x64");
+  if (!candidateArtifact) throw new Error("expected approved Linux x64 Node artifact");
+  const artifact: NonNullable<ReturnType<typeof nodeArchiveFor>> = candidateArtifact;
 
   async function runCancellationAtRemoval(
     removal: "temporary" | "installed",
@@ -463,6 +464,51 @@ test("managed Node installer fences cancellation between staged runtime commit o
   await t.test("before final replacement rename", async () => {
     const renames = await runCancellationAtRemoval("installed");
     assert.equal(renames.length, 1, "only the already-completed staging move may run");
+  });
+
+  await t.test("after runtime-directory inspection and before parent creation", async () => {
+    const home = await mkdtemp(path.join(tmpdir(), "coven-node-runtime-inspection-cancel-"));
+    const paths = managedNodePaths("linux", "x64", TEST_ENV, home);
+    assert.ok(paths);
+    const controller = new AbortController();
+    let releaseInspection!: () => void;
+    let inspectionStarted!: () => void;
+    const inspectionPending = new Promise<void>((resolve) => {
+      releaseInspection = resolve;
+    });
+    const inspectionStartedPromise = new Promise<void>((resolve) => {
+      inspectionStarted = resolve;
+    });
+    try {
+      const pending = installManagedNodeToolchain({
+        platform: "linux",
+        architecture: "x64",
+        env: TEST_ENV,
+        home,
+        signal: controller.signal,
+        fetch: async () => approvedResponse(),
+        dependencies: {
+          digest: () => artifact.sha256,
+          extractArchive: async (_format, _archive, destination) => {
+            await mkdir(path.join(destination, `node-v${MANAGED_NODE_VERSION}-linux-x64`), { recursive: true });
+          },
+          runtimeDirectory: async (extracted) => {
+            inspectionStarted();
+            await inspectionPending;
+            return path.join(extracted, `node-v${MANAGED_NODE_VERSION}-linux-x64`);
+          },
+          probe: async () => ({ status: "missing", paths }),
+        },
+      });
+      await inspectionStartedPromise;
+      controller.abort();
+      releaseInspection();
+      const result = await pending;
+      assert.equal(result.ok, false);
+      await assert.rejects(access(path.dirname(paths.installDir)));
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 });
 
