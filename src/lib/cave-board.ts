@@ -120,6 +120,35 @@ function asanaLinksFromLinks(values: string[] | undefined): CardAsanaLink[] {
     .filter((item): item is CardAsanaLink => item !== null);
 }
 
+/**
+ * Whether two links point at the same thing, for deciding if a URL-derived link
+ * is redundant. Compared on stable identity — the Asana gid, the GitHub
+ * repo/kind/number — rather than on `id` or `url`, because a link stored from
+ * the API and one derived from a pasted URL legitimately differ in both while
+ * naming the same task.
+ */
+function sameAsanaTarget(a: CardAsanaLink, b: CardAsanaLink): boolean {
+  if (a.gid && b.gid) return a.gid === b.gid;
+  return normalizeCompareUrl(a.url) === normalizeCompareUrl(b.url);
+}
+
+function sameGitHubTarget(a: CardGitHubLink, b: CardGitHubLink): boolean {
+  if (a.repo && b.repo && a.kind === b.kind && a.number !== undefined && b.number !== undefined) {
+    // Repo comparison is case-insensitive, matching itemId() in task-github.ts,
+    // which lowercases the repo when building an id. GitHub treats owner/name
+    // case-insensitively, so a link stored from the API with canonical casing
+    // and one derived from a lowercase pasted URL name the same item — comparing
+    // them case-sensitively would fail to match, leave the derived link
+    // unfiltered, and let its generated title overwrite the stored one again.
+    return a.repo.toLowerCase() === b.repo.toLowerCase() && a.number === b.number;
+  }
+  return normalizeCompareUrl(a.url) === normalizeCompareUrl(b.url);
+}
+
+function normalizeCompareUrl(value: string | null | undefined): string {
+  return (value ?? "").trim().replace(/\/+$/, "").toLowerCase();
+}
+
 function normalizeCwd(value: string | null | undefined): string | null {
   const cwd = value?.trim();
   return cwd ? cwd : null;
@@ -179,8 +208,34 @@ function normalizeBeadRef(value: unknown): CardBeadRef | null {
 
 function backfillCard(c: Card | LegacyCard): Card {
   const lifecycle = c.lifecycle ?? inferLifecycle(c.status);
-  const github = mergeGitHubLinks(normalizeGitHubLinks(c.github), ...gitHubLinksFromLinks(c.links));
-  const asana = mergeAsanaLinks(normalizeAsanaLinks(c.asana), ...asanaLinksFromLinks(c.links));
+  // Derived links FILL GAPS; they never overwrite what is already stored.
+  //
+  // Both merges resolve a clash with `title: item.title || previous.title`, so
+  // the incoming value wins whenever it is non-empty — correct when the incoming
+  // link is fresh data from Asana or GitHub, wrong when it was invented from a
+  // URL. The URL derivations always invent a title ("Asana task <gid>",
+  // "<repo> #<number>"), so folding them back in replaced a real stored title
+  // with a placeholder on EVERY load: a human title survived exactly one
+  // round-trip. backfillCard was not a fixed point, which is visible even
+  // without restore — write a card back verbatim and loadBoard returns a
+  // different one (cave-0b8t8).
+  //
+  // Fixed here rather than in the shared merges because the precedence those
+  // use is right for their other caller, where incoming really is authoritative.
+  const storedGitHub = normalizeGitHubLinks(c.github);
+  const storedAsana = normalizeAsanaLinks(c.asana);
+  const github = mergeGitHubLinks(
+    storedGitHub,
+    ...gitHubLinksFromLinks(c.links).filter(
+      (derived) => !storedGitHub.some((stored) => sameGitHubTarget(stored, derived)),
+    ),
+  );
+  const asana = mergeAsanaLinks(
+    storedAsana,
+    ...asanaLinksFromLinks(c.links).filter(
+      (derived) => !storedAsana.some((stored) => sameAsanaTarget(stored, derived)),
+    ),
+  );
   // Both link derivations feed back into `links` so a card's URL list stays the
   // union of everything attached, regardless of which source added it.
   const links = mergeLinksWithAsana(mergeLinksWithGitHub(normalizeLinks(c.links), github), asana);
