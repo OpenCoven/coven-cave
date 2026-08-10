@@ -29,7 +29,7 @@ export function openCovenToolActionTargets(
   if (tools.length === 0) return [REQUIRED_TOOL];
   const actionable = new Set(
     tools
-      .filter((tool) => !tool.installed || tool.outdated || tool.compatible === false)
+      .filter((tool) => !tool.installed || tool.compatible === false)
       .map((tool) => tool.id),
   );
   return OPEN_COVEN_TOOL_ORDER.filter((id) => actionable.has(id));

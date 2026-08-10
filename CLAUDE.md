@@ -429,14 +429,14 @@ the worktree guard to force completion.
 fault.** It exits 2 before assessing a single unit:
 
 ```text
-worktree-lifecycle-patrol: --apply unavailable; missing maintenance planes: coven, beads, github
+worktree-lifecycle-patrol: --apply unavailable; missing maintenance planes: beads, github
 ```
 
-`scripts/maintenance-gate.mjs` hard-codes three of the four planes to
-`enforced: false`, each pointing at unbuilt work — `coven` → `cave-wqa0b.2`,
-`beads` → `cave-wqa0b.3`, `github` → `cave-wqa0b.4`. All three are **BLOCKED**,
-so `--apply` is unreachable for the foreseeable future and no retry, credential
-or daemon will change that. Tracked by `cave-3aqvr`.
+`scripts/maintenance-gate.mjs` composes Cave's local writer-intent fence with
+the released Coven 0.2.5 maintenance protocol. The Beads (`cave-wqa0b.3`) and
+GitHub (`cave-wqa0b.4`) planes remain `enforced: false`, so `--apply` is
+unreachable until those land; no retry, credential, or daemon will change that.
+Tracked by `cave-3aqvr`.
 
 **So hand-retirement is the norm right now, not the exception.** For a unit the
 patrol already classified `cleanup-ready`, use the archive-tag route in the

@@ -127,6 +127,21 @@ Closing a Bead never removes a worktree. The patrol reads Git registrations
 directly, so a leftover remains visible even after its PR merges or its Bead
 closes.
 
+### Maintenance coordination
+
+Cave's lifecycle creator and retirement path hold a composite fence: the
+existing Cave-local writer-intent fence plus `coven maintenance
+acquire`/`heartbeat`/`release` from `@opencoven/cli` 0.2.5 or newer. The local
+fence preserves safety for existing Cave writers; Coven covers its supported
+direct CLI, daemon-session, and claim paths. The coordinator uses exact owner
+generations, rolls back the local fence if Coven cannot be held, and preserves
+both handles for recovery when release fails. It never writes Coven's
+`owner`/`writers`/`lock` records itself.
+
+This remains a cooperating-writer boundary, not a claim that arbitrary Git
+commands or uninstrumented tooling are excluded. Beads and GitHub maintenance
+planes are still required before unattended retirement can run.
+
 The two windows order the same lanes for different intents:
 
 - **Morning** leads with `Fix first` (failing checks, requested changes),
