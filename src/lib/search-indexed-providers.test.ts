@@ -230,4 +230,39 @@ for (const [name, provider] of Object.entries(providers)) {
   assert.notEqual(afterDoc.sourceVersion, beforeDoc.sourceVersion, "a compatibility body edit moves sourceVersion");
 }
 
+// The same invariant for the two providers the reported finding did not cover.
+// tasks previously omitted notes/labels and sessions omitted branch/runtime from
+// both the fingerprint and sourceVersion, relying on updatedAt moving — an
+// assumption about the SOURCE rather than a property of this code.
+{
+  let cards = [
+    { id: "c1", title: "One", notes: "before", status: "open", familiarId: null, sessionId: null, updatedAt: "t1" },
+  ];
+  const tasks = createTasksProvider({ loadCards: async () => cards });
+  const first = await tasks.fingerprint();
+  const [beforeRaw] = await tasks.collect(unrestricted);
+  const before = normalizeSearchDocument(beforeRaw);
+
+  // Notes edited, updatedAt deliberately UNCHANGED.
+  cards = [{ ...cards[0], notes: "after" }];
+  assert.notEqual(await tasks.fingerprint(), first, "a notes edit moves the fingerprint even when updatedAt does not");
+  const [afterRaw] = await tasks.collect(unrestricted);
+  assert.notEqual(normalizeSearchDocument(afterRaw).sourceVersion, before.sourceVersion);
+}
+
+{
+  let convos = [
+    { sessionId: "s1", familiarId: "cody", title: "Chat", status: "running", branch: "feat/a", updatedAt: "t1" },
+  ];
+  const sessions = createSessionsProvider({ listConversations: async () => convos });
+  const first = await sessions.fingerprint();
+  const [beforeRaw] = await sessions.collect(unrestricted);
+  const before = normalizeSearchDocument(beforeRaw);
+
+  convos = [{ ...convos[0], branch: "feat/b" }];
+  assert.notEqual(await sessions.fingerprint(), first, "a branch edit moves the fingerprint even when updatedAt does not");
+  const [afterRaw] = await sessions.collect(unrestricted);
+  assert.notEqual(normalizeSearchDocument(afterRaw).sourceVersion, before.sourceVersion);
+}
+
 console.log("search-indexed-providers.test.ts: ok");
