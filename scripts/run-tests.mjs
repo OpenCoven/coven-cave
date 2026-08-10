@@ -69,6 +69,7 @@ export const SUITES = {
     "scripts/install-git-hooks.test.mjs",
     "scripts/worktree-lifecycle-retirement.test.mjs",
     "scripts/worktree-lifecycle-patrol.test.mjs",
+    "scripts/worktree-lifecycle-fence-renewal.test.mjs",
     "scripts/worktree-status.test.mjs",
     "scripts/worktree-session-exit-retirement.test.mjs",
     "src/lib/board-cache-events.test.ts",
@@ -1665,6 +1666,7 @@ const STRIP_TYPES_MJS = new Set([
   "scripts/research-media-ffmpeg.integration.test.mjs",
   // imports ./worktree-lifecycle-inventory.ts
   "scripts/worktree-lifecycle-retirement.test.mjs",
+  "scripts/worktree-lifecycle-fence-renewal.test.mjs",
 ]);
 
 // Tests whose import graph reaches the "@/..." path alias and therefore need
