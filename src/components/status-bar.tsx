@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import type { SessionPrStatus } from "@/lib/session-pr-status";
+import { formatCovenDuration, type CovenRunPill } from "@/lib/coven-run";
 
 /**
  * StatusBar — the quiet bottom strip of the Home/Chat detail column
@@ -30,6 +32,10 @@ export type StatusBarProps = {
   taskCount: number;
   onViewTasks: () => void;
   onOpenPr?: (url: string) => void;
+  /** Active coven run, if any — see {@link CovenRunPillChip}. */
+  run?: CovenRunPill | null;
+  /** Opens the coven and scrolls to its run. Omitted → the pill is a readout. */
+  onJumpToRun?: () => void;
 };
 
 /** Compact tail of a filesystem path — "…/<basename>"; full path in title. */
@@ -49,6 +55,66 @@ function InfoChip({ icon, label, title }: { icon: IconName; label: string; title
   );
 }
 
+/**
+ * The coven run pill (design proposal §11, second half).
+ *
+ * A compact echo of the run header, so run state survives scrolling deep into
+ * history — and a jump-off back to the run. It reports only what the run model
+ * derives; the one thing it computes is the clock, from the run's start
+ * timestamp, so a reload shows the same number rather than restarting at zero.
+ */
+function CovenRunPillChip({
+  run,
+  onJumpToRun,
+}: {
+  run: CovenRunPill;
+  onJumpToRun?: () => void;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  const ticking = run.live && run.startedAtMs !== null;
+  useEffect(() => {
+    if (!ticking) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [ticking]);
+
+  const elapsed =
+    run.startedAtMs !== null
+      ? formatCovenDuration(now - run.startedAtMs)
+      : run.elapsedMs > 0
+        ? formatCovenDuration(run.elapsedMs)
+        : null;
+  const label = elapsed ? `${run.label} · ${elapsed}` : run.label;
+  const title = onJumpToRun ? `${label} — jump to this run` : label;
+  const body = (
+    <>
+      <span className="status-bar__run-dot" data-live={run.live ? "true" : "false"} aria-hidden />
+      {/* Colour is never the only channel: the icon and the label both carry it. */}
+      <Icon name={run.icon} width="var(--icon-xs)" height="var(--icon-xs)" aria-hidden />
+      <span className="status-bar__chip-label">{label}</span>
+    </>
+  );
+  if (!onJumpToRun) {
+    return (
+      <span className="status-bar__chip status-bar__chip--run" data-tone={run.tone} title={title}>
+        {body}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="status-bar__chip status-bar__chip--run status-bar__chip--action focus-ring"
+      data-tone={run.tone}
+      title={title}
+      aria-label={title}
+      onClick={onJumpToRun}
+    >
+      {body}
+    </button>
+  );
+}
+
 export function StatusBar({
   projectName,
   model,
@@ -58,6 +124,8 @@ export function StatusBar({
   taskCount,
   onViewTasks,
   onOpenPr,
+  run,
+  onJumpToRun,
 }: StatusBarProps) {
   const tasksLabel = taskCount > 0 ? `Open tasks — ${taskCount} open` : "Open tasks";
   const prBody = (
@@ -75,6 +143,7 @@ export function StatusBar({
         {cwd ? <InfoChip icon="ph:folder-open" label={shortCwd(cwd)} title={`Working directory — ${cwd}`} /> : null}
       </div>
       <div className="status-bar__trail">
+        {run ? <CovenRunPillChip run={run} onJumpToRun={onJumpToRun} /> : null}
         {pr ? (
           onOpenPr ? (
             <button

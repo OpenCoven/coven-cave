@@ -95,8 +95,13 @@ import {
   COVEN_RUN_STATUS,
   buildCovenRunFromThread,
   covenRailStatus,
+  covenRunPill,
   type CovenRun,
 } from "@/lib/coven-run";
+import {
+  COVEN_JUMP_TO_RUN_EVENT,
+  publishCovenRunPill,
+} from "@/lib/coven-run-signal";
 import { covenComposerRouting } from "@/lib/coven-composer-routing";
 import type { CovenStopScope } from "@/lib/coven-stop-scope";
 import { CovenRunHeader } from "@/components/coven-run-header";
@@ -1403,6 +1408,28 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     );
   }, [transcript, activeGroup?.responseMode]);
   const activeRun = useMemo(() => runs.find((run) => run.active) ?? null, [runs]);
+
+  // Publish the run to the status bar's pill (design proposal §11), so run
+  // state survives scrolling deep into history. Cleared on unmount and on
+  // coven switch by the effect below — a pill that outlives its surface would
+  // keep claiming a run is live after the reader has navigated away.
+  useEffect(() => {
+    publishCovenRunPill(covenRunPill({ run: activeRun, paused }));
+  }, [activeRun, paused]);
+  useEffect(() => () => publishCovenRunPill(null), []);
+  useEffect(() => {
+    if (!activeId) publishCovenRunPill(null);
+  }, [activeId]);
+
+  // The pill is a jump-off as well as a readout: clicking it lands here.
+  useEffect(() => {
+    const jump = () => {
+      stick();
+      setShowJump(false);
+    };
+    window.addEventListener(COVEN_JUMP_TO_RUN_EVENT, jump);
+    return () => window.removeEventListener(COVEN_JUMP_TO_RUN_EVENT, jump);
+  }, [stick]);
 
   // Rail rows: "N familiars · last activity". Last activity prefers the
   // stored transcript's newest turn and falls back to the group's updatedAt.
