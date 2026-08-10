@@ -434,8 +434,12 @@ type Props = {
   /** An auto-created call session was discarded (empty, hung up) while the
    *  view was still parked on it — the router returns the view to a fresh
    *  compose state instead of leaving the user composing into a deleted
-   *  session. Not called when the user had already switched away. */
-  onVoiceSessionDiscarded?: () => void;
+   *  session. Not called when the user had already switched away. Passed the
+   *  discarded session's id so the router can re-check it's still the one
+   *  showing before navigating (cave-rl980 Task 4 final review) — the discard
+   *  itself is async, and the user may have switched threads or familiars
+   *  while it was in flight. */
+  onVoiceSessionDiscarded?: (sessionId: string) => void;
   onSessionsChanged?: () => void;
   onSessionsDeleted: (sessionIds: readonly string[]) => void;
   /** Fires exactly when THIS view's own session is confirmed removed —
@@ -445,7 +449,15 @@ type Props = {
    *  refreshes), a consumer can treat this as an unambiguous removal signal
    *  for the exact session named, with no need to infer it from call order. */
   onSessionRemoved?: (sessionId: string, reason: SessionRemovalReason) => void;
-  onBack?: () => void;
+  /** Passed the session this back navigation is for — the removal call sites
+   *  below always pass their own (non-null) sessionId; the two "Back to
+   *  sessions" render buttons pass whatever is currently shown. ChatRouter
+   *  only actually navigates when it's still displaying that exact session
+   *  (cave-rl980 Task 4 final review): archiveChat/deleteChat/setChatArchived
+   *  are async, and by the time the request settles the user may have
+   *  already switched to a different thread or familiar, whose view must
+   *  never be clobbered by a now-irrelevant completion. */
+  onBack?: (sessionId: string | null) => void;
   onSlashCommand?: (command: string, args: string) => boolean;
   onOpenOnboarding?: () => void;
   /** Reverse navigation for a chat that's linked to a board task — clicking
@@ -6741,7 +6753,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       onSessionsChanged?.();
       onSessionRemoved?.(sessionId, "archived");
-      onBack?.();
+      onBack?.(sessionId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "archive failed");
     } finally {
@@ -6762,7 +6774,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       onSessionsDeleted([sessionId]);
       onSessionRemoved?.(sessionId, "deleted");
-      onBack?.();
+      onBack?.(sessionId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "delete failed");
     } finally {
@@ -6869,7 +6881,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // Leaving mirrors delete only for archive; unarchive keeps you in place.
       if (archived) {
         onSessionRemoved?.(sessionId, "archived");
-        onBack?.();
+        onBack?.(sessionId);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
@@ -7790,7 +7802,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <FlowSessionTranscriptFallback
                 transcript={flowTranscriptFallback}
                 onRetry={retryHistory}
-                onBack={onBack}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : historyState === "missing" ? (
               <ChatHistoryNotice
@@ -7799,14 +7811,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   ? "This flow session exists, but CovenCave could not find saved chat history or flow output for it yet."
                   : "This session exists, but CovenCave could not find a saved transcript for it yet."}
                 onRetry={retryHistory}
-                onBack={onBack}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : historyState === "error" ? (
               <ChatHistoryNotice
                 title="Could not load chat history"
                 body="The transcript request failed. You can still continue this session."
                 onRetry={retryHistory}
-                onBack={onBack}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : sessionId === null ? (
               // Brand-new chat (no session yet): the 2b launcher — hero, the
@@ -8089,7 +8101,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   // has already switched away, leave them where they are.
                   if (target === sessionId) {
                     onSessionRemoved?.(target, "discarded");
-                    onVoiceSessionDiscarded?.();
+                    onVoiceSessionDiscarded?.(target);
                   }
                 }
               });

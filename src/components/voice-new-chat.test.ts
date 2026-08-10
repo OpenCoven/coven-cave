@@ -244,7 +244,7 @@ test("chat-view: closing an auto-created call discards exactly the session it wa
   // fires in that same branch, immediately before onVoiceSessionDiscarded.
   assert.match(
     chatView,
-    /if \(deleted\) \{[\s\S]*?onSessionsChanged\?\.\(\);[\s\S]*?if \(target === sessionId\) \{\s*\n\s*onSessionRemoved\?\.\(target, "discarded"\);\s*\n\s*onVoiceSessionDiscarded\?\.\(\);\s*\n\s*\}/,
+    /if \(deleted\) \{[\s\S]*?onSessionsChanged\?\.\(\);[\s\S]*?if \(target === sessionId\) \{\s*\n\s*onSessionRemoved\?\.\(target, "discarded"\);\s*\n\s*onVoiceSessionDiscarded\?\.\(target\);\s*\n\s*\}/,
   );
   // Finding 4: the call item can't fork a streaming first send by
   // minting a second, unrelated session underneath it (pre-session only —
@@ -258,7 +258,7 @@ test("chat-view: closing an auto-created call discards exactly the session it wa
   // but back to sessionId: null.
   assert.match(
     chatRouter,
-    /onVoiceSessionDiscarded=\{\(\) => \{[\s\S]*?prev\.kind === "chat"[\s\S]*?sessionId: null, projectRoot: prev\.projectRoot, familiarId: prev\.familiarId/,
+    /onVoiceSessionDiscarded=\{\(removedSessionId\) => \{[\s\S]*?prev\.kind === "chat"[\s\S]*?sessionId: null, projectRoot: prev\.projectRoot, familiarId: prev\.familiarId/,
   );
 });
 

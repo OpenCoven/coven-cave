@@ -171,6 +171,33 @@ function findByAria(renderer: ReactTestRenderer, label: string) {
   return renderer.root.find((node) => node.type === "button" && node.props["aria-label"] === label);
 }
 
+function threadSwitcher(renderer: ReactTestRenderer) {
+  return renderer.root.findByType("select" as never);
+}
+
+/** The header's own rendered title span (`<span title={title}>{title}</span>`
+ *  inside `.right-chat__identity`) — the "header" half of "T remains
+ *  active/header" (cave-rl980 Task 4 final review tests below), distinct
+ *  from `sessionIdAttr`'s router-selection check. */
+function headerTitle(renderer: ReactTestRenderer): string {
+  const node = renderer.root.find(
+    (n) => n.type === "span" && typeof n.props.title === "string",
+  );
+  return node.props.children as string;
+}
+
+/** Controllable stand-in for an in-flight archive/delete/discard request:
+ *  nothing below runs until the test calls `settle()`, so "begin removal on
+ *  S, switch to T, then resolve" is an explicit, deterministic sequence
+ *  instead of a timing assumption. */
+function deferred<T = void>() {
+  let settle!: (value: T) => void;
+  const promise = new Promise<T>((resolve) => {
+    settle = resolve;
+  });
+  return { promise, settle };
+}
+
 beforeEach(() => {
   router.reset();
 });
@@ -399,6 +426,143 @@ describe("confirmed removal vs ordinary null (fix 1 follow-up: archive/delete re
     await update(renderer, props);
     expect(sessionIdAttr(renderer)).toBe("new");
     expect(router.calls.openSession.some((call) => call[0] === "cody-voice-ghost")).toBe(false);
+  });
+});
+
+describe("async removal race: a stale archive/delete/discard completion after switching away must never clobber the newer selection (cave-rl980 Task 4 final review)", () => {
+  // ChatView's archiveChat/deleteChat/setChatArchived/discardVoiceSessionIfEmpty
+  // are all async: the specific onSessionRemoved/onActiveSessionChange
+  // instances they retain are whichever ones were current when the request
+  // BEGAN, frozen even if the user switches to a different thread or
+  // familiar before the request settles. handleSessionRemoved must consult
+  // the LIVE current selection (currentSelectionRef), not those frozen
+  // values — each test below captures the stale callbacks BEFORE switching,
+  // then only invokes them once a controllable promise (standing in for the
+  // real fetch) is manually settled AFTER the switch, so the ordering is
+  // explicit rather than assumed.
+  test("thread switch: an archive begun on S, then a switch to T before the PATCH settles, leaves T active in both the router selection and the header once the stale completion arrives", async () => {
+    const cody = familiar("cody", "Cody");
+    const s = sessionRow("cody-s", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    const t = sessionRow("cody-t", { familiarId: "cody", created_at: "2026-01-05T00:00:00.000Z", updated_at: "2026-01-05T00:00:00.000Z" });
+    const props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions: [s, t] });
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-t"); // newest-first initial resolve
+
+    // Park the panel on S — the session the archive below targets.
+    await act(async () => {
+      (router.latestProps!.onActiveSessionChange as (id: string | null) => void)("cody-s");
+    });
+    expect(sessionIdAttr(renderer)).toBe("cody-s");
+    expect(headerTitle(renderer)).toBe("cody-s");
+
+    // Capture the exact onSessionRemoved instance ChatView's in-flight
+    // archiveChat(S) would retain right now — this is the object identity
+    // check that matters: a fresh (bug-fixed) call to router.latestProps
+    // after the switch below would read a DIFFERENT closure, but the real
+    // archiveChat call only ever holds the one it captured at its own start.
+    const staleOnSessionRemoved = router.latestProps!.onSessionRemoved as (id: string, reason: string) => void;
+    const archivePatch = deferred<void>();
+
+    // The user switches to a different thread (T) under the SAME familiar
+    // while the archive of S is still in flight — the thread switcher
+    // bypasses handleSessionRemoved entirely, exactly like a real manual
+    // pick (see the "explicit New chat" test above for the same bypass).
+    await act(async () => {
+      threadSwitcher(renderer).props.onChange({ currentTarget: { value: "cody-t" } });
+    });
+    expect(sessionIdAttr(renderer)).toBe("cody-t");
+    expect(headerTitle(renderer)).toBe("cody-t");
+
+    // The archive's PATCH settles now — late, after the user already left S
+    // — and fires the same onSessionRemoved(id, reason) archiveChat always
+    // fires on success, via the closure captured before the switch.
+    await act(async () => {
+      archivePatch.settle();
+      await archivePatch.promise;
+      staleOnSessionRemoved("cody-s", "archived");
+    });
+
+    // T must remain exactly where the user left it — both the router
+    // selection and the rendered header — untouched by S's now-irrelevant
+    // completion.
+    expect(sessionIdAttr(renderer)).toBe("cody-t");
+    expect(headerTitle(renderer)).toBe("cody-t");
+
+    // No stale reconciliation: the stale signal must not have left
+    // pendingRemovalRef incorrectly armed for T. Proven by a LATER, entirely
+    // unrelated ordinary null (T's own "Back to sessions" after a
+    // transcript-load failure, say) — an incorrect arm would retain T
+    // through the reconcile branch instead of clearing immediately, exactly
+    // like the "ordinary back" test above.
+    await act(async () => {
+      (router.latestProps!.onActiveSessionChange as (id: string | null) => void)(null);
+    });
+    expect(sessionIdAttr(renderer)).toBe("new");
+  });
+
+  test("familiar switch: an archive begun on S, then a switch to a different familiar's thread T before the PATCH settles, leaves T active once the stale completion arrives", async () => {
+    const cody = familiar("cody", "Cody");
+    const nova = familiar("nova", "Nova");
+    const codySession = sessionRow("cody-s", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    const novaSession = sessionRow("nova-t", { familiarId: "nova", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    let props = baseProps({ activeFamiliar: cody, familiars: [cody, nova], sessions: [codySession, novaSession] });
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-s");
+    expect(headerTitle(renderer)).toBe("cody-s");
+
+    const staleOnSessionRemoved = router.latestProps!.onSessionRemoved as (id: string, reason: string) => void;
+    const archivePatch = deferred<void>();
+
+    // The user switches to a DIFFERENT familiar (nova) while cody's S is
+    // still being archived — a real familiar switch, driven the same way
+    // the app drives it: the activeFamiliar prop changes from outside.
+    props = { ...props, activeFamiliar: nova };
+    await update(renderer, props);
+    expect(sessionIdAttr(renderer)).toBe("nova-t");
+    expect(headerTitle(renderer)).toBe("nova-t");
+
+    await act(async () => {
+      archivePatch.settle();
+      await archivePatch.promise;
+      staleOnSessionRemoved("cody-s", "archived");
+    });
+
+    // nova/T must remain exactly where the user left it.
+    expect(sessionIdAttr(renderer)).toBe("nova-t");
+    expect(headerTitle(renderer)).toBe("nova-t");
+
+    // No stale reconciliation leaking into nova's own state: an unrelated
+    // ordinary null on nova/T must still clear immediately.
+    await act(async () => {
+      (router.latestProps!.onActiveSessionChange as (id: string | null) => void)(null);
+    });
+    expect(sessionIdAttr(renderer)).toBe("new");
+  });
+
+  test("a stale archive completion for the session that IS still selected still correctly retains it — the ref check is not a blanket refusal", async () => {
+    const cody = familiar("cody", "Cody");
+    const older = sessionRow("cody-older", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    const s = sessionRow("cody-s", { familiarId: "cody", created_at: "2026-01-05T00:00:00.000Z", updated_at: "2026-01-05T00:00:00.000Z" });
+    let props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions: [older, s] });
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-s");
+
+    const staleOnSessionRemoved = router.latestProps!.onSessionRemoved as (id: string, reason: string) => void;
+    const archivePatch = deferred<void>();
+
+    // No switch this time — the panel is still on cody-s when the archive
+    // settles, exactly like the existing non-deferred archive test above.
+    await act(async () => {
+      archivePatch.settle();
+      await archivePatch.promise;
+      staleOnSessionRemoved("cody-s", "archived");
+      (router.latestProps!.onActiveSessionChange as (id: string | null) => void)(null);
+    });
+    expect(sessionIdAttr(renderer)).toBe("cody-s"); // retained, not cleared
+
+    props = { ...props, sessions: [older] };
+    await update(renderer, props);
+    expect(sessionIdAttr(renderer)).toBe("cody-older");
   });
 });
 

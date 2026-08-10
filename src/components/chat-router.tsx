@@ -840,7 +840,19 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       onSessionsChanged={onSessionsChanged}
       onSessionsDeleted={onSessionsDeleted}
       onSessionRemoved={onSessionRemoved}
-      onBack={() => setView({ kind: "list" })}
+      // archiveChat/deleteChat/setChatArchived are async; ChatView passes
+      // back the exact session it just removed. Only actually navigate to
+      // the list when the router is STILL showing that session — reading
+      // viewRef (always current, see its declaration above) rather than
+      // `view` directly means this check is correct even though `onBack`
+      // itself is a fresh closure every render: by the time a slow request
+      // settles, the user may have already switched to a different thread
+      // or familiar, and that view must never be clobbered by a now-stale
+      // completion (cave-rl980 Task 4 final review).
+      onBack={(removedSessionId) => {
+        if (viewRef.current.kind !== "chat" || viewRef.current.sessionId !== removedSessionId) return;
+        setView({ kind: "list" });
+      }}
       onSessionStarted={(request) => {
         // Match both the originating session and compose lineage. The functional
         // update makes A→B atomic with navigation, while the synchronously advanced
@@ -875,7 +887,12 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         );
         setPendingVoice({ nonce: Date.now(), sessionId: sid });
       }}
-      onVoiceSessionDiscarded={() => {
+      onVoiceSessionDiscarded={(removedSessionId) => {
+        // Same async-completion guard as onBack above: the discard fetch can
+        // settle after the user has already switched threads or familiars,
+        // and a stale completion must never yank a newer view back to a
+        // blank compose (cave-rl980 Task 4 final review).
+        if (viewRef.current.kind !== "chat" || viewRef.current.sessionId !== removedSessionId) return;
         // The auto-created session was empty and got discarded while the
         // view was still parked on it — return to a fresh compose state for
         // the same familiar/project (same reset shape as the promotion
@@ -883,7 +900,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         // typing into a session that no longer exists.
         advanceComposeInstance();
         setView((prev) =>
-          prev.kind === "chat"
+          prev.kind === "chat" && prev.sessionId === removedSessionId
             ? { kind: "chat", sessionId: null, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
             : prev,
         );
