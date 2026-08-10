@@ -7,6 +7,7 @@ import {
   type DaemonTarget,
 } from "../coven-daemon.ts";
 import { daemonHealthRequest, daemonHealthResponseSucceeded } from "./daemon-health-request.ts";
+import type { DaemonDiagnosticContext } from "./daemon-diagnostics.ts";
 
 export type DaemonProbeResult = {
   ok: true;
@@ -29,13 +30,23 @@ export async function probeDaemonUrl(
   url: string,
   call: CallDaemonTarget = callDaemonTarget,
   now: () => number = Date.now,
+  diagnostics?: DaemonDiagnosticContext,
 ): Promise<DaemonProbeResult> {
   const target = daemonTargetForConfig({ multiHost: { mode: "hub", hubUrl: url, executorUrls: [] } });
   if (target.mode !== "hub") {
     throw new Error(target.mode === "unconfigured-hub" ? target.error : "invalid hub URL");
   }
   const startedAt = now();
-  const response = await call(target, daemonHealthRequest());
+  const response = await call(
+    target,
+    diagnostics
+      ? {
+          ...daemonHealthRequest(),
+          diagnostics,
+          diagnosticOperation: "daemon-probe-health",
+        }
+      : daemonHealthRequest(),
+  );
   const latencyMs = Math.max(0, now() - startedAt);
   if (daemonHealthResponseSucceeded(response)) {
     return { ok: true, reachable: true, status: response.status, latencyMs };

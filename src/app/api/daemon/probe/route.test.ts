@@ -18,5 +18,9 @@ test("probe helper accepts a stubbed daemon caller for route-level outcomes", as
 const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 assert.match(route, /export const runtime = "nodejs"/);
 assert.match(route, /export const dynamic = "force-dynamic"/);
-assert.match(route, /probeDaemonUrl\(url\)/);
+assert.match(
+  route,
+  /probeDaemonUrl\(url, undefined, Date\.now, diagnostics\)/,
+  "the route passes its correlation context into the health probe",
+);
 assert.match(route, /invalid hub URL/);

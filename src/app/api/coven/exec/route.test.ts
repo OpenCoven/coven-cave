@@ -22,4 +22,20 @@ assert.match(
   "missing Coven CLI spawn errors should return the stable install/setup payload",
 );
 
+assert.match(
+  source,
+  /COVEN_CAVE_CORRELATION_ID:\s*diagnostics\.correlationId/,
+  "allowlisted CLI children inherit the request correlation",
+);
+assert.match(
+  source,
+  /recordDaemonDiagnosticEvent\(diagnostics/,
+  "CLI execution emits structured local lifecycle events",
+);
+assert.match(
+  source,
+  /DAEMON_DIAGNOSTIC_CORRELATION_HEADER/,
+  "CLI responses expose the correlation without exposing command output in diagnostics",
+);
+
 console.log("coven exec route.test.ts: ok");
