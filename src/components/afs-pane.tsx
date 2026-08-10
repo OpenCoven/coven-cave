@@ -24,8 +24,12 @@ import {
   commitAvailability,
   defaultCommitBranch,
   groupTimelineByTurn,
+  isSelectableFileChange,
   mergeTimelinePages,
   mountAvailability,
+  readAfsCommitResult,
+  readAfsCommitPreview,
+  readAfsFileDiff,
   type AfsCapabilities,
   type AfsChange,
   type AfsCommitPreview,
@@ -126,15 +130,32 @@ export function AfsPane({ sessionId }: { sessionId: string }) {
         {AFS_TABS.map((id) => (
           <button
             key={id}
+            id={`afs-tab-${id}`}
             role="tab"
             type="button"
             aria-selected={tab === id}
+            aria-controls={`afs-panel-${id}`}
+            tabIndex={tab === id ? 0 : -1}
             className={`focus-ring rounded px-2 py-1 text-[length:var(--text-xs)] transition-colors ${
               tab === id
                 ? "bg-[var(--surface-raised)] text-[var(--text-primary)]"
                 : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
             }`}
             onClick={() => setTab(id)}
+            onKeyDown={(event) => {
+              const current = AFS_TABS.indexOf(tab);
+              let next: AfsTab | null = null;
+              if (event.key === "ArrowRight") next = AFS_TABS[(current + 1) % AFS_TABS.length];
+              if (event.key === "ArrowLeft") {
+                next = AFS_TABS[(current - 1 + AFS_TABS.length) % AFS_TABS.length];
+              }
+              if (event.key === "Home") next = AFS_TABS[0];
+              if (event.key === "End") next = AFS_TABS[AFS_TABS.length - 1];
+              if (!next) return;
+              event.preventDefault();
+              setTab(next);
+              document.getElementById(`afs-tab-${next}`)?.focus();
+            }}
           >
             {TAB_LABEL[id]}
           </button>
@@ -143,11 +164,35 @@ export function AfsPane({ sessionId }: { sessionId: string }) {
         <MountBadge capabilities={capabilities} />
       </div>
 
-      {tab === "changes" ? <ChangesPane sessionId={session.id} /> : null}
-      {tab === "timeline" ? <TimelinePane sessionId={session.id} /> : null}
-      {tab === "commit" ? (
-        <CommitPane session={session} capabilities={capabilities} onCommitted={reload} />
-      ) : null}
+      <div
+        id="afs-panel-changes"
+        role="tabpanel"
+        aria-labelledby="afs-tab-changes"
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+        hidden={tab !== "changes"}
+      >
+        {tab === "changes" ? <ChangesPane sessionId={session.id} /> : null}
+      </div>
+      <div
+        id="afs-panel-timeline"
+        role="tabpanel"
+        aria-labelledby="afs-tab-timeline"
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+        hidden={tab !== "timeline"}
+      >
+        {tab === "timeline" ? <TimelinePane sessionId={session.id} /> : null}
+      </div>
+      <div
+        id="afs-panel-commit"
+        role="tabpanel"
+        aria-labelledby="afs-tab-commit"
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+        hidden={tab !== "commit"}
+      >
+        {tab === "commit" ? (
+          <CommitPane session={session} capabilities={capabilities} onCommitted={reload} />
+        ) : null}
+      </div>
     </section>
   );
 }
@@ -204,12 +249,22 @@ function ChangesPane({ sessionId }: { sessionId: string }) {
     }
     let cancelled = false;
     setFileDiff({ phase: "loading" });
-    getJson<AfsFileDiff>(
+    getJson<unknown>(
       `/api/afs/${encodeURIComponent(sessionId)}/diff?path=${encodeURIComponent(selected.path)}`,
       "Could not read the file patch.",
     )
-      .then((data) => {
-        if (!cancelled) setFileDiff({ phase: "ready", data });
+      .then((payload) => {
+        if (cancelled) return;
+        const data = readAfsFileDiff(payload);
+        if (!data) {
+          throw new Error(
+            "This daemon does not support path-specific file patches. Upgrade the daemon to review this change.",
+          );
+        }
+        if (data.path !== selected.path) {
+          throw new Error("The daemon returned a patch for a different path. Select the file again.");
+        }
+        setFileDiff({ phase: "ready", data });
       })
       .catch((error: Error) => {
         if (!cancelled) setFileDiff({ phase: "error", message: error.message });
@@ -231,7 +286,7 @@ function ChangesPane({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="@container/afs-review min-h-0 flex-1">
-      <div className="grid min-h-0 gap-2 @min-[720px]/afs-review:grid-cols-[minmax(220px,0.8fr)_minmax(0,1.2fr)]">
+      <div className="grid h-full min-h-0 gap-2 @min-[720px]/afs-review:grid-cols-[minmax(220px,0.8fr)_minmax(0,1.2fr)]">
         <div
           className={`min-h-0 overflow-auto rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] p-2 ${
             selected ? "hidden @min-[720px]/afs-review:block" : "block"
@@ -296,7 +351,10 @@ function TreeRow({
   selectedPath: string | null;
   onSelect: (change: AfsChange) => void;
 }) {
-  const selectableChange = node.children.length === 0 ? node.change : null;
+  const selectableChange =
+    node.children.length === 0 && node.change && isSelectableFileChange(node.change)
+      ? node.change
+      : null;
   const content = (
     <>
       {node.change ? (
@@ -525,7 +583,10 @@ function TimelineRow({ entry, onTrace }: { entry: AfsTimelineEntry; onTrace: () 
     <li className="border-b border-[var(--border-hairline)] py-1 text-[length:var(--text-xs)] last:border-b-0">
       <div className="flex min-w-0 items-center gap-2">
         <span className="w-10 shrink-0 text-[var(--text-secondary)]">{entry.op}</span>
-        <span className="min-w-0 grow truncate text-[var(--text-primary)]">{entry.path}</span>
+        <span className="min-w-0 grow truncate text-[var(--text-primary)]">
+          {entry.path}
+          {entry.toPath ? ` → ${entry.toPath}` : ""}
+        </span>
         {canTrace ? (
           <Button size="sm" variant="ghost" onClick={onTrace}>
             Open event
@@ -588,16 +649,36 @@ function CommitPane({
   const [branch, setBranch] = useState(defaultCommitBranch(session));
   const [busy, setBusy] = useState<"preview" | "commit" | null>(null);
   const [preview, setPreview] = useState<Phase<AfsCommitPreview> | null>(null);
+  const [previewedAt, setPreviewedAt] = useState<number | null>(null);
+  const [branchChanged, setBranchChanged] = useState(false);
   const [result, setResult] = useState<{ kind: "ok" | "error"; message: string } | null>(null);
   const previewRequestRef = useRef(0);
 
   const availability = commitAvailability(capabilities, session);
-  const canCommit = availability.enabled && preview?.phase === "ready" && preview.data.wouldCommit;
+  const previewSupported = capabilities.afsCommitDryRun;
+  const canCommit =
+    availability.enabled
+    && previewSupported
+    && preview?.phase === "ready"
+    && preview.data.wouldCommit;
+
+  useEffect(() => {
+    previewRequestRef.current += 1;
+    setBranch(defaultCommitBranch(session));
+    setPreview(null);
+    setPreviewedAt(null);
+    setBranchChanged(false);
+    setBusy(null);
+    setResult(null);
+  }, [session.id, session.name]);
 
   const previewCommit = useCallback(async () => {
     const requestId = ++previewRequestRef.current;
+    const requestedBranch = branch.trim() || defaultCommitBranch(session);
     setBusy("preview");
     setPreview({ phase: "loading" });
+    setPreviewedAt(null);
+    setBranchChanged(false);
     setResult(null);
     try {
       const res = await fetch(`/api/afs/${encodeURIComponent(session.id)}/commit`, {
@@ -607,8 +688,16 @@ function CommitPane({
       });
       const payload: unknown = await res.json().catch(() => null);
       if (!res.ok) throw new Error(errorMessage(payload, "Commit preview failed."));
+      const data = readAfsCommitPreview(payload);
+      if (!data) {
+        throw new Error("The daemon returned an invalid commit preview. Update Coven and try again.");
+      }
+      if (data.id !== session.id || data.branch !== requestedBranch) {
+        throw new Error("The daemon returned a commit preview for a different session or branch.");
+      }
       if (previewRequestRef.current === requestId) {
-        setPreview({ phase: "ready", data: payload as AfsCommitPreview });
+        setPreview({ phase: "ready", data });
+        setPreviewedAt(Date.now());
       }
     } catch (error) {
       if (previewRequestRef.current === requestId) {
@@ -617,9 +706,10 @@ function CommitPane({
     } finally {
       if (previewRequestRef.current === requestId) setBusy(null);
     }
-  }, [branch, session.id]);
+  }, [branch, session]);
 
   const runCommit = useCallback(async () => {
+    const requestedBranch = branch.trim() || defaultCommitBranch(session);
     setBusy("commit");
     setResult(null);
     try {
@@ -630,21 +720,33 @@ function CommitPane({
       });
       const payload: unknown = await res.json().catch(() => null);
       if (!res.ok) throw new Error(errorMessage(payload, "Commit failed."));
-      const commit = payload as { branch?: string; commit?: string };
+      const commit = readAfsCommitResult(payload);
+      if (
+        !commit
+        || commit.id !== session.id
+        || commit.branch !== requestedBranch
+        || commit.state !== "committed"
+      ) {
+        throw new Error(
+          "The daemon returned an unverifiable commit result. Check the session before retrying.",
+        );
+      }
       setResult({
         kind: "ok",
-        message: `Materialized ${commit.branch ?? branch} at ${(commit.commit ?? "").slice(0, 7)}.`,
+        message: `Materialized ${commit.branch} at ${commit.commit.slice(0, 7)}.`,
       });
       onCommitted();
     } catch (error) {
+      setPreview(null);
+      setPreviewedAt(null);
       setResult({ kind: "error", message: (error as Error).message });
     } finally {
       setBusy(null);
     }
-  }, [branch, onCommitted, session.id]);
+  }, [branch, onCommitted, session]);
 
   return (
-    <div className="flex flex-col gap-2 text-[length:var(--text-xs)]">
+    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto text-[length:var(--text-xs)]">
       <label className="flex flex-col gap-1">
         <span className="text-[var(--text-secondary)]">Branch</span>
         <input
@@ -654,6 +756,8 @@ function CommitPane({
             previewRequestRef.current += 1;
             setBranch(event.target.value);
             setPreview(null);
+            setPreviewedAt(null);
+            setBranchChanged(true);
             setBusy(null);
           }}
           disabled={busy === "commit"}
@@ -664,24 +768,33 @@ function CommitPane({
       {availability.enabled ? null : (
         <p className="text-[var(--text-warning)]">{availability.reason}</p>
       )}
+      {availability.enabled && !previewSupported ? (
+        <p className="text-[var(--text-warning)]">
+          Commit preview isn’t supported by this daemon. Update Coven to commit from Cave.
+        </p>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         <Button
           size="sm"
           variant="ghost"
-          disabled={!availability.enabled || busy !== null}
+          disabled={!availability.enabled || !previewSupported || busy !== null}
           onClick={previewCommit}
         >
           {busy === "preview" ? "Previewing…" : "Preview commit"}
         </Button>
         <Button size="sm" disabled={!canCommit || busy !== null} onClick={runCommit}>
           <Icon name="ph:git-branch-bold" width={12} height={12} aria-hidden />
-          {busy === "commit" ? "Committing…" : "Commit"}
+          {busy === "commit" ? "Committing…" : "Commit current session state"}
         </Button>
       </div>
 
-      {availability.enabled && preview === null ? (
-        <p className="text-[var(--text-secondary)]">Preview this branch before committing.</p>
+      {availability.enabled && previewSupported && preview === null ? (
+        <p className="text-[var(--text-secondary)]">
+          {branchChanged
+            ? "Branch changed — preview again to enable Commit."
+            : "Preview the current session state to enable Commit."}
+        </p>
       ) : null}
       {preview?.phase === "loading" ? (
         <p className="text-[var(--text-secondary)]">Validating the commit with the daemon…</p>
@@ -693,7 +806,8 @@ function CommitPane({
       ) : null}
       {preview?.phase === "ready" ? (
         <div className="rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] p-2 text-[var(--text-secondary)]">
-          <p className="text-[var(--text-primary)]">{preview.data.branch}</p>
+          <p className="text-[var(--text-primary)]">Point-in-time validation passed</p>
+          <p>{preview.data.branch}</p>
           <p>
             {preview.data.files} materialized files · {changeTotal(preview.data.counts)} changed (
             {preview.data.counts.added} added · {preview.data.counts.modified} modified ·{" "}
@@ -702,6 +816,11 @@ function CommitPane({
           <p className="break-all">Worktree: {preview.data.worktreePath}</p>
           <p>Provenance high-water: {preview.data.provenanceHighWater}</p>
           <p>No branch was created.</p>
+          <p>
+            Validated against the session state
+            {previewedAt === null ? "" : ` at ${new Date(previewedAt).toLocaleTimeString()}`}. The session can
+            change before commit. Commit revalidates current state and may apply different changes or be refused.
+          </p>
         </div>
       ) : null}
 

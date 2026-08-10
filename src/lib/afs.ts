@@ -18,6 +18,8 @@ export type AfsCapabilities = {
   afsMount: string | false;
   /** Whether the daemon can materialize a delta into a git branch. */
   afsCommit: boolean;
+  /** Whether commit accepts the side-effect-free `dryRun` contract. */
+  afsCommitDryRun: boolean;
 };
 
 export type AfsChangeKind = "added" | "modified" | "deleted";
@@ -56,12 +58,29 @@ export type AfsFileDiff = {
   binary: boolean;
 };
 
+/** Reject legacy list-diff payloads before the patch surface dereferences them. */
+export function readAfsFileDiff(payload: unknown): AfsFileDiff | null {
+  if (!payload || typeof payload !== "object") return null;
+  const value = payload as Record<string, unknown>;
+  return typeof value.path === "string"
+    && typeof value.patch === "string"
+    && typeof value.truncated === "boolean"
+    && typeof value.binary === "boolean"
+    ? {
+        path: value.path,
+        patch: value.patch,
+        truncated: value.truncated,
+        binary: value.binary,
+      }
+    : null;
+}
+
 export type AfsTimelineToolCall = {
   id: number;
   name: string;
-  parameters: unknown;
-  result: unknown;
-  error: unknown;
+  parameters: string | null;
+  result: string | null;
+  error: string | null;
   startedAt: number;
   completedAt: number;
   durationMs: number;
@@ -79,7 +98,7 @@ export type AfsTimelineEntry = {
   beadId?: string | null;
   turn?: number | null;
   toolCallId?: number | null;
-  toolCall?: AfsTimelineToolCall | null;
+  toolCall: AfsTimelineToolCall | null;
 };
 
 export type AfsTimeline = {
@@ -113,6 +132,92 @@ export type AfsCommitPreview = {
   wouldCommit: true;
 };
 
+export type AfsCommitResult = {
+  id: string;
+  branch: string;
+  commit: string;
+  worktreePath: string;
+  provenanceHighWater: number;
+  state: string;
+  counts: AfsChangeCounts;
+};
+
+export function readAfsCommitPreview(payload: unknown): AfsCommitPreview | null {
+  if (!payload || typeof payload !== "object") return null;
+  const value = payload as Record<string, unknown>;
+  const counts = value.counts;
+  if (!counts || typeof counts !== "object") return null;
+  const countValue = counts as Record<string, unknown>;
+  if (
+    typeof value.id !== "string"
+    || typeof value.branch !== "string"
+    || typeof value.worktreePath !== "string"
+    || typeof value.provenanceHighWater !== "number"
+    || typeof value.files !== "number"
+    || value.dryRun !== true
+    || value.wouldCommit !== true
+    || typeof countValue.added !== "number"
+    || typeof countValue.modified !== "number"
+    || typeof countValue.deleted !== "number"
+    || typeof countValue.bytes !== "number"
+  ) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    branch: value.branch,
+    worktreePath: value.worktreePath,
+    provenanceHighWater: value.provenanceHighWater,
+    files: value.files,
+    dryRun: true,
+    wouldCommit: true,
+    counts: {
+      added: countValue.added,
+      modified: countValue.modified,
+      deleted: countValue.deleted,
+      bytes: countValue.bytes,
+    },
+  };
+}
+
+export function readAfsCommitResult(payload: unknown): AfsCommitResult | null {
+  if (!payload || typeof payload !== "object") return null;
+  const value = payload as Record<string, unknown>;
+  const counts = value.counts;
+  if (!counts || typeof counts !== "object") return null;
+  const countValue = counts as Record<string, unknown>;
+  if (
+    typeof value.id !== "string"
+    || typeof value.branch !== "string"
+    || typeof value.commit !== "string"
+    || value.commit.length === 0
+    || typeof value.worktreePath !== "string"
+    || typeof value.provenanceHighWater !== "number"
+    || typeof value.state !== "string"
+    || typeof countValue.added !== "number"
+    || typeof countValue.modified !== "number"
+    || typeof countValue.deleted !== "number"
+    || typeof countValue.bytes !== "number"
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    branch: value.branch,
+    commit: value.commit,
+    worktreePath: value.worktreePath,
+    provenanceHighWater: value.provenanceHighWater,
+    state: value.state,
+    counts: {
+      added: countValue.added,
+      modified: countValue.modified,
+      deleted: countValue.deleted,
+      bytes: countValue.bytes,
+    },
+  };
+}
+
 /**
  * Read capabilities defensively.
  *
@@ -130,6 +235,7 @@ export function readAfsCapabilities(payload: unknown): AfsCapabilities {
     afs: caps.afs === true,
     afsMount: typeof mount === "string" && mount.length > 0 ? mount : false,
     afsCommit: caps.afsCommit === true,
+    afsCommitDryRun: caps.afsCommitDryRun === true,
   };
 }
 
@@ -214,6 +320,19 @@ export function defaultCommitBranch(session: Pick<AfsSession, "id" | "name">): s
 /** Unattributed changes are marked, never hidden (DESIGN.md §4.4). */
 export function unattributedPaths(diff: Pick<AfsDiff, "changes">): string[] {
   return diff.changes.filter((change) => change.attribution === "unknown").map((change) => change.path);
+}
+
+const POSIX_FILE_TYPE_MASK = 0o170000;
+const POSIX_REGULAR_FILE = 0o100000;
+
+/**
+ * Exclude nodes the change ledger identifies as directories or symlinks.
+ *
+ * Deleted entries do not carry mode metadata, so the daemon remains the
+ * authority for those paths and may still return `afs.path_not_file`.
+ */
+export function isSelectableFileChange(change: AfsChange): boolean {
+  return change.mode == null || (change.mode & POSIX_FILE_TYPE_MASK) === POSIX_REGULAR_FILE;
 }
 
 export type TimelineTurn = {

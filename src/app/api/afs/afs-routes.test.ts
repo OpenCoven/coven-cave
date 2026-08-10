@@ -15,7 +15,9 @@ describe("AFS daemon proxy routes", () => {
   });
 
   it("forwards dryRun while preserving commit sanitization and transport safety", () => {
-    assert.match(commitRoute, /dryRun\?: boolean \| null/);
+    assert.match(commitRoute, /dryRun\?: unknown/);
+    assert.match(commitRoute, /body\.dryRun !== undefined && typeof body\.dryRun !== "boolean"/);
+    assert.match(commitRoute, /dryRun must be a boolean/);
     assert.match(commitRoute, /typeof body\.dryRun === "boolean"/);
     assert.match(commitRoute, /\{ dryRun: body\.dryRun \}/);
     assert.match(commitRoute, /branch\.trim\(\)/);

@@ -10,7 +10,7 @@ type CommitBody = {
   branch?: string | null;
   message?: string | null;
   coAuthors?: string[] | null;
-  dryRun?: boolean | null;
+  dryRun?: unknown;
 };
 
 /**
@@ -29,6 +29,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!parsed.ok) return parsed.response;
 
   const body: CommitBody = parsed.body ?? {};
+  if (body.dryRun !== undefined && typeof body.dryRun !== "boolean") {
+    return NextResponse.json(
+      { error: { code: "invalid_request", message: "dryRun must be a boolean." } },
+      { status: 400 },
+    );
+  }
   const branch = typeof body.branch === "string" ? body.branch.trim() : "";
   const message = typeof body.message === "string" ? body.message.trim() : "";
   const coAuthors = Array.isArray(body.coAuthors)

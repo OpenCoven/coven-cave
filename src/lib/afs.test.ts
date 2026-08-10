@@ -7,9 +7,13 @@ import {
   commitAvailability,
   defaultCommitBranch,
   groupTimelineByTurn,
+  isSelectableFileChange,
   mergeTimelinePages,
   mountAvailability,
   readAfsCapabilities,
+  readAfsCommitPreview,
+  readAfsCommitResult,
+  readAfsFileDiff,
   unattributedPaths,
   type AfsCapabilities,
   type AfsChange,
@@ -17,7 +21,12 @@ import {
   type AfsTimelineEntry,
 } from "./afs.ts";
 
-const CAPS: AfsCapabilities = { afs: true, afsMount: false, afsCommit: true };
+const CAPS: AfsCapabilities = {
+  afs: true,
+  afsMount: false,
+  afsCommit: true,
+  afsCommitDryRun: true,
+};
 
 function session(overrides: Partial<AfsSession> = {}): AfsSession {
   return {
@@ -37,13 +46,71 @@ function change(overrides: Partial<AfsChange> = {}): AfsChange {
 
 test("capabilities read false against a daemon with no AFS support", () => {
   // Cave and the daemon ship decoupled, so an older daemon reports nothing.
-  assert.deepEqual(readAfsCapabilities({}), { afs: false, afsMount: false, afsCommit: false });
-  assert.deepEqual(readAfsCapabilities(null), { afs: false, afsMount: false, afsCommit: false });
-  assert.deepEqual(readAfsCapabilities({ capabilities: { afs: true, afsMount: false, afsCommit: true } }), {
-    afs: true,
-    afsMount: false,
-    afsCommit: true,
-  });
+  const unsupported = { afs: false, afsMount: false, afsCommit: false, afsCommitDryRun: false };
+  assert.deepEqual(readAfsCapabilities({}), unsupported);
+  assert.deepEqual(readAfsCapabilities(null), unsupported);
+  assert.deepEqual(
+    readAfsCapabilities({
+      capabilities: {
+        afs: true,
+        afsMount: false,
+        afsCommit: true,
+        afsCommitDryRun: true,
+      },
+    }),
+    { afs: true, afsMount: false, afsCommit: true, afsCommitDryRun: true },
+  );
+  assert.equal(
+    readAfsCapabilities({ capabilities: { afsCommit: true } }).afsCommitDryRun,
+    false,
+    "older commit-capable daemons do not implicitly support dry runs",
+  );
+});
+
+test("file diff payloads fail closed when an older daemon returns the change list", () => {
+  assert.deepEqual(
+    readAfsFileDiff({ path: "/a", patch: "@@", truncated: false, binary: false }),
+    { path: "/a", patch: "@@", truncated: false, binary: false },
+  );
+  assert.equal(
+    readAfsFileDiff({
+      changes: [],
+      counts: { added: 0, modified: 0, deleted: 0, bytes: 0 },
+      truncated: false,
+    }),
+    null,
+  );
+});
+
+test("commit previews require the daemon dry-run envelope", () => {
+  const preview = {
+    id: "afs-1",
+    branch: "afs/afs-1",
+    worktreePath: "/repo/.worktrees/afs-afs-1",
+    provenanceHighWater: 42,
+    counts: { added: 1, modified: 2, deleted: 3, bytes: 99 },
+    files: 6,
+    dryRun: true,
+    wouldCommit: true,
+  };
+  assert.deepEqual(readAfsCommitPreview(preview), preview);
+  assert.equal(readAfsCommitPreview({ ...preview, dryRun: false }), null);
+  assert.equal(readAfsCommitPreview({ branch: "unexpected real commit response", commit: "abc" }), null);
+});
+
+test("real commit results require an attributable materialization envelope", () => {
+  const result = {
+    id: "afs-1",
+    branch: "afs/afs-1",
+    commit: "abc123",
+    worktreePath: "/repo/.worktrees/afs-afs-1",
+    provenanceHighWater: 43,
+    state: "committed",
+    counts: { added: 1, modified: 0, deleted: 0, bytes: 10 },
+  };
+  assert.deepEqual(readAfsCommitResult(result), result);
+  assert.equal(readAfsCommitResult({ ...result, commit: "" }), null);
+  assert.equal(readAfsCommitResult({ branch: result.branch }), null);
 });
 
 test("a mount backend name is carried through, false stays false", () => {
@@ -99,6 +166,17 @@ test("unattributed changes are reported so they can be marked", () => {
   assert.deepEqual(unattributedPaths({ changes }), ["/src/b.rs"]);
 });
 
+test("known directories and symlinks are not selectable as file diffs", () => {
+  assert.equal(isSelectableFileChange(change({ mode: 0o100644 })), true);
+  assert.equal(isSelectableFileChange(change({ mode: 0o040755 })), false);
+  assert.equal(isSelectableFileChange(change({ mode: 0o120777 })), false);
+  assert.equal(
+    isSelectableFileChange(change({ change: "deleted", ino: null, mode: null })),
+    true,
+    "deleted rows have no mode, so the daemon decides whether the path was a file",
+  );
+});
+
 test("change total counts files, not bytes", () => {
   assert.equal(changeTotal({ added: 1, modified: 2, deleted: 3, bytes: 999 }), 6);
 });
@@ -111,6 +189,7 @@ test("timeline groups by turn and keeps unbound entries last", () => {
     bytes: 1,
     at: seq,
     turn,
+    toolCall: null,
   });
   const groups = groupTimelineByTurn([entry(1, 2), entry(2, null), entry(3, 1), entry(4, 2)]);
   assert.deepEqual(
@@ -133,6 +212,7 @@ test("timeline pages merge by daemon sequence and replace duplicate rows", () =>
     path: `/f${seq}`,
     bytes: 1,
     at: seq,
+    toolCall: null,
   });
   const merged = mergeTimelinePages(
     { entries: [entry(1, "write"), entry(2, "write")], nextCursor: 2, hasMore: true },
