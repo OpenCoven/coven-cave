@@ -131,6 +131,24 @@ export function RightChatPanel(props: Props) {
   // "Back to sessions" that merely happens to land after one of those
   // unrelated refreshes (cave-rl980 Task 4 review).
   const pendingRemovalRef = useRef(false);
+  // Synchronously mirrors the current selection — this panel's active
+  // familiar id and selected session id — the instant either commits (see
+  // the layout effect below, deliberately unguarded by familiarsError/
+  // sessionsError/open so it never lags behind the actual render). Read by
+  // handleSessionRemoved below INSTEAD OF the selectedSessionId/activeFamiliar
+  // closed over at that particular function instance's own creation render.
+  // archiveChat/deleteChat/setChatArchived/discardVoiceSessionIfEmpty are all
+  // async: the specific onSessionRemoved callback ChatView's in-flight
+  // request actually invokes is whichever one was current when THAT request
+  // began, frozen at whatever selectedSessionId/activeFamiliar existed then —
+  // and stays frozen even after the user switches to a different thread or
+  // familiar while the request is still in flight. Comparing against this
+  // ref instead means the check always sees the LATEST truth, regardless of
+  // how stale the invoked closure is (cave-rl980 Task 4 final review).
+  const currentSelectionRef = useRef<{ familiarId: string | null; sessionId: string | null }>({
+    familiarId: null,
+    sessionId: null,
+  });
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const resolvedActiveFamiliar =
@@ -147,6 +165,14 @@ export function RightChatPanel(props: Props) {
   // not-yet-mounted router from ever being marked resolved.
   const hasResolvedRouter = activeFamiliar !== null && resolvedFamiliarRef.current === activeFamiliar.id;
   const { announce } = useAnnouncer();
+
+  // Commits currentSelectionRef the instant either half changes — a plain
+  // useLayoutEffect with no early-return guard, unlike the big resolution
+  // effect below, so it can never lag behind the actual rendered selection
+  // during a familiarsError/sessionsError/closed state.
+  useLayoutEffect(() => {
+    currentSelectionRef.current = { familiarId: activeFamiliar?.id ?? null, sessionId: selectedSessionId };
+  }, [activeFamiliar, selectedSessionId]);
 
   // Fold the current eligible roster into the observed-ids record after
   // commit, not inline during render (cave-rl980 Task 4 review): an id only
@@ -189,18 +215,37 @@ export function RightChatPanel(props: Props) {
     );
   };
 
-  // Arms pendingRemovalRef only when the removed session is the one this
-  // panel currently has selected AND has previously observed eligible — the
-  // narrow "selected, observed session" signal cave-rl980 Task 4 review calls
-  // for. Sourced from ChatView's own onSessionRemoved (see its doc), fired
-  // only at the exact archive/delete/discard call sites, never inferred from
+  // Arms pendingRemovalRef only when the removed session is STILL the one
+  // this panel currently has selected, for the same familiar, AND has
+  // previously observed eligible — the narrow "current selected, observed
+  // session" signal cave-rl980 Task 4 review calls for. Sourced from
+  // ChatView's own onSessionRemoved (see its doc), fired only at the exact
+  // archive/delete/discard call sites, never inferred from
   // onSessionsChanged/onSessionsDeleted — those are forwarded to ChatRouter
   // entirely unwrapped below, preserving their existing behavior for every
   // other consumer instead of intercepting every call to guess at removal.
+  //
+  // Deliberately reads currentSelectionRef, NOT the selectedSessionId/
+  // activeFamiliar closed over by this exact function instance: this
+  // specific handleSessionRemoved is whichever one ChatView's async
+  // archive/delete/discard request captured when IT began, and by the time
+  // that request settles the user may have already switched to a different
+  // thread or familiar. Comparing the removed id against a frozen selection
+  // from before the switch would incorrectly arm retention for a session
+  // nobody is looking at anymore; the ref always reflects the CURRENT truth
+  // instead (cave-rl980 Task 4 final review). A single sessionId comparison
+  // against the ref already covers "for the same familiar" too — a session
+  // id is only ever the panel's selectedSessionId while its owning familiar
+  // is active (see the activeFamiliar-cleared effect above and the
+  // resolution effect below, which never carries a selection across a
+  // familiar change), so currentSelectionRef.sessionId can equal
+  // removedSessionId only when currentSelectionRef.familiarId is the
+  // familiar that removal actually happened under.
   const handleSessionRemoved = (removedSessionId: string) => {
-    if (removedSessionId === selectedSessionId && observedSessionIdsRef.current.has(removedSessionId)) {
-      pendingRemovalRef.current = true;
-    }
+    const current = currentSelectionRef.current;
+    if (current.sessionId !== removedSessionId) return;
+    if (!observedSessionIdsRef.current.has(removedSessionId)) return;
+    pendingRemovalRef.current = true;
   };
 
   useEffect(() => {

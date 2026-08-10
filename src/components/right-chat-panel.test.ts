@@ -147,10 +147,29 @@ assert.match(
 // fire for reasons that have nothing to do with this session's removal (a
 // canonical-session reconcile after a stream settles, a *different* thread
 // auto-archiving on reflection, a Board handoff refresh, …).
+//
+// Reads currentSelectionRef (cave-rl980 Task 4 final review), not the
+// selectedSessionId/activeFamiliar closed over by this exact function
+// instance: ChatView's archive/delete/discard flows are async, and the
+// specific onSessionRemoved closure a still-in-flight request retains is
+// whichever one was current when THAT request began — frozen even after the
+// user switches to a different thread or familiar while it is still
+// in-flight. Comparing against the ref instead of the closure means the
+// check always sees the CURRENT truth.
 assert.match(
   source,
-  /const handleSessionRemoved = \(removedSessionId: string\) => \{\s*\n\s*if \(removedSessionId === selectedSessionId && observedSessionIdsRef\.current\.has\(removedSessionId\)\) \{\s*\n\s*pendingRemovalRef\.current = true;\s*\n\s*\}\s*\n\s*\};/,
-  "handleSessionRemoved arms pendingRemovalRef only for a removal of the exact selected, previously observed session",
+  /const currentSelectionRef = useRef<\{ familiarId: string \| null; sessionId: string \| null \}>\(\{\s*\n\s*familiarId: null,\s*\n\s*sessionId: null,\s*\n\s*\}\);/,
+  "a ref mirrors the current selection (familiar id + session id) for handleSessionRemoved to consult instead of stale closure state",
+);
+assert.match(
+  source,
+  /useLayoutEffect\(\(\) => \{\s*\n\s*currentSelectionRef\.current = \{ familiarId: activeFamiliar\?\.id \?\? null, sessionId: selectedSessionId \};\s*\n\s*\}, \[activeFamiliar, selectedSessionId\]\);/,
+  "currentSelectionRef commits synchronously (useLayoutEffect, no early-return guard) so it never lags behind the actual rendered selection",
+);
+assert.match(
+  source,
+  /const handleSessionRemoved = \(removedSessionId: string\) => \{\s*\n\s*const current = currentSelectionRef\.current;\s*\n\s*if \(current\.sessionId !== removedSessionId\) return;\s*\n\s*if \(!observedSessionIdsRef\.current\.has\(removedSessionId\)\) return;\s*\n\s*pendingRemovalRef\.current = true;\s*\n\s*\};/,
+  "handleSessionRemoved arms pendingRemovalRef only for a removal of the exact CURRENT (ref-read) selected, previously observed session",
 );
 assert.match(
   source,

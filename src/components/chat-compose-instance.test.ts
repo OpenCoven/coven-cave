@@ -108,7 +108,7 @@ assert.doesNotMatch(
 // ── 7. Voice-session discard increments (returns to a fresh compose) ─────────
 
 const voiceDiscardHandler =
-  routerSource.match(/onVoiceSessionDiscarded=\{\(\) => \{[\s\S]*?\}\}/)?.[0] ?? "";
+  routerSource.match(/onVoiceSessionDiscarded=\{\(removedSessionId\) => \{[\s\S]*?\}\}/)?.[0] ?? "";
 
 assert.ok(voiceDiscardHandler.length > 0, "onVoiceSessionDiscarded handler must be present in router");
 

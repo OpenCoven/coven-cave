@@ -485,6 +485,7 @@ export const SUITES = {
     "src/components/chat-list-collapse.test.ts",
     "src/components/chat-router-hide-archived.test.ts",
     "src/components/chat-router-switching.test.ts",
+    "src/components/chat-router-removal-race.test.tsx",
     "src/components/right-chat-panel.test.ts",
     "src/components/right-chat-panel-behavior.test.tsx",
     "src/components/chat-compose-instance.test.ts",
@@ -1899,6 +1900,7 @@ const VITEST_TESTS = new Set([
   "src/components/chat-sidebar-wiring.behavior.test.ts",
   "src/components/chat-title-sparkle-behavior.test.tsx",
   "src/components/right-chat-panel-behavior.test.tsx",
+  "src/components/chat-router-removal-race.test.tsx",
   // vi.fn() for the subscriber assertions
   "src/lib/surface-history.test.ts",
   // renders the hook through react-test-renderer
