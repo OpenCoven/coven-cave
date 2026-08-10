@@ -142,17 +142,17 @@ pub(super) fn live_dev_server_url(app: &tauri::App) -> Option<tauri::Url> {
 #[cfg(desktop)]
 pub(super) fn wait_for_sidecar_ready(
     port: u16,
+    auth_token: &str,
     output: &Arc<Mutex<SidecarOutputTail>>,
     timeout: Duration,
     should_cancel: impl Fn() -> bool,
     mut child_exited: impl FnMut() -> bool,
 ) -> PortWaitResult {
-    use std::net::{SocketAddr, TcpStream};
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
     // Require the launched sidecar's own ready log line, not just a listening
     // port — otherwise another process squatting the port would be trusted.
     let ready_line = format!("> Ready on http://127.0.0.1:{}", port);
     let deadline = Instant::now() + timeout;
+    let mut last_handshake_error = None;
     while Instant::now() < deadline {
         if should_cancel() {
             return PortWaitResult::Cancelled;
@@ -164,12 +164,154 @@ pub(super) fn wait_for_sidecar_ready(
             .lock()
             .map(|output| output.text().lines().any(|line| line.trim() == ready_line))
             .unwrap_or(false);
-        if logged_ready && TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
-            return PortWaitResult::Ready;
+        if logged_ready {
+            match authenticated_readiness_handshake(port, auth_token) {
+                Ok(()) => return PortWaitResult::Ready,
+                Err(error) => last_handshake_error = Some(error),
+            }
         }
         thread::sleep(Duration::from_millis(150));
     }
-    PortWaitResult::TimedOut
+    last_handshake_error.map_or(PortWaitResult::TimedOut, PortWaitResult::Refused)
+}
+
+#[cfg(desktop)]
+#[derive(serde::Deserialize)]
+struct NativeReadiness {
+    service: String,
+    version: String,
+    protocol: NativeReadinessProtocol,
+    runtime: NativeReadinessRuntime,
+}
+
+#[cfg(desktop)]
+#[derive(serde::Deserialize)]
+struct NativeReadinessProtocol {
+    name: String,
+    version: u32,
+}
+
+#[cfg(desktop)]
+#[derive(serde::Deserialize)]
+struct NativeReadinessRuntime {
+    bundle: bool,
+    api: String,
+}
+
+#[cfg(desktop)]
+fn authenticated_readiness_handshake(port: u16, auth_token: &str) -> Result<(), String> {
+    use std::io::{Read, Write};
+    use std::net::{SocketAddr, TcpStream};
+
+    const MAX_RESPONSE_BYTES: usize = 64 * 1024;
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(300))
+        .map_err(|error| format!("readiness connection failed: {error}"))?;
+    stream
+        .set_read_timeout(Some(Duration::from_millis(500)))
+        .map_err(|error| format!("could not bound readiness response: {error}"))?;
+    stream
+        .set_write_timeout(Some(Duration::from_millis(500)))
+        .map_err(|error| format!("could not bound readiness request: {error}"))?;
+    write!(
+        stream,
+        "GET /api/app/native-readiness HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nx-coven-cave-token: {auth_token}\r\nConnection: close\r\n\r\n"
+    )
+    .map_err(|error| format!("readiness request failed: {error}"))?;
+
+    let mut response = Vec::new();
+    stream
+        .take((MAX_RESPONSE_BYTES + 1) as u64)
+        .read_to_end(&mut response)
+        .map_err(|error| format!("readiness response failed: {error}"))?;
+    if response.len() > MAX_RESPONSE_BYTES {
+        return Err("readiness response exceeded 64 KiB".to_string());
+    }
+    validate_readiness_response(&response)
+}
+
+#[cfg(desktop)]
+pub(super) fn validate_readiness_response(response: &[u8]) -> Result<(), String> {
+    let separator = b"\r\n\r\n";
+    let header_end = response
+        .windows(separator.len())
+        .position(|window| window == separator)
+        .ok_or_else(|| "readiness endpoint returned a malformed HTTP response".to_string())?;
+    let headers = std::str::from_utf8(&response[..header_end])
+        .map_err(|_| "readiness endpoint returned non-UTF-8 headers".to_string())?;
+    let status = headers.lines().next().unwrap_or_default();
+    if status != "HTTP/1.1 200 OK" && status != "HTTP/1.0 200 OK" {
+        return Err(format!(
+            "readiness endpoint refused the authenticated request ({status})"
+        ));
+    }
+    let encoded_body = &response[header_end + separator.len()..];
+    let body = if headers.lines().any(|line| {
+        line.split_once(':').is_some_and(|(name, value)| {
+            name.eq_ignore_ascii_case("transfer-encoding")
+                && value
+                    .split(',')
+                    .any(|encoding| encoding.trim().eq_ignore_ascii_case("chunked"))
+        })
+    }) {
+        decode_chunked_body(encoded_body)?
+    } else {
+        encoded_body.to_vec()
+    };
+    let readiness: NativeReadiness = serde_json::from_slice(&body)
+        .map_err(|error| format!("readiness endpoint returned malformed JSON: {error}"))?;
+    if readiness.service != "CovenCave" {
+        return Err("readiness endpoint belongs to an unexpected service".to_string());
+    }
+    if readiness.protocol.name != "coven-cave-native-readiness" || readiness.protocol.version != 1 {
+        return Err(format!(
+            "unsupported native readiness protocol {} v{}",
+            readiness.protocol.name, readiness.protocol.version
+        ));
+    }
+    if readiness.version != env!("CARGO_PKG_VERSION") {
+        return Err(format!(
+            "sidecar version {} is incompatible with desktop version {}",
+            readiness.version,
+            env!("CARGO_PKG_VERSION")
+        ));
+    }
+    if !cfg!(debug_assertions) && !readiness.runtime.bundle {
+        return Err("release desktop reached a non-bundled sidecar runtime".to_string());
+    }
+    if readiness.runtime.api != "ready" {
+        return Err("sidecar API dependencies are not ready".to_string());
+    }
+    Ok(())
+}
+
+#[cfg(desktop)]
+fn decode_chunked_body(encoded: &[u8]) -> Result<Vec<u8>, String> {
+    let mut remaining = encoded;
+    let mut decoded = Vec::new();
+    loop {
+        let line_end = remaining
+            .windows(2)
+            .position(|window| window == b"\r\n")
+            .ok_or_else(|| "readiness endpoint returned malformed chunk framing".to_string())?;
+        let size_line = std::str::from_utf8(&remaining[..line_end])
+            .map_err(|_| "readiness endpoint returned non-UTF-8 chunk framing".to_string())?;
+        let size_hex = size_line.split(';').next().unwrap_or_default().trim();
+        let size = usize::from_str_radix(size_hex, 16)
+            .map_err(|_| "readiness endpoint returned an invalid chunk size".to_string())?;
+        remaining = &remaining[line_end + 2..];
+        if size == 0 {
+            if remaining == b"\r\n" || remaining.ends_with(b"\r\n\r\n") {
+                return Ok(decoded);
+            }
+            return Err("readiness endpoint returned malformed chunk terminator".to_string());
+        }
+        if remaining.len() < size + 2 || &remaining[size..size + 2] != b"\r\n" {
+            return Err("readiness endpoint returned a truncated chunk".to_string());
+        }
+        decoded.extend_from_slice(&remaining[..size]);
+        remaining = &remaining[size + 2..];
+    }
 }
 
 #[cfg(desktop)]
@@ -520,6 +662,7 @@ pub(super) fn start_sidecar_runtime(
     };
     match wait_for_sidecar_ready(
         port,
+        &auth_token,
         &sidecar_output,
         sidecar_start_timeout,
         &should_cancel,
@@ -527,9 +670,14 @@ pub(super) fn start_sidecar_runtime(
     ) {
         PortWaitResult::Ready => {}
         PortWaitResult::Cancelled => return Err(SidecarStartError::Cancelled),
-        result @ (PortWaitResult::Exited | PortWaitResult::TimedOut) => {
+        result @ (PortWaitResult::Exited
+        | PortWaitResult::Refused(_)
+        | PortWaitResult::TimedOut) => {
             let reason = match result {
                 PortWaitResult::Exited => "exited before becoming ready".to_string(),
+                PortWaitResult::Refused(error) => {
+                    format!("failed its authenticated readiness handshake: {error}")
+                }
                 PortWaitResult::TimedOut => format!(
                     "did not become ready within {}s",
                     sidecar_start_timeout.as_secs()
