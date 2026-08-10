@@ -59,7 +59,7 @@ test("preserves legacy healthy payloads without ok", async () => {
     call: async () => ({
       ok: true,
       status: 200,
-      data: { apiVersion: "1" },
+      data: { apiVersion: "coven.daemon.v1" },
     }),
     now: () => 10,
   });

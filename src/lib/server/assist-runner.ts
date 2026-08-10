@@ -142,6 +142,7 @@ export async function runBoundedAssist(opts: {
           cwd: dir,
           stdio: ["pipe", "ignore", "pipe"],
           env: harnessSpawnEnv(),
+          windowsHide: true,
         },
       ]);
       // Keep a bounded stderr tail so a non-zero exit carries its reason

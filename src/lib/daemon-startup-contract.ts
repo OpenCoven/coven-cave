@@ -1,7 +1,13 @@
 import { exactSemver } from "./exact-semver.ts";
 
-/** The named daemon API versions Cave can safely adopt. */
-export const SUPPORTED_DAEMON_API_VERSIONS = new Set(["1", "v1"]);
+/** The exact named daemon API contract Cave can safely adopt. */
+export const COVEN_DAEMON_API_VERSION = "coven.daemon.v1";
+
+export function isSupportedDaemonApiVersion(
+  value: unknown,
+): value is typeof COVEN_DAEMON_API_VERSION {
+  return value === COVEN_DAEMON_API_VERSION;
+}
 
 export type DaemonStartupHealth = {
   ok?: unknown;
@@ -29,7 +35,7 @@ export function assessDaemonStartupCompatibility(
   health: DaemonStartupHealth | null | undefined,
   installedVersion: string | null,
 ): DaemonStartupCompatibility {
-  if (!health || health.ok === false || typeof health !== "object") {
+  if (!health || typeof health !== "object" || health.ok !== true) {
     return {
       ok: false,
       code: "invalid_health",
@@ -37,8 +43,8 @@ export function assessDaemonStartupCompatibility(
     };
   }
 
-  const apiVersion = typeof health.apiVersion === "string" ? health.apiVersion.trim() : "";
-  if (!SUPPORTED_DAEMON_API_VERSIONS.has(apiVersion)) {
+  const apiVersion = health.apiVersion;
+  if (!isSupportedDaemonApiVersion(apiVersion)) {
     return {
       ok: false,
       code: "unsupported_api",

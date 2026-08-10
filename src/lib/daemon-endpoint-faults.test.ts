@@ -209,13 +209,13 @@ test("the probe leaves no connection open on the daemon it probed", async () => 
 
 test("a supported API and matching runtime version is adopted", () => {
   const result = assessDaemonStartupCompatibility(
-    { ok: true, apiVersion: "1", covenVersion: "0.2.5" },
+    { ok: true, apiVersion: "coven.daemon.v1", covenVersion: "0.2.5" },
     "0.2.5",
   );
   assert.equal(result.ok, true);
   if (result.ok) {
     assert.equal(result.daemonVersion, "0.2.5");
-    assert.equal(result.apiVersion, "1");
+    assert.equal(result.apiVersion, "coven.daemon.v1");
   }
 });
 
@@ -233,7 +233,7 @@ test("a daemon running a different build than the one Cave manages is refused", 
   // update can open newer persisted state before its own migration guard sees
   // it, so this fails closed.
   const result = assessDaemonStartupCompatibility(
-    { ok: true, apiVersion: "1", covenVersion: "0.2.4" },
+    { ok: true, apiVersion: "coven.daemon.v1", covenVersion: "0.2.4" },
     "0.2.5",
   );
   assert.equal(result.ok, false);
@@ -242,7 +242,7 @@ test("a daemon running a different build than the one Cave manages is refused", 
 
 test("a health document that reports failure is not mined for a version", () => {
   const result = assessDaemonStartupCompatibility(
-    { ok: false, apiVersion: "1", covenVersion: "0.2.5" },
+    { ok: false, apiVersion: "coven.daemon.v1", covenVersion: "0.2.5" },
     "0.2.5",
   );
   assert.equal(result.ok, false);
@@ -250,7 +250,7 @@ test("a health document that reports failure is not mined for a version", () => 
 });
 
 test("a missing or malformed health document is refused, not defaulted", () => {
-  for (const health of [null, undefined, {}, { ok: true }, { ok: true, apiVersion: "1" }]) {
+  for (const health of [null, undefined, {}, { ok: true }, { ok: true, apiVersion: "coven.daemon.v1" }]) {
     const result = assessDaemonStartupCompatibility(health as never, "0.2.5");
     assert.equal(result.ok, false, `health ${JSON.stringify(health)} must not be adopted`);
     if (!result.ok) {

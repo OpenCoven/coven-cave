@@ -466,7 +466,7 @@ async function refreshTailnetPeers(): Promise<void> {
     const { stdout } = await execFileAsync(
       process.env.COVEN_CAVE_TAILSCALE_BIN ?? "tailscale",
       ["status", "--json"],
-      { timeout: 10_000, maxBuffer: 16 * 1024 * 1024 },
+      { timeout: 10_000, maxBuffer: 16 * 1024 * 1024, windowsHide: true },
     );
     const status = JSON.parse(stdout) as {
       Peer?: Record<string, { ID?: string; TailscaleIPs?: string[] }>;

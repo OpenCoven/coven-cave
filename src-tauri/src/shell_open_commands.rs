@@ -10,7 +10,7 @@ fn spawn_x_oauth_browser_launcher(url: &str) -> std::io::Result<std::process::Ch
     };
     #[cfg(target_os = "windows")]
     let mut command = {
-        let mut command = std::process::Command::new(windows_system32_binary("rundll32.exe"));
+        let mut command = windows_command::hidden_system32_command("rundll32.exe");
         command.args(["url.dll,FileProtocolHandler", url]);
         command
     };
@@ -110,7 +110,7 @@ pub(super) fn shell_open(url: String) -> Result<(), String> {
         // Use the Windows URL protocol handler directly instead of routing
         // attacker-controlled URLs through `cmd.exe /c start`, where shell
         // metacharacters such as `&` can execute additional commands.
-        std::process::Command::new("rundll32.exe")
+        windows_command::hidden_system32_command("rundll32.exe")
             .args(["url.dll,FileProtocolHandler", &url])
             .spawn()
             .map_err(|e| e.to_string())?;
@@ -140,7 +140,7 @@ pub(super) fn shell_open_path(path: String) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new(windows_system32_binary("explorer.exe"))
+        windows_command::hidden_command(windows_system32_binary("explorer.exe"))
             .arg(&path)
             .spawn()
             .map_err(|e| e.to_string())?;
@@ -291,10 +291,12 @@ try {
     $owner.Close()
 }
 "#;
-        let output = std::process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-Sta", "-Command", script])
-            .output()
-            .map_err(|e| e.to_string())?;
+        let output = windows_command::hidden_system32_command(
+            r"WindowsPowerShell\v1.0\powershell.exe",
+        )
+        .args(["-NoProfile", "-Sta", "-Command", script])
+        .output()
+        .map_err(|e| e.to_string())?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             return Err(if stderr.is_empty() {
