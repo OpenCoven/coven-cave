@@ -134,7 +134,13 @@ function sameAsanaTarget(a: CardAsanaLink, b: CardAsanaLink): boolean {
 
 function sameGitHubTarget(a: CardGitHubLink, b: CardGitHubLink): boolean {
   if (a.repo && b.repo && a.kind === b.kind && a.number !== undefined && b.number !== undefined) {
-    return a.repo === b.repo && a.number === b.number;
+    // Repo comparison is case-insensitive, matching itemId() in task-github.ts,
+    // which lowercases the repo when building an id. GitHub treats owner/name
+    // case-insensitively, so a link stored from the API with canonical casing
+    // and one derived from a lowercase pasted URL name the same item — comparing
+    // them case-sensitively would fail to match, leave the derived link
+    // unfiltered, and let its generated title overwrite the stored one again.
+    return a.repo.toLowerCase() === b.repo.toLowerCase() && a.number === b.number;
   }
   return normalizeCompareUrl(a.url) === normalizeCompareUrl(b.url);
 }

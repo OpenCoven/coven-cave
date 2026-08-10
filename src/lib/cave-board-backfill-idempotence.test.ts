@@ -89,10 +89,10 @@ async function writeBoard(cards: unknown[]): Promise<void> {
       links: ["https://github.com/OpenCoven/coven-cave/pull/4534"],
       github: [
         {
-          id: "github:pull:OpenCoven/coven-cave:4534",
+          id: "github:pr:opencoven/coven-cave:4534",
           url: "https://github.com/OpenCoven/coven-cave/pull/4534",
           repo: "OpenCoven/coven-cave",
-          kind: "pull",
+          kind: "pr",
           number: 4534,
           title: "Fix the claim guard",
         },
@@ -108,6 +108,46 @@ async function writeBoard(cards: unknown[]): Promise<void> {
     "Fix the claim guard",
     "a stored GitHub title must not be replaced by the derived 'repo #number'",
   );
+}
+
+// ── The same GitHub item under two spellings is ONE connection ────────────────
+// Repo identity on GitHub is case-insensitive, and the two links for one item
+// rarely arrive spelled alike: the stored one comes from the API with canonical
+// casing and an api.github.com URL, while the derived one is parsed from
+// whatever a human pasted. taskGitHubLinkFromUrl() copies the repo straight out
+// of the URL path, so a lowercase paste yields a lowercase repo.
+//
+// The URL fallback cannot reconcile those two — the URLs genuinely differ — so
+// the repo/kind/number identity check is the ONLY thing that can see them as one
+// item. Comparing the repo case-sensitively made it miss, and the card kept two
+// entries for the same pull request forever.
+{
+  await writeBoard([
+    {
+      ...BASE_CARD,
+      id: "card-4",
+      links: ["https://github.com/opencoven/coven-cave/pull/4534"],
+      github: [
+        {
+          id: "github:pr:opencoven/coven-cave:4534",
+          url: "https://api.github.com/repos/OpenCoven/coven-cave/pulls/4534",
+          repo: "OpenCoven/coven-cave",
+          kind: "pr",
+          number: 4534,
+          title: "Fix the claim guard",
+        },
+      ],
+    },
+  ]);
+
+  const board = await loadBoard();
+  const github = board.cards[0].github ?? [];
+  assert.equal(
+    github.length,
+    1,
+    "one pull request must yield one connection, however its repo is cased",
+  );
+  assert.equal(github[0].title, "Fix the claim guard", "and it keeps the stored title");
 }
 
 // ── A URL with no stored counterpart is still backfilled ──────────────────────
