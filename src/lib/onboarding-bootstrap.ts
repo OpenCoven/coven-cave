@@ -2,17 +2,20 @@ export const ONBOARDING_BOOTSTRAP_STAGES = [
   {
     id: "core-tools",
     label: "Prepare local components",
-    pendingDetail: "Cave will verify the local components it needs.",
+    pendingDetail:
+      "Cave will check its private Node.js and npm runtime, then verify the Coven CLI.",
   },
   {
     id: "workspace",
     label: "Create Cave defaults",
-    pendingDetail: "Cave will create user-scoped folders and defaults.",
+    pendingDetail:
+      "Waiting for local components. Cave will then create user-scoped folders and defaults.",
   },
   {
     id: "daemon",
     label: "Start local services",
-    pendingDetail: "Cave will start its local background service.",
+    pendingDetail:
+      "Waiting for setup. Cave will check the local service and start it only when needed.",
   },
 ] as const;
 
