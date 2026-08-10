@@ -25,6 +25,7 @@ import {
   bearerFromReferer,
   bearerFromRefererAny,
   shouldRequireMobileAccessCredential,
+  isTokenlessApiPeerAllowed,
   isTrustedLocalPeer,
   timingSafeEqualString,
   isHtmlNavigationRequest,
@@ -109,6 +110,23 @@ assert.equal(isTailscaleServeHost("cave.tailnet.example.ts.net"), true);
 assert.equal(isTailscaleServeHost("cave.tailnet.example.ts.net:8443"), true);
 assert.equal(isTailscaleServeHost("localhost:3000"), false);
 assert.equal(isTailscaleServeHost("127.0.0.1:3000"), false);
+
+// ─── tokenless API peer proof ─────────────────────────────────────────────
+assert.equal(
+  isTokenlessApiPeerAllowed(false, false),
+  false,
+  "a spoofed loopback Host cannot replace server-verified peer identity",
+);
+assert.equal(
+  isTokenlessApiPeerAllowed(true, false),
+  true,
+  "the custom server's direct-loopback stamp preserves tokenless development",
+);
+assert.equal(
+  isTokenlessApiPeerAllowed(false, true),
+  true,
+  "verified remote ingress remains available through its authenticated path",
+);
 
 // ─── sameOrigin ────────────────────────────────────────────────────────────
 const expected = "http://localhost:3000";

@@ -169,7 +169,7 @@ struct CaveClient {
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let token = CaveConnection.accessToken {
+        if let token = try CaveConnection.credentialForRequest(to: url) {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         if let body {
@@ -331,7 +331,7 @@ struct CaveClient {
         if let updatedAt, !updatedAt.isEmpty {
             items.append(URLQueryItem(name: "v", value: updatedAt))
         }
-        if let token = CaveConnection.accessToken {
+        if let token = try? CaveConnection.credentialForRequest(to: comps.url ?? base) {
             items.append(URLQueryItem(name: "coven_access_token", value: token))
         }
         if !items.isEmpty { comps.queryItems = items }

@@ -7,6 +7,7 @@ import {
   covenAgentRunStatus,
   covenRailStatus,
   covenRunElapsedMs,
+  covenRunPill,
   covenRunProgressLabel,
   formatCovenDuration,
   hasCovenAgentStarted,
@@ -228,4 +229,78 @@ test("the rail carries one status line, and failure outranks the mode", () => {
   )[0];
   assert.equal(covenRailStatus({ memberCount: 2, run: running }).text, "Round robin · 1 of 2");
   assert.equal(covenRailStatus({ memberCount: 2, run: running, paused: true }).text, "Paused · 1 of 2");
+});
+
+test("the run pill echoes the header without inventing state", () => {
+  const running = buildCovenRuns(
+    [
+      user({ id: "u1", responseMode: "round-robin" }),
+      reply({ id: "a", replyTo: "u1", status: "done", text: "ok" }),
+      reply({ id: "b", familiarId: "echo", replyTo: "u1", status: "streaming", text: "x" }),
+    ],
+    { fallbackMode: "round-robin" },
+  )[0];
+  const pill = covenRunPill({ run: running });
+  assert.equal(pill?.label, "Round robin");
+  assert.equal(pill?.tone, "accent");
+  assert.equal(pill?.live, true);
+  // The clock is not baked into the label — the renderer ticks it from here, so
+  // a live run does not re-derive the whole pill once a second.
+  assert.equal(pill?.startedAtMs, Date.parse(AT));
+  assert.ok(!pill?.label.includes(":"));
+});
+
+test("a paused run does not pulse as if it were working", () => {
+  const running = buildCovenRuns(
+    [
+      user({ id: "u1", responseMode: "round-robin" }),
+      reply({ id: "a", replyTo: "u1", status: "done", text: "ok" }),
+      reply({ id: "b", familiarId: "echo", replyTo: "u1" }),
+    ],
+    { fallbackMode: "round-robin" },
+  )[0];
+  const pill = covenRunPill({ run: running, paused: true });
+  assert.equal(pill?.label, "Paused");
+  assert.equal(pill?.tone, "warning");
+  assert.equal(pill?.live, false);
+});
+
+test("a failure outranks the mode in the pill, as it does in the rail", () => {
+  const failing = buildCovenRuns(
+    [
+      user({ id: "u1", responseMode: "broadcast" }),
+      reply({ id: "a", replyTo: "u1", status: "streaming", text: "x" }),
+      reply({ id: "b", familiarId: "echo", replyTo: "u1", status: "error", error: "boom" }),
+      reply({ id: "c", familiarId: "kitty", replyTo: "u1" }),
+    ],
+    { fallbackMode: "broadcast" },
+  )[0];
+  const pill = covenRunPill({ run: failing });
+  assert.equal(pill?.label, "Broadcast — 1 failed");
+  assert.equal(pill?.tone, "danger");
+  assert.equal(pill?.live, false);
+});
+
+test("a settled run keeps its last word, with its final duration", () => {
+  const done = buildCovenRuns(
+    [
+      user({ id: "u1", responseMode: "round-robin" }),
+      reply({ id: "a", replyTo: "u1", status: "done", text: "ok", durationMs: 74_000 }),
+    ],
+    { fallbackMode: "round-robin" },
+  )[0];
+  const pill = covenRunPill({ run: done });
+  assert.equal(pill?.label, "Run complete");
+  assert.equal(pill?.tone, "success");
+  assert.equal(pill?.live, false);
+  // No live clock; the settled duration travels with it so a reload agrees.
+  assert.equal(pill?.startedAtMs, null);
+  assert.equal(formatCovenDuration(pill?.elapsedMs ?? 0), "1m 14s");
+});
+
+test("no coven, no pill", () => {
+  assert.equal(covenRunPill({ run: null }), null);
+  // A user turn whose targets all left has no summary and nothing to report.
+  const empty = buildCovenRuns([user({ id: "u1" })], { fallbackMode: "round-robin" })[0];
+  assert.equal(covenRunPill({ run: empty }), null);
 });
