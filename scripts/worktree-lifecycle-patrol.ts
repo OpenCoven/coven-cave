@@ -12,6 +12,10 @@ import {
   repositoryMaintenanceCapabilities,
   verifyMaintenanceGateOwnership,
 } from "./maintenance-gate.mjs";
+import {
+  assessMaintenancePlaneAdmission,
+  type MaintenancePlaneCapabilities,
+} from "../src/lib/maintenance-plane-admission.ts";
 import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
 import {
   createGitRetirementOperations,
@@ -30,6 +34,13 @@ type Options = {
   nowMs: number;
   apply: boolean;
   maxRetire: number;
+  /**
+   * Opt in to running --apply while the known-pending maintenance planes
+   * (coven/beads/github, cave-wqa0b.2/.3/.4) are unenforced. Never implicit:
+   * absent this, --apply behaves exactly as it did. The local plane is still
+   * required — see assessMaintenancePlaneAdmission.
+   */
+  allowUnenforcedPlanes: boolean;
 };
 
 type PatrolInventory = ReturnType<typeof collectWorktreeLifecycleInventory>;
@@ -120,6 +131,7 @@ export function parseArgs(argv: string[]): Options {
     nowMs: Date.now(),
     apply: false,
     maxRetire: parseMaxRetire(undefined),
+    allowUnenforcedPlanes: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -137,6 +149,9 @@ export function parseArgs(argv: string[]): Options {
         break;
       case "--apply":
         options.apply = true;
+        break;
+      case "--allow-unenforced-planes":
+        options.allowUnenforcedPlanes = true;
         break;
       case "--max-retire": {
         const value = argv[++index];
@@ -176,11 +191,17 @@ sessions, pull requests, workflow runs, and live process cwd ownership. It never
 repairs metadata, removes worktrees, or removes branches unless --apply becomes
 maintenance planes are enforced.
 
---apply is currently unusable until the Beads and GitHub maintenance planes
-land. Cave already coordinates its local fence with Coven's released maintenance
-protocol, but it refuses with exit 2 before assessing any unit while either
-remaining plane is unenforced. Retire cleanup-ready units by hand through the
-archive-tag route in CLAUDE.md until that changes (cave-3aqvr).`);
+--apply refuses with exit 2 before assessing any unit while the Beads or GitHub
+maintenance planes are unenforced (cave-3aqvr). Cave already coordinates its
+local fence with Coven's released maintenance protocol, so the coven plane is
+enforced. Retire cleanup-ready units by hand through the archive-tag route in
+CLAUDE.md, or opt in below.
+
+--allow-unenforced-planes opts in to running --apply while the known-pending
+planes (coven/beads/github, cave-wqa0b.2/.3/.4) are unenforced. The local plane
+is still required and is never waivable: it performs the exclusion that stops
+two actors retiring the same unit. Every degraded run is announced on stderr
+naming the waived planes before any unit is touched (cave-s03wp).`);
 }
 
 function errorMessage(error: unknown): string {
@@ -666,8 +687,36 @@ export function main(argv = process.argv.slice(2)): number {
 
   if (options.apply) {
     const capabilities = repositoryMaintenanceCapabilities();
-    if (!capabilities.complete) {
+    const admission = assessMaintenancePlaneAdmission({
+      capabilities: capabilities as unknown as MaintenancePlaneCapabilities,
+      allowUnenforcedPlanes: options.allowUnenforcedPlanes,
+    });
+    if (!admission.ok) {
+      // A refusal the flag cannot lift reads differently from the ordinary
+      // gate-incomplete one, and saying so stops an operator adding the flag
+      // again harder when the local plane is what is missing.
+      if (admission.code !== "gate-incomplete") {
+        console.error(`worktree-lifecycle-patrol: --apply refused; ${admission.diagnostic}`);
+        return 2;
+      }
       return renderApplyUnavailable(options, inventory, summary, capabilities);
+    }
+    if (admission.degraded) {
+      // Audit before acting, not after: if the run dies mid-retirement, the
+      // record of which planes were waived must already exist. stderr so it
+      // survives --json consumers reading stdout.
+      console.error(
+        [
+          "worktree-lifecycle-patrol: DEGRADED APPLY — proceeding with unenforced maintenance planes",
+          `  waived: ${admission.waivedPlanes.join(", ")}`,
+          ...admission.waivedPlanes.map(
+            (plane) =>
+              `    ${plane.padEnd(7)} ${capabilities[plane]?.source || "no source recorded"}`,
+          ),
+          "  local plane is enforced; exclusion still applies.",
+          "  Authorized by --allow-unenforced-planes (cave-s03wp).",
+        ].join("\n"),
+      );
     }
   }
 
