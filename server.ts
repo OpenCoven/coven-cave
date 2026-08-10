@@ -624,6 +624,15 @@ function isPtyAuthRequired(): boolean {
   return Boolean(accessToken() || SIDECAR_TOKEN);
 }
 
+function shouldRejectUnauthenticatedPtyUpgrade({
+  sidecarTokenConfigured = false,
+  accessTokenConfigured = false,
+  tokenAuthenticated = false,
+} = {}) {
+  if (tokenAuthenticated) return false;
+  return sidecarTokenConfigured || accessTokenConfigured;
+}
+
 function isAuthorized(req: IncomingMessage, query: Record<string, string | string[] | undefined>): boolean {
   if (!isPtyAuthRequired()) return false;
 
@@ -1051,8 +1060,15 @@ function handlePtyConnection(
   });
 }
 
+function loopbackHostname(raw = process.env.HOSTNAME) {
+  if (raw === "127.0.0.1" || raw === "localhost" || raw === "::1") {
+    return raw;
+  }
+  return "127.0.0.1";
+}
+
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME ?? "127.0.0.1";
+const hostname = loopbackHostname();
 const port = cavePort();
 
 const app = next({ dev, hostname, port });
@@ -1101,14 +1117,10 @@ server.on("upgrade", (req, socket, head) => {
   // forwards the `<host>.ts.net` Host) legitimately arrives with a
   // non-loopback Host and must pass the source gate on the strength of its
   // token — mirroring proxy.ts's isAllowedApiHost relaxation on REST.
-  //
-  // An allowlisted tailnet node is a credential in its own right (cave-zm6pn):
-  // its WireGuard-backed device identity is strictly stronger evidence than the
-  // shared bearer token this branch was built for, so it satisfies both the
-  // source gate below and the auth requirement after it.
-  const tailnetAuthenticated = resolveTailnetPeer(req) !== null;
-  const tokenAuthenticated =
-    tailnetAuthenticated || (isPtyAuthRequired() ? isAuthorized(req, query) : false);
+  // Forwarding headers are not credentials at this boundary: a local process
+  // can forge them, so allowlisted tailnet identity alone must never authorize
+  // spawning or adopting a shell.
+  const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
 
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
@@ -1116,19 +1128,14 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  // Enforce token auth whenever the server has a remote/mobile credential.
-  // With no token set — the local desktop app and dev server — the loopback
-  // host+origin gate above is the protection, and credential-less connections
-  // are the local app itself. #714 dropped this and 401'd every local terminal
-  // (reintroducing the v0.0.72 "Terminal connection failed" regression that
-  // server-pty-ws.test.ts warns about). Native mobile mode configures only
-  // COVEN_CAVE_AUTH_TOKEN; require that sidecar token here too so
-  // Tailscale-forwarded PTY upgrades cannot become credential-less shells.
-  // A direct loopback peer (verified off the socket, never forwarded — see
-  // isDirectLoopbackRequest) is the local app or a local browser and is
-  // exempt, mirroring proxy.ts's local-peer exemption on REST (cave-vn2r);
-  // Tailscale-forwarded upgrades carry forwarding headers and stay gated.
-  if (isPtyAuthRequired() && !tokenAuthenticated && !isDirectLoopbackRequest(req)) {
+  // Any configured PTY credential closes the credential-less path, including
+  // direct loopback: another local account or process is not the paired app.
+  // Plain development remains credential-less only when neither token exists.
+  if (shouldRejectUnauthenticatedPtyUpgrade({
+    sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
+    accessTokenConfigured: Boolean(accessToken()),
+    tokenAuthenticated,
+  })) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
