@@ -79,6 +79,11 @@ for (const malformed of ["[", "[action"]) {
   const r = extractNextPaths("Answer.\n<coven:next-paths>\n- [reply] first next step (imperative, <= ~7 words)\n- [task] second next step\n- [reply] Draft the follow-up message\n- [reply] Draft the follow-up message (imperative, <= ~7 words)\n- [task] Create a task for the follow-up\n- [action:open-tasks] Review open tasks\n</coven:next-paths>");
   assert.deepEqual(r.suggestions, []);
 }
+// The former template block stays inert even when it is echoed verbatim.
+{
+  const r = extractNextPaths("Answer.\n<coven:next-paths>\n- [reply] first next step (imperative, <= ~7 words)\n- [task] second next step\n- [reply] Draft the follow-up message\n- [task] Create a task for the follow-up\n- [action:open-tasks] Review open tasks\n</coven:next-paths>");
+  assert.deepEqual(r.suggestions, []);
+}
 // Only exact template echoes are suppressed; useful longer suggestions remain available.
 {
   const r = extractNextPaths("Answer.\n<coven:next-paths>\n- [action:open-tasks] Review open tasks for this project\n- [reply] Draft the follow-up message to Jules\n</coven:next-paths>");
