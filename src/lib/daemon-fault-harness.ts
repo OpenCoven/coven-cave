@@ -16,8 +16,9 @@ import type { Socket } from "node:net";
  *  - **Bounded.** Every accepted socket is tracked and destroyed on `close()`.
  *    Node's `server.close()` only stops new connections and waits for existing
  *    ones to drain; a deliberately hung response never drains. Without the
- *    socket registry, `hang` and `partial-response` would leak a handle and
- *    hold the process open past the test.
+ *    socket registry, `hang` would leak a handle and hold the process open
+ *    past the test. (Only `hang` — the other destructive modes close their
+ *    own socket, so they were never the leak risk.)
  *  - **Deterministic.** Faults are driven by request count, not wall-clock
  *    timing, so `delayedReadyAfter: 3` means the fourth request succeeds on a
  *    loaded CI runner exactly as it does locally. Where a delay is unavoidable
@@ -71,6 +72,11 @@ export type DaemonFaultHarness = {
 };
 
 const HEALTHY_BODY = JSON.stringify({ ok: true, status: "ready" });
+
+/** How long close() waits for a destroyed socket to emit "close" before giving
+ *  up on it. Loopback sockets close in microseconds; this only ever elapses for
+ *  a genuinely wedged handle, which is precisely the case worth reporting. */
+const SOCKET_CLOSE_GRACE_MS = 250;
 
 export async function startDaemonFaultHarness(
   options: DaemonFaultOptions,
@@ -148,6 +154,12 @@ export async function startDaemonFaultHarness(
     url: `http://127.0.0.1:${port}`,
     port,
     requestCount: () => requests,
+    // Raw registry size, deliberately not filtered by `socket.destroyed`.
+    // Filtering would exclude a socket that was destroyed but never actually
+    // emitted "close" — a genuinely wedged handle — and report it as no leak,
+    // which is the same vacuousness this count exists to avoid, one level down.
+    // close() below bounds its wait, so a wedged socket surfaces here as a
+    // non-zero count instead of hanging the suite.
     openSocketCount: () => sockets.size,
     async close() {
       if (closed) return;
@@ -163,6 +175,11 @@ export async function startDaemonFaultHarness(
       // Either way the leak assertions, and stressDaemonLifecycle's
       // leakedSockets, become true by construction. Awaiting is what makes a
       // zero count mean the sockets genuinely closed.
+      // The wait is bounded. An unbounded one would trade the vacuous count for
+      // a hung teardown if a socket never emitted "close" — and a suite that
+      // hangs on the failure path is the exact thing this harness exists to
+      // prevent. On timeout close() resolves anyway and the socket stays in the
+      // registry, so openSocketCount() reports the leak rather than hiding it.
       const pending = [...sockets];
       await Promise.all(
         pending.map(
@@ -172,7 +189,12 @@ export async function startDaemonFaultHarness(
                 resolve();
                 return;
               }
-              socket.once("close", () => resolve());
+              const timer = setTimeout(resolve, SOCKET_CLOSE_GRACE_MS);
+              timer.unref?.();
+              socket.once("close", () => {
+                clearTimeout(timer);
+                resolve();
+              });
               socket.destroy();
             }),
         ),
