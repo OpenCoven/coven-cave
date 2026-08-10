@@ -34,6 +34,7 @@
     "postbuild": "node scripts/bundle-budget.mjs && node scripts/standalone-budget.mjs",
     "test:bundle": "node scripts/bundle-budget.mjs",
     "bench:conversation-list": "node --experimental-strip-types scripts/conversation-list-benchmark.mjs",
+    "bench:daemon-reliability": "node --experimental-strip-types scripts/daemon-reliability-benchmark.mjs",
     "analyze:bundle": "next experimental-analyze --output",
     "codemod:design": "node scripts/codemods/tokenize-tsx-design.mjs",
     "codemod:design:check": "node scripts/codemods/tokenize-tsx-design.mjs --check",

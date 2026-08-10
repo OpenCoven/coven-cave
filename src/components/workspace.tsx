@@ -87,6 +87,7 @@ import {
   createDaemonConnectionSupervisor,
   type DaemonConnectionPoll,
 } from "@/lib/daemon-connection-supervisor";
+import { createTauriDaemonReliabilityObserver } from "@/lib/daemon-reliability";
 import { createDaemonTravelReconcileRequester } from "@/lib/daemon-travel-reconcile-client";
 import {
   createDaemonDesktopAutoStartCoordinator,
@@ -1069,6 +1070,9 @@ export function Workspace() {
   }, [tauriPlatform]);
 
   useEffect(() => {
+    const reliabilityObserver = createTauriDaemonReliabilityObserver({
+      tauriAvailable: () => tauriPlatform === "desktop",
+    });
     const requester = createDaemonTravelReconcileRequester({
       request: async ({ signal }) => {
         const response = await fetch("/api/daemon/travel/reconcile", {
@@ -1093,6 +1097,7 @@ export function Workspace() {
         };
       },
       publish: applyDaemonConnectionPoll,
+      observe: reliabilityObserver,
       isVisible: () => !document.hidden,
     });
     daemonTravelReconcileRequesterRef.current = requester;
@@ -1114,7 +1119,7 @@ export function Workspace() {
       daemonTravelReconcileRequesterRef.current = null;
       daemonConnectionSupervisorRef.current = null;
     };
-  }, [applyDaemonConnectionPoll]);
+  }, [applyDaemonConnectionPoll, tauriPlatform]);
 
   useRefreshOnFocus(() => {
     void daemonConnectionSupervisorRef.current?.refresh({ fresh: true });

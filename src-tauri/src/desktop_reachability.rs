@@ -1722,12 +1722,13 @@ fn run_sidecar_daemon() -> Result<i32, String> {
                 sidecar_output_text(&sidecar_output)
             ));
         }
-        PortWaitResult::Refused(error) => {
+        PortWaitResult::Refused(refusal) => {
             let _ = child.kill();
             let _ = child.wait();
             let _ = std::fs::remove_file(&state_path);
             return Err(format!(
-                "background sidecar failed its authenticated readiness handshake on port {port}: {error}. Bounded sidecar output tail:\n{}",
+                "background sidecar failed its authenticated readiness handshake on port {port}: {}. Bounded sidecar output tail:\n{}",
+                refusal.message,
                 sidecar_output_text(&sidecar_output)
             ));
         }
