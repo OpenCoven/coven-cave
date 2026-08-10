@@ -351,6 +351,22 @@ export function createCovenMaintenanceClient({
   };
 }
 
+/**
+ * `heldBy` reasons that PROVE the Coven fence is no longer held by this handle.
+ *
+ * Deliberately a small allow-list rather than "anything that is not ok". The
+ * two reasons excluded are the ones where the fence may still be standing:
+ * `coven-still-draining` (the lease exists, it just has not finished draining)
+ * and `coven-writers-active` (we hold it and writers are still inside). A
+ * failure to reach Coven at all is likewise not proof of anything, so it is
+ * absent here too and leaves the local fence held.
+ */
+const COVEN_FENCE_PROVABLY_GONE = new Set([
+  "coven-owner-missing", // no owner record at all
+  "coven-not-owner", // someone else owns it; ours is gone
+  "coven-expired", // the lease ran out
+]);
+
 const defaultLocalFence = {
   acquire: acquireLocalMaintenanceGate,
   heartbeat: heartbeatLocalMaintenanceGate,
@@ -452,10 +468,43 @@ export function createRepositoryMaintenanceCoordinator({
       const coven = covenClient.release(handle.coven);
 
       if (!coven.ok) {
+        // The Coven release failed, but that does not by itself mean the Coven
+        // fence is still held — the commonest cause is a lease that already
+        // expired, in which case there is nothing left to split. Ask.
+        //
+        // Holding the local fence on an unknown Coven state is deliberate
+        // (`acquire` reasons about it above). Holding it when the Coven fence
+        // is provably gone protects nothing and strands the local fence for
+        // its full TTL, refusing every acquisition in the repository until it
+        // expires — and then refusing them as `gate-stale`. That was a
+        // repo-wide outage per failed run (cave-nom3z).
+        const verified = covenClient.verify(handle.coven);
+        const covenGone = !verified.ok && COVEN_FENCE_PROVABLY_GONE.has(verified.reason);
+        if (!covenGone) {
+          return {
+            ok: false,
+            reason: `coven-release-failed: ${coven.reason ?? "unknown"}`,
+            recoveryHandle: handle,
+          };
+        }
+        const local = localFence.release(handle.local);
         return {
           ok: false,
+          // Still not ok: the caller asked for both fences to come down and
+          // the Coven side did not do so cleanly. But the local fence is now
+          // released, so this reports a failed release rather than a held one.
           reason: `coven-release-failed: ${coven.reason ?? "unknown"}`,
-          recoveryHandle: handle,
+          covenFenceGone: verified.reason,
+          localReleased: local.ok,
+          // Carry WHY local is still held. This is the recovery path — the
+          // caller is holding a handle it has to do something about — and
+          // "false" without a reason is the least useful thing to hand it.
+          ...(local.ok
+            ? {}
+            : {
+                localReleaseFailed: local.reason ?? "unknown",
+                recoveryHandle: { local: handle.local },
+              }),
         };
       }
       const local = localFence.release(handle.local);
