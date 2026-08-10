@@ -16,8 +16,8 @@ import type { Socket } from "node:net";
  *  - **Bounded.** Every accepted socket is tracked and destroyed on `close()`.
  *    Node's `server.close()` only stops new connections and waits for existing
  *    ones to drain; a deliberately hung response never drains. Without the
- *    socket registry, `hang` and `slow-body` would leak a handle and hold the
- *    process open past the test.
+ *    socket registry, `hang` and `partial-response` would leak a handle and
+ *    hold the process open past the test.
  *  - **Deterministic.** Faults are driven by request count, not wall-clock
  *    timing, so `delayedReadyAfter: 3` means the fourth request succeeds on a
  *    loaded CI runner exactly as it does locally. Where a delay is unavoidable
@@ -152,8 +152,25 @@ export async function startDaemonFaultHarness(
     async close() {
       if (closed) return;
       closed = true;
-      for (const socket of sockets) socket.destroy();
-      sockets.clear();
+      // Destroy each socket and WAIT for its "close" event, which is what
+      // removes it from the registry. Clearing the set here instead would make
+      // openSocketCount() return 0 unconditionally — the leak assertions in the
+      // tests, and stressDaemonLifecycle's leakedSockets, would then be true by
+      // construction and could never catch a real orphan.
+      const pending = [...sockets];
+      await Promise.all(
+        pending.map(
+          (socket) =>
+            new Promise<void>((resolve) => {
+              if (socket.destroyed && !sockets.has(socket)) {
+                resolve();
+                return;
+              }
+              socket.once("close", () => resolve());
+              socket.destroy();
+            }),
+        ),
+      );
       await new Promise<void>((resolve) => {
         // Already-closed is not an error here: `crash-after` closes the server
         // itself, and a harness whose cleanup threw for doing its job would

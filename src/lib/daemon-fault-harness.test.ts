@@ -202,6 +202,36 @@ test("an oversized body is delivered whole so a client cap has something to reje
   }
 });
 
+test("openSocketCount reflects real sockets, so the leak assertions can fail", async () => {
+  // close() used to empty the registry outright, which made the count read 0
+  // whether or not a socket survived — a leak detector that could not detect a
+  // leak, which is worse than none because it reads as coverage. The fix is
+  // that close() now awaits each socket's real "close" event instead.
+  //
+  // To be precise about what this test does and does not do: it pins that the
+  // count is not identically zero, so a regression back to a stub is caught. It
+  // would NOT by itself have caught the original bug, since both assertions
+  // below also held under it. What makes the zero meaningful is close()'s wait.
+  const harness = await startDaemonFaultHarness({ mode: "hang" });
+  const inFlight = fetch(`${harness.url}/health`, {
+    signal: AbortSignal.timeout(HANG_DEADLINE_MS),
+  }).catch(() => undefined);
+
+  // Wait for the server to actually accept the connection before observing.
+  const deadline = Date.now() + 1_000;
+  while (harness.openSocketCount() === 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.ok(
+    harness.openSocketCount() > 0,
+    "an accepted, unanswered connection must be visible in the count",
+  );
+
+  await inFlight;
+  await harness.close();
+  assert.equal(harness.openSocketCount(), 0, "and must drop to zero once closed");
+});
+
 test("repeated lifecycle churn leaks no sockets and rebinds cleanly", async () => {
   const { ports, leakedSockets } = await stressDaemonLifecycle({ cycles: 8 });
   assert.equal(leakedSockets, 0, "an orphaned socket after close is the leak this catches");
