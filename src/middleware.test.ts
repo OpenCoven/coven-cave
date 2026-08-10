@@ -134,7 +134,7 @@ assert.doesNotMatch(
 assert.match(
   source,
   /HEADER_CSRF_TRUSTED_API_PATHS = new Set\(\[\s*"\/api\/app\/native-readiness",\s*"\/api\/mobile-handoff",\s*"\/api\/mobile-token\/refresh",\s*\]\)/,
-  "header-token CSRF relaxation must be limited to explicitly mobile-capable APIs",
+  "header-token CSRF relaxation must be limited to explicitly sidecar-token-authenticated native/mobile APIs",
 );
 assert.doesNotMatch(
   source,

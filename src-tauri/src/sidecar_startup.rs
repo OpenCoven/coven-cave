@@ -301,7 +301,10 @@ fn decode_chunked_body(encoded: &[u8]) -> Result<Vec<u8>, String> {
             .map_err(|_| "readiness endpoint returned an invalid chunk size".to_string())?;
         remaining = &remaining[line_end + 2..];
         if size == 0 {
-            return Ok(decoded);
+            if remaining == b"\r\n" || remaining.ends_with(b"\r\n\r\n") {
+                return Ok(decoded);
+            }
+            return Err("readiness endpoint returned malformed chunk terminator".to_string());
         }
         if remaining.len() < size + 2 || &remaining[size..size + 2] != b"\r\n" {
             return Err("readiness endpoint returned a truncated chunk".to_string());

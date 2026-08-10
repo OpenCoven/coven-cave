@@ -479,6 +479,15 @@ fn native_readiness_accepts_chunked_http_and_rejects_malformed_chunks() {
     assert!(validate_readiness_response(malformed)
         .expect_err("truncated chunks must fail")
         .contains("truncated chunk"));
+
+    let truncated_terminator = format!(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n",
+        body.len(),
+        body
+    );
+    assert!(validate_readiness_response(truncated_terminator.as_bytes())
+        .expect_err("truncated terminal chunks must fail")
+        .contains("malformed chunk terminator"));
 }
 
 #[cfg(target_os = "windows")]
