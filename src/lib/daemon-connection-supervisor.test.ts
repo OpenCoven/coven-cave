@@ -6,6 +6,7 @@ import {
   daemonConnectionPollDelay,
   type DaemonConnectionPoll,
 } from "./daemon-connection-supervisor.ts";
+import type { DaemonReliabilityMeasurementInput } from "./daemon-reliability.ts";
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -78,12 +79,14 @@ function authExpiredPoll(): DaemonConnectionPoll {
 
 function createRig(options: { random?: () => number; visible?: boolean } = {}) {
   let visible = options.visible ?? true;
+  let now = 1_000;
   let nextHandle = 1;
   let inFlight = 0;
   let peakInFlight = 0;
   const requests: RequestRecord[] = [];
   const publishes: Array<{ poll: DaemonConnectionPoll; context: { fresh: boolean } }> = [];
   const timers: TimerRecord[] = [];
+  const observations: DaemonReliabilityMeasurementInput[] = [];
 
   function requestAt(index: number): RequestRecord {
     const record = requests[index];
@@ -103,6 +106,14 @@ function createRig(options: { random?: () => number; visible?: boolean } = {}) {
 
   function fireLatestTimer(): TimerRecord {
     const timer = latestPendingTimer();
+    timer.fired = true;
+    timer.callback();
+    return timer;
+  }
+
+  function firePendingTimer(delayMs: number): TimerRecord {
+    const timer = pendingTimers().find((entry) => entry.delayMs === delayMs);
+    assert.ok(timer, `expected a pending ${delayMs}ms timer`);
     timer.fired = true;
     timer.callback();
     return timer;
@@ -132,6 +143,9 @@ function createRig(options: { random?: () => number; visible?: boolean } = {}) {
     publish(poll, context) {
       publishes.push({ poll, context });
     },
+    observe(measurement) {
+      observations.push(measurement);
+    },
     schedule(callback, delayMs) {
       const timer = {
         handle: nextHandle,
@@ -150,21 +164,27 @@ function createRig(options: { random?: () => number; visible?: boolean } = {}) {
     },
     random: options.random ?? (() => 0.5),
     isVisible: () => visible,
+    now: () => now,
   });
 
   return {
     supervisor,
     requests,
     publishes,
+    observations,
     timers,
     requestAt,
     pendingTimers,
     latestPendingTimer,
     fireLatestTimer,
+    firePendingTimer,
     resolveRequest,
     rejectRequest,
     setExternalVisibility(value: boolean) {
       visible = value;
+    },
+    advanceNow(durationMs: number) {
+      now += durationMs;
     },
     get inFlight() {
       return inFlight;
@@ -212,7 +232,8 @@ test("ordinary refreshes coalesce and timer-driven polls stay serial", async () 
   assert.equal(rig.requests.length, 1);
   assert.equal(rig.inFlight, 1);
   assert.equal(rig.peakInFlight, 1);
-  assert.equal(rig.timers.length, 0);
+  assert.equal(rig.pendingTimers().length, 1);
+  assert.equal(rig.latestPendingTimer().delayMs, 30_000);
 
   await rig.resolveRequest(0, runningPoll());
   await Promise.all([first, second]);
@@ -230,8 +251,9 @@ test("ordinary refreshes coalesce and timer-driven polls stay serial", async () 
   assert.equal(third, fourth);
   assert.equal(rig.requests.length, 2);
   assert.equal(rig.timers.length, timerCountBeforePendingCoalesce);
-  assert.equal(rig.pendingTimers().length, 0);
-  assert.equal(rig.timers.some((timer) => timer.cancelled), false);
+  assert.equal(rig.pendingTimers().length, 1);
+  assert.equal(rig.latestPendingTimer().delayMs, 30_000);
+  assert.equal(rig.timers.filter((timer) => timer.cancelled).length, 1);
 
   await rig.resolveRequest(1, runningPoll("hub"));
   await Promise.all([third, fourth]);
@@ -323,7 +345,8 @@ test("fresh refresh cancels a scheduled timer before starting a new request", as
   const pending = rig.supervisor.refresh({ fresh: true });
 
   assert.equal(staleTimer.cancelled, true);
-  assert.equal(rig.pendingTimers().length, 0);
+  assert.equal(rig.pendingTimers().length, 1);
+  assert.equal(rig.latestPendingTimer().delayMs, 30_000);
   assert.equal(rig.requests.length, 2);
   assert.equal(rig.requestAt(1).fresh, true);
 
@@ -468,9 +491,9 @@ test("coalescing onto a synchronously failing start preserves the retry timer", 
       context: { fresh: false },
     },
   ]);
-  assert.equal(timers.filter((timer) => !timer.cancelled && !timer.fired).length, 1);
+  assert.equal(timers.filter((timer) => !timer.cancelled && !timer.fired).length, 2);
   assert.equal(timers.filter((timer) => timer.cancelled).length, 0);
-  assert.equal(timers[0]?.delayMs, 5_000);
+  assert.ok(timers.some((timer) => timer.delayMs === 5_000 && !timer.cancelled));
   assert.equal(
     publishes.some(({ poll }) => poll.error?.includes("socket exploded loudly") ?? false),
     false,
@@ -498,4 +521,169 @@ test("non-abort rejections publish a generic unavailable poll and back off", asy
     },
   ]);
   assert.equal(rig.latestPendingTimer().delayMs, 5_000);
+});
+
+test("observer emits one successful terminal record after failed reconnect polls", async () => {
+  const rig = createRig({ random: () => 0.5 });
+
+  rig.supervisor.start();
+  rig.advanceNow(250);
+  await rig.resolveRequest(0, offlinePoll());
+  assert.equal(rig.observations.length, 0);
+
+  rig.advanceNow(5_000);
+  rig.firePendingTimer(5_000);
+  rig.advanceNow(500);
+  await rig.resolveRequest(1, offlinePoll());
+  assert.equal(rig.observations.length, 0);
+
+  rig.advanceNow(10_000);
+  rig.firePendingTimer(10_000);
+  rig.advanceNow(500);
+  await rig.resolveRequest(2, runningPoll());
+
+  assert.deepEqual(rig.observations, [{
+    operation: "frontend_reconnect",
+    outcome: "success",
+    readiness: "authenticated",
+    durationMs: 16_250,
+    attempts: 3,
+    backoffMs: 15_000,
+    timeoutMs: 30_000,
+    crashCount: 0,
+    restartCount: 0,
+  }]);
+});
+
+test("observer skips routine healthy cadence after the initial authenticated connection", async () => {
+  const rig = createRig({ random: () => 0.5 });
+
+  rig.supervisor.start();
+  await rig.resolveRequest(0, runningPoll());
+  assert.equal(rig.observations.length, 1);
+
+  rig.firePendingTimer(5_000);
+  rig.advanceNow(25);
+  await rig.resolveRequest(1, runningPoll());
+
+  assert.equal(rig.observations.length, 1);
+});
+
+for (const responseStatus of [409, 423]) {
+  test(`${responseStatus} contention closes the reconnect episode without unscheduled backoff`, async () => {
+    const rig = createRig({ random: () => 0.5 });
+
+    rig.supervisor.start();
+    rig.advanceNow(25);
+    await rig.resolveRequest(0, {
+      responseStatus,
+      responseOk: false,
+      payload: null,
+    });
+
+    assert.deepEqual(rig.observations, [{
+      operation: "frontend_reconnect",
+      outcome: "blocked",
+      failureClass: "contention",
+      readiness: "none",
+      durationMs: 25,
+      attempts: 1,
+      backoffMs: 0,
+      timeoutMs: 30_000,
+      crashCount: 0,
+      restartCount: 0,
+    }]);
+  });
+}
+
+test("a reconnect measurement times out after 30s while operational retries continue", async () => {
+  const rig = createRig({ random: () => 0.5 });
+
+  rig.supervisor.start();
+  await rig.resolveRequest(0, offlinePoll());
+  rig.advanceNow(30_000);
+  rig.firePendingTimer(30_000);
+
+  assert.deepEqual(rig.observations, [{
+    operation: "frontend_reconnect",
+    outcome: "failure",
+    failureClass: "timeout",
+    readiness: "none",
+    durationMs: 30_000,
+    attempts: 1,
+    backoffMs: 5_000,
+    timeoutMs: 30_000,
+    crashCount: 0,
+    restartCount: 0,
+  }]);
+
+  rig.firePendingTimer(5_000);
+  await rig.resolveRequest(1, runningPoll());
+
+  assert.equal(rig.observations.length, 2);
+  assert.equal(rig.observations[1]?.outcome, "success");
+  assert.equal(rig.observations[1]?.attempts, 1);
+});
+
+test("late authenticated success after timeout establishes health without fabricating recovery", async () => {
+  const rig = createRig({ random: () => 0.5 });
+
+  rig.supervisor.start();
+  rig.advanceNow(30_000);
+  rig.firePendingTimer(30_000);
+
+  assert.deepEqual(rig.observations, [{
+    operation: "frontend_reconnect",
+    outcome: "failure",
+    failureClass: "timeout",
+    readiness: "none",
+    durationMs: 30_000,
+    attempts: 1,
+    backoffMs: 0,
+    timeoutMs: 30_000,
+    crashCount: 0,
+    restartCount: 0,
+  }]);
+
+  await rig.resolveRequest(0, runningPoll());
+  assert.equal(rig.observations.length, 1);
+  assert.equal(rig.latestPendingTimer().delayMs, 5_000);
+
+  rig.firePendingTimer(5_000);
+  rig.advanceNow(25);
+  await rig.resolveRequest(1, runningPoll());
+
+  assert.equal(rig.publishes.length, 2);
+  assert.equal(rig.observations.length, 1);
+});
+
+test("observer failures are isolated and stopping an active episode records cancellation", async () => {
+  const observations: DaemonReliabilityMeasurementInput[] = [];
+  let now = 10;
+  const supervisor = createDaemonConnectionSupervisor({
+    request: async () => new Promise<DaemonConnectionPoll>(() => {}),
+    publish() {},
+    observe(measurement) {
+      observations.push(measurement);
+      if (measurement.outcome !== "cancelled") throw new Error("observer failed");
+    },
+    now: () => now,
+  });
+
+  supervisor.start();
+  now = 25;
+  supervisor.stop();
+
+  assert.deepEqual(observations, [{
+    operation: "frontend_reconnect",
+    outcome: "cancelled",
+    failureClass: "cancellation",
+    readiness: "none",
+    durationMs: 15,
+    attempts: 1,
+    backoffMs: 0,
+    timeoutMs: 30_000,
+    crashCount: 0,
+    restartCount: 0,
+  }]);
 });

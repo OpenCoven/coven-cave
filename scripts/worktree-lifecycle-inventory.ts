@@ -2374,12 +2374,39 @@ function recordIsAttributable(record: StructuredMetadataRecord): boolean {
   return record.branchUsable || normalizeAbsoluteWorktreePath(record.path) !== null;
 }
 
+/**
+ * Resolve one unit's lifecycle metadata.
+ *
+ * Returns errors in TWO buckets, and the split is the whole point:
+ *
+ *   - `errors` — everything that disqualifies THIS unit. The unit fails closed
+ *     on all of it, exactly as before.
+ *   - `globalErrors` — the subset of `errors` that is repository-wide, i.e.
+ *     true regardless of which unit is being resolved. Only these may abort an
+ *     operation on some OTHER unit.
+ *
+ * Before cave-1x9pz the two were returned as one list, and `create.ts` tried to
+ * recover the distinction downstream by subtracting the record-level claim
+ * errors from it by string equality. That only ever identified one of the five
+ * kinds produced here, so an ownership conflict, a duplicate record, a
+ * duplicate path or a path/branch mismatch — all of them attributable to a
+ * single named unit — leaked out as repository-wide and refused creation for
+ * every unrelated bead. Which is the same outage cave-g9byt fixed for
+ * record-level errors, resurfacing through the four cases it did not cover.
+ *
+ * Nothing downstream has to guess now: the classification is made here, where
+ * the reason each error exists is still in scope.
+ */
 function metadataFor(
   branch: string | null,
   worktreePath: string | null,
   tasks: BeadTask[],
-): { metadata: WorktreeLifecycleMetadata | null; errors: string[] } {
-  if (!branch) return { metadata: null, errors: [] };
+): {
+  metadata: WorktreeLifecycleMetadata | null;
+  errors: string[];
+  globalErrors: string[];
+} {
+  if (!branch) return { metadata: null, errors: [], globalErrors: [] };
   const allRecords = tasks.flatMap((task) => task.structured);
   // One malformed record used to deny every unit in the repository, because
   // every task's record errors were folded in here wholesale. cave-l11sw wrote
@@ -2412,18 +2439,24 @@ function metadataFor(
             ...new Set(conflictingPathRecords.map((record) => record.branch || "<invalid branch>")),
           ].join(", ")}`,
         ];
+  // `globalErrors` above does not read `branch` or `worktreePath` at all — it is
+  // derived from `tasks` alone and is therefore identical for every unit. That
+  // is what makes it safe to abort someone else's operation on. The ownership
+  // conflict beside it names THIS unit's contested path, so it is not.
+  const repositoryWide = [...new Set(globalErrors)];
   const inventoryErrors = [...new Set([...globalErrors, ...ownershipErrors])];
   if (inventoryErrors.length > 0) {
-    return { metadata: null, errors: inventoryErrors };
+    return { metadata: null, errors: inventoryErrors, globalErrors: repositoryWide };
   }
   if (records.length > 1) {
     return {
       metadata: null,
       errors: [`duplicate structured worktree metadata records for ${branch}`],
+      globalErrors: [],
     };
   }
   const record = records[0];
-  if (!record) return { metadata: null, errors: [] };
+  if (!record) return { metadata: null, errors: [], globalErrors: [] };
   const normalizedRecordPath = normalizeAbsoluteWorktreePath(record.path);
   if (
     normalizedRecordPath !== null &&
@@ -2435,10 +2468,11 @@ function metadataFor(
     return {
       metadata: null,
       errors: [`duplicate structured worktree metadata paths for ${record.path}`],
+      globalErrors: [],
     };
   }
   if (record.errors.length > 0 || !record.metadata) {
-    return { metadata: null, errors: record.errors };
+    return { metadata: null, errors: record.errors, globalErrors: [] };
   }
   if (
     normalizedWorktreePath !== null &&
@@ -2447,9 +2481,10 @@ function metadataFor(
     return {
       metadata: null,
       errors: [`structured worktree metadata path does not match ${branch}`],
+      globalErrors: [],
     };
   }
-  return { metadata: record.metadata, errors: [] };
+  return { metadata: record.metadata, errors: [], globalErrors: [] };
 }
 
 export function probeRecordedPathAbsence(
@@ -3020,6 +3055,7 @@ export function collectWorktreeLifecycleInventory(
       probeErrors,
       metadata: metadata.metadata,
       metadataErrors: metadata.errors,
+      metadataGlobalErrors: metadata.globalErrors,
       remoteRef: remote.remoteRef,
       sessionIds: unit.path
         ? (sessionOwnership.sessionIdsByPath.get(unit.path) ?? [])

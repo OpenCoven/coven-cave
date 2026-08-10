@@ -56,10 +56,20 @@ export const runtime = "nodejs";
 
 const execFileAsync = promisify(execFile);
 
-function reviewedPackage(id: Extract<PrerequisiteId, "runtime-codex" | "runtime-claude" | "runtime-copilot" | "runtime-openclaw">): string {
+type ReviewedPackageId = Extract<
+  PrerequisiteId,
+  "coven-cli" | "runtime-codex" | "runtime-claude" | "runtime-copilot" | "runtime-openclaw"
+>;
+
+function reviewedPackageManifest(id: ReviewedPackageId) {
   const install = prerequisiteById(id).install;
   if (install.kind !== "managed-npm") throw new Error(`${id} must use the managed npm manifest lane`);
-  return `${install.package.packageName}@${install.package.version}`;
+  return install.package;
+}
+
+function reviewedPackage(id: ReviewedPackageId): string {
+  const reviewed = reviewedPackageManifest(id);
+  return `${reviewed.packageName}@${reviewed.version}`;
 }
 
 /**
@@ -70,8 +80,8 @@ function reviewedPackage(id: Extract<PrerequisiteId, "runtime-codex" | "runtime-
  * a shell:
  *
  *   - kind "managed-node": Cave-owned, exact Node/npm archive installation
- *   - Coven CLI self-update: fixed global install of the package's latest tag
- *                            through npm beside the detected CLI.
+ *   - Coven CLI repair:      reviewed compatible package through npm beside
+ *                            the detected CLI.
  *   - other kind "npm":      pinned package through Cave-managed Node/npm.
  */
 const INSTALL_TARGETS = {
@@ -84,7 +94,7 @@ const INSTALL_TARGETS = {
   "coven-cli": {
     kind: "npm",
     label: "Coven CLI",
-    packageName: "@opencoven/cli@latest",
+    packageName: reviewedPackage("coven-cli"),
     binary: "coven",
     timeoutMs: 240_000,
   },
@@ -387,6 +397,24 @@ function verificationTraceLine(verification: OpenCovenToolVerification): string 
   );
 }
 
+function isVerifiedReviewedInstallSuccess(
+  targetName: InstallTarget,
+  exitCode: number | null,
+  verification: OpenCovenToolVerification,
+): boolean {
+  if (targetName !== "coven-cli") {
+    return isVerifiedOpenCovenInstallSuccess(exitCode, verification);
+  }
+  const reviewed = reviewedPackageManifest("coven-cli");
+  return (
+    exitCode === 0 &&
+    verification.packageVerified &&
+    verification.executableVerified &&
+    verification.compatible &&
+    verification.current === reviewed.version
+  );
+}
+
 type LocalDaemonHealth = { ok?: boolean; daemon?: { pid?: number } };
 
 function commandResultDetail(result: {
@@ -603,7 +631,7 @@ async function finishInstallJob(
         let resolutionHint: string | null = null;
         if (
           !plan.verificationPath &&
-          !isVerifiedOpenCovenInstallSuccess(code, verification)
+          !isVerifiedReviewedInstallSuccess(targetName, code, verification)
         ) {
           // npm succeeded but PATH still resolves something that fails
           // verification — usually a stale launcher shadowing the fresh
@@ -612,7 +640,9 @@ async function finishInstallJob(
           // forever; when cleanup is unsafe, surface its manual hint.
           const resolution = await resolveStaleOpenCovenLaunchers(
             targetName,
-            verification.latest,
+            targetName === "coven-cli"
+              ? reviewedPackageManifest("coven-cli").version
+              : verification.latest,
           );
           for (const line of resolution.log) appendOutput(job, `${line}\n`);
           resolutionHint = resolution.hint;
@@ -621,7 +651,7 @@ async function finishInstallJob(
             installed = { path: verification.path };
           }
         }
-        if (!isVerifiedOpenCovenInstallSuccess(code, verification)) {
+        if (!isVerifiedReviewedInstallSuccess(targetName, code, verification)) {
           verificationError = [
             verification.error ?? `Could not verify ${target.binary} after install.`,
             resolutionHint,

@@ -98,8 +98,8 @@ assert.match(
 
 assert.match(
   source,
-  /minimumVersion: "0\.1\.1"/,
-  "coven CLI compatibility floor unified to v0.1.1 (CLI self-manages the engine)",
+  /minimumVersion: "0\.2\.5"/,
+  "coven CLI compatibility floor requires the released maintenance protocol",
 );
 
 assert.match(

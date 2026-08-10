@@ -177,7 +177,7 @@ assert.match(
 );
 assert.match(
   setup,
-  /stop_after_startup_error\(error\)[\s\S]*fatal_exit\(&error\)/,
+  /stop_after_startup_error\([\s\S]{0,200}(?:message|"sidecar startup was cancelled")[\s\S]{0,200}\)[\s\S]{0,200}fatal_exit\(&error\)/,
   "Non-Windows startup failure should reap the owned sidecar before fatal exit",
 );
 assert.match(
