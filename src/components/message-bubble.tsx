@@ -885,20 +885,11 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [], className }
         // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: html }}
       />
-      {/* No streaming cursor here. It used to render as a sibling of the
-          container above — the one placement that keeps it out of the
-          sanitized HTML string — but that container is a block-level <div>,
-          so the span could never trail the last rendered line and instead
-          wrapped onto a row of its own. What the reader saw was a detached
-          grey bar sitting between the message and whatever followed it,
-          after EVERY streaming message that had rendered markdown, which
-          reads as a rendering artifact rather than as a caret (cave-1yslk).
-
-          Putting it back requires appending it INSIDE the last inline
-          descendant of the sanitized HTML, which is exactly the injection
-          this placement was chosen to avoid. Progress is already legible
-          from the text growing, so the affordance is gone rather than
-          wrong. `pending` still drives progressive rendering below. */}
+      {/* No streaming cursor here, and it cannot simply be re-added as a
+          sibling: this container is a block-level <div>, so the span wrapped
+          onto its own row as a detached bar instead of trailing the text
+          (cave-1yslk). Placing it correctly means injecting into the
+          sanitized HTML, which the sibling position existed to avoid. */}
       <InlineCitationPreviews
         citations={citations}
         containerRef={containerRef}
@@ -990,8 +981,7 @@ export type MessageBubbleProps = {
    *  at their chronological position. Assistant role only; when present they
    *  replace the single MarkdownContent render. `content` must still carry
    *  the FULL text so the Copy/Expand actions are unchanged. Only the LAST
-   *  text span streams (progressive markdown + ▌ cursor); earlier spans
-   *  render settled. */
+   *  text span streams (progressive markdown); earlier spans render settled. */
   segments?: MessageBubbleSegment[];
   /** The turn's tool events, forwarded to the reader's "How this was made"
    *  footer (batches, skills, error count). Assistant role only; absent turns
@@ -1126,8 +1116,7 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
   // Assistant
   // CHAT-D4-01: with segments, only the LAST text span is the live streaming
   // edge — earlier spans are settled slices that never change retroactively,
-  // so they take MarkdownContent's settled path (cached render, no throttle,
-  // no cursor) and the ▌ cursor shows on at most one span.
+  // so they take MarkdownContent's settled path (cached render, no throttle).
   const lastTextIdx = segments
     ? segments.reduce((acc, seg, i) => (seg.kind === "text" ? i : acc), -1)
     : -1;
