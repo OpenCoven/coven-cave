@@ -30,6 +30,62 @@ export {
   releaseWriterIntent,
 };
 
+/**
+ * How often a long fenced READ should renew its lease.
+ *
+ * Exists because a fenced read can outlive its lease: the worktree lifecycle
+ * inventory measured 120.8s and 149s on a 39-worktree checkout against a 120s
+ * Coven lease, and nothing renewed it while it ran (cave-cs9g1).
+ *
+ * A quarter of the shorter lease (Coven's, below). The headroom is NOT there to
+ * survive a failed renewal — renewal is fail-closed, so a failure aborts the
+ * read rather than waiting for a next attempt. It is there because renewal
+ * fires on progress, not on a clock: the hook is only reached between external
+ * commands, and a single command can itself run for tens of seconds (`command`
+ * in the inventory defaults to a 30s timeout, and some calls allow longer). So
+ * the true interval between renewals is 30s plus however long the command that
+ * crosses the boundary takes, and the lease has to tolerate that overshoot.
+ */
+export const FENCE_RENEWAL_INTERVAL_MS = 30_000;
+
+/**
+ * Wrap a renew function so it runs at most once per interval.
+ *
+ * Intended for work that reports progress far more often than a lease needs
+ * renewing — the inventory calls its hook once per external command, hundreds
+ * of times — where renewing on every call would spawn a fence process per
+ * command.
+ *
+ * Renewal is driven by progress rather than a timer on purpose: the callers
+ * that need this are synchronous, so they never yield and no timer callback
+ * would ever run. Anchoring to progress also means renewal scales with the
+ * work, which is what actually got slower as the checkout grew.
+ *
+ * The first call after construction is always throttled — the lease was just
+ * taken or renewed, so there is nothing to renew yet.
+ *
+ * Fail-closed: errors from `renew` propagate and are expected to abort the
+ * work. There is deliberately no retry or swallow here, because the only
+ * reason renewal fails is that the fence is gone, and work that continues past
+ * that point is no longer excluding the writers it believes it is.
+ */
+export function createFenceRenewal(
+  renew,
+  { intervalMs = FENCE_RENEWAL_INTERVAL_MS, now = () => Date.now() } = {},
+) {
+  if (typeof renew !== "function") throw new TypeError("renew must be a function");
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+    throw new RangeError("intervalMs must be a positive finite number");
+  }
+  let last = now();
+  return () => {
+    const current = now();
+    if (current - last < intervalMs) return;
+    last = current;
+    renew();
+  };
+}
+
 export const COVEN_MAINTENANCE_MINIMUM_VERSION = "0.2.5";
 export const DEFAULT_COVEN_DRAIN_TIMEOUT_MS = 30_000;
 export const COVEN_OWNER_LEASE_MS = 120_000;
