@@ -348,6 +348,7 @@ export const SUITES = {
     "src/lib/research-mission-flow.test.ts",
     "src/lib/flow/flow-webhook.test.ts",
     "src/lib/server/flow-executor.test.ts",
+    "src/lib/server/coven-process-supervisor.test.ts",
     "src/lib/server/flow-copilot-session.test.ts",
     "src/lib/server/research-mission-store.test.ts",
     "src/lib/server/research-mission-lifecycle.test.ts",

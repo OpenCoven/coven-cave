@@ -102,8 +102,18 @@ assert.match(
 );
 assert.doesNotMatch(
   source,
-  /Node\.js|npm|Coven CLI|Codex|Claude|Copilot|OpenClaw|package/i,
-  "first-run UI hides package and tool identities",
+  /Codex|Claude|Copilot|OpenClaw/i,
+  "first-run setup stays independent of provider runtimes",
+);
+assert.match(
+  source,
+  /private Node\.js and npm runtime, then verify the Coven CLI/,
+  "the local-components phase explains its concrete, Cave-owned work",
+);
+assert.match(
+  source,
+  /does not create Cave defaults or start a familiar runtime/,
+  "a local-components failure says which later work did not happen",
 );
 assert.match(source, />\s*View diagnostics\s*</, "failed setup offers diagnostics beside Retry");
 assert.match(

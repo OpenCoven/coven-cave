@@ -281,7 +281,7 @@ export async function ensureOnboardingCoreTools(
   let lastInstaller: ReturnType<typeof diagnosticInstaller> | undefined;
 
   if (!inspection.runtimeReady) {
-    await onProgress("Preparing Cave’s local runtime…");
+    await onProgress("Setting up Cave’s private Node.js and npm runtime…");
     const result = await runReviewedInstall("managed-node", dependencies);
     lastInstaller = diagnosticInstaller(
       result.target,
@@ -318,7 +318,7 @@ export async function ensureOnboardingCoreTools(
 
   inspection = await dependencies.inspect();
   if (!inspection.coreToolsReady) {
-    await onProgress("Preparing Cave’s core components…");
+    await onProgress("Installing and verifying the Coven CLI…");
     const result = await runReviewedInstall("coven-cli", dependencies);
     lastInstaller = diagnosticInstaller(
       result.target,
@@ -335,7 +335,7 @@ export async function ensureOnboardingCoreTools(
     }
   }
 
-  await onProgress("Verifying Cave’s local components…");
+  await onProgress("Verifying the local runtime and Coven CLI…");
   inspection = await dependencies.inspect();
   if (!inspection.runtimeReady || !inspection.coreToolsReady) {
     return stageFailure({

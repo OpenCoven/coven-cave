@@ -290,6 +290,11 @@ export function OnboardingOverlay({
               <p className="mt-1 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
                 {state.failure.message}
               </p>
+              {state.failure.stage === "core-tools" ? (
+                <p className="mt-2 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
+                  This step prepares Cave’s private Node.js/npm runtime and the Coven CLI. It does not create Cave defaults or start a familiar runtime.
+                </p>
+              ) : null}
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Button
                   variant="primary"

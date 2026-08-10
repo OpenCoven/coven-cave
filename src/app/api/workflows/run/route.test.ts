@@ -68,7 +68,7 @@ assert.match(
 // flows. SSH/hub copilot stays on the daemon.
 assert.match(
   source,
-  /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]{0,1200}startCopilotFlowRun\(/,
+  /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]{0,1400}startCopilotFlowRunWithTransportBoundary\(/,
   "a local copilot workflow spawns the CLI directly instead of an orphaned daemon TUI",
 );
 assert.match(
@@ -88,14 +88,19 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(capabilityFailure\)[\s\S]*?return NextResponse\.json\([\s\S]*?status: 409[\s\S]*?startCopilotFlowRun\(/,
+  /if \(capabilityFailure\)[\s\S]*?return NextResponse\.json\([\s\S]*?status: 409[\s\S]*?startCopilotFlowRunWithTransportBoundary\(/,
   "a failed capability gate cannot start a direct workflow session",
 );
 const compatibilityGateIndex = source.indexOf("if (!spec)");
-const directCopilotLaunchIndex = source.indexOf("startCopilotFlowRun", compatibilityGateIndex);
+const directCopilotLaunchIndex = source.indexOf("startCopilotFlowRunWithTransportBoundary", compatibilityGateIndex);
 assert.ok(
   compatibilityGateIndex >= 0 && directCopilotLaunchIndex > compatibilityGateIndex,
   "an unsupported local Copilot workflow returns before creating a durable running workflow record",
+);
+assert.match(
+  source,
+  /startCopilotFlowRunWithTransportBoundary\(\{[\s\S]*?permissionMode: "unattended"[\s\S]*?\}, finishSession\)/,
+  "workflow bookkeeping is completed through the exact-owner rollback boundary",
 );
 
 console.log("workflow run route.test.ts: ok");
