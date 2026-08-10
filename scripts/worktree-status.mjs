@@ -177,7 +177,8 @@ function touchedSinceOperation(wtPath, startedAtMs) {
     let newest = null;
     for (const rel of res.out.split("\0").filter(Boolean)) {
       const at = mtimeMs(path.join(wtPath, rel));
-      if (at === null || at <= cutoff) continue;
+      if (at === null) return { count: 0, newest: null, readable: false };
+      if (at <= cutoff) continue;
       count += 1;
       if (!newest || at > newest.atMs) newest = { path: rel, atMs: at, at: new Date(at).toISOString() };
     }
@@ -389,6 +390,26 @@ function formatAge(hours) {
   return `${Math.round(hours / 24)}d`;
 }
 
+function wedgeContinueCommand(op) {
+  switch (op) {
+    case "rebase":
+      return "git rebase --continue";
+    case "cherry-pick":
+      return "git cherry-pick --continue";
+    case "revert":
+      return "git revert --continue";
+    case "bisect":
+      return "git bisect good|bad";
+    case "merge":
+    default:
+      return "git commit";
+  }
+}
+
+function wedgeAbortCommand(op) {
+  return `git ${op === "bisect" ? "bisect reset" : `${op} --abort`}`;
+}
+
 // The point of the remedy block is that the next session does not repeat the
 // forensics. It states the operation, its age, the exact conflicted paths,
 // whether any hand resolution exists to protect, and the two commands that end
@@ -397,6 +418,9 @@ function writeWedgeRemedy(row) {
   const w = row.wedge;
   const touched = w.touchedSince;
   const handResolved = !touched.readable || touched.tracked > 0;
+  const continueCommand = wedgeContinueCommand(w.op);
+  const abortCommand = wedgeAbortCommand(w.op);
+  const continueLabel = w.op === "bisect" ? "continue it" : "finish it";
   process.stdout.write(`\n${icon.WEDGED} WEDGED — ${row.branch || row.path}\n`);
   process.stdout.write(`   ${w.op} paused ${formatAge(w.ageHours)} ago (${w.startedAt}), marker ${w.marker}\n`);
   if (w.unmerged.length) {
@@ -418,18 +442,22 @@ function writeWedgeRemedy(row) {
         `${touched.untracked > 0 ? ` (${touched.untracked} untracked file(s) added since)` : ""} —\n` +
         `      the tree is raw ${w.op} output with no hand resolution to lose.\n`,
     );
-    if (w.retained.head && w.retained.otherHead !== false) {
-      process.stdout.write(`      Both sides are reachable from a remote-tracking ref or tag, so an abort strands nothing.\n`);
+    if (w.retained.head && (w.retained.otherHead === null || w.retained.otherHead === true)) {
+      process.stdout.write(
+        w.retained.otherHead === null
+          ? `      This branch's HEAD is reachable from a remote-tracking ref or tag, so dropping the ${w.op} strands nothing.\n`
+          : `      Both sides are reachable from a remote-tracking ref or tag, so an abort strands nothing.\n`,
+      );
     } else {
       process.stdout.write(
-        `      ⚠️  ${w.retained.head ? "the incoming side" : "this branch's HEAD"} is on NO remote ref — archive it before aborting:\n` +
+        `      ⚠️  ${!w.retained.head ? "this branch's HEAD" : "the incoming side"} is on NO remote ref — archive it before aborting:\n` +
           `      git tag -s archive/<flattened-branch>-$(date -u +%F) <oid> && git push origin archive/<…>\n`,
       );
     }
   }
-  process.stdout.write(`   finish it:  cd ${shq(row.path)} && git ${w.op === "rebase" ? "rebase --continue" : "commit"}\n`);
+  process.stdout.write(`   ${continueLabel}:  cd ${shq(row.path)} && ${continueCommand}\n`);
   process.stdout.write(
-    `   or drop it: cd ${shq(row.path)} && git ${w.op === "bisect" ? "bisect reset" : `${w.op} --abort`}` +
+    `   or drop it: cd ${shq(row.path)} && ${abortCommand}` +
       `${handResolved ? "   ← only with the owner's say-so" : ""}\n`,
   );
 }

@@ -171,6 +171,57 @@ function wedgeOnMergeConflict(dir, wt, branch) {
   assert.equal(merged.ok, false, "the merge must stop on a conflict for this fixture to mean anything");
 }
 
+function wedgeOnCherryPickConflict(dir, wt, branch) {
+  git(dir, "branch", "other", "main");
+  const otherWt = join(dir, `${branch.replace(/\W/g, "-")}-other`);
+  git(dir, "worktree", "add", "-q", otherWt, "other");
+  writeFileSync(join(otherWt, "clash.txt"), "theirs\n");
+  git(otherWt, "add", "-A");
+  git(otherWt, "commit", "-qm", "theirs");
+  const picked = git(otherWt, "rev-parse", "HEAD");
+
+  writeFileSync(join(wt, "clash.txt"), "ours\n");
+  git(wt, "add", "-A");
+  git(wt, "commit", "-qm", "ours");
+
+  const cherryPicked = gitAllowFail(wt, "cherry-pick", picked);
+  assert.equal(cherryPicked.ok, false, "the cherry-pick must stop on a conflict");
+}
+
+function wedgeOnRevertConflict(wt) {
+  writeFileSync(join(wt, "clash.txt"), "base\n");
+  git(wt, "add", "-A");
+  git(wt, "commit", "-qm", "base");
+  writeFileSync(join(wt, "clash.txt"), "picked\n");
+  git(wt, "add", "-A");
+  git(wt, "commit", "-qm", "picked");
+  const picked = git(wt, "rev-parse", "HEAD");
+  writeFileSync(join(wt, "clash.txt"), "current\n");
+  git(wt, "add", "-A");
+  git(wt, "commit", "-qm", "current");
+
+  const reverted = gitAllowFail(wt, "revert", picked);
+  assert.equal(reverted.ok, false, "the revert must stop on a conflict");
+}
+
+function wedgeOnBisect(wt) {
+  writeFileSync(join(wt, "history.txt"), "one\n");
+  git(wt, "add", "-A");
+  git(wt, "commit", "-qm", "one");
+  const good = git(wt, "rev-parse", "HEAD");
+  writeFileSync(join(wt, "history.txt"), "two\n");
+  git(wt, "add", "-A");
+  git(wt, "commit", "-qm", "two");
+  writeFileSync(join(wt, "history.txt"), "three\n");
+  git(wt, "add", "-A");
+  git(wt, "commit", "-qm", "three");
+
+  git(wt, "bisect", "start");
+  git(wt, "bisect", "bad");
+  git(wt, "bisect", "good", good);
+  assert.equal(git(wt, "rev-parse", "--abbrev-ref", "HEAD"), "HEAD");
+}
+
 function rowByBranch(dir, branch) {
   return JSON.parse(run(dir, "--json")).rows.find((r) => r.branch === branch);
 }
@@ -211,6 +262,7 @@ test("WEDGED reports no hand resolution when nothing was touched after the stall
 
     const human = run(dir);
     assert.match(human, /no tracked file touched since the merge stalled/);
+    assert.match(human, /this branch's HEAD is on NO remote ref/);
     assert.match(human, /git merge --abort/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -244,6 +296,27 @@ test("WEDGED warns against aborting when a conflict was hand-resolved after the 
   }
 });
 
+test("WEDGED fails closed when a tracked path cannot be stat'd after the stall", () => {
+  const dir = scaffold();
+  try {
+    const wt = join(dir, "wt-unreadable");
+    git(dir, "worktree", "add", "-q", "-b", "feat/unreadable", wt, "main");
+    wedgeOnMergeConflict(dir, wt, "feat/unreadable");
+    rmSync(join(wt, "clash.txt"));
+
+    const row = rowByBranch(dir, "feat/unreadable");
+    assert.equal(row.verdict, "WEDGED");
+    assert.equal(row.wedge.touchedSince.readable, false);
+    assert.equal(row.wedge.touchedSince.tracked, 0);
+
+    const human = run(dir);
+    assert.match(human, /could not read the tree's mtimes/);
+    assert.match(human, /do NOT abort/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("a paused rebase is WEDGED and offers rebase-shaped remedies", () => {
   const dir = scaffold();
   try {
@@ -271,6 +344,66 @@ test("a paused rebase is WEDGED and offers rebase-shaped remedies", () => {
     const human = run(dir);
     assert.match(human, /git rebase --continue/);
     assert.match(human, /git rebase --abort/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a paused cherry-pick is WEDGED and offers cherry-pick-shaped remedies", () => {
+  const dir = scaffold();
+  try {
+    const wt = join(dir, "wt-cherry-pick");
+    git(dir, "worktree", "add", "-q", "-b", "feat/cherry-picking", wt, "main");
+    wedgeOnCherryPickConflict(dir, wt, "feat/cherry-picking");
+
+    const row = rowByBranch(dir, "feat/cherry-picking");
+    assert.equal(row.verdict, "WEDGED");
+    assert.equal(row.wedge.op, "cherry-pick");
+    assert.equal(row.wedge.marker, "CHERRY_PICK_HEAD");
+
+    const human = run(dir);
+    assert.match(human, /git cherry-pick --continue/);
+    assert.match(human, /git cherry-pick --abort/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a paused revert is WEDGED and offers revert-shaped remedies", () => {
+  const dir = scaffold();
+  try {
+    const wt = join(dir, "wt-revert");
+    git(dir, "worktree", "add", "-q", "-b", "feat/reverting", wt, "main");
+    wedgeOnRevertConflict(wt);
+
+    const row = rowByBranch(dir, "feat/reverting");
+    assert.equal(row.verdict, "WEDGED");
+    assert.equal(row.wedge.op, "revert");
+    assert.equal(row.wedge.marker, "REVERT_HEAD");
+
+    const human = run(dir);
+    assert.match(human, /git revert --continue/);
+    assert.match(human, /git revert --abort/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an active bisect is WEDGED and offers bisect-shaped remedies", () => {
+  const dir = scaffold();
+  try {
+    const wt = join(dir, "wt-bisect");
+    git(dir, "worktree", "add", "-q", "-b", "feat/bisecting", wt, "main");
+    wedgeOnBisect(wt);
+
+    const row = rowByPath(dir, "wt-bisect");
+    assert.equal(row.verdict, "WEDGED");
+    assert.equal(row.wedge.op, "bisect");
+    assert.equal(row.wedge.marker, "BISECT_LOG");
+
+    const human = run(dir);
+    assert.match(human, /continue it:  cd .* && git bisect good\|bad/);
+    assert.match(human, /git bisect reset/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

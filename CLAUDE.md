@@ -500,7 +500,7 @@ moment the operation stalled:
   `do NOT abort` and marks the abort command *"only with the owner's say-so"*.
   An unreadable tree fails closed to the same warning.
 
-Both remedies (`git merge --commit` style finish, or the matching `--abort`)
+Both remedies (`git commit` style finish, or the matching `--abort`)
 print with the worktree's real path, so resolving one takes a copy-paste rather
 than a fresh investigation. A `WEDGED` tree is never `SAFE-RETIRE`, so neither
 `--prune` nor `pnpm wt:retire-on-exit` can remove one.
