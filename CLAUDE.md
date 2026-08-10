@@ -425,7 +425,7 @@ Run `pnpm beads:worktrees`. If it reports active, recovery, cooldown, uncertain,
 or gate-incomplete, preserve the unit and record its owner/reason. Never bypass
 the worktree guard to force completion.
 
-⚠️ **`pnpm beads:worktrees:apply` does not work today, and this is not a local
+⚠️ **A plain `pnpm beads:worktrees:apply` refuses, and this is not a local
 fault.** It exits 2 before assessing a single unit:
 
 ```text
@@ -434,13 +434,37 @@ worktree-lifecycle-patrol: --apply unavailable; missing maintenance planes: bead
 
 `scripts/maintenance-gate.mjs` composes Cave's local writer-intent fence with
 the released Coven 0.2.5 maintenance protocol. The Beads (`cave-wqa0b.3`) and
-GitHub (`cave-wqa0b.4`) planes remain `enforced: false`, so `--apply` is
-unreachable until those land; no retry, credential, or daemon will change that.
-Tracked by `cave-3aqvr`.
+GitHub (`cave-wqa0b.4`) planes remain `enforced: false`, so a plain `--apply`
+refuses; no retry, credential, or daemon will change that. Both are blocked
+outside this repository — `cave-wqa0b.3` on an upstream Beads pre-write hook
+(`gastownhall/beads#5193`), `cave-wqa0b.4` on provisioning a dedicated GitHub
+App — so neither is agent-actionable here. The metadata residue this leaves
+behind is `cave-xbc87`. Don't follow the parent `cave-3aqvr`: it is closed
+(option 3 landed as PR #4432; options 1 and 2 were split out).
 
-**So hand-retirement is the norm right now, not the exception.** For a unit the
-patrol already classified `cleanup-ready`, use the archive-tag route in the
-worktree-guard section below.
+**But `--apply` is no longer a dead end.** `--allow-unenforced-planes`
+(`cave-s03wp`) opts into running it while those known-pending planes are
+unenforced:
+
+```bash
+pnpm beads:worktrees:apply --allow-unenforced-planes
+```
+
+The `local` plane is still required and is **never** waivable — it performs the
+exclusion that stops two actors retiring the same unit, so waiving it would be
+an unguarded run rather than a degraded one, and it is refused with its own
+distinct message. Every degraded run prints the waived planes and what blocks
+each one to stderr *before* the first unit is touched, so the record survives a
+run that dies midway.
+
+Note the admission test reads `enforced !== true`, not `=== false`: a plane
+whose entry is missing or malformed counts as unenforced. That direction is
+deliberate — a safety gate that reads absent data as "fine" fails open.
+
+**So retirement is either the degraded apply above or hand-retirement — both
+are sanctioned, neither is a workaround.** For a unit the patrol already
+classified `cleanup-ready`, use the archive-tag route in the worktree-guard
+section below.
 
 ⚠️ **Prove retention before removing anything — a merged PR is NOT retention.**
 A squash-merge leaves the branch's own commits on no remote ref, so
