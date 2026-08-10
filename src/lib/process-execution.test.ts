@@ -51,6 +51,25 @@ test("bounded process output enforces its limit in UTF-8 bytes", () => {
   assert.doesNotMatch(output.text(), /\uFFFD/);
 });
 
+test("bounded process output decodes and redacts across process chunks", () => {
+  const output = new BoundedProcessOutput(200);
+  const unicode = Buffer.from("🦇");
+  output.append("Authorization: Bear");
+  output.append("er github_pat_abcdefghijklmnop");
+  output.append(Buffer.concat([
+    Buffer.from("qrstuvwxyz123456\n"),
+    unicode.subarray(0, 2),
+  ]));
+  output.append(Buffer.concat([
+    unicode.subarray(2),
+    Buffer.from("\n"),
+  ]));
+
+  assert.doesNotMatch(output.text(), /github_pat_|abcdefghijklmnop|qrstuvwxyz/);
+  assert.match(output.text(), /Authorization: \[redacted\]/);
+  assert.doesNotMatch(output.text(), /\uFFFD/);
+});
+
 test("POSIX tree cleanup escalates when a descendant survives the root", {
   skip: process.platform === "win32",
 }, async () => {

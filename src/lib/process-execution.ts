@@ -1,10 +1,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import { stripAnsi } from "./ansi.ts";
 import { redactSecretText } from "./secret-redaction.ts";
 
 const DEFAULT_TERMINATION_GRACE_MS = 1_000;
 const TRUNCATION_MARKER = "[earlier output truncated]\n";
 const TRUNCATION_MARKER_BYTES = Buffer.byteLength(TRUNCATION_MARKER);
+const REDACTION_CONTEXT_BYTES = 4 * 1024;
 
 function utf8Tail(value: string, maxBytes: number): string {
   let start = value.length;
@@ -27,10 +29,12 @@ function utf8Tail(value: string, maxBytes: number): string {
 }
 
 export class BoundedProcessOutput {
-  private value = "";
+  private rawValue = "";
   private truncated = false;
   private readonly maxBytes: number;
   private readonly redact: boolean;
+  private readonly decoder = new StringDecoder("utf8");
+  private finished = false;
 
   constructor(maxBytes: number, options: { redact?: boolean } = {}) {
     if (!Number.isSafeInteger(maxBytes) || maxBytes <= TRUNCATION_MARKER_BYTES) {
@@ -41,22 +45,34 @@ export class BoundedProcessOutput {
   }
 
   append(chunk: string | Buffer): void {
-    const safeChunk = this.redact
-      ? sanitizeProcessOutput(chunk)
-      : stripAnsi(chunk.toString());
-    const nextValue = this.value + safeChunk;
-    if (Buffer.byteLength(nextValue) <= this.maxBytes) {
-      this.value = nextValue;
+    if (this.finished) return;
+    const decoded = this.decoder.write(
+      typeof chunk === "string" ? Buffer.from(chunk) : chunk,
+    );
+    const nextValue = this.rawValue + decoded;
+    const rawBudget = this.maxBytes + REDACTION_CONTEXT_BYTES;
+    if (Buffer.byteLength(nextValue) <= rawBudget) {
+      this.rawValue = nextValue;
       return;
     }
     this.truncated = true;
-    this.value =
-      TRUNCATION_MARKER
-      + utf8Tail(nextValue, this.maxBytes - TRUNCATION_MARKER_BYTES);
+    this.rawValue = utf8Tail(nextValue, rawBudget);
   }
 
   text(): string {
-    return this.redact ? redactSecretText(this.value) : this.value;
+    if (!this.finished) {
+      this.rawValue += this.decoder.end();
+      this.finished = true;
+    }
+    const sanitized = this.redact
+      ? redactSecretText(stripAnsi(this.rawValue))
+      : stripAnsi(this.rawValue);
+    if (!this.truncated && Buffer.byteLength(sanitized) <= this.maxBytes) {
+      return sanitized;
+    }
+    this.truncated = true;
+    return TRUNCATION_MARKER
+      + utf8Tail(sanitized, this.maxBytes - TRUNCATION_MARKER_BYTES);
   }
 
   wasTruncated(): boolean {

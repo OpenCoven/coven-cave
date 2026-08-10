@@ -236,6 +236,7 @@ function whichWith(binary: string, env: NodeJS.ProcessEnv): Promise<string | nul
     env,
     timeoutMs: 1_500,
     captureStderr: false,
+    redactOutput: false,
   }).then((result) => {
     if (result?.code !== 0) return null;
     const found = result.output.trim();

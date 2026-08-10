@@ -2,12 +2,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [mobile, harnesses, launch, hosts, install] = await Promise.all([
+const [mobile, harnesses, launch, hosts, install, installService] = await Promise.all([
   readFile(new URL("../app/api/mobile-handoff/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/harnesses/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/launch/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/hosts/route.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/api/onboarding/install/install-process.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/onboarding/install/install-service.ts", import.meta.url), "utf8"),
 ]);
 
 for (const [name, source] of [
@@ -45,6 +46,16 @@ for (const [name, source] of [
 }
 
 assert.match(install, /shell: false/, "installer stop should never execute through a shell");
+assert.match(
+  installService,
+  /if \(launch\.unresolvedWindowsShim\)/,
+  "installer daemon stop should reject an unresolved Windows batch shim",
+);
+assert.match(
+  harnesses,
+  /function whichWith[\s\S]*?redactOutput: false/,
+  "executable discovery should preserve valid Nix store hashes",
+);
 assert.doesNotMatch(mobile, /stderr: error\.message/, "mobile diagnostics should not expose raw spawn errors");
 assert.doesNotMatch(launch, /error: err\.message/, "Terminal diagnostics should not expose raw spawn errors");
 
