@@ -463,7 +463,50 @@ first would have been lossy. Also note `git log @{u}..HEAD` is worthless as an
 "is it pushed" check on these branches: the upstream ref is gone, so the command
 errors and a naive `| wc -l` reports a reassuring `0`.
 
+### Reading worktree state fast — `pnpm wt:status`
+
+`scripts/worktree-status.mjs` is the network-free companion to the patrol. The
+patrol is authoritative but slow and GitHub-bound; this reads local git only and
+prints a verdict per worktree in well under a second.
+
+```bash
+pnpm wt:status          # human table
+pnpm wt:status:json     # machine-readable
+pnpm wt:prune           # print unlock+remove commands for SAFE-RETIRE trees (executes nothing)
+```
+
+Verdicts run `WEDGED` → `SAFE-RETIRE` → `SALVAGE` → `SCRATCH` → `DIRTY` →
+`ACTIVE` → `PRIMARY`, and `--prune` only ever emits commands for `SAFE-RETIRE`.
+
+**`WEDGED` means an unfinished git operation is paused in that tree** — a merge,
+rebase, cherry-pick, revert, or bisect that was never completed or aborted. It
+exists because that state was previously invisible: nothing in `src/lib` or
+`scripts` looked at `MERGE_HEAD`, so a wedged worktree showed up as nothing more
+than "137 dirty", which reads exactly like a session editing right now. An
+abandoned merge on `docs/cave-zs85n-chat-sidebar-attention` therefore sat
+unresolved from 2026-08-07 to 2026-08-10 while session after session found it,
+assumed in-flight work, and backed off rather than clobber a colleague
+(`cave-97svy`).
+
+The report answers the question that backing off leaves open — **is anyone
+actually working on this?** — by comparing every dirty path's mtime against the
+moment the operation stalled:
+
+- **No tracked file touched since** → no hand resolution exists. The tree is raw
+  merge output, reproducible from the two parents, and an abort costs nothing.
+  The report also says whether both sides are reachable from a remote-tracking
+  ref or tag, and prints the archive-tag command when one is not.
+- **Tracked files touched since** → someone is mid-resolution. The report says
+  `do NOT abort` and marks the abort command *"only with the owner's say-so"*.
+  An unreadable tree fails closed to the same warning.
+
+Both remedies (`git commit` style finish, or the matching `--abort`)
+print with the worktree's real path, so resolving one takes a copy-paste rather
+than a fresh investigation. A `WEDGED` tree is never `SAFE-RETIRE`, so neither
+`--prune` nor `pnpm wt:retire-on-exit` can remove one.
+
 ## Starting the Tauri desktop app
+
 
 Use the desktop shell when validating native-only surfaces such as the terminal,
 browser pane, window chrome, sidecar behavior, updater wiring, or Tauri

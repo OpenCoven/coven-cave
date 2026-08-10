@@ -91,6 +91,11 @@
   authority. Automatic retirement requires the full maintenance gate. Explicit
   maintainer authorization in the current task may activate Branch Curator's
   bounded manual deletion proof.
+- Before you assume a dirty worktree is another session's live work, run
+  `pnpm wt:status`. It is network-free and sub-second, and it separates real
+  in-flight edits from a worktree **wedged** in an abandoned merge or rebase —
+  a state that otherwise reads as ordinary dirtiness and gets stepped around
+  indefinitely. See the `pnpm wt:status` section of [`CLAUDE.md`](CLAUDE.md).
 - Do not push directly to `main`; use the protected PR path for repository changes.
 - Before release or TestFlight work, reconcile through clean `main`, then verify from that state.
 
