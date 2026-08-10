@@ -406,13 +406,19 @@ pub(super) fn start_sidecar_runtime(
 ) -> Result<Url, SidecarStartError> {
     on_step(SidecarStartupStep::PreparingRuntime);
     let resource_dir = app.path().resource_dir().map_err(|error| {
-        SidecarStartError::Failed(format!("could not resolve resource dir: {error}"))
+        SidecarStartError::failed(
+            ReliabilityFailureClass::Permissions,
+            format!("could not resolve resource dir: {error}"),
+        )
     })?;
 
     #[cfg(target_os = "windows")]
     let server_dir_root =
         sidecar_archive::prepare_sidecar_runtime(app, &resource_dir).map_err(|error| {
-            SidecarStartError::Failed(format!("could not prepare sidecar runtime: {error}"))
+            SidecarStartError::failed(
+                ReliabilityFailureClass::Compatibility,
+                format!("could not prepare sidecar runtime: {error}"),
+            )
         })?;
     #[cfg(not(target_os = "windows"))]
     let server_dir_root = resource_dir.join("resources").join("server");
@@ -431,10 +437,10 @@ pub(super) fn start_sidecar_runtime(
         );
         server_js
     } else {
-        return Err(SidecarStartError::Failed(format!(
-            "standalone server not found at {}",
-            server_js.display()
-        )));
+        return Err(SidecarStartError::failed(
+            ReliabilityFailureClass::Compatibility,
+            format!("standalone server not found at {}", server_js.display()),
+        ));
     };
 
     let port = sidecar_ports::dedicated_port();
@@ -443,20 +449,24 @@ pub(super) fn start_sidecar_runtime(
         // kernel for any free port, which always "worked" and left the app on a
         // different address every launch — including in the pairing-secret path
         // (`mobile-tailscale-${port}`), so phones could not find it twice.
-        return Err(SidecarStartError::Failed(format!(
-            "Port {port} is already in use, so CovenCave cannot start its local server.\n\n\
-             This is usually another CovenCave that is still running, or a dev server \
-             started with `pnpm dev`. Quit that one and re-launch, or start CovenCave with \
-             {} set to a free port.",
-            sidecar_ports::CAVE_PORT_ENV,
-        )));
+        return Err(SidecarStartError::failed(
+            ReliabilityFailureClass::Contention,
+            format!(
+                "Port {port} is already in use, so CovenCave cannot start its local server.\n\n\
+                 This is usually another CovenCave that is still running, or a dev server \
+                 started with `pnpm dev`. Quit that one and re-launch, or start CovenCave with \
+                 {} set to a free port.",
+                sidecar_ports::CAVE_PORT_ENV,
+            ),
+        ));
     }
     let auth_token = sidecar_auth_token();
     let mobile_access_token = mobile_access_token_for_app(app);
     log::info!("[cave] starting sidecar on port {port}");
 
     let node = find_node(&resource_dir).ok_or_else(|| {
-        SidecarStartError::Failed(
+        SidecarStartError::failed(
+            ReliabilityFailureClass::Compatibility,
             "Could not find a `node` binary. Install Node.js from https://nodejs.org and re-launch CovenCave."
                 .to_string(),
         )
@@ -464,10 +474,10 @@ pub(super) fn start_sidecar_runtime(
     log::info!("[cave] using node at {}", node.display());
     let piper = bundled_piper_path(&resource_dir);
     if !cfg!(debug_assertions) && !piper.is_file() {
-        return Err(SidecarStartError::Failed(format!(
-            "bundled Piper runtime not found at {}",
-            piper.display()
-        )));
+        return Err(SidecarStartError::failed(
+            ReliabilityFailureClass::Compatibility,
+            format!("bundled Piper runtime not found at {}", piper.display()),
+        ));
     }
     if piper.is_file() {
         log::info!("[cave] using bundled Piper at {}", piper.display());
@@ -478,10 +488,10 @@ pub(super) fn start_sidecar_runtime(
     }
     let kokoro = bundled_kokoro_path(&resource_dir);
     if !cfg!(debug_assertions) && !kokoro.is_file() {
-        return Err(SidecarStartError::Failed(format!(
-            "bundled Kokoro runtime not found at {}",
-            kokoro.display()
-        )));
+        return Err(SidecarStartError::failed(
+            ReliabilityFailureClass::Compatibility,
+            format!("bundled Kokoro runtime not found at {}", kokoro.display()),
+        ));
     }
     if kokoro.is_file() {
         log::info!("[cave] using bundled Kokoro at {}", kokoro.display());
@@ -491,7 +501,8 @@ pub(super) fn start_sidecar_runtime(
         );
     }
     let whisper_cli = find_bundled_whisper_cli(&resource_dir).ok_or_else(|| {
-        SidecarStartError::Failed(
+        SidecarStartError::failed(
+            ReliabilityFailureClass::Compatibility,
             "Could not find the bundled local Whisper runtime. Reinstall CovenCave or contact support."
                 .to_string(),
         )
@@ -504,7 +515,10 @@ pub(super) fn start_sidecar_runtime(
     let sidecar_output = Arc::new(Mutex::new(SidecarOutputTail::default()));
 
     let server_dir = server_entry.parent().ok_or_else(|| {
-        SidecarStartError::Failed("server entry has no parent directory".to_string())
+        SidecarStartError::failed(
+            ReliabilityFailureClass::Compatibility,
+            "server entry has no parent directory",
+        )
     })?;
     let server_js_arg = node_arg_path(&server_entry);
     let server_dir_arg = node_arg_path(server_dir);
@@ -541,15 +555,24 @@ pub(super) fn start_sidecar_runtime(
     #[cfg(target_os = "windows")]
     let (mut command, process_job, launch_gate) = {
         let process_job = windows_process_job::ProcessJob::new().map_err(|error| {
-            SidecarStartError::Failed(format!("could not create sidecar process job: {error}"))
+            SidecarStartError::failed(
+                ReliabilityFailureClass::Permissions,
+                format!("could not create sidecar process job: {error}"),
+            )
         })?;
         let launch_gate = windows_process_job::ProcessLaunchGate::new().map_err(|error| {
-            SidecarStartError::Failed(format!("could not create sidecar launch gate: {error}"))
+            SidecarStartError::failed(
+                ReliabilityFailureClass::Permissions,
+                format!("could not create sidecar launch gate: {error}"),
+            )
         })?;
         let launcher = launch_gate
             .launcher(&node, [&server_js_arg])
             .map_err(|error| {
-                SidecarStartError::Failed(format!("could not prepare sidecar launch gate: {error}"))
+                SidecarStartError::failed(
+                    ReliabilityFailureClass::Permissions,
+                    format!("could not prepare sidecar launch gate: {error}"),
+                )
             })?;
         (launcher.into_std_command(), process_job, launch_gate)
     };
@@ -601,15 +624,24 @@ pub(super) fn start_sidecar_runtime(
     }
 
     let mut child = command.spawn().map_err(|error| {
-        SidecarStartError::Failed(format!("failed to spawn node sidecar: {error}"))
+        SidecarStartError::failed(
+            ReliabilityFailureClass::Permissions,
+            format!("failed to spawn node sidecar: {error}"),
+        )
     })?;
     let stdout = child.stdout.take().ok_or_else(|| {
         let _ = child.kill();
-        SidecarStartError::Failed("node sidecar stdout pipe was unavailable".to_string())
+        SidecarStartError::failed(
+            ReliabilityFailureClass::ProcessExit,
+            "node sidecar stdout pipe was unavailable",
+        )
     })?;
     let stderr = child.stderr.take().ok_or_else(|| {
         let _ = child.kill();
-        SidecarStartError::Failed("node sidecar stderr pipe was unavailable".to_string())
+        SidecarStartError::failed(
+            ReliabilityFailureClass::ProcessExit,
+            "node sidecar stderr pipe was unavailable",
+        )
     })?;
     capture_sidecar_output(stdout, Arc::clone(&sidecar_output));
     capture_sidecar_output(stderr, Arc::clone(&sidecar_output));
@@ -617,16 +649,18 @@ pub(super) fn start_sidecar_runtime(
     let child = {
         if let Err(error) = process_job.assign_child(&child) {
             let _ = child.kill();
-            return Err(SidecarStartError::Failed(format!(
-                "could not assign sidecar launch gate to process job: {error}"
-            )));
+            return Err(SidecarStartError::failed(
+                ReliabilityFailureClass::Permissions,
+                format!("could not assign sidecar launch gate to process job: {error}"),
+            ));
         }
         if let Err(error) = launch_gate.release() {
             let _ = process_job.terminate();
             let _ = child.kill();
-            return Err(SidecarStartError::Failed(format!(
-                "could not release sidecar launch gate: {error}"
-            )));
+            return Err(SidecarStartError::failed(
+                ReliabilityFailureClass::Permissions,
+                format!("could not release sidecar launch gate: {error}"),
+            ));
         }
         SidecarProcess::from_gated(child, process_job)
     };
@@ -641,9 +675,10 @@ pub(super) fn start_sidecar_runtime(
                 .err()
                 .map(|error| format!("; cleanup also failed: {error}"))
                 .unwrap_or_default();
-            return Err(SidecarStartError::Failed(format!(
-                "sidecar process lock is poisoned{cleanup}"
-            )));
+            return Err(SidecarStartError::failed(
+                ReliabilityFailureClass::Unknown,
+                format!("sidecar process lock is poisoned{cleanup}"),
+            ));
         }
     }
 
@@ -673,6 +708,11 @@ pub(super) fn start_sidecar_runtime(
         result @ (PortWaitResult::Exited
         | PortWaitResult::Refused(_)
         | PortWaitResult::TimedOut) => {
+            let failure_class = match &result {
+                PortWaitResult::Exited => ReliabilityFailureClass::ProcessExit,
+                PortWaitResult::TimedOut => ReliabilityFailureClass::Timeout,
+                _ => ReliabilityFailureClass::Unknown,
+            };
             let reason = match result {
                 PortWaitResult::Exited => "exited before becoming ready".to_string(),
                 PortWaitResult::Refused(error) => {
@@ -684,13 +724,16 @@ pub(super) fn start_sidecar_runtime(
                 ),
                 _ => unreachable!(),
             };
-            return Err(SidecarStartError::Failed(format!(
-                "Sidecar (node {}) {} on port {}.\n\nBounded sidecar output tail:\n{}",
-                node.display(),
-                reason,
-                port,
-                sidecar_output_text(&sidecar_output)
-            )));
+            return Err(SidecarStartError::failed(
+                failure_class,
+                format!(
+                    "Sidecar (node {}) {} on port {}.\n\nBounded sidecar output tail:\n{}",
+                    node.display(),
+                    reason,
+                    port,
+                    sidecar_output_text(&sidecar_output)
+                ),
+            ));
         }
     }
 
@@ -703,7 +746,12 @@ pub(super) fn start_sidecar_runtime(
         "http://127.0.0.1:{port}/?covenCaveToken={auth_token}&coven_access_token={mobile_access_token}"
     )
     .parse()
-    .map_err(|error| SidecarStartError::Failed(format!("could not build sidecar URL: {error}")))
+    .map_err(|error| {
+        SidecarStartError::failed(
+            ReliabilityFailureClass::Compatibility,
+            format!("could not build sidecar URL: {error}"),
+        )
+    })
 }
 
 #[cfg(all(desktop, target_os = "windows"))]
@@ -718,15 +766,51 @@ pub(super) fn publish_sidecar_startup_status(
 }
 
 #[cfg(all(desktop, target_os = "windows"))]
+#[derive(Clone, Copy)]
+pub(super) enum NativeStartupTerminalPolicy {
+    RecordAtLifecycleTerminal,
+    DeferredToSupervisor,
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+fn finish_sidecar_startup(
+    app: &tauri::AppHandle,
+    control: &SidecarStartupControl,
+    terminal_policy: NativeStartupTerminalPolicy,
+    duration: Duration,
+    evidence: NativeStartupTerminalEvidence,
+) {
+    match terminal_policy {
+        NativeStartupTerminalPolicy::RecordAtLifecycleTerminal => {
+            record_native_startup_terminal(app, duration, evidence);
+            control.finish();
+        }
+        NativeStartupTerminalPolicy::DeferredToSupervisor => {
+            if let Err(error) = control.finish_with_terminal(evidence) {
+                log::warn!("[cave] could not publish supervised startup terminal result: {error}");
+            }
+        }
+    }
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
 pub(super) fn spawn_sidecar_startup(
     app: tauri::AppHandle,
     control: Arc<SidecarStartupControl>,
+    terminal_policy: NativeStartupTerminalPolicy,
 ) -> Result<(), String> {
     control.begin()?;
+    let started = Instant::now();
     if let Err(error) =
         publish_sidecar_startup_status(&app, &control, SidecarStartupStatus::preparing())
     {
-        control.finish();
+        finish_sidecar_startup(
+            &app,
+            &control,
+            terminal_policy,
+            started.elapsed(),
+            NativeStartupTerminalEvidence::Failed(ReliabilityFailureClass::Unknown),
+        );
         return Err(error);
     }
 
@@ -758,14 +842,17 @@ pub(super) fn spawn_sidecar_startup(
                 move || cancel_control.is_cancelled(),
             );
 
-            let final_status = match result {
+            let (final_status, terminal_evidence) = match result {
                 Ok(_url) if thread_control.is_cancelled() => {
                     if let Some(sidecar) = app.try_state::<SidecarState>() {
                         if let Err(error) = sidecar.stop_after_startup_attempt() {
                             log::warn!("[cave] could not stop cancelled sidecar: {error}");
                         }
                     }
-                    SidecarStartupStatus::cancelled()
+                    (
+                        SidecarStartupStatus::cancelled(),
+                        NativeStartupTerminalEvidence::Cancelled,
+                    )
                 }
                 Ok(url) => {
                     pty::trust_main_origin(&url);
@@ -775,7 +862,10 @@ pub(super) fn spawn_sidecar_startup(
                     // the page's JS context is unreachable.
                     let navigation = replace_main_window_url(&app, url);
                     match navigation {
-                        Ok(()) => SidecarStartupStatus::ready(),
+                        Ok(()) => (
+                            SidecarStartupStatus::ready(),
+                            NativeStartupTerminalEvidence::AuthenticatedReady,
+                        ),
                         Err(error) => {
                             if let Some(sidecar) = app.try_state::<SidecarState>() {
                                 if let Err(stop_error) = sidecar.stop_after_startup_attempt() {
@@ -784,7 +874,12 @@ pub(super) fn spawn_sidecar_startup(
                                     );
                                 }
                             }
-                            SidecarStartupStatus::failed(error)
+                            (
+                                SidecarStartupStatus::failed(error),
+                                NativeStartupTerminalEvidence::Failed(
+                                    ReliabilityFailureClass::Transport,
+                                ),
+                            )
                         }
                     }
                 }
@@ -794,9 +889,15 @@ pub(super) fn spawn_sidecar_startup(
                             log::warn!("[cave] could not stop cancelled sidecar: {error}");
                         }
                     }
-                    SidecarStartupStatus::cancelled()
+                    (
+                        SidecarStartupStatus::cancelled(),
+                        NativeStartupTerminalEvidence::Cancelled,
+                    )
                 }
-                Err(SidecarStartError::Failed(error)) => {
+                Err(SidecarStartError::Failed {
+                    message,
+                    failure_class,
+                }) => {
                     if let Some(sidecar) = app.try_state::<SidecarState>() {
                         if let Err(stop_error) = sidecar.stop_after_startup_attempt() {
                             log::warn!(
@@ -804,7 +905,10 @@ pub(super) fn spawn_sidecar_startup(
                             );
                         }
                     }
-                    SidecarStartupStatus::failed(error)
+                    (
+                        SidecarStartupStatus::failed(message),
+                        NativeStartupTerminalEvidence::Failed(failure_class),
+                    )
                 }
             };
 
@@ -813,12 +917,24 @@ pub(super) fn spawn_sidecar_startup(
             {
                 log::warn!("[cave] {error}");
             }
-            thread_control.finish();
+            finish_sidecar_startup(
+                &app,
+                &thread_control,
+                terminal_policy,
+                started.elapsed(),
+                terminal_evidence,
+            );
         });
 
     if let Err(error) = spawn_result {
-        control.finish();
         let message = format!("could not start sidecar preparation worker: {error}");
+        finish_sidecar_startup(
+            &app,
+            &control,
+            terminal_policy,
+            started.elapsed(),
+            NativeStartupTerminalEvidence::Failed(ReliabilityFailureClass::Permissions),
+        );
         let _ = publish_sidecar_startup_status(
             &app,
             &control,
@@ -844,7 +960,11 @@ pub(super) fn retry_sidecar_startup(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<SidecarStartupControl>>,
 ) -> Result<(), String> {
-    spawn_sidecar_startup(app, Arc::clone(state.inner()))
+    spawn_sidecar_startup(
+        app,
+        Arc::clone(state.inner()),
+        NativeStartupTerminalPolicy::RecordAtLifecycleTerminal,
+    )
 }
 
 #[cfg(all(desktop, target_os = "windows"))]
