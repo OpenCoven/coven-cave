@@ -1,4 +1,4 @@
-import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { promisify } from "node:util";
 import { callDaemonTarget, localDaemonTarget, socketPath } from "./coven-daemon.ts";
 import { covenBin, covenLaunchCommand } from "./coven-bin.ts";
@@ -12,7 +12,7 @@ import {
   type DaemonStartupCompatibility,
   type DaemonStartupHealth,
 } from "./daemon-startup-contract.ts";
-import { RuntimeStartupThrottle } from "./runtime-startup-throttle.ts";
+import { RuntimeStartupCoordinator } from "./runtime-startup-throttle.ts";
 import {
   inspectDaemonAddress,
   reportsDaemonAddressInUse,
@@ -68,6 +68,8 @@ type DaemonLaunchCleanupDependencies = {
   terminateWindowsTree?: (pid: number) => Promise<boolean>;
   killProcessGroup?: (pid: number, signal: NodeJS.Signals) => void;
   waitForExit?: (child: ChildProcess, timeoutMs: number) => Promise<boolean>;
+  processGroupAlive?: (pid: number) => boolean;
+  waitForProcessGroupExit?: (pid: number, timeoutMs: number) => Promise<boolean>;
 };
 
 const execFileAsync = promisify(execFile);
@@ -120,6 +122,24 @@ function isMissingProcess(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ESRCH";
 }
 
+function processGroupAlive(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    return !isMissingProcess(error);
+  }
+}
+
+async function waitForProcessGroupExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processGroupAlive(pid)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return !processGroupAlive(pid);
+}
+
 /**
  * Terminates only the process tree Cave started after readiness has failed a
  * final health check. Windows taskkill owns the shell and all descendants;
@@ -133,6 +153,8 @@ export async function terminateDaemonLaunchTree(
 ): Promise<DaemonLaunchCleanup> {
   const platform = dependencies.platform ?? process.platform;
   const waitForExit = dependencies.waitForExit ?? waitForChildExit;
+  const groupAlive = dependencies.processGroupAlive ?? processGroupAlive;
+  const waitForGroupExit = dependencies.waitForProcessGroupExit ?? waitForProcessGroupExit;
   const pid = child.pid;
 
   if (platform === "win32") {
@@ -157,7 +179,8 @@ export async function terminateDaemonLaunchTree(
     }
     return { attempted: true, completed: false, mode: "process-group" };
   }
-  if (await waitForExit(child, 500)) {
+  await waitForExit(child, 500);
+  if (!groupAlive(pid)) {
     return { attempted: true, completed: true, mode: "process-group" };
   }
   try {
@@ -167,7 +190,11 @@ export async function terminateDaemonLaunchTree(
       return { attempted: true, completed: false, mode: "process-group" };
     }
   }
-  return { attempted: true, completed: await waitForExit(child, 500), mode: "process-group" };
+  return {
+    attempted: true,
+    completed: await waitForGroupExit(pid, 500),
+    mode: "process-group",
+  };
 }
 
 type StartLocalDaemonOptions = {
@@ -185,7 +212,11 @@ type StartLocalDaemonOptions = {
   installedVersion?: () => Promise<string | null>;
   /** Injectable address-occupancy seam for deterministic already-bound tests. */
   inspectAddress?: () => Promise<DaemonAddressOccupancy>;
-  spawnImpl?: typeof spawn;
+  /** Injectable command seam keeps fault scenarios independent of host PATH state. */
+  launchCommand?: () => { command: string; args: string[] };
+  /** Injectable environment seam keeps fault scenarios independent of credential stores. */
+  spawnEnvironment?: () => NodeJS.ProcessEnv;
+  spawnImpl?: (command: string, args: string[], options: SpawnOptions) => ChildProcess;
   terminateLaunchTree?: (child: ChildProcess) => Promise<DaemonLaunchCleanup>;
   inspectLifecycle?: () => Promise<DaemonLifecycleInspection>;
   platform?: NodeJS.Platform;
@@ -228,8 +259,7 @@ export function sanitizeDaemonStartDiagnostic(value: string): string {
   return sanitizeAboutDiagnosticText(value);
 }
 
-const daemonStartThrottle = new RuntimeStartupThrottle();
-let activeDaemonStart: Promise<DaemonStartResult> | null = null;
+const daemonStartCoordinator = new RuntimeStartupCoordinator<DaemonStartResult>();
 
 function hasTestSeam(options: StartLocalDaemonOptions): boolean {
   return Boolean(
@@ -239,6 +269,8 @@ function hasTestSeam(options: StartLocalDaemonOptions): boolean {
     || options.terminateLaunchTree
     || options.installedVersion
     || options.inspectAddress
+    || options.launchCommand
+    || options.spawnEnvironment
     || options.platform,
   );
 }
@@ -254,35 +286,21 @@ const ADDRESS_IN_USE_DIAGNOSTIC =
 
 export function startLocalDaemon(options: StartLocalDaemonOptions = {}): Promise<DaemonStartResult> {
   if (hasTestSeam(options)) return runLocalDaemonStart(options);
-  if (activeDaemonStart) return activeDaemonStart;
-
-  const decision = daemonStartThrottle.allow();
-  if (!decision.allowed) {
-    return Promise.resolve({
+  return daemonStartCoordinator.run(
+    () => runLocalDaemonStart(options),
+    (retryAfterMs) => ({
       ok: false,
       code: "restart_throttled",
-      error: `Cave paused repeated daemon restarts. Try again in ${Math.ceil(decision.retryAfterMs / 1_000)} seconds.`,
+      error: `Cave paused repeated daemon restarts. Try again in ${Math.ceil(retryAfterMs / 1_000)} seconds.`,
       stdout: "",
       stderr: "",
       status: 429,
       readinessAttempts: 0,
       elapsedMs: 0,
       launchMode: "none",
-    });
-  }
-
-  const operation = runLocalDaemonStart(options);
-  activeDaemonStart = operation;
-  void operation.then(
-    (result) => {
-      if (result.ok) daemonStartThrottle.recordSuccess();
-      else daemonStartThrottle.recordFailure();
-    },
-    () => daemonStartThrottle.recordFailure(),
-  ).finally(() => {
-    if (activeDaemonStart === operation) activeDaemonStart = null;
-  });
-  return operation;
+    }),
+    (result) => result.ok,
+  );
 }
 
 async function runLocalDaemonStart({
@@ -295,6 +313,8 @@ async function runLocalDaemonStart({
   readHealthDocument: readHealthDocumentOverride,
   installedVersion,
   inspectAddress = () => inspectDaemonAddress({ socketPath: socketPath() }),
+  launchCommand = () => ({ command: covenBin(), args: ["daemon", "start"] }),
+  spawnEnvironment = harnessSpawnEnv,
   spawnImpl = spawn,
   terminateLaunchTree = terminateDaemonLaunchTree,
   inspectLifecycle = inspectDaemonLifecycle,
@@ -390,7 +410,8 @@ async function runLocalDaemonStart({
   }
 
   const launchMode = platform === "win32" ? "shell" : "direct";
-  const child = spawnImpl(covenBin(), ["daemon", "start"], {
+  const launch = launchCommand();
+  const child = spawnImpl(launch.command, launch.args, {
     stdio: ["ignore", "pipe", "pipe"],
     // POSIX uses an owned process group so timeout cleanup cannot strand a
     // foreground shell's daemon descendant. Windows owns its shell tree via
@@ -399,7 +420,7 @@ async function runLocalDaemonStart({
     // The daemon must never hold scoped vault secrets: daemon-launched
     // sessions would inherit them wholesale. Scoped keys flow only through
     // Cave's own per-familiar spawn path (cave-4nu6).
-    env: harnessSpawnEnv(),
+    env: spawnEnvironment(),
     shell: launchMode === "shell",
   });
   let stdout = "";

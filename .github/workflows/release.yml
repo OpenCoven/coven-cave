@@ -407,6 +407,18 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # PR CI runs this same bounded fault harness on Linux and Windows.
+      # Release CI supplies the macOS host proof without restoring the costly
+      # full PR matrix.
+      - name: Test daemon connectivity fault recovery
+        shell: bash
+        run: |
+          if [ -f scripts/daemon-connectivity-faults.test.ts ]; then
+            pnpm test:daemon-faults
+          else
+            echo "Historical release source predates the daemon fault harness; skipping."
+          fi
+
       - name: Require OpenCoven X app configuration
         env:
           COVEN_CAVE_X_RELEASE_DISABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app && '1' || '' }}
