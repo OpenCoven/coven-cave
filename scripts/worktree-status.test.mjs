@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -135,6 +135,165 @@ test("--prune emits remove commands only for the SAFE-RETIRE tree", () => {
     assert.match(out, /git branch -d 'feat\/safe'/);
     assert.doesNotMatch(out, /wt-live/);
     assert.doesNotMatch(out, /feat\/live/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- WEDGED: unfinished git operations (cave-97svy) ---------------------------
+// A worktree paused mid-merge is indistinguishable from one a session is
+// actively editing if the only signal is "N dirty" — which is how an abandoned
+// merge survived four days and several sessions that each backed off from it.
+// These cases pin the distinction the WEDGED verdict draws.
+
+function gitAllowFail(cwd, ...args) {
+  try {
+    return { ok: true, out: git(cwd, ...args) };
+  } catch (error) {
+    return { ok: false, out: String(error?.stdout || "") };
+  }
+}
+
+/** Leave `wt` stopped on a merge conflict against a sibling branch. */
+function wedgeOnMergeConflict(dir, wt, branch) {
+  git(dir, "branch", "other", "main");
+  const otherWt = join(dir, `${branch.replace(/\W/g, "-")}-other`);
+  git(dir, "worktree", "add", "-q", otherWt, "other");
+  writeFileSync(join(otherWt, "clash.txt"), "theirs\n");
+  git(otherWt, "add", "-A");
+  git(otherWt, "commit", "-qm", "theirs");
+
+  writeFileSync(join(wt, "clash.txt"), "ours\n");
+  git(wt, "add", "-A");
+  git(wt, "commit", "-qm", "ours");
+
+  const merged = gitAllowFail(wt, "merge", "other");
+  assert.equal(merged.ok, false, "the merge must stop on a conflict for this fixture to mean anything");
+}
+
+function rowByBranch(dir, branch) {
+  return JSON.parse(run(dir, "--json")).rows.find((r) => r.branch === branch);
+}
+
+function rowByPath(dir, suffix, ...flags) {
+  return JSON.parse(run(dir, "--json", ...flags)).rows.find((r) => r.path.endsWith(suffix));
+}
+
+test("a worktree paused mid-merge is WEDGED, not DIRTY", () => {
+  const dir = scaffold();
+  try {
+    const wt = join(dir, "wt-wedged");
+    git(dir, "worktree", "add", "-q", "-b", "feat/wedged", wt, "main");
+    wedgeOnMergeConflict(dir, wt, "feat/wedged");
+
+    const row = rowByBranch(dir, "feat/wedged");
+    assert.equal(row.verdict, "WEDGED");
+    assert.equal(row.wedge.op, "merge");
+    assert.equal(row.wedge.marker, "MERGE_HEAD");
+    assert.deepEqual(row.wedge.unmerged, ["clash.txt"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("WEDGED reports no hand resolution when nothing was touched after the stall", () => {
+  const dir = scaffold();
+  try {
+    const wt = join(dir, "wt-abandoned");
+    git(dir, "worktree", "add", "-q", "-b", "feat/abandoned", wt, "main");
+    wedgeOnMergeConflict(dir, wt, "feat/abandoned");
+
+    // Nobody has edited anything since git wrote the conflict, so an abort
+    // cannot destroy a resolution that does not exist.
+    const row = rowByBranch(dir, "feat/abandoned");
+    assert.equal(row.wedge.touchedSince.readable, true);
+    assert.equal(row.wedge.touchedSince.tracked, 0);
+
+    const human = run(dir);
+    assert.match(human, /no tracked file touched since the merge stalled/);
+    assert.match(human, /git merge --abort/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("WEDGED warns against aborting when a conflict was hand-resolved after the stall", () => {
+  const dir = scaffold();
+  try {
+    const wt = join(dir, "wt-resolving");
+    git(dir, "worktree", "add", "-q", "-b", "feat/resolving", wt, "main");
+    wedgeOnMergeConflict(dir, wt, "feat/resolving");
+
+    // Backdate the marker so the conflicted file reads as edited AFTER the
+    // merge stalled — the shape of a human part-way through a resolution.
+    const gitDir = git(wt, "rev-parse", "--path-format=absolute", "--git-dir");
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    utimesSync(join(gitDir, "MERGE_HEAD"), twoHoursAgo, twoHoursAgo);
+
+    const row = rowByBranch(dir, "feat/resolving");
+    assert.equal(row.verdict, "WEDGED");
+    assert.ok(row.wedge.touchedSince.tracked > 0, "the conflicted file postdates the stall");
+    assert.ok(row.wedge.ageHours >= 1.5, `expected a ~2h age, got ${row.wedge.ageHours}`);
+
+    const human = run(dir);
+    assert.match(human, /edited SINCE the merge stalled/);
+    assert.match(human, /do NOT abort/);
+    assert.match(human, /only with the owner's say-so/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a paused rebase is WEDGED and offers rebase-shaped remedies", () => {
+  const dir = scaffold();
+  try {
+    const wt = join(dir, "wt-rebase");
+    git(dir, "worktree", "add", "-q", "-b", "feat/rebasing", wt, "main");
+
+    // Give main and the branch conflicting edits to the same file, then rebase.
+    writeFileSync(join(dir, "clash.txt"), "main side\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qm", "main side");
+    writeFileSync(join(wt, "clash.txt"), "branch side\n");
+    git(wt, "add", "-A");
+    git(wt, "commit", "-qm", "branch side");
+
+    const rebased = gitAllowFail(wt, "rebase", "main");
+    assert.equal(rebased.ok, false, "the rebase must stop on a conflict");
+
+    // A stopped rebase detaches HEAD, so the tree has no branch to look up —
+    // exactly the case that would otherwise fall through to SCRATCH and read as
+    // a harmless scratch checkout.
+    const row = rowByPath(dir, "wt-rebase");
+    assert.equal(row.verdict, "WEDGED");
+    assert.equal(row.wedge.op, "rebase");
+
+    const human = run(dir);
+    assert.match(human, /git rebase --continue/);
+    assert.match(human, /git rebase --abort/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("--prune never offers to remove a WEDGED worktree, however merged it looks", () => {
+  const dir = scaffold();
+  try {
+    // Judged against a default branch that already contains it, this tree is a
+    // retirement candidate — and removing it would silently discard the paused
+    // operation along with it.
+    const wt = join(dir, "wt-merged-wedged");
+    git(dir, "worktree", "add", "-q", "-b", "feat/merged-wedged", wt, "main");
+    wedgeOnMergeConflict(dir, wt, "feat/merged-wedged");
+    git(dir, "branch", "contains-it", "feat/merged-wedged");
+    const env = { ...process.env, WT_DEFAULT_BRANCH: "contains-it" };
+
+    const row = rowByPath(dir, "wt-merged-wedged");
+    assert.equal(row.verdict, "WEDGED", "the wedge must outrank the retirement verdict");
+
+    const out = execFileSync("node", [script, "--prune"], { cwd: dir, encoding: "utf8", env });
+    assert.doesNotMatch(out, /wt-merged-wedged/);
+    assert.doesNotMatch(out, /feat\/merged-wedged/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
