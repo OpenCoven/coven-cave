@@ -91,7 +91,7 @@ export async function POST(req: Request) {
           classification,
           status,
         },
-        error: error ? diagnosticError(error, outcome) : null,
+        error: error ? diagnosticError(error, classification) : null,
       });
       resolve(respond(body, status));
     };
