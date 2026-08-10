@@ -94,10 +94,12 @@ import { groupChatTranscriptThreads } from "@/lib/group-chat-transcript";
 import {
   COVEN_RUN_STATUS,
   buildCovenRunFromThread,
+  covenHistoryFold,
   covenRailStatus,
   covenRunPill,
   type CovenRun,
 } from "@/lib/coven-run";
+import { CovenHistoryFoldView } from "@/components/coven-history-fold";
 import {
   COVEN_JUMP_TO_RUN_EVENT,
   publishCovenRunPill,
@@ -1409,6 +1411,19 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   }, [transcript, activeGroup?.responseMode]);
   const activeRun = useMemo(() => runs.find((run) => run.active) ?? null, [runs]);
 
+  // Earlier runs fold above the transcript (design proposal §6) so scrolling
+  // back through yesterday's work is a choice rather than the default. Derived
+  // from the runs already built — no second pass over the transcript.
+  const historyFold = useMemo(
+    () => covenHistoryFold(runs, { now: Date.now() }),
+    [runs],
+  );
+  // Only the runs the fold does NOT stand for are rendered in full.
+  const visibleRuns = useMemo(
+    () => (historyFold ? runs.slice(historyFold.count) : runs),
+    [runs, historyFold],
+  );
+
   // Publish the run to the status bar's pill (design proposal §11), so run
   // state survives scrolling deep into history. Cleared on unmount and on
   // coven switch by the effect below — a pill that outlives its surface would
@@ -1770,7 +1785,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                       </div>
                     ) : (
                       <div className="coven-tab__runs">
-                        {runs.map((run) => {
+                        {historyFold ? (
+                          <CovenHistoryFoldView
+                            fold={historyFold}
+                            byId={byId}
+                            formatTime={(iso) => formatChatRecency(iso, dtPrefs)}
+                          />
+                        ) : null}
+                        {visibleRuns.map((run) => {
                           const targets = run.user.targetFamiliarIds
                             ?.map((id) => byId.get(id))
                             .filter((f): f is ResolvedFamiliar => Boolean(f));

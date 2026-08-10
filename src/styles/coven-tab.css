@@ -1983,3 +1983,157 @@ textarea.coven-inspector__input {
     border-color: var(--border-strong);
   }
 }
+
+/* ── Earlier-runs history fold (design proposal §6) ───────────────────────────
+   A labelled divider and one quiet card standing in for the runs above it.
+   Deliberately the calmest thing in the transcript: it is context, and the
+   live conversation below it should win every time. */
+
+.coven-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.coven-history__divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.coven-history__rule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--border-hairline));
+}
+
+.coven-history__rule:last-child {
+  background: linear-gradient(to left, transparent, var(--border-hairline));
+}
+
+.coven-history__card {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
+  padding: var(--space-2) var(--space-3);
+}
+
+.coven-history__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.coven-history__glyph[data-tone="success"] {
+  color: var(--color-success-soft);
+}
+
+.coven-history__glyph[data-tone="warning"] {
+  color: var(--color-warning-soft);
+}
+
+.coven-history__glyph[data-tone="muted"] {
+  color: var(--text-muted);
+}
+
+.coven-history__title {
+  overflow: hidden;
+  max-width: 26rem;
+  color: var(--text-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.coven-history__meta {
+  color: var(--text-muted);
+}
+
+.coven-history__toggle {
+  margin-inline-start: auto;
+  border: none;
+  background: transparent;
+  color: var(--accent-presence);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.coven-history__turns {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-hairline);
+}
+
+.coven-history__turn {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+}
+
+.coven-history__avatar {
+  flex: none;
+  margin-top: 1px;
+  border-radius: var(--radius-pill);
+}
+
+.coven-history__body {
+  min-width: 0;
+}
+
+.coven-history__byline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: 2px;
+}
+
+.coven-history__name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.coven-history__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.coven-history__status[data-tone="success"] {
+  color: var(--color-success-soft);
+}
+
+.coven-history__status[data-tone="danger"] {
+  color: var(--color-danger-soft);
+}
+
+.coven-history__status[data-tone="warning"] {
+  color: var(--color-warning-soft);
+}
+
+.coven-history__time {
+  margin-inline-start: auto;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.coven-history__text {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
