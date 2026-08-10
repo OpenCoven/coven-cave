@@ -160,6 +160,34 @@ async function getPull(context, number) {
   return parsePull(await response.json());
 }
 
+/**
+ * GitHub's manual-approval gate. A run parked behind it reports
+ * `status: "completed"` with `conclusion: "action_required"` and ZERO jobs, so
+ * the pull request shows no checks whatsoever.
+ *
+ * Reading only `status` therefore mistook it for finished CI and refused to
+ * recover, leaving Copilot-authored PRs wedged with an empty check rollup
+ * (cave-qshvl). `conclusion` was not merely unused — parseRun dropped it, so
+ * this decision could not have consulted it.
+ */
+const APPROVAL_GATED = "action_required";
+
+/**
+ * Whether a run counts as CI having actually covered this head.
+ *
+ * Deliberately narrow. A FAILED run is coverage — it reported a verdict. A
+ * `cancelled` run is normally superseded by a newer push that has its own run,
+ * and recovering it would fight that. `startup_failure` genuinely produced no
+ * coverage, but re-dispatching a workflow that cannot start would just loop, so
+ * it is left to a human. Only the approval gate is both no-coverage AND fixed
+ * by a fresh dispatch.
+ */
+function isCoverage(run) {
+  if (run.status === "in_progress") return true;
+  if (run.status !== "completed") return false;
+  return run.conclusion !== APPROVAL_GATED;
+}
+
 async function decideRecovery(context, runs, now) {
   if (runs.length === 0) return { recover: true, reason: "missing_ci_run" };
 
@@ -170,8 +198,15 @@ async function decideRecovery(context, runs, now) {
   );
   if (recentRecovery) return { recover: false, reason: "recovery_cooldown" };
 
-  if (runs.some((run) => run.status === "completed" || run.status === "in_progress")) {
+  if (runs.some(isCoverage)) {
     return { recover: false, reason: "ci_present" };
+  }
+
+  // Every run is parked behind the manual-approval gate, so the PR has no
+  // checks at all and never will until someone approves or a fresh run is
+  // dispatched. Recovering is exactly right here.
+  if (runs.length > 0 && runs.every((run) => run.conclusion === APPROVAL_GATED)) {
+    return { recover: true, reason: "approval_gated_run" };
   }
 
   const latest = runs[0];
@@ -304,6 +339,15 @@ function parsePull(value) {
 function parseRun(value) {
   const id = value?.id;
   const status = value?.status;
+  // Normally null while a run is queued or in progress and a string once it
+  // completes, but validated as string-or-null against ANY status rather than
+  // keyed to `status === "completed"`. A completed run that reports no
+  // conclusion is odd, not malformed, and the only consumer below asks whether
+  // the conclusion IS the approval gate — a null answers "no" and the run is
+  // treated as coverage. Throwing there would turn a harmless API quirk into a
+  // dead recovery tool, which is a worse failure than reading one odd run
+  // conservatively.
+  const conclusion = value?.conclusion ?? null;
   const event = value?.event;
   const createdAt = Date.parse(value?.created_at);
   const headSha = value?.head_sha;
@@ -319,7 +363,8 @@ function parseRun(value) {
     typeof headSha !== "string" ||
     !/^[0-9a-f]{40}$/i.test(headSha) ||
     typeof displayTitle !== "string" ||
-    displayTitle.length === 0
+    displayTitle.length === 0 ||
+    (conclusion !== null && typeof conclusion !== "string")
   ) {
     throw new Error("CI workflow run response contained a malformed entry");
   }
@@ -334,6 +379,7 @@ function parseRun(value) {
   return {
     id,
     status,
+    conclusion,
     event,
     createdAt,
     headSha,
