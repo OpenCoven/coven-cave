@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter, once } from "node:events";
 import { createWriteStream, existsSync } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PassThrough, Writable } from "node:stream";
@@ -310,6 +310,35 @@ test("an unproven Windows Codex shim fails closed before spawn", async () => {
       ),
       /could not safely resolve the Codex Windows command shim/i,
     );
+  }
+});
+
+test("Windows Codex discovery rejects UNC executables and canonicalizes reparse paths", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "cave-codex-reparse-"));
+  const targetDirectory = path.join(directory, "target");
+  const linkDirectory = path.join(directory, "link");
+  const target = path.join(targetDirectory, "codex.exe");
+  try {
+    await mkdir(targetDirectory);
+    await copyFile(process.execPath, target);
+    await symlink(targetDirectory, linkDirectory, process.platform === "win32" ? "junction" : "dir");
+    const invocation = buildCodexExecInvocation(
+      { ...base, model: null, cwds: [directory], prompt: "canonical path" },
+      {
+        env: { NODE_ENV: "test", COVEN_CODEX_BIN: path.join(linkDirectory, "codex.exe") },
+        platform: "win32",
+      },
+    );
+    assert.equal(invocation.command.toLowerCase(), (await realpath(target)).toLowerCase());
+    assert.throws(
+      () => buildCodexExecInvocation(
+        { ...base, model: null, cwds: [directory], prompt: "remote path" },
+        { env: { NODE_ENV: "test", COVEN_CODEX_BIN: "\\\\remote-host\\share\\codex.exe" }, platform: "win32" },
+      ),
+      /Codex CLI was not found/i,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

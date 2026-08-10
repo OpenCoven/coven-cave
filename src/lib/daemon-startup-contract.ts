@@ -35,7 +35,7 @@ export function assessDaemonStartupCompatibility(
   health: DaemonStartupHealth | null | undefined,
   installedVersion: string | null,
 ): DaemonStartupCompatibility {
-  if (!health || health.ok === false || typeof health !== "object") {
+  if (!health || typeof health !== "object" || health.ok !== true) {
     return {
       ok: false,
       code: "invalid_health",

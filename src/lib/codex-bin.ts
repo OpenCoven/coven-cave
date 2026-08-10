@@ -8,6 +8,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import {
   covenLaunchCommandForBinary,
+  isWindowsRemoteExecutablePath,
   withCovenWrapperWindowPolicy,
   type CovenLaunchCommand,
 } from "./coven-bin.ts";
@@ -252,6 +253,7 @@ function candidateDirs(
   return configured
     .filter((directory, index) => !!directory && configured.indexOf(directory) === index)
     .filter((directory) => path.isAbsolute(directory))
+    .filter((directory) => platform !== "win32" || !isWindowsRemoteExecutablePath(directory))
     .map((directory) => path.resolve(/* turbopackIgnore: true */ directory))
     .filter((directory) => existsSync(/* turbopackIgnore: true */ directory));
 }
@@ -259,12 +261,18 @@ function candidateDirs(
 export const CODEX_WINDOWS_NOT_FOUND_DIAGNOSTIC =
   "Codex CLI was not found in Cave's launch environment. Install or repair the official @openai/codex package, restart Cave, and try again.";
 
-function verifiedAbsoluteFile(candidate: string): string | null {
+function verifiedAbsoluteFile(
+  candidate: string,
+  platform: NodeJS.Platform = process.platform,
+): string | null {
   if (!path.isAbsolute(candidate)) return null;
+  if (platform === "win32" && isWindowsRemoteExecutablePath(candidate)) return null;
   const absolute = path.resolve(/* turbopackIgnore: true */ candidate);
   try {
-    const stat = statSync(/* turbopackIgnore: true */ absolute);
-    return stat.isFile() || stat.isSymbolicLink() ? absolute : null;
+    const canonical = realpathSync(/* turbopackIgnore: true */ absolute);
+    if (platform === "win32" && isWindowsRemoteExecutablePath(canonical)) return null;
+    const stat = statSync(/* turbopackIgnore: true */ canonical);
+    return stat.isFile() ? canonical : null;
   } catch {
     return null;
   }
@@ -276,7 +284,7 @@ export function verifiedCodexLaunchBinary(
   platform: NodeJS.Platform = process.platform,
 ): string {
   if (platform !== "win32") return binary;
-  const verified = verifiedAbsoluteFile(binary);
+  const verified = verifiedAbsoluteFile(binary, platform);
   if (!verified) throw new Error(CODEX_WINDOWS_NOT_FOUND_DIAGNOSTIC);
   return verified;
 }
@@ -296,13 +304,13 @@ export function codexBin(
 ): string {
   const override = env.CODEX_BIN;
   if (override) {
-    const verified = verifiedAbsoluteFile(override);
+    const verified = verifiedAbsoluteFile(override, platform);
     if (verified) return verified;
   }
   for (const directory of candidateDirs(env, platform)) {
     for (const name of codexCandidateBinNames(platform)) {
       const candidate = path.join(/* turbopackIgnore: true */ directory, name);
-      const verified = verifiedAbsoluteFile(candidate);
+      const verified = verifiedAbsoluteFile(candidate, platform);
       if (verified) return verified;
     }
   }

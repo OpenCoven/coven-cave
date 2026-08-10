@@ -24,7 +24,7 @@
 // for the env option.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -356,22 +356,33 @@ function windowsRegistryPath(discovery: DiscoveryOptions): string | null {
 export const COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC =
   "Coven CLI was not found in Cave's launch environment. Install or repair @opencoven/cli, restart Cave, and try again.";
 
+/** UNC and extended-UNC paths cross Cave's owner-local executable boundary. */
+export function isWindowsRemoteExecutablePath(candidate: string): boolean {
+  const normalized = candidate.replaceAll("/", "\\");
+  return /^\\\\[^?.\\]/.test(normalized) || /^\\\\\?\\UNC\\/i.test(normalized);
+}
+
 function verifiedAbsoluteBinary(
   candidate: string,
   platform: NodeJS.Platform = process.platform,
 ): string | null {
   const pathApi = platform === "win32" ? path.win32 : path;
-  if (!pathApi.isAbsolute(candidate)) return null;
+  const crossHostAbsolute = platform !== process.platform && path.isAbsolute(candidate);
+  if (!pathApi.isAbsolute(candidate) && !crossHostAbsolute) return null;
   // A Cave-owned local daemon/CLI must not be sourced from a remote UNC share.
   // Besides crossing the local trust boundary, probing one synchronously can
   // defeat the bounded onboarding/status request when the share is offline.
-  if (platform === "win32" && /^\\\\(?!\?\\[A-Za-z]:\\)/.test(candidate)) {
+  if (platform === "win32" && isWindowsRemoteExecutablePath(candidate)) {
     return null;
   }
-  const absolute = pathApi.resolve(/* turbopackIgnore: true */ candidate);
+  const absolute = crossHostAbsolute
+    ? path.resolve(/* turbopackIgnore: true */ candidate)
+    : pathApi.resolve(/* turbopackIgnore: true */ candidate);
   try {
-    const st = statSync(/* turbopackIgnore: true */ absolute);
-    return st.isFile() || st.isSymbolicLink() ? absolute : null;
+    const canonical = realpathSync(/* turbopackIgnore: true */ absolute);
+    if (platform === "win32" && isWindowsRemoteExecutablePath(canonical)) return null;
+    const st = statSync(/* turbopackIgnore: true */ canonical);
+    return st.isFile() ? canonical : null;
   } catch {
     return null;
   }
@@ -416,7 +427,7 @@ export function covenBinaryFromEnvironment(
   for (const configuredDir of pathValue.split(pathApi.delimiter)) {
     const normalizedDir = configuredDir.trim().replace(/^"|"$/g, "");
     if (!normalizedDir || !pathApi.isAbsolute(normalizedDir)) continue;
-    if (platform === "win32" && /^\\\\(?!\?\\[A-Za-z]:\\)/.test(normalizedDir)) {
+    if (platform === "win32" && isWindowsRemoteExecutablePath(normalizedDir)) {
       continue;
     }
     const directory = pathApi.resolve(/* turbopackIgnore: true */ normalizedDir);
@@ -516,10 +527,14 @@ export function windowsShimLaunchCommandForBinary(
   if (!script) {
     return { command: binary, fixedArgs: [], unresolvedWindowsShim: true };
   }
-  if (/\.(?:exe|com)$/i.test(script)) {
-    return { command: script, fixedArgs: [] };
+  const verifiedScript = verifiedAbsoluteBinary(script, platform);
+  if (!verifiedScript) {
+    return { command: binary, fixedArgs: [], unresolvedWindowsShim: true };
   }
-  return { command: process.execPath, fixedArgs: [script] };
+  if (/\.(?:exe|com)$/i.test(verifiedScript)) {
+    return { command: verifiedScript, fixedArgs: [] };
+  }
+  return { command: process.execPath, fixedArgs: [verifiedScript] };
 }
 
 export function covenLaunchCommandForBinary(

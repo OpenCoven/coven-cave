@@ -21,6 +21,14 @@ assert.deepEqual(assessDaemonStartupCompatibility(healthy, "1.2.3"), {
   apiVersion: COVEN_DAEMON_API_VERSION,
 });
 
+for (const ok of [undefined, false, null, 1, "true"]) {
+  assert.deepEqual(assessDaemonStartupCompatibility({ ...healthy, ok }, "1.2.3"), {
+    ok: false,
+    code: "invalid_health",
+    diagnostic: "The local Coven daemon did not publish a usable readiness document. Restart Coven and try again.",
+  });
+}
+
 for (const apiVersion of ["1", "v1", "coven.daemon.v2", ` ${COVEN_DAEMON_API_VERSION} `, null, 1]) {
   assert.equal(isSupportedDaemonApiVersion(apiVersion), false);
   assert.deepEqual(assessDaemonStartupCompatibility({ ...healthy, apiVersion }, "1.2.3"), {

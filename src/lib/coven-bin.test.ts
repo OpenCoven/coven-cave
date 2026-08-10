@@ -5,16 +5,25 @@
 // can find `coven` while later spawns still fail with ENOENT.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV, caveToolSpawnEnv, covenAdapterDirsEnvValue, covenBinaryFromEnvironment, covenLaunchCommandForBinary, covenSpawnEnv, covenWrapperSpawnEnv, pickWindowsLauncher, refreshCovenSpawnEnv, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery, withCovenWrapperWindowPolicy } from "./coven-bin.ts";
+import { COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV, caveToolSpawnEnv, covenAdapterDirsEnvValue, covenBinaryFromEnvironment, covenLaunchCommandForBinary, covenSpawnEnv, covenWrapperSpawnEnv, isWindowsRemoteExecutablePath, pickWindowsLauncher, refreshCovenSpawnEnv, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery, withCovenWrapperWindowPolicy } from "./coven-bin.ts";
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 
 const source = await readFile(new URL("./coven-bin.ts", import.meta.url), "utf8");
 const childSpawnEnvSource = await readFile(
   new URL("./child-spawn-env.ts", import.meta.url),
   "utf8",
+);
+
+assert.equal(isWindowsRemoteExecutablePath("\\\\server\\share\\coven.exe"), true);
+assert.equal(isWindowsRemoteExecutablePath("\\\\?\\UNC\\server\\share\\coven.exe"), true);
+assert.equal(isWindowsRemoteExecutablePath("\\\\?\\C:\\Tools\\coven.exe"), false);
+assert.match(
+  source,
+  /const canonical = realpathSync[\s\S]*isWindowsRemoteExecutablePath\(canonical\)[\s\S]*return st\.isFile\(\) \? canonical : null/,
+  "Windows launchers are canonicalized before a reparse target can cross the UNC boundary",
 );
 
 assert.equal(
@@ -809,6 +818,7 @@ assert.match(
 if (process.platform === "win32") {
   const directory = await mkdtemp(path.join(os.tmpdir(), "cave-coven-cwd-plant-"));
   const verifiedDirectory = await mkdtemp(path.join(os.tmpdir(), "cave-coven-path-"));
+  const junctionDirectory = `${verifiedDirectory}-junction`;
   try {
     await copyFile(process.execPath, path.join(directory, "coven.exe"));
     await copyFile(process.execPath, path.join(verifiedDirectory, "coven.exe"));
@@ -826,6 +836,17 @@ if (process.platform === "win32") {
       covenBinaryFromEnvironment({ Path: "\\\\remote-host\\share" }),
       null,
       "remote UNC search roots cannot supply Cave's owner-local Coven CLI",
+    );
+    assert.equal(
+      covenBinaryFromEnvironment({ COVEN_BIN: "\\\\remote-host\\share\\coven.exe" }),
+      null,
+      "a remote UNC override cannot supply Cave's owner-local Coven CLI",
+    );
+    await symlink(verifiedDirectory, junctionDirectory, "junction");
+    assert.equal(
+      covenBinaryFromEnvironment({ Path: junctionDirectory })?.toLowerCase(),
+      (await realpath(path.join(verifiedDirectory, "coven.exe"))).toLowerCase(),
+      "a local reparse path is resolved to its canonical executable before launch",
     );
     const env = { ...process.env };
     for (const key of Object.keys(env)) {
@@ -863,6 +884,7 @@ if (process.platform === "win32") {
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
+    await rm(junctionDirectory, { recursive: true, force: true });
     await rm(verifiedDirectory, { recursive: true, force: true });
   }
 }
