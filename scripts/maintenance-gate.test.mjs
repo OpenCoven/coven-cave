@@ -250,3 +250,38 @@ test("maintenance capabilities name the released Coven protocol without claiming
     complete: false,
   });
 });
+
+test("a failed coven command carries the client's own stderr into the reason", () => {
+  // Every non-zero exit used to collapse to `coven-<op>-unavailable`, which
+  // reads as "the subcommand is missing or too old". The common failure is an
+  // expired owner lease, and that message sent a session after a version
+  // number that had nothing to do with it (cave-7w5cu). The suffix is kept so
+  // existing matchers still work; the detail is appended.
+  const coordinator = createRepositoryMaintenanceCoordinator({
+    covenClient: createCovenMaintenanceClient({
+      run: () => ({ ok: false, stdout: "", stderr: "error: owner lease expired\nbacktrace...", status: 1 }),
+      now: () => 0,
+    }),
+  });
+  const released = coordinator.release({
+    local: { generation: 1 },
+    coven: { ownerId: "cave-maintenance", generation: "g", repoDir },
+  });
+  assert.equal(released.ok, false);
+  assert.match(released.reason, /coven-release-unavailable: error: owner lease expired/);
+  assert.doesNotMatch(released.reason, /backtrace/, "only the first stderr line is carried");
+});
+
+test("a failed coven command with no stderr keeps the bare reason", () => {
+  const coordinator = createRepositoryMaintenanceCoordinator({
+    covenClient: createCovenMaintenanceClient({
+      run: () => ({ ok: false, stdout: "", stderr: "   \n\n", status: 1 }),
+      now: () => 0,
+    }),
+  });
+  const released = coordinator.release({
+    local: { generation: 1 },
+    coven: { ownerId: "cave-maintenance", generation: "g", repoDir },
+  });
+  assert.equal(released.reason, "coven-release-failed: coven-release-unavailable");
+});
