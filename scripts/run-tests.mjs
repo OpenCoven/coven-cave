@@ -1616,6 +1616,7 @@ export const SUITES = {
     "scripts/mobile-tailscale.test.mjs",
     "src/components/mobile-handoff.test.ts",
     "src/components/shell-drawer-smoke.test.ts",
+    "src/components/mobile-drawer-inert-focus-order.test.tsx",
     "src/app/composer-zoom-smoke.test.ts",
     "src/app/safe-area-smoke.test.ts",
     "src/lib/use-viewport.test.ts",
@@ -1901,6 +1902,7 @@ const VITEST_TESTS = new Set([
   "src/components/chat-title-sparkle-behavior.test.tsx",
   "src/components/right-chat-panel-behavior.test.tsx",
   "src/components/chat-router-removal-race.test.tsx",
+  "src/components/mobile-drawer-inert-focus-order.test.tsx",
   // vi.fn() for the subscriber assertions
   "src/lib/surface-history.test.ts",
   // renders the hook through react-test-renderer
