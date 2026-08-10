@@ -29,6 +29,8 @@ export interface WorktreeLifecycleInventoryOptions {
 
 export interface WorktreeLifecycleInventory {
   items: WorktreeLifecycleItem[];
+  orphanedMetadata: OrphanedWorktreeMetadataRecord[];
+  orphanedMetadataErrors: string[];
   budgets: WorktreeLifecycleBudgets;
   inventoryFingerprint: string;
   /**
@@ -40,6 +42,30 @@ export interface WorktreeLifecycleInventory {
    * read them here (cave-t9tlm).
    */
   globalErrors: string[];
+  /**
+   * Every structured worktree record across every bead that failed validation,
+   * with the branch and path it claims.
+   *
+   * A malformed record is charged to the unit it names rather than to the whole
+   * repository (cave-g9byt), so a record whose worktree no longer exists lands
+   * on no unit at all and would otherwise disappear silently. It is still a
+   * defect on someone's bead, and creation still has to refuse a request the
+   * record already claims, so both readers get it from here.
+   */
+  metadataClaimErrors: WorktreeMetadataClaimError[];
+}
+
+export interface WorktreeMetadataClaimError {
+  /**
+   * The branch the record claims, empty when it does not name one a unit could
+   * match. A record keeps its branch string verbatim for diagnostics even when
+   * that string is `refs/heads/foo` or ` foo`, which no unit ever equals; this
+   * field is already normalized so readers do not have to know that.
+   */
+  branch: string;
+  /** The absolute path the record claims; null when it does not name a usable one. */
+  path: string | null;
+  errors: string[];
 }
 
 type CommandResult = {
@@ -117,14 +143,60 @@ type BeadTask = {
   status: string;
   text: string;
   structured: StructuredMetadataRecord[];
+  /**
+   * Errors in the *shape* of the bead's `coven` metadata rather than in any one
+   * record — `worktrees` not being an array, additional records without a
+   * primary. Nothing identifies a branch or a path, so nothing can scope them
+   * to a unit and they stay repository-wide.
+   *
+   * Errors inside a record live on that record's `errors` instead, so they can
+   * be charged to the branch and path it names — see {@link metadataFor}.
+   */
   structuredErrors: string[];
 };
 
+type StructuredMetadataLocation = "primary" | `additional:${number}`;
+
 type StructuredMetadataRecord = {
+  location: StructuredMetadataLocation;
   branch: string;
+  /**
+   * Whether `branch` is an exact local branch name, and so can match a unit.
+   *
+   * `branch` is kept verbatim for diagnostics, which means it can hold a value
+   * no unit will ever equal — `" foo"`, `refs/heads/foo`, `feat/bad..name`.
+   * Treating "non-blank" as "names a unit" would let such a record be charged
+   * to a unit that never matches it and drop out of the repository-wide set at
+   * the same time, so its error would reach no surface at all. Attribution has
+   * to read this flag, not the string.
+   */
+  branchUsable: boolean;
   path: string | null;
+  rawRecord: Record<string, unknown> | null;
   metadata: WorktreeLifecycleMetadata | null;
   errors: string[];
+};
+
+export type OrphanedWorktreeMetadataRecord = {
+  beadId: string;
+  beadStatus: string;
+  location: StructuredMetadataLocation;
+  branch: string;
+  path: string;
+  rawRecord: Record<string, unknown>;
+  record: {
+    branch: string;
+    path: string;
+    owner: string;
+    purpose: string;
+    disposition: WorktreeLifecycleMetadata["disposition"];
+    createdAt: string;
+    reason?: string;
+    reviewAfter?: string;
+    exception?: WorktreeLifecycleMetadata["exception"];
+  };
+  repairable: boolean;
+  reasons: string[];
 };
 
 type StructuredMetadataParse = {
@@ -273,7 +345,7 @@ const UNSAFE_GIT_ENVIRONMENT = new Set([
   "GIT_CONFIG_COUNT",
 ]);
 
-function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
+export function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
     const canonicalKey = key.toUpperCase();
@@ -1539,19 +1611,24 @@ function parseException(
 function parseStructuredRecord(
   taskId: string,
   value: unknown,
-  location: string,
+  prefixLocation: string,
+  location: StructuredMetadataLocation,
   root: string,
 ): StructuredMetadataRecord {
-  const prefix = `Bead ${taskId} ${location} metadata`;
+  const prefix = `Bead ${taskId} ${prefixLocation} metadata`;
   if (!isRecord(value)) {
     return {
+      location,
       branch: "",
+      branchUsable: false,
       path: null,
+      rawRecord: null,
       metadata: null,
       errors: [`${prefix}: record must be an object`],
     };
   }
   const worktree = value;
+  const rawRecord = structuredClone(worktree) as Record<string, unknown>;
   const branch = typeof worktree.branch === "string" ? worktree.branch : "";
   const metadataPath =
     typeof worktree.path === "string"
@@ -1559,6 +1636,9 @@ function parseStructuredRecord(
       : null;
   const errors: string[] = [];
   const metadataErrors = (message: string) => errors.push(`${prefix}: ${message}`);
+  // Tracks the same two checks below, so attribution can ask whether this
+  // branch could match a unit rather than whether the string is non-blank.
+  let branchUsable = false;
   if (
     branch.trim().length === 0 ||
     branch.startsWith("refs/heads/") ||
@@ -1569,6 +1649,8 @@ function parseStructuredRecord(
     const branchCheck = git(root, ["check-ref-format", "--branch", branch]);
     if (!branchCheck.ok || branchCheck.stdout.trim() !== branch) {
       metadataErrors("branch must be a valid exact local branch name");
+    } else {
+      branchUsable = true;
     }
   }
   if (metadataPath === null) {
@@ -1612,10 +1694,23 @@ function parseStructuredRecord(
   const exception = parseException(worktree.exception, exceptionErrors);
   for (const error of exceptionErrors) metadataErrors(error);
 
-  if (errors.length > 0) return { branch, path: metadataPath, metadata: null, errors };
+  if (errors.length > 0) {
+    return {
+      location,
+      branch,
+      branchUsable,
+      path: metadataPath,
+      rawRecord,
+      metadata: null,
+      errors,
+    };
+  }
   return {
+    location,
     branch,
+    branchUsable,
     path: metadataPath,
+    rawRecord,
     metadata: {
       beadId: taskId.toLowerCase(),
       owner: worktree.owner as string,
@@ -1632,17 +1727,46 @@ function parseStructuredRecord(
   };
 }
 
+export function validateStructuredLifecycleRecord(
+  value: unknown,
+  label: string,
+  root: string,
+): Pick<StructuredMetadataRecord, "branch" | "path" | "errors"> {
+  const parsed = parseStructuredRecord(
+    label,
+    value,
+    "lifecycle",
+    "primary",
+    root,
+  );
+  return {
+    branch: parsed.branch,
+    path: parsed.path,
+    errors: parsed.errors,
+  };
+}
+
 function parseStructuredMetadata(
   taskId: string,
   value: unknown,
   root: string,
 ): StructuredMetadataParse {
   if (value === undefined || value === null) return { records: [], errors: [] };
-  if (!isRecord(value)) throw new Error();
+  if (!isRecord(value)) {
+    return {
+      records: [],
+      errors: [`Bead ${taskId} metadata: metadata must be an object`],
+    };
+  }
   if (value.coven === undefined || value.coven === null) {
     return { records: [], errors: [] };
   }
-  if (!isRecord(value.coven)) throw new Error();
+  if (!isRecord(value.coven)) {
+    return {
+      records: [],
+      errors: [`Bead ${taskId} coven metadata: coven must be an object`],
+    };
+  }
 
   const records: StructuredMetadataRecord[] = [];
   const errors: string[] = [];
@@ -1653,10 +1777,10 @@ function parseStructuredMetadata(
       taskId,
       value.coven.worktree,
       "worktree",
+      "primary",
       root,
     );
     records.push(primary);
-    errors.push(...primary.errors);
   }
 
   if (value.coven.worktrees !== undefined) {
@@ -1673,10 +1797,10 @@ function parseStructuredMetadata(
           taskId,
           record,
           `worktrees[${index}]`,
+          `additional:${index}`,
           root,
         );
         records.push(parsed);
-        errors.push(...parsed.errors);
       });
     }
   }
@@ -2234,14 +2358,42 @@ function matchingTasks(
     .map((task) => task.id);
 }
 
+/**
+ * Whether a record identifies *some* unit, however invalid the rest of it is.
+ *
+ * A record names the branch and path it claims even when the rest of it fails
+ * validation — {@link parseStructuredRecord} keeps both fields and reports the
+ * failures separately — and that is what makes scoping possible: a record whose
+ * `disposition` is misspelled still says exactly which unit it describes. The
+ * branch and path matching below then charges it there and nowhere else.
+ *
+ * A record with neither a usable branch nor a usable path claims something we
+ * cannot name, so no unit can be cleared of it and it stays repository-wide.
+ */
+function recordIsAttributable(record: StructuredMetadataRecord): boolean {
+  return record.branchUsable || normalizeAbsoluteWorktreePath(record.path) !== null;
+}
+
 function metadataFor(
   branch: string | null,
   worktreePath: string | null,
   tasks: BeadTask[],
 ): { metadata: WorktreeLifecycleMetadata | null; errors: string[] } {
   if (!branch) return { metadata: null, errors: [] };
-  const globalErrors = tasks.flatMap((task) => task.structuredErrors);
   const allRecords = tasks.flatMap((task) => task.structured);
+  // One malformed record used to deny every unit in the repository, because
+  // every task's record errors were folded in here wholesale. cave-l11sw wrote
+  // a `disposition` outside the accepted set and creation then failed for EVERY
+  // bead with "lifecycle inventory is incomplete", deterministically, until a
+  // human corrected another owner's record — the one repair the worktree rules
+  // forbid. A record that names its branch and path disqualifies that unit; it
+  // has nothing to say about anyone else's (cave-g9byt).
+  const globalErrors = [
+    ...tasks.flatMap((task) => task.structuredErrors),
+    ...allRecords
+      .filter((record) => !recordIsAttributable(record))
+      .flatMap((record) => record.errors),
+  ];
   const records = allRecords.filter((record) => record.branch === branch);
   const normalizedWorktreePath = normalizeAbsoluteWorktreePath(worktreePath);
   const conflictingPathRecords =
@@ -2298,6 +2450,166 @@ function metadataFor(
     };
   }
   return { metadata: record.metadata, errors: [] };
+}
+
+export function probeRecordedPathAbsence(
+  recordedPath: string,
+  probe: (candidate: string) => Stats = lstatSync,
+): { absent: boolean; reason: string | null } {
+  try {
+    probe(recordedPath);
+    return {
+      absent: false,
+      reason: `recorded path exists on disk: ${recordedPath}`,
+    };
+  } catch (error) {
+    const code = isRecord(error) && typeof error.code === "string" ? error.code : "UNKNOWN";
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return { absent: true, reason: null };
+    }
+    const detail = error instanceof Error ? error.message : "unknown filesystem error";
+    return {
+      absent: false,
+      reason: `could not establish recorded path absence for ${recordedPath} (${code}): ${detail}`,
+    };
+  }
+}
+
+function collectOrphanedMetadata(
+  tasks: BeadTask[],
+  localRefs: LocalBranchRef[],
+  entries: WorktreeEntry[],
+): {
+  candidates: OrphanedWorktreeMetadataRecord[];
+  errors: string[];
+} {
+  const localBranches = new Set(localRefs.map((localRef) => localRef.branch));
+  const registeredPaths = new Set(
+    entries.flatMap((entry) => {
+      const normalized = normalizeAbsoluteWorktreePath(entry.path);
+      return normalized === null ? [] : [normalized];
+    }),
+  );
+  const structuredRecords = tasks.flatMap((task) => task.structured);
+  const branchOwnershipCounts = new Map<string, number>();
+  const pathOwnershipCounts = new Map<string, number>();
+  for (const record of structuredRecords) {
+    branchOwnershipCounts.set(
+      record.branch,
+      (branchOwnershipCounts.get(record.branch) ?? 0) + 1,
+    );
+    const normalizedPath = normalizeAbsoluteWorktreePath(record.path);
+    if (normalizedPath !== null) {
+      pathOwnershipCounts.set(
+        normalizedPath,
+        (pathOwnershipCounts.get(normalizedPath) ?? 0) + 1,
+      );
+    }
+  }
+  const candidates: OrphanedWorktreeMetadataRecord[] = [];
+  const errors: string[] = [];
+  for (const task of tasks) {
+    if (task.status === "closed") continue;
+
+    const recordErrors = new Set(task.structured.flatMap((record) => record.errors));
+    errors.push(
+      ...task.structuredErrors.filter((error) => !recordErrors.has(error)),
+    );
+
+    for (const record of task.structured) {
+      const normalizedRecordPath = normalizeAbsoluteWorktreePath(record.path);
+      const hasLifecycleUnit =
+        localBranches.has(record.branch) ||
+        (normalizedRecordPath !== null && registeredPaths.has(normalizedRecordPath));
+      if (
+        record.errors.length > 0 ||
+        record.metadata === null ||
+        record.path === null ||
+        record.rawRecord === null
+      ) {
+        if (!hasLifecycleUnit) errors.push(...record.errors);
+        continue;
+      }
+      if (normalizedRecordPath === null || hasLifecycleUnit) continue;
+
+      const reasons = [
+        ...task.structuredErrors,
+        ...task.structured.flatMap((candidate) => candidate.errors),
+      ];
+      const branchOwners = branchOwnershipCounts.get(record.branch) ?? 0;
+      if (branchOwners !== 1) {
+        reasons.push(
+          `branch ${record.branch} appears in ${branchOwners} structured metadata records`,
+        );
+      }
+      const pathOwners = pathOwnershipCounts.get(normalizedRecordPath) ?? 0;
+      if (pathOwners !== 1) {
+        reasons.push(
+          `path ${normalizedRecordPath} appears in ${pathOwners} structured metadata records`,
+        );
+      }
+      candidates.push({
+        beadId: task.id,
+        beadStatus: task.status,
+        location: record.location,
+        branch: record.branch,
+        path: record.path,
+        rawRecord: record.rawRecord,
+        record: {
+          branch: record.branch,
+          path: record.path,
+          owner: record.metadata.owner,
+          purpose: record.metadata.purpose,
+          disposition: record.metadata.disposition,
+          createdAt: record.metadata.createdAt,
+          ...(record.metadata.reason ? { reason: record.metadata.reason } : {}),
+          ...(record.metadata.reviewAfter
+            ? { reviewAfter: record.metadata.reviewAfter }
+            : {}),
+          ...(record.metadata.exception ? { exception: record.metadata.exception } : {}),
+        },
+        repairable: false,
+        reasons: [...new Set(reasons)],
+      });
+    }
+  }
+  return {
+    candidates,
+    errors: [...new Set(errors)],
+  };
+}
+
+function reconcileOrphanedMetadata(
+  candidates: OrphanedWorktreeMetadataRecord[],
+  localRefs: LocalBranchRef[],
+  entries: WorktreeEntry[],
+): OrphanedWorktreeMetadataRecord[] {
+  const localBranches = new Set(localRefs.map((localRef) => localRef.branch));
+  const registeredPaths = new Set(
+    entries.flatMap((entry) => {
+      const normalized = normalizeAbsoluteWorktreePath(entry.path);
+      return normalized === null ? [] : [normalized];
+    }),
+  );
+
+  return candidates.map((candidate) => {
+    const reasons = [...candidate.reasons];
+    if (localBranches.has(candidate.branch)) {
+      reasons.push(`exact local branch still exists: ${candidate.branch}`);
+    }
+    const normalizedPath = normalizeAbsoluteWorktreePath(candidate.path);
+    if (normalizedPath !== null && registeredPaths.has(normalizedPath)) {
+      reasons.push(`recorded path is still registered: ${candidate.path}`);
+    }
+    const pathProbe = probeRecordedPathAbsence(candidate.path);
+    if (pathProbe.reason !== null) reasons.push(pathProbe.reason);
+    const uniqueReasons = [...new Set(reasons)];
+    return {
+      ...candidate,
+      repairable: uniqueReasons.length === 0 && pathProbe.absent,
+      reasons: uniqueReasons,
+    };
+  });
 }
 
 function pathContains(root: string, candidate: string): boolean {
@@ -2546,6 +2858,7 @@ export function collectWorktreeLifecycleInventory(
   const claims = fetchClaims(root);
   const sessions = fetchSessions(root);
   const tasks = fetchTasks(root);
+  const orphanedMetadata = collectOrphanedMetadata(tasks.tasks, localRefs, entries);
   const processes = fetchProcessOwners();
   const sessionOwnership =
     sessions.error === null
@@ -2720,6 +3033,8 @@ export function collectWorktreeLifecycleInventory(
     "--format=%(refname)%0a%(objectname)%00",
     "refs/heads",
   ]);
+  const finalEntries = parseWorktrees(finalWorktreeRaw);
+  const finalLocalRefs = parseLocalBranchRefs(finalRefsRaw);
   const finalReplacementRefsRaw = requiredGit(root, [
     "for-each-ref",
     "--format=%(refname)%0a%(objectname)%00",
@@ -2772,14 +3087,23 @@ export function collectWorktreeLifecycleInventory(
     throw new Error(HISTORY_OVERRIDE_DRIFT_ERROR);
   }
 
-  const structuredRecords = tasks.tasks
-    .flatMap((task) => task.structured);
+  const structuredRecords = tasks.tasks.flatMap((task) => task.structured);
   const validMetadata = structuredRecords
     .filter(
       (record): record is StructuredMetadataRecord & { metadata: WorktreeLifecycleMetadata } =>
         record.errors.length === 0 && record.metadata !== null,
     )
-    .filter(() => tasks.tasks.every((task) => task.structuredErrors.length === 0))
+    // Exception validity stays repository-wide and fail-closed: a malformed
+    // record anywhere means the exception inventory is not known to be complete,
+    // and an exception wrongly believed present *loosens* a budget. Scoping in
+    // cave-g9byt applies to blocking a unit, not to relaxing one.
+    .filter(() =>
+      tasks.tasks.every(
+        (task) =>
+          task.structuredErrors.length === 0 &&
+          task.structured.every((candidate) => candidate.errors.length === 0),
+      ),
+    )
     .filter(
       (record) =>
         structuredRecords.filter((candidate) => candidate.branch === record.branch).length === 1,
@@ -2852,13 +3176,31 @@ export function collectWorktreeLifecycleInventory(
       ? observation
       : { ...observation, probeErrors: [...observation.probeErrors, reason] };
   });
+  const reconciledOrphanedMetadata = reconcileOrphanedMetadata(
+    orphanedMetadata.candidates,
+    finalLocalRefs,
+    finalEntries,
+  );
 
   return {
     items: driftedObservations.map((observation) =>
       classifyInventoryObservation(observation, options.nowMs),
     ),
+    orphanedMetadata: reconciledOrphanedMetadata,
+    orphanedMetadataErrors: orphanedMetadata.errors,
     budgets,
     globalErrors: [...new Set(branchGlobalErrors)],
+    metadataClaimErrors: structuredRecords
+      .filter((record) => record.errors.length > 0)
+      .map((record) => ({
+        // Blank unless the branch could actually match a unit, so a reader can
+        // treat "no branch and no path" as unnameable without re-deriving what
+        // makes a branch usable. A verbatim `refs/heads/foo` here would read as
+        // a claim on `foo` that nothing can ever match.
+        branch: record.branchUsable ? record.branch : "",
+        path: normalizeAbsoluteWorktreePath(record.path),
+        errors: record.errors,
+      })),
     inventoryFingerprint: fingerprint(
       initialWorktreeRaw,
       initialRefsRaw,

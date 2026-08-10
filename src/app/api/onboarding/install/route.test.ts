@@ -4,7 +4,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+const source = await readFile(
+  new URL("./install-service.ts", import.meta.url),
+  "utf8",
+);
 const installOutput = await readFile(new URL("./install-job-output.ts", import.meta.url), "utf8");
 
 assert.match(source, /"managed-node": \{[\s\S]*kind: "managed-node"/);
@@ -36,6 +39,16 @@ assert.match(
   source,
   /verificationPath: detected[\s\S]*verifyOpenCovenToolInstall\(targetName, \{[\s\S]*binaryPath: plan\.verificationPath,[\s\S]*env: plan\.env/,
   "post-install verification checks the exact CLI launcher that npm targeted",
+);
+assert.match(
+  source,
+  /function isVerifiedReviewedInstallSuccess[\s\S]*verification\.current === reviewed\.version/,
+  "the pinned Coven install verifies the reviewed version instead of npm latest",
+);
+assert.doesNotMatch(
+  source,
+  /!isVerifiedOpenCovenInstallSuccess\(code, verification\)/,
+  "the Coven install path must not require the mutable npm latest tag",
 );
 assert.match(
   source,

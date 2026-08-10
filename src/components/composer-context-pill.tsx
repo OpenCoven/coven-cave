@@ -216,6 +216,8 @@ export function ComposerContextPickers({
         placement={context.config.popoverPlacement}
         projectRoot={context.root}
         onSwitched={context.reload}
+        ariaLabel={view === "worktree" ? "Worktree actions" : undefined}
+        menuLabel={view === "worktree" ? "Worktree actions" : undefined}
         {...branchPopoverExtras(context)}
       />
       {context.addFlow.addError ? (
@@ -368,6 +370,8 @@ export function ComposerContextChips(props: ComposerContextProps) {
           placement={context.config.popoverPlacement}
           projectRoot={context.root}
           onSwitched={context.reload}
+          ariaLabel="Worktree actions"
+          menuLabel="Worktree actions"
           {...branchPopoverExtras(context)}
         />
       ) : null}

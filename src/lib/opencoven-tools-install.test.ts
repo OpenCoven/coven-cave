@@ -89,13 +89,13 @@ assert.equal(
 
 assert.deepEqual(
   openCovenToolActionTargets([cliOutdated]),
-  ["coven-cli"],
-  "an outdated CLI is actionable",
+  [],
+  "a compatible CLI is not reinstalled merely because npm has a newer release",
 );
 assert.equal(
   openCovenToolsPrimaryActionLabel([cliOutdated]),
-  "Update Coven CLI",
-  "an installed outdated CLI gets an update action",
+  "Coven CLI ready",
+  "an installed compatible CLI remains ready when npm has a newer release",
 );
 
 assert.deepEqual(

@@ -1,0 +1,15 @@
+#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+if (args[0] === 'show' && args[2] === '--json') {
+  process.stderr.write(' \t\n');
+  console.log(JSON.stringify([{ id: 'cave-adapter', metadata: { coven: { worktree: { label: 'preserve' } } } }]));
+  process.exit(0);
+}
+if (args[0] === 'update' && args[4] === '--json') {
+  process.stderr.write(' \t\n');
+  console.log(JSON.stringify([{ id: args[1], metadata: JSON.parse(args[3]) }]));
+  process.exit(0);
+}
+console.error(`unexpected bd invocation: ${args.join(' ')}`);
+process.exit(1);

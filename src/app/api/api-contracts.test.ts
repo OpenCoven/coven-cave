@@ -20,6 +20,12 @@ type RouteContract = {
 const contracts: RouteContract[] = [
   { route: "/access-groups", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/access-groups/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  // AFS routes expose a session's working tree, so every one is same-user
+  // local IPC (specs/coven-agent-fs/DESIGN.md section 3).
+  { route: "/afs", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/afs/[id]/commit", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/afs/[id]/diff", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/afs/[id]/timeline", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/app/build-info", methods: ["GET"], kind: "json" },
   { route: "/app/latest-release", methods: ["GET"], kind: "json" },
   { route: "/asana/assigned", methods: ["GET"], kind: "json" },
@@ -36,6 +42,7 @@ const contracts: RouteContract[] = [
   { route: "/board/[id]/lifecycle", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/enrich-steps", methods: ["POST"], kind: "json", readsJson: true },
+  { route: "/board/restore", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/canvas", methods: ["GET", "PUT", "POST", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/capabilities", methods: ["GET"], kind: "json" },
@@ -169,6 +176,7 @@ const contracts: RouteContract[] = [
   { route: "/omnigent/hosts", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/omnigent/sessions", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/omnigent/status", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/onboarding/bootstrap", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/onboarding/install", methods: ["GET", "DELETE", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/onboarding/prerequisites", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/onboarding/setup", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
@@ -343,6 +351,9 @@ function effectiveRouteSource(file: string, source: string): string {
   // nothing.
   if (source.includes('from "@/lib/server/x-oauth-start-route"')) {
     parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "x-oauth-start-route.ts"), "utf8"));
+  }
+  if (source.includes('from "./install-service"')) {
+    parts.push(readFileSync(path.join(path.dirname(file), "install-service.ts"), "utf8"));
   }
   return parts.join("\n");
 }

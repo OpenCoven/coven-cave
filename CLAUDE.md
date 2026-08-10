@@ -296,18 +296,29 @@ Read the exit code.
 **Exit 2 — refused by the admission gate. Use an exception, not the fallback.**
 
 ```text
-worktree-lifecycle-create: creating a worktree would exceed the 20-worktree budget
+worktree-lifecycle-create: creating a worktree would exceed the 28-worktree budget
 ```
 
-`WORKTREE_WARNING_BUDGET = 20` (`src/lib/worktree-lifecycle.ts`) counts **every
+`WORKTREE_WARNING_BUDGET = 28` (`src/lib/worktree-lifecycle.ts`) counts **every
 registered worktree in the checkout**, not yours, so cleaning up your own units
 may not lift it and waiting does not either.
 
 Raised from 12 on 2026-08-04 (`cave-qpwx0`) because 12 no longer described this
 checkout — over one session the count moved 22 → 17 → 22 → 34 → 13 → 17. A gate
 that refuses on every invocation is not a budget, it is an outage, and it taught
-sessions to reach for the unmanaged fallback below. Bursts past 20 are still
-expected; that is what the exception is for.
+sessions to reach for the unmanaged fallback below. Bursts past the budget are
+still expected; that is what the exception is for.
+
+Raised again to 28 on 2026-08-09 (`cave-gzks3`) at 18 attached units. The
+constant's own comment demands a check before any raise — has the session count
+grown, or are merged units simply not being retired? — and the patrol answered
+it: **zero** of the 18 had a merged PR, zero classified `cleanup-ready`, zero
+`uncertain`, two held live process cwds and nine held uncommitted changes. All
+of it was live work, and four units were created by other sessions during a
+single session. `BRANCH_WARNING_BUDGET` moved 30 → 38 in the same change,
+because every managed worktree makes a branch and leaving branches at 30 would
+merely move the refusal one gate down. 38 stays under the 40-branch cap
+`branch-cap.yml` enforces on the remote.
 
 Every refusal from this path is lifted by an attributed, expiring exception, and
 since `cave-no5nr` the refusal prints the exact admissible rerun:
@@ -329,8 +340,8 @@ exception is stored on the bead next to the worktree record, so the unit lands w
 not a bypass — the same gate admits it.
 
 Note the deliberate asymmetry between the two surfaces that read this number:
-the patrol reports `exceeded` as `count > 20`, while creation refuses at
-`count >= 20`, because one more unit is what would take it over. At exactly 20
+the patrol reports `exceeded` as `count > 28`, while creation refuses at
+`count >= 28`, because one more unit is what would take it over. At exactly 28
 the patrol is quiet and creation is refused; that is "*would* exceed", not an
 off-by-one.
 
@@ -363,6 +374,25 @@ any repository change:
 Failures that really are structural name the repository identity instead —
 `canonical repository identity mismatch`, `canonical repository identity
 changed between pages` — and a retry will not help those.
+
+One more structural cause, and the one that reads most like someone else's
+problem: **a malformed worktree record on a bead that claims your branch or
+your path** — `Bead cave-… worktree metadata: disposition is invalid`, or any
+of the sibling `… metadata:` messages. Since `cave-g9byt` such a record is
+charged to the unit it names and to no other, so a bad record elsewhere in the
+checkout no longer touches you. Seeing one here means it claims the exact
+branch or path you asked for, which is a genuine collision: pick a different
+branch, or get the record's owner to repair it. A record naming neither a
+usable branch nor a usable path claims something unnameable and still blocks
+everything until it is fixed.
+
+Before `cave-g9byt` this was repository-wide: `cave-l11sw` wrote
+`disposition: "removed-externally-after-merge"`, outside the accepted
+`active | pr | recovery | archive` set, and every bead's creation failed
+deterministically until a human hand-edited another owner's lifecycle record —
+the one repair the worktree rules forbid. The patrol now names such a record
+under *"Malformed worktree metadata on beads whose units are gone"* rather than
+failing every unit closed over it.
 
 So: **check quota, rerun, and only then** consider
 
@@ -530,6 +560,40 @@ to once a minute via `.claude/worktree-autolock.stamp`. Every lock is appended
 to `.claude/worktree-autolock.log` (gitignored, JSON lines). Disable for a
 command with `WT_AUTOLOCK_DISABLE=1`. It never blocks a tool call and always
 exits 0 — if it cannot read a worktree, it leaves it alone.
+
+**Retention push (automatic, NON-blocking).** A PostToolUse hook —
+`scripts/worktree-retention-push.mjs`, matcher Bash — pushes any worktree
+whose HEAD holds commits reachable from no remote ref, so a local actor cannot
+destroy them. This is the enforcement of the "push your branch to origin after
+every commit" discipline above, which as advice did not hold: a 2026-08-09
+sweep found **174 commits across five branches on no remote ref at all**,
+including 135 on `docs/cave-zs85n-chat-sidebar-attention`. Two of those
+branches were back at risk **25 minutes** after a manual push, because live
+sessions kept committing locally — it is a continuous leak, not a backlog.
+
+It complements rather than duplicates the two hooks above, and neither of them
+covers this: the guard blocks destructive Bash *from a Claude session*, and the
+auto-lock defends against GitHub Desktop. A lock is a delay, not a backup — a
+second `--force` still takes the worktree, and neither hook moves a single
+commit off this machine.
+
+It pushes the **branch** first, because a remote branch is what every other
+surface here reads as retention and a fast-forward push cannot rewrite anyone's
+work. When that is refused — a diverged branch, or `branch-cap.yml` rolling
+back a newly created branch above 40 — it falls back to a tag named for the
+exact commit (`retention/<flattened-branch>-<short-sha>`). That tag is
+immutable and unique, so it never force-updates, never collides, and
+`branch-cap.yml` ignores it (`ref_type == 'branch'` only). It never merges,
+never opens a PR, never deletes or rewrites a ref, and **skips `main`** —
+pushing that is the direct-to-main move this file forbids.
+
+Throttled to once a minute (`.claude/worktree-retention-push.stamp`) and capped
+at 3 pushes per pass to bound the latency added to one tool call; pushed
+worktrees drop out of the at-risk set, so successive passes reach the rest.
+Every push and every failure is appended to
+`.claude/worktree-retention-push.log` (gitignored, JSON lines). Disable for a
+command with `WT_RETENTION_PUSH_DISABLE=1`. It never blocks a tool call and
+always exits 0.
 
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->

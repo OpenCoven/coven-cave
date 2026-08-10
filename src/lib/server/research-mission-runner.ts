@@ -132,6 +132,21 @@ export type ResearchMissionRunnerDeps = {
   missionWorkspacePath(id: string): string;
   /** Resolve a candidate project root to a normalized allowed path, or null. */
   resolveProjectRoot(root: string): Promise<string | null>;
+  /**
+   * Run-start preflight: make sure the mission's familiar can reach the
+   * standard research landing root (where every mission workspace lives), so
+   * finished research is visible from the familiar's later sessions without a
+   * manual grant. Best-effort by contract — implementations MUST NOT throw; a
+   * failed grant degrades to results that land but aren't chat-reachable.
+   */
+  ensureResearchAccess(familiarId: string): Promise<void>;
+  /**
+   * Familiar-level access check for a configured project root at run start.
+   * Returns an actionable error message when the root is a registered project
+   * the familiar cannot use; null when access is fine (including
+   * allowed-but-unregistered roots such as the mission workspace).
+   */
+  checkFamiliarRootAccess(familiarId: string, projectRoot: string): Promise<string | null>;
   now(): Date;
   randomId(): string;
 };
@@ -541,18 +556,31 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
    * Resolve the project root an iteration will run in before any session is
    * spawned. A configured-but-unallowed root fails fast with an actionable
    * message (the flow executor would only say "invalid project root"); the
-   * default mission workspace always resolves.
+   * default mission workspace always resolves. Every start path (create,
+   * next iteration, retry) routes through here, so this is also where run
+   * preflight lives: the familiar's standard-landing grant is ensured, and a
+   * configured registered root the familiar cannot use is refused before a
+   * session is spent.
    */
   const missionStartTarget = async (
     mission: ResearchMission,
   ): Promise<{ ok: true; projectRoot: string } | { ok: false; error: string }> => {
+    // Standard landing access: research artifacts always land in the mission
+    // workspace under the research landing root — make sure the mission's
+    // familiar can reach them from later sessions before this run produces
+    // anything. Best-effort by contract: implementations never throw.
+    await deps.ensureResearchAccess(mission.familiarId);
     if (mission.projectRoot) {
       const resolved = await deps.resolveProjectRoot(mission.projectRoot);
-      if (resolved) return { ok: true, projectRoot: resolved };
-      return {
-        ok: false,
-        error: `Project root "${mission.projectRoot}" is not an allowed project path. Retry in the mission workspace, or set a valid root (an existing Cave project or workspace folder).`,
-      };
+      if (!resolved) {
+        return {
+          ok: false,
+          error: `Project root "${mission.projectRoot}" is not an allowed project path. Retry in the mission workspace, or set a valid root (an existing Cave project or workspace folder).`,
+        };
+      }
+      const denied = await deps.checkFamiliarRootAccess(mission.familiarId, resolved);
+      if (denied) return { ok: false, error: denied };
+      return { ok: true, projectRoot: resolved };
     }
     const workspace = deps.missionWorkspacePath(mission.id);
     const resolved = await deps.resolveProjectRoot(workspace);
@@ -1542,6 +1570,35 @@ export function makeProductionResearchMissionRunner() {
     resolveProjectRoot: async (root) => {
       const { normalizeProjectRoot } = await import("./session-security.ts");
       return normalizeProjectRoot(root);
+    },
+    ensureResearchAccess: async (familiarId) => {
+      // Never let a landing-grant failure block the run itself: the mission
+      // workspace stays writable through builtInProjectRoots either way, so
+      // the worst outcome of a failure here is today's status quo (results
+      // land but need a manual grant to be chat-reachable).
+      try {
+        const { ensureResearchLandingAccess } = await import("./research-landing.ts");
+        await ensureResearchLandingAccess(familiarId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`research landing grant for ${familiarId} failed: ${message}`);
+      }
+    },
+    checkFamiliarRootAccess: async (familiarId, projectRoot) => {
+      const { assertProjectRootAccess, ProjectAccessDeniedError } = await import(
+        "../project-permissions.ts"
+      );
+      try {
+        await assertProjectRootAccess({ familiarId }, projectRoot, "session-launch", {
+          allowUnregisteredRoot: true,
+        });
+        return null;
+      } catch (error) {
+        if (error instanceof ProjectAccessDeniedError) {
+          return `Familiar "${familiarId}" does not have access to project root "${projectRoot}". Grant the project to this familiar in Permissions, or clear the mission's project root to run in its workspace.`;
+        }
+        throw error;
+      }
     },
     now: () => new Date(),
     randomId: () => `research-${crypto.randomUUID()}`,

@@ -499,6 +499,24 @@ export function createGitRetirementOperations({
       for (const rawCandidate of [...new Set(item.ignoredPaths)]) {
         const resolved = resolveDisposableIgnoredTarget(worktreePath, rawCandidate);
         if (!resolved.ok) return resolved;
+        const heartbeated = heartbeatMaintenanceGate(maintenanceHandle);
+        if (!heartbeated.ok) {
+          return {
+            ok: false,
+            reason:
+              heartbeated.reason ??
+              "maintenance gate heartbeat failed before disposable cleanup",
+          };
+        }
+        const verified = verifyMaintenanceGateOwnership(maintenanceHandle);
+        if (!verified.ok) {
+          return {
+            ok: false,
+            reason:
+              verified.reason ??
+              "maintenance gate ownership check failed before disposable cleanup",
+          };
+        }
         const removed = command(
           process.execPath,
           [

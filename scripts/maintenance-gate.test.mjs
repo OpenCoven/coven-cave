@@ -7,6 +7,7 @@ import {
   createRepositoryMaintenanceCoordinator,
   MAX_FENCED_MUTATION_TIMEOUT_MS,
   repositoryMaintenanceCapabilities,
+  supportsCovenMaintenanceVersion,
 } from "./maintenance-gate.mjs";
 
 assert.ok(
@@ -20,13 +21,22 @@ function status(owner, writers = []) {
   return JSON.stringify({ owner, writers });
 }
 
-function covenFixture({ writers = [], malformed = false, unavailable = false, releaseFails = false } = {}) {
+function covenFixture({
+  writers = [],
+  malformed = false,
+  unavailable = false,
+  releaseFails = false,
+  version = COVEN_MAINTENANCE_MINIMUM_VERSION,
+} = {}) {
   const calls = [];
   let owner = null;
   let generation = 0;
   const run = ({ args, cwd }) => {
     calls.push({ args, cwd });
     if (unavailable) return { ok: false, stdout: "", stderr: "", status: null };
+    if (args[0] === "--version") {
+      return { ok: true, stdout: `coven ${version}\n`, stderr: "", status: 0 };
+    }
     const command = args[1];
     if (command === "acquire") {
       generation += 1;
@@ -82,8 +92,11 @@ test("Coven client holds, heartbeats, verifies, and releases its exact fence", (
   assert.deepEqual(
     fixture.calls.map((call) => call.args.slice(0, 2)),
     [
+      ["--version"],
       ["maintenance", "acquire"],
+      ["--version"],
       ["maintenance", "status"],
+      ["--version"],
       ["maintenance", "heartbeat"],
       ["maintenance", "release"],
     ],
@@ -115,7 +128,27 @@ test("Coven client fails closed for malformed or unavailable CLI responses", () 
   const unavailable = createCovenMaintenanceClient({ run: covenFixture({ unavailable: true }).run });
   assert.deepEqual(
     unavailable.acquire({ ownerId: "cave-maintenance", repoDir }),
-    { ok: false, reason: "coven-acquire-unavailable" },
+    { ok: false, reason: "coven-version-unavailable" },
+  );
+});
+
+test("Coven client rejects maintenance protocols below the reviewed release", () => {
+  assert.equal(supportsCovenMaintenanceVersion("coven 0.2.5"), true);
+  assert.equal(supportsCovenMaintenanceVersion("coven v0.3.0"), true);
+  assert.equal(supportsCovenMaintenanceVersion("coven 0.2.5-beta.1"), false);
+  assert.equal(supportsCovenMaintenanceVersion("coven 0.2.4-recovery.1"), false);
+  assert.equal(supportsCovenMaintenanceVersion("unknown"), false);
+
+  const client = createCovenMaintenanceClient({
+    run: covenFixture({ version: "0.2.4-recovery.1" }).run,
+  });
+  assert.deepEqual(
+    client.acquire({ ownerId: "cave-maintenance", repoDir, waitMs: 0 }),
+    {
+      ok: false,
+      reason: "coven-version-unsupported",
+      version: "0.2.4-recovery.1",
+    },
   );
 });
 
@@ -195,7 +228,15 @@ test("composite release is ordered and reports either release failure", () => {
 });
 
 test("maintenance capabilities name the released Coven protocol without claiming completeness", () => {
-  assert.deepEqual(repositoryMaintenanceCapabilities(), {
+  assert.deepEqual(repositoryMaintenanceCapabilities({
+    repoDir,
+    covenClient: {
+      version: () => ({
+        ok: true,
+        version: COVEN_MAINTENANCE_MINIMUM_VERSION,
+      }),
+    },
+  }), {
     local: {
       enforced: true,
       source: "scripts/local-maintenance-gate.mjs via composite coordinator",

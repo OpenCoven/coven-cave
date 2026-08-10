@@ -47,6 +47,29 @@ function commandFailure(operation) {
   return { ok: false, reason: `coven-${operation}-unavailable` };
 }
 
+function parseCovenVersion(value) {
+  const match = asText(value).match(
+    /(?:^|\s)v?(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?(?:\s|$)/,
+  );
+  if (!match) return null;
+  return {
+    version: `${match[1]}.${match[2]}.${match[3]}${match[4] ?? ""}`,
+    parts: [Number(match[1]), Number(match[2]), Number(match[3])],
+    prerelease: Boolean(match[4]),
+  };
+}
+
+export function supportsCovenMaintenanceVersion(value) {
+  const actual = parseCovenVersion(value);
+  const minimum = parseCovenVersion(COVEN_MAINTENANCE_MINIMUM_VERSION);
+  if (!actual || !minimum) return false;
+  for (let index = 0; index < minimum.parts.length; index += 1) {
+    if (actual.parts[index] > minimum.parts[index]) return true;
+    if (actual.parts[index] < minimum.parts[index]) return false;
+  }
+  return !actual.prerelease;
+}
+
 function validOwner(owner) {
   return (
     owner !== null &&
@@ -120,7 +143,27 @@ export function createCovenMaintenanceClient({
   run = defaultRunCoven,
   now = () => Date.now(),
 } = {}) {
+  function version(repoDir) {
+    const result = run({
+      args: ["--version"],
+      cwd: repoDir,
+    });
+    if (!result.ok) return commandFailure("version");
+    const parsed = parseCovenVersion(result.stdout);
+    if (!parsed) return { ok: false, reason: "coven-version-malformed" };
+    if (!supportsCovenMaintenanceVersion(result.stdout)) {
+      return {
+        ok: false,
+        reason: "coven-version-unsupported",
+        version: parsed.version,
+      };
+    }
+    return { ok: true, version: parsed.version };
+  }
+
   function status(repoDir) {
+    const supported = version(repoDir);
+    if (!supported.ok) return supported;
     const result = run({
       args: ["maintenance", "status", "--json"],
       cwd: repoDir,
@@ -142,6 +185,8 @@ export function createCovenMaintenanceClient({
   }
 
   return {
+    version,
+
     acquire({ ownerId, repoDir, waitMs = DEFAULT_COVEN_DRAIN_TIMEOUT_MS } = {}) {
       if (
         typeof ownerId !== "string" ||
@@ -153,6 +198,8 @@ export function createCovenMaintenanceClient({
       ) {
         return { ok: false, reason: "coven-invalid-acquire-options" };
       }
+      const supported = version(repoDir);
+      if (!supported.ok) return supported;
       const result = run({
         args: ["maintenance", "acquire", ownerId, "--wait-ms", String(waitMs), "--json"],
         cwd: repoDir,
@@ -193,6 +240,8 @@ export function createCovenMaintenanceClient({
       if (!handle?.ownerId || !handle?.generation || !handle?.repoDir) {
         return { ok: false, reason: "coven-invalid-handle" };
       }
+      const supported = version(handle.repoDir);
+      if (!supported.ok) return supported;
       const result = run({
         args: [
           "maintenance",
@@ -340,7 +389,10 @@ export function createRepositoryMaintenanceCoordinator({
   };
 }
 
-const coordinator = createRepositoryMaintenanceCoordinator();
+const defaultCovenClient = createCovenMaintenanceClient();
+const coordinator = createRepositoryMaintenanceCoordinator({
+  covenClient: defaultCovenClient,
+});
 
 export function acquireMaintenanceGate(options) {
   return coordinator.acquire(options);
@@ -358,15 +410,21 @@ export function releaseMaintenanceGate(handle) {
   return coordinator.release(handle);
 }
 
-export function repositoryMaintenanceCapabilities() {
+export function repositoryMaintenanceCapabilities({
+  repoDir = process.cwd(),
+  covenClient = defaultCovenClient,
+} = {}) {
+  const covenVersion = covenClient.version(repoDir);
   return {
     local: {
       enforced: true,
       source: "scripts/local-maintenance-gate.mjs via composite coordinator",
     },
     coven: {
-      enforced: true,
-      source: `@opencoven/cli@${COVEN_MAINTENANCE_MINIMUM_VERSION} maintenance`,
+      enforced: covenVersion.ok,
+      source: covenVersion.ok
+        ? `@opencoven/cli@${covenVersion.version} maintenance`
+        : `cave-wqa0b.2: ${covenVersion.reason ?? "Coven maintenance unavailable"}`,
     },
     beads: { enforced: false, source: "cave-wqa0b.3" },
     github: { enforced: false, source: "cave-wqa0b.4" },

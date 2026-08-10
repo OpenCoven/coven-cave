@@ -26,6 +26,15 @@ const moduleUrl = pathToFileURL(
   path.join(scriptDir, "worktree-lifecycle-retirement.ts"),
 ).href;
 const sourceRoot = path.resolve(scriptDir, "..");
+const retirementSource = readFileSync(
+  path.join(scriptDir, "worktree-lifecycle-retirement.ts"),
+  "utf8",
+);
+assert.match(
+  retirementSource,
+  /for \(const rawCandidate[\s\S]*?heartbeatMaintenanceGate\(maintenanceHandle\)[\s\S]*?verifyMaintenanceGateOwnership\(maintenanceHandle\)[\s\S]*?MAX_FENCED_MUTATION_TIMEOUT_MS/,
+  "each disposable cleanup receives a fresh verified lease before its bounded mutation",
+);
 const realGit = process.env.PATH.split(path.delimiter)
   .map((entry) => path.join(entry, "git"))
   .find((candidate) => existsSync(candidate));
@@ -267,6 +276,10 @@ const state = (() => {
 const save = () => writeFileSync(stateFile, JSON.stringify(state));
 const json = () => process.stdout.write(JSON.stringify({ owner: state.owner, writers: state.writers }) + "\\n");
 const [, , group, command, ownerId, generation] = process.argv;
+if (group === "--version") {
+  process.stdout.write("coven 0.2.5\\n");
+  process.exit(0);
+}
 if (group === "sessions") {
   process.stdout.write('{"sessions":[]}\\n');
   process.exit(0);

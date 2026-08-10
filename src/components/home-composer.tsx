@@ -45,7 +45,7 @@ import { useComposerHistory } from "@/lib/use-composer-history";
 import { useDictation } from "@/lib/voice/use-dictation";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
-import { canonicalize } from "@/lib/slash-commands";
+import { canonicalize, inlineSlashCommandPrompt } from "@/lib/slash-commands";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
 import { NO_PROJECT_ID, recentChatProjectRoot } from "@/lib/chat-projects";
@@ -367,8 +367,9 @@ export function HomeComposer({
   // /prompt pickers) — shared hook (use-inline-slash-menus). What a pick DOES
   // stays home's: model picks toast + clear, skill picks start a new chat
   // (invokeSkill), prompts insert-for-editing, and Enter on a command (or
-  // nothing highlighted) falls through to handleSubmit — home dispatches the
-  // typed text, so slash commands also land in the ↑ history.
+  // nothing highlighted) falls through to handleSubmit. Highlighted commands
+  // dispatch the active invocation directly so surrounding prose is not sent
+  // to the harness.
   const modelHarness = canonicalHarnessId(
     modelState?.harness ?? selectedFamiliar?.harness ?? "claude",
   );
@@ -399,7 +400,9 @@ export function HomeComposer({
     onPickModel: (id) => { handleSelectModel(id); onToast(`Model set to ${id}.`); setText(""); },
     onPickSkill: (s) => invokeSkill(s),
     onInsertPrompt: (p) => insertPromptTemplate(p),
-    onRunCommand: () => { void handleSubmit(); },
+    onRunCommand: (cmd) => {
+      void handleSubmit(inlineSlashCommandPrompt(text, composerCaret, cmd.name));
+    },
     onNoMatchEnter: () => { void handleSubmit(); },
   });
 
@@ -572,8 +575,8 @@ export function HomeComposer({
   );
 
 
-  const handleSubmit = useCallback(async () => {
-    const prompt = text.trim();
+  const handleSubmit = useCallback(async (promptOverride?: string) => {
+    const prompt = (promptOverride ?? text).trim();
     // Allow an attachments-only send (chat can carry files with no text); every
     // other path still needs a prompt and is guarded per-destination below.
     if ((!prompt && attachments.length === 0) || sending) return;

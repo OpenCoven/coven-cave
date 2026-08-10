@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 /** Suite name -> ordered list of repo-relative test file paths. */
 export const SUITES = {
   app: [
+    "src/lib/afs.test.ts",
     "src/lib/array-content-equal.test.ts",
     "src/lib/native-notify.test.ts",
     "src/lib/session-list-equal.test.ts",
@@ -37,6 +38,9 @@ export const SUITES = {
     "src/lib/chat-router-promotion.test.ts",
     "src/lib/code-rail.test.ts",
     "src/lib/use-code-rail.test.ts",
+    "src/lib/initial-prompt-handoff.test.ts",
+    "src/lib/cave-board-retention.test.ts",
+    "src/components/board-retention.test.ts",
     "src/lib/workspace-tiles.test.ts",
     "src/lib/page-drag.test.ts",
     "src/lib/familiar-drag.test.ts",
@@ -273,6 +277,8 @@ export const SUITES = {
     "src/lib/chat-session-activity.test.ts",
     "src/lib/chat-session-sort.test.ts",
     "src/lib/chat-turn-gap.test.ts",
+    "src/lib/chat-run-rail.test.ts",
+    "src/components/chat-run-rail.test.ts",
     "src/lib/chat-transcript-fold.test.ts",
     "src/lib/chat-project-overrides.test.ts",
     "src/lib/chat-add-project.test.ts",
@@ -452,6 +458,8 @@ export const SUITES = {
     "src/components/command-palette-polish.test.ts",
     "src/components/command-palette-save-link.test.ts",
     "src/lib/command-palette-search.test.ts",
+    "src/lib/search-query.test.ts",
+    "src/lib/search-index-store.test.ts",
     "src/lib/command-palette-salem-context.test.ts",
     "src/lib/command-palette-scope.test.ts",
     "src/lib/recent-searches.test.ts",
@@ -574,6 +582,7 @@ export const SUITES = {
     "src/lib/projects/access-views.test.ts",
     "src/components/dnd-context-stable-ids.test.ts",
     "src/components/onboarding-guided-steps.test.ts",
+    "src/components/onboarding-bootstrap-overlay.test.ts",
     "src/components/familiar-studio-look-tab.test.ts",
     "src/components/familiars-view.test.ts",
     "src/components/familiar-summoning-circle.test.ts",
@@ -1159,6 +1168,7 @@ export const SUITES = {
     "src/components/grimoire-nav-state.test.ts",
     "src/components/marketplace/marketplace-view-model.test.ts",
     "src/components/onboarding-model.test.ts",
+    "src/lib/onboarding-bootstrap.test.ts",
     "src/lib/onboarding-readiness.test.ts",
     "src/lib/onboarding-status-probes.test.ts",
     "src/lib/onboarding-status-ui.test.ts",
@@ -1176,6 +1186,7 @@ export const SUITES = {
     "scripts/surface-claim-guard.test.mjs",
     "scripts/worktree-guard.test.mjs",
     "scripts/worktree-autolock.test.mjs",
+    "scripts/worktree-retention-push.test.mjs",
     "scripts/branch-curator-manual-cleanup-contract.test.mjs",
     "scripts/branch-to-merge-contract.test.mjs",
     "scripts/git-hooks-pre-commit.test.mjs",
@@ -1199,6 +1210,7 @@ export const SUITES = {
     "src/lib/server/cave-home-migration-discard-guard.test.ts",
     "src/lib/server/cave-home-migration-fast-path.test.ts",
     "src/lib/testing/wait-for.test.ts",
+    "src/lib/server/research-landing.test.ts",
     "src/lib/server/claude-models.test.ts",
     "src/lib/server/copilot-models.test.ts",
     "src/lib/server/grok-models.test.ts",
@@ -1327,6 +1339,7 @@ export const SUITES = {
     "src/app/api/chat/send/route-body-validation.test.ts",
     "src/app/api/chat/send/first-turn-stub.test.ts",
     "src/app/api/onboarding/status/route.test.ts",
+    "src/app/api/onboarding/bootstrap/route.test.ts",
     "src/app/api/onboarding/install/route.test.ts",
     "src/app/api/onboarding/setup/route.test.ts",
     "src/app/api/onboarding/codex-port-preflight/route.test.ts",
@@ -1599,6 +1612,7 @@ export const SUITES = {
     "scripts/ios-chat-thread-no-search.test.mjs",
     "scripts/ios-chat-tab-free.test.mjs",
     "scripts/ios-development-terminal-chrome.test.mjs",
+    "scripts/ios-terminal-composer.test.mjs",
     "scripts/ios-surface-failures.test.mjs",
     "scripts/ios-surface-load-discipline.test.mjs",
     "scripts/mobile-tailscale.test.mjs",
@@ -1636,6 +1650,9 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  // cave-board.ts resolves "@/lib/cave-board-types", "@/lib/task-github" and
+  // friends, so the retention suite cannot load without the alias resolver.
+  "src/lib/cave-board-retention.test.ts",
   // the picker imports the module under test, which resolves
   // "@/lib/code-surface" for the shared session-visibility rule.
   "src/lib/code-session-picker.test.ts",

@@ -19,6 +19,8 @@ const {
 
 assert.equal(isCodeRailTab("changes"), true);
 assert.equal(isCodeRailTab("pr"), true);
+// The AFS delta (cave-je2q9) — distinct from the checkout's working tree.
+assert.equal(isCodeRailTab("filesystem"), true);
 assert.equal(isCodeRailTab("terminal"), false);
 assert.equal(isCodeRailTab(null), false);
 

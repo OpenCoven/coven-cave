@@ -32,7 +32,7 @@ import { orderPrompts, readPromptFavorites, readPromptRecents } from "@/lib/prom
  * - onPickSkill: home starts a new chat, chat sends in-thread;
  * - onInsertPrompt: both insert-for-editing (never send) — but with their own
  *   caret/announce plumbing;
- * - onRunCommand: home submits the typed text, chat runs the slash intent;
+ * - onRunCommand: each composer runs the highlighted slash intent;
  * - onNoMatchEnter: home falls through to submit; chat consumes and does
  *   nothing.
  *

@@ -47,8 +47,8 @@ const cases: Array<{
     name: "update available",
     input: { ...base, latest: "1.3.0", outdated: true },
     state: "outdated",
-    action: "update",
-    copy: "Update available",
+    action: null,
+    copy: "remains compatible",
   },
   {
     name: "current",

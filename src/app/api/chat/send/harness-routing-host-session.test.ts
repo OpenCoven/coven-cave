@@ -542,14 +542,20 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /filterProjectsForFamiliar\(projects, body\.familiarId\)/,
-  "Local Cave chat should derive grant-aware project roots for the familiar before building the runtime prompt",
+  /listAccessibleProjects\(projects, body\.familiarId\)/,
+  "Local Cave chat should derive grant-aware project roots (with each root's access level) for the familiar before building the runtime prompt",
 );
 
 assert.match(
   chatRoute,
   /allowedProjectRoots: grantedProjectRoots/,
   "The runtime prompt should include every project root the familiar is granted, not only the spawn cwd",
+);
+
+assert.match(
+  chatRoute,
+  /projectRootAccess: grantedProjectRootAccess/,
+  "The runtime prompt should carry each granted root's read/write access level so the boundary preamble can annotate it",
 );
 
 assert.match(
