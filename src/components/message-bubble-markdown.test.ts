@@ -151,15 +151,26 @@ assert.match(
 );
 assert.match(
   source,
-  /\{!pending && content \? \(\s*<div className="cave-bubble-actions">/,
-  "Assistant bubble actions render whenever there is settled content",
+  /\{!pending && \(content \|\| isError\) \? \(\s*<div className="cave-bubble-actions" role="group" aria-label="Response actions">/,
+  "Assistant bubble actions render for settled content and interrupted empty responses",
+);
+assert.match(
+  source,
+  /<CopyBubble text=\{content\} response \/>[\s\S]*?aria-label="Retry response"[\s\S]*?aria-expanded=\{!collapsed\}[\s\S]*?<OverflowMenu ariaLabel="More response actions"/,
+  "assistant response controls prioritize Copy, Retry, Collapse, and More",
+);
+assert.match(
+  source,
+  /<PopoverItem icon="ph:arrow-bend-up-left" onSelect=\{onReply\}>[\s\S]*?Open reader[\s\S]*?Read aloud[\s\S]*?checked=\{vote === "up"\}[\s\S]*?checked=\{vote === "down"\}/,
+  "secondary response actions remain available in More with accessible vote state",
 );
 
 // ── CHAT-D3-01: markdown must render progressively while streaming ────────
 // The pending branch used to bail (`setHtml(null); return;`), leaving the
 // user staring at raw ``` fences and **markers** until `done`, then
 // re-typesetting the whole bubble at once (live-measured CLS 0.53).
-const markdownContent = /function MarkdownContent\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+const markdownContent =
+  /function MarkdownContent\([\s\S]*?\n\}\n\nexport function ProgressiveMarkdownBlock/.exec(source)?.[0] ?? "";
 assert.ok(markdownContent, "MarkdownContent component exists");
 assert.doesNotMatch(
   markdownContent,
@@ -168,7 +179,7 @@ assert.doesNotMatch(
 );
 assert.match(
   markdownContent,
-  /if \(pending\) \{[\s\S]*?mdToHtml\(closeTrailingFence\(text\), \{ transient: true, highlightCode: false \}\)/,
+  /if \(pending\) \{[\s\S]*?mdToHtml\(stabilizeStreamingMarkdown\(text\), \{[\s\S]*?transient: true,[\s\S]*?highlightCode: false,[\s\S]*?decorateResponse,[\s\S]*?\}\)/,
   "While pending, accumulated text renders as structured Markdown without launching transient Shiki work",
 );
 assert.match(
@@ -217,7 +228,7 @@ assert.doesNotMatch(
 );
 assert.match(
   markdownContent,
-  /mdToHtml\(closeTrailingFence\(text\), \{ transient: true, highlightCode: false \}\)[\s\S]*?if \(!renderGate\.apply\(stamp\)\) return;/,
+  /mdToHtml\(stabilizeStreamingMarkdown\(text\), \{[\s\S]*?transient: true,[\s\S]*?highlightCode: false,[\s\S]*?decorateResponse,[\s\S]*?\}\)[\s\S]*?if \(!renderGate\.apply\(stamp\)\) return;/,
   "transient promises consult the shared render gate before committing HTML",
 );
 assert.match(
@@ -231,22 +242,35 @@ assert.doesNotMatch(
   "a delayed render must not issue a fresh post-settlement stamp when its timer fires",
 );
 
-// Streaming cursor: removed (cave-1yslk). The only placement that kept it out
-// of the sanitized HTML string was as a sibling of the markdown container, and
-// that container is a block-level <div> — so the cursor could never trail the
-// last rendered line and wrapped onto a row of its own, reading as a detached
-// grey bar after every streaming message. Restoring it means injecting into
-// the sanitized HTML, which is the thing the sibling placement existed to
-// avoid, so these assert its ABSENCE at both sites rather than its position.
+// The detached cursor glyph remains removed (cave-1yslk). Streaming state is a
+// deliberately separate status indicator rather than text pretending to trail
+// the final rendered line.
 assert.doesNotMatch(
   markdownContent,
   /▌/u,
   "no streaming cursor glyph is rendered — it detached onto its own line (cave-1yslk)",
 );
+// Streaming indicator: with rendered HTML during pending, the typing affordance
+// renders as a sibling after the markdown container.
+assert.match(
+  markdownContent,
+  /dangerouslySetInnerHTML=\{\{ __html: html \}\}\s*\/>\s*\{pending \? \(\s*<span className="cave-response-typing"/,
+  "While pending, the typing indicator renders as a sibling element after the markdown container",
+);
 assert.doesNotMatch(
   markdownContent,
-  /dangerouslySetInnerHTML=\{\{ __html: html \}\}\s*\/>[\s\S]{0,400}?\{pending \? \(\s*<span/,
-  "nothing pending-gated renders as a bare sibling span after the markdown container",
+  /if \(!html\) \{[\s\S]*?className=\{`cave-response-rendering/,
+  "The first-paint fallback is a token-free rendering indicator, not raw Markdown",
+);
+assert.doesNotMatch(
+  markdownContent,
+  /if \(!html\)[\s\S]{0,600}?\{text\}/,
+  "The first-paint fallback must never expose raw Markdown source",
+);
+assert.match(
+  source,
+  /sanitizedHtml = decorateResponseHtml\(sanitizedHtml\);/,
+  "Sanitized Markdown receives app-owned lead and status semantics before mounting",
 );
 
 // ── CHAT-D3-03: renderCache must not grow unboundedly ─────────────────────
@@ -265,13 +289,18 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(canUseCache\) renderCacheSet\(markdown, sanitizedHtml\);/,
+  /if \(canUseCache\) renderCacheSet\(cacheKey, sanitizedHtml\);/,
   "Transient and plain-first renders never write to the final cache",
 );
 assert.match(
   source,
   /const canUseCache = !opts\?\.transient && opts\?\.highlightCode !== false;/,
   "Only settled, highlighted Markdown reads or writes the final-render cache",
+);
+assert.match(
+  source,
+  /const cacheKey = `\$\{opts\?\.decorateResponse \? "response" : "document"\}:\$\{markdown\}`;/,
+  "response decoration has a distinct final-render cache namespace",
 );
 
 // ── Stable first paint: structure before syntax color ───────────────────────
@@ -297,12 +326,12 @@ assert.match(
 );
 assert.match(
   markdownContent,
-  /useState<string \| null>\(\s*\(\) => pending \? null : renderCacheGet\(text\) \?\? null,\s*\)/,
+  /useState<string \| null>\(\s*\(\) => pending \? null : renderCacheGet\(cacheKey\) \?\? null,\s*\)/,
   "settled messages synchronously reuse final HTML on remount instead of flashing raw Markdown",
 );
 assert.match(
   markdownContent,
-  /mdToHtml\(text, \{ highlightCode: false \}\)[\s\S]*?mdToHtml\(text\)/,
+  /mdToHtml\(text, \{ highlightCode: false, decorateResponse \}\)[\s\S]*?mdToHtml\(text, \{ decorateResponse \}\)/,
   "a cold settled message applies stable structure before its highlighted enhancement",
 );
 

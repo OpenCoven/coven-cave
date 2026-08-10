@@ -694,8 +694,8 @@ test("coven bubbles strip attention markers before next-paths/delegations/Messag
   );
   assert.match(
     view,
-    /ev\.kind === "assistant_chunk"[\s\S]{0,240}kind: "assistant_replace", text: attentionText\.append\(ev\.text\)[\s\S]{0,240}ev\.kind === "assistant_replace"[\s\S]{0,180}attentionText\.replace\(ev\.text\)/,
-    "chunk and replacement frames become authoritative safe replacements before transcript storage",
+    /ev\.kind === "assistant_chunk"[\s\S]{0,180}responseText\.append\(ev\.text\)[\s\S]{0,240}attentionText\.replace\(canonicalText\)[\s\S]{0,240}ev\.kind === "assistant_replace"[\s\S]{0,180}responseText\.replace\(ev\.text\)[\s\S]{0,240}attentionText\.replace\(canonicalText\)/,
+    "chunk and replacement frames update one canonical buffer before safe transcript storage",
   );
   assert.match(
     view,

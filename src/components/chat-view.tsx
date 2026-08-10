@@ -290,8 +290,11 @@ import { useComposerHistory } from "@/lib/use-composer-history";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversation-tree";
-import { appendCollapsingNewlines } from "@/lib/stream-text";
 import { createChunkCoalescer } from "@/lib/chunk-coalescer";
+import {
+  createCanonicalResponseBuffer,
+  type CanonicalResponseBuffer,
+} from "@/lib/canonical-response-buffer";
 import { consumeChatSse } from "@/lib/chat-sse";
 import {
   EMPTY_CHAT_STREAM_CLIENT_HEALTH,
@@ -519,6 +522,7 @@ type LiveStreamGeneration = {
   sessionAliases: Set<string>;
   controller: AbortController;
   runId: string;
+  responseText: CanonicalResponseBuffer;
   clearWatermark: string;
   streamHealth: () => ChatStreamClientHealth;
   markAttentionCleared: (sessionId: string) => void;
@@ -5070,6 +5074,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       sessionAliases: new Set(initialLiveSessionId ? [initialLiveSessionId] : []),
       controller,
       runId,
+      responseText: createCanonicalResponseBuffer(),
       clearWatermark: now,
       streamHealth: () => generationStreamHealth,
       markAttentionCleared: (sessionId) => {
@@ -5374,7 +5379,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             { cache: "no-store", signal: controller.signal },
           );
           if (recovery.ok && recovery.body) {
-            const resumed = await consumeChatSse(recovery.body, applyStreamEvent);
+            const resumed = await consumeChatSse(recovery.body, applyStreamEvent, cursor);
             cursor = Math.max(cursor, resumed.cursor);
             sawDone = sawDone || resumed.sawDone;
           } else {
@@ -6072,14 +6077,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
    * Extracted from handleEvent's assistant_chunk case (cave-w50e) so the
    * stream loop's coalescer can flush a whole buffered window — dozens of
    * tokens — as a single turns map + registry advance instead of one per
-   * SSE frame. appendCollapsingNewlines is chunking-invariant (see
-   * stream-text.test.ts), so buffering never changes the final text.
+   * SSE frame. The canonical response buffer's append operation is
+   * chunking-invariant, so buffering never changes the final text.
    */
   const applyAssistantChunk = (
     text: string,
     assistantId: string,
     liveGeneration: LiveStreamGeneration,
   ) => {
+    const canonicalText = liveGeneration.responseText.append(text);
     setAssistantLifecycle(
       assistantId,
       "streaming",
@@ -6091,7 +6097,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         t.id === assistantId
           ? {
               ...t,
-              text: appendCollapsingNewlines(t.text, text),
+              text: canonicalText,
               pending: true,
               lifecycle: "streaming",
               // CHAT-D12-01: settle the synthetic row the moment text is
@@ -6121,6 +6127,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     assistantId: string,
     liveGeneration: LiveStreamGeneration,
   ) => {
+    const canonicalText = liveGeneration.responseText.replace(text);
     setAssistantLifecycle(
       assistantId,
       "streaming",
@@ -6132,7 +6139,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         t.id === assistantId
           ? {
               ...t,
-              text,
+              text: canonicalText,
               tools: rebaseToolTextOffsets(t.tools, correction),
               pending: true,
               lifecycle: "streaming",

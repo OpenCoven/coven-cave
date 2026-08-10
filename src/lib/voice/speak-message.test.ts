@@ -116,14 +116,19 @@ assert.ok(
   "when a sentence boundary is near the cap, playback stops on it rather than mid-word",
 );
 
-// ── Wiring: the control is in the assistant hover row ───────────────────────
+// ── Wiring: assistant More owns a persistent speech controller ──────────────
 const bubble = await readFile(new URL("../../components/message-bubble.tsx", import.meta.url), "utf8");
 const speak = await readFile(new URL("../../components/speak-bubble.tsx", import.meta.url), "utf8");
 
 assert.match(
   bubble,
-  /role === "assistant" \? \(\s*<SpeakBubble text=\{content\} familiarId=\{feedbackContext\?\.familiarId\}/,
-  "only assistant replies get a speaker, and it reads the familiar from feedbackContext",
+  /<SpeakBubble\s+text=\{content\}\s+familiarId=\{feedbackContext\?\.familiarId\}\s+hidden\s+controllerRef=\{speechRef\}/,
+  "assistant replies retain a mounted speaker controller and read the familiar from feedbackContext",
+);
+assert.match(
+  bubble,
+  /<PopoverItem[\s\S]*?onSelect=\{\(\) => speechRef\.current\?\.toggle\(\)\}[\s\S]*?Read aloud/,
+  "Read aloud is exposed through the assistant response More menu",
 );
 assert.match(speak, /aria-label=\{busy \? "Stop reading response" : "Read response aloud"\}/, "the control names both of its states");
 assert.match(speak, /state === "playing"\s*\?\s*"ph:stop-fill"/, "playing shows a stop affordance");

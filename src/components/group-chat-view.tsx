@@ -26,6 +26,7 @@ import {
 import { Icon } from "@/lib/icon";
 import { extractNextPaths } from "@/lib/next-paths";
 import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
+import { createCanonicalResponseBuffer } from "@/lib/canonical-response-buffer";
 import { Button } from "@/components/ui/button";
 import { ProjectPicker } from "@/components/project-picker";
 import { modelForRuntimeSwitch } from "@/lib/runtime-models";
@@ -797,6 +798,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       // reply state without waiting for React to render. Apply every update to both.
       let settled = reply;
       const replyRunId = newGroupReplyRunId();
+      const responseText = createCanonicalResponseBuffer(reply.text);
       const attentionText = createAttentionSafeTextAccumulator();
       const apply = (fn: (r: GroupReply) => GroupReply) => {
         settled = fn(settled);
@@ -857,12 +859,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
               if (scopeId === runScopeRef.current) recordSession(group.id, reply.familiarId, ev.sessionId);
             }
             if (ev.kind === "assistant_chunk") {
+              const canonicalText = responseText.append(ev.text);
               apply((r) => applyGroupEvent(r, {
-                kind: "assistant_replace", text: attentionText.append(ev.text),
+                kind: "assistant_replace", text: attentionText.replace(canonicalText),
               }));
             } else if (ev.kind === "assistant_replace") {
+              const canonicalText = responseText.replace(ev.text);
               apply((r) => applyGroupEvent(r, {
-                kind: "assistant_replace", text: attentionText.replace(ev.text),
+                kind: "assistant_replace", text: attentionText.replace(canonicalText),
               }));
             } else {
               apply((r) => applyGroupEvent(r, ev));
