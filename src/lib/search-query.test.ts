@@ -119,6 +119,24 @@ for (const input of [
   assert.deepEqual(values.options, ["blocked"]);
 }
 
+// An unmatched quote is held out of the language pass entirely. Someone typing
+// `"blocked tasks` is spelling an exact phrase; letting inference consume those
+// words would turn a half-typed quote into chips, which is the opposite of the
+// contract that unmatched quotes stay searchable text.
+{
+  const { state, suggestions } = parse('\"blocked tasks', { now: new Date('2026-08-09T12:00:00Z') });
+  assert.deepEqual(state.filters, [], "unmatched-quote content must never become chips");
+  assert.equal(state.text, "blocked tasks");
+  assert.ok(suggestions.some((entry) => entry.kind === "unmatched-quote"));
+}
+
+// The same words WITHOUT the quote do infer, which is what proves the quote is
+// what suppressed it rather than the rule being broken.
+{
+  const { state } = parse("blocked tasks", { now: new Date("2026-08-09T12:00:00Z") });
+  assert.deepEqual(pairs(state), ["status=blocked", "type=task"]);
+}
+
 // An unmatched quote is reported but its content stays searchable.
 {
   const { state, suggestions } = parse('alpha "beta gamma', { naturalLanguage: false });

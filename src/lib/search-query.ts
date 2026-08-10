@@ -168,7 +168,9 @@ const STATUS_WORDS: ReadonlyMap<string, string> = new Map([
  * has to reduce to three chips, and leaving "show" behind would silently
  * require the word "show" to appear in every result.
  */
-const LEADING_FILLER = ["show", "show me", "find", "find me", "search for", "search", "list", "get"];
+const LEADING_FILLER = ["show", "show me", "find", "find me", "search for", "search", "list", "get"]
+  // Longest first, computed once: parsing runs on every keystroke.
+  .sort((a, b) => b.length - a.length);
 
 const STOP_WORDS = new Set([
   "the", "a", "an", "this", "that", "these", "those", "my", "our", "all", "any",
@@ -208,7 +210,7 @@ function applyNaturalLanguage(
   let remaining = [...words];
 
   // Leading filler, longest match first.
-  for (const filler of [...LEADING_FILLER].sort((a, b) => b.length - a.length)) {
+  for (const filler of LEADING_FILLER) {
     const parts = filler.split(" ");
     const head = remaining.slice(0, parts.length).map((word) => word.toLowerCase());
     if (parts.length <= remaining.length && head.join(" ") === filler) {
@@ -311,12 +313,20 @@ export function parseSearchQuery(
   const phrases: string[] = [];
   const suggestions: SearchSuggestion[] = [];
   const words: string[] = [];
+  /** Text that must reach the query verbatim, never through inference. */
+  const literalWords: string[] = [];
 
   for (const token of tokenize(input)) {
     if (token.unterminated) {
       // An open quote is a half-typed phrase, not a syntax error. Keep the
       // content searchable and say why the phrase did not form.
-      if (token.value.length > 0) words.push(...token.value.split(/\s+/).filter(Boolean));
+      //
+      // It is held OUT of the natural-language pass on purpose. Someone typing
+      // `"blocked tasks` is spelling an exact phrase, and letting the language
+      // rules consume those words would turn a half-typed quote into
+      // `status:blocked` + `type:task` chips — the opposite of the contract
+      // that unmatched quotes stay searchable text.
+      if (token.value.length > 0) literalWords.push(token.value);
       suggestions.push({ kind: "unmatched-quote", token: token.value, options: [] });
       continue;
     }
@@ -334,7 +344,8 @@ export function parseSearchQuery(
       continue;
     }
 
-    const [, rawKey, rawValue] = match as unknown as [string, string, string];
+    const rawKey = match[1] ?? "";
+    const rawValue = match[2] ?? "";
     const definition = filterDefinition(rawKey);
 
     if (!definition) {
@@ -374,9 +385,10 @@ export function parseSearchQuery(
     addFilter(filters, definition, rawValue, "syntax");
   }
 
-  const remainingWords = naturalLanguage
-    ? applyNaturalLanguage(words, filters, now)
-    : words;
+  const remainingWords = [
+    ...(naturalLanguage ? applyNaturalLanguage(words, filters, now) : words),
+    ...literalWords,
+  ];
 
   return {
     state: {
