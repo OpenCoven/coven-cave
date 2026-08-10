@@ -49,6 +49,7 @@ import {
   installManagedNodeToolchain,
   managedNpmLaunch,
   probeManagedNodeToolchain,
+  type ManagedNodeInstallFailure,
 } from "@/lib/server/managed-node-toolchain";
 
 export const dynamic = "force-dynamic";
@@ -129,6 +130,14 @@ const INSTALL_TARGETS = {
 } as const;
 
 export type OnboardingInstallTarget = keyof typeof INSTALL_TARGETS;
+export type OnboardingInstallFailureCode =
+  | ManagedNodeInstallFailure
+  | "filesystem_failed"
+  | "install_busy"
+  | "install_timeout"
+  | "installer_start_failed"
+  | "local_service_failed"
+  | "unknown_failure";
 type InstallTarget = OnboardingInstallTarget;
 type CommandPathResult = { path: string | null; error?: string };
 
@@ -308,6 +317,11 @@ type InstallJob = {
   binaryPath?: string | null;
   verification?: OpenCovenToolVerification;
   error?: string;
+  failureCode?: OnboardingInstallFailureCode;
+  applicationData?: {
+    exists: boolean | null;
+    writeProbe: "passed" | "failed";
+  };
   /** Present only for a Coven CLI update, never for other tool installers. */
   daemon?: DaemonUpdateLifecycle;
   /** Cancels preparation or the spawned process; never exposed to clients. */
@@ -327,6 +341,32 @@ type NpmLaneView = {
   npmBusy: boolean;
   npmBusyTarget: InstallTarget | null;
   npmBusyLabel: string | null;
+  npmJob?: ReturnType<typeof jobView>;
+};
+
+export type OnboardingInstallView = {
+  status: "idle" | "running" | "done" | "started" | "busy" | "unavailable";
+  started?: true;
+  target?: OnboardingInstallTarget;
+  ok?: boolean;
+  retryable?: boolean;
+  code?: number | string | null;
+  failureCode?: OnboardingInstallFailureCode;
+  error?: string;
+  hint?: string;
+  npmMissing?: boolean;
+  managedNodeMissing?: boolean;
+  elapsedMs?: number;
+  tail?: string;
+  diagnosticTrace?: string[];
+  binaryPath?: string | null;
+  applicationData?: {
+    exists: boolean | null;
+    writeProbe: "passed" | "failed";
+  };
+  npmBusy?: boolean;
+  npmBusyTarget?: OnboardingInstallTarget | null;
+  npmBusyLabel?: string | null;
   npmJob?: ReturnType<typeof jobView>;
 };
 
@@ -361,18 +401,20 @@ function npmLaneView(): NpmLaneView {
   };
 }
 
-type OnboardingInstallServiceResult = {
+export type OnboardingInstallServiceResult = {
   status: number;
-  body: Record<string, unknown>;
+  body: OnboardingInstallView;
 };
 
 function npmBusyResult(owner: InstallTarget): OnboardingInstallServiceResult {
   return {
     status: 409,
     body: {
+      status: "busy",
       ok: false,
       retryable: true,
       code: "npm_install_in_progress",
+      failureCode: "install_busy",
       error: `${INSTALL_TARGETS[owner].label} is using Cave's shared managed toolchain. Wait for it to finish, then retry.`,
       ...npmLaneView(),
     },
@@ -504,14 +546,46 @@ async function recoverDaemonAfterCliInstall(targetName: InstallTarget, job: Inst
 function installFailureHint(targetName: InstallTarget, output: string): string | null {
   if (
     targetName === "coven-cli" &&
-    /(EBUSY|resource busy|locked|coven\.exe)/i.test(output)
+    /(EBUSY|resource busy|locked)/i.test(output)
   ) {
     return "coven.exe is still locked. Cave only uses graceful local-daemon shutdown and never terminates a process by PID. Quit the process that owns the file (or restart Cave), then retry the update.";
   }
   if (/(EACCES|EPERM|EROFS|permission denied)/i.test(output)) {
-    return "Cave could not write to its user-scoped npm prefix. Check that your Cave application-data directory is writable, then retry; Cave will not request elevation.";
+    return "Cave could not update the selected user-scoped npm prefix. Check that installation, then retry; Cave will not request elevation.";
   }
   return null;
+}
+
+export function classifyOnboardingInstallFailure(input: {
+  code: number | null;
+  output: string;
+  error?: string;
+  launchFailed?: boolean;
+  recoveryFailed?: boolean;
+}): OnboardingInstallFailureCode {
+  const detail = `${input.error ?? ""}\n${input.output}`;
+  if (input.recoveryFailed) return "local_service_failed";
+  if (/timed out/i.test(detail)) return "install_timeout";
+  if (input.launchFailed) return "installer_start_failed";
+  // A zero exit followed by any failure is a post-install verification
+  // outcome. Historical success output must not override that known phase.
+  if (input.code === 0) return "verification_failed";
+  if (/(EBUSY|resource busy|locked)/i.test(detail)) {
+    return "install_busy";
+  }
+  if (/digest|integrity|checksum/i.test(detail)) {
+    return "integrity_check_failed";
+  }
+  if (/archive|extract|unpack/i.test(detail)) return "archive_failed";
+  if (/fetch|download|network|registry|request|response|redirect/i.test(detail)) {
+    return "download_failed";
+  }
+  if (/(EACCES|EPERM|EROFS|permission denied)/i.test(detail)) {
+    // The Coven CLI can live in a host npm prefix outside Cave's application
+    // data. Never turn this signal into an application-data writeability claim.
+    return "filesystem_failed";
+  }
+  return "unknown_failure";
 }
 
 function jobView(job: InstallJob) {
@@ -522,6 +596,7 @@ function jobView(job: InstallJob) {
       status: "running" as const,
       elapsedMs,
       tail,
+      diagnosticTrace: [...job.trace],
       ...(job.daemon ? { daemon: job.daemon } : {}),
     };
   }
@@ -530,18 +605,21 @@ function jobView(job: InstallJob) {
     status: "done" as const,
     elapsedMs,
     tail,
+    diagnosticTrace: [...job.trace],
     ok: job.ok ?? false,
     code: job.code ?? null,
     binaryPath: job.binaryPath ?? null,
     ...(job.verification ? { verification: job.verification } : {}),
     ...(job.daemon ? { daemon: job.daemon } : {}),
     ...(job.error ? { error: job.error } : {}),
+    ...(job.failureCode ? { failureCode: job.failureCode } : {}),
+    ...(job.applicationData ? { applicationData: job.applicationData } : {}),
   };
 }
 
 export function readOnboardingInstall(
   target: OnboardingInstallTarget,
-): Record<string, unknown> {
+): OnboardingInstallView {
   const job = jobs.get(target);
   if (!job) return { status: "idle", ...npmLaneView() };
   return { ...jobView(job), ...npmLaneView() };
@@ -561,12 +639,14 @@ function finishInstallJobError(
   err: unknown,
   npmLease?: NpmInstallLease,
   safeMessage?: string,
+  failureCode: OnboardingInstallFailureCode = "installer_start_failed",
 ) {
   if (job.status !== "running") return;
   job.status = "done";
   job.finishedAt = Date.now();
   job.ok = false;
   job.error = safeMessage ?? installStartErrorMessage(err);
+  job.failureCode = failureCode;
   job.cancel = undefined;
   releaseNpmLease(job, npmLease);
 }
@@ -708,8 +788,16 @@ async function finishInstallJob(
     if (verification) job.verification = verification;
     if (!job.ok) {
       job.error = [installError, recoveryError].filter(Boolean).join(" ");
+      job.failureCode = classifyOnboardingInstallFailure({
+        code,
+        output: job.output,
+        error: job.error,
+        launchFailed: Boolean(launchError),
+        recoveryFailed: installOk && !recovered,
+      });
     } else {
       delete job.error;
+      delete job.failureCode;
     }
   } catch (err) {
     job.status = "done";
@@ -717,6 +805,12 @@ async function finishInstallJob(
     job.ok = false;
     job.code = code;
     job.error = installStartErrorMessage(err);
+    job.failureCode = classifyOnboardingInstallFailure({
+      code,
+      output: job.output,
+      error: job.error,
+      launchFailed: true,
+    });
     appendOutput(job, `${job.error}\n`);
   } finally {
     job.cancel = undefined;
@@ -820,6 +914,7 @@ async function runInstallJob(
         new Error(job.daemon?.detail ?? safeMessage),
         npmLease,
         safeMessage,
+        "local_service_failed",
       );
       return;
     }
@@ -858,21 +953,26 @@ async function runManagedNodeInstallJob(job: InstallJob, npmLease?: NpmInstallLe
       signal: controller.signal,
       onProgress: (line) => appendOutput(job, `${line}\n`),
     });
-    if (result.status === "ready" && !job.cancelRequested) {
+    if (result.ok && !job.cancelRequested) {
       refreshCovenBin();
       refreshCovenSpawnEnv();
       job.ok = true;
       job.code = 0;
-      job.binaryPath = result.paths.node;
+      job.binaryPath = result.probe.paths.node;
       appendTrace(job, "Managed Node installer: digest-verified toolchain re-probed successfully.");
     } else {
       job.ok = false;
       job.code = 1;
       job.error = job.cancelRequested
         ? "install cancelled"
-        : result.status === "unusable"
+        : !result.ok
           ? result.detail
-          : "Managed Node.js and npm could not be verified after installation.";
+          : "Managed Node installation was cancelled after verification.";
+      job.failureCode =
+        result.ok ? "unknown_failure" : result.failure;
+      if (!result.ok && result.applicationData) {
+        job.applicationData = result.applicationData;
+      }
       appendOutput(job, `${job.error}\n`);
     }
   } catch (error) {
@@ -881,6 +981,9 @@ async function runManagedNodeInstallJob(job: InstallJob, npmLease?: NpmInstallLe
     job.error = job.cancelRequested
       ? "install cancelled"
       : installStartErrorMessage(error);
+    job.failureCode = job.cancelRequested
+      ? "unknown_failure"
+      : "installer_start_failed";
     appendOutput(job, `${job.error}\n`);
   } finally {
     job.status = "done";
@@ -925,7 +1028,12 @@ export async function startOnboardingInstall(
     void runManagedNodeInstallJob(job, reservation.lease);
     return {
       status: 202,
-      body: { started: true, target: targetName, ...npmLaneView() },
+      body: {
+        status: "started",
+        started: true,
+        target: targetName,
+        ...npmLaneView(),
+      },
     };
   }
 
@@ -934,8 +1042,10 @@ export async function startOnboardingInstall(
     return {
       status: 422,
       body: {
+        status: "unavailable",
         ok: false,
         npmMissing: true,
+        failureCode: "verification_failed",
         error: "npm is not available beside the detected Coven CLI",
         hint: "Reinstall Coven CLI with Node.js and npm, restart Cave, then retry the update.",
       },
@@ -945,8 +1055,10 @@ export async function startOnboardingInstall(
     return {
       status: 422,
       body: {
+        status: "unavailable",
         ok: false,
         managedNodeMissing: true,
+        failureCode: "verification_failed",
         error: "Cave-managed Node.js and npm are not ready",
         hint: managedNodeInstallHint(),
       },
@@ -955,7 +1067,12 @@ export async function startOnboardingInstall(
   if (!plan) {
     return {
       status: 500,
-      body: { ok: false, error: "no install plan for this platform" },
+      body: {
+        status: "unavailable",
+        ok: false,
+        failureCode: "unsupported_platform",
+        error: "no install plan for this platform",
+      },
     };
   }
 
@@ -989,7 +1106,12 @@ export async function startOnboardingInstall(
 
   return {
     status: 202,
-    body: { started: true, target: targetName, ...npmLaneView() },
+    body: {
+      status: "started",
+      started: true,
+      target: targetName,
+      ...npmLaneView(),
+    },
   };
 }
 

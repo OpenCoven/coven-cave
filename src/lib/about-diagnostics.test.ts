@@ -147,11 +147,30 @@ for (const [index, localPath] of pathCases.entries()) {
   const sanitized = sanitizeAboutDiagnosticText(`before ${localPath} after`);
   assert.equal(sanitized.includes(localPath), false, `path form ${index} is not exposed in test failures`);
   assert.equal(sanitized.startsWith("before [local path omitted]"), true, `path form ${index} is redacted`);
-  assert.equal(sanitized.endsWith(" after"), true, `prose after path form ${index} is preserved`);
+  assert.equal(sanitized.endsWith(" after"), false, `unquoted path form ${index} fails closed at whitespace`);
+
+  const quoted = sanitizeAboutDiagnosticText(`before "${localPath}" after`);
+  assert.equal(
+    quoted,
+    'before "[local path omitted]" after',
+    `quoted path form ${index} preserves unambiguous trailing prose`,
+  );
+}
+
+for (const assignment of [
+  "cwd=/home/sage/private/project",
+  String.raw`cache=C:\Users\Sage\AppData\Local\OpenCoven`,
+  "home=/Users/Example Person",
+  String.raw`cwd=C:\Users\Example Person`,
+  "path:/home/alice/private",
+]) {
+  const sanitized = sanitizeAboutDiagnosticText(assignment);
+  assert.equal(/sage|example|person|alice/i.test(sanitized), false, "assignment-form paths do not expose usernames");
+  assert.match(sanitized, /[:=]\[local path omitted\]/, "assignment keys remain useful after path redaction");
 }
 
 const mixed = sanitizeAboutDiagnosticText(
-  `first C:/Users/name/one then ${secret} then /opt/app/two and https://example.com/docs/page?token=${secret}#install done`,
+  `first "C:/Users/name/one" then ${secret} then "/opt/app/two" and https://example.com/docs/page?token=${secret}#install done`,
 );
 assert.equal(mixed.includes("[local path omitted]"), true, "mixed diagnostics redact local paths");
 assert.equal(mixed.match(/\[local path omitted\]/g)?.length, 2, "multiple local paths are independently redacted");
@@ -160,7 +179,7 @@ assert.equal(mixed.match(/https?:\/\/[^\s"'<>]+/)?.[0], "https://example.com/doc
 assert.equal(mixed.includes("?token="), false, "safe HTTPS URL query values are removed");
 assert.equal(mixed.endsWith(" done"), true, "ordinary prose around paths is preserved");
 
-const ambiguousAfterAnotherPath = String.raw`first C:/safe/path then C:\Users\Example Person\secret.log after update`;
+const ambiguousAfterAnotherPath = String.raw`first "C:/safe/path" then C:\Users\Example Person\secret.log after update`;
 const ambiguousAfterAnotherPathSanitized = sanitizeAboutDiagnosticText(ambiguousAfterAnotherPath);
 assert.equal(
   ambiguousAfterAnotherPathSanitized.includes("Example Person"),

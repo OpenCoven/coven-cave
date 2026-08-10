@@ -69,10 +69,10 @@ type InstallJobDiagnostic = {
 type InstallResultDiagnostic = { ok: boolean; detail: string };
 
 const SAFE_WEB_URL = /https?:\/\/[^\s"'<>]+/gi;
+const QUOTED_LOCAL_PATH =
+  /(["'`])(?:file:\/{2,3}(?:[A-Za-z]:[\\/]|\/)|\\\\|[A-Za-z]:[\\/]|\/(?!\/))[^"'`\r\n]*\1/g;
 const LOCAL_PATH =
-  /(^|[\s"'`(<\[])(?:file:\/{2,3}(?:[A-Za-z]:[\\/]|\/)[^\s"'`<>\])}]+|\\\\[^\s"'`<>\])}]+[\\/][^\s"'`<>\])}]+|[A-Za-z]:[\\/][^\s"'`<>\])}]+|\/(?!\/)[^\s/"'`<>\])}]+(?:\/[^\s"'`<>\])}]+)*)/i;
-const LOCAL_PATH_START =
-  /(^|[\s"'`(<\[])(?:file:\/{2,3}(?:[A-Za-z]:[\\/]|\/)|\\\\[^\s"'`<>\])}]+[\\/]|[A-Za-z]:[\\/]|\/(?!\/)[^\s/"'`<>\])}]+\/)/i;
+  /(^|[:=\s"'`(<\[])(?:file:\/{2,3}(?:[A-Za-z]:[\\/]|\/)[^\s"'`<>\])}]+|\\\\[^\s"'`<>\])}]+[\\/][^\s"'`<>\])}]+|[A-Za-z]:[\\/][^\s"'`<>\])}]+|\/(?!\/)[^\s/"'`<>\])}]+(?:\/[^\s"'`<>\])}]+)*)/i;
 
 function withoutQueryOrFragment(value: string): string {
   try {
@@ -86,29 +86,27 @@ function withoutQueryOrFragment(value: string): string {
 }
 
 function redactLocalPaths(value: string): string {
-  let remaining = value;
+  let remaining = value.replace(
+    QUOTED_LOCAL_PATH,
+    (_path, quote: string) => `${quote}[local path omitted]${quote}`,
+  );
   let redacted = "";
 
   while (remaining) {
     const localPath = LOCAL_PATH.exec(remaining);
-    const pathStart = LOCAL_PATH_START.exec(remaining);
-    if (!localPath || !pathStart || localPath.index !== pathStart.index) {
+    if (!localPath) {
       return redacted + remaining;
     }
 
-    const afterStart = remaining.slice(pathStart.index + pathStart[0].length);
-    const firstWhitespace = afterStart.search(/\s/);
-    const nextTokenHasSlash =
-      firstWhitespace >= 0 && /^\s+[^\s]*[\\/][^\s]*/.test(afterStart.slice(firstWhitespace));
     redacted += remaining.slice(0, localPath.index) + (localPath[1] ?? "") + "[local path omitted]";
-
-    if (nextTokenHasSlash) {
-      // A literal space can be part of a local path, so its end cannot be
-      // inferred from prose. Deliberately sacrifice the rest of this line
-      // rather than risk copying a user or directory name.
+    const afterMatch = localPath.index + localPath[0].length;
+    if (/^\s/.test(remaining.slice(afterMatch))) {
+      // Whitespace can belong to an unquoted absolute path, so its boundary
+      // cannot be inferred safely. Sacrifice the rest of the line rather than
+      // expose a username or directory segment. Quoted paths are handled above.
       return redacted;
     }
-    remaining = remaining.slice(localPath.index + localPath[0].length);
+    remaining = remaining.slice(afterMatch);
   }
 
   return redacted;

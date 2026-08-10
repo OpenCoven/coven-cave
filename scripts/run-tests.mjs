@@ -959,6 +959,10 @@ export const SUITES = {
     "src/lib/onboarding-gate.test.ts",
     "src/lib/onboarding-prerequisites.test.ts",
     "src/lib/server/managed-node-toolchain.test.ts",
+    "src/lib/server/owned-directory-write.test.ts",
+    "src/lib/server/onboarding-diagnostics.test.ts",
+    "src/lib/server/onboarding-core-tools.test.ts",
+    "src/lib/server/onboarding-bootstrap.test.ts",
     "src/lib/onboarding-install-queue.test.ts",
     "src/lib/onboarding-setup-failure.test.ts",
     "src/app/onboarding-install-route.test.ts",
@@ -1357,6 +1361,7 @@ export const SUITES = {
     "src/app/api/chat/send/first-turn-stub.test.ts",
     "src/app/api/onboarding/status/route.test.ts",
     "src/app/api/onboarding/bootstrap/route.test.ts",
+    "src/app/api/onboarding/install/install-service.test.ts",
     "src/app/api/onboarding/install/route.test.ts",
     "src/app/api/onboarding/setup/route.test.ts",
     "src/app/api/onboarding/codex-port-preflight/route.test.ts",
@@ -1669,6 +1674,12 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  // onboarding diagnostics and core tools resolve shared server/API aliases.
+  "src/lib/server/onboarding-diagnostics.test.ts",
+  "src/lib/server/onboarding-core-tools.test.ts",
+  "src/lib/server/onboarding-bootstrap.test.ts",
+  "src/app/api/onboarding/bootstrap/route.test.ts",
+  "src/app/api/onboarding/install/install-service.test.ts",
   // the file provider wraps server/project-paths.ts, which resolves "@/lib/..."
   // for the project allow-list; the suite cannot load without the resolver.
   "src/lib/search-provider.test.ts",
