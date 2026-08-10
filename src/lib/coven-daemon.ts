@@ -5,6 +5,15 @@ import { homedir } from "node:os";
 import path from "node:path";
 import type { CaveConfig } from "./cave-config.ts";
 import { storedHubAccessToken } from "./hub-access-token.ts";
+import {
+  isSecureHubCredentialTransport,
+  normalizeHubUrl,
+} from "./hub-url.ts";
+
+export {
+  isSecureHubCredentialTransport,
+  normalizeHubUrl,
+} from "./hub-url.ts";
 
 type SocketPathResolverOptions = {
   platform?: NodeJS.Platform;
@@ -16,8 +25,6 @@ type SocketPathResolverOptions = {
 type ReadTextFile = (filePath: string, encoding: BufferEncoding) => string;
 
 const WINDOWS_PIPE_PREFIX = "\\\\.\\pipe\\";
-const DEFAULT_HUB_PROTOCOL = "http://";
-
 export type DaemonTarget =
   | { mode: "local"; label: "Local daemon"; socketPath: string }
   | { mode: "hub"; label: "Server hub"; url: string; accessToken?: string }
@@ -85,20 +92,6 @@ export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {})
  */
 export function socketPath(): string {
   return resolveDaemonSocketPath();
-}
-
-export function normalizeHubUrl(rawUrl: string): string {
-  // Trim whitespace, then trailing slashes, without a backtracking-prone
-  // regex: `/\/+$/` is polynomial-ReDoS-prone on user-provided URLs
-  // (reachable via the daemon probe/config routes). Manual scans are linear
-  // and preserve the original trim-then-strip-slashes semantics.
-  const whitespaceTrimmed = rawUrl.trim();
-  let end = whitespaceTrimmed.length;
-  while (end > 0 && whitespaceTrimmed[end - 1] === "/") end -= 1;
-  const trimmed = whitespaceTrimmed.slice(0, end);
-  if (!trimmed) return "";
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `${DEFAULT_HUB_PROTOCOL}${trimmed}`;
 }
 
 function hubTargetFromUrl(rawUrl: string): Extract<DaemonTarget, { mode: "hub" }> | null {
@@ -252,6 +245,18 @@ function callDaemonTargetOnce<T = unknown>(
     maxResponseBytes,
   }: DaemonRequest,
 ): Promise<DaemonResponse<T>> {
+  if (
+    target.mode === "hub" &&
+    target.accessToken &&
+    !isSecureHubCredentialTransport(target.url)
+  ) {
+    return Promise.resolve({
+      ok: false,
+      status: 0,
+      data: null,
+      error: "refusing to send a hub access token without HTTPS or loopback secure transport",
+    });
+  }
   return new Promise((resolve) => {
     let settled = false;
     const settle = (value: DaemonResponse<T>) => {

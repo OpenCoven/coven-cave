@@ -2,6 +2,7 @@ import {
   callDaemonTarget,
   daemonTargetForConfig,
   extractDaemonError,
+  isSecureHubCredentialTransport,
   type DaemonRequest,
   type DaemonResponse,
   type DaemonTarget,
@@ -30,11 +31,33 @@ export async function probeDaemonUrl(
   call: CallDaemonTarget = callDaemonTarget,
   now: () => number = Date.now,
 ): Promise<DaemonProbeResult> {
-  const target = daemonTargetForConfig({ multiHost: { mode: "hub", hubUrl: url, executorUrls: [] } });
-  if (target.mode !== "hub") {
-    throw new Error(target.mode === "unconfigured-hub" ? target.error : "invalid hub URL");
+  const resolvedTarget = daemonTargetForConfig({
+    multiHost: { mode: "hub", hubUrl: url, executorUrls: [] },
+  });
+  if (resolvedTarget.mode !== "hub") {
+    throw new Error(
+      resolvedTarget.mode === "unconfigured-hub" ? resolvedTarget.error : "invalid hub URL",
+    );
   }
+  // Ad-hoc probes must never forward the process-wide or vaulted credential to
+  // caller-selected origins. A token pasted into this exact probe URL is safe
+  // to use because the caller already supplied it for that destination.
+  const parsedUrl = new URL(url.includes("://") ? url : `http://${url}`);
+  const embeddedToken = parsedUrl.searchParams.get("coven_access_token")?.trim();
+  const { accessToken: _storedCredential, ...uncredentialedTarget } = resolvedTarget;
+  const target: DaemonTarget = embeddedToken
+    ? { ...uncredentialedTarget, accessToken: embeddedToken }
+    : uncredentialedTarget;
   const startedAt = now();
+  if (target.accessToken && !isSecureHubCredentialTransport(target.url)) {
+    return {
+      ok: true,
+      reachable: false,
+      status: 0,
+      latencyMs: Math.max(0, now() - startedAt),
+      reason: "Hub access tokens require HTTPS unless the endpoint is loopback.",
+    };
+  }
   const response = await call(target, daemonHealthRequest());
   const latencyMs = Math.max(0, now() - startedAt);
   if (daemonHealthResponseSucceeded(response)) {

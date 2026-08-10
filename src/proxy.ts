@@ -11,6 +11,7 @@ import {
   timingSafeEqualString,
   isLoopbackHost,
   isAllowedApiHost,
+  isTokenlessApiPeerAllowed,
   sameOrigin,
   isAllowedRequestSource,
   isAllowedRequestSourceAny,
@@ -158,7 +159,11 @@ function isLocalOnlyAutomationRun(pathname: string, method: string) {
   return method === "POST" && /^\/api\/codex-automations\/[^/]+\/run$/.test(pathname);
 }
 
-const HEADER_CSRF_TRUSTED_API_PATHS = new Set(["/api/mobile-handoff", "/api/mobile-token/refresh"]);
+const HEADER_CSRF_TRUSTED_API_PATHS = new Set([
+  "/api/app/native-readiness",
+  "/api/mobile-handoff",
+  "/api/mobile-token/refresh",
+]);
 
 function isHeaderCsrfTrustedApiPath(pathname: string) {
   return HEADER_CSRF_TRUSTED_API_PATHS.has(pathname);
@@ -353,9 +358,13 @@ export async function proxy(req: NextRequest) {
   const sidecarAuthenticated = sidecarTokenMatches(suppliedToken);
 
   if (!sidecarToken) {
-    return process.env.COVEN_CAVE_BUNDLE === "1"
-      ? jsonError(500, "missing sidecar auth token")
-      : nextWithMobileAccessMarker(req, remoteIngress);
+    if (process.env.COVEN_CAVE_BUNDLE === "1") {
+      return jsonError(500, "missing sidecar auth token");
+    }
+    if (!isTokenlessApiPeerAllowed(trustedLocalPeer, remoteIngress)) {
+      return jsonError(403, "forbidden peer: missing trusted local peer or verified remote ingress");
+    }
+    return nextWithMobileAccessMarker(req, remoteIngress);
   }
 
   if (!sidecarAuthenticated && !remoteIngress) {

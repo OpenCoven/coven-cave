@@ -71,8 +71,8 @@ assert.doesNotMatch(
 // --- Shared Projects request carries the paired credential ------------------
 assert.match(
   devClient,
-  /func projects[\s\S]*?if let token = CaveConnection\.accessToken \{\s*\n\s*request\.setValue\("Bearer \\\(token\)", forHTTPHeaderField: "Authorization"\)/,
-  "project requests must send the Bearer token for Terminal and chat project access",
+  /func projects[\s\S]*?if let token = try CaveConnection\.credentialForRequest\(to: url\) \{\s*\n\s*request\.setValue\("Bearer \\\(token\)", forHTTPHeaderField: "Authorization"\)/,
+  "project requests must send only an origin-bound credential",
 );
 
 // --- Discovery: credential-safe probes, ordered adjudication, 401 terminal -
@@ -90,6 +90,16 @@ assert.match(
   model,
   /private static func adjudicateDiscoveryResults[\s\S]*?for \(index, result\) in results\.enumerated\(\)[\s\S]*?case \.ok: return \.found\(candidates\[index\]\)[\s\S]*?case \.unauthorized: return \.unauthorized/,
   "results must be adjudicated in candidate order with 401/403 still terminal (sibling-port safety)",
+);
+assert.match(
+  model,
+  /if sendCredential \{[\s\S]*?do \{[\s\S]*?try CaveConnection\.credentialForRequest[\s\S]*?catch \{[\s\S]*?return \.credentialFailure\(error\.localizedDescription\)/,
+  "paired discovery must fail visibly when the stored credential cannot be sent to a candidate",
+);
+assert.doesNotMatch(
+  model,
+  /try\? CaveConnection\.credentialForRequest\(to: req\.url!\)/,
+  "paired discovery must not suppress credential-origin or transport failures and adopt a tokenless sibling",
 );
 
 // --- Relocation keeps discovery alive --------------------------------------

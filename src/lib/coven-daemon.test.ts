@@ -172,9 +172,12 @@ const {
   assert.equal(extractDaemonError(res), null);
 }
 
-// Hub URLs accept private-network host:port shorthand and normalize to HTTP.
+// Scheme-less hub shorthand preserves the established explicit HTTP behavior.
 {
   assert.equal(normalizeHubUrl(" server.tailnet:8787 "), "http://server.tailnet:8787");
+  assert.equal(normalizeHubUrl("localhost:8787"), "http://localhost:8787");
+  assert.equal(normalizeHubUrl("127.0.0.1:8787"), "http://127.0.0.1:8787");
+  assert.equal(normalizeHubUrl("[::1]:8787"), "http://[::1]:8787");
   assert.equal(normalizeHubUrl("https://server.tailnet:8787/"), "https://server.tailnet:8787");
 }
 
@@ -198,7 +201,7 @@ const {
   assert.equal(target.label, "Local daemon");
 }
 
-// Hub mode routes daemon calls to the configured private-network HTTP target.
+// Hub mode preserves the configured private-network HTTP target.
 {
   const target = daemonTargetForConfig({
     version: 1,
@@ -267,6 +270,38 @@ const {
     assert.equal(res.ok, true);
     assert.equal(authorization, "Bearer v1.signed");
     assert.equal(requestedUrl, "/api/v1/health");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+// Bearer credentials never leave the host over remote plaintext HTTP.
+{
+  let requests = 0;
+  const server = createServer((_req, res) => {
+    requests += 1;
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+  });
+  await new Promise((resolve) => server.listen(0, "0.0.0.0", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+
+  try {
+    const res = await callDaemonTarget(
+      {
+        mode: "hub",
+        label: "Server hub",
+        url: `http://192.0.2.1:${address.port}`,
+        accessToken: "v1.signed",
+      },
+      { path: "/api/v1/health", timeoutMs: 100 },
+    );
+
+    assert.equal(res.ok, false);
+    assert.equal(res.status, 0);
+    assert.match(res.error ?? "", /HTTPS|secure transport/i);
+    assert.equal(requests, 0);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

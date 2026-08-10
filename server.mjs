@@ -342,6 +342,14 @@ function parseUpgradeTarget(rawUrl) {
 function isPtyAuthRequired() {
   return Boolean(accessToken() || SIDECAR_TOKEN);
 }
+function shouldRejectUnauthenticatedPtyUpgrade({
+  sidecarTokenConfigured = false,
+  accessTokenConfigured = false,
+  tokenAuthenticated = false
+} = {}) {
+  if (tokenAuthenticated) return false;
+  return sidecarTokenConfigured || accessTokenConfigured;
+}
 function isAuthorized(req, query) {
   if (!isPtyAuthRequired()) return false;
   const queryToken = firstQueryValue(query[ACCESS_QUERY_PARAM]);
@@ -655,8 +663,14 @@ function handlePtyConnection(ws, threadId, cols, rows, cwd, replayCursor) {
     detachPtyConsumer(threadId, session, ws);
   });
 }
+function loopbackHostname(raw = process.env.HOSTNAME) {
+  if (raw === "127.0.0.1" || raw === "localhost" || raw === "::1") {
+    return raw;
+  }
+  return "127.0.0.1";
+}
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME ?? "127.0.0.1";
+const hostname = loopbackHostname();
 const port = cavePort();
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
@@ -692,14 +706,17 @@ server.on("upgrade", (req, socket, head) => {
     });
     return;
   }
-  const tailnetAuthenticated = resolveTailnetPeer(req) !== null;
-  const tokenAuthenticated = tailnetAuthenticated || (isPtyAuthRequired() ? isAuthorized(req, query) : false);
+  const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     socket.destroy();
     return;
   }
-  if (isPtyAuthRequired() && !tokenAuthenticated && !isDirectLoopbackRequest(req)) {
+  if (shouldRejectUnauthenticatedPtyUpgrade({
+    sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
+    accessTokenConfigured: Boolean(accessToken()),
+    tokenAuthenticated
+  })) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
