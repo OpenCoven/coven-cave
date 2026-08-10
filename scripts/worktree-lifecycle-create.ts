@@ -796,14 +796,6 @@ function inventoryErrors(items: WorktreeLifecycleItem[]): string[] {
 }
 
 /**
- * The per-unit metadata failures that stand in the way of THIS creation.
- *
- * A unit-scoped error belongs to the unit it names and to no other — but if the
- * unit it names is the branch or the path being requested, it is this request's
- * problem too. Creating a second worktree over a path whose ownership is
- * already contested is how the contest becomes unresolvable.
- */
-/**
  * Well-formed records from OTHER beads that already claim this branch or path.
  *
  * `claimErrorsForRequest` refuses when the record claiming your path is
@@ -845,6 +837,19 @@ function orphanedClaimsForRequest(
   ];
 }
 
+/**
+ * The per-unit metadata failures that stand in the way of THIS creation.
+ *
+ * A unit-scoped error belongs to the unit it names and to no other — but if the
+ * unit it names is the branch or the path being requested, it is this request's
+ * problem too. Creating a second worktree over a path whose ownership is
+ * already contested is how the contest becomes unresolvable.
+ *
+ * `metadataGlobalErrors` is subtracted because those are the repository-wide
+ * ones, already reported once by {@link inventoryErrors}; repeating them here
+ * would make an unrelated global failure look like a collision with this
+ * request.
+ */
 function contestedUnitErrors(
   items: WorktreeLifecycleItem[],
   branch: string,
