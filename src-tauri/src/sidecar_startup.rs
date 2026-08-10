@@ -202,15 +202,58 @@ pub(super) fn node_arg_path(path: &Path) -> PathBuf {
 /// history. Both first startup and later supervisor revivals use this exact
 /// path so URL escaping and the native-navigation fallback cannot drift.
 #[cfg(desktop)]
-pub(super) fn replace_main_window_url(app: &tauri::AppHandle, url: Url) -> Result<(), String> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "main window is unavailable".to_string())?;
+fn navigate_sidecar_window(window: &tauri::WebviewWindow, url: Url) -> Result<(), String> {
     let escaped = url.to_string().replace('"', "%22");
     window
         .eval(format!("window.location.replace(\"{escaped}\");"))
         .or_else(|_| window.navigate(url))
-        .map_err(|error| format!("could not navigate the main window: {error}"))
+        .map_err(|error| format!("could not navigate the {} window: {error}", window.label()))
+}
+
+#[cfg(desktop)]
+pub(super) fn refreshed_sidecar_window_url(startup_url: &Url, current_url: &Url) -> Url {
+    let presentation_query: Vec<_> = current_url
+        .query_pairs()
+        .filter(|(key, _)| key != "covenCaveToken" && key != "coven_access_token")
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect();
+    let mut refreshed = startup_url.clone();
+    refreshed.set_path(current_url.path());
+    refreshed.set_fragment(current_url.fragment());
+    for (key, value) in presentation_query {
+        refreshed.query_pairs_mut().append_pair(&key, &value);
+    }
+    refreshed
+}
+
+#[cfg(desktop)]
+pub(super) fn replace_main_window_url(app: &tauri::AppHandle, url: Url) -> Result<(), String> {
+    let main_window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window is unavailable".to_string())?;
+    navigate_sidecar_window(&main_window, url.clone())?;
+
+    for label in [QUICK_CHAT_WINDOW_LABEL, NOTCH_WINDOW_LABEL] {
+        let Some(window) = app.get_webview_window(label) else {
+            continue;
+        };
+        let target = match window.url() {
+            Ok(current) => refreshed_sidecar_window_url(&url, &current),
+            Err(error) => {
+                log::warn!(
+                    "[cave] could not inspect the {label} window during sidecar recovery: {error}; closing the stale auxiliary window"
+                );
+                let _ = window.close();
+                continue;
+            }
+        };
+        if let Err(error) = navigate_sidecar_window(&window, target) {
+            log::warn!("[cave] {error}; closing the stale auxiliary window");
+            let _ = window.close();
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(desktop)]
@@ -570,7 +613,7 @@ pub(super) fn spawn_sidecar_startup(
             let final_status = match result {
                 Ok(_url) if thread_control.is_cancelled() => {
                     if let Some(sidecar) = app.try_state::<SidecarState>() {
-                        if let Err(error) = sidecar.stop() {
+                        if let Err(error) = sidecar.stop_after_startup_attempt() {
                             log::warn!("[cave] could not stop cancelled sidecar: {error}");
                         }
                     }
@@ -587,7 +630,7 @@ pub(super) fn spawn_sidecar_startup(
                         Ok(()) => SidecarStartupStatus::ready(),
                         Err(error) => {
                             if let Some(sidecar) = app.try_state::<SidecarState>() {
-                                if let Err(stop_error) = sidecar.stop() {
+                                if let Err(stop_error) = sidecar.stop_after_startup_attempt() {
                                     log::warn!(
                                         "[cave] could not stop sidecar after navigation failure: {stop_error}"
                                     );
@@ -599,7 +642,7 @@ pub(super) fn spawn_sidecar_startup(
                 }
                 Err(SidecarStartError::Cancelled) => {
                     if let Some(sidecar) = app.try_state::<SidecarState>() {
-                        if let Err(error) = sidecar.stop() {
+                        if let Err(error) = sidecar.stop_after_startup_attempt() {
                             log::warn!("[cave] could not stop cancelled sidecar: {error}");
                         }
                     }
@@ -607,7 +650,7 @@ pub(super) fn spawn_sidecar_startup(
                 }
                 Err(SidecarStartError::Failed(error)) => {
                     if let Some(sidecar) = app.try_state::<SidecarState>() {
-                        if let Err(stop_error) = sidecar.stop() {
+                        if let Err(stop_error) = sidecar.stop_after_startup_attempt() {
                             log::warn!(
                                 "[cave] could not stop sidecar after startup failure: {stop_error}"
                             );
