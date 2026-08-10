@@ -181,8 +181,13 @@ assert.match(
 );
 assert.match(
   daemon,
-  /!daemonOnline && status\?\.reason/,
-  "contradictory running evidence should keep its diagnostic reason visible",
+  /const statusFailureReason =[\s\S]*?!loading && !starting && !restarting && !daemonOnline \? status\?\.reason : null/,
+  "contradictory running evidence should remain visible without announcing stale errors during recovery",
+);
+assert.match(
+  daemon,
+  /Enter a full URL, such as https:\/\/server\.tailnet:8787\./,
+  "invalid hub guidance should match the secure remote-target example",
 );
 assert.match(phone, /Use this device as hub/, "phone pairing should offer its known tailnet host to Server Hub");
 assert.match(

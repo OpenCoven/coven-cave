@@ -444,7 +444,7 @@ export function DaemonSection({
       return;
     }
     if (!isValidHubUrl(url)) {
-      setConnectionError("Enter a full HTTP URL, such as http://server.tailnet:8787.");
+      setConnectionError("Enter a full URL, such as https://server.tailnet:8787.");
       return;
     }
     probeCtlRef.current?.abort();
@@ -632,6 +632,8 @@ export function DaemonSection({
     status?.target?.mode === "hub" && status.availability === "unreachable"
       ? "Configured but unreachable"
       : stateLabel;
+  const statusFailureReason =
+    !loading && !starting && !restarting && !daemonOnline ? status?.reason : null;
   const targetLabel = status?.target?.label || (mode === "hub" ? "server hub" : "local runtime");
   const queueCount = status?.travel?.pendingQueueCount ?? 0;
   const isAway = Boolean(status?.travel && status.travel.mode !== "home");
@@ -828,11 +830,11 @@ export function DaemonSection({
             </div>
           ) : null}
 
-          {!loading && !daemonOnline && status?.reason ? (
+          {statusFailureReason ? (
             <p className="settings-daemon-inline-error" role="alert">
               {statusFailureLead}
-              {status.target?.url ? ` · ${status.target.url}` : ""}
-              {` · ${status.reason}`}
+              {status?.target?.url ? ` · ${status.target.url}` : ""}
+              {` · ${statusFailureReason}`}
             </p>
           ) : null}
           {startError ? <p className="settings-daemon-inline-error" role="alert">{startError}</p> : null}
