@@ -258,11 +258,13 @@ export function interleaveByType(results: readonly RankedResult[], limit: number
  * describing the same underlying thing are NOT merged here — that would require
  * cross-provider identity the contracts do not define.
  */
+const DEDUPE_KEY_SEPARATOR = "\u0000";
+
 export function dedupeResults(results: readonly RankedResult[]): RankedResult[] {
   const seen = new Set<string>();
   const out: RankedResult[] = [];
   for (const result of results) {
-    const key = `${result.providerId}\u0000${result.document.id}`;
+    const key = `${result.providerId}${DEDUPE_KEY_SEPARATOR}${result.document.id}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(result);

@@ -229,15 +229,21 @@ assert.equal(satisfiesHardConstraints(doc({ updatedAt: "2026-08-09T00:00:00Z" })
 
 // The coordinator re-checks permissions even when a provider wrongly permits.
 {
-  const leaky = provider({ permits: () => true });
-  const strict = provider({ id: "tasks", permits: permitsByProject });
-  const rows = rowsFrom([doc({ id: "secret", projectId: "hidden", permissions: [{ kind: "project", id: "hidden" }], title: "widget" })]);
+  const leaky = provider({ id: "leaky", permits: () => true });
+  const strict = provider({ id: "strict", permits: permitsByProject });
+  const leaked = doc({ id: "secret", projectId: "hidden", permissions: [{ kind: "project", id: "hidden" }], title: "widget" });
   const restricted = { allowedProjectIds: ["p1"], allowedProjectRoots: null, familiarId: null };
 
-  const leakyOut = await runSearch({ query: query({ text: "widget" }), context: restricted, now: NOW }, deps([leaky], rows));
+  const leakyOut = await runSearch(
+    { query: query({ text: "widget" }), context: restricted, now: NOW },
+    deps([leaky], rowsFrom([leaked], "leaky")),
+  );
   // permitsByProject is bypassed by the leaky provider, but hard scopes and the
   // coordinator's own re-check still apply — the document must not appear.
-  const strictOut = await runSearch({ query: query({ text: "widget" }), context: restricted, now: NOW }, deps([strict], rows));
+  const strictOut = await runSearch(
+    { query: query({ text: "widget" }), context: restricted, now: NOW },
+    deps([strict], rowsFrom([leaked], "strict")),
+  );
   assert.deepEqual(leakyOut.results, [], "the coordinator's baseline check hides an unreadable project");
   assert.equal(leakyOut.emptyReason, "permission-denied");
   assert.deepEqual(strictOut.results, [], "the coordinator's re-check hides an unreadable project");
