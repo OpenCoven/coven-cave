@@ -99,8 +99,31 @@ function asText(value) {
   return typeof value === "string" ? value : "";
 }
 
-function commandFailure(operation) {
-  return { ok: false, reason: `coven-${operation}-unavailable` };
+/**
+ * Turn a failed `coven maintenance <op>` into a reason string.
+ *
+ * The suffix stays `-unavailable` because callers and tests match on it, but it
+ * now carries the client's own first NON-EMPTY line of stderr. Without that,
+ * EVERY non-zero exit read as "the subcommand is unavailable" — so an expired
+ * owner lease, which is the common failure, looked like a missing or too-old
+ * client. That cost a wrong root cause on cave-7w5cu: the reported version skew
+ * was real on PATH and entirely irrelevant, because the gate launches a
+ * different binary. One line of stderr would have said so.
+ *
+ * Matched rather than split: a failing client can emit a long backtrace, and
+ * only the first line is ever used, so there is no reason to allocate an array
+ * for the rest of it.
+ */
+function commandFailure(operation, result) {
+  // Horizontal whitespace only in the leading class — `\s` would span newlines
+  // and let the match start on a blank line, defeating the "non-empty" part.
+  const detail = asText(result?.stderr).match(/^[^\S\n]*(\S[^\n]*)/m)?.[1];
+  return {
+    ok: false,
+    reason: detail
+      ? `coven-${operation}-unavailable: ${detail.trimEnd().slice(0, 200)}`
+      : `coven-${operation}-unavailable`,
+  };
 }
 
 function parseCovenVersion(value) {
@@ -205,7 +228,7 @@ export function createCovenMaintenanceClient({
       args: ["--version"],
       cwd: repoDir,
     });
-    if (!result.ok) return commandFailure("version");
+    if (!result.ok) return commandFailure("version", result);
     const parsed = parseCovenVersion(result.stdout);
     if (!parsed) return { ok: false, reason: "coven-version-malformed" };
     if (!supportsCovenMaintenanceVersion(result.stdout)) {
@@ -225,7 +248,7 @@ export function createCovenMaintenanceClient({
       args: ["maintenance", "status", "--json"],
       cwd: repoDir,
     });
-    if (!result.ok) return commandFailure("status");
+    if (!result.ok) return commandFailure("status", result);
     const parsed = parseStatus(result.stdout);
     return parsed ? { ok: true, status: parsed } : { ok: false, reason: "coven-status-malformed" };
   }
@@ -238,7 +261,7 @@ export function createCovenMaintenanceClient({
       args: ["maintenance", "release", handle.ownerId, handle.generation],
       cwd: handle.repoDir,
     });
-    return result.ok ? { ok: true } : commandFailure("release");
+    return result.ok ? { ok: true } : commandFailure("release", result);
   }
 
   return {
@@ -261,7 +284,7 @@ export function createCovenMaintenanceClient({
         args: ["maintenance", "acquire", ownerId, "--wait-ms", String(waitMs), "--json"],
         cwd: repoDir,
       });
-      if (!result.ok) return commandFailure("acquire");
+      if (!result.ok) return commandFailure("acquire", result);
 
       const parsed = parseStatus(result.stdout);
       if (!parsed || !parsed.owner) {
@@ -309,7 +332,7 @@ export function createCovenMaintenanceClient({
         ],
         cwd: handle.repoDir,
       });
-      if (!result.ok) return commandFailure("heartbeat");
+      if (!result.ok) return commandFailure("heartbeat", result);
       const parsed = parseStatus(result.stdout);
       if (!parsed) return { ok: false, reason: "coven-heartbeat-output-malformed" };
       return heldBy(parsed, handle, Math.floor(now() / 1_000));
@@ -427,6 +450,7 @@ export function createRepositoryMaintenanceCoordinator({
     release(handle) {
       if (!handle?.local || !handle?.coven) return { ok: false, reason: "invalid-composite-handle" };
       const coven = covenClient.release(handle.coven);
+
       if (!coven.ok) {
         return {
           ok: false,
