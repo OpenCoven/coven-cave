@@ -40,6 +40,7 @@ export const SUITES = {
     "src/lib/use-code-rail.test.ts",
     "src/lib/initial-prompt-handoff.test.ts",
     "src/lib/cave-board-retention.test.ts",
+    "src/lib/cave-board-backfill-idempotence.test.ts",
     "src/components/board-retention.test.ts",
     "src/lib/workspace-tiles.test.ts",
     "src/lib/page-drag.test.ts",
@@ -1679,6 +1680,8 @@ const ALIAS_LOADER = new Set([
   // cave-board.ts resolves "@/lib/cave-board-types", "@/lib/task-github" and
   // friends, so the retention suite cannot load without the alias resolver.
   "src/lib/cave-board-retention.test.ts",
+  // same reason: the idempotence suite loads cave-board.ts directly.
+  "src/lib/cave-board-backfill-idempotence.test.ts",
   // the picker imports the module under test, which resolves
   // "@/lib/code-surface" for the shared session-visibility rule.
   "src/lib/code-session-picker.test.ts",
