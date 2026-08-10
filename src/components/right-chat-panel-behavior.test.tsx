@@ -199,6 +199,22 @@ function threadSwitcher(renderer: ReactTestRenderer) {
   return renderer.root.findByType("select" as never);
 }
 
+/** The single `<aside>` root every render path shares (RightChatPanelFrame's
+ *  own aside for loading/error/chooser, or the fully resolved aside) — used
+ *  to check the persistent-root accessibility contract (fix 4, cave-rl980
+ *  Task 4 final review): truthfully out of the tab order/accessibility tree
+ *  while closed, without ever unmounting. */
+function panelRoot(renderer: ReactTestRenderer) {
+  return renderer.root.findByType("aside" as never);
+}
+
+/** Whether the render-blocking Loading frame (`role="status"`,
+ *  `right-chat__loading`) is currently showing — distinct from an
+ *  ErrorState/resolved render (fix 1, cave-rl980 Task 4 final review). */
+function isLoadingFrame(renderer: ReactTestRenderer): boolean {
+  return renderer.root.findAll((node) => node.props.className === "right-chat__loading").length > 0;
+}
+
 /** The header's own rendered title span (`<span title={title}>{title}</span>`
  *  inside `.right-chat__identity`) — the "header" half of "T remains
  *  active/header" (cave-rl980 Task 4 final review tests below), distinct
@@ -488,6 +504,62 @@ describe("confirmed removal vs ordinary null (fix 1 follow-up: archive/delete re
     expect(sessionIdAttr(renderer)).toBe("cody-older");
     expect(router.calls.openSession.at(-1)?.[0]).toBe("cody-older");
     expect(router.calls.openSession.some((call) => call[0] === "cody-promoted")).toBe(false);
+  });
+});
+
+describe("starting a new compose before the roster confirms a pending removal cancels the pending replacement (fix 2, cave-rl980 Task 4 final review)", () => {
+  // The retain-until-roster-confirms branch above intentionally holds a stale
+  // selection open across renders while awaiting confirmation. If the user
+  // starts a fresh compose in that window (e.g. from the router's own list
+  // view, reachable once onBack navigates there after the archive/delete —
+  // ChatList's "New chat", or any other compact/hideRail compose entry), the
+  // fixed ChatRouter reports null again via its composeInstance-aware change
+  // detection (see the reporting effect's doc in chat-router.tsx) even
+  // though the plain session-id value never changes (null -> null). That
+  // second report is simulated directly here, exactly like every other test
+  // in this file simulates ChatRouter's real reporting via
+  // onActiveSessionChange. Once it arrives, pendingRemovalRef has already
+  // been consumed by the FIRST report, so handleActiveSessionChange treats it
+  // as an ordinary null and clears the stale retained id — the fresh compose
+  // must then survive the roster's later confirmation instead of being
+  // clobbered by a resurrected replacement.
+  test("a new compose started while a confirmed archive still awaits roster confirmation clears the stale retained id, and the later roster confirmation does not resurrect a replacement over it", async () => {
+    const cody = familiar("cody", "Cody");
+    const older = sessionRow("cody-older", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    const newer = sessionRow("cody-newer", { familiarId: "cody", created_at: "2026-01-05T00:00:00.000Z", updated_at: "2026-01-05T00:00:00.000Z" });
+    let props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions: [older, newer] });
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-newer");
+
+    // Archive begins on cody-newer -- same order as the confirmed-archive
+    // test above: onSessionsChanged, then the narrow onSessionRemoved signal,
+    // then (via ChatRouter's onBack) a null.
+    await act(async () => {
+      (router.latestProps!.onSessionsChanged as () => void)();
+      (router.latestProps!.onSessionRemoved as (id: string, reason: string) => void)("cody-newer", "archived");
+      (router.latestProps!.onActiveSessionChange as (id: string | null) => void)(null);
+    });
+    expect(sessionIdAttr(renderer)).toBe("cody-newer"); // retained, awaiting roster confirmation
+    expect(router.calls.newChat.length).toBe(0);
+
+    // BEFORE the roster confirms the removal, the user starts a fresh
+    // compose. sessionId stays null throughout (list -> compose), which is
+    // exactly why the fixed router's reporting must key on composeInstance,
+    // not just the session-id value, to notify RightChatPanel at all.
+    await act(async () => {
+      (router.latestProps!.onActiveSessionChange as (id: string | null) => void)(null);
+    });
+    expect(sessionIdAttr(renderer)).toBe("new"); // the stale retained id is gone, cleared like any ordinary null
+    expect(router.calls.newChat.length).toBe(0); // cleared via the handler, not a second imperative call
+
+    // The roster now confirms cody-newer really is gone. The same-familiar
+    // reconcile branch must NOT resurrect a replacement over the user's
+    // fresh compose -- selectedSessionId is already null, so its own
+    // `if (!selectedSessionId) return;` guard bails immediately.
+    props = { ...props, sessions: [older] };
+    await update(renderer, props);
+    expect(sessionIdAttr(renderer)).toBe("new"); // still the user's fresh compose, not resurrected
+    expect(router.calls.openSession.some((call) => call[0] === "cody-older")).toBe(false);
   });
 });
 
@@ -886,6 +958,61 @@ describe("applied-session-scope contract: a familiar switch never resolves again
   });
 });
 
+describe("a stale applied-session-scope must not block indefinitely once the target familiar's own fetch has failed (fix 1, cave-rl980 Task 4 final review)", () => {
+  test("switching to nova while its sessions fetch has already failed (scope still unconfirmed) shows the explicit sessions ErrorState with Retry, not indefinite Loading", async () => {
+    const cody = familiar("cody", "Cody");
+    const nova = familiar("nova", "Nova");
+    const codySession = sessionRow("cody-1", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    let props = baseProps({
+      activeFamiliar: cody,
+      familiars: [cody, nova],
+      sessions: [codySession],
+      sessionsScopeFamiliarId: "cody",
+    });
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-1");
+
+    // The user switches to nova. Workspace's own refetch for nova's scope
+    // fails outright (not merely slow) -- loadSessions only ever confirms a
+    // scope it successfully fetched, so sessionsScopeFamiliarId stays "cody"
+    // (stale) forever while sessionsError flips true for the failed attempt.
+    // Without the fix, the loading gate's scope clause would hold this at an
+    // indefinite spinner no future render could ever clear.
+    props = { ...props, activeFamiliar: nova, sessionsError: true };
+    await update(renderer, props);
+
+    expect(isLoadingFrame(renderer)).toBe(false);
+    expect(renderer.root.findAllByType(MockChatRouter)).toHaveLength(0);
+    const retryButtons = renderer.root
+      .findAllByType(Button)
+      .filter((node) => node.props.children === "Retry" && node.props.onClick === props.onRetrySessions);
+    expect(retryButtons.length).toBeGreaterThan(0);
+    expect(findByAria(renderer, "Close Chat panel")).toBeTruthy();
+  });
+
+  test("switching to nova while its sessions scope is merely still pending (no error yet) keeps showing Loading -- first-resolution safety is unaffected", async () => {
+    const cody = familiar("cody", "Cody");
+    const nova = familiar("nova", "Nova");
+    const codySession = sessionRow("cody-1", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    let props = baseProps({
+      activeFamiliar: cody,
+      familiars: [cody, nova],
+      sessions: [codySession],
+      sessionsScopeFamiliarId: "cody",
+    });
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-1");
+
+    // No sessionsError this time -- the refetch simply hasn't resolved yet.
+    props = { ...props, activeFamiliar: nova };
+    await update(renderer, props);
+
+    expect(isLoadingFrame(renderer)).toBe(true);
+    expect(renderer.root.findAllByType(MockChatRouter)).toHaveLength(0);
+    expect(renderer.root.findAllByType(Button).filter((node) => node.props.children === "Retry")).toHaveLength(0);
+  });
+});
+
 describe("transient roster errors keep a resolved router mounted (fix 2)", () => {
   test("a transient sessions error keeps an already-resolved ChatRouter mounted and offers an inline retry", async () => {
     const cody = familiar("cody", "Cody");
@@ -995,6 +1122,83 @@ describe("every loading/error/chooser state exposes a discoverable Close action 
       findByAria(renderer, "Close Chat panel").props.onClick();
     });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("persistent closed roots stay truthfully out of the tab order and accessibility tree without unmounting (fix 4, cave-rl980 Task 4 final review)", () => {
+  test("loading: aria-hidden/inert follow open, and the frame itself never unmounts across the toggle", async () => {
+    let props = baseProps({ familiarsLoaded: false, open: false });
+    const renderer = await renderPanel(props);
+    expect(panelRoot(renderer).props["aria-hidden"]).toBe(true);
+    expect(panelRoot(renderer).props.inert).toBe(true);
+    expect(isLoadingFrame(renderer)).toBe(true); // still mounted, merely inert
+
+    props = { ...props, open: true };
+    await update(renderer, props);
+    expect(panelRoot(renderer).props["aria-hidden"]).toBe(false);
+    expect(panelRoot(renderer).props.inert).toBe(false);
+    expect(isLoadingFrame(renderer)).toBe(true);
+  });
+
+  test("familiars error: aria-hidden/inert follow open without disturbing the Retry action's presence", async () => {
+    let props = baseProps({ familiarsError: "boom", open: false });
+    const renderer = await renderPanel(props);
+    expect(panelRoot(renderer).props["aria-hidden"]).toBe(true);
+    expect(panelRoot(renderer).props.inert).toBe(true);
+    expect(renderer.root.findAllByType(Button).some((node) => node.props.children === "Retry")).toBe(true);
+
+    props = { ...props, open: true };
+    await update(renderer, props);
+    expect(panelRoot(renderer).props["aria-hidden"]).toBe(false);
+    expect(panelRoot(renderer).props.inert).toBe(false);
+  });
+
+  test("no active familiar chooser: aria-hidden/inert follow open", async () => {
+    let props = baseProps({ activeFamiliar: null, open: false });
+    const renderer = await renderPanel(props);
+    expect(panelRoot(renderer).props["aria-hidden"]).toBe(true);
+    expect(panelRoot(renderer).props.inert).toBe(true);
+
+    props = { ...props, open: true };
+    await update(renderer, props);
+    expect(panelRoot(renderer).props["aria-hidden"]).toBe(false);
+    expect(panelRoot(renderer).props.inert).toBe(false);
+  });
+
+  test("sessions error before first resolution: aria-hidden/inert follow open", async () => {
+    let props = baseProps({ sessionsError: true, open: false });
+    const renderer = await renderPanel(props);
+    expect(panelRoot(renderer).props["aria-hidden"]).toBe(true);
+    expect(panelRoot(renderer).props.inert).toBe(true);
+
+    props = { ...props, open: true };
+    await update(renderer, props);
+    expect(panelRoot(renderer).props["aria-hidden"]).toBe(false);
+    expect(panelRoot(renderer).props.inert).toBe(false);
+  });
+
+  test("fully resolved chat: closing after resolution makes the root aria-hidden/inert without unmounting ChatRouter, so the resolved session/transcript/stream/draft survive the close", async () => {
+    const cody = familiar("cody", "Cody");
+    const sessions = [sessionRow("cody-1", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" })];
+    let props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions }); // open: true (baseProps default)
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-1");
+    expect(panelRoot(renderer).props["aria-hidden"]).toBe(false);
+    expect(panelRoot(renderer).props.inert).toBe(false);
+
+    props = { ...props, open: false };
+    await update(renderer, props);
+    expect(panelRoot(renderer).props["aria-hidden"]).toBe(true);
+    expect(panelRoot(renderer).props.inert).toBe(true);
+    expect(renderer.root.findAllByType(MockChatRouter)).toHaveLength(1); // still mounted while closed
+    expect(sessionIdAttr(renderer)).toBe("cody-1"); // the resolved selection survives the close
+
+    props = { ...props, open: true };
+    await update(renderer, props);
+    expect(panelRoot(renderer).props["aria-hidden"]).toBe(false);
+    expect(panelRoot(renderer).props.inert).toBe(false);
+    expect(renderer.root.findAllByType(MockChatRouter)).toHaveLength(1);
+    expect(sessionIdAttr(renderer)).toBe("cody-1");
   });
 });
 

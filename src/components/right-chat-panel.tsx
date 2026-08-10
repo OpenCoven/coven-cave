@@ -24,18 +24,33 @@ import type { Familiar, SessionRow } from "@/lib/types";
  * focus-trapped mobile modal, so every one of those states — not just the
  * fully resolved chat — must expose a discoverable way out instead of
  * trapping focus with no escape affordance.
+ *
+ * `open` is truthful accessibility, not a mount gate (cave-rl980 Task 4
+ * review): Shell keeps this panel mounted while closed (collapsed/hidden via
+ * CSS) so ChatRouter's transcript/stream/scroll/draft survive a close —
+ * "Keep the router mounted" per the design doc — but a persistently-mounted,
+ * merely visually-collapsed root is otherwise still in the tab order and the
+ * accessibility tree, so a sighted mouse user sees nothing while a keyboard
+ * or screen-reader user can still Tab into (and activate) hidden Retry/Close/
+ * New-chat controls or land on hidden chat content. `aria-hidden` + `inert`
+ * together (the same pair `code-terminal-drawer.tsx` uses for its own
+ * "hidden rather than unmounted" drawer) make every frame/root truthfully
+ * absent from both when `open` is false, while an `open` state stays fully
+ * accessible.
  */
 function RightChatPanelFrame({
+  open,
   onClose,
   title = "Chat",
   children,
 }: {
+  open: boolean;
   onClose: () => void;
   title?: string;
   children: ReactNode;
 }) {
   return (
-    <aside className="right-chat" aria-label="Chat panel">
+    <aside className="right-chat" aria-label="Chat panel" aria-hidden={!open} inert={!open}>
       <header className="right-chat__header">
         <strong>{title}</strong>
         <button
@@ -459,13 +474,25 @@ export function RightChatPanel(props: Props) {
   // stale-familiar flash is ever rendered. hasResolvedRouter still protects
   // a LATER, transient scope hiccup for an already-showing familiar exactly
   // like familiarsError/sessionsError below.
+  //
+  // An unconfirmed scope stops blocking the instant `sessionsError` is true
+  // (cave-rl980 Task 4 review, final finding): the caller's fetch for the
+  // scope this exact familiar needs has already failed outright — there is
+  // no future "scope applies" transition left to wait quietly for, only a
+  // real failure to report — so falling through here lets the sessionsError
+  // branch below render the explicit "Couldn't load chats" ErrorState with
+  // Retry instead of an indefinite spinner nothing will ever clear. A scope
+  // that is merely still pending (no error yet) is untouched by this and
+  // keeps rendering Loading exactly as before — first-resolution safety
+  // never resolves against a roster that hasn't actually confirmed it
+  // belongs to this familiar.
   if (
     !familiarsLoaded ||
     !sessionsLoaded ||
-    (activeFamiliar !== null && !sessionsScopeCurrent && !hasResolvedRouter)
+    (activeFamiliar !== null && !sessionsScopeCurrent && !hasResolvedRouter && !sessionsError)
   ) {
     return (
-      <RightChatPanelFrame onClose={props.onClose}>
+      <RightChatPanelFrame onClose={props.onClose} open={open}>
         <div className="right-chat__loading" role="status">
           Loading Chat…
         </div>
@@ -479,7 +506,7 @@ export function RightChatPanel(props: Props) {
   // later transient failure instead of unmounting it into this ErrorState.
   if (familiarsError && !hasResolvedRouter) {
     return (
-      <RightChatPanelFrame onClose={props.onClose}>
+      <RightChatPanelFrame onClose={props.onClose} open={open}>
         <ErrorState
           compact
           headline="Couldn't load familiars"
@@ -492,7 +519,7 @@ export function RightChatPanel(props: Props) {
 
   if (!activeFamiliar) {
     return (
-      <RightChatPanelFrame onClose={props.onClose}>
+      <RightChatPanelFrame onClose={props.onClose} open={open}>
         <EmptyState
           compact
           icon="ph:users-three"
@@ -516,10 +543,12 @@ export function RightChatPanel(props: Props) {
     );
   }
 
-  // Same transient-vs-mounted distinction as familiarsError above.
+  // Same transient-vs-mounted distinction as familiarsError above. Also the
+  // fallback for the stale-scope-plus-fetch-failure case carved out of the
+  // loading gate above: it reaches here unconditional on sessionsScopeCurrent.
   if (sessionsError && !hasResolvedRouter) {
     return (
-      <RightChatPanelFrame onClose={props.onClose}>
+      <RightChatPanelFrame onClose={props.onClose} open={open}>
         <ErrorState
           compact
           headline="Couldn't load chats"
@@ -543,7 +572,17 @@ export function RightChatPanel(props: Props) {
       : null;
 
   return (
-    <aside className="right-chat" aria-label="Chat panel" data-session-id={selectedSessionId ?? "new"}>
+    <aside
+      className="right-chat"
+      aria-label="Chat panel"
+      // Truthful accessibility for the persistently-mounted root, same
+      // rationale as RightChatPanelFrame's own doc above: closed means out of
+      // both the tab order and the accessibility tree, never merely
+      // invisible; open stays fully accessible.
+      aria-hidden={!open}
+      inert={!open}
+      data-session-id={selectedSessionId ?? "new"}
+    >
       <header className="right-chat__header">
         {resolvedActiveFamiliar ? <FamiliarAvatar familiar={resolvedActiveFamiliar} size="sm" /> : null}
         <span className="right-chat__identity">
