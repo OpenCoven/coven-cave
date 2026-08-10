@@ -60,8 +60,8 @@ const SHA_GUARD = "github.event_name != 'workflow_dispatch' || github.sha == inp
 // Every job must refuse a recovery dispatch whose branch head has moved. A job
 // may narrow itself further (for example, skipping on pull_request to keep a
 // paid runner off the PR fan-out), but only by ANDing extra conditions onto the
-// guard. A top-level `||` in the suffix could re-admit a stale dispatch, so the
-// shape is pinned rather than merely searched for.
+// guard. Any `||` in the suffix could re-admit a stale dispatch, so the shape is
+// pinned rather than merely searched for.
 function assertShaGuarded(jobName, condition) {
   assert.equal(typeof condition, "string", `${jobName} must declare an if: condition`);
   if (condition === SHA_GUARD) {
@@ -76,7 +76,7 @@ function assertShaGuarded(jobName, condition) {
   assert.ok(suffix.length > 0, `${jobName} must not AND the guard against an empty condition`);
   assert.ok(
     !suffix.includes("||"),
-    `${jobName} must not weaken the head-moved guard with a top-level disjunction`,
+    `${jobName} must not weaken the head-moved guard with any disjunction in the suffix`,
   );
 }
 
