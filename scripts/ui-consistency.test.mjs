@@ -417,6 +417,8 @@ assert.equal(
       invalidExceptions: repositoryResult.invalidExceptions,
       invalidBaselineFindings: repositoryResult.invalidBaselineFindings,
       duplicateBaselineKeys: repositoryResult.duplicateBaselineKeys,
+      duplicateExceptionKeys: repositoryResult.duplicateExceptionKeys,
+      outOfOrderBaseline: repositoryResult.outOfOrderBaseline,
     },
     null,
     2,
