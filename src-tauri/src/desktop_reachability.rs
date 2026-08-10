@@ -1477,7 +1477,7 @@ fn background_availability_supported() -> bool {
 /// and this daemon scanned 3000..=3010, so the two essentially never agreed.
 ///
 /// The old scan survives only as a last resort. Here, unlike the GUI path, not
-/// starting is worse than moving: the GUI can show the user an refusal.message, whereas a
+/// starting is worse than moving: the GUI can show the user an error, whereas a
 /// background daemon that refuses to bind leaves the phone silently unreachable
 /// with nothing on screen to explain it. The fallback logs loudly, and the
 /// serve-repair pass re-points Tailscale at whatever port was actually taken.
