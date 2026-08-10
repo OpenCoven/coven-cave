@@ -15,6 +15,22 @@ test("probe helper accepts a stubbed daemon caller for route-level outcomes", as
   assert.equal(result.reason, "hub unhealthy: maintenance");
 });
 
+test("probe rejects a bearer-protected remote HTTP hub before calling it", async () => {
+  let calls = 0;
+  const result = await probeDaemonUrl(
+    "http://hub.example.test:8787/?coven_access_token=v1.signed",
+    async () => {
+      calls += 1;
+      return { ok: true, status: 200, data: { ok: true } };
+    },
+    () => 5,
+  );
+
+  assert.equal(calls, 0);
+  assert.equal(result.reachable, false);
+  assert.match(result.reason ?? "", /HTTPS|secure transport/i);
+});
+
 const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 assert.match(route, /export const runtime = "nodejs"/);
 assert.match(route, /export const dynamic = "force-dynamic"/);

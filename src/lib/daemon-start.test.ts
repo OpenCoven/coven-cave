@@ -28,10 +28,10 @@ assert.match(daemonStart, /sanitizeDaemonStartDiagnostic\(stdout\)/, "launcher s
 assert.match(daemonStart, /sanitizeDaemonStartDiagnostic\(stderr\)/, "launcher stderr is redacted before it reaches a client");
 assert.match(daemonStart, /assessDaemonStartupCompatibility/, "readiness must validate runtime coherence, not only socket reachability");
 assert.match(daemonStart, /code: "runtime_incompatible"/, "a stale or incompatible runtime has a stable actionable outcome");
-assert.match(daemonStart, /RuntimeStartupThrottle/, "repeated failed starts must be bounded to prevent a restart storm");
+assert.match(daemonStart, /RuntimeStartupCoordinator/, "duplicate launches and repeated failures share one bounded startup lane");
 assert.match(daemonStart, /code: "address_in_use"/, "an address someone else holds has its own actionable outcome");
 assert.match(daemonStart, /inspectDaemonAddress/, "occupancy is proven by connecting, not inferred from a failed health probe");
-assert.match(daemonStart, /activeDaemonStart/, "concurrent start requests must share one owned launch");
+assert.match(daemonStart, /daemonStartCoordinator\.run/, "production starts enter the shared coordinator");
 
 for (const [payload, expected] of [
   [{ status: "running", ok: true }, { status: "running" }],
@@ -430,11 +430,12 @@ test("Windows cleanup delegates the complete owned tree to taskkill", async () =
 test("POSIX cleanup escalates an owned process group when the launcher does not exit", async () => {
   const child = fakeChild(5200);
   const signals = [];
-  let waits = 0;
   const result = await terminateDaemonLaunchTree(child, {
     platform: "linux",
     killProcessGroup: (pid, signal) => signals.push([pid, signal]),
-    waitForExit: async () => ++waits === 2,
+    waitForExit: async () => true,
+    processGroupAlive: () => true,
+    waitForProcessGroupExit: async () => true,
   });
   assert.deepEqual(signals, [[5200, "SIGTERM"], [5200, "SIGKILL"]]);
   assert.deepEqual(result, { attempted: true, completed: true, mode: "process-group" });

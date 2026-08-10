@@ -1464,6 +1464,7 @@ export const SUITES = {
     "src/app/api/voice/transcript/route.test.ts",
     "src/server-pty-ws.test.ts",
     "src/server-heap-monitor.test.ts",
+    "src/lib/pty-upgrade-auth.test.ts",
     "src/lib/pty-ws-bridge.test.ts",
     "src/lib/websocket-url.test.ts",
     "src/lib/familiar-liveness.test.ts",
@@ -1642,6 +1643,7 @@ export const SUITES = {
   // the matrix is where per-OS behavior is verified.
   conformance: [
     "scripts/cross-environment.test.ts",
+    "scripts/daemon-connectivity-faults.test.ts",
     "scripts/windows-native-browser-regression.test.mjs",
     "scripts/cave-home-migration-windows.test.ts",
   ],
