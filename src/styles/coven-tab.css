@@ -1025,7 +1025,12 @@ textarea.coven-tab__field-input {
    viewport to the turn in progress. */
 .coven-section__prose[data-clamped="true"] {
   position: relative;
-  max-height: 3.4em;
+  /* Exactly two lines of the prose's OWN size. An `em` here resolves against
+     the section's inherited 13px, not the 14px the reply renders at, so a
+     plain 3.4em lands a hair UNDER two lines — every two-line reply then
+     "overflows" by a couple of pixels and offers a Show-full control that
+     reveals nothing. */
+  max-height: calc(var(--text-md) * 1.65 * 2);
   overflow: hidden;
 }
 

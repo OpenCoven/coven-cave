@@ -414,7 +414,15 @@ test("Group Chat is a tab inside the Chat surface, not a standalone page", () =>
 test("Group chat stop cleanup targets only the retired scope on switch and unmount", () => {
   assert.match(view, /const activeRunsRef = useRef\(new Map<string, ActiveGroupReplyRun>\(\)\)/, "tracks every in-flight familiar reply in a local active-run registry");
   assert.match(view, /const runScopeRef = useRef\(0\)/, "assigns every turn a scope token");
-  assert.match(view, /const retiringScopeId = runScopeRef\.current;[\s\S]{0,200}runScopeRef\.current \+= 1;[\s\S]{0,200}void stopScopeRuns\(retiringScopeId, \{ quiet: false \}\);/, "coven switches retire the old scope before best-effort stop cleanup");
+  // A pause is an awaited promise inside the retiring schedule. Leaving it held
+  // on a coven switch would strand that schedule forever and carry the paused
+  // state into a coven that has no run at all.
+  assert.match(
+    view,
+    /const retiringScopeId = runScopeRef\.current;[\s\S]{0,600}pauseReleaseRef\.current\?\.\(\);/,
+    "switching covens releases any held rotation on the way out",
+  );
+  assert.match(view, /const retiringScopeId = runScopeRef\.current;[\s\S]{0,900}runScopeRef\.current \+= 1;[\s\S]{0,900}void stopScopeRuns\(retiringScopeId, \{ quiet: false \}\);/, "coven switches retire the old scope before best-effort stop cleanup");
   assert.match(view, /useEffect\(\(\) => \(\) => \{[\s\S]{0,300}const retiringScopeId = runScopeRef\.current;[\s\S]{0,120}runScopeRef\.current \+= 1;[\s\S]{0,220}void stopScopeRuns\(retiringScopeId, \{ quiet: true \}\);[\s\S]{0,120}\}, \[flushPendingSave\]\);/, "unmount cleanup posts stops without touching a future scope");
   assert.match(view, /scopeId !== runScopeRef\.current/, "late completions from a retired scope are ignored");
   assert.match(view, /registerActiveGroupReplyRun\(/, "each reply registers itself when its stream starts");
@@ -511,7 +519,7 @@ test("Group chat is a world-class chat surface (a11y + resilience)", () => {
   // abort/busy wiring when they still own the active controller.
   assert.match(
     view,
-    /swap transcript when the active group changes[\s\S]*?const retiringScopeId = runScopeRef\.current;\s*\n\s*runScopeRef\.current \+= 1;\s*\n\s*abortRef\.current = null;\s*\n\s*setBusy\(false\);\s*\n\s*void stopScopeRuns\(retiringScopeId, \{ quiet: false \}\);/,
+    /swap transcript when the active group changes[\s\S]*?const retiringScopeId = runScopeRef\.current;\s*\n\s*runScopeRef\.current \+= 1;\s*\n\s*abortRef\.current = null;\s*\n\s*setBusy\(false\);[\s\S]{0,900}void stopScopeRuns\(retiringScopeId, \{ quiet: false \}\);/,
     "changing the active coven retires and stops the in-flight scope before loading the new transcript",
   );
   {

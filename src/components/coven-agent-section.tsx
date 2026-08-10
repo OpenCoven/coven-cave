@@ -72,6 +72,9 @@ function RawOutputDisclosure({ blocks }: { blocks: string[] }) {
   );
 }
 
+/** See the clamp note in {@link CovenAgentSection}. */
+const CLAMP_MIN_CHARS = 200;
+
 export type CovenSuggestion = { path: NextPath; onSelect: () => void };
 
 /**
@@ -163,7 +166,16 @@ export function CovenAgentSection({
   const reply = agent.reply;
   const raw = unrecognizedCovenBlocks(reply.text);
   const settled = agent.status === "complete" || agent.status === "stopped";
-  const clamped = clampable && settled && !expanded;
+  // Only clamp a reply long enough for clamping to buy anything.
+  //
+  // Decided from the text, not from layout: measuring the rendered box counts
+  // the bubble's own hover chrome as "hidden content", so every settled reply
+  // — including two-line ones that fit — reported an overflow and offered a
+  // Show-full control that revealed nothing. Two lines of the ~50rem reading
+  // measure is roughly 190 characters, so anything under that is already short
+  // enough to leave alone; erring toward NOT clamping keeps the failure mode
+  // "nothing was hidden" rather than "a control that lies".
+  const clamped = clampable && settled && !expanded && visibleText.length > CLAMP_MIN_CHARS;
   const note =
     agent.status === "thinking"
       ? reply.activity ?? "Analyzing the prompt…"
