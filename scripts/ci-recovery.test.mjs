@@ -91,6 +91,22 @@ const GUARDED_CI_WORKFLOW = [
   ]),
   "",
 ].join("\n");
+const PREVIOUS_GUARDED_CI_WORKFLOW = [
+  "name: CI",
+  `run-name: ${GUARDED_RUN_NAME}`,
+  "on:",
+  "  workflow_dispatch:",
+  "    inputs:",
+  "      expected_sha:",
+  "        required: true",
+  "        type: string",
+  "concurrency:",
+  `  group: ${GUARDED_CONCURRENCY}`,
+  "jobs:",
+  "  build:",
+  `    if: ${GUARDED_JOB_IF}`,
+  "",
+].join("\n");
 
 function githubFixture({ pulls, runsBySha = {}, jobsByRun = {}, workflowsBySha = {} }) {
   const requests = [];
@@ -178,6 +194,30 @@ test("report-only mode identifies an aged PR with no CI run without dispatching"
 test("apply dispatches one fresh CI run for a qualifying same-repository head", async () => {
   const pr = pull();
   const fixture = githubFixture({ pulls: [pr] });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+  assert.equal(result.recoveries[0].dispatched, true);
+  assert.deepEqual(
+    fixture.requests.filter((request) => request.method === "POST"),
+    [
+      {
+        method: "POST",
+        path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
+        body: { ref: pr.head.ref, inputs: { expected_sha: pr.head.sha } },
+      },
+    ],
+  );
+});
+
+test("apply preserves expected_sha for the previous complete guarded workflow", async () => {
+  const pr = pull();
+  const fixture = githubFixture({
+    pulls: [pr],
+    workflowsBySha: {
+      [pr.head.sha]: PREVIOUS_GUARDED_CI_WORKFLOW,
+    },
+  });
 
   const result = await runCiRecovery(options(fixture.fetchImpl, true));
 

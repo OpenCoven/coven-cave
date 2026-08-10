@@ -287,7 +287,14 @@ async function workflowSupportsExpectedSha(context, sha) {
     Object.entries(EXPECTED_JOB_GUARDS).every(
       ([name, guard]) => workflow?.jobs?.[name]?.if === guard,
     );
-  if (hasCompleteGuardedContract) return true;
+  const hasPreviousGuardedContract =
+    hasCompleteExpectedInput &&
+    workflow["run-name"] === EXPECTED_RUN_NAME &&
+    workflow?.concurrency?.group === EXPECTED_CONCURRENCY_GROUP &&
+    workflow?.jobs?.build?.if === EXPECTED_JOB_GUARD &&
+    !Object.hasOwn(workflow?.jobs ?? {}, "paths") &&
+    !Object.hasOwn(workflow?.jobs ?? {}, "ios");
+  if (hasCompleteGuardedContract || hasPreviousGuardedContract) return true;
 
   const hasGuardedProtocolMarker =
     hasExpectedInput || JSON.stringify(workflow).includes("inputs.expected_sha");
