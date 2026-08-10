@@ -19,7 +19,16 @@
  * Spec: docs/superpowers/specs/2026-08-03-global-intelligent-search-design.md
  */
 
-import { SEARCH_QUERY_VERSION, type SearchQueryState } from "./search-filters.ts";
+import {
+  SEARCH_FILTER_OPERATORS,
+  SEARCH_FILTER_ORIGINS,
+  SEARCH_QUERY_VERSION,
+  SEARCH_SCOPE_DIMENSIONS,
+  type SearchFilterOperator,
+  type SearchFilterOrigin,
+  type SearchQueryState,
+  type SearchScopeDimension,
+} from "./search-filters.ts";
 import { normalizeSearchDocument, type SearchDocument } from "./search-document.ts";
 import {
   selectProviders,
@@ -89,6 +98,52 @@ export type QueryValidation =
   | { ok: false; code: "unsupported-version" | "malformed-query" | "query-too-long"; message: string }
   | { ok: true; query: SearchQueryState };
 
+/**
+ * Read one of the constraint arrays, REFUSING the query if any entry is
+ * malformed rather than dropping that entry.
+ *
+ * Dropping is the tempting choice and it is the wrong one here. Every array
+ * this reads — phrases, filters, scopes — NARROWS the search, so silently
+ * discarding a member returns MORE than the caller asked for. On a surface
+ * whose scopes are the thing keeping one project's results out of another's,
+ * failing open in the widening direction is the failure that matters; a
+ * refused query is merely an error the client can fix.
+ *
+ * An absent array is not malformed — a filters-only query legitimately carries
+ * no phrases — so `undefined` reads as empty while a present non-array does not.
+ */
+function readConstraintArray<T>(
+  value: unknown,
+  isValid: (entry: unknown) => entry is T,
+): { ok: true; entries: T[] } | { ok: false } {
+  if (value === undefined) return { ok: true, entries: [] };
+  if (!Array.isArray(value)) return { ok: false };
+  if (!value.every(isValid)) return { ok: false };
+  return { ok: true, entries: value };
+}
+
+function isSearchFilter(value: unknown): value is SearchQueryState["filters"][number] {
+  if (!isPlainObject(value)) return false;
+  return (
+    typeof value.key === "string" &&
+    value.key.length > 0 &&
+    SEARCH_FILTER_OPERATORS.includes(value.operator as SearchFilterOperator) &&
+    (typeof value.value === "string" || typeof value.value === "boolean") &&
+    SEARCH_FILTER_ORIGINS.includes(value.origin as SearchFilterOrigin)
+  );
+}
+
+function isSearchScope(value: unknown): value is SearchQueryState["scopes"][number] {
+  if (!isPlainObject(value)) return false;
+  return (
+    SEARCH_SCOPE_DIMENSIONS.includes(value.dimension as SearchScopeDimension) &&
+    typeof value.id === "string" &&
+    value.id.length > 0 &&
+    typeof value.label === "string" &&
+    typeof value.implicit === "boolean"
+  );
+}
+
 export function validateQuery(value: unknown): QueryValidation {
   if (!isPlainObject(value)) {
     return { ok: false, code: "malformed-query", message: "query must be an object" };
@@ -100,28 +155,38 @@ export function validateQuery(value: unknown): QueryValidation {
       message: `unsupported query version ${String(value.version)}`,
     };
   }
+  if (value.text !== undefined && typeof value.text !== "string") {
+    return { ok: false, code: "malformed-query", message: "text must be a string" };
+  }
   const text = typeof value.text === "string" ? value.text : "";
   if (text.length > MAX_TEXT) {
     return { ok: false, code: "query-too-long", message: "query text exceeds the limit" };
   }
+
+  const phrases = readConstraintArray(value.phrases, (entry): entry is string =>
+    typeof entry === "string",
+  );
+  if (!phrases.ok) {
+    return { ok: false, code: "malformed-query", message: "phrases must be strings" };
+  }
+  const filters = readConstraintArray(value.filters, isSearchFilter);
+  if (!filters.ok) {
+    return { ok: false, code: "malformed-query", message: "a filter is malformed" };
+  }
+  const scopes = readConstraintArray(value.scopes, isSearchScope);
+  if (!scopes.ok) {
+    return { ok: false, code: "malformed-query", message: "a scope is malformed" };
+  }
+  if (value.presentation !== undefined && value.presentation !== "grouped" && value.presentation !== "top") {
+    return { ok: false, code: "malformed-query", message: "presentation is malformed" };
+  }
+
   const query: SearchQueryState = {
     version: SEARCH_QUERY_VERSION,
     text,
-    phrases: Array.isArray(value.phrases)
-      ? value.phrases.filter((p): p is string => typeof p === "string")
-      : [],
-    filters: Array.isArray(value.filters)
-      ? value.filters.filter(
-          (f): f is SearchQueryState["filters"][number] =>
-            isPlainObject(f) && typeof f.key === "string",
-        )
-      : [],
-    scopes: Array.isArray(value.scopes)
-      ? value.scopes.filter(
-          (s): s is SearchQueryState["scopes"][number] =>
-            isPlainObject(s) && typeof s.dimension === "string" && typeof s.id === "string",
-        )
-      : [],
+    phrases: phrases.entries,
+    filters: filters.entries,
+    scopes: scopes.entries,
     presentation: value.presentation === "grouped" ? "grouped" : "top",
   };
   return { ok: true, query };

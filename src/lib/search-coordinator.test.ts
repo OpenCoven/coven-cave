@@ -68,6 +68,62 @@ assert.equal(validateQuery({ ...query(), text: "x".repeat(2000) }).code, "query-
 assert.equal(validateQuery(query()).ok, true);
 
 /* ---------------------------------------------------------------------- */
+/* Constraint arrays are REFUSED when malformed, never silently dropped     */
+/* ---------------------------------------------------------------------- */
+
+// The query AST arrives as untrusted JSON. Every one of these arrays NARROWS
+// the search, so dropping a malformed member would return MORE than the caller
+// asked for — the wrong direction to fail on a surface whose scopes are what
+// keep one project's results out of another's.
+
+const goodFilter = { key: "type", operator: "is", value: "task", origin: "syntax" };
+const goodScope = { dimension: "project", id: "p1", label: "P1", implicit: false };
+
+assert.equal(validateQuery({ ...query(), filters: [goodFilter] }).ok, true);
+assert.equal(validateQuery({ ...query(), scopes: [goodScope] }).ok, true);
+
+for (const [label, bad] of [
+  ["operator outside the union", { ...goodFilter, operator: "matches" }],
+  ["operator missing", { key: "type", value: "task", origin: "syntax" }],
+  ["origin outside the union", { ...goodFilter, origin: "spoofed" }],
+  ["value neither string nor boolean", { ...goodFilter, value: { nested: true } }],
+  ["empty key", { ...goodFilter, key: "" }],
+]) {
+  const result = validateQuery({ ...query(), filters: [goodFilter, bad] });
+  assert.equal(result.ok, false, `filter with ${label} is refused`);
+  assert.equal(result.code, "malformed-query");
+}
+
+for (const [label, bad] of [
+  ["dimension outside the union", { ...goodScope, dimension: "everything" }],
+  ["id missing", { dimension: "project", label: "P1", implicit: false }],
+  ["implicit not a boolean", { ...goodScope, implicit: "yes" }],
+  ["label missing", { dimension: "project", id: "p1", implicit: false }],
+]) {
+  const result = validateQuery({ ...query(), scopes: [goodScope, bad] });
+  assert.equal(result.ok, false, `scope with ${label} is refused`);
+  assert.equal(result.code, "malformed-query");
+}
+
+// A non-string phrase is a constraint that would vanish; refuse it too.
+assert.equal(validateQuery({ ...query(), phrases: ["ok", 7] }).ok, false);
+// A present-but-not-array constraint is malformed; an ABSENT one is not.
+assert.equal(validateQuery({ ...query(), filters: "type:task" }).ok, false);
+assert.equal(validateQuery({ ...query(), scopes: {} }).ok, false);
+{
+  const sparse = validateQuery({ version: SEARCH_QUERY_VERSION });
+  assert.equal(sparse.ok, true, "a query carrying only a version is valid and empty");
+  assert.deepEqual(sparse.query.filters, []);
+  assert.deepEqual(sparse.query.scopes, []);
+  assert.deepEqual(sparse.query.phrases, []);
+  assert.equal(sparse.query.text, "");
+}
+// A non-string text would silently become "" and search everything.
+assert.equal(validateQuery({ ...query(), text: 42 }).ok, false);
+// An unknown presentation is refused rather than quietly reinterpreted as "top".
+assert.equal(validateQuery({ ...query(), presentation: "columns" }).ok, false);
+
+/* ---------------------------------------------------------------------- */
 /* Ranking: the spec's order of evidence                                   */
 /* ---------------------------------------------------------------------- */
 

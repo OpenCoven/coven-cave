@@ -18,7 +18,14 @@
 /** Query-state version. Bump only with a migration and a fail-closed path. */
 export const SEARCH_QUERY_VERSION = 1;
 
-export type SearchFilterOperator = "is" | "has" | "after" | "before";
+/**
+ * Declared as a value, not just a type, because the query AST arrives as
+ * untrusted JSON over HTTP and something has to check these at runtime. A
+ * type-only union checks nothing once the JSON is parsed.
+ */
+export const SEARCH_FILTER_OPERATORS = ["is", "has", "after", "before"] as const;
+
+export type SearchFilterOperator = (typeof SEARCH_FILTER_OPERATORS)[number];
 
 /**
  * Where a filter came from. This is not bookkeeping — it drives behavior:
@@ -26,7 +33,14 @@ export type SearchFilterOperator = "is" | "has" | "after" | "before";
  * `natural-language` chips so an inferred filter is visible and removable
  * rather than a hidden reinterpretation of what the user typed.
  */
-export type SearchFilterOrigin = "syntax" | "natural-language" | "picker" | "context";
+export const SEARCH_FILTER_ORIGINS = [
+  "syntax",
+  "natural-language",
+  "picker",
+  "context",
+] as const;
+
+export type SearchFilterOrigin = (typeof SEARCH_FILTER_ORIGINS)[number];
 
 export type SearchFilter = {
   key: string;
@@ -35,7 +49,15 @@ export type SearchFilter = {
   origin: SearchFilterOrigin;
 };
 
-export type SearchScopeDimension = "project" | "familiar" | "room" | "session" | "runtime";
+export const SEARCH_SCOPE_DIMENSIONS = [
+  "project",
+  "familiar",
+  "room",
+  "session",
+  "runtime",
+] as const;
+
+export type SearchScopeDimension = (typeof SEARCH_SCOPE_DIMENSIONS)[number];
 
 export type SearchScope = {
   dimension: SearchScopeDimension;
