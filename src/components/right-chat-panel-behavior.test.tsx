@@ -35,13 +35,27 @@
 //      session that arrives while still closed is what first open selects,
 //      never a stale earlier snapshot. A same-familiar close/reopen (no
 //      transition) preserves a manual thread selection exactly as before.
+//      Identity tracking/invalidation happens before the loading/error
+//      readiness guard, not merged with it (cave-rl980 Task 4 review): a
+//      closed A -> B -> A round trip that happens entirely while a roster
+//      error is active throughout is still tracked, so recovering and
+//      reopening re-resolves A fresh instead of retaining a stale,
+//      never-invalidated original resolution.
 //   3. an open familiar switch issues exactly one imperative openSession/
 //      newChat call — never a second one caused by the outgoing familiar's
 //      stale selection being compared against the new familiar's roster.
 //   4. a transient roster error keeps an already-resolved ChatRouter mounted,
 //      and never marks a not-yet-mounted ("null") router resolved.
-//   5. every loading/error/chooser state exposes a working Close action.
-//   6. the familiar chooser only offers the filtered, resolved roster.
+//   5. applied-session-scope contract (cave-rl980 Task 4 review): a familiar
+//      switch never resolves against another familiar's still-in-flight
+//      sessions roster (sessions/sessionsScopeFamiliarId still naming the
+//      OUTGOING familiar) — no early blank compose, no stale other-familiar
+//      session — and resolves exactly once, correctly, the instant the
+//      caller confirms the roster now corresponds to the new familiar.
+//      Omitting sessionsScopeFamiliarId entirely preserves the pre-scope-
+//      aware contract for every caller that hasn't adopted it yet.
+//   6. every loading/error/chooser state exposes a working Close action.
+//   7. the familiar chooser only offers the filtered, resolved roster.
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -685,6 +699,55 @@ describe("first-open semantics: transitions are tracked while closed, but resolu
     expect(router.calls.openSession.at(-1)?.[0]).toBe("cody-newer");
     expect(router.calls.openSession.length + router.calls.newChat.length).toBe(1);
   });
+
+  test("closed A -> B -> A while roster errors are active throughout tracks every transition despite the errors; recovering and reopening re-resolves A fresh instead of retaining the stale, never-invalidated original resolution (cave-rl980 Task 4 review)", async () => {
+    const cody = familiar("cody", "Cody");
+    const nova = familiar("nova", "Nova");
+    const codySession = sessionRow("cody-1", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    const novaSession = sessionRow("nova-1", { familiarId: "nova", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    let props = baseProps({ activeFamiliar: cody, familiars: [cody, nova], sessions: [codySession, novaSession] });
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-1");
+    const callsAfterInitialResolve = router.calls.openSession.length + router.calls.newChat.length;
+
+    // Close the panel and a sessions-roster error begins — and stays active
+    // for the ENTIRE A -> B -> A round trip below. Identity tracking must
+    // happen before the loading/error readiness guard (cave-rl980 Task 4
+    // review): if the guard suppressed the whole effect body — tracking
+    // included — for this entire stretch, trackedFamiliarIdRef would never
+    // advance past the ORIGINAL cody, and the later return to cody would be
+    // mistaken for "nothing changed".
+    props = { ...props, open: false, sessionsError: true };
+    await update(renderer, props);
+
+    // Switch to nova — still closed, still erroring.
+    props = { ...props, activeFamiliar: nova };
+    await update(renderer, props);
+    expect(router.calls.openSession.length + router.calls.newChat.length).toBe(callsAfterInitialResolve); // no resolve attempted while erroring
+
+    // Switch back to cody — STILL closed, STILL erroring the entire time.
+    props = { ...props, activeFamiliar: cody };
+    await update(renderer, props);
+    expect(router.calls.openSession.length + router.calls.newChat.length).toBe(callsAfterInitialResolve); // still no resolve attempted
+
+    // The error clears while still closed. The round trip must have been
+    // tracked as a real transition throughout — proven here by the
+    // selection reading as unresolved ("new"), not the ORIGINAL cody-1 a
+    // never-invalidated resolvedFamiliarRef would still (wrongly) trust.
+    props = { ...props, sessionsError: false };
+    await update(renderer, props);
+    expect(sessionIdAttr(renderer)).toBe("new"); // invalidated, not stale cody-1 — proves the transition was tracked despite the error
+    expect(router.calls.openSession.length + router.calls.newChat.length).toBe(callsAfterInitialResolve); // still deferred: the panel is still closed
+
+    // Reopen: must re-resolve cody fresh, against the CURRENT sessions —
+    // exactly one new resolution call, never zero (zero would mean the
+    // stale, never-invalidated original resolution was silently retained).
+    props = { ...props, open: true };
+    await update(renderer, props);
+    expect(sessionIdAttr(renderer)).toBe("cody-1");
+    expect(router.calls.openSession.at(-1)?.[0]).toBe("cody-1");
+    expect(router.calls.openSession.length + router.calls.newChat.length).toBe(callsAfterInitialResolve + 1);
+  });
 });
 
 describe("familiar transitions issue exactly one imperative action (fix 3: no double resolution from stale selection)", () => {
@@ -725,6 +788,101 @@ describe("familiar transitions issue exactly one imperative action (fix 3: no do
     expect(sessionIdAttr(renderer)).toBe("new");
     expect(router.calls.newChat.at(-1)).toEqual([undefined, undefined, "nova"]);
     expect(router.calls.openSession.length + router.calls.newChat.length).toBe(callsBefore + 1);
+  });
+});
+
+describe("applied-session-scope contract: a familiar switch never resolves against another familiar's still-in-flight sessions roster (fix 5, cave-rl980 Task 4 review)", () => {
+  test("switching to B while `sessions` still reflects A's scoped roster defers resolution until B's roster is applied, then resolves exactly once to B's real newest session", async () => {
+    const cody = familiar("cody", "Cody");
+    const nova = familiar("nova", "Nova");
+    const codySession = sessionRow("cody-1", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    // Workspace's session list is fetched scoped to a single active familiar
+    // (loadSessions in workspace.tsx) -- `sessions` only ever holds ONE
+    // familiar's rows at a time in practice, not a combined multi-familiar
+    // array. sessionsScopeFamiliarId names which familiar it currently is.
+    let props = baseProps({
+      activeFamiliar: cody,
+      familiars: [cody, nova],
+      sessions: [codySession],
+      sessionsScopeFamiliarId: "cody",
+    });
+    const renderer = await renderPanel(props);
+    expect(sessionIdAttr(renderer)).toBe("cody-1");
+    const callsBefore = router.calls.openSession.length + router.calls.newChat.length;
+
+    // The user switches to nova. `activeFamiliar` flips immediately, but
+    // Workspace's own refetch for nova's roster hasn't resolved yet: both
+    // `sessions` and the scope prop still name cody -- the exact race the
+    // applied-scope contract exists to close.
+    props = { ...props, activeFamiliar: nova };
+    await update(renderer, props);
+
+    // No early resolution: no old cody-1 session mistakenly kept under
+    // nova's identity, and no premature blank compose opened for nova either
+    // -- the panel renders its own blocked frame (no data-session-id, no
+    // mounted router) instead of guessing.
+    expect(sessionIdAttr(renderer)).toBe(null);
+    expect(renderer.root.findAllByType(MockChatRouter)).toHaveLength(0);
+    expect(router.calls.openSession.length + router.calls.newChat.length).toBe(callsBefore);
+
+    // A stale re-render with the SAME unconfirmed scope (e.g. the 4s poll
+    // ticking before the switch-triggered refetch resolves) must not resolve
+    // early either.
+    await update(renderer, props);
+    expect(sessionIdAttr(renderer)).toBe(null);
+    expect(router.calls.openSession.length + router.calls.newChat.length).toBe(callsBefore);
+
+    // Workspace's refetch for nova resolves: `sessions` now reflects nova's
+    // real roster, and the scope prop confirms it.
+    const novaSession = sessionRow("nova-1", { familiarId: "nova", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
+    props = { ...props, sessions: [novaSession], sessionsScopeFamiliarId: "nova" };
+    await update(renderer, props);
+
+    // Exactly one resolution now fires, correctly against nova's own data --
+    // never cody's stale row, never a blank compose nova didn't need.
+    expect(sessionIdAttr(renderer)).toBe("nova-1");
+    expect(router.calls.openSession.at(-1)?.[0]).toBe("nova-1");
+    expect(router.calls.openSession.length + router.calls.newChat.length).toBe(callsBefore + 1);
+  });
+
+  test("opening a familiar fresh while its sessions scope is not yet applied defers the blank-compose fallback until the roster confirms it truly has no eligible chat", async () => {
+    const nova = familiar("nova", "Nova");
+    // First activation: `sessions` is empty and the scope prop explicitly
+    // names no familiar yet (`null`) -- simulating Workspace's unscoped
+    // initial state before its familiar-scoped fetch has resolved.
+    let props = baseProps({
+      activeFamiliar: nova,
+      familiars: [nova],
+      sessions: [],
+      sessionsScopeFamiliarId: null,
+    });
+    const renderer = await renderPanel(props);
+
+    // Blocked: nothing has resolved, and no blank compose has been opened
+    // early against an unconfirmed, possibly-incomplete empty roster.
+    expect(sessionIdAttr(renderer)).toBe(null);
+    expect(renderer.root.findAllByType(MockChatRouter)).toHaveLength(0);
+    expect(router.calls.openSession.length + router.calls.newChat.length).toBe(0);
+
+    // The roster confirms nova truly has no eligible chat.
+    props = { ...props, sessionsScopeFamiliarId: "nova" };
+    await update(renderer, props);
+
+    expect(sessionIdAttr(renderer)).toBe("new");
+    expect(router.calls.newChat.at(-1)).toEqual([undefined, undefined, "nova"]);
+    expect(router.calls.openSession.length + router.calls.newChat.length).toBe(1);
+  });
+
+  test("omitting sessionsScopeFamiliarId entirely (Task 7 not wired yet) preserves the pre-scope-aware contract: resolution proceeds immediately, exactly like every other existing caller", async () => {
+    const cody = familiar("cody", "Cody");
+    const sessions = [sessionRow("cody-1", { familiarId: "cody", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" })];
+    // No sessionsScopeFamiliarId override at all -- baseProps leaves it
+    // undefined, matching a caller that hasn't adopted the contract.
+    const props = baseProps({ activeFamiliar: cody, familiars: [cody], sessions });
+    const renderer = await renderPanel(props);
+
+    expect(sessionIdAttr(renderer)).toBe("cody-1");
+    expect(router.calls.openSession.at(-1)?.[0]).toBe("cody-1");
   });
 });
 

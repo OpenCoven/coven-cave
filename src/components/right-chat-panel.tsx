@@ -10,7 +10,9 @@ import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
   eligibleRightChatSessions,
+  isCurrentRightChatSessionsScope,
   resolveLatestRightChatSessionId,
+  type RightChatSessionsScope,
 } from "@/lib/right-chat-session";
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
@@ -57,6 +59,21 @@ type Props = {
   sessions: SessionRow[];
   sessionsLoaded: boolean;
   sessionsError: boolean;
+  /**
+   * Applied-session-scope contract (cave-rl980 Task 4 review): the familiar
+   * id the CALLER currently guarantees `sessions` reflects. Workspace's own
+   * session list is fetched scoped to a single active familiar and refetches
+   * asynchronously on every familiar switch (see `loadSessions` in
+   * workspace.tsx), so `sessions` can still hold the OUTGOING familiar's rows
+   * for a render or more after `activeFamiliar` itself has already flipped —
+   * resolving eagerly against it would risk opening a blank compose for a
+   * familiar that actually has chats, or the reverse. Omit this prop (or
+   * pass `undefined`) until Workspace tracks and supplies its own applied
+   * scope (Task 7 wires it): `sessions` is then trusted as already current,
+   * preserving this contract exactly for every caller that hasn't adopted
+   * it yet. See `isCurrentRightChatSessionsScope` in right-chat-session.ts.
+   */
+  sessionsScopeFamiliarId?: RightChatSessionsScope;
   familiarsLoaded: boolean;
   familiarsError: string | null;
   daemonRunning: boolean;
@@ -89,6 +106,7 @@ export function RightChatPanel(props: Props) {
     sessions,
     sessionsLoaded,
     sessionsError,
+    sessionsScopeFamiliarId,
     familiarsLoaded,
     familiarsError,
     daemonRunning,
@@ -179,6 +197,14 @@ export function RightChatPanel(props: Props) {
   // (via the gate on the first-resolution effect below) keeps a null,
   // not-yet-mounted router from ever being marked resolved.
   const hasResolvedRouter = activeFamiliar !== null && resolvedFamiliarRef.current === activeFamiliar.id;
+  // True once `sessions` is confirmed to correspond to the active familiar
+  // (cave-rl980 Task 4 review — see isCurrentRightChatSessionsScope's doc in
+  // right-chat-session.ts). Always true while the caller hasn't adopted the
+  // applied-scope contract yet (sessionsScopeFamiliarId left undefined),
+  // preserving today's behavior exactly until Workspace wires it (Task 7).
+  const sessionsScopeCurrent =
+    activeFamiliar === null ||
+    isCurrentRightChatSessionsScope(sessionsScopeFamiliarId, activeFamiliar.id);
   const { announce } = useAnnouncer();
 
   // Commits currentSelectionRef the instant either half changes — a plain
@@ -313,26 +339,41 @@ export function RightChatPanel(props: Props) {
   // handling both, not two separate effects (cave-rl980 Task 4 review — see
   // the reasons below):
   //
-  // 1. Every familiar-identity TRANSITION is tracked via trackedFamiliarIdRef
-  //    regardless of `open` — ChatRouter/ChatView stay mounted underneath as
-  //    a persistent controller, per the design doc, so a familiar change must
-  //    be noticed even while hidden. A closed A -> B -> A round trip must
-  //    still invalidate whatever was resolved for the earlier A: without
-  //    this tracking, coming back to A would find resolvedFamiliarRef still
-  //    reading "A" (never touched while closed) and wrongly conclude nothing
-  //    had changed. But the actual RESOLVE — the imperative
-  //    openSession/newChat call, and setting selectedSessionId — is a
-  //    completely separate, `open`-gated step (cave-rl980 Task 4 spec
-  //    review): first-open semantics require resolving against whichever
+  // 1. Familiar-identity tracking/invalidation happens FIRST, unconditional
+  //    on familiars/sessions readiness or errors (cave-rl980 Task 4 review):
+  //    a closed A -> B -> A round trip must still be detected as a real
+  //    transition even while a roster error is active throughout, or
+  //    trackedFamiliarIdRef would never advance past the ORIGINAL A, and the
+  //    later return to A would be mistaken for "nothing changed" — silently
+  //    retaining A's stale resolution once the error clears and the panel
+  //    reopens, instead of forcing the fresh resolve a real transition
+  //    requires. Every familiar-identity TRANSITION is tracked via
+  //    trackedFamiliarIdRef regardless of `open` too — ChatRouter/ChatView
+  //    stay mounted underneath as a persistent controller, per the design
+  //    doc, so a familiar change must be noticed even while hidden. But the
+  //    actual RESOLVE — the imperative openSession/newChat call, and setting
+  //    selectedSessionId — remains a separate, readiness/scope/`open`-gated
+  //    step below: first-open semantics require resolving against whichever
   //    session is newest at the moment the panel actually becomes visible,
-  //    never one resolved earlier while hidden. So a closed transition
-  //    invalidates ownership here but issues no router call at all; this
-  //    same effect performs the real resolve — against live, then-current
-  //    `sessions` — the instant `open` flips true, since `open` is itself a
+  //    never one resolved earlier while hidden or against stale data. So a
+  //    closed, erroring, or not-yet-scoped transition invalidates ownership
+  //    here but issues no router call at all; this same effect performs the
+  //    real resolve once every gate clears, since each gate is itself a
   //    dependency below. A same-familiar close/reopen (no transition at all)
-  //    never invalidates anything, so it preserves a manual thread
-  //    selection exactly as before.
-  // 2. A familiar change must issue EXACTLY ONE imperative openSession/
+  //    never invalidates anything, so it preserves a manual thread selection
+  //    exactly as before.
+  // 2. The resolve/reconcile itself additionally requires `sessions` to be
+  //    CONFIRMED to reflect this exact familiar (cave-rl980 Task 4 review):
+  //    Workspace's own session list is fetched scoped to a single active
+  //    familiar and refetches asynchronously on every switch, so `sessions`
+  //    can still hold the OUTGOING familiar's rows for a render or more
+  //    after `activeFamiliar` itself has already changed. Resolving against
+  //    it regardless would risk opening a blank compose for a familiar that
+  //    actually has chats, or the reverse. See sessionsScopeCurrent (derived
+  //    above via isCurrentRightChatSessionsScope in right-chat-session.ts) —
+  //    omitting sessionsScopeFamiliarId (Task 7 has not wired Workspace's own
+  //    scope yet) always reports current, so this gate is a no-op until then.
+  // 3. A familiar change must issue EXACTLY ONE imperative openSession/
   //    newChat call while open. Splitting this into two effects (one keyed
   //    on the familiar changing, a second reconciling an ineligible
   //    selection) races them: on the very render the familiar changes, a
@@ -351,19 +392,23 @@ export function RightChatPanel(props: Props) {
   //    effect just set — its own transition becomes a same-value no-op
   //    instead of a second, independently guessed one.
   useLayoutEffect(() => {
-    if (!activeFamiliar || !familiarsLoaded || familiarsError || !sessionsLoaded || sessionsError) return;
+    if (!activeFamiliar) return;
 
     if (trackedFamiliarIdRef.current !== activeFamiliar.id) {
       // A transition just occurred — possibly back to a familiar visited
-      // earlier in the same closed stretch (closed A -> B -> A) — so
+      // earlier in the same closed stretch (closed A -> B -> A), or one that
+      // happened entirely while familiars/sessions were erroring — so
       // whatever resolution/selection ownership was previously recorded
       // belongs to a different occupancy and must never be trusted for this
-      // one, regardless of `open`.
+      // one, regardless of `open`, readiness, errors, or scope.
       trackedFamiliarIdRef.current = activeFamiliar.id;
       resolvedFamiliarRef.current = null;
       pendingRemovalRef.current = false;
       setSelectedSessionId(null);
     }
+
+    if (!familiarsLoaded || familiarsError || !sessionsLoaded || sessionsError) return;
+    if (!sessionsScopeCurrent) return;
 
     if (resolvedFamiliarRef.current !== activeFamiliar.id) {
       // First open, or a genuine familiar change: needs a fresh resolve.
@@ -398,9 +443,27 @@ export function RightChatPanel(props: Props) {
     if (replacement) routerRef.current?.openSession(replacement);
     else routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
     setSelectedSessionId(replacement);
-  }, [activeFamiliar, announce, eligibleSessions, familiarsError, familiarsLoaded, open, selectedSessionId, sessions, sessionsError, sessionsLoaded]);
+  }, [activeFamiliar, announce, eligibleSessions, familiarsError, familiarsLoaded, open, selectedSessionId, sessions, sessionsError, sessionsLoaded, sessionsScopeCurrent]);
 
-  if (!familiarsLoaded || !sessionsLoaded) {
+  // Blocks rendering — including ChatRouter's own mount — while the active
+  // familiar's sessions scope hasn't been confirmed yet, for a familiar that
+  // has never resolved before (cave-rl980 Task 4 review). Merely skipping
+  // RightChatPanel's own resolve effect above is not enough on its own:
+  // ChatRouter/ChatView already flip to a fresh, familiar-bound blank
+  // compose the instant their own `familiar` prop changes (their own
+  // internal familiar-switch effect), independent of whether this component
+  // ever calls openSession/newChat. Keeping ChatRouter unmounted until scope
+  // is confirmed — the same treatment as the plain loading gate below —
+  // means it never even sees the new familiar until the effect above is
+  // ready to resolve it in the very same commit, so no early blank or
+  // stale-familiar flash is ever rendered. hasResolvedRouter still protects
+  // a LATER, transient scope hiccup for an already-showing familiar exactly
+  // like familiarsError/sessionsError below.
+  if (
+    !familiarsLoaded ||
+    !sessionsLoaded ||
+    (activeFamiliar !== null && !sessionsScopeCurrent && !hasResolvedRouter)
+  ) {
     return (
       <RightChatPanelFrame onClose={props.onClose}>
         <div className="right-chat__loading" role="status">
