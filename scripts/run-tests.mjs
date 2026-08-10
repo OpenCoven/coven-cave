@@ -458,6 +458,7 @@ export const SUITES = {
     "src/components/command-palette-save-link.test.ts",
     "src/lib/command-palette-search.test.ts",
     "src/lib/search-query.test.ts",
+    "src/lib/search-index-store.test.ts",
     "src/lib/command-palette-salem-context.test.ts",
     "src/lib/command-palette-scope.test.ts",
     "src/lib/recent-searches.test.ts",
