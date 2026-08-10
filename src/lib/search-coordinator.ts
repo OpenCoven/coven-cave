@@ -245,7 +245,7 @@ export async function runSearch(
       diagnostics.push({
         providerId: provider.id,
         code: "unavailable",
-        message: error instanceof Error ? "provider failed" : "provider failed",
+        message: "provider failed",
       });
     }
   }
