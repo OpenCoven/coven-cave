@@ -9,7 +9,7 @@ import "@/styles/coven-tab.css";
  * GroupChatView — the "coven" group-chat surface.
  *
  * A coven is a saved set of familiars you talk to together. Broadcast mode fans
- * a prompt out in parallel; Round robin mode rotates the lead and relays settled
+ * a prompt out in parallel; Round robin follows the selected order and relays settled
  * peer replies before the next familiar takes its turn. Each familiar still has
  * its own resumable `/api/chat/send` session because there is no server-side
  * group-session primitive.
@@ -68,7 +68,6 @@ import {
   moveGroupParticipant,
   includedGroupParticipants,
   orderRoundRobinFamiliarIds,
-  nextRoundRobinLeadId,
   renderCovenRoundtablePrompt,
   renderCovenRoundRobinPrompt,
   runCovenReplySchedule,
@@ -180,7 +179,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   const [inspectorOpen, setInspectorOpen] = useState(false);
   // Stepper focus: show one familiar's replies and hide (never stop) the rest.
   const [focusId, setFocusId] = useState<string | null>(null);
-  // Pause holds the rotation between turns; `pausePending` is the window where
+  // Pause holds the ordered queue between turns; `pausePending` is the window where
   // the request is in but the current reply is still finishing.
   const [paused, setPaused] = useState(false);
   const [pausePending, setPausePending] = useState(false);
@@ -320,7 +319,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     runScopeRef.current += 1;
     abortRef.current = null;
     setBusy(false);
-    // Release any held rotation on the way out. A pause is an awaited promise
+    // Release any held reply queue on the way out. A pause is an awaited promise
     // inside the retiring schedule; leaving it held would strand that schedule
     // forever, and the pause state would follow the reader into a coven that
     // has no run at all.
@@ -635,22 +634,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     [announce, busy, persistGroups],
   );
 
-  const advanceRoundRobinLead = useCallback((groupId: string, leadId: string) => {
-    setGroups((prev) => {
-      const current = prev.find((group) => group.id === groupId);
-      if (!current) return prev;
-      const nextLead = nextRoundRobinLeadId(current.familiarIds, leadId);
-      if (current.nextRoundRobinLeadId === nextLead) return prev;
-      const next = upsertGroup(prev, {
-        ...current,
-        nextRoundRobinLeadId: nextLead,
-        updatedAt: nowIso(),
-      });
-      saveGroups(next);
-      return next;
-    });
-  }, []);
-
   async function stopServerRun(entry: { runId: string; sessionId: string | null }) {
     const response = await fetch("/api/chat/stop", {
       method: "POST",
@@ -702,7 +685,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   /**
    * Stop exactly one familiar's turn (design proposal §8, "Stop <name>").
    *
-   * Scoped to that reply's server run, so a rotation continues to the next
+   * Scoped to that reply's server run, so the queue continues to the next
    * familiar and a broadcast's other familiars are untouched. Whatever had
    * streamed is kept and labelled Stopped.
    */
@@ -733,7 +716,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     });
   }
 
-  /** Release a held rotation, whatever the reason it was held. */
+  /** Release a held reply queue, whatever the reason it was held. */
   const releasePause = useCallback(() => {
     pauseRequestedRef.current = false;
     pauseReleaseRef.current?.();
@@ -924,7 +907,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
         return;
       }
       const orderedTargetIds = group.responseMode === "round-robin"
-        ? orderRoundRobinFamiliarIds(group.familiarIds, targetIds, group.nextRoundRobinLeadId)
+        ? orderRoundRobinFamiliarIds(group.familiarIds, targetIds)
         : targetIds;
       // Roster reflects the FULL coven (not just @mention targets) — a familiar
       // should know who else is in the room even when addressed alone. Composed
@@ -983,9 +966,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       const scopeId = runScopeRef.current;
       const controller = new AbortController();
       abortRef.current = controller;
-      if (group.responseMode === "round-robin" && replies.length > 1) {
-        advanceRoundRobinLead(group.id, replies[0].familiarId);
-      }
       const settled = await runCovenReplySchedule({
         mode: group.responseMode,
         replies,
@@ -1121,7 +1101,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       }
     },
     [
-      advanceRoundRobinLead,
       busy,
       streamOne,
       byId,
@@ -1391,7 +1370,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       if (next === group) return;
       persistGroups(upsertGroup(groupsRef.current, next));
       const name = byId.get(familiarId)?.display_name ?? familiarId;
-      announce(`${name} moved ${delta < 0 ? "earlier" : "later"} in the rotation.`);
+      announce(`${name} moved ${delta < 0 ? "earlier" : "later"} in the reply order.`);
     },
     [announce, byId, persistGroups],
   );
@@ -1756,7 +1735,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                                 ? projectLaunchMessage
                                 : activeGroup.responseMode === "broadcast"
                                   ? "Every familiar answers at once, independently, in its own thread."
-                                  : "Familiars respond in turn and see earlier replies. @name routes to one without advancing the rotation."
+                                  : "Familiars respond in the selected order and see earlier replies. @name routes to one without changing that order."
                           }
                           actions={
                             participants.length === 0 ? (
