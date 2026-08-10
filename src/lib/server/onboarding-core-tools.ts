@@ -82,19 +82,19 @@ export async function ensureOnboardingCoreTools(
   }
 
   if (!before.runtimeReady) {
-    await onProgress("Preparing Cave’s local runtime…");
+    await onProgress("Setting up Cave’s private Node.js and npm runtime…");
     if (!(await runReviewedInstall("managed-node"))) {
       return {
         ok: false,
         message:
-          "Setup stopped at Prepare local components. Check that your user application-data folder is writable, then retry setup.",
+          "Setup stopped at Prepare local components. Cave couldn’t prepare its private Node.js and npm runtime. No Cave defaults were created. Retry setup; if it happens again, restart Cave and try once more.",
       };
     }
   }
 
   const afterRuntime = await inspectOnboardingCoreTools();
   if (!afterRuntime.coreToolsReady) {
-    await onProgress("Preparing Cave’s core components…");
+    await onProgress("Installing and verifying the Coven CLI…");
     if (!(await runReviewedInstall("coven-cli"))) {
       return {
         ok: false,
@@ -104,7 +104,7 @@ export async function ensureOnboardingCoreTools(
     }
   }
 
-  await onProgress("Verifying Cave’s local components…");
+  await onProgress("Verifying the local runtime and Coven CLI…");
   const verified = await inspectOnboardingCoreTools();
   if (!verified.runtimeReady || !verified.coreToolsReady) {
     return {
