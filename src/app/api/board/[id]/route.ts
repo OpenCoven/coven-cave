@@ -3,8 +3,8 @@ import {
   deleteCard,
   loadBoard,
   OrchestrationValidationError,
+  STATUSES,
   updateCard,
-  type CardLifecycle,
   type CardPriority,
   type CardStatus,
 } from "@/lib/cave-board";
@@ -17,10 +17,10 @@ import { trustedProjectCwd } from "@/lib/cave-projects";
 export const dynamic = "force-dynamic";
 
 const PATCH_FIELDS = [
-  "title", "notes", "status", "lifecycle", "lifecycleReason", "priority",
+  "title", "notes", "status", "lifecycleReason", "priority",
   "familiarId", "modelOverride", "modelOverrideHarness", "sessionId", "cwd",
   "projectId", "links", "github", "asana", "labels", "startDate", "endDate",
-  "needsHuman", "runningSince", "steps", "attachments", "dependencies",
+  "needsHuman", "steps", "attachments", "dependencies",
   "primaryBlockerId", "primaryBlockerPinned", "nextStep", "ops",
 ] as const satisfies readonly (keyof CardPatch)[];
 
@@ -29,11 +29,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  let body: Partial<{
+  type PatchBody = Partial<{
     title: string;
     notes: string;
     status: CardStatus;
-    lifecycle: CardLifecycle;
     lifecycleReason: string | undefined;
     priority: CardPriority;
     familiarId: string | null;
@@ -49,7 +48,6 @@ export async function PATCH(
     startDate: string | null;
     endDate: string | null;
     needsHuman: boolean;
-    runningSince: string | undefined;
     steps: CardStep[];
     attachments: ChatAttachment[];
     dependencies: TaskDependency[];
@@ -60,10 +58,24 @@ export async function PATCH(
      * the board lock so concurrent element edits don't clobber each other. */
     ops: CardOps;
   }>;
+  let rawBody: unknown;
   try {
-    body = await req.json();
+    rawBody = await req.json();
   } catch {
     return NextResponse.json({ ok: false, error: "invalid json body" }, { status: 400 });
+  }
+  if (!rawBody || typeof rawBody !== "object" || Array.isArray(rawBody)) {
+    return NextResponse.json({ ok: false, error: "invalid json body" }, { status: 400 });
+  }
+  let body = rawBody as PatchBody;
+  if (body.status !== undefined && !STATUSES.includes(body.status as CardStatus)) {
+    return NextResponse.json({ ok: false, error: "invalid status" }, { status: 400 });
+  }
+  if (body.lifecycleReason !== undefined && typeof body.lifecycleReason !== "string") {
+    return NextResponse.json({ ok: false, error: "invalid lifecycle reason" }, { status: 400 });
+  }
+  if (body.needsHuman !== undefined && typeof body.needsHuman !== "boolean") {
+    return NextResponse.json({ ok: false, error: "invalid needs-human flag" }, { status: 400 });
   }
   // Keep a card's cwd consistent with its project, server-side (cave-pw83):
   //  - assigning a project (projectId set) → derive cwd from it, ignoring the body's;

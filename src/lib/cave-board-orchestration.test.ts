@@ -79,6 +79,26 @@ await assert.rejects(
   },
 );
 
+const malformedPinTarget = await board.createCard({ title: "Malformed pin target" });
+await assert.rejects(
+  board.updateCard(malformedPinTarget.id, {
+    primaryBlockerPinned: "false" as never,
+  }),
+  (error) => {
+    assert.ok(errorCodes(error).includes("primary_blocker_invalid"));
+    return true;
+  },
+);
+await assert.rejects(
+  board.updateCard(malformedPinTarget.id, {
+    primaryBlockerPinned: null as never,
+  }),
+  (error) => {
+    assert.ok(errorCodes(error).includes("primary_blocker_invalid"));
+    return true;
+  },
+);
+
 const blocker = {
   id: "human-blocker",
   kind: "human" as const,
@@ -145,6 +165,28 @@ await assert.rejects(
   },
 );
 
+const normalizedStatus = await board.createCard({ title: "Normalize status writes" });
+const normalizedDone = await board.updateCard(normalizedStatus.id, { status: "done" });
+assert.equal(normalizedDone?.lifecycle, "completed", "status writes derive lifecycle under the lock");
+
+const approvalGate = await board.createCard({
+  title: "Approval-gated dispatch",
+  nextStep: humanNextStep,
+});
+assert.equal(approvalGate.needsHuman, true);
+await assert.rejects(
+  board.transitionCard(approvalGate.id, { to: "dispatched" }),
+  (error) => {
+    assert.deepEqual(errorCodes(error), ["next_step_requires_approval"]);
+    return true;
+  },
+);
+await board.updateCard(approvalGate.id, {
+  nextStep: { ...humanNextStep, requiresApproval: false },
+});
+const approvedDispatch = await board.transitionCard(approvalGate.id, { to: "dispatched" });
+assert.equal(approvedDispatch?.lifecycle, "dispatched");
+
 const running = await board.createCard({ title: "Failing run" });
 await board.updateCard(running.id, { retryCount: running.maxRetries });
 await board.transitionCard(running.id, { to: "dispatched" });
@@ -172,9 +214,10 @@ const humanRun = await board.createCard({
   title: "Preserve human direction",
 });
 await board.transitionCard(humanRun.id, { to: "dispatched" });
-await board.updateCard(humanRun.id, { nextStep: humanNextStep });
+const humanActionStep = { ...humanNextStep, requiresApproval: false };
+await board.updateCard(humanRun.id, { nextStep: humanActionStep });
 const humanFailed = await board.transitionCard(humanRun.id, { to: "failed" });
-assert.deepEqual(humanFailed?.nextStep, humanNextStep, "lifecycle automation preserves human next steps");
+assert.deepEqual(humanFailed?.nextStep, humanActionStep, "lifecycle automation preserves human next steps");
 
 const pinnedBlocker = {
   ...blocker,

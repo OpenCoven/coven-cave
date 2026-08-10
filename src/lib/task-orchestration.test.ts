@@ -104,6 +104,14 @@ function codes(errors) {
     ["primary_blocker_invalid"],
   );
 
+  const malformedPin = card("malformed-pin", {
+    primaryBlockerPinned: "false",
+  });
+  assert.deepEqual(
+    codes(validateOrchestration(malformedPin, { cards: [malformedPin] })),
+    ["primary_blocker_invalid"],
+  );
+
   const duplicateDependencies = card("duplicate-dependencies", {
     dependencies: [
       dep("same", { kind: "human" }),
@@ -181,6 +189,25 @@ function codes(errors) {
     codes(validateOrchestration(whitespace, { cards: [upstream, whitespace] })),
     ["blocked_requires_next_step"],
     "a whitespace-only summary is not a next step",
+  );
+}
+
+// ── I7: approval blocks execution ────────────────────────────────────────────
+
+{
+  const queued = card("approval-queued", {
+    nextStep: step({ requiresApproval: true }),
+  });
+  assert.deepEqual(validateOrchestration(queued, { cards: [queued] }), []);
+
+  const running = {
+    ...queued,
+    status: "running",
+    lifecycle: "running",
+  };
+  assert.deepEqual(
+    codes(validateOrchestration(running, { cards: [running], previous: queued })),
+    ["next_step_requires_approval"],
   );
 }
 

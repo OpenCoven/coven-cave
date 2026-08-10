@@ -184,8 +184,9 @@ at the offending field:
 | `dependency_dangling` | I4, unknown `taskId` or `primaryBlockerId` |
 | `dependency_needs_evidence` | I5 |
 | `dependency_invalid` | Dependency payload is malformed or repeats an id |
-| `primary_blocker_invalid` | Primary blocker is neither null nor a non-empty id |
+| `primary_blocker_invalid` | Primary blocker or pin has an invalid runtime shape |
 | `next_step_invalid` | Next-step payload is missing required structured fields |
+| `next_step_requires_approval` | Dispatch or execution was attempted before approval cleared |
 | `dependency_authorship` | I6, automation tried to overwrite a human dependency |
 | `next_step_authorship` | I6, automation tried to overwrite a human next step |
 

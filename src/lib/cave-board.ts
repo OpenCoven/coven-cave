@@ -78,6 +78,20 @@ function statusForLifecycle(lifecycle: CardLifecycle, currentStatus: CardStatus)
   return currentStatus;
 }
 
+function statusForWrite(
+  lifecycle: CardLifecycle,
+  requestedStatus: CardStatus | undefined,
+  currentStatus: CardStatus,
+): CardStatus {
+  if (lifecycle !== "queued") {
+    return statusForLifecycle(lifecycle, currentStatus);
+  }
+  if (requestedStatus === "inbox" || requestedStatus === "backlog") {
+    return requestedStatus;
+  }
+  return currentStatus === "inbox" ? "inbox" : "backlog";
+}
+
 function normalizeList(values: string[] | undefined): string[] {
   return [...new Set(toStringList(values).map((value) => value.trim()).filter(Boolean))];
 }
@@ -211,7 +225,8 @@ function backfillCard(c: Card | LegacyCard): Card {
     steps: c.steps ?? [],
     dependencies: c.dependencies ?? [],
     primaryBlockerId: c.primaryBlockerId ?? null,
-    primaryBlockerPinned: c.primaryBlockerPinned ?? false,
+    primaryBlockerPinned:
+      typeof c.primaryBlockerPinned === "boolean" ? c.primaryBlockerPinned : false,
     nextStep: c.nextStep ?? null,
   } as Card;
 }
@@ -363,7 +378,8 @@ export async function createCard(input: NewCardInput): Promise<Card> {
       .map((text) => ({ id: crypto.randomUUID(), text, done: false, addedAt: now })),
     dependencies: input.dependencies ?? [],
     primaryBlockerId: input.primaryBlockerId ?? null,
-    primaryBlockerPinned: input.primaryBlockerPinned ?? false,
+    primaryBlockerPinned:
+      "primaryBlockerPinned" in input ? input.primaryBlockerPinned! : false,
     nextStep: input.nextStep ?? null,
   };
   if (card.nextStep?.requiresApproval) card.needsHuman = true;
@@ -394,6 +410,17 @@ export async function updateCard(
   const patch: Partial<Omit<Card, "id" | "createdAt">> = hasCardOps(ops)
     ? { ...plain, ...applyCardOps(current, ops, new Date().toISOString()) }
     : plain;
+  const now = new Date().toISOString();
+  const requestedStatus = "status" in patch ? patch.status : undefined;
+  const nextLifecycle =
+    ("lifecycle" in patch ? patch.lifecycle : undefined) ??
+    (requestedStatus ? inferLifecycle(requestedStatus) : current.lifecycle);
+  const nextStatus =
+    "status" in patch || "lifecycle" in patch
+      ? statusForWrite(nextLifecycle, requestedStatus, current.status)
+      : current.status;
+  const lifecycleChanged = nextLifecycle !== current.lifecycle;
+  const statusChanged = nextStatus !== current.status;
   // Resolve the structured connection lists once, then fold both back into
   // `links` so the URL list stays the union of everything attached (github +
   // asana + explicit links) — same invariant createCard/backfill maintain.
@@ -410,7 +437,13 @@ export async function updateCard(
     ...patch,
     id: current.id,
     createdAt: current.createdAt,
-    updatedAt: new Date().toISOString(),
+    status: nextStatus,
+    lifecycle: nextLifecycle,
+    lifecycleAt: lifecycleChanged ? now : current.lifecycleAt,
+    lifecycleReason: lifecycleChanged
+      ? ("lifecycleReason" in patch ? patch.lifecycleReason : undefined)
+      : current.lifecycleReason,
+    updatedAt: now,
     labels: patch.labels
       ? normalizeList(patch.labels)
       : current.labels,
@@ -454,10 +487,11 @@ export async function updateCard(
       ? patch.primaryBlockerId ?? null
       : current.primaryBlockerId ?? null,
     primaryBlockerPinned: "primaryBlockerPinned" in patch
-      ? patch.primaryBlockerPinned ?? false
+      ? patch.primaryBlockerPinned!
       : current.primaryBlockerPinned ?? false,
     nextStep: "nextStep" in patch ? patch.nextStep ?? null : current.nextStep ?? null,
   };
+  if (statusChanged) next.needsHuman = next.status === "blocked";
   if (next.nextStep?.requiresApproval) next.needsHuman = true;
   if (next.lifecycle === "running" && !next.runningSince) {
     next.runningSince = next.updatedAt;

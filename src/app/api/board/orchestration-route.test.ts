@@ -48,6 +48,34 @@ assert.equal(createdResponse.status, 200);
 const createdBody = await createdResponse.json();
 const cardId = createdBody.card.id as string;
 
+const invalidStatus = await PATCH(
+  request("PATCH", { status: "teleported" }),
+  { params: Promise.resolve({ id: cardId }) },
+);
+assert.equal(invalidStatus.status, 400);
+assert.equal((await invalidStatus.json()).error, "invalid status");
+
+const derivedStatus = await PATCH(
+  request("PATCH", {
+    status: "done",
+    lifecycle: "failed",
+    lifecycleReason: "Marked done from a linked chat",
+    needsHuman: true,
+  }),
+  { params: Promise.resolve({ id: cardId }) },
+);
+assert.equal(derivedStatus.status, 200);
+const derivedStatusBody = await derivedStatus.json();
+assert.equal(derivedStatusBody.card.lifecycle, "completed");
+assert.equal(derivedStatusBody.card.needsHuman, false);
+assert.equal(derivedStatusBody.card.lifecycleReason, "Marked done from a linked chat");
+
+const resetStatus = await PATCH(
+  request("PATCH", { status: "backlog" }),
+  { params: Promise.resolve({ id: cardId }) },
+);
+assert.equal(resetStatus.status, 200);
+
 const invalidPatch = await PATCH(
   request("PATCH", {
     id: "forged-id",
@@ -84,6 +112,34 @@ assert.notEqual(
   "PATCH cannot replace createdAt",
 );
 assert.equal(renamedBody.card.title, "Renamed safely");
+
+const approvalResponse = await POST(request("POST", {
+  title: "Approval route target",
+  nextStep: {
+    summary: "Approve task dispatch",
+    requiresApproval: true,
+    origin: "human",
+    updatedAt: new Date().toISOString(),
+  },
+}));
+const approvalId = (await approvalResponse.json()).card.id as string;
+const blockedDispatch = await transition(
+  request("POST", { to: "dispatched" }),
+  { params: Promise.resolve({ id: approvalId }) },
+);
+assert.equal(blockedDispatch.status, 422);
+assert.ok(
+  (await blockedDispatch.json()).errors.some(
+    (error: { code: string }) => error.code === "next_step_requires_approval",
+  ),
+);
+
+const malformedReason = await transition(
+  request("POST", { to: "dispatched", reason: {} }),
+  { params: Promise.resolve({ id: cardId }) },
+);
+assert.equal(malformedReason.status, 400);
+assert.equal((await malformedReason.json()).error, "invalid reason");
 
 const boardPath = path.join(caveHome, "board.json");
 const boardFile = JSON.parse(await readFile(boardPath, "utf8"));

@@ -97,6 +97,7 @@ export type OrchestrationErrorCode =
   | "dependency_invalid"
   | "primary_blocker_invalid"
   | "next_step_invalid"
+  | "next_step_requires_approval"
   | "dependency_authorship"
   | "next_step_authorship";
 

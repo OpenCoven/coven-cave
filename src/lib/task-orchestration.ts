@@ -374,6 +374,14 @@ export function validateOrchestration(
       message: "The primary blocker must be a non-empty dependency id or null.",
     });
   }
+  const rawPinned = (card as { primaryBlockerPinned?: unknown }).primaryBlockerPinned;
+  if (rawPinned !== undefined && typeof rawPinned !== "boolean") {
+    errors.push({
+      code: "primary_blocker_invalid",
+      field: "primaryBlockerId",
+      message: "The primary blocker pin must be true or false.",
+    });
+  }
 
   const rawNextStep = (card as { nextStep?: unknown }).nextStep;
   if (
@@ -385,6 +393,17 @@ export function validateOrchestration(
       code: "next_step_invalid",
       field: "nextStep",
       message: "The next step must include a summary, approval flag, origin, and updatedAt.",
+    });
+  }
+  if (
+    (card.lifecycle === "dispatched" || card.lifecycle === "running") &&
+    isValidNextStepShape(rawNextStep) &&
+    rawNextStep.requiresApproval
+  ) {
+    errors.push({
+      code: "next_step_requires_approval",
+      field: "nextStep",
+      message: "Clear the next step's approval requirement before dispatching this task.",
     });
   }
 
