@@ -39,6 +39,7 @@ const RAW_INTERVAL_ALLOWLIST = new Map([
   ["components/chat-view.tsx", "1s elapsed ticker on the streaming meta line; no network"],
   ["components/chat-run-rail.tsx", "run-rail elapsed + session-age ticker (1s while a call runs, 60s idle); no network"],
   ["components/coven-run-header.tsx", "1s elapsed ticker on the coven run header, mounted only while the run is active; reads the clock only, issues no request"],
+  ["components/status-bar.tsx", "1s elapsed ticker on the coven run pill, armed only while a run is genuinely live; reads the clock only, issues no request"],
   ["components/familiar-studio-projects-tab.tsx", "30s grant-undo countdown while an accepting row is visible; no network"],
   ["components/update-available.tsx", "6-hour recheck cadence; a hidden-tab skip would defer updates for days"],
   ["components/onboarding-overlay.tsx", "modal-scoped 2s install polls; only run while the overlay is open mid-setup"],

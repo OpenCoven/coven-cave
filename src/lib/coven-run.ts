@@ -344,3 +344,84 @@ export function covenRailStatus(args: {
     live: true,
   };
 }
+
+/**
+ * The status-bar run pill (design proposal §11, second half).
+ *
+ * Run state has to survive scrolling deep into history, so the status bar
+ * carries a compact echo of the run header. It reports only what the run model
+ * already derives — no second source of truth, and no state the header does not
+ * also show.
+ *
+ * The elapsed clock is deliberately NOT baked into `label`: a live run's clock
+ * ticks, and re-deriving the whole pill once a second would repaint every
+ * subscriber. The renderer appends it from `startedAtMs` instead, the same way
+ * the run header does, so a reload reports the same number.
+ */
+export type CovenRunPill = {
+  label: string;
+  tone: CovenStatusTone;
+  icon: IconName;
+  /** True only while a familiar is genuinely working — drives the dot's pulse. */
+  live: boolean;
+  /** Epoch ms of the run's first reply; null once the run has settled. */
+  startedAtMs: number | null;
+  /** A settled run's final wall time, so the pill can report it without a clock. */
+  elapsedMs: number;
+};
+
+export function covenRunPill(args: {
+  run: CovenRun | null;
+  paused?: boolean;
+}): CovenRunPill | null {
+  const { run } = args;
+  if (!run) return null;
+  const starts = run.agents
+    .map((agent) => Date.parse(agent.reply.createdAt))
+    .filter((value) => Number.isFinite(value));
+  const startedAtMs = starts.length > 0 ? Math.min(...starts) : null;
+
+  if (!run.active) {
+    // A settled run keeps its last word in the bar, matching the summary strip
+    // the reader would find if they scrolled back to it.
+    if (!run.summary) return null;
+    return {
+      label: run.summary.title,
+      tone: run.summary.tone,
+      icon: run.summary.icon,
+      live: false,
+      startedAtMs: null,
+      elapsedMs: covenRunElapsedMs(run.agents.map((agent) => agent.reply)),
+    };
+  }
+
+  if (run.counts.failed > 0) {
+    return {
+      label: `${covenModeLabel(run.mode)} — ${run.counts.failed} failed`,
+      tone: "danger",
+      icon: "ph:warning",
+      live: false,
+      startedAtMs,
+      elapsedMs: 0,
+    };
+  }
+  if (args.paused) {
+    return {
+      label: "Paused",
+      tone: "warning",
+      icon: "ph:pause-fill",
+      // A paused run is not working, so the dot must not pulse as if it were.
+      live: false,
+      startedAtMs,
+      elapsedMs: 0,
+    };
+  }
+  return {
+    label: covenModeLabel(run.mode),
+    tone: "accent",
+    icon: covenModeIcon(run.mode),
+    live: true,
+    startedAtMs,
+    elapsedMs: 0,
+  };
+}
