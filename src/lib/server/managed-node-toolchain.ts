@@ -103,7 +103,7 @@ type ManagedNodeInstallPhase =
 type ManagedNodeProbeExec = (
   file: string,
   args: readonly string[],
-  options: { env: NodeJS.ProcessEnv; timeout: number },
+  options: { env: NodeJS.ProcessEnv; timeout: number; windowsHide: true },
 ) => Promise<{ stdout: string; stderr: string }>;
 
 function isProbeTimeout(error: unknown): boolean {
@@ -121,7 +121,7 @@ async function runManagedNodeProbe(
   timeout: number,
 ): Promise<{ stdout: string; stderr: string }> {
   try {
-    return await run(file, args, { env, timeout });
+    return await run(file, args, { env, timeout, windowsHide: true });
   } catch (error) {
     if (!isProbeTimeout(error)) throw error;
     throw new Error(

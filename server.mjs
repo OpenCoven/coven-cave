@@ -261,7 +261,7 @@ async function refreshTailnetPeers() {
     const { stdout } = await execFileAsync(
       process.env.COVEN_CAVE_TAILSCALE_BIN ?? "tailscale",
       ["status", "--json"],
-      { timeout: 1e4, maxBuffer: 16 * 1024 * 1024 }
+      { timeout: 1e4, maxBuffer: 16 * 1024 * 1024, windowsHide: true }
     );
     const status = JSON.parse(stdout);
     const next2 = /* @__PURE__ */ new Map();

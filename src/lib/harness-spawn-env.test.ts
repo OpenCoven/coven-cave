@@ -221,7 +221,11 @@ assert.doesNotMatch(chatSendSource, /covenSpawnEnv/, "chat/send no longer forwar
 // the env by familiar, and every caller hands it a familiar id — a runner that
 // scopes correctly is worthless if a caller passes nothing.
 const oneShotSource = read("./server/coven-oneshot.ts");
-assert.match(oneShotSource, /env: harnessSpawnEnv\(familiarId\)/, "one-shot harness spawn is familiar-scoped");
+assert.match(
+  oneShotSource,
+  /env: covenWrapperSpawnEnv\(harnessSpawnEnv\(familiarId\)\)/,
+  "one-shot Coven wrapper spawn stays familiar-scoped and opts into hidden native launch",
+);
 assert.doesNotMatch(oneShotSource, /covenSpawnEnv/);
 
 const enrichSource = read("../app/api/board/enrich-steps/route.ts");
@@ -241,7 +245,11 @@ assert.match(
 assert.doesNotMatch(rewriteSource, /covenSpawnEnv/);
 
 const automationSource = read("./server/automation-runner.ts");
-assert.match(automationSource, /env: harnessSpawnEnv\(\)/, "automation runs no longer inherit the full process env");
+assert.match(
+  automationSource,
+  /env: codexManagedPackageSpawnEnv\(\s*dependencies\.env \?\? harnessSpawnEnv\(\),\s*invocation\.managedPackage/,
+  "automation runs keep the scoped harness env while adding only the validated Codex package contract",
+);
 
 const assistSource = read("./server/assist-runner.ts");
 assert.match(assistSource, /env: harnessSpawnEnv\(\)/, "assist runs no longer inherit the full process env");
@@ -249,8 +257,8 @@ assert.match(assistSource, /env: harnessSpawnEnv\(\)/, "assist runs no longer in
 const daemonStartSource = read("./daemon-start.ts");
 assert.match(
   daemonStartSource,
-  /spawnEnvironment = harnessSpawnEnv[\s\S]*?env: \{\s*\.\.\.spawnEnvironment\(\),[\s\S]*?COVEN_CAVE_CORRELATION_ID/,
-  "the daemon defaults to a scoped environment seam and adds only diagnostic metadata",
+  /spawnEnvironment = harnessSpawnEnv[\s\S]*?const spawnEnv = spawnEnvironment\(\);[\s\S]*?env: covenWrapperSpawnEnv\(\{\s*\.\.\.spawnEnv,[\s\S]*?COVEN_CAVE_CORRELATION_ID/,
+  "the daemon keeps its scoped environment seam, adds only diagnostics, and opts the Coven wrapper into hidden launch",
 );
 assert.doesNotMatch(daemonStartSource, /covenSpawnEnv/);
 
