@@ -124,6 +124,9 @@ echo "[sweep] repo: $REPO"
 echo "[sweep] repo HEAD: $(git rev-parse --short HEAD 2>/dev/null) on $(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
 echo "[sweep] registered worktrees: $before"
 echo "[sweep] --- agent output follows ---"
+# Byte offset of the agent's output, so its report can be inspected afterwards
+# without teeing (stdout is already redirected to the log).
+agent_offset=$(wc -c <"$LOG")
 
 # Tools are scoped deliberately: no Write, no Edit. This job inspects, retires
 # worktrees, and closes beads. It has no business editing source files.
@@ -136,10 +139,31 @@ after=$(git worktree list | wc -l | tr -d ' ')
 echo "[sweep] --- agent exited with status $status ---"
 echo "[sweep] worktrees remaining: $after"
 
+# A run that never assessed anything must not read as one that assessed and
+# found nothing. Both leave the worktree count unchanged, so without this the
+# log line and the (absent) notification are identical — which is how a quota
+# deferral looked like a clean sweep on 2026-08-10T15:10.
+# Only the FIRST non-empty line counts, because the prompt requires the marker
+# there. Matching it anywhere would misread a normal report that merely quotes
+# the phrase — and now that the marker is documented, a report explaining why it
+# did NOT defer is a realistic way to trip that.
+deferred=""
+first_line="$(tail -c "+$((agent_offset + 1))" "$LOG" | grep -m1 -v '^[[:space:]]*$' || true)"
+case "$first_line" in
+  "SWEEP DEFERRED"*) deferred="$first_line" ;;
+esac
+
 # Count the worktrees here rather than trusting the agent's summary — a
 # retirement is a filesystem fact, not a claim.
+# A non-zero exit is checked FIRST and always notifies. Letting the deferral
+# branch swallow it would hide a real failure behind the marker — the same
+# silent-success shape this whole guard exists to close.
 if [[ "$status" -ne 0 ]]; then
   notify "Worktree sweep errored" "Agent exited $status. Check the log."
+  [[ -n "$deferred" ]] && echo "[sweep] (the run also reported: $deferred)"
+elif [[ -n "$deferred" ]]; then
+  echo "[sweep] DEFERRED — the patrol did not run: $deferred"
+  echo "[sweep] this run assessed nothing; the next scheduled sweep is the retry"
 elif [[ "$after" -lt "$before" ]]; then
   notify "Worktree sweep: $(( before - after )) retired" \
     "$before -> $after worktrees. Log: $LOG"

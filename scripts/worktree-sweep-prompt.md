@@ -19,6 +19,17 @@ always preserve.
 - Check GraphQL quota first: `gh api rate_limit --jq .resources.graphql`. If it is
   nearly exhausted, STOP and report — the patrol will exit 1 with an incomplete
   inventory, and an incomplete inventory must never be treated as "nothing to do".
+
+  **If you stop here, say so unmistakably.** Begin your report with the literal
+  line `SWEEP DEFERRED: quota` and do not describe what a later run might find as
+  though you will still be here to run it — you will not; this process ends when
+  you finish writing. A deferred run is otherwise invisible: the wrapper counts
+  worktrees before and after, sees no change, logs `no change (N -> N)` and exits
+  0, which reads exactly like a healthy sweep that found nothing retirable. That
+  happened on 2026-08-10T15:10 and the run looked clean.
+
+  Do not wait for the reset either. Waiting burns the run, and the scheduler will
+  come back on its own; the next scheduled sweep is the retry.
 - Run `pnpm beads:worktrees:json` (takes several minutes). Skip the pnpm banner
   before the first `{` when parsing. Each item's `lane` field is the
   classification; `counts` is the tally.
