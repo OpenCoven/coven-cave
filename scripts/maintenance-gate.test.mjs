@@ -311,6 +311,11 @@ test("a local release that itself fails is reported with an exact recovery handl
   });
   const released = coordinator.release(releaseHandle);
   assert.equal(released.localReleased, false);
+  assert.equal(
+    released.localReleaseFailed,
+    "state-busy",
+    "the recovery path must say WHY local is still held, not just that it is",
+  );
   assert.deepEqual(
     released.recoveryHandle,
     { local: releaseHandle.local },

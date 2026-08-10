@@ -588,6 +588,9 @@ export function acquireMaintenanceGate({
 
     const advanced = nextGeneration(root, existing.ok ? existing.value.generation : 0);
     if (!advanced.ok) return advanced;
+    // Resolved once: two calls could in principle disagree, and the record must
+    // not end up describing a host it was not written on.
+    const host = currentHost();
     const gate = {
       generation: advanced.generation,
       ownerId,
@@ -601,7 +604,7 @@ export function acquireMaintenanceGate({
       // Written so a later reader can tell whether `pid` is even addressable
       // from where it is standing. Omitted rather than guessed when the host
       // name is unavailable, which keeps the record valid and un-probeable.
-      ...(currentHost() === null ? {} : { host: currentHost() }),
+      ...(host === null ? {} : { host }),
     };
     if (existing.ok) {
       const staleName = `${gateFile}.stale-${existing.value.generation}-${randomBytes(4).toString("hex")}`;

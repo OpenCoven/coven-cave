@@ -472,7 +472,15 @@ export function createRepositoryMaintenanceCoordinator({
           reason: `coven-release-failed: ${coven.reason ?? "unknown"}`,
           covenFenceGone: verified.reason,
           localReleased: local.ok,
-          ...(local.ok ? {} : { recoveryHandle: { local: handle.local } }),
+          // Carry WHY local is still held. This is the recovery path — the
+          // caller is holding a handle it has to do something about — and
+          // "false" without a reason is the least useful thing to hand it.
+          ...(local.ok
+            ? {}
+            : {
+                localReleaseFailed: local.reason ?? "unknown",
+                recoveryHandle: { local: handle.local },
+              }),
         };
       }
       const local = localFence.release(handle.local);
