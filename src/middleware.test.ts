@@ -133,7 +133,7 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /HEADER_CSRF_TRUSTED_API_PATHS = new Set\(\["\/api\/mobile-handoff", "\/api\/mobile-token\/refresh"\]\)/,
+  /HEADER_CSRF_TRUSTED_API_PATHS = new Set\(\[\s*"\/api\/app\/native-readiness",\s*"\/api\/mobile-handoff",\s*"\/api\/mobile-token\/refresh",\s*\]\)/,
   "header-token CSRF relaxation must be limited to explicitly mobile-capable APIs",
 );
 assert.doesNotMatch(
@@ -262,8 +262,18 @@ assert.match(
 );
 assert.match(
   tauriSource,
-  /wait_for_sidecar_ready\(\s*port,\s*&sidecar_output,\s*sidecar_start_timeout,\s*&should_cancel,\s*child_exited,\s*\)/,
-  "Tauri sidecar should require bounded launch output and a live child before trusting the URL",
+  /wait_for_sidecar_ready\(\s*port,\s*&auth_token,\s*&sidecar_output,\s*sidecar_start_timeout,\s*&should_cancel,\s*child_exited,\s*\)/,
+  "Tauri sidecar should require its launch evidence, token, live child, and bounded authenticated handshake",
+);
+assert.match(
+  tauriSource,
+  /GET \/api\/app\/native-readiness HTTP\/1\.1[\s\S]*x-coven-cave-token: \{auth_token\}/,
+  "Tauri readiness must make an authenticated end-to-end API request",
+);
+assert.match(
+  tauriSource,
+  /readiness\.version != env!\("CARGO_PKG_VERSION"\)/,
+  "Tauri readiness must reject a sidecar from an incompatible app version",
 );
 assert.match(
   tauriSource,

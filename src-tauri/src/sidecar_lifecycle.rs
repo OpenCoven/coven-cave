@@ -80,6 +80,7 @@ pub(super) enum PortWaitResult {
     Ready,
     Cancelled,
     Exited,
+    Refused(String),
     TimedOut,
 }
 
