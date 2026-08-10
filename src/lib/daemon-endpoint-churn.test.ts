@@ -55,6 +55,13 @@ function addressFor(dir: string, name: string): string {
 
 async function bind(socketPath: string): Promise<Server> {
   const server = createServer(() => {});
+  // Registered before listen resolves, not after the caller unbinds it. These
+  // tests assert mid-cycle, so an assertion that throws would otherwise skip
+  // its unbind() and leave a listener holding the address — the suite then
+  // hangs on the failure path, which is the exact behaviour this whole fault
+  // harness exists to prevent. Closing twice is harmless; the cleanup runner
+  // swallows it.
+  cleanups.push(() => server.close());
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(socketPath, () => resolve());
@@ -150,6 +157,10 @@ test("churn leaves no connection behind on any listener it probed", async () => 
 
   for (let cycle = 1; cycle <= CYCLES; cycle += 1) {
     const server = createServer(() => {});
+    // Same registration discipline as bind() above: this test counts
+    // connections, so it cannot use the helper, but an assertion throwing
+    // mid-cycle must still not strand a listener.
+    cleanups.push(() => server.close());
     server.on("connection", (socket) => {
       everOpened += 1;
       stillOpen += 1;
