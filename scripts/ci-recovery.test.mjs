@@ -559,7 +559,11 @@ test("a completed run that actually ran is still coverage, including a failure",
   // The fix must not turn every completed run into a recovery candidate. A
   // FAILED run reported a verdict, so CI covered this head and re-dispatching
   // would just re-run a known failure.
-  for (const conclusion of ["success", "failure", "cancelled", "timed_out"]) {
+  //
+  // `cancelled` is deliberately NOT in this list — see the two tests below. It
+  // was here originally (cave-qshvl) on the reasoning that a newer push
+  // supersedes it, which is true only when a newer run actually exists.
+  for (const conclusion of ["success", "failure", "timed_out"]) {
     const pr = pull();
     const ran = workflowRun({ id: 9200, status: "completed", conclusion, headSha: pr.head.sha });
     const fixture = githubFixture({ pulls: [pr], runsBySha: { [pr.head.sha]: [ran] } });
@@ -572,6 +576,63 @@ test("a completed run that actually ran is still coverage, including a failure",
       `conclusion=${conclusion} is coverage and must not be recovered`,
     );
   }
+});
+
+test("a cancelled run that is the NEWEST for a static head is recovered", async () => {
+  // The wedge cave-geaji fixes. Nothing is coming to replace this run: the head
+  // has not moved, so the required context reports `cancelled` rather than
+  // `success` forever and the PR has no path to green.
+  //
+  // Live case: #4514 head 02f74118ff carried exactly one run, cancelled, and
+  // `pnpm ci:recovery` reported "0 eligible" while the PR sat blocked.
+  const pr = pull();
+  const cancelled = workflowRun({
+    id: 9300,
+    status: "completed",
+    conclusion: "cancelled",
+    headSha: pr.head.sha,
+  });
+  const fixture = githubFixture({ pulls: [pr], runsBySha: { [pr.head.sha]: [cancelled] } });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, false));
+
+  assert.equal(result.recoveries.length, 1, "a cancelled newest run must be recoverable");
+  assert.equal(result.recoveries[0].reason, "cancelled_latest_run");
+});
+
+test("a cancelled run underneath a NEWER run is left alone", async () => {
+  // The case the original reasoning describes and gets right: something newer
+  // is already running for this head, so the cancellation was a supersession
+  // and dispatching again would fight it.
+  const pr = pull();
+  const cancelled = workflowRun({
+    id: 9400,
+    status: "completed",
+    conclusion: "cancelled",
+    headSha: pr.head.sha,
+    // Both NOW-relative and outside the grace window, so this exercises the
+    // supersession rule rather than incidentally landing in `ci_queued`.
+    createdAt: new Date(NOW - RECOVERY_GRACE_MS - 2_000).toISOString(),
+  });
+  const newer = workflowRun({
+    id: 9401,
+    status: "in_progress",
+    conclusion: null,
+    headSha: pr.head.sha,
+    createdAt: new Date(NOW - RECOVERY_GRACE_MS - 1_000).toISOString(),
+  });
+  const fixture = githubFixture({
+    pulls: [pr],
+    runsBySha: { [pr.head.sha]: [cancelled, newer] },
+  });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, false));
+
+  assert.deepEqual(
+    result.recoveries,
+    [],
+    "a superseded cancellation must not trigger a redundant dispatch",
+  );
 });
 
 test("one real run alongside an approval-gated one still counts as coverage", async () => {
