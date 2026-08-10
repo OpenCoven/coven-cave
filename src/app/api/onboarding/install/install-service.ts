@@ -12,6 +12,7 @@ import {
 } from "@/lib/server/global-npm-install-lane";
 import {
   covenBin,
+  covenLaunchCommand,
   caveToolSpawnEnv,
   covenSpawnEnv,
   pickWindowsLauncher,
@@ -450,8 +451,8 @@ function daemonLifecycleDependencies(job: InstallJob): DaemonUpdateDependencies 
       };
     },
     stop: async (): Promise<DaemonCommandResult> => {
-      const stop = await runInstallProcess(covenBin(), ["daemon", "stop"], {
-        shell: process.platform === "win32",
+      const launch = covenLaunchCommand();
+      const stop = await runInstallProcess(launch.command, [...launch.fixedArgs, "daemon", "stop"], {
         timeoutMs: 8_000,
       });
       return { ok: stop.code === 0, detail: commandResultDetail(stop) };

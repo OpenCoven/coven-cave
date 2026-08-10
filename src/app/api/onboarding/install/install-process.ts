@@ -1,6 +1,10 @@
 import { spawn } from "node:child_process";
-import { stripAnsi } from "@/lib/ansi";
 import { covenSpawnEnv } from "@/lib/coven-bin";
+import {
+  BoundedProcessOutput,
+  safeProcessErrorMessage,
+  terminateProcessTree,
+} from "@/lib/process-execution";
 import { redactSensitiveInstallOutput } from "./install-job-output";
 
 export type InstallProcessResult = {
@@ -13,30 +17,60 @@ export type InstallProcessResult = {
 export function runInstallProcess(
   command: string,
   args: string[],
-  options: { shell: boolean; timeoutMs: number },
+  options: { timeoutMs: number },
 ): Promise<InstallProcessResult> {
   return new Promise((resolve) => {
     const child = spawn(command, args, {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: covenSpawnEnv(),
-      shell: options.shell,
+      shell: false,
+      detached: process.platform !== "win32",
     });
-    let output = "";
-    const timer = setTimeout(() => child.kill("SIGTERM"), options.timeoutMs);
+    const output = new BoundedProcessOutput(8_192);
+    let settled = false;
+    let timedOut = false;
+    const finish = (result: InstallProcessResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      void terminateProcessTree(child).then(() => finish({
+        code: null,
+        signal: "SIGTERM",
+        output: redactSensitiveInstallOutput(output.text()),
+      }));
+    }, options.timeoutMs);
     child.stdout.on("data", (data) => {
-      output = redactSensitiveInstallOutput(output + stripAnsi(data.toString()));
+      output.append(data);
     });
     child.stderr.on("data", (data) => {
-      output = redactSensitiveInstallOutput(output + stripAnsi(data.toString()));
+      output.append(data);
     });
     child.on("error", (error) => {
-      clearTimeout(timer);
-      resolve({ code: 1, signal: null, output: error.message });
+      finish({
+        code: 1,
+        signal: null,
+        output: safeProcessErrorMessage(error, "Coven CLI"),
+      });
     });
     child.on("close", (code, signal) => {
-      clearTimeout(timer);
-      resolve({ code, signal, output });
+      if (timedOut) {
+        finish({
+          code: null,
+          signal: "SIGTERM",
+          output: redactSensitiveInstallOutput(output.text()),
+        });
+        return;
+      }
+      finish({
+        code,
+        signal,
+        output: redactSensitiveInstallOutput(output.text()),
+      });
     });
   });
 }

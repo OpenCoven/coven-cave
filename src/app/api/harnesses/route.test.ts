@@ -5,7 +5,7 @@ const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
-  /spawn\(launch\.command, \[\.\.\.launch\.fixedArgs, "--no-auto-update", "models"\]/,
+  /runProbe\(\s*launch\.command,\s*\[\.\.\.launch\.fixedArgs, "--no-auto-update", "models"\]/,
   "the harness catalog probe must not trigger Grok's automatic updater on routine UI refreshes",
 );
 
@@ -87,9 +87,7 @@ assert.match(
 );
 assert.match(
   source,
-  // The options object also carries `windowsHide: true` (see
-  // src/lib/child-spawn-window.test.ts); match `env` wherever it sits in it.
-  /function probeVersion\([\s\S]*?env: NodeJS\.ProcessEnv = covenSpawnEnv\(\)[\s\S]*?spawn\(binary,[\s\S]*?\{[^{}]*\benv,/,
+  /function probeVersion\([\s\S]*?env: NodeJS\.ProcessEnv = covenSpawnEnv\(\)[\s\S]*?runProbe\(binary,[\s\S]*?\{\s*env,/,
   "version probing accepts the exact launch environment instead of always rebuilding one",
 );
 assert.doesNotMatch(

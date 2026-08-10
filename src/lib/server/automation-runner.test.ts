@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFile } from "node:fs/promises";
 import { buildCodexExecInvocation } from "./automation-runner.ts";
 
 const base = {
@@ -24,4 +25,14 @@ test("model is passed as --model when set; COVEN_CODEX_BIN overrides the command
   assert.deepEqual(inv.args.slice(0, 3), ["exec", "--model", "gpt-5.4"]);
   assert.equal(typeof inv.cwd, "string");
   delete process.env.COVEN_CODEX_BIN;
+});
+
+test("automation execution is bounded, redacted, direct, and tree-owned", async () => {
+  const source = await readFile(new URL("./automation-runner.ts", import.meta.url), "utf8");
+  assert.match(source, /MAX_RUN_LOG_BYTES/);
+  assert.match(source, /AUTOMATION_TIMEOUT_MS/);
+  assert.match(source, /terminateProcessTree\(child\)/);
+  assert.match(source, /safeProcessErrorMessage\(err, "Automation runtime"\)/);
+  assert.match(source, /detached: process\.platform !== "win32"/);
+  assert.doesNotMatch(source, /\.stdout\?\.pipe\(out\)|\.stderr\?\.pipe\(out\)/);
 });

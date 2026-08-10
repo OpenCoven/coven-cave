@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
+import {
+  BoundedProcessOutput,
+  safeProcessErrorMessage,
+  terminateProcessTree,
+} from "@/lib/process-execution";
 
 export const dynamic = "force-dynamic";
 
@@ -67,32 +72,51 @@ export async function POST(req: Request) {
   return new Promise<Response>((resolve) => {
     const child = spawn("osascript", ["-e", script], {
       stdio: ["ignore", "pipe", "pipe"],
+      detached: true,
     });
-    let stderr = "";
-    child.stderr.on("data", (d) => (stderr += d.toString()));
+    const stderr = new BoundedProcessOutput(16 * 1024);
+    let settled = false;
+    let timedOut = false;
+    const finish = (response: Response) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(response);
+    };
+    child.stderr.on("data", (data) => stderr.append(data));
     const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      resolve(
+      timedOut = true;
+      void terminateProcessTree(child).then(() => finish(
         NextResponse.json(
-          { ok: false, error: "launch timed out", stderr },
+          { ok: false, error: "launch timed out", stderr: stderr.text() },
           { status: 504 },
         ),
-      );
+      ));
     }, 4000);
     child.on("error", (err) => {
-      clearTimeout(timer);
-      resolve(
-        NextResponse.json({ ok: false, error: err.message }, { status: 500 }),
+      finish(
+        NextResponse.json(
+          { ok: false, error: safeProcessErrorMessage(err, "Terminal launcher") },
+          { status: 500 },
+        ),
       );
     });
     child.on("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) {
-        resolve(NextResponse.json({ ok: true, command }));
-      } else {
-        resolve(
+      if (timedOut) {
+        finish(
           NextResponse.json(
-            { ok: false, error: `osascript exited ${code}`, stderr },
+            { ok: false, error: "launch timed out", stderr: stderr.text() },
+            { status: 504 },
+          ),
+        );
+        return;
+      }
+      if (code === 0) {
+        finish(NextResponse.json({ ok: true, command }));
+      } else {
+        finish(
+          NextResponse.json(
+            { ok: false, error: `osascript exited ${code}`, stderr: stderr.text() },
             { status: 500 },
           ),
         );

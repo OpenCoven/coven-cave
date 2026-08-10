@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { hostname } from "node:os";
 import { loadConfig, saveConfig } from "@/lib/cave-config";
 import { chatHostOptions, sshHostRegistry, type ChatHostOption } from "@/lib/chat-hosts";
@@ -8,6 +8,7 @@ import { OmnigentClient } from "@/lib/omnigent/client";
 import { omnigentHostOptionId } from "@/lib/omnigent/ids";
 import { isOmnigentEnvConfigured, isOmnigentFleetActive, resolveOmnigentBaseUrl } from "@/lib/omnigent/token";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
+import { terminateProcessTree } from "@/lib/process-execution";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,13 +19,29 @@ const PROBE_TIMEOUT_MS = 3_500;
 
 function probeSshHost(host: string): Promise<boolean> {
   return new Promise((resolve) => {
-    const child = execFile(
+    const child = spawn(
       "ssh",
       ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "--", host, "true"],
-      { windowsHide: true, timeout: PROBE_TIMEOUT_MS },
-      (error) => resolve(!error),
+      {
+        windowsHide: true,
+        stdio: "ignore",
+        detached: process.platform !== "win32",
+      },
     );
-    child.on("error", () => resolve(false));
+    let settled = false;
+    let timedOut = false;
+    const finish = (online: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(online);
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      void terminateProcessTree(child).then(() => finish(false));
+    }, PROBE_TIMEOUT_MS);
+    child.on("error", () => finish(false));
+    child.on("close", (code) => finish(!timedOut && code === 0));
   });
 }
 

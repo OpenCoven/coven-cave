@@ -4,6 +4,12 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { covenHome } from "@/lib/coven-paths";
 import { harnessSpawnEnv } from "../harness-spawn-env.ts";
+import { MAX_RUN_LOG_BYTES } from "./automation-log-paths.ts";
+import {
+  safeProcessErrorMessage,
+  sanitizeProcessOutput,
+  terminateProcessTree,
+} from "@/lib/process-execution";
 import type { CodexAutomation } from "@/lib/codex-automations-types";
 import {
   recordRun,
@@ -11,6 +17,8 @@ import {
   hasRunningRun,
   type AutomationRunRecord,
 } from "@/lib/automation-runs.ts";
+
+const AUTOMATION_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 
 export type CodexExecInvocation = {
   command: string;
@@ -55,7 +63,9 @@ export async function startAutomationRun(auto: CodexAutomation): Promise<Automat
   await updateRun(run.id, { logPath });
 
   try {
-    const out = createWriteStream(/* turbopackIgnore: true */ logPath, { flags: "a" });
+    const out = createWriteStream(/* turbopackIgnore: true */ logPath, { flags: "w" });
+    let loggedBytes = 0;
+    let logTruncated = false;
     // No familiar context: automations get shared vault keys only, and the
     // explicit env replaces the previous implicit full-process.env inheritance.
     // Command and cwd are runtime configuration, not repository-relative
@@ -65,20 +75,68 @@ export async function startAutomationRun(auto: CodexAutomation): Promise<Automat
       cwd: inv.cwd,
       stdio: ["pipe", "pipe", "pipe"],
       env: harnessSpawnEnv(),
+      windowsHide: true,
+      detached: process.platform !== "win32",
     }]);
-    child.stdout?.pipe(out);
-    child.stderr?.pipe(out);
+    const appendLog = (chunk: Buffer) => {
+      if (logTruncated) return;
+      const safeChunk = sanitizeProcessOutput(chunk);
+      const safeBytes = Buffer.from(safeChunk);
+      const remaining = MAX_RUN_LOG_BYTES - loggedBytes;
+      if (safeBytes.length <= remaining) {
+        loggedBytes += safeBytes.length;
+        out.write(safeBytes);
+        return;
+      }
+      const marker = Buffer.from("\n[output truncated]\n");
+      const contentBudget = Math.max(0, remaining - marker.length);
+      out.write(Buffer.concat([
+        safeBytes.subarray(0, contentBudget),
+        marker.subarray(0, remaining - contentBudget),
+      ]));
+      loggedBytes = MAX_RUN_LOG_BYTES;
+      logTruncated = true;
+    };
+    child.stdout?.on("data", appendLog);
+    child.stderr?.on("data", appendLog);
     child.stdin?.write(inv.stdinPrompt);
     child.stdin?.end();
+    let settled = false;
+    let timedOut = false;
+    const finish = (fields: Parameters<typeof updateRun>[1]) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      out.end();
+      void updateRun(run.id, fields);
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      void terminateProcessTree(child).finally(() => {
+        finish({
+          status: "failed",
+          finishedAt: new Date().toISOString(),
+          summary: "Run exceeded the two-hour execution limit",
+        });
+      });
+    }, AUTOMATION_TIMEOUT_MS);
     child.on("error", (err) => {
-      void updateRun(run.id, {
+      finish({
         status: "failed",
         finishedAt: new Date().toISOString(),
-        summary: err instanceof Error ? err.message : "spawn error",
+        summary: safeProcessErrorMessage(err, "Automation runtime"),
       });
     });
     child.on("close", (code) => {
-      void updateRun(run.id, {
+      if (timedOut) {
+        finish({
+          status: "failed",
+          finishedAt: new Date().toISOString(),
+          summary: "Run exceeded the two-hour execution limit",
+        });
+        return;
+      }
+      finish({
         status: code === 0 ? "succeeded" : "failed",
         finishedAt: new Date().toISOString(),
         exitCode: code ?? undefined,
