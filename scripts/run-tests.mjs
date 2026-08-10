@@ -157,6 +157,7 @@ export const SUITES = {
     "src/lib/app-update.test.ts",
     "src/lib/about-status.test.ts",
     "src/lib/daemon-connection-supervisor.test.ts",
+    "src/lib/daemon-fault-harness.test.ts",
     "src/lib/daemon-status-classification.test.ts",
     "src/lib/daemon-desktop-auto-start.test.ts",
     "src/lib/daemon-recovery-presentation.test.ts",
