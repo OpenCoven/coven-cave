@@ -81,7 +81,8 @@
   protocol; the remaining Beads and GitHub planes are still unenforced. That is
   not a local fault and a retry will not clear it, so
   hand-retirement through the archive-tag route in [`CLAUDE.md`](CLAUDE.md) is
-  the expected path until those land (`cave-3aqvr`). Prove retention first: a
+  the expected path until those land (`cave-wqa0b.3` and `cave-wqa0b.4`; the
+  residue they leave behind is `cave-xbc87`). Prove retention first: a
   squash-merge leaves the branch commits on no remote ref, so a merged PR is not
   retention and a pushed archive tag is. Local cleanup is bounded and exact-OID
   guarded; remote deletion remains proposal-only.
