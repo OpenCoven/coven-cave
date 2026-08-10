@@ -82,7 +82,7 @@ test("delayed readiness, partial health, crash, hang, reset, and version skew st
 
   for (const [name, health, expectedCode] of [
     ["partial", { ok: true }, "runtime_incompatible"],
-    ["version-skew", { ok: true, apiVersion: "v1", covenVersion: "1.2.2" }, "runtime_incompatible"],
+    ["version-skew", { ok: true, apiVersion: "coven.daemon.v1", covenVersion: "1.2.2" }, "runtime_incompatible"],
   ] as const) {
     const result = await startLocalDaemon({
       restart: true,

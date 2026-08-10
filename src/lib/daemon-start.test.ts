@@ -517,7 +517,7 @@ test("a stale runtime discovered after launch is rejected and the owned tree is 
     installedVersion: async () => "1.2.3",
     readHealthDocument: async () => ({
       ok: true,
-      apiVersion: "v1",
+      apiVersion: "coven.daemon.v1",
       covenVersion: "1.2.2",
     }),
     spawnImpl: () => child,

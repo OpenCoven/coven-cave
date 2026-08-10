@@ -68,6 +68,12 @@ export function buildCodexExecInvocation(
   const command = launch.command;
   const args = [
     ...launch.fixedArgs,
+    // Codex deliberately downgrades workspace-write to read-only on Windows
+    // when no Windows sandbox backend is selected. Research owns this
+    // noninteractive child, so select the supported unelevated backend
+    // explicitly; other platforms and interactive/user-owned launches keep
+    // their existing policy.
+    ...(platform === "win32" ? ["--config", 'windows.sandbox="unelevated"'] : []),
     "exec",
     "--skip-git-repo-check",
     "--config",

@@ -77,7 +77,10 @@ assert.match(
 );
 
 test("invocation pipes the prompt to codex exec stdin", () => {
-  const inv = buildCodexExecInvocation({ ...base, model: null, cwds: ["/repo"], prompt: "do it" });
+  const inv = buildCodexExecInvocation(
+    { ...base, model: null, cwds: ["/repo"], prompt: "do it" },
+    { env: { NODE_ENV: "test", COVEN_CODEX_BIN: "/opt/codex" }, platform: "linux" },
+  );
   assert.equal(inv.args[0], "exec");
   assert.equal(inv.args[inv.args.length - 1], "-");
   assert.deepEqual(
@@ -131,7 +134,11 @@ test("an official Windows npm Codex shim resolves directly to its architecture-s
     },
   );
   assert.equal(inv.command, fixture.native);
-  assert.equal(inv.args[0], "exec");
+  assert.deepEqual(
+    inv.args.slice(0, 4),
+    ["--config", 'windows.sandbox="unelevated"', "exec", "--skip-git-repo-check"],
+    "native Windows Research enables Codex's supported unelevated workspace-write backend",
+  );
   assert.equal(inv.stdinPrompt, "unicode \u{1F52E}");
   assert.deepEqual(inv.managedPackage, { root: fixture.packageRoot, manager: "npm" });
   assert.ok(!inv.args.some((arg) => /\.(?:cmd|js)$/i.test(arg)), "cmd.exe, Node, and its wrapper are not part of argv");
@@ -707,7 +714,10 @@ test("native Windows crosses the installed official shim boundary without launch
     },
   );
   assert.match(invocation.command, /[\\/]vendor[\\/].+[\\/]bin[\\/]codex\.exe$/i);
-  assert.equal(invocation.args[0], "exec");
+  assert.deepEqual(
+    invocation.args.slice(0, 4),
+    ["--config", 'windows.sandbox="unelevated"', "exec", "--skip-git-repo-check"],
+  );
   assert.equal(invocation.managedPackage?.root.endsWith(path.join("@openai", "codex")), true);
 
   const result = spawnSync(invocation.command, ["--version"], {

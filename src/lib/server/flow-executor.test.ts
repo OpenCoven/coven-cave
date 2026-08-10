@@ -99,17 +99,28 @@ assert.match(
 );
 
 assert.equal(
-  supportsSessionLaunchPolicy({ capabilities: { sessionLaunchPolicy: true } }),
+  supportsSessionLaunchPolicy({
+    ok: true,
+    apiVersion: "coven.daemon.v1",
+    capabilities: { sessionLaunchPolicy: true },
+  }),
   true,
-  "the exact Coven capability admits the coordinated launch-policy contract",
+  "the exact named Coven contract and capability admit the coordinated launch-policy contract",
 );
 for (const health of [
   null,
   {},
-  { capabilities: { sessionLaunchPolicy: false } },
-  { capabilities: { sessionUnattendedWorkspaceWrite: true } },
+  { ok: true, apiVersion: "coven.daemon.v1", capabilities: { sessionLaunchPolicy: false } },
+  { ok: true, apiVersion: "coven.daemon.v1", capabilities: { sessionUnattendedWorkspaceWrite: true } },
+  { ok: true, apiVersion: "v1", capabilities: { sessionLaunchPolicy: true } },
+  { ok: true, apiVersion: "coven.daemon.v2", capabilities: { sessionLaunchPolicy: true } },
+  { ok: false, apiVersion: "coven.daemon.v1", capabilities: { sessionLaunchPolicy: true } },
 ]) {
-  assert.equal(supportsSessionLaunchPolicy(health), false, "missing, false, and stale capability names fail closed");
+  assert.equal(
+    supportsSessionLaunchPolicy(health),
+    false,
+    "missing, failed, legacy, future, and stale health contracts fail closed",
+  );
 }
 assert.deepEqual(
   researchSessionLaunchPolicy(["/canonical/research-mission"]),

@@ -5,6 +5,7 @@ import type {
   DaemonResponse,
   DaemonTarget,
 } from "@/lib/coven-daemon";
+import { isSupportedDaemonApiVersion } from "../daemon-startup-contract.ts";
 
 export const SESSION_LAUNCH_POLICY_CAPABILITY = "sessionLaunchPolicy";
 
@@ -23,10 +24,15 @@ export type ResearchSessionLaunchPolicy = {
   addDirs: string[];
 };
 
-/** Read the named opt-in defensively; missing and non-boolean values fail closed. */
+/** Require the exact daemon contract and named opt-in; every mismatch fails closed. */
 export function supportsSessionLaunchPolicy(health: unknown): boolean {
   if (!health || typeof health !== "object" || Array.isArray(health)) return false;
-  const capabilities = (health as { capabilities?: unknown }).capabilities;
+  const healthRecord = health as { ok?: unknown; apiVersion?: unknown; capabilities?: unknown };
+  if (
+    healthRecord.ok !== true
+    || !isSupportedDaemonApiVersion(healthRecord.apiVersion)
+  ) return false;
+  const capabilities = healthRecord.capabilities;
   return Boolean(
     capabilities
     && typeof capabilities === "object"
