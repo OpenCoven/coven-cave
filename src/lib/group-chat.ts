@@ -33,6 +33,12 @@ export type CovenGroup = {
   id: string;
   name: string;
   familiarIds: string[];
+  /**
+   * Members sitting out the next run. They keep membership, order and pinned
+   * session; they just do not receive the next message. Absent means everyone
+   * is in, which is what every coven saved before this field existed.
+   */
+  excludedFamiliarIds?: string[];
   /** Per-familiar resumed session ids so each thread survives reloads. */
   sessions: Record<string, string>;
   /** Registered project every participant can access. Required before launch. */
@@ -86,6 +92,24 @@ export type GroupReply = {
   status: GroupReplyStatus;
   /** Latest progress/tool label — the "thinking…" line while streaming. */
   activity?: string;
+  /**
+   * What produced {@link activity}. `status: "streaming"` with no text yet is
+   * three different things to a reader — thinking, running a tool, or relaying
+   * progress — and the run header has to name which. The stream already
+   * distinguishes them (`tool_use` vs `progress`); this keeps that distinction
+   * instead of flattening both into one label.
+   */
+  activityKind?: "progress" | "tool";
+  /** Tool names invoked this turn, in call order, from `tool_use` starts. */
+  toolCalls?: string[];
+  /**
+   * How a non-completing turn ended, when the operator ended it rather than the
+   * model failing. `stopped` kept whatever had streamed; `skipped` never
+   * started. Both are `status: "error"` on the wire — the distinction is the
+   * difference between "something broke" and "you ended it", and the run
+   * summary must not report the second as the first.
+   */
+  outcome?: "stopped" | "skipped";
   error?: string;
   durationMs?: number;
   costUsd?: number;
@@ -123,20 +147,40 @@ export function applyGroupEvent(reply: GroupReply, ev: GroupStreamEvent): GroupR
     case "session":
       return { ...reply, sessionId: ev.sessionId };
     case "assistant_chunk":
-      return { ...reply, status: "streaming", activity: undefined, text: reply.text + ev.text };
+      return {
+        ...reply,
+        status: "streaming",
+        activity: undefined,
+        activityKind: undefined,
+        text: reply.text + ev.text,
+      };
     case "assistant_replace":
-      return { ...reply, status: "streaming", activity: undefined, text: ev.text };
+      return {
+        ...reply,
+        status: "streaming",
+        activity: undefined,
+        activityKind: undefined,
+        text: ev.text,
+      };
     case "progress":
       return {
         ...reply,
         status: reply.status === "queued" ? "streaming" : reply.status,
         activity: ev.status === "done" ? reply.activity : ev.label ?? reply.activity,
+        activityKind: ev.status === "done" ? reply.activityKind : "progress",
       };
     case "tool_use":
       return {
         ...reply,
         status: reply.status === "queued" ? "streaming" : reply.status,
         activity: ev.name ? `${ev.name}…` : reply.activity,
+        activityKind: "tool",
+        // Count starts only: a single call reports `running` then `ok`/`error`,
+        // so counting every event would double every tool in the summary row.
+        toolCalls:
+          ev.name && (ev.status === undefined || ev.status === "running")
+            ? [...(reply.toolCalls ?? []), ev.name]
+            : reply.toolCalls,
       };
     case "done":
       return {
@@ -146,10 +190,17 @@ export function applyGroupEvent(reply: GroupReply, ev: GroupStreamEvent): GroupR
         durationMs: ev.durationMs ?? reply.durationMs,
         costUsd: ev.costUsd ?? reply.costUsd,
         activity: undefined,
+        activityKind: undefined,
         error: ev.isError ? reply.error ?? "request failed" : reply.error,
       };
     case "error":
-      return { ...reply, status: "error", error: ev.message, activity: undefined };
+      return {
+        ...reply,
+        status: "error",
+        error: ev.message,
+        activity: undefined,
+        activityKind: undefined,
+      };
     default:
       return reply;
   }
@@ -362,14 +413,24 @@ export function resolveGroupMessageTargets(
   groupFamiliarIds: string[],
   participants: MentionableFamiliar[],
   explicitTargetFamiliarIds?: string[],
+  /**
+   * Who an *untargeted* message fans out to — the roster minus anyone sitting
+   * the next run out. Defaults to the whole coven.
+   *
+   * Deliberately not applied to the targeted branch: addressing a familiar by
+   * name is the explicit override of their sit-out, and silently dropping an
+   * @mention would be the surface disagreeing with what the user typed.
+   */
+  includedFamiliarIds?: string[],
 ): { targetIds: string[]; targeted: boolean } {
   const mentioned = explicitTargetFamiliarIds === undefined ? parseMentions(text, participants) : [];
   const requested = explicitTargetFamiliarIds ?? mentioned;
   const targeted = explicitTargetFamiliarIds !== undefined || mentioned.length > 0;
+  const included = includedFamiliarIds ?? groupFamiliarIds;
   return {
     targetIds: targeted
       ? groupFamiliarIds.filter((id) => requested.includes(id))
-      : [...groupFamiliarIds],
+      : groupFamiliarIds.filter((id) => included.includes(id)),
     targeted,
   };
 }
@@ -591,7 +652,69 @@ export function setGroupParticipants(
   const nextRoundRobinLeadId = ids.includes(group.nextRoundRobinLeadId ?? "")
     ? group.nextRoundRobinLeadId
     : ids[0];
-  return { ...group, familiarIds: ids, sessions, nextRoundRobinLeadId, updatedAt: now };
+  // A familiar removed from the coven cannot stay on the sit-out list: it would
+  // silently sit the familiar out again if it were ever re-added.
+  const excludedFamiliarIds = (group.excludedFamiliarIds ?? []).filter((id) => ids.includes(id));
+  return {
+    ...group,
+    familiarIds: ids,
+    sessions,
+    nextRoundRobinLeadId,
+    ...(excludedFamiliarIds.length > 0 ? { excludedFamiliarIds } : { excludedFamiliarIds: undefined }),
+    updatedAt: now,
+  };
+}
+
+/**
+ * The familiars that take part in the next run, in rotation order.
+ *
+ * Sitting a familiar out is not removing it: it keeps its membership, its
+ * pinned session and its place in the order, and simply does not receive the
+ * next message.
+ */
+export function includedGroupParticipants(group: CovenGroup): string[] {
+  const excluded = new Set(group.excludedFamiliarIds ?? []);
+  return group.familiarIds.filter((id) => !excluded.has(id));
+}
+
+/** Toggle one familiar's "in the next run" switch. */
+export function setGroupParticipantIncluded(
+  group: CovenGroup,
+  familiarId: string,
+  included: boolean,
+  now: string,
+): CovenGroup {
+  if (!group.familiarIds.includes(familiarId)) return group;
+  const excluded = new Set(group.excludedFamiliarIds ?? []);
+  if (included === !excluded.has(familiarId)) return group;
+  if (included) excluded.delete(familiarId);
+  else excluded.add(familiarId);
+  const next = group.familiarIds.filter((id) => excluded.has(id));
+  return {
+    ...group,
+    excludedFamiliarIds: next.length > 0 ? next : undefined,
+    updatedAt: now,
+  };
+}
+
+/**
+ * Move one familiar earlier (-1) or later (+1) in the rotation.
+ *
+ * Returns the SAME object at either end of the list, so a no-op arrow press
+ * does not bump `updatedAt` and reshuffle the rail.
+ */
+export function moveGroupParticipant(
+  group: CovenGroup,
+  familiarId: string,
+  delta: -1 | 1,
+  now: string,
+): CovenGroup {
+  const index = group.familiarIds.indexOf(familiarId);
+  const target = index + delta;
+  if (index === -1 || target < 0 || target >= group.familiarIds.length) return group;
+  const familiarIds = [...group.familiarIds];
+  [familiarIds[index], familiarIds[target]] = [familiarIds[target], familiarIds[index]];
+  return { ...group, familiarIds, updatedAt: now };
 }
 
 export function setGroupResponseMode(
@@ -769,6 +892,21 @@ export type CovenReplyRunner = (
   settledBefore: GroupReply[],
 ) => Promise<GroupReply>;
 
+/** What the operator decided about the next queued familiar in a rotation. */
+export type CovenTurnDecision = "run" | "stop";
+
+/**
+ * Consulted immediately before each round-robin turn starts, so Pause can hold
+ * the queue between turns. Resolving `"run"` (the default when no gate is
+ * supplied) is the previous behaviour exactly; a gate that never resolves is a
+ * paused queue, and resolving `"stop"` ends the run without starting the turn.
+ *
+ * Broadcast never consults it: every familiar in a broadcast has already
+ * started, so there is no "before the next turn" for a decision to land in —
+ * stopping one there is per-agent Stop, not a queue decision.
+ */
+export type CovenTurnGate = (reply: GroupReply) => Promise<CovenTurnDecision>;
+
 /**
  * Dispatch one Coven turn. Broadcast starts every reply together. Round robin
  * waits for each reply before starting the next and exposes the settled prefix
@@ -781,15 +919,39 @@ export async function runCovenReplySchedule(args: {
   signal: AbortSignal;
   runReply: CovenReplyRunner;
   onCancelled?: (reply: GroupReply) => void;
+  /** Round robin only — see {@link CovenTurnGate}. */
+  gate?: CovenTurnGate;
 }): Promise<GroupReply[]> {
   if (args.mode === "broadcast") {
     return Promise.all(args.replies.map((reply) => args.runReply(reply, [])));
   }
 
   const settled: GroupReply[] = [];
+  // Once the gate says stop, every remaining familiar is skipped rather than
+  // re-gated — asking again per familiar would prompt N times for one decision.
+  let stopped = false;
+  const cancel = (reply: GroupReply, outcome: "stopped" | "skipped"): GroupReply => ({
+    ...reply,
+    status: "error" as const,
+    error: "cancelled",
+    outcome,
+    activity: undefined,
+    activityKind: undefined,
+  });
   for (const reply of args.replies) {
-    if (args.signal.aborted) {
-      const cancelled = { ...reply, status: "error" as const, error: "cancelled", activity: undefined };
+    if (args.signal.aborted || stopped) {
+      const cancelled = cancel(reply, "skipped");
+      settled.push(cancelled);
+      args.onCancelled?.(cancelled);
+      continue;
+    }
+    const decision = args.gate ? await args.gate(reply) : "run";
+    // The gate can await an operator decision for as long as a pause lasts, so
+    // re-check abort on the way out — Stop during a pause must not then start
+    // the very turn the pause was holding.
+    if (decision === "stop" || args.signal.aborted) {
+      stopped = decision === "stop";
+      const cancelled = cancel(reply, "skipped");
       settled.push(cancelled);
       args.onCancelled?.(cancelled);
       continue;
