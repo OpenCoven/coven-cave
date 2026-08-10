@@ -40,8 +40,8 @@ assert.match(
 
 assert.match(
   turnRow,
-  /inlineReasoning,[\s\S]*nextPaths,[\s\S]*\} = extractChatRenderedText\(turn\.text, \{ pending: Boolean\(turn\.pending\) \}\)/,
-  "Assistant turns should use the shared visible-text projection for reasoning and next paths",
+  /inlineReasoning,[\s\S]*\} = extractChatRenderedText\(turn\.text, \{ pending: Boolean\(turn\.pending\) \}\)/,
+  "Assistant turns should use the shared visible-text projection for reasoning and control-marker stripping",
 );
 
 assert.match(
