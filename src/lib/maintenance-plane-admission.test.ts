@@ -6,7 +6,12 @@ import {
   type MaintenancePlaneCapabilities,
 } from "./maintenance-plane-admission.ts";
 
-/** Today's real shape: local enforced, the three pending planes off. */
+/**
+ * A representative shape: local enforced, the waivable planes off. Note coven is
+ * opportunistic in the real gate — enforced when @opencoven/cli maintenance is
+ * available — so a live run may show it either way. Tests set it explicitly
+ * rather than assuming.
+ */
 function capabilities(
   overrides: Partial<Record<keyof MaintenancePlaneCapabilities, boolean>> = {},
 ): MaintenancePlaneCapabilities {
@@ -132,5 +137,48 @@ test("missing planes are reported in a stable order", () => {
       allowUnenforcedPlanes: false,
     });
     if (!result.ok) assert.deepEqual(result.missingPlanes, ["coven", "beads", "github"]);
+  }
+});
+
+test("a missing plane entry fails closed, not open", () => {
+  // The defect this replaced: `capabilities[plane]?.enforced === false` is false
+  // when the entry is undefined, so an absent plane read as enforced. A safety
+  // gate must never treat missing data as satisfied.
+  const withoutLocal = {
+    coven: { enforced: true },
+    beads: { enforced: true },
+    github: { enforced: true },
+  } as unknown as MaintenancePlaneCapabilities;
+
+  const refused = assessMaintenancePlaneAdmission({
+    capabilities: withoutLocal,
+    allowUnenforcedPlanes: false,
+  });
+  assert.equal(refused.ok, false, "an absent local plane must not be admitted");
+  if (!refused.ok) assert.deepEqual(refused.missingPlanes, ["local"]);
+
+  // And the opt-in must not rescue it either: absent local is still local.
+  const waived = assessMaintenancePlaneAdmission({
+    capabilities: withoutLocal,
+    allowUnenforcedPlanes: true,
+  });
+  assert.equal(waived.ok, false);
+  if (!waived.ok) assert.equal(waived.code, "local-plane-unenforced");
+});
+
+test("a malformed plane entry is treated as unenforced", () => {
+  for (const bad of [undefined, null, {}, { enforced: "yes" }, { enforced: 1 }]) {
+    const capabilities = {
+      local: { enforced: true },
+      coven: { enforced: true },
+      beads: { enforced: true },
+      github: bad,
+    } as unknown as MaintenancePlaneCapabilities;
+    const result = assessMaintenancePlaneAdmission({
+      capabilities,
+      allowUnenforcedPlanes: false,
+    });
+    assert.equal(result.ok, false, `github=${JSON.stringify(bad)} must not be admitted`);
+    if (!result.ok) assert.deepEqual(result.missingPlanes, ["github"]);
   }
 });

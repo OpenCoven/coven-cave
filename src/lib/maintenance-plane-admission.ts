@@ -1,10 +1,13 @@
 /**
  * Whether `--apply` may proceed on a degraded maintenance gate (cave-s03wp).
  *
- * `--apply` refuses unless all four maintenance planes report `enforced`. Three
- * of them — coven, beads, github — are hard-coded off pending cave-wqa0b.2/.3/.4,
- * all BLOCKED with no movement, so automated retirement has been unreachable for
- * as long as those have been open (cave-3aqvr).
+ * `--apply` refuses unless all four maintenance planes report `enforced`. Beads
+ * and github are hard-coded off pending cave-wqa0b.3/.4, both BLOCKED with no
+ * movement, so automated retirement has been unreachable for as long as those
+ * have been open (cave-3aqvr). The coven plane is NOT hard-coded: it is
+ * opportunistic, enforced when `@opencoven/cli` maintenance is available and
+ * unenforced when it is not (cave-wqa0b.2), so it can be either on a given run.
+ * That is why it sits in the waivable set rather than being assumed present.
  *
  * The cost is not theoretical and it compounds. Creation is automated;
  * retirement is not. Observed 2026-08-08: four units were hand-retired and the
@@ -64,8 +67,12 @@ export function assessMaintenancePlaneAdmission(input: {
   /** The explicit opt-in. Absent, behaviour is unchanged. */
   allowUnenforcedPlanes: boolean;
 }): PlaneAdmission {
+  // `!== true` rather than `=== false`, so a plane whose entry is absent or
+  // malformed counts as unenforced. A safety gate that reads missing data as
+  // "fine" fails open, which is the one direction this must never fail: an
+  // absent local plane would otherwise waive the exclusion silently.
   const missingPlanes = PLANE_ORDER.filter(
-    (plane) => input.capabilities[plane]?.enforced === false,
+    (plane) => input.capabilities[plane]?.enforced !== true,
   );
 
   if (missingPlanes.length === 0) return { ok: true, degraded: false };

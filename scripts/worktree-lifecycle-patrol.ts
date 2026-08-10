@@ -192,10 +192,11 @@ repairs metadata, removes worktrees, or removes branches unless --apply becomes
 maintenance planes are enforced.
 
 --apply refuses with exit 2 before assessing any unit while the Beads or GitHub
-maintenance planes are unenforced (cave-3aqvr). Cave already coordinates its
-local fence with Coven's released maintenance protocol, so the coven plane is
-enforced. Retire cleanup-ready units by hand through the archive-tag route in
-CLAUDE.md, or opt in below.
+maintenance planes are unenforced (cave-3aqvr). The coven plane is
+opportunistic -- enforced when Coven's released maintenance protocol is
+available, unenforced when it is not -- so it may be missing too. Retire
+cleanup-ready units by hand through the archive-tag route in CLAUDE.md, or opt
+in below.
 
 --allow-unenforced-planes opts in to running --apply while the known-pending
 planes (coven/beads/github, cave-wqa0b.2/.3/.4) are unenforced. The local plane
