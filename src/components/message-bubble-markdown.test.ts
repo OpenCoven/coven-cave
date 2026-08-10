@@ -259,13 +259,13 @@ assert.match(
 );
 assert.match(
   markdownContent,
-  /if \(!html\) \{[\s\S]*?className=\{`cave-response-rendering/,
-  "The first-paint fallback is a token-free rendering indicator, not raw Markdown",
+  /if \(!html\) \{[\s\S]*?if \(!decorateResponse\) \{[\s\S]*?\{text\}[\s\S]*?className=\{`cave-response-rendering/,
+  "Generic Markdown preserves authored text while response Markdown uses the token-free rendering indicator",
 );
-assert.doesNotMatch(
+assert.match(
   markdownContent,
-  /if \(!html\)[\s\S]{0,600}?\{text\}/,
-  "The first-paint fallback must never expose raw Markdown source",
+  /if \(!decorateResponse\) \{[\s\S]{0,300}?\{text\}/,
+  "Non-response Markdown keeps user-authored text accessible while its async render settles",
 );
 assert.match(
   source,

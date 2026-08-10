@@ -39,7 +39,7 @@ The response stays readable and stable while preserving the familiar's authored 
 
 ## Recommendation
 
-- Render **bold**, _italics_, [links](https://example.com), and \`threads-dgg\`.
+- Render **bold**, _italics_, [[READY]](https://example.com/status), and \`threads-dgg\`.
 - Keep supporting details beneath the primary conclusion.
 
 Use \`[READY]\` literally in code, while standalone [REVIEW] and [BLOCKED] tokens become badges.
@@ -117,6 +117,19 @@ test("completed assistant responses render editorial Markdown and accessible con
     timeout: 30_000,
   });
   await expect(bubble.locator(".cave-response-status")).toHaveCount(3);
+  await expect(bubble.locator(".cave-response-lead")).toContainText(
+    "The response stays readable and stable",
+  );
+  await expect(bubble.locator("code").filter({ hasText: "[READY]" })).toHaveCount(1);
+  await expect(bubble.locator("code .cave-response-status")).toHaveCount(0);
+  await expect(bubble.locator('a[href="https://example.com/status"]')).toContainText("[READY]");
+  await expect(
+    bubble.locator('a[href="https://example.com/status"] .cave-response-status'),
+  ).toHaveCount(0);
+  await expect(bubble.locator(".cave-response-status").first()).not.toHaveAttribute(
+    "role",
+    "status",
+  );
   await expect(bubble.getByText("threads-dgg")).toBeVisible();
   await expect(bubble.locator("strong")).toContainText("bold");
   await expect(bubble.locator("em")).toContainText("italics");

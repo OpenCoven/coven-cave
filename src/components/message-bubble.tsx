@@ -888,6 +888,13 @@ function MarkdownContent({
   }, [cacheKey, decorateResponse, pending, renderGate, text]);
 
   if (!html) {
+    if (!decorateResponse) {
+      return (
+        <span className={`whitespace-pre-wrap break-words text-[length:var(--text-md)] leading-relaxed${className ? ` ${className}` : ""}`}>
+          {text}
+        </span>
+      );
+    }
     return (
       <span
         className={`cave-response-rendering${className ? ` ${className}` : ""}`}

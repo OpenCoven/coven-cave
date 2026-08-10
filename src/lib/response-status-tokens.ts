@@ -87,20 +87,22 @@ export function decorateResponseHtml(html: string): string {
       const badge = doc.createElement("span");
       badge.className = "cave-response-status";
       badge.dataset.tone = segment.tone;
-      badge.setAttribute("role", "status");
-      badge.setAttribute("aria-label", `Status: ${segment.label.toLowerCase()}`);
       badge.textContent = segment.text;
       fragment.append(badge);
     }
     node.replaceWith(fragment);
   }
 
-  const firstBlock = doc.body.firstElementChild;
-  if (
-    firstBlock?.tagName === "P" &&
-    Array.from(doc.body.children).some((element) => /^H[1-6]$/.test(element.tagName))
-  ) {
-    firstBlock.classList.add("cave-response-lead");
+  const blocks = Array.from(doc.body.querySelectorAll("p, h1, h2, h3, h4, h5, h6"));
+  const firstHeadingIndex = blocks.findIndex((element) => /^H[1-6]$/.test(element.tagName));
+  if (firstHeadingIndex > 0) {
+    const lead = blocks.slice(0, firstHeadingIndex).find((element) => {
+      if (element.tagName !== "P") return false;
+      const copy = element.cloneNode(true) as HTMLElement;
+      copy.querySelectorAll(".cave-response-status").forEach((status) => status.remove());
+      return Boolean(copy.textContent?.trim());
+    });
+    lead?.classList.add("cave-response-lead");
   }
 
   return doc.body.innerHTML;
