@@ -509,6 +509,16 @@ assert.match(
   /onClick=\{\(\) => \{\s*onExpand\?\.\(\);\s*onSelect\(row\.id\);/,
   "collapsed session buttons expand before selection",
 );
+assert.match(
+  rail,
+  /const openRailClassName = onExpand \? "py-2" : "overflow-y-auto py-2";/,
+  "SurfaceRail-hosted sessions defer scrolling to the shared rail while the narrow standalone list remains scrollable",
+);
+assert.match(
+  rail,
+  /open \? openRailClassName : "items-center gap-1"/,
+  "the session navigation applies the layout-specific open-state scrolling contract",
+);
 
 assert.match(
   composer,
