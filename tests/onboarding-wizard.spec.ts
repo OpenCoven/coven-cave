@@ -42,19 +42,22 @@ function state(overrides: Partial<BootstrapState> = {}): BootstrapState {
         id: "core-tools",
         label: "Prepare local components",
         status: "pending",
-        detail: "Cave will verify the local components it needs.",
+        detail:
+          "Cave will check its private Node.js and npm runtime, then verify the Coven CLI.",
       },
       {
         id: "workspace",
         label: "Create Cave defaults",
         status: "pending",
-        detail: "Cave will create user-scoped folders and defaults.",
+        detail:
+          "Waiting for local components. Cave will then create user-scoped folders and defaults.",
       },
       {
         id: "daemon",
         label: "Start local services",
         status: "pending",
-        detail: "Cave will start its local background service.",
+        detail:
+          "Waiting for setup. Cave will check the local service and start it only when needed.",
       },
     ],
     failure: null,
@@ -162,7 +165,7 @@ test.describe("onboarding bootstrap", () => {
               id: "core-tools",
               label: "Prepare local components",
               status: "running",
-              detail: "Preparing Cave’s local runtime…",
+              detail: "Setting up Cave’s private Node.js and npm runtime…",
             },
             ...state().stages.slice(1),
           ],
@@ -173,24 +176,14 @@ test.describe("onboarding bootstrap", () => {
 
     const dialog = setup(page);
     await dialog.getByRole("button", { name: "Set up Cave", exact: true }).click();
-    await expect(dialog.getByText("Preparing Cave’s local runtime…")).toBeVisible();
+    await expect(dialog.getByText("Setting up Cave’s private Node.js and npm runtime…")).toBeVisible();
     await expect(dialog.locator('[aria-current="step"]')).toContainText(
       "Prepare local components",
     );
     expect(confirmations).toBe(1);
 
-    const visibleText = await dialog.innerText();
-    for (const hidden of [
-      "Node.js",
-      "npm",
-      "Coven CLI",
-      "Codex",
-      "Claude",
-      "Copilot",
-      "OpenClaw",
-    ]) {
-      expect(visibleText).not.toContain(hidden);
-    }
+    await expect(dialog.getByText(/private Node\.js and npm runtime/)).toBeVisible();
+    await expect(dialog.getByText(/Waiting for local components/)).toBeVisible();
     await expect(dialog.getByText(/Provider sign-in is deferred/)).toBeVisible();
     await expect(dialog.getByText(/never asks for an administrator password/)).toBeVisible();
     await expect(dialog.getByText(/Git is optional/)).toBeVisible();
@@ -238,6 +231,40 @@ test.describe("onboarding bootstrap", () => {
     await expect(alert.getByRole("button", { name: "Retry setup" })).toHaveCount(1);
     await alert.getByRole("button", { name: "Retry setup" }).click();
     expect(retries).toBe(1);
+  });
+
+  test("explains what a local-components failure did and did not do", async ({
+    page,
+  }) => {
+    const failed = state({
+      confirmed: true,
+      status: "failed",
+      activeStage: "core-tools",
+      stages: state().stages.map((stage) =>
+        stage.id === "core-tools"
+          ? {
+              ...stage,
+              status: "failed",
+              detail: "Setup stopped at Prepare local components. Cave couldn’t prepare its private Node.js and npm runtime.",
+            }
+          : stage,
+      ),
+      failure: {
+        stage: "core-tools",
+        stageLabel: "Prepare local components",
+        message: "Setup stopped at Prepare local components. Cave couldn’t prepare its private Node.js and npm runtime. No Cave defaults were created. Retry setup; if it happens again, restart Cave and try once more.",
+        recoveryLabel: "Retry setup",
+      },
+    });
+    await gotoApp(page, (route) => route.fulfill({ json: payload(failed) }), {
+      dismissed: true,
+    });
+
+    const alert = setup(page).getByRole("alert");
+    await expect(alert).toContainText("No Cave defaults were created.");
+    await expect(alert).toContainText(
+      "It does not create Cave defaults or start a familiar runtime.",
+    );
   });
 
   test("skips onboarding when an existing setup is already ready", async ({
