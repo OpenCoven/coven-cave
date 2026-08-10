@@ -485,9 +485,66 @@ pub(super) fn replace_main_window_url(app: &tauri::AppHandle, url: Url) -> Resul
 #[cfg(desktop)]
 pub(super) fn start_sidecar_runtime(
     app: &tauri::AppHandle,
+    operation: &'static str,
+    attempt: u32,
     mut on_step: impl FnMut(SidecarStartupStep),
     should_cancel: impl Fn() -> bool,
 ) -> Result<Url, SidecarStartError> {
+    let diagnostics = sidecar_diagnostics::SidecarDiagnosticContext::new(
+        operation,
+        attempt,
+        app.package_info().version.to_string(),
+        app.path()
+            .app_local_data_dir()
+            .ok()
+            .map(|directory| directory.join(sidecar_diagnostics::NATIVE_DIAGNOSTICS_FILE_NAME)),
+    );
+    let lifecycle_phase = if operation == "sidecar-recovery" {
+        "recovery"
+    } else {
+        "startup"
+    };
+    diagnostics.record(
+        lifecycle_phase,
+        "started",
+        "dedicated-sidecar",
+        None,
+        None,
+    );
+    let result = run_sidecar_runtime(app, &diagnostics, &mut on_step, should_cancel);
+    match &result {
+        Ok(_) => diagnostics.record(lifecycle_phase, "succeeded", "ready", None, None),
+        Err(SidecarStartError::Cancelled) => {
+            diagnostics.record(lifecycle_phase, "cancelled", "cancelled", None, None)
+        }
+        Err(SidecarStartError::Failed(_)) => {
+            let failed_phase = diagnostics.current_phase();
+            diagnostics.record(
+                failed_phase,
+                "failed",
+                "startup-failed",
+                Some("sidecar-start-failed"),
+                None,
+            )
+        }
+    }
+    result
+}
+
+#[cfg(desktop)]
+fn run_sidecar_runtime(
+    app: &tauri::AppHandle,
+    diagnostics: &sidecar_diagnostics::SidecarDiagnosticContext,
+    on_step: &mut impl FnMut(SidecarStartupStep),
+    should_cancel: impl Fn() -> bool,
+) -> Result<Url, SidecarStartError> {
+    diagnostics.record(
+        "preparing-runtime",
+        "started",
+        "resource-discovery",
+        None,
+        None,
+    );
     on_step(SidecarStartupStep::PreparingRuntime);
     let resource_dir = app.path().resource_dir().map_err(|error| {
         SidecarStartError::failed(
@@ -631,6 +688,20 @@ pub(super) fn start_sidecar_runtime(
         None => log::warn!("[cave] `coven` CLI not found on disk - onboarding will prompt install"),
     }
 
+    diagnostics.record(
+        "preparing-runtime",
+        "succeeded",
+        "runtime-ready",
+        None,
+        None,
+    );
+    diagnostics.record(
+        "sidecar-spawn",
+        "started",
+        "node-process",
+        None,
+        None,
+    );
     on_step(SidecarStartupStep::StartingService);
     if should_cancel() {
         return Err(SidecarStartError::Cancelled);
@@ -639,12 +710,14 @@ pub(super) fn start_sidecar_runtime(
     #[cfg(target_os = "windows")]
     let (mut command, process_job, launch_gate) = {
         let process_job = windows_process_job::ProcessJob::new().map_err(|error| {
+            diagnostics.record_io_error("sidecar-spawn", "process-job-failed", &error);
             SidecarStartError::failed(
                 ReliabilityFailureClass::Permissions,
                 format!("could not create sidecar process job: {error}"),
             )
         })?;
         let launch_gate = windows_process_job::ProcessLaunchGate::new().map_err(|error| {
+            diagnostics.record_io_error("sidecar-spawn", "launch-gate-failed", &error);
             SidecarStartError::failed(
                 ReliabilityFailureClass::Permissions,
                 format!("could not create sidecar launch gate: {error}"),
@@ -653,6 +726,7 @@ pub(super) fn start_sidecar_runtime(
         let launcher = launch_gate
             .launcher(&node, [&server_js_arg])
             .map_err(|error| {
+                diagnostics.record_io_error("sidecar-spawn", "launcher-preparation-failed", &error);
                 SidecarStartError::failed(
                     ReliabilityFailureClass::Permissions,
                     format!("could not prepare sidecar launch gate: {error}"),
@@ -674,7 +748,34 @@ pub(super) fn start_sidecar_runtime(
         .env("NODE_ENV", "production")
         .env("COVEN_WHISPER_CPP_BIN", &whisper_cli)
         .env("COVEN_CAVE_AUTH_TOKEN", &auth_token)
-        .env("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token);
+        .env("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token)
+        .env(
+            sidecar_diagnostics::CORRELATION_ID_ENV,
+            &diagnostics.correlation_id,
+        )
+        .env(
+            sidecar_diagnostics::DIAGNOSTIC_GENERATION_ENV,
+            diagnostics.generation.to_string(),
+        )
+        .env(
+            sidecar_diagnostics::DIAGNOSTIC_OPERATION_ENV,
+            diagnostics.operation,
+        )
+        .env(
+            sidecar_diagnostics::DIAGNOSTIC_ATTEMPT_ENV,
+            diagnostics.attempt.to_string(),
+        )
+        .env(
+            sidecar_diagnostics::NATIVE_VERSION_ENV,
+            &diagnostics.cave_version,
+        )
+        .env(
+            sidecar_diagnostics::NATIVE_PROTOCOL_VERSION_ENV,
+            "1",
+        );
+    if let Some(path) = diagnostics.diagnostics_file.as_deref() {
+        command.env(sidecar_diagnostics::NATIVE_DIAGNOSTICS_FILE_ENV, path);
+    }
 
     if cfg!(debug_assertions) {
         // Development uses the explicit COVEN_PIPER_BIN/PATH fallback from the
@@ -708,6 +809,7 @@ pub(super) fn start_sidecar_runtime(
     }
 
     let mut child = command.spawn().map_err(|error| {
+        diagnostics.record_io_error("sidecar-spawn", "spawn-failed", &error);
         SidecarStartError::failed(
             ReliabilityFailureClass::Permissions,
             format!("failed to spawn node sidecar: {error}"),
@@ -732,6 +834,7 @@ pub(super) fn start_sidecar_runtime(
     #[cfg(target_os = "windows")]
     let child = {
         if let Err(error) = process_job.assign_child(&child) {
+            diagnostics.record_io_error("sidecar-spawn", "process-ownership-failed", &error);
             let _ = child.kill();
             return Err(SidecarStartError::failed(
                 ReliabilityFailureClass::Permissions,
@@ -739,6 +842,7 @@ pub(super) fn start_sidecar_runtime(
             ));
         }
         if let Err(error) = launch_gate.release() {
+            diagnostics.record_io_error("sidecar-spawn", "launch-gate-release-failed", &error);
             let _ = process_job.terminate();
             let _ = child.kill();
             return Err(SidecarStartError::failed(
@@ -766,6 +870,20 @@ pub(super) fn start_sidecar_runtime(
         }
     }
 
+    diagnostics.record(
+        "sidecar-spawn",
+        "succeeded",
+        "process-owned",
+        None,
+        None,
+    );
+    diagnostics.record(
+        "readiness",
+        "started",
+        "authenticated-loopback",
+        None,
+        None,
+    );
     on_step(SidecarStartupStep::WaitingForService);
     let sidecar_start_timeout = sidecar_start_timeout();
     let child_exited = || {
@@ -824,6 +942,13 @@ pub(super) fn start_sidecar_runtime(
             ));
         }
     }
+    diagnostics.record(
+        "readiness",
+        "succeeded",
+        "authenticated-loopback",
+        None,
+        None,
+    );
 
     sidecar_reachability_ready(app, port, sidecar_pid);
 
@@ -886,6 +1011,8 @@ pub(super) fn spawn_sidecar_startup(
     app: tauri::AppHandle,
     control: Arc<SidecarStartupControl>,
     terminal_policy: NativeStartupTerminalPolicy,
+    operation: &'static str,
+    attempt: u32,
 ) -> Result<(), String> {
     control.begin()?;
     let started = Instant::now();
@@ -913,6 +1040,8 @@ pub(super) fn spawn_sidecar_startup(
             let cancel_control = Arc::clone(&thread_control);
             let result = start_sidecar_runtime(
                 &app,
+                operation,
+                attempt,
                 move |step| {
                     let status = match step {
                         SidecarStartupStep::PreparingRuntime => SidecarStartupStatus::preparing(),
@@ -1052,6 +1181,8 @@ pub(super) fn retry_sidecar_startup(
         app,
         Arc::clone(state.inner()),
         NativeStartupTerminalPolicy::RecordAtLifecycleTerminal,
+        "sidecar-manual-retry",
+        1,
     )
 }
 

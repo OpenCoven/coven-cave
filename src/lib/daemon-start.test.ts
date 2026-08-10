@@ -11,6 +11,11 @@ import {
   terminateDaemonLaunchTree,
 } from "./daemon-start.ts";
 import { waitForDaemonReadiness } from "./daemon-readiness.ts";
+import {
+  clearDaemonDiagnosticEventsForTests,
+  createDaemonDiagnosticContext,
+  listDaemonDiagnosticEvents,
+} from "./server/daemon-diagnostics.ts";
 
 const daemonStart = await readFile(new URL("./daemon-start.ts", import.meta.url), "utf8");
 const readinessSource = await readFile(new URL("./daemon-readiness.ts", import.meta.url), "utf8");
@@ -75,6 +80,57 @@ test("a foreground launcher is successful as soon as health becomes ready", asyn
     sleep: async (ms) => { now += ms; },
   });
   assert.deepEqual(result, { ready: true, attempts: 3, elapsedMs: 200, runnerExited: false });
+});
+
+test("daemon startup propagates one correlation into the CLI child and lifecycle events", async () => {
+  clearDaemonDiagnosticEventsForTests();
+  const diagnostics = createDaemonDiagnosticContext({
+    correlationId: "55555555-5555-4555-8555-555555555555",
+    generation: 4,
+  });
+  let spawnEnv: NodeJS.ProcessEnv | undefined;
+  const result = await startLocalDaemon({
+    restart: true,
+    diagnostics,
+    startTimeoutMs: 50,
+    readinessPollMs: 1,
+    probe: async () => ({ ok: true }),
+    spawnImpl: (_command, _args, options) => {
+      spawnEnv = options.env;
+      return fakeChild();
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(spawnEnv?.COVEN_CAVE_CORRELATION_ID, diagnostics.correlationId);
+  assert.equal(spawnEnv?.COVEN_CAVE_DIAGNOSTIC_GENERATION, "4");
+  assert.equal(spawnEnv?.COVEN_CAVE_DIAGNOSTIC_OPERATION, "daemon-start");
+  const events = listDaemonDiagnosticEvents();
+  assert.deepEqual(
+    events.map(({ correlationId, generation, operation, phase, outcome }) => ({
+      correlationId,
+      generation,
+      operation,
+      phase,
+      outcome,
+    })),
+    [
+      {
+        correlationId: "55555555-5555-4555-8555-555555555555",
+        generation: 4,
+        operation: "daemon-start",
+        phase: "startup",
+        outcome: "started",
+      },
+      {
+        correlationId: "55555555-5555-4555-8555-555555555555",
+        generation: 4,
+        operation: "daemon-start",
+        phase: "startup",
+        outcome: "succeeded",
+      },
+    ],
+  );
 });
 
 test("the deadline performs one final health probe before reporting timeout", async () => {

@@ -415,6 +415,8 @@ pub fn run() {
                         app.handle().clone(),
                         startup_control,
                         NativeStartupTerminalPolicy::RecordAtLifecycleTerminal,
+                        "sidecar-startup",
+                        1,
                     )?;
                     spawn_sidecar_supervisor(app.handle().clone());
                     None
@@ -422,7 +424,13 @@ pub fn run() {
                 #[cfg(not(target_os = "windows"))]
                 {
                     let startup_started = std::time::Instant::now();
-                    let sidecar_url = match start_sidecar_runtime(app.handle(), |_| {}, || false) {
+                    let sidecar_url = match start_sidecar_runtime(
+                        app.handle(),
+                        "sidecar-startup",
+                        1,
+                        |_| {},
+                        || false,
+                    ) {
                         Ok(url) => {
                             pending_native_startup_terminal = Some((
                                 startup_started,

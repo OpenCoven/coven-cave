@@ -1,6 +1,11 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import {
+  clearDaemonDiagnosticEventsForTests,
+  createDaemonDiagnosticContext,
+  listDaemonDiagnosticEvents,
+} from "./server/daemon-diagnostics.ts";
 
 const {
   normalizeDaemonError,
@@ -245,9 +250,11 @@ const {
 // Hub requests authenticate with the extracted mobile access token.
 {
   let authorization = "";
+  let correlationId = "";
   let requestedUrl = "";
   const server = createServer((req, res) => {
     authorization = req.headers.authorization ?? "";
+    correlationId = String(req.headers["x-coven-correlation-id"] ?? "");
     requestedUrl = req.url ?? "";
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ ok: true }));
@@ -255,6 +262,11 @@ const {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   assert.ok(address && typeof address === "object");
+  clearDaemonDiagnosticEventsForTests();
+  const diagnostics = createDaemonDiagnosticContext({
+    correlationId: "22222222-2222-4222-8222-222222222222",
+    generation: 9,
+  });
 
   try {
     const res = await callDaemonTarget(
@@ -264,12 +276,36 @@ const {
         url: `http://127.0.0.1:${address.port}`,
         accessToken: "v1.signed",
       },
-      { path: "/api/v1/health", timeoutMs: 500 },
+      {
+        path: "/api/v1/health",
+        timeoutMs: 500,
+        diagnostics,
+        diagnosticOperation: "daemon-probe-health",
+      },
     );
 
     assert.equal(res.ok, true);
     assert.equal(authorization, "Bearer v1.signed");
+    assert.equal(correlationId, diagnostics.correlationId);
     assert.equal(requestedUrl, "/api/v1/health");
+    assert.deepEqual(
+      listDaemonDiagnosticEvents().map(
+        ({ correlationId: eventCorrelationId, generation, operation, endpoint, outcome }) => ({
+          correlationId: eventCorrelationId,
+          generation,
+          operation,
+          endpoint,
+          outcome,
+        }),
+      ),
+      [{
+        correlationId: diagnostics.correlationId,
+        generation: diagnostics.generation,
+        operation: "daemon-probe-health",
+        endpoint: { kind: "hub-http", classification: "online", status: 200 },
+        outcome: "succeeded",
+      }],
+    );
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -384,6 +420,11 @@ const {
 // flake: a briefly-busy daemon shouldn't surface a hard error for a read).
 {
   let attempts = 0;
+  clearDaemonDiagnosticEventsForTests();
+  const diagnostics = createDaemonDiagnosticContext({
+    correlationId: "33333333-3333-4333-8333-333333333333",
+    generation: 11,
+  });
   const server = createServer((req, res) => {
     attempts += 1;
     if (attempts === 1) {
@@ -398,10 +439,43 @@ const {
   try {
     const res = await callDaemonTarget(
       { mode: "hub", label: "Server hub", url: `http://127.0.0.1:${port}` },
-      { path: "/api/v1/familiars", timeoutMs: 500 },
+      {
+        path: "/api/v1/familiars",
+        timeoutMs: 500,
+        diagnostics,
+        diagnosticOperation: "daemon-familiars",
+      },
     );
     assert.equal(res.ok, true, "GET should succeed via the retry");
     assert.equal(attempts, 2, "exactly one retry");
+    assert.deepEqual(
+      listDaemonDiagnosticEvents().map(
+        ({ correlationId, generation, operation, attempt, outcome }) => ({
+          correlationId,
+          generation,
+          operation,
+          attempt,
+          outcome,
+        }),
+      ),
+      [
+        {
+          correlationId: "33333333-3333-4333-8333-333333333333",
+          generation: 11,
+          operation: "daemon-familiars",
+          attempt: 1,
+          outcome: "failed",
+        },
+        {
+          correlationId: "33333333-3333-4333-8333-333333333333",
+          generation: 11,
+          operation: "daemon-familiars",
+          attempt: 2,
+          outcome: "succeeded",
+        },
+      ],
+      "request retries preserve correlation and increment attempt",
+    );
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -428,6 +502,38 @@ const {
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+}
+
+// Transport failures retain only the stable OS code and sanitized message.
+{
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  await new Promise((resolve) => server.close(resolve));
+  clearDaemonDiagnosticEventsForTests();
+  const diagnostics = createDaemonDiagnosticContext({
+    correlationId: "44444444-4444-4444-8444-444444444444",
+    generation: 12,
+  });
+  const res = await callDaemonTarget(
+    { mode: "hub", label: "Server hub", url: `http://127.0.0.1:${port}` },
+    {
+      path: "/api/v1/health",
+      timeoutMs: 100,
+      retryTransportFailure: false,
+      diagnostics,
+      diagnosticOperation: "daemon-health",
+    },
+  );
+  assert.equal(res.ok, false);
+  const [event] = listDaemonDiagnosticEvents();
+  assert.equal(event.error?.classification, "transport-error");
+  assert.equal(event.error?.code, "ECONNREFUSED");
+  assert.doesNotMatch(
+    event.error?.message ?? "",
+    /Users|127\.0\.0\.1|coven_access_token|token=/,
+    "OS diagnostics never retain paths, addresses, or credentials",
+  );
 }
 
 // Opt-in response caps accept a body exactly at the boundary, reject the next
