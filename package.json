@@ -68,6 +68,7 @@
     "beads:worktrees": "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave",
     "beads:worktrees:json": "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave --json",
     "beads:worktrees:create": "node --experimental-strip-types scripts/worktree-lifecycle-create.ts",
+    "beads:worktrees:clear-record": "node --experimental-strip-types scripts/worktree-lifecycle-clear-record.ts",
     "beads:worktrees:apply": "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave --apply",
     "beads:patrol": "pnpm beads:prs:patrol && pnpm beads:worktrees",
     "beads:patrol:apply": "pnpm beads:prs:patrol:apply && pnpm beads:worktrees",
