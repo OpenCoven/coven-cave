@@ -2117,7 +2117,7 @@ textarea.coven-inspector__input {
 }
 
 .coven-history__status[data-tone="danger"] {
-  color: var(--color-danger-soft);
+  color: var(--danger-text, var(--color-danger-soft));
 }
 
 .coven-history__status[data-tone="warning"] {
