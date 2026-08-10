@@ -68,6 +68,7 @@ export const ICON_NAMES = [
   "ph:hand",
   "ph:heartbeat",
   "ph:kanban",
+  "ph:list-checks",
   "ph:magic-wand-fill",
   "ph:magnifying-glass",
   "ph:magnifying-glass-bold",
