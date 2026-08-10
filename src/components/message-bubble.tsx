@@ -872,9 +872,6 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [], className }
     return (
       <span className={`whitespace-pre-wrap break-words text-[length:var(--text-md)] leading-relaxed${className ? ` ${className}` : ""}`}>
         {text}
-        {pending && text ? (
-          <span aria-hidden className="ml-1 inline-block animate-pulse text-[var(--text-secondary)]">▌</span>
-        ) : null}
       </span>
     );
   }
@@ -888,11 +885,11 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [], className }
         // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: html }}
       />
-      {/* Streaming cursor as a SIBLING of the markdown container — never
-          injected into the sanitized HTML string. */}
-      {pending ? (
-        <span aria-hidden="true" className="ml-1 inline-block animate-pulse text-[var(--text-secondary)]">▌</span>
-      ) : null}
+      {/* No streaming cursor here, and it cannot simply be re-added as a
+          sibling: this container is a block-level <div>, so the span wrapped
+          onto its own row as a detached bar instead of trailing the text
+          (cave-1yslk). Placing it correctly means injecting into the
+          sanitized HTML, which the sibling position existed to avoid. */}
       <InlineCitationPreviews
         citations={citations}
         containerRef={containerRef}
@@ -984,8 +981,7 @@ export type MessageBubbleProps = {
    *  at their chronological position. Assistant role only; when present they
    *  replace the single MarkdownContent render. `content` must still carry
    *  the FULL text so the Copy/Expand actions are unchanged. Only the LAST
-   *  text span streams (progressive markdown + ▌ cursor); earlier spans
-   *  render settled. */
+   *  text span streams (progressive markdown); earlier spans render settled. */
   segments?: MessageBubbleSegment[];
   /** The turn's tool events, forwarded to the reader's "How this was made"
    *  footer (batches, skills, error count). Assistant role only; absent turns
@@ -1120,8 +1116,7 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
   // Assistant
   // CHAT-D4-01: with segments, only the LAST text span is the live streaming
   // edge — earlier spans are settled slices that never change retroactively,
-  // so they take MarkdownContent's settled path (cached render, no throttle,
-  // no cursor) and the ▌ cursor shows on at most one span.
+  // so they take MarkdownContent's settled path (cached render, no throttle).
   const lastTextIdx = segments
     ? segments.reduce((acc, seg, i) => (seg.kind === "text" ? i : acc), -1)
     : -1;
