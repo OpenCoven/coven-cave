@@ -349,4 +349,39 @@ assert.match(source, /<ErrorState\b/, "familiar and session failures render the 
 assert.match(source, /<EmptyState\b/, "the no-active-familiar chooser uses the shared EmptyState");
 assert.match(source, /<Button\b/, "retry and chooser actions use the shared Button");
 
+// A stale applied-session-scope must never block indefinitely once the
+// caller's OWN fetch for that scope has actually failed (cave-rl980 Task 4
+// final review): the loading gate's scope clause only holds while there is
+// still something to wait for.
+assert.match(
+  source,
+  /activeFamiliar !== null && !sessionsScopeCurrent && !hasResolvedRouter && !sessionsError/,
+  "an unconfirmed scope stops blocking rendering the instant the target familiar's own sessions fetch has failed, falling through to the explicit sessions ErrorState instead of an indefinite spinner",
+);
+
+// Persistent, closed roots must be truthfully out of the tab order and the
+// accessibility tree while staying mounted (cave-rl980 Task 4 review) — see
+// RightChatPanelFrame's own doc for why a merely visually-collapsed root is
+// not enough on its own.
+assert.match(
+  source,
+  /function RightChatPanelFrame\(\{\s*open,\s*onClose,/,
+  "the shared frame takes an explicit open prop",
+);
+assert.match(
+  source,
+  /<aside className="right-chat" aria-label="Chat panel" aria-hidden=\{!open\} inert=\{!open\}>/,
+  "the shared frame applies truthful aria-hidden/inert to its own root",
+);
+assert.equal(
+  (source.match(/<RightChatPanelFrame onClose=\{props\.onClose\} open=\{open\}>/g) ?? []).length,
+  4,
+  "every one of the four shared-frame call sites forwards the panel's own open prop",
+);
+assert.match(
+  source,
+  /aria-hidden=\{!open\}\s*\n\s*inert=\{!open\}\s*\n\s*data-session-id=\{selectedSessionId \?\? "new"\}/,
+  "the fully resolved aside applies the same truthful aria-hidden/inert pairing",
+);
+
 console.log("right-chat-panel.test.ts OK");

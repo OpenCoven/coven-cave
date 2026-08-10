@@ -210,11 +210,30 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   }, [onActiveSessionChange]);
   const activeSessionId = view.kind === "chat" ? view.sessionId : null;
   const lastReportedSessionRef = useRef<string | null>(activeSessionId);
+  // A null activeSessionId is ambiguous on its own: the list view and every
+  // distinct blank-compose attempt (list -> new chat, a familiar switch's
+  // fresh compose, a discarded session's fresh compose, ...) all report the
+  // SAME null, so a consumer that retains a prior selection while awaiting a
+  // removal's roster confirmation (RightChatPanel's pendingRemovalRef, see its
+  // doc) would never learn a brand-new compose has already superseded it —
+  // the plain session id value never changes. composeInstance is the
+  // existing, purpose-built nonce for exactly "a new blank-compose attempt"
+  // (see its declaration above) and is already bumped at every real
+  // compose-entry call site, so folding it into the reported identity — only
+  // while activeSessionId stays null; a promotion is deliberately excluded,
+  // mirroring advanceComposeInstance's own contract — reports a fresh
+  // transition even though the plain session id value never changes
+  // (cave-rl980 Task 4 review).
+  const lastReportedComposeInstanceRef = useRef<number>(composeInstance);
   useEffect(() => {
-    if (lastReportedSessionRef.current === activeSessionId) return;
+    const changed =
+      lastReportedSessionRef.current !== activeSessionId ||
+      (activeSessionId === null && lastReportedComposeInstanceRef.current !== composeInstance);
+    if (!changed) return;
     lastReportedSessionRef.current = activeSessionId;
+    lastReportedComposeInstanceRef.current = composeInstance;
     onActiveSessionChangeRef.current?.(activeSessionId);
-  }, [activeSessionId]);
+  }, [activeSessionId, composeInstance]);
   // ── Multi-pane split (drag a convo from the thread rail onto the chat) ────
   // The primary chat is one pane; dropped conversations open beside/above/
   // below it. Pure layout rules live in @/lib/chat-split; panes for deleted
@@ -842,16 +861,20 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       onSessionRemoved={onSessionRemoved}
       // archiveChat/deleteChat/setChatArchived are async; ChatView passes
       // back the exact session it just removed. Only actually navigate to
-      // the list when the router is STILL showing that session — reading
-      // viewRef (always current, see its declaration above) rather than
-      // `view` directly means this check is correct even though `onBack`
-      // itself is a fresh closure every render: by the time a slow request
-      // settles, the user may have already switched to a different thread
-      // or familiar, and that view must never be clobbered by a now-stale
-      // completion (cave-rl980 Task 4 final review).
+      // the list when the router is STILL showing that session — the
+      // equality check runs INSIDE the functional setView updater, not
+      // against viewRef.current beforehand, because a ref assigned during
+      // render only advances once per commit: a same-tick switch (e.g.
+      // RightChatPanel's own openSession(T) call) and this stale completion
+      // can both fire within the same batch with no render in between, so a
+      // pre-check would still read the PRE-batch session and wrongly permit
+      // the transition, clobbering T back to the list once React folds both
+      // queued updates together. Threading the check through the updater's
+      // own `prev` instead means it always compares against whatever the
+      // OTHER queued update in this exact batch actually leaves behind,
+      // regardless of call order (cave-rl980 Task 4 final review).
       onBack={(removedSessionId) => {
-        if (viewRef.current.kind !== "chat" || viewRef.current.sessionId !== removedSessionId) return;
-        setView({ kind: "list" });
+        setView((prev) => (prev.kind === "chat" && prev.sessionId === removedSessionId ? { kind: "list" } : prev));
       }}
       onSessionStarted={(request) => {
         // Match both the originating session and compose lineage. The functional
@@ -888,17 +911,28 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         setPendingVoice({ nonce: Date.now(), sessionId: sid });
       }}
       onVoiceSessionDiscarded={(removedSessionId) => {
-        // Same async-completion guard as onBack above: the discard fetch can
-        // settle after the user has already switched threads or familiars,
-        // and a stale completion must never yank a newer view back to a
-        // blank compose (cave-rl980 Task 4 final review).
-        if (viewRef.current.kind !== "chat" || viewRef.current.sessionId !== removedSessionId) return;
-        // The auto-created session was empty and got discarded while the
-        // view was still parked on it — return to a fresh compose state for
-        // the same familiar/project (same reset shape as the promotion
-        // above, but back to sessionId: null) instead of leaving the user
-        // typing into a session that no longer exists.
-        advanceComposeInstance();
+        // The auto-created session was empty and got discarded — return to a
+        // fresh compose state for the same familiar/project (same reset shape
+        // as the promotion above, but back to sessionId: null) instead of
+        // leaving the user typing into a session that no longer exists. Same
+        // atomic-equality-inside-the-updater guard as onBack above (a same-
+        // tick switch and this stale completion must never both land): the
+        // check runs against the updater's own `prev`, never a viewRef
+        // snapshot from before the batch, so it always yields to whatever the
+        // OTHER queued update in this exact batch actually leaves behind
+        // (cave-rl980 Task 4 final review).
+        //
+        // The compose-instance bump below is a narrower, best-effort signal,
+        // not the source of truth for whether the discard itself applies: it
+        // only needs to revoke display-run ownership for a blank compose
+        // ChatView is ACTUALLY showing right now (see composeInstance's own
+        // doc above), so gating it on a viewRef read here — rather than
+        // threading it through the same functional updater — stays
+        // deliberately conservative without risking a spurious remount of
+        // whatever the user has already switched to.
+        if (viewRef.current.kind === "chat" && viewRef.current.sessionId === removedSessionId) {
+          advanceComposeInstance();
+        }
         setView((prev) =>
           prev.kind === "chat" && prev.sessionId === removedSessionId
             ? { kind: "chat", sessionId: null, projectRoot: prev.projectRoot, familiarId: prev.familiarId }

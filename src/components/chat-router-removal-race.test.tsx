@@ -410,4 +410,249 @@ describe("ChatRouter onVoiceSessionDiscarded is conditional the same way (cave-r
   });
 });
 
+describe("stale-removal guards stay atomic even when a switch and the stale completion land in the SAME batch (fix 3, cave-rl980 Task 4 final review)", () => {
+  // The tests above prove the SEQUENTIAL ordering (switch fully commits,
+  // THEN the stale completion arrives) — viewRef.current is already correct
+  // by then, since a render landed in between. These prove the harder,
+  // previously-unguarded case: the switch and the stale completion are BOTH
+  // invoked inside the SAME act(), with no render/commit landing between
+  // them. A ref assigned during render (viewRef) only advances once per
+  // commit, so a pre-check against it would still read the PRE-batch session
+  // here — the fix threads the equality check through setView's own
+  // functional updater instead, which React resolves in enqueue order
+  // regardless of how many updates land in one batch.
+  test("thread switch: opening T and a stale onBack(S) fired in the SAME act/commit still leaves T active", async () => {
+    const cody = familiar("cody", "Cody");
+    const sessionS = sessionRow("cody-s", "cody", "2026-01-01T00:00:00.000Z");
+    const sessionT = sessionRow("cody-t", "cody", "2026-01-05T00:00:00.000Z");
+    const ref = { current: null as ChatRouterHandle | null };
+
+    await act(async () => {
+      renderer = create(
+        <ChatRouter
+          ref={ref as never}
+          familiar={cody}
+          familiars={[cody]}
+          sessions={[sessionS, sessionT]}
+          onSessionsDeleted={vi.fn()}
+          compact
+          hideRail
+          syncUrlHash={false}
+          enableSplitPanes={false}
+        />,
+      );
+    });
+
+    await act(async () => {
+      ref.current!.openSession("cody-s");
+    });
+    expect(ref.current!.currentSessionId()).toBe("cody-s");
+
+    const staleOnBack = chatView.latestProps!.onBack as (sessionId: string | null) => void;
+
+    // Both calls happen inside the SAME act — no intervening render.
+    await act(async () => {
+      ref.current!.openSession("cody-t");
+      staleOnBack("cody-s");
+    });
+
+    expect(ref.current!.currentSessionId()).toBe("cody-t");
+    expect(chatView.latestProps!.sessionId).toBe("cody-t");
+  });
+
+  test("familiar switch: opening a different familiar's T and a stale onBack(S) fired in the SAME act/commit still leaves T active", async () => {
+    const cody = familiar("cody", "Cody");
+    const nova = familiar("nova", "Nova");
+    const sessionS = sessionRow("cody-s", "cody", "2026-01-01T00:00:00.000Z");
+    const sessionT = sessionRow("nova-t", "nova", "2026-01-01T00:00:00.000Z");
+    const ref = { current: null as ChatRouterHandle | null };
+
+    await act(async () => {
+      renderer = create(
+        <ChatRouter
+          ref={ref as never}
+          familiar={cody}
+          familiars={[cody, nova]}
+          sessions={[sessionS, sessionT]}
+          onSessionsDeleted={vi.fn()}
+          compact
+          hideRail
+          syncUrlHash={false}
+          enableSplitPanes={false}
+        />,
+      );
+    });
+
+    await act(async () => {
+      ref.current!.openSession("cody-s");
+    });
+    expect(ref.current!.currentSessionId()).toBe("cody-s");
+
+    const staleOnBack = chatView.latestProps!.onBack as (sessionId: string | null) => void;
+
+    await act(async () => {
+      ref.current!.openSession("nova-t");
+      staleOnBack("cody-s");
+    });
+
+    expect(ref.current!.currentSessionId()).toBe("nova-t");
+    expect(chatView.latestProps!.sessionId).toBe("nova-t");
+  });
+
+  test("onVoiceSessionDiscarded: opening T and a stale discard for S fired in the SAME act/commit still leaves T active", async () => {
+    const cody = familiar("cody", "Cody");
+    const sessionS = sessionRow("cody-s", "cody", "2026-01-01T00:00:00.000Z");
+    const sessionT = sessionRow("cody-t", "cody", "2026-01-05T00:00:00.000Z");
+    const ref = { current: null as ChatRouterHandle | null };
+
+    await act(async () => {
+      renderer = create(
+        <ChatRouter
+          ref={ref as never}
+          familiar={cody}
+          familiars={[cody]}
+          sessions={[sessionS, sessionT]}
+          onSessionsDeleted={vi.fn()}
+          compact
+          hideRail
+          syncUrlHash={false}
+          enableSplitPanes={false}
+        />,
+      );
+    });
+
+    await act(async () => {
+      ref.current!.openSession("cody-s");
+    });
+    expect(ref.current!.currentSessionId()).toBe("cody-s");
+
+    const staleOnVoiceSessionDiscarded =
+      chatView.latestProps!.onVoiceSessionDiscarded as (sessionId: string) => void;
+
+    await act(async () => {
+      ref.current!.openSession("cody-t");
+      staleOnVoiceSessionDiscarded("cody-s");
+    });
+
+    expect(ref.current!.currentSessionId()).toBe("cody-t");
+    expect(chatView.latestProps!.sessionId).toBe("cody-t");
+  });
+});
+
+describe("ChatRouter reports every distinct compose attempt even when sessionId stays null throughout (fix 2, cave-rl980 Task 4 review)", () => {
+  // RightChatPanel retains a stale selection while awaiting a removal's
+  // roster confirmation (pendingRemovalRef), consumed by "the very next
+  // active-session report of any kind" — but a null->null transition (list ->
+  // a fresh compose, or one blank compose replaced by another) never changed
+  // the plain session-id value on its own, so without this fix the consumer
+  // never learns a brand-new compose has already superseded what it's
+  // waiting on. composeInstance is the router's own existing, purpose-built
+  // nonce for exactly "a new blank-compose attempt" and is already bumped at
+  // every real compose-entry call site (imperative newChat, ChatList's
+  // onNewChat, the familiar-switch effect) — folding it into the reported
+  // identity while the session id stays null is what closes the gap.
+  test("a second imperative newChat() while already on a blank compose (null -> null) still fires onActiveSessionChange again", async () => {
+    const cody = familiar("cody", "Cody");
+    const sessionS = sessionRow("cody-s", "cody", "2026-01-01T00:00:00.000Z");
+    const ref = { current: null as ChatRouterHandle | null };
+    const onActiveSessionChange = vi.fn();
+
+    await act(async () => {
+      renderer = create(
+        <ChatRouter
+          ref={ref as never}
+          familiar={cody}
+          familiars={[cody]}
+          sessions={[sessionS]}
+          onSessionsDeleted={vi.fn()}
+          onActiveSessionChange={onActiveSessionChange}
+          compact
+          hideRail
+          syncUrlHash={false}
+          enableSplitPanes={false}
+        />,
+      );
+    });
+
+    await act(async () => {
+      ref.current!.openSession("cody-s");
+    });
+    expect(onActiveSessionChange).toHaveBeenLastCalledWith("cody-s");
+    const callsAfterOpen = onActiveSessionChange.mock.calls.length;
+
+    // First "new chat": null after a real session id — always reported even
+    // without this fix, since the plain value itself changes. A baseline,
+    // not the behavior under test.
+    await act(async () => {
+      ref.current!.newChat(undefined, undefined, "cody");
+    });
+    expect(onActiveSessionChange).toHaveBeenLastCalledWith(null);
+    const callsAfterFirstNewChat = onActiveSessionChange.mock.calls.length;
+    expect(callsAfterFirstNewChat).toBe(callsAfterOpen + 1);
+
+    // Second "new chat" while ALREADY on a blank compose: sessionId is null
+    // both before and after. This IS a distinct compose attempt the fix must
+    // still surface.
+    await act(async () => {
+      ref.current!.newChat(undefined, undefined, "cody");
+    });
+    expect(onActiveSessionChange.mock.calls.length).toBe(callsAfterFirstNewChat + 1);
+    expect(onActiveSessionChange).toHaveBeenLastCalledWith(null);
+  });
+
+  test("a promotion (null -> a real session id) still reports exactly once per actual value change — promotions do not bump composeInstance, so this fix never doubles that report", async () => {
+    const cody = familiar("cody", "Cody");
+    const sessionS = sessionRow("cody-s", "cody", "2026-01-01T00:00:00.000Z");
+    const ref = { current: null as ChatRouterHandle | null };
+    const onActiveSessionChange = vi.fn();
+
+    await act(async () => {
+      renderer = create(
+        <ChatRouter
+          ref={ref as never}
+          familiar={cody}
+          familiars={[cody]}
+          sessions={[sessionS]}
+          onSessionsDeleted={vi.fn()}
+          onActiveSessionChange={onActiveSessionChange}
+          compact
+          hideRail
+          syncUrlHash={false}
+          enableSplitPanes={false}
+        />,
+      );
+    });
+
+    // A real, unambiguous baseline session — sidesteps the chat-first boot
+    // effect's own silent (unreported, "mount never notifies") auto-compose
+    // so the two transitions under test below are unambiguous.
+    await act(async () => {
+      ref.current!.openSession("cody-s");
+    });
+    expect(onActiveSessionChange).toHaveBeenLastCalledWith("cody-s");
+
+    await act(async () => {
+      ref.current!.newChat(undefined, undefined, "cody");
+    });
+    expect(onActiveSessionChange).toHaveBeenLastCalledWith(null);
+    const callsAfterNewChat = onActiveSessionChange.mock.calls.length;
+
+    // shouldRouterPromoteSession requires the promotion request's
+    // composeInstance to match the router's current one — read it straight
+    // off the mocked ChatView's own latest props (the real prop ChatRouter
+    // passes it) so this stays correct regardless of how many composes
+    // preceded it.
+    const currentComposeInstance = (chatView.latestProps as { composeInstance?: number }).composeInstance;
+    await act(async () => {
+      (chatView.latestProps!.onSessionStarted as (request: unknown) => void)({
+        newSessionId: "cody-promoted",
+        expectedSessionId: null,
+        composeInstance: currentComposeInstance,
+      });
+    });
+    expect(onActiveSessionChange).toHaveBeenLastCalledWith("cody-promoted");
+    expect(onActiveSessionChange.mock.calls.length).toBe(callsAfterNewChat + 1); // exactly one more report
+  });
+});
+
 console.log("chat-router-removal-race.test.tsx wired");
