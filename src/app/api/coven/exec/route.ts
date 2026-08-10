@@ -74,6 +74,7 @@ export async function POST(req: Request) {
       body: Record<string, unknown>,
       status: number,
       outcome: "succeeded" | "failed" | "timed-out",
+      classification: string,
       error?: unknown,
     ) => {
       if (settled) return;
@@ -87,7 +88,7 @@ export async function POST(req: Request) {
         process: { pid: child.pid },
         endpoint: {
           kind: "cli",
-          classification: outcome === "succeeded" ? "completed" : outcome,
+          classification,
           status,
         },
         error: error ? diagnosticError(error, outcome) : null,
@@ -102,6 +103,7 @@ export async function POST(req: Request) {
         { ok: false, error: "timeout", stdout: stripAnsi(out), stderr: stripAnsi(err) },
         504,
         "timed-out",
+        "cli-timeout",
         "timeout",
       );
     }, 6000);
@@ -113,6 +115,7 @@ export async function POST(req: Request) {
           : { ok: false, error: e.message },
         500,
         "failed",
+        "cli-spawn-error",
         e,
       );
     });
@@ -127,6 +130,7 @@ export async function POST(req: Request) {
         },
         200,
         code === 0 ? "succeeded" : "failed",
+        code === 0 ? "completed" : "cli-error",
         code === 0 ? undefined : `CLI exited with status ${code ?? "unknown"}`,
       );
     });

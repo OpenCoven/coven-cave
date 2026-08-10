@@ -178,7 +178,9 @@ fn append_bounded_event(path: &Path, event: &Value) -> Result<(), std::io::Error
             .unwrap_or(target);
         bytes.drain(..start);
     }
-    fs::write(path, bytes)
+    let tmp_path = path.with_extension("jsonl.tmp");
+    fs::write(&tmp_path, &bytes)?;
+    fs::rename(&tmp_path, path)
 }
 
 #[cfg(test)]

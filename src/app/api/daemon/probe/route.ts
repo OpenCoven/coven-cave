@@ -42,7 +42,7 @@ export async function POST(req: Request) {
     : "";
   if (!url) return respond({ ok: false, error: "invalid hub URL" }, 400);
   try {
-    return respond(await probeDaemonUrl(url, undefined, Date.now, diagnostics));
+    return respond(await probeDaemonUrl(url, { diagnostics }));
   } catch {
     return respond({ ok: false, error: "invalid hub URL" }, 400);
   }

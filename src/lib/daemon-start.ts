@@ -245,6 +245,8 @@ export function parseDaemonLifecycleInspection(value: unknown): DaemonLifecycleI
 
 async function inspectDaemonLifecycle(
   diagnostics?: DaemonDiagnosticContext,
+  operation?: string,
+  attempt?: number,
 ): Promise<DaemonLifecycleInspection> {
   try {
     const { command, fixedArgs } = covenLaunchCommand();
@@ -258,6 +260,8 @@ async function inspectDaemonLifecycle(
           ...(diagnostics ? {
             COVEN_CAVE_CORRELATION_ID: diagnostics.correlationId,
             COVEN_CAVE_DIAGNOSTIC_GENERATION: String(diagnostics.generation),
+            ...(operation != null ? { COVEN_CAVE_DIAGNOSTIC_OPERATION: operation } : {}),
+            ...(attempt != null ? { COVEN_CAVE_DIAGNOSTIC_ATTEMPT: String(attempt) } : {}),
           } : {}),
         },
         timeout: 2_500,
@@ -493,7 +497,7 @@ async function runLocalDaemonStartCore({
   }
 
   if (automatic && !restart) {
-    const lifecycle = await (inspectLifecycle ?? (() => inspectDaemonLifecycle(diagnostics)))();
+    const lifecycle = await (inspectLifecycle ?? (() => inspectDaemonLifecycle(diagnostics, automatic ? "daemon-recovery" : "daemon-start", 1)))();
     if (lifecycle.status === "running") {
       return { ok: true, alreadyRunning: true, readinessAttempts: 2, elapsedMs: Date.now() - startedAt, launchMode: "none" };
     }
