@@ -128,6 +128,7 @@ type StructuredMetadataRecord = {
   location: StructuredMetadataLocation;
   branch: string;
   path: string | null;
+  rawRecord: Record<string, unknown> | null;
   metadata: WorktreeLifecycleMetadata | null;
   errors: string[];
 };
@@ -138,6 +139,7 @@ export type OrphanedWorktreeMetadataRecord = {
   location: StructuredMetadataLocation;
   branch: string;
   path: string;
+  rawRecord: Record<string, unknown>;
   record: {
     branch: string;
     path: string;
@@ -299,7 +301,7 @@ const UNSAFE_GIT_ENVIRONMENT = new Set([
   "GIT_CONFIG_COUNT",
 ]);
 
-function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
+export function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
     const canonicalKey = key.toUpperCase();
@@ -1575,11 +1577,13 @@ function parseStructuredRecord(
       location,
       branch: "",
       path: null,
+      rawRecord: null,
       metadata: null,
       errors: [`${prefix}: record must be an object`],
     };
   }
   const worktree = value;
+  const rawRecord = structuredClone(worktree) as Record<string, unknown>;
   const branch = typeof worktree.branch === "string" ? worktree.branch : "";
   const metadataPath =
     typeof worktree.path === "string"
@@ -1640,11 +1644,21 @@ function parseStructuredRecord(
   const exception = parseException(worktree.exception, exceptionErrors);
   for (const error of exceptionErrors) metadataErrors(error);
 
-  if (errors.length > 0) return { location, branch, path: metadataPath, metadata: null, errors };
+  if (errors.length > 0) {
+    return {
+      location,
+      branch,
+      path: metadataPath,
+      rawRecord,
+      metadata: null,
+      errors,
+    };
+  }
   return {
     location,
     branch,
     path: metadataPath,
+    rawRecord,
     metadata: {
       beadId: taskId.toLowerCase(),
       owner: worktree.owner as string,
@@ -2447,7 +2461,12 @@ function collectOrphanedMetadata(
       const hasLifecycleUnit =
         localBranches.has(record.branch) ||
         (normalizedRecordPath !== null && registeredPaths.has(normalizedRecordPath));
-      if (record.errors.length > 0 || record.metadata === null || record.path === null) {
+      if (
+        record.errors.length > 0 ||
+        record.metadata === null ||
+        record.path === null ||
+        record.rawRecord === null
+      ) {
         if (!hasLifecycleUnit) errors.push(...record.errors);
         continue;
       }
@@ -2472,6 +2491,7 @@ function collectOrphanedMetadata(
         location: record.location,
         branch: record.branch,
         path: record.path,
+        rawRecord: record.rawRecord,
         record: {
           branch: record.branch,
           path: record.path,

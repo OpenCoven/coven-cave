@@ -13,7 +13,11 @@ import {
 import { devNull } from "node:os";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { maintenanceGateRoot } from "./maintenance-gate.mjs";
+import {
+  acquireMaintenanceGate,
+  maintenanceGateRoot,
+  releaseMaintenanceGate,
+} from "./maintenance-gate.mjs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
@@ -95,13 +99,15 @@ const orphanRecord = {
 };
 
 function repairCandidate(overrides = {}) {
+  const record = overrides.record ?? orphanRecord;
   return {
     beadId: "cave-orphan",
     beadStatus: "open",
     location: "primary",
     branch: orphanRecord.branch,
     path: orphanRecord.path,
-    record: orphanRecord,
+    record,
+    rawRecord: overrides.rawRecord ?? record,
     repairable: true,
     reasons: [],
     ...overrides,
@@ -116,6 +122,7 @@ function repairOperations({
   registered = { ok: true, present: false },
   filesystem = { ok: true, present: false },
   persist = { ok: true },
+  persistMutation = persist.ok ? "intended" : "none",
   verificationMetadata,
 } = {}) {
   let storedCoven = coven;
@@ -165,9 +172,13 @@ function repairOperations({
       },
       persistCoven(beadId, nextCoven) {
         calls.push(`persist:${beadId}`);
-        if (persist.ok) storedCoven = nextCoven;
+        if (persistMutation === "intended") storedCoven = nextCoven;
+        else if (persistMutation !== "none") storedCoven = persistMutation;
         return persist;
       },
+    },
+    get storedCoven() {
+      return storedCoven;
     },
   };
 }
@@ -288,6 +299,7 @@ try {
     });
     assert.deepEqual(report.repaired.map((item) => item.beadId), ["cave-orphan"]);
     assert.deepEqual(report.blocked, []);
+    assert.deepEqual(report.partial, []);
     assert.deepEqual(report.pending, []);
     assert.deepEqual(fixture.calls, [
       "gate",
@@ -300,6 +312,99 @@ try {
       "gate",
       "read:cave-orphan",
     ]);
+  }
+
+  {
+    const primary = { ...orphanRecord, purpose: "Primary" };
+    const firstAdditional = {
+      ...orphanRecord,
+      branch: "fix/cave-first-additional",
+      path: "/repo/.worktrees/cave-first-additional",
+      purpose: "First additional",
+    };
+    const secondAdditional = {
+      ...orphanRecord,
+      branch: "fix/cave-second-additional",
+      path: "/repo/.worktrees/cave-second-additional",
+      purpose: "Second additional",
+    };
+    const fixture = repairOperations({
+      coven: {
+        sibling: "preserved",
+        worktree: primary,
+        worktrees: [firstAdditional, secondAdditional],
+      },
+    });
+    const candidates = [
+      repairCandidate({ record: primary }),
+      repairCandidate({
+        location: "additional:0",
+        branch: firstAdditional.branch,
+        path: firstAdditional.path,
+        record: firstAdditional,
+      }),
+      repairCandidate({
+        location: "additional:1",
+        branch: secondAdditional.branch,
+        path: secondAdditional.path,
+        record: secondAdditional,
+      }),
+    ];
+    const report = repairOrphanedWorktreeMetadata({
+      candidates,
+      maxRepairs: 3,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired, candidates);
+    assert.deepEqual(report.blocked, []);
+    assert.deepEqual(report.partial, []);
+    assert.deepEqual(report.pending, []);
+    assert.deepEqual(
+      fixture.storedCoven,
+      { sibling: "preserved" },
+      "same-Bead candidates are removed without invalidating later locations",
+    );
+  }
+
+  {
+    const rawPrimary = {
+      ...orphanRecord,
+      path: `${orphanRecord.path}/`,
+      futureField: { preservedUntilRemoval: true },
+    };
+    const untouched = {
+      ...orphanRecord,
+      branch: "fix/cave-untouched",
+      path: "/repo/.worktrees/cave-untouched/",
+      purpose: "Untouched",
+      futureField: { preservedAfterPromotion: true },
+    };
+    const fixture = repairOperations({
+      coven: {
+        sibling: "preserved",
+        worktree: rawPrimary,
+        worktrees: [untouched],
+      },
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [
+        repairCandidate({
+          record: orphanRecord,
+          rawRecord: rawPrimary,
+        }),
+      ],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired.map((item) => item.beadId), ["cave-orphan"]);
+    assert.deepEqual(report.blocked, []);
+    assert.deepEqual(report.partial, []);
+    assert.deepEqual(fixture.storedCoven, {
+      sibling: "preserved",
+      worktree: untouched,
+    });
   }
 
   {
@@ -464,11 +569,6 @@ try {
       /EACCES fixture denied/,
     ],
     ["update failure", { persist: { ok: false, reason: "fixture update failed" } }, /fixture update failed/],
-    [
-      "verification failure",
-      { verificationMetadata: { label: "preserve", coven: { worktree: orphanRecord } } },
-      /verification/i,
-    ],
   ]) {
     const fixture = repairOperations(options);
     const report = repairOrphanedWorktreeMetadata({
@@ -479,6 +579,41 @@ try {
     });
     assert.deepEqual(report.repaired, [], `${name} must not report success`);
     assert.match(report.blocked[0]?.reason ?? "", reason, name);
+    assert.deepEqual(report.partial, [], `${name} must not report a partial mutation`);
+  }
+
+  {
+    const updateFailedAfterMutation = repairOperations({
+      persist: { ok: false, reason: "fixture update response failed" },
+      persistMutation: "intended",
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: updateFailedAfterMutation.operations,
+    });
+    assert.deepEqual(report.repaired, []);
+    assert.deepEqual(report.blocked, []);
+    assert.match(report.partial[0]?.reason ?? "", /update response failed.*landed/i);
+  }
+
+  {
+    const verificationFailed = repairOperations({
+      verificationMetadata: {
+        label: "preserve",
+        coven: { worktree: { ...orphanRecord, purpose: "Unexpected" } },
+      },
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: verificationFailed.operations,
+    });
+    assert.deepEqual(report.repaired, []);
+    assert.deepEqual(report.blocked, []);
+    assert.match(report.partial[0]?.reason ?? "", /verification failed/i);
   }
 
   {
@@ -528,8 +663,9 @@ try {
       operations: closedDuringVerification.operations,
     });
     assert.deepEqual(report.repaired, []);
+    assert.deepEqual(report.blocked, []);
     assert.match(
-      report.blocked[0]?.reason ?? "",
+      report.partial[0]?.reason ?? "",
       /verification failed.*closed after persistence.*partial/,
     );
     assert.equal(
@@ -575,8 +711,12 @@ try {
         operations: fixture.operations,
       });
       assert.deepEqual(report.repaired, []);
-      assert.match(report.blocked[0]?.reason ?? "", new RegExp(failure));
-      assert.match(report.blocked[0]?.reason ?? "", new RegExp(phase));
+      const failureEntry =
+        index === 2 ? report.partial[0] : report.blocked[0];
+      assert.match(failureEntry?.reason ?? "", new RegExp(failure));
+      assert.match(failureEntry?.reason ?? "", new RegExp(phase));
+      assert.equal(report.partial.length, index === 2 ? 1 : 0);
+      assert.equal(report.blocked.length, index === 2 ? 0 : 1);
       assert.equal(
         fixture.calls.includes("persist:cave-orphan"),
         index === 2,
@@ -790,6 +930,31 @@ process.exit(93);
       ok: true,
       present: false,
     });
+    const hostileGitEnvironment = {
+      GIT_DIR: process.env.GIT_DIR,
+      GIT_WORK_TREE: process.env.GIT_WORK_TREE,
+      GIT_INDEX_FILE: process.env.GIT_INDEX_FILE,
+    };
+    process.env.GIT_DIR = origin;
+    process.env.GIT_WORK_TREE = fixtureRoot;
+    process.env.GIT_INDEX_FILE = path.join(fixtureRoot, "hostile-index");
+    try {
+      assert.deepEqual(
+        operations.probeLocalBranch("main"),
+        { ok: true, present: true },
+        "metadata repair branch probes ignore ambient repository overrides",
+      );
+      assert.deepEqual(
+        operations.probeRegisteredPath(repo),
+        { ok: true, present: true },
+        "metadata repair worktree probes ignore ambient repository overrides",
+      );
+    } finally {
+      for (const [key, value] of Object.entries(hostileGitEnvironment)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
     assert.equal(
       operations.probeLocalBranch("refs/heads/main").ok,
       false,
@@ -923,7 +1088,57 @@ process.exit(93);
     assert.match(warnedUpdate.reason, /wrote to stderr despite reporting success/);
 
     delete process.env.METADATA_REPAIR_BD_MODE;
+    writeFileSync(
+      repairState,
+      JSON.stringify({
+        id: "cave-adapter",
+        status: "open",
+        metadata: {
+          unrelated: "preserved",
+          coven: { sibling: "preserved", worktree: adapterRecord },
+        },
+      }),
+    );
+    const repairGateRepo = path.join(fixtureRoot, "metadata-repair-gate-repo");
+    mkdirSync(repairGateRepo);
+    git(["init", "-q", "-b", "main"], repairGateRepo);
+    const acquiredRepairGate = acquireMaintenanceGate({
+      ownerId: "metadata-repair-adapter-test",
+      purpose: "verify production metadata repair gate handling",
+      repoDir: repairGateRepo,
+    });
+    assert.equal(acquiredRepairGate.ok, true);
+    try {
+      const productionRepair = repairOrphanedWorktreeMetadata({
+        candidates: [
+          repairCandidate({
+            beadId: "cave-adapter",
+            branch: adapterRecord.branch,
+            path: adapterRecord.path,
+            record: adapterRecord,
+            rawRecord: adapterRecord,
+          }),
+        ],
+        maxRepairs: 1,
+        gateHandle: acquiredRepairGate.handle,
+        repositoryRoot: repo,
+        operations,
+      });
+      assert.deepEqual(
+        productionRepair.repaired.map((candidate) => candidate.beadId),
+        ["cave-adapter"],
+        "production repair operations accept the complete acquired gate handle",
+      );
+    } finally {
+      if (acquiredRepairGate.ok) {
+        assert.deepEqual(releaseMaintenanceGate(acquiredRepairGate.handle), {
+          ok: true,
+        });
+      }
+    }
     const invalidGate = operations.heartbeatAndVerifyGate({
+      root: maintenanceGateRoot(repairGateRepo),
+      ownerId: "metadata-repair-adapter-test",
       generation: 7,
       token: "token",
     });
@@ -2151,7 +2366,7 @@ printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata"
 elif [ "\${LIFECYCLE_ORPHANED_METADATA_AMBIGUOUS:-0}" = "1" ]; then
 printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-orphan-malformed-sibling","status":"open","title":"Malformed sibling orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-malformed","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Malformed sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-malformed-sibling","path":"relative/orphaned","owner":"Kitty","purpose":"Malformed sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}},{"id":"cave-orphan-duplicate-branch","status":"open","title":"Duplicate branch orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-duplicate-branch","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Duplicate branch fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-duplicate-branch","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Duplicate branch fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}},{"id":"cave-orphan-duplicate-path","status":"open","title":"Duplicate path orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-duplicate-path","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Duplicate path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-duplicate-path-sibling","path":"${orphanedMissingPath}/","owner":"Kitty","purpose":"Duplicate path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_ORPHANED_METADATA:-0}" = "1" ]; then
-printf '%s\n' '[{"id":"cave-orphan","status":"open","title":"Orphaned metadata fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/orphaned","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-present-path","status":"open","title":"Present path fixture","metadata":{"coven":{"worktree":{"branch":"feat/present-path","path":"${orphanedPresentPath}","owner":"Kitty","purpose":"Present path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-dangling-path","status":"open","title":"Dangling path fixture","metadata":{"coven":{"worktree":{"branch":"feat/dangling-path","path":"${orphanedDanglingPath}","owner":"Kitty","purpose":"Dangling path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-closed-orphan","status":"closed","title":"Closed orphaned metadata fixture","metadata":{"coven":{"worktree":{"branch":"feat/closed-orphan","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Closed orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+printf '%s\n' '[{"id":"cave-orphan","status":"open","title":"Orphaned metadata fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/orphaned","path":"${orphanedMissingPath}/","owner":"Kitty","purpose":"Orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z","futureField":{"preserve":true}}}}},{"id":"cave-present-path","status":"open","title":"Present path fixture","metadata":{"coven":{"worktree":{"branch":"feat/present-path","path":"${orphanedPresentPath}","owner":"Kitty","purpose":"Present path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-dangling-path","status":"open","title":"Dangling path fixture","metadata":{"coven":{"worktree":{"branch":"feat/dangling-path","path":"${orphanedDanglingPath}","owner":"Kitty","purpose":"Dangling path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-closed-orphan","status":"closed","title":"Closed orphaned metadata fixture","metadata":{"coven":{"worktree":{"branch":"feat/closed-orphan","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Closed orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_MALFORMED_WORKTREES:-0}" = "1" ]; then
 printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Malformed array","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":{}}}}]'
 elif [ "\${LIFECYCLE_DUPLICATE_WORKTREE_BRANCH:-0}" = "1" ]; then
@@ -2474,6 +2689,15 @@ exit 0
   assert.equal(orphanedByBead.get("cave-orphan").location, "primary");
   assert.equal(orphanedByBead.get("cave-orphan").repairable, true);
   assert.deepEqual(orphanedByBead.get("cave-orphan").reasons, []);
+  assert.equal(orphanedByBead.get("cave-orphan").path, orphanedMissingPath);
+  assert.equal(
+    orphanedByBead.get("cave-orphan").rawRecord.path,
+    `${orphanedMissingPath}/`,
+  );
+  assert.deepEqual(
+    orphanedByBead.get("cave-orphan").rawRecord.futureField,
+    { preserve: true },
+  );
   assert.equal(orphanedByBead.get("cave-present-path").repairable, false);
   assert.match(
     orphanedByBead.get("cave-present-path").reasons.join("\n"),
@@ -3852,7 +4076,24 @@ exit 0
     apply: true,
     maxRetire: 3,
   };
-  const applyInventory = { items: report.items };
+  const applyInventory = {
+    items: report.items,
+    orphanedMetadata: [],
+    orphanedMetadataErrors: [],
+  };
+  const emptyMetadataRepair = {
+    repaired: [],
+    blocked: [],
+    partial: [],
+    pending: [],
+  };
+  const metadataApplyDependencies = {
+    createMetadataRepairOperations: () => ({ fixture: "metadata-ops" }),
+    repairOrphanedWorktreeMetadata: ({ maxRepairs }) => {
+      assert.equal(maxRepairs, 0);
+      return emptyMetadataRepair;
+    },
+  };
   const acquiredHandle = {
     root: repo,
     ownerId: "fixture-owner",
@@ -3891,6 +4132,26 @@ exit 0
     ok: true,
     status: 0,
   });
+  assert.deepEqual(
+    evaluateRetirementApplyOutcome({
+      metadataRepair: {
+        ...emptyMetadataRepair,
+        blocked: [
+          {
+            beadId: "cave-orphan",
+            location: "primary",
+            reason: "fixture repair blocked",
+          },
+        ],
+      },
+      retirement: fakeRetirement,
+    }),
+    {
+      ok: false,
+      status: 1,
+      reason: "metadata-repair-blocked",
+    },
+  );
   assert.deepEqual(evaluateRetirementApplyOutcome({ retirement: blockedRetirement }), {
     ok: false,
     status: 1,
@@ -4044,6 +4305,7 @@ exit 0
     let releasedHandle = null;
     let createOpsHandle = null;
     const result = runRetirementApply(applyOptions, applyInventory, {
+      ...metadataApplyDependencies,
       acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
       heartbeatMaintenanceGate: () => {
         events.push("heartbeat");
@@ -4074,6 +4336,7 @@ exit 0
       },
     });
     assert.deepEqual(result, {
+      metadataRepair: emptyMetadataRepair,
       retirement: fakeRetirement,
       postInventory: fakePostInventory,
     });
@@ -4098,7 +4361,53 @@ exit 0
   }
 
   {
+    const repairedCandidate = repairCandidate();
+    const events = [];
+    const result = runRetirementApply(
+      { ...applyOptions, maxRetire: 1 },
+      {
+        ...applyInventory,
+        orphanedMetadata: [repairedCandidate],
+      },
+      {
+        ...metadataApplyDependencies,
+        acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+        heartbeatMaintenanceGate: () => ({ ok: true }),
+        verifyMaintenanceGateOwnership: () => ({ ok: true }),
+        releaseMaintenanceGate: () => ({ ok: true }),
+        createMetadataRepairOperations: () => ({ fixture: "metadata-ops" }),
+        repairOrphanedWorktreeMetadata: ({ maxRepairs, operations }) => {
+          events.push("repair");
+          assert.equal(maxRepairs, 1);
+          assert.deepEqual(operations, { fixture: "metadata-ops" });
+          return {
+            ...emptyMetadataRepair,
+            repaired: [repairedCandidate],
+          };
+        },
+        createGitRetirementOperations: () => ({ fixture: "git-ops" }),
+        retireLifecycleUnits: () => {
+          assert.fail("metadata repair consumes the only shared batch slot");
+        },
+        collectWorktreeLifecycleInventory: () => {
+          events.push("post-inventory");
+          return { ...fakePostInventory, orphanedMetadata: [] };
+        },
+      },
+    );
+    assert.deepEqual(events, ["repair", "post-inventory"]);
+    assert.deepEqual(result.metadataRepair.repaired, [repairedCandidate]);
+    assert.deepEqual(result.retirement.retired, []);
+    assert.equal(
+      result.retirement.cleanupReady.length,
+      report.counts["retire-after-gate"],
+      "Git candidates remain cleanup-ready when metadata consumes the batch",
+    );
+  }
+
+  {
     const result = runRetirementApply(applyOptions, applyInventory, {
+      ...metadataApplyDependencies,
       acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
       heartbeatMaintenanceGate: () => ({ ok: true }),
       verifyMaintenanceGateOwnership: () => ({ ok: true }),
@@ -4122,6 +4431,7 @@ exit 0
   {
     const events = [];
     const result = runRetirementApply(applyOptions, applyInventory, {
+      ...metadataApplyDependencies,
       acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
       heartbeatMaintenanceGate: () => {
         events.push("heartbeat");
@@ -4175,6 +4485,7 @@ exit 0
   {
     let ownershipChecks = 0;
     const result = runRetirementApply(applyOptions, applyInventory, {
+      ...metadataApplyDependencies,
       acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
       heartbeatMaintenanceGate: () => ({ ok: true }),
       verifyMaintenanceGateOwnership: () => {
@@ -4202,6 +4513,7 @@ exit 0
   assert.throws(
     () =>
       runRetirementApply(applyOptions, applyInventory, {
+        ...metadataApplyDependencies,
         acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
         heartbeatMaintenanceGate: () => {
           assert.fail("heartbeat must not run after retirement throws");

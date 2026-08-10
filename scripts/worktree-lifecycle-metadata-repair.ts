@@ -7,6 +7,7 @@ import {
 } from "./maintenance-gate.mjs";
 import { normalizeAbsoluteWorktreePath } from "../src/lib/worktree-lifecycle.ts";
 import {
+  sanitizedGitEnvironment,
   validateStructuredLifecycleRecord,
   type OrphanedWorktreeMetadataRecord,
 } from "./worktree-lifecycle-inventory.ts";
@@ -19,8 +20,8 @@ type PresenceResult =
   | { ok: false; reason: string };
 
 export type MetadataRepairGateHandle = {
-  root?: string;
-  ownerId?: string;
+  root: string;
+  ownerId: string;
   generation: number;
   token: string;
 };
@@ -34,6 +35,11 @@ export type ExactMetadataBead = {
 export type MetadataRepairReport = {
   repaired: OrphanedWorktreeMetadataRecord[];
   blocked: Array<{
+    beadId: string;
+    location: OrphanedWorktreeMetadataRecord["location"];
+    reason: string;
+  }>;
+  partial: Array<{
     beadId: string;
     location: OrphanedWorktreeMetadataRecord["location"];
     reason: string;
@@ -60,6 +66,10 @@ type CommandResult = {
 };
 
 type GateFunctionResult = { ok: true } | { ok: false; reason?: string };
+type RepairOneResult =
+  | { kind: "repaired" }
+  | { kind: "blocked"; reason: string; halt: boolean }
+  | { kind: "partial"; reason: string; halt: true };
 
 const COMMAND_TIMEOUT_MS = 120_000;
 const BEAD_STATUSES = [
@@ -290,6 +300,18 @@ function blockedReason(
   });
 }
 
+function partialReason(
+  report: MetadataRepairReport,
+  candidate: OrphanedWorktreeMetadataRecord,
+  reason: string,
+): void {
+  report.partial.push({
+    beadId: candidate.beadId,
+    location: candidate.location,
+    reason,
+  });
+}
+
 function readFreshBead(
   operations: MetadataRepairOperations,
   candidate: OrphanedWorktreeMetadataRecord,
@@ -347,120 +369,209 @@ function probeAbsent(
 function repairOne(
   candidate: OrphanedWorktreeMetadataRecord,
   gateHandle: MetadataRepairGateHandle,
+  repositoryRoot: string,
   operations: MetadataRepairOperations,
-): OperationResult {
-  let result = checkpoint(
+): RepairOneResult {
+  const beforeRead = checkpoint(
     operations,
     gateHandle,
     "before exact Bead reread",
   );
-
-  let fresh:
-    | { ok: true; bead: ExactMetadataBead; coven: JsonRecord }
-    | { ok: false; reason: string }
-    | null = null;
-  let nextCoven: JsonRecord | null = null;
-  if (result.ok) {
-    fresh = readFreshBead(operations, candidate);
-    if (!fresh.ok) result = fresh;
+  if (!beforeRead.ok) {
+    return { kind: "blocked", reason: beforeRead.reason, halt: true };
   }
-  if (result.ok && fresh?.ok && fresh.bead.status === "closed") {
-    result = {
-      ok: false,
+
+  const fresh = readFreshBead(operations, candidate);
+  if (!fresh.ok) {
+    return { kind: "blocked", reason: fresh.reason, halt: false };
+  }
+  if (fresh.bead.status === "closed") {
+    return {
+      kind: "blocked",
       reason: `exact Bead reread found ${candidate.beadId} closed before metadata persistence`,
+      halt: false,
     };
   }
-  if (result.ok && fresh?.ok) {
-    try {
-      nextCoven = removeLifecycleRecord(
-        fresh.coven,
-        candidate.location,
-        candidate.record,
-        gateHandle.root ?? process.cwd(),
-      );
-    } catch (error) {
-      result = { ok: false, reason: errorMessage(error) };
-    }
+
+  let nextCoven: JsonRecord;
+  try {
+    nextCoven = removeLifecycleRecord(
+      fresh.coven,
+      candidate.location,
+      candidate.rawRecord,
+      repositoryRoot,
+    );
+  } catch (error) {
+    return { kind: "blocked", reason: errorMessage(error), halt: false };
   }
 
-  if (result.ok) {
-    result = probeAbsent(
-      "exact local branch probe",
-      () => operations.probeLocalBranch(candidate.branch),
-      `exact local branch still exists: ${candidate.branch}`,
-    );
+  const branch = probeAbsent(
+    "exact local branch probe",
+    () => operations.probeLocalBranch(candidate.branch),
+    `exact local branch still exists: ${candidate.branch}`,
+  );
+  if (!branch.ok) {
+    return { kind: "blocked", reason: branch.reason, halt: false };
   }
-  if (result.ok) {
-    result = probeAbsent(
-      "registered worktree path probe",
-      () => operations.probeRegisteredPath(candidate.path),
-      `registered path still exists: ${candidate.path}`,
-    );
+
+  const registered = probeAbsent(
+    "registered worktree path probe",
+    () => operations.probeRegisteredPath(candidate.path),
+    `registered path still exists: ${candidate.path}`,
+  );
+  if (!registered.ok) {
+    return { kind: "blocked", reason: registered.reason, halt: false };
   }
-  if (result.ok) {
-    result = probeAbsent(
-      "filesystem path probe",
-      () => operations.probeFilesystemPath(candidate.path),
-      `recorded path exists on disk: ${candidate.path}`,
-    );
+
+  const filesystem = probeAbsent(
+    "filesystem path probe",
+    () => operations.probeFilesystemPath(candidate.path),
+    `recorded path exists on disk: ${candidate.path}`,
+  );
+  if (!filesystem.ok) {
+    return { kind: "blocked", reason: filesystem.reason, halt: false };
   }
-  if (result.ok) {
-    result = checkpoint(
+
+  const beforePersistence = checkpoint(
+    operations,
+    gateHandle,
+    "before metadata persistence",
+  );
+  if (!beforePersistence.ok) {
+    return {
+      kind: "blocked",
+      reason: beforePersistence.reason,
+      halt: true,
+    };
+  }
+
+  const expectedMetadata = {
+    ...fresh.bead.metadata,
+    coven: nextCoven,
+  };
+  const persistence = safeOperation("metadata persistence failed", () =>
+    operations.persistCoven(candidate.beadId, nextCoven),
+  );
+  if (!persistence.ok) {
+    const afterFailure = checkpoint(
       operations,
       gateHandle,
-      "before metadata persistence",
+      "before failed-persistence verification",
     );
-  }
-  if (result.ok && nextCoven !== null) {
-    result = safeOperation("metadata persistence failed", () =>
-      operations.persistCoven(candidate.beadId, nextCoven),
-    );
-  }
-  if (result.ok) {
-    result = checkpoint(
-      operations,
-      gateHandle,
-      "before post-persistence verification",
-    );
-  }
-  if (result.ok && fresh?.ok && nextCoven !== null) {
+    if (!afterFailure.ok) {
+      return {
+        kind: "partial",
+        reason: `${persistence.reason}; ${afterFailure.reason}; persistence outcome is unverifiable`,
+        halt: true,
+      };
+    }
     const verification = readFreshBead(operations, candidate);
     if (!verification.ok) {
-      result = {
-        ok: false,
-        reason: `metadata persistence verification failed: ${verification.reason}`,
+      return {
+        kind: "partial",
+        reason: `${persistence.reason}; persistence outcome is unverifiable: ${verification.reason}`,
+        halt: true,
       };
-    } else if (verification.bead.status === "closed") {
-      result = {
-        ok: false,
-        reason: `metadata persistence verification failed: ${candidate.beadId} closed after persistence; repair is partial`,
-      };
-    } else {
-      const expectedMetadata = {
-        ...fresh.bead.metadata,
-        coven: nextCoven,
-      };
-      if (!isDeepStrictEqual(verification.bead.metadata, expectedMetadata)) {
-        result = {
-          ok: false,
-          reason:
-            "metadata persistence verification failed: fresh metadata does not exactly match the intended snapshot",
-        };
-      }
     }
+    if (verification.bead.status === "closed") {
+      return {
+        kind: "partial",
+        reason: `${persistence.reason}; ${candidate.beadId} closed after persistence was attempted; persistence outcome is unverifiable`,
+        halt: true,
+      };
+    }
+    if (isDeepStrictEqual(verification.bead.metadata, expectedMetadata)) {
+      return {
+        kind: "partial",
+        reason: `${persistence.reason}; exact reread confirmed the intended metadata landed`,
+        halt: true,
+      };
+    }
+    if (isDeepStrictEqual(verification.bead.metadata, fresh.bead.metadata)) {
+      return {
+        kind: "blocked",
+        reason: `${persistence.reason}; exact reread confirmed metadata remained unchanged`,
+        halt: false,
+      };
+    }
+    return {
+      kind: "partial",
+      reason: `${persistence.reason}; exact reread found an unexpected metadata snapshot, so persistence is unverifiable`,
+      halt: true,
+    };
   }
-  return result;
+
+  const beforeVerification = checkpoint(
+    operations,
+    gateHandle,
+    "before post-persistence verification",
+  );
+  if (!beforeVerification.ok) {
+    return {
+      kind: "partial",
+      reason: `${beforeVerification.reason}; metadata persistence completed but verification did not`,
+      halt: true,
+    };
+  }
+
+  const verification = readFreshBead(operations, candidate);
+  if (!verification.ok) {
+    return {
+      kind: "partial",
+      reason: `metadata persistence verification failed: ${verification.reason}`,
+      halt: true,
+    };
+  }
+  if (verification.bead.status === "closed") {
+    return {
+      kind: "partial",
+      reason: `metadata persistence verification failed: ${candidate.beadId} closed after persistence; repair is partial`,
+      halt: true,
+    };
+  }
+  if (!isDeepStrictEqual(verification.bead.metadata, expectedMetadata)) {
+    return {
+      kind: "partial",
+      reason:
+        "metadata persistence verification failed: fresh metadata does not exactly match the intended snapshot",
+      halt: true,
+    };
+  }
+  return { kind: "repaired" };
+}
+
+function compareRepairOrder(
+  left: {
+    candidate: OrphanedWorktreeMetadataRecord;
+  },
+  right: {
+    candidate: OrphanedWorktreeMetadataRecord;
+  },
+): number {
+  if (
+    left.candidate.location === "primary" &&
+    right.candidate.location === "primary"
+  ) {
+    return 0;
+  }
+  if (left.candidate.location === "primary") return 1;
+  if (right.candidate.location === "primary") return -1;
+  const leftIndex = Number(left.candidate.location.slice("additional:".length));
+  const rightIndex = Number(right.candidate.location.slice("additional:".length));
+  return rightIndex - leftIndex;
 }
 
 export function repairOrphanedWorktreeMetadata({
   candidates,
   maxRepairs,
   gateHandle,
+  repositoryRoot = process.cwd(),
   operations,
 }: {
   candidates: OrphanedWorktreeMetadataRecord[];
   maxRepairs: number;
   gateHandle: MetadataRepairGateHandle;
+  repositoryRoot?: string;
   operations: MetadataRepairOperations;
 }): MetadataRepairReport {
   if (!Number.isSafeInteger(maxRepairs) || maxRepairs < 0) {
@@ -471,14 +582,46 @@ export function repairOrphanedWorktreeMetadata({
   const report: MetadataRepairReport = {
     repaired: [],
     blocked: [],
-    pending: repairable.slice(maxRepairs),
+    partial: [],
+    pending: [],
   };
-
-  for (const candidate of selected) {
-    const result = repairOne(candidate, gateHandle, operations);
-    if (result.ok) report.repaired.push(candidate);
-    else blockedReason(report, candidate, result.reason);
+  const work = selected.map((candidate, index) => ({ candidate, index }));
+  const byBead = new Map<string, typeof work>();
+  for (const item of work) {
+    const grouped = byBead.get(item.candidate.beadId) ?? [];
+    grouped.push(item);
+    byBead.set(item.candidate.beadId, grouped);
   }
+  const results = new Map<number, RepairOneResult>();
+  let halted = false;
+  for (const group of byBead.values()) {
+    group.sort(compareRepairOrder);
+    for (const item of group) {
+      if (halted) break;
+      const result = repairOne(
+        item.candidate,
+        gateHandle,
+        repositoryRoot,
+        operations,
+      );
+      results.set(item.index, result);
+      if (result.kind !== "repaired" && result.halt) halted = true;
+    }
+    if (halted) break;
+  }
+  for (const [index, candidate] of selected.entries()) {
+    const result = results.get(index);
+    if (result === undefined) {
+      report.pending.push(candidate);
+    } else if (result.kind === "repaired") {
+      report.repaired.push(candidate);
+    } else if (result.kind === "partial") {
+      partialReason(report, candidate, result.reason);
+    } else {
+      blockedReason(report, candidate, result.reason);
+    }
+  }
+  report.pending.push(...repairable.slice(maxRepairs));
   return report;
 }
 
@@ -486,9 +629,11 @@ function command(
   executable: string,
   args: string[],
   cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
 ): CommandResult {
   const result = spawnSync(executable, args, {
     cwd,
+    env,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
     timeout: COMMAND_TIMEOUT_MS,
@@ -695,6 +840,7 @@ export function createMetadataRepairOperations({
           "git",
           ["-C", normalizedRoot, "check-ref-format", "--branch", branch],
           normalizedRoot,
+          sanitizedGitEnvironment(),
         );
         if (
           checked.status !== 0 ||
@@ -711,6 +857,7 @@ export function createMetadataRepairOperations({
           "git",
           ["-C", normalizedRoot, "show-ref", "--verify", "--quiet", fullRef],
           normalizedRoot,
+          sanitizedGitEnvironment(),
         );
         if (result.error || result.stdout.length > 0 || result.stderr.length > 0) {
           throw new Error(
@@ -733,6 +880,7 @@ export function createMetadataRepairOperations({
           "git",
           ["-C", normalizedRoot, "worktree", "list", "--porcelain", "-z"],
           normalizedRoot,
+          sanitizedGitEnvironment(),
         );
         if (result.status !== 0 || result.error) {
           throw new Error(
