@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { access, lstat, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, mkdtemp, readFile, readlink, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -386,6 +386,82 @@ test("managed Node installer honors cancellation before any installation work", 
     } finally {
       await rm(home, { recursive: true, force: true });
     }
+  });
+});
+
+test("managed Node installer fences cancellation between staged runtime commit operations", async (t) => {
+  const artifact = nodeArchiveFor("linux", "x64");
+  assert.ok(artifact);
+
+  async function runCancellationAtRemoval(
+    removal: "temporary" | "installed",
+  ): Promise<string[]> {
+    const home = await mkdtemp(path.join(tmpdir(), `coven-node-commit-${removal}-`));
+    const paths = managedNodePaths("linux", "x64", TEST_ENV, home);
+    assert.ok(paths);
+    const controller = new AbortController();
+    const renames: string[] = [];
+    let releaseRemoval!: () => void;
+    let removalStarted!: () => void;
+    const removalPending = new Promise<void>((resolve) => {
+      releaseRemoval = resolve;
+    });
+    const removalStartedPromise = new Promise<void>((resolve) => {
+      removalStarted = resolve;
+    });
+    let probes = 0;
+    try {
+      const pending = installManagedNodeToolchain({
+        platform: "linux",
+        architecture: "x64",
+        env: TEST_ENV,
+        home,
+        signal: controller.signal,
+        fetch: async () => approvedResponse(),
+        dependencies: {
+          digest: () => artifact.sha256,
+          extractArchive: async (_format, _archive, destination) => {
+            await mkdir(path.join(destination, `node-v${MANAGED_NODE_VERSION}-linux-x64`), { recursive: true });
+          },
+          probe: async () => {
+            probes += 1;
+            return probes === 1
+              ? { status: "missing", paths }
+              : { status: "ready", version: MANAGED_NODE_VERSION, paths };
+          },
+          remove: async (target, options) => {
+            const shouldPause = removal === "temporary"
+              ? target.includes(".tmp-")
+              : target === paths.installDir;
+            if (shouldPause) {
+              removalStarted();
+              await removalPending;
+            }
+            await rm(target, options);
+          },
+          rename: async (source, destination) => {
+            renames.push(`${source}->${destination}`);
+            await rename(source, destination);
+          },
+        },
+      });
+      await removalStartedPromise;
+      controller.abort();
+      releaseRemoval();
+      const result = await pending;
+      assert.equal(result.ok, false);
+      return renames;
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  }
+
+  await t.test("before staging rename", async () => {
+    assert.deepEqual(await runCancellationAtRemoval("temporary"), []);
+  });
+  await t.test("before final replacement rename", async () => {
+    const renames = await runCancellationAtRemoval("installed");
+    assert.equal(renames.length, 1, "only the already-completed staging move may run");
   });
 });
 

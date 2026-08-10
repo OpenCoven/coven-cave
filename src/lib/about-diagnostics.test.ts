@@ -133,6 +133,11 @@ assert.match(
   /\[redacted\]|\[local path omitted\]/,
   "freeform result text is redacted before inclusion",
 );
+assert.equal(
+  sanitizeAboutDiagnosticText("https://alice:password@example.test/archive?token=secret"),
+  "https://example.test/archive",
+  "credentialed URLs retain only the safe origin and path",
+);
 
 const pathCases = [
   String.raw`C:\Users\name\file`,

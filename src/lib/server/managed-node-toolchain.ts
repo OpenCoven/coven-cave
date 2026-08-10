@@ -389,6 +389,8 @@ export async function installManagedNodeToolchain(options: {
       archive: Buffer,
       destination: string,
     ) => Promise<void>;
+    remove?: typeof rm;
+    rename?: typeof rename;
   };
 } = {}): Promise<ManagedNodeInstallResult> {
   const platform = options.platform ?? process.platform;
@@ -421,6 +423,8 @@ export async function installManagedNodeToolchain(options: {
     };
   }
   const fetcher = options.fetch ?? fetch;
+  const remove = options.dependencies?.remove ?? rm;
+  const move = options.dependencies?.rename ?? rename;
   const stage = path.join(/* turbopackIgnore: true */ paths.stagingRoot, `node-${randomUUID()}`);
   const installTemporary = `${paths.installDir}.tmp-${randomUUID()}`;
   let downloadTimedOut = false;
@@ -495,11 +499,13 @@ export async function installManagedNodeToolchain(options: {
     writeProbeTarget = path.dirname(paths.installDir);
     await mkdir(/* turbopackIgnore: true */ path.dirname(paths.installDir), { recursive: true });
     throwIfManagedNodeInstallCancelled(options.signal);
-    await rm(/* turbopackIgnore: true */ installTemporary, { recursive: true, force: true });
-    await rename(/* turbopackIgnore: true */ runtime, installTemporary);
+    await remove(/* turbopackIgnore: true */ installTemporary, { recursive: true, force: true });
     throwIfManagedNodeInstallCancelled(options.signal);
-    await rm(/* turbopackIgnore: true */ paths.installDir, { recursive: true, force: true });
-    await rename(/* turbopackIgnore: true */ installTemporary, paths.installDir);
+    await move(/* turbopackIgnore: true */ runtime, installTemporary);
+    throwIfManagedNodeInstallCancelled(options.signal);
+    await remove(/* turbopackIgnore: true */ paths.installDir, { recursive: true, force: true });
+    throwIfManagedNodeInstallCancelled(options.signal);
+    await move(/* turbopackIgnore: true */ installTemporary, paths.installDir);
     throwIfManagedNodeInstallCancelled(options.signal);
     writeProbeTarget = paths.npmPrefix;
     await mkdir(/* turbopackIgnore: true */ paths.npmPrefix, { recursive: true });

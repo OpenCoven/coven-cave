@@ -80,6 +80,10 @@ const REMAINING_CONTROL_CHARACTERS = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/
 function withoutQueryOrFragment(value: string): string {
   try {
     const url = new URL(value);
+    // A username can identify a local account just as a password can expose a
+    // secret. Diagnostics need the remote location, not either credential.
+    url.username = "";
+    url.password = "";
     url.search = "";
     url.hash = "";
     return url.toString();
