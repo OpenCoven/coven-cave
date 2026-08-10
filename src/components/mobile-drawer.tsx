@@ -39,6 +39,37 @@ type MobileDrawerProps = {
 export function MobileDrawer({ open, onClose, rightChat }: MobileDrawerProps) {
   const rightChatRef = useRef<HTMLElement | null>(null);
 
+  // Make the shell chrome behind the right Chat modal inert so Tab/AT users
+  // can't reach it while the dialog is up. `.shell-frame` is Shell's own
+  // root (shell.tsx) — this portal mounts to document.body, OUTSIDE that
+  // subtree, so making it inert never reaches the modal we're keeping
+  // interactive. Restores whatever inert state `.shell-frame` actually had
+  // before, rather than assuming it was false.
+  //
+  // Declared BEFORE useFocusTrap below on purpose: React runs a component's
+  // passive-effect cleanups in the same top-down order they were declared
+  // (not reversed), for both updates and unmount. useFocusTrap's own cleanup
+  // calls `returnFocusRef.current?.focus()` to return focus to the shell
+  // toggle that opened the drawer — but `.focus()` on an element inside an
+  // `inert` subtree is a silent no-op. So this effect's cleanup (clearing
+  // `shell.inert`) MUST run first, or the restored focus call lands while
+  // the shell is still inert and does nothing. Both effects intentionally
+  // stay plain `useEffect` (matching useFocusTrap's own passive-effect
+  // implementation) — mixing in `useLayoutEffect` here would just move this
+  // ahead of ALL passive effects regardless of declaration order, which
+  // works too, but decouples the ordering guarantee from something a future
+  // reader can see at a glance the way declaration order can.
+  useEffect(() => {
+    if (open !== "right-chat") return;
+    const shell = document.querySelector<HTMLElement>(".shell-frame");
+    if (!shell) return;
+    const prevInert = shell.inert;
+    shell.inert = true;
+    return () => {
+      shell.inert = prevInert;
+    };
+  }, [open]);
+
   // The right Chat modal owns Escape + focus trap/return entirely through
   // the shared hook (the same contract Modal uses) — the legacy standalone
   // listener below is scoped away from it so Escape never fires two close
@@ -69,34 +100,18 @@ export function MobileDrawer({ open, onClose, rightChat }: MobileDrawerProps) {
     };
   }, [open, onClose]);
 
-  // Make the shell chrome behind the right Chat modal inert so Tab/AT users
-  // can't reach it while the dialog is up. `.shell-frame` is Shell's own
-  // root (shell.tsx) — this portal mounts to document.body, OUTSIDE that
-  // subtree, so making it inert never reaches the modal we're keeping
-  // interactive. Restores whatever inert state `.shell-frame` actually had
-  // before, rather than assuming it was false.
-  useEffect(() => {
-    if (open !== "right-chat") return;
-    const shell = document.querySelector<HTMLElement>(".shell-frame");
-    if (!shell) return;
-    const prevInert = shell.inert;
-    shell.inert = true;
-    return () => {
-      shell.inert = prevInert;
-    };
-  }, [open]);
-
   if (typeof document === "undefined") return null;
   if (!open && !rightChat) return null;
 
   return createPortal(
     <>
       {open ? (
-        <div
+        <button
+          type="button"
           className="mobile-drawer-backdrop"
           data-drawer-slot={open}
+          aria-label="Close drawer"
           onClick={onClose}
-          role="presentation"
         />
       ) : null}
       {rightChat ? (

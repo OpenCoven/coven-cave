@@ -465,11 +465,13 @@ assert.match(
 );
 
 // Backdrop renders only while a drawer (nav, list, OR right-chat) is open —
-// never for a merely-retained, closed right-chat modal.
+// never for a merely-retained, closed right-chat modal. It's a real <button>
+// (cave-rl980 Task 5 spec finding), not a role="presentation" div, so it's
+// reachable from the keyboard too.
 assert.match(
   drawerSource,
-  /\{open \? \(\s*\n\s*<div\s*\n\s*className="mobile-drawer-backdrop"/,
-  "the backdrop renders only while any drawer is open",
+  /\{open \? \(\s*\n\s*<button\s*\n\s*type="button"\s*\n\s*className="mobile-drawer-backdrop"/,
+  "the backdrop renders only while any drawer is open, as a real <button>",
 );
 
 // Escape ownership: the legacy standalone listener must step aside for the
