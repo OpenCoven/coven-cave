@@ -390,7 +390,7 @@ struct ConnectionView: View {
         switch outcome {
         case .found(let url):
             liveCheck = .found(port: url.port)
-        case .unauthorized:
+        case .unauthorized, .credentialFailure(_):
             liveCheck = .pairingRequired
         case .unreachable(let failure):
             liveCheck = .failed(failure)
