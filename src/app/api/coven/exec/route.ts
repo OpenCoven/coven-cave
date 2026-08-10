@@ -8,6 +8,11 @@ import {
 } from "@/lib/coven-bin";
 import { covenCliMissingError, isMissingExecutableError } from "@/lib/coven-spawn-error";
 import {
+  BoundedProcessOutput,
+  safeProcessErrorMessage,
+  terminateProcessTree,
+} from "@/lib/process-execution";
+import {
   daemonDiagnosticContextFromRequest,
   DAEMON_DIAGNOSTIC_CORRELATION_HEADER,
   diagnosticError,
@@ -23,6 +28,8 @@ const SUBCOMMAND_ARGS: Record<string, string[]> = {
   doctor: [],
   daemon: ["status"],
 };
+const EXEC_TIMEOUT_MS = 6_000;
+const EXEC_OUTPUT_BYTES = 64 * 1024;
 
 export async function POST(req: Request) {
   const diagnostics = daemonDiagnosticContextFromRequest(req);
@@ -77,10 +84,12 @@ export async function POST(req: Request) {
         COVEN_CAVE_DIAGNOSTIC_OPERATION: operation,
         COVEN_CAVE_DIAGNOSTIC_ATTEMPT: "1",
       },
+      detached: process.platform !== "win32",
     });
-    let out = "";
-    let err = "";
+    const out = new BoundedProcessOutput(EXEC_OUTPUT_BYTES);
+    const err = new BoundedProcessOutput(EXEC_OUTPUT_BYTES);
     let settled = false;
+    let timedOut = false;
     const settle = (
       body: Record<string, unknown>,
       status: number,
@@ -90,6 +99,7 @@ export async function POST(req: Request) {
     ) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       recordDaemonDiagnosticEvent(diagnostics, {
         component: "cli",
         operation,
@@ -106,24 +116,25 @@ export async function POST(req: Request) {
       });
       resolve(respond(body, status));
     };
-    child.stdout.on("data", (d) => (out += d.toString()));
-    child.stderr.on("data", (d) => (err += d.toString()));
-    const t = setTimeout(() => {
-      child.kill("SIGTERM");
+    const timeoutResponse = () =>
       settle(
-        { ok: false, error: "timeout", stdout: stripAnsi(out), stderr: stripAnsi(err) },
+        { ok: false, error: "timeout", stdout: out.text(), stderr: err.text() },
         504,
         "timed-out",
         "cli-timeout",
         "timeout",
       );
-    }, 6000);
+    child.stdout.on("data", (data) => out.append(data));
+    child.stderr.on("data", (data) => err.append(data));
+    const timer = setTimeout(() => {
+      timedOut = true;
+      void terminateProcessTree(child).finally(timeoutResponse);
+    }, EXEC_TIMEOUT_MS);
     child.on("error", (e) => {
-      clearTimeout(t);
       settle(
         isMissingExecutableError(e)
           ? covenCliMissingError()
-          : { ok: false, error: e.message },
+          : { ok: false, error: safeProcessErrorMessage(e, "Coven CLI") },
         500,
         "failed",
         "cli-spawn-error",
@@ -131,13 +142,16 @@ export async function POST(req: Request) {
       );
     });
     child.on("close", (code) => {
-      clearTimeout(t);
+      if (timedOut) {
+        timeoutResponse();
+        return;
+      }
       settle(
         {
           ok: code === 0,
           exitCode: code,
-          stdout: stripAnsi(out),
-          stderr: stripAnsi(err),
+          stdout: out.text(),
+          stderr: err.text(),
         },
         200,
         code === 0 ? "succeeded" : "failed",

@@ -20,6 +20,8 @@ import {
   type AutomationRunRecord,
 } from "@/lib/automation-runs.ts";
 
+const AUTOMATION_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
+
 export type CodexExecInvocation = {
   command: string;
   args: string[];

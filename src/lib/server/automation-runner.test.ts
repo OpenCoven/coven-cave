@@ -760,3 +760,13 @@ test("native Windows crosses the installed official shim boundary without launch
   assert.equal(result.status, 0, result.stderr || result.error?.message);
   assert.match(result.stdout, /codex/i);
 });
+
+test("automation execution is bounded, redacted, direct, and tree-owned", async () => {
+  const source = await readFile(new URL("./automation-runner.ts", import.meta.url), "utf8");
+  assert.match(source, /MAX_RUN_LOG_BYTES/);
+  assert.match(source, /AUTOMATION_TIMEOUT_MS/);
+  assert.match(source, /terminateProcessTree\(child\)/);
+  assert.match(source, /safeProcessErrorMessage\(err, "Automation runtime"\)/);
+  assert.match(source, /detached: process\.platform !== "win32"/);
+  assert.doesNotMatch(source, /\.stdout\?\.pipe\(out\)|\.stderr\?\.pipe\(out\)/);
+});
