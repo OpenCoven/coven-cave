@@ -66,16 +66,7 @@ const GUARDED_CONCURRENCY =
   "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
 const GUARDED_JOB_IF =
   "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
-const GUARDED_JOB_NAMES = [
-  "frontend-static",
-  "frontend-tests",
-  "frontend-bundle",
-  "cargo-check",
-  "e2e-shard",
-  "conformance",
-  "sidecar-runtime",
-  "windows-native",
-];
+const GUARDED_JOB_NAMES = ["build"];
 const GUARDED_CI_WORKFLOW = [
   "name: CI",
   `run-name: ${GUARDED_RUN_NAME}`,
@@ -245,14 +236,14 @@ test("apply fails closed when expected_sha exists without the REST-visible run s
   assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
 });
 
-test("apply fails closed when one recovery leaf job lacks the expected SHA guard", async () => {
+test("apply fails closed when the required job lacks the expected SHA guard", async () => {
   const pr = pull();
   const fixture = githubFixture({
     pulls: [pr],
     workflowsBySha: {
       [pr.head.sha]: GUARDED_CI_WORKFLOW.replace(
-        `  windows-native:\n    if: ${GUARDED_JOB_IF}`,
-        "  windows-native:\n    if: success()",
+        `  build:\n    if: ${GUARDED_JOB_IF}`,
+        "  build:\n    if: success()",
       ),
     },
   });
