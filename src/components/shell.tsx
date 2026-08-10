@@ -23,6 +23,7 @@ import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer"
 import { DetailSplitHost, type DetailSplitTile } from "@/components/detail-split-host";
 import { ShellPeelReveal } from "@/components/shell-peel-reveal";
 import {
+  eventKey,
   getPanelShortcutBindings,
   labelPanelShortcut,
   matchesPanelShortcut,
@@ -808,7 +809,11 @@ function ShellInner({
         else toggleDesktopNav();
         return;
       }
-      const key = e.key.toLowerCase();
+      // Same guard as matchesPanelShortcut above: an event with no readable key
+      // is ignored rather than thrown on. Guarding only the call above would
+      // just move the crash down to this line (cave-lryhx).
+      const key = eventKey(e);
+      if (key === null) return;
       const meta = e.metaKey || e.ctrlKey;
       if (meta && key === "\\" && !twoPane) {
         e.preventDefault();
