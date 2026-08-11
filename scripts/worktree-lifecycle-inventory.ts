@@ -3008,8 +3008,12 @@ function collectInventory(
     const probedBranches = new Set(
       probedUnits.flatMap((unit) => (unit.branch ? [unit.branch] : [])),
     );
+    // Describes the MECHANISM, not whoever happens to call it today. focusRefs
+    // is a general inventory option, and this string surfaces in unit reasons
+    // and CLI diagnostics — naming one caller would misdescribe the next one.
     const scopedError =
-      "pull request association not probed: inventory was scoped to the retirement candidate";
+      `pull request association not probed: this unit was outside the inventory's ` +
+      `focusRefs scope (${focusRefs.size} ref${focusRefs.size === 1 ? "" : "s"})`;
     for (const unit of units) {
       if (!probedHeads.has(unit.head) && !prs.errorsByOid.has(unit.head)) {
         prs.errorsByOid.set(unit.head, scopedError);
