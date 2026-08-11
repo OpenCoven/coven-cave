@@ -45,7 +45,7 @@ function joinNames(names: readonly string[], joiner: "then" | "and"): string {
 }
 
 const ENTER_IDLE_MULTI =
-  "Enter sends · Shift+Enter new line · @name routes to one familiar without advancing the rotation.";
+  "Enter sends · Shift+Enter new line · @name routes to one familiar without changing the selected order.";
 const ENTER_IDLE_SINGLE = "Enter sends · Shift+Enter new line.";
 const ENTER_RUNNING =
   "A run is active — Enter queues your message; it won't interrupt anyone. @name replies to one familiar.";
@@ -70,15 +70,15 @@ export function covenComposerRouting(args: {
       lead: "Replies only to",
       chips: mentioned.map((m) => ({ id: m.id, name: m.name, arrow: false, dot: false })),
       placeholder: `Reply to ${target}…`,
-      // A mention is a side conversation: it must not look like it advances the
-      // queue, because it does not.
+      // A mention is a side conversation: it targets only the named familiar
+      // without mutating the selected order for later full-coven messages.
       enterNote: args.running
         ? ENTER_RUNNING
-        : `Enter sends to ${target} only — the rotation doesn't advance. Shift+Enter for a new line.`,
+        : `Enter sends to ${target} only — the selected order stays unchanged. Shift+Enter for a new line.`,
       sendLabel: args.running ? "Queue" : `Send to ${target}`,
       sendTitle: args.running
         ? "Queues until the run finishes — Stop is the only interrupt"
-        : `Send to ${target} without advancing the rotation`,
+        : `Send to ${target} without changing the selected order`,
       queues: args.running,
       showModeControl,
     };

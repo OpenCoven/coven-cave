@@ -73,6 +73,7 @@ const contracts: RouteContract[] = [
   { route: "/coven/exec", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/daemon/capabilities", methods: ["GET"], kind: "json" },
   { route: "/daemon/connection", methods: ["GET"], kind: "json" },
+  { route: "/daemon/diagnostics", methods: ["GET"], kind: "json" },
   { route: "/daemon/probe", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/daemon/start", methods: ["POST"], kind: "json" },
   { route: "/daemon/status", methods: ["GET"], kind: "json" },
@@ -353,6 +354,12 @@ function effectiveRouteSource(file: string, source: string): string {
   // nothing.
   if (source.includes('from "@/lib/server/x-oauth-start-route"')) {
     parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "x-oauth-start-route.ts"), "utf8"));
+  }
+  // The onboarding bootstrap route keeps GET and POST wiring in the App
+  // Router module while its injectable handlers live beside the bootstrap
+  // service. Inline that reviewed helper just like the OAuth route above.
+  if (source.includes('from "@/lib/server/onboarding-bootstrap-route"')) {
+    parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "onboarding-bootstrap-route.ts"), "utf8"));
   }
   if (source.includes('from "./install-service"')) {
     parts.push(readFileSync(path.join(path.dirname(file), "install-service.ts"), "utf8"));

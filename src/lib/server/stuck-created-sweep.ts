@@ -23,7 +23,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { sacrificeSessionLocal } from "@/lib/cave-config";
-import { covenLaunchCommand, covenSpawnEnv } from "@/lib/coven-bin";
+import { covenLaunchCommand, covenWrapperSpawnEnv } from "@/lib/coven-bin";
 import { callDaemon } from "@/lib/coven-daemon";
 
 const execFileAsync = promisify(execFile);
@@ -94,7 +94,7 @@ export async function sweepStuckCreatedSessions(opts: {
         const { command, fixedArgs } = covenLaunchCommand();
         await execFileAsync(command, [...fixedArgs, "sacrifice", id, "--yes"], {
           windowsHide: true,
-          env: covenSpawnEnv(),
+          env: covenWrapperSpawnEnv(),
           timeout: SACRIFICE_TIMEOUT_MS,
         });
       } catch {

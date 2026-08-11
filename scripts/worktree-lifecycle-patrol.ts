@@ -7,11 +7,16 @@ import {
 } from "../src/lib/worktree-lifecycle.ts";
 import {
   acquireMaintenanceGate,
+  createFenceRenewal,
   heartbeatMaintenanceGate,
   releaseMaintenanceGate,
   repositoryMaintenanceCapabilities,
   verifyMaintenanceGateOwnership,
 } from "./maintenance-gate.mjs";
+import {
+  assessMaintenancePlaneAdmission,
+  type MaintenancePlaneCapabilities,
+} from "../src/lib/maintenance-plane-admission.ts";
 import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
 import {
   createGitRetirementOperations,
@@ -30,6 +35,13 @@ type Options = {
   nowMs: number;
   apply: boolean;
   maxRetire: number;
+  /**
+   * Opt in to running --apply while the known-pending maintenance planes
+   * (coven/beads/github, cave-wqa0b.2/.3/.4) are unenforced. Never implicit:
+   * absent this, --apply behaves exactly as it did. The local plane is still
+   * required — see assessMaintenancePlaneAdmission.
+   */
+  allowUnenforcedPlanes: boolean;
 };
 
 type PatrolInventory = ReturnType<typeof collectWorktreeLifecycleInventory>;
@@ -74,6 +86,23 @@ type RetirementApplyDependencies = {
   createMetadataRepairOperations: typeof createMetadataRepairOperations;
   repairOrphanedWorktreeMetadata: typeof repairOrphanedWorktreeMetadata;
   collectWorktreeLifecycleInventory: typeof collectWorktreeLifecycleInventory;
+  /**
+   * Optional, and injected so a test can observe renewal without waiting out
+   * the throttle.
+   *
+   * Optional because the existing apply tests build explicit dependency
+   * literals rather than spreading the defaults, so a required field would
+   * arrive undefined in every one of them and fail as a TypeError inside the
+   * inventory try/catch — which surfaces as a confusing postInventoryError
+   * rather than as the missing wiring it actually is.
+   *
+   * The real {@link createFenceRenewal} deliberately skips the first call and
+   * then renews at most every FENCE_RENEWAL_INTERVAL_MS, which is correct in
+   * production and invisible in a test that finishes in milliseconds — every
+   * call would be throttled, so a missing renewal and a working one look
+   * identical. Injecting the factory lets a test supply an unthrottled one.
+   */
+  createFenceRenewal?: typeof createFenceRenewal;
 };
 
 const APPLY_OWNER_ID = "worktree-lifecycle-patrol";
@@ -88,6 +117,7 @@ const defaultRetirementApplyDependencies: RetirementApplyDependencies = {
   createMetadataRepairOperations,
   repairOrphanedWorktreeMetadata,
   collectWorktreeLifecycleInventory,
+  createFenceRenewal,
 };
 
 type RetirementApplyResult = {
@@ -120,6 +150,7 @@ export function parseArgs(argv: string[]): Options {
     nowMs: Date.now(),
     apply: false,
     maxRetire: parseMaxRetire(undefined),
+    allowUnenforcedPlanes: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -137,6 +168,9 @@ export function parseArgs(argv: string[]): Options {
         break;
       case "--apply":
         options.apply = true;
+        break;
+      case "--allow-unenforced-planes":
+        options.allowUnenforcedPlanes = true;
         break;
       case "--max-retire": {
         const value = argv[++index];
@@ -176,11 +210,18 @@ sessions, pull requests, workflow runs, and live process cwd ownership. It never
 repairs metadata, removes worktrees, or removes branches unless --apply becomes
 maintenance planes are enforced.
 
---apply is currently unusable until the Beads and GitHub maintenance planes
-land. Cave already coordinates its local fence with Coven's released maintenance
-protocol, but it refuses with exit 2 before assessing any unit while either
-remaining plane is unenforced. Retire cleanup-ready units by hand through the
-archive-tag route in CLAUDE.md until that changes (cave-3aqvr).`);
+--apply refuses with exit 2 before assessing any unit while the Beads or GitHub
+maintenance planes are unenforced (cave-3aqvr). The coven plane is
+opportunistic -- enforced when Coven's released maintenance protocol is
+available, unenforced when it is not -- so it may be missing too. Retire
+cleanup-ready units by hand through the archive-tag route in CLAUDE.md, or opt
+in below.
+
+--allow-unenforced-planes opts in to running --apply while the known-pending
+planes (coven/beads/github, cave-wqa0b.2/.3/.4) are unenforced. The local plane
+is still required and is never waivable: it performs the exclusion that stops
+two actors retiring the same unit. Every degraded run is announced on stderr
+naming the waived planes before any unit is touched (cave-s03wp).`);
 }
 
 function errorMessage(error: unknown): string {
@@ -531,7 +572,42 @@ export function runRetirementApply(
     const repairableOrphans = (inventory.orphanedMetadata ?? []).filter(
       (candidate) => candidate.repairable,
     );
-    const repairLimit = Math.min(options.maxRetire, repairableOrphans.length);
+    // Reserve a retirement slot before metadata repair spends the budget.
+    //
+    // --max-retire is one allowance shared by two jobs, and repair is served
+    // first. Whenever there were at least maxRetire repairable records, repair
+    // took all of it, gitLimit fell to 0, and retireLifecycleUnits was never
+    // called — so the run retired nothing while still listing the units it
+    // could have retired, which reads as "considered and declined" rather than
+    // "never got a slot". Measured on two consecutive runs against this
+    // checkout: 3 repaired, 0 retired, with 15 records pending; at three
+    // repairs a run it would take five clean runs before a single worktree
+    // became eligible, and hand-retirement keeps adding residue faster than
+    // that (cave-xbc87). See cave-1si7i.
+    //
+    // The reservation is one slot, not a second budget: total mutations still
+    // cannot exceed maxRetire, which is what bounds an unattended sweep's blast
+    // radius (scripts/worktree-sweep-prompt.md pins --max-retire 3 and says not
+    // to raise it). It is taken only when something is actually retirable, so a
+    // run with nothing to retire still spends the whole allowance on repair,
+    // exactly as before.
+    //
+    // The lane test matches retireLifecycleUnits' own eligibility filter
+    // (worktree-lifecycle-retirement.ts:161); anything else would reserve a
+    // slot for work that cannot happen.
+    const retirableAtGate = inventory.items.some(
+      (item) => item.lane === "retire-after-gate",
+    );
+    // Only reserve when there is more than one slot to divide. With
+    // --max-retire 1 a reservation would not share the budget, it would just
+    // move the starvation onto repair — which is the same defect wearing the
+    // other hat, and it would contradict the established behaviour that a
+    // single-slot run spends it on repair.
+    const retirementReservation = retirableAtGate && options.maxRetire >= 2 ? 1 : 0;
+    const repairLimit = Math.min(
+      Math.max(0, options.maxRetire - retirementReservation),
+      repairableOrphans.length,
+    );
     metadataRepair = dependencies.repairOrphanedWorktreeMetadata({
       candidates: inventory.orphanedMetadata ?? [],
       maxRepairs: repairLimit,
@@ -581,11 +657,47 @@ export function runRetirementApply(
           }`;
       } else {
         try {
+          // Renew the fence AS the inventory works, not merely before it.
+          //
+          // This is the longest operation inside the fence — on a large
+          // checkout it outlives the 120s Coven lease on its own (measured at
+          // 141s against COVEN_OWNER_LEASE_MS), so heartbeating once above and
+          // verifying ownership afterwards is not enough: the lease is already
+          // gone by the time the inventory returns, the ownership check below
+          // cannot pass, and the release at the end of this function fails with
+          // "maintenance lease expired".
+          //
+          // createFenceRenewal anchors renewal to progress rather than to a
+          // timer, which is the only thing that works here: the inventory is
+          // synchronous throughout (spawnSync for git and gh), so it never
+          // yields and no timer callback would ever run. The create path solved
+          // exactly this for its own inventory in cave-cs9g1; this call site
+          // was left behind. See cave-ykj47.
+          //
+          // Throwing on a failed heartbeat is deliberate and matches
+          // createFenceRenewal's fail-closed contract: if the fence is gone,
+          // continuing would do unexcluded work while believing otherwise. The
+          // catch below turns that into a reported postInventoryError rather
+          // than an abort, because the retirement above has already happened
+          // and its result must still be reported.
+          const makeFenceRenewal =
+            dependencies.createFenceRenewal ?? createFenceRenewal;
+          const renewFenceDuringPostInventory = makeFenceRenewal(() => {
+            const renewed = dependencies.heartbeatMaintenanceGate(acquired.handle);
+            if (!renewed.ok) {
+              throw new Error(
+                `failed to heartbeat maintenance gate during post-apply inventory: ${
+                  renewed.reason ?? "unknown heartbeat error"
+                }`,
+              );
+            }
+          });
           const candidatePostInventory =
             dependencies.collectWorktreeLifecycleInventory({
               repo: options.repo!,
               root: options.root,
               nowMs: options.nowMs,
+              onProgress: renewFenceDuringPostInventory,
             });
           const ownershipAfter =
             dependencies.verifyMaintenanceGateOwnership(acquired.handle);
@@ -666,8 +778,36 @@ export function main(argv = process.argv.slice(2)): number {
 
   if (options.apply) {
     const capabilities = repositoryMaintenanceCapabilities();
-    if (!capabilities.complete) {
+    const admission = assessMaintenancePlaneAdmission({
+      capabilities: capabilities as unknown as MaintenancePlaneCapabilities,
+      allowUnenforcedPlanes: options.allowUnenforcedPlanes,
+    });
+    if (!admission.ok) {
+      // A refusal the flag cannot lift reads differently from the ordinary
+      // gate-incomplete one, and saying so stops an operator adding the flag
+      // again harder when the local plane is what is missing.
+      if (admission.code !== "gate-incomplete") {
+        console.error(`worktree-lifecycle-patrol: --apply refused; ${admission.diagnostic}`);
+        return 2;
+      }
       return renderApplyUnavailable(options, inventory, summary, capabilities);
+    }
+    if (admission.degraded) {
+      // Audit before acting, not after: if the run dies mid-retirement, the
+      // record of which planes were waived must already exist. stderr so it
+      // survives --json consumers reading stdout.
+      console.error(
+        [
+          "worktree-lifecycle-patrol: DEGRADED APPLY — proceeding with unenforced maintenance planes",
+          `  waived: ${admission.waivedPlanes.join(", ")}`,
+          ...admission.waivedPlanes.map(
+            (plane) =>
+              `    ${plane.padEnd(7)} ${capabilities[plane]?.source || "no source recorded"}`,
+          ),
+          "  local plane is enforced; exclusion still applies.",
+          "  Authorized by --allow-unenforced-planes (cave-s03wp).",
+        ].join("\n"),
+      );
     }
   }
 

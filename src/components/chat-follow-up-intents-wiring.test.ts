@@ -9,7 +9,7 @@ const journal = await readFile(new URL("./journal/journal-entries.tsx", import.m
 assert.match(chatView, /import \{ FollowUpCards \} from "@\/components\/chat-follow-up-cards"/, "ChatView uses the shared typed follow-up cards");
 assert.match(chatView, /import \{ FollowUpTaskReview \} from "@\/components\/chat-follow-up-task-review"/, "ChatView owns the review-first task handoff");
 assert.match(chatView, /<FollowUpCards[\s\S]*paths=\{followUp\.suggestions\}[\s\S]*onActivate=\{handleFollowUp\}/, "the composer placement routes cards through typed handling");
-assert.match(chatView, /<FollowUpCards[\s\S]*paths=\{nextPaths\}[\s\S]*onActivate=\{onSuggestion\}/, "historical assistant turns use the same cards");
+assert.equal([...chatView.matchAll(/<FollowUpCards/g)].length, 1, "historical assistant turns never render action cards");
 assert.match(chatView, /setInput\(path\.prompt\);[\s\S]{0,160}inputRef\.current\?\.focus\(\)/, "reply follow-ups fill and focus the composer without sending");
 assert.match(chatView, /path\.kind === "task"[\s\S]{0,120}setTaskSuggestion\(path\)/, "task follow-ups open a review instead of sending");
 assert.match(chatView, /path\.actionId === "open-tasks"[\s\S]{0,180}new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode: "board" \} \}\)/, "the action allowlist only navigates to Tasks");
@@ -31,6 +31,11 @@ assert.match(
   groupChat,
   /\.filter\(\(path\) => path\.kind === "reply"\)[\s\S]*?sendSuggestion\(\s*\n\s*path\.prompt,\s*\n\s*agent\.familiarId,/,
   "only filtered reply text reaches the group send path",
+);
+assert.match(
+  groupChat,
+  /const isLatestRun = runIndex === visibleRuns\.length - 1;[\s\S]*?isLatestRun && agent\.status === "complete"/,
+  "group-chat actions render only for the newest run",
 );
 assert.doesNotMatch(groupChat, /typed\.map\(/, "raw typed task/action paths never reach group rendering or sendSuggestion");
 assert.doesNotMatch(groupChat, /broadcast\(typed\b|sendSuggestion\(typed\b/, "task/action paths never reach group broadcast/send routing");

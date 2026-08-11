@@ -902,6 +902,45 @@ test("Windows packaged sidecar starts without a console window", async () => {
   );
 });
 
+test("Windows app-owned console children share the native no-window launcher", async () => {
+  const [helper, discovery, shellCommands] = await Promise.all([
+    readNativeHost("windows_command.rs"),
+    readNativeHost("sidecar_discovery.rs"),
+    readNativeHost("shell_open_commands.rs"),
+  ]);
+
+  assert.match(
+    helper,
+    /fn hidden_command[\s\S]*command\.creation_flags\(CREATE_NO_WINDOW\)/,
+    "the shared helper must apply CREATE_NO_WINDOW to noninteractive native children",
+  );
+  assert.match(
+    helper,
+    /fn hidden_system32_command[\s\S]*windows_system32_binary\(program\)[\s\S]*current_dir\(system32\)/,
+    "system children must use absolute System32 programs and a trusted cwd",
+  );
+  assert.equal(
+    discovery.match(/windows_command::hidden_system32_command\("where\.exe"\)/g)?.length,
+    2,
+    "Node and Coven where.exe discovery must use the hidden launcher and an absolute System32 path",
+  );
+  assert.match(
+    shellCommands,
+    /CovenFolderPicker[\s\S]*windows_command::hidden_system32_command\(\s*r"WindowsPowerShell\\v1\.0\\powershell\.exe",?\s*\)[\s\S]*"-Sta"/,
+    "the visible folder picker must suppress only PowerShell's console host and resolve it from System32",
+  );
+  assert.equal(
+    shellCommands.match(/windows_command::hidden_system32_command\("rundll32\.exe"\)/g)?.length,
+    2,
+    "both URL launchers resolve rundll32 from System32 instead of the working directory",
+  );
+  assert.doesNotMatch(
+    `${discovery}\n${shellCommands}`,
+    /(?:Command::new|hidden_command)\("(?:where|powershell|rundll32)\.exe"\)/,
+    "console-subsystem discovery, dialog, and protocol hosts cannot use cwd-searchable bare names",
+  );
+});
+
 test("Windows first launch paints progress and supports recovery while the sidecar starts", async () => {
   const [launcher, startupPage] = await Promise.all([
     readNativeHost(
@@ -936,13 +975,13 @@ test("Windows first launch paints progress and supports recovery while the sidec
   );
   assert.match(
     launcher,
-    /spawn_sidecar_startup\(\s*app\.handle\(\)\.clone\(\),\s*startup_control,\s*NativeStartupTerminalPolicy::RecordAtLifecycleTerminal,\s*\)\?;\s*spawn_sidecar_supervisor\(app\.handle\(\)\.clone\(\)\)/,
+    /spawn_sidecar_startup\(\s*app\.handle\(\)\.clone\(\),\s*startup_control,\s*NativeStartupTerminalPolicy::RecordAtLifecycleTerminal,\s*"sidecar-startup",\s*1,\s*\)\?;\s*spawn_sidecar_supervisor\(app\.handle\(\)\.clone\(\)\)/,
     "Windows must start post-ready supervision beside the startup owner",
   );
   assert.match(
     launcher,
-    /spawn_sidecar_startup\(\s*app\.clone\(\),\s*Arc::clone\(control\.inner\(\)\),\s*sidecar_startup::NativeStartupTerminalPolicy::DeferredToSupervisor,\s*\)/,
-    "automatic Windows recovery must reuse SidecarStartupControl instead of racing it",
+    /spawn_sidecar_startup\(\s*app\.clone\(\),\s*Arc::clone\(control\.inner\(\)\),\s*sidecar_startup::NativeStartupTerminalPolicy::DeferredToSupervisor,\s*"sidecar-recovery",\s*attempt,\s*\)/,
+    "automatic Windows recovery must reuse SidecarStartupControl and carry its attempt identity",
   );
   assert.match(
     launcher,

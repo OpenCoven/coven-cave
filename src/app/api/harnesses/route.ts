@@ -10,7 +10,15 @@ import {
   type AdapterReport,
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
-import { covenLaunchCommand, covenSpawnEnv, pickWindowsLauncher, refreshCovenSpawnEnv, type CovenLaunchCommand } from "@/lib/coven-bin";
+import {
+  COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC,
+  covenLaunchCommand,
+  covenSpawnEnv,
+  covenWrapperSpawnEnv,
+  pickWindowsLauncher,
+  refreshCovenSpawnEnv,
+  type CovenLaunchCommand,
+} from "@/lib/coven-bin";
 import { COPILOT_NO_AUTO_UPDATE_ARG, copilotStreamSpec } from "@/lib/copilot-stream";
 import { probeCodexRuntimeAvailability } from "@/lib/codex-runtime-availability";
 import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
@@ -68,6 +76,23 @@ type AdapterAvailability = {
   spawnEnv?: NodeJS.ProcessEnv;
 };
 
+function missingCovenAvailability(component?: "coven"): RuntimeAvailabilitySummary {
+  return {
+    state: "missing",
+    code: "runtime_missing",
+    message: COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC,
+    ...(component ? { component } : {}),
+  };
+}
+
+function resolvedCovenLaunch(): CovenLaunchCommand | null {
+  try {
+    return covenLaunchCommand();
+  } catch {
+    return null;
+  }
+}
+
 // Mirrors the send route's launch dispatch: copilot/grok/hermes/opencode use
 // their direct CLI launch plans, everything else launches through `coven run`.
 // Same commands, same spawn env shape (no familiar → shared keys only), and
@@ -89,9 +114,11 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
   }
   const env = id === "opencode" ? openCodeSpawnEnv(null) : harnessSpawnEnv(null);
   if (id === "codex") {
+    const launch = resolvedCovenLaunch();
+    if (!launch) return { availability: missingCovenAvailability("coven") };
     return {
       availability: summarizeRuntimeAvailability(await probeCodexRuntimeAvailability({
-        launch: covenLaunchCommand(),
+        launch,
         env,
       })),
     };
@@ -123,7 +150,8 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
       hermesLaunch,
     };
   }
-  const launch = covenLaunchCommand();
+  const launch = resolvedCovenLaunch();
+  if (!launch) return { availability: missingCovenAvailability() };
   if (id === "claude") {
     // The chat route launches Claude through `coven run`, so readiness means
     // both the outer Coven command and Claude in that same scoped env exist.
@@ -239,8 +267,10 @@ function probeGrokModels(
 
 function covenSupportsAdapterList(): Promise<boolean> {
   return new Promise((resolve) => {
-    const { command, fixedArgs } = covenLaunchCommand();
-    const child = spawn(command, [...fixedArgs, "--help"], { windowsHide: true, env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+    const launch = resolvedCovenLaunch();
+    if (!launch) return resolve(false);
+    const { command, fixedArgs } = launch;
+    const child = spawn(command, [...fixedArgs, "--help"], { windowsHide: true, env: covenWrapperSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     child.stdout.on("data", (d) => (out += d.toString()));
     child.stderr.on("data", (d) => (out += d.toString()));
@@ -261,8 +291,10 @@ function covenSupportsAdapterList(): Promise<boolean> {
 
 function loadCovenAdapterSummaries(): Promise<CovenAdapterSummary[]> {
   return new Promise((resolve) => {
-    const { command, fixedArgs } = covenLaunchCommand();
-    const child = spawn(command, [...fixedArgs, "adapter", "list", "--json"], { windowsHide: true, env: covenSpawnEnv(), stdio: ["ignore", "pipe", "ignore"] });
+    const launch = resolvedCovenLaunch();
+    if (!launch) return resolve([]);
+    const { command, fixedArgs } = launch;
+    const child = spawn(command, [...fixedArgs, "adapter", "list", "--json"], { windowsHide: true, env: covenWrapperSpawnEnv(), stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     const t = setTimeout(() => {
       child.kill("SIGTERM");

@@ -25,6 +25,51 @@ export interface WorktreeLifecycleInventoryOptions {
   repo: string;
   root: string;
   nowMs: number;
+  /**
+   * Called after every external command this inventory runs.
+   *
+   * A caller holding a lease over the inventory cannot renew it with a timer:
+   * this function is synchronous and every second of it is spent inside
+   * `spawnSync`, so the event loop never turns and no `setInterval` fires. The
+   * hook is the only place renewal can happen, and anchoring it to commands
+   * rather than to wall-clock means renewal tracks work actually done — the
+   * inventory gets slower as the checkout grows, and so does the renewal.
+   *
+   * Throwing from the hook aborts the inventory. That is deliberate: a caller
+   * whose fence has been lost should stop reading a repository it no longer
+   * excludes writers from, rather than finishing and reporting a snapshot
+   * taken without exclusion. Callers that merely want progress should not
+   * throw.
+   */
+  onProgress?: () => void;
+
+  /**
+   * Restrict the per-unit GitHub probing to these full local refs.
+   *
+   * The pull-request probe costs one GraphQL round trip per head oid and
+   * another per branch — measured at ~2 calls and ~2s per unit, so ~104 calls
+   * and ~95s of a ~134s inventory on a 47-unit checkout. Retirement's reprobe
+   * pays all of it to re-verify ONE candidate and then discards every other
+   * unit, twice per retirement (cave-imhf0).
+   *
+   * Scoping narrows ONLY that GitHub probing. Every unit is still enumerated
+   * locally, so cross-unit checks that do not need the network — conflicting
+   * structured paths, duplicate branch claims, orphaned metadata — see exactly
+   * what they see in a full inventory, and the focused unit's own
+   * classification is unchanged.
+   *
+   * Units outside the scope FAIL CLOSED: each is given an explicit
+   * "not probed" probe error, so it classifies `uncertain` rather than
+   * appearing to have no pull request. That direction is not optional. The
+   * absence of a PR association is precisely what makes a unit look landed and
+   * retirable, so treating "not asked" as "no PR" would turn a cost
+   * optimisation into a gate that offers up live worktrees for destruction.
+   *
+   * A unit whose head oid or branch is shared with a focused unit keeps its
+   * real answer: the probe result is keyed by oid and branch, not by unit, so
+   * poisoning it would corrupt the focused unit's own data.
+   */
+  focusRefs?: string[];
 }
 
 export interface WorktreeLifecycleInventory {
@@ -274,12 +319,55 @@ function isIsoCalendarDate(value: string): boolean {
   );
 }
 
+/**
+ * Progress hook for the in-flight inventory, or null when none is running.
+ *
+ * Module state rather than a threaded parameter because `command` is called
+ * from well over a hundred sites; threading it would be a large diff for no
+ * added safety. `collectWorktreeLifecycleInventory` is synchronous and
+ * single-threaded, so the only way two inventories could interleave is
+ * re-entrance from inside the hook, which `runProgressHook` refuses.
+ */
+let activeProgressHook: (() => void) | null = null;
+let insideProgressHook = false;
+
+function runProgressHook(): void {
+  // A hook that ran a command would re-enter this and recurse without bound.
+  // Note the reach of this guard: anything the hook does — including starting
+  // a whole nested inventory — runs with progress reporting suppressed, so a
+  // nested read never drives its own hook. That is intended (the outer fence
+  // is the one being held) but it means a nested inventory cannot abort
+  // through its own hook.
+  if (activeProgressHook === null || insideProgressHook) return;
+  insideProgressHook = true;
+  try {
+    activeProgressHook();
+  } finally {
+    insideProgressHook = false;
+  }
+}
+
 function command(
   executable: string,
   args: string[],
   cwd: string,
   timeout = 30_000,
   env: NodeJS.ProcessEnv = process.env,
+): CommandResult {
+  const result = runCommand(executable, args, cwd, timeout, env);
+  // Deliberately OUTSIDE runCommand's catch: a hook that throws is reporting a
+  // lost fence, and swallowing it there would turn that into an ordinary
+  // "invocation failed" result and let the inventory continue unfenced.
+  runProgressHook();
+  return result;
+}
+
+function runCommand(
+  executable: string,
+  args: string[],
+  cwd: string,
+  timeout: number,
+  env: NodeJS.ProcessEnv,
 ): CommandResult {
   try {
     const result = spawnSync(executable, args, {
@@ -2799,6 +2887,20 @@ function classifyInventoryObservation(
 export function collectWorktreeLifecycleInventory(
   options: WorktreeLifecycleInventoryOptions,
 ): WorktreeLifecycleInventory {
+  const previousHook = activeProgressHook;
+  activeProgressHook = options.onProgress ?? null;
+  try {
+    return collectInventory(options);
+  } finally {
+    // Restore rather than null out, so a nested call (tests, tooling) cannot
+    // silently disarm an outer inventory's fence renewal.
+    activeProgressHook = previousHook;
+  }
+}
+
+function collectInventory(
+  options: WorktreeLifecycleInventoryOptions,
+): WorktreeLifecycleInventory {
   const requestedRoot = normalizeAbsoluteWorktreePath(options.root);
   if (requestedRoot === null) throw new Error("root must be an absolute worktree path");
   const root = realpathSync(requestedRoot);
@@ -2882,13 +2984,49 @@ export function collectWorktreeLifecycleInventory(
           oid: null,
           error: originIdentity.error,
         };
+  const focusRefs = options.focusRefs ? new Set(options.focusRefs) : null;
+  const probedUnits =
+    focusRefs === null ? units : units.filter((unit) => unit.ref !== null && focusRefs.has(unit.ref));
   const prs = fetchPullRequests(
     options.repo,
     root,
-    units.map((unit) => unit.head),
-    units.flatMap((unit) => (unit.branch ? [unit.branch] : [])),
+    probedUnits.map((unit) => unit.head),
+    probedUnits.flatMap((unit) => (unit.branch ? [unit.branch] : [])),
     defaultBranch.branch,
   );
+  if (focusRefs !== null) {
+    // Fail closed for everything that was not asked about. Without this the
+    // unprobed units would read as "no pull request", which is the signal that
+    // makes a unit look landed and retirable — a scoped inventory would then
+    // offer live worktrees up for destruction.
+    //
+    // Keyed by oid and branch rather than by unit, because that is how the
+    // probe result is keyed: two units can share a head oid, and marking it
+    // unprobed on behalf of an unfocused unit would corrupt the focused unit's
+    // own answer. So skip any key a focused unit depends on.
+    const probedHeads = new Set(probedUnits.map((unit) => unit.head));
+    const probedBranches = new Set(
+      probedUnits.flatMap((unit) => (unit.branch ? [unit.branch] : [])),
+    );
+    // Describes the MECHANISM, not whoever happens to call it today. focusRefs
+    // is a general inventory option, and this string surfaces in unit reasons
+    // and CLI diagnostics — naming one caller would misdescribe the next one.
+    const scopedError =
+      `pull request association not probed: this unit was outside the inventory's ` +
+      `focusRefs scope (${focusRefs.size} ref${focusRefs.size === 1 ? "" : "s"})`;
+    for (const unit of units) {
+      if (!probedHeads.has(unit.head) && !prs.errorsByOid.has(unit.head)) {
+        prs.errorsByOid.set(unit.head, scopedError);
+      }
+      if (
+        unit.branch !== null &&
+        !probedBranches.has(unit.branch) &&
+        !prs.errorsByBranch.has(unit.branch)
+      ) {
+        prs.errorsByBranch.set(unit.branch, scopedError);
+      }
+    }
+  }
   const workflows = fetchWorkflows(options.repo, root);
   const claims = fetchClaims(root);
   const sessions = fetchSessions(root);

@@ -36,11 +36,12 @@ test("RRULEs are structurally validated — a prefix check alone let garbage per
   assert.equal(parseCodexRrule("RRULE:garbage").mode, "raw");
 });
 
-test("errors map by kind: bad schedule 400, missing mission 404, internal failures 500", () => {
+test("errors map by kind: active owner 409, bad schedule 400, missing mission 404, internal failures 500", () => {
   // Thrown runner errors are classified: known precondition/bound messages →
   // 400, mission-not-found → 404, and EVERYTHING else (fs errors, bugs) →
   // 500 — internal failures must not masquerade as client errors.
   assert.match(source, /research mission not found"\) return 404/);
+  assert.match(source, /RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT\) return 409/);
   assert.match(source, /VALIDATION_ERRORS\.has\(message\) \|\| message\.startsWith\("cannot schedule a "\)/);
   assert.match(source, /return 500;/);
   assert.match(source, /status: scheduleErrorStatus\(message\)/);

@@ -68,6 +68,8 @@ mod sidecar_auth;
 #[cfg(desktop)]
 mod sidecar_discovery;
 #[cfg(desktop)]
+mod sidecar_diagnostics;
+#[cfg(desktop)]
 mod sidecar_lifecycle;
 #[cfg(desktop)]
 mod sidecar_ports;
@@ -82,6 +84,8 @@ mod tauri_setup;
 mod window_geometry;
 #[cfg(all(desktop, target_os = "windows"))]
 mod windows_process_job;
+#[cfg(all(desktop, target_os = "windows"))]
+mod windows_command;
 
 #[cfg(desktop)]
 use desktop_reachability::*;

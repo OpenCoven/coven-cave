@@ -30,10 +30,28 @@ assert.match(
   /normalizeGitHubLinks/,
   "Board persistence should normalize task GitHub connections",
 );
+// Asserted as separate facts rather than one literal expression: the call is
+// now multi-line, and pinning its exact text made this break on a change that
+// preserved every behaviour it names (cave-0b8t8).
 assert.match(
   boardStore,
-  /const github = mergeGitHubLinks\(normalizeGitHubLinks\(c\.github\), \.\.\.gitHubLinksFromLinks\(c\.links\)\)/,
-  "Board backfill should preserve explicit GitHub connections and derive legacy GitHub link URLs",
+  /const storedGitHub = normalizeGitHubLinks\(c\.github\)/,
+  "Board backfill normalizes the stored GitHub connections",
+);
+assert.match(
+  boardStore,
+  /mergeGitHubLinks\(\s*storedGitHub,/,
+  "Board backfill preserves explicit GitHub connections as the merge base",
+);
+assert.match(
+  boardStore,
+  /gitHubLinksFromLinks\(c\.links\)\.filter\(/,
+  "Board backfill still derives legacy GitHub link URLs",
+);
+assert.match(
+  boardStore,
+  /sameGitHubTarget\(stored, derived\)/,
+  "a URL-derived GitHub link is dropped when a stored link already names that item — otherwise its generated title overwrites the real one on every load (cave-0b8t8)",
 );
 assert.match(
   boardCreateApi,

@@ -4624,6 +4624,264 @@ exit 0
     "runRetirementApply preserves both retirement and release failures",
   );
 
+  // ── Metadata repair must not eat the whole retirement budget (cave-1si7i) ───
+  //
+  // --max-retire is one allowance shared by repair and retirement, and repair
+  // is served first. With at least maxRetire repairable records, repair took
+  // all of it and retireLifecycleUnits was never called, so a run reported
+  // "Locally retired (0)" beside the units it could have retired. Two
+  // consecutive real runs did exactly that: 3 repaired, 0 retired.
+  {
+    const retirableInventory = {
+      ...applyInventory,
+      // Enough repairable records to consume maxRetire several times over.
+      orphanedMetadata: Array.from({ length: 12 }, (_, index) => ({
+        beadId: `cave-fixture-${index}`,
+        location: "primary",
+        branch: `feat/fixture-${index}`,
+        path: `${repo}/.worktrees/fixture-${index}`,
+        repairable: true,
+      })),
+      orphanedMetadataErrors: [],
+    };
+    assert.ok(
+      retirableInventory.items.some((item) => item.lane === "retire-after-gate"),
+      "fixture inventory must contain a unit retirement would actually select",
+    );
+
+    let repairBudget = null;
+    let retireBudget = null;
+    runRetirementApply(applyOptions, retirableInventory, {
+      createMetadataRepairOperations: () => ({ fixture: "metadata-ops" }),
+      repairOrphanedWorktreeMetadata: ({ maxRepairs }) => {
+        repairBudget = maxRepairs;
+        return emptyMetadataRepair;
+      },
+      acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+      heartbeatMaintenanceGate: () => ({ ok: true }),
+      verifyMaintenanceGateOwnership: () => ({ ok: true }),
+      releaseMaintenanceGate: () => ({ ok: true }),
+      createGitRetirementOperations: () => ({ fixture: "ops" }),
+      retireLifecycleUnits: ({ maxRetire }) => {
+        retireBudget = Number(maxRetire);
+        return fakeRetirement;
+      },
+      collectWorktreeLifecycleInventory: () => fakePostInventory,
+    });
+
+    assert.equal(
+      retireBudget,
+      1,
+      "retirement must get a slot even when repairable records outnumber the budget — it used to get none",
+    );
+    assert.equal(
+      repairBudget,
+      applyOptions.maxRetire - 1,
+      "repair takes the remainder, not the whole allowance",
+    );
+    assert.ok(
+      repairBudget + retireBudget <= applyOptions.maxRetire,
+      "the reservation must not widen the blast radius --max-retire exists to bound",
+    );
+  }
+
+  // A single-slot run still spends it on repair. Reserving out of a budget of
+  // one would not share it, it would only move the starvation onto repair --
+  // the same defect wearing the other hat. Pinned here because it is a
+  // deliberate choice rather than a fallout of the arithmetic.
+  {
+    let repairBudget = null;
+    let retirementRan = false;
+    runRetirementApply(
+      { ...applyOptions, maxRetire: 1 },
+      {
+        ...applyInventory,
+        orphanedMetadata: [
+          {
+            beadId: "cave-fixture-single",
+            location: "primary",
+            branch: "feat/fixture-single",
+            path: `${repo}/.worktrees/fixture-single`,
+            repairable: true,
+          },
+        ],
+        orphanedMetadataErrors: [],
+      },
+      {
+        createMetadataRepairOperations: () => ({ fixture: "metadata-ops" }),
+        repairOrphanedWorktreeMetadata: ({ maxRepairs }) => {
+          repairBudget = maxRepairs;
+          return emptyMetadataRepair;
+        },
+        acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+        heartbeatMaintenanceGate: () => ({ ok: true }),
+        verifyMaintenanceGateOwnership: () => ({ ok: true }),
+        releaseMaintenanceGate: () => ({ ok: true }),
+        createGitRetirementOperations: () => ({ fixture: "ops" }),
+        retireLifecycleUnits: () => {
+          retirementRan = true;
+          return fakeRetirement;
+        },
+        collectWorktreeLifecycleInventory: () => fakePostInventory,
+      },
+    );
+
+    assert.equal(repairBudget, 1, "a single slot goes to repair, as it did before the reservation");
+    assert.equal(retirementRan, false, "and retirement is not invoked with no slot left");
+  }
+
+  // With nothing retirable, the whole allowance still goes to repair: the
+  // reservation is for work that can actually happen, not a standing tax.
+  {
+    const nothingRetirable = {
+      ...applyInventory,
+      items: applyInventory.items.filter((item) => item.lane !== "retire-after-gate"),
+      orphanedMetadata: Array.from({ length: 12 }, (_, index) => ({
+        beadId: `cave-fixture-${index}`,
+        location: "primary",
+        branch: `feat/fixture-${index}`,
+        path: `${repo}/.worktrees/fixture-${index}`,
+        repairable: true,
+      })),
+      orphanedMetadataErrors: [],
+    };
+
+    let repairBudget = null;
+    let retirementRan = false;
+    runRetirementApply(applyOptions, nothingRetirable, {
+      createMetadataRepairOperations: () => ({ fixture: "metadata-ops" }),
+      repairOrphanedWorktreeMetadata: ({ maxRepairs }) => {
+        repairBudget = maxRepairs;
+        return emptyMetadataRepair;
+      },
+      acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+      heartbeatMaintenanceGate: () => ({ ok: true }),
+      verifyMaintenanceGateOwnership: () => ({ ok: true }),
+      releaseMaintenanceGate: () => ({ ok: true }),
+      createGitRetirementOperations: () => ({ fixture: "ops" }),
+      retireLifecycleUnits: () => {
+        retirementRan = true;
+        return fakeRetirement;
+      },
+      collectWorktreeLifecycleInventory: () => fakePostInventory,
+    });
+
+    assert.equal(
+      repairBudget,
+      applyOptions.maxRetire,
+      "no reservation is taken when nothing is retirable",
+    );
+    assert.equal(retirementRan, false, "and retirement is not invoked for an empty candidate set");
+  }
+
+  // ── The post-apply inventory renews the fence AS it works (cave-ykj47) ──────
+  //
+  // The inventory is the longest operation inside the fence and on a real
+  // checkout outruns the 120s Coven lease by itself (measured 141s). Before the
+  // fix it ran with no progress hook: the gate was heartbeated once before it
+  // and verified after, so the lease was already gone by the time it returned
+  // and the release failed with "maintenance lease expired".
+  //
+  // The renewal factory is injected unthrottled here on purpose. The real
+  // createFenceRenewal skips its first call and then renews at most every
+  // FENCE_RENEWAL_INTERVAL_MS, so in a test that finishes in milliseconds every
+  // call is throttled and a missing hook is indistinguishable from a working
+  // one.
+  {
+    const heartbeats = [];
+    let sawProgressHook = null;
+    const result = runRetirementApply(applyOptions, applyInventory, {
+      ...metadataApplyDependencies,
+      acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+      heartbeatMaintenanceGate: (handle) => {
+        heartbeats.push(handle);
+        return { ok: true };
+      },
+      verifyMaintenanceGateOwnership: () => ({ ok: true }),
+      releaseMaintenanceGate: () => ({ ok: true }),
+      createGitRetirementOperations: () => ({ fixture: "ops" }),
+      retireLifecycleUnits: () => fakeRetirement,
+      createFenceRenewal: (renew) => renew,
+      collectWorktreeLifecycleInventory: (options) => {
+        sawProgressHook = options.onProgress;
+        // Stand in for the inventory's own progress reporting.
+        for (let index = 0; index < 4; index += 1) options.onProgress?.();
+        return fakePostInventory;
+      },
+    });
+
+    assert.equal(
+      typeof sawProgressHook,
+      "function",
+      "the post-apply inventory must receive a progress hook — without one nothing renews the fence while it runs",
+    );
+    assert.equal(
+      heartbeats.length,
+      5,
+      "one heartbeat before the inventory plus one per progress report",
+    );
+    assert.ok(
+      heartbeats.every((handle) => handle === acquiredHandle),
+      "every renewal renews the fence this run actually holds",
+    );
+    assert.deepEqual(result.postInventory, fakePostInventory);
+    assert.equal(result.postInventoryError, undefined);
+    assert.equal(result.warning, undefined, "the release succeeds when the fence is still held");
+  }
+
+  // A fence that dies mid-inventory must stop the inventory, not be ridden out.
+  // createFenceRenewal is documented fail-closed: work continuing past a lost
+  // fence is no longer excluding the writers it believes it is. The retirement
+  // above has already happened, so this surfaces as a reported error rather
+  // than an abort.
+  {
+    let heartbeatCalls = 0;
+    let progressCalls = 0;
+    const result = runRetirementApply(applyOptions, applyInventory, {
+      ...metadataApplyDependencies,
+      acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+      heartbeatMaintenanceGate: () => {
+        heartbeatCalls += 1;
+        // Succeed for the pre-inventory heartbeat, then lose the fence.
+        return heartbeatCalls === 1
+          ? { ok: true }
+          : { ok: false, reason: "maintenance lease expired" };
+      },
+      verifyMaintenanceGateOwnership: () => ({ ok: true }),
+      releaseMaintenanceGate: () => ({ ok: true }),
+      createGitRetirementOperations: () => ({ fixture: "ops" }),
+      retireLifecycleUnits: () => fakeRetirement,
+      createFenceRenewal: (renew) => renew,
+      collectWorktreeLifecycleInventory: (options) => {
+        for (let index = 0; index < 4; index += 1) {
+          progressCalls += 1;
+          options.onProgress?.();
+        }
+        return fakePostInventory;
+      },
+    });
+
+    assert.equal(
+      progressCalls,
+      1,
+      "the inventory stops at the first progress report after the fence is lost",
+    );
+    assert.match(
+      result.postInventoryError,
+      /failed to heartbeat maintenance gate during post-apply inventory: maintenance lease expired/,
+    );
+    assert.equal(
+      result.postInventory,
+      undefined,
+      "an inventory collected behind a dead fence is never reported as authoritative",
+    );
+    assert.deepEqual(
+      result.retirement,
+      fakeRetirement,
+      "retirement already completed before the fence was lost and is still reported",
+    );
+  }
+
   const gateRoot = maintenanceGateRoot(repo);
   const applyResult = patrolResult(["--apply", "--json"]);
   assert.equal(applyResult.status, 2);

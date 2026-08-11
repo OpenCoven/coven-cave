@@ -48,7 +48,7 @@ function ModeExplainer() {
           <strong>next message</strong>.
         </p>
         <p className="coven-modes__rule">
-          <code>@name</code> replies to one familiar without advancing the rotation.
+          <code>@name</code> replies to one familiar without changing the selected order.
         </p>
       </div>
     </div>

@@ -9,6 +9,8 @@ const RUST_PATH = /^(?:src-tauri\/|Cargo\.(?:toml|lock)$|rust-toolchain)/;
 const ROOT_RUNTIME_PATH = /^[^/]+\.(?:[cm]?[jt]s|tsx?)$/;
 const E2E_PATH =
   /^(?:src\/(?:app|components|lib|styles)\/|tests\/|server\.(?:mjs|ts)$|playwright\.config|package\.json$|pnpm-lock\.yaml$)/;
+const IOS_PATH =
+  /^(?:apps\/ios\/|scripts\/(?:ios-xcodegen\.sh|build-ios-(?:markdown|terminal)\.mjs|ci-paths(?:\.test)?\.mjs)$|package\.json$|pnpm-lock\.yaml$|\.github\/workflows\/ci\.yml$)/;
 
 export function classifyCiPaths(paths) {
   const normalized = paths
@@ -18,6 +20,7 @@ export function classifyCiPaths(paths) {
     frontend: normalized.some((file) => FRONTEND_PATH.test(file) || ROOT_RUNTIME_PATH.test(file)),
     rust: normalized.some((file) => RUST_PATH.test(file)),
     e2e: normalized.some((file) => E2E_PATH.test(file) || ROOT_RUNTIME_PATH.test(file)),
+    ios: normalized.some((file) => IOS_PATH.test(file)),
   };
 }
 
@@ -47,7 +50,7 @@ function main() {
   const paths = changedPaths(base, head);
   const result = paths
     ? classifyCiPaths(paths)
-    : { frontend: true, rust: true, e2e: true };
+    : { frontend: true, rust: true, e2e: true, ios: true };
   for (const [name, enabled] of Object.entries(result)) {
     process.stdout.write(`${name}=${enabled}\n`);
   }

@@ -28,8 +28,54 @@ export function isGraphEdge(dep: TaskDependency): boolean {
   return dep.kind === "task" && typeof dep.taskId === "string" && dep.taskId.length > 0;
 }
 
+const DEPENDENCY_KINDS = new Set([
+  "task",
+  "github",
+  "human",
+  "credential",
+  "service",
+  "execution",
+  "external",
+]);
+const DEPENDENCY_STATES = new Set(["unresolved", "resolved", "waived"]);
+const RECORD_ORIGINS = new Set(["human", "enhance", "system"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === "string";
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && !Number.isNaN(Date.parse(value));
+}
+
+function isValidDependencyShape(value: unknown): value is TaskDependency {
+  if (!isRecord(value)) return false;
+  return (
+    isNonEmpty(value.id) &&
+    typeof value.kind === "string" &&
+    DEPENDENCY_KINDS.has(value.kind) &&
+    isNonEmpty(value.label) &&
+    typeof value.state === "string" &&
+    DEPENDENCY_STATES.has(value.state) &&
+    typeof value.origin === "string" &&
+    RECORD_ORIGINS.has(value.origin) &&
+    isTimestamp(value.createdAt) &&
+    isOptionalString(value.taskId) &&
+    isOptionalString(value.ref) &&
+    isOptionalString(value.url) &&
+    isOptionalString(value.resolvedAt) &&
+    isOptionalString(value.resolvedBy) &&
+    isOptionalString(value.evidence)
+  );
+}
+
 export function dependenciesOf(card: Pick<Card, "dependencies">): TaskDependency[] {
-  return card.dependencies ?? [];
+  const raw = (card as { dependencies?: unknown }).dependencies;
+  return Array.isArray(raw) ? raw.filter(isValidDependencyShape) : [];
 }
 
 export function unresolvedOf(card: Pick<Card, "dependencies">): TaskDependency[] {
@@ -40,8 +86,24 @@ function isNonEmpty(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function isValidNextStepShape(step: unknown): step is TaskNextStep {
+  if (!isRecord(step)) return false;
+  return (
+    typeof step.summary === "string" &&
+    typeof step.requiresApproval === "boolean" &&
+    typeof step.origin === "string" &&
+    RECORD_ORIGINS.has(step.origin) &&
+    isTimestamp(step.updatedAt) &&
+    isOptionalString(step.actorFamiliarId) &&
+    isOptionalString(step.capability) &&
+    isOptionalString(step.target) &&
+    (step.inputs === undefined ||
+      (Array.isArray(step.inputs) && step.inputs.every((input) => typeof input === "string")))
+  );
+}
+
 export function isValidNextStep(step: TaskNextStep | null | undefined): step is TaskNextStep {
-  return step != null && isNonEmpty(step.summary);
+  return isValidNextStepShape(step) && isNonEmpty(step.summary);
 }
 
 function sameOptionalString(left: string | null | undefined, right: string | null | undefined): boolean {
@@ -240,6 +302,21 @@ export type OrchestrationContext = {
   automated?: boolean;
 };
 
+export class OrchestrationValidationError extends Error {
+  readonly errors: OrchestrationError[];
+
+  constructor(errors: OrchestrationError[]) {
+    super("Task orchestration validation failed");
+    this.name = "OrchestrationValidationError";
+    this.errors = errors;
+  }
+}
+
+export function assertValidOrchestration(card: Card, ctx: OrchestrationContext): void {
+  const errors = validateOrchestration(card, ctx);
+  if (errors.length > 0) throw new OrchestrationValidationError(errors);
+}
+
 /**
  * Every way a write can violate the contract. Returns all of them rather than
  * the first, so the inspector can mark every bad field in one pass instead of
@@ -250,6 +327,86 @@ export function validateOrchestration(
   ctx: OrchestrationContext,
 ): OrchestrationError[] {
   const errors: OrchestrationError[] = [];
+  const rawDependencies = (card as { dependencies?: unknown }).dependencies;
+  if (rawDependencies !== undefined && rawDependencies !== null) {
+    if (!Array.isArray(rawDependencies)) {
+      errors.push({
+        code: "dependency_invalid",
+        field: "dependencies",
+        message: "Dependencies must be an array of complete dependency records.",
+      });
+    } else {
+      const seen = new Set<string>();
+      for (const raw of rawDependencies) {
+        const dependencyId =
+          isRecord(raw) && typeof raw.id === "string" ? raw.id : undefined;
+        if (!isValidDependencyShape(raw)) {
+          errors.push({
+            code: "dependency_invalid",
+            field: "dependencies",
+            ...(dependencyId ? { dependencyId } : {}),
+            message: "Every dependency must include a valid id, kind, label, state, origin, and createdAt.",
+          });
+          continue;
+        }
+        if (seen.has(raw.id)) {
+          errors.push({
+            code: "dependency_invalid",
+            field: "dependencies",
+            dependencyId: raw.id,
+            message: `Dependency id "${raw.id}" is duplicated.`,
+          });
+        }
+        seen.add(raw.id);
+      }
+    }
+  }
+
+  const rawPrimary = (card as { primaryBlockerId?: unknown }).primaryBlockerId;
+  if (
+    rawPrimary !== undefined &&
+    rawPrimary !== null &&
+    !isNonEmpty(rawPrimary)
+  ) {
+    errors.push({
+      code: "primary_blocker_invalid",
+      field: "primaryBlockerId",
+      message: "The primary blocker must be a non-empty dependency id or null.",
+    });
+  }
+  const rawPinned = (card as { primaryBlockerPinned?: unknown }).primaryBlockerPinned;
+  if (rawPinned !== undefined && typeof rawPinned !== "boolean") {
+    errors.push({
+      code: "primary_blocker_invalid",
+      field: "primaryBlockerPinned",
+      message: "The primary blocker pin must be true or false.",
+    });
+  }
+
+  const rawNextStep = (card as { nextStep?: unknown }).nextStep;
+  if (
+    rawNextStep !== undefined &&
+    rawNextStep !== null &&
+    !isValidNextStepShape(rawNextStep)
+  ) {
+    errors.push({
+      code: "next_step_invalid",
+      field: "nextStep",
+      message: "The next step must include a summary, approval flag, origin, and updatedAt.",
+    });
+  }
+  if (
+    (card.lifecycle === "dispatched" || card.lifecycle === "running") &&
+    isValidNextStepShape(rawNextStep) &&
+    rawNextStep.requiresApproval
+  ) {
+    errors.push({
+      code: "next_step_requires_approval",
+      field: "nextStep",
+      message: "Clear the next step's approval requirement before dispatching this task.",
+    });
+  }
+
   const deps = dependenciesOf(card);
   const unresolved = unresolvedOf(card);
   const live = new Set(ctx.cards.map((other) => other.id));

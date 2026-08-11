@@ -35,13 +35,26 @@ test("mobile resolves the remote daemon path rather than local Node or Coven", (
   assert.deepEqual(resolved.map((entry) => entry.id), ["mobile-remote-daemon", "tailscale"]);
 });
 
-test("Node archives are fixed to the reviewed release, official origin, digest, and bounded size", () => {
-  const archive = nodeArchiveFor("win32", "x64");
-  assert.ok(archive);
-  assert.match(archive.url, new RegExp(`^https://nodejs\\.org/dist/v${MANAGED_NODE_VERSION}/`));
-  assert.match(archive.sha256, /^[a-f0-9]{64}$/);
-  assert.equal(archive.format, "zip");
-  assert.ok(archive.maxBytes > 0);
+test("Node archives exactly match the reviewed Node.js 24.18.0 release manifest", () => {
+  const expected = {
+    "win32-x64": ["zip", "0ae68406b42d7725661da979b1403ec9926da205c6770827f33aac9d8f26e821"],
+    "win32-arm64": ["zip", "f274669adb93b1fd0fbf8f21fd078609e9dcc84333d4f2718d2dde3f9a161a01"],
+    "darwin-x64": ["tar.gz", "dfd0dbd3e721503434df7b7205e719f61b3a3a31b2bcf9729b8b91fea240f080"],
+    "darwin-arm64": ["tar.gz", "e1a97e14c99c803e96c7339403282ea05a499c32f8d83defe9ef5ec66f979ed1"],
+    "linux-x64": ["tar.gz", "783130984963db7ba9cbd01089eaf2c2efb055c7c1693c943174b967b3050cb8"],
+    "linux-arm64": ["tar.gz", "6b4484c2190274175df9aa8f28e2d758a819cb1c1fe6ab481e2f95b463ab8508"],
+  } as const;
+
+  for (const [target, [format, sha256]] of Object.entries(expected)) {
+    const [platform, architecture] = target.split("-") as ["win32" | "darwin" | "linux", "x64" | "arm64"];
+    const archive = nodeArchiveFor(platform, architecture);
+    assert.ok(archive, `expected an archive for ${target}`);
+    const archivePlatform = platform === "win32" ? "win" : platform;
+    assert.equal(archive.url, `https://nodejs.org/dist/v${MANAGED_NODE_VERSION}/node-v${MANAGED_NODE_VERSION}-${archivePlatform}-${architecture}.${format}`);
+    assert.equal(archive.sha256, sha256);
+    assert.equal(archive.maxBytes, 128_000_000);
+  }
+
   assert.equal(nodeArchiveFor("ios", "arm64"), null);
 });
 

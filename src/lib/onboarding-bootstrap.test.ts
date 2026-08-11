@@ -99,6 +99,90 @@ test("bootstrap stops on the blocked stage with one retry action", async () => {
   );
 });
 
+test("bootstrap preserves the stable code and safe diagnostic snapshot on failure", async () => {
+  const diagnostics = {
+    version: 1 as const,
+    capturedAt: "2026-08-10T12:34:56.000Z",
+    stage: "core-tools" as const,
+    code: "download_failed" as const,
+    summary: "Cave couldn’t download its local components.",
+    nextStep: "Check your connection, then retry setup.",
+    environment: {
+      appVersion: "1.2.3",
+      platform: "linux" as const,
+      architecture: "x64" as const,
+    },
+    applicationData: {
+      displayLocation: "Cave application data" as const,
+      exists: true,
+      writeProbe: "passed" as const,
+    },
+    components: {
+      managedNode: "missing" as const,
+      covenCli: "missing" as const,
+      localService: "not_checked" as const,
+    },
+  };
+  const result = await runOnboardingBootstrapStages(
+    createOnboardingBootstrapState(true),
+    {
+      "core-tools": async () => ({
+        ok: false,
+        code: "download_failed",
+        nextStep: diagnostics.nextStep,
+        diagnostics,
+        message: `Setup stopped at Prepare local components. ${diagnostics.summary} ${diagnostics.nextStep}`,
+      }),
+      workspace: async () => ({ ok: true, skipped: false, detail: "unused" }),
+      daemon: async () => ({ ok: true, skipped: false, detail: "unused" }),
+    },
+    async () => undefined,
+  );
+
+  assert.equal(result.failure?.code, "download_failed");
+  assert.equal(result.failure?.nextStep, diagnostics.nextStep);
+  assert.deepEqual(result.failure?.diagnostics, diagnostics);
+});
+
+test("retry clears the prior failure and resumes at the first incomplete stage", async () => {
+  const state = createOnboardingBootstrapState(true);
+  state.status = "failed";
+  state.activeStage = "workspace";
+  state.stages[0]!.status = "complete";
+  state.stages[1]!.status = "failed";
+  state.failure = {
+    stage: "workspace",
+    stageLabel: "Create Cave defaults",
+    message: "Previous safe failure.",
+    recoveryLabel: "Retry setup",
+    code: "filesystem_failed",
+  };
+  const calls: OnboardingBootstrapStageId[] = [];
+  const result = await runOnboardingBootstrapStages(
+    state,
+    {
+      "core-tools": async () => {
+        calls.push("core-tools");
+        return { ok: true, skipped: false, detail: "unused" };
+      },
+      workspace: async () => {
+        calls.push("workspace");
+        return { ok: true, skipped: false, detail: "Defaults ready." };
+      },
+      daemon: async () => {
+        calls.push("daemon");
+        return { ok: true, skipped: false, detail: "Service ready." };
+      },
+    },
+    async () => undefined,
+  );
+
+  assert.deepEqual(calls, ["workspace", "daemon"]);
+  assert.equal(result.failure, null);
+  assert.equal(result.complete, true);
+  assert.equal(result.stages[0]?.status, "complete");
+});
+
 test("a persisted running stage becomes resumable without losing completed work", () => {
   const state = createOnboardingBootstrapState(true);
   state.status = "running";

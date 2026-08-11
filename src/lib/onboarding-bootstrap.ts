@@ -2,17 +2,20 @@ export const ONBOARDING_BOOTSTRAP_STAGES = [
   {
     id: "core-tools",
     label: "Prepare local components",
-    pendingDetail: "Cave will verify the local components it needs.",
+    pendingDetail:
+      "Cave will check its private Node.js and npm runtime, then verify the Coven CLI.",
   },
   {
     id: "workspace",
     label: "Create Cave defaults",
-    pendingDetail: "Cave will create user-scoped folders and defaults.",
+    pendingDetail:
+      "Waiting for local components. Cave will then create user-scoped folders and defaults.",
   },
   {
     id: "daemon",
     label: "Start local services",
-    pendingDetail: "Cave will start its local background service.",
+    pendingDetail:
+      "Waiting for setup. Cave will check the local service and start it only when needed.",
   },
 ] as const;
 
@@ -33,11 +36,68 @@ export type OnboardingBootstrapStage = {
   detail: string;
 };
 
+export type OnboardingSetupFailureCode =
+  | "application_data_not_writable"
+  | "filesystem_failed"
+  | "download_failed"
+  | "integrity_check_failed"
+  | "archive_failed"
+  | "install_busy"
+  | "install_timeout"
+  | "verification_failed"
+  | "unsupported_platform"
+  | "installer_start_failed"
+  | "local_service_failed"
+  | "unknown_failure";
+
+export type OnboardingComponentReadiness =
+  | "ready"
+  | "missing"
+  | "incompatible"
+  | "unusable"
+  | "not_ready"
+  | "not_checked"
+  | "unknown";
+
+export type OnboardingSetupDiagnostics = {
+  version: 1;
+  capturedAt: string;
+  stage: OnboardingBootstrapStageId;
+  code: OnboardingSetupFailureCode;
+  summary: string;
+  nextStep: string;
+  environment: {
+    appVersion: string;
+    platform: "win32" | "darwin" | "linux" | "unsupported";
+    architecture: "x64" | "arm64" | "other";
+  };
+  applicationData: {
+    displayLocation: "Cave application data";
+    exists: boolean | null;
+    writeProbe: "passed" | "failed" | "not_run";
+  };
+  components: {
+    managedNode: OnboardingComponentReadiness;
+    covenCli: OnboardingComponentReadiness;
+    localService: OnboardingComponentReadiness;
+  };
+  installer?: {
+    target: "managed-node" | "coven-cli";
+    status: "idle" | "running" | "done" | "busy" | "unavailable";
+    elapsedMs: number | null;
+    exitCode: number | null;
+    outputTail: string[];
+  };
+};
+
 export type OnboardingBootstrapFailure = {
   stage: OnboardingBootstrapStageId;
   stageLabel: string;
   message: string;
   recoveryLabel: "Retry setup";
+  code?: OnboardingSetupFailureCode;
+  nextStep?: string;
+  diagnostics?: OnboardingSetupDiagnostics;
 };
 
 export type OnboardingBootstrapState = {
@@ -54,7 +114,13 @@ export type OnboardingBootstrapState = {
 
 export type OnboardingBootstrapStageResult =
   | { ok: true; skipped: boolean; detail: string }
-  | { ok: false; message: string };
+  | {
+      ok: false;
+      message: string;
+      code?: OnboardingSetupFailureCode;
+      nextStep?: string;
+      diagnostics?: OnboardingSetupDiagnostics;
+    };
 
 export type OnboardingBootstrapStageRunner = (
   onProgress: (detail: string) => Promise<void>,
@@ -213,6 +279,9 @@ export async function runOnboardingBootstrapStages(
         stageLabel: definition.label,
         message: result.message,
         recoveryLabel: "Retry setup",
+        ...(result.code ? { code: result.code } : {}),
+        ...(result.nextStep ? { nextStep: result.nextStep } : {}),
+        ...(result.diagnostics ? { diagnostics: result.diagnostics } : {}),
       };
       state = updateStage(
         {

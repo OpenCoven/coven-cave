@@ -36,5 +36,8 @@ assert.match(
   /error: "invalid priority"/,
   "invalid priority responses must use a stable error string",
 );
+assert.match(source, /OrchestrationValidationError/, "POST must handle orchestration validation errors");
+assert.match(source, /error: "orchestration_invalid"/, "POST must return a stable orchestration error");
+assert.match(source, /errors: error\.errors/, "POST must return field-specific orchestration errors");
 
 console.log("board/route.test.ts: ok");

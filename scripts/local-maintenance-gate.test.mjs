@@ -11,7 +11,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import {
@@ -126,6 +126,28 @@ function expireGate(repo) {
     heartbeatAt: new Date(heartbeat).toISOString(),
   });
   return { filePath, original };
+}
+
+/**
+ * Rewrite the live gate so it names a process that has certainly exited.
+ *
+ * Spawns a real child and waits for it, rather than inventing a "probably
+ * free" pid: a guessed number can collide with a live process and turn this
+ * into a flake that only fails on a busy machine.
+ */
+async function orphanGate(repo, { host = hostname() } = {}) {
+  const filePath = path.join(maintenanceGateRoot(repo), "gate.json");
+  const original = JSON.parse(readFileSync(filePath, "utf8"));
+  const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
+  const deadPid = child.pid;
+  await new Promise((resolve) => child.on("exit", resolve));
+  const orphaned = { ...original, pid: deadPid, host };
+  // `host: null` means a record written before hosts were recorded, so the key
+  // has to be REMOVED — acquisition already wrote one, and spreading the
+  // original would silently keep it.
+  if (host === null) delete orphaned.host;
+  writeJsonAtomic(filePath, orphaned);
+  return { filePath, original, deadPid };
 }
 
 function expireIntent(lease) {
@@ -403,6 +425,139 @@ test("caller-controlled time cannot force takeover or publish a future lease", (
   );
   assert.ok(Date.parse(intentState.heartbeatAt) <= Date.now());
   assert.equal(releaseWriterIntent(intent.lease).ok, true);
+  rmSync(repo, { recursive: true, force: true });
+});
+
+// cave-w049l. The gate recorded a pid and nothing read it, so a run that
+// crashed refused every acquisition in the repository until its 600s TTL ran
+// out — and then refused them as `gate-stale`, which no shipping caller passes
+// `takeoverStale` to clear.
+test("an UNEXPIRED gate is held for its full TTL even when the owner has exited", async () => {
+  const repo = makeRepo();
+  assert.equal(acquireMaintenanceGate({ ownerId: "first", repoDir: repo }).ok, true);
+  await orphanGate(repo);
+
+  // A process can acquire the gate and exit while work it started continues, or
+  // die midway through a mutation, so an exited owner is NOT proof that nothing
+  // is in flight. Reclaiming here breaks mutual exclusion: an earlier draft did
+  // exactly that and the concurrent-acquirer test below produced three winners.
+  const status = maintenanceGateStatus(repo);
+  assert.equal(status.gate.expired, false);
+  assert.equal(status.gate.ownerProcessGone, true, "liveness is reported...");
+  assert.equal(
+    acquireMaintenanceGate({ ownerId: "second", repoDir: repo }).reason,
+    "gate-held",
+    "...but it does not shorten the TTL",
+  );
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("an EXPIRED gate whose owner process is gone is reclaimed without the opt-in", async () => {
+  const repo = makeRepo();
+  const first = acquireMaintenanceGate({ ownerId: "first", repoDir: repo });
+  assert.equal(first.ok, true);
+  const { deadPid } = await orphanGate(repo);
+  expireGate(repo);
+
+  // Past the TTL the old behaviour was `gate-stale`, which required
+  // takeoverStale — and nothing in shipping code passes it, so the wedge was
+  // indefinite rather than ten minutes long.
+  const status = maintenanceGateStatus(repo);
+  assert.equal(status.gate.expired, true);
+  assert.equal(status.gate.ownerProcessGone, true);
+
+  const second = acquireMaintenanceGate({ ownerId: "second", repoDir: repo });
+  assert.equal(second.ok, true, "an abandoned expired gate is reclaimable without takeoverStale");
+  assert.ok(
+    second.handle.generation > first.handle.generation,
+    "the reclaim advances the fenced generation, as a stale takeover does",
+  );
+  assert.equal(
+    verifyMaintenanceGateOwnership(first.handle).reason,
+    "not-owner",
+    "the previous owner is fenced out even though its lease had not expired",
+  );
+
+  // The reclaim is evidenced, not silent: same sidecar as a stale takeover...
+  const sidecars = readdirSync(maintenanceGateRoot(repo)).filter((name) =>
+    name.startsWith("gate.json.stale-"),
+  );
+  assert.equal(sidecars.length, 1, "the displaced record is preserved beside the gate");
+  // ...plus an audit line that says WHY it was reclaimed.
+  const audit = readFileSync(path.join(maintenanceGateRoot(repo), "audit.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((entry) => entry.event === "gate-taken-over");
+  assert.equal(audit.length, 1);
+  assert.equal(audit[0].basis, "owner-process-gone");
+  assert.equal(audit[0].fromPid, deadPid);
+
+  assert.equal(releaseMaintenanceGate(second.handle).ok, true);
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("an expired gate from ANOTHER host still requires the explicit opt-in", async () => {
+  const repo = makeRepo();
+  assert.equal(acquireMaintenanceGate({ ownerId: "first", repoDir: repo }).ok, true);
+  // The gate lives under the git common dir, which may be shared or synced. A
+  // pid from another machine says nothing about a process on this one, so the
+  // probe must not answer for it.
+  await orphanGate(repo, { host: `not-${hostname()}` });
+  expireGate(repo);
+
+  assert.equal(maintenanceGateStatus(repo).gate.ownerProcessGone, false);
+  assert.equal(
+    acquireMaintenanceGate({ ownerId: "second", repoDir: repo }).reason,
+    "gate-stale",
+    "a foreign host keeps the takeoverStale requirement",
+  );
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("an expired record written before hosts existed still requires the opt-in", async () => {
+  const repo = makeRepo();
+  assert.equal(acquireMaintenanceGate({ ownerId: "first", repoDir: repo }).ok, true);
+  await orphanGate(repo, { host: null });
+  expireGate(repo);
+
+  assert.equal(
+    maintenanceGateStatus(repo).gate.ownerProcessGone,
+    false,
+    "an absent host is un-probeable, not local",
+  );
+  assert.equal(acquireMaintenanceGate({ ownerId: "second", repoDir: repo }).reason, "gate-stale");
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("an expired gate whose owner is ALIVE still requires the explicit opt-in", () => {
+  const repo = makeRepo();
+  // The owning pid here is this test process, which is emphatically alive.
+  const first = acquireMaintenanceGate({ ownerId: "first", repoDir: repo });
+  assert.equal(first.ok, true);
+  expireGate(repo);
+  assert.equal(maintenanceGateStatus(repo).gate.ownerProcessGone, false);
+  assert.equal(
+    acquireMaintenanceGate({ ownerId: "second", repoDir: repo }).reason,
+    "gate-stale",
+    "a live owner past its TTL is a judgement call, not an abandonment",
+  );
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("a malformed host makes the record malformed rather than merely un-probeable", () => {
+  const repo = makeRepo();
+  assert.equal(acquireMaintenanceGate({ ownerId: "first", repoDir: repo }).ok, true);
+  const filePath = path.join(maintenanceGateRoot(repo), "gate.json");
+  const original = JSON.parse(readFileSync(filePath, "utf8"));
+  writeJsonAtomic(filePath, { ...original, host: 42 });
+
+  // Fail closed: a garbage host sitting next to a pid invites exactly the wrong
+  // liveness inference, so the record is rejected rather than partly trusted.
+  assert.equal(
+    acquireMaintenanceGate({ ownerId: "second", repoDir: repo }).reason,
+    "malformed-gate",
+  );
   rmSync(repo, { recursive: true, force: true });
 });
 

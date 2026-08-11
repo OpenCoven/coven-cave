@@ -21,10 +21,21 @@ fn rejects_invalid_urls() {
 
 #[test]
 fn windows_system32_binary_uses_an_absolute_system_path() {
-    let path = super::windows_system32_binary("rundll32.exe");
-    let path = path.to_string_lossy();
-    assert!(path.starts_with(r"C:\") || path.contains(r":\"));
-    assert!(path.ends_with(r"System32\rundll32.exe") || path.ends_with("System32/rundll32.exe"));
+    // This contract runs on every CI host. Normalize only for the assertion:
+    // Unix PathBuf treats the backslashes in the Windows fallback/root-relative
+    // input as literal characters, so its debug string legitimately mixes both
+    // separator styles even though Windows resolves the same value normally.
+    let windows_path = |path: std::path::PathBuf| path.to_string_lossy().replace('\\', "/");
+
+    let path = windows_path(super::windows_system32_binary("rundll32.exe"));
+    assert!(path.starts_with("C:/") || path.contains(":/"));
+    assert!(path.ends_with("System32/rundll32.exe"));
+
+    let powershell = windows_path(super::windows_system32_binary(
+        r"WindowsPowerShell\v1.0\powershell.exe",
+    ));
+    assert!(powershell.starts_with("C:/") || powershell.contains(":/"));
+    assert!(powershell.ends_with("System32/WindowsPowerShell/v1.0/powershell.exe"));
 }
 
 #[test]
