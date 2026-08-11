@@ -97,11 +97,30 @@ export function isRenderableImageSrc(src: string | null | undefined): boolean {
   // authenticated GET to an arbitrary API route. Only the read-only image
   // endpoint used by persisted chat attachments is safe here.
   if (/^\/api\/chat\/attachment(?:[?#]|$)/.test(value)) return true;
+  if (/^\/api\//.test(value)) return false;
   if (value.startsWith("blob:")) return true;
   // `image/svg+xml` is deliberately absent: an inline SVG can carry script, and
   // nothing here can render it inert.
   if (/^data:image\/(png|jpeg|jpg|gif|webp|avif);base64,/i.test(value)) return true;
-  if (/^https:\/\/[^/\s]+/i.test(value)) return true;
+  if (/^https:\/\/[^/\s]+/i.test(value)) {
+    // A relative `/api/...` is refused above, but the same route reached as an
+    // absolute same-origin URL would slip through this arm -- and
+    // `needsAuthedImageFetch` turns any same-origin `/api/*` into an
+    // authenticated GET, which is the exact capability the relative check
+    // exists to deny. This module also runs where no origin is known (SSR,
+    // unit tests), so rather than compare origins we refuse every `https:`
+    // URL whose path enters `/api/` unless it is the attachment endpoint.
+    // Losing third-party hosts that happen to serve pictures under `/api/` is
+    // a far cheaper trade than leaving the bypass open.
+    let pathname: string;
+    try {
+      pathname = new URL(value).pathname;
+    } catch {
+      return false;
+    }
+    if (/^\/api\/chat\/attachment$/.test(pathname)) return true;
+    return !pathname.startsWith("/api/");
+  }
   return false;
 }
 
