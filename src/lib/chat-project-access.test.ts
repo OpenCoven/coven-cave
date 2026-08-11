@@ -144,7 +144,7 @@ assert.equal(
     requestedProjectRoot: "/Users/me/dev/cave/.git/cave-worktrees/task-42",
     resolvedCwd: "/Users/me/private-unapproved-workspace",
   }),
-  "unregistered:/Users/me/dev/cave/.git/cave-worktrees/task-42",
+  "unregistered:/Users/me/private-unapproved-workspace",
   "a symlink-swapped Board worktree fails closed when the resolved cwd escapes the assigned project",
 );
 

@@ -64,7 +64,7 @@ export function taskWorktreeProjectAccessId(
   // Otherwise the normal unregistered-project chokepoint must deny the turn
   // instead of authorizing one project while spawning the harness elsewhere.
   if (!isInsideRoot(taskProject.root, args.resolvedCwd)) {
-    return `unregistered:${args.requestedProjectRoot}`;
+    return `unregistered:${args.resolvedCwd}`;
   }
 
   return args.taskProjectId;
