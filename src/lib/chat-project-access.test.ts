@@ -1,5 +1,8 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import { chatProjectAccessId, taskWorktreeProjectAccessId } from "./chat-project-access.ts";
 
@@ -211,3 +214,64 @@ assert.equal(
 );
 
 console.log("chat-project-access tests passed");
+
+// SECURITY: the requested root is client-supplied, so a `.worktrees/<name>`
+// symlink pointing outside the project would otherwise borrow the parent
+// project's grant while the harness ran elsewhere. The realpathed cwd must
+// land under the same prefix.
+assert.equal(
+  chatProjectAccessId({
+    projects,
+    requestedProjectRoot: "/Users/me/dev/cave/.worktrees/evil",
+    resolvedCwd: "/Users/me/victim-ungranted-project",
+  }),
+  "unregistered:/Users/me/dev/cave/.worktrees/evil",
+  "a symlinked worktree request whose real cwd escapes the parent project fails closed",
+);
+
+// REGRESSION: `resolvedCwd` arrives realpath-resolved from
+// resolveLocalRuntimeCwd, so a lexically-resolved prefix built from a
+// symlink-registered project root could never match it, and every legitimate
+// worktree chat under that project fail-closed as unregistered.
+{
+  const realBase = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cpa-")));
+  const realProject = path.join(realBase, "real", "cave");
+  fs.mkdirSync(path.join(realProject, ".worktrees", "feat-x"), { recursive: true });
+  const linkedProject = path.join(realBase, "linked-cave");
+  fs.symlinkSync(realProject, linkedProject);
+
+  const linkedProjects = [
+    {
+      id: "proj-linked",
+      name: "Cave",
+      root: linkedProject,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ];
+
+  assert.equal(
+    chatProjectAccessId({
+      projects: linkedProjects,
+      requestedProjectRoot: path.join(linkedProject, ".worktrees", "feat-x"),
+      resolvedCwd: path.join(realProject, ".worktrees", "feat-x"),
+    }),
+    "proj-linked",
+    "a worktree under a symlink-registered project still authorizes against that project",
+  );
+
+  fs.mkdirSync(path.join(realBase, "elsewhere"), { recursive: true });
+  assert.equal(
+    chatProjectAccessId({
+      projects: linkedProjects,
+      requestedProjectRoot: path.join(linkedProject, ".worktrees", "feat-x"),
+      resolvedCwd: path.join(realBase, "elsewhere"),
+    }),
+    `unregistered:${path.join(linkedProject, ".worktrees", "feat-x")}`,
+    "canonicalizing the project root does not widen containment",
+  );
+
+  fs.rmSync(realBase, { recursive: true, force: true });
+}
+
+console.log("chat-project-access worktree cwd containment tests passed");
