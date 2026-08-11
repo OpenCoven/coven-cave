@@ -2,6 +2,7 @@ import {
   callDaemonTarget,
   daemonTargetForConfig,
   extractDaemonError,
+  normalizeHubUrl,
   type DaemonRequest,
   type DaemonResponse,
   type DaemonTarget,
@@ -16,6 +17,14 @@ export type DaemonProbeResult = {
 };
 
 type CallDaemonTarget = (target: DaemonTarget, request: DaemonRequest) => Promise<DaemonResponse<unknown>>;
+
+function explicitHubAccessToken(rawUrl: string): string | undefined {
+  try {
+    return new URL(normalizeHubUrl(rawUrl)).searchParams.get("coven_access_token")?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export function classifyHubFailure(res: DaemonResponse<unknown>): string {
   const detail = extractDaemonError(res) ?? `http ${res.status}`;
@@ -33,8 +42,9 @@ export async function probeDaemonUrl(
   if (target.mode !== "hub") {
     throw new Error(target.mode === "unconfigured-hub" ? target.error : "invalid hub URL");
   }
+  const probeTarget = explicitHubAccessToken(url) ? target : { ...target, accessToken: undefined };
   const startedAt = now();
-  const response = await call(target, { path: "/api/v1/health", timeoutMs: 1500 });
+  const response = await call(probeTarget, { path: "/api/v1/health", timeoutMs: 1500 });
   const latencyMs = Math.max(0, now() - startedAt);
   if (response.ok && response.data) {
     return { ok: true, reachable: true, status: response.status, latencyMs };
