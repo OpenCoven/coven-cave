@@ -74,7 +74,7 @@ import { openRunBuffer, type RunBufferHandle } from "@/lib/server/chat-stream-bu
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 import { loadProjects } from "@/lib/cave-projects";
-import { chatProjectAccessId } from "@/lib/chat-project-access";
+import { chatProjectAccessId, taskWorktreeProjectAccessId } from "@/lib/chat-project-access";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
   OpenClawAgentResolutionError,
@@ -986,17 +986,18 @@ export async function POST(req: Request) {
   // The worktree itself is intentionally not a separate project record, so
   // its first native-chat turn must authorize against the card's server-owned
   // project instead of failing as an arbitrary unregistered directory. This
-  // narrow exception applies only to the fresh reserved handoff and only when
-  // the browser submits the exact CWD persisted on that task card.
-  const taskWorktreeProjectId =
-    body.startNewConversation &&
-    !existingConversation &&
-    taskCard?.projectId &&
-    taskCard.cwd &&
-    body.projectRoot &&
-    taskCard.cwd === body.projectRoot
-      ? taskCard.projectId
-      : null;
+  // narrow exception applies only to the fresh reserved handoff, only when
+  // the browser submits the exact CWD persisted on that task card, and only
+  // when the symlink-resolved runtime cwd remains inside the task project.
+  const taskWorktreeProjectId = taskWorktreeProjectAccessId({
+    projects,
+    startNewConversation: Boolean(body.startNewConversation),
+    hasExistingConversation: Boolean(existingConversation),
+    taskProjectId: taskCard?.projectId,
+    taskCwd: taskCard?.cwd,
+    requestedProjectRoot: body.projectRoot,
+    resolvedCwd: cwd,
+  });
   const chatProjectId = sshRuntime
     ? null
     : taskWorktreeProjectId ?? chatProjectAccessId({

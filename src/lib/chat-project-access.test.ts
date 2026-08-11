@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 
-import { chatProjectAccessId } from "./chat-project-access.ts";
+import { chatProjectAccessId, taskWorktreeProjectAccessId } from "./chat-project-access.ts";
 
 const projects = [
   {
@@ -118,6 +118,34 @@ assert.equal(
   }),
   "proj-1",
   "a registered project wins over the workspace exemption",
+);
+
+assert.equal(
+  taskWorktreeProjectAccessId({
+    projects,
+    startNewConversation: true,
+    hasExistingConversation: false,
+    taskProjectId: "proj-1",
+    taskCwd: "/Users/me/dev/cave/.git/cave-worktrees/task-42",
+    requestedProjectRoot: "/Users/me/dev/cave/.git/cave-worktrees/task-42",
+    resolvedCwd: "/Users/me/dev/cave/.git/cave-worktrees/task-42",
+  }),
+  "proj-1",
+  "a fresh Board worktree handoff inside the assigned project authorizes through the task project",
+);
+
+assert.equal(
+  taskWorktreeProjectAccessId({
+    projects,
+    startNewConversation: true,
+    hasExistingConversation: false,
+    taskProjectId: "proj-1",
+    taskCwd: "/Users/me/dev/cave/.git/cave-worktrees/task-42",
+    requestedProjectRoot: "/Users/me/dev/cave/.git/cave-worktrees/task-42",
+    resolvedCwd: "/Users/me/private-unapproved-workspace",
+  }),
+  "unregistered:/Users/me/dev/cave/.git/cave-worktrees/task-42",
+  "a symlink-swapped Board worktree fails closed when the resolved cwd escapes the assigned project",
 );
 
 console.log("chat-project-access tests passed");

@@ -448,7 +448,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /import \{ chatProjectAccessId \} from "@\/lib\/chat-project-access";/,
+  /import \{ chatProjectAccessId, taskWorktreeProjectAccessId \} from "@\/lib\/chat-project-access";/,
   "Chat send should resolve project access ids through the shared chat-project-access helper (explicit and resumed roots resolve to a project id; unknown explicit roots fail closed; the familiar's own workspace is exempt — see chat-project-access.test.ts)",
 );
 
@@ -466,8 +466,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /body\.startNewConversation[\s\S]*!existingConversation[\s\S]*taskCard\?\.projectId[\s\S]*taskCard\.cwd === body\.projectRoot[\s\S]*taskWorktreeProjectId \?\? chatProjectAccessId/,
-  "A fresh Board worktree handoff should authorize through its persisted task project instead of treating the worktree as an unregistered project",
+  /taskWorktreeProjectAccessId\(\{[\s\S]*startNewConversation: Boolean\(body\.startNewConversation\),[\s\S]*hasExistingConversation: Boolean\(existingConversation\),[\s\S]*taskProjectId: taskCard\?\.projectId,[\s\S]*taskCwd: taskCard\?\.cwd,[\s\S]*requestedProjectRoot: body\.projectRoot,[\s\S]*resolvedCwd: cwd,[\s\S]*\}\)[\s\S]*taskWorktreeProjectId \?\? chatProjectAccessId/,
+  "A fresh Board worktree handoff should authorize through its persisted task project only after checking the resolved cwd remains inside that project",
 );
 
 assert.doesNotMatch(
