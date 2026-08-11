@@ -20,7 +20,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-type TarEntry = { name: string; body?: string; mode?: number; type?: "0" | "1" | "2" | "5"; linkName?: string };
+type TarEntry = { name: string; body?: string; mode?: number; type?: "0" | "1" | "2" | "5" | "L"; linkName?: string };
 
 function tarArchive(entries: TarEntry[]): Buffer {
   const blocks: Buffer[] = [];
@@ -83,6 +83,27 @@ test("safe tar extraction accepts ordinary files and rejects traversal", async (
     await extractSafeTarGz(gzipSync(tarFile("node-v22/bin/node", "node")), root);
     assert.equal(await readFile(path.join(root, "node-v22", "bin", "node"), "utf8"), "node");
     await assert.rejects(extractSafeTarGz(gzipSync(tarFile("../outside", "no")), root), /escapes/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("safe tar extraction supports GNU long-name metadata without weakening path validation", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "coven-managed-node-long-name-"));
+  const longName = `node-v24/${"nested-".repeat(20)}node`;
+  try {
+    await extractSafeTarGz(gzipSync(tarArchive([
+      { name: "././@LongLink", type: "L", body: `${longName}\0` },
+      { name: "short-name", body: "node" },
+    ])), root);
+    assert.equal(await readFile(path.join(root, longName), "utf8"), "node");
+    await assert.rejects(
+      extractSafeTarGz(gzipSync(tarArchive([
+        { name: "././@LongLink", type: "L", body: "../outside\0" },
+        { name: "short-name", body: "no" },
+      ])), root),
+      /escapes/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
