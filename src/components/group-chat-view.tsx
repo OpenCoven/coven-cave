@@ -531,10 +531,10 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
           ),
         ),
       );
-      // A familiar can perform an explicit human-requested handoff by emitting
-      // a validated delegation trailer. Plain assistant @mentions remain prose.
-      // Process the small delegation tree sequentially so Stop prevents queued
-      // work from starting and each target keeps its resumable familiar session.
+      // A familiar can propose a handoff by emitting a validated delegation
+      // trailer, but assistant output is never sufficient authority to execute
+      // it. Process approved handoffs sequentially so Stop prevents queued work
+      // from starting and each target keeps its resumable familiar session.
       const delivered = new Set(
         transcriptRef.current
           .filter((turn): turn is GroupUserTurn => turn.role === "user" && Boolean(turn.delegationSourceReplyId))
@@ -567,6 +567,16 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
             ) continue;
             const target = byId.get(targetId);
             if (!target) continue;
+            const delegatedBy = byId.get(source.familiarId)?.display_name ?? source.familiarId;
+            const approved = await confirm({
+              title: `Approve handoff to ${target.display_name}?`,
+              body: `${delegatedBy} proposed this task:\n\n${delegation.task}`,
+              confirmLabel: "Approve handoff",
+            });
+            // A model cannot authorize work for another familiar. Declining
+            // stops the delegation tree rather than presenting more prompts
+            // emitted by the same untrusted reply.
+            if (!approved || controller.signal.aborted) return;
             const at = nowIso();
             const delegatedTurn: GroupUserTurn = {
               id: newId(),
@@ -591,7 +601,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
             delivered.add(dedupeKey);
             delegationCount += 1;
             setTranscript((prev) => [...prev, delegatedTurn, delegatedReply]);
-            const delegatedBy = byId.get(source.familiarId)?.display_name ?? source.familiarId;
             const child = await streamOne(
               group,
               delegatedReply,
@@ -629,7 +638,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         announce(`${total - failed} of ${total} familiars replied; ${failed} failed.`, "assertive");
       }
     },
-    [busy, streamOne, byId, announce, operatorDisplayName],
+    [busy, streamOne, byId, announce, operatorDisplayName, confirm],
   );
 
   // Composer sends and suggestion chips share the stream path, but a suggestion

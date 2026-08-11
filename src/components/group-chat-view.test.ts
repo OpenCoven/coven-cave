@@ -78,7 +78,7 @@ test("@mentions target a subset of the coven", () => {
   assert.match(view, /applyMention\(draft, mention\.start, mention\.query/, "inserts the chosen familiar");
 });
 
-test("completed familiar delegation trailers route bounded, attributable follow-up work", () => {
+test("completed familiar delegation trailers require approval before bounded, attributable follow-up work", () => {
   assert.match(view, /extractCovenDelegations\(withoutNextPaths\)/, "parses only the tested structured trailer after removing next-path controls");
   assert.match(view, /source\.status !== "done"/, "never routes a partial or failed familiar reply");
   assert.match(view, /!group\.familiarIds\.includes\(targetId\)/, "rejects out-of-coven targets");
@@ -87,6 +87,13 @@ test("completed familiar delegation trailers route bounded, attributable follow-
   assert.match(view, /targetId === source\.familiarId/, "rejects self-delegation");
   assert.match(view, /lineage\.has\(targetId\)/, "rejects delegation cycles");
   assert.match(view, /delivered\.has\(dedupeKey\)/, "deduplicates source-to-target deliveries");
+  assert.match(view, /const approved = await confirm\(\{/, "requires an operator decision before accepting assistant-proposed work");
+  assert.match(view, /body: `\$\{delegatedBy\} proposed this task:\\n\\n\$\{delegation\.task\}`/, "shows the exact proposed task during approval");
+  assert.match(view, /if \(!approved \|\| controller\.signal\.aborted\) return;/, "never sends a declined or stopped handoff");
+  assert.ok(
+    view.indexOf("const approved = await confirm({") < view.indexOf("const child = await streamOne("),
+    "approval happens before the delegated request is streamed",
+  );
   assert.match(view, /MAX_COVEN_DELEGATION_DEPTH/, "bounds delegation depth");
   assert.match(view, /MAX_COVEN_DELEGATIONS_PER_TURN/, "bounds total delegated sends per human turn");
   assert.match(view, /controller\.signal\.aborted/, "Stop prevents queued delegated sends from starting");
