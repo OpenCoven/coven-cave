@@ -6,19 +6,25 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
   assessManagedWorktreeCreation,
-  BRANCH_WARNING_BUDGET,
+  calculateLifecycleBudgets,
   isDisposableIgnoredPath,
-  WORKTREE_WARNING_BUDGET,
   type LifecycleDisposition,
   type ManagedCreationException,
   type WorktreeLifecycleBudgets,
   type WorktreeLifecycleItem,
 } from "../src/lib/worktree-lifecycle.ts";
-import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
 import {
-  heartbeatWriterIntent,
-  registerWriterIntent,
-  releaseWriterIntent,
+  collectWorktreeLifecycleInventory,
+  type OrphanedWorktreeMetadataRecord,
+  type WorktreeMetadataClaimError,
+} from "./worktree-lifecycle-inventory.ts";
+import {
+  acquireMaintenanceGate,
+  createFenceRenewal,
+  heartbeatMaintenanceGate,
+  MAX_FENCED_MUTATION_TIMEOUT_MS,
+  releaseMaintenanceGate,
+  repositoryMaintenanceCapabilities,
 } from "./maintenance-gate.mjs";
 
 const REPOSITORY = "OpenCoven/coven-cave";
@@ -121,20 +127,14 @@ type Outcome = {
   createdReport: CreatedReport | null;
 };
 
-type WriterLease = {
-  writerId: string;
-  token: string;
-  root: string;
+type MaintenanceFence = {
+  local: object;
+  coven: {
+    ownerId: string;
+    generation: string;
+    repoDir: string;
+  };
 };
-
-const registerIntent = registerWriterIntent as unknown as (options: {
-  writerId: string;
-  purpose: string;
-  repoDir: string;
-  ttlMs: number;
-}) =>
-  | { ok: true; lease: WriterLease }
-  | { ok: false; reason: string };
 
 class CliError extends Error {
   readonly exitCode: number;
@@ -756,10 +756,12 @@ function exceptionForPath(
  *
  * Creation reads exactly two things out of the inventory: the paths this bead
  * already owns ({@link existingOwnedPaths}) and the budget counts. The first is
- * derived from each item's path, taskIds and bead metadata, so a metadata error
- * can hide an owned path and let creation past a budget it should have hit —
- * that stays a hard stop, repo-wide. The second comes from local git facts
- * (worktree count, branch count, exception counts) and no probe touches it.
+ * derived from each item's path, taskIds and bead metadata. Errors that cannot
+ * be attributed to a branch or path can hide an owned path and remain a hard
+ * stop repo-wide. Errors on an attributable record are handled separately by
+ * {@link claimErrorsForRequest}: they block the unit they name, not every
+ * creation in the checkout. The second comes from local git facts (worktree
+ * count, branch count, exception counts) and no probe touches it.
  *
  * `probeErrors` are deliberately NOT included. They answer "is this unit safe to
  * RETIRE" — landing time, PR association, ref recency — which creation never
@@ -773,7 +775,135 @@ function exceptionForPath(
  * of re-aborting the whole run (cave-c4f97).
  */
 function inventoryErrors(items: WorktreeLifecycleItem[]): string[] {
-  return [...new Set(items.flatMap((item) => item.metadataErrors))];
+  // Read the inventory's own classification rather than re-deriving it. This
+  // used to fold EVERY unit's `metadataErrors` together and then subtract the
+  // record-level claim errors by string equality, on the theory that whatever
+  // survived was repository-wide. It was not: `metadataFor` produces five kinds
+  // of error and only one of them is a record-level claim, so an ownership
+  // conflict, a duplicate record, a duplicate path and a path/branch mismatch
+  // all survived the subtraction and aborted creation for every unrelated bead
+  // (cave-1x9pz).
+  //
+  // The live case that exposed it: one worktree had a different branch checked
+  // out than its bead's record claimed. A real defect, on exactly one unit —
+  // and it refused `--bead` for the whole checkout, which is precisely the
+  // outage cave-g9byt was written to end.
+  return [...new Set(items.flatMap((item) => item.metadataGlobalErrors))];
+}
+
+/**
+ * Well-formed records from OTHER beads that already claim this branch or path.
+ *
+ * `claimErrorsForRequest` refuses when the record claiming your path is
+ * malformed. Without this, a VALID record claiming the same path did not —
+ * which is backwards: a well-formed claim is the stronger claim, and the
+ * malformed one is only visible because its validation errors happen to travel
+ * with it. Creating into a path another bead already names produces a unit with
+ * two records claiming it, which is precisely the contested state the ownership
+ * conflict reports and nothing can resolve automatically.
+ *
+ * Scoped to the exact branch or path requested, so a stale record elsewhere
+ * still cannot refuse an unrelated creation — the whole point of cave-1x9pz.
+ */
+function orphanedClaimsForRequest(
+  orphaned: readonly OrphanedWorktreeMetadataRecord[],
+  beadId: string,
+  branch: string,
+  worktreePath: string,
+): string[] {
+  const requested = normalizeCandidate(worktreePath);
+  const normalizedBead = beadId.toLowerCase();
+  return [
+    ...new Set(
+      orphaned
+        // The requesting bead's own records are handled upstream, where
+        // re-creating a unit the same bead used to own is a legitimate flow.
+        .filter((record) => record.beadId.toLowerCase() !== normalizedBead)
+        .filter(
+          (record) =>
+            record.branch === branch || normalizeCandidate(record.path) === requested,
+        )
+        .map(
+          (record) =>
+            `bead ${record.beadId} already claims ${
+              record.branch === branch ? `branch ${branch}` : `path ${record.path}`
+            }`,
+        ),
+    ),
+  ];
+}
+
+/**
+ * The per-unit metadata failures that stand in the way of THIS creation.
+ *
+ * A unit-scoped error belongs to the unit it names and to no other — but if the
+ * unit it names is the branch or the path being requested, it is this request's
+ * problem too. Creating a second worktree over a path whose ownership is
+ * already contested is how the contest becomes unresolvable.
+ *
+ * `metadataGlobalErrors` is subtracted because those are the repository-wide
+ * ones, already reported once by {@link inventoryErrors}; repeating them here
+ * would make an unrelated global failure look like a collision with this
+ * request.
+ */
+function contestedUnitErrors(
+  items: WorktreeLifecycleItem[],
+  branch: string,
+  worktreePath: string,
+): string[] {
+  const requested = normalizeCandidate(worktreePath);
+  return [
+    ...new Set(
+      items
+        .filter(
+          (item) =>
+            item.branch === branch ||
+            (item.path !== null && normalizeCandidate(item.path) === requested),
+        )
+        .flatMap((item) =>
+          item.metadataErrors.filter((error) => !item.metadataGlobalErrors.includes(error)),
+        ),
+    ),
+  ];
+}
+
+/**
+ * The malformed metadata records that stand in the way of *this* creation.
+ *
+ * A record that fails validation still names the branch and path it claims, so
+ * it can be charged to the unit it describes instead of to the repository. That
+ * scoping is the whole point of cave-g9byt — one bead's bad `disposition` had
+ * been failing `--bead` for every other bead in the checkout — but it must not
+ * become a way to create *over* a claim: a record already holding this branch
+ * or this path is exactly the collision the abort was protecting, and a
+ * malformed one is no less a claim than a valid one. A record naming neither a
+ * usable branch nor a usable path claims something unnameable, so it keeps
+ * blocking everything until someone repairs it.
+ *
+ * `claim.branch` is already blank unless the branch is one a unit could match,
+ * so a record carrying `refs/heads/foo` or ` foo` is unnameable here rather
+ * than a claim on `foo` — see {@link WorktreeMetadataClaimError}.
+ */
+function claimErrorsForRequest(
+  claims: WorktreeMetadataClaimError[],
+  branch: string,
+  worktreePath: string,
+): string[] {
+  const requested = normalizeCandidate(worktreePath);
+  return [
+    ...new Set(
+      claims
+        .filter((claim) => {
+          const unattributable = claim.branch.trim().length === 0 && claim.path === null;
+          return (
+            unattributable ||
+            claim.branch === branch ||
+            (claim.path !== null && normalizeCandidate(claim.path) === requested)
+          );
+        })
+        .flatMap((claim) => claim.errors),
+    ),
+  ];
 }
 
 function existingOwnedPaths(
@@ -837,13 +967,67 @@ function exceptionSuggestion(options: ManagedCreateOptions, worktreePath: string
   ];
 }
 
-function refusalOutcome(reasons: string[], suggestion: string[] = []): Outcome {
+/**
+ * Only suggest the patrol's `--apply` when it can actually run.
+ *
+ * This line used to be unconditional, on EVERY refusal this script emits —
+ * budget, duplicate metadata, orphaned record alike. But `--apply` refuses
+ * outright whenever any maintenance plane is unenforced, and
+ * `repositoryMaintenanceCapabilities()` remains incomplete while the Beads
+ * and GitHub planes are unbuilt, so the suggestion is not runnable yet
+ * (cave-wmkn4).
+ *
+ * A refusal that prints an impossible next step is worse than one that prints
+ * none: it sends the operator through a command that exits 2, and the documented
+ * escapes they reach for next are the ones the guard rules exist to forbid — a
+ * bare `git worktree add`, which yields a permanently `uncertain` unit, or
+ * hand-editing the bead, which is the forgery cave-l52dt rules out.
+ *
+ * Uses `capabilities.complete` to gate the suggestion — the same field the
+ * patrol itself uses — rather than counting per-plane `enforced === false`.
+ * A newly added unenforced plane, or any other condition that sets
+ * `complete=false`, will suppress the suggestion even if the listed-plane scan
+ * would have wrongly cleared it.
+ *
+ * `includeRetireByHand` controls whether the hand-retirement route is printed.
+ * It is only relevant for budget refusals; non-budget refusals (duplicate
+ * metadata, missing primary registration) should omit it.
+ */
+function maintenanceSuggestion(
+  capabilities = repositoryMaintenanceCapabilities(),
+  includeRetireByHand = true,
+): string[] {
+  if (capabilities?.complete) return ["Suggestion: pnpm beads:worktrees:apply"];
+  const planes = ["coven", "beads", "github", "local"] as const;
+  const missing = capabilities
+    ? planes.filter((plane) => capabilities[plane]?.enforced === false)
+    : [];
+  const planeSummary =
+    missing.length > 0 ? missing.join(", ") : "unknown (capabilities unavailable)";
+  const lines: string[] = [
+    `Note: pnpm beads:worktrees:apply cannot run here — unenforced maintenance planes: ${planeSummary}.`,
+  ];
+  if (includeRetireByHand) {
+    lines.push(
+      "Retire by hand instead: prove retention (a remote branch, or a pushed archive tag —",
+      "a merged PR is not retention, since a squash leaves the branch's commits on no remote ref),",
+      "then `git worktree unlock <path> && git worktree remove <path> && git branch -d <branch>`.",
+    );
+  }
+  return lines;
+}
+
+function refusalOutcome(
+  reasons: string[],
+  suggestion: string[] = [],
+  includeRetireByHand = true,
+): Outcome {
   return {
     status: 2,
     stdout: null,
     stderr: [
       ...reasons.map((reason) => `worktree-lifecycle-create: ${reason}`),
-      "Suggestion: pnpm beads:worktrees:apply",
+      ...maintenanceSuggestion(undefined, includeRetireByHand),
       ...suggestion,
     ],
     createdReport: null,
@@ -872,17 +1056,13 @@ function createdOutcome(
   };
 }
 
-function heartbeatBoth(leases: WriterLease[], stage: string): void {
-  if (leases.length !== 2) {
-    throw new CliError(`writer leases unavailable during ${stage}`);
+function heartbeatBoth(leases: MaintenanceFence[], stage: string): void {
+  if (leases.length !== 1) {
+    throw new CliError(`maintenance fence unavailable during ${stage}`);
   }
-  const failures: string[] = [];
-  for (const lease of leases) {
-    const result = heartbeatWriterIntent(lease);
-    if (!result.ok) failures.push(`${lease.writerId}: ${result.reason}`);
-  }
-  if (failures.length > 0) {
-    throw new CliError(`writer lease heartbeat failed during ${stage}: ${failures.join(", ")}`);
+  const result = heartbeatMaintenanceGate(leases[0]);
+  if (!result.ok) {
+    throw new CliError(`maintenance fence heartbeat failed during ${stage}: ${result.reason}`);
   }
 }
 
@@ -971,22 +1151,20 @@ function assessLocalRefusalPreflight(
       requestedPath,
       nowMs,
       existingPaths: structuredPaths,
-      budgets: {
-        worktrees: {
-          count: registrations.length,
-          warning: WORKTREE_WARNING_BUDGET,
-          exceeded: registrations.length > WORKTREE_WARNING_BUDGET,
-        },
-        branches: {
-          count: branchCount,
-          warning: BRANCH_WARNING_BUDGET,
-          exceeded: branchCount > BRANCH_WARNING_BUDGET,
-        },
-        exceptions: {
-          active: 0,
-          expired: 0,
-        },
-      },
+      // Routed through the shared calculation rather than repeating the
+      // arithmetic here. This preflight is the surface that actually issues the
+      // refusal, so a second copy of the rule is a second place for it to drift
+      // — which is how the detached-unit exclusion (cave-oenag) could have
+      // landed in the report while the refusal kept the old count.
+      budgets: calculateLifecycleBudgets({
+        worktreeCount: registrations.length,
+        detachedWorktreeCount: registrations.filter(
+          (registration) => registration.branch === null,
+        ).length,
+        branchCount,
+        activeExceptions: 0,
+        expiredExceptions: 0,
+      }),
       exception: exceptionForAssessment(exception),
     }),
     registeredPaths,
@@ -1170,7 +1348,7 @@ function compensate(
   fullRef: string,
   worktreePath: string,
   createdOid: string,
-  leases: WriterLease[],
+  leases: MaintenanceFence[],
   originalMessage: string,
   completedStatus = 1,
   completedStderr: string[] = [],
@@ -1214,7 +1392,22 @@ function compensate(
     );
   }
 
-  const remove = git(root, ["worktree", "remove", worktreePath]);
+  try {
+    heartbeatBoth(leases, "before worktree compensation");
+  } catch (error) {
+    return partialOutcome(
+      `${originalMessage}; ${
+        error instanceof Error ? error.message : "writer lease heartbeat failed"
+      }`,
+      probePartialState(root, worktreePath, fullRef),
+      original,
+    );
+  }
+  const remove = git(
+    root,
+    ["worktree", "remove", worktreePath],
+    MAX_FENCED_MUTATION_TIMEOUT_MS,
+  );
   if (!remove.ok) {
     return partialOutcome(
       `${originalMessage}; worktree compensation failed: ${
@@ -1263,13 +1456,28 @@ function compensate(
       original,
     );
   }
-  const deleteRef = git(root, [
-    "update-ref",
-    "--no-deref",
-    "-d",
-    fullRef,
-    createdOid,
-  ]);
+  try {
+    heartbeatBoth(leases, "immediately before local ref compensation");
+  } catch (error) {
+    return partialOutcome(
+      `${originalMessage}; ${
+        error instanceof Error ? error.message : "writer lease heartbeat failed"
+      }`,
+      probePartialState(root, worktreePath, fullRef),
+      original,
+    );
+  }
+  const deleteRef = git(
+    root,
+    [
+      "update-ref",
+      "--no-deref",
+      "-d",
+      fullRef,
+      createdOid,
+    ],
+    MAX_FENCED_MUTATION_TIMEOUT_MS,
+  );
   if (!deleteRef.ok) {
     return partialOutcome(
       `${originalMessage}; local ref compensation failed: ${
@@ -1477,33 +1685,27 @@ function expectedMetadataPreserved(
 
 function execute(
   options: ManagedCreateOptions,
-  leases: WriterLease[],
+  leases: MaintenanceFence[],
 ): Outcome {
   const root = realpathSync(path.resolve(options.root));
   const { fullRef, worktreePath } = validateBranchAndPath(root, options.branch);
   assertRefAndPathAbsent(root, fullRef, worktreePath);
 
   const purpose = `beads:worktrees:create for Bead ${options.beadId}`;
-  const global = registerIntent({
-    writerId: "worktree-create",
+  const acquired = acquireMaintenanceGate({
+    ownerId: `worktree-lifecycle-create:${options.beadId}`,
     purpose,
     repoDir: root,
     ttlMs: INTENT_TTL_MS,
+    quiesceTimeoutMs: 30_000,
   });
-  if (!global.ok) {
-    throw new CliError(`global writer intent failed: ${global.reason}`);
+  if (!acquired.ok) {
+    throw new CliError(`maintenance fence acquisition failed: ${acquired.reason}`);
   }
-  leases.push(global.lease as WriterLease);
-  const specific = registerIntent({
-    writerId: `worktree-create:${options.beadId}`,
-    purpose,
-    repoDir: root,
-    ttlMs: INTENT_TTL_MS,
-  });
-  if (!specific.ok) {
-    throw new CliError(`Bead writer intent failed: ${specific.reason}`);
-  }
-  leases.push(specific.lease as WriterLease);
+  leases.push(acquired.handle as MaintenanceFence);
+  // The preflight above reduces needless drain time; this second proof is the
+  // authoritative one because the composite fence now excludes participants.
+  assertRefAndPathAbsent(root, fullRef, worktreePath);
 
   const initialBead = loadExactBead(root, options.beadId);
   const initialCoven = parseCoven(initialBead.metadata, root);
@@ -1545,13 +1747,30 @@ function execute(
     repo: REPOSITORY,
     root,
     nowMs: Date.now(),
+    // The inventory outlives the Coven lease on a large checkout, so renew it
+    // as the inventory works instead of only after it finishes (cave-cs9g1).
+    onProgress: createFenceRenewal(() =>
+      heartbeatBoth(leases, "during lifecycle inventory"),
+    ),
   });
   heartbeatBoth(leases, "after lifecycle inventory");
   // Global failures still abort: if GitHub was unreachable or the canonical
   // repository could not be resolved, the run did not see the repository at all
   // and no admission decision it makes is trustworthy. Per-unit probe errors do
-  // not abort — see {@link inventoryErrors}.
-  const errors = [...inventory.globalErrors, ...inventoryErrors(inventory.items)];
+  // not abort — see {@link inventoryErrors} — and neither do malformed metadata
+  // records describing some other unit; see {@link claimErrorsForRequest}.
+  const errors = [
+    ...inventory.globalErrors,
+    ...inventoryErrors(inventory.items),
+    ...contestedUnitErrors(inventory.items, options.branch, worktreePath),
+    ...claimErrorsForRequest(inventory.metadataClaimErrors, options.branch, worktreePath),
+    ...orphanedClaimsForRequest(
+      inventory.orphanedMetadata,
+      options.beadId,
+      options.branch,
+      worktreePath,
+    ),
+  ];
   if (errors.length > 0) {
     throw new CliError(`lifecycle inventory is incomplete: ${errors.join("; ")}`);
   }
@@ -1571,12 +1790,15 @@ function execute(
         `Bead ${options.beadId} already has structured worktree metadata; a current worktree exception is required to append another record`,
       ],
       exceptionSuggestion(options, worktreePath),
+      false,
     );
   }
   if (primaryRegistrationMissing) {
-    return refusalOutcome([
-      `Bead ${options.beadId} primary structured worktree metadata is not currently registered`,
-    ]);
+    return refusalOutcome(
+      [`Bead ${options.beadId} primary structured worktree metadata is not currently registered`],
+      [],
+      false,
+    );
   }
   const existingPaths = existingOwnedPaths(inventory.items, options.beadId);
 
@@ -1600,14 +1822,18 @@ function execute(
 
   assertRefAndPathAbsent(root, fullRef, worktreePath);
   heartbeatBoth(leases, "before git worktree add");
-  const add = git(root, [
-    "worktree",
-    "add",
-    "-b",
-    options.branch,
-    worktreePath,
-    options.startPoint,
-  ]);
+  const add = git(
+    root,
+    [
+      "worktree",
+      "add",
+      "-b",
+      options.branch,
+      worktreePath,
+      options.startPoint,
+    ],
+    MAX_FENCED_MUTATION_TIMEOUT_MS,
+  );
   let addHeartbeatError: string | null = null;
   try {
     heartbeatBoth(leases, "after git worktree add");
@@ -1756,7 +1982,11 @@ function execute(
         ...freshAssessment.reasons.map(
           (reason) => `worktree-lifecycle-create: ${reason}`,
         ),
-        "Suggestion: pnpm beads:worktrees:apply",
+        // Same gate as refusalOutcome (cave-wmkn4): never advertise a command
+        // the maintenance planes make unrunnable. This is the compensate path —
+        // a refusal found AFTER the worktree was created — so it reaches the
+        // user in exactly the situation where a dead next step is most costly.
+        ...maintenanceSuggestion(),
         ...exceptionSuggestion(options, worktreePath),
       ],
     );
@@ -1797,7 +2027,11 @@ function execute(
       exitCode === 2
         ? [
             `worktree-lifecycle-create: ${message}`,
-            "Suggestion: pnpm beads:worktrees:apply",
+            // Gated for the same reason as above. `includeRetireByHand` is
+            // false here: this is compensate's generic exit-2 message, which
+            // covers refusals that are not about the worktree budget, and
+            // retire-by-hand advice is only a remedy for the budget ones.
+            ...maintenanceSuggestion(undefined, false),
           ]
         : [],
     );
@@ -1814,6 +2048,7 @@ function execute(
       "--json",
     ],
     root,
+    MAX_FENCED_MUTATION_TIMEOUT_MS,
   );
   let updateHeartbeatError: string | null = null;
   try {
@@ -1975,7 +2210,7 @@ function render(outcome: Outcome): never {
 }
 
 function main(): never {
-  const leases: WriterLease[] = [];
+  const leases: MaintenanceFence[] = [];
   let outcome: Outcome;
   try {
     outcome = execute(parseArgs(process.argv.slice(2)), leases);
@@ -1996,13 +2231,13 @@ function main(): never {
 
   const releaseFailures: string[] = [];
   for (const lease of [...leases].reverse()) {
-    const released = releaseWriterIntent(lease);
+    const released = releaseMaintenanceGate(lease);
     if (!released.ok) {
-      releaseFailures.push(`${lease.writerId}: ${released.reason}`);
+      releaseFailures.push(released.reason ?? "unknown release failure");
     }
   }
   if (releaseFailures.length > 0) {
-    const warning = `writer intent release failed: ${releaseFailures.join(", ")}`;
+    const warning = `maintenance fence release failed: ${releaseFailures.join(", ")}`;
     outcome.status = 1;
     outcome.stderr.push(`worktree-lifecycle-create: ${warning}`);
     if (outcome.createdReport !== null) {

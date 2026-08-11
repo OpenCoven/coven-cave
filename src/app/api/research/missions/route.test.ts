@@ -20,6 +20,12 @@ test("an explicit project root is resolved before the mission exists", () => {
   assert.match(route, /validated\.value\.projectRoot = resolved/);
 });
 
+test("typed launch-input refusals keep their 400/413 status and durable mission", () => {
+  assert.match(route, /error instanceof ResearchMissionLaunchInputError/);
+  assert.match(route, /error: error\.message, mission: error\.mission/);
+  assert.match(route, /status: error\.status/);
+});
+
 test("list requires a familiar and reconciles persisted missions", () => {
   assert.match(route, /familiarId required/);
   assert.match(route, /listAndReconcileResearchMissions/);

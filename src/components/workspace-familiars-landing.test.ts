@@ -93,7 +93,7 @@ for (const gate of [
 assert.match(
   workspace,
   /\{\(onboardingOpen \|\| onboardingMounted\) && \(\s*<OnboardingOverlay[\s\S]*open=\{onboardingOpen\}/,
-  "onboarding loads on first open but remains mounted so job polling and one-shot refs survive close/reopen",
+  "onboarding loads on first open but remains mounted so local refs survive close/reopen while the server owns job progress",
 );
 assert.match(
   workspace,
@@ -117,13 +117,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /import \{[\s\S]*shouldApplyStartupOnboardingStatus[\s\S]*\} from "@\/lib\/onboarding-gate"/,
-  "Workspace imports the shared startup-status helper from onboarding-gate",
+  /import \{[\s\S]*shouldApplyStartupOnboardingBootstrap[\s\S]*\} from "@\/lib\/onboarding-gate"/,
+  "Workspace imports the shared bootstrap startup helper from onboarding-gate",
 );
 assert.match(
   workspace,
-  /shouldApplyStartupOnboardingStatus\(\{\s*status: json,\s*cancelled,\s*manuallyOpened: manualOnboardingOpenedRef\.current,\s*\}\)/s,
-  "a delayed startup response delegates the manual/cancelled/status gate to the shared helper",
+  /fetch\("\/api\/onboarding\/bootstrap"[\s\S]*shouldApplyStartupOnboardingBootstrap\(\{\s*status: json,\s*cancelled,\s*manuallyOpened: manualOnboardingOpenedRef\.current,\s*\}\)/s,
+  "a delayed bootstrap response delegates the manual/cancelled/status gate to the shared helper",
 );
 assert.match(
   workspace,
@@ -316,7 +316,7 @@ assert.match(
 
 assert.match(
   navigation,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", group: "work", navHidden: true \}/,
   "Browser is kept for ⌘5/palette but navHidden from rendered navigation rows",
 );
 

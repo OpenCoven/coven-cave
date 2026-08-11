@@ -13,6 +13,8 @@ const [
   mobileScript,
   uninstall,
   docs,
+  server,
+  copilotFlow,
 ] = await Promise.all([
   read("../src-tauri/src/desktop_reachability.rs"),
   read("../src-tauri/src/tauri_setup.rs"),
@@ -23,6 +25,8 @@ const [
   read("./mobile-tailscale.sh"),
   read("./uninstall-app.sh"),
   read("../docs/mobile-tailscale.md"),
+  read("../server.ts"),
+  read("../src/lib/server/flow-copilot-session.ts"),
 ]);
 
 assert.match(
@@ -58,8 +62,13 @@ assert.match(
 );
 assert.match(
   reachability,
-  /create_fresh_log_file[\s\S]*\.truncate\(true\)/,
-  "each daemon launch must discard stale readiness output before repairing Serve",
+  /let sidecar_output = Arc::new\(Mutex::new\(SidecarOutputTail::default\(\)\)\)[\s\S]*stdout\(Stdio::piped\(\)\)[\s\S]*stderr\(Stdio::piped\(\)\)[\s\S]*capture_sidecar_output/,
+  "background sidecars must drain readiness output into a bounded in-memory tail",
+);
+assert.doesNotMatch(
+  reachability,
+  /sidecar-daemon-server\.log|create_fresh_log_file/,
+  "background sidecars must not accumulate persistent launch logs",
 );
 assert.match(
   reachability,
@@ -98,8 +107,22 @@ assert.match(
 );
 assert.match(
   reachability,
-  /another CovenCave GUI already owns desktop reachability/,
+  /conflicts_with_live_gui\([\s\S]*?\) \{\s*return Ok\(GuiReachability::AlreadyOwnedBy \{/,
   "a second GUI must not overwrite the live GUI ownership marker",
+);
+// cave-4wnxo: the conflict must stay inside `Ok`. Reported as `Err` it unwinds
+// out of Tauri's setup hook, which on macOS runs inside tao's
+// did_finish_launching — an Objective-C frame that cannot unwind — so the
+// runtime aborts with SIGABRT instead of naming the GUI already running.
+assert.doesNotMatch(
+  reachability,
+  /Err\("another CovenCave GUI already owns desktop reachability"/,
+  "a live second GUI is an ordinary outcome, not a setup error that aborts macOS",
+);
+assert.match(
+  reachability,
+  /fn conflicts_with_live_gui\([\s\S]*?existing\.pid != current\.pid && lease_matches\(/,
+  "ownership conflicts must compare process identity, not a reusable PID alone",
 );
 assert.match(
   reachability,
@@ -136,14 +159,28 @@ assert.match(
   /run_sidecar_daemon_if_requested\(\)[\s\S]*tauri::Builder::default/,
   "the background entrypoint must exit before constructing a GUI",
 );
+const reachabilityCall = setup.indexOf("prepare_gui_reachability(app.handle())?");
+assert.ok(reachabilityCall !== -1, "the setup hook must still prepare GUI reachability");
 assert.ok(
-  setup.indexOf("check_app_translocation();") < setup.indexOf("prepare_gui_reachability(app.handle())?;"),
+  setup.indexOf("check_app_translocation();") < reachabilityCall,
   "AppTranslocation must be rejected before reachability can install a LaunchAgent",
+);
+// The conflict has to be handled at the call site rather than propagated. See
+// the abort note above: `?` on this outcome is what SIGABRTs a second launch.
+assert.match(
+  setup,
+  /match prepare_gui_reachability\(app\.handle\(\)\)\? \{[\s\S]*?GuiReachability::Acquired => \{\}[\s\S]*?GuiReachability::AlreadyOwnedBy \{ pid \} => report_existing_gui_owner\(pid\)/,
+  "a second GUI must be reported and exited cleanly, never propagated into a non-unwinding panic",
 );
 assert.match(
   setup,
   /sidecar_stopped[\s\S]*state\.stop\(\)[\s\S]*if sidecar_stopped \{[\s\S]*sidecar_reachability_stopped[\s\S]*handoff_to_background_daemon/,
   "window teardown must hand off to launchd only after stopping the owned sidecar",
+);
+assert.match(
+  setup,
+  /stop_after_startup_error\([\s\S]{0,200}(?:message|"sidecar startup was cancelled")[\s\S]{0,200}\)[\s\S]{0,200}fatal_exit\(&error\)/,
+  "Non-Windows startup failure should reap the owned sidecar before fatal exit",
 );
 assert.match(
   lifecycle,
@@ -155,6 +192,46 @@ assert.match(
   startup,
   /wait_for_sidecar_ready[\s\S]*sidecar_reachability_ready\(app, port, sidecar_pid\)/,
   "Serve repair and the power monitor must start only after the selected port is ready",
+);
+assert.match(
+  startup,
+  /configure_unix_sidecar_parent_watchdog\(&mut command\)/,
+  "packaged Unix sidecars must inherit an exact parent-death lease",
+);
+assert.match(
+  lifecycle,
+  /stdin\(Stdio::piped\(\)\)[\s\S]*COVEN_CAVE_PARENT_WATCHDOG[\s\S]*stdin-eof[\s\S]*process_group\(0\)/,
+  "the Unix parent lease must be an inherited pipe and the child must own its process group",
+);
+assert.match(
+  lifecycle,
+  /child\.stdin\.take\(\)[\s\S]*Duration::from_secs\(2\)[\s\S]*could not inspect watched sidecar/,
+  "normal Unix cleanup must close the same parent lease with a bounded fallback",
+);
+assert.match(
+  copilotFlow,
+  /PACKAGED_UNIX_SIDECAR_SHUTDOWN_LEASE_MS = 2_000[\s\S]*COPILOT_SHUTDOWN_TERMINATION_ATTEMPTS = 1[\s\S]*COPILOT_PROCESS_TERMINATION_GRACE_MS = 400/,
+  "direct Copilot group cleanup must retain real headroom beneath the native two-second lease",
+);
+assert.match(
+  server,
+  /COVEN_CAVE_PARENT_WATCHDOG === "stdin-eof"[\s\S]*process\.stdin\.once\("end"[\s\S]*process\.stdin\.once\("error"[\s\S]*process\.stdin\.resume\(\)/,
+  "the packaged server must attach exact-parent EOF handlers before starting stdin flow",
+);
+assert.match(
+  server,
+  /function terminatePackagedUnixSidecarTree[\s\S]*process\.kill\(-process\.pid, "SIGKILL"\)/,
+  "parent EOF must kill the packaged server's owned Unix process group",
+);
+assert.match(
+  server,
+  /terminatePackagedUnixSidecarTree[\s\S]*terminatePtySessions\(\)[\s\S]*Promise\.race\([\s\S]*PACKAGED_CHILD_SHUTDOWN_BUDGET_MS[\s\S]*finally[\s\S]*terminatePtySessions\(\)[\s\S]*process\.kill\(-process\.pid, "SIGKILL"\)/,
+  "parent EOF must kill PTYs first and bound direct-run cleanup before the native lease expires",
+);
+assert.match(
+  server,
+  /direct Copilot process-tree shutdown could not be proved/,
+  "parent EOF must expose the fail-closed boundary when an isolated tree cannot be proved stopped",
 );
 assert.match(
   reachability,

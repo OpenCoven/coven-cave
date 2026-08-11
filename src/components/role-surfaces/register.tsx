@@ -131,11 +131,17 @@ registerRoleSurface({
 // the "coder" role token — the Studio's Coding type or a role label carrying
 // any of the aliases below. GitHub-item opens also land here, on the room's
 // demand-loaded Activity / PRs / Issues / Reviews tabs.
+//
+// The id stays `code` while the title reads "Coding Desk" (cave-smaji), and
+// that gap is deliberate: the id is a PERSISTED workspace mode (`surface:code`)
+// that the `?mode=code` and `?mode=github` aliases resolve into, so renaming it
+// would strand every stored last-surface and every saved link for a change no
+// one can see.
 registerRoleSurface({
   id: CODE_SURFACE_ID,
   role: "coder",
   aliases: ["coding", "developer", "engineer", "programmer", "software-engineer", "code"],
-  title: "Code Workshop",
+  title: "Coding Desk",
   iconName: "ph:code",
   description: "Multi-session coding workbench — diffs, files, terminals, branches, and GitHub",
   accentHue: 250,

@@ -1674,6 +1674,7 @@ export function FamiliarAnalyticsContent({
     setActionModal(buildActionModal(request));
   }, []);
   const traceRequest = useCallback((request: SelfHealRequest) => {
+    setBoardOpen(false);
     setTraceTarget({ id: request.id, title: request.title });
     setActionModal(null);
   }, []);
@@ -1980,6 +1981,7 @@ export function FamiliarAnalyticsContent({
         {pulseOpen ? (
           <PulseOverlay
             pulse={model.sessionPulse}
+            lattice={model.activityLattice}
             lastActive={model.growthReport?.lastActiveAt ?? model.recentSessions[0]?.updated_at ?? null}
             streakDays={model.progression?.streakDays ?? 0}
             onClose={() => setPulseOpen(false)}

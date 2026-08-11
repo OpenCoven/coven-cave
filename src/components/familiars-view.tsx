@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useDateTimePrefs } from "@/lib/datetime-format";
@@ -24,7 +24,11 @@ import { CanonicalMemoryRequestError } from "@/lib/canonical-memory-client";
 import type { PendingCanonicalMemorySelection } from "@/lib/canonical-memory";
 import { createMemoryFeedRequestGate } from "@/lib/memory-feed-request-gate";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
-import { SUMMON_FAMILIAR_EVENT, consumeSummonPending } from "@/lib/summon-events";
+import {
+  SUMMON_FAMILIAR_EVENT,
+  consumeSummonPending,
+  hasSummonPending,
+} from "@/lib/summon-events";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import { readSurfaceResource } from "@/lib/surface-warmup-registry";
@@ -102,7 +106,7 @@ export function FamiliarsView({
   onRetryFamiliars,
 }: AgentsViewProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
-  const [createOpen, setCreateOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(hasSummonPending);
   // Other surfaces request the Summoning Circle through summon-events: the
   // retained latch covers the fresh-mount race (mode flip → this view mounts
   // after the event fired); the event covers the already-mounted case. The
@@ -110,8 +114,10 @@ export function FamiliarsView({
   // unconditionally, so an already-mounted view that only reacted to the
   // event left it armed and the NEXT mount popped the circle open uninvited
   // (cave-ibvl).
+  useLayoutEffect(() => {
+    if (createOpen) consumeSummonPending();
+  }, [createOpen]);
   useEffect(() => {
-    if (consumeSummonPending()) setCreateOpen(true);
     const open = () => {
       consumeSummonPending();
       setCreateOpen(true);

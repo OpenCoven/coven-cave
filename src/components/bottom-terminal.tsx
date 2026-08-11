@@ -198,7 +198,7 @@ async function createXterm(
 }
 
 /** Imperative handle for writing into a pane's PTY from outside it — the
- *  Coding Room's broadcast input (cave-98o51). Deliberately write-only: it
+ *  Coding Desk's broadcast input (cave-98o51). Deliberately write-only: it
  *  reuses the transport this pane already owns rather than adding a second PTY
  *  API, and a write made through it does NOT re-fire `onUserInput`, so a
  *  broadcast can never echo back into the pane that produced it. */
@@ -696,6 +696,15 @@ export function BottomTerminal({
         term.write(bytes);
         pushToMirror(bytes);
       });
+      bridge.onReplayReset(() => {
+        // The server kept the PTY alive but its bounded retained-output window
+        // no longer reaches this client cursor. Reset immediately before its
+        // legacy-style full replay; otherwise the tail would be appended to a
+        // stale terminal state.
+        term.reset();
+        decoderRef.current = new TextDecoder("utf-8", { fatal: false });
+        pendingMirrorRef.current = "";
+      });
       bridge.onExit((code) => {
         announce(
           `\r\n\x1b[2m[exit ${code} — press any key to start a new shell]\x1b[0m\r\n`,
@@ -720,14 +729,17 @@ export function BottomTerminal({
             }
             if (disposed) return;
             try {
-              // The server replays its scrollback ring on reattach; reset
-              // first so the replay paints a clean screen instead of
-              // appending a duplicate of what's already visible.
-              term.reset();
-              // Reset the streaming decoder (+ pending buffer) too: a mid-char
-              // socket drop left partial bytes that would corrupt the mirror.
-              decoderRef.current = new TextDecoder("utf-8", { fatal: false });
-              pendingMirrorRef.current = "";
+              // Cursor-aware servers replay only the bytes missed while this
+              // socket was down. Keeping xterm intact makes that replay
+              // byte-for-byte continuous; a retained-window gap is signalled
+              // through onReplayReset above and falls back to full replay.
+              // An older server does not understand the opt-in query and
+              // retains full replay, so preserve its historical reset path.
+              if (!bridge.hasReplayCursor) {
+                term.reset();
+                decoderRef.current = new TextDecoder("utf-8", { fatal: false });
+                pendingMirrorRef.current = "";
+              }
               await bridge.reconnect();
               bridge.resize(term.cols, term.rows);
               return;
@@ -735,9 +747,6 @@ export function BottomTerminal({
               /* next delay */
             }
           }
-          announce(
-            "\r\n\x1b[2m[terminal reconnect failed — press any key to retry]\x1b[0m\r\n",
-          );
           srAnnounce("Terminal reconnect failed; press any key to retry", "assertive");
         } finally {
           reconnecting = false;
@@ -747,9 +756,6 @@ export function BottomTerminal({
       bridge.onClose((_code, reason) => {
         if (disposed) return;
         if (reason === "replaced") {
-          announce(
-            "\r\n\x1b[2m[this terminal was opened in another window — view detached]\x1b[0m\r\n",
-          );
           srAnnounce("This terminal was opened in another window; this view is detached", "assertive");
           return;
         }
@@ -757,7 +763,6 @@ export function BottomTerminal({
           // onExit already announced; a keypress starts a fresh shell.
           return;
         }
-        announce("\r\n\x1b[2m[terminal disconnected — reconnecting…]\x1b[0m\r\n");
         srAnnounce("Terminal disconnected, reconnecting", "assertive");
         void attemptReconnect();
       });

@@ -47,12 +47,17 @@ test("errors map by kind: unknown action 400, client mistakes 400, missing missi
   // mission-not-found → 404, and EVERYTHING else (fs errors, bugs) → 500 —
   // internal failures must not masquerade as client errors.
   assert.match(source, /research mission not found"\) return 404/);
+  assert.match(source, /message === RESEARCH_SESSION_OWNER_REPAIR_REQUIRED\) return 409/);
+  assert.match(source, /message === RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT\) return 409/);
   assert.match(source, /VALIDATION_ERRORS\.has\(message\)/);
   assert.match(source, /startsWith\('Project root "'\)/);
   assert.match(source, /startsWith\("invalid source"\)/);
   assert.match(source, /return 400;/);
   assert.match(source, /return 500;/);
   assert.match(source, /status: actionErrorStatus\(message\)/);
+  assert.match(source, /error instanceof ResearchMissionLaunchInputError/);
+  assert.match(source, /error: error\.message, mission: error\.mission/);
+  assert.match(source, /status: error\.status/);
   // Manual runs vs an ACTIVE linked automation is a state conflict (409),
   // resolved by pausing the schedule — not a client error (cave-7had).
   assert.match(

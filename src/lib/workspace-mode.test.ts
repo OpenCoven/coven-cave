@@ -62,10 +62,10 @@ test("the documented alias landings hold", () => {
   assert.equal(MODE_ALIASES.roles, "marketplace", "Roles is a Marketplace hub section");
   assert.equal(MODE_ALIASES.capabilities, "marketplace", "Capabilities is a Marketplace hub section");
   assert.equal(MODE_ALIASES.code, "surface:code", "Code is the Coding familiar's room (cave-cc5r)");
-  assert.equal(MODE_ALIASES.github, "surface:code", "GitHub is an Activity intent inside Code Workshop");
+  assert.equal(MODE_ALIASES.github, "surface:code", "GitHub is an Activity intent inside Coding Desk");
 });
 
-test("github remains valid only as a Code Workshop compatibility alias", () => {
+test("github remains valid only as a Coding Desk compatibility alias", () => {
   assert.ok(!(CANONICAL_WORKSPACE_MODES as readonly string[]).includes("github"));
   assert.ok(isAliasWorkspaceMode("github"));
   assert.equal(MODE_ALIASES.github, "surface:code");

@@ -18,7 +18,8 @@ console.log("bottom-terminal-ws-bridge.test.ts OK");
 
 // ── Disconnect recovery (the "terminal stopped accepting input" class) ───────
 assert.match(src, /bridge\.onClose\(/, "terminal reacts to a dropped socket instead of freezing");
-assert.match(src, /terminal disconnected — reconnecting/, "drop is announced in the pane");
+assert.match(src, /srAnnounce\("Terminal disconnected, reconnecting", "assertive"\)/, "drop is announced without writing non-PTY bytes into xterm");
+assert.doesNotMatch(src, /terminal disconnected — reconnecting/, "reconnect status never corrupts byte-continuous terminal state");
 assert.match(src, /const RECONNECT_DELAYS_MS = \[0, 1000, 3000\]/, "reconnect retries with capped backoff");
 assert.match(
   src,
@@ -43,9 +44,9 @@ assert.match(
   /sendToPtyRef\.current = null;/,
   "teardown drops the writer so a broadcast can't write into an unmounted pane",
 );
-assert.match(src, /term\.reset\(\);[\s\S]{0,400}await bridge\.reconnect\(\)/, "screen resets before reattach so the server replay paints clean");
-assert.match(src, /term\.reset\(\);[\s\S]{0,300}decoderRef\.current = new TextDecoder/, "the streaming decoder is reset on reconnect so replayed scrollback decodes cleanly");
-assert.match(src, /reason === "replaced"/, "a take-over by another window is announced, not fought with reconnects");
+assert.match(src, /if \(!bridge\.hasReplayCursor\) \{[\s\S]{0,260}term\.reset\(\);[\s\S]{0,400}await bridge\.reconnect\(\)/, "older full-replay servers reset before reattach");
+assert.match(src, /bridge\.onReplayReset\(\(\) => \{[\s\S]{0,300}term\.reset\(\);[\s\S]{0,300}decoderRef\.current = new TextDecoder/, "expired cursor fallback resets the terminal and decoder before bounded full replay");
+assert.match(src, /reason === "replaced"[\s\S]{0,260}srAnnounce/, "a take-over by another window is announced, not fought with reconnects");
 
 // ── PTY lifetime is decoupled from view lifetime ──────────────────────────────
 // Unmount is usually a keepalive tab-switch remount; killing the PTY there

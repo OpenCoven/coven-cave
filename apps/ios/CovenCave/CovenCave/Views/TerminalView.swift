@@ -18,6 +18,8 @@ struct TerminalView: View {
     @State private var showingNewShorthand = false
     @State private var showingProjectPicker = false
     @State private var newShorthand = ""
+    @State private var draft = ""
+    @State private var showingTerminalHelp = false
 
     /// Per-cwd thread id → one durable shell per working directory.
     private var threadId: String { "ios-terminal::" + (cwd ?? "home") }
@@ -75,6 +77,16 @@ struct TerminalView: View {
             )
             .ignoresSafeArea(.container, edges: .bottom)
             Divider()
+            TerminalComposer(
+                draft: $draft,
+                connected: terminal.connected,
+                exited: terminal.exited,
+                onSend: { terminal.sendInput($0) },
+                onCommand: dispatchTerminalCommand,
+                onAskFamiliar: {
+                    app.requestTerminalFamiliarHandoff(draft: draft, cwd: cwd)
+                }
+            )
             keyRow
         }
         .task { if !app.projectsLoaded { await app.loadProjects() } }
@@ -115,6 +127,11 @@ struct TerminalView: View {
             Button("Cancel", role: .cancel) { newShorthand = "" }
         } message: {
             Text("This command is stored on this phone.")
+        }
+        .alert("Terminal commands", isPresented: $showingTerminalHelp) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("/clear clears the shell screen. /cwd chooses a working directory. Unknown slash input is sent to your shell.")
         }
     }
 
@@ -225,6 +242,17 @@ struct TerminalView: View {
         guard let wsBase = app.connection?.wsBaseURL else { return }
         terminal.connect(wsBase: wsBase, threadId: threadId,
                          projectRoot: cwd, cols: cols, rows: rows)
+    }
+
+    private func dispatchTerminalCommand(_ command: TerminalCommand) {
+        switch command {
+        case .help:
+            showingTerminalHelp = true
+        case .clear:
+            terminal.sendInput("clear\n")
+        case .chooseWorkingDirectory:
+            showingProjectPicker = true
+        }
     }
 
     private func switchCwd(_ root: String?) {

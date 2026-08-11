@@ -29,6 +29,7 @@ struct ChatView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Bindable var thread: ChatThread
     @State private var draft: String = ""
     /// The message being quoted in the next send, if any (swipe-to-reply).
@@ -482,11 +483,13 @@ struct ChatView: View {
                 recentRoots: app.recentProjectRoots,
                 selectedRoot: $thread.projectRoot,
                 isResolved: $projectResolved,
-                requiresExplicitSelection: thread.needsProjectSelection
-            ) {
-                thread.needsProjectSelection = false
-                app.touch(thread)
-            }
+                refreshToken: 0,
+                requiresExplicitSelection: thread.needsProjectSelection,
+                onResolved: {
+                    thread.needsProjectSelection = false
+                    app.touch(thread)
+                }
+            )
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(chrome.bgRaised)
@@ -640,38 +643,111 @@ struct ChatView: View {
         id.split(separator: "/").last.map(String.init) ?? id
     }
 
+    private var linkedGitHubContext: (link: CardGitHubLink, url: URL)? {
+        app.linkedTasks(for: thread)
+            .flatMap(\.githubLinks)
+            .compactMap { link in
+                validGitHubURL(for: link).map { (link, $0) }
+            }
+            .first
+    }
+
+    private func validGitHubURL(for link: CardGitHubLink) -> URL? {
+        let kind = link.kind.lowercased()
+        guard ["pr", "review_request", "issue"].contains(kind),
+              let number = link.number,
+              let url = URL(string: link.url),
+              url.scheme?.lowercased() == "https",
+              url.host?.lowercased() == "github.com",
+              url.user == nil,
+              url.password == nil,
+              url.port == nil
+        else { return nil }
+
+        let repo = link.repo.split(separator: "/", omittingEmptySubsequences: true)
+        let path = url.pathComponents.filter { $0 != "/" }
+        let expectedKind = kind == "issue" ? "issues" : "pull"
+        guard repo.count == 2,
+              path.count >= 4,
+              path[0].caseInsensitiveCompare(String(repo[0])) == .orderedSame,
+              path[1].caseInsensitiveCompare(String(repo[1])) == .orderedSame,
+              path[2].lowercased() == expectedKind,
+              path[3] == String(number)
+        else { return nil }
+        return url
+    }
+
+    private func githubContextLabel(_ link: CardGitHubLink) -> String {
+        let kind = link.kind.lowercased() == "issue" ? "Issue" : "PR"
+        guard let number = link.number else { return kind }
+        return "\(kind) #\(number)"
+    }
+
     private var linkedContextStrip: some View {
         let cards = app.linkedTasks(for: thread)
-        return Button {
-            showTasks = true
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "checklist")
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 8))
+        return layout {
+            if let context = linkedGitHubContext {
+                Link(destination: context.url) {
+                    HStack(spacing: 6) {
+                        Image(systemName: context.link.kind.lowercased() == "issue"
+                              ? "smallcircle.filled.circle" : "arrow.triangle.branch")
+                        Text(githubContextLabel(context.link))
+                            .lineLimit(1)
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption2.weight(.bold))
+                    }
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(chrome.accent)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(cards.count == 1 ? "Linked task" : "\(cards.count) linked tasks")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                    Text(cards.first?.title ?? "Open Tasks")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 36)
+                    .background(chrome.accent.opacity(0.12), in: Capsule())
+                    .overlay(Capsule().stroke(chrome.accent.opacity(0.35), lineWidth: 1))
                 }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.tertiary)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open \(githubContextLabel(context.link)) on GitHub")
             }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 52)
-            .background(chrome.bgRaised)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(chrome.border).frame(height: 1)
+
+            Button {
+                showTasks = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "checklist")
+                        .foregroundStyle(chrome.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(cards.count == 1 ? "Linked task" : "\(cards.count) linked tasks")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(cards.first?.title ?? "Open Tasks")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityHint("Opens tasks linked to this conversation")
         }
-        .buttonStyle(.plain)
-        .accessibilityHint("Opens tasks linked to this conversation")
+        .padding(.horizontal, 14)
+        .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 8 : 0)
+        .padding(.top, dynamicTypeSize.isAccessibilitySize ? 16 : 0)
+        .padding(.bottom, dynamicTypeSize.isAccessibilitySize ? 16 : 0)
+        .frame(minHeight: 52)
+        .background(chrome.bgRaised)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(chrome.border).frame(height: 1)
+        }
     }
 
     private func sessionDetailRow(

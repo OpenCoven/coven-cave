@@ -40,7 +40,7 @@ function platformId(): "win32" | "darwin" | "linux" | "ios" | "android" {
 async function commandPath(binary: string): Promise<string | null> {
   const command = process.platform === "win32" ? "where" : "which";
   try {
-    const { stdout } = await execFileAsync(command, [binary], { env: covenSpawnEnv(), timeout: PROBE_TIMEOUT_MS });
+    const { stdout } = await execFileAsync(command, [binary], { windowsHide: true, env: covenSpawnEnv(), timeout: PROBE_TIMEOUT_MS });
     const lines = stdout.split(/\r?\n/);
     return process.platform === "win32" ? pickWindowsLauncher(lines) : lines.map((line) => line.trim()).find(Boolean) ?? null;
   } catch {
@@ -99,7 +99,7 @@ async function desktopNativeProbe(definition: PrerequisiteDefinition): Promise<P
   }
   if (definition.id === "windows-webview2") {
     try {
-      const { stdout } = await execFileAsync("reg", ["query", "HKLM\\SOFTWARE\\Microsoft\\EdgeUpdate\\Clients", "/s"], { timeout: PROBE_TIMEOUT_MS });
+      const { stdout } = await execFileAsync("reg", ["query", "HKLM\\SOFTWARE\\Microsoft\\EdgeUpdate\\Clients", "/s"], { windowsHide: true, timeout: PROBE_TIMEOUT_MS });
       return /webview2/i.test(stdout) ? { state: "pass", detail: "WebView2 runtime is registered for this Windows installation." } : { state: "unknown", detail: "WebView2 could not be confirmed from the registry." };
     } catch {
       return { state: "unknown", detail: "WebView2 is installed by the CovenCave MSI; registry probing was unavailable." };
@@ -108,7 +108,7 @@ async function desktopNativeProbe(definition: PrerequisiteDefinition): Promise<P
   if (definition.id === "linux-desktop-runtime") {
     const session = process.env.WAYLAND_DISPLAY || process.env.DISPLAY;
     try {
-      const { stdout } = await execFileAsync("ldconfig", ["-p"], { timeout: PROBE_TIMEOUT_MS });
+      const { stdout } = await execFileAsync("ldconfig", ["-p"], { windowsHide: true, timeout: PROBE_TIMEOUT_MS });
       const webkit = /libwebkit2gtk-4\.1/i.test(stdout);
       const fuse = await commandPath("fusermount3") ?? await commandPath("fusermount");
       if (!webkit || !session) {

@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
-import type { CovenLaunchCommand } from "./coven-bin.ts";
+import {
+  covenWrapperSpawnEnv,
+  type CovenLaunchCommand,
+} from "./coven-bin.ts";
 import {
   evaluateRuntimeAvailability,
   missingRunnerMessage,
@@ -106,7 +109,7 @@ export const runCovenAdapterList: CovenAdapterListProbe = (launch, env) =>
     let child;
     try {
       child = spawn(launch.command, [...launch.fixedArgs, "adapter", "list", "--json"], {
-        env,
+        env: covenWrapperSpawnEnv(env),
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
       });

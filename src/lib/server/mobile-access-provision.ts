@@ -20,12 +20,31 @@ import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { CAVE_PORTS, CAVE_PORT_ENV, parsePort } from "../../../scripts/ports.mjs";
+
+/**
+ * Same resolution order as server.ts `cavePort()` and the Rust
+ * `dedicated_port()`: explicit Cave override, then PORT, then the channel
+ * default. This module runs inside Next, which bundles the import, so unlike
+ * server.ts it can consume the contract directly instead of copying it.
+ */
+function resolveCavePort(env: Record<string, string | undefined>): string {
+  const channelDefault =
+    env.COVEN_CAVE_BUNDLE === "1" ? CAVE_PORTS.production : CAVE_PORTS.dev;
+  const resolved =
+    parsePort(env[CAVE_PORT_ENV]) ?? parsePort(env.PORT) ?? channelDefault;
+  return String(resolved);
+}
 
 /** Mirrors scripts/mobile-tailscale.sh STATE_ROOT/STATE_DIR/TOKEN_FILE. */
 export function mobileAccessSecretFile(
   env: Record<string, string | undefined> = process.env,
 ): string {
-  const port = (env.PORT || "3000").trim() || "3000";
+  // Keyed by port to mirror the shell script — which is why the port contract
+  // (scripts/ports.mjs) exists: the packaged app used to bind a random port
+  // every launch, so this directory moved every launch and every paired phone
+  // had to re-pair. Same resolution order as server.ts `cavePort()`.
+  const port = resolveCavePort(env);
   const stateRoot =
     env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim() ||
     path.join(

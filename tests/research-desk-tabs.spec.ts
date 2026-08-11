@@ -796,9 +796,28 @@ test.describe("research desk tabs", () => {
     await intake.locator(".research-mode-card", { hasText: "Deep loop" }).click();
     await expect(intake.getByText("You chose Deep loop — this run will use it.")).toBeVisible();
 
-    // Quick saves panel lists the shared saved-links store.
+    // Quick saves is a drawer docked to the bottom edge: collapsed by default
+    // so the intake is not competing with a permanent list, and it says how
+    // many saves it holds before you open it.
+    const savesToggle = intake.getByRole("button", { name: /^Quick saves/ });
+    await expect(savesToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(intake.getByRole("region", { name: "Quick saves" })).toHaveCount(0);
+
+    await savesToggle.click();
+    await expect(savesToggle).toHaveAttribute("aria-expanded", "true");
+
+    // Opened, it lists the shared saved-links store, grouped rather than flat.
     const saves = intake.getByRole("region", { name: "Quick saves" });
     await expect(saves.getByRole("button", { name: /acme\/vector-bench/ })).toBeVisible();
     await expect(saves.getByRole("button", { name: /Qdrant guide/ })).toBeVisible();
+
+    // The draft typed above ("vector databases") promotes its matches into a
+    // suggested group, each explaining itself.
+    await expect(saves.getByText("✦ Suggested for this prompt")).toBeVisible();
+    await expect(saves.getByText(/matches “vector”/).first()).toBeVisible();
+
+    // Attaching one reports back on the collapsed bar.
+    await saves.getByRole("button", { name: /Qdrant guide/ }).click();
+    await expect(intake.getByText("1 attached to this run")).toBeVisible();
   });
 });

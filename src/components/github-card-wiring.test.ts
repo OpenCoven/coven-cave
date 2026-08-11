@@ -7,11 +7,12 @@ import { readFileSync } from "node:fs";
 
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const card = readFileSync(new URL("./github-card.tsx", import.meta.url), "utf8");
+const renderedText = readFileSync(new URL("../lib/chat-rendered-text.ts", import.meta.url), "utf8");
 
 // chat-view: imports and render paths.
 assert.match(
   chatView,
-  /import \{ sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl \} from "@\/lib\/github-blocks"/,
+  /import \{ sliceGitHubBlocks, unfurlUserMessage, descriptorUrl \} from "@\/lib\/github-blocks"/,
   "chat-view imports the github-blocks lib",
 );
 assert.match(chatView, /import \{ GitHubCard \} from "@\/components\/github-card"/, "chat-view imports GitHubCard");
@@ -19,7 +20,7 @@ assert.match(chatView, /function splitSegmentsForGitHub\(/, "has the segments→
 assert.match(chatView, /<GitHubCard descriptor=/, "renders GitHubCard as a block segment");
 assert.match(
   chatView,
-  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(splitSegmentsForImages\(\[\{ kind: "text", text: visibleWithGh \}\]\), artifactCtx\),\s*onOpenUrl,\s*ghFamiliar,\s*\)/,
+  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\]\)/,
   "settled path keeps GitHub splitting after artifacts while image groups remain intact across both boundaries",
 );
 assert.match(
@@ -29,8 +30,23 @@ assert.match(
 );
 assert.match(
   chatView,
-  /turn\.pending\s*\?\s*stripImageMarkers\(stripGitHubMarkers\(reasoningSplit\.visible\)\)/,
-  "streaming path keeps GitHub stripping nested inside image-marker stripping so neither raw tag flashes",
+  /extractChatRenderedText\(turn\.text, \{ pending: Boolean\(turn\.pending\) \}\)/,
+  "both pending and settled turns render through the shared marker pipeline",
+);
+assert.match(
+  renderedText,
+  /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);[\s\S]*const autoStatusSplit = extractAutoStatusMarkers\(skillSplit\.visible\);[\s\S]*const attentionSplit = extractChatAttentionMarker\(autoStatusSplit\.visible,[\s\S]*const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);/,
+  "the shared projection resolves skill, auto-status, attention, then next paths before card markers",
+);
+assert.match(
+  renderedText,
+  /visible: stripImageMarkers\(stripGitHubMarkers\(nextPathSplit\.visible\)\)/,
+  "GitHub/image markers strip unconditionally and LAST — after skill, auto-status, attention, and next-path extraction have all seen the marker-bearing text — so raw tags never flash on pending OR settled turns",
+);
+assert.doesNotMatch(
+  renderedText,
+  /pending\s*\?\s*stripImageMarkers\(stripGitHubMarkers\(/,
+  "GitHub/image stripping must not be gated behind turn.pending — it runs unconditionally on both streaming and settled turns",
 );
 assert.match(
   chatView,

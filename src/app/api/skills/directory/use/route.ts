@@ -90,6 +90,7 @@ export async function POST(req: Request) {
   const args = buildUseArgs(target, skill);
   try {
     const { stdout, stderr } = await execFileAsync("npx", args, {
+      windowsHide: true,
       cwd: process.cwd(),
       timeout: USE_TIMEOUT_MS,
       maxBuffer: MAX_USE_BUFFER,

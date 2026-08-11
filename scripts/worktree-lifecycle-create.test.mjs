@@ -16,10 +16,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  registerWriterIntent,
-  releaseWriterIntent,
-} from "./maintenance-gate.mjs";
+import { maintenanceGateStatus } from "./maintenance-gate.mjs";
 
 if (process.platform === "win32") {
   console.log(
@@ -35,6 +32,47 @@ const realGit = process.env.PATH.split(path.delimiter)
 
 assert.ok(realGit, "the test requires git on PATH");
 assert.equal(existsSync(script), true, "managed worktree creator module must exist");
+
+const creatorSource = readFileSync(script, "utf8");
+for (const mutation of [
+  /git\(\s*root,\s*\[\s*"worktree",\s*"add"[\s\S]*?MAX_FENCED_MUTATION_TIMEOUT_MS/,
+  /command\(\s*"bd",\s*\[\s*"update"[\s\S]*?MAX_FENCED_MUTATION_TIMEOUT_MS/,
+  /git\(\s*root,\s*\[\s*"worktree",\s*"remove"[\s\S]*?MAX_FENCED_MUTATION_TIMEOUT_MS/,
+  /"update-ref"[\s\S]*?MAX_FENCED_MUTATION_TIMEOUT_MS/,
+]) {
+  assert.match(
+    creatorSource,
+    mutation,
+    "each blocking creation or compensation mutation must be bounded by the Coven lease",
+  );
+}
+
+// Every emitter of the `--apply` suggestion must go through maintenanceSuggestion(),
+// which gates it on capabilities.complete. The suggestion is unrunnable while any
+// maintenance plane is unenforced, and a refusal that names an impossible next step
+// pushes the operator toward the unmanaged fallbacks the guard rules forbid.
+//
+// Structural, not a count. cave-wmkn4 fixed refusalOutcome and left two compensate
+// paths emitting the literal directly (cave-e4n3l); the miss survived verification
+// because grepping the literal returns a nonzero count either way — the gated branch
+// legitimately contains it. So assert on WHERE it appears: exactly one occurrence,
+// on the line that returns it from behind the capabilities check.
+{
+  const createSource = readFileSync(script, "utf8");
+  const suggestionLines = createSource
+    .split("\n")
+    .filter((line) => line.includes('"Suggestion: pnpm beads:worktrees:apply"'));
+  assert.equal(
+    suggestionLines.length,
+    1,
+    `the --apply suggestion must have exactly one emitter; found ${suggestionLines.length}:\n${suggestionLines.join("\n")}`,
+  );
+  assert.match(
+    suggestionLines[0],
+    /capabilities\?\.complete/,
+    "the sole emitter must be the branch gated on capabilities.complete",
+  );
+}
 
 function run(command, args, cwd, options = {}) {
   return spawnSync(command, args, {
@@ -110,6 +148,7 @@ function createFixture({
   const bin = path.join(fixtureRoot, "bin");
   const stateDir = path.join(fixtureRoot, "state");
   const stateFile = path.join(stateDir, "beads.json");
+  const covenStateFile = path.join(stateDir, "coven-maintenance.json");
   const lockDir = path.join(stateDir, "beads.lock");
   const gitMarker = path.join(stateDir, "git-oid-failed");
 
@@ -261,15 +300,64 @@ esac
 
   executable(
     path.join(bin, "coven"),
-    `#!/bin/sh
-case "$1" in
-  sessions) printf '%s\\n' '{"sessions":[]}' ;;
-  claim) printf '%s\\n' '{"claims":[]}' ;;
-  *)
-    printf 'unexpected coven command: %s\\n' "$*" >&2
-    exit 2
-    ;;
-esac
+    `#!/usr/bin/env node
+const { readFileSync, writeFileSync } = require("node:fs");
+const path = require("node:path");
+const stateFile = path.join(__dirname, "..", "state", "coven-maintenance.json");
+const state = (() => {
+  try { return JSON.parse(readFileSync(stateFile, "utf8")); }
+  catch { return { owner: null, writers: [], releaseFails: false, events: [] }; }
+})();
+const save = () => writeFileSync(stateFile, JSON.stringify(state));
+const json = () => process.stdout.write(JSON.stringify({ owner: state.owner, writers: state.writers }) + "\\n");
+const [, , group, command, ownerId, generation] = process.argv;
+if (group === "--version") {
+  process.stdout.write("coven 0.2.5\\n");
+  process.exit(0);
+}
+if (group === "sessions") {
+  process.stdout.write('{"sessions":[]}\\n');
+  process.exit(0);
+}
+if (group === "claim") {
+  process.stdout.write('{"claims":[]}\\n');
+  process.exit(0);
+}
+if (group !== "maintenance") process.exit(2);
+state.events ??= [];
+if (command === "acquire") {
+  if (state.owner !== null) process.exit(1);
+  state.owner = {
+    owner_id: ownerId,
+    generation: "fixture-generation",
+    expires_at: Math.floor(Date.now() / 1000) + 120,
+    phase: state.writers.length === 0 ? "held" : "draining",
+  };
+  state.events.push("acquire");
+  save();
+  json();
+  process.exit(0);
+}
+if (command === "heartbeat") {
+  if (!state.owner || state.owner.owner_id !== ownerId || state.owner.generation !== generation) process.exit(1);
+  state.owner.expires_at = Math.floor(Date.now() / 1000) + 120;
+  state.events.push("heartbeat");
+  save();
+  json();
+  process.exit(0);
+}
+if (command === "release") {
+  if (state.releaseFails || !state.owner || state.owner.owner_id !== ownerId || state.owner.generation !== generation) process.exit(1);
+  state.owner = null;
+  state.events.push("release");
+  save();
+  process.exit(0);
+}
+if (command === "status") {
+  json();
+  process.exit(0);
+}
+process.exit(2);
 `,
   );
 
@@ -382,16 +470,11 @@ function snapshotIntents(state) {
 }
 function sabotageRelease(state) {
   if (!state.config.releaseSabotage) return;
-  const root = path.join(state.repo, ".git", "coven-maintenance-gate", "intents");
-  if (!existsSync(root)) return;
-  const intents = readdirSync(root)
-    .map((name) => ({ name, value: JSON.parse(readFileSync(path.join(root, name), "utf8")) }))
-    .filter(({ value }) =>
-      state.config.releaseSabotage === "both"
-        ? true
-        : value.writerId === state.config.releaseSabotage
-    );
-  for (const intent of intents) rmSync(path.join(root, intent.name));
+  const covenState = path.join(path.dirname(state.repo), "state", "coven-maintenance.json");
+  const current = existsSync(covenState)
+    ? JSON.parse(readFileSync(covenState, "utf8"))
+    : { owner: null, writers: [], events: [] };
+  writeFileSync(covenState, JSON.stringify({ ...current, releaseFails: true }));
 }
 
 const args = process.argv.slice(2);
@@ -524,6 +607,7 @@ process.exit(2);
   const env = {
     ...process.env,
     PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+    COVEN_BIN: path.join(bin, "coven"),
     NODE_NO_WARNINGS: "1",
   };
   return {
@@ -532,6 +616,7 @@ process.exit(2);
     origin,
     bin,
     stateFile,
+    covenStateFile,
     alternateOid,
     env,
   };
@@ -694,15 +779,6 @@ function assertOriginalEvidence(result, branch, targetPath, originalOid) {
     ),
     `rollback-incomplete stderr must retain original creation evidence: ${result.stderr}`,
   );
-}
-
-function readAudit(fixture) {
-  const audit = path.join(fixture.repo, ".git", "coven-maintenance-gate", "audit.jsonl");
-  return readFileSync(audit, "utf8")
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
 }
 
 async function runConcurrentCreates(fixture, invocations) {
@@ -873,27 +949,28 @@ await withFixture({}, async (fixture) => {
     "full-ref rejection leaves Bead records untouched",
   );
 
-  const heldSpecific = registerWriterIntent({
-    writerId: "worktree-create:cave-unit1",
-    purpose: "fixture-specific blocker",
-    repoDir: fixture.repo,
-    ttlMs: 600_000,
+  writeJson(fixture.covenStateFile, {
+    owner: {
+      owner_id: "another-maintainer",
+      generation: "other-generation",
+      expires_at: Math.floor(Date.now() / 1_000) + 120,
+      phase: "held",
+    },
+    writers: [],
+    releaseFails: false,
   });
-  assert.equal(heldSpecific.ok, true);
-  const secondIntentFailure = runCreate(
+  const heldCovenFence = runCreate(
     fixture,
     createArgs({ branch: "feat/cave-unit1-intent-failure" }),
   );
-  assert.equal(secondIntentFailure.status, 1);
-  assert.match(secondIntentFailure.stderr, /writer-already-active|writer intent/i);
+  assert.equal(heldCovenFence.status, 1);
+  assert.match(heldCovenFence.stderr, /maintenance fence acquisition failed: coven-acquire-failed/i);
   assert.equal(
-    releaseWriterIntent(heldSpecific.lease).ok,
-    true,
-    "fixture releases its own specific blocker",
+    maintenanceGateStatus(fixture.repo).gate,
+    null,
+    "a rejected Coven fence rolls back the exact local owner",
   );
-  const intentAudit = readAudit(fixture);
-  const globalEvents = intentAudit.filter((entry) => entry.writerId === "worktree-create");
-  assert.equal(globalEvents.at(-1).event, "intent-released", "global lease releases after second fails");
+  writeJson(fixture.covenStateFile, { owner: null, writers: [], releaseFails: false });
 
   const missingStartPoint = runCreate(
     fixture,
@@ -967,27 +1044,11 @@ await withFixture({}, async (fixture) => {
   assert.equal(refState(fixture.repo, report.fullRef).oid, report.head);
   const state = readJson(fixture.stateFile);
   assert.deepEqual(Object.keys(state.updates.at(-1)), ["coven"], "bd update merges only coven");
-  const snapshots = state.intentSnapshots.at(-1).sort((a, b) =>
-    a.writerId.localeCompare(b.writerId),
-  );
-  assert.deepEqual(
-    snapshots.map(({ writerId, ttlMs }) => ({ writerId, ttlMs })),
-    [
-      { writerId: "worktree-create", ttlMs: 600_000 },
-      { writerId: "worktree-create:cave-unit1", ttlMs: 600_000 },
-    ],
-  );
-  assert.ok(snapshots.every((intent) => intent.purpose.includes("cave-unit1")));
-  const audit = readAudit(fixture);
-  const releases = audit.filter((entry) => entry.event === "intent-released").slice(-2);
-  assert.deepEqual(
-    releases.map((entry) => entry.writerId),
-    ["worktree-create:cave-unit1", "worktree-create"],
-    "writer intents release in reverse order",
-  );
-  const heartbeats = audit.filter((entry) => entry.event === "intent-heartbeat");
-  assert.ok(heartbeats.some((entry) => entry.writerId === "worktree-create"));
-  assert.ok(heartbeats.some((entry) => entry.writerId === "worktree-create:cave-unit1"));
+  const covenFence = readJson(fixture.covenStateFile);
+  assert.equal(covenFence.owner, null, "the exact Coven owner is released after metadata persistence");
+  assert.ok(covenFence.events.includes("acquire"), "creator enters the released Coven protocol");
+  assert.ok(covenFence.events.includes("heartbeat"), "creator renews the composite fence while mutating");
+  assert.ok(covenFence.events.includes("release"), "creator releases the composite fence after verification");
 
   const cliExceptionPath = path.join(
     fixture.repo,
@@ -1062,14 +1123,25 @@ for (const [mode, branch] of [
 
 await withFixture({ fixturePrefix: "cave-worktree-create-o'reilly-" }, async (fixture) => {
   const existingPath = addWorktree(fixture, "feat/cave-unit1-existing", "cave-unit1-existing");
-  for (let index = 0; index < 10; index += 1) {
+  // Drive the registration count to exactly WORKTREE_WARNING_BUDGET so admission
+  // refuses at `count >= budget`. The count includes the primary checkout, so the
+  // arithmetic is: 26 attached + 1 existing (above) + 1 primary = 28. If the
+  // budget moves again, this loop moves with it (budget - 2).
+  //
+  // These MUST be branch-attached (cave-oenag). They were `--detach` until the
+  // budget stopped counting detached units, at which point this fixture stopped
+  // reaching the budget at all and the refusal below silently disappeared — the
+  // fixture was simulating sprawl with exactly the scratch space the budget now
+  // ignores. The separate detached case is asserted below.
+  for (let index = 0; index < 26; index += 1) {
     git(
       [
         "worktree",
         "add",
         "-q",
-        "--detach",
-        path.join(fixture.repo, ".worktrees", `budget-detached-${index}`),
+        "-b",
+        `budget/attached-${index}`,
+        path.join(fixture.repo, ".worktrees", `budget-attached-${index}`),
         "origin/main",
       ],
       fixture.repo,
@@ -1107,9 +1179,24 @@ await withFixture({ fixturePrefix: "cave-worktree-create-o'reilly-" }, async (fi
   const refused = runCreate(fixture, createArgs({ bead, branch, owner, purpose }));
   assert.equal(refused.status, 2, refused.stderr);
   assert.match(refused.stderr, /already owns a registered worktree/);
-  assert.match(refused.stderr, /12-worktree budget/);
-  assert.match(refused.stderr, /30-local-branch budget/);
-  assert.match(refused.stderr, /Suggestion: pnpm beads:worktrees:apply/);
+  assert.match(refused.stderr, /28-worktree budget/);
+  assert.match(refused.stderr, /38-local-branch budget/);
+  // A refusal must not send the operator to a command that cannot run. Today,
+  // two maintenance planes remain unenforced, so `--apply`
+  // exits 2 before assessing anything — yet this line was printed on EVERY
+  // refusal (cave-wmkn4). If the maintenance planes later become enforced and
+  // `--apply` becomes runnable, this assertion should be updated accordingly.
+  assert.doesNotMatch(
+    refused.stderr,
+    /Suggestion: pnpm beads:worktrees:apply/,
+    "an unrunnable command must not be suggested",
+  );
+  assert.match(refused.stderr, /cannot run here — unenforced maintenance planes: beads, github/);
+  assert.match(
+    refused.stderr,
+    /a merged PR is not retention/,
+    "the hand-retirement route must state the trap that makes it lossy",
+  );
   assert.match(refused.stderr, /This admission refusal can be lifted/i);
   assert.doesNotMatch(refused.stderr, /worth exceeding the budget/i);
   // The refusal must name the escape hatch it would accept. Without this the
@@ -1516,6 +1603,10 @@ await withFixture(
     assert.match(result.stderr, /rollback-incomplete|unverifiable|lease/i);
     const targetPath = path.join(fixture.repo, ".worktrees", branch.replace(/^feat\//, ""));
     const originalOid = git(["rev-parse", "origin/main^{commit}"], fixture.repo).trim();
+    if (mode === "lose-lease-then-fail") {
+      assert.match(result.stderr, /maintenance fence release failed/i);
+      break;
+    }
     assertPartialTruth(result, fixture, branch, targetPath);
     assertOriginalEvidence(result, branch, targetPath, originalOid);
     if (mode === "move-ref-then-fail") {
@@ -1525,7 +1616,6 @@ await withFixture(
         "current moved ref differs from retained original evidence",
       );
     }
-    if (mode === "lose-lease-then-fail") break;
   }
   },
 );
@@ -1740,6 +1830,286 @@ await withFixture(
     // passes with the gate scoped. It is deliberately not re-asserted here: this
     // bead already owns a worktree by now, so admission would refuse for that
     // reason and the assertion would prove nothing about the inventory gate.
+  },
+);
+
+// A malformed structured record used to deny creation to EVERY bead, because
+// every task's record errors were folded into every unit's metadata errors.
+// cave-l11sw wrote `disposition: "removed-externally-after-merge"` — outside the
+// accepted set — and `pnpm beads:worktrees:create` then failed deterministically
+// for every bead in the checkout with "lifecycle inventory is incomplete", with
+// no repair available that the worktree rules permit: correcting another owner's
+// lifecycle record is exactly the hand-edit they forbid. A record names the
+// branch and path it claims even when the rest of it is invalid, so it
+// disqualifies that unit and no other (cave-g9byt).
+function writeMalformedRecord(fixture, { beadId, branch, worktreePath }) {
+  const state = readJson(fixture.stateFile);
+  const issue = state.issues.find((candidate) => candidate.id === beadId);
+  assert.ok(issue, `fixture must carry ${beadId}`);
+  issue.metadata = {
+    ...issue.metadata,
+    coven: {
+      ...issue.metadata?.coven,
+      worktree: {
+        branch,
+        path: worktreePath,
+        owner: "kitty",
+        purpose: "Malformed record fixture",
+        createdAt: "2026-08-09T09:09:52.185Z",
+        // The exact value from cave-l11sw. Every other field is valid, so the
+        // record fails on this alone and the assertions below cannot pass by
+        // accident on some unrelated validation error.
+        disposition: "removed-externally-after-merge",
+      },
+    },
+  };
+  writeJson(fixture.stateFile, state);
+}
+
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    writeMalformedRecord(fixture, {
+      beadId: "cave-unit2",
+      branch: "feat/cave-unit2-orphan",
+      // No worktree is ever registered here — the shape cave-l11sw was in, its
+      // managed worktree having been removed outside the lifecycle after merge.
+      worktreePath: path.join(fixture.repo, ".worktrees", "cave-unit2-orphan"),
+    });
+
+    const created = runCreate(fixture, createArgs());
+    assert.doesNotMatch(
+      created.stderr,
+      /lifecycle inventory is incomplete/,
+      "another bead's malformed record must not block an unrelated creation",
+    );
+    assert.equal(created.status, 0, `create must succeed: ${created.stderr}`);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example") !== null,
+      true,
+      "the requested branch is actually created",
+    );
+  },
+);
+
+// Scoping is about the malformed record, not whether its worktree still
+// exists. An active malformed unit remains uncertain in the patrol, but it
+// cannot deny an unrelated managed creation.
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    const existingBranch = "feat/cave-unit2-existing";
+    const existingPath = path.join(
+      fixture.repo,
+      ".worktrees",
+      "cave-unit2-existing",
+    );
+    const existing = runCreate(
+      fixture,
+      createArgs({ bead: "cave-unit2", branch: existingBranch }),
+    );
+    assert.equal(existing.status, 0, `fixture create must succeed: ${existing.stderr}`);
+
+    writeMalformedRecord(fixture, {
+      beadId: "cave-unit2",
+      branch: existingBranch,
+      worktreePath: existingPath,
+    });
+
+    const created = runCreate(fixture, createArgs());
+    assert.doesNotMatch(
+      created.stderr,
+      /lifecycle inventory is incomplete/,
+      "an active malformed unit must not block an unrelated creation",
+    );
+    assert.equal(created.status, 0, `create must succeed: ${created.stderr}`);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example") !== null,
+      true,
+      "the unrelated branch is actually created",
+    );
+  },
+);
+
+// The scoping above must not become a way to create *over* a claim. A record
+// already naming this branch is the collision the abort was protecting, and a
+// malformed record is no less a claim than a valid one.
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    writeMalformedRecord(fixture, {
+      beadId: "cave-unit2",
+      branch: "feat/cave-unit1-example",
+      worktreePath: path.join(fixture.repo, ".worktrees", "cave-unit1-example"),
+    });
+
+    const refused = runCreate(fixture, createArgs());
+    assert.notEqual(refused.status, 0, "a claimed branch must not be created over");
+    assert.match(refused.stderr, /lifecycle inventory is incomplete/);
+    assert.match(refused.stderr, /disposition is invalid/);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example"),
+      null,
+      "no branch is created when the request collides with a claim",
+    );
+  },
+);
+
+// Same for the path, which a differently-named branch can still land on: the
+// creator slugifies `feat/`, `fix/`, `docs/` and `chore/` away, so `fix/x` and
+// `feat/x` both resolve to `.worktrees/x`.
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    writeMalformedRecord(fixture, {
+      beadId: "cave-unit2",
+      branch: "fix/cave-unit1-example",
+      worktreePath: path.join(fixture.repo, ".worktrees", "cave-unit1-example"),
+    });
+
+    const refused = runCreate(fixture, createArgs());
+    assert.notEqual(refused.status, 0, "a claimed path must not be created over");
+    assert.match(refused.stderr, /lifecycle inventory is incomplete/);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example"),
+      null,
+      "no branch is created when the request collides with a claimed path",
+    );
+  },
+);
+
+// A record that names neither a usable branch nor a usable path claims
+// something unnameable, so it cannot be charged to any unit and has to keep
+// blocking everything. The trap is that `branch` is kept verbatim for
+// diagnostics: `refs/heads/…` and a whitespace-padded name are both non-blank
+// strings that NO unit will ever equal, so a "non-blank means it names a unit"
+// test would drop the record out of the repository-wide set and into a unit
+// that never matches — reaching no surface at all. Attribution reads the
+// validated flag instead.
+for (const unusableBranch of ["refs/heads/feat/cave-unit2-unnameable", " feat/cave-unit2-padded"]) {
+  await withFixture(
+    { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+    async (fixture) => {
+      const state = readJson(fixture.stateFile);
+      const issue = state.issues.find((candidate) => candidate.id === "cave-unit2");
+      issue.metadata = {
+        coven: {
+          worktree: {
+            branch: unusableBranch,
+            // Not a string, so no usable path either — the record names nothing.
+            path: 17,
+            owner: "kitty",
+            purpose: "Unnameable record fixture",
+            createdAt: "2026-08-09T09:09:52.185Z",
+            disposition: "active",
+          },
+        },
+      };
+      writeJson(fixture.stateFile, state);
+
+      const refused = runCreate(fixture, createArgs());
+      assert.notEqual(
+        refused.status,
+        0,
+        `an unnameable record (${JSON.stringify(unusableBranch)}) must keep blocking creation`,
+      );
+      assert.match(refused.stderr, /lifecycle inventory is incomplete/);
+      assert.match(refused.stderr, /branch must be an? .*exact local branch name/);
+      assert.equal(
+        refState(fixture.repo, "refs/heads/feat/cave-unit1-example"),
+        null,
+        "no branch is created while an unnameable record stands",
+      );
+    },
+  );
+}
+
+// cave-1x9pz — the same outage as cave-g9byt, through an error it did not
+// cover. Every record here is VALID; what conflicts is which unit owns a path.
+//
+// The live shape: a managed worktree was created for one branch, then a session
+// checked a different branch out inside it. The bead's record still names the
+// original branch, so `metadataFor` resolving the unit at that path finds a
+// record claiming the path under another branch and reports "conflicting
+// structured path ownership".
+//
+// That error names exactly one unit. It reached `create` as repository-wide
+// anyway, because `create` recovered scoping by subtracting the record-level
+// claim errors — and this is not one; every record is well-formed. So an
+// unrelated bead could not create a worktree at all, and no exception could
+// rescue it: the inventory throws before admission is assessed.
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    const ownedBranch = "feat/cave-unit2-owned";
+    const ownedPath = path.join(fixture.repo, ".worktrees", "cave-unit2-owned");
+    const owned = runCreate(
+      fixture,
+      createArgs({ bead: "cave-unit2", branch: ownedBranch }),
+    );
+    assert.equal(owned.status, 0, `fixture create must succeed: ${owned.stderr}`);
+
+    // Check a DIFFERENT branch out inside that worktree, leaving the bead's
+    // record pointing at the branch it was created for.
+    const swapped = spawnSync(
+      "git",
+      ["-C", ownedPath, "checkout", "-b", "feat/cave-unit2-swapped"],
+      { encoding: "utf8" },
+    );
+    assert.equal(swapped.status, 0, `fixture checkout must succeed: ${swapped.stderr}`);
+
+    const created = runCreate(fixture, createArgs());
+    assert.doesNotMatch(
+      created.stderr,
+      /lifecycle inventory is incomplete/,
+      "a contested path on another unit must not block an unrelated creation",
+    );
+    assert.doesNotMatch(
+      created.stderr,
+      /conflicting structured path ownership/,
+      "the conflict belongs to the unit whose path is contested, not to this request",
+    );
+    assert.equal(created.status, 0, `create must succeed: ${created.stderr}`);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example") !== null,
+      true,
+      "the unrelated branch is actually created",
+    );
+  },
+);
+
+// …and the other half, so the scoping does not become a way to create over a
+// contested path. Requesting the very path whose ownership is in dispute must
+// still refuse: a second worktree there is how the dispute becomes unresolvable.
+await withFixture(
+  { issues: [defaultIssue("cave-unit1"), defaultIssue("cave-unit2")] },
+  async (fixture) => {
+    const contestedPath = path.join(fixture.repo, ".worktrees", "cave-unit1-example");
+    const state = readJson(fixture.stateFile);
+    const issue = state.issues.find((candidate) => candidate.id === "cave-unit2");
+    // A fully VALID record — it simply claims the path this request wants,
+    // under a branch that is not the one being requested.
+    issue.metadata = {
+      coven: {
+        worktree: {
+          branch: "feat/cave-unit2-elsewhere",
+          path: contestedPath,
+          owner: "kitty",
+          purpose: "Contested path fixture",
+          createdAt: "2026-08-09T09:09:52.185Z",
+          disposition: "active",
+        },
+      },
+    };
+    writeJson(fixture.stateFile, state);
+
+    const refused = runCreate(fixture, createArgs());
+    assert.notEqual(refused.status, 0, "a contested path must not be created over");
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example"),
+      null,
+      "no branch is created when the request lands on a contested path",
+    );
   },
 );
 

@@ -2,7 +2,7 @@
 
 import "@/styles/cave-composer.css";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 // The slash menu popover reuses the home composer's .hc-slash-* affordance —
 // this stylesheet is global-scoped, so importing it here makes the menu render
 // identically in the tray window (which never mounts the home composer).
@@ -330,6 +330,17 @@ export function QuickChatComposer({
   const modelHarness = canonicalHarnessId(familiar?.harness ?? "claude");
   const runtimeModelInventory = useRuntimeModelInventory(modelHarness, familiar?.id);
   const runtimeModelOptions = runtimeModelInventory.models;
+  const [composerCaret, setComposerCaret] = useState(draft.length);
+  const completeComposerText = useCallback((nextText: string, nextCaret: number) => {
+    onDraftChange(nextText);
+    setComposerCaret(nextCaret);
+    requestAnimationFrame(() => {
+      const textarea = composerRef?.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(nextCaret, nextCaret);
+    });
+  }, [composerRef, onDraftChange]);
   // Shared inline menus (/command listbox + Skills group, /model, /skill,
   // /prompt pickers) — same hook as the home/chat composers so the keyboard
   // grammar transfers. The pick callbacks reference the helpers declared just
@@ -338,6 +349,8 @@ export function QuickChatComposer({
   const menu = useInlineSlashMenus({
     text: draft,
     setText: onDraftChange,
+    caret: composerCaret,
+    onCompleteText: completeComposerText,
     modelHarness,
     modelOptionsOverride: runtimeModelOptions,
     onPickModel: (id) => {
@@ -667,7 +680,7 @@ export function QuickChatComposer({
             const cmd = menu.slashSuggestions[i];
             const s = menu.skillCommandRows[i - menu.slashSuggestions.length];
             if (cmd) {
-              onDraftChange(cmd.name + (cmd.argPlaceholder ? " " : ""));
+              menu.completeCommand(cmd.name, Boolean(cmd.argPlaceholder));
               composerRef?.current?.focus();
             } else if (s) {
               invokeSkillOption(s);
@@ -725,7 +738,13 @@ export function QuickChatComposer({
         aria-expanded={slashMenuOpen}
         aria-controls={slashMenuOpen ? menu.slashListboxId : undefined}
         aria-activedescendant={slashMenuOpen ? `${menu.slashListboxId}-opt-${menu.slashIdx}` : undefined}
-        onChange={(event) => onDraftChange(event.target.value)}
+        onChange={(event) => {
+          onDraftChange(event.target.value);
+          setComposerCaret(event.target.selectionStart ?? event.target.value.length);
+        }}
+        onSelect={(event) => setComposerCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
+        onClick={(event) => setComposerCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
+        onKeyUp={(event) => setComposerCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
         onKeyDown={onKeyDown}
         onPaste={handlePaste}
         placeholder={familiar ? `Message @${familiar.id}…` : "@sage summarize what needs attention"}

@@ -35,7 +35,7 @@ const FETCH_TIMEOUT_MS = 10_000;
 const MAX_GIT_BUFFER = 16 * 1024 * 1024;
 
 function git(cwd: string, args: string[], timeout: number = GIT_TIMEOUT_MS) {
-  return execFileAsync("git", args, { cwd, env: caveToolSpawnEnv(), timeout, maxBuffer: MAX_GIT_BUFFER });
+  return execFileAsync("git", args, { windowsHide: true, cwd, env: caveToolSpawnEnv(), timeout, maxBuffer: MAX_GIT_BUFFER });
 }
 
 export type RepoRootResolution =

@@ -227,7 +227,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const openclawAvailability = evaluateRuntimeAvailability\(\{[\s\S]*runner: "openclaw"[\s\S]*command: openclawLaunch\.command[\s\S]*requiredFiles: openclawLaunch\.requiredFiles[\s\S]*\}\);[\s\S]*if \(openclawAvailability\.state !== "ready"\)[\s\S]*return;[\s\S]*spawn\(openclawLaunch\.command/,
+  /const openclawAvailability = evaluateRuntimeAvailability\(\{[\s\S]*runner: "openclaw"[\s\S]*command: openclawLaunch\.command[\s\S]*requiredFiles: openclawLaunch\.requiredFiles[\s\S]*\}\);[\s\S]*if \(openclawAvailability\.state !== "ready"\)[\s\S]*return;[\s\S]*spawn\((?:\/\* turbopackIgnore: true \*\/ )?openclawLaunch\.command/,
   "OpenClaw chat should use the shared passive availability gate before spawning",
 );
 
@@ -276,7 +276,7 @@ assert.doesNotMatch(
 
 assert.match(
   chatRoute,
-  /const spawnChild = \(mode: "gateway" \| "local"\) => \{[\s\S]*openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, mode\)[\s\S]*spawn\(openclawLaunch\.command, \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\],[\s\S]*env: openclawEnv,[\s\S]*shell: false/,
+  /const spawnChild = \(mode: "gateway" \| "local"\) => \{[\s\S]*openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, mode\)[\s\S]*spawn\((?:\/\* turbopackIgnore: true \*\/ )?openclawLaunch\.command, \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\],[\s\S]*env: openclawEnv,[\s\S]*shell: false/,
   "OpenClaw chat should invoke resolved npm shims through Node without shell parsing untrusted prompts",
 );
 
@@ -542,14 +542,20 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /filterProjectsForFamiliar\(projects, body\.familiarId\)/,
-  "Local Cave chat should derive grant-aware project roots for the familiar before building the runtime prompt",
+  /listAccessibleProjects\(projects, body\.familiarId\)/,
+  "Local Cave chat should derive grant-aware project roots (with each root's access level) for the familiar before building the runtime prompt",
 );
 
 assert.match(
   chatRoute,
   /allowedProjectRoots: grantedProjectRoots/,
   "The runtime prompt should include every project root the familiar is granted, not only the spawn cwd",
+);
+
+assert.match(
+  chatRoute,
+  /projectRootAccess: grantedProjectRootAccess/,
+  "The runtime prompt should carry each granted root's read/write access level so the boundary preamble can annotate it",
 );
 
 assert.match(
@@ -704,14 +710,14 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /await setDefaultSessionTitleIfMissing\(finalSessionId, chatTitle\)/,
+  /await setDefaultStubTitleAuto\(finalSessionId, chatTitle\)/,
   "Fresh chats should store a Cave-side title override so daemon prompt-derived titles do not win in the session list",
 );
 
 assert.match(
   chatRoute,
-  /async function setDefaultSessionTitleIfMissing[\s\S]*await setSessionTitle\(sessionId, title\)/,
-  "The default title override helper should preserve existing titles and write only through the Cave title override path",
+  /async function setDefaultStubTitleAuto[\s\S]{0,400}setSessionTitleAutoIfOwned/,
+  "The default title override helper must use the atomic auto-owned write (setSessionTitleAutoIfOwned)",
 );
 
 assert.match(

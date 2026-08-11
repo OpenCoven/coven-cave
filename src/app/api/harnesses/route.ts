@@ -10,7 +10,15 @@ import {
   type AdapterReport,
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
-import { covenLaunchCommand, covenSpawnEnv, pickWindowsLauncher, refreshCovenSpawnEnv, type CovenLaunchCommand } from "@/lib/coven-bin";
+import {
+  COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC,
+  covenLaunchCommand,
+  covenSpawnEnv,
+  covenWrapperSpawnEnv,
+  pickWindowsLauncher,
+  refreshCovenSpawnEnv,
+  type CovenLaunchCommand,
+} from "@/lib/coven-bin";
 import { COPILOT_NO_AUTO_UPDATE_ARG, copilotStreamSpec } from "@/lib/copilot-stream";
 import { probeCodexRuntimeAvailability } from "@/lib/codex-runtime-availability";
 import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
@@ -68,25 +76,34 @@ type AdapterAvailability = {
   spawnEnv?: NodeJS.ProcessEnv;
 };
 
+function missingCovenAvailability(component?: "coven"): RuntimeAvailabilitySummary {
+  return {
+    state: "missing",
+    code: "runtime_missing",
+    message: COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC,
+    ...(component ? { component } : {}),
+  };
+}
+
+function resolvedCovenLaunch(): CovenLaunchCommand | null {
+  try {
+    return covenLaunchCommand();
+  } catch {
+    return null;
+  }
+}
+
 // Mirrors the send route's launch dispatch: copilot/grok/hermes/opencode use
 // their direct CLI launch plans, everything else launches through `coven run`.
 // Same commands, same spawn env shape (no familiar → shared keys only), and
 // bounded filesystem stats only — this endpoint stays probe-cheap.
 async function adapterAvailability(id: string): Promise<AdapterAvailability> {
-  const env = id === "opencode" ? openCodeSpawnEnv(null) : harnessSpawnEnv(null);
-  if (id === "codex") {
-    return {
-      availability: summarizeRuntimeAvailability(await probeCodexRuntimeAvailability({
-        launch: covenLaunchCommand(),
-        env,
-      })),
-    };
-  }
   if (id === "copilot") {
     const stream = copilotStreamSpec();
     if (stream) {
       const copilotLaunch = await resolveCopilotRuntimeLaunch(stream.executable, {
-        spawnEnv: () => harnessSpawnEnv(null),
+        spawnEnv: (discoveryDeadline) =>
+          harnessSpawnEnv(null, { discoveryDeadline }),
       });
       return {
         availability: summarizeRuntimeAvailability(copilotLaunch.availability),
@@ -94,6 +111,17 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
       };
     }
     // No stream manifest → copilot chats fall back to `coven run` below.
+  }
+  const env = id === "opencode" ? openCodeSpawnEnv(null) : harnessSpawnEnv(null);
+  if (id === "codex") {
+    const launch = resolvedCovenLaunch();
+    if (!launch) return { availability: missingCovenAvailability("coven") };
+    return {
+      availability: summarizeRuntimeAvailability(await probeCodexRuntimeAvailability({
+        launch,
+        env,
+      })),
+    };
   }
   if (id === "opencode") {
     const launch = openCodeLaunch([], process.platform, env);
@@ -122,7 +150,8 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
       hermesLaunch,
     };
   }
-  const launch = covenLaunchCommand();
+  const launch = resolvedCovenLaunch();
+  if (!launch) return { availability: missingCovenAvailability() };
   if (id === "claude") {
     // The chat route launches Claude through `coven run`, so readiness means
     // both the outer Coven command and Claude in that same scoped env exist.
@@ -148,7 +177,7 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
 function whichWith(binary: string, env: NodeJS.ProcessEnv): Promise<string | null> {
   return new Promise((resolve) => {
     const command = process.platform === "win32" ? "where" : "which";
-    const child = spawn(command, [binary], { env, stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawn(command, [binary], { windowsHide: true, env, stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     child.stdout.on("data", (d) => (out += d.toString()));
     child.on("close", (code) => {
@@ -183,7 +212,7 @@ function probeVersion(
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(binary, [...fixedArgs, ...args], { env, stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn(binary, [...fixedArgs, ...args], { windowsHide: true, env, stdio: ["ignore", "pipe", "pipe"] });
     } catch {
       resolve(null);
       return;
@@ -213,7 +242,7 @@ function probeGrokModels(
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(launch.command, [...launch.fixedArgs, "--no-auto-update", "models"], { env, stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn(launch.command, [...launch.fixedArgs, "--no-auto-update", "models"], { windowsHide: true, env, stdio: ["ignore", "pipe", "pipe"] });
     } catch {
       resolve({ models: [], defaultModel: null });
       return;
@@ -238,8 +267,10 @@ function probeGrokModels(
 
 function covenSupportsAdapterList(): Promise<boolean> {
   return new Promise((resolve) => {
-    const { command, fixedArgs } = covenLaunchCommand();
-    const child = spawn(command, [...fixedArgs, "--help"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+    const launch = resolvedCovenLaunch();
+    if (!launch) return resolve(false);
+    const { command, fixedArgs } = launch;
+    const child = spawn(command, [...fixedArgs, "--help"], { windowsHide: true, env: covenWrapperSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     child.stdout.on("data", (d) => (out += d.toString()));
     child.stderr.on("data", (d) => (out += d.toString()));
@@ -260,8 +291,10 @@ function covenSupportsAdapterList(): Promise<boolean> {
 
 function loadCovenAdapterSummaries(): Promise<CovenAdapterSummary[]> {
   return new Promise((resolve) => {
-    const { command, fixedArgs } = covenLaunchCommand();
-    const child = spawn(command, [...fixedArgs, "adapter", "list", "--json"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "ignore"] });
+    const launch = resolvedCovenLaunch();
+    if (!launch) return resolve([]);
+    const { command, fixedArgs } = launch;
+    const child = spawn(command, [...fixedArgs, "adapter", "list", "--json"], { windowsHide: true, env: covenWrapperSpawnEnv(), stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     const t = setTimeout(() => {
       child.kill("SIGTERM");
@@ -290,6 +323,7 @@ async function countOpenClawAgents(): Promise<number> {
 }
 
 export async function GET() {
+  const copilotRuntime = await adapterAvailability("copilot");
   const openclawAgentCount = await countOpenClawAgents();
   const reports: HarnessReport[] = await Promise.all(
     COMPATIBILITY_ADAPTERS.map(async (h) => {
@@ -300,7 +334,9 @@ export async function GET() {
       // Windows PATH in WSL. `which grok` on Linux does not apply PATHEXT, so
       // using only the generic probe would hide a runnable Windows install
       // from the summoning circle even though the chat launcher can execute it.
-      const runtime = await adapterAvailability(h.id);
+      const runtime = h.id === "copilot"
+        ? copilotRuntime
+        : await adapterAvailability(h.id);
       const copilotLaunch = runtime.copilotLaunch;
       const hermesLaunch = runtime.hermesLaunch;
       const resolvedBinary = h.id === "grok" ? grokBin() : h.binary;

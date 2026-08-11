@@ -226,7 +226,16 @@ assert.doesNotMatch(
   /\/api\/chat\/send/,
   "HomeComposer must not send chats itself — its cancel-after-session-event pattern aborted the request, killed the harness, and lost the transcript. Chat sends belong to ChatView.",
 );
-
+assert.match(
+  source,
+  /const handled = onSlash\?\.\(command, args\) \?\? false;[\s\S]*?if \(handled\) \{[\s\S]*?return;[\s\S]*?\}[\s\S]*?onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{[\s\S]*?initialControls: initialChatControls/,
+  "Home should launch a real chat when a slash command requires chat-owned context",
+);
+assert.match(
+  source,
+  /onRunCommand: \(cmd\) => \{\s*void handleSubmit\(inlineSlashCommandPrompt\(text, composerCaret, cmd\.name\)\);\s*\}/,
+  "Home should execute the active inline command instead of submitting surrounding prose",
+);
 assert.match(
   source,
   /onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{\s*initialControls: initialChatControls,[\s\S]*?\}\)/,
@@ -251,18 +260,16 @@ assert.match(
   "HomeComposer should invalidate warmed tasks and clear staged attachments after creating a board card",
 );
 
-// ── Familiar selector removed from home ──────────────────────────────────────
-// The active familiar is chosen in the side panel; home must not duplicate the
-// selector. The footer band's second chip is the runtime + model picker.
-assert.doesNotMatch(
+// ── Familiar selector is explicit at the launch point ────────────────────────
+assert.match(
   source,
   /onSetActiveFamiliar/,
-  "HomeComposer no longer takes an active-familiar setter (selection lives in the side panel)",
+  "HomeComposer accepts the active-familiar setter",
 );
-assert.doesNotMatch(
+assert.match(
   source,
-  /HomeSelect|Choose chat agent|hc-access-chip/,
-  "HomeComposer no longer renders the home familiar selector chip",
+  /<FamiliarQuickSwitch[\s\S]*activeFamiliarId=\{selectedFamiliarId \|\| null\}[\s\S]*singleRequired/,
+  "HomeComposer shows a labeled, single-familiar picker beside launch context",
 );
 
 assert.doesNotMatch(
@@ -338,6 +345,11 @@ assert.doesNotMatch(
 // aria-activedescendant conveys the highlight while focus stays in the textarea.
 
 const chatSource = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+assert.match(
+  chatSource,
+  /initialAttachments\?\.length \?\? 0\) === 0 &&[\s\S]*?intentFromSlash\(initialPrompt\)[\s\S]*?return;/,
+  "ChatView should execute a Home-handoff slash command after mounting instead of sending it as plain harness text",
+);
 // HomeComposer delegates its popover JSX to the shared HomeSlashMenu component
 // (Task 6: collapse the three near-duplicate popovers into one); ChatView still
 // inlines its own menus, so the ARIA/JSX assertions below check each in its
@@ -428,7 +440,7 @@ assert.match(
 );
 
 // ── /skill + /skills inline picker (mirrors /model) ──────────────────────────
-assert.match(menusHook, /skillSlashOptions\(text, skills\)/, "the shared hook offers inline /skill autocomplete");
+assert.match(menusHook, /skillSlashOptions\(activeInvocation\?\.input \?\? "", skills\)/, "the shared hook offers caret-scoped inline /skill autocomplete");
 assert.match(source, /command === "\/skill" \|\| command === "\/skills"/, "HomeComposer handles the /skill and /skills commands");
 assert.match(
   source,
@@ -531,7 +543,7 @@ assert.match(
 
 assert.match(
   menusHook,
-  /modelSlashOptions\(text, modelHarness, modelOptionsOverride\)/,
+  /modelSlashOptions\(activeInvocation\?\.input \?\? "", modelHarness, modelOptionsOverride\)/,
   "the shared hook offers inline /model autocomplete",
 );
 assert.match(
@@ -563,7 +575,7 @@ assert.doesNotMatch(
 // these pins hold the call sites, the hook test holds the semantics.
 assert.match(
   source,
-  /const \[text, setText\] = useState\(""\);[\s\S]{0,260}?const \[draftRestored, setDraftRestored\] = useState\(false\);[\s\S]{0,260}?useLayoutEffect\(\(\) => \{\s*setText\(readComposerDraft\(HOME_DRAFT_KEY\)\);\s*setDraftRestored\(true\);\s*\}, \[\]\)/,
+  /const \[text, setText\] = useState\(""\);[\s\S]{0,260}?const \[composerCaret, setComposerCaret\] = useState\(0\);[\s\S]{0,260}?const \[draftRestored, setDraftRestored\] = useState\(false\);[\s\S]{0,320}?useLayoutEffect\(\(\) => \{\s*const restored = readComposerDraft\(HOME_DRAFT_KEY\);\s*setText\(restored\);\s*setComposerCaret\(restored\.length\);\s*setDraftRestored\(true\);\s*\}, \[\]\)/,
   "home composer restores the persisted draft before paint from an SSR-stable empty snapshot",
 );
 assert.match(
@@ -746,12 +758,12 @@ assert.match(
 );
 assert.match(
   menusHook,
-  /slashDismissed \? null : modelSlashOptions\(text, modelHarness, modelOptionsOverride\)/,
+  /slashDismissed \? null : modelSlashOptions\(activeInvocation\?\.input \?\? "", modelHarness, modelOptionsOverride\)/,
   "the model menu respects the dismissed flag",
 );
 assert.match(
   menusHook,
-  /slashDismissed \? null : skillSlashOptions\(text, skills\)/,
+  /slashDismissed \? null : skillSlashOptions\(activeInvocation\?\.input \?\? "", skills\)/,
   "the skill menu respects the dismissed flag",
 );
 assert.match(

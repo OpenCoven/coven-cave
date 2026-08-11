@@ -76,7 +76,23 @@ export type WorktreeLifecycleObservation = {
   updatedAtMs: number | null;
   probeErrors: string[];
   metadata: WorktreeLifecycleMetadata | null;
+  /**
+   * Everything disqualifying this unit's metadata. The unit fails closed on all
+   * of it.
+   */
   metadataErrors: string[];
+  /**
+   * The subset of {@link metadataErrors} that is repository-wide — true no
+   * matter which unit is being resolved, because it is derived from the beads
+   * alone rather than from this branch or path.
+   *
+   * Only these may abort an operation on a DIFFERENT unit. Everything else in
+   * `metadataErrors` names one unit and belongs to it: an ownership conflict, a
+   * duplicate record or path, a path that does not match its branch. Treating
+   * those as repository-wide is what made one bead's bad record refuse creation
+   * for every other bead (cave-1x9pz, and cave-g9byt before it).
+   */
+  metadataGlobalErrors: string[];
   remoteRef: WorktreeRemoteRef | null;
   sessionIds: string[];
 };
@@ -108,7 +124,16 @@ type LegacyWorktreeObservation = Pick<
 type WorktreeObservationCompatibilityFields = Partial<
   Pick<
     WorktreeLifecycleObservation,
-    "kind" | "ref" | "metadata" | "metadataErrors" | "remoteRef" | "sessionIds"
+    | "kind"
+    | "ref"
+    | "metadata"
+    | "metadataErrors"
+    // Optional alongside `metadataErrors` so a legacy observation that predates
+    // the split still parses; it reads as "nothing here is repository-wide",
+    // which is the conservative answer for a caller that never classified.
+    | "metadataGlobalErrors"
+    | "remoteRef"
+    | "sessionIds"
   >
 >;
 
@@ -140,12 +165,69 @@ export type WorktreeLifecycleRenderOptions = {
 // For the patrol the number is advisory, which is what "warning" names. For
 // creation it is a hard refusal, so the refusal text in
 // {@link assessManagedWorktreeCreation} deliberately does not call it a warning.
-export const WORKTREE_WARNING_BUDGET = 12;
-export const BRANCH_WARNING_BUDGET = 30;
+//
+// 2026-08-04 (cave-qpwx0): 12 -> 20, at the repository owner's direction. The
+// count is repo-wide, so 12 stopped describing this checkout some time ago —
+// over a single session it moved 22 -> 17 -> 22 -> 34 -> 13 -> 17 while six
+// worktrees were retired and roughly twenty were created. A gate that refuses
+// on every invocation is not a budget, it is an outage: it taught sessions to
+// reach for the unmanaged `git worktree add` fallback, whose units carry no
+// lifecycle metadata and can therefore never be retired (cave-l52dt) — the
+// exact sprawl this number exists to bound.
+//
+// The budget is chosen to sit above the observed working set rather than above
+// the peak. Bursts past it are expected and are what the attributed, expiring
+// `--exception-*` path is for; the refusal prints that invocation (cave-no5nr).
+// If this needs raising again, check first whether the concurrent-session count
+// has genuinely grown or whether units are simply not being retired on merge —
+// the second is the failure this number is meant to surface, and raising it
+// would hide exactly the signal worth having.
+//
+// 2026-08-09 (cave-gzks3): 20 -> 28, after running that check rather than
+// asserting it. The patrol reported 18 attached worktrees with **zero** merged
+// PRs across the entire set, zero classified `cleanup-ready`, and zero
+// `uncertain`; two held live process cwds and nine held uncommitted changes.
+// Nothing was retirable and being left unretired — every unit was live work, so
+// this is the first branch of that check (genuine growth), not the second. Four
+// of the eighteen were created by concurrent sessions during a single session,
+// which is the growth rate the number now has to absorb.
+//
+// BRANCH_WARNING_BUDGET moves with it, and must. Managed creation always makes a
+// branch, so local branches track worktrees plus whatever is not currently
+// checked out; leaving branches at 30 under a 28-worktree budget would just move
+// the refusal to the branch gate and reproduce the outage one line down. 38
+// keeps the worktree gate the binding one while staying under the 40-branch cap
+// `branch-cap.yml` enforces on the remote — above that, CI rolls a newly created
+// branch back and the local gate would be admitting what the remote rejects.
+export const WORKTREE_WARNING_BUDGET = 28;
+export const BRANCH_WARNING_BUDGET = 38;
 
+// Only branch-attached worktrees count against the admission budget.
+//
+// 2026-08-05 (cave-oenag): four detached units appeared at once — three review
+// scratch worktrees and one under /private/tmp — occupying a fifth of the
+// budget. With the budget at 20 and creation refusing at `count >= 20`, three
+// stale scratch units are the difference between managed creation working and
+// every session being refused.
+//
+// The exclusion is structural rather than a naming heuristic. The managed
+// creator always makes a branch, so a detached unit is by construction not one
+// of its units: the patrol cannot retire it (no `metadata.coven.worktree`
+// record, so it classes `uncertain` forever) and `pnpm beads:worktrees:apply`
+// will never touch it. Counting it therefore lets units the gate has no
+// authority over refuse the ones it does — the outage described in the
+// WORKTREE_WARNING_BUDGET note above, arriving by a different route.
+//
+// They are excluded, not hidden: `registered` and `detached` are reported
+// alongside `count` so a checkout accumulating scratch space still says so.
 export type WorktreeLifecycleBudgets = {
   worktrees: {
+    /** Branch-attached units — the number the budget is assessed against. */
     count: number;
+    /** Every registered worktree, including detached scratch space. */
+    registered: number;
+    /** `registered - count`: detached units, excluded from the assessment. */
+    detached: number;
     warning: typeof WORKTREE_WARNING_BUDGET;
     exceeded: boolean;
   };
@@ -296,10 +378,6 @@ function applicableManagedCreationException({
     : null;
 }
 
-function managedCreationExceptionReasons(exception: ManagedCreationException): string[] {
-  return [`owner exception active until ${exception.expiresAt}: ${exception.owner} — ${exception.reason}`];
-}
-
 function recoveryDispositionReasons(
   metadata: WorktreeLifecycleMetadata,
   nowMs: number,
@@ -311,6 +389,26 @@ function recoveryDispositionReasons(
 
 function metadataBackfillReason(): string {
   return "structured lifecycle metadata backfill required before automated retirement can proceed";
+}
+
+// A detached unit with no metadata is not a managed worktree awaiting backfill —
+// the managed creator always makes a branch, so this one came from somewhere
+// else: a review harness, or `git worktree add --detach` for a read-only build.
+// Both reach the same `uncertain` lane, and neither is ever auto-retired, but
+// they call for opposite responses: backfill is impossible here (there is no
+// bead to write the record onto), while the owning tool is what should clean up.
+// Saying "backfill required" sends the reader after a remedy that cannot apply.
+//
+// The wording deliberately does not call these units disposable. cave-oenag
+// found three detached review worktrees holding 29–45 commits that existed on
+// no remote — at that moment they were the only reachable copy of that work.
+function detachedScratchReason(): string {
+  return (
+    "detached HEAD with no lifecycle metadata: no branch points at this work, so " +
+    "the managed creator did not make it — expect tooling scratch space. Automated " +
+    "retirement still refuses it; removal is by hand and loses any commit reachable " +
+    "only from this HEAD, so prove retention first (git branch/tag --contains)"
+  );
 }
 
 function withReasons(item: WorktreeLifecycleObservation, lane: WorktreeLifecycleLane, reasons: string[]) {
@@ -361,6 +459,9 @@ function classifyLifecycleUnitInternal(
     if (legacyMissingMetadata) {
       return classifyLifecycleUnitWithoutMetadata(observation, nowMs);
     }
+    if (!observation.branch) {
+      return withReasons(observation, "uncertain", [detachedScratchReason()]);
+    }
     return withReasons(observation, "uncertain", [metadataBackfillReason()]);
   }
 
@@ -404,14 +505,18 @@ function classifyLifecycleUnitInternal(
     ]);
   }
 
-  const activeException = applicableManagedCreationException({
-    exception: observation.metadata.exception,
-    requestedPath: observation.path,
-    nowMs,
-  });
-  if (activeException) {
-    return withReasons(observation, "active", managedCreationExceptionReasons(activeException));
-  }
+  // A managed creation exception is admission authority only: it lifts the
+  // budget refusal in `assessManagedWorktreeCreation` so the unit can be
+  // created. It deliberately does NOT survive into retirement. Control only
+  // reaches here once `landed` is true, so honoring the exception at this point
+  // pinned merged, clean worktrees as `active` until a calendar expiry that
+  // outlived the work by days. That is the ratchet cave-8dpxq removes: every
+  // exception granted to escape a full budget went on to hold the budget full,
+  // forcing the next session to request another one.
+  //
+  // Retirement stays gated by the 8-hour cooldown, the repository-wide
+  // maintenance gate, and the deletion proof below, so dropping the exception
+  // here reclassifies landed work without authorizing any new deletion.
 
   if (observation.remoteRef && observation.remoteRef.oid !== observation.head) {
     return withReasons(observation, "recovery", [
@@ -540,6 +645,7 @@ function normalizeWorktreeObservation(
       probeErrors: observation.probeErrors,
       metadata: observation.metadata ?? null,
       metadataErrors: observation.metadataErrors ?? [],
+      metadataGlobalErrors: observation.metadataGlobalErrors ?? [],
       remoteRef: observation.remoteRef ?? null,
       sessionIds: observation.sessionIds ?? [],
     },
@@ -585,25 +691,40 @@ function assertNonnegativeInteger(name: string, value: number): void {
 
 export function calculateLifecycleBudgets({
   worktreeCount,
+  detachedWorktreeCount = 0,
   branchCount,
   activeExceptions,
   expiredExceptions,
 }: {
+  /** Every registered worktree, detached ones included. */
   worktreeCount: number;
+  /**
+   * How many of `worktreeCount` have no branch. Defaults to 0, which reproduces
+   * the pre-cave-oenag arithmetic for callers that do not distinguish them.
+   */
+  detachedWorktreeCount?: number;
   branchCount: number;
   activeExceptions: number;
   expiredExceptions: number;
 }): WorktreeLifecycleBudgets {
   assertNonnegativeInteger("worktreeCount", worktreeCount);
+  assertNonnegativeInteger("detachedWorktreeCount", detachedWorktreeCount);
   assertNonnegativeInteger("branchCount", branchCount);
   assertNonnegativeInteger("activeExceptions", activeExceptions);
   assertNonnegativeInteger("expiredExceptions", expiredExceptions);
+  if (detachedWorktreeCount > worktreeCount) {
+    throw new Error("detachedWorktreeCount must not exceed worktreeCount");
+  }
+
+  const attachedWorktreeCount = worktreeCount - detachedWorktreeCount;
 
   return {
     worktrees: {
-      count: worktreeCount,
+      count: attachedWorktreeCount,
+      registered: worktreeCount,
+      detached: detachedWorktreeCount,
       warning: WORKTREE_WARNING_BUDGET,
-      exceeded: worktreeCount > WORKTREE_WARNING_BUDGET,
+      exceeded: attachedWorktreeCount > WORKTREE_WARNING_BUDGET,
     },
     branches: {
       count: branchCount,
@@ -685,9 +806,16 @@ export function renderWorktreeLifecycleReport(
 ): string {
   const { includeFooter = true } = options;
   const { counts } = summary;
+  const { detached, registered } = summary.budgets.worktrees;
+  // Say so when the assessed number is smaller than the registered one, so the
+  // exclusion is legible rather than a discrepancy the reader has to derive.
+  const detachedNote =
+    detached > 0
+      ? ` — ${detached} detached unit${detached === 1 ? "" : "s"} not counted (${registered} registered)`
+      : "";
   const lines = [
     `Worktree lifecycle: ${summary.items.length} registered | ${counts.active} active | ${counts.recovery} recovery | ${counts.cooldown} cooldown | ${counts["retire-after-gate"]} cleanup-ready | ${counts.uncertain} uncertain | ${counts.protected} protected`,
-    `Worktree budget: ${summary.budgets.worktrees.count}/${summary.budgets.worktrees.warning} (${summary.budgets.worktrees.exceeded ? "exceeded" : "within budget"})`,
+    `Worktree budget: ${summary.budgets.worktrees.count}/${summary.budgets.worktrees.warning} (${summary.budgets.worktrees.exceeded ? "exceeded" : "within budget"})${detachedNote}`,
     `Local branch budget: ${summary.budgets.branches.count}/${summary.budgets.branches.warning} (${summary.budgets.branches.exceeded ? "exceeded" : "within budget"})`,
     `Managed exceptions: ${summary.budgets.exceptions.active} active | ${summary.budgets.exceptions.expired} expired`,
   ];

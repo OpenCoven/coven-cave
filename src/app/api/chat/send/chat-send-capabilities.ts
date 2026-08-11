@@ -4,7 +4,11 @@ import { createReadStream } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import type { Readable, Writable } from "node:stream";
-import { covenLaunchCommand } from "@/lib/coven-bin";
+import {
+  COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC,
+  covenLaunchCommand,
+  covenWrapperSpawnEnv,
+} from "@/lib/coven-bin";
 import {
   covenRunSupportsAddDirFlag,
   covenRunSupportsModelFlag,
@@ -20,7 +24,7 @@ import {
 import type { OpenCodeRunCapabilities } from "@/lib/opencode-compatibility";
 import { evaluateRuntimeAvailability } from "@/lib/runtime-availability";
 
-let modelFlagProbe: Promise<boolean> | null = null;
+let modelFlagProbe: Promise<HelpProbeOutcome> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
 let openCodeModelFlagProbe: Promise<boolean> | null = null;
@@ -147,7 +151,10 @@ function terminateProbeProcessTree(child: OpenCodeProbeChild): Promise<void> {
       finish();
     }, openCodeProbeCleanupGraceMs());
     try {
-      killer = spawn(treeKill.command, treeKill.args, { stdio: "ignore", windowsHide: true });
+      // `treeKill.command` is a host binary (`taskkill.exe` / `kill`) resolved
+      // at runtime, never a bundled module. The ignore stops Turbopack from
+      // treating it as a traceable specifier and globbing the checkout.
+      killer = spawn(/* turbopackIgnore: true */ treeKill.command, treeKill.args, { stdio: "ignore", windowsHide: true });
       killer.once("error", () => {
         try { child.kill("SIGTERM"); } catch { /* Best-effort fallback. */ }
         finish();
@@ -160,7 +167,18 @@ function terminateProbeProcessTree(child: OpenCodeProbeChild): Promise<void> {
   });
 }
 
-function probeHelp(
+/**
+ * A help probe that could not be completed is NOT the same as a CLI that does
+ * not advertise the flag. `matched: false` means "asked, and the help text has
+ * no such option"; `ok: false` means "never got an answer". Collapsing the two
+ * makes a spawn failure or a timeout read as an unsupported capability, which
+ * is how a broken probe ends up telling a user their model is unsupported.
+ */
+export type HelpProbeOutcome =
+  | { ok: true; matched: boolean }
+  | { ok: false; reason: string };
+
+export function probeHelpOutcome(
   command: string,
   args: string[],
   matches: (help: string) => boolean,
@@ -168,21 +186,23 @@ function probeHelp(
   input?: string,
   acceptNonZeroExit = true,
   cwd?: string,
-): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
+): Promise<HelpProbeOutcome> {
+  return new Promise<HelpProbeOutcome>((resolve) => {
     let output = "";
     let settled = false;
-    const done = (value: boolean) => {
+    const timeoutMs = openCodeCapabilityProbeTimeoutMs();
+    const done = (value: HelpProbeOutcome) => {
       if (settled) return;
       settled = true;
       resolve(value);
     };
     try {
-      const child = spawn(command, args, {
+      const child = spawn(/* turbopackIgnore: true */ command, args, {
+        ...openCodeProbeSpawnOptions(),
+        windowsHide: true,
         env,
         cwd,
         stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
-        ...openCodeProbeSpawnOptions(),
       }) as ChildProcessByStdio<Writable, Readable, Readable>;
       if (input !== undefined) child.stdin.end(input, "utf8");
       child.stdout.on("data", (chunk) => (output += chunk.toString()));
@@ -191,22 +211,67 @@ function probeHelp(
         try {
           child.kill("SIGTERM");
         } catch {
-          // The capability is unsupported when the probe cannot complete.
+          // The probe is already being abandoned; the timeout is the report.
         }
-        done(false);
-      }, openCodeCapabilityProbeTimeoutMs());
+        done({
+          ok: false,
+          reason: `\`${command} ${args.join(" ")}\` did not respond within ${timeoutMs}ms.`,
+        });
+      }, timeoutMs);
       child.on("close", (code) => {
         clearTimeout(timeout);
-        done((acceptNonZeroExit || code === 0) && matches(output));
+        if (code === null) {
+          done({
+            ok: false,
+            reason: `\`${command} ${args.join(" ")}\` exited without an exit code.`,
+          });
+          return;
+        }
+        if (!acceptNonZeroExit && code !== 0) {
+          done({
+            ok: false,
+            reason: `\`${command} ${args.join(" ")}\` exited with code ${code}.`,
+          });
+          return;
+        }
+        try {
+          done({ ok: true, matched: (acceptNonZeroExit || code === 0) && matches(output) });
+        } catch (error) {
+          done({
+            ok: false,
+            reason: `\`${command} ${args.join(" ")}\` help output could not be evaluated: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
       });
-      child.on("error", () => {
+      child.on("error", (error: Error) => {
         clearTimeout(timeout);
-        done(false);
+        done({ ok: false, reason: `\`${command}\` could not be started: ${error.message}` });
       });
-    } catch {
-      done(false);
+    } catch (error) {
+      done({
+        ok: false,
+        reason: `\`${command}\` could not be started: ${error instanceof Error ? error.message : String(error)}`,
+      });
     }
   });
+}
+
+/** Exported for chat-send-capabilities.test.ts, which drives it against real
+ *  child processes — a timeout, a spawn failure and a non-zero exit each have
+ *  to be exercised for real, not simulated. The boolean face of
+ *  probeHelpOutcome; prefer the outcome form in product code so a failed probe
+ *  stays distinguishable from an unmatched flag. */
+export function probeHelp(
+  command: string,
+  args: string[],
+  matches: (help: string) => boolean,
+  env = harnessSpawnEnv(),
+  input?: string,
+  acceptNonZeroExit = true,
+  cwd?: string,
+): Promise<boolean> {
+  return probeHelpOutcome(command, args, matches, env, input, acceptNonZeroExit, cwd)
+    .then((outcome) => outcome.ok && outcome.matched);
 }
 
 type ProbeOutput = { output: string; complete: boolean };
@@ -227,10 +292,11 @@ function probeOutput(
       resolve({ output, complete });
     };
     try {
-      const child = spawn(command, args, {
+      const child = spawn(/* turbopackIgnore: true */ command, args, {
+        ...openCodeProbeSpawnOptions(),
+        windowsHide: true,
         env,
         stdio: ["ignore", "pipe", "pipe"],
-        ...openCodeProbeSpawnOptions(),
       });
       let overflowed = false;
       const append = (chunk: Buffer) => {
@@ -433,7 +499,7 @@ function rememberOpenCodeFileIdentity(key: string, identity: string): void {
 async function hashFile(file: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = createHash("sha256");
-    const stream = createReadStream(file);
+    const stream = createReadStream(/* turbopackIgnore: true */ file);
     stream.on("data", (chunk: string | Buffer) => { hash.update(chunk); });
     stream.once("error", reject);
     stream.once("end", () => resolve(hash.digest("hex")));
@@ -444,8 +510,8 @@ async function fileIdentity(file: string, platform: NodeJS.Platform): Promise<st
   try {
     // Resolve a symlink before reading it so changing its target changes the
     // identity even when the link itself keeps its old metadata.
-    const resolved = await realpath(file);
-    const entry = await stat(resolved);
+    const resolved = await realpath(/* turbopackIgnore: true */ file);
+    const entry = await stat(/* turbopackIgnore: true */ resolved);
     if (!entry.isFile() || entry.size > MAX_OPENCODE_IDENTITY_FILE_BYTES) return null;
     const stablePath = platform === "win32" ? resolved.toLowerCase() : resolved;
     // ctime and inode invalidate a retained digest for ordinary in-place
@@ -457,7 +523,7 @@ async function fileIdentity(file: string, platform: NodeJS.Platform): Promise<st
       return cached;
     }
     const digest = await hashFile(resolved);
-    const after = await stat(resolved);
+    const after = await stat(/* turbopackIgnore: true */ resolved);
     const afterKey = `${stablePath}\0${after.size}\0${after.mtimeMs}\0${after.ctimeMs}\0${after.ino}`;
     // An update racing the stream makes the hash ambiguous. Do not cache or
     // reuse it; the caller will safely fall back to plain mode for this turn.
@@ -578,31 +644,82 @@ export function parseOpenCodeRunCapabilitiesHelp(help: string, version: string |
   };
 }
 
-/** Capability probes are cached because old Coven CLIs reject unknown flags. */
+/** Capability probes are cached because old Coven CLIs reject unknown flags.
+ * Only ANSWERS are cached: a probe that never completed says nothing about the
+ * installed CLI, and caching that failure would pin a transient spawn error to
+ * the process for its whole lifetime. */
+function cachedHelpOutcome(
+  read: () => Promise<HelpProbeOutcome> | null,
+  write: (probe: Promise<HelpProbeOutcome> | null) => void,
+  start: () => Promise<HelpProbeOutcome>,
+): Promise<HelpProbeOutcome> {
+  const cached = read();
+  if (cached) return cached;
+  const probe = start().then((outcome) => {
+    if (!outcome.ok) write(null);
+    return outcome;
+  }, (error: unknown) => {
+    write(null);
+    throw error;
+  });
+  write(probe);
+  return probe;
+}
+
+/** The `coven run --model` capability with its probe failures intact. */
+export function covenRunModelFlagOutcome(): Promise<HelpProbeOutcome> {
+  let launch;
+  try {
+    launch = covenLaunchCommand();
+  } catch {
+    return Promise.resolve({ ok: false, reason: COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC });
+  }
+  const { command, fixedArgs } = launch;
+  return cachedHelpOutcome(
+    () => modelFlagProbe,
+    (probe) => { modelFlagProbe = probe; },
+    () => probeHelpOutcome(
+      command,
+      [...fixedArgs, "run", "--help"],
+      covenRunSupportsModelFlag,
+      covenWrapperSpawnEnv(harnessSpawnEnv()),
+    ),
+  );
+}
+
 export function covenRunSupportsModel(): Promise<boolean> {
-  const { command, fixedArgs } = covenLaunchCommand();
-  return (modelFlagProbe ??= probeHelp(
-    command,
-    [...fixedArgs, "run", "--help"],
-    covenRunSupportsModelFlag,
-  ));
+  return covenRunModelFlagOutcome().then((outcome) => outcome.ok && outcome.matched);
 }
 
 export function covenRunSupportsPermission(): Promise<boolean> {
-  const { command, fixedArgs } = covenLaunchCommand();
+  let launch;
+  try {
+    launch = covenLaunchCommand();
+  } catch {
+    return Promise.resolve(false);
+  }
+  const { command, fixedArgs } = launch;
   return (permissionFlagProbe ??= probeHelp(
     command,
     [...fixedArgs, "run", "--help"],
     covenRunSupportsPermissionFlag,
+    covenWrapperSpawnEnv(harnessSpawnEnv()),
   ));
 }
 
 export function covenRunSupportsAddDir(): Promise<boolean> {
-  const { command, fixedArgs } = covenLaunchCommand();
+  let launch;
+  try {
+    launch = covenLaunchCommand();
+  } catch {
+    return Promise.resolve(false);
+  }
+  const { command, fixedArgs } = launch;
   return (addDirFlagProbe ??= probeHelp(
     command,
     [...fixedArgs, "run", "--help"],
     covenRunSupportsAddDirFlag,
+    covenWrapperSpawnEnv(harnessSpawnEnv()),
   ));
 }
 

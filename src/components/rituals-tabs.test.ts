@@ -86,7 +86,7 @@ assert.match(
 );
 assert.match(
   automations,
-  /<Tabs[\s\S]{0,200}items=\{RITUAL_TABS\}[\s\S]{0,120}value=\{activeTab\}[\s\S]{0,120}onChange=\{selectTab\}[\s\S]{0,120}ariaLabel="Rituals sections"[\s\S]{0,120}idPrefix="automations"/,
+  /<Tabs[\s\S]{0,200}items=\{RITUAL_TABS\}[\s\S]{0,120}value=\{activeTab\}[\s\S]{0,120}onChange=\{selectTabTracked\}[\s\S]{0,120}ariaLabel="Rituals sections"[\s\S]{0,120}idPrefix="automations"/,
   "Rituals tabs should be driven by the shared Tabs component with accessible wiring",
 );
 assert.match(

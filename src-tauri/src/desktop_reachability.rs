@@ -915,8 +915,18 @@ fn remove_gui_ownership_if_owned(app_data_dir: &Path, owner: &ProcessLease) {
     }
 }
 
+/// Take reachability ownership for this GUI, or report the GUI that already
+/// holds it.
+///
+/// A live second owner returns `Ok(GuiReachability::AlreadyOwnedBy)` rather
+/// than `Err`. This is not cosmetic: the caller runs inside Tauri's setup hook,
+/// which on macOS executes within tao's `did_finish_launching` — an
+/// Objective-C callback that cannot unwind. An `Err` there becomes a `panic!`
+/// in a non-unwinding frame, which the runtime escalates to SIGABRT, so a
+/// perfectly ordinary "it's already running" turned into a crash report.
+/// `Err` is therefore reserved for genuine failures to determine ownership.
 #[cfg(all(desktop, target_os = "macos"))]
-pub(super) fn prepare_gui_reachability(app: &tauri::AppHandle) -> Result<(), String> {
+pub(super) fn prepare_gui_reachability(app: &tauri::AppHandle) -> Result<GuiReachability, String> {
     let app_data_dir = app
         .path()
         .app_data_dir()
@@ -924,12 +934,14 @@ pub(super) fn prepare_gui_reachability(app: &tauri::AppHandle) -> Result<(), Str
     let _ownership = acquire_reachability_ownership_lease(&app_data_dir)?;
     let current_gui = current_process_lease()?;
     if let Some(existing) = read_gui_ownership_state(&app_data_dir) {
-        if lease_matches(
+        if conflicts_with_live_gui(
             &existing.lease,
+            &current_gui,
             process_identity(existing.lease.pid).as_deref(),
-        ) && existing.lease.pid != current_gui.pid
-        {
-            return Err("another CovenCave GUI already owns desktop reachability".to_string());
+        ) {
+            return Ok(GuiReachability::AlreadyOwnedBy {
+                pid: existing.lease.pid,
+            });
         }
         if existing.lease.pid == current_gui.pid && existing.lease.identity == current_gui.identity
         {
@@ -972,12 +984,14 @@ pub(super) fn prepare_gui_reachability(app: &tauri::AppHandle) -> Result<(), Str
     } else if launch_agent_installed() {
         uninstall_launch_agent(&app_data_dir)?;
     }
-    Ok(())
+    Ok(GuiReachability::Acquired)
 }
 
 #[cfg(all(desktop, not(target_os = "macos")))]
-pub(super) fn prepare_gui_reachability(_app: &tauri::AppHandle) -> Result<(), String> {
-    Ok(())
+pub(super) fn prepare_gui_reachability(
+    _app: &tauri::AppHandle,
+) -> Result<GuiReachability, String> {
+    Ok(GuiReachability::Acquired)
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
@@ -1100,6 +1114,42 @@ fn process_identity(pid: u32) -> Option<String> {
 #[cfg(desktop)]
 fn lease_matches(lease: &ProcessLease, current_identity: Option<&str>) -> bool {
     current_identity.is_some_and(|current| current == lease.identity)
+}
+
+/// What starting this GUI meant for reachability ownership.
+///
+/// Finding a live owner is an ordinary second-instance outcome, not a setup
+/// failure, so it is reported as `Ok` and left for the caller to act on. See
+/// `prepare_gui_reachability` for why the distinction is load-bearing.
+#[cfg(desktop)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum GuiReachability {
+    /// This process now owns reachability.
+    Acquired,
+    /// A different, still-live GUI owns it; this process must not take over.
+    // Only macOS records GUI ownership, so nothing constructs this elsewhere.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    AlreadyOwnedBy { pid: u32 },
+}
+
+/// Whether a recorded ownership lease belongs to a *different* GUI that is
+/// still alive.
+///
+/// Split out from `prepare_gui_reachability` so the conflict decision can be
+/// tested without a live `AppHandle` — and kept on `cfg(desktop)` rather than
+/// macOS so that test actually runs in CI, which has no macOS runner.
+///
+/// A recorded PID alone proves nothing: PIDs are reused. `lease_matches`
+/// compares the kernel-recorded birth timestamp, so a reused PID reads as a
+/// dead owner and this GUI is free to claim ownership.
+#[cfg(desktop)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn conflicts_with_live_gui(
+    existing: &ProcessLease,
+    current: &ProcessLease,
+    existing_identity: Option<&str>,
+) -> bool {
+    existing.pid != current.pid && lease_matches(existing, existing_identity)
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
@@ -1417,24 +1467,36 @@ fn background_availability_supported() -> bool {
     false
 }
 
+/// The background-availability daemon serves the SAME address the GUI does.
+///
+/// This is the point of the dedicated port. LaunchAgent mode is a handoff — the
+/// GUI's sidecar exits and `server.mjs` keeps serving so paired phones stay
+/// reachable — and a handoff that changes the port is not a handoff at all: the
+/// phone's stored host stops resolving and `tailscale serve` is left pointing
+/// at a loopback port nothing answers on. Previously the GUI took a random port
+/// and this daemon scanned 3000..=3010, so the two essentially never agreed.
+///
+/// The old scan survives only as a last resort. Here, unlike the GUI path, not
+/// starting is worse than moving: the GUI can show the user an error, whereas a
+/// background daemon that refuses to bind leaves the phone silently unreachable
+/// with nothing on screen to explain it. The fallback logs loudly, and the
+/// serve-repair pass re-points Tailscale at whatever port was actually taken.
 #[cfg(all(desktop, target_os = "macos"))]
 fn daemon_port() -> Result<u16, String> {
+    let dedicated = crate::sidecar_ports::dedicated_port();
+    if TcpListener::bind(("127.0.0.1", dedicated)).is_ok() {
+        return Ok(dedicated);
+    }
+    log::warn!(
+        "[cave] dedicated port {dedicated} is occupied; the background daemon is falling back to \
+         a scanned port, so paired phones depend on the Tailscale serve repair pass to follow it"
+    );
     for port in 3000..=3010 {
         if TcpListener::bind(("127.0.0.1", port)).is_ok() {
             return Ok(port);
         }
     }
-    find_free_port().ok_or_else(|| "no free loopback port is available".to_string())
-}
-
-#[cfg(desktop)]
-fn create_fresh_log_file(path: &Path) -> Result<std::fs::File, String> {
-    std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(path)
-        .map_err(|error| format!("could not create {}: {error}", path.display()))
+    Err("no free loopback port is available".to_string())
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
@@ -1565,19 +1627,7 @@ fn run_sidecar_daemon() -> Result<i32, String> {
     let auth_token = sidecar_auth_token();
     let mobile_access_token =
         load_or_create_mobile_access_token(&app_data_dir.join(MOBILE_ACCESS_TOKEN_FILE));
-    let log_dir = std::env::var("HOME")
-        .map(PathBuf::from)
-        .map_err(|_| "HOME is unavailable".to_string())?
-        .join("Library")
-        .join("Logs")
-        .join("CovenCave");
-    std::fs::create_dir_all(&log_dir)
-        .map_err(|error| format!("could not create {}: {error}", log_dir.display()))?;
-    let server_log = log_dir.join("sidecar-daemon-server.log");
-    let stdout = create_fresh_log_file(&server_log)?;
-    let stderr = stdout
-        .try_clone()
-        .map_err(|error| format!("could not duplicate {}: {error}", server_log.display()))?;
+    let sidecar_output = Arc::new(Mutex::new(SidecarOutputTail::default()));
 
     let mut command = Command::new(&node);
     command
@@ -1592,9 +1642,9 @@ fn run_sidecar_daemon() -> Result<i32, String> {
         .env("COVEN_KOKORO_BIN", &kokoro)
         .env("COVEN_CAVE_AUTH_TOKEN", &auth_token)
         .env("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token)
-        .stdin(Stdio::null());
-    command.stdout(Stdio::from(stdout));
-    command.stderr(Stdio::from(stderr));
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     // Take the same lease as GUI startup immediately before creating the
     // child. A GUI that wins this lease writes its marker first; a daemon that
     // wins records its child before releasing it, so the GUI can stop it
@@ -1609,6 +1659,24 @@ fn run_sidecar_daemon() -> Result<i32, String> {
     let mut child = command
         .spawn()
         .map_err(|error| format!("could not start background sidecar: {error}"))?;
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("background sidecar stdout pipe was unavailable".to_string());
+        }
+    };
+    let stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("background sidecar stderr pipe was unavailable".to_string());
+        }
+    };
+    capture_sidecar_output(stdout, Arc::clone(&sidecar_output));
+    capture_sidecar_output(stderr, Arc::clone(&sidecar_output));
     let child_pid = child.id();
     let identity = match process_identity(child_pid) {
         Some(identity) => identity,
@@ -1631,9 +1699,14 @@ fn run_sidecar_daemon() -> Result<i32, String> {
     }
     drop(ownership);
 
-    match wait_for_sidecar_ready(port, &server_log, Duration::from_secs(30), || {
-        gui_is_active(&app_data_dir) || daemon_shutdown_requested()
-    }) {
+    match wait_for_sidecar_ready(
+        port,
+        &auth_token,
+        &sidecar_output,
+        Duration::from_secs(30),
+        || gui_is_active(&app_data_dir) || daemon_shutdown_requested(),
+        || child.try_wait().ok().flatten().is_some(),
+    ) {
         PortWaitResult::Ready => {}
         PortWaitResult::Cancelled => {
             let _ = child.kill();
@@ -1641,12 +1714,31 @@ fn run_sidecar_daemon() -> Result<i32, String> {
             let _ = std::fs::remove_file(&state_path);
             return Ok(0);
         }
+        PortWaitResult::Exited => {
+            let _ = child.wait();
+            let _ = std::fs::remove_file(&state_path);
+            return Err(format!(
+                "background sidecar exited before becoming ready on port {port}. Bounded sidecar output tail:\n{}",
+                sidecar_output_text(&sidecar_output)
+            ));
+        }
+        PortWaitResult::Refused(refusal) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = std::fs::remove_file(&state_path);
+            return Err(format!(
+                "background sidecar failed its authenticated readiness handshake on port {port}: {}. Bounded sidecar output tail:\n{}",
+                refusal.message,
+                sidecar_output_text(&sidecar_output)
+            ));
+        }
         PortWaitResult::TimedOut => {
             let _ = child.kill();
             let _ = child.wait();
             let _ = std::fs::remove_file(&state_path);
             return Err(format!(
-                "background sidecar did not become ready on port {port}"
+                "background sidecar did not become ready on port {port}. Bounded sidecar output tail:\n{}",
+                sidecar_output_text(&sidecar_output)
             ));
         }
     }
@@ -1881,6 +1973,69 @@ mod tests {
         assert!(!lease_matches(&lease, None));
     }
 
+    fn lease(pid: u32, identity: &str) -> ProcessLease {
+        ProcessLease {
+            pid,
+            identity: identity.to_string(),
+        }
+    }
+
+    #[test]
+    fn gui_conflict_detects_a_live_second_gui() {
+        let existing = lease(4001, "birth-a");
+        let current = lease(4002, "birth-b");
+        assert!(conflicts_with_live_gui(
+            &existing,
+            &current,
+            Some("birth-a")
+        ));
+    }
+
+    #[test]
+    fn gui_conflict_ignores_reentrant_setup_by_the_same_gui() {
+        // macOS lifecycle restoration can re-enter setup in the same process.
+        // Treating that as a second instance would make the app exit on resume.
+        let same = lease(4001, "birth-a");
+        assert!(!conflicts_with_live_gui(&same, &same, Some("birth-a")));
+    }
+
+    #[test]
+    fn gui_conflict_ignores_a_recycled_pid() {
+        // The recorded owner died and the OS handed its PID to something else.
+        // Comparing PIDs alone would lock the user out of their own app.
+        let existing = lease(4001, "birth-a");
+        let current = lease(4002, "birth-b");
+        assert!(!conflicts_with_live_gui(
+            &existing,
+            &current,
+            Some("birth-of-some-unrelated-process")
+        ));
+    }
+
+    #[test]
+    fn gui_conflict_ignores_a_dead_owner() {
+        // No identity at all means the recorded PID is not running.
+        let existing = lease(4001, "birth-a");
+        let current = lease(4002, "birth-b");
+        assert!(!conflicts_with_live_gui(&existing, &current, None));
+    }
+
+    #[test]
+    fn gui_conflict_is_a_success_outcome_not_an_error() {
+        // The regression this guards (cave-4wnxo): reporting a second GUI as
+        // `Err` propagates out of Tauri's setup hook, which on macOS cannot
+        // unwind, so the process aborts with SIGABRT rather than saying what
+        // happened. Keeping the conflict inside `Ok` makes that unrepresentable
+        // — a caller cannot `?` it into a panic.
+        let conflict: Result<GuiReachability, String> =
+            Ok(GuiReachability::AlreadyOwnedBy { pid: 4001 });
+        assert!(conflict.is_ok());
+        assert_ne!(
+            conflict.expect("a live second GUI is not a setup failure"),
+            GuiReachability::Acquired
+        );
+    }
+
     #[test]
     fn gui_ownership_persists_its_sidecar_lease_for_crash_recovery() {
         let state = GuiOwnershipState {
@@ -1901,24 +2056,5 @@ mod tests {
         )
         .expect("GUI ownership state deserializes");
         assert_eq!(restored.sidecar.expect("sidecar is retained").port, 3007);
-    }
-
-    #[test]
-    fn daemon_readiness_log_is_empty_for_each_launch() {
-        let path = std::env::temp_dir().join(format!(
-            "coven-daemon-ready-test-{}-{:?}.log",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        std::fs::write(&path, "> Ready on http://127.0.0.1:3000\n").expect("seed stale log");
-        let mut fresh = create_fresh_log_file(&path).expect("truncate daemon log");
-        fresh
-            .write_all(b"> Ready on http://127.0.0.1:3007\n")
-            .expect("write new readiness");
-        fresh.sync_all().expect("flush readiness");
-        let log = std::fs::read_to_string(&path).expect("read fresh daemon log");
-        assert!(!log.contains("3000"));
-        assert!(log.contains("3007"));
-        let _ = std::fs::remove_file(path);
     }
 }

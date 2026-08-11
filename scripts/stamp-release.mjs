@@ -2,30 +2,40 @@
 // cave-ef6f: one-command release stamp.
 //
 //   node scripts/stamp-release.mjs [--level patch|minor|major] [--version X.Y.Z]
-//                                  [--dry-run] [--no-pr]
+//                                  [--dry-run] [--prepare-only] [--no-pr]
 //
 // Hand-rolled stamps produced three PR collisions between concurrent sessions
 // on 2026-07-08 alone, and every cut re-derives the same version
 // locations by hand. This script:
 //   1. REFUSES when another stamp PR is already open (the collision guard);
 //   2. bumps the five version locations (package.json, tauri.conf.json,
-//      Cargo.toml, Cargo.lock's `app` package, apps/ios/CovenCave/project.yml);
+//      Cargo.toml, Cargo.lock's `app` package, apps/ios/CovenCave/project.yml —
+//      whose iOS entry carries BOTH the marketing version and the
+//      CURRENT_PROJECT_VERSION build stamp, see nextIosBuildStamp);
 //   3. drafts the CHANGELOG section from `git log v<prev>..HEAD` subjects —
 //      a starting point to edit in the PR, not prose to trust blindly;
 //   4. branches, commits SIGNED (-S), pushes, and opens the PR via the REST
 //      API (survives exhausted GraphQL quota).
 //
 // `--dry-run` prints the plan (new version, per-file replacement counts, the
-// changelog draft) and writes nothing. Pure helpers are exported for tests.
+// changelog draft) and writes nothing. `--prepare-only` performs the local
+// source edits in an already-managed release/stamp-vX.Y.Z worktree, but never
+// creates a branch, commits, pushes, or opens a PR. Pure helpers are exported
+// for tests.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { replaceCanonicalYamlStringSetting } from "./release-yaml-settings.mjs";
+import YAML from "yaml";
+import {
+  readCanonicalYamlStringSetting,
+  replaceCanonicalYamlStringSetting,
+} from "./release-yaml-settings.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const IOS_MARKETING_VERSION_PATH = ["settings", "base", "MARKETING_VERSION"];
+const IOS_BUILD_VERSION_PATH = ["settings", "base", "CURRENT_PROJECT_VERSION"];
 
 // ── pure helpers (exported for scripts/stamp-release.test.mjs) ───────────────
 
@@ -39,14 +49,170 @@ export function bumpVersion(current, level = "patch") {
   throw new Error(`unknown bump level: "${level}"`);
 }
 
+export function compareVersions(left, right) {
+  const parse = (value, label) => {
+    const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(String(value).trim());
+    if (!match) throw new Error(`unparseable ${label} version: "${value}"`);
+    return match.slice(1).map(Number);
+  };
+  const a = parse(left, "left");
+  const b = parse(right, "right");
+  for (let index = 0; index < 3; index += 1) {
+    if (a[index] !== b[index]) return a[index] < b[index] ? -1 : 1;
+  }
+  return 0;
+}
+
+/** The iOS CFBundleVersion stamp: a YYYYMMDDHH instant in UTC.
+ *
+ * App Store Connect requires CFBundleVersion to be unique and strictly
+ * increasing per app, and a stamp left at its previous value rejects the
+ * upload — which is exactly what happened to v0.2.3 on 2026-08-03, because the
+ * release stamp bumped MARKETING_VERSION and left this one behind. The date
+ * shape is monotonic without anyone tracking the last uploaded value; the
+ * `current` guard covers the one case it isn't (two cuts in the same UTC hour,
+ * or a clock that went backwards), by stepping one past what the file holds.
+ */
+export function nextIosBuildStamp(current, date = new Date()) {
+  const format = (utcMs) => {
+    const d = new Date(utcMs);
+    const pad = (n, width) => String(n).padStart(width, "0");
+    return (
+      `${pad(d.getUTCFullYear(), 4)}${pad(d.getUTCMonth() + 1, 2)}` +
+      `${pad(d.getUTCDate(), 2)}${pad(d.getUTCHours(), 2)}`
+    );
+  };
+  const nowMs = date.getTime();
+  if (!Number.isFinite(nowMs)) throw new Error("iOS build stamp needs a valid date");
+  const stamp = format(nowMs);
+  if (!/^\d{10}$/.test(stamp)) {
+    throw new Error(`unusable iOS build stamp for ${date.toISOString()}: "${stamp}"`);
+  }
+  // Same-hour re-cut (or a clock that stepped backwards): advance a whole UTC
+  // hour off the recorded stamp rather than adding 1 to the integer, so the
+  // result stays a well-formed YYYYMMDDHH instant instead of an hour "24".
+  if (typeof current === "string" && /^\d{10}$/.test(current) && current >= stamp) {
+    const [y, m, d, h] = [
+      Number(current.slice(0, 4)),
+      Number(current.slice(4, 6)),
+      Number(current.slice(6, 8)),
+      Number(current.slice(8, 10)),
+    ];
+    return format(Date.UTC(y, m - 1, d, h + 1));
+  }
+  return stamp;
+}
+
 /** The five stamp locations and how each encodes the version. */
 export const STAMP_FILES = [
   { path: "package.json", kind: "json-version" },
   { path: "src-tauri/tauri.conf.json", kind: "json-version" },
   { path: "src-tauri/Cargo.toml", kind: "toml-version" },
   { path: "src-tauri/Cargo.lock", kind: "cargo-lock-app" },
-  { path: "apps/ios/CovenCave/project.yml", kind: "yaml-marketing-version" },
+  { path: "apps/ios/CovenCave/project.yml", kind: "yaml-ios-versions" },
 ];
+
+function canonicalJsonVersionNode(content, relativePath) {
+  try {
+    JSON.parse(content);
+  } catch (error) {
+    throw new Error(`${relativePath}: invalid JSON (${error.message})`);
+  }
+
+  const document = YAML.parseDocument(content, { prettyErrors: true });
+  if (document.errors.length > 0) {
+    throw new Error(
+      `${relativePath}: JSON must not contain duplicate keys (${document.errors
+        .map((error) => error.message)
+        .join("; ")})`,
+    );
+  }
+  if (!YAML.isMap(document.contents)) {
+    throw new Error(`${relativePath}: JSON root must be an object with one version field`);
+  }
+
+  const matches = document.contents.items.filter(
+    (pair) => YAML.isScalar(pair.key) && pair.key.value === "version",
+  );
+  if (matches.length !== 1 || !YAML.isScalar(matches[0]?.value)) {
+    throw new Error(`${relativePath}: could not read exactly one root string version field`);
+  }
+  const valueNode = matches[0].value;
+  if (typeof valueNode.value !== "string" || valueNode.type !== "QUOTE_DOUBLE") {
+    throw new Error(`${relativePath}: root version must be a JSON string`);
+  }
+  const [start, end] = valueNode.range ?? [];
+  if (!Number.isInteger(start) || !Number.isInteger(end)) {
+    throw new Error(`${relativePath}: could not locate root version source range`);
+  }
+  return { value: valueNode.value, start, end };
+}
+
+function canonicalTomlVersionMatch(content, relativePath) {
+  let section = null;
+  const matches = [];
+  let offset = 0;
+  for (const line of content.split(/(?<=\n)/)) {
+    const body = line.replace(/[\r\n]+$/, "");
+    const sectionMatch = /^\s*\[([^\]]+)\]\s*(?:#.*)?$/.exec(body);
+    if (sectionMatch) {
+      section = sectionMatch[1];
+    } else if (section === "package") {
+      const versionMatch = /^(\s*version\s*=\s*")((?:[^"\\]|\\.)*)(")(?:\s*#.*)?\s*$/.exec(body);
+      if (versionMatch) {
+        const start = offset + versionMatch[1].length;
+        matches.push({ value: JSON.parse(`"${versionMatch[2]}"`), start, end: start + versionMatch[2].length });
+      }
+    }
+    offset += line.length;
+  }
+  if (matches.length !== 1) {
+    throw new Error(`${relativePath}: expected exactly one version in the canonical [package] table`);
+  }
+  return matches[0];
+}
+
+function canonicalCargoLockAppVersion(content, relativePath) {
+  const matches = [
+    ...content.matchAll(
+      /(?:^|\n)\[\[package\]\]\r?\nname = "app"\r?\nversion = "([^"]+)"(?:\r?\n|$)/g,
+    ),
+  ];
+  if (matches.length !== 1) {
+    throw new Error(`${relativePath}: expected exactly one app package version in Cargo.lock`);
+  }
+  return matches[0][1];
+}
+
+/** Read the version currently encoded by one stamp location. */
+export function readStampedVersion(kind, content, relativePath = "<unknown>") {
+  let version;
+  switch (kind) {
+    case "json-version": {
+      version = canonicalJsonVersionNode(content, relativePath).value;
+      break;
+    }
+    case "toml-version":
+      version = canonicalTomlVersionMatch(content, relativePath).value;
+      break;
+    case "cargo-lock-app":
+      version = canonicalCargoLockAppVersion(content, relativePath);
+      break;
+    case "yaml-ios-versions":
+      version = readCanonicalYamlStringSetting(
+        content,
+        IOS_MARKETING_VERSION_PATH,
+        relativePath,
+      );
+      break;
+    default:
+      throw new Error(`unknown stamp kind: "${kind}"`);
+  }
+  if (typeof version !== "string" || !version.trim()) {
+    throw new Error(`${relativePath}: could not read the ${kind} version`);
+  }
+  return version.trim();
+}
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -66,13 +232,27 @@ export function stampContent(kind, content, oldVersion, newVersion) {
   };
   switch (kind) {
     case "json-version":
-      sub(new RegExp(`("version":\\s*")${old}(")`));
+      {
+        const version = canonicalJsonVersionNode(content, "JSON manifest");
+        if (version.value === oldVersion) {
+          content = `${content.slice(0, version.start)}${JSON.stringify(newVersion)}${content.slice(version.end)}`;
+          replaced = 1;
+        }
+      }
       break;
     case "toml-version":
-      sub(new RegExp(`(^version = ")${old}(")`, "m"));
+      {
+        const version = canonicalTomlVersionMatch(content, "Cargo.toml");
+        if (version.value === oldVersion) {
+          content = `${content.slice(0, version.start)}${newVersion}${content.slice(version.end)}`;
+          replaced = 1;
+        }
+      }
       break;
     case "cargo-lock-app":
-      sub(new RegExp(`(name = "app"\\nversion = ")${old}(")`));
+      if (canonicalCargoLockAppVersion(content, "Cargo.lock") === oldVersion) {
+        sub(new RegExp(`(name = "app"\\nversion = ")${old}(")`));
+      }
       break;
     default:
       throw new Error(`unknown stamp kind: "${kind}"`);
@@ -80,12 +260,29 @@ export function stampContent(kind, content, oldVersion, newVersion) {
   return { content, replaced };
 }
 
-export function applyReplacement(kind, contents, nextVersion, relativePath = "<unknown>") {
-  if (kind === "yaml-marketing-version") {
-    return replaceCanonicalYamlStringSetting(
+export function applyReplacement(
+  kind,
+  contents,
+  nextVersion,
+  relativePath = "<unknown>",
+  now = new Date(),
+) {
+  if (kind === "yaml-ios-versions") {
+    const stamped = replaceCanonicalYamlStringSetting(
       contents,
       IOS_MARKETING_VERSION_PATH,
       nextVersion,
+      relativePath,
+    );
+    const currentBuild = readCanonicalYamlStringSetting(
+      stamped,
+      IOS_BUILD_VERSION_PATH,
+      relativePath,
+    );
+    return replaceCanonicalYamlStringSetting(
+      stamped,
+      IOS_BUILD_VERSION_PATH,
+      nextIosBuildStamp(currentBuild, now),
       relativePath,
     );
   }
@@ -119,6 +316,32 @@ export function insertChangelogSection(changelog, section) {
   return `${changelog.slice(0, after)}\n\n${section.trimEnd()}\n${changelog.slice(after)}`;
 }
 
+export function writeReleaseEdits(changes, writer = writeFileSync) {
+  const completed = [];
+  try {
+    for (const change of changes) {
+      completed.push(change);
+      writer(change.abs, change.content);
+    }
+  } catch (error) {
+    const rollbackFailures = [];
+    for (const change of completed.reverse()) {
+      try {
+        writer(change.abs, change.before);
+      } catch (rollbackError) {
+        rollbackFailures.push(`${change.file}: ${rollbackError.message}`);
+      }
+    }
+    const detail = error instanceof Error ? error.message : String(error);
+    if (rollbackFailures.length) {
+      throw new Error(
+        `release preparation write failed (${detail}); rollback also failed for ${rollbackFailures.join(", ")}`,
+      );
+    }
+    throw new Error(`release preparation write failed; prior files restored (${detail})`);
+  }
+}
+
 /** The collision guard: any open PR already stamping a release. */
 export function findOpenStampPr(pulls) {
   return (
@@ -129,17 +352,88 @@ export function findOpenStampPr(pulls) {
 
 // ── main ──────────────────────────────────────────────────────────────────────
 
+const WINDOWS_GIT_CANDIDATES = [
+  "/mnt/c/Program Files/Git/cmd/git.exe",
+  "/mnt/c/Program Files/Git/bin/git.exe",
+];
+
+export function resolveGitExecutable({
+  platform = process.platform,
+  env = process.env,
+  gitPointer,
+  pathExists = existsSync,
+} = {}) {
+  const override = env.COVEN_CAVE_GIT_EXECUTABLE?.trim();
+  if (override) return override;
+  if (platform !== "linux" || !env.WSL_INTEROP) return "git";
+
+  let pointer = gitPointer;
+  if (pointer === undefined) {
+    try {
+      pointer = readFileSync(path.join(ROOT, ".git"), "utf8");
+    } catch {
+      return "git";
+    }
+  }
+  if (!/^gitdir:\s*[A-Za-z]:[\\/]/i.test(pointer.trim())) return "git";
+
+  const executable = WINDOWS_GIT_CANDIDATES.find((candidate) => pathExists(candidate));
+  if (executable) return executable;
+  throw new Error(
+    "managed worktree uses a Windows Git pointer, but Windows Git was not found; " +
+      "set COVEN_CAVE_GIT_EXECUTABLE or run the release command from Windows",
+  );
+}
+
+const gitExecutable = resolveGitExecutable();
 const run = (cmd, args, opts = {}) =>
-  execFileSync(cmd, args, { cwd: ROOT, encoding: "utf8", ...opts }).trim();
+  execFileSync(cmd === "git" ? gitExecutable : cmd, args, {
+    cwd: ROOT,
+    encoding: "utf8",
+    ...opts,
+  }).trim();
 
 function main() {
   const argv = process.argv.slice(2);
+  if (argv.includes("--help") || argv.includes("-h")) {
+    console.log(`Usage:
+  pnpm release:preview [--level patch|minor|major] [--version X.Y.Z]
+  pnpm release:prepare [--level patch|minor|major] [--version X.Y.Z]
+  pnpm release:verify --version X.Y.Z
+
+release:preview prints the complete plan and writes nothing.
+release:prepare writes the five manifests and CHANGELOG.md only; run it from
+the managed release/stamp-vX.Y.Z worktree. It never commits, pushes, tags,
+publishes, or opens a PR. After curating the changelog, release:verify runs the
+same fail-closed source check used by release CI.`);
+    return;
+  }
+
+  const valueFlags = new Set(["--level", "--version"]);
+  const booleanFlags = new Set(["--dry-run", "--prepare-only", "--no-pr"]);
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (booleanFlags.has(arg)) continue;
+    if (valueFlags.has(arg)) {
+      const supplied = argv[index + 1];
+      if (!supplied || supplied.startsWith("-")) {
+        console.error(`✗ ${arg} requires a value`);
+        process.exit(1);
+      }
+      index += 1;
+      continue;
+    }
+    console.error(`✗ unknown option "${arg}" (run with --help for usage)`);
+    process.exit(1);
+  }
+
   const flag = (name) => argv.includes(name);
   const value = (name) => {
     const i = argv.indexOf(name);
     return i !== -1 ? argv[i + 1] : undefined;
   };
   const dryRun = flag("--dry-run");
+  const prepareOnly = flag("--prepare-only");
   const noPr = flag("--no-pr");
   const level = value("--level") ?? "patch";
 
@@ -151,16 +445,83 @@ function main() {
     process.exit(1);
   }
 
-  const current = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
+  const sources = STAMP_FILES.map(({ path: relativePath, kind }) => ({
+    abs: path.join(ROOT, relativePath),
+    relativePath,
+    kind,
+    before: readFileSync(path.join(ROOT, relativePath), "utf8"),
+  }));
+  const packageSource = sources.find(({ relativePath }) => relativePath === "package.json");
+  const current = readStampedVersion(
+    packageSource.kind,
+    packageSource.before,
+    packageSource.relativePath,
+  );
   const next = value("--version") ?? bumpVersion(current, level);
   if (!/^\d+\.\d+\.\d+$/.test(next)) {
     console.error(`✗ refusing non-semver version "${next}"`);
     process.exit(1);
   }
 
+  if (compareVersions(next, current) <= 0) {
+    console.error(`✗ release version must advance: current is ${current}, requested ${next}`);
+    process.exit(1);
+  }
+
+  const branch = `release/stamp-v${next}`;
+  if (prepareOnly && !dryRun) {
+    const currentBranch = run("git", ["branch", "--show-current"]);
+    if (currentBranch !== branch) {
+      console.error(
+        `✗ --prepare-only must run in the managed ${branch} worktree (currently ${currentBranch || "detached HEAD"})`,
+      );
+      process.exit(1);
+    }
+  }
+
+  if (!dryRun) {
+    const head = run("git", ["rev-parse", "--verify", "HEAD"]);
+    const remoteMainLine = run("git", [
+      "ls-remote",
+      "--exit-code",
+      "origin",
+      "refs/heads/main",
+    ]);
+    const remoteMain = remoteMainLine.split(/\s+/)[0];
+    if (!/^[0-9a-f]{40}$/i.test(remoteMain)) {
+      console.error("✗ could not resolve the live origin/main commit — aborting, nothing written");
+      process.exit(1);
+    }
+    if (head !== remoteMain) {
+      console.error(
+        `✗ release preparation must start at live origin/main ${remoteMain}; current HEAD is ${head} — recreate the managed release worktree, nothing written`,
+      );
+      process.exit(1);
+    }
+  }
+
+  // Refuse drift before calculating or writing any edits. A partially hand-
+  // stamped tree is not a safe starting point for release preparation.
+  for (const source of sources) {
+    const found = readStampedVersion(source.kind, source.before, source.relativePath);
+    if (found !== current) {
+      console.error(
+        `✗ version drift: ${source.relativePath} has ${found}, but package.json has ${current} — aborting, nothing written`,
+      );
+      process.exit(1);
+    }
+  }
+
   // Collision guard — three stamp PRs raced on 2026-07-08; never open a second.
   const repo = "OpenCoven/coven-cave";
-  const pulls = JSON.parse(run("gh", ["api", `repos/${repo}/pulls?state=open&per_page=50`]));
+  const pullLines = run("gh", [
+    "api",
+    "--paginate",
+    "--jq",
+    ".[] | { number, title } | @json",
+    `repos/${repo}/pulls?state=open&per_page=100`,
+  ]);
+  const pulls = pullLines ? pullLines.split("\n").map((line) => JSON.parse(line)) : [];
   const openStamp = findOpenStampPr(pulls);
   if (openStamp) {
     console.error(
@@ -173,20 +534,24 @@ function main() {
   const subjects = run("git", ["log", `${prevTag}..HEAD`, "--no-merges", "--pretty=%s"])
     .split("\n")
     .filter(Boolean);
-  const dateIso = new Date().toISOString().slice(0, 10);
+  // One instant for the whole cut: the CHANGELOG date and the iOS build stamp
+  // both derive from it, and two `new Date()` calls either side of a boundary
+  // would date the release one day and stamp the build the next.
+  const now = new Date();
+  const dateIso = now.toISOString().slice(0, 10);
   const section = buildChangelogSection({ version: next, prevVersion: current, dateIso, subjects });
 
   console.log(`stamp: v${current} → v${next} (${subjects.length} commits since ${prevTag})`);
 
   const edits = [];
-  for (const { path: relativePath, kind } of STAMP_FILES) {
-    const abs = path.join(ROOT, relativePath);
-    const before = readFileSync(abs, "utf8");
+  for (const { abs, relativePath, kind, before } of sources) {
     let content;
     let replaced;
-    if (kind === "yaml-marketing-version") {
-      content = applyReplacement(kind, before, next, relativePath);
-      replaced = 1;
+    if (kind === "yaml-ios-versions") {
+      content = applyReplacement(kind, before, next, relativePath, now);
+      // MARKETING_VERSION + CURRENT_PROJECT_VERSION — App Store Connect
+      // rejects an upload whose build stamp did not move.
+      replaced = 2;
     } else {
       ({ content, replaced } = stampContent(kind, before, current, next));
       if (replaced === 0) {
@@ -196,10 +561,15 @@ function main() {
         process.exit(1);
       }
     }
-    edits.push({ abs, file: relativePath, content, replaced });
+    edits.push({ abs, file: relativePath, before, content, replaced });
   }
   const changelogAbs = path.join(ROOT, "CHANGELOG.md");
-  const changelog = insertChangelogSection(readFileSync(changelogAbs, "utf8"), section);
+  const changelogBefore = readFileSync(changelogAbs, "utf8");
+  if (changelogBefore.includes(`## [${next}]`)) {
+    console.error(`✗ CHANGELOG.md already contains a v${next} section — aborting, nothing written`);
+    process.exit(1);
+  }
+  const changelog = insertChangelogSection(changelogBefore, section);
 
   if (dryRun) {
     for (const e of edits)
@@ -210,12 +580,32 @@ function main() {
     return;
   }
 
-  for (const e of edits) writeFileSync(e.abs, e.content);
-  writeFileSync(changelogAbs, changelog);
+  // Branch creation can fail (existing branch, worktree conflict, permissions).
+  // Do it before source writes so that failure leaves every manifest untouched.
+  if (!prepareOnly) {
+    const currentBranch = run("git", ["branch", "--show-current"]);
+    if (currentBranch !== branch) run("git", ["checkout", "-b", branch]);
+  }
+
+  writeReleaseEdits([
+    ...edits,
+    {
+      abs: changelogAbs,
+      file: "CHANGELOG.md",
+      before: changelogBefore,
+      content: changelog,
+    },
+  ]);
   console.log("✓ five locations stamped + CHANGELOG drafted");
 
-  const branch = `release/stamp-v${next}`;
-  run("git", ["checkout", "-b", branch]);
+  if (prepareOnly) {
+    console.log("✓ preparation only — no branch, commit, push, tag, release, or PR action was run");
+    console.log(
+      `next: edit the v${next} CHANGELOG teaser, run pnpm release:verify --version ${next}, then make the signed stamp commit on ${branch}`,
+    );
+    return;
+  }
+
   run("git", ["add", "CHANGELOG.md", ...STAMP_FILES.map((f) => f.path)]);
   // -S: repo rule — every commit lands Verified.
   run("git", [

@@ -1,11 +1,12 @@
 // @ts-nocheck
 // Source pins for the chat composer's context grammar after the 2026-07-22
-// split (cave-g21f): the footer band carries project · model · branch as
-// three separate chips (ComposerContextChips) on the left — each opening its
-// own picker — and the linked-work strip (tasks · GitHub · link/create) on
-// the right. The grouped ComposerActionsMenu keeps its four groups. The
-// write surface stays minimal: textarea, then attach · voice · grouped menu ·
-// circular send.
+// split (cave-g21f) and the adaptive-placement refactor: context chips
+// (ComposerContextChips — project · worktree · branch · model) are constructed once as
+// chatContextControls and placed adaptively: footer-band cluster for new chats
+// (inlineComposer), session-header div for active chats (!inlineComposer).
+// The linked-work strip always lives in the footer band regardless of
+// placement. The grouped ComposerActionsMenu keeps its four groups. The write
+// surface stays minimal: textarea, then attach · voice · grouped menu · send.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -50,7 +51,7 @@ assert.doesNotMatch(
   "the standalone attach button is gone from the control row (it lives in the + menu now)",
 );
 assert.doesNotMatch(controlRow, /<ComposerPlusMenu/, "the composer actions should no longer expose the legacy plus menu");
-assert.doesNotMatch(controlRow, /<ComposerContextChips/, "the context chips live in the footer band, not the control row");
+assert.doesNotMatch(controlRow, /<ComposerContextChips/, "the context chips are placed adaptively (footer band for inlineComposer, session header for !inlineComposer) — never in the control row");
 assert.doesNotMatch(controlRow, /<ComposerOptionsMenu/, "the composer actions should no longer expose the legacy options menu");
 assert.doesNotMatch(source, /<ComposerLinkedWorkActions\b/, "ChatView should not mount the menu-row linked-work actions directly — the band uses the chip strip");
 
@@ -60,10 +61,22 @@ assert.match(
   /className="cave-composer-control-row"[\s\S]*?className="cave-composer-footer-band"/,
   "the footer band renders after the composer controls, inside the panel",
 );
+// chatContextControls is constructed once with all runtime/model picker props preserved
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\n\s*<div className="cave-composer-footer-band__cluster">\s*\n\s*<ComposerContextChips[\s\S]*?<\/div>\s*\n\s*\{linkedContextRow\}[\s\S]*?<div className="cave-chat-followups">[\s\S]*?<FollowUpCards/,
-  "the band leads with context and linked work, then carries the latest assistant options",
+  /const chatContextControls = \([\s\S]*?<ComposerContextChips[\s\S]*?runtime=\{modelHarness\}[\s\S]*?modelValue=\{composerModelValue\}[\s\S]*?onPickRuntime=\{handleSelectRuntime\}[\s\S]*?onPickModel=\{handleSelectModel\}/,
+  "chatContextControls is constructed once as ComposerContextChips with preserved runtime/model picker props",
+);
+// New chats (inlineComposer): cluster mounts in footer band; active chats: session header
+assert.match(
+  source,
+  /className="cave-composer-footer-band">[\s\S]*?\{inlineComposer \? \([\s\S]*?<div className="cave-composer-footer-band__cluster">[\s\S]*?\{chatContextControls\}[\s\S]*?<\/div>[\s\S]*?\) : null\}[\s\S]*?\{linkedContextRow\}[\s\S]*?<FollowUpCards/,
+  "the band conditionally mounts the context cluster (inlineComposer only); linked work and follow-ups always follow",
+);
+assert.match(
+  source,
+  /cave-chat-header-context">\{chatContextControls\}/,
+  "active chat mounts the context controls in the session header (.cave-chat-header-context)",
 );
 assert.doesNotMatch(
   source.match(/<footer[\s\S]*?className="cave-composer-shell"/)?.[0] ?? "",
@@ -71,7 +84,7 @@ assert.doesNotMatch(
   "latest assistant options no longer float above the composer shell",
 );
 
-// ── Split chips (cave-g21f): project · model · branch as separate controls ──
+// ── Split chips (cave-g21f): project · worktree · branch · model as separate controls ──
 assert.match(
   source,
   /<ComposerContextChips\s*\n\s*projects=\{projects\}\s*\n\s*projectValue=\{resolvedProjectId\}\s*\n\s*onProjectChange=\{setProjectIdDraft\}/,
@@ -114,10 +127,34 @@ assert.doesNotMatch(
 );
 
 // ── Each chip opens its own picker; the hub popover is gone ─────────────────
+// Grammar: Project > Worktree (conditional) > Branch > Model in control order
 assert.match(
   pill,
-  /aria-label=\{`Project: \$\{projectLabel\} — change project`\}[\s\S]*?aria-label=\{`Model: \$\{modelLabel\} — change model`\}[\s\S]*?aria-label=\{`Branch: \$\{context\.branch\} — switch branch or create a worktree`\}/,
-  "the chips read Project / Model / Branch as separately labelled controls in order",
+  /aria-label=\{`Project: \$\{projectLabel\} — change project`\}[\s\S]*?aria-label=\{`Worktree: \$\{context\.worktree\} — open worktree actions`\}[\s\S]*?aria-label=\{`Branch: \$\{context\.branch\} — switch branch or create a worktree`\}[\s\S]*?aria-label=\{`Model: \$\{modelLabel\} — change model`\}/,
+  "the chips read Project / Worktree / Branch / Model as separately labelled controls in order",
+);
+assert.match(pill, /const worktreeRef = useRef/, "worktree has its own independent ref anchor");
+assert.match(pill, /const branchRef = useRef/, "branch has its own independent ref anchor");
+assert.match(pill, /name="ph:tree-structure"/, "the worktree chip uses the tree-structure icon");
+assert.doesNotMatch(
+  pill,
+  /aria-label=\{`Branch:[\s\S]{0,200}?context\.worktree[\s\S]{0,50}?`\}/,
+  "worktree is no longer folded into the branch chip's accessible name",
+);
+assert.match(
+  pill,
+  /open=\{menu === "worktree"\}[\s\S]*?anchorRef=\{worktreeRef\}[\s\S]*?open=\{menu === "branch"\}[\s\S]*?anchorRef=\{branchRef\}/,
+  "worktree and branch each have a separate GitBranchMenuPopover with its own open state and anchor",
+);
+assert.match(
+  pill,
+  /open=\{menu === "worktree"\}[\s\S]*?ariaLabel="Worktree actions"[\s\S]*?menuLabel="Worktree actions"/,
+  "the worktree chip opens a menu whose accessible labels match the trigger",
+);
+assert.match(
+  pill,
+  /ComposerContextView\s*=\s*null\s*\|[\s\S]*?"worktree"/,
+  "ComposerContextView supports the worktree picker state",
 );
 assert.match(pill, /context\.hasGit \? \(/, "the branch chip elides for git-less composers (home, no-project chats)");
 assert.doesNotMatch(
@@ -136,13 +173,27 @@ assert.match(
   "runtime and branch pickers honor the caller's preferred vertical side",
 );
 
-// ── The header no longer hosts the linked-context strip ─────────────────────
+// ── Header: MetaLine + adaptive context controls (never linkedContextRow) ───
 const header = source.match(/<header className="cave-chat-linear-header[\s\S]*?<\/header>/)?.[0] ?? "";
 assert.ok(header, "chat header is present");
 assert.doesNotMatch(
   header,
   /linkedContextRow/,
-  "the header renders MetaLine only — the linked-context strip stays in the band",
+  "the header never carries the linked-context strip (that always stays in the band)",
+);
+// For active chats (!inlineComposer) the header hosts chatContextControls in
+// .cave-chat-header-context; for new chats they move to the footer band.
+assert.match(
+  source,
+  /!inlineComposer[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
+  "active chats (!inlineComposer) mount context controls in .cave-chat-header-context inside the header",
+);
+// Interactive controls must not be nested inside MetaLine's live region —
+// the context div is placed *after* </MetaLine>, not inside it.
+assert.doesNotMatch(
+  source.match(/<MetaLine(?![A-Za-z])[\s\S]*?<\/MetaLine>/)?.[0] ?? "",
+  /chatContextControls/,
+  "chatContextControls is not nested inside MetaLine's live region",
 );
 
 // ── Band chrome: attached underside strip, one tone deeper ──────────────────
@@ -289,6 +340,28 @@ assert.match(
   css,
   /\.composer-options__choices\s*\{[\s\S]*?flex-wrap:\s*wrap/,
   "grouped choice panels wrap inside the popover rather than the composer footer",
+);
+
+// ── Adaptive context overflow + header containment + mobile touch targets ────
+assert.match(
+  css,
+  /\.cave-context-controls \{[\s\S]*?display: flex;[\s\S]*?overflow-x: auto;[\s\S]*?white-space: nowrap;/,
+  "shared context controls should remain one horizontally scrollable line",
+);
+assert.match(
+  css,
+  /\.cave-context-controls \{[^}]*padding-block: calc\(var\(--ring-offset\) \+ var\(--ring-width\)\);/,
+  "context controls need padding-block so overflow-y clip preserves the full focus-ring outline",
+);
+assert.match(
+  activityCss,
+  /\.cave-chat-header-context \{[\s\S]*?min-width: 0;[\s\S]*?overflow: hidden;/,
+  "the active header should contain context overflow without widening the pane",
+);
+assert.match(
+  transcriptCss,
+  /@media \(max-width: 767px\)[\s\S]*?\.cave-chat-header-context[\s\S]*?\.cave-context-chip \{[^}]*min-height: var\(--touch-target\);/,
+  "mobile header context controls should retain touch targets",
 );
 
 console.log("chat-composer-footer-band.test.ts: ok");

@@ -15,7 +15,7 @@ import { resolveSecret } from "../vault.ts";
 import { speechEnginesReadiness } from "../voice/speech-models.ts";
 
 const execFileAsync = promisify(execFile);
-const probeOptions = { timeout: 3_000, maxBuffer: 32 * 1024 };
+const probeOptions = { windowsHide: true, timeout: 3_000, maxBuffer: 32 * 1024 };
 
 type ReadinessVoice = {
   id: string;

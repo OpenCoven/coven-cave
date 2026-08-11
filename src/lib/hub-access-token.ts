@@ -3,6 +3,7 @@ import {
   getLocalEncryptedSecret,
   setLocalEncryptedSecret,
 } from "./local-encrypted-vault.ts";
+import { normalizeHubUrl } from "./hub-url.ts";
 
 /**
  * Hub access token custody (cave-1v95, persistence P0).
@@ -33,7 +34,7 @@ function hubAccessTokenOrigin(rawUrl: string): string | null {
   const trimmed = rawUrl.trim();
   if (!trimmed) return null;
   try {
-    return new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`).origin;
+    return new URL(normalizeHubUrl(trimmed)).origin;
   } catch {
     return null;
   }

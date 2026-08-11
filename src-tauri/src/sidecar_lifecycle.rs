@@ -1,5 +1,18 @@
 use super::*;
 
+#[cfg(all(desktop, unix))]
+pub(super) fn configure_unix_sidecar_parent_watchdog(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+
+    // The parent retains the write end inside `Child`; an abrupt GUI exit
+    // closes it in the kernel even when Rust destructors never run. A fresh
+    // process group lets the watched Node root terminate its owned tree.
+    command
+        .stdin(Stdio::piped())
+        .env("COVEN_CAVE_PARENT_WATCHDOG", "stdin-eof");
+    command.process_group(0);
+}
+
 #[cfg(desktop)]
 pub(super) struct SidecarProcess {
     child: Child,
@@ -21,6 +34,13 @@ impl SidecarProcess {
 
     pub(super) fn id(&self) -> u32 {
         self.child.id()
+    }
+
+    pub(super) fn has_exited(&mut self) -> Result<bool, String> {
+        self.child
+            .try_wait()
+            .map(|status| status.is_some())
+            .map_err(|error| format!("could not inspect sidecar process: {error}"))
     }
 
     /// A reachability assertion may only follow the exact child retained by
@@ -52,14 +72,40 @@ pub(super) enum SidecarStartupStep {
 #[cfg(desktop)]
 pub(super) enum SidecarStartError {
     Cancelled,
-    Failed(String),
+    Failed {
+        message: String,
+        failure_class: ReliabilityFailureClass,
+    },
 }
 
 #[cfg(desktop)]
+impl SidecarStartError {
+    pub(super) fn failed(
+        failure_class: ReliabilityFailureClass,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::Failed {
+            message: message.into(),
+            failure_class,
+        }
+    }
+}
+
+#[cfg(desktop)]
+#[derive(Clone)]
 pub(super) enum PortWaitResult {
     Ready,
     Cancelled,
+    Exited,
+    Refused(SidecarReadinessRefusal),
     TimedOut,
+}
+
+#[cfg(desktop)]
+#[derive(Clone)]
+pub(super) struct SidecarReadinessRefusal {
+    pub(super) message: String,
+    pub(super) failure_class: ReliabilityFailureClass,
 }
 
 #[cfg(all(desktop, target_os = "windows"))]
@@ -142,9 +188,59 @@ impl SidecarStartupStatus {
 #[cfg(all(desktop, target_os = "windows"))]
 pub(super) struct SidecarStartupControl {
     status: Mutex<SidecarStartupStatus>,
+    terminal: SidecarStartupTerminalSlot,
     running: AtomicBool,
     cancel_requested: AtomicBool,
     shutdown_requested: AtomicBool,
+}
+
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+struct SidecarStartupTerminal {
+    evidence: NativeStartupTerminalEvidence,
+    completed_at: std::time::Instant,
+}
+
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+#[derive(Default)]
+struct SidecarStartupTerminalSlot(Mutex<Option<SidecarStartupTerminal>>);
+
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+impl SidecarStartupTerminalSlot {
+    fn publish(&self, evidence: NativeStartupTerminalEvidence) -> Result<(), String> {
+        let mut terminal = self
+            .0
+            .lock()
+            .map_err(|_| "sidecar startup terminal lock is poisoned".to_string())?;
+        if terminal.is_some() {
+            return Err("sidecar startup terminal result is awaiting consumption".to_string());
+        }
+        *terminal = Some(SidecarStartupTerminal {
+            evidence,
+            completed_at: std::time::Instant::now(),
+        });
+        Ok(())
+    }
+
+    fn consume(&self) -> Result<Option<NativeStartupTerminalEvidence>, String> {
+        self.0
+            .lock()
+            .map(|mut terminal| terminal.take().map(|terminal| terminal.evidence))
+            .map_err(|_| "sidecar startup terminal lock is poisoned".to_string())
+    }
+
+    fn is_pending(&self) -> Result<bool, String> {
+        self.0
+            .lock()
+            .map(|terminal| terminal.is_some())
+            .map_err(|_| "sidecar startup terminal lock is poisoned".to_string())
+    }
+
+    fn completed_at(&self) -> Result<Option<std::time::Instant>, String> {
+        self.0
+            .lock()
+            .map(|terminal| terminal.as_ref().map(|terminal| terminal.completed_at))
+            .map_err(|_| "sidecar startup terminal lock is poisoned".to_string())
+    }
 }
 
 #[cfg(all(desktop, target_os = "windows"))]
@@ -152,6 +248,7 @@ impl SidecarStartupControl {
     pub(super) fn new() -> Self {
         Self {
             status: Mutex::new(SidecarStartupStatus::preparing()),
+            terminal: SidecarStartupTerminalSlot::default(),
             running: AtomicBool::new(false),
             cancel_requested: AtomicBool::new(false),
             shutdown_requested: AtomicBool::new(false),
@@ -173,6 +270,31 @@ impl SidecarStartupControl {
         self.running.store(false, Ordering::Release);
     }
 
+    pub(super) fn finish_with_terminal(
+        &self,
+        evidence: NativeStartupTerminalEvidence,
+    ) -> Result<(), String> {
+        let result = self.terminal.publish(evidence);
+        self.finish();
+        result
+    }
+
+    pub(super) fn consume_terminal(&self) -> Result<Option<NativeStartupTerminalEvidence>, String> {
+        self.terminal.consume()
+    }
+
+    pub(super) fn has_terminal(&self) -> Result<bool, String> {
+        self.terminal.is_pending()
+    }
+
+    pub(super) fn terminal_completed_at(&self) -> Result<Option<std::time::Instant>, String> {
+        self.terminal.completed_at()
+    }
+
+    pub(super) fn is_running(&self) -> bool {
+        self.running.load(Ordering::Acquire)
+    }
+
     pub(super) fn request_cancel(&self) -> Result<(), String> {
         if !self.running.load(Ordering::Acquire) {
             return Err("sidecar startup is not running".to_string());
@@ -191,6 +313,10 @@ impl SidecarStartupControl {
         self.cancel_requested.store(true, Ordering::Release);
     }
 
+    pub(super) fn is_shutdown_requested(&self) -> bool {
+        self.shutdown_requested.load(Ordering::Acquire)
+    }
+
     pub(super) fn status(&self) -> Result<SidecarStartupStatus, String> {
         self.status
             .lock()
@@ -205,6 +331,37 @@ impl SidecarStartupControl {
             .map_err(|_| "sidecar startup status lock is poisoned".to_string())?;
         *current = status;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod sidecar_startup_terminal_tests {
+    use super::*;
+
+    #[test]
+    fn startup_terminal_evidence_is_published_and_consumed_once() {
+        let terminal = SidecarStartupTerminalSlot::default();
+        let evidence = NativeStartupTerminalEvidence::Failed(ReliabilityFailureClass::Contention);
+
+        terminal
+            .publish(evidence)
+            .expect("publish terminal evidence");
+        assert!(
+            terminal
+                .completed_at()
+                .expect("read terminal completion")
+                .is_some(),
+            "published terminal evidence must retain its completion time"
+        );
+        assert_eq!(
+            terminal.consume().expect("consume terminal evidence"),
+            Some(evidence)
+        );
+        assert_eq!(
+            terminal.consume().expect("consume empty terminal slot"),
+            None
+        );
+        assert!(!terminal.is_pending().expect("inspect terminal slot"));
     }
 }
 
@@ -226,6 +383,15 @@ impl Drop for SidecarCleanupGuard {
 
 #[cfg(desktop)]
 impl SidecarState {
+    pub(super) fn stop_after_startup_error(&self, error: String) -> String {
+        match self.stop() {
+            Ok(()) => error,
+            Err(cleanup_error) => {
+                format!("{error}\n\nSidecar cleanup also failed: {cleanup_error}")
+            }
+        }
+    }
+
     pub(super) fn stop(&self) -> Result<(), String> {
         #[cfg(target_os = "windows")]
         let mut guard = match self.0.try_lock() {
@@ -242,6 +408,22 @@ impl SidecarState {
             .0
             .lock()
             .map_err(|_| "sidecar process lock is poisoned".to_string())?;
+        let Some(child) = guard.take() else {
+            return Ok(());
+        };
+        drop(guard);
+        stop_sidecar_child(child)
+    }
+
+    #[cfg(target_os = "windows")]
+    pub(super) fn stop_after_startup_attempt(&self) -> Result<(), String> {
+        // Startup failure runs on the worker thread, not the UI/exit path.
+        // Wait for the supervisor's brief liveness probe so cleanup cannot
+        // leave a failed child holding the selected port.
+        let mut guard = match self.0.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         let Some(child) = guard.take() else {
             return Ok(());
         };
@@ -276,6 +458,28 @@ pub(super) fn stop_sidecar_child(mut process: SidecarProcess) -> Result<(), Stri
 
     #[cfg(not(target_os = "windows"))]
     {
+        #[cfg(unix)]
+        if process.child.stdin.take().is_some() {
+            // Normal shutdown uses the same exact-parent lease as crash
+            // shutdown so Node can reap PTYs and its isolated process group.
+            // Fall back to the existing direct kill if a broken child ignores
+            // EOF; application teardown remains strictly bounded.
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                if process
+                    .child
+                    .try_wait()
+                    .map_err(|error| format!("could not inspect watched sidecar: {error}"))?
+                    .is_some()
+                {
+                    return Ok(());
+                }
+                if Instant::now() >= deadline {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
         if process
             .child
             .try_wait()
@@ -297,6 +501,9 @@ pub(super) fn stop_sidecar_child(mut process: SidecarProcess) -> Result<(), Stri
 
 #[cfg(all(desktop, target_os = "windows"))]
 pub(super) fn shutdown_owned_processes(app: &tauri::AppHandle) {
+    if let Some(supervisor) = app.try_state::<Arc<SidecarSupervisor>>() {
+        supervisor.request_stop();
+    }
     if let Some(control) = app.try_state::<Arc<SidecarStartupControl>>() {
         control.request_shutdown();
     }

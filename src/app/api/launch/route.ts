@@ -67,6 +67,7 @@ export async function POST(req: Request) {
   return new Promise<Response>((resolve) => {
     const child = spawn("osascript", ["-e", script], {
       stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
     });
     let stderr = "";
     child.stderr.on("data", (d) => (stderr += d.toString()));

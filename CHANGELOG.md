@@ -7,6 +7,164 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-08-08
+
+> A reading-first Coding Desk, a rebuilt Research Desk, safer remote access,
+> steadier navigation, and release and runtime checks that name what went wrong.
+
+Patch release on top of v0.2.4.
+
+### Added
+
+- Rebuilt the Coding Desk around a worktree-aware file tree, source viewer,
+  resizable Changes/PR rail, persistent terminal drawer, session picker,
+  per-version viewed state, and rebindable shortcuts; narrow layouts now use
+  the room's measured width (#4418, #4423, #4443).
+- Rebuilt the Research Desk with structured briefs, recommendations, resizable
+  rails, richer mission progress, searchable and pageable Library results,
+  truthful provider readiness, and improved resource cards and grids
+  (#4417, #4419).
+- Added the full familiar activity lattice, comparing a 52-week density grid,
+  eight-week trend, and 14-day pulse from one shared data model (#4425).
+- Added app-wide loaded-data search and richer project/task context to iOS, and
+  made contextual New Chat reuse the visible familiar with recoverable project
+  loading (#4397, #4424).
+- Added sub-surface Back/Forward history, beginning with the Chat scope strip
+  (#4407).
+- Added durable Chat attention states and an **Awaiting you** group for explicit
+  requests, conversations left hanging, and overdue replies, with persistence,
+  replay, and stream reconciliation that clears requests on a newer human reply
+  rather than merely opening the chat (#4391).
+- Enabled Discord Rich Presence consistently in local and release builds, with
+  links to OpenCoven and Coven Cave (#4403, #4409, #4410, #4411).
+
+### Changed
+
+- Unified the Home and Chat sidebar header, kept the rail open when navigating
+  away from Chat, and made desktop collapse leave a usable icon rail with
+  hover-to-peek instead of hiding navigation entirely (#4404, #4405, #4406).
+- Restored the prior familiar creation and avatar flow by removing the
+  experimental image-driven summoning, scrying, rite, and foil-card path
+  (#4412).
+- Made Grimoire Relations counts explicitly scope-aware and expanded the
+  bounded graph window while preserving the renderer's measured performance
+  ceiling (#4431).
+- Kept unfinished Role Surface rooms out of production builds while preserving
+  them for development, with an explicit build allowlist and honest
+  under-construction messaging; Research Desk and Chart Room remain available
+  in production (#4440).
+
+### Fixed
+
+- Refused a proven occupied daemon address before spawning, now returning an
+  actionable `address_in_use` result while preserving conservative recovery
+  and ownership behavior (#4429).
+- Stopped Windows child-process console windows from appearing over Cave and
+  made macOS report an already-running second GUI instead of aborting
+  (#4413, #4416).
+- Made `dev:app` reject ANSI-contaminated port captures and report a desktop
+  shell that dies before setup completes instead of claiming a successful
+  launch (#4401, #4426).
+- Closed spoken-text normalization edge cases from the reader and voice paths
+  (#4399).
+- Made reader citation chips reliably reconcile anchors added or replaced after
+  rendering, without making unrelated reader behavior depend on citation
+  enhancement timing (#4441).
+
+### Security
+
+- Added fail-closed Tailscale device authorization using an explicit stable
+  node-ID allowlist rather than trusting a client-controlled host header
+  (#4402).
+- Added an opt-in WebAuthn presence gate that binds a user-verified passkey to
+  the allowlisted tailnet device; local access and first enrollment remain
+  deliberately recoverable (#4415).
+
+### Build and release
+
+- Added preview, transactional preparation, and fail-closed verification for
+  releases. The stamp now updates every canonical desktop, Cargo, and iOS
+  version source plus the changelog; release CI accepts only a verified
+  annotated tag on `main` and builds every artifact from its immutable commit
+  (#4433, #4437).
+- Split frontend and Windows-native CI work, sharded Playwright, stabilized
+  citation-chip waits, restored two Windows source guards, and added
+  repository-wide protection against committed merge-conflict markers
+  (#4420, #4421, #4422, #4427, #4430, #4434, #4436).
+- Added fail-closed recovery for same-repository pull requests whose CI event
+  never arrived, with explicit apply mode, cooldowns, and shared head-SHA
+  concurrency (#4435).
+- Excluded detached worktrees from managed-creation admission, required verified
+  remote retention before retiring units whose branch is gone, and documented
+  the current gate-blocked retirement path (#4414, #4432, #4438).
+
+## [0.2.4] - 2026-08-06
+
+> A tabbed sidebar, the Coding Room rebuilt as a three-zone workbench, image
+> carousels familiars can drive, summoning a familiar from a likeness, and an
+> app that now keeps its own address and brings its runtime back when it dies.
+
+Patch release on top of v0.2.3.
+
+### Added
+
+- Rebuilt the Coding Room as a three-zone workbench and landed its approved design (#4311, #4319).
+- Added a shared chat image carousel that familiars can drive (#4315).
+- Added playable canvas sketches, a waiting-room arcade, and iOS voice calls (#4314).
+- Restructured sidebar navigation from stacked sections into a tabbed layout, with collapsible side-panel destination groups (#4347).
+- Gave the web folder picker Explorer's Quick access and This PC rails, and made Settings > Workspace path's Browse actually choose a folder (#4352).
+- Added a mission catalog with renown bonuses, and the first cut of the activity lattice (#4335).
+- Added the orchestration task validator with readiness derivation, and wrote down the orchestration-ready task contract (#4343, #4306).
+- Added a Cave-safe branch-to-merge skill available to every familiar (#4307).
+- Added a fast local worktree status dashboard (#4313).
+- Added the conjuring rite: summon a familiar from a likeness, with the scrying stream, the foil-plate card and its holographic preview.
+- Added a fold for long threads — earlier turns collapse behind a pill instead of scrolling forever (#4383).
+- Gave dev and production builds **dedicated ports** — dev 3000, production 3020, e2e 3100 — overridable with `COVEN_CAVE_PORT` (#4393). The packaged app used to ask the kernel for any free port on every launch, so its address changed each time; that also moved the phone-pairing state directory, which is why a paired phone could stop finding the desktop after a restart.
+
+### Changed
+
+- Bounded PTY streaming and added replay cursors, so a busy terminal no longer floods its client (#4362).
+- Bounded desktop sidecar output (#4373).
+- Improved chat discovery, titles, and reflection archiving (#4357), and the adaptive chat context controls (#4356).
+- Injected the familiar contract (`SOUL.md` / `IDENTITY.md`) into chat prompt assembly (#4344).
+- Raised the worktree admission budget from 12 to 20 (#4348) and the sidecar file-count budget to 5,926 for the image carousel, recording that the budget is a rate problem rather than a count problem (#4331, #4332, #4333).
+- Hardened exact-head branch merges (#4346), stopped creation exceptions from blocking worktree retirement (#4366), and made a budget refusal name the exception that would admit it (#4308).
+- Lifted the notification dropdown above page content (#4273).
+- Removed Play mode from the canvas editor.
+- Retired the Chat rail's Scheduled/Plugins chip band — both destinations already live in the Home rail's list — and moved the overflow menu onto the grouping-tabs row beside Recent/Projects.
+- Quieted the New chat button on both rails: same full width and keyboard hint, an accent tint instead of a solid fill. The collapsed icon rail keeps its filled square, where a label-less tint would vanish among the outline glyphs.
+- Aligned the Home and Chat siderails so the section tabs, familiar selector and primary action sit in the same order in both.
+- Routed every WebSocket URL through one helper, so a TLS-terminated page can never derive an insecure `ws://` (#4393). Cave reaches the same origin over plain loopback, `tailscale serve`, and a MagicDNS host; each surface used to decide the scheme for itself.
+- Stopped Turbopack tracing dynamic runtime paths into the bundle's file trace, and declared the sidecar runtime file-count budget in one place (#4392, #4396).
+
+### Fixed
+
+- **The iOS app compiles again.** A `ChatProjectPicker` call in `ChatView` closed its argument list with `}` instead of `)`, and `refreshToken` sat between the flag and the callbacks so the memberwise initializer's argument order disagreed with both call sites. The Swift target had not built since 2026-08-03; CI never noticed, because it builds the web app and the Rust shell but not the Swift one.
+- **`scripts/stamp-release.mjs` now refreshes the iOS `CURRENT_PROJECT_VERSION` build stamp alongside `MARKETING_VERSION`.** A stamped release used to carry the previous cut's build number, which App Store Connect rejects as a duplicate — that is what blocked the v0.2.3 TestFlight upload.
+- Fixed the iOS session picker not switching conversations, kept the thread-row zoom anchored to the row itself, and kept the ⌘1–4 tab shortcuts out of the accessibility tree (#4322, #4360).
+- Fixed the iOS build generating its web bundles after xcodegen had already scanned for them (#4345).
+- Fixed cold managed npm startup on Windows during onboarding (#4359).
+- Hardened chat capability help probes (#4363).
+- Reaped Unix sidecars on parent exit (#4374), with a portable test for it (#4368).
+- Restored the Canvas and focus-ring contracts and cleared the Canvas editor merge remnants (#4367).
+- Parsed image data URLs without running a regex over the whole payload (#4340).
+- Reported thin budget headroom everywhere and reseated the caps by rate (#4353).
+- Contained async polling failures (#4349).
+- Fixed the Home slash-command handoff and discovery (#4342), and restored accessible solo-to-coven promotion (#4295).
+- Kept automatic daemon recovery fail-closed when restart is set, and supervised daemon startup coherence (#4329).
+- Aligned scoped analytics workbench evidence (#4283).
+- Snapped the voice call overlay's spacing to the scale (#4303).
+- **The desktop app brings its runtime back when it dies (#4395).** Nothing watched the packaged sidecar after startup, so if it exited an hour later the window kept pointing at a dead port — no message, no recovery, quit-and-relaunch the only way out. The one retry path that existed was Windows-only and manual. A supervisor now revives it with a backoff that cools off and then tries again.
+- **The familiar is no longer written off after four failed restarts (#4393).** The restart schedule ran out and stopped for good, and only a successful poll could reset it — which never arrives for a daemon that is genuinely gone. The budget now refills after a cooldown.
+- **A daemon that listens but stops answering is now detected (#4393).** It previously reported as running forever: alive, and answering nothing.
+- Preserved capability-probe failures instead of reporting them as an unsupported model, so a spawn failure or timeout no longer reads as "your model does not work".
+- Guarded the workspace-root override on read and stopped re-parsing it per entry.
+- Fixed the foil card blowing out everywhere except the top-left quadrant, the seal printing every scried value twice, and the card scrolling away mid-rite.
+- Preserved legacy GitHub code navigation during room hydration.
+- Made the thread fold caret turn, and dropped the rule that pointed at nothing.
+- Dated a whole release cut from one instant, so a stamp crossing midnight no longer splits across two days (#4381), and refreshed the iOS build stamp on every cut.
+- Resolved the iOS project-picker merge conflict that broke the Swift target.
+
 ## [0.2.3] - 2026-08-03
 
 > Live call transcripts, answer rewriting in the reader, a familiar analytics

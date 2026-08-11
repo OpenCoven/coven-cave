@@ -19,6 +19,8 @@ import {
   MOBILE_INVITE_TTL_MS,
   nativeAppDiscoveryProof,
   resolveIosInstallUrl,
+  serveRouteFailure,
+  shouldAllowMagicDnsFallback,
   tailnetDiscoveryProof,
   tailscaleBin,
   tailscaleSpawnEnv,
@@ -38,6 +40,7 @@ function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult
   return new Promise((resolve) => {
     const bin = tailscaleBin();
     const child = spawn(bin, args, {
+      windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: tailscaleSpawnEnv(),
     });
@@ -332,13 +335,31 @@ async function ensureNativeAppServeReady(
     const parsed = parseServeStatus(status.stdout);
     if (!("error" in parsed)) serveStatus = parsed.value;
   }
-  const tailnetDiscovery = tailnetDiscoveryProof({ selfStatus, serveStatus, backendUrl: backend });
+  const tailnetDiscovery = tailnetDiscoveryProof({
+    selfStatus,
+    serveStatus,
+    backendUrl: backend,
+    // A successful status command with no matching handler proves there is no
+    // live route. MagicDNS alone only identifies the node; it does not publish
+    // the loopback backend.
+    allowMagicDnsFallback: shouldAllowMagicDnsFallback({
+      serveOk: serve.ok,
+      statusOk: status.ok,
+    }),
+  });
   let discovery: ReturnType<typeof nativeAppDiscoveryProof> = tailnetDiscovery;
   let fallbackWarning: string | null = null;
   if (!tailnetDiscovery.ok) {
     const httpServe = await runTailscale(["serve", "--bg", `--http=${backendPort(backend)}`, backend]);
     if (httpServe.ok) {
-      discovery = nativeAppDiscoveryProof({ selfStatus, serveStatus, backendUrl: backend });
+      discovery = nativeAppDiscoveryProof({
+        selfStatus,
+        serveStatus,
+        backendUrl: backend,
+        // The explicit HTTP Serve fallback is addressed by Tailscale IP. Do
+        // not replace it with an unproven MagicDNS HTTPS URL.
+        allowMagicDnsFallback: false,
+      });
       if (discovery.ok && discovery.source === "tailscale-ip-http") {
         fallbackWarning = serveWarning
           ? `${serveWarning} Using the Tailscale IP fallback for the native app.`
@@ -357,12 +378,18 @@ async function ensureNativeAppServeReady(
   }
 
   if (!discovery.ok) {
-    const routeDetail = fallbackWarning ?? serveWarning ?? discovery.reason;
+    const routeFailure = serveRouteFailure({
+      backendUrl: backend,
+      serveError: fallbackWarning ?? serveWarning,
+      statusError: status.stderr,
+      routeReason: discovery.reason,
+    });
+    const routeDetail = routeFailure.error;
     return NextResponse.json(
       {
         ok: false,
         error: routeDetail,
-        stderr: fallbackWarning ?? serveWarning ?? status.stderr,
+        stderr: routeFailure.stderr,
         backendUrl: backend,
         steps: buildPairingSteps({
           access: { ok: true },
@@ -494,15 +521,29 @@ async function mobileHandoffReady(
     if (!("error" in parsed)) serveStatus = parsed.value;
   }
 
-  const discovery = tailnetDiscoveryProof({ selfStatus, serveStatus, backendUrl: backend });
+  const discovery = tailnetDiscoveryProof({
+    selfStatus,
+    serveStatus,
+    backendUrl: backend,
+    allowMagicDnsFallback: shouldAllowMagicDnsFallback({
+      serveOk: serve.ok,
+      statusOk: status.ok,
+    }),
+  });
 
   if (!discovery.ok) {
+    const routeFailure = serveRouteFailure({
+      backendUrl: backend,
+      serveError: serveWarning,
+      statusError: status.stderr,
+      routeReason: discovery.reason,
+    });
     // Nothing usable — surface the most actionable error we have.
     return NextResponse.json(
       {
         ok: false,
-        error: serveWarning ?? discovery.reason,
-        stderr: serveWarning ?? status.stderr,
+        error: routeFailure.error,
+        stderr: routeFailure.stderr,
         backendUrl: backend,
       },
       { status: 500 },

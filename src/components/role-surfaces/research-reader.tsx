@@ -108,9 +108,6 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
   const documentReaderApiRef = useRef<DocumentReaderApi | null>(null);
   const pbarRef = useRef<HTMLDivElement | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
-  const stripRef = useRef<HTMLDivElement | null>(null);
-  const trackRef = useRef<HTMLDivElement | null>(null);
-  const thumbRef = useRef<HTMLButtonElement | null>(null);
 
   const doc = useMemo(
     () => parseFindingsDoc(markdown ?? "", mission.sources),
@@ -305,72 +302,6 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
     return () => {
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", up);
-    };
-  }, []);
-
-  // ── "more sources" strip: reflect + drag the scroll thumb ────────────────
-  const updateThumb = () => {
-    const strip = stripRef.current;
-    const track = trackRef.current;
-    const thumb = thumbRef.current;
-    if (!strip || !track || !thumb) return;
-    const max = strip.scrollWidth - strip.clientWidth;
-    if (max <= 1) {
-      track.hidden = true;
-      return;
-    }
-    track.hidden = false;
-    const tw = track.clientWidth;
-    const thw = Math.max(28, tw * (strip.clientWidth / strip.scrollWidth));
-    thumb.style.width = `${thw}px`;
-    thumb.style.left = `${(strip.scrollLeft / max) * (tw - thw)}px`;
-  };
-  useEffect(() => {
-    updateThumb();
-    window.addEventListener("resize", updateThumb);
-    return () => window.removeEventListener("resize", updateThumb);
-  }, [miniSources.length, railOn, railWidth]);
-
-  const thumbDrag = useRef<{ x: number; left: number } | null>(null);
-  const stripDrag = useRef<{ x: number; sl: number } | null>(null);
-  const onThumbDown = (event: React.PointerEvent) => {
-    thumbDrag.current = { x: event.clientX, left: parseFloat(thumbRef.current?.style.left || "0") || 0 };
-    thumbRef.current?.setPointerCapture(event.pointerId);
-    event.preventDefault();
-    event.stopPropagation();
-  };
-  const onStripDown = (event: React.PointerEvent) => {
-    if ((event.target as HTMLElement).closest(".rr-srcthumb")) return;
-    stripDrag.current = { x: event.clientX, sl: stripRef.current?.scrollLeft ?? 0 };
-  };
-  useEffect(() => {
-    const move = (event: PointerEvent) => {
-      const strip = stripRef.current;
-      const track = trackRef.current;
-      const thumb = thumbRef.current;
-      if (thumbDrag.current && strip && track && thumb) {
-        const tw = track.clientWidth;
-        const thw = thumb.offsetWidth;
-        const nl = Math.max(0, Math.min(tw - thw, thumbDrag.current.left + (event.clientX - thumbDrag.current.x)));
-        strip.scrollLeft = tw - thw > 0 ? (nl / (tw - thw)) * (strip.scrollWidth - strip.clientWidth) : 0;
-      } else if (stripDrag.current && strip) {
-        const dx = event.clientX - stripDrag.current.x;
-        if (Math.abs(dx) > 3) strip.classList.add("is-dragging");
-        strip.scrollLeft = stripDrag.current.sl - dx;
-      }
-    };
-    const up = () => {
-      thumbDrag.current = null;
-      if (stripDrag.current) {
-        stripDrag.current = null;
-        stripRef.current?.classList.remove("is-dragging");
-      }
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    return () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
     };
   }, []);
 
@@ -650,7 +581,7 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
                 {miniSources.length ? (
                   <div className="rr-more">
                     <div className="rr-more__label">More sources · {miniSources.length}</div>
-                    <div className="rr-srcscroll" ref={stripRef} onScroll={updateThumb} onPointerDown={onStripDown}>
+                    <div className="rr-srcscroll">
                       {miniSources.map((source) => {
                         const view = statusView(source.status);
                         const toneClass = view.refTone === "warn" ? " rr-sref--warn" : view.refTone === "muted" ? " rr-sref--muted" : "";
@@ -669,9 +600,6 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
                           </button>
                         );
                       })}
-                    </div>
-                    <div className="rr-srctrack" ref={trackRef}>
-                      <button className="rr-srcthumb" ref={thumbRef} type="button" aria-label="Scroll sources" onPointerDown={onThumbDown} />
                     </div>
                   </div>
                 ) : null}

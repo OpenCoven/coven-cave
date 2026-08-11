@@ -10,18 +10,31 @@ struct ChatProjectPicker: View {
     let recentRoots: [String]
     @Binding var selectedRoot: String?
     @Binding var isResolved: Bool
+    // Declaration order must preserve the memberwise initializer: required
+    // refreshToken, then the defaulted requiresExplicitSelection flag, then
+    // the optional callbacks in the order onResolved, onManageAccess.
+    let refreshToken: Int
     var requiresExplicitSelection = false
     var onResolved: (() -> Void)?
+    var onManageAccess: (() -> Void)?
 
     @State private var projects: [ProjectInfo] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var resolvedLoadKey: LoadKey?
     @State private var reloadToken = 0
+    @State private var loadGeneration = 0
 
     private struct LoadKey: Hashable {
-        var familiarIds: [String]
-        var reloadToken: Int
-        var requiresExplicitSelection: Bool
+        let familiarIds: [String]
+        let refreshToken: Int
+        let reloadToken: Int
+        let requiresExplicitSelection: Bool
+    }
+
+    private struct LoadIdentity: Hashable {
+        let key: LoadKey
+        let generation: Int
     }
 
     private var familiarKey: [String] {
@@ -31,20 +44,39 @@ struct ChatProjectPicker: View {
     private var loadKey: LoadKey {
         LoadKey(
             familiarIds: familiarKey,
+            refreshToken: refreshToken,
             reloadToken: reloadToken,
             requiresExplicitSelection: requiresExplicitSelection
         )
     }
 
+    #if DEBUG
+    private enum PreviewInitialState {
+        case empty
+        case failure
+    }
+
+    private var previewInitialState: PreviewInitialState? {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--ui-preview-new-chat-project-retry") {
+            return .failure
+        }
+        if arguments.contains("--ui-preview-new-chat-project-empty-retry") {
+            return .empty
+        }
+        return nil
+    }
+    #endif
+
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 0) {
             if familiarKey.isEmpty {
                 Label(
                     "Choose a familiar before selecting a project.",
                     systemImage: "person.crop.circle.badge.questionmark"
                 )
                 .foregroundStyle(.secondary)
-            } else if isLoading {
+            } else if resolvedLoadKey != loadKey {
                 ProgressView("Finding shared projects…")
             } else if let errorMessage {
                 VStack(alignment: .leading, spacing: 8) {
@@ -53,13 +85,21 @@ struct ChatProjectPicker: View {
                     Button("Retry") { reloadToken += 1 }
                 }
             } else if projects.isEmpty {
-                Label(
-                    familiarKey.count == 1
-                        ? "This familiar has no accessible projects."
-                        : "These familiars do not share an accessible project.",
-                    systemImage: "folder.badge.questionmark"
-                )
-                .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(
+                        familiarKey.count == 1
+                            ? "This familiar has no accessible projects."
+                            : "These familiars do not share an accessible project.",
+                        systemImage: "folder.badge.questionmark"
+                    )
+                    .foregroundStyle(.secondary)
+                    HStack(spacing: 12) {
+                        Button("Retry") { reloadToken += 1 }
+                        if let onManageAccess {
+                            Button("Project access", action: onManageAccess)
+                        }
+                    }
+                }
             } else {
                 projectPicker
             }
@@ -90,6 +130,7 @@ struct ChatProjectPicker: View {
             }
         }
         .pickerStyle(.menu)
+        .accessibilityIdentifier("New chat project")
         .accessibilityHint("Chooses where this chat can work")
     }
 
@@ -109,40 +150,66 @@ struct ChatProjectPicker: View {
 
     @MainActor
     private func loadProjects() async {
+        loadGeneration &+= 1
+        let identity = LoadIdentity(key: loadKey, generation: loadGeneration)
+
+        resolvedLoadKey = nil
+        projects = []
+        errorMessage = nil
+        isResolved = false
+
         guard !familiarKey.isEmpty else {
-            projects = []
-            selectedRoot = nil
-            isResolved = false
-            errorMessage = nil
             isLoading = false
             return
         }
 
-        guard app.client != nil else {
-            projects = []
-            isResolved = false
-            errorMessage = "Connect to your Cave to load projects."
-            isLoading = false
-            return
+        #if DEBUG
+        if refreshToken == 0, reloadToken == 0 {
+            switch previewInitialState {
+            case .failure:
+                errorMessage = "Couldn’t load projects."
+                resolvedLoadKey = identity.key
+                return
+            case .empty:
+                resolvedLoadKey = identity.key
+                return
+            case nil:
+                break
+            }
         }
+        #endif
 
         isLoading = true
-        isResolved = false
-        errorMessage = nil
+        defer {
+            if loadGeneration == identity.generation {
+                isLoading = false
+            }
+        }
+
+        guard app.canLoadChatProjects else {
+            guard loadGeneration == identity.generation else { return }
+            isLoading = false
+            errorMessage = "Connect to your Cave to load projects."
+            resolvedLoadKey = identity.key
+            return
+        }
+
         do {
             let loaded = try await ChatProjectSelection.loadProjectsWithRecovery(
                 load: {
-                    guard let currentClient = app.client else {
-                        throw CaveError.notConfigured
-                    }
-                    return try await currentClient.projects(familiarIds: familiarKey)
+                    try await app.loadChatProjects(familiarIds: familiarKey)
                 },
                 recover: { _ in
+                    guard app.canRecoverChatProjectConnection else { return false }
                     await app.recoverConnectionInBackground()
                     return app.connectionState == .connected
                 }
             )
             try Task.checkCancellation()
+            guard loadGeneration == identity.generation, loadKey == identity.key else {
+                return
+            }
+            isLoading = false
             projects = loaded
             selectedRoot = requiresExplicitSelection
                 ? nil
@@ -152,14 +219,19 @@ struct ChatProjectPicker: View {
                     projects: loaded
                 )
             isResolved = selectedRoot != nil
+            resolvedLoadKey = identity.key
             if isResolved { onResolved?() }
         } catch is CancellationError {
             return
         } catch {
+            guard loadGeneration == identity.generation, loadKey == identity.key else {
+                return
+            }
+            isLoading = false
             projects = []
             isResolved = false
             errorMessage = error.localizedDescription
+            resolvedLoadKey = identity.key
         }
-        isLoading = false
     }
 }

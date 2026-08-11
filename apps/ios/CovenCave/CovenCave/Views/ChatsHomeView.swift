@@ -8,6 +8,23 @@ enum ChatRoute: Hashable {
     case thread(ChatThread)
 }
 
+@MainActor
+enum ChatNewConversationContext {
+    static func fixedFamiliarId(
+        selection: ChatRoute?,
+        detailPath: [ChatRoute]
+    ) -> String? {
+        guard let visibleRoute = detailPath.last ?? selection else { return nil }
+        switch visibleRoute {
+        case .familiar(let familiar):
+            return familiar.id
+        case .thread(let thread):
+            let familiarIds = ChatProjectSelection.familiarKey(thread.familiarIds)
+            return familiarIds.count == 1 ? familiarIds[0] : nil
+        }
+    }
+}
+
 /// The Chats destination, shaped like Messages: one vertical list of
 /// *familiars*, each row previewing the last thing said in that familiar's
 /// landing chat. There is no cross-familiar "Recent" list — a familiar is the
@@ -17,7 +34,7 @@ struct ChatsHomeView: View {
     @Environment(\.chrome) private var chrome
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var showNewChat = false
-    @State private var initialNewChatFamiliarIds: [String] = []
+    @State private var fixedNewChatFamiliarId: String?
     @State private var query = ""
     /// Drives the accent glow on the search field while it's being edited.
     @FocusState private var searchFocused: Bool
@@ -32,6 +49,7 @@ struct ChatsHomeView: View {
     /// All-familiars roster sheet.
     @State private var showFamiliars = false
     @State private var showProjects = false
+    @State private var appliedPreviewLaunchIntent = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Anchors the iOS 18 zoom transition: thread rows mark themselves as
     /// sources; the pushed conversation zooms out of its row.
@@ -42,7 +60,7 @@ struct ChatsHomeView: View {
         .sheet(isPresented: $showFamiliars) {
             FamiliarsListView { familiar in
                 showFamiliars = false
-                initialNewChatFamiliarIds = [familiar.id]
+                fixedNewChatFamiliarId = familiar.id
                 Task { @MainActor in
                     await Task.yield()
                     showNewChat = true
@@ -54,6 +72,7 @@ struct ChatsHomeView: View {
             if ProcessInfo.processInfo.arguments.contains("--ui-open-familiars") {
                 showFamiliars = true
             }
+            applyPreviewLaunchIntent()
             #endif
         }
     }
@@ -81,9 +100,16 @@ struct ChatsHomeView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { homeSearchBar }
             .sheet(
                 isPresented: $showNewChat,
-                onDismiss: { initialNewChatFamiliarIds = [] }
+                onDismiss: {
+                    fixedNewChatFamiliarId = nil
+                    app.cancelTerminalFamiliarHandoff()
+                }
             ) {
-                NewChatView(initialFamiliarIds: initialNewChatFamiliarIds) { thread in
+                NewChatView(
+                    fixedFamiliarId: fixedNewChatFamiliarId,
+                    initialProjectRoot: app.terminalFamiliarHandoff?.cwd
+                ) { thread in
+                    app.applyTerminalFamiliarHandoff(to: thread)
                     showNewChat = false
                     open(.thread(thread))
                 }
@@ -114,7 +140,7 @@ struct ChatsHomeView: View {
             }
             .onChange(of: app.newChatRequested) { _, requested in
                 guard requested else { return }
-                presentNewChat()
+                presentContextualNewChat()
                 app.newChatRequested = false
             }
             .onChange(of: app.chatSearchRequested) { _, requested in
@@ -214,12 +240,25 @@ struct ChatsHomeView: View {
 
     /// Start a brand-new chat with a familiar and open it (familiar-row action).
     private func startNewChat(with familiar: Familiar) {
-        presentNewChat(familiarIds: [familiar.id])
+        presentNewChat(fixedFamiliarId: familiar.id)
     }
 
-    private func presentNewChat(familiarIds: [String] = []) {
-        initialNewChatFamiliarIds = familiarIds
+    private func presentNewChat(fixedFamiliarId: String? = nil) {
+        self.fixedNewChatFamiliarId = fixedFamiliarId
         showNewChat = true
+    }
+
+    private func presentContextualNewChat() {
+        presentNewChat(
+            fixedFamiliarId: ChatNewConversationContext.fixedFamiliarId(
+                selection: selection,
+                detailPath: detailPath
+            )
+        )
+    }
+
+    private func presentGeneralNewChat() {
+        presentNewChat()
     }
 
     /// Large-title header pinned to the top, mirroring the Read / Tasks
@@ -239,7 +278,7 @@ struct ChatsHomeView: View {
             }
             CircularIconButton(systemImage: "square.and.pencil",
                                label: "New chat") {
-                presentNewChat()
+                presentContextualNewChat()
             }
         }
         .padding(.horizontal, 16)
@@ -274,7 +313,7 @@ struct ChatsHomeView: View {
 
             CircularIconButton(systemImage: "square.and.pencil",
                                label: "New chat") {
-                presentNewChat()
+                presentContextualNewChat()
             }
         }
         .padding(.horizontal, 12)
@@ -325,7 +364,7 @@ struct ChatsHomeView: View {
     private func consumeGlobalRequests() {
         consumeThreadRequest(app.threadToOpen)
         if app.newChatRequested {
-            presentNewChat()
+            presentContextualNewChat()
             app.newChatRequested = false
         }
         if app.chatSearchRequested {
@@ -376,10 +415,25 @@ struct ChatsHomeView: View {
         } description: {
             Text("Pull to refresh once your desktop is connected, or start a group chat.")
         } actions: {
-            Button("New chat") { presentNewChat() }
+            Button("New chat") { presentGeneralNewChat() }
                 .buttonStyle(.borderedProminent)
         }
     }
+
+    #if DEBUG
+    private func applyPreviewLaunchIntent() {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard !appliedPreviewLaunchIntent,
+              arguments.contains("--ui-open-contextual-new-chat")
+        else { return }
+
+        appliedPreviewLaunchIntent = true
+        if let thread = app.mostRecentThread {
+            selection = .thread(thread)
+        }
+        presentContextualNewChat()
+    }
+    #endif
 
     private func loadFailure(_ error: String) -> some View {
         ContentUnavailableView {

@@ -13,6 +13,8 @@ import {
   type ChatAutoArchivePolicy,
   extendUntilIso,
   normalizeChatAutoArchivePolicy,
+  type ReflectionTrigger,
+  shouldAutoArchiveOnReflection,
   SUMMON_GRACE_DAYS,
 } from "./chat-auto-archive.ts";
 import {
@@ -23,6 +25,7 @@ import {
   type FamiliarRuntime,
   normalizeFamiliarRuntime,
 } from "./familiar-runtime.ts";
+import { loadConversation } from "./cave-conversations.ts";
 import { normalizeHermesProfileBinding, type HermesProfileBinding } from "./hermes-profiles.ts";
 import { runtimeOwnsModelDefault } from "./runtime-models.ts";
 import type { UserProfile } from "./user-profile-shared.ts";
@@ -46,9 +49,27 @@ export {
 
 const CONFIG_PATH = path.join(caveHome(), "config.json");
 const STATE_PATH = path.join(caveHome(), "state.json");
+const CONFIG_SCHEMA_VERSION = 1;
+
+export class CaveConfigCompatibilityError extends Error {
+  readonly code: "invalid_cave_config" | "unsupported_cave_config_version" | "invalid_cave_state";
+
+  constructor(
+    code: CaveConfigCompatibilityError["code"],
+    message: string,
+  ) {
+    super(message);
+    this.name = "CaveConfigCompatibilityError";
+    this.code = code;
+  }
+}
+
+export function isCaveConfigCompatibilityError(error: unknown): error is CaveConfigCompatibilityError {
+  return error instanceof CaveConfigCompatibilityError;
+}
 
 const DEFAULT_CONFIG: CaveConfig = {
-  version: 1,
+  version: CONFIG_SCHEMA_VERSION,
   defaults: { harness: "codex", model: "openai/gpt-5.6-sol" },
   familiars: {},
   roles: [],
@@ -128,6 +149,8 @@ function defaultState(): CaveState {
     sessionFamiliar: {},
     sessionTitles: {},
     sessionTitleAuto: {},
+    sessionTitleManual: {},
+    sessionTitleRevision: {},
     sessionArchived: {},
     sessionSacrificed: {},
     sessionKeep: {},
@@ -137,6 +160,31 @@ function defaultState(): CaveState {
     mergedPrAutoArchived: {},
     travel: defaultTravelState(),
   };
+}
+
+function normalizeSessionTitleManual(value: unknown): Record<string, true> {
+  const normalized: Record<string, true> = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return normalized;
+  for (const [sessionId, isManual] of Object.entries(value)) {
+    if (sessionId && isManual === true) normalized[sessionId] = true;
+  }
+  return normalized;
+}
+
+function normalizeSessionTitleRevision(value: unknown): Record<string, number> {
+  const normalized: Record<string, number> = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return normalized;
+  for (const [sessionId, revision] of Object.entries(value)) {
+    if (
+      sessionId &&
+      typeof revision === "number" &&
+      Number.isSafeInteger(revision) &&
+      revision >= 0
+    ) {
+      normalized[sessionId] = revision;
+    }
+  }
+  return normalized;
 }
 
 /** Per-familiar overrides for Omnigent session create. */
@@ -326,9 +374,16 @@ export type CaveState = {
   /** Session to Cave-side title override. Wins over the daemon's title when present. */
   sessionTitles: Record<string, string>;
   /** Session to the last title auto-rename set (provenance). Present only while the
-   *  current override still equals it — a manual rename clears the entry. Lets the
-   *  periodic rename tell its own titles from a person's (chat-auto-rename.ts). */
+   *  current override still equals it. Lets the periodic rename tell its own
+   *  titles from a person's (chat-auto-rename.ts). */
   sessionTitleAuto: Record<string, string>;
+  /** Explicit manual title ownership. Unlike absence of auto provenance, this
+   *  remains authoritative when a person chooses text equal to an auto default.
+   *  Legacy sessions omit it and may still be recognized by known defaults. */
+  sessionTitleManual: Record<string, true>;
+  /** Monotonic ownership revision. Every manual or automatic title mutation
+   *  increments it, including same-text ownership changes. */
+  sessionTitleRevision: Record<string, number>;
   /** Session to ISO timestamp when archived in the Cave. Empty when unarchived. */
   sessionArchived: Record<string, string>;
   /** Session to ISO timestamp when sacrificed (soft-deleted) in the Cave. Hidden from lists. */
@@ -348,12 +403,65 @@ export type CaveState = {
   travel: CaveTravelState;
 };
 
+export function sessionTitleRevision(
+  state: CaveState,
+  sessionId: string,
+): number {
+  return state.sessionTitleRevision[sessionId] ?? 0;
+}
+
+function incrementSessionTitleRevision(state: CaveState, sessionId: string): void {
+  const current = sessionTitleRevision(state, sessionId);
+  if (current >= Number.MAX_SAFE_INTEGER) {
+    throw new Error(`session title revision exhausted for ${sessionId}`);
+  }
+  state.sessionTitleRevision[sessionId] = current + 1;
+}
+
 async function loadConfigUnlocked(): Promise<CaveConfig> {
+  let raw: string;
   try {
-    const raw = await readFile(CONFIG_PATH, "utf8");
-    const parsed = JSON.parse(raw) as Partial<CaveConfig>;
+    raw = await readFile(CONFIG_PATH, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return defaultConfig();
+    throw error;
+  }
+
+  let parsed: Partial<CaveConfig>;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new CaveConfigCompatibilityError(
+        "invalid_cave_config",
+        "Cave configuration is invalid. Restore a valid config.json backup before changing settings.",
+      );
+    }
+    parsed = value as Partial<CaveConfig>;
+  } catch (error) {
+    if (isCaveConfigCompatibilityError(error)) throw error;
+    throw new CaveConfigCompatibilityError(
+      "invalid_cave_config",
+      "Cave configuration is invalid. Restore a valid config.json backup before changing settings.",
+    );
+  }
+
+  const version = parsed.version ?? CONFIG_SCHEMA_VERSION;
+  if (!Number.isSafeInteger(version) || version < 1) {
+    throw new CaveConfigCompatibilityError(
+      "invalid_cave_config",
+      "Cave configuration has an invalid schema version. Restore a valid config.json backup before changing settings.",
+    );
+  }
+  if (version > CONFIG_SCHEMA_VERSION) {
+    throw new CaveConfigCompatibilityError(
+      "unsupported_cave_config_version",
+      "Cave configuration was written by a newer version of Cave. Update Cave before changing settings.",
+    );
+  }
+
+  try {
     const config: CaveConfig = {
-      version: parsed.version ?? 1,
+      version,
       defaults: { ...DEFAULT_CONFIG.defaults, ...(parsed.defaults ?? {}) },
       familiars: parsed.familiars ?? {},
       roles: parsed.roles ?? [],
@@ -408,8 +516,12 @@ async function loadConfigUnlocked(): Promise<CaveConfig> {
       await writeJsonAtomic(CONFIG_PATH, config).catch(() => {});
     }
     return config;
-  } catch {
-    return defaultConfig();
+  } catch (error) {
+    if (isCaveConfigCompatibilityError(error)) throw error;
+    throw new CaveConfigCompatibilityError(
+      "invalid_cave_config",
+      "Cave configuration is invalid. Restore a valid config.json backup before changing settings.",
+    );
   }
 }
 
@@ -653,13 +765,28 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
 }
 
 async function loadStateUnlocked(): Promise<CaveState> {
+  let raw: string;
   try {
-    const raw = await readFile(STATE_PATH, "utf8");
-    const parsed = JSON.parse(raw) as Partial<CaveState>;
+    raw = await readFile(STATE_PATH, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return defaultState();
+    throw error;
+  }
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new CaveConfigCompatibilityError(
+        "invalid_cave_state",
+        "Cave state is invalid. Restore a valid state.json backup before changing sessions.",
+      );
+    }
+    const parsed = value as Partial<CaveState>;
     return {
       sessionFamiliar: parsed.sessionFamiliar ?? {},
       sessionTitles: parsed.sessionTitles ?? {},
       sessionTitleAuto: parsed.sessionTitleAuto ?? {},
+      sessionTitleManual: normalizeSessionTitleManual(parsed.sessionTitleManual),
+      sessionTitleRevision: normalizeSessionTitleRevision(parsed.sessionTitleRevision),
       sessionArchived: parsed.sessionArchived ?? {},
       sessionSacrificed: parsed.sessionSacrificed ?? {},
       sessionKeep: parsed.sessionKeep ?? {},
@@ -669,8 +796,12 @@ async function loadStateUnlocked(): Promise<CaveState> {
       mergedPrAutoArchived: parsed.mergedPrAutoArchived ?? {},
       travel: normalizeTravelState(parsed.travel),
     };
-  } catch {
-    return defaultState();
+  } catch (error) {
+    if (isCaveConfigCompatibilityError(error)) throw error;
+    throw new CaveConfigCompatibilityError(
+      "invalid_cave_state",
+      "Cave state is invalid. Restore a valid state.json backup before changing sessions.",
+    );
   }
 }
 
@@ -830,6 +961,22 @@ export async function markOfflineTravelItemSyncing(itemId: string): Promise<Cave
   });
 }
 
+export async function updateOfflineTravelItemPayload(
+  itemId: string,
+  payload: unknown,
+): Promise<CaveTravelQueueItem | null> {
+  return updateState((state) => {
+    state.travel = normalizeTravelState(state.travel);
+    let updated: CaveTravelQueueItem | null = null;
+    state.travel.offlineQueue = state.travel.offlineQueue.map((item) => {
+      if (item.id !== itemId) return item;
+      updated = { ...item, payload };
+      return updated;
+    });
+    return updated;
+  });
+}
+
 export async function failOfflineTravelItem(itemId: string, error: string): Promise<void> {
   await updateState((state) => {
     state.travel = normalizeTravelState(state.travel);
@@ -872,6 +1019,7 @@ export async function recordSessionFamiliar(sessionId: string, familiarId: strin
 
 /**
  * Set or clear a Cave-side title override for a session.
+ * Non-empty titles are explicitly marked as manually owned.
  * Pass an empty/whitespace-only title to clear the override.
  */
 export async function setSessionTitle(sessionId: string, title: string): Promise<string | null> {
@@ -879,12 +1027,13 @@ export async function setSessionTitle(sessionId: string, title: string): Promise
     const trimmed = title.trim();
     if (!trimmed) {
       delete state.sessionTitles[sessionId];
+      delete state.sessionTitleManual[sessionId];
     } else {
       state.sessionTitles[sessionId] = trimmed;
+      state.sessionTitleManual[sessionId] = true;
     }
-    // A plain (manual / first-exchange) set clears auto-rename provenance so the
-    // periodic rename treats the new title as a person's choice and backs off.
     delete state.sessionTitleAuto[sessionId];
+    incrementSessionTitleRevision(state, sessionId);
     return trimmed || null;
   });
   invalidateSessionsListCache();
@@ -894,8 +1043,8 @@ export async function setSessionTitle(sessionId: string, title: string): Promise
 /**
  * Set a session title from the periodic auto-rename (chat-auto-rename.ts),
  * recording provenance so a later rename knows it still owns the title while a
- * person's manual rename (which clears the provenance via setSessionTitle) is
- * left untouched. Pass an empty title to no-op.
+ * person's manual rename (which records explicit ownership via setSessionTitle)
+ * is left untouched. Pass an empty title to no-op.
  */
 export async function setSessionTitleAuto(sessionId: string, title: string): Promise<string | null> {
   const trimmed = title.trim();
@@ -903,10 +1052,86 @@ export async function setSessionTitleAuto(sessionId: string, title: string): Pro
   const next = await updateState((state) => {
     state.sessionTitles[sessionId] = trimmed;
     state.sessionTitleAuto[sessionId] = trimmed;
+    delete state.sessionTitleManual[sessionId];
+    incrementSessionTitleRevision(state, sessionId);
     return trimmed;
   });
   invalidateSessionsListCache();
   return next;
+}
+
+/**
+ * Atomically set a session title with auto-provenance, but only when the
+ * current title has no explicit manual marker and is absent, matches one of the
+ * supplied autoDefaults, or matches the current sessionTitleAuto provenance.
+ * This lets legacy defaults be claimed without confusing an equal manually
+ * chosen title for an automatic one. When preserveManualTitles is false, the
+ * caller may explicitly take ownership of any current title. Optional expected
+ * title/revision values make that takeover a compare-and-set, so even a
+ * same-text manual ownership change after observation wins. Returns the written
+ * title, or null if a manual title or observation conflict was preserved.
+ * Trim/empty input is a no-op (returns null).
+ */
+export async function setSessionTitleAutoIfOwned(
+  sessionId: string,
+  title: string,
+  autoDefaults: ReadonlySet<string>,
+  preserveManualTitles = true,
+  expectedRevision?: number,
+  expectedTitle?: string,
+): Promise<string | null> {
+  const trimmed = title.trim();
+  if (!trimmed) return null;
+  const result = await updateState((state) => {
+    const current = state.sessionTitles[sessionId];
+    const explicitlyManual = state.sessionTitleManual[sessionId] === true;
+    if (
+      expectedRevision !== undefined &&
+      (
+        sessionTitleRevision(state, sessionId) !== expectedRevision ||
+        (current !== undefined && current !== expectedTitle)
+      )
+    ) {
+      return null;
+    }
+    const currentAuto = state.sessionTitleAuto[sessionId];
+    // Write only when the title is absent, is a known auto default, or was
+    // previously written by an auto path (provenance match). Explicit manual
+    // ownership wins over text equality with a default.
+    if (
+      preserveManualTitles &&
+      (
+        explicitlyManual ||
+        (
+          current &&
+          !autoDefaults.has(current) &&
+          current !== currentAuto
+        )
+      )
+    ) {
+      return null; // manual title present — preserve it
+    }
+    state.sessionTitles[sessionId] = trimmed;
+    state.sessionTitleAuto[sessionId] = trimmed;
+    delete state.sessionTitleManual[sessionId];
+    incrementSessionTitleRevision(state, sessionId);
+    return trimmed;
+  });
+  if (result !== null) invalidateSessionsListCache();
+  return result;
+}
+
+/**
+ * Initialize an automatically generated title for a newly exposed session.
+ * Existing titles are never treated as defaults: the ownership check and
+ * provenance write happen in one state mutation, so a concurrent manual rename
+ * wins rather than being cleared by initialization.
+ */
+export async function initializeSessionTitleOwnership(
+  sessionId: string,
+  title: string,
+): Promise<string | null> {
+  return setSessionTitleAutoIfOwned(sessionId, title, new Set());
 }
 
 /** Mark a session as archived in the Cave (does not touch the daemon row). */
@@ -970,6 +1195,61 @@ export async function extendSessionAutoArchiveLocal(
   });
   invalidateSessionsListCache();
   return untilIso;
+}
+
+/**
+ * Archive a single session after a successful reflection, atomically.
+ *
+ * Unlike the sweep-internal `autoArchiveSessionsLocal`, this helper applies the
+ * reflection policy against `sessionKeep` and `sessionArchived`, and checks
+ * `sessionSacrificed`, inside the same `updateState` write that sets the archive
+ * timestamp. A concurrent `setSessionKeepLocal` queued first therefore wins.
+ * Authoritative session existence is checked before entering the write so no
+ * external I/O holds the state lock. The sessions-list cache is invalidated
+ * only when the write actually archives.
+ *
+ * Returns the archive timestamp when archived, else null.
+ */
+export type ReflectionArchiveRequest = {
+  trigger: ReflectionTrigger;
+  policy: ChatAutoArchivePolicy;
+  lastActivityAt?: string | null;
+  sessionExists?: () => Promise<boolean>;
+};
+
+export async function autoArchiveReflectedSessionLocal(
+  sessionId: string,
+  request: ReflectionArchiveRequest,
+): Promise<string | null> {
+  const sessionExists = request.sessionExists ?? (async () =>
+    Boolean(await loadConversation(sessionId)));
+  let exists: boolean;
+  try {
+    exists = await sessionExists();
+  } catch {
+    return null;
+  }
+  if (!exists) return null;
+
+  let archivedAt: string | null = null;
+  await updateState((state) => {
+    if (state.sessionSacrificed[sessionId]) return;
+    if (!shouldAutoArchiveOnReflection(
+      sessionId,
+      request.trigger,
+      request.policy,
+      {
+        keep: state.sessionKeep,
+        archivedSessionIds: Object.keys(state.sessionArchived),
+        lastActivityAt: request.lastActivityAt,
+      },
+    )) return;
+    const now = new Date().toISOString();
+    state.sessionArchived[sessionId] = now;
+    archivedAt = now;
+  });
+  if (archivedAt) invalidateSessionsListCache();
+  return archivedAt;
 }
 
 /**

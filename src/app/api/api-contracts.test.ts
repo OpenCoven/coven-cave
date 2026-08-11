@@ -20,8 +20,15 @@ type RouteContract = {
 const contracts: RouteContract[] = [
   { route: "/access-groups", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/access-groups/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  // AFS routes expose a session's working tree, so every one is same-user
+  // local IPC (specs/coven-agent-fs/DESIGN.md section 3).
+  { route: "/afs", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/afs/[id]/commit", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/afs/[id]/diff", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/afs/[id]/timeline", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/app/build-info", methods: ["GET"], kind: "json" },
   { route: "/app/latest-release", methods: ["GET"], kind: "json" },
+  { route: "/app/native-readiness", methods: ["GET"], kind: "json" },
   { route: "/asana/assigned", methods: ["GET"], kind: "json" },
   { route: "/asana/workspaces", methods: ["GET"], kind: "json" },
   { route: "/asana/pat", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
@@ -36,6 +43,7 @@ const contracts: RouteContract[] = [
   { route: "/board/[id]/lifecycle", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/enrich-steps", methods: ["POST"], kind: "json", readsJson: true },
+  { route: "/board/restore", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/canvas", methods: ["GET", "PUT", "POST", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/capabilities", methods: ["GET"], kind: "json" },
@@ -58,12 +66,14 @@ const contracts: RouteContract[] = [
   { route: "/codex-automations/[id]/runs/[runId]/log", methods: ["GET"], kind: "json" },
   { route: "/codex-automations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/config", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/config/workspace-path", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/coven-memory", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
   { route: "/coven-memory/[id]", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
   { route: "/coven-memory/overview", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
   { route: "/coven/exec", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/daemon/capabilities", methods: ["GET"], kind: "json" },
   { route: "/daemon/connection", methods: ["GET"], kind: "json" },
+  { route: "/daemon/diagnostics", methods: ["GET"], kind: "json" },
   { route: "/daemon/probe", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/daemon/start", methods: ["POST"], kind: "json" },
   { route: "/daemon/status", methods: ["GET"], kind: "json" },
@@ -168,6 +178,7 @@ const contracts: RouteContract[] = [
   { route: "/omnigent/hosts", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/omnigent/sessions", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/omnigent/status", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/onboarding/bootstrap", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/onboarding/install", methods: ["GET", "DELETE", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/onboarding/prerequisites", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/onboarding/setup", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
@@ -180,6 +191,10 @@ const contracts: RouteContract[] = [
   { route: "/opencoven/submissions", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/openclaw-agents", methods: ["GET"], kind: "json" },
   { route: "/opencoven-tools/status", methods: ["GET"], kind: "json" },
+  { route: "/passkey/challenge", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/passkey/register", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/passkey/assert", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/passkey/enrolled", methods: ["GET", "DELETE"], kind: "json" },
   { route: "/preferences/backdrop", methods: ["GET", "PUT", "DELETE"], kind: "stream", localOriginGuard: true },
   { route: "/preferences", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/mobile-permissions", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
@@ -223,6 +238,7 @@ const contracts: RouteContract[] = [
   { route: "/salem", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/salem/pathfinder", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/salem/pathfinder/feedback", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/search", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/sessions/[id]/events", methods: ["GET"], kind: "json" },
   { route: "/sessions/[id]/input", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/sessions/[id]/kill", methods: ["POST"], kind: "json" },
@@ -338,6 +354,15 @@ function effectiveRouteSource(file: string, source: string): string {
   // nothing.
   if (source.includes('from "@/lib/server/x-oauth-start-route"')) {
     parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "x-oauth-start-route.ts"), "utf8"));
+  }
+  // The onboarding bootstrap route keeps GET and POST wiring in the App
+  // Router module while its injectable handlers live beside the bootstrap
+  // service. Inline that reviewed helper just like the OAuth route above.
+  if (source.includes('from "@/lib/server/onboarding-bootstrap-route"')) {
+    parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "onboarding-bootstrap-route.ts"), "utf8"));
+  }
+  if (source.includes('from "./install-service"')) {
+    parts.push(readFileSync(path.join(path.dirname(file), "install-service.ts"), "utf8"));
   }
   return parts.join("\n");
 }
@@ -524,7 +549,7 @@ for (const contract of contracts) {
   );
   const guardedDiagnostics = [
     ...sendSource.matchAll(
-      /if \(cancelledByUser\) \{[\s\S]{0,200}?\} else if \(!assistantText\.trim\(\)(?: && !launchFailure)?\) \{/g,
+      /(?:if \(cancelledByUser\) \{[\s\S]{0,200}?\} else if \(!assistantText\.trim\(\)(?: && !launchFailure)?\) \{|if \(!cancelledByUser && !assistantText\.trim\(\)\) \{)/g,
     ),
   ];
   assert.equal(
@@ -577,8 +602,8 @@ for (const contract of contracts) {
   );
   assert.match(
     sendSource,
-    /if \(cancelledByUser\) \{\s*\n\s*if \(!assistantText\.trim\(\)\) assistantText = "\(cancelled\)";\s*\n\s*isError = false;/,
-    "/chat/send: a user cancel must never be recorded as a harness error (openclaw path)",
+    /if \(cancelledByUser\) \{\s*\n\s*assistantText = "\(cancelled\)";\s*\n\s*isError = false;\s*\n\s*\} else if \(stdout\.trim\(\)\) \{/,
+    "/chat/send: an explicit OpenClaw stop must take precedence over malformed or truncated bridge stdout",
   );
 
   // SSE heartbeats: a long tool run can stream nothing for minutes, and a

@@ -66,13 +66,13 @@ assert.match(
 
 assert.match(
   source,
-  /const \[section, setSection\] = useState<Section>\("general"\)/,
+  /useSurfaceHistory<Section>\(\{\s*id:\s*"settings:section",\s*initial:\s*"general"\s*\}\)/,
   "SettingsShell should render the same initial section on server and client",
 );
 
 assert.doesNotMatch(
   source,
-  /useState<Section>\(initialSection\)/,
+  /useState<Section>\(initialSection\)|initial:\s*initialSection/,
   "SettingsShell must not read window.location.hash during the first client render",
 );
 
@@ -371,8 +371,8 @@ assert.ok(workspacePathField.length > 0, "WorkspacePathField source should remai
 assert.match(workspacePathField, /const ctl = new AbortController\(\)/, "the workspace path field should own its AbortController");
 assert.match(
   workspacePathField,
-  /fetch\("\/api\/config", \{ cache: "no-store", signal: ctl\.signal \}\)/,
-  "the workspace path field should read the narrow config route for workspacePath",
+  /fetch\("\/api\/config\/workspace-path", \{ cache: "no-store", signal: ctl\.signal \}\)/,
+  "the workspace path field should read the narrow workspace-path route",
 );
 assert.doesNotMatch(
   workspacePathField,
@@ -381,10 +381,61 @@ assert.doesNotMatch(
 );
 assert.match(
   workspacePathField,
-  /if \(!ctl\.signal\.aborted && j\.workspacePath\) setPath\(j\.workspacePath\)/,
+  /if \(ctl\.signal\.aborted\) return;/,
   "the workspace path field should stay silent after unmount while applying workspacePath",
 );
 assert.match(workspacePathField, /return \(\) => ctl\.abort\(\)/, "the workspace path field should abort on unmount");
+
+// Browse used to mean "hand the path to the OS file manager": a no-op on the
+// web build, and never a way to CHANGE the root. It now opens the in-app
+// folder browser (no native dialog) and persists the pick; revealing the
+// folder natively survives as its own desktop-only control.
+assert.match(
+  workspacePathField,
+  /<DirectoryPickerModal\s+open=\{pickerOpen\}/,
+  "Browse opens the shared in-app folder browser",
+);
+assert.match(
+  workspacePathField,
+  /setFieldError\(""\);\s*setPickerOpen\(true\);/,
+  "the Browse button clears a stale failure before reopening the picker",
+);
+assert.doesNotMatch(
+  workspacePathField,
+  /openError/,
+  "the shared alert slot is not named for only one of the two failures it carries",
+);
+assert.match(
+  workspacePathField,
+  /method: "POST",[\s\S]*body: JSON\.stringify\(\{ dir \}\)/,
+  "choosing a folder persists it through the workspace-path route",
+);
+assert.match(workspacePathField, /announce\("Workspace path saved\."\)/, "a saved path announces");
+assert.match(
+  workspacePathField,
+  /disabled=\{Boolean\(envPin\) \|\| saving\}/,
+  "an env-pinned workspace root cannot be changed from Settings",
+);
+assert.match(
+  workspacePathField,
+  /Pinned by the \{envPin\} environment variable\./,
+  "an env pin explains itself instead of silently ignoring the pick",
+);
+assert.match(
+  workspacePathField,
+  /aria-label="Open workspace folder in file manager"/,
+  "revealing the folder natively survives as its own control",
+);
+assert.match(
+  shellSource,
+  /import \{ DirectoryPickerModal \} from "@\/components\/directory-picker-modal"/,
+  "the settings shell reuses the shared picker rather than a second browser",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-workspace-actions\s*\{[\s\S]*?display:\s*flex/,
+  "the workspace row lays its actions out in a row",
+);
 assert.match(source, /aria-label="Server hub URL"/, "the hub URL input is labelled");
 assert.match(source, /aria-label="Executor addresses, one per line"/, "the executor textarea is labelled");
 assert.match(source, /focusTarget\.focus\(\{ preventScroll: true \}\)/, "a search/deep-link jump moves focus to the target group");

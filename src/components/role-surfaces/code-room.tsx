@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Code Workshop — the Coding familiar's room (cave-cc5r).
+ * Coding Desk — the Coding familiar's room (cave-cc5r).
  *
  * A thin adapter that mounts the existing CodeView inside the Role Surface
  * chrome. The workbench itself is unchanged; this file only translates the

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { CaveProject } from "@/lib/cave-projects";
 import { chatProjectById } from "@/lib/chat-projects";
 import { archiveAction, sessionMenuSections, voiceAction, type SessionMenuItemId } from "@/lib/chat-session-menu-model";
@@ -8,8 +8,12 @@ import { Icon } from "@/lib/icon";
 import { useShowThinking } from "@/lib/reasoning-visibility";
 import { useThreadInstrumentsVisible } from "@/lib/thread-instruments-visibility";
 import type { Familiar, SessionRow } from "@/lib/types";
+import { FamiliarIcon } from "@/components/familiar-icon";
 import { ProjectPickerPopover } from "@/components/project-picker";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
+
+const ENABLED_MENU_ITEM_SELECTOR =
+  '[role="menuitem"]:not(:disabled):not([aria-disabled="true"]), [role="menuitemradio"]:not(:disabled):not([aria-disabled="true"]), [role="menuitemcheckbox"]:not(:disabled):not([aria-disabled="true"])';
 
 /** Slim overflow kebab (cave-zolo): only genuinely secondary tools live here.
  *  Lifecycle verbs (archive, delete) and the voice call are direct header
@@ -26,6 +30,8 @@ export function SessionOverflowMenu({
   sessionId,
   hasTurns,
   onOpenDebug,
+  promotableFamiliars,
+  onPromoteToCoven,
   reflecting,
   onReflect,
 }: {
@@ -43,6 +49,8 @@ export function SessionOverflowMenu({
   /** Gates the Show-thinking toggle — pointless on an empty transcript. */
   hasTurns: boolean;
   onOpenDebug: () => void;
+  promotableFamiliars: Familiar[];
+  onPromoteToCoven: (familiarId: string) => void;
   /** Reflect-on-thread (absent when the familiar has no id). */
   reflecting: boolean;
   onReflect?: () => void;
@@ -52,6 +60,8 @@ export function SessionOverflowMenu({
   const [showThinking, setShowThinking] = useShowThinking();
   const [instrumentsVisible, setInstrumentsVisible] = useThreadInstrumentsVisible();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const keyboardOpenRequested = useRef(false);
   const activeProject =
     (projectId ? chatProjectById(projectId, projects) : projects[0]) ?? null;
 
@@ -68,6 +78,66 @@ export function SessionOverflowMenu({
   });
 
   const close = () => setOpen(false);
+  const setSessionMenuOpen = useCallback((next: boolean) => {
+    if (next) setProjectPickerOpen(false);
+    setOpen(next);
+  }, []);
+
+  const getEnabledItems = useCallback(
+    () =>
+      Array.from(
+        menuRef.current?.querySelectorAll<HTMLElement>(ENABLED_MENU_ITEM_SELECTOR) ?? [],
+      ),
+    [],
+  );
+
+  const focusFirstEnabledItem = useCallback(() => {
+    keyboardOpenRequested.current = false;
+    getEnabledItems()[0]?.focus();
+  }, [getEnabledItems]);
+
+  useEffect(() => {
+    if (!open || !keyboardOpenRequested.current) return;
+    const focusFrame = requestAnimationFrame(focusFirstEnabledItem);
+    return () => cancelAnimationFrame(focusFrame);
+  }, [focusFirstEnabledItem, open]);
+
+  const onTriggerKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+        keyboardOpenRequested.current = true;
+        e.stopPropagation();
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (open) {
+          requestAnimationFrame(focusFirstEnabledItem);
+        } else {
+          setSessionMenuOpen(true);
+        }
+      }
+    },
+    [focusFirstEnabledItem, open, setSessionMenuOpen],
+  );
+
+  const onBodyKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+      const items = getEnabledItems();
+      if (items.length === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+      let nextIndex: number;
+      if (e.key === "Home") nextIndex = 0;
+      else if (e.key === "End") nextIndex = items.length - 1;
+      else if (e.key === "ArrowDown") nextIndex = (currentIndex + 1) % items.length;
+      else nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
+      items[nextIndex]?.focus();
+    },
+    [getEnabledItems],
+  );
 
   const handlers: Record<SessionMenuItemId, () => void> = {
     "continue-on-phone": () => {
@@ -113,42 +183,64 @@ export function SessionOverflowMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         title="Session options"
+        onPointerDown={() => {
+          keyboardOpenRequested.current = false;
+        }}
+        onKeyDown={onTriggerKeyDown}
         onClick={() => {
-          // The picker shares this anchor, so its outside-click handler skips
-          // clicks here — close it explicitly or both popovers stack open.
-          setProjectPickerOpen(false);
-          setOpen(!open);
+          setSessionMenuOpen(!open);
         }}
       >
         <Icon name="ph:dots-three-vertical" width={15} aria-hidden />
       </button>
       <Popover
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={setSessionMenuOpen}
         anchorRef={triggerRef}
         placement="bottom-end"
         minWidth={216}
         ariaLabel="Chat options"
       >
-        <PopoverBody>
-          {sections.map((section, si) => (
-            <Fragment key={si}>
-              {si > 0 ? <PopoverSeparator /> : null}
-              {section.map((item) => (
-                <PopoverItem
-                  key={item.id}
-                  icon={item.icon}
-                  checked={item.checked}
-                  disabled={item.disabled}
-                  title={item.title}
-                  onSelect={handlers[item.id]}
-                >
-                  {item.label}
-                </PopoverItem>
-              ))}
-            </Fragment>
-          ))}
-        </PopoverBody>
+        <div ref={menuRef} onKeyDown={onBodyKeyDown}>
+          <PopoverBody role="menu" ariaLabel="Chat options">
+            {sections.map((section, si) => (
+              <Fragment key={si}>
+                {si > 0 ? <PopoverSeparator /> : null}
+                {section.map((item) => (
+                  <PopoverItem
+                    key={item.id}
+                    icon={item.icon}
+                    checked={item.checked}
+                    disabled={item.disabled}
+                    title={item.title}
+                    onSelect={handlers[item.id]}
+                  >
+                    {item.label}
+                  </PopoverItem>
+                ))}
+              </Fragment>
+            ))}
+            {promotableFamiliars.length > 0 ? (
+              <>
+                <PopoverSeparator />
+                <PopoverLabel>Start a coven with</PopoverLabel>
+                {promotableFamiliars.map((candidate) => (
+                  <PopoverItem
+                    key={candidate.id}
+                    leading={<span aria-hidden><FamiliarIcon familiar={candidate} size="sm" /></span>}
+                    title={`Continue this chat in a coven with ${candidate.display_name}`}
+                    onSelect={() => {
+                      close();
+                      onPromoteToCoven(candidate.id);
+                    }}
+                  >
+                    {candidate.display_name}
+                  </PopoverItem>
+                ))}
+              </>
+            ) : null}
+          </PopoverBody>
+        </div>
       </Popover>
       <ProjectPickerPopover
         open={projectPickerOpen}
@@ -293,7 +385,7 @@ export function ChatTitleEditable({
    *  edit input still pre-fills with the override so accepting it patches
    *  the canonical title in the daemon/state. */
   displayTitleOverride?: string | null;
-  onSessionsChanged?: () => void;
+  onSessionsChanged?: () => void | Promise<void>;
   /** Render as a full-width all-caps headline row above the context chips
    *  instead of an inline title inside the session chip. */
   headline?: boolean;
@@ -309,6 +401,16 @@ export function ChatTitleEditable({
   const [value, setValue] = useState(baseTitle);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const submittedRef = useRef(false);
+  const mountedRef = useRef(true);
+  const onSessionsChangedRef = useRef(onSessionsChanged);
+  onSessionsChangedRef.current = onSessionsChanged;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!editing) setValue(baseTitle);
@@ -321,6 +423,10 @@ export function ChatTitleEditable({
     inputRef.current?.select();
   }, [editing]);
 
+  const refreshSessions = () => {
+    if (mountedRef.current) void onSessionsChangedRef.current?.();
+  };
+
   // Rename has two entry points into the same edit mode: the pencil button
   // beside the title and clicking the title text. (The overflow menu's Rename
   // item and its window-event bridge died in cave-zolo — the pencil is the
@@ -328,20 +434,43 @@ export function ChatTitleEditable({
 
   const display = baseTitle || session.id;
 
-  // A resolved fetch is not a successful one: the local-origin gate answers 403
-  // and a rejected patch answers { ok: false }. Refreshing on those would paint
-  // the rename as applied when the server refused it, so the refresh is gated
-  // on a genuine success and anything else falls through to the sessions poll.
-  const patchTitle = async (title: string) => {
+  // A resolved fetch is not necessarily successful. Only a genuine success or
+  // the title CAS conflict contract has authoritative state worth refreshing.
+  const patchTitle = async (title: string, ownership: "manual" | "auto" = "manual", replaceManual = false) => {
     try {
+      const body = ownership === "auto"
+        ? {
+            title,
+            titleOwnership: "auto" as const,
+            autoDefaults: session.title ? [session.title] : [],
+            ...(replaceManual && {
+              replaceManualTitle: true,
+              observedTitle: session.title,
+              observedTitleRevision: session.titleRevision ?? 0,
+            }),
+          }
+        : { title };
       const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title }),
+        body: JSON.stringify(body),
       });
       const json = await res.json().catch(() => ({ ok: res.ok }));
+      const titleOwnershipConflict =
+        ownership === "auto" &&
+        replaceManual &&
+        res.status === 409 &&
+        json?.ok === false &&
+        json?.conflict === true &&
+        (json?.title === null || typeof json?.title === "string") &&
+        Number.isSafeInteger(json?.titleRevision) &&
+        json.titleRevision >= 0;
+      if (titleOwnershipConflict) {
+        refreshSessions();
+        return;
+      }
       if (!res.ok || json?.ok === false) return;
-      onSessionsChanged?.();
+      refreshSessions();
     } catch {
       /* transient — next sessions poll will reconcile */
     }
@@ -367,9 +496,9 @@ export function ChatTitleEditable({
     if (!next) return;
     setGenerating(true);
     try {
-      if (next !== (session.title ?? "").trim()) await patchTitle(next);
+      if (next !== (session.title ?? "").trim()) await patchTitle(next, "auto", true);
     } finally {
-      setGenerating(false);
+      if (mountedRef.current) setGenerating(false);
     }
   };
 

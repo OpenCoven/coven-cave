@@ -281,11 +281,9 @@
 }
 
 /* ── Preview modal ─────────────────────────────────────────────────────────
-   Clicking a card opens the sketch rendered live. It starts as a still preview
-   (pointer-events off, same opaque-origin sandbox as thumbnails); the Play
-   toggle hands input back so the sketch actually runs. Bespoke dialog
-   (useFocusTrap) because the shared Modal owns a breadcrumb header/footer this
-   layout replaces. */
+   Clicking a card opens the sketch live in the same opaque-origin sandbox as
+   thumbnails. Bespoke dialog (useFocusTrap) because the shared Modal owns a
+   breadcrumb header/footer this layout replaces. */
 .chat-canvas-preview-backdrop {
   position: fixed;
   inset: 0;
@@ -379,7 +377,6 @@
   width: 100%;
   border: 0;
   display: block;
-  pointer-events: none;
 }
 /* Play toggle hands the sandbox its own input back (cave canvas interactivity).
    Isolation is unchanged — still an opaque-origin allow-scripts sandbox. */

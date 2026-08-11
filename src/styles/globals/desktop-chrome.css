@@ -59,6 +59,15 @@ button:active > .edge-rail-chip {
   overflow: visible;
 }
 
+/* Native title-bar glass applies backdrop-filter below, which makes this band
+   an auto-level stacking context: the bell's local z-50 cannot escape it and
+   later shell content can paint over the dropdown. Lift the band only while
+   the dropdown exists. 140 clears in-content layers (up to 130) while staying
+   below drawers (150+), portaled popovers (400), and modal/drag layers. */
+.shell-top:has(.notification-bell__popover) {
+  z-index: 140;
+}
+
 .shell-titlebar-drag-lane {
   display: none;
 }

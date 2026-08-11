@@ -22,16 +22,45 @@ assert.match(source, /export async function proxy\(req: NextRequest\)/, "Next 16
 assert.match(source, /matcher:\s*\["\/\(\(\?!_next\/static\|_next\/image\|favicon\.ico\)\.\*\)"\]/, "proxy should guard API and mobile browser routes");
 assert.match(source, /process\.env\.COVEN_CAVE_AUTH_TOKEN/, "proxy should require the per-launch sidecar token");
 assert.match(source, /process\.env\.COVEN_CAVE_BUNDLE === "1"[\s\S]*missing sidecar auth token/, "bundled sidecar mode should fail closed when its auth token is missing");
+assert.match(
+  source,
+  /forbidden peer: missing trusted local peer or verified remote ingress/,
+  "tokenless peer failures should identify the missing authorization proof",
+);
 assert.match(source, /req\.headers\.get\("origin"\)/, "middleware should reject unsafe origins");
 assert.match(source, /req\.headers\.get\("host"\)/, "middleware should reject unsafe hosts");
 assert.match(source, /const requestHost = req\.headers\.get\("host"\)/, "proxy should capture the forwarded request host once");
-assert.match(source, /isAllowedApiHost\(requestHost, mobileAccessAuthenticated\)/, "valid mobile access should satisfy the API host gate");
+// Remote ingress is a verified mobile invite OR an allowlisted tailnet device
+// (cave-zm6pn). Both are proven credentials; neither is the bare
+// COVEN_CAVE_TAILNET_TRUST flag, which must never relax a gate on its own.
+assert.match(source, /const remoteIngress = mobileAccessAuthenticated \|\| tailnetPeerVerified/, "remote ingress is a verified invite or a verified tailnet device");
+assert.match(source, /isAllowedApiHost\(requestHost, remoteIngress\)/, "verified remote ingress should satisfy the API host gate");
 assert.doesNotMatch(source, /isAllowedApiHost\([^)]*tailnetTrusted[^)]*\)/, "tailnet membership alone must not relax the API host gate");
 assert.match(source, /const tailnetTrusted = process\.env\.COVEN_CAVE_TAILNET_TRUST === "1"/, "the tailnet-trust flag should survive only as a taint marker that further restricts automation ingress");
+// The tailnet half of remoteIngress must come from the server.ts-minted stamp
+// verified against the per-boot secret — never from a client-controlled Host or
+// from the env flag above.
 assert.match(
   source,
+  /const tailnetNodeId = verifiedTailnetNode\(\s*req\.headers\.get\(TAILNET_PEER_HEADER\),\s*process\.env\.COVEN_CAVE_TAILNET_PEER_SECRET,\s*\)/,
+  "tailnet ingress is authorized by the verified per-boot stamp, not by a client-controlled header",
+);
+assert.match(
+  source,
+  /const tailnetPeerVerified = tailnetNodeId !== null/,
+  "tailnet verification is derived from a resolved node id",
+);
+assert.match(
+  source,
+  /nextWithMobileAccessMarker\(req, remoteIngress\)/,
+  "proxy should forward the verified remote-ingress state into downstream request headers",
+);
+// A tailnet device is remote by construction, so it must carry the mobile
+// marker — otherwise desktop-only routes would treat a phone as local.
+assert.doesNotMatch(
+  source,
   /nextWithMobileAccessMarker\(req, mobileAccessAuthenticated\)/,
-  "proxy should forward the verified mobile-access state into downstream request headers",
+  "tailnet ingress must not be excluded from the mobile marker (desktop-only routes rely on it)",
 );
 assert.match(source, /const origin = req\.headers\.get\("origin"\)/, "API origin gate should read the source origin header once");
 assert.match(source, /const referer = req\.headers\.get\("referer"\)/, "API referer gate should read the source referer header once");
@@ -59,7 +88,7 @@ assert.doesNotMatch(
 );
 assert.match(source, /isProductionWebhookGet\(req\.nextUrl\.pathname, req\.method\)/, "state-changing GET webhooks should have a dedicated tokenless CSRF guard");
 assert.match(source, /isLocalOnlyAutomationRun\(req\.nextUrl\.pathname, req\.method\)/, "run-now automation execution should have a dedicated local-only proxy guard");
-assert.match(source, /mobileAccessAuthenticated \|\| tailnetTrusted \|\| !isLoopbackHost\(requestHost\)/, "run-now automation execution must deny mobile, tailnet, and non-loopback proxy ingress");
+assert.match(source, /remoteIngress \|\| tailnetTrusted \|\| !isLoopbackHost\(requestHost\)/, "run-now automation execution must deny mobile, tailnet-device, tailnet-flagged, and non-loopback proxy ingress");
 assert.match(source, /missing request source/, "tokenless GET webhooks should reject absent Origin and Referer headers");
 // cave-gzje: a verified signed mobile invite is the paired phone's credential.
 // The final sidecar gate must admit it (the phone can never learn the
@@ -67,8 +96,8 @@ assert.match(source, /missing request source/, "tokenless GET webhooks should re
 // extend to mobile-cookie-authenticated requests in exchange.
 assert.match(
   source,
-  /if \(!sidecarAuthenticated && !mobileAccessAuthenticated\) \{/,
-  "the sidecar gate must admit mobile-access-authenticated requests — packaged phones hold no sidecar token",
+  /if \(!sidecarAuthenticated && !remoteIngress\) \{/,
+  "the sidecar gate must admit verified remote ingress — neither a packaged phone nor an allowlisted tailnet device holds the sidecar token",
 );
 assert.match(
   source,
@@ -109,8 +138,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /HEADER_CSRF_TRUSTED_API_PATHS = new Set\(\["\/api\/mobile-handoff", "\/api\/mobile-token\/refresh"\]\)/,
-  "header-token CSRF relaxation must be limited to explicitly mobile-capable APIs",
+  /HEADER_CSRF_TRUSTED_API_PATHS = new Set\(\[\s*"\/api\/app\/native-readiness",\s*"\/api\/mobile-handoff",\s*"\/api\/mobile-token\/refresh",\s*\]\)/,
+  "header-token CSRF relaxation must be limited to explicitly sidecar-token-authenticated native/mobile APIs",
 );
 assert.doesNotMatch(
   source,
@@ -123,7 +152,7 @@ assert.doesNotMatch(
 // the bypass ran first and silently let non-loopback callers through during
 // `pnpm dev` if anything ever bound the dev server outside 127.0.0.1.
 {
-  const hostIdx = source.indexOf("isAllowedApiHost(requestHost, mobileAccessAuthenticated)");
+  const hostIdx = source.indexOf("isAllowedApiHost(requestHost, remoteIngress)");
   const originIdx = source.indexOf("isAllowedRequestSourceAny(origin, expectedOrigins)");
   const refererIdx = source.indexOf("isAllowedRequestSourceAny(referer, expectedOrigins)");
   const contentTypeIdx = source.indexOf("unsupported content-type");
@@ -167,8 +196,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /shouldRequireMobileAccessCredential\(\s*req\.headers\.get\("host"\),\s*suppliedTokens\.length > 0,\s*trustedLocalPeer,?\s*\)/,
-  "the mobile gate must consult the verified local-peer stamp",
+  /shouldRequireMobileAccessCredential\(\s*req\.headers\.get\("host"\),\s*suppliedTokens\.length > 0,\s*trustedLocalPeer,\s*tailnetPeerVerified,?\s*\)/,
+  "the mobile gate must consult the verified local-peer stamp and the verified tailnet device",
 );
 // The marker classifies mobile INGRESS, not credential possession: a mobile
 // invite cookie in a local desktop browser (auto-sent after a pairing link
@@ -182,8 +211,8 @@ assert.match(
 );
 assert.match(
   source,
-  /mobileAccessGate\(req, trustedLocalPeer\)/,
-  "the local-peer stamp is verified once in proxy() and shared with the mobile gate",
+  /mobileAccessGate\(req, trustedLocalPeer, tailnetPeerVerified\)/,
+  "the local-peer and tailnet stamps are verified once in proxy() and shared with the mobile gate",
 );
 
 // ── HTML access gate for unauthenticated browser navigations ──────────────
@@ -238,6 +267,26 @@ assert.match(
 );
 assert.match(
   tauriSource,
-  /wait_for_sidecar_ready\(port, &log_path, sidecar_start_timeout, &should_cancel\)/,
-  "Tauri sidecar should require the launched sidecar's ready log before trusting the URL",
+  /wait_for_sidecar_ready\(\s*port,\s*&auth_token,\s*&sidecar_output,\s*sidecar_start_timeout,\s*&should_cancel,\s*child_exited,\s*\)/,
+  "Tauri sidecar should require its launch evidence, token, live child, and bounded authenticated handshake",
+);
+assert.match(
+  tauriSource,
+  /GET \/api\/app\/native-readiness HTTP\/1\.1[\s\S]*x-coven-cave-token: \{auth_token\}/,
+  "Tauri readiness must make an authenticated end-to-end API request",
+);
+assert.match(
+  tauriSource,
+  /readiness\.version != env!\("CARGO_PKG_VERSION"\)/,
+  "Tauri readiness must reject a sidecar from an incompatible app version",
+);
+assert.match(
+  tauriSource,
+  /let child_exited = \|\|[\s\S]*sidecar\.has_exited\(\)/,
+  "Tauri sidecar readiness should detect an early child exit",
+);
+assert.doesNotMatch(
+  tauriSource,
+  /sidecar_log_path|sidecar-daemon-server\.log|create_fresh_log_file/,
+  "Tauri sidecar should not persist daemon launch output",
 );

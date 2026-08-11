@@ -60,6 +60,22 @@ function growth(healthLabel: string, retroAcceptRate: number | null = null) {
   assert.match(i.text, /thread confidence low \(32\/100\)/, "names the low score");
 }
 
+// ---- an explicit visible scope overrides lifetime confidence + report count ----
+{
+  const i = deriveAnalyticsInsight(
+    model({
+      confidence: confidence(90, "Trusted"),
+      growthReport: growth("active"),
+      threadReports: [{}, {}, {}] as FamiliarAnalyticsModel["threadReports"],
+    }),
+    0,
+    { confidence: confidence(32, "Low"), threadReportCount: 1 },
+  );
+  assert.match(i.text, /^Low, actively used/, "the scoped confidence owns the lead");
+  assert.match(i.text, /thread confidence low \(32\/100\)/, "the scoped low score owns the warning");
+  assert.doesNotMatch(i.text, /3 thread signal reports/, "lifetime report counts do not leak into a scoped insight");
+}
+
 // ---- concerns: contract failing dominates tone ----
 {
   const i = deriveAnalyticsInsight(model({ contractReport: contract(false, 5, 3), growthReport: growth("active") }), 0);

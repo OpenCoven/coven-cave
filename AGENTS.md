@@ -18,7 +18,7 @@
   the fallback.** Telling them apart is the whole game, because the wrong choice
   creates a worktree nothing can ever retire.
   - **Exit 2 — refused by the admission gate** (`creating a worktree would
-    exceed the 12-worktree budget`, or `Bead … already owns a registered
+    exceed the 28-worktree budget`, or `Bead … already owns a registered
     worktree`). The gate ran fine and declined. **Do not fall back to `git worktree add` here.** Every refusal
     from this path is lifted by an attributed, expiring exception, and the
     refusal itself now prints the exact rerun. The budget counts every
@@ -40,13 +40,29 @@
     Bead alongside the worktree, so the unit still lands with full lifecycle metadata
     and stays retirable — this is a sanctioned path, not a bypass.
   - **Exit 1 — errored because the lifecycle inventory is incomplete.** The command
-    could not build a **complete** inventory, which needs live GitHub queries, so
-    it fails when the GraphQL quota is exhausted (`API rate limit already
-    exceeded`) and when any commit's PR association comes back malformed (`pull
-    request node returned malformed fields or a mismatched head OID`) — a
-    repo-state condition no amount of waiting clears. An exception cannot rescue
-    this: the inventory throws before admission is ever assessed. Only here is
-    the fallback justified:
+    could not build a **complete** inventory, which needs live GitHub queries. An
+    exception cannot rescue this: the inventory throws before admission is ever
+    assessed. **Almost every exit 1 is transient — retry before you conclude
+    otherwise.** Two failures dominate, and both clear on their own:
+    - the GraphQL quota is exhausted (`API rate limit already exceeded`) — that
+      pool is separate from REST and refills hourly, so `gh api rate_limit --jq
+      .resources.graphql` tells you when to retry;
+    - a commit's PR association comes back malformed or absent (`commit
+      association connection is unavailable`, `pull request node returned
+      malformed fields or a mismatched head OID`) — usually a degraded or
+      throttled GitHub response rather than repository state. Observed
+      2026-08-06: a warning of exactly this shape vanished on a rerun minutes
+      later, once quota had recovered, with nothing else changed.
+
+    So the order is **check quota → rerun → only then fall back**. Genuinely
+    structural failures name the repository itself (`canonical repository
+    identity mismatch`, `canonical repository identity changed between pages`);
+    those do not improve with a retry. A malformed worktree record on a bead
+    (`Bead cave-… worktree metadata: …`) is structural too, but since
+    `cave-g9byt` it is charged only to the unit it names — so if one reaches
+    you, it claims the exact branch or path you asked for. Pick another branch
+    or have its owner repair it; do not hand-edit someone else's record. Reach
+    for the fallback only after a retry failed:
 
     ```bash
     git worktree add -b <branch> .worktrees/<branch> origin/main   # last resort
@@ -58,16 +74,29 @@
     never retire it. Retire it by hand through the archive-tag route in
     [`CLAUDE.md`](CLAUDE.md), and never hand-write the missing metadata onto the
     Bead — that record is the evidence the retirement gate checks.
-- After a PR merges, run `pnpm beads:worktrees`, record the merged unit's
-  disposition, and use `pnpm beads:worktrees:apply` only when it reports a
-  complete repository maintenance transaction. Local cleanup is bounded and
-  exact-OID guarded; remote deletion remains proposal-only.
+- After a PR merges, run `pnpm beads:worktrees` and record the merged unit's
+  disposition. **`pnpm beads:worktrees:apply` cannot retire anything today** — it
+  exits 2 with `missing maintenance planes: beads, github`. Cave now holds its
+  local writer-intent fence together with Coven's released 0.2.5 maintenance
+  protocol; the remaining Beads and GitHub planes are still unenforced. That is
+  not a local fault and a retry will not clear it, so
+  hand-retirement through the archive-tag route in [`CLAUDE.md`](CLAUDE.md) is
+  the expected path until those land (`cave-wqa0b.3` and `cave-wqa0b.4`; the
+  residue they leave behind is `cave-xbc87`). Prove retention first: a
+  squash-merge leaves the branch commits on no remote ref, so a merged PR is not
+  retention and a pushed archive tag is. Local cleanup is bounded and exact-OID
+  guarded; remote deletion remains proposal-only.
 - Run `pnpm beads:worktrees` before closing PR-backed work. Record each local
   worktree as removed and verified or intentionally preserved with an owner and
   reason; `retire-after-gate` is a classification, not automatic deletion
   authority. Automatic retirement requires the full maintenance gate. Explicit
   maintainer authorization in the current task may activate Branch Curator's
   bounded manual deletion proof.
+- Before you assume a dirty worktree is another session's live work, run
+  `pnpm wt:status`. It is network-free and sub-second, and it separates real
+  in-flight edits from a worktree **wedged** in an abandoned merge or rebase —
+  a state that otherwise reads as ordinary dirtiness and gets stepped around
+  indefinitely. See the `pnpm wt:status` section of [`CLAUDE.md`](CLAUDE.md).
 - Do not push directly to `main`; use the protected PR path for repository changes.
 - Before release or TestFlight work, reconcile through clean `main`, then verify from that state.
 
@@ -125,6 +154,24 @@ Hard rules, enforced by gates (not advisory):
   semantics, placeholder grammar `Search <items>…` with the `…` character,
   state copy). `scripts/ui-consistency.test.mjs` pins the §10 headings and
   the doc's factual claims (palette counts, token values, cited paths).
+
+## Orchestration-Ready Tasks (any Board or Chart Room work)
+
+[`docs/orchestration-ready-tasks.md`](docs/orchestration-ready-tasks.md) is the
+shared task contract for every familiar, surface, and orchestrator; the design
+rationale is in
+[`docs/superpowers/specs/2026-08-03-orchestration-ready-task-shape-design.md`](docs/superpowers/specs/2026-08-03-orchestration-ready-task-shape-design.md).
+
+The load-bearing rule: **a blocked task must carry unresolved dependencies, one
+named primary blocker, and one imperative next step.** Failure-blocked is the
+same contract — a failed run synthesizes an `execution` dependency rather than
+taking a weaker path into Blocked. Enforcement belongs in the `cave-board.ts`
+mutators, not route handlers, because Enhance calls `updateCard` directly.
+
+Two boundaries automation must not cross: `nextStep.requiresApproval` blocks
+dispatch outright, and human-authored dependencies or next steps are proposed
+against, never overwritten. Auto-application is gated on checks the Cave can
+verify itself — a model's self-reported confidence is not one of them.
 
 ## Starting The Tauri Desktop App
 

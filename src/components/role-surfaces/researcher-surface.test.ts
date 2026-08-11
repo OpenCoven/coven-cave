@@ -240,7 +240,7 @@ test("archived missions collapse below the priority groups", () => {
   assert.match(list, /group\.id !== "archived"/);
   assert.match(list, /group\.id === "archived"/);
   // The header counts visible, non-archived missions only.
-  assert.match(list, /<span>\{nonArchivedCount\}<\/span>/);
+  assert.match(list, /className="research-mission-nav__count">\{nonArchivedCount\}<\/span>/);
   // …and the group is a real count-labeled disclosure.
   assert.match(list, /aria-expanded=\{archivedOpen\}/);
   assert.match(list, /research-mission-nav__group-toggle focus-ring/);

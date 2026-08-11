@@ -1,3 +1,5 @@
+import type { ChatAttention } from "./chat-attention.ts";
+
 export type Familiar = {
   id: string;
   name?: string;
@@ -81,11 +83,19 @@ export type SessionRow = {
   model?: string | null;
   runtime?: string | null;
   title: string;
+  /** Cave title ownership revision observed alongside title. */
+  titleRevision?: number;
   status: string;
   exit_code: number | null;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  /** Canonical conversational responsibility; independent of runtime status. */
+  attention: ChatAttention;
+  /** Latest selected-path human send causally preceding canonical attention. */
+  attentionAfterOperationId?: string | null;
+  /** Bounded server-authored operation ancestry ending at attentionAfterOperationId. */
+  attentionOperationLineage?: string[];
   familiarId?: string | null;
   origin?: SessionOrigin;
   /** Cave has a saved local conversation transcript; preserves recoverable interrupted chats without surfacing daemon-only dead runs. */

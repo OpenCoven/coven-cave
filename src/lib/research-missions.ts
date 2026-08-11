@@ -1,4 +1,5 @@
 import { parseCodexRrule, RRULE_DAY_LABEL } from "./codex-automation-form.ts";
+import { hasUnpairedUtf16Surrogate } from "./utf16.ts";
 
 export const RESEARCH_MISSION_MODES = [
   "brief",
@@ -268,6 +269,13 @@ function validTimestamp(value: unknown): value is string {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
 }
 
+function validResearchPromptText(value: unknown, maxLength: number): value is string {
+  return typeof value === "string"
+    && !value.includes("\0")
+    && !hasUnpairedUtf16Surrogate(value)
+    && value.length <= maxLength;
+}
+
 function optionalString(
   value: Record<string, unknown>,
   key: string,
@@ -476,13 +484,17 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     || !RESEARCH_MISSION_ID_RE.test(value.id)
     || typeof value.familiarId !== "string"
     || !FAMILIAR_ID_RE.test(value.familiarId)
-    || typeof value.title !== "string"
-    || typeof value.intent !== "string"
+    || !validResearchPromptText(value.title, RESEARCH_TITLE_MAX_LENGTH)
+    || !validResearchPromptText(value.intent, RESEARCH_INTENT_MAX_LENGTH)
     || !RESEARCH_MISSION_MODES.includes(value.mode as ResearchMissionMode)
     || !["auto", "user"].includes(String(value.modeSource))
-    || typeof value.deliverable !== "string"
+    || !validResearchPromptText(value.deliverable, RESEARCH_DELIVERABLE_MAX_LENGTH)
+    || !value.deliverable.trim()
     || !Array.isArray(value.constraints)
-    || value.constraints.some((constraint) => typeof constraint !== "string")
+    || value.constraints.length > RESEARCH_CONSTRAINT_MAX_COUNT
+    || value.constraints.some((constraint) => (
+      !validResearchPromptText(constraint, RESEARCH_CONSTRAINT_MAX_LENGTH)
+    ))
     || !isRecord(value.bounds)
     || !RESEARCH_MISSION_STATUSES.has(value.status as ResearchMissionStatus)
     || !validTimestamp(value.createdAt)
@@ -508,6 +520,11 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     || finishedAt === null
     || automationId === null
     || lastError === null) {
+    return null;
+  }
+  if ((direction !== undefined && !validResearchPromptText(direction, RESEARCH_DIRECTION_MAX_LENGTH))
+    || (audience !== undefined && !validResearchPromptText(audience, RESEARCH_AUDIENCE_MAX_LENGTH))
+    || (projectRoot !== undefined && !validResearchPromptText(projectRoot, RESEARCH_PROJECT_ROOT_MAX_LENGTH))) {
     return null;
   }
   const iterations = value.iterations.map(parseResearchIteration);
@@ -555,6 +572,13 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
  *  validator (server) and the desk composer (client). */
 export const RESEARCH_INTENT_MIN_LENGTH = 8;
 export const RESEARCH_INTENT_MAX_LENGTH = 10_000;
+export const RESEARCH_TITLE_MAX_LENGTH = 160;
+export const RESEARCH_DELIVERABLE_MAX_LENGTH = 160;
+export const RESEARCH_AUDIENCE_MAX_LENGTH = 500;
+export const RESEARCH_PROJECT_ROOT_MAX_LENGTH = 2_000;
+export const RESEARCH_DIRECTION_MAX_LENGTH = 2_000;
+export const RESEARCH_CONSTRAINT_MAX_COUNT = 20;
+export const RESEARCH_CONSTRAINT_MAX_LENGTH = 500;
 
 export function validateCreateResearchMissionInput(
   input: unknown,
@@ -567,7 +591,14 @@ export function validateCreateResearchMissionInput(
   if (!FAMILIAR_ID_RE.test(familiarId) || familiarId.includes("..")) {
     return { ok: false, error: "invalid familiar id" };
   }
-  const intent = typeof value.intent === "string" ? value.intent.trim() : "";
+  const rawIntent = typeof value.intent === "string" ? value.intent : "";
+  const intent = rawIntent.trim();
+  if (intent.includes("\0")) {
+    return { ok: false, error: "intent contains an invalid NUL character" };
+  }
+  if (hasUnpairedUtf16Surrogate(rawIntent)) {
+    return { ok: false, error: "intent contains invalid Unicode" };
+  }
   if (intent.length < RESEARCH_INTENT_MIN_LENGTH || intent.length > RESEARCH_INTENT_MAX_LENGTH) {
     return {
       ok: false,
@@ -580,9 +611,19 @@ export function validateCreateResearchMissionInput(
   if (value.modeSource !== "auto" && value.modeSource !== "user") {
     return { ok: false, error: "invalid mode source" };
   }
-  const deliverable = typeof value.deliverable === "string" ? value.deliverable.trim() : "";
-  if (!deliverable || deliverable.length > 160) {
-    return { ok: false, error: "deliverable required" };
+  const rawDeliverable = typeof value.deliverable === "string" ? value.deliverable : "";
+  const deliverable = rawDeliverable.trim();
+  if (deliverable.includes("\0")) {
+    return { ok: false, error: "deliverable contains an invalid NUL character" };
+  }
+  if (hasUnpairedUtf16Surrogate(rawDeliverable)) {
+    return { ok: false, error: "deliverable contains invalid Unicode" };
+  }
+  if (!deliverable || deliverable.length > RESEARCH_DELIVERABLE_MAX_LENGTH) {
+    return {
+      ok: false,
+      error: `deliverable must be between 1 and ${RESEARCH_DELIVERABLE_MAX_LENGTH} characters`,
+    };
   }
   const bounds = normalizeResearchBounds(
     value.bounds && typeof value.bounds === "object"
@@ -590,25 +631,59 @@ export function validateCreateResearchMissionInput(
       : {},
   );
   if (!bounds.ok) return { ok: false, error: bounds.reason };
-  const constraints = Array.isArray(value.constraints)
-    ? value.constraints
-        .filter((item): item is string => typeof item === "string")
-        .map((item) => item.trim())
-        .filter(Boolean)
-        .slice(0, 20)
-        .map((item) => item.slice(0, 500))
-    : [];
+  if (value.constraints !== undefined && !Array.isArray(value.constraints)) {
+    return { ok: false, error: "constraints must be an array of strings" };
+  }
+  const rawConstraints = value.constraints ?? [];
+  if (rawConstraints.length > RESEARCH_CONSTRAINT_MAX_COUNT) {
+    return {
+      ok: false,
+      error: `constraints must contain at most ${RESEARCH_CONSTRAINT_MAX_COUNT} items`,
+    };
+  }
+  if (rawConstraints.some((item) => typeof item !== "string")) {
+    return { ok: false, error: "constraints must be an array of strings" };
+  }
+  const constraints: string[] = [];
+  for (const rawConstraint of rawConstraints as string[]) {
+    if (rawConstraint.includes("\0")) {
+      return { ok: false, error: "constraint contains an invalid NUL character" };
+    }
+    if (hasUnpairedUtf16Surrogate(rawConstraint)) {
+      return { ok: false, error: "constraint contains invalid Unicode" };
+    }
+    const constraint = rawConstraint.trim();
+    if (constraint.length > RESEARCH_CONSTRAINT_MAX_LENGTH) {
+      return {
+        ok: false,
+        error: `each constraint must be at most ${RESEARCH_CONSTRAINT_MAX_LENGTH} characters`,
+      };
+    }
+    if (constraint) constraints.push(constraint);
+  }
   const optionalText = (field: "title" | "audience" | "projectRoot", max: number) => {
     const raw = value[field];
     if (raw === undefined || raw === null || raw === "") return undefined;
-    if (typeof raw !== "string" || raw.includes("\0")) return null;
-    return raw.trim().slice(0, max) || undefined;
+    if (
+      typeof raw !== "string"
+      || raw.includes("\0")
+      || hasUnpairedUtf16Surrogate(raw)
+    ) return null;
+    const trimmed = raw.trim();
+    if (trimmed.length > max) return null;
+    return trimmed || undefined;
   };
-  const title = optionalText("title", 160);
-  const audience = optionalText("audience", 500);
-  const projectRoot = optionalText("projectRoot", 2_000);
-  if (title === null || audience === null || projectRoot === null) {
-    return { ok: false, error: "invalid optional research field" };
+  const title = optionalText("title", RESEARCH_TITLE_MAX_LENGTH);
+  const audience = optionalText("audience", RESEARCH_AUDIENCE_MAX_LENGTH);
+  const projectRoot = optionalText("projectRoot", RESEARCH_PROJECT_ROOT_MAX_LENGTH);
+  if (title === null) {
+    return { ok: false, error: `title must be valid Unicode text without NUL and at most ${RESEARCH_TITLE_MAX_LENGTH} characters` };
+  }
+  if (audience === null) {
+    return { ok: false, error: `audience must be valid Unicode text without NUL and at most ${RESEARCH_AUDIENCE_MAX_LENGTH} characters` };
+  }
+  if (projectRoot === null) {
+    return { ok: false, error: `projectRoot must be valid Unicode text without NUL and at most ${RESEARCH_PROJECT_ROOT_MAX_LENGTH} characters` };
   }
   return {
     ok: true,
@@ -745,6 +820,62 @@ function settledPhaseOutcome(
  * - cancelled/archived mid-run — unfinished phases read skipped.
  * Live missions pass raw step statuses through unchanged.
  */
+/**
+ * One short meta line per display phase, for the Desk stepper.
+ *
+ * The handoff prints a second line under each phase node ("12/12 src",
+ * "your turn") so the stepper reports progress rather than only position.
+ * Every string here is read off the mission — counts, statuses, the
+ * checkpoint state — so a phase with nothing to report says "—" instead of
+ * inventing a number.
+ */
+export function researchPhaseMeta(
+  mission: Pick<ResearchMission, "status" | "bounds" | "sources" | "artifacts" | "iterations">,
+  phaseIds: readonly string[],
+): string[] {
+  const statuses = researchPhaseStatuses(mission, phaseIds);
+  const counts = researchSourceStatusCounts(mission.sources);
+  const artifacts = mission.artifacts.filter((artifact) => artifact.state !== "rejected").length;
+  return phaseIds.map((phase, index) => {
+    const status = statuses[index];
+    if (phase === "scope") {
+      return status === "succeeded" ? "bounds set" : status === "running" ? "framing…" : "—";
+    }
+    if (phase === "gather") {
+      if (status === "pending") return "—";
+      // A zero target is a real (if legacy) bound. "3/0 src" reads as a broken
+      // divide, so report the count alone when there is nothing to divide by.
+      return mission.bounds.sourceTarget > 0
+        ? `${mission.sources.length}/${mission.bounds.sourceTarget} src`
+        : `${mission.sources.length} src`;
+    }
+    if (phase === "challenge") {
+      if (status === "failed") return "stopped here";
+      if (counts.conflicting > 0) {
+        return `${counts.conflicting} conflicting`;
+      }
+      return status === "succeeded" ? "verified" : status === "running" ? "testing…" : "—";
+    }
+    if (phase === "synthesize") {
+      if (status === "pending") return "—";
+      return artifacts > 0 ? `${artifacts} artifact${artifacts === 1 ? "" : "s"}` : "drafting…";
+    }
+    if (phase === "control") {
+      if (mission.status === "checkpoint") return "your turn";
+      return status === "succeeded" ? "approved" : "—";
+    }
+    if (phase === "publish") {
+      const published = mission.artifacts.filter((artifact) => artifact.state === "published").length;
+      if (published > 0) return `${published} published`;
+      // A succeeded publish phase with nothing published is a real state (the
+      // run finished without promoting an artifact). "shipped" would claim
+      // something went out; say what actually happened instead.
+      return status === "succeeded" ? "none published" : "gated";
+    }
+    return "—";
+  });
+}
+
 export function researchPhaseStatuses(
   mission: Pick<ResearchMission, "status" | "iterations">,
   phaseIds: readonly string[],
@@ -876,7 +1007,21 @@ export type ResearchBoundReading = {
   badge?: "over" | "met";
   /** Plain-prose gate-vs-target semantics for tooltips and screen readers. */
   detail: string;
+  /**
+   * Fraction of the bound consumed, clamped to 0–1, for the reading's meter
+   * bar. Present only where a denominator genuinely exists: a spend with no
+   * cap and the checkpoint cadence have nothing to be a fraction *of*, so they
+   * carry no bar rather than a bar that means nothing (the value text still
+   * says everything). Past a stop gate it pins at 1 while `tone` says "over".
+   */
+  progress?: number;
 };
+
+/** Clamp a ratio into 0–1; a zero or absent denominator yields no bar. */
+function boundProgress(used: number, total: number): number | undefined {
+  if (!Number.isFinite(total) || total <= 0) return undefined;
+  return Math.max(0, Math.min(1, used / total));
+}
 
 /**
  * Bound-meter rows with honest over/met states.
@@ -917,6 +1062,9 @@ export function researchBoundReadings(
       value: `$${reportedCost.toFixed(2)}${bounds.maxSpendUsd === undefined ? " reported" : `/$${bounds.maxSpendUsd.toFixed(2)}`}`,
       tone: spendOver ? "over" : "neutral",
       ...(spendOver ? { badge: "over" as const } : {}),
+      ...(bounds.maxSpendUsd === undefined
+        ? {}
+        : { progress: boundProgress(reportedCost, bounds.maxSpendUsd) }),
       detail: bounds.maxSpendUsd === undefined
         ? "Reported spend so far; no spend cap is set."
         : spendOver
@@ -937,6 +1085,7 @@ export function researchBoundReadings(
       value: `${elapsedMinutes}/${bounds.wallClockMinutes} min`,
       tone: timeOver ? "over" : "neutral",
       ...(timeOver ? { badge: "over" as const } : {}),
+      progress: boundProgress(elapsedMinutes, bounds.wallClockMinutes),
       detail: timeOver
         ? "Past the wall-clock budget — it is a stop gate checked between iterations, so a running iteration may finish over it, but no further iterations will start."
         : "Wall-clock budget is a stop gate checked between iterations.",
@@ -947,6 +1096,7 @@ export function researchBoundReadings(
       value: `${mission.sources.length}/${bounds.sourceTarget}`,
       tone: sourcesMet ? "met" : "neutral",
       ...(sourcesMet ? { badge: "met" as const } : {}),
+      progress: boundProgress(mission.sources.length, bounds.sourceTarget),
       detail: sourcesMet
         ? "Source target reached — it is a goal, not a cap."
         : "Source target is a goal, not a cap.",

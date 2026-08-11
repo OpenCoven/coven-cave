@@ -1,7 +1,7 @@
 // Contract test for the `branch-to-merge` skill.
 //
 // The skill tells agents how to land a branch on protected `main`. Its value is
-// entirely in the facts it asserts — the nine required checks, the PR-only path,
+// entirely in the facts it asserts — the required check, the PR-only path,
 // the no-AI-attribution rule, the lifecycle retirement route. A skill that
 // drifts from those facts is worse than no skill: it is confidently wrong at the
 // exact moment an agent is about to mutate `main`.
@@ -16,10 +16,7 @@ const skill = fs.readFileSync(".agents/skills/branch-to-merge/SKILL.md", "utf8")
 const claude = fs.readFileSync("CLAUDE.md", "utf8");
 const agents = fs.readFileSync("AGENTS.md", "utf8");
 
-// Derive the check list from CLAUDE.md rather than restating it. A hardcoded
-// list only catches removals, and the change that actually happened here was an
-// addition (five contexts widened to nine on 2026-08-01) — which a
-// presence-only assertion sails straight past.
+// Derive the check list from CLAUDE.md rather than restating it.
 const NUMBER_WORDS = ["ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "ELEVEN", "TWELVE"];
 
 function backticked(source) {
@@ -28,7 +25,7 @@ function backticked(source) {
 
 function documentedChecks() {
   const bullet =
-    /- Required status checks — \*\*all ([A-Z]+)\*\* must pass[^:]*:(.*?)\. The four matrix legs/s.exec(
+    /- Required status checks — \*\*(?:all )?([A-Z]+)\*\* must pass[^:]*:(.*?)\. Routine PR CI/s.exec(
       claude,
     );
   assert.ok(bullet, "CLAUDE.md no longer states the required status checks in the expected shape");
@@ -36,11 +33,11 @@ function documentedChecks() {
 }
 
 function skillChecks() {
-  const section = /required checks must pass:\n\n```bash\n.*?```\n\n(.*?)\n\nCodeQL is retired/s.exec(
+  const section = /required checks? must pass:\n\n```bash\n.*?```\n\n(.*?)\n\nCodeQL is retired/s.exec(
     skill,
   );
   assert.ok(section, "skill no longer lists the required checks in the expected shape");
-  const word = /\n([A-Za-z]+) required checks must pass:/.exec(skill)?.[1];
+  const word = /\n([A-Za-z]+) required checks? must pass:/.exec(skill)?.[1];
   assert.ok(word, "skill no longer states how many checks are required");
   return { word, names: backticked(section[1]) };
 }
@@ -85,7 +82,11 @@ test("skill offers a PR as the only path onto main", () => {
     !/^\s*[BC]\) (Merge|Squash merge)/m.test(skill),
     "skill must not offer a local merge into the base branch",
   );
-  assert.ok(skill.includes("gh pr merge <#> --squash --delete-branch"));
+  const mergeCommands = skill.match(/^gh pr merge .*$/gm) ?? [];
+  assert.ok(
+    mergeCommands.includes('gh pr merge <#> --squash --match-head-commit "$expected_head"'),
+  );
+  assert.ok(mergeCommands.every((command) => !command.includes("--delete-branch")));
 });
 
 test("skill reuses an existing PR instead of creating a duplicate", () => {
@@ -98,6 +99,25 @@ test("skill requires all checks on the exact current PR head", () => {
   assert.ok(skill.includes("expected_head=$(git rev-parse HEAD)"));
   assert.ok(skill.includes("Before and after the watch, require `headRefOid` to equal `$expected_head`"));
   assert.ok(skill.includes("pending, cancelled, stale, missing, or failed context"));
+  assert.ok(
+    skill.includes('--match-head-commit "$expected_head"'),
+    "merge must atomically reject a PR head that changed after verification",
+  );
+  assert.ok(skill.includes('actual_head=$(gh pr view <#> --json headRefOid --jq .headRefOid)'));
+  assert.ok(skill.includes('test "$actual_head" = "$expected_head"'));
+  assert.ok(skill.includes("gh pr checks <#> --required"));
+  assert.ok(skill.includes("set -euo pipefail"));
+});
+
+test("CLAUDE.md documents the same exact-head, patrol-safe merge", () => {
+  const mergeCommands = claude.match(/^gh pr merge .*$/gm) ?? [];
+  assert.ok(
+    mergeCommands.includes('gh pr merge <#> --squash --match-head-commit "$expected_head"'),
+  );
+  assert.ok(mergeCommands.every((command) => !command.includes("--delete-branch")));
+  assert.ok(claude.includes('test "$actual_head" = "$expected_head"'));
+  assert.ok(claude.includes("gh pr checks <#> --required"));
+  assert.ok(claude.includes("set -euo pipefail"));
 });
 
 test("skill mirrors the protected-main policy that governs its PR lifecycle", () => {

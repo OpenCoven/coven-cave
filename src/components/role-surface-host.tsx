@@ -9,6 +9,10 @@
  * actions, status indicators, notifications, commands) and renders it inside
  * the room chrome. The Cave shell never branches on a specific role — every
  * role-specific behavior lives behind this one component.
+ *
+ * Two gates decide whether the room opens, and the closed door names the one
+ * that closed it: `src/lib/room-flags.ts` says whether this BUILD ships the
+ * room at all, and role matching says whether this FAMILIAR holds it.
  */
 
 import { Component, useEffect, useMemo, useRef, type ReactNode } from "react";
@@ -22,6 +26,7 @@ import {
   type RoleSurfaceContext,
   type RoleSurfaceContribution,
 } from "@/lib/role-surfaces";
+import { roomEnabledInBuild } from "@/lib/room-flags";
 import { useRoleSurfaceStateSnapshot } from "@/lib/role-surface-state";
 
 /** A broken surface must never take the shell down with it. */
@@ -68,6 +73,10 @@ export function RoleSurfaceHost({
   onLeave: () => void;
 }) {
   const surface = getRoleSurface(surfaceId);
+  // A room this build doesn't ship is registered and role-matchable but never
+  // reaches `visibleSurfaces`. Distinguish it so the closed door tells the
+  // truth — "under construction" rather than "you lack the role".
+  const shippedInBuild = surface != null && roomEnabledInBuild(surface.id);
   const available = surface != null && context != null && visibleSurfaces.some((s) => s.id === surface.id);
   const roleStateSnapshot = useRoleSurfaceStateSnapshot(
     context?.activeFamiliar.id ?? null,
@@ -121,6 +130,20 @@ export function RoleSurfaceHost({
   }
 
   if (!available) {
+    // A build that doesn't ship the room is a settled fact — it needs no role
+    // manifest to decide, so say so immediately rather than waiting on a load
+    // that cannot change the answer.
+    if (surface && !shippedInBuild) {
+      return (
+        <div className="role-surface-unavailable">
+          <Icon name="ph:hammer" width={22} height={22} aria-hidden />
+          <p>{surface.title} is still under construction and isn't part of this build.</p>
+          <button type="button" className="role-surface-chip focus-ring" onClick={onLeave}>
+            Back to the Cave
+          </button>
+        </div>
+      );
+    }
     // While role manifests are still loading, hold judgment quietly instead of
     // flashing "unavailable" for a room that's about to resolve.
     if (!rolesLoaded) return <div className="role-surface-unavailable" aria-busy="true" />;

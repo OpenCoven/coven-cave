@@ -89,7 +89,7 @@ test("the five-tab band hangs every section off one Tabs control", () => {
   }
   assert.match(src, /idPrefix="familiar-section"/, "stable tab ids");
   assert.match(src, /\{ id: "skills", label: "Skills", count: snapshot\.loading \? undefined : data\.skillCount \}/, "skills tab counts real unique skills");
-  assert.match(src, /useState<FamiliarSectionId>\("skills"\)/, "the handoff's namesake section opens first");
+  assert.match(src, /useSurfaceHistory<FamiliarSectionId>\(\{[\s\S]{0,120}initial:\s*"skills"/, "the handoff's namesake section opens first");
   // One derivation feeds every section — provenance math can't drift per tab.
   assert.match(src, /deriveFamiliarSectionData\(\{/, "sections share one derived model");
   for (const mount of [

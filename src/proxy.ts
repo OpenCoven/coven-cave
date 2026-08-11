@@ -11,6 +11,7 @@ import {
   timingSafeEqualString,
   isLoopbackHost,
   isAllowedApiHost,
+  isTokenlessApiPeerAllowed,
   sameOrigin,
   isAllowedRequestSource,
   isAllowedRequestSourceAny,
@@ -21,8 +22,12 @@ import {
   isTrustedLocalPeer,
   isHtmlNavigationRequest,
   accessGatePage,
+  TAILNET_PEER_HEADER,
+  verifiedTailnetNode,
+  requiresPasskeyPresence,
 } from "./proxy-helpers";
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
+import { PRESENCE_COOKIE, verifyPresenceToken } from "./lib/passkey-presence.ts";
 
 // Re-exported here so existing call sites (and tests) that imported these
 // from "./proxy" keep working.
@@ -76,7 +81,11 @@ async function mobileAccessVerification(
   return null;
 }
 
-async function mobileAccessGate(req: NextRequest, trustedLocalPeer: boolean) {
+async function mobileAccessGate(
+  req: NextRequest,
+  trustedLocalPeer: boolean,
+  tailnetPeerVerified: boolean,
+) {
   const expected = configuredMobileAccessToken();
   if (!expected) return null;
 
@@ -86,6 +95,7 @@ async function mobileAccessGate(req: NextRequest, trustedLocalPeer: boolean) {
       req.headers.get("host"),
       suppliedTokens.length > 0,
       trustedLocalPeer,
+      tailnetPeerVerified,
     )
   ) {
     return null;
@@ -149,7 +159,11 @@ function isLocalOnlyAutomationRun(pathname: string, method: string) {
   return method === "POST" && /^\/api\/codex-automations\/[^/]+\/run$/.test(pathname);
 }
 
-const HEADER_CSRF_TRUSTED_API_PATHS = new Set(["/api/mobile-handoff", "/api/mobile-token/refresh"]);
+const HEADER_CSRF_TRUSTED_API_PATHS = new Set([
+  "/api/app/native-readiness",
+  "/api/mobile-handoff",
+  "/api/mobile-token/refresh",
+]);
 
 function isHeaderCsrfTrustedApiPath(pathname: string) {
   return HEADER_CSRF_TRUSTED_API_PATHS.has(pathname);
@@ -184,7 +198,16 @@ export async function proxy(req: NextRequest) {
     req.headers.get(LOCAL_PEER_HEADER),
     process.env.COVEN_CAVE_LOCAL_PEER_SECRET,
   );
-  const mobileRes = await mobileAccessGate(req, trustedLocalPeer);
+  // The allowlisted tailnet device behind a Tailscale-Serve-forwarded request
+  // (cave-zm6pn), resolved by server.ts off the raw socket and stamped with a
+  // per-boot secret. This REPLACES the shared pairing token for remote access:
+  // a device proven by WireGuard identity needs no invite to paste.
+  const tailnetNodeId = verifiedTailnetNode(
+    req.headers.get(TAILNET_PEER_HEADER),
+    process.env.COVEN_CAVE_TAILNET_PEER_SECRET,
+  );
+  const tailnetPeerVerified = tailnetNodeId !== null;
+  const mobileRes = await mobileAccessGate(req, trustedLocalPeer, tailnetPeerVerified);
   if (mobileRes) return mobileRes;
 
   if (!req.nextUrl.pathname.startsWith("/api/")) {
@@ -226,8 +249,42 @@ export async function proxy(req: NextRequest) {
   // but the flag still marks tailnet ingress below so local-only automation
   // runs stay off that path.
   const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
-  if (!isAllowedApiHost(requestHost, mobileAccessAuthenticated)) {
+  // Remote ingress is now EITHER a verified mobile invite or an allowlisted
+  // tailnet device. Both are non-local by construction, so both relax the host
+  // gate (a Serve-forwarded <host>.ts.net Host) and both must carry the mobile
+  // marker below so desktop-only routes keep 403ing.
+  const remoteIngress = mobileAccessAuthenticated || tailnetPeerVerified;
+  if (!isAllowedApiHost(requestHost, remoteIngress)) {
     return jsonError(403, "forbidden host");
+  }
+
+  // Passkey presence (cave-brksh). Tailnet identity proves WHICH DEVICE; a
+  // WebAuthn assertion proves A HUMAN JUST AUTHENTICATED ON IT. When the
+  // requirement is armed, remote ingress needs both.
+  //
+  // A mobile-invite-authenticated caller can never satisfy this, and that is
+  // the intended reading rather than an oversight: the presence token is bound
+  // to a device identity, and a shared bearer secret does not carry one. Arming
+  // the requirement means remote access is by tailnet device identity plus
+  // biometrics, full stop.
+  if (
+    requiresPasskeyPresence(
+      req.nextUrl.pathname,
+      remoteIngress,
+      process.env.COVEN_CAVE_PASSKEY_REQUIRED === "1",
+    )
+  ) {
+    const presenceSecret = process.env.COVEN_CAVE_PASSKEY_SESSION_SECRET;
+    const presenceCookie = req.cookies.get(PRESENCE_COOKIE)?.value;
+    const presence =
+      tailnetNodeId && presenceSecret && presenceCookie
+        ? await verifyPresenceToken(presenceCookie, presenceSecret)
+        : null;
+    // Re-check the binding even though it is inside the MAC: the MAC proves we
+    // issued the token, not that we issued it to THIS device.
+    if (!presence?.ok || presence.tailnetNodeId !== tailnetNodeId) {
+      return jsonError(401, "passkey presence required");
+    }
   }
 
   // Running a Codex automation launches the local `codex` binary with the
@@ -236,7 +293,7 @@ export async function proxy(req: NextRequest) {
   // authenticated: their forwarded Host value is client/forwarder-controlled
   // and cannot prove that the original peer was loopback.
   if (isLocalOnlyAutomationRun(req.nextUrl.pathname, req.method)) {
-    if (mobileAccessAuthenticated || tailnetTrusted || !isLoopbackHost(requestHost)) {
+    if (remoteIngress || tailnetTrusted || !isLoopbackHost(requestHost)) {
       return jsonError(403, "forbidden local-only endpoint");
     }
   }
@@ -301,12 +358,16 @@ export async function proxy(req: NextRequest) {
   const sidecarAuthenticated = sidecarTokenMatches(suppliedToken);
 
   if (!sidecarToken) {
-    return process.env.COVEN_CAVE_BUNDLE === "1"
-      ? jsonError(500, "missing sidecar auth token")
-      : nextWithMobileAccessMarker(req, mobileAccessAuthenticated);
+    if (process.env.COVEN_CAVE_BUNDLE === "1") {
+      return jsonError(500, "missing sidecar auth token");
+    }
+    if (!isTokenlessApiPeerAllowed(trustedLocalPeer, remoteIngress)) {
+      return jsonError(403, "forbidden peer: missing trusted local peer or verified remote ingress");
+    }
+    return nextWithMobileAccessMarker(req, remoteIngress);
   }
 
-  if (!sidecarAuthenticated && !mobileAccessAuthenticated) {
+  if (!sidecarAuthenticated && !remoteIngress) {
     // A verified signed mobile invite is the paired phone's credential: the
     // token is minted by this desktop from its access secret and already
     // passed mobileAccessGate above. Requiring the webview's per-launch
@@ -317,7 +378,7 @@ export async function proxy(req: NextRequest) {
     return jsonError(401, "unauthorized");
   }
 
-  return nextWithMobileAccessMarker(req, mobileAccessAuthenticated);
+  return nextWithMobileAccessMarker(req, remoteIngress);
 }
 
 export const config = {

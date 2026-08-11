@@ -16,7 +16,7 @@ assert.ok(rowBlock, "the familiar ForEach block should be findable");
 
 assert.match(
   home,
-  /private func startNewChat\(with familiar: Familiar\) \{[\s\S]*presentNewChat\(familiarIds: \[familiar\.id\]\)/,
+  /private func startNewChat\(with familiar: Familiar\) \{[\s\S]*presentNewChat\(fixedFamiliarId: familiar\.id\)/,
   "startNewChat should open project-aware New Chat with the familiar preselected",
 );
 

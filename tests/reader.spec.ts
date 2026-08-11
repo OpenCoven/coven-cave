@@ -165,6 +165,7 @@ async function openReader(page: Page, turn: TurnSpec) {
   await expect(page.locator(".cave-reader-doc .cave-md")).toContainText(marker.slice(0, 24), {
     timeout: 30_000,
   });
+
 }
 
 test("cited sources render as chips, with no footnote plumbing left in the prose", async ({ page }) => {
@@ -172,9 +173,32 @@ test("cited sources render as chips, with no footnote plumbing left in the prose
   const body = page.locator(".cave-reader-doc .cave-md");
 
   // #4265: the reader rendered through MarkdownBlock, which does not mount the
-  // citation previews, so these were plain underlined links.
-  await expect(body.locator("a.cave-citation-chip")).toHaveCount(2);
+  // citation previews, so these were plain underlined links. Wait for the chips
+  // themselves: prose can settle before the async markdown and preview effects.
+  // Keep this wait scoped to the only test whose contract is citation chips;
+  // making every reader test wait on them multiplied one flaky assertion across
+  // the serial suite and failed different unrelated cases on each CI attempt.
+  await expect(body.locator("a.cave-citation-chip")).toHaveCount(2, { timeout: 30_000 });
   await expect(body.locator("a.cave-citation-chip").first()).toHaveText("developer.mozilla.org");
+
+  // The markdown renderer may replace injected DOM after the preview effect's
+  // first pass. A fresh raw anchor must be reconciled in place rather than
+  // remaining an inert footnote until another React render happens.
+  await body.locator("a.cave-citation-chip").first().evaluate((link) => {
+    const replacement = document.createElement("a");
+    replacement.dataset.lateCitation = "1";
+    replacement.href = "#cite-1";
+    replacement.textContent = link.textContent;
+    link.replaceWith(replacement);
+  });
+  const lateCitation = body.locator('[data-late-citation="1"]');
+  await expect(lateCitation).toHaveClass(/cave-citation-chip/);
+  await expect(lateCitation).toHaveAttribute(
+    "href",
+    "https://developer.mozilla.org/docs/Web/CSS/grid-auto-flow",
+  );
+  await expect(lateCitation).toHaveAttribute("aria-haspopup", "dialog");
+  await expect(body.locator("a.cave-citation-chip")).toHaveCount(2);
 
   // #4264: the reader was handed raw `text`, so the markers survived into the
   // prose and the definition block was dumped at the end of the document.

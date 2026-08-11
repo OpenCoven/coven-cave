@@ -76,6 +76,16 @@ async function base(
       },
     }),
   );
+  await page.route("**/api/daemon/connection**", (route) =>
+    route.fulfill({
+      json: {
+        running: true,
+        availability: "online",
+        checkedAt: new Date().toISOString(),
+        target: { mode: "local", label: "Local daemon", socket: "/tmp/coven.sock" },
+      },
+    }),
+  );
   await page.route("**/api/onboarding/status**", (route) =>
     route.fulfill({ json: { ok: true, complete: true, steps: {}, tools: [] } }),
   );
@@ -206,56 +216,59 @@ test.describe("code surface (Coding familiar's room)", () => {
     // Scoped to the header testid: the rail row and the nav's Recent
     // Activity roll-up legitimately repeat the same diffstat text.
     const header = page.getByTestId("code-workbench-header");
-    await expect(header.getByRole("heading", { name: "Wire the flux capacitor" })).toBeVisible();
+    await expect(header.getByRole("button", { name: /Wire the flux capacitor/ })).toBeVisible();
     await expect(header.getByText("feat/flux")).toBeVisible();
-    await expect(header.getByText("#7 (open)")).toBeVisible();
+    await expect(header.getByText("#7")).toBeVisible();
     await expect(header.getByText("+12 −3")).toBeVisible();
 
-    // cave-98o51: the terminal is the Room's permanent center, so Diff is no
-    // longer a workbench tab — it is Changes, the context dock's default.
-    const dock = page.getByRole("tablist", { name: "Session context" });
-    await expect(dock.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
+    // cave-0rcku: review docks BESIDE the source as a rail whose default tab is
+    // Changes — never a workbench tab you have to leave the file to reach.
+    const reviewTabs = page.getByRole("tablist", { name: "Review surface" });
+    await expect(reviewTabs.getByRole("tab", { name: /Changes/ })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("tablist", { name: "Session workbench" })).toHaveCount(0);
+    await expect(page.getByRole("tablist", { name: "Session context" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "modified flux.ts src" })).toBeVisible({ timeout: 15_000 });
+
+    // The shell is a permanent bottom drawer, not a tab — its bar is on screen
+    // without anyone having gone looking for it.
+    await expect(page.getByRole("button", { name: /Open the terminal drawer/ })).toBeVisible();
   });
 
-  test("workbench tabs switch; Files shows tree + preview; inspector lists branches", async ({ page, isMobile }) => {
+  test("the tree marks changed files, the rail collapses to a spine, the inspector is a header popover", async ({ page, isMobile }) => {
     test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
     await base(page);
     await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("code-workbench-tree")).toBeVisible({ timeout: 30_000 });
 
-    const wb = page.getByRole("tablist", { name: "Session context" });
-    await expect(wb).toBeVisible({ timeout: 30_000 });
+    // cave-0rcku: the tree carries the working-tree status itself, so "what did
+    // this session touch?" is answerable without leaving the file you are on.
+    const tree = page.getByTestId("code-workbench-tree");
+    const changedFilter = tree.getByRole("button", { name: /changed/ });
+    await expect(changedFilter).toBeVisible();
+    await changedFilter.click();
+    await expect(changedFilter).toHaveAttribute("aria-pressed", "true");
+    await expect(tree.getByRole("list", { name: "Changed files" })).toBeVisible();
 
-    // Files: ProjectTree renders, picking a file loads the editable preview.
-    await wb.getByRole("tab", { name: "Files" }).click();
-    await expect(page.locator('[role="tree"]')).toBeVisible({ timeout: 15_000 });
-    await page.getByText("README.md", { exact: false }).first().click();
-    await expect(page.getByText("Hello.")).toBeVisible({ timeout: 15_000 });
+    // The rail closes to a spine that STILL answers "is there anything to
+    // review?" — a panel that vanished would make that unanswerable.
+    const rail = page.getByTestId("code-review-rail");
+    await expect(rail).toBeVisible();
+    await page.getByRole("button", { name: "Hide the review rail" }).click();
+    await expect(rail).toHaveCount(0);
+    const spine = page.getByRole("button", { name: "Show the review rail" });
+    await expect(spine).toBeVisible();
+    await spine.click();
+    await expect(page.getByTestId("code-review-rail")).toBeVisible();
 
-    // Inspector: cave-98o51 moved it out of a header toggle and into the
-    // context dock, alongside Changes and Files, so it is reached by its tab.
-    await wb.getByRole("tab", { name: "Inspector" }).click();
+    // Inspector: cave-0rcku moved it out of the retired dock and into a header
+    // popover, so branches are one click from the file you are reading.
+    await page.getByRole("button", { name: /Session inspector/ }).click();
     const inspector = page.getByRole("region", { name: "Branches" });
     await expect(inspector).toBeVisible({ timeout: 15_000 });
     await expect(inspector.getByText("main", { exact: true })).toBeVisible({ timeout: 15_000 });
     // The worktree mark on the branch row (the Root env row also contains
     // "feat-flux" inside the worktree path, so match the ⑂-prefixed form).
     await expect(inspector.getByText("⑂ feat-flux")).toBeVisible();
-
-    // cave-uod42: GitHub is a dock tab, so triage sits beside the terminal
-    // instead of replacing the whole Room. Selecting it widens the dock,
-    // because a list/detail split at sidebar width is unreadable.
-    const dock = page.getByTestId("code-context-dock");
-    await wb.getByRole("tab", { name: "GitHub" }).click();
-    await expect(dock).toHaveAttribute("data-size", "expanded");
-    await expect(wb.getByRole("tab", { name: "GitHub" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    // The terminal center is the point of the Room — it must survive every
-    // context switch, GitHub included.
-    await expect(page.getByTestId("code-terminal-workspace")).toBeVisible();
   });
 
   test("?mode=code&session=<id>&wtab=files deep link selects the session and tab", async ({ page, isMobile }) => {
@@ -264,10 +277,12 @@ test.describe("code surface (Coding familiar's room)", () => {
     await page.goto("/?mode=code&session=s-old&wtab=files", { waitUntil: "domcontentloaded" });
 
     // The deep-linked (NOT newest) session is selected…
-    await expect(page.getByRole("heading", { name: "Fix login retry" })).toBeVisible({ timeout: 30_000 });
-    // …with its Files tab active, and the params stripped from the URL.
-    const wb = page.getByRole("tablist", { name: "Session context" });
-    await expect(wb.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
+    await expect(
+      page.getByTestId("code-workbench-header").getByRole("button", { name: /Fix login retry/ }),
+    ).toBeVisible({ timeout: 30_000 });
+    // …with the file tree on screen (files are a column now, not a tab), and
+    // the params stripped from the URL.
+    await expect(page.getByTestId("code-workbench-tree")).toBeVisible();
     await expect
       .poll(() => page.evaluate(() => window.location.search))
       .not.toContain("session=");
@@ -286,7 +301,7 @@ test.describe("code surface (Coding familiar's room)", () => {
     await expect(page.getByRole("heading", { name: "Release alert" })).toBeVisible({ timeout: 30_000 });
   });
 
-  test("a non-coding familiar sees the closed Code Workshop door", async ({ page }) => {
+  test("a non-coding familiar sees the closed Coding Desk door", async ({ page }) => {
     await base(page, [NEWEST, OLDER], "general");
     await page.goto("/?mode=github", { waitUntil: "domcontentloaded" });
 
@@ -301,7 +316,6 @@ test.describe("code surface (Coding familiar's room)", () => {
     isMobile,
   }) => {
     test.skip(!!isMobile, "desktop project supplies the narrow viewport explicitly");
-    await page.setViewportSize({ width: 320, height: 700 });
     await base(page);
     let releaseMemberships = () => {};
     const membershipsReady = new Promise<void>((resolve) => {
@@ -321,21 +335,36 @@ test.describe("code surface (Coding familiar's room)", () => {
     });
     await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
 
-    const sessionsTab = page.getByRole("tab", { name: "Sessions" });
+    const sessionsTab = page
+      .getByRole("tablist", { name: "Code surface" })
+      .getByRole("tab", { name: "Sessions" });
+    // Establish keyboard modality before programmatically selecting the exact
+    // tab under test so Chromium applies the :focus-visible inset ring.
+    await page.keyboard.press("Tab");
     await sessionsTab.focus();
     await expect(sessionsTab).toBeFocused();
+    // Report the real computed values rather than a collapsed boolean: a bare
+    // `outlineMatchesToken: false` hides which half mismatched. The tab carries
+    // `focus-ring-inset`, so the ring is drawn inside the box — width
+    // `--ring-width` (2px) at the negated offset, not the outset `--ring-offset`.
     await expect
-      .poll(() =>
-        sessionsTab.evaluate((element) => {
-          const style = getComputedStyle(element);
-          return {
-            outlineOffset: style.outlineOffset,
-            outlineWidth: style.outlineWidth,
-          };
-        }),
+      .poll(
+        () =>
+          sessionsTab.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return {
+              focusVisible: element.matches(":focus-visible"),
+              outlineWidth: style.outlineWidth,
+              outlineOffset: style.outlineOffset,
+            };
+          }),
+        { timeout: 30_000 },
       )
-      .toEqual({ outlineOffset: "-2px", outlineWidth: "2px" });
+      .toEqual({ focusVisible: true, outlineWidth: "2px", outlineOffset: "-2px" });
 
+    // Resize only after the desktop Code surface has mounted. Starting at a
+    // phone width intentionally routes to the mobile workshop fallback.
+    await page.setViewportSize({ width: 320, height: 700 });
     await page.getByRole("button", { name: "GitHub organization settings" }).click();
     const popover = page.getByRole("dialog", { name: "GitHub organization settings" });
     await expect(popover).toBeVisible({ timeout: 30_000 });

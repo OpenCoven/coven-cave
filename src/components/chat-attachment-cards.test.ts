@@ -14,14 +14,14 @@ assert.match(cards, /aria-modal="true"/, "attachment preview remains a modal dia
 assert.match(cards, /export function AttachmentList/, "attachment chips have a dedicated presentation component");
 assert.match(cards, /export function InlineImageAttachments/, "familiar-produced images have an inline presentation component");
 assert.match(cards, /export function AttachmentThumb/, "staged attachments have a chip-sized preview component");
-assert.match(chatView, /import \{ AttachmentList, AttachmentThumb, InlineImageAttachments, formatAttachmentBytes, isInlineImageAttachment \} from "\.\/chat-attachment-cards"/, "ChatView consumes the attachment presentation boundary");
+assert.match(chatView, /import \{[^}]*\bAttachmentList\b[^}]*\bAttachmentThumb\b[^}]*\bInlineImageAttachments\b[^}]*\bformatAttachmentBytes\b[^}]*\bisInlineImageAttachment\b[^}]*\} from "\.\/chat-attachment-cards"/, "ChatView consumes the attachment presentation boundary");
 
 // Both transcript paths — the turn you sent and the turn a familiar produced —
 // render images as images and keep the chip list for everything that has no
 // pixels to show. A user-attached screenshot used to appear only as a filename
 // (cave-xrvns follow-up), which is indistinguishable from a text file.
 const inlineSplits = chatView.match(
-  /<InlineImageAttachments attachments=\{turn\.attachments\} \/>\s*\{turn\.attachments\.some\(\(a\) => !isInlineImageAttachment\(a\)\) \? \(\s*<AttachmentList attachments=\{turn\.attachments\.filter\(\(a\) => !isInlineImageAttachment\(a\)\)\} \/>/g,
+  /<InlineImageAttachments attachments=\{turn\.attachments\} \/>[\s\S]{0,400}?\{turn\.attachments\.some\(\(a\) => !isInlineImageAttachment\(a\)[\s\S]{0,120}?\) \? \([\s\S]{0,200}?<AttachmentList attachments=\{turn\.attachments\.filter\(\(a\) => !isInlineImageAttachment\(a\)/g,
 ) ?? [];
 assert.equal(
   inlineSplits.length,

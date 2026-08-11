@@ -12,10 +12,13 @@ process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR = root;
 const {
   CHAT_ATTACHMENT_MAX_AGE_MS,
   ChatAttachmentStoreError,
+  chatAttachmentMaxBytes,
   chatAttachmentMimeType,
   isValidChatAttachmentId,
   readChatImageAttachment,
   saveChatImageAttachment,
+  saveChatMediaAttachment,
+  saveChatMediaAttachmentFromFileSync,
   sweepChatImageAttachments,
 } = await import("./chat-attachment-store.ts");
 
@@ -103,6 +106,52 @@ test("a missing attachment reports missing, not a crash", async () => {
   await assert.rejects(
     () => readChatImageAttachment("11111111-2222-4333-8444-555555555555.png"),
     (error: unknown) => error instanceof ChatAttachmentStoreError && error.code === "missing",
+  );
+});
+
+test("a media payload round-trips through the store", async () => {
+  const clip = Buffer.from("fake-mp4-bytes-for-roundtrip");
+  const dataUrl = `data:video/mp4;base64,${clip.toString("base64")}`;
+  const storedId = await saveChatMediaAttachment(dataUrl, "video/mp4");
+  assert.ok(storedId, "saving an allowlisted video returns an id");
+  assert.match(storedId, /\.mp4$/, "the extension comes from the mime type");
+  assert.equal(chatAttachmentMimeType(storedId), "video/mp4");
+
+  const read = await readChatImageAttachment(storedId);
+  assert.equal(read.mimeType, "video/mp4");
+  assert.deepEqual(read.data, clip, "the bytes come back unchanged");
+});
+
+test("media outside the allowlist is refused", async () => {
+  const dataUrl = `data:video/x-matroska;base64,${Buffer.from("mkv").toString("base64")}`;
+  assert.equal(await saveChatMediaAttachment(dataUrl, "video/x-matroska"), null);
+  assert.equal(saveChatMediaAttachmentFromFileSync("/tmp/whatever.mkv", "video/x-matroska"), null);
+});
+
+test("a media file copies into the store synchronously", async () => {
+  const source = path.join(outside, "teaser.mp4");
+  const clip = Buffer.from("fake-mp4-bytes-for-file-copy");
+  await writeFile(source, clip);
+  const storedId = saveChatMediaAttachmentFromFileSync(source, "video/mp4");
+  assert.ok(storedId, "copying a valid mp4 returns an id");
+  const meta = await stat(path.join(root, storedId));
+  assert.equal(meta.mode & 0o777, 0o600, "copied media is owner-only");
+  const read = await readChatImageAttachment(storedId);
+  assert.deepEqual(read.data, clip);
+});
+
+test("media reads use the media cap, not the image cap", async () => {
+  // Larger than the 5MB image cap but under the 50MB media cap.
+  const big = Buffer.alloc(6 * 1024 * 1024, 7);
+  const source = path.join(outside, "big.mp3");
+  await writeFile(source, big);
+  const storedId = saveChatMediaAttachmentFromFileSync(source, "audio/mpeg");
+  assert.ok(storedId, "a 6MB mp3 is admitted under the media cap");
+  const read = await readChatImageAttachment(storedId);
+  assert.equal(read.data.byteLength, big.byteLength, "the read path honors the media cap");
+  assert.ok(
+    chatAttachmentMaxBytes(storedId) > chatAttachmentMaxBytes("5b1f0e64-6b0e-4b6b-9f3a-0d1c2e3f4a5b.png"),
+    "media ids carry a larger cap than image ids",
   );
 });
 

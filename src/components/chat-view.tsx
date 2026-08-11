@@ -40,6 +40,7 @@ import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { ChatSessionContextRow } from "@/components/chat-session-context-row";
 import { ChatThreadMinimap, ChatThreadSpine } from "@/components/chat-thread-instruments";
+import { ChatRunRail } from "@/components/chat-run-rail";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
@@ -66,9 +67,11 @@ import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   advanceLiveChatGeneration,
   clearLiveChatGeneration,
+  clearLiveChatGenerationAliases,
   mapConversationHistoryTurns,
   publishLiveChatGenerationMetadata,
   readLiveChatGeneration,
+  reconcileLiveChatGenerationSession,
   recordLiveChatGeneration,
   retryTurnModelRequest,
   stageLiveChatGenerationMetadata,
@@ -83,6 +86,12 @@ import {
 } from "@/lib/chat-turn-state";
 import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat-transcript-groups";
 import { generateChatTitle } from "@/lib/chat-title-generation";
+import { chatTurnGapLabel } from "@/lib/chat-turn-gap";
+import {
+  chatFoldAriaLabel,
+  chatFoldLabel,
+  chatTranscriptFold,
+} from "@/lib/chat-transcript-fold";
 import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
 import {
   newSessionDefaults,
@@ -94,6 +103,11 @@ import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
+import {
+  CHAT_VIEW_HANDOFF_SCOPE,
+  claimInitialPromptHandoff,
+  initialPromptHandoffClaimed,
+} from "@/lib/initial-prompt-handoff";
 import { useCopy } from "@/lib/use-copy";
 import { parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure } from "@/lib/harness-failure";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
@@ -128,7 +142,6 @@ import { LinkedContextRow } from "@/components/composer-linked-work-actions";
 import { ComposerContextChips } from "@/components/composer-context-pill";
 import {
   cleanImageDataUrl,
-  extractAgentAttachmentMarkers,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
@@ -192,13 +205,17 @@ import {
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
 import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
-import { extractNextPaths, type NextPath } from "@/lib/next-paths";
+import type { NextPath } from "@/lib/next-paths";
 import { FollowUpCards } from "@/components/chat-follow-up-cards";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
-import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
-import { imageCarouselKey, sliceImageBlocks, stripImageMarkers } from "@/lib/image-blocks";
-import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
-import { extractAutoStatusMarkers } from "@/lib/auto-status-blocks";
+import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
+import { imageCarouselKey, sliceImageBlocks } from "@/lib/image-blocks";
+import { parseSkillInvocation } from "@/lib/skill-blocks";
+import {
+  chatTurnVisibleText,
+  extractChatRenderedText,
+} from "@/lib/chat-rendered-text";
+import { sliceSpecBlocks } from "@/lib/spec-blocks";
 import {
   AUTO_BRIEFED_KEY,
   clearAutoMission,
@@ -210,8 +227,22 @@ import {
   type AutoMissionRecord,
 } from "@/lib/auto-mission-state";
 import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
+import {
+  emitChatAttentionClear,
+  emitChatAttentionSettlement,
+} from "@/lib/chat-attention-events";
+import {
+  createAdoptedAttentionSettlementRegistry,
+  createChatAttentionAdoptionTracker,
+  createChatAttentionSettlementTracker,
+  createExternallySettledGenerationRegistry,
+} from "@/lib/chat-attention-lifecycle";
+import {
+  chatAttentionProjectionScopeKey,
+} from "@/lib/chat-attention-projection";
 import { GitHubCard } from "@/components/github-card";
 import { ImageCarousel } from "@/components/image-carousel";
+import { ChatSpecCard } from "@/components/chat-spec-card";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillStageCard } from "@/components/skill-stage-card";
 import { AutoStatusCard } from "@/components/auto-status-card";
@@ -277,8 +308,18 @@ import {
 import { streamFamiliarText } from "@/lib/familiar-stream";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
-import { AttachmentList, AttachmentThumb, InlineImageAttachments, formatAttachmentBytes, isInlineImageAttachment } from "./chat-attachment-cards";
+import { AttachmentList, AttachmentThumb, InlineImageAttachments, InlineMediaAttachments, formatAttachmentBytes, isInlineImageAttachment, isInlineMediaAttachment } from "./chat-attachment-cards";
 import { preloadMarkdownPreview } from "@/lib/markdown-preview";
+import {
+  type CreationRefreshState,
+  onSendStart,
+  onCreationSessionIdentified,
+  onDoneCreationRefresh,
+  onCreationRunTerminated,
+  shouldReplacementRefreshOnDone,
+} from "@/lib/chat-creation-refresh";
+import { canPromoteDisplayedSession, ownsDisplayedView } from "@/lib/chat-session-ownership";
+import type { ChatSessionPromotionRequest } from "@/lib/chat-router-promotion";
 
 // Chat history commonly arrives before syntax highlighting is needed. Warm the
 // lightweight browser-only serializer while that request is in flight so
@@ -299,6 +340,27 @@ const replyableTurnCache = new WeakMap<Turn, boolean>();
 // state) can be unit-tested without React. The full LiveChatGenerationSnapshot
 // is structurally assignable to the helper's minimal SnapshotLiveness shape.
 
+// `isLiveSnapshotActive` only proves the registry entry hasn't gone stale
+// (unaborted + recently touched) — a generation that finished seconds ago
+// still reads as "active" until its owning send's `finally` retires the
+// entry. Adopting a snapshot like that (opening/refreshing a thread whose
+// reply already landed) must repaint the transcript, but it must NOT clear
+// sidebar attention: that reply already went through its own settlement, and
+// re-clearing here would suppress a genuinely new human request that arrived
+// in the same TTL window. Only a snapshot whose active leaf is still
+// `pending` represents a generation actually awaiting a reply.
+function isLiveGenerationPending(live: Pick<LiveChatGenerationSnapshot, "turns" | "activeLeafId">): boolean {
+  return Boolean(live.turns.find((t) => t.id === live.activeLeafId)?.pending);
+}
+
+// A remounted view can evict and externally settle a stale/orphaned live
+// snapshot before the original send owner's `finally` runs. Share that
+// suppression by the generation controller: it is unique per run, survives
+// remount adoption through the live registry, and does not leak if an orphaned
+// owner never comes back to consume it.
+const externallySettledChatAttentionControllers = createExternallySettledGenerationRegistry();
+const adoptedPendingAttentionSettlementOwners = createAdoptedAttentionSettlementRegistry();
+
 type Props = {
   familiar: Familiar;
   sessionId: string | null;
@@ -313,6 +375,13 @@ type Props = {
    * Allow that one first prompt to send into the reserved, otherwise-empty
    * conversation instead of treating it as a resumed thread. */
   autoSendInitialPrompt?: boolean;
+  /** Stable id for THIS handoff, for callers that can remount the view while
+   * `initialPrompt` is still set. The auto-send guard is otherwise an instance
+   * ref, so a remount re-arms it and sends the prompt twice — which is what the
+   * Task Work cockpit did every time its pane-set-keyed Group remounted to show
+   * the code rail (cave-6une3). Supplying this moves the latch out of the
+   * instance and into `initial-prompt-handoff`, keyed by this id. */
+  initialPromptHandoffId?: string | null;
   /** The Board reserved this Cave conversation id before any native harness
    * session exists, so the first send must not pass it as a resume token. */
   startNewConversation?: boolean;
@@ -336,12 +405,24 @@ type Props = {
    *  switched this view to a different session. */
   openVoiceSessionId?: string;
   daemonRunning?: boolean;
+  /** Workspace's current sidebar familiar filter — the scope its
+   *  `/api/sessions/list` request is actually loaded under (null means "all
+   *  familiars"). This is the list scope that can prove a session's absence,
+   *  which can differ from this chat's own `familiar`/`session.familiarId`
+   *  (a split pane showing a different familiar, or a caller that mounts
+   *  ChatView outside Workspace's sidebar entirely). Left undefined by
+   *  callers that don't track a list scope; Workspace's own attention-clear
+   *  handler always re-derives and overrides the authoritative scope itself,
+   *  so this is best-effort provenance on the emitted event, not the sole
+   *  source of truth. */
+  activeFamiliarId?: string | null;
   /** Roster used to promote this chat into a coven from the familiar rail. */
   familiars?: Familiar[];
   /** Workspace-owned session list; the starting page's "Continue" row reads it
    *  so no extra fetch rides on every new chat. */
   sessions?: SessionRow[];
-  onSessionStarted?: (sessionId: string) => void;
+  composeInstance?: number;
+  onSessionStarted?: (request: ChatSessionPromotionRequest) => void;
   /** Pre-session voice call: ChatView created a conversation for the call;
    *  the router promotes it and re-enters via openVoiceNonce. */
   onVoiceSessionCreated?: (sessionId: string) => void;
@@ -431,17 +512,24 @@ type QueuedChatMessage = {
   options?: ChatSendOptions;
   controls: ChatSendControls;
 };
+// Settles exactly one sidebar-attention reconciliation per generation. An
 type LiveStreamGeneration = {
   sessionId: string | null;
   originSessionId: string | null;
+  sessionAliases: Set<string>;
   controller: AbortController;
   runId: string;
+  clearWatermark: string;
   streamHealth: () => ChatStreamClientHealth;
+  markAttentionCleared: (sessionId: string) => void;
+  markPersistenceConfirmed: () => void;
+  reconcileCanonicalSessions: () => void;
 };
 function liveStreamMetadata(liveGeneration: LiveStreamGeneration): LiveChatGenerationMetadata {
   return {
     runId: liveGeneration.runId,
     streamHealth: liveGeneration.streamHealth(),
+    clearWatermark: liveGeneration.clearWatermark,
   };
 }
 type ComposerThinkingEffort = CommandThinkingEffort;
@@ -474,6 +562,7 @@ const CHUNK_FLUSH_MS = 40;
 const CHAT_ATTACHMENT_ACCEPT = [
   "image/*",
   "video/*",
+  "audio/*",
   "application/pdf",
   "application/json",
   "text/*",
@@ -970,64 +1059,6 @@ function lifecycleLabel(lifecycle: ChatTurnLifecycle): string {
     case "complete":
       return "Complete";
   }
-}
-
-/**
- * Split assistant text into visible body + accumulated reasoning. We treat any
- * `<thinking>...</thinking>` or `<reasoning>...</reasoning>` block (both
- * commonly emitted by Claude/Codex harnesses) as reasoning to be collapsed.
- * Unclosed reasoning blocks are captured while streaming instead of leaking
- * raw internal tags into the transcript.
- */
-function splitReasoning(text: string): { visible: string; reasoning: string } {
-  const reasoningParts: string[] = [];
-  const visibleParts: string[] = [];
-  const tagRe = /<(\/?)(thinking|reasoning)>/gi;
-  let activeTag: string | null = null;
-  let reasoningStart = 0;
-  let cursor = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = tagRe.exec(text)) !== null) {
-    const closing = match[1] === "/";
-    const tag = match[2].toLowerCase();
-
-    if (!activeTag && closing) {
-      visibleParts.push(text.slice(cursor, match.index));
-      cursor = tagRe.lastIndex;
-      continue;
-    }
-
-    if (!activeTag && !closing) {
-      visibleParts.push(text.slice(cursor, match.index));
-      activeTag = tag;
-      reasoningStart = tagRe.lastIndex;
-      cursor = tagRe.lastIndex;
-      continue;
-    }
-
-    if (activeTag === tag && closing) {
-      reasoningParts.push(text.slice(reasoningStart, match.index).trim());
-      activeTag = null;
-      cursor = tagRe.lastIndex;
-    }
-  }
-
-  if (activeTag) {
-    reasoningParts.push(text.slice(reasoningStart).trim());
-  } else {
-    visibleParts.push(text.slice(cursor));
-  }
-
-  const visible = visibleParts.join("");
-  // Strip upstream debug-prefix lines (e.g. "[model-fallback/decision] …")
-  // that leak into the assistant transcript. Anchored to line start so
-  // inline brackets in prose are untouched.
-  const DEBUG_PREFIX_RE = /^\[[a-z][\w-]*(?:\/[\w-]+)+\][^\n]*\n?/gim;
-  return {
-    visible: visible.replace(DEBUG_PREFIX_RE, "").replace(/\n{3,}/g, "\n\n").trimStart(),
-    reasoning: reasoningParts.join("\n\n").trim(),
-  };
 }
 
 // ── ChatEmptyState ────────────────────────────────────────────────────────────
@@ -1810,7 +1841,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, familiars = [], sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -2477,6 +2508,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [activeProjectRoot, onProjectRootChange]);
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
+  const creationRefreshStateRef = useRef<CreationRefreshState>({ pendingRuns: {} });
+  // Tracks which generation run currently owns the displayed view. Cleared on
+  // thread switch, adoption, and unmount. See ownsDisplayedView for the guard.
+  const displayedCreationRunIdRef = useRef<string | null>(null);
+  const onSessionsChangedRef = useRef(onSessionsChanged);
+  onSessionsChangedRef.current = onSessionsChanged;
+  useLayoutEffect(() => {
+    return () => {
+      displayedCreationRunIdRef.current = null;
+    };
+  }, []);
   const streamHealthSessionRef = useRef(sessionId);
   const currentStreamHealthRunIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -2517,6 +2559,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const historyExpandedRef = useRef(false);
   historyExpandedRef.current = historyExpanded;
+  // "Chat Session - Prototype.dc.html" (cave-u5lq7): a long thread opens on the
+  // recent exchange with everything older behind one pill. Separate concern
+  // from historyExpanded above — that is a mounting budget, this is a reading
+  // affordance — but opening the fold lifts the cap too, because a pill that
+  // says "hide earlier turns" has promised every earlier turn.
+  const [foldOpen, setFoldOpen] = useState(false);
+  const foldOpenRef = useRef(false);
+  foldOpenRef.current = foldOpen;
   // Distance-from-bottom captured at the instant of expansion so the prepended
   // older rows don't visually shove the viewport (restored in a layout effect).
   const expandAnchorRef = useRef<number | null>(null);
@@ -2592,8 +2642,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // Restore the pre-expansion distance-from-bottom once the full transcript has
   // mounted, so revealing the older rows doesn't jump the reader's viewport.
+  // Either reveal prepends rows above the viewport, so both have to restore the
+  // anchor. Keying on historyExpanded alone missed the case where the reader
+  // had already scrolled up (cap lifted) and then opened the fold — the rows
+  // arrived with no effect left to fire, and the viewport jumped.
   useLayoutEffect(() => {
-    if (!historyExpanded) return;
+    if (!historyExpanded && !foldOpen) return;
     const anchor = expandAnchorRef.current;
     expandAnchorRef.current = null;
     if (anchor == null) return;
@@ -2602,7 +2656,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       el.scrollTop = Math.max(0, el.scrollHeight - anchor);
       captureReleasedScrollAnchor();
     }
-  }, [captureReleasedScrollAnchor, historyExpanded]);
+  }, [captureReleasedScrollAnchor, historyExpanded, foldOpen]);
+
+  // Opening the fold lifts the render cap with it and anchors the scroll, so
+  // the earlier turns slide in ABOVE the reader rather than shoving them down.
+  // Stable identity: TranscriptRows is memoized on its props.
+  const toggleFold = useCallback(() => {
+    if (foldOpenRef.current) {
+      setFoldOpen(false);
+      return;
+    }
+    const el = scrollRef.current;
+    expandAnchorRef.current = el ? el.scrollHeight - el.scrollTop : null;
+    captureReleasedScrollAnchor();
+    setHistoryExpanded(true);
+    setFoldOpen(true);
+  }, [captureReleasedScrollAnchor]);
 
   // `shouldApply` lets a caller (the effect below) veto the setState after the
   // await — a fetch that resolves after a thread switch must not overwrite the
@@ -2989,6 +3058,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
    *  settle-refetch below; an instance that merely ADOPTED a live snapshot
    *  (remounted mid-generation) does. */
   const streamOwnerRef = useRef(false);
+  const adoptedPendingAttentionClearRef = useRef(createChatAttentionAdoptionTracker());
   /** Session whose settle (registry clear) should trigger a disk refetch:
    *  set when this non-owner view adopts a live snapshot, or when it evicts
    *  a stale one while the orphaned stream may still be running (cave-0er). */
@@ -3010,6 +3080,45 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       runId: currentStreamHealthRunIdRef.current,
       sessionId: targetSessionId,
     };
+  }
+
+  function maybeEmitAdoptedPendingAttentionClear(
+    targetSessionId: string,
+    live: LiveChatGenerationSnapshot,
+  ) {
+    if (!isLiveGenerationPending(live) || !live.runId) return;
+    if (!adoptedPendingAttentionClearRef.current.shouldEmit(targetSessionId, live.runId)) return;
+    emitAttentionClear(targetSessionId, live.runId, attentionClearWatermarkForLiveGeneration(live));
+    adoptedPendingAttentionSettlementOwners.markAttentionCleared(live.controller, targetSessionId);
+  }
+
+  function emitAttentionClear(
+    targetSessionId: string,
+    operationId: string,
+    clearWatermark?: string | null,
+  ) {
+    const knownSession = session?.id === targetSessionId
+      ? session
+      : sessions?.find((entry) => entry.id === targetSessionId) ?? null;
+    // The scope that can prove absence is Workspace's own current sidebar
+    // filter (the scope its session list is actually loaded under), not this
+    // chat's owning familiar — a split pane, or any session whose familiar
+    // differs from the active filter, would otherwise carry a scope that can
+    // never prove anything relative to the list actually being polled. Fall
+    // back to the session's own familiar only when the caller never learned
+    // the active scope at all (activeFamiliarId is undefined, not null).
+    const scopeFamiliarId = activeFamiliarId !== undefined
+      ? activeFamiliarId
+      : knownSession?.familiarId ?? familiar.id;
+    emitChatAttentionClear(targetSessionId, operationId, {
+      clearWatermark,
+      scopeKey: chatAttentionProjectionScopeKey(scopeFamiliarId),
+      baselineAttention: knownSession?.attention ?? null,
+    });
+  }
+
+  function attentionClearWatermarkForLiveGeneration(live: LiveChatGenerationSnapshot): string | null {
+    return live.clearWatermark ?? live.turns.find((turn) => turn.id === live.activeLeafId)?.createdAt ?? null;
   }
 
   function persistLiveTurns(
@@ -3101,6 +3210,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       if (live && isLiveSnapshotActive(live, Date.now())) {
         adoptLiveGenerationMetadata(live, sessionId);
+        maybeEmitAdoptedPendingAttentionClear(sessionId, live);
         setTurns(live.turns);
         turnsRef.current = live.turns;
         setActiveLeafId(live.activeLeafId);
@@ -3180,9 +3290,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       turns.map((t) => ({
         id: t.id,
         role: t.role,
-        // Visible text only: assistant turns may carry inline <thinking>
-        // blocks in `text`; match what the transcript actually renders.
-        text: t.role === "assistant" ? splitReasoning(t.text).visible : t.text,
+        // Match the exact prose projection used by the transcript, excluding
+        // reasoning and every non-visible control marker.
+        text: chatTurnVisibleText(t),
       })),
       findDebouncedQuery,
       { matchCase: findMatchCase, wholeWord: findWholeWord },
@@ -3191,9 +3301,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // Find searches the whole transcript, so opening it mounts every turn — a
   // jump (jumpToFindMatch) resolves its target via querySelector and must find
-  // the row in the DOM regardless of the render cap.
+  // the row in the DOM regardless of the render cap OR the fold. Without the
+  // fold half, searching a long thread reports hits in folded turns and then
+  // jumps nowhere, because the row it looks for was never rendered.
   useEffect(() => {
-    if (findOpen) setHistoryExpanded(true);
+    if (findOpen) {
+      setHistoryExpanded(true);
+      setFoldOpen(true);
+    }
   }, [findOpen]);
 
   // Keep the active pointer in bounds when the match set shrinks.
@@ -3374,6 +3489,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       : modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
       ? modelState.effectiveModel
       : "";
+  const [composerCaret, setComposerCaret] = useState(0);
+  const completeComposerText = useCallback((nextText: string, nextCaret: number) => {
+    setInput(nextText);
+    setComposerCaret(nextCaret);
+    requestAnimationFrame(() => {
+      const textarea = inputRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(nextCaret, nextCaret);
+    });
+  }, []);
   const {
     skills,
     prompts,
@@ -3389,10 +3515,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     slashIdx,
     setSlashIdx,
     slashListboxId,
+    completeCommand,
     handleKeyDown: handleMenuKey,
   } = useInlineSlashMenus({
     text: input,
     setText: setInput,
+    caret: composerCaret,
+    onCompleteText: completeComposerText,
     modelHarness,
     modelOptionsOverride: composerModelOptions,
     onPickModel: (id) => {
@@ -3468,9 +3597,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // @-file mentions (CHAT-D1-04). Typing `@` opens a workspace-file picker
   // for the selected predetermined project. The file index is fetched once
   // per root from /api/project/files and fuzzy-filtered client-side. Mentions
-  // stay disjoint from the slash menu: `@` is mid-token, `/` first-token-only.
+  // stay disjoint from the slash menu because each requires its own boundary.
   const mentionRoot = activeProjectRoot.trim();
-  const [composerCaret, setComposerCaret] = useState(0);
   const [mentionIdx, setMentionIdx] = useState(0);
   // Esc hides the picker for the current input; any edit brings it back.
   const [mentionDismissed, setMentionDismissed] = useState(false);
@@ -3653,23 +3781,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return null;
-    return extractNextPaths(last.text).suggestions.find((path) => path.kind === "reply") ?? null;
+    return extractChatRenderedText(last.text).nextPaths.find((path) => path.kind === "reply") ?? null;
   }, [activePath]);
 
-  // Chat-revamp 1b: the LATEST settled turn's follow-up suggestions render as
-  // typed cards directly above the composer (aligned to the reading column) —
-  // the most actionable element sits closest to the input. That turn's in-turn
-  // card row is suppressed (followUp.turnId → TurnRow) so the suggestions
-  // never render twice; older turns keep their in-turn rows. The parser owns
-  // the product cap so every renderer stays aligned.
+  // The latest settled turn's follow-up suggestions render directly above the
+  // composer. Suggestions are ephemeral actions, not transcript history, so
+  // assistant rows only strip their control blocks and never render old cards.
   const followUp = useMemo(() => {
-    const empty = { turnId: null as string | null, suggestions: [] as NextPath[] };
+    const empty = { suggestions: [] as NextPath[] };
     const last = [...activePath]
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return empty;
-    const suggestions = extractNextPaths(splitReasoning(last.text).visible).suggestions;
-    return suggestions.length ? { turnId: last.id, suggestions } : empty;
+    const suggestions = extractChatRenderedText(last.text).nextPaths;
+    return suggestions.length ? { suggestions } : empty;
   }, [activePath]);
 
   const handleFollowUp = useCallback((path: NextPath) => {
@@ -3773,6 +3898,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // A queued follow-up belongs to the conversation that was visible when it
     // was composed. Never let a thread switch dispatch it into another chat.
     if (isThreadSwitch) {
+      // Clearing display ownership on any thread switch means an in-flight
+      // generation from the previous view can no longer adopt.
+      displayedCreationRunIdRef.current = null;
       queuedMessagesRef.current = [];
       setQueuedMessages([]);
     }
@@ -3802,6 +3930,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const live = readLiveChatGeneration(sessionId);
     if (live && isLiveSnapshotActive(live, Date.now())) {
       adoptLiveGenerationMetadata(live, sessionId);
+      maybeEmitAdoptedPendingAttentionClear(sessionId, live);
       setTurns(live.turns);
       turnsRef.current = live.turns;
       setActiveLeafId(live.activeLeafId);
@@ -3826,6 +3955,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       skipSettleNotifyRef.current += 1;
       clearLiveChatGeneration(sessionId);
       if (!live.controller.signal.aborted) refetchOnSettleRef.current = sessionId;
+      // A still-pending snapshot (see isLiveGenerationPending above) had
+      // already optimistically cleared sidebar attention via
+      // emitChatAttentionClear when it was adopted. Evicting it here — dead
+      // orphan cleanup, not a real settlement — must not leave that
+      // projection "pending" forever (no owning generation is left to ever
+      // settle it). Settle it now as "failed": we cannot prove the human's
+      // request actually got a persisted reply, and fabricating "persisted"
+      // risks permanently hiding attention on a request that never got
+      // answered. Reconciling canonical sessions once afterward repaints the
+      // sidebar from disk truth (a genuinely still-running orphan stream's
+      // later settle must be a no-op against both the already-cleared
+      // operation and this one reload).
+      if (isLiveGenerationPending(live) && live.runId) {
+        externallySettledChatAttentionControllers.mark(live.controller, sessionId, live.runId);
+        emitChatAttentionSettlement(sessionId, live.runId, "failed");
+        onSessionsChangedRef.current?.();
+      }
     }
     const applyConversationPayload = (json: ConversationHistoryPayload) => {
       const mapped = mapConversationHistoryTurns(json.conversation?.turns ?? []);
@@ -4031,6 +4177,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   useEffect(() => {
     updateFollowing(true);
     setHistoryExpanded(false);
+    // The fold is per-thread: arriving in a new chat should land on its recent
+    // exchange, not inherit the last thread's expansion.
+    setFoldOpen(false);
     expandAnchorRef.current = null;
     releasedScrollAnchorRef.current = null;
   }, [sessionId, updateFollowing]);
@@ -4848,6 +4997,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setProjectRootRequired(false);
     const initialLiveSessionId = currentSessionRef.current;
     liveSessionIdRef.current = initialLiveSessionId;
+    const runId = crypto.randomUUID();
+    creationRefreshStateRef.current = onSendStart(creationRefreshStateRef.current, runId, initialLiveSessionId);
+    // Register this run as the displayed owner for both new and resumed chats.
+    // Unmount/thread-switch cleanup clears the slot before a late replacement
+    // can promote into a different compose.
+    displayedCreationRunIdRef.current = runId;
     setHistoryState("loaded");
 
     // Explicit parentTurnId (including null = root) wins; only fall back to the
@@ -4886,13 +5041,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ],
     };
     const controller = new AbortController();
-    const runId = crypto.randomUUID();
     currentStreamHealthRunIdRef.current = runId;
     let generationStreamHealth = applyStreamHealthAction({
       type: "connect",
       runId,
       at: new Date().toISOString(),
     });
+    const attentionSettlement = createChatAttentionSettlementTracker({
+      operationId: runId,
+      operationController: controller,
+      externalSettlements: externallySettledChatAttentionControllers,
+      settleProjection: (sessionId, operationId, outcome) => {
+        emitChatAttentionSettlement(sessionId, operationId, outcome);
+      },
+      reconcileCanonicalSessions: () => onSessionsChangedRef.current?.(),
+    });
+    adoptedPendingAttentionSettlementOwners.register(controller, attentionSettlement);
     // `sessionId` mutates to the server-assigned id as events arrive;
     // `originSessionId` stays the thread this generation started on, so a
     // background generation (user switched threads mid-stream) can tell it no
@@ -4900,9 +5064,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const liveGeneration: LiveStreamGeneration = {
       sessionId: initialLiveSessionId,
       originSessionId: initialLiveSessionId,
+      sessionAliases: new Set(initialLiveSessionId ? [initialLiveSessionId] : []),
       controller,
       runId,
+      clearWatermark: now,
       streamHealth: () => generationStreamHealth,
+      markAttentionCleared: (sessionId) => {
+        attentionSettlement.markAttentionCleared(sessionId);
+      },
+      markPersistenceConfirmed: () => {
+        attentionSettlement.markPersistenceConfirmed();
+      },
+      reconcileCanonicalSessions: () => {
+        attentionSettlement.reconcileNow();
+      },
     };
     const publishStreamHealth = (
       action: Exclude<
@@ -4981,6 +5156,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         updatedAt: Date.now(),
         runId,
         streamHealth: generationStreamHealth,
+        clearWatermark: now,
       });
     }
     try {
@@ -4993,6 +5169,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // The on-disk conversation is about to change; a cached pre-send payload
       // must not be painted on a later revisit of this thread.
       if (liveGeneration.sessionId) invalidateConversation(liveGeneration.sessionId);
+      if (liveGeneration.sessionId) {
+        emitAttentionClear(liveGeneration.sessionId, runId, liveGeneration.clearWatermark);
+        attentionSettlement.markAttentionCleared(liveGeneration.sessionId);
+      }
       const res = await fetch("/api/chat/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -5267,8 +5447,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         });
       }
     } finally {
+      attentionSettlement.reconcileIfNeeded();
+      // All terminal exits — HTTP rejection, missing body, exhausted recovery,
+      // abort, and stream exceptions — reach here. Calling
+      // onCreationRunTerminated unconditionally is safe: it removes only
+      // unbound pending entries and preserves bound session retry ones.
+      creationRefreshStateRef.current = onCreationRunTerminated(creationRefreshStateRef.current, liveGeneration.runId);
       // Always retire THIS generation's registry entry (keyed by session).
-      clearLiveChatGeneration(liveGeneration.sessionId, runId);
+      clearLiveChatGenerationAliases(liveGeneration.sessionAliases, runId);
       if (needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
         setHistoryRetryKey((k) => k + 1);
       }
@@ -5484,7 +5670,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // comparator that ignores callback identity, so a captured hook
           // value could go stale (chat-view memo notes below).
           : userDisplayName(readUserProfileSnapshot()?.profile);
-    const source = turn.role === "assistant" ? extractNextPaths(splitReasoning(turn.text).visible).visible : turn.text;
+    const source = chatTurnVisibleText(turn);
     // A quote is a passage the reader selected inside the Expand reader; with
     // none, the whole turn is the subject, exactly as the Reply action means.
     const snippet = buildReplySnippet(quote ?? source);
@@ -5501,8 +5687,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // captures a stale `replyToTurn`.
     let canReply = replyableTurnCache.get(turn);
     if (canReply === undefined) {
-      const source =
-        turn.role === "assistant" ? extractNextPaths(splitReasoning(turn.text).visible).visible : turn.text;
+      const source = chatTurnVisibleText(turn);
       canReply = source.trim().length > 0;
       replyableTurnCache.set(turn, canReply);
     }
@@ -5753,7 +5938,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     readerPromptFor,
     rerunWithFor,
     send,
-    activateFollowUp: handleFollowUp,
   };
 
   // Auto-send a prompt handed off from the home composer. Deferred one
@@ -5772,8 +5956,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     if (!projectLaunchReady) return;
     if (initialPromptSentRef.current || (sessionId && !autoSendInitialPrompt)) return;
+    // A caller that can remount this view under a live handoff (the Task Work
+    // cockpit, whose Group is keyed by the visible pane set) supplies a stable
+    // id, and the latch moves out of the instance ref so the remount cannot
+    // re-send. Callers without one keep the instance-ref-only behaviour.
+    if (
+      initialPromptHandoffId
+      && initialPromptHandoffClaimed(CHAT_VIEW_HANDOFF_SCOPE, initialPromptHandoffId)
+    ) {
+      initialPromptSentRef.current = true;
+      return;
+    }
     const timer = window.setTimeout(() => {
       if (initialPromptSentRef.current) return;
+      if (
+        initialPromptHandoffId
+        && !claimInitialPromptHandoff(CHAT_VIEW_HANDOFF_SCOPE, initialPromptHandoffId)
+      ) {
+        initialPromptSentRef.current = true;
+        return;
+      }
       initialPromptSentRef.current = true;
       const normalized = initialControls ? normalizeCommandControls(initialControls) : null;
       if (normalized) {
@@ -5797,6 +5999,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               : {}),
           }
         : undefined;
+      if (
+        (initialAttachments?.length ?? 0) === 0 &&
+        intentFromSlash(initialPrompt)
+      ) {
+        return;
+      }
       void sendRaw(
         initialPrompt,
         initialAttachments ?? [],
@@ -5809,7 +6017,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }, 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSendInitialPrompt, initialPrompt, projectLaunchReady, sessionId]);
+  }, [autoSendInitialPrompt, initialPrompt, initialPromptHandoffId, projectLaunchReady, sessionId]);
 
   // "Start a task" tail end: the first send's "session" event hands over the
   // session id, and the card follows the chat. Fire-and-forget — a failed card
@@ -5942,22 +6150,61 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ) => {
     switch (ev.kind) {
       case "session": {
-        liveGeneration.sessionId = ev.sessionId;
+        // A generation that started with no session id at all is a brand-new
+        // chat: this event mints ev.sessionId for the first time, so no
+        // canonical row can contain stale attention to clear. Resumed sessions
+        // already carry their id at generation start and clear conservatively.
+        const isBrandNewSession = liveGeneration.sessionId == null;
+        if (!isBrandNewSession) {
+          emitAttentionClear(ev.sessionId, liveGeneration.runId, liveGeneration.clearWatermark);
+          liveGeneration.markAttentionCleared(ev.sessionId);
+        }
+        reconcileLiveChatGenerationSession(
+          liveGeneration,
+          ev.sessionId,
+          liveGeneration.runId,
+        );
+        // Bind creation-refresh OUTSIDE the ownership guard. The provenance
+        // gate is now encoded in the helper: only a sessionless generation
+        // (originSessionId === null) may bind an unbound pending creation state;
+        // an existing-session generation is rejected internally.
+        creationRefreshStateRef.current = onCreationSessionIdentified(
+          creationRefreshStateRef.current, liveGeneration.runId, liveGeneration.originSessionId, ev.sessionId,
+        );
         if (ev.sessionId !== currentSessionRef.current) {
-          // Only adopt the new session id into THIS view's refs when the view is
-          // still on the thread this generation started from. If the user
-          // switched to another conversation before the id arrived (a new chat's
-          // first-token latency), this is a *background* generation: adopting its
-          // id would splice its chunks into the displayed thread and mis-address
-          // the next send (sendRaw reads currentSessionRef as initialLiveSessionId).
-          // Still notify onSessionStarted — the router promotes a still-open new
-          // chat but leaves an already-switched view alone (chat-router.tsx).
-          if (currentSessionRef.current === liveGeneration.originSessionId) {
+          // Only adopt the new session id into THIS view's refs when this run
+          // still owns the displayed thread. The run slot blocks both overlapping
+          // sessionless sends and resumed replacements arriving after switch/unmount.
+          const owned = ownsDisplayedView({
+            currentSessionId: currentSessionRef.current,
+            originSessionId: liveGeneration.originSessionId,
+            runId: liveGeneration.runId,
+            displayedCreationRunId: displayedCreationRunIdRef.current,
+          });
+          const shouldPromote = canPromoteDisplayedSession({
+            currentSessionId: currentSessionRef.current,
+            originSessionId: liveGeneration.originSessionId,
+            runId: liveGeneration.runId,
+            displayedCreationRunId: displayedCreationRunIdRef.current,
+          });
+          if (owned) {
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
+            // Clear display ownership after adoption so no late event may
+            // re-adopt via the done stable-ID fallback.
+            displayedCreationRunIdRef.current = null;
           }
-          onSessionStarted?.(ev.sessionId);
+          // Router promotion: pass originSessionId so ChatRouter can match the
+          // specific thread this generation started from (null for sessionless
+          // new-chat; non-null for replacement/fork on an existing session).
+          if (shouldPromote) {
+            onSessionStarted?.({
+              newSessionId: ev.sessionId,
+              expectedSessionId: liveGeneration.originSessionId,
+              composeInstance,
+            });
+          }
         }
         if (taskArmedRef.current) {
           // One-shot: clear before the async create so a second session event
@@ -6115,29 +6362,87 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           setError((prev) => prev ?? "The agent run ended with an error.");
           raiseDebugError({ turnId: assistantId });
         } else {
+          liveGeneration.markPersistenceConfirmed();
           // cave-fy1q phase 3: first completed reply ever — no-op unless the
           // first-open anchor exists (fresh installs only).
           stampFirstReplyOnce();
         }
         void refreshUsagePlan(ev.responseMetadata?.confirmedModel ?? ev.responseMetadata?.model ?? null);
+        if (ev.sessionId) {
+          reconcileLiveChatGenerationSession(
+            liveGeneration,
+            ev.sessionId,
+            liveGeneration.runId,
+          );
+        }
         if (ev.sessionId && ev.sessionId !== currentSessionRef.current) {
-          liveGeneration.sessionId = ev.sessionId;
-          // Same ownership guard as the "session" event: a background generation
-          // (user switched threads before this settled) must not overwrite the
-          // displayed thread's currentSessionRef. Still let the router register it.
-          if (currentSessionRef.current === liveGeneration.originSessionId) {
+          // Same run-and-thread ownership predicate as the "session" event.
+          const owned = ownsDisplayedView({
+            currentSessionId: currentSessionRef.current,
+            originSessionId: liveGeneration.originSessionId,
+            runId: liveGeneration.runId,
+            displayedCreationRunId: displayedCreationRunIdRef.current,
+          });
+          const shouldPromote = canPromoteDisplayedSession({
+            currentSessionId: currentSessionRef.current,
+            originSessionId: liveGeneration.originSessionId,
+            runId: liveGeneration.runId,
+            displayedCreationRunId: displayedCreationRunIdRef.current,
+          });
+          if (owned) {
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
+            // Clear display ownership after adoption (same as session event path).
+            displayedCreationRunIdRef.current = null;
           }
-          onSessionStarted?.(ev.sessionId);
+          // Router promotion: pass originSessionId so ChatRouter can match the
+          // specific thread this generation started from (mirrors the session event path).
+          if (shouldPromote) {
+            onSessionStarted?.({
+              newSessionId: ev.sessionId,
+              expectedSessionId: liveGeneration.originSessionId,
+              composeInstance,
+            });
+          }
         }
-        // A Board native-chat handoff already owns the stable conversation id,
-        // so its "session" event does not promote the router and therefore
-        // cannot refresh the task's session list. Refresh after the server has
-        // saved the first transcript; otherwise the cockpit stays in its
-        // one-shot bridge mode and never restores the normal work/rail view.
-        if (startNewConversation && ev.sessionId) onSessionsChanged?.();
+        const completedSessionId = ev.sessionId ?? liveGeneration.sessionId;
+        // Bind creation-refresh to this generation's session ID before the done
+        // decision. Covers: (a) the race where done arrives before the "session"
+        // event (no prior binding), and (b) background generations where the user
+        // switched away — session event already bound the state, this is idempotent.
+        // The provenance gate is encoded in the helper: only a sessionless
+        // generation (originSessionId === null) may bind; a retry participates
+        // only when its origin matches the already-bound creation session; an
+        // unrelated existing-session generation is rejected internally.
+        if (completedSessionId) {
+          creationRefreshStateRef.current = onCreationSessionIdentified(
+            creationRefreshStateRef.current, liveGeneration.runId, liveGeneration.originSessionId, completedSessionId,
+          );
+        }
+        const { shouldRefresh: shouldCreationRefresh, nextState: nextCreationRefreshState } =
+          onDoneCreationRefresh(creationRefreshStateRef.current, liveGeneration.runId, completedSessionId, ev.isError);
+        creationRefreshStateRef.current = nextCreationRefreshState;
+        // Replacement refresh: a resumed session (non-null origin) whose server-
+        // assigned stable ID differs from the origin (replacement/fork, e.g.
+        // OpenCode resume) needs a sidebar refresh so the new row appears.
+        // Background replacements refresh the sidebar but must not adopt the
+        // display — ownership is guarded upstream in the "session" and "done" event
+        // handlers via ownsDisplayedView.
+        const shouldReplacementRefresh = shouldReplacementRefreshOnDone(
+          liveGeneration.originSessionId,
+          completedSessionId,
+          ev.isError,
+        );
+        // Consolidate creation, replacement, and board refresh sources to a single
+        // call so no double-invocation is possible regardless of which path fires.
+        // A Board native-chat handoff already owns the stable conversation id, so
+        // its "session" event does not promote the router; refreshing here after
+        // persistence restores the normal work/rail view from the one-shot bridge mode.
+        const shouldRefreshSessions = shouldCreationRefresh || shouldReplacementRefresh || (startNewConversation && !!ev.sessionId && !ev.isError);
+        // Use the latest callback while mounted; stale runs may not refresh a
+        // replacement compose after layout cleanup revokes display ownership.
+        if (shouldRefreshSessions) onSessionsChangedRef.current?.();
         persistLiveTurns(
           turnsRef.current,
           assistantId,
@@ -6418,6 +6723,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // transcript survives, reachable via the chat list's "Show archived" toggle
   // where the same menu item unarchives it back onto the rail.
   // Rail drag-to-promote retains this callback for turning a solo chat into a coven.
+  const promotableFamiliars = useMemo(
+    () => addableFamiliars(familiars, familiar.id),
+    [familiar.id, familiars],
+  );
+  const promotableFamiliarIds = useMemo(
+    () => promotableFamiliars.map((candidate) => candidate.id),
+    [promotableFamiliars],
+  );
+
   const promoteToCoven = useCallback(
     (addedId: string) => {
       const added = familiars.find((f) => f.id === addedId);
@@ -6455,8 +6769,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const onStart = (e: Event) => {
       const detail = (e as CustomEvent<FamiliarDragDetail>).detail;
       if (!detail?.id) return;
-      const addable = addableFamiliars(familiars, familiar.id).map((f) => f.id);
-      if (!canDropFamiliar({ draggedId: detail.id, hostId: familiar.id, addableIds: addable })) return;
+      if (!canDropFamiliar({ draggedId: detail.id, hostId: familiar.id, addableIds: promotableFamiliarIds })) return;
       setFamiliarDrag(detail);
     };
     const onEnd = () => {
@@ -6469,7 +6782,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       window.removeEventListener(FAMILIAR_DRAG_START, onStart);
       window.removeEventListener(FAMILIAR_DRAG_END, onEnd);
     };
-  }, [familiar.id, familiars]);
+  }, [familiar.id, promotableFamiliarIds]);
 
   const handleFamiliarDrop = useCallback(
     (e: React.DragEvent) => {
@@ -6478,11 +6791,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setFamiliarDrag(null);
       setDropHover(false);
       if (!dropped) return;
-      const addable = addableFamiliars(familiars, familiar.id).map((f) => f.id);
-      if (!canDropFamiliar({ draggedId: dropped, hostId: familiar.id, addableIds: addable })) return;
+      if (!canDropFamiliar({ draggedId: dropped, hostId: familiar.id, addableIds: promotableFamiliarIds })) return;
       promoteToCoven(dropped);
     },
-    [familiar.id, familiarDrag, familiars, promoteToCoven],
+    [familiar.id, familiarDrag, promoteToCoven, promotableFamiliarIds],
   );
 
   const setChatArchived = async (archived: boolean) => {
@@ -6573,9 +6885,39 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // renders inline there and docked everywhere else. Extracted to a variable
   // rather than duplicated: a second composer would mean two textareas sharing
   // nothing, with draft, project, model, branch and enhance state forked.
+  // Context controls follow the same pattern: constructed once as
+  // chatContextControls and placed adaptively — footer cluster for new chats
+  // (inlineComposer) and session header for active chats (!inlineComposer)
+  // so picker state is never duplicated.
   const inlineComposer = sessionId === null;
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
+  const chatContextControls = (
+    <ComposerContextChips
+      projects={projects}
+      projectValue={resolvedProjectId}
+      onProjectChange={setProjectIdDraft}
+      familiarId={familiar.id ?? null}
+      createProject={createProject}
+      createProjectOrThrow={createProjectOrThrow}
+      runtime={modelHarness}
+      modelValue={composerModelValue}
+      modelOptions={composerModelOptions}
+      onPickRuntime={handleSelectRuntime}
+      onPickModel={handleSelectModel}
+      promotableModel={promotableModel}
+      onPromoteModelToDefault={handlePromoteModelToDefault}
+      modelDisabled={busy}
+      projectRoot={activeProjectRoot}
+      onOpenUrl={onOpenUrl}
+      registerCurrentRoot={setupCandidateRoot ?? undefined}
+      onRegisterCurrentRoot={
+        setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
+      }
+      popoverPlacement={composerPopoverPlacement}
+      ariaLabel={inlineComposer ? "New chat context" : "Session context"}
+    />
+  );
   const composerNode = (
         <footer
           className="cave-composer-dock"
@@ -6775,7 +7117,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                           ref={active ? activeSlashOptionRef : null}
                           onMouseEnter={() => setSlashIdx(i)}
                           onClick={() => {
-                            setInput(cmd.name + (cmd.argPlaceholder ? " " : ""));
+                            completeCommand(cmd.name, Boolean(cmd.argPlaceholder));
                             inputRef.current?.focus();
                           }}
                           className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
@@ -7115,36 +7457,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   </div>
                 </div>
               </div>
-              {/* Footer band — the darker strip attached to the panel's
-                  underside carries context and linked work first, then the
-                  latest assistant options. Suggestions stay hidden while a
-                  response streams so stale actions cannot be activated. */}
+              {/* Footer band — carries linked work and latest assistant options.
+                  Context controls ride here only for new chats (inlineComposer);
+                  active chats show them in the session header instead. */}
               <div className="cave-composer-footer-band">
-                <div className="cave-composer-footer-band__cluster">
-                  <ComposerContextChips
-                    projects={projects}
-                    projectValue={resolvedProjectId}
-                    onProjectChange={setProjectIdDraft}
-                    familiarId={familiar.id ?? null}
-                    createProject={createProject}
-                    createProjectOrThrow={createProjectOrThrow}
-                    runtime={modelHarness}
-                    modelValue={composerModelValue}
-                    modelOptions={composerModelOptions}
-                    onPickRuntime={handleSelectRuntime}
-                    onPickModel={handleSelectModel}
-                    promotableModel={promotableModel}
-                    onPromoteModelToDefault={handlePromoteModelToDefault}
-                    modelDisabled={busy}
-                    projectRoot={activeProjectRoot}
-                    onOpenUrl={onOpenUrl}
-                    registerCurrentRoot={setupCandidateRoot ?? undefined}
-                    onRegisterCurrentRoot={
-                      setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
-                    }
-                    popoverPlacement={composerPopoverPlacement}
-                  />
-                </div>
+                {inlineComposer ? (
+                  <div className="cave-composer-footer-band__cluster">
+                    {chatContextControls}
+                  </div>
+                ) : null}
                 {linkedContextRow}
                 {followUp.suggestions.length > 0 && !busy ? (
                   <div className="cave-chat-followups">
@@ -7270,6 +7591,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 sessionId={sessionId}
                 hasTurns={turns.length > 0}
                 onOpenDebug={openDebug}
+                promotableFamiliars={promotableFamiliars}
+                onPromoteToCoven={promoteToCoven}
                 reflecting={reflecting}
                 onReflect={familiar.id ? () => void reflectOnThread() : undefined}
                 registerCurrentRoot={setupCandidateRoot ?? undefined}
@@ -7296,6 +7619,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             />
           </div>
         </MetaLine>
+        {!inlineComposer ? (
+          <div className="cave-chat-header-context">{chatContextControls}</div>
+        ) : null}
       </header>
       {/* Chat.dc.html 2a: find slides open as a band under the title row —
           controls over a scrollable list of every hit. The list is the point:
@@ -7486,6 +7812,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             turnIndexMap={turnIndexMap}
             allTurns={activePath}
             historyExpanded={historyExpanded}
+            foldOpen={foldOpen}
+            onToggleFold={toggleFold}
             familiar={familiar}
             busy={busy}
             foundTurnId={foundTurnId}
@@ -7494,7 +7822,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setExpandedAvatarTurnId={setExpandedAvatarTurnId}
             onOpenUrl={onOpenUrl}
             handlersRef={transcriptHandlersRef}
-            followUpTurnId={followUp.turnId}
           />
           {shouldShowChatArchiveNudge({
             taskLifecycle: linkedContext?.task?.lifecycle ?? null,
@@ -7579,6 +7906,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }}
         />
       ) : null}
+              {/* Run rail (Coven Cave - Chat Session handoff, cave-w716g): the
+                  timeline, tool mix and live step, derived from the SAME
+                  activePath the transcript renders. Shares the instruments
+                  toggle — it is the same class of furniture as the spine and
+                  minimap, and two settings for one idea is a choice nobody
+                  asked for.
+
+                  Mounted AFTER the transcript on purpose. It was briefly the
+                  row's first child with CSS `order` doing the visual placement,
+                  which put the rail ahead of the conversation for screen
+                  readers — `order` moves boxes, never reading order. DOM order
+                  is the accessible order, so the annotation follows the log. */}
+              {activePath.length > 0 && instrumentsVisible ? (
+                <ChatRunRail turns={activePath} conversationCreatedAt={session?.created_at} />
+              ) : null}
       </div>
       </CodeReadingContext.Provider>
       </FileLinkResolverContext.Provider>
@@ -7852,6 +8194,31 @@ function splitSegmentsForGitHub(
 }
 
 /**
+ * Replace complete familiar-authored spec fences with document cards. This is
+ * settled-turn only: while a familiar is still writing, the ordinary Markdown
+ * path keeps the unfinished fence legible until its closing delimiter arrives.
+ */
+function splitSegmentsForSpecs(
+  segments: MessageBubbleSegment[],
+): MessageBubbleSegment[] {
+  return segments.flatMap<MessageBubbleSegment>((segment, segmentIndex) => {
+    if (segment.kind !== "text") return [segment];
+    return sliceSpecBlocks(segment.text).flatMap<MessageBubbleSegment>((piece, pieceIndex) => {
+      if (piece.kind === "text") {
+        return piece.text.trim()
+          ? [{ kind: "text" as const, text: piece.text }]
+          : [];
+      }
+      return [{
+        kind: "block" as const,
+        key: `spec-${segmentIndex}-${pieceIndex}-${piece.spec.title}`,
+        node: <ChatSpecCard spec={piece.spec} />,
+      }];
+    });
+  });
+}
+
+/**
  * Split prose segments again on `<coven:image …>` markers, mounting one
  * ImageCarousel per deck at the marker's position (src/lib/image-blocks.ts).
  * This runs before the GitHub/artifact splits so a grouped deck can span either
@@ -7908,7 +8275,6 @@ type TranscriptHandlers = {
   readerPromptFor: (turn: Turn) => { text: string; createdAt?: string } | undefined;
   rerunWithFor: (turn: Turn) => ((prompt: string) => void) | undefined;
   send: (override?: string) => Promise<void>;
-  activateFollowUp: (path: NextPath) => void;
 };
 
 /**
@@ -7932,6 +8298,8 @@ const TranscriptRows = memo(function TranscriptRows({
   turnIndexMap,
   allTurns,
   historyExpanded,
+  foldOpen,
+  onToggleFold,
   familiar,
   // Presence input for regenerateFor (see doc comment); unused directly.
   busy: _busy,
@@ -7941,12 +8309,15 @@ const TranscriptRows = memo(function TranscriptRows({
   setExpandedAvatarTurnId,
   onOpenUrl,
   handlersRef,
-  followUpTurnId,
 }: {
   groupedTurns: TranscriptGroup[];
   turnIndexMap: Map<string, number>;
   allTurns: Turn[];
   historyExpanded: boolean;
+  /** Earlier-turns fold (cave-u5lq7): closed hides everything but the recent
+   *  exchange. Distinct from historyExpanded — see chat-transcript-fold.ts. */
+  foldOpen: boolean;
+  onToggleFold: () => void;
   familiar: Familiar;
   busy: boolean;
   foundTurnId: string | null;
@@ -7955,25 +8326,40 @@ const TranscriptRows = memo(function TranscriptRows({
   setExpandedAvatarTurnId: React.Dispatch<React.SetStateAction<string | null>>;
   onOpenUrl?: (url: string) => void;
   handlersRef: React.RefObject<TranscriptHandlers>;
-  /** The turn whose follow-up pills render above the composer instead of
-   *  in-turn (chat-revamp 1b) — TurnRow suppresses its own row for it. */
-  followUpTurnId: string | null;
 }) {
   const handlers = () => handlersRef.current;
+  // Earlier-turns fold ("Chat Session - Prototype.dc.html", cave-u5lq7). The
+  // fold's count is computed over the WHOLE transcript, never over the capped
+  // slice — a pill reading "54 earlier turns" on a 200-turn thread would be
+  // reporting the render cap, not the conversation.
+  const fold = chatTranscriptFold(groupedTurns);
+  const folded = fold.hiddenTurns > 0 && !foldOpen;
   // Render cap (TRANSCRIPT_RENDER_CAP): while pinned to the bottom, only
   // mount the newest groups. The per-row prev-turn lookup still reads
   // the full `allTurns`/`turnIndexMap`, so the first visible row's
   // timestamp gap stays correct. Expands to the whole transcript the
   // moment the reader scrolls up or opens find (see historyExpanded).
-  const renderGroups =
-    historyExpanded || groupedTurns.length <= TRANSCRIPT_RENDER_CAP
+  // A closed fold mounts even less than the cap would, so it wins outright.
+  const renderGroups = folded
+    ? groupedTurns.slice(fold.startIndex)
+    : historyExpanded || groupedTurns.length <= TRANSCRIPT_RENDER_CAP
       ? groupedTurns
       : groupedTurns.slice(-TRANSCRIPT_RENDER_CAP);
-  return renderGroups.map((g) => {
+  const rows = renderGroups.map((g, groupIndex) => {
     if (g.kind === "single") {
       const t = g.turn;
       const i = turnIndexMap.get(t.id) ?? -1;
       const prev = allTurns[i - 1];
+      // "Chat Session - Prototype.dc.html" (cave-n3jg2): a long pause gets a
+      // named rule across the column. The transcript already revealed a
+      // timestamp here; the divider says what the timestamp only implies —
+      // that the turns above and below are separate sittings.
+      // …but never on the FIRST rendered row. Its `prev` is a turn the reader
+      // cannot see — folded away, or below the render cap — so the rule would
+      // measure a pause against nothing, and it lands one line under the fold
+      // pill, which is already the boundary there (design language §8: one
+      // hairline per boundary).
+      const gapLabel = groupIndex === 0 ? null : chatTurnGapLabel(prev?.createdAt, t.createdAt);
       const showTimestamp = (() => {
         if (!t.createdAt) return false;
         if (!prev?.createdAt) return true;
@@ -7992,7 +8378,7 @@ const TranscriptRows = memo(function TranscriptRows({
           onNext: () => void handlers().switchBranch(t.id, 1),
         };
       })();
-      return (
+      const row = (
         <TurnRow
           key={t.id}
           turn={t}
@@ -8006,14 +8392,26 @@ const TranscriptRows = memo(function TranscriptRows({
           readerPrompt={handlers().readerPromptFor(t)}
           onRerunWith={handlers().rerunWithFor(t)}
           onOpenUrl={onOpenUrl}
-          onSuggestion={(path) => handlers().activateFollowUp(path)}
           onRequest={(prompt) => void handlers().send(prompt)}
           feedbackContext={feedbackContext}
           expanded={expandedAvatarTurnId === t.id}
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
           branchNav={singleBranchNav}
-          suppressSuggestions={t.id === followUpTurnId}
         />
+      );
+      if (!gapLabel) return row;
+      return (
+        <Fragment key={t.id}>
+          {/* Decorative: the pause is already legible from the timestamp the
+              same condition reveals on the turn below, so a screen reader
+              hearing this twice would be noise. */}
+          <div className="cave-chat-turn-gap" aria-hidden="true">
+            <span className="cave-chat-turn-gap__rule" />
+            <span className="cave-chat-turn-gap__label">{gapLabel}</span>
+            <span className="cave-chat-turn-gap__rule" />
+          </div>
+          {row}
+        </Fragment>
       );
     }
     const mm = String(Math.floor(g.durationSec / 60)).padStart(2, "0");
@@ -8059,19 +8457,41 @@ const TranscriptRows = memo(function TranscriptRows({
               readerPrompt={handlers().readerPromptFor(t)}
               onRerunWith={handlers().rerunWithFor(t)}
               onOpenUrl={onOpenUrl}
-              onSuggestion={(path) => handlers().activateFollowUp(path)}
               onRequest={(prompt) => void handlers().send(prompt)}
               feedbackContext={feedbackContext}
               expanded={expandedAvatarTurnId === t.id}
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
               branchNav={groupBranchNav}
-              suppressSuggestions={t.id === followUpTurnId}
             />
           );
         })}
       </div>
     );
   });
+  if (fold.hiddenTurns === 0) return rows;
+  // The pill leads the transcript in both states: closed it names what is
+  // hidden, open it names the way back. The two rules make it read as a seam
+  // in the conversation rather than as a toolbar.
+  return [
+    <div key="__chat-fold" className="cave-chat-fold">
+      <span aria-hidden className="cave-chat-fold__rule" />
+      <button
+        type="button"
+        className="cave-chat-fold__pill focus-ring"
+        aria-expanded={foldOpen}
+        aria-label={chatFoldAriaLabel(fold.hiddenTurns, foldOpen)}
+        onClick={onToggleFold}
+      >
+        {/* The caret's direction is driven off the button's own aria-expanded,
+            not a data-prop on the Icon: Icon only forwards aria-* / role, so a
+            data attribute here is silently dropped and the caret never turns. */}
+        <Icon name="ph:caret-up" width={9} className="cave-chat-fold__caret" aria-hidden />
+        {chatFoldLabel(fold.hiddenTurns, foldOpen)}
+      </button>
+      <span aria-hidden className="cave-chat-fold__rule" />
+    </div>,
+    ...rows,
+  ];
 });
 
 // CHAT-D3-07 perf: the implementation is memoized as `TurnRow` below, so a
@@ -8092,19 +8512,13 @@ function TurnRowImpl({
   onOpenUrl,
   expanded = false,
   onToggleAvatar,
-  onSuggestion,
   onRequest,
   feedbackContext,
   branchNav,
-  suppressSuggestions = false,
 }: {
   turn: Turn;
-  onSuggestion?: (path: NextPath) => void;
   /** User-authored artifact feedback remains a normal chat send. */
   onRequest?: (prompt: string) => void;
-  /** Chat-revamp 1b: true for the latest settled turn, whose follow-up pills
-   *  render above the composer instead of at the turn's tail. */
-  suppressSuggestions?: boolean;
   familiar: Familiar;
   showTimestamp?: boolean;
   /** CHAT-D9-04: true while this turn is the just-jumped-to find match —
@@ -8224,14 +8638,15 @@ function TurnRowImpl({
                 onOpenUrl={onOpenUrl}
                 branchNav={branchNav}
               />
-              {/* An image you attached renders as the image, matching the
-                  assistant path — the chip list only carries what has no
-                  pixels to show (text files, oversize/undelivered images). */}
+              {/* An image or playable clip you attached renders as itself,
+                  matching the assistant path — the chip list only carries what
+                  has nothing to show (text files, oversize/undelivered). */}
               {turn.attachments?.length ? (
                 <>
                   <InlineImageAttachments attachments={turn.attachments} />
-                  {turn.attachments.some((a) => !isInlineImageAttachment(a)) ? (
-                    <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a))} />
+                  <InlineMediaAttachments attachments={turn.attachments} />
+                  {turn.attachments.some((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a)) ? (
+                    <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a))} />
                   ) : null}
                 </>
               ) : null}
@@ -8263,27 +8678,13 @@ function TurnRowImpl({
     );
   }
 
-  // Hide raw `coven:attachment` marker blocks from the live-streamed text. The
-  // server strips them from the persisted text and streams the parsed files as
-  // `attachment` events; this keeps the in-flight turn clean before reload.
-  const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(turn.text).text);
-  const inlineReasoning = reasoningSplit.reasoning;
-  // GitHub markers: while streaming, strip complete + partial `<coven:github…>`
-  // tags so they never flash as raw text (cards mount on settle); settled
-  // turns keep them for splitSegmentsForGitHub below to replace with cards.
-  const ghSafeVisible = turn.pending
-    ? stripImageMarkers(stripGitHubMarkers(reasoningSplit.visible))
-    : reasoningSplit.visible;
-  // Skill markers extract on BOTH paths — the whole point is live "which
-  // skill, what stage" visibility while the agent works (design §5). The
-  // extraction also strips partial tails so raw tags never flash.
-  const skillSplit = extractSkillMarkers(ghSafeVisible);
-  // Auto-mission status card (design mirrors skill markers): extracted the
-  // same way, on both the streaming and settled path, so the phase chip
-  // (clarifying/working/blocked/done) updates live.
-  const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);
-  const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(autoStatusSplit.visible);
-  const visible = turn.pending ? visibleWithGh : stripImageMarkers(stripGitHubMarkers(visibleWithGh));
+  const {
+    visible,
+    cardText: visibleWithGh,
+    inlineReasoning,
+    skillUpdates,
+    autoStatusUpdate,
+  } = extractChatRenderedText(turn.text, { pending: Boolean(turn.pending) });
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
   // CHAT-D12-01: while this turn's own live indicator is showing (pending, no
@@ -8333,7 +8734,12 @@ function TurnRowImpl({
     // artifact or GitHub card. The later splitters refine only the remaining
     // prose; the `visible` fallback/content path is marker-free either way.
     const split = splitSegmentsForGitHub(
-      splitSegmentsForArtifacts(splitSegmentsForImages([{ kind: "text", text: visibleWithGh }]), artifactCtx),
+      splitSegmentsForArtifacts(
+        splitSegmentsForImages(
+          splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }]),
+        ),
+        artifactCtx,
+      ),
       onOpenUrl,
       ghFamiliar,
     );
@@ -8502,22 +8908,23 @@ function TurnRowImpl({
               </div>
             ) : null}
             {/* Agent-produced inline attachments: images render full-bleed
-                (e.g. /image generations), everything else stays a file chip
-                that opens the lightbox. */}
+                (e.g. /image generations), audio/video mount as players, and
+                everything else stays a file chip that opens the lightbox. */}
             {turn.attachments?.length ? (
               <>
                 <InlineImageAttachments attachments={turn.attachments} />
-                {turn.attachments.some((a) => !isInlineImageAttachment(a)) ? (
-                  <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a))} />
+                <InlineMediaAttachments attachments={turn.attachments} />
+                {turn.attachments.some((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a)) ? (
+                  <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a))} />
                 ) : null}
               </>
             ) : null}
             {/* Skill stage cards (design §5): one per skill name per turn,
                 updated in place by repeated <coven:skill> markers — live
                 while streaming, settled state after. */}
-            {skillSplit.updates.length ? (
+            {skillUpdates.length ? (
               <div className="mt-2 space-y-1.5">
-                {skillSplit.updates.map((u) => (
+                {skillUpdates.map((u) => (
                   <SkillStageCard key={u.name} name={u.name} stage={u.stage} note={u.note} />
                 ))}
               </div>
@@ -8525,9 +8932,9 @@ function TurnRowImpl({
             {/* Auto-mission status card: one per turn, updated in place by
                 repeated <coven:auto-status> markers — the human-visible half
                 of the /auto watcher above that fires the blocked/done ping. */}
-            {autoStatusSplit.update ? (
+            {autoStatusUpdate ? (
               <div className="mt-2">
-                <AutoStatusCard state={autoStatusSplit.update.state} note={autoStatusSplit.update.note} />
+                <AutoStatusCard state={autoStatusUpdate.state} note={autoStatusUpdate.note} />
               </div>
             ) : null}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
@@ -8575,12 +8982,6 @@ function TurnRowImpl({
                   );
                 })()
               : null}
-            {/* Typed follow-ups render LAST — reply fills the composer, task
-                opens review, and action routes to Tasks; they sit closest to
-                the composer and aren't pushed up by tool activity. */}
-            {nextPaths.length > 0 && !turn.pending && !suppressSuggestions && onSuggestion ? (
-              <FollowUpCards paths={nextPaths} onActivate={onSuggestion} />
-            ) : null}
             {/* Comment on the markdown artifact this turn produced: select any
                 passage above to leave a comment, then request a revision that
                 sends every comment back to the agent. Settled, substantial
@@ -9218,7 +9619,6 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     prev.showTimestamp === next.showTimestamp &&
     prev.found === next.found &&
     prev.expanded === next.expanded &&
-    prev.suppressSuggestions === next.suppressSuggestions &&
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
     Boolean(prev.onReply) === Boolean(next.onReply) &&

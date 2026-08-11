@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -51,7 +51,7 @@ const shim = [
   "const { appendFileSync } = require('node:fs');",
   "appendFileSync(process.env.COVEN_TEST_LOG, `${JSON.stringify(process.argv.slice(2))}\\n`);",
   "if (process.argv[2] === 'adapter' && process.argv[3] === 'list' && process.argv[4] === '--json') {",
-  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'assistant-envelope', 'assistant-envelope-exit-1', 'cancel'].includes(process.env.COVEN_TEST_MODE) }]));",
+  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'assistant-envelope', 'assistant-envelope-exit-1', 'assistant-envelope-reasoning', 'cancel', 'cancel-partial-attention'].includes(process.env.COVEN_TEST_MODE) }]));",
   "  process.exit(0);",
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === '--help') {",
@@ -66,6 +66,13 @@ const shim = [
   "    setInterval(() => {}, 1000);",
   "    return;",
   "  }",
+  "  if (process.env.COVEN_TEST_MODE === 'cancel-partial-attention') {",
+  "    process.stdout.write(JSON.stringify({ type: 'system', subtype: 'init', model: 'gpt-5.6-sol', session_id: 'cancelled-partial-attention-session' }) + '\\n');",
+  "    process.stdout.write(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Visible answer.\\n<coven:attent' }] }, session_id: 'cancelled-partial-attention-session' }) + '\\n');",
+  "    appendFileSync(process.env.COVEN_TEST_CANCEL_READY, 'started');",
+  "    setInterval(() => {}, 1000);",
+  "    return;",
+  "  }",
   "  if (process.env.COVEN_TEST_MODE === 'assistant-envelope' || process.env.COVEN_TEST_MODE === 'assistant-envelope-exit-1') {",
   "    const cleanupExit = process.env.COVEN_TEST_MODE === 'assistant-envelope-exit-1';",
   "    const events = [",
@@ -75,6 +82,15 @@ const shim = [
   "    ];",
   "    process.stdout.write(events.map((event) => JSON.stringify(event)).join('\\n') + '\\n');",
   "    process.exit(cleanupExit ? 1 : 0);",
+  "  }",
+  "  if (process.env.COVEN_TEST_MODE === 'assistant-envelope-reasoning') {",
+  "    const events = [",
+  "      { type: 'system', subtype: 'init', model: 'gpt-5.6-sol', session_id: 'coven-envelope-reasoning-session' },",
+  "      { type: 'assistant', message: { content: [{ type: 'text', text: '<reasoning>private notes <coven:attention reason=\"decision\" /></reasoning>\\nVisible answer.\\n<coven:attention reason=\"approval\" />' }] }, session_id: 'coven-envelope-reasoning-session' },",
+  "      { type: 'result', subtype: 'success', is_error: false, session_id: 'coven-envelope-reasoning-session' },",
+  "    ];",
+  "    process.stdout.write(events.map((event) => JSON.stringify(event)).join('\\n') + '\\n');",
+  "    process.exit(0);",
   "  }",
   "  process.stdout.write('unsupported harness `codex`');",
   "  process.exit(1);",
@@ -114,6 +130,10 @@ async function waitForText(file, timeoutMs = 5_000) {
     }
   }
   assert.fail(`timed out waiting for fixture marker ${file}`);
+}
+
+async function clearFile(file) {
+  await unlink(file).catch(() => undefined);
 }
 
 try {
@@ -233,6 +253,33 @@ try {
   // JSONL. That is neither an adapter-discovery failure nor evidence that
   // Codex is signed out. It must remain a structured runtime-process error
   // instead of fabricating the completed-but-empty authentication hint.
+  process.env.COVEN_TEST_MODE = "assistant-envelope-reasoning";
+  {
+    const { events } = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        familiarId: "opal",
+        prompt: "preserve reasoning on reload",
+        projectRoot: familiarWorkspace,
+        sessionId: "coven-envelope-reasoning-session",
+        runId: "coven-envelope-reasoning-run",
+      }),
+    })));
+    assert.equal(events.findLast((event) => event.kind === "done")?.isError, false);
+    const reasoningConversation = await loadConversation("coven-envelope-reasoning-session");
+    const reasoningTurn = reasoningConversation?.turns.at(-1);
+    assert.equal(reasoningTurn?.text.trim(), "Visible answer.");
+    assert.equal(reasoningTurn?.reasoning, "private notes", "reasoning survives reload without control markers");
+    assert.equal(
+      reasoningTurn?.responseMetadata?.attentionRequest?.reason,
+      "approval",
+      "only the visible attention marker should create a human attention request",
+    );
+    assert.doesNotMatch(reasoningTurn?.text ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
+    assert.doesNotMatch(reasoningTurn?.reasoning ?? "", /<(?:thinking|reasoning)>|<coven:attention/);
+  }
+
   process.env.COVEN_TEST_MODE = "silent-exit";
   const silentExitSessionId = "silent-codex-session";
   const silentExitResponse = await POST(new Request("http://localhost/api/chat/send", {
@@ -312,6 +359,7 @@ try {
   const cancelReady = path.join(home, "cancel-ready");
   process.env.COVEN_TEST_MODE = "cancel";
   process.env.COVEN_TEST_CANCEL_READY = cancelReady;
+  await clearFile(cancelReady);
   const cancelledSessionId = "cancelled-codex-session";
   const cancelledRunId = "cancelled-codex-run";
   const cancelResponse = await POST(new Request("http://localhost/api/chat/send", {
@@ -345,6 +393,34 @@ try {
   assert.equal(cancelledTurn?.text, "(cancelled)");
   assert.equal(cancelledTurn?.cancelled, true);
   assert.equal(cancelledTurn?.isError, false);
+
+  // A cancelled streamed reply keeps the visible text that already reached the
+  // user, but must hide any incomplete `<coven:attention` tail before it is
+  // persisted and reloaded.
+  process.env.COVEN_TEST_MODE = "cancel-partial-attention";
+  await clearFile(cancelReady);
+  const cancelledPartialRunId = "cancelled-partial-attention-run";
+  const cancelPartialResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "opal",
+      prompt: "stop after partial attention prefix",
+      projectRoot: familiarWorkspace,
+      sessionId: "cancelled-partial-attention-session",
+      runId: cancelledPartialRunId,
+    }),
+  }));
+  await waitForText(cancelReady);
+  assert.equal(requestChatStop(cancelledPartialRunId), true);
+  const { events: cancelledPartialEvents } = await readSse(cancelPartialResponse);
+  assert.equal(cancelledPartialEvents.findLast((event) => event.kind === "done")?.isError, false);
+  const cancelledPartialConversation = await loadConversation("cancelled-partial-attention-session");
+  const cancelledPartialTurn = cancelledPartialConversation?.turns.at(-1);
+  assert.equal(cancelledPartialTurn?.text, "Visible answer.\n");
+  assert.equal(cancelledPartialTurn?.cancelled, true);
+  assert.equal(cancelledPartialTurn?.isError, false);
+  assert.doesNotMatch(cancelledPartialTurn?.text ?? "", /<coven:attention/);
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;
   else process.env.COVEN_HOME = previousHome;

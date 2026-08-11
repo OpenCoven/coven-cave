@@ -4,6 +4,7 @@ import { buildCovenMarkersDirective } from "./coven-marker-directive.ts";
 import { sliceGitHubBlocks } from "./github-blocks.ts";
 import { isRenderableImageSrc, sliceImageBlocks } from "./image-blocks.ts";
 import { extractSkillMarkers } from "./skill-blocks.ts";
+import { sliceSpecBlocks } from "./spec-blocks.ts";
 
 const directive = buildCovenMarkersDirective();
 
@@ -25,6 +26,20 @@ assert.match(
   directive,
   /proposal card the user must tap/,
   "action markers must be described as tap-to-fire proposals",
+);
+for (const reason of ["input", "approval", "credentials", "decision"]) {
+  assert.match(directive, new RegExp(`\\b${reason}\\b`), `attention reason ${reason} taught`);
+}
+const attentionExample = directive.match(/Choose a release channel\.\n<coven:attention reason="decision" \/>/)?.[0];
+assert.ok(attentionExample, "directive carries a concrete parseable attention example");
+const { extractChatAttentionMarker } = await import("./chat-attention-marker.ts");
+assert.deepEqual(
+  extractChatAttentionMarker(attentionExample),
+  {
+    visible: "Choose a release channel.\n",
+    request: { reason: "decision" },
+  },
+  "the taught attention example must parse into a concrete request",
 );
 
 // ── Lockstep: the directive's own example markers must parse (github-blocks) ─
@@ -74,6 +89,15 @@ assert.match(
   directive,
   /group="…"/,
   "the group attribute must be taught alongside adjacency",
+);
+
+const exampleSpec = directive.match(/`{3,}spec title="[^"]+"\n[\s\S]*?\n`{3,}/)?.[0];
+assert.ok(exampleSpec, "directive carries a spec-fence example");
+const specPieces = sliceSpecBlocks(exampleSpec);
+assert.equal(
+  specPieces.filter((piece) => piece.kind === "spec").length,
+  1,
+  "the taught spec example must parse into a document card",
 );
 
 // ── Coverage: every parseable kind/stage is taught ───────────────────────────

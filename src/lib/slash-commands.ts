@@ -92,6 +92,71 @@ export function matchSlash(prefix: string): SlashCommand[] {
   );
 }
 
+export type InlineSlashInvocation = {
+  start: number;
+  caret: number;
+  tokenEnd: number;
+  input: string;
+  commandToken: string;
+};
+
+/**
+ * Find the slash invocation that owns the caret. A slash may begin the draft
+ * or follow whitespace, which keeps URLs and path fragments from opening the
+ * command menu while allowing commands after prose or on later lines.
+ */
+export function inlineSlashInvocation(
+  text: string,
+  caret: number,
+): InlineSlashInvocation | null {
+  const boundedCaret = Math.max(0, Math.min(caret, text.length));
+  const beforeCaret = text.slice(0, boundedCaret);
+  let start = beforeCaret.lastIndexOf("/");
+
+  while (start >= 0) {
+    if (start === 0 || /\s/.test(beforeCaret[start - 1] ?? "")) {
+      const input = beforeCaret.slice(start);
+      if (!input.includes("\n")) {
+        const commandToken = input.split(/\s/, 1)[0] ?? "";
+        let tokenEnd = start + commandToken.length;
+        while (tokenEnd < text.length && !/\s/.test(text[tokenEnd] ?? "")) {
+          tokenEnd += 1;
+        }
+        return { start, caret: boundedCaret, tokenEnd, input, commandToken };
+      }
+    }
+    start = beforeCaret.lastIndexOf("/", start - 1);
+  }
+
+  return null;
+}
+
+export function inlineSlashCommandPrompt(
+  text: string,
+  caret: number,
+  command: string,
+): string {
+  const invocation = inlineSlashInvocation(text, caret);
+  if (!invocation) return command;
+
+  const args = invocation.input.slice(invocation.commandToken.length).trim();
+  return args ? `${command} ${args}` : command;
+}
+
+export function replaceInlineSlashRange(
+  text: string,
+  start: number,
+  end: number,
+  replacement: string,
+): { text: string; caret: number } {
+  const safeStart = Math.max(0, Math.min(start, text.length));
+  const safeEnd = Math.max(safeStart, Math.min(end, text.length));
+  return {
+    text: `${text.slice(0, safeStart)}${replacement}${text.slice(safeEnd)}`,
+    caret: safeStart + replacement.length,
+  };
+}
+
 /** Render a /help block grouped by section. */
 export function formatHelp(): string {
   const sections: Record<string, string> = {

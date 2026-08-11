@@ -89,11 +89,25 @@ import { readFile } from "node:fs/promises";
 
 // ── Group chat: error replies ────────────────────────────────────────────────
 {
+  // The coven redesign moved the failure CARD (and its harness recovery
+  // buttons) into CovenAgentSection; group-chat-view still owns the handler
+  // those buttons call, so the two halves are asserted against their files.
   const source = await readFile(new URL("./group-chat-view.tsx", import.meta.url), "utf8");
+  const section = await readFile(new URL("./coven-agent-section.tsx", import.meta.url), "utf8");
+  assert.match(
+    section,
+    /parseHarnessFailure\(reply\.error\)/,
+    "group chat should parse each error reply's text",
+  );
+  assert.match(
+    section,
+    /<HarnessFixActions[\s\S]{0,160}onUseHarness=\{onUseHarness\}/,
+    "the failure card should offer the harness recovery actions",
+  );
   assert.match(
     source,
-    /parseHarnessFailure\(r\.error\)/,
-    "group chat should parse each error reply's text",
+    /onUseHarness=\{\(runtime\) =>[\s\S]{0,120}useHarnessForReply\(agent\.reply, runtime\)/,
+    "group chat should wire each failure card to the per-reply harness-fix handler",
   );
   assert.match(
     source,

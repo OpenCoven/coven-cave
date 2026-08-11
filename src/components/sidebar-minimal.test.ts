@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { transformSync } from "esbuild";
 
 const styles = [
   readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8"),
@@ -10,7 +11,14 @@ const styles = [
   readFileSync(new URL("../styles/sidebar-minimal/activity-rail.css", import.meta.url), "utf8"),
 ].join("\n");
 const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+// The scope switcher + New chat are SHARED with the Chat rail (SidebarRailHeader),
+// so their markup and chrome are pinned against the shared files, not this one.
+const railHeaderSource = readFileSync(new URL("./sidebar-rail-header.tsx", import.meta.url), "utf8");
+const railHeaderCss = readFileSync(new URL("../styles/globals/rail-header.css", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
+// The Home/Code split itself — the sidebar reaches the registry only through
+// this module, so a committed artifact here breaks the rail just as badly.
+const navSection = readFileSync(new URL("../lib/nav-section.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 // The footer (Dashboard + Settings + version) lives in a shared component so it
 // stays identical when Chat replaces SidebarMinimal with WorkspaceSidebar.
@@ -66,14 +74,25 @@ assert.match(
 
 assert.match(
   source,
-  /<div className="sidebar-nav-scroll"/,
+  /<div\s+className="sidebar-nav-scroll"/,
   "Sidebar should keep the main navigation in one continuous scrollable rail",
 );
 
-assert.doesNotMatch(
-  source,
-  /function SidebarSection|<SidebarSection|sidebar-section-label|fm\.group === "work"|fm\.group === "tools"/,
-  "Left sidepanel should render one flat list without collapsible Work/Tools sections",
+assert.match(source, /<NavSectionTabs section=\{section\} onSectionChange=\{onSectionChange\}/, "sidebar destinations use the shared Home and Code tabs");
+assert.match(source, /navItemsForSection\(section\)\.map/, "the active tab filters destination rows through the shared registry");
+assert.match(source, /sectionRooms\.map\(\(room\) =>/, "dynamic role-surface rooms follow the active section");
+assert.match(source, /itemSelector: "\.sidebar-folder-row"/, "visible destinations share one roving keyboard sequence");
+assert.match(source, /role="tabpanel"[\s\S]*?aria-labelledby=\{`nav-section-tab-\$\{section\}`\}/, "the destination list is labeled by its active tab");
+// Retiring the SidebarSection assertions took this rule's only coverage with
+// them. Its section-heading half is dead — nothing emits sidebar-section*
+// anymore — but the recent-activity half is live: RecentActivityRollup still
+// renders in the Code section, and the 56px rail has no room for it.
+// Tolerant of the group's ordering: the dead .sidebar-section-label half should
+// eventually be deleted from this rule, and that cleanup must not fail here.
+assert.match(
+  styles,
+  /\.shell-nav--rail \.recent-activity[^{]*\{[^}]*display:\s*none/,
+  "the icon rail hides the recent-activity list while retaining destination icons",
 );
 
 // The standalone Knowledge section is gone; Library is now isolated on its
@@ -96,8 +115,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /props\.roleSurfaces!\.map\(\(room\) =>/,
-  "Code Workshop remains registry-driven through the active familiar's rooms",
+  /const sectionRooms = React\.useMemo\(\s*\(\) => \(props\.roleSurfaces \?\? \[\]\)\.filter\(/,
+  "Coding Desk remains registry-driven through the active familiar's rooms",
 );
 assert.match(
   source,
@@ -106,14 +125,23 @@ assert.match(
 );
 assert.match(
   source,
-  /import \{[\s\S]*VISIBLE_WORKSPACE_NAV_ITEMS,[\s\S]*\} from "@\/lib\/workspace-navigation"/,
-  "the sidebar consumes the shared registry's already-filtered visible rows",
+  /import \{[\s\S]*navItemsForSection,[\s\S]*\} from "@\/lib\/nav-section"/,
+  "the sidebar consumes the shared registry's visible rows through the section split",
 );
 
 assert.match(
   navigation,
-  /\{ id: "home", label: "Home"/,
-  "Home is the first workspace destination",
+  /\{ id: "home", label: "Home", iconName: "ph:house-bold",[^}]*group: "work"/,
+  "Home starts the Work destination group",
+);
+assert.match(navigation, /\{ id: "chat", label: "Chat", iconName: "ph:chats",[^}]*group: "work"/, "Chat belongs to Work");
+assert.match(navigation, /\{ id: "board", label: "Tasks", iconName: "ph:kanban",[^}]*group: "work"/, "Tasks belongs to Work");
+assert.match(navigation, /\{ id: "inbox", label: "Rituals", iconName: "ph:calendar-check",[^}]*group: "work"/, "Rituals belongs to Work");
+assert.match(navigation, /\{ id: "grimoire", label: "Memories", iconName: "ph:books",[^}]*group: "explore"/, "Memories belongs to Explore");
+assert.match(
+  navigation,
+  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold",[^}]*group: "explore"/,
+  "Marketplace belongs to Explore",
 );
 
 assert.doesNotMatch(
@@ -191,7 +219,7 @@ assert.doesNotMatch(
 // it) but is navHidden, so it renders no sidebar row — summoned on demand.
 assert.match(
   navigation,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", group: "work", navHidden: true \}/,
   "Browser is kept for ⌘5/palette but hidden from the sidebar rows (navHidden)",
 );
 
@@ -348,12 +376,12 @@ assert.match(
 // affordance on every breakpoint.
 assert.match(
   source,
-  /<div className="sidebar-actions">\s*<button type="button" className="sidebar-action-row focus-ring" onClick=\{onNewChat\}[^>]*>/,
+  /<SidebarRailHeader[\s\S]*?onNewChat=\{onNewChat\}/,
   "the sidebar renders a New chat CTA at the top, wired to onNewChat",
 );
 assert.match(
-  source,
-  /<Icon[\s\S]{0,180}name="ph:note-pencil"[\s\S]*?<span>New chat<\/span>/,
+  railHeaderSource,
+  /<Icon[\s\S]{0,240}name="ph:note-pencil"[\s\S]*?<span className="rail-header__new-label">New chat<\/span>/,
   "the New chat CTA is labelled and iconed",
 );
 
@@ -369,7 +397,7 @@ assert.doesNotMatch(
 // wordmark gave it the slot; the collapsed rail keeps the avatar-only trigger.
 assert.match(
   source,
-  /<div className="sidebar-familiar-switch">[\s\S]{0,600}<FamiliarQuickSwitch/,
+  /<SidebarRailHeader[\s\S]{0,600}familiars=\{familiars\}/,
   "the sidenav header mounts the familiar switcher",
 );
 assert.match(
@@ -379,8 +407,8 @@ assert.match(
 );
 const sidebarCss = styles;
 assert.match(
-  sidebarCss,
-  /\.shell-nav--rail \.sidebar-familiar-switch \.familiar-switcher__trigger-label \{\s*\n\s*display: none/,
+  railHeaderCss,
+  /\.shell-nav--rail \.rail-header__scope \.familiar-switcher__trigger-label,[\s\S]*?display: none/,
   "the rail keeps the avatar-only trigger (label drops)",
 );
 assert.doesNotMatch(
@@ -400,7 +428,7 @@ assert.match(
 );
 assert.match(
   styles,
-  /@media \(max-width: 1023px\) \{[\s\S]*\.sidebar-header,[\s\S]*\.sidebar-action-row,[\s\S]*\.sidebar-folder-row,[\s\S]*\.sidebar-foot-btn,[\s\S]*\.sidebar-familiar-filter__select[\s\S]*min-height:\s*var\(--touch-target\)/,
+  /@media \(max-width: 1023px\) \{[\s\S]*\.sidebar-header,[\s\S]*\.sidebar-folder-row,[\s\S]*\.sidebar-foot-btn,[\s\S]*\.sidebar-familiar-filter__select[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Mobile sidebar drawer rows and familiar select should meet the shared touch target",
 );
 
@@ -454,11 +482,8 @@ assert.match(
   "The 56px rail has no room for text — the version line hides there",
 );
 
-// Quiet cluster (§8): occasional destinations stay in the same flat list but
-// render muted-until-hover, with the first quiet row opening a spacing gap.
-// Chat-first hierarchy (cave-xsq.8): the prominent cluster is exactly the
-// ⌘-numbered daily set (Home ⌘1 · Chat ⌘2 · Tasks ⌘3 · Schedules ⌘4); Memories
-// leads the quiet cluster, followed by Marketplace/GitHub/Work Queue.
+// Explore retains quiet row treatment, while its section header now owns the
+// separation from the daily Work destinations.
 assert.match(
   navigation,
   /\{ id: "journal",[^}]*navHidden: true \}/,
@@ -480,19 +505,9 @@ assert.match(
   "Marketplace is in the quiet cluster",
 );
 assert.match(
-  source,
-  /quietLead=\{Boolean\(fm\.quiet\) && !rows\[i - 1\]\?\.quiet\}/,
-  "the first quiet row opens the spacing gap (indexed on the rendered list after navHidden filtering)",
-);
-assert.match(
   styles,
   /\.sidebar-folder-row--quiet \{[^}]*color: var\(--text-muted\);/,
   "quiet rows read muted at rest",
-);
-assert.match(
-  styles,
-  /\.sidebar-folder-row--quiet-lead \{[^}]*margin-top: var\(--space-3\);/,
-  "the quiet cluster opens with spacing, not a hairline divider",
 );
 
 // ── Split-open marker ────────────────────────────────────────────────────────
@@ -528,13 +543,103 @@ assert.match(
 );
 assert.match(
   workspace,
-  /<SidebarMinimal\s+mode=\{mode\}\s+splitPageModes=\{splitPageModes\}/,
-  "workspace threads splitPageModes into the sidebar",
+  /<SidebarMinimal\s+mode=\{mode\}\s+section=\{navSection\}\s+onSectionChange=\{handleSectionChange\}\s+splitPageModes=\{splitPageModes\}/,
+  "workspace threads the section and splitPageModes into the sidebar",
 );
 assert.match(
   styles,
   /\.sidebar-folder-row--split \{[^}]*color-mix\(in oklch, var\(--accent-presence\)/,
   "the split marker reuses the active accent at a lighter wash",
+);
+
+// ── Committed merge-artifact guard (cave-2hh5q) ──────────────────────────────
+// 23316da3 committed two unresolved conflict-marker blocks into this component.
+// The file stopped PARSING, so every route 500'd — including
+// /api/app/build-info — until 4ea88862 repaired it (cave-tbdnt).
+//
+// The whole suite above stayed green through it. That is the point worth
+// keeping: every assertion in this file is a source-TEXT match, and a regex is
+// perfectly happy to find its pattern inside a file no compiler would accept.
+// Text pinning cannot, even in principle, notice that a file stopped parsing.
+// So this section adds the two checks that can.
+
+// 1. Parse the component for real. This is the guard that generalizes: it fails
+//    on conflict markers, but equally on any other syntax breakage that a
+//    source-text assertion would sail straight past. esbuild's parser is the
+//    same one Next uses to transform the file, so a pass here means the route
+//    can at least build.
+for (const [name, text, loader] of [
+  ["sidebar-minimal.tsx", source, "tsx"],
+  ["sidebar-rail-header.tsx", railHeaderSource, "tsx"],
+  ["sidebar-footer.tsx", footer, "tsx"],
+  ["nav-section.ts", navSection, "ts"],
+  ["workspace-navigation.ts", navigation, "ts"],
+]) {
+  assert.doesNotThrow(
+    () => transformSync(text, { loader, sourcefile: name }),
+    `${name} must parse — a source-text assertion cannot tell a broken file from a working one`,
+  );
+}
+
+// 2. Name the artifact explicitly as well. The parse check already rejects a
+//    conflicted file, but it reports a bare "Expression expected" pointing at
+//    whichever line the parser gave up on; this one says what actually
+//    happened, which is the difference between a five-minute fix and the
+//    outage that produced this bead.
+//
+//    All FOUR marker kinds, not three: `|||||||` opens the base section under
+//    `merge.conflictStyle = diff3` / `zdiff3`, which is a per-contributor git
+//    setting this repo does not pin. A complete diff3 conflict would still trip
+//    the other three, so this mainly covers a partial resolution that clears
+//    `<<<<<<<` / `=======` / `>>>>>>>` and leaves the base section behind —
+//    which is precisely the artifact a hand-edited conflict tends to strand.
+//
+//    Anchored at line start on purpose: a seven-character run only reads as a
+//    conflict marker when it opens the line, and `=======` appears mid-line in
+//    legitimate comment rules and CSS.
+const CONFLICT_MARKER = /^(?:<{7}|\|{7}|={7}|>{7})/m;
+for (const [name, text] of [
+  ["sidebar-minimal.tsx", source],
+  ["sidebar-rail-header.tsx", railHeaderSource],
+  ["sidebar-footer.tsx", footer],
+  ["nav-section.ts", navSection],
+  ["workspace-navigation.ts", navigation],
+  ["the sidebar stylesheets", styles],
+  ["rail-header.css", railHeaderCss],
+]) {
+  assert.doesNotMatch(
+    text,
+    CONFLICT_MARKER,
+    `${name} must not carry unresolved Git conflict markers (cave-2hh5q / cave-tbdnt)`,
+  );
+}
+
+// ── Stale navigation identifier (cave-2hh5q) ─────────────────────────────────
+// The conflicted merge left BOTH sides live in the file at once: the old flat
+// `VISIBLE_WORKSPACE_NAV_ITEMS.map(...)` and its tabbed replacement. The flat
+// list is the whole registry, unsplit — mapping it here would render every Home
+// destination under Code and every Code destination under Home, while each
+// individual row assertion above kept passing, because the rows themselves are
+// unchanged. Only the section split is allowed to reach the registry.
+assert.doesNotMatch(
+  source,
+  /VISIBLE_WORKSPACE_NAV_ITEMS/,
+  "the sidebar must reach nav rows through navItemsForSection(section), never the unsplit VISIBLE_WORKSPACE_NAV_ITEMS list",
+);
+assert.match(
+  navSection,
+  /export function navItemsForSection\(section: NavSection\)[\s\S]{0,160}navSectionForMode\(item\.id\) === section/,
+  "navItemsForSection must keep filtering by section — a passthrough would un-split the rail without failing a row assertion",
+);
+
+// Recent Activity is Code-only (cave-24d2r): Home is destinations, Code is live
+// work. The prop assertions above fire wherever the rollup is mounted, so
+// without this the section gate could be dropped and every one of them would
+// still pass.
+assert.match(
+  source,
+  /section === "code" \? \(\s*<RecentActivityRollup/,
+  "Recent Activity renders only in the Code section — Home stays destinations-only",
 );
 
 console.log("sidebar-minimal.test.ts (shell-ia-lastmile) OK");

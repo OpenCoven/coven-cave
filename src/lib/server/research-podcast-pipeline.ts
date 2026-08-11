@@ -144,7 +144,11 @@ export function trimPcmWavSilence(bytes: Uint8Array): Uint8Array {
   if (parsed.bitsPerSample !== 16 || parsed.blockAlign < parsed.channels * 2) return bytes;
   const view = new DataView(parsed.bytes.buffer, parsed.bytes.byteOffset, parsed.bytes.byteLength);
   const frameBytes = parsed.blockAlign;
-  const frameCount = Math.floor(parsed.dataLength / frameBytes);
+  // A data chunk that is not a whole number of frames is malformed; flooring
+  // it here would silently drop the trailing partial-frame bytes, so pass the
+  // segment through untouched instead (PR #4288 review, cave-bsaum).
+  if (parsed.dataLength % frameBytes !== 0) return bytes;
+  const frameCount = parsed.dataLength / frameBytes;
   const audible = (frame: number): boolean => {
     const base = parsed.dataOffset + frame * frameBytes;
     for (let channel = 0; channel < parsed.channels; channel += 1) {
