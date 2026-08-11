@@ -477,8 +477,13 @@ assert.doesNotMatch(
 );
 assert.match(
   chatRoute,
-  /const generationOrigin = existingConversation\?\.origin \?\? body\.origin/,
-  "a request must not relabel an existing user chat as a projectless hidden generation",
+  /Boolean\(existingConversation\)[\s\S]*isProjectlessGenerationOrigin\(existingConversation\?\.origin\)/,
+  "only persisted hidden-generation provenance may bypass project authorization",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /isProjectlessGenerationOrigin\([^)]*body\.origin/,
+  "client-supplied origin must never decide whether project authorization is required",
 );
 
 const authorizeLaunchIndex = chatRoute.indexOf("await authorizeChatProjectLaunch");

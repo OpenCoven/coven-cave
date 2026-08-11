@@ -1103,11 +1103,13 @@ export async function POST(req: Request) {
   const resolvedFamiliarWorkspace = !sshRuntime
     ? await resolveFamiliarWorkspace(body.familiarId)
     : undefined;
-  // A persisted conversation owns its provenance. Never let a request relabel
-  // an existing user chat as a hidden generator to bypass project checks.
-  const generationOrigin = existingConversation?.origin ?? body.origin;
+  // Only persisted provenance may select the legacy projectless generation
+  // lane. `body.origin` is untrusted request metadata: it may label a newly
+  // created conversation, but it must never bypass project authorization.
   const projectlessGeneration =
-    !body.projectRoot && isProjectlessGenerationOrigin(generationOrigin);
+    !body.projectRoot &&
+    Boolean(existingConversation) &&
+    isProjectlessGenerationOrigin(existingConversation?.origin);
   // A Board task may be isolated in a worktree below its registered project.
   // The worktree itself is intentionally not a separate project record, so
   // its first native-chat turn must authorize against the card's server-owned
