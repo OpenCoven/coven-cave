@@ -1579,7 +1579,7 @@ export function makeProductionResearchMissionRunner() {
         await ensureResearchLandingAccess(familiarId, missionId);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error(`research landing grant for ${familiarId} failed: ${message}`);
+        console.error(`research landing grant for ${familiarId} / ${missionId} failed: ${message}`);
       }
     },
     checkFamiliarRootAccess: async (familiarId, projectRoot) => {
