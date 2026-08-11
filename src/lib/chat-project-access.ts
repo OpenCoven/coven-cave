@@ -24,13 +24,26 @@ function samePath(a: string, b: string): boolean {
  * any. Separator-exact and traversal-safe: the candidate is `path.resolve`d
  * (collapsing `..` escapes) and must sit strictly BELOW
  * `<project>/.worktrees/`, so `/proj-evil/...`, `/proj/.worktrees` itself,
- * and `/proj/.worktrees/../..` all miss.
+ * and `/proj/.worktrees/../..` all miss. The runtime cwd must also resolve
+ * there so symlinked worktree paths cannot grant access to another directory.
  */
-function worktreeParentProject(root: string, projects: CaveProject[]): CaveProject | null {
-  const resolved = path.resolve(root);
+function worktreeParentProject(
+  root: string,
+  resolvedCwd: string,
+  projects: CaveProject[],
+): CaveProject | null {
+  const requested = path.resolve(root);
+  const realCwd = path.resolve(resolvedCwd);
   for (const project of projects) {
     const prefix = path.resolve(project.root) + path.sep + ".worktrees" + path.sep;
-    if (resolved.startsWith(prefix) && resolved.length > prefix.length) return project;
+    if (
+      requested.startsWith(prefix) &&
+      requested.length > prefix.length &&
+      realCwd.startsWith(prefix) &&
+      realCwd.length > prefix.length
+    ) {
+      return project;
+    }
   }
   return null;
 }
@@ -75,7 +88,7 @@ export function chatProjectAccessId(args: ChatProjectAccessArgs): string | null 
     return null;
   }
 
-  const worktreeParent = worktreeParentProject(explicitRoot, args.projects);
+  const worktreeParent = worktreeParentProject(explicitRoot, args.resolvedCwd, args.projects);
   if (worktreeParent) return worktreeParent.id;
 
   return `unregistered:${projectRoot}`;

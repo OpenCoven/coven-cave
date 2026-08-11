@@ -165,6 +165,17 @@ assert.equal(
   "a traversal escape below .worktrees/ resolves outside and fails closed",
 );
 
+
+assert.equal(
+  chatProjectAccessId({
+    projects,
+    requestedProjectRoot: "/Users/me/dev/cave/.worktrees/evil",
+    resolvedCwd: "/Users/me/victim-ungranted-project",
+  }),
+  "unregistered:/Users/me/dev/cave/.worktrees/evil",
+  "a symlinked worktree request whose real cwd escapes the parent project fails closed",
+);
+
 assert.equal(
   chatProjectAccessId({
     projects,
