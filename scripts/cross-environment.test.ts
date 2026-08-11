@@ -17,7 +17,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -150,7 +150,7 @@ function skip(reason: string): void {
   );
   assert.deepEqual(
     covenLaunchCommandForBinary(shim, "win32"),
-    { command: process.execPath, fixedArgs: [shimScript] },
+    { command: process.execPath, fixedArgs: [realpathSync(shimScript)] },
     "win32 .cmd shims launch through node + the resolved script (never spawned directly — CVE-2024-27980 EINVAL)",
   );
 
