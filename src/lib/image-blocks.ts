@@ -110,16 +110,16 @@ export function isRenderableImageSrc(src: string | null | undefined): boolean {
     // exists to deny. This module also runs where no origin is known (SSR,
     // unit tests), so rather than compare origins we refuse every `https:`
     // URL whose path enters `/api/` unless it is the attachment endpoint.
-    // Losing third-party hosts that happen to serve pictures under `/api/` is
-    // a far cheaper trade than leaving the bypass open.
-    let pathname: string;
-    try {
-      pathname = new URL(value).pathname;
-    } catch {
-      return false;
-    }
-    if (/^\/api\/chat\/attachment$/.test(pathname)) return true;
-    return !pathname.startsWith("/api/");
+    // Losing third-party hosts that serve pictures under `/api/` is a far
+    // cheaper trade than leaving the bypass open.
+    //
+    // The path is sliced by hand rather than via `new URL`, because the
+    // documented placeholder `https://.../shot.png` (with a real ellipsis) is
+    // not a parseable URL and must keep rendering as the teachable example.
+    const afterHost = value.replace(/^https:\/\/[^/\s?#]*/i, "");
+    const path = afterHost.split(/[?#]/)[0].replace(/\\/g, "/").toLowerCase();
+    if (path === "/api/chat/attachment") return true;
+    return !path.startsWith("/api/");
   }
   return false;
 }
