@@ -27,6 +27,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -55,7 +56,9 @@ import {
   type ReadingBlock,
 } from "@/lib/code-reading";
 import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
-import { SpeakBubble } from "@/components/speak-bubble";
+import { SpeakBubble, type SpeakBubbleController } from "@/components/speak-bubble";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 // Lazy: the reader is a modal opened by an explicit click, and it carries its
 // own stylesheet. Loading it eagerly puts both on the / route's first paint for
 // every session, including the ones that never expand a message.
@@ -66,16 +69,17 @@ const MessageReader = dynamic(
 import type { BatchTool } from "@/lib/chat-tool-batches";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
+import { decorateResponseHtml } from "@/lib/response-status-tokens";
 import { resolveShikiLang, diffContentLang } from "@/lib/code-lang";
 import { unwrapPreviewShell } from "@/lib/markdown-preview-shell";
 import { loadMarkdownPreview } from "@/lib/markdown-preview";
 import {
   cacheRenderedMarkdown as renderCacheSet,
-  closeTrailingFence,
   createMarkdownRenderGate,
   getRenderedMarkdown as renderCacheGet,
   normalizePseudoLists,
   scanFenceFilenames,
+  stabilizeStreamingMarkdown,
   type MarkdownRenderGate,
 } from "@/lib/message-markdown-stream";
 import { CodeReadingContext, FileLinkResolverContext, useWireCopyButtons } from "./message-dom-wiring";
@@ -653,11 +657,12 @@ function isMermaidCodeBlock(block: Block): boolean {
 
 async function mdToHtml(
   markdown: string,
-  opts?: { transient?: boolean; highlightCode?: boolean },
+  opts?: { transient?: boolean; highlightCode?: boolean; decorateResponse?: boolean },
 ): Promise<string> {
   const canUseCache = !opts?.transient && opts?.highlightCode !== false;
+  const cacheKey = `${opts?.decorateResponse ? "response" : "document"}:${markdown}`;
   if (canUseCache) {
-    const cached = renderCacheGet(markdown);
+    const cached = renderCacheGet(cacheKey);
     if (cached !== undefined) return cached;
   }
 
@@ -740,6 +745,7 @@ async function mdToHtml(
   if (mermaidPlugin?.postProcess) {
     sanitizedHtml = await mermaidPlugin.postProcess(sanitizedHtml);
   }
+  if (opts?.decorateResponse) sanitizedHtml = decorateResponseHtml(sanitizedHtml);
   // Strip the renderer's cm-preview shell so blocks land as DIRECT children
   // of .cave-md — its `> * + *` owl selector is the only block-rhythm rule,
   // and with the shell in place a list rendered flush against the paragraph
@@ -748,7 +754,7 @@ async function mdToHtml(
   // Transient (mid-stream) snapshots are never requested again once the
   // stream advances past them — caching one per throttle tick would churn
   // settled entries out of the LRU for no hit-rate gain.
-  if (canUseCache) renderCacheSet(markdown, sanitizedHtml);
+  if (canUseCache) renderCacheSet(cacheKey, sanitizedHtml);
   return sanitizedHtml;
 }
 
@@ -762,15 +768,24 @@ type MarkdownContentProps = {
   pending?: boolean;
   onOpenUrl?: (url: string) => void;
   citations?: readonly Citation[];
+  decorateResponse?: boolean;
   /** Extra classes on the markdown container — the Expand reader uses this to
    *  set its own reading scale (.cave-md--reader). Omitted in the transcript,
    *  which reads at the stream's density. */
   className?: string;
 };
 
-function MarkdownContent({ text, pending, onOpenUrl, citations = [], className }: MarkdownContentProps) {
+function MarkdownContent({
+  text,
+  pending,
+  onOpenUrl,
+  citations = [],
+  decorateResponse = false,
+  className,
+}: MarkdownContentProps) {
+  const cacheKey = `${decorateResponse ? "response" : "document"}:${text}`;
   const [html, setHtml] = useState<string | null>(
-    () => pending ? null : renderCacheGet(text) ?? null,
+    () => pending ? null : renderCacheGet(cacheKey) ?? null,
   );
   // Chat prose file references (`src/foo.ts:42`) open in Code — but only when
   // the surface's resolver (FileLinkResolverContext) confirms the file exists
@@ -823,7 +838,11 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [], className }
       const stamp = renderGate.issue();
       const run = () => {
         lastStreamRenderRef.current = Date.now();
-        mdToHtml(closeTrailingFence(text), { transient: true, highlightCode: false })
+        mdToHtml(stabilizeStreamingMarkdown(text), {
+          transient: true,
+          highlightCode: false,
+          decorateResponse,
+        })
           .then((h) => {
             if (!renderGate.apply(stamp)) return;
             setHtml(h);
@@ -843,7 +862,7 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [], className }
     // then enhance that stable frame with Shiki token colors. A cached final
     // render resolves immediately and never regresses to the plain stage.
     let cancelled = false;
-    const cached = renderCacheGet(text);
+    const cached = renderCacheGet(cacheKey);
     if (cached !== undefined) {
       const stamp = renderGate.issue();
       if (renderGate.apply(stamp)) setHtml(cached);
@@ -851,14 +870,14 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [], className }
     }
 
     const plainStamp = renderGate.issue();
-    mdToHtml(text, { highlightCode: false })
+    mdToHtml(text, { highlightCode: false, decorateResponse })
       .then((plainHtml) => {
         if (cancelled) return;
         if (!renderGate.apply(plainStamp)) return;
         setHtml(plainHtml);
 
         const highlightedStamp = renderGate.issue();
-        return mdToHtml(text).then((highlightedHtml) => {
+        return mdToHtml(text, { decorateResponse }).then((highlightedHtml) => {
           if (cancelled) return;
           if (!renderGate.apply(highlightedStamp)) return;
           setHtml(highlightedHtml);
@@ -866,12 +885,29 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [], className }
       })
       .catch((err) => { console.error("[MarkdownContent] mdToHtml failed", err); });
     return () => { cancelled = true; };
-  }, [text, pending]);
+  }, [cacheKey, decorateResponse, pending, renderGate, text]);
 
   if (!html) {
+    if (!decorateResponse) {
+      return (
+        <span className={`whitespace-pre-wrap break-words text-[length:var(--text-md)] leading-relaxed${className ? ` ${className}` : ""}`}>
+          {text}
+          {pending ? "▌" : ""}
+        </span>
+      );
+    }
     return (
-      <span className={`whitespace-pre-wrap break-words text-[length:var(--text-md)] leading-relaxed${className ? ` ${className}` : ""}`}>
-        {text}
+      <span
+        className={`cave-response-rendering${className ? ` ${className}` : ""}`}
+        role="status"
+        aria-label={pending ? "Familiar is writing" : "Rendering response"}
+      >
+        <span className="cave-response-typing-dots" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+        <span>{pending ? "Writing" : "Rendering response"}</span>
       </span>
     );
   }
@@ -885,11 +921,19 @@ function MarkdownContent({ text, pending, onOpenUrl, citations = [], className }
         // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: html }}
       />
-      {/* No streaming cursor here, and it cannot simply be re-added as a
-          sibling: this container is a block-level <div>, so the span wrapped
-          onto its own row as a detached bar instead of trailing the text
-          (cave-1yslk). Placing it correctly means injecting into the
-          sanitized HTML, which the sibling position existed to avoid. */}
+      {/* This is a separate response status, not a cursor intended to trail the
+          final rendered line. Keeping it outside sanitized HTML avoids malformed
+          Markdown while making its standalone placement deliberate. */}
+      {pending ? (
+        <span className="cave-response-typing" role="status" aria-label="Familiar is writing">
+          <span className="cave-response-typing-dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span>Writing</span>
+        </span>
+      ) : null}
       <InlineCitationPreviews
         citations={citations}
         containerRef={containerRef}
@@ -914,7 +958,7 @@ export function ProgressiveMarkdownBlock({
 // CopyButton — hover "Copy message" (raw markdown source)
 // ---------------------------------------------------------------------------
 
-function CopyBubble({ text }: { text: string }) {
+function CopyBubble({ text, response = false }: { text: string; response?: boolean }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -932,8 +976,9 @@ function CopyBubble({ text }: { text: string }) {
       type="button"
       aria-label={copied ? "Copied" : "Copy message"}
       onClick={copy}
-      className={`cave-copy-btn cave-copy-btn-bubble${copied ? " cave-copy-btn--confirmed" : ""}`}
+      className={`cave-copy-btn cave-copy-btn-bubble focus-ring${response ? " cave-response-action" : ""}${copied ? " cave-copy-btn--confirmed" : ""}`}
     >
+      {response ? <Icon name="ph:copy" width={12} aria-hidden /> : null}
       {copied ? "Copied" : "Copy"}
     </button>
   );
@@ -999,6 +1044,8 @@ export type MessageBubbleProps = {
   /** Which familiar produced the answer — the reader's Rewrite control asks it
    *  for the rewrite. Absent hides the control. */
   readerFamiliarId?: string;
+  /** The owning surface already supplies a collapse control (Coven sections). */
+  collapsible?: boolean;
   /** Branching: when a turn has siblings, render a compact ‹ index/total ›
    *  switcher. Omitted (or total <= 1) hides it. */
   branchNav?: {
@@ -1009,8 +1056,13 @@ export type MessageBubbleProps = {
   };
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, readerTools, readerDurationMs, onAskAbout, readerPrompt, onRerunWith, readerFamiliarId, branchNav }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, readerTools, readerDurationMs, onAskAbout, readerPrompt, onRerunWith, readerFamiliarId, collapsible = true, branchNav }: MessageBubbleProps) {
   const [tsVisible, setTsVisible] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [readerOpen, setReaderOpen] = useState(false);
+  const [speakState, setSpeakState] = useState<"idle" | "loading" | "playing">("idle");
+  const speechRef = useRef<SpeakBubbleController | null>(null);
+  const responseBodyId = useId();
   const [vote, setVote] = useState<Feedback | null>(() => (messageId ? getFeedback(messageId) : null));
   const applyVote = (v: Feedback) => {
     if (!messageId) return;
@@ -1031,6 +1083,9 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
   };
   useEffect(() => () => { if (hoverTimer.current) clearTimeout(hoverTimer.current); }, []);
+  useEffect(() => {
+    if (pending) setCollapsed(false);
+  }, [pending]);
 
   const shouldShowTs = showTimestamp || tsVisible;
 
@@ -1120,64 +1175,93 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
   const lastTextIdx = segments
     ? segments.reduce((acc, seg, i) => (seg.kind === "text" ? i : acc), -1)
     : -1;
+  const responseState = pending ? "streaming" : isError ? "error" : "complete";
+  const canCollapse = collapsible && Boolean(content.trim());
+  const hasMoreActions = Boolean(onReply || content || messageId);
+
   return (
     <div
       className="group relative cave-bubble-assistant"
+      data-state={responseState}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      <div className={isError ? "text-[var(--color-warning)]" : ""}>
-        {segments?.length ? (
-          segments.map((seg, i) => {
-            if (seg.kind === "block") {
-              return <div key={seg.key} className="my-2">{seg.node}</div>;
-            }
-            const text = segmentedCitations
-              ? renderCitationReferences(seg.text, segmentedCitations)
-              : seg.text;
-            return (
-              <MarkdownContent
-                key={`span-${i}`}
-                text={text}
-                pending={pending && i === lastTextIdx}
-                onOpenUrl={onOpenUrl}
-                citations={cited.citations}
-              />
-            );
-          })
+      <div id={responseBodyId} className="cave-response-frame" data-state={responseState}>
+        {collapsed ? (
+          <div className="cave-response-collapsed" role="status">
+            Response collapsed
+          </div>
         ) : (
-          <MarkdownContent
-            text={cited.body}
-            pending={pending}
-            onOpenUrl={onOpenUrl}
-            citations={cited.citations}
-          />
+          <div className="cave-response-body">
+            <div className={isError ? "text-[var(--danger-text)]" : ""}>
+              {segments?.length ? (
+                segments.map((seg, i) => {
+                  if (seg.kind === "block") {
+                    return <div key={seg.key} className="my-2">{seg.node}</div>;
+                  }
+                  const text = segmentedCitations
+                    ? renderCitationReferences(seg.text, segmentedCitations)
+                    : seg.text;
+                  return (
+                    <MarkdownContent
+                      key={`span-${i}`}
+                      text={text}
+                      pending={pending && i === lastTextIdx}
+                      onOpenUrl={onOpenUrl}
+                      citations={cited.citations}
+                      decorateResponse
+                    />
+                  );
+                })
+              ) : (
+                <MarkdownContent
+                  text={cited.body}
+                  pending={pending}
+                  onOpenUrl={onOpenUrl}
+                  citations={cited.citations}
+                  decorateResponse
+                />
+              )}
+            </div>
+          </div>
         )}
+        {isError && !pending ? (
+          <div className="cave-response-error" role="alert">
+            Response interrupted
+          </div>
+        ) : null}
       </div>
       {/* Always in the DOM (CHAT-D6-04) — visibility is CSS-gated so the
           actions are reachable by keyboard (Tab), screen readers, and touch. */}
-      {!pending && content ? (
-        <div className="cave-bubble-actions">
-          {onReply ? (
-            <button
-              type="button"
-              aria-label="Reply to message"
-              title="Reply"
-              onClick={onReply}
-              className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
-            >
-              <Icon name="ph:arrow-bend-up-left" width={11} aria-hidden />
-            </button>
-          ) : null}
+      {!pending && (content || isError) ? (
+        <div className="cave-bubble-actions" role="group" aria-label="Response actions">
+          {content ? <CopyBubble text={content} response /> : null}
           {onRegenerate ? (
             <button
               type="button"
-              aria-label="Regenerate response"
-              title="Regenerate"
+              aria-label="Retry response"
+              title="Retry"
               onClick={onRegenerate}
-              className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
+              className="cave-copy-btn cave-copy-btn-bubble cave-response-action focus-ring"
             >
-              <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
+              <Icon name="ph:arrow-clockwise" width={12} aria-hidden />
+              Retry
+            </button>
+          ) : null}
+          {canCollapse ? (
+            <button
+              type="button"
+              aria-controls={responseBodyId}
+              aria-expanded={!collapsed}
+              onClick={() => setCollapsed((value) => !value)}
+              className="cave-copy-btn cave-copy-btn-bubble cave-response-action focus-ring"
+            >
+              <Icon
+                name={collapsed ? "ph:arrows-out-simple" : "ph:arrows-in-simple"}
+                width={12}
+                aria-hidden
+              />
+              {collapsed ? "Expand" : "Collapse"}
             </button>
           ) : null}
           {branchNav && branchNav.total > 1 ? (
@@ -1205,43 +1289,73 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
               </button>
             </span>
           ) : null}
-          <ExpandBubble
+          {hasMoreActions ? (
+            <OverflowMenu ariaLabel="More response actions" size="xs" className="cave-response-more">
+              {onReply ? (
+                <PopoverItem icon="ph:arrow-bend-up-left" onSelect={onReply}>
+                  Reply
+                </PopoverItem>
+              ) : null}
+              {content ? (
+                <PopoverItem icon="ph:arrows-out-simple" onSelect={() => setReaderOpen(true)}>
+                  Open reader
+                </PopoverItem>
+              ) : null}
+              {content ? (
+                <PopoverItem
+                  icon={speakState === "playing" ? "ph:stop-fill" : "ph:speaker-high-fill"}
+                  onSelect={() => speechRef.current?.toggle()}
+                >
+                  {speakState === "loading"
+                    ? "Preparing audio"
+                    : speakState === "playing"
+                      ? "Stop reading"
+                      : "Read aloud"}
+                </PopoverItem>
+              ) : null}
+              {messageId && (onReply || content) ? <PopoverSeparator /> : null}
+              {messageId ? (
+                <PopoverItem
+                  icon="ph:thumbs-up"
+                  checked={vote === "up"}
+                  onSelect={() => applyVote("up")}
+                >
+                  Good response
+                </PopoverItem>
+              ) : null}
+              {messageId ? (
+                <PopoverItem
+                  icon="ph:thumbs-down"
+                  checked={vote === "down"}
+                  onSelect={() => applyVote("down")}
+                >
+                  Bad response
+                </PopoverItem>
+              ) : null}
+            </OverflowMenu>
+          ) : null}
+          <SpeakBubble
             text={content}
-            label={label ?? "Familiar response"}
-            tools={readerTools}
-            durationMs={readerDurationMs}
-            onAskAbout={onAskAbout}
-            prompt={readerPrompt}
-            onRerunWith={onRerunWith}
-            familiarId={readerFamiliarId}
+            familiarId={feedbackContext?.familiarId}
+            hidden
+            controllerRef={speechRef}
+            onStateChange={setSpeakState}
           />
-          <CopyBubble text={content} />
-          {role === "assistant" ? (
-            <SpeakBubble text={content} familiarId={feedbackContext?.familiarId} />
-          ) : null}
-          {messageId ? (
-            <>
-              <button
-                type="button"
-                aria-label="Good response"
-                aria-pressed={vote === "up"}
-                onClick={() => applyVote("up")}
-                className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
-              >
-                <Icon name="ph:thumbs-up" width={13} aria-hidden />
-              </button>
-              <button
-                type="button"
-                aria-label="Bad response"
-                aria-pressed={vote === "down"}
-                onClick={() => applyVote("down")}
-                className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
-              >
-                <Icon name="ph:thumbs-down" width={13} aria-hidden />
-              </button>
-            </>
-          ) : null}
         </div>
+      ) : null}
+      {readerOpen ? (
+        <ExpandBubble
+          open
+          onClose={() => setReaderOpen(false)}
+          text={content}
+          label={label ?? "Familiar response"}
+          tools={readerTools}
+          durationMs={readerDurationMs}
+          onAskAbout={onAskAbout}
+          prompt={readerPrompt}
+          onRerunWith={onRerunWith}
+          familiarId={readerFamiliarId}
+        />
       ) : null}
       <div className={`cave-bubble-timestamp${shouldShowTs ? " cave-bubble-timestamp--visible" : ""}`}>
         {fmtBubbleTime(timestamp)}
@@ -1255,6 +1369,8 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
 // ---------------------------------------------------------------------------
 
 function ExpandBubble({
+  open,
+  onClose,
   text,
   label,
   tools,
@@ -1264,6 +1380,8 @@ function ExpandBubble({
   onRerunWith,
   familiarId,
 }: {
+  open: boolean;
+  onClose: () => void;
   text: string;
   label: string;
   tools?: readonly BatchTool[];
@@ -1273,19 +1391,9 @@ function ExpandBubble({
   onRerunWith?: (prompt: string) => void;
   familiarId?: string;
 }) {
-  const [open, setOpen] = useState(false);
   const readerCited = useMemo(() => renderCitedBody(text), [text]);
   return (
     <>
-      <button
-        type="button"
-        aria-label="Expand message"
-        title="Expand"
-        onClick={() => setOpen(true)}
-        className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
-      >
-        <Icon name="ph:arrows-out-simple" width={11} aria-hidden />
-      </button>
       {open ? (
         <MessageReader
           text={text}
@@ -1296,7 +1404,7 @@ function ExpandBubble({
           prompt={prompt}
           onRerunWith={onRerunWith}
           familiarId={familiarId}
-          onClose={() => setOpen(false)}
+          onClose={onClose}
         >
           {/* MarkdownContent, not MarkdownBlock: it is the renderer that wires
               InlineCitationPreviews, so a cited answer gets the same interactive
@@ -1317,6 +1425,7 @@ function ExpandBubble({
             text={readerCited.body}
             citations={readerCited.citations}
             className="cave-md--expanded cave-md--reader"
+            decorateResponse
           />
         </MessageReader>
       ) : null}
