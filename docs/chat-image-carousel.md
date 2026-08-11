@@ -47,7 +47,7 @@ local-file-read surface. `isRenderableImageSrc` accepts only:
 
 | Form | Why |
 | --- | --- |
-| `https://…` | remote pictures |
+| `https://…` | remote pictures, unless the path enters `/api/` |
 | `data:image/{png,jpeg,jpg,gif,webp,avif};base64,…` | inline payloads |
 | `blob:…` | in-process object URLs |
 | `/api/chat/attachment` (same origin) | the read-only attachment store |
@@ -55,6 +55,11 @@ local-file-read surface. `isRenderableImageSrc` accepts only:
 Everything else is refused, explicitly including `javascript:`, `vbscript:`,
 `file:`, bare `http:`, protocol-relative `//host/…`, `data:image/svg+xml`
 (an SVG can carry script) and any value containing control characters.
+
+The `/api/` exclusion applies to the absolute spelling too: `https://<origin>/api/…`
+is refused just as `/api/…` is, because `needsAuthedImageFetch` turns any
+same-origin `/api/*` into an authenticated GET, and a marker that could name one
+would otherwise reach it by writing the URL out in full.
 
 ## §2 The card (`src/components/image-carousel.tsx`)
 
@@ -64,8 +69,9 @@ Everything else is refused, explicitly including `javascript:`, `vbscript:`,
   focus is inside the deck.
 - Clicking a slide opens a focus-trapped lightbox (Escape closes, focus
   returns to the trigger) with the same arrow-key navigation.
-- Pictures load through `AuthedImage`, so `/api/…` sources survive the
-  packaged sidecar's auth gate (see `src/lib/authed-image.ts`).
+- Pictures load through `AuthedImage`, so the one permitted
+  `/api/chat/attachment` source survives the packaged sidecar's auth gate (see
+  `src/lib/authed-image.ts`).
 - The slide track animates only when the user has not asked for reduced
   motion; under `reduce` the change is instant.
 - Slide changes announce through a **local** live region — the card mounts in
