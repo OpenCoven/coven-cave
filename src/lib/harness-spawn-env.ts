@@ -1,13 +1,13 @@
 /**
  * Harness spawn env — the vault-scoping enforcement point (cave-4nu6).
  *
- * `resolveSecret()` caches every resolved vault value into `process.env`, and
- * `covenSpawnEnv()` forwards the full process env, so without intervention
- * every spawned harness inherits every secret. This module subtracts, at
- * spawn time, the vault-managed keys whose `scope` does not grant the familiar
- * being spawned (denylist subtraction — PATH/HOME and non-vault env stay
- * intact). Unscoped entries are shared and pass through, so existing
- * vault.yaml files behave exactly as before.
+ * `resolveSecret()` caches ordinary resolved vault values into `process.env`,
+ * and `covenSpawnEnv()` forwards the scrubbed process env, so without
+ * intervention every spawned harness would inherit every cached secret. This
+ * module subtracts, at spawn time, the vault-managed keys whose `scope` does
+ * not grant the familiar being spawned (denylist subtraction — PATH/HOME and
+ * non-vault env stay intact). Unscoped entries are shared and pass through, so
+ * existing vault.yaml files behave exactly as before.
  *
  * Use this instead of `covenSpawnEnv()` for anything that runs a harness
  * (`coven run`, adapter binaries, `codex exec`) or the daemon. Spawns with no
@@ -16,11 +16,17 @@
  * spawn path of a granted familiar.
  */
 
-import { covenSpawnEnv } from "./coven-bin.ts";
+import {
+  covenSpawnEnv,
+  type CovenSpawnEnvOptions,
+} from "./coven-bin.ts";
+import { vaultFreeDiscoveryEnv } from "./child-spawn-env.ts";
 import { readEnvLocalValue } from "./env-file.ts";
 import { GITHUB_HARNESS_TOKEN_ENV_KEYS } from "./github-token-env.ts";
 import { hasLocalEncryptedSecret } from "./local-encrypted-vault.ts";
 import { isVaultKeyGrantedTo, loadVaultMap, resolveVaultManagedSecret, type VaultMap } from "./vault.ts";
+
+export { vaultFreeDiscoveryEnv } from "./child-spawn-env.ts";
 
 /**
  * Return the explicitly opted-in external credential names that a harness may
@@ -104,13 +110,50 @@ export function subtractScopedVaultKeys(
 }
 
 /**
+ * Canonical, credential-free environment for capability probes.
+ *
+ * One Vault-map snapshot governs both PATH discovery and the final env scrub.
+ * This deliberately bypasses familiar/shared restoration, so probing a PATH
+ * launcher can never materialize a credential merely to delete it afterward.
+ */
+export function canonicalProbeSpawnEnv(
+  discovery: Pick<CovenSpawnEnvOptions, "discoveryDeadline" | "now"> = {},
+  dependencies: {
+    sourceEnv?: NodeJS.ProcessEnv;
+    loadMap?: () => VaultMap;
+    spawnEnv?: typeof covenSpawnEnv;
+  } = {},
+): NodeJS.ProcessEnv {
+  const map = (dependencies.loadMap ?? (() => loadVaultMap(true)))();
+  const sourceEnv = dependencies.sourceEnv ?? process.env;
+  const spawn = dependencies.spawnEnv ?? covenSpawnEnv;
+  const env = spawn({
+    discoveryEnv: vaultFreeDiscoveryEnv(sourceEnv, map),
+    discoveryDeadline: discovery.discoveryDeadline,
+    now: discovery.now,
+  });
+  return vaultFreeDiscoveryEnv(env, map);
+}
+
+/**
  * `covenSpawnEnv()` minus scoped vault keys the familiar is not granted.
  * The vault map is force-reloaded per spawn so a just-tightened scope applies
  * immediately — spawns are per chat turn and the map is a tiny local file.
  */
-export function harnessSpawnEnv(familiarId?: string | null): NodeJS.ProcessEnv {
+export function harnessSpawnEnv(
+  familiarId?: string | null,
+  discovery: Pick<CovenSpawnEnvOptions, "discoveryDeadline" | "now"> = {},
+): NodeJS.ProcessEnv {
   const map = loadVaultMap(true);
-  const env = subtractScopedVaultKeys(covenSpawnEnv(), map, familiarId);
+  const env = subtractScopedVaultKeys(
+    covenSpawnEnv({
+      discoveryEnv: vaultFreeDiscoveryEnv(process.env, map),
+      discoveryDeadline: discovery.discoveryDeadline,
+      now: discovery.now,
+    }),
+    map,
+    familiarId,
+  );
   restoreGrantedVaultGitHubTokenEnv(env, map, familiarId);
   return restoreAllowedGitHubTokenEnv(env, undefined, new Set(Object.keys(map)));
 }

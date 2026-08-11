@@ -35,6 +35,15 @@ assert.match(
   "hook sets tabindex on items",
 );
 
+// Reset every matching row before assigning the visible rove set's tab stop.
+// CSS-only visibility changes can reveal a previously hidden row between React
+// renders, so leaving that row at tabindex=0 would create multiple tab stops.
+assert.match(
+  source,
+  /const allItems = Array\.from\(container\.querySelectorAll<HTMLElement>\(itemSelector\)\);[\s\S]*?allItems\.forEach\(\(item\) => \{\s*item\.tabIndex = -1;\s*\}\);[\s\S]*?const items = getItems\(\);[\s\S]*?item\.tabIndex = 0;/,
+  "resets all matching rows before assigning the visible rove set's tab stop",
+);
+
 // Loop is opt-in (default false to match WAI-ARIA APG composite-widget guidance).
 assert.match(
   source,

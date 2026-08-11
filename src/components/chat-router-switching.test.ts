@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const familiarChangeEffect =
-  source.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[familiar\?\.id\]\);/)?.[0] ?? "";
+  source.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[advanceComposeInstance, familiar\?\.id\]\);/)?.[0] ?? "";
 
 assert.match(
   familiarChangeEffect,
@@ -50,9 +50,15 @@ assert.match(
   "ChatRouter should render an opened session with its own familiar before the parent active familiar catches up",
 );
 
+assert.match(
+  source,
+  /<ChatView[\s\S]*?onSessionsChanged=\{onSessionsChanged\}/,
+  "ChatRouter forwards Workspace's stable session refresh callback to ChatView unchanged",
+);
+
 // ── Chat-first IA (cave-hsa6): boot into a compose view, not the list ───────
 const bootComposeEffect =
-  source.match(/const bootComposeRef = useRef\(false\);[\s\S]*?\}, \[familiar\?\.id, fallbackFamiliar\?\.id\]\);/)?.[0] ?? "";
+  source.match(/const bootComposeRef = useRef\(false\);[\s\S]*?\}, \[familiar\?\.id, visibleFamiliars\.length\]\);/)?.[0] ?? "";
 assert.match(
   bootComposeEffect,
   /if \(bootComposeRef\.current\) return;/,
@@ -75,8 +81,22 @@ assert.match(
 );
 assert.match(
   bootComposeEffect,
-  /prev\.kind === "list" \? \{ kind: "chat", sessionId: null, familiarId: bootFamiliarId \} : prev/,
+  /prev\.kind === "list"\s*\?\s*\{ kind: "chat", sessionId: null, familiarId: familiar\?\.id \?\? null \}/,
   "booting into chat opens a zero-session compose view (ChatEmptyState + composer), no server session created",
+);
+// …and does NOT choose a familiar. An active one carries; absent one the view
+// opens unbound so NewChatLaunch asks, rather than binding the composer to
+// visibleFamiliars[0] and sending the user's first message to whichever
+// familiar sorted first.
+assert.doesNotMatch(
+  bootComposeEffect,
+  /fallbackFamiliar/,
+  "boot-compose does not adopt the first familiar in the roster",
+);
+assert.match(
+  bootComposeEffect,
+  /if \(visibleFamiliars\.length === 0\) return;/,
+  "boot still waits for the roster to load before leaving the list view",
 );
 
 // ── CHAT-D9-01: URL deep links (#chat-<sessionId>) ───────────────────────────
@@ -125,7 +145,7 @@ assert.match(
 
 assert.match(
   source,
-  /prev\.kind === "chat" && prev\.sessionId === null\s*\? \{ kind: "chat", sessionId: sid/,
+  /shouldRouterPromoteSession\(\s*\{ sessionId: prev\.sessionId, composeInstance: composeInstanceRef\.current \},\s*request,\s*\)/,
   "Session promotion must update the view's sessionId via setView so the hash-sync effect writes the promoted id",
 );
 
@@ -218,13 +238,20 @@ assert.match(
   "Popstate should clear stale chat hashes and return to the list when the target session is missing",
 );
 
-// ── CHAT-D9-04: in-transcript find (turn-level jump + count) ─────────────────
-// The find bar lives in ChatView's header meta line; matching is turn-level
-// (case-insensitive substring over visible text) via the pure helper in
-// src/lib/transcript-find.ts. Intra-turn highlighting is deferred.
+// ── CHAT-D9-04 → cave-7gr08: in-transcript find ──────────────────────────────
+// Superseded placement: find was an inline widget in the header meta line;
+// Chat.dc.html 2a promotes it to a band under the title row (see
+// chat-find-band.test.ts). What survives here is the part that still holds —
+// jumps resolve to a TURN, blank queries match nothing, the nav is labelled,
+// and ⌘F stays scoped to the chat section rather than the window.
 
 const chatViewSource = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const chatCssSource = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+// The controls moved into the band, so the find-chrome pins read both files.
+const findChromeSource =
+  chatViewSource + readFileSync(new URL("./chat-find-band.tsx", import.meta.url), "utf8");
+// cave-chat.css is a facade of @imports; the runner's css-source-contract-hook
+// patches readFileSync so it yields the effective content of the split sheets.
+const chatCssSource = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat", "cave-chat/transcript", "cave-chat/activity"]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 
@@ -258,26 +285,30 @@ assert.deepEqual(
 
 // 2. The find bar renders in the header meta line with n/m count and
 //    prev/next navigation carrying aria-labels.
+// The band renders under the header, so the rename/voice/debug/delete actions
+// keep their places even when find is open — the original intent, now met by
+// moving find out of the cluster entirely instead of squeezing it in.
 assert.match(
   chatViewSource,
-  /<MetaLine[\s\S]*?<ChatFindBar[\s\S]*?<\/MetaLine>/,
-  "ChatFindBar must render inside the header MetaLine row so rename/voice/debug/delete actions stay put",
+  /<\/header>[\s\S]{0,600}?<ChatFindBand/,
+  "the find band renders under the title row, outside the action cluster",
+);
+assert.doesNotMatch(chatViewSource, /<ChatFindBar/, "the inline find widget is retired");
+
+assert.match(
+  findChromeSource,
+  /\$\{activeIndex \+ 1\}\/\$\{hits\.length\}/,
+  "find must show a 1-based n/m count",
 );
 
 assert.match(
-  chatViewSource,
-  /\$\{activeIndex \+ 1\} \/ \$\{matchCount\}/,
-  "The find bar must show a 1-based `n / m` matching-turn count",
-);
-
-assert.match(
-  chatViewSource,
+  findChromeSource,
   /aria-label="Previous match"/,
   "Prev navigation needs an aria-label",
 );
 
 assert.match(
-  chatViewSource,
+  findChromeSource,
   /aria-label="Next match"/,
   "Next navigation needs an aria-label",
 );
@@ -354,8 +385,7 @@ assert.equal(
 // 6. The Esc layering is self-contained: the find input stops propagation so
 //    closing find never reaches the composer's Esc handling, and Enter /
 //    Shift+Enter cycle next/prev.
-const findBarComponent =
-  chatViewSource.match(/function ChatFindBar\(\{[\s\S]*?\nfunction MetaLineElapsed/)?.[0] ?? "";
+const findBarComponent = readFileSync(new URL("./chat-find-band.tsx", import.meta.url), "utf8");
 
 assert.match(
   findBarComponent,
@@ -379,8 +409,8 @@ assert.match(
 
 assert.match(
   chatViewSource,
-  /t\.role === "assistant" \? splitReasoning\(t\.text\)\.visible : t\.text/,
-  "Find must match the VISIBLE transcript text — never turn.reasoning or unsplit thinking blocks",
+  /text: chatTurnVisibleText\(t\),/,
+  "Find must match the shared visible transcript text — never turn.reasoning or unsplit thinking/control blocks",
 );
 
 // 8. Highlight CSS: temporary cave-turn-found flash with reduced-motion

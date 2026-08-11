@@ -39,8 +39,8 @@ assert.match(
 // every already-opened surface reload in one task group instead of a sequence.
 assert.match(
   model,
-  /private func refreshLoadedSurfaces\(\) async \{[\s\S]*?withTaskGroup[\s\S]*?group\.addTask \{ await self\.loadCoreResources\(\) \}[\s\S]*?if sessionsLoaded \{ group\.addTask \{ await self\.loadSessions\(\) \} \}[\s\S]*?if tasksLoaded \{ group\.addTask \{ await self\.loadTasks\(\) \} \}[\s\S]*?if remindersLoaded \{ group\.addTask \{ await self\.loadReminders\(\) \} \}[\s\S]*?if projectsLoaded \{ group\.addTask \{ await self\.loadProjects\(\) \} \}[\s\S]*?if journalLoaded \{ group\.addTask \{ await self\.loadJournal\(\) \} \}[\s\S]*?if canvasLoaded \{ group\.addTask \{ await self\.loadCanvas\(\) \} \}/,
-  "reconnect should refresh all already-opened surfaces plus familiars/theme (canvas included — it has no other automatic recovery path)",
+  /private func refreshLoadedSurfaces\(\) async \{[\s\S]*?withTaskGroup[\s\S]*?group\.addTask \{ await self\.loadCoreResources\(\) \}[\s\S]*?if sessionsLoaded \{ group\.addTask \{ await self\.loadSessions\(\) \} \}[\s\S]*?if tasksLoaded \{ group\.addTask \{ await self\.loadTasks\(\) \} \}[\s\S]*?if remindersLoaded \{ group\.addTask \{ await self\.loadReminders\(\) \} \}[\s\S]*?if projectsLoaded \{ group\.addTask \{ await self\.loadProjects\(\) \} \}/,
+  "reconnect should refresh every remaining already-opened surface plus core resources",
 );
 assert.match(
   model,
@@ -56,7 +56,7 @@ assert.match(
 );
 assert.match(
   model,
-  /private func resetHostScopedStateForNewConnection\(\) \{[\s\S]*?familiars = \[\][\s\S]*?sessionsLoaded = false[\s\S]*?tasksLoaded = false[\s\S]*?remindersLoaded = false[\s\S]*?projectsLoaded = false[\s\S]*?journalLoaded = false/,
+  /private func resetHostScopedStateForNewConnection\(\) \{[\s\S]*?familiars = \[\][\s\S]*?sessionsLoaded = false[\s\S]*?tasksLoaded = false[\s\S]*?remindersLoaded = false[\s\S]*?projectsLoaded = false/,
   "new-host reset should drop loaded-surface flags so .checking shows the connection flow instead of stale data",
 );
 
@@ -72,14 +72,6 @@ assert.match(
   /static func isAuthFailure\(_ error: Error\) -> Bool/,
   "CaveError should expose an auth-failure classifier",
 );
-// Canvas has no per-view retry (its load task is one-shot behind canvasLoaded),
-// so its failures MUST go through the shared path to schedule auto recovery.
-assert.match(
-  model,
-  /func loadCanvas\(\) async \{[\s\S]*?canvasError = handleSurfaceError\(error\)/,
-  "canvas load failures should share the surface error path (auth routing + auto recover)",
-);
-
 // --- Transport resilience: waits for connectivity and retries transient request failures
 assert.match(
   client,
@@ -88,8 +80,13 @@ assert.match(
 );
 assert.match(
   devClient,
-  /config\.waitsForConnectivity = true/,
-  "developer API requests should wait briefly for connectivity too",
+  /data\(for: request\)/,
+  "developer API requests should inherit the core client's connectivity wait and retry policy",
+);
+assert.doesNotMatch(
+  devClient,
+  /URLSessionConfiguration|URLSession\(/,
+  "developer API requests should not bypass the resilient client with a private session",
 );
 assert.match(client, /func data\(for req: URLRequest\) async throws -> \(Data, URLResponse\)/, "CaveClient should centralize resilient request data loading");
 assert.match(

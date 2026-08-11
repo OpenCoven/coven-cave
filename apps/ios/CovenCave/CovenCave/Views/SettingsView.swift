@@ -2,14 +2,15 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
+    @Environment(AppLock.self) private var appLock
     @Environment(\.chrome) private var chrome
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.desktop.rawValue
     @AppStorage(ChatNotifications.enabledKey) private var chatNotificationsEnabled = true
-    @State private var editingHost: String = ""
-    @State private var showDisconnectConfirm = false
     @State private var exportArchive: ExportArchive?
     @State private var exportFailed = false
     @State private var themeError = false
+    @State private var securityAuthFailed = false
+    @State private var securityAuthUnavailable = false
     /// Light/Dark used both to preview the theme swatches and as the mode pushed
     /// to the desktop. Seeded from the desktop's published mode on appear.
     @State private var pushMode: ColorScheme = .dark
@@ -22,24 +23,34 @@ struct SettingsView: View {
         return "\(version) (\(build))"
     }
 
+    /// Top level mirrors the design handoff's settings IA: profile hero, then
+    /// Appearance / Wards / Chats / Community / Legal groups and a centered
+    /// mono brand footer. Connection plumbing (address, re-check, disconnect)
+    /// lives one level down behind the hero.
     var body: some View {
         NavigationStack {
             Form {
-                connectionCard
-                themeSection
+                heroSection
                 appearanceSection
+                wardsSection
+                securitySection
                 chatsSection
-                permissionsSection
-                hostSection
-                disconnectSection
-                aboutSection
+                communitySection
+                legalSection
             }
             .themedListBackground()
             .readableListWidth(680)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { app.navigationDrawerOpen = true } label: {
+                        Image(systemName: "line.3.horizontal")
+                    }
+                    .accessibilityLabel("Open navigation")
+                }
+            }
             .onAppear {
-                editingHost = app.connection?.host ?? ""
                 pushMode = (app.publishedMode ?? (chrome.colorScheme == .light ? "light" : "dark")) == "light" ? .light : .dark
             }
             .onChange(of: app.publishedMode) { _, mode in
@@ -47,14 +58,6 @@ struct SettingsView: View {
                 // from elsewhere, so the swatches and selection stay truthful.
                 guard let mode else { return }
                 pushMode = mode == "light" ? .light : .dark
-            }
-            .confirmationDialog("Disconnect from your desktop?",
-                                isPresented: $showDisconnectConfirm,
-                                titleVisibility: .visible) {
-                Button("Disconnect", role: .destructive) { app.disconnect() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("You'll need to re-enter your desktop address to reconnect.")
             }
             .sheet(item: $exportArchive) { archive in
                 ActivityView(items: [archive.url])
@@ -67,52 +70,99 @@ struct SettingsView: View {
             } message: {
                 Text("Your desktop didn't confirm the change. Check the connection and try again.")
             }
-        }
-    }
-
-    // MARK: - Connection hero
-
-    /// A glanceable header card: a themed glyph, the desktop host, and a live
-    /// status pill — so the most important state (am I connected?) reads at once
-    /// instead of buried in a labelled row.
-    private var connectionCard: some View {
-        Section {
-            HStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(chrome.accent.opacity(0.18))
-                    Image(systemName: "desktopcomputer")
-                        .font(.title2)
-                        .foregroundStyle(chrome.accent)
-                }
-                .frame(width: 52, height: 52)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Your desktop")
-                        .font(.headline)
-                    Text(app.connection?.host ?? "Not set up")
-                        .font(.footnote.monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    statusBadge.padding(.top, 2)
-                }
-                Spacer(minLength: 0)
+            .alert("Couldn't confirm it's you", isPresented: $securityAuthFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Authentication failed or was cancelled, so this setting wasn't changed.")
             }
-            .padding(.vertical, 6)
-            .listRowBackground(chrome.bgRaised.opacity(0.6))
-        } footer: {
-            Text("Connected over your Tailscale network with a paired Cave access token.")
+            .alert("Device authentication unavailable", isPresented: $securityAuthUnavailable) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Turn on a device passcode before changing this security setting.")
+            }
         }
     }
 
-    // MARK: - Theme (overrides the desktop)
+    // MARK: - Profile hero (per the design: sigil avatar, name, mono host + status dot)
+
+    /// The most important state — who am I and am I connected? — reads at once:
+    /// a gradient sigil avatar, the cave's name, and the desktop host in mono
+    /// behind a live status dot. Tapping through opens the Connection page
+    /// (address, re-check, disconnect), keeping the top level uncluttered.
+    private var heroSection: some View {
+        Section {
+            NavigationLink {
+                ConnectionSettingsView()
+            } label: {
+                HStack(spacing: 14) {
+                    Circle()
+                        .fill(chrome.accentGradient)
+                        .frame(width: 54, height: 54)
+                        .overlay {
+                            Image(systemName: "moon.stars.fill")
+                                .font(.system(size: 22, weight: .medium))
+                                .foregroundStyle(chrome.accentForeground)
+                        }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(app.operatorDisplayName)
+                            .font(.headline)
+                        HStack(spacing: 6) {
+                            Circle().fill(statusTint).frame(width: 7, height: 7)
+                            Text(statusLine)
+                                .font(.footnote.monospaced())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 6)
+            }
+            .listRowBackground(chrome.bgRaised.opacity(0.6))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(app.operatorDisplayName), \(statusAccessibilityLabel)")
+            .accessibilityHint("Opens connection settings.")
+        }
+    }
+
+    private var statusTint: Color {
+        switch app.connectionState {
+        case .connected: return .green
+        case .unreachable, .needsAuth: return .orange
+        case .checking, .unconfigured: return .secondary
+        }
+    }
+
+    private var statusLine: String {
+        switch app.connectionState {
+        case .connected: return app.connection?.host ?? "Connected"
+        case .checking: return "Checking…"
+        case .unreachable: return "Unreachable"
+        case .needsAuth: return "Needs pairing"
+        case .unconfigured: return "Not set up"
+        }
+    }
+
+    private var statusAccessibilityLabel: String {
+        switch app.connectionState {
+        case .connected: return "connected to \(app.connection?.host ?? "your desktop")"
+        case .checking: return "checking connection"
+        case .unreachable: return "desktop unreachable"
+        case .needsAuth: return "needs pairing"
+        case .unconfigured: return "not set up"
+        }
+    }
+
+    // MARK: - Appearance (theme pushed to the desktop + this phone's override)
 
     /// The headline feature: pick any of the desktop's named themes from the
     /// phone. Selecting one publishes it to the desktop (`PUT /api/theme`), which
     /// adopts it and re-publishes the resolved palette — so both the Mac and this
-    /// phone re-theme together within a couple of seconds.
-    private var themeSection: some View {
+    /// phone re-theme together within a couple of seconds. The trailing row
+    /// overrides light/dark on this phone alone.
+    private var appearanceSection: some View {
         Section {
             Picker("Mode", selection: $pushMode) {
                 Label("Light", systemImage: "sun.max.fill").tag(ColorScheme.light)
@@ -142,10 +192,18 @@ struct SettingsView: View {
             }
             .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
             .listRowBackground(Color.clear)
+
+            Picker(selection: $appearanceRaw) {
+                ForEach(AppearanceMode.allCases) { mode in
+                    Label(mode.label, systemImage: mode.icon).tag(mode.rawValue)
+                }
+            } label: {
+                Label("On this phone", systemImage: "iphone")
+            }
         } header: {
-            Text("Theme")
+            Text("Appearance")
         } footer: {
-            Text("Sets the palette for your Cave desktop **and** this phone. Your desktop must be open; it updates within a few seconds.")
+            Text("Theme re-paints your Cave desktop **and** this phone within a few seconds. “Match desktop” follows its light/dark mode; Light or Dark fixes this phone only.")
         }
     }
 
@@ -156,21 +214,83 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Appearance (this phone only)
+    // MARK: - Wards (familiar project access)
 
-    private var appearanceSection: some View {
+    private var wardsSection: some View {
         Section {
-            Picker(selection: $appearanceRaw) {
-                ForEach(AppearanceMode.allCases) { mode in
-                    Label(mode.label, systemImage: mode.icon).tag(mode.rawValue)
-                }
+            NavigationLink {
+                PermissionsView()
             } label: {
-                Label("Light / Dark", systemImage: "circle.lefthalf.filled")
+                Label("Familiar permissions", systemImage: "key.fill")
+                    .foregroundStyle(.primary)
             }
         } header: {
-            Text("On this phone")
+            Text("Wards")
         } footer: {
-            Text("“Match desktop” follows your Cave desktop's light/dark mode. Light or Dark fixes it on this phone only — handy when you're outdoors and the desktop is dark.")
+            Text("Per-familiar project access. Changes from the phone require the desktop opt-in.")
+        }
+    }
+
+    // MARK: - Security (biometric app lock + approvals)
+
+    /// Two persisted toggles gated behind `AppLock`: unlocking the app itself
+    /// and approving credential-affecting actions (desktop host changes,
+    /// disconnect). Both bind straight to `appLock`'s published state rather
+    /// than a locally mirrored `@State`, so a toggle only visibly moves once
+    /// the authentication it requires actually succeeds — a failed/cancelled
+    /// prompt just leaves the row where it was.
+    private var securitySection: some View {
+        Section {
+            Toggle(isOn: Binding(
+                get: { appLock.lockEnabled },
+                set: { newValue in
+                    // Avoid redundant work before spawning the Task. The
+                    // outcome switch still handles any same-runloop race.
+                    guard appLock.canBeginAuthentication else { return }
+                    Task {
+                        handleSecurityOutcome(await appLock.setLockEnabled(newValue))
+                    }
+                }
+            )) {
+                Label("Require \(appLock.biometricLabel) to unlock", systemImage: appLock.biometricSystemImage)
+                    .foregroundStyle(.primary)
+            }
+            .disabled(!appLock.canUseDeviceAuthentication || appLock.isAuthenticating)
+
+            Toggle(isOn: Binding(
+                get: { appLock.approvalEnabled },
+                set: { newValue in
+                    guard appLock.canBeginAuthentication else { return }
+                    Task {
+                        handleSecurityOutcome(await appLock.setApprovalEnabled(newValue))
+                    }
+                }
+            )) {
+                Label("Require \(appLock.biometricLabel) for approvals", systemImage: "checkmark.shield")
+                    .foregroundStyle(.primary)
+            }
+            .disabled(!appLock.canUseDeviceAuthentication || appLock.isAuthenticating)
+        } header: {
+            Text("Security")
+        } footer: {
+            if appLock.canUseDeviceAuthentication {
+                Text("Unlock guards the app itself on cold start and after being away 60 seconds or more. Approvals re-confirm it's you before changing or disconnecting your paired desktop. Your device passcode always works as a fallback.")
+            } else if appLock.approvalEnabled {
+                Text("Approvals remain required, but device authentication is unavailable. Protected pairing changes are disabled until you turn on a device passcode.")
+            } else {
+                Text("Turn on a passcode (Settings → Face ID & Passcode, or Touch ID & Passcode) to enable app lock and approvals.")
+            }
+        }
+    }
+
+    private func handleSecurityOutcome(_ outcome: AuthenticationOutcome) {
+        switch outcome {
+        case .authorized, .busy:
+            break
+        case .denied:
+            securityAuthFailed = true
+        case .unavailable:
+            securityAuthUnavailable = true
         }
     }
 
@@ -200,67 +320,154 @@ struct SettingsView: View {
         } header: {
             Text("Chats")
         } footer: {
-            Text("Get notified when a familiar finishes replying while you're away. Muted chats stay silent. Export saves every conversation as Markdown files in a single .zip.")
+            Text("Get notified when a familiar finishes replying while you're away. Export saves every chat as Markdown in a .zip.")
         }
     }
 
-    // MARK: - Permissions (familiar project access)
+    // MARK: - Community & Legal
 
-    private var permissionsSection: some View {
+    private var communitySection: some View {
+        Section("Community") {
+            linkRow("Discord", value: "OpenCoven", url: "https://discord.gg/opencoven")
+            linkRow("X", value: "@OpenCvn", url: "https://x.com/OpenCvn")
+            linkRow("Docs", value: "docs.opencoven.ai", url: "https://docs.opencoven.ai")
+            linkRow("Podcast", value: "pod.opencoven.ai", url: "https://pod.opencoven.ai")
+            linkRow("Blog", value: "mind.opencoven.ai", url: "https://mind.opencoven.ai")
+        }
+    }
+
+    private var legalSection: some View {
         Section {
-            NavigationLink {
-                PermissionsView()
-            } label: {
-                Label("Familiar permissions", systemImage: "key.fill")
-                    .foregroundStyle(.primary)
-            }
+            linkRow("Terms of Service", value: "opencoven.ai/terms", url: "https://opencoven.ai/terms")
+            linkRow("Privacy", value: "opencoven.ai/privacy", url: "https://opencoven.ai/privacy")
         } header: {
-            Text("Permissions")
+            Text("Legal")
         } footer: {
-            Text("See and manage which projects each familiar can read or change. Changing them from the phone requires the desktop opt-in.")
+            // Design's mono brand footer, centered under the last group.
+            Text("Coven Cave · \(appVersion)")
+                .font(.caption.monospaced())
+                .frame(maxWidth: .infinity)
+                .padding(.top, 10)
         }
     }
 
-    // MARK: - Change host
-
-    private var hostSection: some View {
-        Section {
-            LabeledContent("Status") { statusBadge }
-            Button("Re-check connection") {
-                Task { await app.refreshConnection() }
+    @ViewBuilder
+    private func linkRow(_ label: String, value: String, url: String) -> some View {
+        if let destination = URL(string: url) {
+            Link(destination: destination) {
+                LabeledContent(label) {
+                    Label(value, systemImage: "arrow.up.right")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
-            TextField("my-mac.tailnet.ts.net", text: $editingHost)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.URL)
-                .font(.callout.monospaced())
-            Button("Save and reconnect") {
-                Task { await app.configure(host: editingHost) }
-            }
-            .disabled(editingHost.trimmingCharacters(in: .whitespaces).isEmpty
-                      || editingHost == app.connection?.host)
-        } header: {
-            Text("Connection")
-        } footer: {
-            Text("Change this if your desktop's Tailscale name changes.")
+            .foregroundStyle(.primary)
         }
     }
+}
 
-    private var disconnectSection: some View {
-        Section {
-            Button("Disconnect", role: .destructive) {
-                showDisconnectConfirm = true
+// MARK: - Connection detail (pushed from the hero)
+
+/// Everything about the desktop link that used to sprawl across the settings
+/// top level: live status, re-check, changing the Tailscale address, and the
+/// destructive disconnect.
+private struct ConnectionSettingsView: View {
+    @Environment(AppModel.self) private var app
+    @Environment(AppLock.self) private var appLock
+    @State private var editingHost: String = ""
+    @State private var showDisconnectConfirm = false
+    @State private var approvalFailed = false
+    @State private var approvalUnavailable = false
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Status") { statusBadge }
+                Button("Re-check connection") {
+                    Task { await app.refreshConnection() }
+                }
+            } footer: {
+                Text("Connected over your Tailscale network with a paired Cave access token.")
             }
-        }
-    }
 
-    private var aboutSection: some View {
-        Section("About") {
-            LabeledContent("Version") {
-                Text(appVersion)
+            Section {
+                TextField("my-mac.tailnet.ts.net", text: $editingHost)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
                     .font(.callout.monospaced())
-                    .foregroundStyle(.secondary)
+                Button("Save and reconnect") {
+                    // Avoid redundant work before spawning the Task; `.busy`
+                    // remains a no-op if a same-runloop tap races this guard.
+                    guard appLock.canBeginAuthentication else { return }
+                    Task {
+                        let outcome = await appLock.performApprovedAction(
+                            reason: "Confirm it's you to change your desktop connection"
+                        ) {
+                            await app.configure(host: editingHost)
+                        }
+                        handleApprovalOutcome(outcome)
+                    }
+                }
+                .disabled(editingHost.trimmingCharacters(in: .whitespaces).isEmpty
+                          || editingHost == app.connection?.host
+                          || appLock.isAuthenticating)
+            } header: {
+                Text("Desktop address")
+            } footer: {
+                Text("Change this if your desktop's Tailscale name changes.")
             }
+
+            Section {
+                Button("Disconnect", role: .destructive) {
+                    showDisconnectConfirm = true
+                }
+            }
+        }
+        .themedListBackground()
+        .readableListWidth(680)
+        .navigationTitle("Connection")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { editingHost = app.connection?.host ?? "" }
+        .confirmationDialog("Disconnect from your desktop?",
+                            isPresented: $showDisconnectConfirm,
+                            titleVisibility: .visible) {
+            Button("Disconnect", role: .destructive) {
+                // Same synchronous fast-path as above; `.busy` remains a no-op.
+                guard appLock.canBeginAuthentication else { return }
+                Task {
+                    let outcome = await appLock.performApprovedAction(
+                        reason: "Confirm it's you to disconnect from your desktop"
+                    ) {
+                        app.disconnect()
+                    }
+                    handleApprovalOutcome(outcome)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You'll need to re-enter your desktop address to reconnect.")
+        }
+        .alert("Couldn't confirm it's you", isPresented: $approvalFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Authentication failed or was cancelled, so nothing changed.")
+        }
+        .alert("Device authentication unavailable", isPresented: $approvalUnavailable) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Turn on a device passcode before changing your desktop connection.")
+        }
+    }
+
+    private func handleApprovalOutcome(_ outcome: AuthenticationOutcome) {
+        switch outcome {
+        case .authorized, .busy:
+            break
+        case .denied:
+            approvalFailed = true
+        case .unavailable:
+            approvalUnavailable = true
         }
     }
 

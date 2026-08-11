@@ -37,14 +37,14 @@ assert.match(
 
 assert.match(
   conversationRoute,
-  /NextResponse\.json\(\{ ok: true, conversation: conv, context \}\)/,
-  "Conversation API should return context alongside saved Cave conversations",
+  /NextResponse\.json\(\{\s*ok: true,\s*conversation: sanitizeConversationMetadata\(conv\),\s*context,\s*\}\)/,
+  "Conversation API should return context alongside sanitized saved Cave conversations",
 );
 
 assert.match(
   conversationRoute,
-  /NextResponse\.json\(\{ ok: true, conversation: jsonlConv, context \}\)/,
-  "Conversation API should return context alongside OpenClaw JSONL conversations",
+  /NextResponse\.json\(\{\s*ok: true,\s*conversation: sanitizeConversationMetadata\(jsonlConv\),\s*context,\s*\}\)/,
+  "Conversation API should return context alongside sanitized OpenClaw JSONL conversations",
 );
 
 assert.match(
@@ -140,7 +140,7 @@ assert.match(
 // stranded the user on the chat list instead of the task's board inspector.
 assert.match(
   workspace,
-  /modeRef\.current === "chat" && !window\.location\.hash\) showFamiliarChatList\(\)/,
+  /modeRef\.current === "chat" && !window\.location\.hash\) \{\s*showFamiliarChatList\(\)/,
   "Workspace popstate must only show the chat list on an empty hash, so the task chip's #card- navigation isn't hijacked back to the list",
 );
 

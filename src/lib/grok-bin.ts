@@ -99,6 +99,7 @@ export function grokBin(): string {
   if (process.platform === "win32") {
     try {
       const output = execFileSync("where", ["grok"], {
+        windowsHide: true,
         encoding: "utf8",
         timeout: 1500,
         env: covenSpawnEnv(),

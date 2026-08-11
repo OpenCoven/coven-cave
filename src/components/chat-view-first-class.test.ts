@@ -59,7 +59,7 @@ assert.match(
 
 assert.match(
   source,
-  /function retryLastSend\(\)[\s\S]*sendRaw\(\s*lastFailedSend\.text,\s*lastFailedSend\.attachments\b/,
+  /function retryFailedSend\(optionOverrides\?: Partial<ChatSendOptions>\)[\s\S]*sendRaw\(\s*lastFailedSend\.text,\s*lastFailedSend\.attachments\b[\s\S]*?function retryLastSend\(\) \{\s*retryFailedSend\(\);/,
   "ChatView should expose a retry action that resends the failed prompt and attachments",
 );
 
@@ -71,8 +71,8 @@ assert.match(
 
 assert.match(
   source,
-  /const CHAT_ATTACHMENT_ACCEPT = \[[\s\S]*"image\/\*"[\s\S]*"video\/\*"[\s\S]*"application\/pdf"[\s\S]*"\.md"[\s\S]*"\.json"[\s\S]*\]\.join\(","\)/,
-  "Chat attachments should explicitly accept images, videos, documents, and common text/code files",
+  /const CHAT_ATTACHMENT_ACCEPT = \[[\s\S]*"image\/\*"[\s\S]*"video\/\*"[\s\S]*"audio\/\*"[\s\S]*"application\/pdf"[\s\S]*"\.md"[\s\S]*"\.json"[\s\S]*\]\.join\(","\)/,
+  "Chat attachments should explicitly accept images, videos, audio, documents, and common text/code files",
 );
 
 assert.match(
@@ -140,27 +140,78 @@ assert.match(
 
 assert.match(
   source,
-  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*"Model"[\s\S]*label:\s*"Thinking"[\s\S]*label:\s*"Speed"[\s\S]*<ComposerActionsMenu[\s\S]*sections:\s*composerResponseSections/,
-  "The grouped Response section exposes Access, Model, Thinking, and Speed controls in order",
-);
-assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
-// "Both" reconciliation (2026-07-21): the context pill returned with the
-// footer band — but only there, never back in the control row.
-assert.equal(
-  source.match(/<ComposerContextChips/g)?.length,
-  1,
-  "the context chips mount exactly once — in the footer band",
+  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*`Model · \$\{inventoryProvenanceLabel\([\s\S]*\.\.\.modelCapabilities\.map\([\s\S]*capability\.delivery === "prompt-only" \? "Prompt guidance" : "Native"[\s\S]*<ComposerActionsMenu[\s\S]*sections:\s*composerResponseSections/,
+  "The grouped Response section exposes access, model, and capability-aware controls with an honest delivery label",
 );
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\n\s*<div className="cave-composer-footer-band__cluster">\s*\n\s*<ComposerContextChips/,
-  "the context chips live in the footer band, not the control row",
+  /const pendingFamiliarModel =[\s\S]*?applicationState === "pending"[\s\S]*?const modelOverrideForRequest =[\s\S]*?currentModelState\?\.source === "session" \|\| pendingFamiliarModel[\s\S]*?pendingFamiliarModel[\s\S]*?"next-message" as const/,
+  "a model selected before the first session exists is sent once while its familiar-default PATCH is pending, without pinning the chat",
+);
+assert.match(
+  source,
+  /pendingModelOverrideRef\.current = stagedModel[\s\S]*?const optimistic: ChatModelState[\s\S]*?modelStateRef\.current = optimistic/,
+  "a model selected before the initial model-state read is staged synchronously for the first send",
+);
+assert.match(
+  source,
+  /hasPendingModelOverride[\s\S]*?modelOverrideForRequest =[\s\S]*?hasPendingModelOverride[\s\S]*?pendingModelOverride/,
+  "the staged model wins over a still-null or stale rendered model state",
+);
+assert.match(
+  source,
+  /currentModelState\?\.source === "runtime-default"[\s\S]*?pendingRuntimeDefault && sessionId[\s\S]*?"runtime-default" as const[\s\S]*?: "next-message" as const/,
+  "an inherited or no-session runtime default is a one-turn sentinel, while only an explicit Reset on an existing chat persists a clear",
+);
+assert.match(
+  source,
+  /retryFailedSend\(\{ modelOverride: null, modelOverrideScope: undefined \}\)/,
+  "a harness-switch retry drops the failed runtime's saved model intent",
+);
+assert.match(
+  source,
+  /const handleSelectRuntime = useCallback\([\s\S]*?setModelCapabilities\(\[\]\);[\s\S]*?setModelControls\(\{\}\);/,
+  "runtime switches clear the previous runtime's controls before async capability refresh",
+);
+assert.match(
+  source,
+  /const runtimeMutation = runtimeMutationRef\.current;[\s\S]*?await runtimeMutation[\s\S]*?Runtime selection could not be saved; message not sent\./,
+  "a send waits for the runtime binding write instead of launching the previous harness",
+);
+assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
+// Context controls are constructed once as chatContextControls and placed
+// adaptively — footer for new chats (inlineComposer), header for active chats.
+// This avoids duplicated picker state while the control row stays context-free.
+assert.equal(
+  source.match(/<ComposerContextChips/g)?.length,
+  1,
+  "ComposerContextChips is constructed exactly once (as chatContextControls)",
+);
+assert.match(
+  source,
+  /const chatContextControls = \([\s\S]{0,50}\n\s*<ComposerContextChips/,
+  "chatContextControls wraps the single ComposerContextChips construction",
+);
+assert.match(
+  source,
+  /inlineComposer[\s\S]{0,200}cave-composer-footer-band__cluster[\s\S]{0,200}\{chatContextControls\}/,
+  "the context controls ride the footer band only for new-chat (inlineComposer)",
+);
+assert.match(
+  source,
+  /!inlineComposer[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
+  "the context controls ride the header for active chats (!inlineComposer)",
 );
 assert.doesNotMatch(source, /<ComposerOptionsMenu/, "legacy options-menu composition should be gone");
 
 // Model selection moved out of the composer UI into the /model slash command.
 assert.doesNotMatch(source, /ChatModelControl/, "the model picker is gone from the chat composer");
 assert.match(source, /command === "\/model"/, "the chat composer handles the /model command");
+assert.match(
+  source,
+  /command === "\/model"[\s\S]{0,900}isRuntimeDefaultModelArg\(args\)[\s\S]{0,180}handleSelectModel\(null\)/,
+  "the chat composer treats /model default as a runtime-default clear instead of a custom id",
+);
 
 // Options render as inline radio pills — no nested StandardSelect popover in the panel.
 const optionsSource = readFileSync(new URL("./composer-options-menu.tsx", import.meta.url), "utf8");
@@ -170,8 +221,13 @@ assert.doesNotMatch(source, /StandardSelect/, "the composer no longer wraps cont
 
 assert.match(
   source,
-  /reasoningEffort: controlsOverride\?\.thinkingEffort \?\? thinkingEffort,[\s\S]*responseSpeed: controlsOverride\?\.responseSpeed \?\? responseSpeed,/,
-  "Send payload should include thinking and speed control values",
+  /thinkingEffort: controlsOverride\?\.thinkingEffort \?\? thinkingEffort,[\s\S]*responseSpeed: controlsOverride\?\.responseSpeed \?\? responseSpeed,[\s\S]*modelControls: controlsOverride\?\.modelControls \?\? modelControls,/,
+  "Send payload should preserve legacy command controls and the selected model-control snapshot",
+);
+assert.match(
+  source,
+  /handlePickProjectFix[\s\S]{0,1800}failed\.controls,/,
+  "a project-access repair retry must preserve the selected model controls",
 );
 
 assert.match(

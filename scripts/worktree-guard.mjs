@@ -26,15 +26,635 @@
  *   • `git push <remote> --delete <branch>` (or `push <remote> :<branch>`) is
  *     blocked when an OPEN PR still has that head (deleting the branch closes
  *     the PR — the #2286 failure). Needs `gh` + network; fails OPEN.
+ *   • `mv .worktrees/<name> <elsewhere>` is blocked on the same risk test:
+ *     git's admin file keeps pointing at the old path, so moving a live
+ *     worktree strands its work exactly like deleting it would.
+ *
+ * "Retained" normally means a remote BRANCH or a TAG that is present on a
+ * remote. The strict direct guard also accepts one explicitly named merged
+ * GitHub PR whose exact `refs/pull/<number>/head` is freshly authenticated,
+ * fetched, and rechecked; this bounded path handles squash-source auto-delete
+ * without enumerating a large unrelated ref namespace. Tags count because
+ * archiving a branch as a signed, pushed tag preserves its OIDs
+ * more durably than a branch does — merging deletes the branch, never the tag.
+ * Requiring a branch made the guard block six provably-archived cleanups during
+ * one sweep (2026-07-29), and six bypasses to delete preserved work is how the
+ * bypass stops being read. A LOCAL-only tag never counts: it dies with the
+ * machine. Verifying a tag is remote needs the network (git keeps no
+ * remote-tracking refs for tags), and that probe fails CLOSED — unlike the
+ * warn-only probes here, it gates deletion, so "cannot verify" must not read as
+ * "verified".
+ *
+ * Paths are resolved against the SEGMENT's effective cwd, which both a leading
+ * `cd <dir> &&` and git's `-C <dir>` move. Resolving against the hook's cwd
+ * instead made those forms silently unguarded (cave-6d2dp).
  *
  * Deliberate destruction is allowed by prefixing the command with
  * `WT_GUARD_BYPASS=1 ` — the guard only ensures it can't happen by accident.
+ * Honoured bypasses AND blocked attempts are appended to
+ * `.claude/worktree-guard-bypass.log` (gitignored, one JSON line each with a
+ * `verdict` field) so a later post-mortem can tell a deliberate override from
+ * a gap in the guard — the question cave-boor8 could not answer. Blocks are
+ * recorded too because their absence is itself evidence: a worktree that was
+ * never the subject of a block or a bypass yet disappeared was destroyed by
+ * something that does not route through the hook at all (external terminal,
+ * editor, automation) — the one hole no PreToolUse hook can close.
  * On any internal error the guard exits 0: a hook bug must never brick Bash.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
+
+const FULL_OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+// Generic branch/tag retention proof has a deterministic network/work ceiling.
+// Exceeding any one is uncertainty, not permission to turn an unbounded ref
+// inventory into deletion evidence. Exact merged-PR proof has its own smaller
+// ceiling: one PR API record and one exact PR ref, each checked twice.
+// With incremental 16-ref fetch batches this permits at most 16 initial
+// advertisements, 31 source-only fetches, and 31 rechecks: 78 remote round
+// trips total.
+const STRICT_MAX_REMOTES = 16;
+const STRICT_MAX_CANDIDATE_SOURCES = 256;
+const STRICT_FETCH_BATCH_SIZE = 16;
+const STRICT_MAX_REF_BYTES = 1024;
+const STRICT_GIT_UNSAFE_ENV = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_COMMON_DIR",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_GRAFT_FILE",
+  "GIT_SHALLOW_FILE",
+  "GIT_REPLACE_REF_BASE",
+  "GIT_NAMESPACE",
+  "GIT_QUARANTINE_PATH",
+  "GIT_EXEC_PATH",
+  "GIT_CONFIG_COUNT",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_SYSTEM",
+  "GIT_CONFIG_GLOBAL",
+  "GIT_CONFIG_NOSYSTEM",
+  "GIT_PAGER",
+  "GIT_LITERAL_PATHSPECS",
+  "GIT_GLOB_PATHSPECS",
+  "GIT_NOGLOB_PATHSPECS",
+  "GIT_ICASE_PATHSPECS",
+];
+
+function strictRefuse(reason) {
+  process.stderr.write(`worktree-guard strict refusal: ${reason}\n`);
+  process.exit(2);
+}
+
+function strictGitEnv() {
+  const env = { ...process.env };
+  for (const key of STRICT_GIT_UNSAFE_ENV) delete env[key];
+  for (const key of Object.keys(env)) {
+    if (/^GIT_CONFIG_(?:KEY|VALUE)_\d+$/.test(key)) delete env[key];
+  }
+  env.GIT_NO_REPLACE_OBJECTS = "1";
+  env.GIT_PAGER = "cat";
+  return env;
+}
+
+function strictGitProbe(args, cwd) {
+  const probe = spawnSync("git", args, {
+    cwd,
+    env: strictGitEnv(),
+    encoding: "utf8",
+    timeout: 10000,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (probe.error) throw new Error(`git probe failed: ${probe.error.message}`);
+  if (probe.signal) throw new Error(`git probe ended on signal ${probe.signal}`);
+  if (!Number.isInteger(probe.status)) throw new Error("git probe returned no exit status");
+  if (probe.stderr !== "") throw new Error("git probe returned unexpected diagnostics");
+  if (typeof probe.stdout !== "string") throw new Error("git probe returned malformed output");
+  return { status: probe.status, stdout: probe.stdout };
+}
+
+function strictGit(args, cwd) {
+  const probe = strictGitProbe(args, cwd);
+  if (probe.status !== 0) throw new Error(`git probe exited ${probe.status}`);
+  return probe.stdout;
+}
+
+function strictGithubApi(endpoint, cwd) {
+  const env = strictGitEnv();
+  delete env.GH_HOST;
+  delete env.GH_REPO;
+  env.GH_PAGER = "cat";
+  env.GH_PROMPT_DISABLED = "1";
+  const probe = spawnSync(
+    "gh",
+    ["api", "--hostname", "github.com", "--method", "GET", endpoint],
+    {
+      cwd,
+      env,
+      encoding: "utf8",
+      timeout: 10000,
+      maxBuffer: 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  if (probe.error) throw new Error(`GitHub API failed: ${probe.error.message}`);
+  if (probe.signal) throw new Error(`GitHub API ended on signal ${probe.signal}`);
+  if (probe.status !== 0) throw new Error(`GitHub API exited ${probe.status}`);
+  if (probe.stderr !== "") throw new Error("GitHub API returned unexpected diagnostics");
+  if (typeof probe.stdout !== "string" || !probe.stdout) {
+    throw new Error("GitHub API returned empty output");
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(probe.stdout);
+  } catch {
+    throw new Error("GitHub API returned malformed JSON");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("GitHub API returned malformed PR data");
+  }
+  return parsed;
+}
+
+function strictSingleOid(output, label) {
+  const lines = output.split("\n");
+  if (lines.length !== 2 || lines[1] !== "" || !FULL_OID.test(lines[0])) {
+    throw new Error(`${label} returned a malformed full OID`);
+  }
+  return lines[0];
+}
+
+function strictSingleLine(output, label) {
+  const lines = output.split("\n");
+  if (lines.length !== 2 || lines[1] !== "" || !lines[0]) {
+    throw new Error(`${label} returned malformed output`);
+  }
+  return lines[0];
+}
+
+function strictRegisteredWorktree(target) {
+  const output = strictGit(["-C", target, "worktree", "list", "--porcelain", "-z"]);
+  if (!output.endsWith("\0\0")) throw new Error("worktree registry returned malformed output");
+  const records = output.slice(0, -2).split("\0\0");
+  let found = false;
+  for (const record of records) {
+    const fields = record.split("\0");
+    if (!fields[0]?.startsWith("worktree ") || fields[0].length === "worktree ".length) {
+      throw new Error("worktree registry returned a malformed record");
+    }
+    const registeredPath = fields[0].slice("worktree ".length);
+    if (!path.isAbsolute(registeredPath) || fields.slice(1).some((field) => !field)) {
+      throw new Error("worktree registry returned malformed fields");
+    }
+    if (registeredPath === target) found = true;
+  }
+  if (!found) throw new Error("target is not an exactly registered worktree");
+}
+
+function strictRemoteNames(target) {
+  const output = strictGit(["-C", target, "remote"]);
+  if (!output.endsWith("\n")) throw new Error("git remote returned malformed output");
+  const remotes = output.slice(0, -1).split("\n");
+  if (remotes.length === 1 && remotes[0] === "") throw new Error("repository has no configured remotes");
+  if (remotes.some((remote) => !remote || /\s/.test(remote)) || new Set(remotes).size !== remotes.length) {
+    throw new Error("git remote returned malformed names");
+  }
+  if (remotes.length > STRICT_MAX_REMOTES) {
+    throw new Error(`repository exceeds strict remote limit ${STRICT_MAX_REMOTES}`);
+  }
+  return remotes;
+}
+
+function strictRemoteRefs(output, remote, target, expectedOidWidth, sourceCapacity) {
+  if (output && !output.endsWith("\n")) throw new Error(`remote ${remote} returned malformed output`);
+  const refs = [];
+  const seen = new Set();
+  for (const line of output ? output.slice(0, -1).split("\n") : []) {
+    const match = /^([0-9a-f]+)\t(refs\/(heads|tags)\/(.+))$/.exec(line);
+    if (
+      !match ||
+      !FULL_OID.test(match[1]) ||
+      match[1].length !== expectedOidWidth ||
+      !match[4] ||
+      seen.has(match[2])
+    ) {
+      throw new Error(`remote ${remote} returned malformed refs`);
+    }
+    if (match[3] === "heads" && match[4].endsWith("^{}")) {
+      throw new Error(`remote ${remote} returned a malformed branch ref`);
+    }
+    const peeled = match[3] === "tags" && match[4].endsWith("^{}");
+    const baseRef = peeled ? match[2].slice(0, -3) : match[2];
+    if (Buffer.byteLength(baseRef, "utf8") > STRICT_MAX_REF_BYTES) {
+      throw new Error(`remote ${remote} returned an overlong refname`);
+    }
+    seen.add(match[2]);
+    refs.push({ oid: match[1], ref: match[2], baseRef, kind: match[3], name: match[4], peeled });
+  }
+  const sourceCount = refs.filter((entry) => !entry.peeled).length;
+  if (sourceCount > sourceCapacity) {
+    throw new Error(`repository exceeds strict candidate source limit ${STRICT_MAX_CANDIDATE_SOURCES}`);
+  }
+  for (const entry of refs) strictGit(["-C", target, "check-ref-format", entry.baseRef]);
+  const advertised = new Set(refs.map((entry) => entry.ref));
+  for (const entry of refs) {
+    if (entry.peeled && !advertised.has(entry.baseRef)) {
+      throw new Error(`remote ${remote} returned a peeled tag without its base ref`);
+    }
+  }
+  return refs;
+}
+
+function strictFetchAdvertisedRefs(target, remote, sourceRefs) {
+  if (!sourceRefs.length || sourceRefs.length > STRICT_FETCH_BATCH_SIZE) {
+    throw new Error(`strict fetch batch must contain 1..${STRICT_FETCH_BATCH_SIZE} sources`);
+  }
+  strictGit([
+    "-C", target,
+    "fetch", "--quiet", "--refetch", "--no-auto-maintenance", "--no-write-fetch-head", "--no-tags", "--no-recurse-submodules", "--refmap=",
+    "--", remote, ...sourceRefs.map((sourceRef) => `${sourceRef}:`),
+  ], target);
+}
+
+function strictAdvertisementUnchanged(target, remote, expectedRefs, expectedOidWidth) {
+  const refreshed = strictRemoteRefs(
+    strictGit(["-C", target, "ls-remote", "--heads", "--tags", "--", remote]),
+    remote,
+    target,
+    expectedOidWidth,
+    STRICT_MAX_CANDIDATE_SOURCES,
+  );
+  const refreshedByRef = new Map(refreshed.map((entry) => [entry.ref, entry.oid]));
+  const expectedByRef = new Map(expectedRefs.map((entry) => [entry.ref, entry.oid]));
+  for (const [ref, oid] of expectedByRef) {
+    if (refreshedByRef.get(ref) !== oid) {
+      throw new Error(`remote ${remote} changed ${ref} during retention proof`);
+    }
+  }
+  for (const ref of refreshedByRef.keys()) {
+    if (!expectedByRef.has(ref)) {
+      throw new Error(`remote ${remote} added ${ref} during retention proof`);
+    }
+  }
+}
+
+function strictResolveAdvertisedCommit(target, remote, entry, peeled) {
+  const sourceType = strictSingleLine(
+    strictGit(["-C", target, "cat-file", "-t", entry.oid]),
+    `advertised source ${entry.ref}`,
+  );
+  if (peeled) {
+    if (entry.kind !== "tags" || sourceType !== "tag") {
+      throw new Error(`remote ${remote} advertised an invalid peeled tag base for ${entry.ref}`);
+    }
+    const actualPeeledOid = strictSingleOid(
+      strictGit(["-C", target, "rev-parse", "--verify", `${entry.oid}^{}`]),
+      `fetched tag peel ${entry.ref}`,
+    );
+    if (actualPeeledOid !== peeled.oid) {
+      throw new Error(`remote ${remote} advertised a false peeled target for ${entry.ref}`);
+    }
+  } else if (sourceType !== "commit") {
+    throw new Error(`remote ${remote} advertised non-commit retention source ${entry.ref}`);
+  }
+
+  const advertisedCommit = peeled?.oid ?? entry.oid;
+  const resolvedCommit = strictSingleOid(
+    strictGit(["-C", target, "rev-parse", "--verify", `${advertisedCommit}^{commit}`]),
+    `advertised target ${entry.ref}`,
+  );
+  if (resolvedCommit !== advertisedCommit) {
+    throw new Error(`remote ${remote} advertised ${entry.ref} as an ambiguous commit target`);
+  }
+  return advertisedCommit;
+}
+
+function strictGithubRepoFromRemoteUrl(output) {
+  const remoteUrl = strictSingleLine(output, "git remote get-url");
+  const match =
+    /^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(remoteUrl) ??
+    /^git@github\.com:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(remoteUrl) ??
+    /^ssh:\/\/git@github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(remoteUrl);
+  if (!match) throw new Error("configured remote URL is not a canonical github.com repository URL");
+  return `${match[1]}/${match[2]}`;
+}
+
+function strictSingleExactRef(output, remote, expectedRef, expectedOidWidth) {
+  const lines = output.split("\n");
+  if (lines.length !== 2 || lines[1] !== "") {
+    throw new Error(`remote ${remote} returned malformed exact-ref output`);
+  }
+  const match = /^([0-9a-f]+)\t(refs\/pull\/([1-9][0-9]*)\/head)$/.exec(lines[0]);
+  if (
+    !match ||
+    !FULL_OID.test(match[1]) ||
+    match[1].length !== expectedOidWidth ||
+    match[2] !== expectedRef ||
+    Buffer.byteLength(match[2], "utf8") > STRICT_MAX_REF_BYTES
+  ) {
+    throw new Error(`remote ${remote} returned a malformed exact PR head`);
+  }
+  return { oid: match[1], ref: match[2], kind: "pull", name: match[3], peeled: false };
+}
+
+function strictValidateMergedGithubPr(pr, proof, head) {
+  if (pr.number !== proof.number) throw new Error("GitHub PR number does not match requested proof");
+  if (pr.state !== "closed" || pr.merged !== true || typeof pr.merged_at !== "string" || !Number.isFinite(Date.parse(pr.merged_at))) {
+    throw new Error("GitHub PR is not merged");
+  }
+  if (!FULL_OID.test(pr.merge_commit_sha) || pr.merge_commit_sha.length !== head.length) {
+    throw new Error("GitHub PR returned a malformed merge commit");
+  }
+  if (pr.head?.sha !== head) throw new Error("GitHub PR head does not match expected HEAD");
+  if (pr.base?.ref !== proof.base) throw new Error("GitHub PR base does not match expected base");
+  if (pr.base?.repo?.full_name?.toLowerCase() !== proof.repo.toLowerCase()) {
+    throw new Error("GitHub PR repository does not match requested proof");
+  }
+  return {
+    number: pr.number,
+    state: pr.state,
+    merged: pr.merged,
+    mergedAt: pr.merged_at,
+    mergeCommit: pr.merge_commit_sha,
+    head: pr.head.sha,
+    base: pr.base.ref,
+    repo: pr.base.repo.full_name.toLowerCase(),
+  };
+}
+
+function strictRetainedByMergedGithubPr(target, head, proof) {
+  const remotes = strictRemoteNames(target);
+  if (!remotes.includes(proof.remote)) throw new Error("GitHub PR proof remote is not configured");
+  strictGit(["-C", target, "check-ref-format", `refs/heads/${proof.base}`]);
+
+  const remoteRepo = strictGithubRepoFromRemoteUrl(
+    strictGit(["-C", target, "remote", "get-url", "--", proof.remote]),
+  );
+  if (remoteRepo.toLowerCase() !== proof.repo.toLowerCase()) {
+    throw new Error("configured remote URL does not match GitHub PR proof repository");
+  }
+
+  const endpoint = `repos/${proof.repo}/pulls/${proof.number}`;
+  const initialPr = strictValidateMergedGithubPr(strictGithubApi(endpoint, target), proof, head);
+
+  const prRef = `refs/pull/${proof.number}/head`;
+  strictGit(["-C", target, "check-ref-format", prRef]);
+  const advertised = strictSingleExactRef(
+    strictGit(["-C", target, "ls-remote", "--", proof.remote, prRef]),
+    proof.remote,
+    prRef,
+    head.length,
+  );
+  if (advertised.oid !== head) throw new Error("advertised GitHub PR head does not match expected HEAD");
+
+  strictFetchAdvertisedRefs(target, proof.remote, [prRef]);
+  const refreshed = strictSingleExactRef(
+    strictGit(["-C", target, "ls-remote", "--", proof.remote, prRef]),
+    proof.remote,
+    prRef,
+    head.length,
+  );
+  if (refreshed.oid !== advertised.oid) {
+    throw new Error(`remote ${proof.remote} changed ${prRef} during retention proof`);
+  }
+  const refreshedPr = strictValidateMergedGithubPr(strictGithubApi(endpoint, target), proof, head);
+  if (JSON.stringify(refreshedPr) !== JSON.stringify(initialPr)) {
+    throw new Error("GitHub PR changed during retention proof");
+  }
+  const advertisedCommit = strictResolveAdvertisedCommit(target, proof.remote, advertised, null);
+  if (advertisedCommit !== head) throw new Error("fetched GitHub PR head does not match expected HEAD");
+}
+
+function strictRetainedOnRemote(target, head) {
+  const advertisements = [];
+  let candidateSourceCount = 0;
+  for (const remote of strictRemoteNames(target)) {
+    const output = strictGit(["-C", target, "ls-remote", "--heads", "--tags", "--", remote]);
+    const refs = strictRemoteRefs(
+      output,
+      remote,
+      target,
+      head.length,
+      STRICT_MAX_CANDIDATE_SOURCES - candidateSourceCount,
+    );
+    candidateSourceCount += refs.filter((entry) => !entry.peeled).length;
+    advertisements.push({ remote, refs });
+  }
+
+  // A merged feature tip is retained when it is an ancestor of a freshly
+  // advertised remote branch or commit-bearing tag. Plan every remote before
+  // fetching so every configured remote must answer and the aggregate source
+  // cap is enforced before any allow. Exact-HEAD sources are then fetched,
+  // rechecked, and evaluated globally before unrelated ancestry sources.
+  const plans = advertisements.map(({ remote, refs }) => {
+    const peeledByBase = new Map(
+      refs.filter((entry) => entry.peeled).map((entry) => [entry.baseRef, entry]),
+    );
+    const candidates = [
+      ...refs.filter((entry) => entry.kind === "heads"),
+      ...refs.filter((entry) => entry.kind === "tags" && !entry.peeled),
+    ];
+    const exact = [];
+    const ancestry = [];
+    for (const entry of candidates) {
+      const advertisedCommit = peeledByBase.get(entry.ref)?.oid ?? entry.oid;
+      (advertisedCommit === head ? exact : ancestry).push(entry);
+    }
+    return { remote, refs, peeledByBase, exact, ancestry };
+  });
+
+  for (const phase of ["exact", "ancestry"]) {
+    for (const plan of plans) {
+      const candidates = plan[phase];
+      for (let offset = 0; offset < candidates.length; offset += STRICT_FETCH_BATCH_SIZE) {
+        const batch = candidates.slice(offset, offset + STRICT_FETCH_BATCH_SIZE);
+        strictFetchAdvertisedRefs(target, plan.remote, batch.map((entry) => entry.ref));
+        strictAdvertisementUnchanged(target, plan.remote, plan.refs, head.length);
+        for (const entry of batch) {
+          const peeled = plan.peeledByBase.get(entry.ref);
+          const advertisedCommit = strictResolveAdvertisedCommit(target, plan.remote, entry, peeled);
+          if (phase === "exact") {
+            if (advertisedCommit !== head) {
+              throw new Error(`remote ${plan.remote} changed exact source ${entry.ref}`);
+            }
+            return;
+          }
+
+          const ancestry = strictGitProbe(
+            ["-C", target, "merge-base", "--is-ancestor", head, advertisedCommit],
+            target,
+          );
+          if (ancestry.stdout !== "") throw new Error("git ancestry probe returned unexpected output");
+          if (ancestry.status === 0) return;
+          if (ancestry.status !== 1) throw new Error(`git ancestry probe exited ${ancestry.status}`);
+        }
+      }
+    }
+  }
+  throw new Error("HEAD is not retained by any configured remote");
+}
+
+function strictCanonicalCwd(cwd) {
+  const missingSegments = [];
+  let cursor = cwd;
+  for (;;) {
+    try {
+      return {
+        path: path.join(realpathSync(cursor), ...missingSegments),
+        missing: missingSegments.length > 0,
+      };
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw new Error(`lsof cwd cannot be resolved: ${error.message}`);
+      const parent = path.dirname(cursor);
+      if (parent === cursor) throw new Error(`lsof cwd cannot be resolved: ${error.message}`);
+      missingSegments.unshift(path.basename(cursor));
+      cursor = parent;
+    }
+  }
+}
+
+function strictLiveProcesses(target) {
+  const testLsof =
+    process.env.WT_GUARD_TEST_MODE === "1" && process.env.WT_GUARD_TEST_LSOF_BIN
+      ? process.env.WT_GUARD_TEST_LSOF_BIN
+      : "lsof";
+  const probe = spawnSync(testLsof, ["-d", "cwd", "-F", "pcn"], {
+    cwd: path.parse(process.cwd()).root || path.sep,
+    encoding: "utf8",
+    timeout: 10000,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (probe.error) throw new Error(`lsof probe failed: ${probe.error.message}`);
+  if (probe.signal) throw new Error(`lsof probe ended on signal ${probe.signal}`);
+  if (probe.status !== 0) throw new Error(`lsof probe exited ${probe.status}`);
+  if (probe.stderr !== "") throw new Error("lsof probe returned unexpected diagnostics");
+  if (typeof probe.stdout !== "string" || !probe.stdout || !probe.stdout.endsWith("\n")) {
+    throw new Error("lsof probe returned malformed output");
+  }
+
+  const prefix = target.endsWith(path.sep) ? target : `${target}${path.sep}`;
+  let state = "pid";
+  let processRecord = null;
+  let recordCount = 0;
+
+  for (const line of probe.stdout.slice(0, -1).split("\n")) {
+    if (state === "pid") {
+      if (!/^p[0-9]+$/.test(line)) throw new Error("lsof probe returned a malformed pid");
+      processRecord = { pid: line.slice(1), command: "" };
+      state = "command";
+    } else if (state === "command") {
+      if (!line.startsWith("c") || line.length === 1) throw new Error("lsof probe returned a malformed command");
+      processRecord.command = line.slice(1);
+      state = "descriptor";
+    } else if (state === "descriptor") {
+      if (line !== "fcwd") throw new Error("lsof probe returned a malformed cwd descriptor");
+      state = "name";
+    } else if (state === "name") {
+      const cwd = line.slice(1);
+      if (!line.startsWith("n") || !cwd || !path.isAbsolute(cwd)) {
+        throw new Error("lsof probe returned a malformed cwd name");
+      }
+      const canonicalCwd = strictCanonicalCwd(cwd);
+      recordCount += 1;
+      if (canonicalCwd.path === target || canonicalCwd.path.startsWith(prefix)) {
+        if (canonicalCwd.missing) throw new Error("lsof cwd inside target cannot be resolved");
+        throw new Error(`process ${processRecord.pid} has cwd inside target`);
+      }
+      processRecord = null;
+      state = "pid";
+    } else {
+      throw new Error("lsof probe entered an invalid parser state");
+    }
+  }
+  if (state !== "pid" || processRecord) throw new Error("lsof probe returned an incomplete final record");
+  if (!recordCount) throw new Error("lsof probe returned no process records");
+}
+
+function runStrictWorktreeRemove(args) {
+  const basicArgs =
+    args.length === 4 &&
+    args[0] === "--strict-worktree-remove" &&
+    args[2] === "--expected-head";
+  const githubPrArgs =
+    args.length === 10 &&
+    args[0] === "--strict-worktree-remove" &&
+    args[2] === "--expected-head" &&
+    args[4] === "--retained-by-github-pr" &&
+    args[8] === "--expected-base";
+  if (!basicArgs && !githubPrArgs) {
+    throw new Error(
+      "expected --strict-worktree-remove <absolute-path> --expected-head <full-oid> " +
+        "[--retained-by-github-pr <remote> <owner/repo> <number> --expected-base <branch>]",
+    );
+  }
+  const requestedPath = args[1];
+  const expectedHead = args[3];
+  if (!path.isAbsolute(requestedPath)) throw new Error("target path must be absolute");
+  if (!FULL_OID.test(expectedHead)) throw new Error("expected HEAD must be a full OID");
+  let githubProof = null;
+  if (githubPrArgs) {
+    const remote = args[5];
+    const repo = args[6];
+    const numberText = args[7];
+    const base = args[9];
+    if (!remote || /\s/.test(remote)) throw new Error("GitHub PR proof remote is malformed");
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || repo.endsWith(".git")) {
+      throw new Error("GitHub PR proof repository is malformed");
+    }
+    if (!/^[1-9][0-9]*$/.test(numberText) || numberText.length > 10) {
+      throw new Error("GitHub PR proof number is malformed");
+    }
+    if (!base || base.length > STRICT_MAX_REF_BYTES || strictSingleLine(`${base}\n`, "expected base") !== base) {
+      throw new Error("GitHub PR proof base is malformed");
+    }
+    const number = Number(numberText);
+    if (!Number.isSafeInteger(number)) throw new Error("GitHub PR proof number is out of range");
+    githubProof = { remote, repo, number, base };
+  }
+
+  let target;
+  try {
+    target = realpathSync(requestedPath);
+  } catch (error) {
+    throw new Error(`target cannot be resolved: ${error.message}`);
+  }
+  if (!statSync(target).isDirectory()) throw new Error("target is not a directory");
+  strictRegisteredWorktree(target);
+
+  const actualHead = strictSingleOid(
+    strictGit(["-C", target, "rev-parse", "--verify", "HEAD"]),
+    "git rev-parse HEAD",
+  );
+  if (actualHead !== expectedHead) throw new Error("target HEAD does not match expected HEAD");
+
+  const status = strictGit([
+    "-c", "core.fsmonitor=false",
+    "-c", "core.filemode=true",
+    "-c", "status.showUntrackedFiles=all",
+    "-c", "diff.ignoreSubmodules=none",
+    "-c", "status.submoduleSummary=true",
+    // Repository-owned .gitignore and .git/info/exclude remain intentionally
+    // ignored here; Branch Curator's normative ignored-state proof owns them.
+    // Only external/configured excludes are neutralized by this strict barrier.
+    "-c", `core.excludesFile=${process.platform === "win32" ? "NUL" : "/dev/null"}`,
+    "-C", target,
+    "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none",
+  ]);
+  if (status !== "") throw new Error("target worktree is not clean");
+
+  if (githubProof) strictRetainedByMergedGithubPr(target, actualHead, githubProof);
+  else strictRetainedOnRemote(target, actualHead);
+  strictLiveProcesses(target);
+  process.stdout.write(`${JSON.stringify({
+    ok: true,
+    mode: "strict-worktree-remove",
+    path: target,
+    head: actualHead,
+  })}\n`);
+  process.exitCode = 0;
+}
 
 const BYPASS = "WT_GUARD_BYPASS=1";
 /** Fast pre-filter: commands that can't possibly match skip all work. */
@@ -52,7 +672,11 @@ function allow() {
   process.exit(0);
 }
 
+/** Set once in main() so block() can record what it refused. */
+const CTX = { command: null, cwd: null, session: null };
+
 function block(reason) {
+  recordEvent("block", reason);
   process.stderr.write(
     `⛔ worktree-guard blocked this command.\n${reason}\n` +
       `If this destruction is deliberate, re-run prefixed with \`${BYPASS} \` — but first make sure ` +
@@ -60,6 +684,38 @@ function block(reason) {
       `on 2026-07-03 a "cleanup" like this destroyed another session's in-progress worktree).`,
   );
   process.exit(2);
+}
+
+/**
+ * Record every honoured bypass AND every block.
+ *
+ * On 2026-07-29 a worktree holding 3 uncommitted files was destroyed and the
+ * post-mortem (cave-boor8) could not establish whether the guard had been
+ * bypassed or circumvented — the bypass path left no trace at all. Appends
+ * here make that question answerable: a bypass entry names the deliberate
+ * override; a block entry followed by the worktree's disappearance names an
+ * actor that retried OUTSIDE the hook; and no entry at all means the
+ * destruction never routed through Bash — the unhookable hole. Best-effort by
+ * construction: any failure is swallowed, because refusing a command over a
+ * logging problem would be a worse bug than the missing record.
+ */
+function recordEvent(verdict, reason) {
+  try {
+    if (typeof CTX.command !== "string") return;
+    const root = process.env.CLAUDE_PROJECT_DIR || CTX.cwd;
+    const line = `${JSON.stringify({
+      at: new Date().toISOString(),
+      verdict,
+      session: CTX.session ?? null,
+      cwd: CTX.cwd,
+      command: CTX.command.length > 500 ? `${CTX.command.slice(0, 500)}…` : CTX.command,
+      ...(reason ? { reason: reason.length > 300 ? `${reason.slice(0, 300)}…` : reason } : {}),
+    })}\n`;
+    // .claude/* is gitignored (except settings.json), so this never enters the repo.
+    appendFileSync(path.join(root, ".claude", "worktree-guard-bypass.log"), line);
+  } catch {
+    /* logging must never block a command */
+  }
 }
 
 function git(args, cwd) {
@@ -83,6 +739,29 @@ function resolveTarget(raw, cwd) {
 }
 
 /**
+ * The directory a segment's relative paths actually resolve against.
+ *
+ * Two things move it, and missing either let a real removal through: a leading
+ * `cd <dir> &&` in the same compound command, and git's own `-C <dir>`. Before
+ * this, `cd .worktrees && git worktree remove x` (or `git -C <repo> worktree
+ * remove x`) resolved `x` against the HOOK's cwd, so destructionRisk() stat'd a
+ * path that didn't exist, returned "safe", and the removal sailed through.
+ */
+function cdTargetOf(seg) {
+  const m = seg.match(/^cd\s+(?!-)(\S+|"[^"]*"|'[^']*')\s*$/);
+  return m ? m[1].replace(/^['"]|['"]$/g, "") : null;
+}
+
+/** `-C <dir>` (repeatable in git, applied left to right) for one segment. */
+function gitDashCDir(toks, cwd) {
+  let dir = cwd;
+  for (let i = 0; i < toks.length - 1; i++) {
+    if (toks[i] === "-C") dir = resolveTarget(toks[i + 1], dir);
+  }
+  return dir;
+}
+
+/**
  * Classify a candidate path: a `.worktrees/<name>` ROOT, the whole
  * `.worktrees` CONTAINER, or null (deeper paths are the owner's own business).
  */
@@ -95,6 +774,204 @@ function worktreeRoot(abs) {
 }
 
 /** "" = safe to destroy; otherwise a human reason it is not. */
+/** PIDs from this process up to init — a hook that blocked on its OWN shell's
+ *  cwd would make every in-worktree cleanup impossible. */
+function ownAncestry() {
+  const mine = new Set();
+  let pid = process.pid;
+  for (let hops = 0; hops < 32 && pid > 1; hops += 1) {
+    mine.add(String(pid));
+    try {
+      const out = execFileSync("ps", ["-o", "ppid=", "-p", String(pid)], { encoding: "utf8", timeout: 2000 });
+      const parent = Number.parseInt(out.trim(), 10);
+      if (!Number.isFinite(parent) || parent <= 1) break;
+      pid = parent;
+    } catch {
+      break;
+    }
+  }
+  return mine;
+}
+
+/** Processes whose cwd sits inside `wtPath`.
+ *
+ *  `git status` only sees a session that has SAVED edits. A session driving the
+ *  worktree by absolute path — editing files in it while its own cwd is the
+ *  primary checkout, or running `pnpm test:app` in it — leaves a clean, pushed
+ *  worktree that this guard used to wave through. That is the husk case named
+ *  at the top of this file (a worktree gutted while a dev server or tsc still
+ *  ran inside it), and it is the one shape the earlier checks cannot see.
+ *
+ *  One `lsof` over cwd descriptors only: no directory walk, so node_modules
+ *  costs nothing. Fails open like every other probe here — a guard that bricks
+ *  Bash when lsof is missing or slow is worse than one that misses a case. */
+function liveProcesses(wtPath) {
+  // lsof reports ITSELF, and a child inherits this process's cwd — so cleaning
+  // up a worktree while standing in it made the guard block its own caller
+  // ("1 process(es) are still working in it: pid N (lsof)"). ownAncestry()
+  // cannot help: the probe is a DESCENDANT of the guard, and it has already
+  // exited by the time any ps walk could classify it.
+  //
+  // Running the probe from the filesystem root is the fix that holds
+  // everywhere: its cwd then cannot match the worktree prefix no matter how
+  // many helpers it forks (some lsof builds do), which pid bookkeeping alone
+  // would miss. Scanning is system-wide, so its own cwd does not affect output.
+  // spawnSync additionally exposes the pid, kept below as a cheap backstop.
+  const probe = spawnSync("lsof", ["-d", "cwd", "-F", "pcn"], {
+    cwd: path.parse(process.cwd()).root || path.sep,
+    encoding: "utf8",
+    timeout: 5000,
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  // lsof exits non-zero when some processes are unreadable; keep partial output.
+  const out = typeof probe.stdout === "string" ? probe.stdout : "";
+  if (!out) return [];
+  const mine = ownAncestry();
+  if (probe.pid) mine.add(String(probe.pid));
+  // The kernel hands lsof the CANONICAL path, so `/var/...` on macOS comes back
+  // as `/private/var/...`. Comparing the caller's spelling against it silently
+  // matches nothing — the check would look installed and catch zero cases.
+  let root = wtPath;
+  try {
+    root = realpathSync(wtPath);
+  } catch {
+    /* unreadable — fall back to the literal path */
+  }
+  const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+  const hits = [];
+  let pid = "";
+  let cmd = "";
+  for (const line of out.split("\n")) {
+    if (line.startsWith("p")) {
+      pid = line.slice(1);
+      cmd = "";
+    } else if (line.startsWith("c")) {
+      cmd = line.slice(1);
+    } else if (line.startsWith("n")) {
+      const dir = line.slice(1);
+      if (dir !== root && !dir.startsWith(prefix)) continue;
+      if (mine.has(pid)) continue;
+      if (!hits.some((h) => h.pid === pid)) hits.push({ pid, cmd });
+    }
+  }
+  return hits;
+}
+
+/** Tag names present on ANY configured remote, fetched at most once per run.
+ *
+ *  Git keeps no remote-tracking refs for tags, so there is no offline way to
+ *  tell a pushed tag from a local one — and the difference is the whole point,
+ *  since a local tag dies with the machine. One `ls-remote` per remote answers
+ *  it for every tag at once. Affordable here because this only runs when a
+ *  destructive command is already in flight, never on the hot edit path.
+ *
+ *  Fails CLOSED: if ls-remote errors (offline, auth, timeout) the set stays
+ *  empty, so no tag is credited and the guard blocks. Every other probe in this
+ *  file fails open, but those decide whether to *warn*; this one decides whether
+ *  deletion is safe, and "cannot verify" must never read as "verified".
+ */
+const remoteTagCache = new Map();
+
+/** Cache key: the repo's COMMON git dir, so every worktree of one repo shares
+ *  one lookup while a command reaching into a second repo (via `git -C`) never
+ *  inherits the first repo's tags. */
+function repoKey(cwd) {
+  try {
+    return (
+      git(["-C", cwd || ".", "rev-parse", "--path-format=absolute", "--git-common-dir"], undefined).trim() ||
+      cwd ||
+      "."
+    );
+  } catch {
+    return cwd || "."; // not a repo we can identify — key on the raw cwd
+  }
+}
+
+function remoteNames(cwd) {
+  try {
+    return git(["remote"], cwd)
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/** Tag names present on ONE remote, fetched at most once per repo+remote.
+ *
+ *  Git keeps no remote-tracking refs for tags, so there is no offline way to
+ *  tell a pushed tag from a local one — and that difference is the whole point,
+ *  since a local tag dies with the machine. One `ls-remote` answers it for every
+ *  tag on that remote at once.
+ *
+ *  Fails CLOSED: if ls-remote errors (offline, auth, timeout) the set stays
+ *  empty, so nothing is credited and the guard blocks. Every other probe in this
+ *  file fails open, but those decide whether to *warn*; this one decides whether
+ *  deletion is safe, and "cannot verify" must never read as "verified".
+ */
+function tagsOnRemote(cwd, remote) {
+  const key = repoKey(cwd);
+  let perRemote = remoteTagCache.get(key);
+  if (!perRemote) {
+    perRemote = new Map();
+    remoteTagCache.set(key, perRemote);
+  }
+  const cached = perRemote.get(remote);
+  if (cached) return cached;
+  const found = new Set();
+  perRemote.set(remote, found);
+  try {
+    for (const line of git(["ls-remote", "--tags", remote], cwd).split("\n")) {
+      const m = /refs\/tags\/(.+?)(?:\^\{\})?$/.exec(line.trim());
+      if (m) found.add(m[1]);
+    }
+  } catch {
+    /* this remote is unreachable — credit nothing from it */
+  }
+  return found;
+}
+
+/** Where `oid` is durably retained, or "" if nowhere. A remote branch is the
+ *  cheap offline answer; a tag pushed to a remote counts too, and is in fact
+ *  the stronger one — merging deletes the branch but never the tag. */
+function retainedOnRemote(oid, cwd) {
+  try {
+    if (git(["branch", "-r", "--contains", oid], cwd).trim()) return "a remote branch";
+  } catch {
+    /* fall through to tags */
+  }
+  let tags = [];
+  try {
+    tags = git(["for-each-ref", "--format=%(refname:short)", "--contains", oid, "refs/tags"], cwd)
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  } catch {
+    return "";
+  }
+  if (!tags.length) return "";
+  // Every remote is probed — an archive tag pushed to a second remote is just as
+  // durable as one on origin, and capping the scan would reintroduce exactly the
+  // false block this helper exists to remove. Ordered scan with an early return
+  // keeps the ordinary single-remote case at one ls-remote.
+  for (const remote of remoteNames(cwd)) {
+    const pushed = tagsOnRemote(cwd, remote);
+    const hit = tags.find((t) => pushed.has(t));
+    if (hit) return `remote tag ${hit} on ${remote}`;
+  }
+  return "";
+}
+
+/** Both destructive paths offer the same two ways out, so word them once. */
+function retentionAdvice(ref) {
+  return (
+    `Push it (\`git push -u origin ${ref}\`), or archive the commits as a tag ` +
+    `(\`git tag -s archive/${ref.replace(/\//g, "-")} <oid> && git push origin archive/…\`) — ` +
+    `a pushed tag counts as retention and outlives the branch.`
+  );
+}
+
 function destructionRisk(wtPath) {
   if (!existsSync(wtPath)) return "";
   if (!existsSync(path.join(wtPath, ".git"))) return ""; // husk — GC freely
@@ -106,8 +983,15 @@ function destructionRisk(wtPath) {
       return `\`${wtPath}\` has ${n} uncommitted change(s) — a session may be mid-task in it.`;
     }
     const head = git(["-C", wtPath, "rev-parse", "HEAD"], undefined).trim();
-    const onRemote = git(["-C", wtPath, "branch", "-r", "--contains", head], undefined).trim();
-    if (!onRemote) return `\`${wtPath}\` HEAD (${head.slice(0, 8)}) exists on NO remote ref — removing it orphans unpushed commits.`;
+    if (!retainedOnRemote(head, wtPath)) {
+      return `\`${wtPath}\` HEAD (${head.slice(0, 8)}) exists on NO remote ref — removing it orphans unpushed commits.`;
+    }
+    const live = liveProcesses(wtPath);
+    if (live.length) {
+      const who = live.slice(0, 3).map((h) => `pid ${h.pid} (${h.cmd || "?"})`).join(", ");
+      const more = live.length > 3 ? ` and ${live.length - 3} more` : "";
+      return `\`${wtPath}\` is clean and pushed, but ${live.length} process(es) are still working in it: ${who}${more}.`;
+    }
     return "";
   } catch {
     return ""; // can't assess (mid-teardown, permissions) — don't brick cleanup
@@ -117,10 +1001,42 @@ function destructionRisk(wtPath) {
 function checkWorktreeRemove(seg, cwd) {
   const m = seg.match(/\bgit\b.*\bworktree\s+remove\s+(.*)$/);
   if (!m) return;
+  const base = gitDashCDir(tokens(seg), cwd);
   for (const tok of tokens(m[1])) {
     if (tok.startsWith("-")) continue;
-    const risk = destructionRisk(resolveTarget(tok, cwd));
+    const risk = destructionRisk(resolveTarget(tok, base));
     if (risk) block(`\`git worktree remove\` targets live work:\n${risk}`);
+  }
+}
+
+/**
+ * Moving a worktree root is as destructive as deleting it: git's admin file
+ * still points at the old path, so the worktree is broken and any uncommitted
+ * work is stranded somewhere the owning session will not look. `git worktree
+ * move` is the supported operation and is left alone.
+ */
+function checkMove(seg, cwd) {
+  const toks = tokens(seg);
+  if (toks[0] !== "mv") return;
+  const operands = toks.slice(1).filter((t) => !t.startsWith("-"));
+  if (operands.length < 2) return;
+  for (const tok of operands.slice(0, -1)) {
+    const hit = worktreeRoot(resolveTarget(tok, cwd));
+    if (!hit) continue; // a path inside a worktree is the owner's business
+    if (hit.root) {
+      const risk = destructionRisk(hit.root);
+      if (risk) block(`\`mv\` would strand a live worktree (git still points at the old path):\n${risk}`);
+    } else if (hit.container && existsSync(hit.container)) {
+      // Moving the container strands every child just like removing it does.
+      try {
+        for (const child of readdirSync(hit.container)) {
+          const risk = destructionRisk(path.join(hit.container, child));
+          if (risk) block(`\`mv ${tok}\` wipes every worktree, including live work:\n${risk}`);
+        }
+      } catch {
+        /* unreadable container — allow */
+      }
+    }
   }
 }
 
@@ -131,7 +1047,9 @@ function checkRmRf(seg, cwd) {
   if (!(flags.includes("r") && flags.includes("f")) && !flags.includes("R")) return;
   for (const tok of toks.slice(1)) {
     if (tok.startsWith("-")) continue;
-    if (!tok.includes(".worktrees")) continue;
+    // Classify the RESOLVED path, never the raw token: after `cd .worktrees`
+    // the token is a bare name like `feature-x` and a substring test on it
+    // silently skips a real worktree root.
     const hit = worktreeRoot(resolveTarget(tok, cwd));
     if (!hit) continue; // a path INSIDE a worktree — its owner's business
     if (hit.root) {
@@ -159,11 +1077,10 @@ function checkBranchDelete(seg, cwd) {
     try {
       const tip = git(["rev-parse", "--verify", "--quiet", `refs/heads/${name}`], cwd).trim();
       if (!tip) continue;
-      const onRemote = git(["branch", "-r", "--contains", tip], cwd).trim();
-      if (!onRemote) {
+      if (!retainedOnRemote(tip, cwd)) {
         block(
           `\`git branch -D ${name}\` would orphan unpushed commits: its tip (${tip.slice(0, 8)}) exists on no remote ref.\n` +
-            `Push the branch first (\`git push -u origin ${name}\`) or confirm the commits are disposable.`,
+            retentionAdvice(name),
         );
       }
     } catch {
@@ -218,21 +1135,45 @@ function main() {
   }
   const command = input?.tool_input?.command;
   if (typeof command !== "string" || !INTEREST.test(command)) return allow();
-  if (command.includes(BYPASS)) return allow();
   const cwd =
     (typeof input.cwd === "string" && input.cwd) || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  CTX.command = command;
+  CTX.cwd = cwd;
+  CTX.session = input?.session_id ?? null;
+  if (/^\s*WT_GUARD_BYPASS=1(?:\s|$)/.test(command)) {
+    recordEvent("bypass", null);
+    return allow();
+  }
 
+  // Relative paths resolve against the segment's effective cwd, which a leading
+  // `cd` in the same compound command moves for everything after it.
+  let segCwd = cwd;
   for (const seg of segments(command)) {
-    checkWorktreeRemove(seg, cwd);
-    checkRmRf(seg, cwd);
-    checkBranchDelete(seg, cwd);
-    checkRemoteBranchDelete(seg, cwd);
+    const cdTo = cdTargetOf(seg);
+    if (cdTo) {
+      segCwd = resolveTarget(cdTo, segCwd);
+      continue;
+    }
+    checkWorktreeRemove(seg, segCwd);
+    checkRmRf(seg, segCwd);
+    checkMove(seg, segCwd);
+    checkBranchDelete(seg, segCwd);
+    checkRemoteBranchDelete(seg, segCwd);
   }
   return allow();
 }
 
-try {
-  main();
-} catch {
-  allow(); // a guard bug must never brick every Bash call
+const directArgs = process.argv.slice(2);
+if (directArgs.length > 0) {
+  try {
+    runStrictWorktreeRemove(directArgs);
+  } catch (error) {
+    strictRefuse(error instanceof Error ? error.message : "unknown strict probe error");
+  }
+} else {
+  try {
+    main();
+  } catch {
+    allow(); // a guard bug must never brick every Bash call
+  }
 }

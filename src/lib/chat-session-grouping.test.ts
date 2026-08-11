@@ -112,69 +112,98 @@ test("railGroupPreview + railMoreLabel: 6-row cap with Show N more / fewer", () 
   assert.equal(railMoreLabel(true, 0), "Show fewer");
 });
 
-// ── Source pins: expandable-row disclosure semantics (chat-list.tsx) ─────────
+// ── Source pins: rows open directly on click (chat-list.tsx) ─────────────────
 
-test("chat-list: rows are proper disclosures (aria-expanded + aria-controls)", () => {
+test("chat-list: a row click opens the session directly (no disclosure strip)", () => {
   assert.match(
     chatList,
-    /aria-expanded=\{selectMode \? undefined : isExpanded\}/,
-    "the row button reports its disclosure state outside select mode",
+    /onClick=\{\(\) => \{ if \(selectMode\) \{ toggleSelect\(s\.id\); return; \} setActiveId\(s\.id\); onOpen\(s\.id, s\.familiarId\); \}\}/,
+    "a row click selects in select mode, otherwise opens the session",
   );
-  assert.match(
+  assert.doesNotMatch(
     chatList,
-    /aria-controls=\{isExpanded \? detailId : undefined\}/,
-    "the expanded row points at its detail strip",
+    /expandedRowId|setExpandedRowId/,
+    "the inline detail-strip disclosure state is gone",
   );
-  assert.match(
+  assert.doesNotMatch(
     chatList,
-    /const detailId = `chat-list-row-detail-\$\{s\.id\}`/,
-    "detail strips carry stable per-session ids",
+    /chat-list-row-detail|onDoubleClick/,
+    "no detail strip or double-click fast path remains — click IS the open path",
   );
 });
 
-test("chat-list: detail strip carries Resume/Open (existing open path) + Archive", () => {
+test("chat-list: Enter and Space both open the focused row", () => {
   assert.match(
     chatList,
-    /\{s\.status === "running" \? "Resume" : "Open"\}/,
-    "the primary action is Resume while running, Open otherwise",
+    /if \(e\.key === "Enter" \|\| e\.key === " "\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*if \(selectMode\) \{ toggleSelect\(s\.id\); return; \}\s*\n\s*setActiveId\(s\.id\); onOpen\(s\.id, s\.familiarId\);/,
+    "keyboard activation mirrors the click: select in select mode, open otherwise",
   );
+  // dnd-kit's Space/Enter drag activation prevents default but does NOT stop
+  // propagation — without this guard, activating keyboard reorder on the drag
+  // handle bubbles to the row and navigates away, destroying the drag.
   assert.match(
     chatList,
-    /chat-list-row-detail[\s\S]{0,1400}setActiveId\(s\.id\);\s*\n\s*onOpen\(s\.id, s\.familiarId\);/,
-    "Resume/Open routes through the existing open-session action",
-  );
-  assert.match(
-    chatList,
-    /onClick=\{\(e\) => void setSessionArchived\(e, s\.id, !s\.archived_at\)\}/,
-    "Archive reuses the existing archive PATCH action",
+    /if \(e\.target !== e\.currentTarget\) return;\s*\n\s*if \(e\.key === "Enter" \|\| e\.key === " "\)/,
+    "the row keydown ignores events from nested controls (drag handle keeps keyboard reorder)",
   );
 });
 
-test("chat-list: Escape collapses the expanded row before clearing search", () => {
+test("chat-list: Escape in search clears the query", () => {
   assert.match(
     chatList,
-    /if \(expandedRowId\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*setExpandedRowId\(null\);\s*\n\s*return;\s*\n\s*\}\s*\n\s*if \(search\) \{/,
-    "the search field's Escape handler collapses first, clears second",
-  );
-  assert.match(
-    chatList,
-    /if \(e\.key === "Escape" && !e\.defaultPrevented\) \{\s*\n\s*setExpandedRowId\(\(cur\) => \(cur \? null : cur\)\);/,
-    "a global Escape collapses the expanded row (deferring to consumers that already handled it)",
+    /if \(e\.key !== "Escape"\) return;\s*\n\s*if \(search\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*setSearch\(""\);/,
+    "the search field's Escape handler clears the query",
   );
 });
 
 // ── Source pins: toolbar contracts (chat-list.tsx) ───────────────────────────
 
-test("chat-list: All / Active segmented control drives the running-only filter", () => {
+// cave-n3jg2 ("Chat Session - Prototype.dc.html"): the All/Active segmented
+// control and its duplicate dot toggle are replaced by one counted chip per
+// state the daemon actually reports. "Active" could only ever answer "what is
+// running?"; the chips also answer "what failed?" and "what is waiting on me?".
+test("chat-list: counted status chips drive the status filter", () => {
   assert.match(
     chatList,
-    /aria-pressed=\{!unreadsOnly\}\s*\n\s*onClick=\{\(\) => setUnreadsOnly\(false\)\}/,
-    "All clears the active-only filter",
+    /aria-pressed=\{statusFilter === "all"\}\s*\n\s*onClick=\{\(\) => setStatusFilter\("all"\)\}/,
+    "All clears the status filter",
   );
   assert.match(
     chatList,
-    /aria-pressed=\{unreadsOnly\}\s*\n\s*onClick=\{\(\) => setUnreadsOnly\(true\)\}/,
-    "Active enables the running-only filter (same state as the dot toggle)",
+    /\{CHAT_SESSION_STATUS_ORDER\.map\(\(key\) => \{[\s\S]{0,600}?onClick=\{\(\) => setStatusFilter\(key\)\}/,
+    "one chip per reported status, each setting the filter",
+  );
+  assert.match(
+    chatList,
+    /<span className="chat-status-chip__count">\{statusCounts\[key\]\}<\/span>/,
+    "each chip carries its own count",
+  );
+  // Counting the SEARCHED set (not the filtered one) is what keeps the numbers
+  // under the chips you did not press from changing when you press one.
+  assert.match(
+    chatList,
+    /const statusCounts = useMemo\(\(\) => countChatSessionStatuses\(searched\), \[searched\]\);/,
+    "counts describe the searched set, so pressing a chip never renumbers the others",
+  );
+});
+
+test("chat-list: activity bands head the default recency order", () => {
+  assert.match(
+    chatList,
+    /const activityBanded =\s*\n\s*groupBy === "none" && effectiveSelection === "all" && sessionSort === "recent" && sessionOrder\.length === 0;/,
+    "bands are scoped to the flat, ungrouped, unsorted-by-hand recency view",
+  );
+  assert.match(
+    chatList,
+    /<li className="chat-activity-header" data-bucket=\{band\.bucket\}>/,
+    "each band renders its own header keyed by bucket",
+  );
+  // A named flat order still gets one header, so the list never presents rows
+  // in an order it has not named.
+  assert.match(
+    chatList,
+    /map\.set\(offset, \{ bucket: "flat", label: CHAT_SESSION_SORT_HEADING\[sessionSort\], count: rest\.length \}\);/,
+    "non-recency orders get a single named header",
   );
 });
 

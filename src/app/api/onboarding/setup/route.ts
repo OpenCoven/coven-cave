@@ -18,7 +18,7 @@ import {
   adapterManifestScaffoldForHarness,
   isTrustedOnboardingHarness,
 } from "@/lib/harness-adapters";
-import { defaultModelForRuntime } from "@/lib/runtime-models";
+import { modelForRuntimeSwitch } from "@/lib/runtime-models";
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 
 export const dynamic = "force-dynamic";
@@ -67,8 +67,10 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const model =
-    (draft?.model ?? body.model ?? defaultModelForRuntime(harness)).trim() || defaultModelForRuntime(harness);
+  const model = modelForRuntimeSwitch(
+    harness,
+    draft?.model ?? body.model ?? null,
+  );
 
   const covenDir = covenHome();
   const caveDir = caveHome();
@@ -118,13 +120,16 @@ export async function POST(req: Request) {
   const existing = await loadConfig();
   const nextConfig = {
     version: existing.version || 1,
-    defaults: { harness, model },
+    defaults: {
+      harness,
+      model: model || existing.defaults.model,
+    },
     familiars: draft
       ? {
           ...(existing.familiars ?? {}),
           [draft.id]: {
             harness: draft.harness,
-            model: draft.model,
+            ...(draft.model ? { model: draft.model } : {}),
             // Remote familiars carry their SSH runtime in the binding —
             // chat's send route reads it via bindingFor(); familiars.toml
             // stays runtime-free.

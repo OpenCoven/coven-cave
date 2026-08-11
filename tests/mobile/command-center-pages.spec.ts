@@ -42,7 +42,12 @@ test.describe("mobile command center pages", () => {
   });
 
   test("Chat index and new chat detail keep stable mobile geometry", async ({ page }) => {
-    await page.getByRole("tab", { name: "Chat" }).click();
+    // Scoped to the bottom tabs: the siderail's NavSectionTabs now renders a
+    // second role="tab" named "Chat" (NAV_SECTIONS id "code"), so the bare
+    // name matches two elements. This spec is about phone geometry and its
+    // beforeEach already waits for .mobile-bottom-tabs — that is the tab it
+    // has always meant.
+    await page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "Chat", exact: true }).click();
     await page.waitForSelector(".chat-surface");
 
     await expectNoHorizontalOverflow(page, "Chat index");
@@ -52,7 +57,9 @@ test.describe("mobile command center pages", () => {
     // there's no toggle-row geometry to assert here.
     const topBar = await box(page, ".top-bar");
 
-    await page.locator(".chat-surface").getByRole("button", { name: "Session", exact: true }).first().click();
+    // cave-n3jg2: the two conditional "+ Session" CTAs (identity row, filter
+    // row) collapsed into one "New session" button in the surface title row.
+    await page.locator(".chat-surface").getByRole("button", { name: "New session", exact: true }).first().click();
     await page.waitForSelector(".cave-chat-linear");
 
     await expectNoHorizontalOverflow(page, "Chat detail");

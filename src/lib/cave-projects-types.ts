@@ -6,11 +6,40 @@
  * to avoid pulling node:fs/promises into the browser bundle.
  */
 
+import type { ProjectAccessLevel } from "./project-access-levels.ts";
+
 export type CaveProject = {
   id: string;
   name: string;
   root: string;
   color?: string;
+  /** Effective familiar access on familiar-scoped reads; absent on the operator registry view. */
+  access?: ProjectAccessLevel;
+  /** Canonical GitHub repository link (https://github.com/owner/repo), when tied to one. */
+  repoUrl?: string;
+  /**
+   * The root string as it was persisted, present whenever the server had to
+   * re-normalize it to return {@link CaveProject.root} (cave-2x1em).
+   *
+   * Usually that is a leading `~` being expanded, but the server normalizer
+   * also trims, converts backslashes and drops trailing slashes — any of which
+   * moves the key. The field is attached for all of them, not just `~`.
+   *
+   * Roots are the KEYS of client-side stores — IDB projectAvatars,
+   * cave:chat:project-overrides, comux pins and order — so a record written
+   * before the server started expanding (`~/code/app`) keys differently from
+   * the same folder added today (`/Users/me/code/app`). Serving one consistent
+   * form fixes the split, but it also moves the key out from under whatever
+   * was already stored. This field carries the old key so the client can
+   * re-key its stores.
+   *
+   * Response-only: `saveProjects` strips it before writing, so it never reaches
+   * projects.json. That strip is the enforcement — every mutation path persists
+   * the array `loadProjectsUnlocked` returned, so documenting the intent here
+   * without stripping there would have written the marker to disk on the first
+   * create/patch/delete after an upgrade.
+   */
+  legacyRoot?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -58,4 +87,28 @@ export function dedupeProjectsByRoot(
 
 export function sortProjectsAlphabetically(projects: CaveProject[]): CaveProject[] {
   return dedupeProjectsByRoot(projects).sort(compareProjectsAlphabetically);
+}
+
+/**
+ * Resolve a manually typed picker query to one project. Exact project names
+ * win; otherwise the first alphabetized name/root match mirrors the visible
+ * picker order. Blank or unmatched queries select nothing.
+ */
+export function projectForPickerQuery(
+  projects: CaveProject[],
+  query: string,
+): CaveProject | null {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return null;
+
+  const visible = sortProjectsAlphabetically(projects).filter(
+    (project) =>
+      project.name.toLowerCase().includes(normalizedQuery) ||
+      project.root.toLowerCase().includes(normalizedQuery),
+  );
+  return (
+    visible.find((project) => project.name.trim().toLowerCase() === normalizedQuery) ??
+    visible[0] ??
+    null
+  );
 }

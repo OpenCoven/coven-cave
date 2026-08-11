@@ -2,9 +2,15 @@ import { mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  cleanMediaDataUrl,
   MAX_ATTACHMENT_IMAGE_BYTES,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
+import {
+  saveChatImageAttachment,
+  saveChatMediaAttachment,
+  sweepChatImageAttachments,
+} from "@/lib/server/chat-attachment-store";
 
 const ATTACHMENT_TMP_DIR = path.join(tmpdir(), "coven-cave-attachments");
 const IMAGE_EXT_BY_SUBTYPE: Record<string, string> = {
@@ -42,6 +48,44 @@ export async function writeImageAttachmentsToTemp(
     }
   }
   return filePaths;
+}
+
+/**
+ * Give each image and playable-media attachment a durable copy and stamp its
+ * id onto the record the transcript will keep. `persisted` is the
+ * metadata-only shape (payloads already stripped); `source` still holds the
+ * bytes.
+ *
+ * Best effort by design: a store failure leaves that attachment exactly as it
+ * was before — metadata only — rather than failing the send.
+ */
+export async function persistImageAttachments(
+  persisted: ChatAttachment[],
+  source: ChatAttachment[],
+): Promise<ChatAttachment[]> {
+  const anyPayloads = source.some(
+    (attachment) =>
+      attachment.dataUrl &&
+      (attachment.mimeType?.startsWith("image/") || cleanMediaDataUrl(attachment.dataUrl)),
+  );
+  if (!anyPayloads) return persisted;
+  const stored = await Promise.all(
+    persisted.map(async (attachment, index) => {
+      const origin = source[index];
+      if (!origin?.dataUrl) return attachment;
+      let storedId: string | null = null;
+      if (origin.mimeType?.startsWith("image/")) {
+        storedId = await saveChatImageAttachment(origin.dataUrl, origin.mimeType);
+      } else {
+        const media = cleanMediaDataUrl(origin.dataUrl);
+        if (media) storedId = await saveChatMediaAttachment(media.dataUrl, media.mimeType);
+      }
+      return storedId ? { ...attachment, storedId } : attachment;
+    }),
+  );
+  // Retention runs off the write path so a send never waits on a directory scan.
+  void sweepChatImageAttachments().catch(() => undefined);
+  return stored;
 }
 
 export function cleanupImageTempFiles(filePaths: ReadonlyMap<number, string>) {

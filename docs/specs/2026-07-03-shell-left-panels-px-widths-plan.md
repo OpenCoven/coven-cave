@@ -10,7 +10,7 @@
 
 **Spec:** `docs/specs/2026-07-03-shell-left-panels-px-widths-design.md`
 
-**Where to work:** worktree `.worktrees/shell-left-panels-px-widths`, branch `shell-left-panels-px-widths`. ⚠️ Use ONLY paths under the worktree for every Edit/Write — absolute paths into the primary checkout (`/Users/buns/Documents/GitHub/OpenCoven/coven-cave/src/...`) silently land edits in the primary tree, and 7 other Claude sessions are live on this machine. ⚠️ Every commit must be signed: `git commit -S`.
+**Where to work:** worktree `.worktrees/shell-left-panels-px-widths`, branch `shell-left-panels-px-widths`. ⚠️ Use ONLY paths under the worktree for every Edit/Write — absolute paths into the primary checkout (`/Users/<someone>/Documents/GitHub/OpenCoven/coven-cave/src/...`) silently land edits in the primary tree, and 7 other Claude sessions are live on this machine. ⚠️ Every commit must be signed: `git commit -S`.
 
 ---
 
@@ -323,7 +323,7 @@ Expected: `MERGED`. ⚠️ Do NOT chain branch-deletion cleanup onto the merge c
 - [ ] **Step 5: Local cleanup (only after MERGED is confirmed)**
 
 ```bash
-cd /Users/buns/Documents/GitHub/OpenCoven/coven-cave
+cd /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave
 git worktree remove .worktrees/shell-left-panels-px-widths
 git branch -D shell-left-panels-px-widths
 git worktree list

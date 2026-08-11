@@ -68,8 +68,8 @@ Every PR-backed bead follows this lifecycle:
 3. Open a draft PR early once the patch is coherent enough for CI and review.
 4. Keep the checks/review loop in GitHub, but mirror concise state into the bead with the bridge.
 5. Enter the merge gate only after required checks are green, review threads are resolved, and the repository merge policy is satisfied.
-6. Perform post-merge cleanup: sync `main`, remove the merged branch/worktree, prune stale refs only when safe, and record cleanup in the bead.
-7. Do not close the bead before the merge or explicit completion; the close reason must include the PR number and verification evidence.
+6. Run `pnpm beads:worktrees`, then perform post-merge cleanup: sync `main`, remove the merged branch/worktree only when its owner and the safety gates allow it, or record why it remains intentionally preserved.
+7. Do not close the bead before the merge or explicit completion; the close reason must include the PR number and verification evidence. Do not close the bead until the local worktree has a recorded disposition: removed and verified, or preserved with an owner and reason.
 
 The PR bridge is report-only by default:
 
@@ -102,10 +102,45 @@ and end of every working session (or schedule it — a Coven cron or reminder
 invoking the package script works):
 
 ```bash
-pnpm beads:prs:patrol                       # report-only; window picked by local clock
-pnpm beads:prs:patrol -- --window evening   # explicit window
-pnpm beads:prs:patrol:apply                 # also mirror every linked PR's state into its beads
+pnpm beads:patrol                            # PR lanes plus local worktree lifecycle
+pnpm beads:prs:patrol -- --window evening    # PR-only patrol with an explicit window
+pnpm beads:worktrees                         # local worktrees only, report-only
+pnpm beads:patrol:apply                      # mirror PR state, then report worktrees
 ```
+
+The worktree patrol remains read-only. It records full dirty paths and correlates
+each registered worktree with live processes, Coven claims, non-closed Beads,
+open PRs, active workflows, exact PR heads merged to `main`, and recency. Its lifecycle
+lanes are:
+
+- `active` — local changes or a live owner still needs the worktree.
+- `recovery` — detached, WIP, backup, or unlanded work still protects data.
+- `cooldown` — landed work is inside the mandatory 8-hour recency window.
+- `retire-after-gate` — old, clean, landed work is cleanup-ready. Automatic
+  retirement still requires the full repository-wide maintenance gate; explicit
+  maintainer authorization in the current task may instead activate Branch
+  Curator's bounded manual deletion proof.
+- `uncertain` — an ownership or remote probe failed, so cleanup fails closed.
+- `protected` — the primary checkout or tool-owned infrastructure.
+
+Closing a Bead never removes a worktree. The patrol reads Git registrations
+directly, so a leftover remains visible even after its PR merges or its Bead
+closes.
+
+### Maintenance coordination
+
+Cave's lifecycle creator and retirement path hold a composite fence: the
+existing Cave-local writer-intent fence plus `coven maintenance
+acquire`/`heartbeat`/`release` from `@opencoven/cli` 0.2.5 or newer. The local
+fence preserves safety for existing Cave writers; Coven covers its supported
+direct CLI, daemon-session, and claim paths. The coordinator uses exact owner
+generations, rolls back the local fence if Coven cannot be held, and preserves
+both handles for recovery when release fails. It never writes Coven's
+`owner`/`writers`/`lock` records itself.
+
+This remains a cooperating-writer boundary, not a claim that arbitrary Git
+commands or uninstrumented tooling are excluded. Beads and GitHub maintenance
+planes are still required before unattended retirement can run.
 
 The two windows order the same lanes for different intents:
 
@@ -141,7 +176,7 @@ Lanes, ordered fix-first → land → review → bead-driven → waiting:
 - **Checks failing** / **Changes requested** — open PRs that need work before more review.
 - **Needs review** / **Ready to merge** — approved-and-green PRs show a *merge eligible* badge, never a merge button: merge authority still follows repository policy (see the merge gate above).
 - **No open PR** — ready beads no PR references yet (epics excluded), with a **Claim** action.
-- **Post-merge cleanup** — a merged PR whose bead is still open, with a **Close bead** action. (Detection is limited to beads still in the `ready` set; worktree/branch removal stays a CLI step.)
+- **Post-merge cleanup** — a merged PR whose bead is still open, with a **Close bead** action. Detection is limited to beads still in the `ready` set, and the action never removes a worktree or branch. Run `pnpm beads:worktrees` and record the local disposition before closing; registered leftovers remain visible in that patrol after the Bead leaves the queue.
 - **Waiting** — draft, pending-checks, and blocked PRs; shown but never counted as actionable.
 
 Each card carries the familiar and surface labels, the bead id, live check/review state, and a stale flag (no update in 24h). A per-familiar rollup along the top filters the whole board to one familiar. The pure join lives in `src/lib/beads-work-queue.ts`; claim/close map to the `/api/beads` adapter with verification recorded in the bead, not a chat transcript.

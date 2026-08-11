@@ -13,12 +13,13 @@ export type InstallProcessResult = {
 export function runInstallProcess(
   command: string,
   args: string[],
-  options: { shell: boolean; timeoutMs: number },
+  options: { shell: boolean; timeoutMs: number; env?: NodeJS.ProcessEnv },
 ): Promise<InstallProcessResult> {
   return new Promise((resolve) => {
     const child = spawn(command, args, {
+      windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
-      env: covenSpawnEnv(),
+      env: options.env ?? covenSpawnEnv(),
       shell: options.shell,
     });
     let output = "";

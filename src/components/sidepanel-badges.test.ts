@@ -9,14 +9,15 @@ const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf
 assert.match(sidebar, /function badgeText\(n\?: number\)/, "badge formatter exists");
 assert.match(sidebar, /boardOpenCount\?: number/, "sidebar accepts a board count");
 assert.match(sidebar, /scheduleNeedsCount\?: number/, "sidebar accepts a schedules count");
-assert.match(sidebar, /githubAssignedCount\?: number/, "sidebar accepts a github count");
-assert.match(sidebar, /badge: \(p\) => badgeText\(p\.boardOpenCount\)/, "Board nav badge wired");
-assert.match(sidebar, /badge: \(p\) => badgeText\(p\.scheduleNeedsCount\)/, "Schedules nav badge wired");
-assert.match(sidebar, /badge: \(p\) => badgeText\(p\.githubAssignedCount\)/, "GitHub nav badge wired");
+assert.doesNotMatch(sidebar, /githubAssignedCount\?: number/, "sidebar no longer accepts a standalone github count");
+assert.match(sidebar, /board: \(props\) => badgeText\(props\.boardOpenCount\)/, "Board nav badge wired");
+assert.match(sidebar, /inbox: \(props\) => badgeText\(props\.scheduleNeedsCount\)/, "Rituals nav badge wired");
+assert.doesNotMatch(sidebar, /github: \(props\) => badgeText\(props\.githubAssignedCount\)/, "GitHub nav badge removed with the standalone row");
+assert.match(sidebar, /badge=\{MODE_BADGES\[fm\.id\]\?\.\(props\)\}/, "registry rows receive host-specific badges");
 
 assert.match(workspace, /boardOpenCount=\{boardTaskCount\}/, "board count passed to sidebar");
 assert.match(workspace, /scheduleNeedsCount=\{scheduleNeedsCount\}/, "schedules count passed");
-assert.match(workspace, /githubAssignedCount=\{githubAssignedCount\}/, "github count passed");
+assert.doesNotMatch(workspace, /githubAssignedCount=\{githubAssignedCount\}/, "workspace no longer passes a standalone github count");
 // cave-925w: the badge and Home's "Needs you" strip read ONE memo — the badge
 // is that shared group's length, not a separately computed count.
 assert.match(workspace, /const inboxNeedsYou = useMemo\(\s*\(\) => groupInboxFeed\(inboxItemsWithEphemeral\)\.needsYou,/, "schedules badge = needs-you group (shared memo)");

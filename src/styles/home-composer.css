@@ -1,5 +1,4 @@
 /* Home intent-surface facade. Ordered imports preserve the previous cascade. */
 @import "./home-composer/landing-composer.css";
 @import "./home-composer/feed-menus.css";
-@import "./home-composer/digest.css";
 @import "./home-composer/hearth-continuations.css";

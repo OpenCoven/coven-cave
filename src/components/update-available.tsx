@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { isTauri, useIsTauriDesktop } from "@/lib/tauri-platform";
 import { useShellBanners } from "@/lib/shell-banners";
@@ -21,11 +29,12 @@ import {
   type PreparationProgress,
 } from "@/lib/native-update-preparation";
 import {
+  NativeUpdateCheckSequence,
   adoptNativeUpdateResult,
   nativeUpdateCoordinator,
 } from "@/lib/native-update-coordinator";
-import { updateDaemonForCaveUpdate } from "@/lib/app-update-daemon";
-import { APP_VERSION } from "@/lib/app-version";
+import { updateCovenCli } from "@/lib/app-update-daemon";
+import { readDaemonAutomation } from "@/lib/daemon-automation-pref";
 
 const BANNER_ID = "update-available";
 const DAEMON_ALIGNMENT_BANNER_ID = "daemon-release-alignment";
@@ -97,13 +106,14 @@ async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> 
 }
 
 /**
- * The updater that installs a release belongs to the previous Cave version.
- * Reconcile once after the new shell starts so the first release containing
- * this behavior also aligns the separately installed CLI/daemon.
+ * On desktop startup, inspect the separately installed Coven CLI. Cave, the
+ * CLI, and its daemon are independently versioned, so an unavailable
+ * background availability check remains silent and no Cave version is used as
+ * a CLI requirement. A global install is always user-confirmed.
  */
 export function DaemonReleaseAlignmentTrigger() {
   const isDesktop = useIsTauriDesktop();
-  const { pushBanner, dismissBanner } = useShellBanners();
+  const { dismissBanner } = useShellBanners();
   const attempted = useRef(false);
 
   useEffect(() => {
@@ -111,55 +121,27 @@ export function DaemonReleaseAlignmentTrigger() {
     let active = true;
     let running = false;
 
-    const start = (confirmInstall = false) => {
+    const start = () => {
       if (!active || running) return;
       attempted.current = true;
       running = true;
-      void updateDaemonForCaveUpdate(APP_VERSION, {
-        confirmInstall,
-        onUpdateStart: () => {
-          if (active) {
-            pushBanner({
-              id: DAEMON_ALIGNMENT_BANNER_ID,
-              severity: "info",
-              title: `Updating Coven daemon to match Cave v${APP_VERSION}…`,
-            });
-          }
-        },
-      }).then((result) => {
+      // `updateCovenCli` already refuses to install without explicit consent —
+      // it returns "confirmation-required" when confirmInstall is falsy, which
+      // is why this background check has always been a no-op that defers to
+      // Settings -> About. The opt-in preference is that consent (cave-bqywj):
+      // read at call time, default off, so nothing installs unattended unless
+      // the user asked for it.
+      void updateCovenCli({ confirmInstall: readDaemonAutomation().autoUpgradeCli }).then(() => {
         running = false;
         if (!active) return;
-        if (result === "confirmation-required") {
-          pushBanner({
-            id: DAEMON_ALIGNMENT_BANNER_ID,
-            severity: "info",
-            title: `Coven daemon v${APP_VERSION} is ready to install`,
-            cta: {
-              label: "Update Coven daemon",
-              onClick: () => {
-                attempted.current = false;
-                start(true);
-              },
-            },
-          });
-        } else {
-          dismissBanner(DAEMON_ALIGNMENT_BANNER_ID);
-        }
-      }).catch((error) => {
+        // Ordinary CLI availability and update actions live in Settings →
+        // About. Keep chat headers focused on chat; only that surface has the
+        // detailed version, verification, and installer state needed to act.
+        dismissBanner(DAEMON_ALIGNMENT_BANNER_ID);
+      }).catch(() => {
         running = false;
         if (!active) return;
-        pushBanner({
-          id: DAEMON_ALIGNMENT_BANNER_ID,
-          severity: "warning",
-          title: `Coven daemon update failed (${errorMessage(error, "update failed")})`,
-          cta: {
-            label: "Retry daemon update",
-            onClick: () => {
-              attempted.current = false;
-              start(true);
-            },
-          },
-        });
+        dismissBanner(DAEMON_ALIGNMENT_BANNER_ID);
       });
     };
 
@@ -167,7 +149,7 @@ export function DaemonReleaseAlignmentTrigger() {
     return () => {
       active = false;
     };
-  }, [dismissBanner, isDesktop, pushBanner]);
+  }, [dismissBanner, isDesktop]);
 
   return null;
 }
@@ -392,7 +374,7 @@ export function UpdateBannerTrigger() {
                         pushBanner({
                           id: BANNER_ID,
                           severity: "info",
-                          title: `Updating Coven daemon and installing Cave v${r.version}…`,
+                          title: `Installing CovenCave v${r.version}…`,
                         });
                         void installPreparedUpdate(r.update).catch(async (error) => {
                           await nativeUpdateCoordinator.finishAction(owner);
@@ -501,47 +483,105 @@ type LastKnownUpdate =
   | { kind: "current"; checkedAt: string }
   | { kind: "available"; version: string; checkedAt: string };
 
+export type UpdateSettingsActionHandle = {
+  check: () => boolean;
+};
+
 /**
  * Settings ▸ About row. Desktop uses the signed native updater when available;
  * the web surface truthfully renders the same release-route fallback state.
  */
-export function UpdateSettingsRow() {
+export function UpdateSettingsRow({
+  actionRef,
+  onCheckAvailabilityChange,
+}: {
+  actionRef?: Ref<UpdateSettingsActionHandle>;
+  onCheckAvailabilityChange?: (available: boolean) => void;
+} = {}) {
   const [state, setState] = useState<RowState>({ phase: "checking" });
   const mounted = useRef(true);
   const activeCancellation = useRef<CancellationSignal | null>(null);
   const preparedUpdate = useRef<NativeUpdateHandle | null>(null);
   const owner = useRef(Symbol("update-settings")).current;
   const lastKnown = useRef<LastKnownUpdate | null>(null);
-  const checkSequence = useRef(0);
+  const checkSequence = useRef(new NativeUpdateCheckSequence()).current;
+  const installInFlight = useRef(false);
 
   const check = useCallback(() => {
-    const sequence = ++checkSequence.current;
+    if (
+      checkSequence.inFlight ||
+      activeCancellation.current ||
+      preparedUpdate.current ||
+      installInFlight.current
+    )
+      return false;
+    const sequence = checkSequence.begin();
     setState({ phase: "checking" });
-    void resolveUpdate(owner).then((r) => {
-      if (sequence !== checkSequence.current) return;
-      if (!mounted.current) {
-        if (r.kind === "native") void nativeUpdateCoordinator.release(owner);
-        return;
-      }
-      if (r.kind === "current") {
-        lastKnown.current = { kind: "current", checkedAt: r.checkedAt };
-        setState({ phase: "current", checkedAt: r.checkedAt, source: r.source });
-      } else if (r.kind === "unavailable") {
-        setState({ phase: "unavailable", message: r.message, stale: lastKnown.current });
-      } else if (r.kind === "native-unavailable") {
-        lastKnown.current = { kind: "available", version: r.version, checkedAt: new Date().toISOString() };
-        setState({ phase: "native-unavailable", r });
-      } else {
-        lastKnown.current = { kind: "available", version: r.version, checkedAt: new Date().toISOString() };
-        setState({ phase: "available", r });
-      }
-    });
-  }, []);
+    void resolveUpdate(owner)
+      .then((r) => {
+        const current = checkSequence.settle(sequence);
+        if (!mounted.current) {
+          if (r.kind === "native") void nativeUpdateCoordinator.release(owner);
+          return;
+        }
+        if (!current) return;
+        if (r.kind === "current") {
+          lastKnown.current = { kind: "current", checkedAt: r.checkedAt };
+          setState({
+            phase: "current",
+            checkedAt: r.checkedAt,
+            source: r.source,
+          });
+        } else if (r.kind === "unavailable") {
+          setState({
+            phase: "unavailable",
+            message: r.message,
+            stale: lastKnown.current,
+          });
+        } else if (r.kind === "native-unavailable") {
+          lastKnown.current = {
+            kind: "available",
+            version: r.version,
+            checkedAt: new Date().toISOString(),
+          };
+          setState({ phase: "native-unavailable", r });
+        } else {
+          lastKnown.current = {
+            kind: "available",
+            version: r.version,
+            checkedAt: new Date().toISOString(),
+          };
+          setState({ phase: "available", r });
+        }
+      })
+      .catch((error) => {
+        if (!checkSequence.settle(sequence) || !mounted.current) return;
+        setState({
+          phase: "unavailable",
+          message: errorMessage(error, "Update check failed"),
+          stale: lastKnown.current,
+        });
+      });
+    return true;
+  }, [checkSequence, owner]);
+
+  useImperativeHandle(actionRef, () => ({ check }), [check]);
+
+  useEffect(() => {
+    onCheckAvailabilityChange?.(
+      state.phase !== "checking" &&
+        state.phase !== "preparing" &&
+        state.phase !== "cancelling" &&
+        state.phase !== "prepared" &&
+        state.phase !== "installing",
+    );
+  }, [onCheckAvailabilityChange, state.phase]);
 
   useEffect(() => {
     mounted.current = true;
     const unsubscribe = nativeUpdateCoordinator.subscribe((snapshot) => {
       if (!mounted.current || activeCancellation.current || preparedUpdate.current) return;
+      checkSequence.supersede();
       if (snapshot.update) {
         lastKnown.current = {
           kind: "available",
@@ -570,7 +610,7 @@ export function UpdateSettingsRow() {
         void nativeUpdateCoordinator.release(owner);
       }
     };
-  }, [check]);
+  }, [check, checkSequence, owner]);
 
   const prepare = (update: NativeUpdateHandle, version: string) => {
     if (activeCancellation.current || preparedUpdate.current) return;
@@ -628,8 +668,10 @@ export function UpdateSettingsRow() {
   const install = (update: NativeUpdateHandle, version: string) => {
     if (preparedUpdate.current !== update) return;
     preparedUpdate.current = null;
+    installInFlight.current = true;
     setState({ phase: "installing", version });
     void installPreparedUpdate(update).catch(async (err) => {
+      installInFlight.current = false;
       await nativeUpdateCoordinator.finishAction(owner);
       await nativeUpdateCoordinator.invalidate(update);
       if (mounted.current) {
@@ -807,9 +849,11 @@ export function UpdateSettingsRow() {
   }
 
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
+    <div className="settings-about-update-row flex items-center justify-between gap-4 px-4 py-3">
       <span className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">Updates</span>
-      <div className="flex items-center gap-2">{control}</div>
+      <div className="settings-about-update-actions flex items-center gap-2">
+        {control}
+      </div>
     </div>
   );
 }

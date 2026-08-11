@@ -11,10 +11,17 @@ struct AgentActivityView: View {
     /// Whether the owning bubble is still streaming — the only state that may
     /// animate a spinner, so a persisted step can never spin after reload.
     let streaming: Bool
+    /// Identifies the owning message. The expanded/collapsed choice is keyed by
+    /// it in `AppModel` rather than held here, because a transcript rebuild
+    /// re-creates this view and view-local `@State` would go with it — the
+    /// trail collapsing itself moments after the reader opened it (cave-m5tao).
+    let messageId: String
 
-    @State private var expanded = false
+    @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var expanded: Bool { app.expandedActivityMessages.contains(messageId) }
 
     /// Expanded list cap — the tail is where the action is, and a bubble
     /// shouldn't scroll for pages of settled steps.
@@ -35,7 +42,11 @@ struct AgentActivityView: View {
     private var chipButton: some View {
         Button {
             withAnimation(reduceMotion ? nil : .snappy(duration: 0.22)) {
-                expanded.toggle()
+                if expanded {
+                    app.expandedActivityMessages.remove(messageId)
+                } else {
+                    app.expandedActivityMessages.insert(messageId)
+                }
             }
             Haptics.tap()
         } label: {
@@ -54,6 +65,10 @@ struct AgentActivityView: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    // "Bash — <argument>": keep the tool name and the end of
+                    // the argument, drop the middle. Same reasoning as the
+                    // detail line in an expanded row.
+                    .truncationMode(.middle)
                     // A ticking label shouldn't pop — crossfade between steps.
                     .contentTransition(reduceMotion ? .identity : .opacity)
                 Image(systemName: "chevron.down")
@@ -117,6 +132,22 @@ struct AgentActivityView: View {
                         .font(.caption2.monospaced())
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
+                        // Both ends identify the argument; the middle rarely
+                        // does. Clipping the tail cost a path its filename —
+                        // "apps/ios/CovenCave/CovenCave/Mod…" — and would cost
+                        // a long command its arguments.
+                        .truncationMode(.middle)
+                }
+                if let failure = step.errorOutput, !failure.isEmpty {
+                    // Why it failed. Wraps rather than truncating to one line —
+                    // a reason clipped mid-sentence is no reason at all.
+                    Text(failure)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(Color.red.opacity(0.85))
+                        .lineLimit(ActivityFold.errorOutputLines)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .padding(.top, 2)
                 }
             }
             Spacer(minLength: 8)
@@ -142,6 +173,12 @@ struct AgentActivityView: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+        case .notice:
+            // Informational, not an outcome — a harness note the run carried on
+            // past. Settled on arrival, so it never spins.
+            Image(systemName: "info.circle")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         case .error:
             Image(systemName: "xmark.circle.fill")
                 .font(.caption2)

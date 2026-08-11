@@ -10,7 +10,9 @@ import test from "node:test";
 import {
   advanceOnboardingAutoFinishGate,
   isLatestOnboardingStatusRequest,
+  shouldApplyStartupOnboardingBootstrap,
   shouldApplyStartupOnboardingStatus,
+  shouldAutoOpenOnboardingBootstrap,
   shouldAutoOpenOnboarding,
   type OnboardingStatusPayload,
 } from "./onboarding-gate.ts";
@@ -41,6 +43,13 @@ assert.equal(
   shouldAutoOpenOnboarding(payload({})),
   false,
   "server complete → no auto-open",
+);
+assert.equal(
+  shouldAutoOpenOnboarding(
+    payload({ complete: false, steps: { ...allStepsOk, project: { ok: false }, daemon: { ok: false } } }),
+  ),
+  false,
+  "a Queue project is not a setup step — selection lives on the Tasks page's Queue tab, so it never reopens the wizard",
 );
 
 // ── Coven Code is not a setup requirement (the cave-219 AND-gate is gone) ────
@@ -116,6 +125,43 @@ test("delayed startup status yields to a later manual onboarding open", async ()
     await decision,
     false,
     "a startup auto-open result must be ignored once onboarding was opened manually first",
+  );
+});
+
+test("bootstrap auto-open resumes confirmed work and ignores completed setup", () => {
+  assert.equal(
+    shouldAutoOpenOnboardingBootstrap({
+      complete: false,
+      needsSetup: true,
+      confirmed: false,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldAutoOpenOnboardingBootstrap({
+      complete: false,
+      needsSetup: true,
+      confirmed: true,
+    }),
+    true,
+    "confirmed interrupted setup resumes",
+  );
+  assert.equal(
+    shouldAutoOpenOnboardingBootstrap({
+      complete: true,
+      needsSetup: false,
+      confirmed: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldApplyStartupOnboardingBootstrap({
+      status: { complete: false, needsSetup: true },
+      cancelled: false,
+      manuallyOpened: true,
+    }),
+    false,
+    "manual open wins over delayed bootstrap status",
   );
 });
 

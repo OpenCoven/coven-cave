@@ -1,8 +1,8 @@
 // @ts-nocheck
 // Chat-revamp phase D — app chrome contracts:
 //   1. 56px icon rail: brand mark on top, primary-surface icon buttons,
-//      Settings + account avatar at the bottom; quiet surfaces demoted to the
-//      expanded panel (still reachable via ⌘B / hover-peek / ⌘K).
+//      Dashboard + Settings + account avatar at the bottom; quiet surfaces
+//      remain reachable as icons.
 //   2. 52px-band command bar: "Search or ask <familiar>…" + ⌘K keycap,
 //      right cluster = compact running status + notification bell.
 //   3. Bottom status bar: session context chips (project/model/branch/cwd) +
@@ -11,12 +11,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
-const sidebarCss = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
+const sidebarCss = readFileSync(new URL("../styles/sidebar-minimal/activity-rail.css", import.meta.url), "utf8");
 const menuBar = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const statusBar = readFileSync(new URL("./status-bar.tsx", import.meta.url), "utf8");
 const statusBarCss = readFileSync(new URL("../styles/status-bar.css", import.meta.url), "utf8");
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const desktopChrome = readFileSync(new URL("../styles/globals/desktop-chrome.css", import.meta.url), "utf8");
 
 // ── 1. Icon rail ─────────────────────────────────────────────────────────────
 assert.match(
@@ -50,11 +51,17 @@ assert.match(
   /\.shell-nav--rail \.sidebar-folder-row,\n\.shell-nav--rail \.sidebar-action-row,\n\.shell-nav--rail \.sidebar-foot-btn,\n\.shell-nav--rail \.sidebar-foot-icon-btn \{[\s\S]{0,220}?width: 36px;\s*\n\s*height: 36px;/,
   "rail controls are 36px squares",
 );
-// Primary-only rail: quiet cluster + Dashboard demoted to the expanded panel.
-assert.match(
+// Dashboard stays reachable in the rail and follows the footer's DOM order, so
+// its icon sits directly above Settings in the rail's vertical footer stack.
+assert.doesNotMatch(
   sidebarCss,
-  /\.shell-nav--rail \.sidebar-folder-row--quiet,\s*\n\.shell-nav--rail a\.sidebar-foot-btn\[href="\/dashboard"\] \{\s*\n\s*display: none;/,
-  "quiet destinations and the Dashboard link don't earn rail slots (reachable when expanded / via ⌘K)",
+  /\.shell-nav--rail a\.sidebar-foot-btn\[href="\/dashboard"\] \{\s*\n\s*display: none;/,
+  "Dashboard remains visible above Settings in the rail footer",
+);
+assert.doesNotMatch(
+  sidebarCss,
+  /\.shell-nav--rail \.sidebar-folder-row--quiet[\s\S]{0,100}display: none;/,
+  "quiet sidebar destinations retain rail icons, including Memories, Marketplace, and GitHub",
 );
 // The avatar keeps a real action (Settings) and an accessible name.
 assert.match(
@@ -64,10 +71,10 @@ assert.match(
 );
 
 // ── 2. Top command bar ───────────────────────────────────────────────────────
-assert.match(
+assert.doesNotMatch(
   menuBar,
-  /const searchTarget = activeFamiliarName\?\.trim\(\) \|\| "Salem";/,
-  "the command bar addresses the active familiar, falling back to Salem",
+  /searchTarget|activeFamiliarName/,
+  "the fixed Cave search placeholder should not retain an unused familiar-name target",
 );
 assert.match(
   menuBar,
@@ -99,8 +106,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /<FamiliarMenuBar\s*\n\s*activeFamiliarId=\{activeId\}\s*\n\s*activeFamiliarName=\{active\?\.display_name \?\? null\}[\s\S]{0,400}?<RunningSessionsPopover\s*\n\s*sessions=\{runningSessions\}/,
-  "the menu bar receives the active familiar name and the running-processes popover",
+  /<FamiliarMenuBar\s*\n\s*activeFamiliarId=\{activeId\}[\s\S]{0,400}?<RunningSessionsPopover\s*\n\s*sessions=\{runningSessions\}/,
+  "the menu bar receives the active familiar id and the running-processes popover",
 );
 assert.match(
   workspace,
@@ -109,9 +116,14 @@ assert.match(
 );
 // The bell popover must not be clipped by the slim band.
 assert.match(
-  globals,
+  desktopChrome,
   /\.shell-top \{[^}]*overflow: visible;/,
   "shell-top no longer clips (the bell popover hangs below the band)",
+);
+assert.match(
+  desktopChrome,
+  /\.shell-top:has\(\.notification-bell__popover\) \{[^}]*z-index: 140;/,
+  "an open notification dropdown lifts its title-bar stacking context above shell content",
 );
 
 // ── 3. Bottom status bar ─────────────────────────────────────────────────────

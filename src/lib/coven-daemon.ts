@@ -5,6 +5,22 @@ import { homedir } from "node:os";
 import path from "node:path";
 import type { CaveConfig } from "./cave-config.ts";
 import { storedHubAccessToken } from "./hub-access-token.ts";
+import {
+  isSecureHubCredentialTransport,
+  normalizeHubUrl,
+} from "./hub-url.ts";
+
+export {
+  isSecureHubCredentialTransport,
+  normalizeHubUrl,
+} from "./hub-url.ts";
+import {
+  createDaemonDiagnosticContext,
+  DAEMON_DIAGNOSTIC_CORRELATION_HEADER,
+  diagnosticError,
+  recordDaemonDiagnosticEvent,
+  type DaemonDiagnosticContext,
+} from "./server/daemon-diagnostics.ts";
 
 type SocketPathResolverOptions = {
   platform?: NodeJS.Platform;
@@ -16,8 +32,6 @@ type SocketPathResolverOptions = {
 type ReadTextFile = (filePath: string, encoding: BufferEncoding) => string;
 
 const WINDOWS_PIPE_PREFIX = "\\\\.\\pipe\\";
-const DEFAULT_HUB_PROTOCOL = "http://";
-
 export type DaemonTarget =
   | { mode: "local"; label: "Local daemon"; socketPath: string }
   | { mode: "hub"; label: "Server hub"; url: string; accessToken?: string }
@@ -87,29 +101,16 @@ export function socketPath(): string {
   return resolveDaemonSocketPath();
 }
 
-export function normalizeHubUrl(rawUrl: string): string {
-  // Trim whitespace, then trailing slashes, without a backtracking-prone
-  // regex: `/\/+$/` is polynomial-ReDoS-prone on user-provided URLs
-  // (reachable via the daemon probe/config routes). Manual scans are linear
-  // and preserve the original trim-then-strip-slashes semantics.
-  const whitespaceTrimmed = rawUrl.trim();
-  let end = whitespaceTrimmed.length;
-  while (end > 0 && whitespaceTrimmed[end - 1] === "/") end -= 1;
-  const trimmed = whitespaceTrimmed.slice(0, end);
-  if (!trimmed) return "";
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `${DEFAULT_HUB_PROTOCOL}${trimmed}`;
-}
-
 function hubTargetFromUrl(rawUrl: string): Extract<DaemonTarget, { mode: "hub" }> | null {
   const normalized = normalizeHubUrl(rawUrl);
   if (!normalized) return null;
   const url = new URL(normalized);
   // An embedded token (a freshly pasted invite URL, or an env-provided URL)
   // wins; otherwise fall back to the out-of-config custody the config
-  // sanitizer maintains (cave-1v95): env override, then the encrypted vault.
+  // sanitizer maintains (cave-1v95): global env override, then encrypted
+  // custody bound to this exact origin.
   const embedded = url.searchParams.get("coven_access_token")?.trim();
-  const accessToken = embedded || storedHubAccessToken() || undefined;
+  const accessToken = embedded || storedHubAccessToken(url.toString()) || undefined;
   url.search = "";
   url.hash = "";
   return {
@@ -163,6 +164,11 @@ export type DaemonRequest = {
   path: string;
   body?: unknown;
   timeoutMs?: number;
+  maxResponseBytes?: number;
+  retryTransportFailure?: boolean;
+  diagnostics?: DaemonDiagnosticContext;
+  diagnosticOperation?: string;
+  diagnosticAttempt?: number;
 };
 
 export type DaemonResponse<T = unknown> = {
@@ -172,14 +178,11 @@ export type DaemonResponse<T = unknown> = {
   error?: string;
 };
 
-export async function callDaemon<T = unknown>({
-  method = "GET",
-  path: reqPath,
-  body,
-  timeoutMs = 4000,
-}: DaemonRequest): Promise<DaemonResponse<T>> {
+export async function callDaemon<T = unknown>(
+  request: DaemonRequest,
+): Promise<DaemonResponse<T>> {
   const target = await loadDaemonTarget();
-  return callDaemonTarget<T>(target, { method, path: reqPath, body, timeoutMs });
+  return callDaemonTarget<T>(target, request);
 }
 
 export async function callDaemonTarget<T = unknown>(
@@ -189,30 +192,78 @@ export async function callDaemonTarget<T = unknown>(
     path: reqPath,
     body,
     timeoutMs = 4000,
+    maxResponseBytes,
+    retryTransportFailure = true,
+    diagnostics = createDaemonDiagnosticContext(),
+    diagnosticOperation = "daemon-request",
+    diagnosticAttempt = 1,
   }: DaemonRequest,
 ): Promise<DaemonResponse<T>> {
   if (target.mode === "unconfigured-hub") {
-    return {
+    const result = {
       ok: false,
       status: 0,
       data: null,
       error: target.error,
     };
+    recordDaemonDiagnosticEvent(diagnostics, {
+      component: "daemon",
+      operation: diagnosticOperation,
+      phase: "target-resolution",
+      attempt: diagnosticAttempt,
+      outcome: "failed",
+      process: { pid: process.pid },
+      endpoint: { kind: "none", classification: "unconfigured-hub" },
+      error: diagnosticError(target.error, "configuration-error"),
+    });
+    return result;
   }
 
-  const first = await callDaemonTargetOnce<T>(target, { method, path: reqPath, body, timeoutMs });
+  const first = await callDaemonTargetOnce<T>(target, {
+    method,
+    path: reqPath,
+    body,
+    timeoutMs,
+    maxResponseBytes,
+    diagnostics,
+    diagnosticOperation,
+    diagnosticAttempt,
+  });
   // Retry transport-level failures (status 0: timeout/reset/refused) once for
-  // reads — a briefly-busy daemon must not surface a hard error for a GET
-  // (the /api/familiars 503 flake). Mutations never retry: a timed-out POST
-  // may have been applied. HTTP-level errors (a real status) never retry.
-  if (!first.ok && first.status === 0 && method === "GET") {
+  // reads unless the caller opts out — a briefly-busy daemon must not surface
+  // a hard error for a GET (the /api/familiars 503 flake). Mutations never
+  // retry: a timed-out POST may have been applied. HTTP-level errors (a real
+  // status) never retry.
+  if (!first.ok && first.status === 0 && method === "GET" && retryTransportFailure) {
     await new Promise((resolve) => setTimeout(resolve, GET_RETRY_DELAY_MS));
-    return callDaemonTargetOnce<T>(target, { method, path: reqPath, body, timeoutMs });
+    return callDaemonTargetOnce<T>(target, {
+      method,
+      path: reqPath,
+      body,
+      timeoutMs,
+      maxResponseBytes,
+      retryTransportFailure,
+      diagnostics,
+      diagnosticOperation,
+      diagnosticAttempt: diagnosticAttempt + 1,
+    });
   }
   return first;
 }
 
 const GET_RETRY_DELAY_MS = 250;
+
+function diagnosticResponseVersions(data: unknown): Record<string, string> {
+  if (!data || typeof data !== "object") return {};
+  const record = data as Record<string, unknown>;
+  return Object.fromEntries(
+    [
+      ["api", record.apiVersion],
+      ["daemon", record.covenVersion],
+      ["service", record.version],
+    ].filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
+}
 
 function callDaemonTargetOnce<T = unknown>(
   target: Exclude<DaemonTarget, { mode: "unconfigured-hub" }>,
@@ -221,14 +272,63 @@ function callDaemonTargetOnce<T = unknown>(
     path: reqPath,
     body,
     timeoutMs = 4000,
+    maxResponseBytes,
+    diagnostics = createDaemonDiagnosticContext(),
+    diagnosticOperation = "daemon-request",
+    diagnosticAttempt = 1,
   }: DaemonRequest,
 ): Promise<DaemonResponse<T>> {
+  if (
+    target.mode === "hub" &&
+    target.accessToken &&
+    !isSecureHubCredentialTransport(target.url)
+  ) {
+    return Promise.resolve({
+      ok: false,
+      status: 0,
+      data: null,
+      error: "refusing to send a hub access token without HTTPS or loopback secure transport",
+    });
+  }
   return new Promise((resolve) => {
+    const startedAt = Date.now();
     let settled = false;
-    const settle = (value: DaemonResponse<T>) => {
+    const settle = (value: DaemonResponse<T>, sourceError?: unknown) => {
       if (settled) return;
       settled = true;
       clearTimeout(deadline);
+      const errorClassification = value.ok
+        ? null
+        : value.status === 0
+          ? "transport-error"
+          : value.status === 401 || value.status === 403
+            ? "authorization-error"
+            : value.error === "malformed response"
+              ? "malformed-response"
+              : value.error === "daemon response exceeded size limit"
+                ? "response-size-limit"
+                : "http-error";
+      recordDaemonDiagnosticEvent(diagnostics, {
+        component: "daemon",
+        operation: diagnosticOperation,
+        phase: "response",
+        attempt: diagnosticAttempt,
+        durationMs: Date.now() - startedAt,
+        outcome: value.ok ? "succeeded" : "failed",
+        process: { pid: process.pid },
+        versions: diagnosticResponseVersions(value.data),
+        endpoint: {
+          kind: target.mode === "hub" ? "hub-http" : "local-socket",
+          classification: value.ok ? "online" : errorClassification ?? "unknown",
+          status: value.status,
+        },
+        error: errorClassification
+          ? diagnosticError(
+              sourceError ?? value.error ?? `daemon http ${value.status}`,
+              errorClassification,
+            )
+          : null,
+      });
       resolve(value);
     };
 
@@ -241,6 +341,7 @@ function callDaemonTargetOnce<T = unknown>(
     if (target.mode === "hub" && target.accessToken) {
       headers.authorization = `Bearer ${target.accessToken}`;
     }
+    headers[DAEMON_DIAGNOSTIC_CORRELATION_HEADER] = diagnostics.correlationId;
     const requestOptions =
       target.mode === "hub"
         ? (() => {
@@ -273,11 +374,32 @@ function callDaemonTargetOnce<T = unknown>(
       requestOptions,
       (res) => {
         const chunks: Buffer[] = [];
-        res.on("data", (c) => chunks.push(c));
+        let responseBytes = 0;
+        res.on("data", (chunk: Buffer | string) => {
+          const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          responseBytes += bytes.byteLength;
+          if (
+            maxResponseBytes !== undefined &&
+            responseBytes > maxResponseBytes
+          ) {
+            settle({
+              ok: false,
+              status: res.statusCode ?? 502,
+              data: null,
+              error: "daemon response exceeded size limit",
+            });
+            res.destroy();
+            return;
+          }
+          chunks.push(bytes);
+        });
         // A response that errors mid-body (daemon crash, connection reset)
         // never emits "end" — without this handler the promise would hang.
         res.on("error", (err) => {
-          settle({ ok: false, status: 0, data: null, error: normalizeDaemonError(err) });
+          settle(
+            { ok: false, status: 0, data: null, error: normalizeDaemonError(err) },
+            err,
+          );
         });
         res.on("end", () => {
           const raw = Buffer.concat(chunks).toString("utf8");
@@ -320,7 +442,7 @@ function callDaemonTargetOnce<T = unknown>(
         status: 0,
         data: null,
         error: normalizeDaemonError(err),
-      });
+      }, err);
     });
 
     if (payload) req.write(payload);

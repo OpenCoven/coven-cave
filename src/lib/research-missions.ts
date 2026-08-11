@@ -1,4 +1,5 @@
 import { parseCodexRrule, RRULE_DAY_LABEL } from "./codex-automation-form.ts";
+import { hasUnpairedUtf16Surrogate } from "./utf16.ts";
 
 export const RESEARCH_MISSION_MODES = [
   "brief",
@@ -91,6 +92,51 @@ export type ResearchArtifactRef = {
   updatedAt: string;
 };
 
+/** Mode → primary-deliverable kind. Single source of truth — the lifecycle
+ *  and runner previously duplicated this mapping privately. */
+export function researchArtifactKindForMode(mode: ResearchMissionMode): ResearchArtifactKind {
+  if (mode === "sweep") return "report";
+  if (mode === "paper") return "paper";
+  if (mode === "autoresearch") return "findings";
+  return "brief";
+}
+
+/** The always-produced workspace files every mission must track and save,
+ *  beyond the mode-specific primary deliverable. */
+export const STANDARD_RESEARCH_ARTIFACTS: ReadonlyArray<
+  Pick<ResearchArtifactRef, "key" | "kind" | "title" | "relativePath">
+> = [
+  { key: "findings", kind: "findings", title: "Findings", relativePath: "findings.md" },
+  { key: "source-ledger", kind: "source-ledger", title: "Source ledger", relativePath: "sources.json" },
+  { key: "research-log", kind: "research-log", title: "Research log", relativePath: "research-log.md" },
+];
+
+/** Additive backfill for missions created before the standard refs existed:
+ *  appends any standard ref whose key is absent. Never overwrites, never
+ *  reorders (the primary working copy must stay first), identity when
+ *  nothing is missing; stamped no fresher than the primary so draft-picking
+ *  sorts stay stable. */
+export function ensureStandardArtifactRefs(mission: ResearchMission): ResearchMission {
+  const missing = STANDARD_RESEARCH_ARTIFACTS.filter(
+    (standard) => !mission.artifacts.some((artifact) => artifact.key === standard.key),
+  );
+  if (missing.length === 0) return mission;
+  const iteration = mission.iterations.at(-1)?.number ?? 1;
+  const stampedAt = mission.artifacts[0]?.updatedAt ?? mission.createdAt;
+  return {
+    ...mission,
+    artifacts: [
+      ...mission.artifacts,
+      ...missing.map((standard) => ({
+        ...standard,
+        iteration,
+        state: "working" as const,
+        updatedAt: stampedAt,
+      })),
+    ],
+  };
+}
+
 export type ResearchSourceRef = {
   id: string;
   title: string;
@@ -180,19 +226,359 @@ export type ResearchMissionActionInput =
   }
   | { action: "attach-source"; source: ResearchSourceDraft }
   | { action: "update-source"; sourceId: string; patch: ResearchSourcePatch }
-  | { action: "reject-artifact"; artifactKey: string; reason: string };
+  | { action: "reject-artifact"; artifactKey: string; reason: string }
+  | { action: "publish-artifact"; artifactKey: string };
 
 export type CreateResearchMissionResult =
   | { ok: true; value: CreateResearchMissionInput }
   | { ok: false; error: string };
 
+const RESEARCH_MISSION_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const FAMILIAR_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
+const RESEARCH_MISSION_STATUSES: ReadonlySet<ResearchMissionStatus> = new Set([
+  "queued",
+  "planning",
+  "running",
+  "checkpoint",
+  "paused",
+  "completed",
+  "failed",
+  "cancelled",
+  "archived",
+]);
+const RESEARCH_ITERATION_STATUSES: ReadonlySet<ResearchIterationStatus> = new Set([
+  "queued",
+  "running",
+  "checkpoint",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+const RESEARCH_SOURCE_STATUSES: ReadonlySet<ResearchSourceRef["status"]> = new Set([
+  "candidate",
+  "used",
+  "conflicting",
+  "rejected",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function validTimestamp(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+function validResearchPromptText(value: unknown, maxLength: number): value is string {
+  return typeof value === "string"
+    && !value.includes("\0")
+    && !hasUnpairedUtf16Surrogate(value)
+    && value.length <= maxLength;
+}
+
+function optionalString(
+  value: Record<string, unknown>,
+  key: string,
+): string | undefined | null {
+  const candidate = value[key];
+  if (candidate === undefined) return undefined;
+  return typeof candidate === "string" ? candidate : null;
+}
+
+function optionalTimestamp(
+  value: Record<string, unknown>,
+  key: string,
+): string | undefined | null {
+  const candidate = value[key];
+  if (candidate === undefined) return undefined;
+  return validTimestamp(candidate) ? candidate : null;
+}
+
+function parseResearchIteration(value: unknown): ResearchIteration | null {
+  if (!isRecord(value)
+    || !Number.isSafeInteger(value.number)
+    || (value.number as number) < 1
+    || !RESEARCH_ITERATION_STATUSES.has(value.status as ResearchIterationStatus)) {
+    return null;
+  }
+  const flowRunId = optionalString(value, "flowRunId");
+  const sessionId = optionalString(value, "sessionId");
+  const automationRunId = optionalString(value, "automationRunId");
+  const startedAt = optionalTimestamp(value, "startedAt");
+  const finishedAt = optionalTimestamp(value, "finishedAt");
+  const summary = optionalString(value, "summary");
+  const decisionReason = optionalString(value, "decisionReason");
+  if (flowRunId === null
+    || sessionId === null
+    || automationRunId === null
+    || startedAt === null
+    || finishedAt === null
+    || summary === null
+    || decisionReason === null) {
+    return null;
+  }
+  if (value.costUsd !== undefined
+    && (typeof value.costUsd !== "number"
+      || !Number.isFinite(value.costUsd)
+      || value.costUsd < 0)) {
+    return null;
+  }
+  if (value.decision !== undefined
+    && !["continue", "checkpoint", "complete"].includes(String(value.decision))) {
+    return null;
+  }
+  let steps: ResearchIteration["steps"];
+  if (value.steps !== undefined) {
+    if (!Array.isArray(value.steps)) return null;
+    const parsedSteps = value.steps.map((step) => {
+      if (!isRecord(step)
+        || typeof step.id !== "string"
+        || typeof step.type !== "string"
+        || !["pending", "running", "succeeded", "failed", "skipped"].includes(
+          String(step.status),
+        )
+        || (step.detail !== undefined && typeof step.detail !== "string")) {
+        return null;
+      }
+      return {
+        id: step.id,
+        type: step.type,
+        status: step.status as NonNullable<ResearchIteration["steps"]>[number]["status"],
+        ...(typeof step.detail === "string" ? { detail: step.detail } : {}),
+      };
+    });
+    if (parsedSteps.some((step) => step === null)) return null;
+    steps = parsedSteps as NonNullable<ResearchIteration["steps"]>;
+  }
+  return {
+    number: value.number as number,
+    status: value.status as ResearchIterationStatus,
+    ...(flowRunId !== undefined ? { flowRunId } : {}),
+    ...(sessionId !== undefined ? { sessionId } : {}),
+    ...(automationRunId !== undefined ? { automationRunId } : {}),
+    ...(startedAt !== undefined ? { startedAt } : {}),
+    ...(finishedAt !== undefined ? { finishedAt } : {}),
+    ...(typeof value.costUsd === "number" ? { costUsd: value.costUsd } : {}),
+    ...(summary !== undefined ? { summary } : {}),
+    ...(value.decision !== undefined
+      ? { decision: value.decision as ResearchIteration["decision"] }
+      : {}),
+    ...(decisionReason !== undefined ? { decisionReason } : {}),
+    ...(steps !== undefined ? { steps } : {}),
+  };
+}
+
+function parseResearchArtifact(value: unknown): ResearchArtifactRef | null {
+  if (!isRecord(value)
+    || typeof value.key !== "string"
+    || !RESEARCH_ARTIFACT_KINDS.includes(value.kind as ResearchArtifactKind)
+    || typeof value.title !== "string"
+    || typeof value.relativePath !== "string"
+    || !Number.isSafeInteger(value.iteration)
+    || (value.iteration as number) < 1
+    || !["working", "published", "rejected"].includes(String(value.state))
+    || !validTimestamp(value.updatedAt)) {
+    return null;
+  }
+  const knowledgeId = optionalString(value, "knowledgeId");
+  const rejectionReason = optionalString(value, "rejectionReason");
+  if (knowledgeId === null || rejectionReason === null) return null;
+  return {
+    key: value.key,
+    kind: value.kind as ResearchArtifactKind,
+    title: value.title,
+    relativePath: value.relativePath,
+    ...(knowledgeId !== undefined ? { knowledgeId } : {}),
+    iteration: value.iteration as number,
+    state: value.state as ResearchArtifactRef["state"],
+    ...(rejectionReason !== undefined ? { rejectionReason } : {}),
+    updatedAt: value.updatedAt,
+  };
+}
+
+function parseResearchSource(value: unknown): ResearchSourceRef | null {
+  if (!isRecord(value)
+    || typeof value.id !== "string"
+    || typeof value.title !== "string"
+    || typeof value.sourceType !== "string"
+    || !RESEARCH_SOURCE_STATUSES.has(value.status as ResearchSourceRef["status"])) {
+    return null;
+  }
+  const url = optionalString(value, "url");
+  const localPath = optionalString(value, "localPath");
+  const publisher = optionalString(value, "publisher");
+  const publishedAt = optionalString(value, "publishedAt");
+  const claim = optionalString(value, "claim");
+  const note = optionalString(value, "note");
+  if (url === null
+    || localPath === null
+    || publisher === null
+    || publishedAt === null
+    || claim === null
+    || note === null) {
+    return null;
+  }
+  if (value.confidence !== undefined
+    && (typeof value.confidence !== "number"
+      || !Number.isFinite(value.confidence)
+      || value.confidence < 0
+      || value.confidence > 1)) {
+    return null;
+  }
+  return {
+    id: value.id,
+    title: value.title,
+    ...(url !== undefined ? { url } : {}),
+    ...(localPath !== undefined ? { localPath } : {}),
+    ...(publisher !== undefined ? { publisher } : {}),
+    ...(publishedAt !== undefined ? { publishedAt } : {}),
+    sourceType: value.sourceType,
+    ...(claim !== undefined ? { claim } : {}),
+    ...(note !== undefined ? { note } : {}),
+    ...(typeof value.confidence === "number" ? { confidence: value.confidence } : {}),
+    status: value.status as ResearchSourceRef["status"],
+  };
+}
+
+function parseResearchAutomation(value: unknown): ResearchAutomationLink | null {
+  if (!isRecord(value)
+    || typeof value.id !== "string"
+    || typeof value.rrule !== "string"
+    || !["ACTIVE", "PAUSED"].includes(String(value.status))
+    || typeof value.checkpointFingerprint !== "string") {
+    return null;
+  }
+  const checkpointToken = optionalString(value, "checkpointToken");
+  const lastRunId = optionalString(value, "lastRunId");
+  const lastRunAt = optionalTimestamp(value, "lastRunAt");
+  const stopReason = optionalString(value, "stopReason");
+  if (checkpointToken === null
+    || lastRunId === null
+    || lastRunAt === null
+    || stopReason === null) {
+    return null;
+  }
+  if (value.lastRunStatus !== undefined
+    && !["queued", "running", "succeeded", "failed"].includes(String(value.lastRunStatus))) {
+    return null;
+  }
+  return {
+    id: value.id,
+    rrule: value.rrule,
+    status: value.status as ResearchAutomationLink["status"],
+    checkpointFingerprint: value.checkpointFingerprint,
+    ...(checkpointToken !== undefined ? { checkpointToken } : {}),
+    ...(lastRunId !== undefined ? { lastRunId } : {}),
+    ...(value.lastRunStatus !== undefined
+      ? { lastRunStatus: value.lastRunStatus as ResearchAutomationLink["lastRunStatus"] }
+      : {}),
+    ...(lastRunAt !== undefined ? { lastRunAt } : {}),
+    ...(stopReason !== undefined ? { stopReason } : {}),
+  };
+}
+
+export function parseResearchMission(value: unknown): ResearchMission | null {
+  if (!isRecord(value)
+    || value.version !== 1
+    || typeof value.id !== "string"
+    || !RESEARCH_MISSION_ID_RE.test(value.id)
+    || typeof value.familiarId !== "string"
+    || !FAMILIAR_ID_RE.test(value.familiarId)
+    || !validResearchPromptText(value.title, RESEARCH_TITLE_MAX_LENGTH)
+    || !validResearchPromptText(value.intent, RESEARCH_INTENT_MAX_LENGTH)
+    || !RESEARCH_MISSION_MODES.includes(value.mode as ResearchMissionMode)
+    || !["auto", "user"].includes(String(value.modeSource))
+    || !validResearchPromptText(value.deliverable, RESEARCH_DELIVERABLE_MAX_LENGTH)
+    || !value.deliverable.trim()
+    || !Array.isArray(value.constraints)
+    || value.constraints.length > RESEARCH_CONSTRAINT_MAX_COUNT
+    || value.constraints.some((constraint) => (
+      !validResearchPromptText(constraint, RESEARCH_CONSTRAINT_MAX_LENGTH)
+    ))
+    || !isRecord(value.bounds)
+    || !RESEARCH_MISSION_STATUSES.has(value.status as ResearchMissionStatus)
+    || !validTimestamp(value.createdAt)
+    || !validTimestamp(value.updatedAt)
+    || !Array.isArray(value.iterations)
+    || !Array.isArray(value.artifacts)
+    || !Array.isArray(value.sources)) {
+    return null;
+  }
+  const bounds = normalizeResearchBounds(value.bounds as Partial<ResearchBounds>);
+  if (!bounds.ok) return null;
+  const direction = optionalString(value, "direction");
+  const audience = optionalString(value, "audience");
+  const projectRoot = optionalString(value, "projectRoot");
+  const startedAt = optionalTimestamp(value, "startedAt");
+  const finishedAt = optionalTimestamp(value, "finishedAt");
+  const automationId = optionalString(value, "automationId");
+  const lastError = optionalString(value, "lastError");
+  if (direction === null
+    || audience === null
+    || projectRoot === null
+    || startedAt === null
+    || finishedAt === null
+    || automationId === null
+    || lastError === null) {
+    return null;
+  }
+  if ((direction !== undefined && !validResearchPromptText(direction, RESEARCH_DIRECTION_MAX_LENGTH))
+    || (audience !== undefined && !validResearchPromptText(audience, RESEARCH_AUDIENCE_MAX_LENGTH))
+    || (projectRoot !== undefined && !validResearchPromptText(projectRoot, RESEARCH_PROJECT_ROOT_MAX_LENGTH))) {
+    return null;
+  }
+  const iterations = value.iterations.map(parseResearchIteration);
+  const artifacts = value.artifacts.map(parseResearchArtifact);
+  const sources = value.sources.map(parseResearchSource);
+  if (iterations.some((iteration) => iteration === null)
+    || artifacts.some((artifact) => artifact === null)
+    || sources.some((source) => source === null)) {
+    return null;
+  }
+  const automation = value.automation === undefined
+    ? undefined
+    : parseResearchAutomation(value.automation);
+  if (automation === null) return null;
+  return {
+    version: 1,
+    id: value.id,
+    familiarId: value.familiarId,
+    title: value.title,
+    intent: value.intent,
+    ...(direction !== undefined ? { direction } : {}),
+    mode: value.mode as ResearchMissionMode,
+    modeSource: value.modeSource as ResearchMission["modeSource"],
+    deliverable: value.deliverable,
+    ...(audience !== undefined ? { audience } : {}),
+    ...(projectRoot !== undefined ? { projectRoot } : {}),
+    constraints: value.constraints as string[],
+    bounds: bounds.value,
+    status: value.status as ResearchMissionStatus,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+    ...(startedAt !== undefined ? { startedAt } : {}),
+    ...(finishedAt !== undefined ? { finishedAt } : {}),
+    ...(automation !== undefined ? { automation } : {}),
+    ...(automationId !== undefined ? { automationId } : {}),
+    iterations: iterations as ResearchIteration[],
+    artifacts: artifacts as ResearchArtifactRef[],
+    sources: sources as ResearchSourceRef[],
+    ...(lastError !== undefined ? { lastError } : {}),
+  };
+}
 
 /** Minimum meaningful research intent — blocks accidental one-word launches
  *  that would still spend a real familiar session. Enforced by the create
  *  validator (server) and the desk composer (client). */
 export const RESEARCH_INTENT_MIN_LENGTH = 8;
 export const RESEARCH_INTENT_MAX_LENGTH = 10_000;
+export const RESEARCH_TITLE_MAX_LENGTH = 160;
+export const RESEARCH_DELIVERABLE_MAX_LENGTH = 160;
+export const RESEARCH_AUDIENCE_MAX_LENGTH = 500;
+export const RESEARCH_PROJECT_ROOT_MAX_LENGTH = 2_000;
+export const RESEARCH_DIRECTION_MAX_LENGTH = 2_000;
+export const RESEARCH_CONSTRAINT_MAX_COUNT = 20;
+export const RESEARCH_CONSTRAINT_MAX_LENGTH = 500;
 
 export function validateCreateResearchMissionInput(
   input: unknown,
@@ -205,7 +591,14 @@ export function validateCreateResearchMissionInput(
   if (!FAMILIAR_ID_RE.test(familiarId) || familiarId.includes("..")) {
     return { ok: false, error: "invalid familiar id" };
   }
-  const intent = typeof value.intent === "string" ? value.intent.trim() : "";
+  const rawIntent = typeof value.intent === "string" ? value.intent : "";
+  const intent = rawIntent.trim();
+  if (intent.includes("\0")) {
+    return { ok: false, error: "intent contains an invalid NUL character" };
+  }
+  if (hasUnpairedUtf16Surrogate(rawIntent)) {
+    return { ok: false, error: "intent contains invalid Unicode" };
+  }
   if (intent.length < RESEARCH_INTENT_MIN_LENGTH || intent.length > RESEARCH_INTENT_MAX_LENGTH) {
     return {
       ok: false,
@@ -218,9 +611,19 @@ export function validateCreateResearchMissionInput(
   if (value.modeSource !== "auto" && value.modeSource !== "user") {
     return { ok: false, error: "invalid mode source" };
   }
-  const deliverable = typeof value.deliverable === "string" ? value.deliverable.trim() : "";
-  if (!deliverable || deliverable.length > 160) {
-    return { ok: false, error: "deliverable required" };
+  const rawDeliverable = typeof value.deliverable === "string" ? value.deliverable : "";
+  const deliverable = rawDeliverable.trim();
+  if (deliverable.includes("\0")) {
+    return { ok: false, error: "deliverable contains an invalid NUL character" };
+  }
+  if (hasUnpairedUtf16Surrogate(rawDeliverable)) {
+    return { ok: false, error: "deliverable contains invalid Unicode" };
+  }
+  if (!deliverable || deliverable.length > RESEARCH_DELIVERABLE_MAX_LENGTH) {
+    return {
+      ok: false,
+      error: `deliverable must be between 1 and ${RESEARCH_DELIVERABLE_MAX_LENGTH} characters`,
+    };
   }
   const bounds = normalizeResearchBounds(
     value.bounds && typeof value.bounds === "object"
@@ -228,25 +631,59 @@ export function validateCreateResearchMissionInput(
       : {},
   );
   if (!bounds.ok) return { ok: false, error: bounds.reason };
-  const constraints = Array.isArray(value.constraints)
-    ? value.constraints
-        .filter((item): item is string => typeof item === "string")
-        .map((item) => item.trim())
-        .filter(Boolean)
-        .slice(0, 20)
-        .map((item) => item.slice(0, 500))
-    : [];
+  if (value.constraints !== undefined && !Array.isArray(value.constraints)) {
+    return { ok: false, error: "constraints must be an array of strings" };
+  }
+  const rawConstraints = value.constraints ?? [];
+  if (rawConstraints.length > RESEARCH_CONSTRAINT_MAX_COUNT) {
+    return {
+      ok: false,
+      error: `constraints must contain at most ${RESEARCH_CONSTRAINT_MAX_COUNT} items`,
+    };
+  }
+  if (rawConstraints.some((item) => typeof item !== "string")) {
+    return { ok: false, error: "constraints must be an array of strings" };
+  }
+  const constraints: string[] = [];
+  for (const rawConstraint of rawConstraints as string[]) {
+    if (rawConstraint.includes("\0")) {
+      return { ok: false, error: "constraint contains an invalid NUL character" };
+    }
+    if (hasUnpairedUtf16Surrogate(rawConstraint)) {
+      return { ok: false, error: "constraint contains invalid Unicode" };
+    }
+    const constraint = rawConstraint.trim();
+    if (constraint.length > RESEARCH_CONSTRAINT_MAX_LENGTH) {
+      return {
+        ok: false,
+        error: `each constraint must be at most ${RESEARCH_CONSTRAINT_MAX_LENGTH} characters`,
+      };
+    }
+    if (constraint) constraints.push(constraint);
+  }
   const optionalText = (field: "title" | "audience" | "projectRoot", max: number) => {
     const raw = value[field];
     if (raw === undefined || raw === null || raw === "") return undefined;
-    if (typeof raw !== "string" || raw.includes("\0")) return null;
-    return raw.trim().slice(0, max) || undefined;
+    if (
+      typeof raw !== "string"
+      || raw.includes("\0")
+      || hasUnpairedUtf16Surrogate(raw)
+    ) return null;
+    const trimmed = raw.trim();
+    if (trimmed.length > max) return null;
+    return trimmed || undefined;
   };
-  const title = optionalText("title", 160);
-  const audience = optionalText("audience", 500);
-  const projectRoot = optionalText("projectRoot", 2_000);
-  if (title === null || audience === null || projectRoot === null) {
-    return { ok: false, error: "invalid optional research field" };
+  const title = optionalText("title", RESEARCH_TITLE_MAX_LENGTH);
+  const audience = optionalText("audience", RESEARCH_AUDIENCE_MAX_LENGTH);
+  const projectRoot = optionalText("projectRoot", RESEARCH_PROJECT_ROOT_MAX_LENGTH);
+  if (title === null) {
+    return { ok: false, error: `title must be valid Unicode text without NUL and at most ${RESEARCH_TITLE_MAX_LENGTH} characters` };
+  }
+  if (audience === null) {
+    return { ok: false, error: `audience must be valid Unicode text without NUL and at most ${RESEARCH_AUDIENCE_MAX_LENGTH} characters` };
+  }
+  if (projectRoot === null) {
+    return { ok: false, error: `projectRoot must be valid Unicode text without NUL and at most ${RESEARCH_PROJECT_ROOT_MAX_LENGTH} characters` };
   }
   return {
     ok: true,
@@ -383,6 +820,62 @@ function settledPhaseOutcome(
  * - cancelled/archived mid-run — unfinished phases read skipped.
  * Live missions pass raw step statuses through unchanged.
  */
+/**
+ * One short meta line per display phase, for the Desk stepper.
+ *
+ * The handoff prints a second line under each phase node ("12/12 src",
+ * "your turn") so the stepper reports progress rather than only position.
+ * Every string here is read off the mission — counts, statuses, the
+ * checkpoint state — so a phase with nothing to report says "—" instead of
+ * inventing a number.
+ */
+export function researchPhaseMeta(
+  mission: Pick<ResearchMission, "status" | "bounds" | "sources" | "artifacts" | "iterations">,
+  phaseIds: readonly string[],
+): string[] {
+  const statuses = researchPhaseStatuses(mission, phaseIds);
+  const counts = researchSourceStatusCounts(mission.sources);
+  const artifacts = mission.artifacts.filter((artifact) => artifact.state !== "rejected").length;
+  return phaseIds.map((phase, index) => {
+    const status = statuses[index];
+    if (phase === "scope") {
+      return status === "succeeded" ? "bounds set" : status === "running" ? "framing…" : "—";
+    }
+    if (phase === "gather") {
+      if (status === "pending") return "—";
+      // A zero target is a real (if legacy) bound. "3/0 src" reads as a broken
+      // divide, so report the count alone when there is nothing to divide by.
+      return mission.bounds.sourceTarget > 0
+        ? `${mission.sources.length}/${mission.bounds.sourceTarget} src`
+        : `${mission.sources.length} src`;
+    }
+    if (phase === "challenge") {
+      if (status === "failed") return "stopped here";
+      if (counts.conflicting > 0) {
+        return `${counts.conflicting} conflicting`;
+      }
+      return status === "succeeded" ? "verified" : status === "running" ? "testing…" : "—";
+    }
+    if (phase === "synthesize") {
+      if (status === "pending") return "—";
+      return artifacts > 0 ? `${artifacts} artifact${artifacts === 1 ? "" : "s"}` : "drafting…";
+    }
+    if (phase === "control") {
+      if (mission.status === "checkpoint") return "your turn";
+      return status === "succeeded" ? "approved" : "—";
+    }
+    if (phase === "publish") {
+      const published = mission.artifacts.filter((artifact) => artifact.state === "published").length;
+      if (published > 0) return `${published} published`;
+      // A succeeded publish phase with nothing published is a real state (the
+      // run finished without promoting an artifact). "shipped" would claim
+      // something went out; say what actually happened instead.
+      return status === "succeeded" ? "none published" : "gated";
+    }
+    return "—";
+  });
+}
+
 export function researchPhaseStatuses(
   mission: Pick<ResearchMission, "status" | "iterations">,
   phaseIds: readonly string[],
@@ -514,7 +1007,21 @@ export type ResearchBoundReading = {
   badge?: "over" | "met";
   /** Plain-prose gate-vs-target semantics for tooltips and screen readers. */
   detail: string;
+  /**
+   * Fraction of the bound consumed, clamped to 0–1, for the reading's meter
+   * bar. Present only where a denominator genuinely exists: a spend with no
+   * cap and the checkpoint cadence have nothing to be a fraction *of*, so they
+   * carry no bar rather than a bar that means nothing (the value text still
+   * says everything). Past a stop gate it pins at 1 while `tone` says "over".
+   */
+  progress?: number;
 };
+
+/** Clamp a ratio into 0–1; a zero or absent denominator yields no bar. */
+function boundProgress(used: number, total: number): number | undefined {
+  if (!Number.isFinite(total) || total <= 0) return undefined;
+  return Math.max(0, Math.min(1, used / total));
+}
 
 /**
  * Bound-meter rows with honest over/met states.
@@ -555,6 +1062,9 @@ export function researchBoundReadings(
       value: `$${reportedCost.toFixed(2)}${bounds.maxSpendUsd === undefined ? " reported" : `/$${bounds.maxSpendUsd.toFixed(2)}`}`,
       tone: spendOver ? "over" : "neutral",
       ...(spendOver ? { badge: "over" as const } : {}),
+      ...(bounds.maxSpendUsd === undefined
+        ? {}
+        : { progress: boundProgress(reportedCost, bounds.maxSpendUsd) }),
       detail: bounds.maxSpendUsd === undefined
         ? "Reported spend so far; no spend cap is set."
         : spendOver
@@ -575,6 +1085,7 @@ export function researchBoundReadings(
       value: `${elapsedMinutes}/${bounds.wallClockMinutes} min`,
       tone: timeOver ? "over" : "neutral",
       ...(timeOver ? { badge: "over" as const } : {}),
+      progress: boundProgress(elapsedMinutes, bounds.wallClockMinutes),
       detail: timeOver
         ? "Past the wall-clock budget — it is a stop gate checked between iterations, so a running iteration may finish over it, but no further iterations will start."
         : "Wall-clock budget is a stop gate checked between iterations.",
@@ -585,6 +1096,7 @@ export function researchBoundReadings(
       value: `${mission.sources.length}/${bounds.sourceTarget}`,
       tone: sourcesMet ? "met" : "neutral",
       ...(sourcesMet ? { badge: "met" as const } : {}),
+      progress: boundProgress(mission.sources.length, bounds.sourceTarget),
       detail: sourcesMet
         ? "Source target reached — it is a goal, not a cap."
         : "Source target is a goal, not a cap.",

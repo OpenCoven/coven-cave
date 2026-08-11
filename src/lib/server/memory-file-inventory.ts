@@ -1,6 +1,11 @@
 import { open, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import {
+  hasUnclosedMarkdownComment,
+  stripCompleteMarkdownComments,
+} from "../document-reader.ts";
+import { parseMdDocument } from "../md-frontmatter.ts";
 import { parseMemorySourceContext } from "@/lib/memory-source-context";
 import {
   classifyMemoryFilePath,
@@ -50,25 +55,39 @@ async function readHead(filePath: string): Promise<string | undefined> {
   }
 }
 
+function hasAmbiguousLeadingFrontmatter(head: string): boolean {
+  const open = head.match(/^---\r?\n/);
+  if (!open) return false;
+  return !/\r?\n---(?:\r?\n|$)/.test(head.slice(open[0].length));
+}
+
 /** Body excerpt from a file head: frontmatter stripped, first 200 chars. */
 export function readExcerpt(head: string): string | undefined {
-  const body = head.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
-  return body.slice(0, 200) || undefined;
+  if (hasAmbiguousLeadingFrontmatter(head)) return undefined;
+  const body = parseMdDocument(head).body;
+  if (hasUnclosedMarkdownComment(body)) return undefined;
+  const cleaned = stripCompleteMarkdownComments(body).trim();
+  return cleaned.slice(0, 200) || undefined;
 }
 
 // ── Entry cache ───────────────────────────────────────────────────────────────
 // Rebuilding an entry is the expensive part (head read + classification), so
-// completed entries are cached keyed by (size, mtimeMs) and reused while the
-// file is unchanged. Repeat scans then cost one readdir walk + one stat per
-// file. Entries for files that vanished are evicted after each scan.
+// completed entries remain path-keyed and are reused while the file is
+// unchanged for the same explicit home. Repeat scans then cost one readdir walk
+// + one stat per file. Entries for files that vanished are evicted after each
+// scan of their exact owner home.
 
-const entryCache = new Map<string, { size: number; mtimeMs: number; entry: MemoryEntry }>();
+const entryCache = new Map<
+  string,
+  { ownerHome: string; size: number; mtimeMs: number; entry: MemoryEntry }
+>();
 
 type BuildOverrides = { relPath?: string; familiarIdFallback?: string };
 
 async function buildEntry(
   fullPath: string,
   baseDir: string,
+  home: string,
   overrides: BuildOverrides = {},
 ): Promise<MemoryEntry | null> {
   let s;
@@ -79,12 +98,18 @@ async function buildEntry(
   }
   if (!s.isFile()) return null;
 
+  const ownerHome = path.resolve(/* turbopackIgnore: true */ home);
   const cached = entryCache.get(fullPath);
-  if (cached && cached.mtimeMs === s.mtimeMs && cached.size === s.size) {
+  if (
+    cached &&
+    cached.ownerHome === ownerHome &&
+    cached.mtimeMs === s.mtimeMs &&
+    cached.size === s.size
+  ) {
     return cached.entry;
   }
 
-  const classification = classifyMemoryFilePath(fullPath);
+  const classification = classifyMemoryFilePath(fullPath, ownerHome);
   if (!classification) return null;
 
   const head = await readHead(fullPath);
@@ -110,7 +135,7 @@ async function buildEntry(
     ...(excerpt ? { excerpt } : {}),
     ...(familiarId ? { familiarId } : {}),
   };
-  entryCache.set(fullPath, { size: s.size, mtimeMs: s.mtimeMs, entry });
+  entryCache.set(fullPath, { ownerHome, size: s.size, mtimeMs: s.mtimeMs, entry });
   return entry;
 }
 
@@ -138,7 +163,7 @@ async function walk(dir: string, acc: Candidate[], baseDir: string, overrides?: 
 
 const BUILD_CONCURRENCY = 64;
 
-async function buildEntries(candidates: Candidate[]): Promise<MemoryEntry[]> {
+async function buildEntries(candidates: Candidate[], home: string): Promise<MemoryEntry[]> {
   const results: (MemoryEntry | null)[] = new Array(candidates.length).fill(null);
   let next = 0;
   const worker = async () => {
@@ -146,15 +171,15 @@ async function buildEntries(candidates: Candidate[]): Promise<MemoryEntry[]> {
       const index = next;
       next += 1;
       const c = candidates[index];
-      results[index] = await buildEntry(c.fullPath, c.baseDir, c.overrides);
+      results[index] = await buildEntry(c.fullPath, c.baseDir, home, c.overrides);
     }
   };
   await Promise.all(Array.from({ length: Math.min(BUILD_CONCURRENCY, candidates.length) }, worker));
   return results.filter((e): e is MemoryEntry => e !== null);
 }
 
-async function collectFamiliarWorkspaces(acc: Candidate[]) {
-  const workspacesDir = path.join(homedir(), ".openclaw", "workspace");
+async function collectFamiliarWorkspaces(acc: Candidate[], home: string) {
+  const workspacesDir = path.join(home, ".openclaw", "workspace");
   let items;
   try {
     items = await readdir(workspacesDir, { withFileTypes: true });
@@ -175,8 +200,8 @@ async function collectFamiliarWorkspaces(acc: Candidate[]) {
   }
 }
 
-async function collectCovenFamiliarWorkspaces(acc: Candidate[]) {
-  const familiarsDir = path.join(homedir(), ".coven", "workspaces", "familiars");
+async function collectCovenFamiliarWorkspaces(acc: Candidate[], home: string) {
+  const familiarsDir = path.join(home, ".coven", "workspaces", "familiars");
   let items;
   try {
     items = await readdir(familiarsDir, { withFileTypes: true });
@@ -190,10 +215,10 @@ async function collectCovenFamiliarWorkspaces(acc: Candidate[]) {
   }
 }
 
-async function scanMemoryFileEntries(): Promise<MemoryEntry[]> {
+async function scanMemoryFileEntries(home: string): Promise<MemoryEntry[]> {
   const candidates: Candidate[] = [];
 
-  for (const source of memoryFileSourcesForHome()) {
+  for (const source of memoryFileSourcesForHome(home)) {
     try {
       const s = await stat(/* turbopackIgnore: true */ source.rootPath);
       if (s.isDirectory()) {
@@ -210,30 +235,43 @@ async function scanMemoryFileEntries(): Promise<MemoryEntry[]> {
     }
   }
 
-  await collectFamiliarWorkspaces(candidates);
-  await collectCovenFamiliarWorkspaces(candidates);
+  await collectFamiliarWorkspaces(candidates, home);
+  await collectCovenFamiliarWorkspaces(candidates, home);
 
-  const entries = await buildEntries(candidates);
+  const entries = await buildEntries(candidates, home);
 
-  // Evict cache entries for files that no longer exist on disk.
+  // Evict entries owned by this exact explicit home only. Lexical containment
+  // is insufficient because one explicit test/runtime home may be nested under
+  // another without belonging to the outer scan.
+  const resolvedHome = path.resolve(/* turbopackIgnore: true */ home);
   const seen = new Set(candidates.map((c) => c.fullPath));
-  for (const key of entryCache.keys()) {
-    if (!seen.has(key)) entryCache.delete(key);
+  for (const [key, cached] of entryCache) {
+    if (cached.ownerHome === resolvedHome && !seen.has(key)) {
+      entryCache.delete(key);
+    }
   }
 
   entries.sort((a, b) => (a.modified < b.modified ? 1 : -1));
   return entries;
 }
 
-// Concurrent callers (the Grimoire navigator, memory view, and chat scoping
-// can all ask at once) share a single in-flight scan instead of stampeding
-// the filesystem.
-let inFlightScan: Promise<MemoryEntry[]> | null = null;
+// Concurrent callers (the Grimoire navigator, memory view, and chat scoping)
+// share an in-flight scan only when they target the same home.
+const inFlightScans = new Map<string, Promise<MemoryEntry[]>>();
 
-export async function listMemoryFileEntries(): Promise<MemoryEntry[]> {
-  if (inFlightScan) return inFlightScan;
-  inFlightScan = scanMemoryFileEntries().finally(() => {
-    inFlightScan = null;
+export async function listMemoryFileEntries(
+  home = homedir(),
+): Promise<MemoryEntry[]> {
+  const homeKey = path.resolve(/* turbopackIgnore: true */ home);
+  const existing = inFlightScans.get(homeKey);
+  if (existing) return existing;
+
+  const scan = scanMemoryFileEntries(homeKey);
+  const tracked = scan.finally(() => {
+    if (inFlightScans.get(homeKey) === tracked) {
+      inFlightScans.delete(homeKey);
+    }
   });
-  return inFlightScan;
+  inFlightScans.set(homeKey, tracked);
+  return tracked;
 }

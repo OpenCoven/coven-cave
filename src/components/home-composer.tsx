@@ -12,16 +12,18 @@ import "@/styles/home-composer.css";
 
 import {
   type KeyboardEvent,
-  type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import type { Familiar, SessionRow } from "@/lib/types";
+import type { SessionRow } from "@/lib/types";
+import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { InitialCommandControls } from "@/lib/command-controls";
 import { Icon } from "@/lib/icon";
-import { resolveModelArg } from "@/lib/slash-model";
+import { isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
   resolveSkillInvocation,
@@ -43,11 +45,10 @@ import { useComposerHistory } from "@/lib/use-composer-history";
 import { useDictation } from "@/lib/voice/use-dictation";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
-import { canonicalize } from "@/lib/slash-commands";
+import { canonicalize, inlineSlashCommandPrompt } from "@/lib/slash-commands";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
-import type { InboxItem } from "@/lib/cave-inbox";
 import { useProjects } from "@/lib/use-projects";
-import { NO_PROJECT_ID } from "@/lib/chat-projects";
+import { NO_PROJECT_ID, recentChatProjectRoot } from "@/lib/chat-projects";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
 import { ComposerPlusMenu } from "@/components/composer-plus-menu";
 import { useAddProjectFlow } from "@/components/project-picker";
@@ -55,9 +56,10 @@ import { sortProjectsAlphabetically } from "@/lib/cave-projects-types";
 import { ComposerContextChips } from "@/components/composer-context-pill";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
-import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { canonicalHarnessId, COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
+import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
 import { HomeFromTaskRow, type HomeTaskOrigin } from "@/components/home/home-from-task";
 import { HomeContinue } from "@/components/home/home-continue";
@@ -67,27 +69,33 @@ import {
   attachmentIcon,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
-import {
-  COMMAND_CONTROL_DEFAULTS,
-  COMMAND_RESPONSE_SPEED_OPTIONS,
-  COMMAND_THINKING_OPTIONS,
-  type CommandResponseSpeed,
-  type CommandThinkingEffort,
-} from "@/lib/command-controls";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 import { greetingForHour } from "@/lib/home-greeting";
-import { DESTINATIONS, PLACEHOLDERS, type Destination } from "@/components/home/home-destinations";
-import { resolveHomeComposerFamiliar, resolveHomeComposerProject } from "@/lib/home-composer-context";
+import { DESTINATIONS, placeholderFor, type Destination } from "@/components/home/home-destinations";
+import {
+  homeComposerProjectLaunchMessage,
+  isHomeComposerProjectLaunchReady,
+  projectsForHomeComposerScope,
+  resolveHomeComposerFamiliar,
+  resolveHomeComposerProject,
+  shouldClearHomeComposerProjectSelection,
+} from "@/lib/home-composer-context";
 import { publishBoardChanged } from "@/lib/board-cache-events";
+import {
+  cancelSystemBrowserUrlWindow,
+  openSystemBrowserUrl,
+  reserveSystemBrowserUrlWindow,
+} from "@/lib/open-external";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type { Destination } from "@/components/home/home-destinations";
 
 type Props = {
-  familiars: Familiar[];
+  familiars: ResolvedFamiliar[];
   activeFamiliarId: string | null;
+  onSetActiveFamiliar: (familiarId: string) => void;
   sessions: SessionRow[];
   /** Open a new chat that sends `prompt` through ChatView's streaming path.
    *  Home never talks to the chat API itself — a fire-and-cancel send here
@@ -97,7 +105,7 @@ type Props = {
     familiarId: string,
     projectRoot: string | null,
     opts?: {
-      initialControls?: { thinkingEffort: CommandThinkingEffort; responseSpeed: CommandResponseSpeed; runtimeHost?: string };
+      initialControls?: InitialCommandControls;
       /** Files staged in the home composer; the opened chat auto-sends with them. */
       initialAttachments?: ChatAttachment[];
     },
@@ -106,16 +114,9 @@ type Props = {
   onToast: (msg: string) => void;
   /** Submit a slash command. Mirrors the chat composer's escape hatch so
    *  `/inbox`, `/board`, `/remind …` etc. work from the home screen too. */
-  onSlash?: (command: string, args: string) => void;
+  onSlash?: (command: string, args: string) => boolean;
   /** Resume a recent chat from the Continue column's session cards. */
   onOpenSession?: (sessionId: string, familiarId: string | null) => void;
-  /** "Needs you" attention tier (fired + response-needed) — the SAME
-   *  groupInboxFeed slice the Schedules nav badge counts (cave-925w). */
-  needsYou: InboxItem[];
-  /** Open one needs-you item's target — same handler the bell popover uses. */
-  onOpenInboxItem: (item: InboxItem) => void;
-  /** Jump to the Schedules surface for the full feed. */
-  onOpenSchedules: () => void;
   /** Voice new-chat: start a live voice call in a brand-new chat with this
    *  familiar. The workspace pre-creates the session and routes to chat.
    *  May return a promise so the button can gate itself against rapid
@@ -136,18 +137,26 @@ const HOME_COMPOSER_MAX_HEIGHT = 332;
 export function HomeComposer({
   familiars,
   activeFamiliarId,
+  onSetActiveFamiliar,
   sessions,
   onStartChat,
   onNavigateToBoard,
   onToast,
   onSlash,
   onOpenSession,
-  needsYou,
-  onOpenInboxItem,
-  onOpenSchedules,
   onStartVoiceCall,
 }: Props) {
-  const [text, setText] = useState(() => readComposerDraft(HOME_DRAFT_KEY));
+  // Hydrate from the same empty draft SSR emitted, then restore local storage
+  // before paint so textarea and Send-button state update in one React commit.
+  const [text, setText] = useState("");
+  const [composerCaret, setComposerCaret] = useState(0);
+  const [draftRestored, setDraftRestored] = useState(false);
+  useLayoutEffect(() => {
+    const restored = readComposerDraft(HOME_DRAFT_KEY);
+    setText(restored);
+    setComposerCaret(restored.length);
+    setDraftRestored(true);
+  }, []);
   const [destination, setDestination] = useState<Destination>("chat");
   const [sending, setSending] = useState(false);
   // In-flight guard for the voice-call mint: onStartVoiceCall is an async
@@ -186,6 +195,16 @@ export function HomeComposer({
   }, []);
   const { announce } = useAnnouncer();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const completeComposerText = useCallback((nextText: string, nextCaret: number) => {
+    setText(nextText);
+    setComposerCaret(nextCaret);
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(nextCaret, nextCaret);
+    });
+  }, []);
   // Attachments staged in the composer (cap 10, mirroring the chat composer);
   // handed to the opened chat on submit. Shared hook — home adds the limit
   // toast + SR announce and defers refocus a tick (the chat composer is silent).
@@ -210,41 +229,103 @@ export function HomeComposer({
   // confusing state. Archived familiars stay reachable from Familiar Studio
   // Lifecycle (unarchive there) but should never appear in fresh-session
   // surfaces.
-  const { visibleFamiliars, selectedFamiliarId, selectedFamiliar } = useMemo(
+  const { selectedFamiliarId, selectedFamiliar } = useMemo(
     () => resolveHomeComposerFamiliar(familiars, activeFamiliarId, archivedFamiliars),
     [familiars, activeFamiliarId, archivedFamiliars],
   );
-  const { modelState, selectModel: handleSelectModel, selectRuntime: handleSelectRuntime } =
+  const {
+    modelState,
+    pendingModelOverride,
+    waitForRuntimeWrite,
+    selectModel: handleSelectModel,
+    selectRuntime: handleSelectRuntime,
+  } =
     useHomeModelState(selectedFamiliarId);
-  const { projects, createProject } = useProjects({ familiarId: selectedFamiliarId || null });
+  // Keep the operator registry query alive even before a familiar exists. The
+  // home add-project action can register a folder before familiar setup, and
+  // hiding the unscoped result makes a successful creation look inert. Once a
+  // familiar is selected, the same hook switches to its access-scoped view.
+  const {
+    projects: scopedProjects,
+    loading: projectsLoading,
+    error: projectsError,
+    loadedSuccessfully: projectsLoadedSuccessfully,
+    createProject,
+    createProjectOrThrow,
+  } = useProjects({
+    enabled: true,
+    familiarId: selectedFamiliarId || null,
+  });
+  const projects = useMemo(
+    () => projectsForHomeComposerScope(scopedProjects, selectedFamiliarId),
+    [scopedProjects, selectedFamiliarId],
+  );
   const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [thinkingEffort, setThinkingEffort] = useState<CommandThinkingEffort>(
-    COMMAND_CONTROL_DEFAULTS.thinkingEffort,
-  );
-  const [responseSpeed, setResponseSpeed] = useState<CommandResponseSpeed>(
-    COMMAND_CONTROL_DEFAULTS.responseSpeed,
-  );
   // Host chip: where the opened chat should execute. Per-composer state, not a
   // sticky pref — mirrors the chat composer's Host chip (#2337/#2340).
   const [runtimeHost, setRuntimeHost] = useState<string | null>(null);
-  const selectedProject = useMemo(
-    () => resolveHomeComposerProject(projects, selectedProjectId, NO_PROJECT_ID),
-    [projects, selectedProjectId],
+  // Carry an explicit Home model intent through the new-chat handoff. This is
+  // needed even when the familiar-default PATCH is still in flight: Home
+  // unmounts as soon as ChatView takes ownership of the first send.
+  const initialModelOverride =
+    pendingModelOverride !== undefined
+      ? pendingModelOverride
+      : modelState?.source === "runtime-default"
+        ? ""
+        : modelState?.source === "familiar-default" &&
+            modelState.effectiveModel &&
+            modelState.effectiveModel !== "unknown"
+          ? modelState.effectiveModel
+          : undefined;
+  const initialChatControls: InitialCommandControls | undefined =
+    runtimeHost || initialModelOverride !== undefined
+      ? {
+          ...(runtimeHost ? { runtimeHost } : {}),
+          ...(initialModelOverride !== undefined
+            ? { modelOverride: initialModelOverride, modelOverrideScope: "next-message" as const }
+            : {}),
+        }
+      : undefined;
+  // The project the most recent chat ran in: the default for the next chat
+  // when the user hasn't explicitly picked one (kept live as sessions load).
+  const recentProjectRoot = useMemo(
+    () => recentChatProjectRoot(sessions, projects),
+    [sessions, projects],
   );
+  const selectedProject = useMemo(
+    () => resolveHomeComposerProject(projects, selectedProjectId, NO_PROJECT_ID, recentProjectRoot),
+    [projects, selectedProjectId, recentProjectRoot],
+  );
+  const selectedProjectRoot = selectedProject?.root ?? "";
+  const projectLaunchReady = isHomeComposerProjectLaunchReady({
+    familiarId: selectedFamiliarId,
+    projectsLoadedSuccessfully,
+    projectsLoading,
+    projectsError,
+    selectedProject,
+  });
+  const projectLaunchMessage = homeComposerProjectLaunchMessage({
+    familiarId: selectedFamiliarId,
+    projectsLoading,
+    projectsError,
+    projectsLoadedSuccessfully,
+    projectCount: projects.length,
+  });
+  const displayProjectId = selectedProject?.id ?? null;
   const selectedRuntime = canonicalHarnessId(
     modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude",
   );
-  const runtimeModelOptions = useRuntimeModelOptions(selectedRuntime, selectedFamiliarId);
-  const selectedModelId =
-    selectedRuntime === "opencode"
-      ? modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
-        ? modelState.effectiveModel
-        : ""
-      : runtimeModelOptions.length === 0
-        ? ""
-        : runtimeModelOptions.some((model) => model.id === modelState?.effectiveModel)
-          ? modelState!.effectiveModel
-          : runtimeModelOptions[0]?.id ?? "";
+  const runtimeModelInventory = useRuntimeModelInventory(selectedRuntime, selectedFamiliarId);
+  const runtimeModelOptions = runtimeModelInventory.models;
+  const runtimeOwnsDefault = runtimeModelInventory.defaultOwner === "runtime";
+  const effectiveModel =
+    modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+      ? modelState.effectiveModel
+      : "";
+  // Keep a safe custom or stale-but-persisted model visible even when live
+  // discovery has not returned it. Hiding it as the empty default would make
+  // the picker look cleared while the next send still uses that model.
+  const selectedModelId = effectiveModel;
   const keys = useKeySymbols();
   const runtimeSectionOptions = useMemo(
     () =>
@@ -255,22 +336,29 @@ export function HomeComposer({
     [],
   );
 
+  // An unset pick stays unset — the live default (most recent chat's project,
+  // then the first project) resolves in resolveHomeComposerProject so it can
+  // upgrade as sessions land. Only clear a stale pick whose project vanished.
   useEffect(() => {
-    if (selectedProjectId === NO_PROJECT_ID) return; // an explicit No-project choice is valid
-    if (selectedProjectId && projects.some((project) => project.id === selectedProjectId)) return;
-    setSelectedProjectId(projects[0]?.id ?? "");
-  }, [projects, selectedProjectId]);
+    if (!shouldClearHomeComposerProjectSelection(projects, selectedProjectId, projectsLoadedSuccessfully)) return;
+    setSelectedProjectId("");
+  }, [projects, projectsLoadedSuccessfully, selectedProjectId]);
 
   // "Add to project ›" flyout data + the "Start a new project" flow (same
   // directory-picker flow the context pill uses, so both entry points create
   // projects identically).
   const plusMenuProjects = useMemo(
-    () => sortProjectsAlphabetically(projects).map((p) => ({ id: p.id, name: p.name })),
+    () => sortProjectsAlphabetically(projects).map((p) => ({
+      id: p.id,
+      name: p.name,
+      access: p.access,
+    })),
     [projects],
   );
   const plusAddProject = useAddProjectFlow({
     familiarId: selectedFamiliarId || null,
     createProject,
+    createProjectOrThrow,
     projects,
     onAdded: setSelectedProjectId,
   });
@@ -279,8 +367,9 @@ export function HomeComposer({
   // /prompt pickers) — shared hook (use-inline-slash-menus). What a pick DOES
   // stays home's: model picks toast + clear, skill picks start a new chat
   // (invokeSkill), prompts insert-for-editing, and Enter on a command (or
-  // nothing highlighted) falls through to handleSubmit — home dispatches the
-  // typed text, so slash commands also land in the ↑ history.
+  // nothing highlighted) falls through to handleSubmit. Highlighted commands
+  // dispatch the active invocation directly so surrounding prose is not sent
+  // to the harness.
   const modelHarness = canonicalHarnessId(
     modelState?.harness ?? selectedFamiliar?.harness ?? "claude",
   );
@@ -299,16 +388,21 @@ export function HomeComposer({
     slashIdx,
     setSlashIdx,
     slashListboxId,
+    completeCommand,
     handleKeyDown: handleMenuKey,
   } = useInlineSlashMenus({
     text,
     setText,
+    caret: composerCaret,
+    onCompleteText: completeComposerText,
     modelHarness,
-    modelOptionsOverride: modelHarness === "opencode" ? runtimeModelOptions : undefined,
+    modelOptionsOverride: runtimeModelOptions,
     onPickModel: (id) => { handleSelectModel(id); onToast(`Model set to ${id}.`); setText(""); },
     onPickSkill: (s) => invokeSkill(s),
     onInsertPrompt: (p) => insertPromptTemplate(p),
-    onRunCommand: () => { void handleSubmit(); },
+    onRunCommand: (cmd) => {
+      void handleSubmit(inlineSlashCommandPrompt(text, composerCaret, cmd.name));
+    },
     onNoMatchEnter: () => { void handleSubmit(); },
   });
 
@@ -318,7 +412,7 @@ export function HomeComposer({
   // (or a hint-less skill) starts the chat. Mirrors chat-view's
   // invokeSkillOption.
   const invokeSkill = useCallback(
-    (skill: SkillOption, args = "") => {
+    async (skill: SkillOption, args = "") => {
       const filled = `/skill ${skill.id}`;
       if (skill.argumentHint && !args && text.trim().toLowerCase() !== filled.toLowerCase()) {
         setText(`${filled} `);
@@ -329,12 +423,31 @@ export function HomeComposer({
         onToast("No familiar selected — add one in Settings.");
         return;
       }
+      if (!projectLaunchReady) {
+        onToast(projectLaunchMessage);
+        return;
+      }
+      if (!(await waitForRuntimeWrite())) {
+        onToast("Runtime selection could not be saved; chat was not started.");
+        return;
+      }
       setText("");
-      onStartChat(buildSkillPrompt(skill, args), selectedFamiliarId, selectedProject?.root ?? null, {
-        initialControls: { thinkingEffort, responseSpeed, ...(runtimeHost ? { runtimeHost } : {}) },
+      onStartChat(buildSkillPrompt(skill, args), selectedFamiliarId, selectedProjectRoot, {
+        initialControls: initialChatControls,
       });
     },
-    [selectedFamiliarId, selectedProject, thinkingEffort, responseSpeed, runtimeHost, onStartChat, onToast, text],
+    [
+      selectedFamiliarId,
+      selectedProject,
+      selectedProjectRoot,
+      projectLaunchReady,
+      projectLaunchMessage,
+      runtimeHost,
+      initialChatControls,
+      onStartChat,
+      onToast,
+      text,
+    ],
   );
 
   // Drop a prompt template into the composer for editing — never a start.
@@ -406,7 +519,7 @@ export function HomeComposer({
   const taskOrigin: HomeTaskOrigin | null = null;
 
   // Auto-grow textarea — chat-composer sizing, shared hook (use-autogrow-textarea).
-  const { resize: autoGrow } = useAutogrowTextarea(textareaRef, text, {
+  useAutogrowTextarea(textareaRef, text, {
     fallbackMaxHeight: HOME_COMPOSER_MAX_HEIGHT,
   });
 
@@ -462,8 +575,8 @@ export function HomeComposer({
   );
 
 
-  const handleSubmit = useCallback(async () => {
-    const prompt = text.trim();
+  const handleSubmit = useCallback(async (promptOverride?: string) => {
+    const prompt = (promptOverride ?? text).trim();
     // Allow an attachments-only send (chat can carry files with no text); every
     // other path still needs a prompt and is guarded per-destination below.
     if ((!prompt && attachments.length === 0) || sending) return;
@@ -485,10 +598,16 @@ export function HomeComposer({
           onToast(current ? `Model: ${current}` : "Type /model <id> to pick a model.");
           return;
         }
+        if (isRuntimeDefaultModelArg(args)) {
+          handleSelectModel(null);
+          onToast("Model reset to the runtime default.");
+          return;
+        }
         const id = resolveModelArg(
           args,
           modelHarness,
-          modelHarness === "opencode" ? runtimeModelOptions : undefined,
+          runtimeModelOptions,
+          runtimeModelInventory.allowCustom,
         );
         if (!id) {
           onToast(`Unknown model "${args.trim()}".`);
@@ -530,13 +649,37 @@ export function HomeComposer({
         insertPromptTemplate(template);
         return;
       }
-      if (onSlash) {
+      const handled = onSlash?.(command, args) ?? false;
+      if (handled) {
         pushHistory(prompt);
         setText("");
-        onSlash(command, args);
-      } else {
-        onToast(`Slash commands aren't wired up here yet — try ${command} from a chat.`);
+        return;
       }
+      if (!selectedFamiliarId) {
+        onToast("No familiar yet — summon one to run this command. Your draft is saved.");
+        requestSummonFamiliar();
+        return;
+      }
+      if (!projectLaunchReady) {
+        onToast(projectLaunchMessage);
+        return;
+      }
+      if (!(await waitForRuntimeWrite())) {
+        onToast("Runtime selection could not be saved; chat was not started.");
+        return;
+      }
+      pushHistory(prompt);
+      setText("");
+      clearDraft();
+      clearAttachments();
+      onStartChat(prompt, selectedFamiliarId, selectedProjectRoot, {
+        initialControls: initialChatControls,
+      });
+      return;
+    }
+
+    if (destination === "chat" && !projectLaunchReady) {
+      onToast(projectLaunchMessage);
       return;
     }
 
@@ -549,6 +692,8 @@ export function HomeComposer({
           requestSummonFamiliar();
           return;
         }
+        const systemBrowserReservation = reserveSystemBrowserUrlWindow();
+        let systemBrowserReservationConsumed = false;
         setSending(true);
         try {
           const { startOmnigentRunFromBrowser } = await import("@/lib/omnigent/browser-run");
@@ -568,9 +713,12 @@ export function HomeComposer({
           clearDraft();
           clearAttachments();
           onToast("Omnigent session started — opening…");
-          const { openExternalUrl } = await import("@/lib/open-external");
-          void openExternalUrl(result.webUrl);
+          systemBrowserReservationConsumed = true;
+          void openSystemBrowserUrl(result.webUrl, { reservation: systemBrowserReservation });
         } finally {
+          if (!systemBrowserReservationConsumed) {
+            cancelSystemBrowserUrlWindow(systemBrowserReservation);
+          }
           setSending(false);
         }
         return;
@@ -589,6 +737,14 @@ export function HomeComposer({
             requestSummonFamiliar();
             break;
           }
+          if (!projectLaunchReady) {
+            onToast(projectLaunchMessage);
+            break;
+          }
+          if (!(await waitForRuntimeWrite())) {
+            onToast("Runtime selection could not be saved; chat was not started.");
+            break;
+          }
           // Hand the prompt to ChatView, which owns the streaming send. Doing
           // the send here and canceling on the session event aborts the
           // request server-side — the harness is killed mid-run and the
@@ -604,8 +760,8 @@ export function HomeComposer({
           clearDraft();
           clearAttachments();
           promptEnhance.reset();
-          onStartChat(prompt, selectedFamiliarId, selectedProject?.root ?? null, {
-            initialControls: { thinkingEffort, responseSpeed, ...(runtimeHost ? { runtimeHost } : {}) },
+          onStartChat(prompt, selectedFamiliarId, selectedProjectRoot, {
+            initialControls: initialChatControls,
             initialAttachments: outgoing,
           });
           break;
@@ -650,11 +806,16 @@ export function HomeComposer({
     activeFamiliarId,
     selectedFamiliarId,
     selectedProject,
+    selectedProjectRoot,
+    projectLaunchReady,
+    projectLaunchMessage,
     modelState,
     modelHarness,
-    thinkingEffort,
-    responseSpeed,
+    runtimeModelOptions,
+    runtimeModelInventory.allowCustom,
     runtimeHost,
+    initialChatControls,
+    waitForRuntimeWrite,
     sending,
     attachments,
     clearDraft,
@@ -797,13 +958,22 @@ export function HomeComposer({
               const cmd = slashSuggestions[i];
               const s = skillCommandRows[i - slashSuggestions.length];
               if (cmd) {
-                setText(cmd.name + (cmd.argPlaceholder ? " " : ""));
+                completeCommand(cmd.name, Boolean(cmd.argPlaceholder));
                 textareaRef.current?.focus();
               } else if (s) {
                 invokeSkill(s);
               }
             }}
           />
+        ) : null}
+
+        {destination === "chat" && !projectLaunchReady ? (
+          <p
+            role={projectsError ? "alert" : "status"}
+            className="mx-auto mb-2 max-w-3xl px-3 text-[length:var(--text-xs)] leading-5 text-[var(--text-muted)]"
+          >
+            {projectLaunchMessage}
+          </p>
         ) : null}
 
         {/* Composer card — reference layout: the input leads; the mode pills,
@@ -870,10 +1040,17 @@ export function HomeComposer({
         <textarea
           ref={textareaRef}
           className="hc-textarea cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_45%,transparent)] md:text-sm"
-          placeholder={PLACEHOLDERS[destination]}
+          placeholder={placeholderFor(destination, selectedFamiliar?.display_name ?? null)}
           rows={1}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          readOnly={!draftRestored}
+          onChange={(e) => {
+            setText(e.target.value);
+            setComposerCaret(e.target.selectionStart ?? e.target.value.length);
+          }}
+          onSelect={(e) => setComposerCaret(e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
+          onClick={(e) => setComposerCaret(e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
+          onKeyUp={(e) => setComposerCaret(e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
           onPaste={handlePaste}
           onKeyDown={handleKeyDown}
           disabled={sending}
@@ -934,9 +1111,8 @@ export function HomeComposer({
                 }}
                 projects={{
                   projects: plusMenuProjects,
-                  selectedId: selectedProjectId || null,
+                  selectedId: displayProjectId,
                   onPick: setSelectedProjectId,
-                  noProjectId: NO_PROJECT_ID,
                   onStartNewProject: plusAddProject.beginAddProject,
                 }}
                 skills={{
@@ -965,12 +1141,16 @@ export function HomeComposer({
                             requestSummonFamiliar();
                             return;
                           }
+                          if (!projectLaunchReady) {
+                            onToast(projectLaunchMessage);
+                            return;
+                          }
                           setVoiceCallPending(true);
                           void Promise.resolve(
-                            onStartVoiceCall(selectedFamiliarId, selectedProject?.root ?? null),
+                            onStartVoiceCall(selectedFamiliarId, selectedProjectRoot),
                           ).finally(() => setVoiceCallPending(false));
                         },
-                        disabled: sending || voiceCallPending,
+                        disabled: sending || voiceCallPending || !projectLaunchReady,
                       }
                     : undefined
                 }
@@ -982,6 +1162,11 @@ export function HomeComposer({
                 promptSnippets={{ onSelect: () => setSnippetsBrowserOpen(true) }}
                 onOpenModelTuning={() => setOptionsOpen(true)}
               />
+              {plusAddProject.addError ? (
+                <span className="cave-project-picker__error" role="alert">
+                  {plusAddProject.addError}
+                </span>
+              ) : null}
               {plusAddProject.addProjectModal}
               <div
                 className="hc-dest-pills hc-dest-pills--inline"
@@ -1013,7 +1198,11 @@ export function HomeComposer({
               <button
                 type="button"
                 onClick={() => void handleSubmit()}
-                disabled={(!text.trim() && attachments.length === 0) || sending}
+                disabled={
+                  (!text.trim() && attachments.length === 0) ||
+                  sending ||
+                  (destination === "chat" && !projectLaunchReady)
+                }
                 data-typing={text.trim() ? "true" : undefined}
                 className="cave-composer-send focus-ring transition-colors"
                 title={`Send message (${keys.enter})`}
@@ -1029,8 +1218,9 @@ export function HomeComposer({
           </div>
 
           {/* Model & tuning panel — the existing Options popover, opened from
-              the "+" menu and anchored to it (host/thinking/speed tuning stays
-              here; the context pill on the footer band carries project ·
+              the "+" menu and anchored to it (host/runtime/model selection stays
+              here; selected-model controls appear in Chat after capability resolution;
+              the context pill on the footer band carries project ·
               model). */}
           <ComposerOptionsMenu
             open={optionsOpen}
@@ -1041,10 +1231,7 @@ export function HomeComposer({
             disabled={sending}
             onSaveAsTemplate={() => setSaveTemplateSeed(text)}
             saveAsTemplateDisabled={!text.trim()}
-            indicator={
-              thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
-              responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed
-            }
+            indicator={Boolean(runtimeHost)}
             sections={[
               {
                 id: "runtime",
@@ -1053,29 +1240,22 @@ export function HomeComposer({
                 options: runtimeSectionOptions,
                 onChange: (id: string) => handleSelectRuntime(id),
               } satisfies ComposerOptionSection,
-              ...(runtimeModelOptions.length > 0
+              ...(runtimeOwnsDefault || runtimeModelOptions.length > 0 || runtimeModelInventory.loading
                 ? [{
                     id: "model",
-                    label: "Model",
+                    label: `Model · ${inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)}`,
                     value: selectedModelId,
-                    options: runtimeModelOptions.map((m) => ({ value: m.id, label: m.label })),
-                    onChange: (id: string) => handleSelectModel(id),
+                    showUnlistedValue: true,
+                    options: [
+                      {
+                        value: "",
+                        label: "Runtime default",
+                      },
+                      ...runtimeModelOptions.map((m) => ({ value: m.id, label: m.label })),
+                    ],
+                    onChange: (id: string) => handleSelectModel(id || null),
                   } satisfies ComposerOptionSection]
                 : []),
-              {
-                id: "thinking",
-                label: "Thinking",
-                value: thinkingEffort,
-                options: COMMAND_THINKING_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-                onChange: (v: string) => setThinkingEffort(v as CommandThinkingEffort),
-              } satisfies ComposerOptionSection,
-              {
-                id: "speed",
-                label: "Speed",
-                value: responseSpeed,
-                options: COMMAND_RESPONSE_SPEED_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-                onChange: (v: string) => setResponseSpeed(v as CommandResponseSpeed),
-              } satisfies ComposerOptionSection,
             ]}
           />
         </div>
@@ -1087,13 +1267,24 @@ export function HomeComposer({
             above. Send hugs bottom-right, vertically aligned. */}
         <div className="cave-composer-footer-band home-composer-toolbar">
           <div className="home-composer-toolbar__left">
+            <FamiliarQuickSwitch
+              familiars={familiars}
+              activeFamiliarId={selectedFamiliarId || null}
+              sessions={sessions}
+              onSelectFamiliar={(id) => {
+                if (id) onSetActiveFamiliar(id);
+              }}
+              placement="top-start"
+              labeled
+              singleRequired
+            />
             <ComposerContextChips
               projects={projects}
-              projectValue={selectedProjectId || null}
+              projectValue={displayProjectId}
               onProjectChange={setSelectedProjectId}
-              allowNoProject
               familiarId={selectedFamiliarId || null}
               createProject={createProject}
+              createProjectOrThrow={createProjectOrThrow}
               runtime={selectedRuntime}
               modelValue={selectedModelId}
               modelOptions={runtimeModelOptions}

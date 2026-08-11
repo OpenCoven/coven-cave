@@ -13,12 +13,13 @@ const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf
 const urlState = readFileSync(new URL("../lib/workspace-url-state.ts", import.meta.url), "utf8");
 const navState = readFileSync(new URL("../lib/sidebar-nav-state.ts", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 
 // ── Rewrite aliases: setMode replaces them, so `mode` never holds them ───────
 
 function branchTarget(alias) {
   const m = workspace.match(
-    new RegExp(`if \\(next === "${alias}"\\) \\{[\\s\\S]{0,700}?setModeRaw\\("([a-z-]+)"\\)`),
+    new RegExp(`if \\(next === "${alias}"\\) \\{[\\s\\S]{0,700}?commitMode\\("([a-z-]+)"(?:,\\s*"[^"]+")?\\)`),
   );
   assert.ok(m, `setMode should have a rewrite branch for the "${alias}" alias`);
   return m[1];
@@ -62,18 +63,46 @@ assert.match(
   "the roles/capabilities aliases render the Marketplace hub on their sections (keyed remount)",
 );
 
+assert.equal(MODE_ALIASES.code, "surface:code");
+assert.match(
+  workspace,
+  /if \(next === "code"\) \{[\s\S]{0,700}?commitMode\(roleSurfaceMode\(CODE_SURFACE_ID\)\)/,
+  'setMode\'s "code" branch must land on the Coding familiar\'s room (MODE_ALIASES.code = "surface:code", cave-cc5r)',
+);
+assert.equal(MODE_ALIASES.github, "surface:code");
+assert.match(
+  workspace,
+  /if \(next === "github"\) \{[\s\S]{0,500}?enqueuePendingCodeNavigation\(\{\s*kind: "tab",\s*topTab: "activity",\s*nonce: Date\.now\(\),?\s*\}\);[\s\S]{0,300}?commitMode\(roleSurfaceMode\(CODE_SURFACE_ID\), "github"\)/,
+  'setMode migrates legacy "github" requests to Coding Desk Activity',
+);
+assert.doesNotMatch(
+  workspace,
+  /mode === "github" \?/,
+  "github is compatibility intent, never a standalone render branch",
+);
+assert.doesNotMatch(
+  workspace,
+  /mode === "code" \|\| mode === "github"/,
+  "the old combined Code/GitHub render branch is gone — Code renders inside the Role Surface room",
+);
+
 // ── Every mode-string entry point validates/routes through the shared
 //    vocabulary instead of ad-hoc special cases ──────────────────────────────
 
 assert.match(
   urlState,
-  /function readModeParam\(\): WorkspaceMode \| null \{[\s\S]{0,300}?isWorkspaceMode\(raw\)/,
-  "?mode= deep links validate via isWorkspaceMode (canonical + alias vocabulary)",
+  /function readModeParam\(\): WorkspaceMode \| RoleSurfaceMode \| null \{[\s\S]{0,350}?isWorkspaceMode\(raw\) \|\| isRoleSurfaceMode\(raw\)/,
+  "?mode= deep links validate built-in modes and generic role-surface modes",
 );
 assert.match(
   workspace,
   /if \(last && \(isWorkspaceMode\(last\) \|\| isRoleSurfaceMode\(last\)\)\) setMode\(last as CaveMode\)/,
   "persisted last-surface restore validates via isWorkspaceMode and lets setMode route aliases",
+);
+assert.match(
+  workspace,
+  /useEffect\(\(\) => \{\s*if \(!activeId\) return;\s*if \(!isRoleSurfaceMode\(mode\)\) \{\s*setLastSurface\(activeId, mode\);\s*return;\s*\}\s*const roleSurfaceId = parseRoleSurfaceMode\(mode\);\s*if \(!roleSurfaceId\) return;\s*if \(!roleSurfaceSession\.rolesLoaded\) return;\s*if \(!roleSurfaceSession\.rolesLoadedSuccessfully\) return;\s*if \(!roleSurfaceSession\.visibleSurfaces\.some\(\(surface\) => surface\.id === roleSurfaceId\)\) return;\s*setLastSurface\(activeId, mode\);\s*\}, \[\s*activeId,\s*mode,\s*roleSurfaceSession\.rolesLoaded,\s*roleSurfaceSession\.rolesLoadedSuccessfully,\s*roleSurfaceSession\.visibleSurfaces,\s*\]\);/,
+  "role rooms persist only after successful role resolution confirms the exact room is visible for the active familiar",
 );
 assert.doesNotMatch(
   workspace,
@@ -89,9 +118,14 @@ assert.match(
   "sidebar-nav-state derives row highlighting from the shared MODE_ALIASES table",
 );
 assert.match(
+  navigation,
+  /export type WorkspaceNavMode = WorkspaceMode/,
+  "the shared navigation registry reuses the WorkspaceMode union instead of a drifting copy",
+);
+assert.match(
   sidebar,
-  /export type FolderMode = WorkspaceMode/,
-  "the sidebar reuses the WorkspaceMode union instead of a drifting copy",
+  /type WorkspaceNavMode,[\s\S]*from "@\/lib\/workspace-navigation"/,
+  "the sidebar consumes the registry's mode type instead of declaring a component-local alias",
 );
 
 console.log("workspace-alias-modes: ok");

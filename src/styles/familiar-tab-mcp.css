@@ -147,6 +147,41 @@
   color: var(--text-muted);
 }
 
+/* ── Health check row + verdict pills (from /api/mcp/health, the MCP doctor) ── */
+
+.familiar-mcp__catalog-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.familiar-mcp__catalog-title-row .familiar-mcp__catalog-title {
+  margin-bottom: 0;
+}
+
+.familiar-mcp__health {
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+.familiar-mcp__health--ready {
+  border: 1px solid color-mix(in oklch, var(--color-success) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-success) 14%, transparent);
+  color: var(--color-success);
+}
+
+.familiar-mcp__health--needs-config {
+  border: 1px solid color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-warning) 14%, transparent);
+  color: var(--color-warning);
+}
+
+.familiar-mcp__health--unavailable {
+  border: 1px solid color-mix(in oklch, var(--color-danger) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-danger) 14%, transparent);
+  color: var(--color-danger);
+}
+
 .familiar-mcp__catalog-note {
   margin: 0;
   font-size: var(--text-sm);

@@ -10,7 +10,7 @@ const automations = [
   readFileSync(new URL("./automations/ritual-overview.tsx", import.meta.url), "utf8"),
 ].join("\n");
 const menuBar = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
-const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const calendar = readFileSync(new URL("./calendar-view.tsx", import.meta.url), "utf8");
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -20,9 +20,9 @@ const slashCommands = readFileSync(new URL("../lib/slash-commands.ts", import.me
 
 // ── The surface is "Rituals" everywhere it's named ──────────────────────────
 assert.match(
-  sidebar,
+  navigation,
   /\{ id: "inbox", label: "Rituals", iconName: "ph:calendar-check"/,
-  "Sidebar should label the slim surface Rituals",
+  "The navigation registry should label the slim surface Rituals",
 );
 assert.match(
   workspace,
@@ -31,8 +31,8 @@ assert.match(
 );
 assert.match(
   mobileTabs,
-  /const\s+TABS\s*=\s*FOLDER_MODES[\s\S]*?\.filter\([\s\S]*?!fm\.quiet\s*&&\s*!fm\.navHidden[\s\S]*?\.map\([\s\S]*?label\s*:\s*fm\.label[\s\S]*?ariaLabel\s*:\s*fm\.label/,
-  "Mobile bottom tabs derive visible and accessible labels from the canonical FOLDER_MODES rows (one surface, one name — issue #3283)",
+  /const\s+TABS\s*=\s*PRIMARY_WORKSPACE_NAV_ITEMS\.map\([\s\S]*?label\s*:\s*fm\.label[\s\S]*?ariaLabel\s*:\s*fm\.label/,
+  "Mobile bottom tabs derive visible and accessible labels from the canonical primary navigation rows (one surface, one name — issue #3283)",
 );
 assert.match(
   notificationBell,
@@ -86,7 +86,7 @@ assert.match(
 );
 assert.match(
   automations,
-  /<Tabs[\s\S]{0,200}items=\{RITUAL_TABS\}[\s\S]{0,120}value=\{activeTab\}[\s\S]{0,120}onChange=\{selectTab\}[\s\S]{0,120}ariaLabel="Rituals sections"[\s\S]{0,120}idPrefix="automations"/,
+  /<Tabs[\s\S]{0,200}items=\{RITUAL_TABS\}[\s\S]{0,120}value=\{activeTab\}[\s\S]{0,120}onChange=\{selectTabTracked\}[\s\S]{0,120}ariaLabel="Rituals sections"[\s\S]{0,120}idPrefix="automations"/,
   "Rituals tabs should be driven by the shared Tabs component with accessible wiring",
 );
 assert.match(
@@ -167,12 +167,12 @@ assert.match(
 );
 assert.match(automations, /function useRitualNow\(\): Date \| null[\s\S]{0,560}setNow\(new Date\(\)\);[\s\S]{0,80}scheduleMidnight/, "the hydration-stable week clock starts in the browser and refreshes at local midnight");
 assert.match(automations, /ritualNow \? buildRitualWeek\(inboxVisible, ritualNow\) : \[\]/, "the week ribbon waits for the browser-local date before derivation");
-assert.doesNotMatch(sidebar, /\{ id: "flow", label: "Flow"/, "Flow nav is hidden from the active branch");
+assert.doesNotMatch(navigation, /\{ id: "flow", label: "Flow"/, "Flow nav is hidden from the active branch");
 
 assert.doesNotMatch(automations, /listFlows\(\)/, "Rituals does not load flow docs");
 assert.doesNotMatch(automations, /runFlow\(flow\.id\)/, "Rituals does not run flows");
 assert.doesNotMatch(automations, /navigateToMode\("flow"\)/, "Rituals does not route into Flow");
 assert.doesNotMatch(workspace, /mode === "flow" \?\s*\(\s*<FlowView/, "Persisted Flow mode does not render FlowView on the active branch");
-assert.match(workspace, /if \(next === "flow"\) \{[\s\S]{0,600}?setModeRaw\("inbox"\)/, "Flow navigation events normalize to Rituals via setMode's alias funnel (cave-m4ih.3)");
+assert.match(workspace, /if \(next === "flow"\) \{[\s\S]{0,600}?commitMode\("inbox"\)/, "Flow navigation events normalize to Rituals via setMode's alias funnel (cave-m4ih.3)");
 
 console.log("rituals-tabs.test.ts: ok");

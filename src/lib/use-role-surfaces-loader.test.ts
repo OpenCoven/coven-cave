@@ -1,0 +1,814 @@
+// @ts-nocheck
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createElement, useCallback } from "react";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
+
+import * as roleSurfaceHooks from "./use-role-surfaces.ts";
+import { registerRoleSurface } from "./role-surfaces.ts";
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve(value: T): void;
+  reject(error: unknown): void;
+};
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+}
+
+function response(ok: boolean, body: unknown): Response {
+  return {
+    ok,
+    json: async () => body,
+  } as Response;
+}
+
+test("memory access preserves a successful empty inventory", async () => {
+  assert.equal(typeof roleSurfaceHooks.createMemoryAccess, "function");
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => response(true, { ok: true, entries: [] });
+  try {
+    const memory = roleSurfaceHooks.createMemoryAccess("salem");
+    assert.deepEqual(await memory.listEntries(), []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("memory access rejects network, non-OK, failed, and malformed inventory responses", async () => {
+  assert.equal(typeof roleSurfaceHooks.createMemoryAccess, "function");
+  const originalFetch = globalThis.fetch;
+  const memory = roleSurfaceHooks.createMemoryAccess("salem");
+  try {
+    globalThis.fetch = async () => {
+      throw new Error("offline");
+    };
+    await assert.rejects(memory.listEntries(), /offline/);
+
+    globalThis.fetch = async () => response(false, { entries: [] });
+    await assert.rejects(memory.listEntries());
+
+    globalThis.fetch = async () => response(true, { ok: false, entries: [] });
+    await assert.rejects(memory.listEntries());
+
+    globalThis.fetch = async () => response(true, { entries: [] });
+    await assert.rejects(memory.listEntries());
+
+    globalThis.fetch = async () =>
+      response(true, {
+        ok: true,
+        entries: [
+          {
+            relPath: "MEMORY.md",
+            fullPath: "/tmp/MEMORY.md",
+            rootLabel: "Familiar",
+            sourceKindLabel: "Memory",
+            size: "not-a-number",
+            modified: "2026-07-26T00:00:00.000Z",
+          },
+        ],
+      });
+    await assert.rejects(memory.listEntries());
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("memory access keeps a missing familiar as an honest empty without fetching", async () => {
+  assert.equal(typeof roleSurfaceHooks.createMemoryAccess, "function");
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return response(true, { entries: [] });
+  };
+  try {
+    assert.deepEqual(await roleSurfaceHooks.createMemoryAccess(null).listEntries(), []);
+    assert.equal(calls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+type ProbeProps<T> = {
+  scope: string;
+  request(scope: string): Promise<T>;
+  exposeReload?(reload: (options?: { retainData?: boolean }) => Promise<boolean>): void;
+};
+
+function LoaderProbe<T>({ scope, request, exposeReload }: ProbeProps<T>) {
+  assert.equal(typeof roleSurfaceHooks.useLatestAsyncData, "function");
+  const load = useCallback(() => request(scope), [request, scope]);
+  const { data, error, reload } = roleSurfaceHooks.useLatestAsyncData({
+    scopeKey: scope,
+    load,
+    errorMessage: "Couldn't load probe.",
+  });
+  exposeReload?.(reload);
+  return createElement("output", null, JSON.stringify({ data, error }));
+}
+
+function output(renderer: ReactTestRenderer): { data: unknown; error: string | null } {
+  return JSON.parse(renderer.root.findByType("output").children.join(""));
+}
+
+type RoleSurfaceFetchResponse = {
+  ok: boolean;
+  status?: number;
+  json(): Promise<unknown>;
+};
+
+type DeferredFetchResponse = {
+  url: string;
+  resolve(value: RoleSurfaceFetchResponse): void;
+};
+
+type RoleSurfaceSnapshot = {
+  familiarId: string | null;
+  contextFamiliarId: string | null;
+  rolesLoaded: boolean;
+  rolesLoadedSuccessfully: boolean;
+};
+
+function deferredRoleSurfaceFetch() {
+  const originalFetch = globalThis.fetch;
+  const pending: DeferredFetchResponse[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    return await new Promise((resolve) => pending.push({ url, resolve }));
+  }) as typeof fetch;
+  return {
+    pending,
+    restore() {
+      globalThis.fetch = originalFetch;
+    },
+  };
+}
+
+function familiar(id: string, role = "Researcher") {
+  return {
+    id,
+    display_name: id,
+    role,
+  };
+}
+
+function settleRoles(response: DeferredFetchResponse, body: unknown) {
+  return act(async () => {
+    response.resolve({
+      ok: true,
+      json: async () => body,
+    });
+    await Promise.resolve();
+  });
+}
+
+function failRoles(response: DeferredFetchResponse, options?: { status?: number; error?: Error }) {
+  return act(async () => {
+    response.resolve({
+      ok: options?.error ? true : false,
+      status: options?.status ?? 500,
+      json: async () => {
+        if (options?.error) throw options.error;
+        return { ok: false };
+      },
+    });
+    await Promise.resolve();
+  });
+}
+
+function RoleSurfaceSessionProbe({
+  familiarId,
+  snapshots,
+}: {
+  familiarId: string | null;
+  snapshots: RoleSurfaceSnapshot[];
+}) {
+  const session = roleSurfaceHooks.useRoleSurfaceSession({
+    familiar: familiarId ? familiar(familiarId) : null,
+    sessions: [],
+    activeSessionId: null,
+    daemonRunning: true,
+    openUrl() {},
+    openSession() {},
+    focusCard() {},
+    refreshTasks() {},
+  });
+  snapshots.push({
+    familiarId,
+    contextFamiliarId: session.context?.activeFamiliar.id ?? null,
+    rolesLoaded: session.rolesLoaded,
+    rolesLoadedSuccessfully: session.rolesLoadedSuccessfully,
+  });
+  return createElement("role-surface-session-probe");
+}
+
+test("selected content ignores a late response from the prior selection", async () => {
+  const pending = new Map<string, Deferred<string>>();
+  const request = (scope: string) => {
+    const next = deferred<string>();
+    pending.set(scope, next);
+    return next.promise;
+  };
+  let renderer!: ReactTestRenderer;
+
+  await act(async () => {
+    renderer = create(createElement(LoaderProbe, { scope: "memory-a", request }));
+  });
+  await act(async () => {
+    renderer.update(createElement(LoaderProbe, { scope: "memory-b", request }));
+  });
+  await act(async () => pending.get("memory-b")!.resolve("content-b"));
+  assert.deepEqual(output(renderer), { data: "content-b", error: null });
+
+  await act(async () => pending.get("memory-a")!.resolve("content-a"));
+  assert.deepEqual(output(renderer), { data: "content-b", error: null });
+  await act(async () => renderer.unmount());
+});
+
+test("familiar scope ignores a late failure from the prior familiar", async () => {
+  const pending = new Map<string, Deferred<string[]>>();
+  const request = (scope: string) => {
+    const next = deferred<string[]>();
+    pending.set(scope, next);
+    return next.promise;
+  };
+  let renderer!: ReactTestRenderer;
+
+  await act(async () => {
+    renderer = create(createElement(LoaderProbe, { scope: "familiar-a", request }));
+  });
+  await act(async () => {
+    renderer.update(createElement(LoaderProbe, { scope: "familiar-b", request }));
+  });
+  await act(async () => pending.get("familiar-b")!.resolve(["b-card"]));
+  assert.deepEqual(output(renderer), { data: ["b-card"], error: null });
+
+  await act(async () => pending.get("familiar-a")!.reject(new Error("late failure")));
+  assert.deepEqual(output(renderer), { data: ["b-card"], error: null });
+  await act(async () => renderer.unmount());
+});
+
+test("retry clears successful data while the fresh request is pending", async () => {
+  const requests: Deferred<string>[] = [];
+  const request = () => {
+    const next = deferred<string>();
+    requests.push(next);
+    return next.promise;
+  };
+  let reload!: () => Promise<boolean>;
+  let renderer!: ReactTestRenderer;
+
+  await act(async () => {
+    renderer = create(
+      createElement(LoaderProbe, {
+        scope: "same-scope",
+        request,
+        exposeReload: (nextReload) => {
+          reload = nextReload;
+        },
+      }),
+    );
+  });
+  await act(async () => requests[0].resolve("first"));
+  assert.deepEqual(output(renderer), { data: "first", error: null });
+
+  await act(async () => {
+    void reload();
+  });
+  assert.deepEqual(output(renderer), { data: null, error: null });
+  await act(async () => requests[1].resolve("second"));
+  assert.deepEqual(output(renderer), { data: "second", error: null });
+  await act(async () => renderer.unmount());
+});
+
+test("retained revalidation keeps usable data while pending and when refresh fails", async () => {
+  const requests: Deferred<string>[] = [];
+  const request = () => {
+    const next = deferred<string>();
+    requests.push(next);
+    return next.promise;
+  };
+  let reload!: (options?: { retainData?: boolean }) => Promise<boolean>;
+  let renderer!: ReactTestRenderer;
+
+  await act(async () => {
+    renderer = create(
+      createElement(LoaderProbe, {
+        scope: "same-scope",
+        request,
+        exposeReload: (nextReload) => {
+          reload = nextReload;
+        },
+      }),
+    );
+  });
+  await act(async () => requests[0].resolve("first"));
+  assert.deepEqual(output(renderer), { data: "first", error: null });
+
+  let refresh!: Promise<boolean>;
+  await act(async () => {
+    refresh = reload({ retainData: true });
+  });
+  assert.deepEqual(output(renderer), { data: "first", error: null });
+
+  await act(async () => requests[1].reject(new Error("refresh failed")));
+  assert.equal(await refresh, false);
+  assert.deepEqual(output(renderer), { data: "first", error: "Couldn't load probe." });
+  await act(async () => renderer.unmount());
+});
+
+test("role-surface session treats a successful empty roles list as settled evidence", async () => {
+  const fetch = deferredRoleSurfaceFetch();
+  const snapshots: RoleSurfaceSnapshot[] = [];
+  let renderer!: ReactTestRenderer;
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(RoleSurfaceSessionProbe, { familiarId: "salem", snapshots }));
+    });
+    assert.equal(fetch.pending.length, 1);
+    assert.equal(fetch.pending[0]?.url, "/api/roles");
+    assert.deepEqual(snapshots.at(-1), {
+      familiarId: "salem",
+      contextFamiliarId: "salem",
+      rolesLoaded: false,
+      rolesLoadedSuccessfully: false,
+    });
+
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    assert.deepEqual(snapshots.at(-1), {
+      familiarId: "salem",
+      contextFamiliarId: "salem",
+      rolesLoaded: true,
+      rolesLoadedSuccessfully: true,
+    });
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+  }
+});
+
+test("role-surface session clears success on familiar change and preserves failure as unsuccessful settlement", async () => {
+  const fetch = deferredRoleSurfaceFetch();
+  const snapshots: RoleSurfaceSnapshot[] = [];
+  let renderer!: ReactTestRenderer;
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(RoleSurfaceSessionProbe, { familiarId: "familiar-a", snapshots }));
+    });
+    await settleRoles(fetch.pending.shift()!, {
+      roles: [{ id: "researcher", familiar: "familiar-a", active: true }],
+    });
+    assert.deepEqual(snapshots.at(-1), {
+      familiarId: "familiar-a",
+      contextFamiliarId: "familiar-a",
+      rolesLoaded: true,
+      rolesLoadedSuccessfully: true,
+    });
+
+    snapshots.length = 0;
+    await act(async () => {
+      renderer.update(createElement(RoleSurfaceSessionProbe, { familiarId: "familiar-b", snapshots }));
+    });
+    assert.ok(
+      snapshots.every(
+        (snapshot) =>
+          snapshot.familiarId === "familiar-b"
+          && snapshot.contextFamiliarId === "familiar-b"
+          && snapshot.rolesLoaded === false
+          && snapshot.rolesLoadedSuccessfully === false,
+      ),
+      "switching familiars must not expose the previous familiar's settled-success state",
+    );
+
+    const familiarB = fetch.pending.shift()!;
+    assert.equal(familiarB.url, "/api/roles");
+    await failRoles(familiarB, { status: 503 });
+    assert.deepEqual(snapshots.at(-1), {
+      familiarId: "familiar-b",
+      contextFamiliarId: "familiar-b",
+      rolesLoaded: true,
+      rolesLoadedSuccessfully: false,
+    });
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+  }
+});
+
+test("role-surface session keeps a missing familiar unsettled and unfetched", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return response(true, { roles: [] });
+  }) as typeof fetch;
+  const snapshots: RoleSurfaceSnapshot[] = [];
+  let renderer!: ReactTestRenderer;
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(RoleSurfaceSessionProbe, { familiarId: null, snapshots }));
+    });
+    assert.equal(calls, 0);
+    assert.deepEqual(snapshots.at(-1), {
+      familiarId: null,
+      contextFamiliarId: null,
+      rolesLoaded: false,
+      rolesLoadedSuccessfully: false,
+    });
+  } finally {
+    await act(async () => renderer?.unmount());
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("role-surface session aggregates All-scope rooms and records deterministic owners", async () => {
+  const unregisterResearch = registerRoleSurface({
+    id: "loader-test-research-room",
+    role: "researcher",
+    title: "Loader Research Room",
+    iconName: "ph:book-open",
+    description: "research",
+    priority: 20,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const unregisterCode = registerRoleSurface({
+    id: "loader-test-code-room",
+    role: "coder",
+    title: "Loader Code Room",
+    iconName: "ph:code",
+    description: "code",
+    priority: 10,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const fetch = deferredRoleSurfaceFetch();
+  const snapshots: Array<{
+    visibleSurfaceIds: string[];
+    surfaceFamiliarIds: Record<string, readonly string[]>;
+    rolesLoaded: boolean;
+  }> = [];
+  let renderer!: ReactTestRenderer;
+
+  function AggregateProbe() {
+    const session = roleSurfaceHooks.useRoleSurfaceSession({
+      familiar: null,
+      familiars: [familiar("research"), familiar("code", "Coder")],
+      sessions: [],
+      activeSessionId: null,
+      daemonRunning: true,
+      openUrl() {},
+      openSession() {},
+      focusCard() {},
+      refreshTasks() {},
+    });
+    snapshots.push({
+      visibleSurfaceIds: session.visibleSurfaces.map((surface) => surface.id),
+      surfaceFamiliarIds: session.surfaceFamiliarIds,
+      rolesLoaded: session.rolesLoaded,
+    });
+    return createElement("role-surface-aggregate-probe");
+  }
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(AggregateProbe));
+    });
+    assert.equal(fetch.pending.length, 1);
+    assert.equal(fetch.pending[0]?.url, "/api/roles");
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    const latest = snapshots.at(-1)!;
+    assert.deepEqual(latest.visibleSurfaceIds, [
+      "loader-test-research-room",
+      "loader-test-code-room",
+    ]);
+    assert.deepEqual(latest.surfaceFamiliarIds, {
+      "loader-test-research-room": ["research"],
+      "loader-test-code-room": ["code"],
+    });
+    assert.equal(latest.rolesLoaded, true);
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+    unregisterResearch();
+    unregisterCode();
+  }
+});
+
+test("role-surface session keeps the selected multi-scope union when a primary familiar is present", async () => {
+  const unregisterResearch = registerRoleSurface({
+    id: "loader-test-multi-research-room",
+    role: "researcher",
+    title: "Multi Research Room",
+    iconName: "ph:book-open",
+    description: "research",
+    priority: 20,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const unregisterCode = registerRoleSurface({
+    id: "loader-test-multi-code-room",
+    role: "coder",
+    title: "Multi Code Room",
+    iconName: "ph:code",
+    description: "code",
+    priority: 10,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const unregisterReview = registerRoleSurface({
+    id: "loader-test-multi-review-room",
+    role: "reviewer",
+    title: "Multi Review Room",
+    iconName: "ph:git-diff",
+    description: "review",
+    priority: 5,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const fetch = deferredRoleSurfaceFetch();
+  const snapshots: Array<{
+    visibleSurfaceIds: string[];
+    surfaceFamiliarIds: Record<string, readonly string[]>;
+    contextFamiliarId: string | null;
+  }> = [];
+  const research = familiar("research");
+  const code = familiar("code", "Coder");
+  const review = familiar("review", "Reviewer");
+  let renderer!: ReactTestRenderer;
+
+  function MultiProbe({ candidates }: { candidates: Array<ReturnType<typeof familiar>> }) {
+    const session = roleSurfaceHooks.useRoleSurfaceSession({
+      // Deliberately provide a stale primary while the selected roster is multi.
+      familiar: research,
+      familiars: candidates,
+      sessions: [],
+      activeSessionId: null,
+      daemonRunning: true,
+      openUrl() {},
+      openSession() {},
+      focusCard() {},
+      refreshTasks() {},
+    });
+    snapshots.push({
+      visibleSurfaceIds: session.visibleSurfaces.map((surface) => surface.id),
+      surfaceFamiliarIds: session.surfaceFamiliarIds,
+      contextFamiliarId: session.context?.activeFamiliar.id ?? null,
+    });
+    return createElement("role-surface-multi-probe");
+  }
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(MultiProbe, { candidates: [research, code, review] }));
+    });
+    assert.equal(fetch.pending.length, 1);
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    const first = snapshots.at(-1)!;
+    assert.deepEqual(first.visibleSurfaceIds, [
+      "loader-test-multi-research-room",
+      "loader-test-multi-code-room",
+      "loader-test-multi-review-room",
+    ]);
+    assert.deepEqual(first.surfaceFamiliarIds, {
+      "loader-test-multi-research-room": ["research"],
+      "loader-test-multi-code-room": ["code"],
+      "loader-test-multi-review-room": ["review"],
+    });
+    assert.equal(first.contextFamiliarId, null);
+
+    snapshots.length = 0;
+    await act(async () => {
+      renderer.update(createElement(MultiProbe, { candidates: [research, code] }));
+    });
+    assert.equal(fetch.pending.length, 1);
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    const selected = snapshots.at(-1)!;
+    assert.deepEqual(selected.visibleSurfaceIds, [
+      "loader-test-multi-research-room",
+      "loader-test-multi-code-room",
+    ]);
+    assert.deepEqual(selected.surfaceFamiliarIds, {
+      "loader-test-multi-research-room": ["research"],
+      "loader-test-multi-code-room": ["code"],
+    });
+    assert.equal(selected.contextFamiliarId, null);
+
+    snapshots.length = 0;
+    await act(async () => {
+      renderer.update(createElement(MultiProbe, { candidates: [code, research] }));
+    });
+    assert.equal(fetch.pending.length, 0, "reordering a scope must not reload the role manifest");
+    const reordered = snapshots.at(-1)!;
+    assert.deepEqual(reordered.visibleSurfaceIds, selected.visibleSurfaceIds);
+    assert.deepEqual(reordered.surfaceFamiliarIds, selected.surfaceFamiliarIds);
+    assert.equal(reordered.contextFamiliarId, null);
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+    unregisterResearch();
+    unregisterCode();
+    unregisterReview();
+  }
+});
+
+test("role-surface session keeps shared-owner rooms aggregate without choosing an owner", async () => {
+  const unregister = registerRoleSurface({
+    id: "loader-test-shared-room",
+    role: "researcher",
+    title: "Shared Research Room",
+    iconName: "ph:book-open",
+    description: "shared",
+    priority: 20,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const fetch = deferredRoleSurfaceFetch();
+  const snapshots: Array<{
+    visibleSurfaceIds: string[];
+    surfaceFamiliarIds: Record<string, readonly string[]>;
+    contextFamiliarId: string | null;
+  }> = [];
+  let renderer!: ReactTestRenderer;
+
+  function SharedProbe() {
+    const session = roleSurfaceHooks.useRoleSurfaceSession({
+      familiar: null,
+      familiars: [familiar("research-a"), familiar("research-b")],
+      sessions: [],
+      activeSessionId: null,
+      daemonRunning: true,
+      openUrl() {},
+      openSession() {},
+      focusCard() {},
+      refreshTasks() {},
+    });
+    snapshots.push({
+      visibleSurfaceIds: session.visibleSurfaces.map((surface) => surface.id),
+      surfaceFamiliarIds: session.surfaceFamiliarIds,
+      contextFamiliarId: session.context?.activeFamiliar.id ?? null,
+    });
+    return createElement("role-surface-shared-probe");
+  }
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(SharedProbe));
+    });
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    const latest = snapshots.at(-1)!;
+    assert.deepEqual(latest.visibleSurfaceIds, ["loader-test-shared-room"]);
+    assert.deepEqual(latest.surfaceFamiliarIds, {
+      "loader-test-shared-room": ["research-a", "research-b"],
+    });
+    assert.equal(latest.contextFamiliarId, null);
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+    unregister();
+  }
+});
+
+test("role-surface session does not leak an active thread into another familiar context", async () => {
+  const observed = new Map<string, { activeSessionId: string | null; currentThreadId: string | null }>();
+  const unregister = registerRoleSurface({
+    id: "loader-test-thread-isolation-room",
+    role: "researcher",
+    title: "Thread Isolation Room",
+    iconName: "ph:book-open",
+    description: "thread isolation",
+    priority: 20,
+    shouldDisplay: (context) => {
+      observed.set(context.activeFamiliar.id, {
+        activeSessionId: context.runtimeState.activeSessionId,
+        currentThreadId: context.currentThread?.id ?? null,
+      });
+      return true;
+    },
+    render: () => null,
+  });
+  const fetch = deferredRoleSurfaceFetch();
+  let renderer!: ReactTestRenderer;
+
+  function ThreadProbe() {
+    const session = roleSurfaceHooks.useRoleSurfaceSession({
+      familiar: null,
+      familiars: [familiar("research-a"), familiar("research-b")],
+      sessions: [
+        { id: "session-a", familiarId: "research-a" },
+        { id: "session-b", familiarId: "research-b" },
+      ],
+      activeSessionId: "session-a",
+      daemonRunning: true,
+      openUrl() {},
+      openSession() {},
+      focusCard() {},
+      refreshTasks() {},
+    });
+    return createElement("role-surface-thread-probe", {
+      visible: session.visibleSurfaces.length,
+    });
+  }
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(ThreadProbe));
+    });
+    await settleRoles(fetch.pending.shift()!, { roles: [] });
+    assert.deepEqual(observed, new Map([
+      ["research-a", { activeSessionId: "session-a", currentThreadId: "session-a" }],
+      ["research-b", { activeSessionId: null, currentThreadId: null }],
+    ]));
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+    unregister();
+  }
+});
+
+test("role-surface session ignores a late manifest response from a prior scope", async () => {
+  const unregister = registerRoleSurface({
+    id: "loader-test-late-room",
+    role: "manifest-only",
+    title: "Manifest Room",
+    iconName: "ph:book-open",
+    description: "manifest",
+    priority: 20,
+    shouldDisplay: () => true,
+    render: () => null,
+  });
+  const fetch = deferredRoleSurfaceFetch();
+  const snapshots: Array<{
+    visibleSurfaceIds: string[];
+    rolesLoaded: boolean;
+    rolesLoadedSuccessfully: boolean;
+  }> = [];
+  const first = familiar("manifest-a", "General");
+  const second = familiar("manifest-b", "General");
+  let renderer!: ReactTestRenderer;
+
+  function ScopeProbe({ candidate }: { candidate: ReturnType<typeof familiar> }) {
+    const session = roleSurfaceHooks.useRoleSurfaceSession({
+      familiar: null,
+      familiars: [candidate],
+      sessions: [],
+      activeSessionId: null,
+      daemonRunning: true,
+      openUrl() {},
+      openSession() {},
+      focusCard() {},
+      refreshTasks() {},
+    });
+    snapshots.push({
+      visibleSurfaceIds: session.visibleSurfaces.map((surface) => surface.id),
+      rolesLoaded: session.rolesLoaded,
+      rolesLoadedSuccessfully: session.rolesLoadedSuccessfully,
+    });
+    return createElement("role-surface-scope-probe");
+  }
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(ScopeProbe, { candidate: first }));
+    });
+    const firstResponse = fetch.pending.shift()!;
+    await act(async () => {
+      renderer.update(createElement(ScopeProbe, { candidate: second }));
+    });
+    const secondResponse = fetch.pending.shift()!;
+    await settleRoles(secondResponse, {
+      roles: [{ id: "manifest-only", familiar: "manifest-b", active: true }],
+    });
+    assert.deepEqual(snapshots.at(-1), {
+      visibleSurfaceIds: ["loader-test-late-room"],
+      rolesLoaded: true,
+      rolesLoadedSuccessfully: true,
+    });
+
+    await settleRoles(firstResponse, {
+      roles: [{ id: "manifest-only", familiar: "manifest-a", active: true }],
+    });
+    assert.deepEqual(snapshots.at(-1), {
+      visibleSurfaceIds: ["loader-test-late-room"],
+      rolesLoaded: true,
+      rolesLoadedSuccessfully: true,
+    });
+  } finally {
+    await act(async () => renderer?.unmount());
+    fetch.restore();
+    unregister();
+  }
+});

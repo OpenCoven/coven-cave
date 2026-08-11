@@ -1,30 +1,40 @@
 import type {
   CreateResearchMissionInput,
-  ResearchArtifactKind,
   ResearchMission,
+} from "../research-missions.ts";
+import type {
+  ResearchSessionAuthority,
+  ResearchSessionOwnerKind,
+} from "./research-session-authority.ts";
+import {
+  researchArtifactKindForMode,
+  STANDARD_RESEARCH_ARTIFACTS,
 } from "../research-missions.ts";
 import type { FlowRunRecord } from "../flows.ts";
 
 export type ResearchFlowStartResult = {
   ok: boolean;
+  /** Typed client-input/transport status preserved by Research HTTP routes. */
+  status?: number;
   executor?: "session" | "travel-queue";
   sessionId?: string;
+  /** Durable exact daemon authority for later reconciliation/cancellation. */
+  sessionAuthority?: ResearchSessionAuthority;
+  /** Private process-owner class; never serialized into mission.json. */
+  sessionOwnerKind?: ResearchSessionOwnerKind;
   run?: FlowRunRecord;
   queued?: boolean;
   unavailable?: boolean;
+  /** A start failed after launch and its process owner could not prove cleanup. */
+  cleanupUnconfirmed?: boolean;
+  /** Exact in-process owner cleanup; ignored by durable mission serialization. */
+  cleanupSession?: () => Promise<void>;
   error?: string;
 };
 
-function artifactKindForMode(mode: ResearchMission["mode"]): ResearchArtifactKind {
-  if (mode === "sweep") return "report";
-  if (mode === "paper") return "paper";
-  if (mode === "autoresearch") return "findings";
-  return "brief";
-}
-
 function missionTitle(input: CreateResearchMissionInput): string {
   const explicit = input.title?.trim();
-  if (explicit) return explicit.slice(0, 160);
+  if (explicit) return explicit;
   const intent = input.intent.trim().replace(/\s+/g, " ");
   return intent.length <= 80 ? intent : `${intent.slice(0, 77)}…`;
 }
@@ -36,7 +46,7 @@ export function createMissionRecord(
   now: Date,
 ): ResearchMission {
   const timestamp = now.toISOString();
-  const kind = artifactKindForMode(input.mode);
+  const kind = researchArtifactKindForMode(input.mode);
   return {
     version: 1,
     id,
@@ -54,15 +64,23 @@ export function createMissionRecord(
     createdAt: timestamp,
     updatedAt: timestamp,
     iterations: [{ number: 1, status: "queued" }],
-    artifacts: [{
-      key: "primary",
-      kind,
-      title: missionTitle(input),
-      relativePath: "artifacts/primary.md",
-      iteration: 1,
-      state: "working",
-      updatedAt: timestamp,
-    }],
+    artifacts: [
+      {
+        key: "primary",
+        kind,
+        title: missionTitle(input),
+        relativePath: "artifacts/primary.md",
+        iteration: 1,
+        state: "working",
+        updatedAt: timestamp,
+      },
+      ...STANDARD_RESEARCH_ARTIFACTS.map((standard) => ({
+        ...standard,
+        iteration: 1,
+        state: "working" as const,
+        updatedAt: timestamp,
+      })),
+    ],
     sources: [],
   };
 }
@@ -77,6 +95,22 @@ export function applyStartResult(
   const iterationIndex = mission.iterations.length - 1;
   const current = mission.iterations[iterationIndex];
   if (!result.ok) {
+    if (result.cleanupUnconfirmed && result.sessionId) {
+      return {
+        ...mission,
+        status: "running",
+        startedAt: mission.startedAt ?? timestamp,
+        updatedAt: timestamp,
+        lastError: result.error || "Research session cleanup could not be confirmed",
+        iterations: mission.iterations.map((item, index) => index === iterationIndex ? {
+          ...current,
+          status: "running",
+          sessionId: result.sessionId,
+          startedAt: current?.startedAt ?? timestamp,
+          summary: result.error || "Research session cleanup could not be confirmed",
+        } : item),
+      };
+    }
     return {
       ...mission,
       status: "failed",

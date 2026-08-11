@@ -1,6 +1,12 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { after, test } from "node:test";
+import { createDefaultPreferences } from "../../../lib/preferences-schema.ts";
 
 const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 const rosterHelper = readFileSync(new URL("../../../lib/server/familiar-roster.ts", import.meta.url), "utf8");
@@ -100,6 +106,16 @@ assert.match(
   /await ensureAdapterManifestScaffold\(draft\.harness\)/,
   "POST should scaffold adapters through the COVEN_HOME-aware shared writer",
 );
+assert.match(
+  source,
+  /import \{ loadPreferences \} from "@\/lib\/server\/preferences-store";/,
+  "POST should load the canonical Cave preferences on the server",
+);
+assert.match(
+  source,
+  /import \{ voiceBindingForNewFamiliar \} from "@\/lib\/voice\/new-familiar-defaults";/,
+  "POST should validate new-familiar voice defaults through the shared helper",
+);
 
 // Reuses the shared onboarding write primitives so a UI-created familiar is
 // identical to a setup-created one.
@@ -147,6 +163,25 @@ assert.doesNotMatch(
   /defaults:\s*\{/,
   "POST must NOT write a defaults object — creating a familiar must not change the user's global default harness/model",
 );
+assert.match(
+  source,
+  /const preferences = await loadPreferences\(\);\s*const voiceBinding = voiceBindingForNewFamiliar\(preferences\.voice\);\s*await saveConfig\(\{/,
+  "POST should derive the voice binding from canonical preferences immediately before saveConfig",
+);
+assert.match(
+  source,
+  /\[draft\.id\]:\s*\{[\s\S]{0,320}?voiceProvider:\s*null,\s*voiceModel:\s*null,\s*voiceName:\s*null,\s*\.\.\.voiceBinding[\s\S]{0,320}?\}\s*,?\s*\}\s*,?\s*\}\);/,
+  "POST should clear orphaned voice fields before spreading defaults inside only the new familiar binding",
+);
+assert.equal(
+  source.match(/voiceProvider:\s*null/g)?.length,
+  1,
+  "the voice clear sentinels should exist only in the new-familiar upsert",
+);
+assert.ok(
+  source.indexOf("await saveConfig({") < source.indexOf("await writeFile("),
+  "POST persists a familiar binding before registering it in familiars.toml",
+);
 
 // Optional-body (fallback-empty) handling, per the API contract for this route.
 assert.match(source, /let body[\s\S]{0,120}=\s*\{\}/, "POST should initialize an optional request body");
@@ -169,5 +204,243 @@ assert.match(
   /try\s*\{\s*contractWrote = await scaffoldFamiliarContractFiles\([\s\S]*?\}\s*catch\s*\{/,
   "contract scaffolding must be best-effort (never fail creation)",
 );
+
+// Real POST behavior: exercise the route against isolated Cave/Coven homes and
+// a controlled empty daemon roster so config/TOML ordering and deep-merge
+// behavior are verified without touching a live install or external service.
+const testRoot = await mkdtemp(path.join(tmpdir(), "familiars-post-route-"));
+const testCovenHome = path.join(testRoot, "coven");
+const testCaveHome = path.join(testRoot, "cave");
+const socketPath = path.join(testRoot, "coven.sock");
+const configPath = path.join(testCaveHome, "config.json");
+const preferencesPath = path.join(testCaveHome, "preferences.json");
+const familiarsTomlPath = path.join(testCovenHome, "familiars.toml");
+const originalEnv = {
+  COVEN_HOME: process.env.COVEN_HOME,
+  COVEN_CAVE_HOME: process.env.COVEN_CAVE_HOME,
+  COVEN_SOCKET: process.env.COVEN_SOCKET,
+  COVEN_PREFERENCES_PATH: process.env.COVEN_PREFERENCES_PATH,
+  COVEN_THEME_PATH: process.env.COVEN_THEME_PATH,
+  COVEN_WORKSPACES_ROOT: process.env.COVEN_WORKSPACES_ROOT,
+};
+
+await mkdir(testCovenHome, { recursive: true });
+await mkdir(testCaveHome, { recursive: true });
+process.env.COVEN_HOME = testCovenHome;
+process.env.COVEN_CAVE_HOME = testCaveHome;
+process.env.COVEN_SOCKET = socketPath;
+process.env.COVEN_PREFERENCES_PATH = preferencesPath;
+process.env.COVEN_THEME_PATH = path.join(testCaveHome, "theme.json");
+process.env.COVEN_WORKSPACES_ROOT = path.join(testCovenHome, "workspaces");
+
+const daemonRequests: string[] = [];
+const daemonServer = createServer((req, res) => {
+  daemonRequests.push(req.url ?? "");
+  if (req.method === "GET" && req.url === "/api/v1/familiars") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end("[]");
+    return;
+  }
+  res.writeHead(404, { "content-type": "application/json" });
+  res.end(JSON.stringify({ error: "not_found" }));
+});
+await new Promise<void>((resolve, reject) => {
+  daemonServer.once("error", reject);
+  daemonServer.listen(socketPath, () => {
+    daemonServer.off("error", reject);
+    resolve();
+  });
+});
+
+after(async () => {
+  await new Promise<void>((resolve) => {
+    daemonServer.close(() => resolve());
+    daemonServer.closeAllConnections();
+  });
+  for (const [name, value] of Object.entries(originalEnv)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+  await rm(testRoot, { recursive: true, force: true });
+});
+
+const { POST } = await import("./route.ts");
+
+const existingToml = [
+  "# User familiars for this Coven.",
+  "",
+  "[[familiar]]",
+  'id = "existing"',
+  'display_name = "Existing"',
+  'role = "Familiar"',
+  'description = "Already here"',
+  'harness = "codex"',
+  "",
+].join("\n");
+
+function baseConfig(familiars: Record<string, Record<string, unknown>>) {
+  return {
+    version: 1,
+    defaults: { harness: "claude", model: "workspace/default" },
+    familiars,
+    roles: [],
+    addons: {
+      github: false,
+      code: false,
+      browser: false,
+      flow: false,
+      journal: false,
+      docs: false,
+    },
+    marketplace: { installed: {}, knowledgePacks: [] },
+    multiHost: { mode: "local", hubUrl: "", executorUrls: [] },
+    omnigent: {
+      enabled: false,
+      baseUrl: "",
+      defaultAgentId: "",
+      defaultHostId: "",
+      defaultWorkspace: "",
+      hostMap: {},
+      hostWorkspaceMap: {},
+      exposeHostsInComposer: true,
+    },
+    remoteHosts: [],
+  };
+}
+
+async function writeBehaviorFixture(
+  familiars: Record<string, Record<string, unknown>>,
+  voice: { defaultProvider: unknown; defaultModel: unknown; defaultVoice: unknown },
+  toml = existingToml,
+) {
+  const preferences = createDefaultPreferences(true);
+  preferences.voice = voice as typeof preferences.voice;
+  await rm(configPath, { recursive: true, force: true });
+  await writeFile(configPath, JSON.stringify(baseConfig(familiars), null, 2));
+  await writeFile(preferencesPath, JSON.stringify(preferences, null, 2));
+  await writeFile(familiarsTomlPath, toml);
+}
+
+function createRequest(id: string): Request {
+  return new Request("http://test/api/familiars", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiar: {
+        id,
+        displayName: id,
+        description: `Description for ${id}`,
+        harness: "codex",
+        model: "openai/gpt-5.6-sol",
+      },
+    }),
+  });
+}
+
+async function readConfig() {
+  return JSON.parse(await readFile(configPath, "utf8")) as ReturnType<typeof baseConfig>;
+}
+
+test("POST seeds valid voice preferences only into the created familiar", async () => {
+  const existing = {
+    harness: "codex",
+    model: "existing/model",
+    voiceProvider: "local",
+    voiceModel: "existing-voice-model",
+    voiceName: "Existing Voice",
+  };
+  const initial = baseConfig({ existing });
+  await writeBehaviorFixture(
+    { existing },
+    {
+      defaultProvider: "openai",
+      defaultModel: "gpt-realtime",
+      defaultVoice: "cedar",
+    },
+  );
+
+  const response = await POST(createRequest("valid-voice"));
+  assert.equal(response.status, 200);
+  const config = await readConfig();
+  assert.deepEqual(config.familiars["valid-voice"], {
+    harness: "codex",
+    model: "openai/gpt-5.6-sol",
+    voiceProvider: "openai",
+    voiceModel: "gpt-realtime",
+    voiceName: "cedar",
+  });
+  assert.equal(JSON.stringify(config.defaults), JSON.stringify(initial.defaults));
+  assert.equal(JSON.stringify(config.familiars.existing), JSON.stringify(existing));
+  assert.match(await readFile(familiarsTomlPath, "utf8"), /id = "valid-voice"/);
+});
+
+test("POST omits voice fields for none and invalid preferences", async () => {
+  for (const [id, voice] of [
+    ["none-voice", { defaultProvider: "", defaultModel: "", defaultVoice: "" }],
+    ["invalid-voice", {
+      defaultProvider: "openai",
+      defaultModel: "gpt-4o-realtime-preview",
+      defaultVoice: "alloy",
+    }],
+  ] as const) {
+    await writeBehaviorFixture({}, voice, "# User familiars for this Coven.\n");
+    const response = await POST(createRequest(id));
+    assert.equal(response.status, 200);
+    const binding = (await readConfig()).familiars[id];
+    assert.ok(binding);
+    assert.equal("voiceProvider" in binding, false);
+    assert.equal("voiceModel" in binding, false);
+    assert.equal("voiceName" in binding, false);
+  }
+});
+
+test("POST retry clears stale orphan voice fields when preferences do not bind voice", async () => {
+  await writeBehaviorFixture(
+    {
+      orphan: {
+        harness: "claude",
+        model: "old/model",
+        voiceProvider: "elevenlabs",
+        voiceModel: "eleven_turbo_v2_5",
+        voiceName: "21m00Tcm4TlvDq8ikWAM",
+        note: "preserve me",
+      },
+    },
+    { defaultProvider: "", defaultModel: "", defaultVoice: "" },
+    "# User familiars for this Coven.\n",
+  );
+
+  const response = await POST(createRequest("orphan"));
+  assert.equal(response.status, 200);
+  const binding = (await readConfig()).familiars.orphan;
+  assert.equal(binding.harness, "codex");
+  assert.equal(binding.model, "openai/gpt-5.6-sol");
+  assert.equal(binding.note, "preserve me");
+  assert.equal("voiceProvider" in binding, false);
+  assert.equal("voiceModel" in binding, false);
+  assert.equal("voiceName" in binding, false);
+  assert.match(await readFile(familiarsTomlPath, "utf8"), /id = "orphan"/);
+});
+
+test("POST does not register TOML when config persistence fails", async () => {
+  await writeBehaviorFixture(
+    {},
+    { defaultProvider: "", defaultModel: "", defaultVoice: "" },
+    "# User familiars for this Coven.\n",
+  );
+  await rm(configPath, { force: true });
+  await mkdir(configPath);
+
+  await assert.rejects(() => POST(createRequest("config-failure")));
+  assert.equal(
+    await readFile(familiarsTomlPath, "utf8"),
+    "# User familiars for this Coven.\n",
+  );
+});
+
+test("behavior tests used only the controlled empty daemon roster", () => {
+  assert.ok(daemonRequests.length >= 4);
+  assert.deepEqual(new Set(daemonRequests), new Set(["/api/v1/familiars"]));
+});
 
 console.log("familiars route.test.ts: ok");

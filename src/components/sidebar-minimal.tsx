@@ -4,13 +4,13 @@
  * SidebarMinimal -- the redesigned Cave sidebar.
  *
  * Layout (top to bottom):
- *   1. Familiar scope selector + New chat CTA
- *   2. App destinations as one flat visible list
+ *   1. Home / Chat section tabs, familiar scope selector, and New chat CTA
+ *   2. Grouped app destinations and role-surface rooms
  *   3. Footer: Dashboard, Settings
  */
 
 import React from "react";
-import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
+import { SidebarRailHeader } from "@/components/sidebar-rail-header";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import {
@@ -21,33 +21,45 @@ import {
 } from "@/lib/page-drag";
 import { sidebarRowState, type SidebarRowState } from "@/lib/sidebar-nav-state";
 import { RecentActivityRollup } from "@/components/recent-activity-rollup";
+import { NavSectionTabs } from "@/components/nav-section-tabs";
 import { SidebarFooter } from "@/components/sidebar-footer";
+import {
+  DEFAULT_NAV_SECTION,
+  navItemsForSection,
+  roomBelongsToSection,
+  type NavSection,
+} from "@/lib/nav-section";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
-import type { WorkspaceMode } from "@/lib/workspace-mode";
-
-/** The sidebar's mode vocabulary IS the workspace's — one union, no copy.
- *  (Was a hand-maintained duplicate that drifted; cave-m4ih.3.) */
-export type FolderMode = WorkspaceMode;
-
+import {
+  type WorkspaceNavItem,
+  type WorkspaceNavMode,
+} from "@/lib/workspace-navigation";
 export type SidebarRoleSurfaceRow = {
   /** Generic workspace mode string (`surface:<id>`) — the sidebar never
-   *  interprets it, only round-trips it through onModeChange. */
+   *  interprets it, only round-trips it through navigation callbacks. */
   mode: string;
   label: string;
   iconName: Parameters<typeof Icon>[0]["name"];
   description: string;
+  /** In All/multi scope, selecting a room first narrows to this owner so the
+   *  host can provide its familiar-bound context. */
+  familiarId?: string;
 };
 
 export type SidebarMinimalProps = {
   mode: string;
+  /** Active global section (Home | Chat). The shell owns it so deep links and
+   *  the ⌘K palette can move rooms; omitted falls back to Home. */
+  section?: NavSection;
+  onSectionChange?: (section: NavSection) => void;
   /** Page modes currently open as secondary split tiles (drag-to-split).
    *  Their rows get a lighter "open in split" wash instead of the active fill,
    *  so the highlight stays honest when a page renders beside the primary. */
   splitPageModes?: readonly string[];
-  /** Role Surface rooms visible for the active familiar. Registry-driven —
+  /** Role Surface rooms visible for the active scope. Registry-driven —
    *  rendered as their own cluster; empty/omitted hides the cluster. */
   roleSurfaces?: readonly SidebarRoleSurfaceRow[];
   sessions: SessionRow[];
@@ -64,7 +76,7 @@ export type SidebarMinimalProps = {
   /** Multiselect scope (≥2 ids) — the header switcher checks members and
    *  summarizes the count on its trigger. */
   selectedFamiliarIds?: ReadonlySet<string>;
-  onFamiliarScopeChange: (id: string | null, opts?: { multi?: boolean }) => void;
+  onFamiliarScopeChange: (id: string | null, opts?: { multi?: boolean; preserveSurface?: boolean }) => void;
   responseNeeded?: Set<string>;
   notificationBadgeCount?: number;
   onOpenInbox?: () => void;
@@ -72,7 +84,6 @@ export type SidebarMinimalProps = {
   /** Live counts surfaced as small nav badges (omitted/0 -> no badge). */
   boardOpenCount?: number;
   scheduleNeedsCount?: number;
-  githubAssignedCount?: number;
 };
 
 // Format a count as a compact nav badge; 0/undefined yields no badge.
@@ -81,61 +92,10 @@ function badgeText(n?: number): string | undefined {
   return n > 99 ? "99+" : String(n);
 }
 
-const FOLDER_MODES: Array<{
-  id: FolderMode;
-  label: string;
-  iconName: Parameters<typeof Icon>[0]["name"];
-  badge?: (props: SidebarMinimalProps) => string | undefined;
-  kbd?: string;
-  // One-line hover/long-press help. Differentiates surfaces that read alike at
-  // a glance.
-  description: string;
-  /** Visual demotion (§8 quiet hierarchy): still one flat list — same roving
-   *  tabindex, same click targets — but quiet rows render muted-until-hover
-   *  and the first one opens a spacing gap, so daily destinations read first. */
-  quiet?: boolean;
-  /** Kept in the list (so the command palette's "Go to" launcher and the
-   *  ⌘-number shortcut still reach it) but NOT rendered as a sidebar row. For
-   *  surfaces you summon on demand rather than navigate to daily — the Browser
-   *  opens itself when a link/URL is clicked, so it needn't sit in the nav. */
-  navHidden?: boolean;
-}> = [
-  { id: "home", label: "Home", iconName: "ph:house-bold", kbd: "⌘1", description: "Overview and quick actions" },
-  { id: "chat", label: "Chat", iconName: "ph:chats", kbd: "⌘2", description: "Talk with your familiars — 1:1 or a Group tab for a whole coven" },
-  // Group Chat ("coven") is no longer a standalone destination — it lives as the
-  // Group tab inside Chat. The `groupchat` mode still exists as a redirect target.
-  { id: "board", label: "Tasks", iconName: "ph:kanban", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
-  { id: "inbox", label: "Rituals", iconName: "ph:calendar-check", kbd: "⌘4", description: "Inbox, calendar, and scheduled jobs in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
-  // Chat-first hierarchy (cave-xsq.8): the prominent cluster is exactly the
-  // ⌘-numbered daily destinations (Home · Chat · Tasks · Schedules — Schedules
-  // also carries the needs-you badge). Memories joins the quiet cluster: same
-  // flat list, same reachability (rows, palette, deep links), just
-  // muted-until-hover so the conversation-first surfaces read first.
-  // Journal keeps no row of its own — it's a tab inside Memories, and a
-  // dedicated row double-listed the same surface. navHidden keeps the mode in
-  // the ⌘K palette and as a deep-link target (setMode remaps it to the
-  // Memories surface's Journal tab).
-  { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your familiars' daily reflections — a tab in Memories", quiet: true, navHidden: true },
-  { id: "grimoire", label: "Memories", iconName: "ph:books", description: "Edit memory, knowledge, and journal markdown as living documents", quiet: true },
-  // Browser is summoned on demand (a clicked link/URL opens it, plus ⌘5 and the
-  // ⌘K palette) rather than navigated to daily, so it's kept in the list for
-  // those launchers but hidden from the sidebar rows.
-  { id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true },
-  // Ask Salem is a destination you summon (Home entry, ⌘K "Go to", deep link,
-  // or the split-pane widget's expand button) — deliberately NOT a sidebar row
-  // (see salem-home-entry.test.ts). navHidden keeps it reachable everywhere else.
-  { id: "salem", label: "Ask Salem", iconName: "ph:cat", description: "Ask the docs familiar — grounded answers from the Coven index and your Cave", navHidden: true },
-  { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' crafts and skills", quiet: true },
-  // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
-  // mode + page remain reachable programmatically but aren't surfaced here.
-  { id: "github", label: "GitHub", iconName: "ph:github-logo", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount), quiet: true },
-];
-
-// Rows actually rendered in the sidebar — everything except on-demand surfaces
-// (navHidden), which stay in FOLDER_MODES for the ⌘K palette + ⌘-number launcher.
-const VISIBLE_MODES = FOLDER_MODES.filter((fm) => !fm.navHidden);
-
-export { FOLDER_MODES };
+const MODE_BADGES: Partial<Record<WorkspaceNavMode, (props: SidebarMinimalProps) => string | undefined>> = {
+  board: (props) => badgeText(props.boardOpenCount),
+  inbox: (props) => badgeText(props.scheduleNeedsCount),
+};
 
 
 function FolderRow({
@@ -189,11 +149,11 @@ function FolderRow({
       onDragStart={
         draggable
           ? (e) => {
-              e.dataTransfer.setData(PAGE_DRAG_MIME, id);
-              e.dataTransfer.setData("text/plain", label);
-              e.dataTransfer.effectAllowed = "copy";
-              emitPageDragStart({ mode: id, label });
-            }
+            e.dataTransfer.setData(PAGE_DRAG_MIME, id);
+            e.dataTransfer.setData("text/plain", label);
+            e.dataTransfer.effectAllowed = "copy";
+            emitPageDragStart({ mode: id, label });
+          }
           : undefined
       }
       onDragEnd={draggable ? () => emitPageDragEnd() : undefined}
@@ -213,6 +173,8 @@ function FolderRow({
 export function SidebarMinimal(props: SidebarMinimalProps) {
   const {
     mode,
+    section = DEFAULT_NAV_SECTION,
+    onSectionChange,
     onNewChat,
     onOpenSettings,
     onModeChange,
@@ -233,9 +195,14 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
   // Projects lives only inside the Familiars surface's Projects tab now (and ⌘9 /
   // the /projects deep-link in workspace.tsx open it there) — no sidebar entry.
-  const handleModeSelect = (id: FolderMode) => {
+  const handleModeSelect = (id: WorkspaceNavMode) => {
     onModeChange(id);
   };
+  // Rooms are registry-driven; each one shows in the section its mode maps to.
+  const sectionRooms = React.useMemo(
+    () => (props.roleSurfaces ?? []).filter((room) => roomBelongsToSection(room.mode, section)),
+    [props.roleSurfaces, section],
+  );
 
   return (
     <nav className="sidebar-minimal" aria-label="Primary">
@@ -249,89 +216,90 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       {/* Static wordmark. Collapsing the sidebar is now owned by the shell's
           floating top-left toggle (and ⌘B), so the header is no longer a
           button — it just leaves room for the float. */}
-      {/* Familiar scope lives HERE, on every page (cave-vtk9) — the sidenav
-          header carries the labeled dropdown switcher; the collapsed rail
-          keeps the avatar-only trigger. The mobile top bar keeps its own
-          (the drawer hides this one). */}
-      <div className="sidebar-familiar-switch">
-        <FamiliarQuickSwitch
-          familiars={familiars}
-          activeFamiliarId={activeFamiliarId ?? null}
-          selectedFamiliarIds={selectedFamiliarIds}
-          sessions={sessions}
-          responseNeeded={responseNeeded}
-          onSelectFamiliar={onFamiliarScopeChange}
-          placement="bottom-start"
-          labeled
-        />
-      </div>
+      {onSectionChange ? <NavSectionTabs section={section} onSectionChange={onSectionChange} /> : null}
 
-      <div className="sidebar-actions">
-        <button type="button" className="sidebar-action-row focus-ring" onClick={onNewChat} title="New chat">
-          <Icon
-            name="ph:note-pencil"
-            className="sidebar-action-icon"
-            width={CAVE_ICON_SIZE.sidePanelAction}
-            height={CAVE_ICON_SIZE.sidePanelAction}
-            aria-hidden
-          />
-          <span>New chat</span>
-        </button>
-      </div>
+      {/* Familiar scope + New chat (cave-vtk9) — SHARED with the Chat section
+          via SidebarRailHeader, so the two controls cannot drift apart across
+          the Home/Chat toggle the way the forked copies did. The collapsed rail
+          keeps the avatar-only trigger; the mobile top bar keeps its own
+          switcher (the drawer hides this one). */}
+      <SidebarRailHeader
+        familiars={familiars}
+        activeFamiliarId={activeFamiliarId ?? null}
+        selectedFamiliarIds={selectedFamiliarIds}
+        sessions={sessions}
+        responseNeeded={responseNeeded}
+        onSelectFamiliar={onFamiliarScopeChange}
+        onNewChat={onNewChat}
+      />
 
-      <div className="sidebar-nav-scroll" ref={navScrollRef}>
-        {VISIBLE_MODES.map((fm, i) => (
-          <FolderRow
-            key={fm.id}
-            id={fm.id}
-            label={fm.label}
-            iconName={fm.iconName}
-            // Active follows the primary mode (Roles/Capabilities keep the
-            // Marketplace hub lit); pages open as split tiles get a lighter
-            // "open in split" state instead. Derivation in lib/sidebar-nav-state.
-            state={sidebarRowState(fm.id, mode, props.splitPageModes)}
-            badge={fm.badge?.(props)}
-            kbd={fm.kbd}
-            description={fm.description}
-            quiet={fm.quiet}
-            // Index the VISIBLE list, not FOLDER_MODES — a navHidden entry between
-            // quiet rows must not throw off the "first quiet row" gap.
-            quietLead={Boolean(fm.quiet) && !VISIBLE_MODES[i - 1]?.quiet}
-            onClick={() => handleModeSelect(fm.id)}
-          />
-        ))}
-
-        {/* Role Surface rooms — the active familiar's vocation workspaces.
+      <div
+        className="sidebar-nav-scroll"
+        ref={navScrollRef}
+        role="tabpanel"
+        id={`nav-section-panel-${section}`}
+        aria-labelledby={`nav-section-tab-${section}`}
+      >
+          {navItemsForSection(section).map((fm: WorkspaceNavItem, i, rows) => (
+            <FolderRow
+              key={fm.id}
+              id={fm.id}
+              label={fm.label}
+              iconName={fm.iconName}
+              // Active follows the primary mode (Roles/Capabilities keep the
+              // Marketplace hub lit); pages open as split tiles get a lighter
+              // "open in split" state instead. Derivation in lib/sidebar-nav-state.
+              state={sidebarRowState(fm.id, mode, props.splitPageModes)}
+              badge={MODE_BADGES[fm.id]?.(props)}
+              kbd={fm.kbd}
+              description={fm.description}
+              quiet={fm.quiet}
+              // Index the RENDERED list — a navHidden entry between quiet rows
+              // must not throw off the "first quiet row" gap.
+              quietLead={Boolean(fm.quiet) && !rows[i - 1]?.quiet}
+              onClick={() => handleModeSelect(fm.id)}
+            />
+          ))}
+          {/* Role Surface rooms — the active familiar's or selected scope's
+            vocation workspaces, filtered to the open section (the coding
+            workbench belongs to Code; every other room to Home).
             Registry-driven: the sidebar renders whatever it's handed and never
             names a role. The cluster label keeps them reading as chambers of
             the Cave rather than more app tabs. */}
-        {(props.roleSurfaces?.length ?? 0) > 0 && (
-          <>
-            <div className="sidebar-rooms-label" aria-hidden>
-              Rooms
-            </div>
-            {props.roleSurfaces!.map((room) => (
-              <FolderRow
-                key={room.mode}
-                id={room.mode}
-                label={room.label}
-                iconName={room.iconName}
-                state={sidebarRowState(room.mode, mode, props.splitPageModes)}
-                description={room.description}
-                onClick={() => {
-                  onModeChange(room.mode);
-                }}
-              />
-            ))}
-          </>
-        )}
+          {sectionRooms.length > 0 && (
+            <>
+              <div className="sidebar-rooms-label" aria-hidden>
+                Rooms
+              </div>
+              {sectionRooms.map((room) => (
+                <FolderRow
+                  key={room.mode}
+                  id={room.mode}
+                  label={room.label}
+                  iconName={room.iconName}
+                  state={sidebarRowState(room.mode, mode, props.splitPageModes)}
+                  description={room.description}
+                  onClick={() => {
+                    if (room.familiarId && room.familiarId !== activeFamiliarId) {
+                      onFamiliarScopeChange(room.familiarId, { preserveSurface: true });
+                    }
+                    onModeChange(room.mode);
+                  }}
+                />
+              ))}
+            </>
+          )}
 
-        <RecentActivityRollup
-          sessions={sessions}
-          selectedFamiliarIds={selectedFamiliarIds}
-          activeSessionId={activeSessionId}
-          onOpenSession={onOpenSession}
-        />
+          {/* The session list belongs to the Code room (cave-24d2r) — Home is
+            destinations, Code is live work. */}
+          {section === "code" ? (
+            <RecentActivityRollup
+              sessions={sessions}
+              selectedFamiliarIds={selectedFamiliarIds}
+              activeSessionId={activeSessionId}
+              onOpenSession={onOpenSession}
+            />
+          ) : null}
       </div>
 
       {/* Bottom: Dashboard + Settings, then the version line — shared with the

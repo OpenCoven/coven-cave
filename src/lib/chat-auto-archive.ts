@@ -10,8 +10,8 @@ import type { SessionOrigin, SessionRow } from "./types.ts";
  *    default behavior; enabling this flips the nudge into an automatic archive.
  *  - `archiveOnReflection`: archive a chat as soon as a thread reflection
  *    (self-report) lands for it — a reflection marks the thread as wrapped up.
- *    Off by default; toggled from the chat page's Settings tab. Periodic
- *    (mid-flight) reports never archive; `manual` reflections archive
+ *    On by default; can be disabled from the chat page's Settings tab.
+ *    Periodic (mid-flight) reports never archive; `manual` reflections archive
  *    immediately; `auto` reflections only archive threads already idle (see
  *    REFLECTION_AUTO_ARCHIVE_MIN_IDLE_MS).
  *  - `archiveOnPrMerge`: archive a chat when the pull request its work
@@ -49,7 +49,7 @@ export type ChatAutoArchivePolicy = {
 export const DEFAULT_CHAT_AUTO_ARCHIVE_POLICY: ChatAutoArchivePolicy = {
   enabled: true,
   archiveOnTaskCompletion: false,
-  archiveOnReflection: false,
+  archiveOnReflection: true,
   archiveOnPrMerge: true,
   externalAfterDays: 7,
   idleAfterDays: 30,

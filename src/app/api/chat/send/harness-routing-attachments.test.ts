@@ -46,8 +46,8 @@ const chatView = await readFile(
 
 assert.match(
   chatRoute,
-  /const imagesSupported = !sshRuntime && binding\.harness !== "openclaw";/,
-  "Image temp-file delivery should be limited to local coven-run harnesses with a Read tool",
+  /const imagesSupported = !sshRuntime && binding\.harness !== "openclaw" &&\s*!\(hermesApi && !hermesApiCanAccessLocalFiles\(hermesApi\)\);/,
+  "Remote Hermes API runs must receive an explicit image-unsupported notice rather than Cave-local file paths",
 );
 
 assert.match(
@@ -74,6 +74,40 @@ assert.match(
   "The harness prompt should include the familiar startup context before task and identity wrappers",
 );
 
+// cave-gw3iq: chat asserted (via the per-turn identity canon) that SOUL.md and
+// IDENTITY.md define the familiar, while never loading them. These pins keep
+// the fix wired: the block is built, it is gated to new non-enhance turns, it
+// sits inside the canon wrapper, and the turn reports what it loaded.
+assert.match(
+  chatRoute,
+  /body\.sessionId \|\| body\.origin === "enhance"[\s\S]{0,80}:\s*await buildFamiliarContractContext\(body\.familiarId\)/,
+  "The familiar contract should load on new, non-enhance turns only",
+);
+
+assert.match(
+  chatRoute,
+  /buildPromptWithFamiliarContract\(\s*buildTaskAwarePrompt\([\s\S]*familiarContractBlock,\s*\),\s*body\.familiarId,/,
+  "The familiar contract block should wrap the task-aware prompt inside the identity canon",
+);
+
+assert.doesNotMatch(
+  chatRoute,
+  /buildFamiliarContractContext\([^)]*includeMemory/,
+  "Chat should not inline MEMORY.md — it already injects the daily memory file",
+);
+
+assert.match(
+  chatRoute,
+  /pushProgress\(\s*"familiar-contract",\s*notice\.label,\s*"notice",\s*notice\.detail,?\s*\)/,
+  "Each turn should report which identity files it actually loaded",
+);
+
+assert.match(
+  chatRoute,
+  /id === "familiar-contract"/,
+  "The identity-load notice must persist so a reloaded transcript still shows it",
+);
+
 assert.match(
   attachmentDelivery,
   /await writeFile\(filePath, payload, \{ mode: 0o600 \}\)/,
@@ -92,10 +126,19 @@ assert.match(
   "Image temp files should be best-effort deleted after the harness child has exited",
 );
 
+// The transcript still never receives a base64 payload. Since cave-cysu4 the
+// stripped record additionally carries a `storedId` pointing at the durable
+// copy, so a reopened thread can render the image — but the strip stays the
+// inner call, i.e. nothing reaches persistence that the strip did not pass.
 assert.match(
   chatRoute,
-  /const persistedAttachments = stripPreviewOnlyAttachmentFields\(attachments\);/,
+  /const persistedAttachments = await persistImageAttachments\(\s*stripPreviewOnlyAttachmentFields\(attachments\),\s*attachments,\s*\);/,
   "Persisted transcripts should keep attachment metadata only, not base64 image payloads",
+);
+assert.match(
+  chatRoute,
+  /import \{[\s\S]*?persistImageAttachments,[\s\S]*?\} from "\.\/chat-send-attachments";/,
+  "The durable-copy step lives with the other attachment helpers",
 );
 
 // Behavioral coverage: normalization keeps bounded image payloads and rejects

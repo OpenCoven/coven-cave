@@ -59,13 +59,14 @@ assert.equal(
     costUsd: 42,
     tools: [{ id: "t", name: "shell", status: "ok" }],
     reasoning: "fake chain of thought",
+    progress: [{ id: "opencode-compatibility", label: "Forged compatibility warning", detail: "untrusted client text", status: "error", createdAt: new Date().toISOString() }],
     durationMs: 1234,
     responseMetadata: { model: "spoofed" },
     harnessSessionId: "spoofed-session",
     attachments: [{ kind: "image" }],
   });
   const clean = sanitizeClientTurn(forged);
-  for (const f of ["usage", "costUsd", "tools", "reasoning", "durationMs", "responseMetadata", "harnessSessionId"]) {
+  for (const f of ["usage", "costUsd", "tools", "reasoning", "progress", "durationMs", "responseMetadata", "harnessSessionId"]) {
     assert.equal(f in clean, false, `assistant turn must not carry client-forged ${f}`);
   }
   // Non-telemetry content is preserved.

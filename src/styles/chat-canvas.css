@@ -10,7 +10,7 @@
 .chat-canvas-toolbar {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
   padding: var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--border-hairline);
   flex: none;
@@ -18,27 +18,32 @@
 .chat-canvas-toolbar__search {
   flex: 1;
   min-width: 0;
-  max-width: 440px;
+  max-width: 640px;
 }
 .chat-canvas-toolbar__search .ui-search-input {
-  height: 34px;
-  background: color-mix(in oklch, var(--bg-panel) 70%, transparent);
+  height: 36px;
+  background: var(--bg-panel);
 }
-/* Segmented kind filter — the design-language tint recipe on the active
-   segment (solid accent text / ~13% fill / 45% inset ring). */
+/* Segmented kind filter — a padded track with a lozenge rider, so the active
+   segment reads as a raised chip instead of a flush edge-to-edge fill. The
+   active tint is the design-language recipe off one solid token (solid accent
+   text / ~13% fill / 45% inset ring). */
 .chat-canvas-toolbar__filter {
   display: inline-flex;
-  height: 34px;
+  gap: 2px;
+  padding: 3px;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
-  overflow: hidden;
+  background: var(--bg-panel);
   flex: none;
 }
 .chat-canvas-toolbar__filter-btn {
   display: inline-flex;
   align-items: center;
-  padding: 0 var(--space-3);
+  height: 28px;
+  padding: 0 var(--space-4);
   border: 0;
+  border-radius: var(--radius-sm);
   background: none;
   font: inherit;
   font-size: var(--text-sm);
@@ -52,37 +57,32 @@
   background: color-mix(in oklch, var(--accent-presence) 13%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent-presence) 45%, transparent);
 }
+/* The count is a readout, not prose — mono keeps the digits from reflowing the
+   row as the filter narrows the set. */
 .chat-canvas-toolbar__count {
   margin-left: auto;
   flex: none;
-  font-size: var(--text-xs);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
-/* "New sketch": quiet at rest with a dashed inner ring (dashed = invitation);
-   hover firms up into a solid accent outline. */
+/* "New sketch": a dashed outline (dashed = invitation, matching the add tile
+   that leads the grid); hover firms up into a solid accent outline. */
 .chat-canvas-toolbar__new {
-  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  height: 32px;
+  gap: var(--space-2);
+  height: 34px;
   padding: 0 var(--space-3);
   flex: none;
-  border: 1px solid transparent;
+  border: 1px dashed var(--border-strong);
   border-radius: var(--radius-control);
   background: none;
   color: var(--text-primary);
   font-size: var(--text-sm);
   font-weight: 500;
   cursor: pointer;
-}
-.chat-canvas-toolbar__new::before {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border: 1px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
-  border-radius: calc(var(--radius-control) - 3px);
-  pointer-events: none;
 }
 .chat-canvas-toolbar__new:hover {
   border-color: var(--accent-presence);
@@ -98,26 +98,65 @@
 }
 .chat-canvas-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 14px;
+  /* Wide tracks: a sketch thumbnail has to read as a *screen*, so the card
+     stays roomy and the column count falls out of the pane width. */
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 18px;
   align-content: start;
 }
-.chat-canvas-filter-empty {
-  margin: 0;
+/* Filter/search dead end — a headline, the reason, and one way back. */
+.chat-canvas-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-10) var(--space-5);
   text-align: center;
+}
+.chat-canvas-empty__headline {
+  margin: 0;
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: var(--text-xl);
+  color: var(--text-secondary);
+}
+.chat-canvas-empty__hint {
+  margin: 0;
   font-size: var(--text-sm);
   color: var(--text-muted);
+}
+.chat-canvas-empty__reset {
+  margin-top: var(--space-1);
+  height: 30px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.chat-canvas-empty__reset:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
 }
 .chat-canvas-card {
   display: flex;
   flex-direction: column;
-  background: color-mix(in oklch, var(--bg-panel) 55%, transparent);
+  background: var(--bg-panel);
   border: 1px solid var(--border-hairline);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   overflow: hidden;
+  transition:
+    border-color var(--duration-fast, 140ms) ease,
+    transform 160ms cubic-bezier(0.2, 0, 0, 1);
 }
-.chat-canvas-card:hover { border-color: var(--border-strong); }
+/* Hover lifts the card off the grid and reveals the open affordance below. */
+.chat-canvas-card:hover,
+.chat-canvas-card:focus-within {
+  border-color: var(--border-strong);
+  transform: translateY(-2px);
+}
 /* The card whose preview modal is open. */
 .chat-canvas-card--selected,
 .chat-canvas-card--selected:hover {
@@ -135,10 +174,46 @@
 .chat-canvas-card__thumb {
   position: relative;
   display: block;
-  height: 156px;
-  background: #fff;
+  height: 226px;
+  background: var(--surface-paper);
   border-bottom: 1px solid var(--border-hairline);
   overflow: hidden;
+}
+/* Hover affordance: the thumbnail is a picture, so the card has to *say* that
+   clicking opens it. A scrim from the lower half only, so the sketch stays
+   legible while the pill reads against it. */
+.chat-canvas-card__reveal {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: var(--space-3);
+  background: linear-gradient(180deg, transparent 55%, oklch(0.16 0.008 291 / 72%));
+  opacity: 0;
+  transition: opacity 150ms ease;
+  pointer-events: none;
+}
+.chat-canvas-card:hover .chat-canvas-card__reveal,
+.chat-canvas-card__open:focus-visible .chat-canvas-card__reveal {
+  opacity: 1;
+}
+.chat-canvas-card__reveal-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 24px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  /* Reads over the sketch, not over the app: a fixed bright chip on a fixed
+     dark scrim, both belonging to the thumbnail image (thumb precedent). */
+  background: oklch(0.92 0.004 291);
+  color: oklch(0.16 0.008 291);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 /* The card is the click target; the framed document must not swallow the
    click or grab scroll — it's a picture here, not an app. */
@@ -155,14 +230,15 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  height: 42px;
+  padding: 0 var(--space-3);
+  flex: none;
   min-width: 0;
 }
 .chat-canvas-card__title {
   flex: 1;
   min-width: 0;
   font-size: var(--text-sm);
-  font-weight: 500;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -170,27 +246,34 @@
 }
 .chat-canvas-card__sub {
   flex-shrink: 0;
-  font-size: var(--text-xs);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
+/* Destructive, so it stays recessive until the card is under the pointer —
+   then it names itself in danger colour. */
 .chat-canvas-card__delete {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 24px;
-  width: 24px;
+  height: 22px;
+  width: 22px;
   flex-shrink: 0;
   color: var(--text-muted);
   background: none;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
+  opacity: 0.35;
+  transition: opacity 140ms ease;
   cursor: pointer;
 }
-/* Deletion is confirmed by dialog, so the hover reads as attention (accent),
-   not alarm — matching the redesign mock. */
+.chat-canvas-card:hover .chat-canvas-card__delete,
+.chat-canvas-card__delete:focus-visible {
+  opacity: 1;
+}
 .chat-canvas-card__delete:hover {
-  color: var(--accent-presence);
-  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  color: var(--color-danger);
+  background: color-mix(in oklch, var(--color-danger) 16%, transparent);
 }
 .chat-canvas-card__delete:disabled {
   opacity: 0.55;
@@ -198,10 +281,9 @@
 }
 
 /* ── Preview modal ─────────────────────────────────────────────────────────
-   Clicking a card opens the sketch rendered live but non-interactive
-   (pointer-events off, same opaque-origin sandbox as thumbnails). Running it
-   for real happens in the editor. Bespoke dialog (useFocusTrap) because the
-   shared Modal owns a breadcrumb header/footer this layout replaces. */
+   Clicking a card opens the sketch live in the same opaque-origin sandbox as
+   thumbnails. Bespoke dialog (useFocusTrap) because the shared Modal owns a
+   breadcrumb header/footer this layout replaces. */
 .chat-canvas-preview-backdrop {
   position: fixed;
   inset: 0;
@@ -254,7 +336,8 @@
   border-radius: var(--radius-pill);
   padding: var(--space-1) var(--space-2);
 }
-.chat-canvas-preview__close {
+.chat-canvas-preview__close,
+.chat-canvas-preview__expand {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -267,9 +350,21 @@
   color: var(--text-muted);
   cursor: pointer;
 }
-.chat-canvas-preview__close:hover {
+.chat-canvas-preview__close:hover,
+.chat-canvas-preview__expand:hover {
   color: var(--text-primary);
   background: var(--bg-raised);
+}
+/* Expanded: the dialog fills the viewport edge-to-edge (chrome drops with it,
+   same idiom as the editor's in-app expand). */
+.chat-canvas-preview-backdrop[data-expanded] {
+  padding: 0;
+}
+.chat-canvas-preview[data-expanded] {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
 }
 .chat-canvas-preview__body {
   display: flex;
@@ -282,7 +377,11 @@
   width: 100%;
   border: 0;
   display: block;
-  pointer-events: none;
+}
+/* Play toggle hands the sandbox its own input back (cave canvas interactivity).
+   Isolation is unchanged — still an opaque-origin allow-scripts sandbox. */
+.chat-canvas-preview__frame[data-playing] {
+  pointer-events: auto;
 }
 .chat-canvas-preview__hint {
   margin: 0;
@@ -311,30 +410,41 @@
   border-radius: var(--radius-card);
   min-height: 170px;
 }
+/* At rest the create cell is a card-shaped hole in the grid — same footprint
+   as a sketch card (226px thumb + 42px meta) so the row never jitters when it
+   expands or collapses. */
 .chat-canvas-add--ghost {
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
-  min-height: 210px;
-  border: 1px dashed color-mix(in oklch, var(--accent-presence) 45%, transparent);
-  background: none;
+  gap: var(--space-3);
+  min-height: 268px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--text-primary) 2%, transparent);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
 }
 .chat-canvas-add--ghost:hover {
   border-color: var(--accent-presence);
-  color: var(--accent-presence);
-  background: color-mix(in oklch, var(--accent-presence) 6%, transparent);
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--text-primary) 5%, transparent);
 }
 .chat-canvas-add--ghost svg { width: 22px; height: 22px; }
+/* Opened, it becomes the loudest thing on the surface: two tracks wide, an
+   accent edge, and a lifted ground that separates it from the card field. */
 .chat-canvas-add--expanded {
   grid-column: span 2;
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
-  background: var(--bg-panel);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent-presence) 12%, transparent);
-  padding: var(--space-3);
-  gap: var(--space-2);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 34%, transparent);
+  border-radius: var(--radius-card);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklch, var(--bg-raised) 90%, transparent),
+    var(--bg-panel)
+  );
+  box-shadow: 0 18px 48px oklch(0 0 0 / 34%);
+  padding: var(--space-4);
+  gap: var(--space-3);
 }
 @media (max-width: 640px) {
   .chat-canvas-add--expanded { grid-column: span 1; }
@@ -358,10 +468,12 @@
   align-items: center;
   gap: var(--space-2);
 }
+/* Serif: this is the surface's one authored question, not a field label. */
 .chat-canvas-add__heading {
   margin: 0;
-  font-size: var(--text-base);
-  font-weight: 650;
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: var(--text-xl);
+  font-weight: 500;
   color: var(--text-primary);
 }
 .chat-canvas-add__subheading {
@@ -410,7 +522,7 @@
   font-size: var(--text-sm);
   padding: var(--space-2) var(--space-3);
 }
-.chat-canvas-add__prompt { min-height: 72px; resize: vertical; }
+.chat-canvas-add__prompt { min-height: 96px; resize: vertical; line-height: 1.55; }
 .chat-canvas-add__refine-input { min-height: 64px; resize: vertical; }
 .chat-canvas-add__editor {
   min-height: 160px;
@@ -426,31 +538,87 @@
 }
 .chat-canvas-add__row .chat-canvas-add__title { flex: 1; }
 .chat-canvas-add__spacer { flex: 1; }
+/* Who is going to draw this. A named identity with its avatar, not a form
+   control — the choice belongs to the sentence above it. */
 .chat-canvas-add__familiar {
-  font-size: var(--text-xs);
-  color: var(--text-primary);
-  background: var(--bg-base);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 32px;
+  max-width: 200px;
+  padding: 0 var(--space-3);
   border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-pill);
-  padding: var(--space-1) var(--space-2);
-  max-width: 180px;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--text-primary) 3%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
 }
+.chat-canvas-add__familiar:hover { border-color: var(--border-strong); }
+.chat-canvas-add__familiar-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-canvas-add__familiar-av {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--accent-presence) 26%, transparent);
+  font-size: var(--text-2xs);
+  line-height: 1;
+}
+.chat-canvas-add__caret {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-muted);
+  transition: transform 140ms ease;
+}
+.chat-canvas-add__caret[data-open] { transform: rotate(180deg); }
 .chat-canvas-add__start-code,
 .chat-canvas-add__retry-save {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  border: 0;
+  gap: var(--space-2);
+  height: 32px;
+  border: 1px solid var(--border-hairline);
   background: none;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
   cursor: pointer;
-  padding: var(--space-1) var(--space-2);
+  padding: 0 var(--space-3);
   border-radius: var(--radius-control);
 }
 .chat-canvas-add__start-code:hover,
-.chat-canvas-add__retry-save:hover { color: var(--text-primary); background: var(--bg-raised); }
+.chat-canvas-add__retry-save:hover { color: var(--text-primary); border-color: var(--border-strong); }
 .chat-canvas-add__start-code svg { width: 12px; height: 12px; }
+/* Rich popover row: an icon tile, the option, and what it actually does. */
+.chat-canvas-add__source-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.chat-canvas-add__source-desc {
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  color: var(--text-muted);
+  white-space: normal;
+}
+/* The one line that tells you what pressing Create will actually do. */
+.chat-canvas-add__tip {
+  margin: 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  color: color-mix(in oklch, var(--text-muted) 70%, transparent);
+}
 .chat-canvas-add__no-familiar {
   margin: 0;
   font-size: var(--text-xs);
@@ -524,6 +692,16 @@
   flex-wrap: wrap;
   gap: var(--space-1);
 }
+/* Uniform rows, never a ragged last one. Free-wrapping three starter pills in
+   the hero's 560px column lands 2 + 1, which reads as a mistake; one per row
+   keeps the rhythm and lets each suggestion stay on a single line. */
+.chat-canvas-add--hero .chat-canvas-add__suggestions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.chat-canvas-add--hero .chat-canvas-add__suggestion {
+  text-align: left;
+}
 .chat-canvas-add__suggestion {
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-pill);
@@ -534,6 +712,27 @@
   cursor: pointer;
 }
 .chat-canvas-add__suggestion:hover { border-color: var(--border-strong); color: var(--text-primary); }
+
+/* Playable toggle — pressed state uses the one accent token, tinted per the
+   state recipe, so it reads as engaged without introducing a second hue. */
+.chat-canvas-add__playable {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+.chat-canvas-add__playable:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.chat-canvas-add__playable[aria-pressed="true"] {
+  border-color: color-mix(in oklch, var(--accent-presence) 38%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  color: var(--accent-presence);
+}
 .chat-canvas-add__result-head,
 .chat-canvas-add__code-head {
   display: flex;
@@ -607,6 +806,18 @@
   .chat-canvas-add__skeleton { animation: none; }
   .chat-canvas-card--new { animation: none; }
   .chat-canvas-preview-backdrop { animation: none; }
+  /* The hover reveal still appears — it carries meaning — it just stops
+     travelling: no lift, no fade, no caret spin. */
+  .chat-canvas-card,
+  .chat-canvas-card__reveal,
+  .chat-canvas-card__delete,
+  .chat-canvas-add__caret {
+    transition: none;
+  }
+  .chat-canvas-card:hover,
+  .chat-canvas-card:focus-within {
+    transform: none;
+  }
 }
 /* Listitem wrapper for the add tile inside the role="list" grid — contents
    display keeps the tile itself on the grid track. */

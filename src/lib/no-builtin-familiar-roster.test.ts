@@ -3,7 +3,6 @@ import { readFile } from "node:fs/promises";
 
 const files = [
   "src/lib/demo-seed.ts",
-  "src/lib/flow/flow-templates.ts",
   "src/components/workspace.tsx",
   "src/components/settings-shell.tsx",
   "automations/familiar-weekly-reflection.toml",

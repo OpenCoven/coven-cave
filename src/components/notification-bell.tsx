@@ -320,7 +320,10 @@ export function NotificationBell({
         title={`${displayBadgeCount} unread`}
         aria-label={`Notifications, ${displayBadgeCount} unread`}
       >
-        <Icon name="ph:bell-fill" aria-hidden />
+        {/* Fill (not hue) is the second unread channel: the glyph solidifies
+            while the count chip stays border+tint, so the two read as one
+            warning-hued control with distinct treatments. */}
+        <Icon name={displayBadgeCount > 0 ? "ph:bell-fill" : "ph:bell"} aria-hidden />
 
         {displayBadgeCount > 0 ? (
           <span aria-hidden className="notification-bell__badge">

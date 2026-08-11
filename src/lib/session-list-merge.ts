@@ -3,14 +3,26 @@ import {
   defaultChatTitleForSession,
   sanitizeSessionTitle,
 } from "./cave-chat-titles.ts";
+import {
+  deriveChatAttention,
+  NO_CHAT_ATTENTION,
+  normalizeChatAttentionOperationId,
+  normalizeChatAttentionOperationLineage,
+  type ChatAttentionEvidence,
+} from "./chat-attention.ts";
+import { ACTIVE_SESSION_STATUSES } from "./chat-auto-archive.ts";
 import { initiatorFromSessionKey } from "./session-initiator.ts";
 import { inferOrigin } from "./session-origin.ts";
 import type { SessionInitiator, SessionOrigin, SessionRow } from "./types.ts";
 
-export type DaemonSessionRow = Omit<SessionRow, "familiarId" | "origin">;
+export type DaemonSessionRow = Omit<
+  SessionRow,
+  "attention" | "attentionAfterOperationId" | "attentionOperationLineage" | "familiarId" | "origin"
+>;
 
 export type LocalConversationSummary = {
   sessionId: string;
+  harnessSessionId?: string;
   familiarId: string;
   harness?: string;
   model?: string;
@@ -26,6 +38,7 @@ export type LocalConversationSummary = {
   branch?: string;
   /** PR URL the chat reported in an assistant reply (transcript snapshot). */
   prUrl?: string;
+  attentionEvidence?: ChatAttentionEvidence;
 };
 
 type MergeOptions = {
@@ -45,6 +58,24 @@ function isDaemonAuthoritativeTerminalStatus(status: string): boolean {
   return DAEMON_AUTHORITATIVE_TERMINAL_STATUSES.has(status);
 }
 
+// A project-root mismatch means the daemon can no longer vouch for a
+// session's cwd/branch identity, but its status is still daemon-authoritative
+// truth. Recovery previously handled only the terminal statuses above, so an
+// invalid-root daemon session that is still actively running (or otherwise
+// still doing work) was never marked `seen` — the local conversation then
+// fell through to the local-only path and derived attention from its own
+// ("completed") status, surfacing stale attention for a session the daemon
+// says is still running. Recover active statuses too so `deriveChatAttention`
+// sees the daemon-truth status and suppresses attention via
+// ACTIVE_SESSION_STATUSES, same as it already does for a valid-root row.
+function isDaemonRecoverableStatus(status: string): boolean {
+  return isDaemonAuthoritativeTerminalStatus(status) || ACTIVE_SESSION_STATUSES.has(status);
+}
+
+function isArchivedStatus(status: string | null | undefined): boolean {
+  return (status ?? "").trim().toLowerCase() === "archived";
+}
+
 /** Extract the local cwd from a conversation runtime ("local:<cwd>").
  *  Kept dependency-free here (rather than importing the server work-branch
  *  helper) so this module stays pure and unit-testable. */
@@ -54,17 +85,41 @@ function conversationLocalCwd(runtime: string | undefined): string | null {
   return cwd || null;
 }
 
+function attentionAfterOperationId(
+  evidence: ChatAttentionEvidence | null | undefined,
+): string | null {
+  return normalizeChatAttentionOperationId(evidence?.attentionAfterOperationId);
+}
+
+function attentionOperationLineageFields(
+  evidence: ChatAttentionEvidence | null | undefined,
+): { attentionOperationLineage: string[] } | Record<string, never> {
+  const lineage = normalizeChatAttentionOperationLineage(evidence?.attentionOperationLineage);
+  return lineage.length > 0 ? { attentionOperationLineage: lineage } : {};
+}
+
+function isDaemonAuthoritativeActiveStatus(status: string): boolean {
+  return ACTIVE_SESSION_STATUSES.has(status);
+}
+
+function isDaemonAuthoritativeStatus(status: string): boolean {
+  return isDaemonAuthoritativeTerminalStatus(status) || isDaemonAuthoritativeActiveStatus(status);
+}
+
 function localConversationToSession(
   conv: LocalConversationSummary,
   state: CaveState,
   projectRootForCwd?: (cwd: string) => string | null,
+  now = Date.now(),
 ): SessionRow {
   const keep = Boolean(state.sessionKeep?.[conv.sessionId]);
+  const pinned = Boolean(state.sessionPinned?.[conv.sessionId]);
   const extendedUntil = state.sessionArchiveExtendedUntil?.[conv.sessionId] ?? null;
   const title =
     state.sessionTitles[conv.sessionId] ?? sanitizeSessionTitle(conv.title) ?? "Chat";
   const familiarId = state.sessionFamiliar[conv.sessionId] ?? conv.familiarId ?? null;
   const status = conv.status ?? "completed";
+  const archivedAt = state.sessionArchived[conv.sessionId] ?? null;
   // Sidebar/rail project groups key on project_root. A UI chat only exists as
   // a local conversation (the daemon never sees it), so without this backfill
   // every new chat lands in the "No project" bucket instead of its project's
@@ -80,11 +135,20 @@ function localConversationToSession(
     ...(conv.model ? { model: conv.model } : {}),
     ...(conv.runtime ? { runtime: conv.runtime } : {}),
     title,
+    titleRevision: state.sessionTitleRevision?.[conv.sessionId] ?? 0,
     status,
     exit_code: conv.exitCode ?? (status === "failed" || status === "error" ? 1 : 0),
-    archived_at: state.sessionArchived[conv.sessionId] ?? null,
+    archived_at: archivedAt,
     created_at: conv.createdAt ?? conv.updatedAt,
     updated_at: conv.updatedAt,
+    attention: deriveChatAttention({
+      evidence: conv.attentionEvidence,
+      status,
+      archivedAt,
+      now,
+    }),
+    attentionAfterOperationId: attentionAfterOperationId(conv.attentionEvidence),
+    ...attentionOperationLineageFields(conv.attentionEvidence),
     familiarId,
     origin: conv.origin ?? "chat",
     hasLocalConversation: true,
@@ -92,6 +156,7 @@ function localConversationToSession(
     ...(conv.prUrl ? { chatPrUrl: conv.prUrl } : {}),
     initiator: conv.initiator ?? { kind: "human", label: "Cave user", channel: "cave" },
     ...(keep ? { keep: true } : {}),
+    ...(pinned ? { pinned: true } : {}),
     ...(extendedUntil ? { archive_extended_until: extendedUntil } : {}),
   };
 }
@@ -107,8 +172,9 @@ export function localConversationSessionRows(
   includeArchived: boolean,
   projectRootForCwd?: (cwd: string) => string | null,
 ): SessionRow[] {
+  const now = Date.now();
   return localConversations
-    .map((conv) => localConversationToSession(conv, state, projectRootForCwd))
+    .map((conv) => localConversationToSession(conv, state, projectRootForCwd, now))
     .filter((row) => visibleSession(row, state, includeArchived))
     .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
 }
@@ -121,6 +187,7 @@ export function mergeSessionRows({
   isValidDaemonProjectRoot,
   projectRootForCwd,
 }: MergeOptions): SessionRow[] {
+  const now = Date.now();
   const seen = new Set<string>();
   const rows: SessionRow[] = [];
 
@@ -132,47 +199,110 @@ export function mergeSessionRows({
   // the list orders by real activity, not by what you last looked at.
   const localUpdatedById = new Map<string, string>();
   const localById = new Map<string, LocalConversationSummary>();
+  const localByHarnessSessionId = new Map<string, LocalConversationSummary>();
   for (const conv of localConversations) {
     if (conv.updatedAt) {
       localUpdatedById.set(conv.sessionId, conv.updatedAt);
       localById.set(conv.sessionId, conv);
     }
+    if (conv.harnessSessionId) {
+      localByHarnessSessionId.set(conv.harnessSessionId, conv);
+    }
   }
 
+  type MappedDaemonSession = {
+    session: DaemonSessionRow;
+    local: LocalConversationSummary | undefined;
+    stateSessionId: string;
+    harnessMatched: boolean;
+  };
+  const daemonByMappedId = new Map<string, MappedDaemonSession>();
   for (const session of daemonSessions) {
-    const local = localById.get(session.id);
+    const directLocal = localById.get(session.id);
+    const harnessLocal = directLocal ? undefined : localByHarnessSessionId.get(session.id);
+    const local = directLocal ?? harnessLocal;
+    const stateSessionId = local?.sessionId ?? session.id;
+    const candidate = {
+      session,
+      local,
+      stateSessionId,
+      harnessMatched: Boolean(harnessLocal),
+    };
+    const existing = daemonByMappedId.get(stateSessionId);
+    if (!existing || (candidate.harnessMatched && !existing.harnessMatched)) {
+      daemonByMappedId.set(stateSessionId, candidate);
+    }
+  }
+
+  for (const { session, local, stateSessionId } of daemonByMappedId.values()) {
     if (isValidDaemonProjectRoot && !isValidDaemonProjectRoot(session.project_root)) {
-      if (local && isDaemonAuthoritativeTerminalStatus(session.status)) {
-        seen.add(session.id);
-        const recovered = localConversationToSession(local, state, projectRootForCwd);
+      if (local && isDaemonRecoverableStatus(session.status)) {
+        seen.add(stateSessionId);
+        const recovered = localConversationToSession(local, state, projectRootForCwd, now);
+        const archived_at = state.sessionArchived[stateSessionId] ?? session.archived_at;
+        const attention =
+          isArchivedStatus(session.status)
+            ? NO_CHAT_ATTENTION
+            : deriveChatAttention({
+                evidence: local.attentionEvidence,
+                status: session.status,
+                archivedAt: archived_at,
+                now,
+              });
         const row: SessionRow = {
           ...recovered,
           status: session.status,
           exit_code: session.exit_code,
-          archived_at: state.sessionArchived[session.id] ?? session.archived_at,
+          archived_at,
+          // A project-root mismatch means the daemon can no longer vouch for
+          // this session's cwd/branch identity, but the local transcript still
+          // captures the session's terminal state well enough to normalize
+          // attention — except for daemon `archived`, which is an archive
+          // boundary even before archived_at is stamped.
+          attention,
           initiator: session.initiator ?? recovered.initiator,
         };
         if (visibleSession(row, state, includeArchived)) rows.push(row);
       }
       continue;
     }
-    seen.add(session.id);
-    const titleOverride = state.sessionTitles[session.id];
-    const archivedLocal = state.sessionArchived[session.id] ?? null;
-    const keep = Boolean(state.sessionKeep?.[session.id]);
-    const extendedUntil = state.sessionArchiveExtendedUntil?.[session.id] ?? null;
+    seen.add(stateSessionId);
+    const titleOverride = state.sessionTitles[stateSessionId];
+    const archivedLocal = state.sessionArchived[stateSessionId] ?? null;
+    const keep = Boolean(state.sessionKeep?.[stateSessionId]);
+    const pinned = Boolean(state.sessionPinned?.[stateSessionId]);
+    const extendedUntil = state.sessionArchiveExtendedUntil?.[stateSessionId] ?? null;
     const archived_at = archivedLocal ?? session.archived_at;
-    const localUpdatedAt = localUpdatedById.get(session.id);
-    const familiarId = state.sessionFamiliar[session.id] ?? local?.familiarId ?? null;
+    const localUpdatedAt = local?.updatedAt ?? localUpdatedById.get(session.id);
+    const familiarId = state.sessionFamiliar[stateSessionId] ?? local?.familiarId ?? null;
     const localIsNewer =
       localUpdatedAt != null &&
       Number.isFinite(Date.parse(localUpdatedAt)) &&
       Number.isFinite(Date.parse(session.updated_at)) &&
       Date.parse(localUpdatedAt) > Date.parse(session.updated_at);
-    const daemonStatusIsAuthoritative = isDaemonAuthoritativeTerminalStatus(session.status);
+    const daemonStatusIsAuthoritative = isDaemonAuthoritativeStatus(session.status);
+    const mergedStatus =
+      localIsNewer && !daemonStatusIsAuthoritative && local?.status
+        ? local.status
+        : session.status;
+    const attention =
+      isArchivedStatus(mergedStatus)
+        ? NO_CHAT_ATTENTION
+        : deriveChatAttention({
+            evidence: local?.attentionEvidence,
+            status: mergedStatus,
+            archivedAt: archived_at,
+            now,
+          });
     const row: SessionRow = {
       ...session,
+      ...(local && local.sessionId !== session.id ? { id: local.sessionId } : {}),
       ...(localUpdatedAt ? { updated_at: localUpdatedAt } : {}),
+      // Cave conversations record the concrete runtime selected for the chat
+      // (`local:<cwd>` or `ssh:<host>:<cwd>`). That send-time provenance is
+      // authoritative for model inventory scoping; a daemon row may omit it or
+      // retain the pre-transition runtime, so never let the merge erase it.
+      ...(local?.runtime ? { runtime: local.runtime } : {}),
       ...(localIsNewer && !daemonStatusIsAuthoritative && local?.status ? { status: local.status } : {}),
       // A local summary with no status (a first-turn stub whose reply is still
       // streaming) must contribute neither status nor exit_code — the daemon's
@@ -185,7 +315,11 @@ export function mergeSessionRows({
         titleOverride ??
         sanitizeSessionTitle(session.title) ??
         defaultChatTitleForSession(session.id),
+      titleRevision: state.sessionTitleRevision?.[stateSessionId] ?? 0,
       archived_at,
+      attention,
+      attentionAfterOperationId: attentionAfterOperationId(local?.attentionEvidence),
+      ...attentionOperationLineageFields(local?.attentionEvidence),
       // A Cave conversation records real provenance at send time; harness/
       // title inference is only the fallback for daemon-only sessions.
       origin: local?.origin ?? inferOrigin(session),
@@ -201,6 +335,7 @@ export function mergeSessionRows({
       ...(!local && inferOrigin(session) === "chat" ? { generated: true } : {}),
       ...(local ? { hasLocalConversation: true } : {}),
       ...(keep ? { keep: true } : {}),
+      ...(pinned ? { pinned: true } : {}),
       ...(extendedUntil ? { archive_extended_until: extendedUntil } : {}),
       familiarId,
       initiator: session.initiator ?? initiatorFromSessionKey("", familiarId ?? session.harness),
@@ -208,7 +343,10 @@ export function mergeSessionRows({
     if (visibleSession(row, state, includeArchived)) rows.push(row);
   }
 
-  for (const row of localConversationSessionRows(localConversations, state, includeArchived, projectRootForCwd)) {
+  for (const row of localConversations
+    .map((conv) => localConversationToSession(conv, state, projectRootForCwd, now))
+    .filter((session) => visibleSession(session, state, includeArchived))
+    .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))) {
     if (seen.has(row.id)) continue;
     rows.push(row);
   }

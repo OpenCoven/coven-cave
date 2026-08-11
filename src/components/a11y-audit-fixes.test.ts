@@ -44,17 +44,20 @@ test("nav count badge uses a solid accent fill (WCAG contrast)", async () => {
   );
 });
 
-test("accent-filled buttons pair the accent with its semantic foreground", async () => {
-  // White / --text-primary on --accent-presence failed AA (~2.8:1 dark). The
-  // accent's paired --accent-presence-foreground adapts per mode, so route to it.
+test("filled action buttons pair the fill with its semantic foreground", async () => {
+  // White / --text-primary on --accent-presence failed AA (~2.8:1 dark), so
+  // filled buttons must route to the fill's paired foreground token, which
+  // adapts per mode. The Tasks redesign makes New task a --primary CTA (Coven
+  // design language: accent is presence, not the CTA colour) — --primary-
+  // foreground is its designed contrast pair, so the AA guarantee is preserved.
   const board = await readFile(new URL("../styles/board.css", import.meta.url), "utf8");
   assert.match(
     board,
-    /\.board-new-card-btn\s*\{[^}]*background:var\(--accent-presence\)[^}]*color:var\(--accent-presence-foreground\)/,
+    /\.board-new-card-btn\s*\{[^}]*background:var\(--primary\)[^}]*color:var\(--primary-foreground\)/,
   );
   assert.doesNotMatch(
     board,
-    /\.board-new-card-btn\s*\{[^}]*background:var\(--accent-presence\)[^}]*color:var\(--text-primary\)/,
+    /\.board-new-card-btn\s*\{[^}]*color:var\(--text-primary\)/,
   );
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
   // Both salem accent action states use the paired foreground, not hardcoded #fff.
@@ -70,19 +73,19 @@ test("accent-filled buttons pair the accent with its semantic foreground", async
 
 test("priority pills darken their text in light mode (WCAG contrast)", async () => {
   const board = await readFile(new URL("../styles/board.css", import.meta.url), "utf8");
-  // The pill text is lightened toward #fff for dark mode; light mode needs the
-  // opposite (mix toward #000) or it fails AA on the faint tint (~2:1).
+  // The pill text is lightened toward white for dark mode; light mode needs the
+  // opposite (mix toward black) or it fails AA on the faint tint (~2:1).
   for (const variant of ["urgent", "high", "medium"]) {
     assert.match(
       board,
-      new RegExp(`\\[data-mode="light"\\] \\.board-kanban-priority-pill--${variant}\\s*\\{[^}]*color:color-mix\\(in oklch,var\\(--[a-z-]+\\) 76%,#000\\)`),
+      new RegExp(`\\[data-mode="light"\\] \\.board-kanban-priority-pill--${variant}\\s*\\{[^}]*color:color-mix\\(in oklch,var\\(--[a-z-]+\\) 76%,black\\)`),
       `kanban ${variant} pill must darken text in light mode`,
     );
   }
   for (const variant of ["urgent", "high"]) {
     assert.match(
       board,
-      new RegExp(`\\[data-mode="light"\\] \\.board-card-stack__priority-pill--${variant}\\s*\\{[^}]*#000`),
+      new RegExp(`\\[data-mode="light"\\] \\.board-card-stack__priority-pill--${variant}\\s*\\{[^}]*black`),
       `card-stack ${variant} pill must darken text in light mode`,
     );
   }

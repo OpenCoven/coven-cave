@@ -6,8 +6,7 @@
 // static `import` still ships their code (and their heavy transitive deps) in
 // the always-loaded main bundle. Routing them through `next/dynamic` moves each
 // into its own chunk that the browser fetches on first open instead of at app
-// boot. Notably this pulls `@xyflow/react` (FlowView) and
-// `@uiw/react-codemirror` (ComuxView → code-editor) out of the shared bundle.
+// boot. Notably this pulls `@uiw/react-codemirror` out of the shared bundle.
 //
 // `ssr: false` is safe: the whole app is client-rendered (`workspace.tsx` is a
 // client component) and these surfaces are interactive-only.
@@ -63,7 +62,6 @@ function timed<C>(name: string, loader: () => Promise<C>): () => Promise<C> {
 // App Router implementation of `next/dynamic` does not expose `.preload()`, so
 // warm-up must call the loaders directly to fetch a sidebar's chunks without
 // mounting the surface (and therefore without running any of its effects).
-const loadGitHubView = () => import("@/components/github-view").then((m) => m.GitHubView);
 const loadCalendarView = () => import("@/components/calendar-view").then((m) => m.CalendarView);
 const loadBoardView = () => import("@/components/board-view").then((m) => m.BoardView);
 const loadMarketplaceView = () =>
@@ -80,17 +78,15 @@ const loadInboxEscalationsView = () =>
 
 /** Canonical sidebar surfaces whose chunks can be warmed before navigation. */
 export type WarmableSidebarSurface =
-  | "github"
   | "marketplace"
   | "board"
   | "schedules"
   | "grimoire"
   | "agents";
 
-export const GitHubView = dynamic(
-  timed("github", loadGitHubView),
-  { ssr: false, loading: SurfaceFallback },
-);
+// The Code workbench chunk (CodeMirror et al.) now rides the Code room's
+// dynamic import (role-surfaces/register.tsx → code-room.tsx), keeping it out
+// of the boot bundle without a wrapper here.
 
 export const CalendarView = dynamic(
   timed("calendar", loadCalendarView),
@@ -157,8 +153,6 @@ export const InboxEscalationsView = dynamic(
  */
 export function preloadSidebarSurface(surface: WarmableSidebarSurface): Promise<void> {
   switch (surface) {
-    case "github":
-      return loadGitHubView().then(() => undefined);
     case "marketplace":
       return loadMarketplaceView().then(() => undefined);
     case "board":
@@ -214,7 +208,9 @@ export const CommandPalette = dynamic(
 
 export const OnboardingOverlay = dynamic(
   timed("onboarding", () =>
-    import("@/components/onboarding-overlay").then((m) => m.OnboardingOverlay),
+    import("@/components/onboarding-bootstrap-overlay").then(
+      (m) => m.OnboardingOverlay,
+    ),
   ),
   { ssr: false, loading: () => null },
 );

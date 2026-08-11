@@ -55,7 +55,7 @@ assert.match(
 // --- Status row copy -------------------------------------------------------------
 assert.match(
   view,
-  /Desktop found on port \\\(\$0\)\./,
+  /Desktop found · responding on :\\\(\$0\)/,
   "success names the discovered port",
 );
 assert.match(
@@ -82,8 +82,8 @@ assert.match(
 );
 assert.match(
   model,
-  /if sendCredential, let token = CaveConnection\.accessToken \{/,
-  "the Authorization header is gated on sendCredential",
+  /if sendCredential \{[\s\S]*?try CaveConnection\.credentialForRequest\(to: req\.url!\)[\s\S]*?return \.credentialFailure\(error\.localizedDescription\)/,
+  "paired discovery gates Authorization on exact credential origin and stops on policy failure",
 );
 
 console.log("ios-live-check: OK");

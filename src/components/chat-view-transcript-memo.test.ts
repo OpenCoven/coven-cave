@@ -34,10 +34,10 @@ assert.match(
   "ChatView renders TranscriptRows and hands it the latest-ref for row actions",
 );
 
-// ── 3. Latest-ref pattern: reassigned every render, all six actions ─────────
+// ── 3. Latest-ref pattern: reassigned every render, all typed actions ───────
 assert.match(
   src,
-  /transcriptHandlersRef\.current = \{\s*siblingsFor,\s*switchBranch,\s*editTurnInComposer,\s*regenerateFor,\s*replyFor,\s*send,\s*\};/,
+  /transcriptHandlersRef\.current = \{\s*siblingsFor,\s*switchBranch,\s*editTurnInComposer,\s*regenerateFor,\s*replyFor,\s*askAboutFor,\s*readerPromptFor,\s*rerunWithFor,\s*send,\s*\};/,
   "the handlers ref must be reassigned in the render body so closures never go stale",
 );
 
@@ -56,7 +56,7 @@ for (const pattern of [
   /handlers\(\)\.regenerateFor\(t\)/,
   /handlers\(\)\.replyFor\(t\)/,
   /handlers\(\)\.editTurnInComposer\(t\)/,
-  /handlers\(\)\.send\(sug\)/,
+  /handlers\(\)\.send\(prompt\)/,
   /handlers\(\)\.switchBranch\(t\.id, -1\)/,
   /handlers\(\)\.siblingsFor\(t\.id\)/,
 ]) {
@@ -91,9 +91,13 @@ assert.match(
   /historyExpanded \|\| groupedTurns\.length <= TRANSCRIPT_RENDER_CAP/,
   "the render cap decision moved with the loop",
 );
+// cave-u5lq7: the loop now assigns instead of returning, because the
+// earlier-turns fold prepends a pill ahead of the rows. What this pin cares
+// about — that the mapping lives INSIDE the memo, not in ChatView's body —
+// is unchanged.
 assert.match(
   transcriptRowsBody,
-  /return renderGroups\.map\(\(g\) => \{/,
+  /const rows = renderGroups\.map\(\(g, groupIndex\) => \{/,
   "the row loop lives inside the memo component",
 );
 // The pre-extraction inline IIFE form must not come back to ChatView's JSX.

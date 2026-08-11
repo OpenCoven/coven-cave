@@ -8,8 +8,18 @@ const destinations = await readFile(new URL("./home/home-destinations.ts", impor
 // ───────── Task 1: Destination-aware placeholder + drop subtitle ─────────
 assert.match(
   destinations,
-  /const PLACEHOLDERS: Record<Destination, string> = \{[\s\S]*?chat:[\s\S]*?board:[\s\S]*?\}/,
-  "PLACEHOLDERS must be a Record<Destination, string> with chat/board keys",
+  /export function placeholderFor\([\s\S]*?familiarName: string \| null[\s\S]*?\): string/,
+  "placeholderFor must be a template fn taking (destination, familiarName)",
+);
+assert.doesNotMatch(
+  destinations,
+  /Nova/,
+  "Task placeholder must not hardcode a seed familiar name (#3962)",
+);
+assert.match(
+  destinations,
+  /familiarName\?\.trim\(\) \|\| "a familiar"/,
+  "Empty familiar state falls back to neutral copy, not a name",
 );
 assert.doesNotMatch(
   source,
@@ -18,8 +28,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /placeholder=\{PLACEHOLDERS\[destination\]\}/,
-  "textarea must use placeholder={PLACEHOLDERS[destination]}",
+  /placeholder=\{placeholderFor\(destination, selectedFamiliar\?\.display_name \?\? null\)\}/,
+  "textarea must wire placeholderFor(destination, selectedFamiliar name)",
 );
 assert.doesNotMatch(
   source,
@@ -41,7 +51,6 @@ const css = (
     [
       "../styles/home-composer/landing-composer.css",
       "../styles/home-composer/feed-menus.css",
-      "../styles/home-composer/digest.css",
       "../styles/home-composer/hearth-continuations.css",
     ].map((sheet) => readFile(new URL(sheet, import.meta.url), "utf8")),
   )
@@ -98,10 +107,10 @@ assert.doesNotMatch(
   /hc-footer-band/,
   "the legacy hc- footer band stays retired — the shared cave-composer-footer-band carries the context pill",
 );
-assert.doesNotMatch(
+assert.match(
   source,
-  /HomeSelect|Choose chat agent/,
-  "the home familiar selector is removed (selection lives in the side panel)",
+  /<FamiliarQuickSwitch[\s\S]*labeled[\s\S]*singleRequired/,
+  "the home familiar selector is labeled and constrained to one launch target",
 );
 assert.doesNotMatch(
   source,
@@ -122,8 +131,8 @@ assert.match(
 assert.doesNotMatch(css, /\.hc-action-bar\b/, "the bespoke action-bar CSS is gone (chat composer footer styles apply)");
 assert.doesNotMatch(
   css,
-  /\.hc-familiar-selector|\.hc-home-select/,
-  "the familiar-selector / home-select CSS is removed with the selector",
+  /\.hc-home-select/,
+  "home reuses the shared familiar picker instead of custom select CSS",
 );
 assert.doesNotMatch(
   css,

@@ -1,15 +1,17 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
-import { MarkdownBlock } from "@/components/message-bubble";
+import { DocumentReader } from "@/components/document-reader";
+import { MarkdownReaderBlock } from "@/components/canonical-memory-markdown";
 import { useMemoryFile } from "@/lib/use-memory-file";
 import { MemoryMdEditor } from "@/components/md-editor/memory-md-editor";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
-import type { MemoryRow } from "@/lib/memory-rows";
+import type { FileMemoryRow } from "@/lib/memory-rows";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { parseMarkdownReaderDocument } from "@/lib/document-reader";
 
 function compactPath(path: string): string {
   const collapsed = path.replace(/^\/Users\/[^/]+/, "~");
@@ -28,11 +30,11 @@ export function MemoryReaderPane({
   onExpand,
   onBack,
 }: {
-  row: MemoryRow | null;
+  row: FileMemoryRow | null;
   age: string;
   sizeLabel: string;
   onOpenFile: (path: string) => void;
-  onExpand: (row: MemoryRow) => void;
+  onExpand: (row: FileMemoryRow) => void;
   onBack?: () => void;
 }) {
   const [mode, setMode] = useState<"rendered" | "raw">("rendered");
@@ -42,11 +44,14 @@ export function MemoryReaderPane({
   // read view after an edit session so it shows what was saved.
   const [editing, setEditing] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
-  // `contentPath` is the absolute, allow-listed path to fetch full content from — set
-  // for files and for agent memories the server could resolve. When absent (e.g. an
-  // agent memory with no resolvable file), fall back to the entry's `excerpt`.
+  // File rows always carry the absolute allow-listed content path.
   const fetchPath = row?.contentPath ?? null;
   const { text, error, loading } = useMemoryFile(fetchPath, { refreshToken });
+  const content = text ?? "";
+  const readerDocument = useMemo(
+    () => parseMarkdownReaderDocument(content, row?.title ?? "Memory"),
+    [content, row?.title],
+  );
 
   // Leaving a row ends its edit session — a new selection opens in read mode.
   useEffect(() => {
@@ -72,12 +77,8 @@ export function MemoryReaderPane({
     });
   };
 
-  // With a content path we render the fetched file; without one we render the excerpt.
-  const hasFile = Boolean(row.contentPath);
-  const content = hasFile ? text ?? "" : row.excerpt ?? "";
-  const isFileLoading = hasFile && (loading || text === null);
-  const fileError = hasFile ? error : null;
-  const emptyMsg = hasFile ? "Empty file." : "No excerpt available.";
+  const isFileLoading = loading || text === null;
+  const fileError = error;
 
   return (
     <div className="flex h-full min-h-0 flex-col rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30">
@@ -100,63 +101,61 @@ export function MemoryReaderPane({
             {row.title}
           </h3>
           <div className="flex shrink-0 items-center gap-1">
-            {hasFile ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditing((prev) => {
-                    if (prev) setRefreshToken((n) => n + 1);
-                    return !prev;
-                  });
-                }}
-                aria-pressed={editing}
-                aria-label={editing ? "Stop editing" : "Edit memory file"}
-                title={editing ? "Stop editing" : "Edit"}
-                className={`focus-ring mr-1 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-2xs)] transition-colors ${
-                  editing
-                    ? "bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                <Icon name="ph:pencil-simple" width={11} aria-hidden />
-                {editing ? "Done" : "Edit"}
-              </button>
-            ) : null}
-            {!editing ? (
-            <>
-            <div className="mr-1 inline-flex overflow-hidden rounded-md border border-[var(--border-hairline)] text-[length:var(--text-2xs)]">
-              {(["rendered", "raw"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  aria-pressed={mode === m}
-                  onClick={() => setMode(m)}
-                  className={`focus-ring-inset px-2 py-1 transition-colors ${
-                    mode === m
-                      ? "bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
-                      : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
-                  }`}
-                >
-                  {m === "rendered" ? "Rendered" : "Raw"}
-                </button>
-              ))}
-            </div>
             <button
               type="button"
-              onClick={() => onExpand(row)}
-              aria-label="Expand to fullscreen reader"
-              title="Fullscreen"
-              className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              onClick={() => {
+                setEditing((previous) => {
+                  if (previous) setRefreshToken((current) => current + 1);
+                  return !previous;
+                });
+              }}
+              aria-pressed={editing}
+              aria-label={editing ? "Stop editing" : "Edit memory file"}
+              title={editing ? "Stop editing" : "Edit"}
+              className={`focus-ring mr-1 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-2xs)] transition-colors ${
+                editing
+                  ? "bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              }`}
             >
-              <Icon name="ph:arrows-out-simple" width={12} aria-hidden />
+              <Icon name="ph:pencil-simple" width={11} aria-hidden />
+              {editing ? "Done" : "Edit"}
             </button>
-            </>
+            {!editing ? (
+              <>
+                <div className="mr-1 inline-flex overflow-hidden rounded-md border border-[var(--border-hairline)] text-[length:var(--text-2xs)]">
+                  {(["rendered", "raw"] as const).map((nextMode) => (
+                    <button
+                      key={nextMode}
+                      type="button"
+                      aria-pressed={mode === nextMode}
+                      onClick={() => setMode(nextMode)}
+                      className={`focus-ring-inset px-2 py-1 transition-colors ${
+                        mode === nextMode
+                          ? "bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
+                          : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
+                      }`}
+                    >
+                      {nextMode === "rendered" ? "Rendered" : "Raw"}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onExpand(row)}
+                  aria-label="Expand to fullscreen reader"
+                  title="Fullscreen"
+                  className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                >
+                  <Icon name="ph:arrows-out-simple" width={12} aria-hidden />
+                </button>
+              </>
             ) : null}
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
           <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">
-            {row.kind === "agent" ? "Familiar memory" : "File"}
+            File
           </span>
           <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{row.sourceLabel}</span>
           {sizeLabel ? (
@@ -193,54 +192,71 @@ export function MemoryReaderPane({
             <Icon name="ph:file-text" width={11} aria-hidden />
             Open file
           </button>
-          {row.contentPath ? (
-            <button
-              type="button"
-              onClick={() => openGrimoireDoc("memory", row.contentPath!)}
-              title="Open in the Memories editor"
-              className="focus-ring inline-flex h-6 items-center gap-1 rounded border border-[var(--border-hairline)] px-1.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            >
-              <Icon name="ph:book-open" width={11} aria-hidden />
-              Memories
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => openGrimoireDoc("memory", row.contentPath)}
+            title="Open in the Memories editor"
+            className="focus-ring inline-flex h-6 items-center gap-1 rounded border border-[var(--border-hairline)] px-1.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:book-open" width={11} aria-hidden />
+            Memories
+          </button>
         </div>
       </div>
-      {editing && row.contentPath ? (
+      {editing ? (
         <div className="min-h-0 flex-1">
           <MemoryMdEditor
             path={row.contentPath}
             sourceLabel={row.sourceLabel}
             onCancel={() => {
               setEditing(false);
-              setRefreshToken((n) => n + 1);
+              setRefreshToken((current) => current + 1);
             }}
           />
         </div>
       ) : (
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {fileError ? (
-          <ErrorState
-            compact
-            headline="Couldn't load this memory"
-            subtitle={fileError}
-          />
-        ) : isFileLoading ? (
-          <div className="space-y-2.5" aria-label="Loading memory" aria-busy="true">
-            {["92%", "85%", "97%", "78%", "90%", "70%"].map((w, i) => (
-              <Skeleton key={i} variant="text" width={w} />
-            ))}
-          </div>
-        ) : content.trim() === "" ? (
-          <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">{emptyMsg}</p>
-        ) : mode === "rendered" ? (
-          <MarkdownBlock text={content} />
-        ) : (
-          <pre className="whitespace-pre-wrap break-words font-mono text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)]">
-            {content}
-          </pre>
-        )}
-      </div>
+        <div className="min-h-0 flex-1">
+          {fileError ? (
+            <div className="p-4">
+              <ErrorState
+                compact
+                headline="Couldn't load this memory"
+                subtitle={fileError}
+              />
+            </div>
+          ) : isFileLoading ? (
+            <div
+              className="space-y-2.5 p-4"
+              aria-label="Loading memory"
+              aria-busy="true"
+            >
+              {["92%", "85%", "97%", "78%", "90%", "70%"].map(
+                (width, index) => (
+                  <Skeleton key={index} variant="text" width={width} />
+                ),
+              )}
+            </div>
+          ) : content.trim() === "" ? (
+            <p className="p-4 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+              Empty file.
+            </p>
+          ) : mode === "rendered" ? (
+            <DocumentReader
+              document={readerDocument}
+              navigation="compact"
+              renderLede={(block) => (
+                <MarkdownReaderBlock block={block} blockKey="memory-lede" />
+              )}
+              renderBlock={(block, key) => (
+                <MarkdownReaderBlock block={block} blockKey={key} />
+              )}
+            />
+          ) : (
+            <pre className="h-full overflow-y-auto whitespace-pre-wrap break-words p-4 font-mono text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)]">
+              {content}
+            </pre>
+          )}
+        </div>
       )}
     </div>
   );

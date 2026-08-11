@@ -278,8 +278,8 @@ console.log("chat-projects.test.ts: ok");
 
   assert.deepEqual(
     resolveChatProjectSelection({ ...base, draftId: "gone", hasSession: true, sessionProjectRoot: "/work/beta" }),
-    { projectId: "gone", project: roster[0] },
-    "a stale draft id keeps the legacy first-project display fallback",
+    { projectId: "gone", project: null },
+    "a stale explicit project never silently substitutes the first project",
   );
 
   assert.deepEqual(
@@ -366,6 +366,310 @@ console.log("chat-projects.test.ts: ok");
     }),
     { projectId: "p2", project: roster[1] },
     "a brand-new task chat opens scoped to the task's project, not the first project",
+  );
+
+  // ── Most recent chat's project (recentProjectRoot) ─────────────────────────
+  // A brand-new chat with no other context starts in the project the most
+  // recent chat ran in, so back-to-back chats stay in the working project
+  // instead of snapping to the alphabetically-first one.
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      recentProjectRoot: "/work/beta",
+    }),
+    { projectId: "p2", project: roster[1] },
+    "a brand-new chat inherits the most recent chat's project",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      fallbackProjectRoot: "/work/alpha",
+      recentProjectRoot: "/work/beta",
+    }),
+    { projectId: "p1", project: roster[0] },
+    "an opener root (e.g. a project group's + button) outranks the recency default",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      taskProjectId: "p1",
+      recentProjectRoot: "/work/beta",
+    }),
+    { projectId: "p1", project: roster[0] },
+    "a linked task's project outranks the recency default",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      draftId: NO_PROJECT_ID,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      recentProjectRoot: "/work/beta",
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "an explicit No-project pick beats the recency default",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      recentProjectRoot: "/somewhere/unregistered",
+    }),
+    { projectId: null, project: roster[0] },
+    "an unregistered recent root falls through to the first project",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: "/Users/me/.coven/workspaces/familiars/cody",
+      recentProjectRoot: "/work/beta",
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "recency never re-roots an EXISTING session in an unregistered cwd",
+  );
+
+  // ── Unregistered opener roots (worktree hand-off) ──────────────────────────
+  // REGRESSION (2026-07-23): "New worktree…" dispatches a new chat at the
+  // freshly provisioned `.worktrees/<branch>` checkout. That root maps to no
+  // registered project, so the resolver used to drop it and fall through to
+  // the recent/first project — the chat silently ran in the shared checkout
+  // the worktree was created to avoid. An explicit opener root now resolves
+  // to its registered parent project, with the checkout root carried
+  // separately for runtime execution.
+  const worktreeRoot = "/work/alpha/.worktrees/feat-x";
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      fallbackProjectRoot: worktreeRoot,
+      recentProjectRoot: "/work/beta",
+    }),
+    { projectId: "p1", project: roster[0], unregisteredRoot: worktreeRoot },
+    "a new worktree chat keeps its runtime root and authorizes through the registered parent project",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      fallbackProjectRoot: `${worktreeRoot}/`,
+    }),
+    { projectId: "p1", project: roster[0], unregisteredRoot: worktreeRoot },
+    "the opener root is normalized (trailing slash trimmed)",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: worktreeRoot,
+      fallbackProjectRoot: worktreeRoot,
+    }),
+    { projectId: "p1", project: roster[0], unregisteredRoot: worktreeRoot },
+    "the worktree root and parent authorization survive the first send",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: "/Users/me/.coven/workspaces/familiars/cody",
+      fallbackProjectRoot: worktreeRoot,
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "a DIFFERENT session opened into a worktree-rooted view keeps its own home",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      draftId: "p2",
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      fallbackProjectRoot: worktreeRoot,
+    }),
+    { projectId: "p2", project: roster[1] },
+    "an explicit user pick still beats the opener's worktree root",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      taskProjectId: "p1",
+      fallbackProjectRoot: worktreeRoot,
+    }),
+    { projectId: "p1", project: roster[0] },
+    "a linked task's project still beats the opener's worktree root",
+  );
+
+  // ── Reopened worktree chats (cave-k0ra) ─────────────────────────────────────
+  // REGRESSION (2026-07-23): a chat created in a `.worktrees/<branch>` checkout
+  // kept its root only while the opener's fallbackProjectRoot still matched.
+  // Reopened later from the chat list, the view root differs (or is absent),
+  // the resolver returned bare No-project, and the chat lost its home: git
+  // chip hidden, enhance in "chat" mode. A recorded cwd under a registered
+  // project's `.worktrees/` dir now carries through as unregisteredRoot while
+  // the parent project remains the visible, access-bearing selection.
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: worktreeRoot,
+      fallbackProjectRoot: null,
+    }),
+    { projectId: "p1", project: roster[0], unregisteredRoot: worktreeRoot },
+    "a reopened worktree chat keeps its runtime home and registered parent project",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: worktreeRoot,
+      fallbackProjectRoot: "/work/beta",
+      recentProjectRoot: "/work/beta",
+    }),
+    { projectId: "p1", project: roster[0], unregisteredRoot: worktreeRoot },
+    "a mismatched view root never strips a worktree session of its recorded home",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: `${worktreeRoot}/`,
+      fallbackProjectRoot: null,
+    }),
+    { projectId: "p1", project: roster[0], unregisteredRoot: worktreeRoot },
+    "the recorded worktree root is normalized (trailing slash trimmed)",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: "/elsewhere/.worktrees/feat-x",
+      fallbackProjectRoot: null,
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "a worktree under an UNREGISTERED parent stays bare No-project — its cwd is never surfaced",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: "/work/alphax/.worktrees/feat-x",
+      fallbackProjectRoot: null,
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "containment is separator-exact: /work/alphax never matches project root /work/alpha",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: "/work/alpha/.worktrees-evasion/feat-x",
+      fallbackProjectRoot: null,
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "only the literal .worktrees/ directory qualifies — sibling dirs sharing the prefix do not",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: "/work/alpha/.worktrees/feat-x/../../escape",
+      fallbackProjectRoot: null,
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "dot-segment traversal cannot claim a registered worktree parent",
+  );
+}
+
+// ── recentChatProjectRoot ────────────────────────────────────────────────────
+// The root fed into the recency default above: the registered project of the
+// newest visible chat. Unregistered/no-project chats are skipped (they can't
+// seed a registered-project picker); archived and generated rows never count.
+{
+  const { recentChatProjectRoot } = await import("./chat-projects.ts");
+  const roster = [
+    { id: "alpha", name: "Alpha", root: "/work/alpha", createdAt: "", updatedAt: "" },
+    { id: "beta", name: "Beta", root: "/work/beta", createdAt: "", updatedAt: "" },
+  ];
+
+  assert.equal(
+    recentChatProjectRoot(
+      [
+        session("older-beta", "/work/beta", "2026-06-01T00:00:00.000Z", "nova"),
+        session("newest-alpha", "/work/alpha", "2026-06-03T00:00:00.000Z", "cody"),
+      ],
+      roster,
+    ),
+    "/work/alpha",
+    "the newest chat's registered project wins",
+  );
+
+  assert.equal(
+    recentChatProjectRoot(
+      [
+        session("newest-scratch", "", "2026-06-05T00:00:00.000Z", "charm"),
+        session("unregistered", "/somewhere/else", "2026-06-04T00:00:00.000Z", "sage"),
+        session("registered", "/work/beta", "2026-06-02T00:00:00.000Z", "nova"),
+      ],
+      roster,
+    ),
+    "/work/beta",
+    "no-project and unregistered chats are skipped, not treated as a default",
+  );
+
+  assert.equal(
+    recentChatProjectRoot(
+      [
+        { ...session("stashed", "/work/alpha", "2026-06-09T00:00:00.000Z", "cody"), archived_at: "2026-06-09T01:00:00.000Z" },
+        session("status-archived", "/work/alpha", "2026-06-08T00:00:00.000Z", "cody", "archived"),
+        session("live", "/work/beta", "2026-06-07T00:00:00.000Z", "nova"),
+      ],
+      roster,
+    ),
+    "/work/beta",
+    "archived chats don't drive the default",
+  );
+
+  assert.equal(
+    recentChatProjectRoot(
+      [session("normalized", "/work/beta/", "2026-06-02T00:00:00.000Z", "nova")],
+      roster,
+    ),
+    "/work/beta",
+    "roots are normalized to the registered project's canonical root",
+  );
+
+  assert.equal(recentChatProjectRoot([], roster), null, "no sessions → no recency default");
+  assert.equal(
+    recentChatProjectRoot([session("any", "/work/alpha", "2026-06-01T00:00:00.000Z", "nova")], []),
+    null,
+    "no registered projects → no recency default",
   );
 }
 

@@ -1,8 +1,10 @@
 /* ── Session list card polish ──────────────────────────────────────────────
-   Each row reads as a tappable card: a faint leading-edge accent on hover, a
-   refined model pill, and running sessions feel LIVE (pulsing status dot +
-   accent-tinted "Active now…" preview). Purely additive over the row's inline
-   Tailwind background/active states. */
+   Each row reads as a tappable card: a faint leading-edge accent on hover and
+   a refined model pill. Purely additive over the row's inline Tailwind
+   background/active states. (The "live" half of this block — a pulsing status
+   dot and an accent-tinted "Active now…" preview — retired in cave-n3jg2 when
+   the dot became the familiar's avatar with a breathing ring and the preview
+   stopped restating the status.) */
 .chat-list-row {
   transition:
     background var(--duration-fast, 120ms) var(--ease-standard, ease),
@@ -23,23 +25,11 @@
   background: color-mix(in oklch, var(--bg-raised) 55%, transparent);
 }
 
-/* Running sessions: gentle pulsing halo on the status dot + live-tinted preview. */
-.chat-list-row[data-status="running"] .chat-list-status-dot > span {
-  animation: chat-list-dot-pulse 2s var(--ease-standard, ease-out) infinite;
-}
-.chat-list-row[data-status="running"] .chat-list-row-preview {
-  color: color-mix(in oklch, var(--color-success) 78%, var(--text-secondary));
-}
-@keyframes chat-list-dot-pulse {
-  0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-success) 55%, transparent); }
-  70% { box-shadow: 0 0 0 5px color-mix(in oklch, var(--color-success) 0%, transparent); }
-  100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-success) 0%, transparent); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .chat-list-row[data-status="running"] .chat-list-status-dot > span {
-    animation: none;
-  }
-}
+/* The running row's live signal moved onto the familiar avatar as a breathing
+   ring (cave-n3jg2, chat-list.css). The halo that used to pulse the status dot
+   would now pulse the avatar behind that ring — two animations saying the same
+   thing — and the preview line no longer restates the status, so its live tint
+   had nothing left to tint. */
 
 /* PR-status badge — replaces the status dot when a thread's work reached a
    pull request. GitHub's own state colors: open green, merged the presence
@@ -450,7 +440,6 @@
     min-height: calc(var(--touch-target) + 4px);
     background: color-mix(in oklch, var(--bg-raised) 92%, transparent);
     backdrop-filter: blur(14px) saturate(140%);
-    -webkit-backdrop-filter: blur(14px) saturate(140%);
   }
 
   .chat-scope-tabs [role="tab"] {
@@ -558,7 +547,6 @@
     z-index: 45;
     background: color-mix(in oklch, var(--bg-base) 96%, transparent);
     backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
   }
 
   .chat-list-dossier > * {
@@ -709,60 +697,4 @@
     min-width: 0;
   }
 
-  /* ── Automation templates panel ─────────────────────────────────────────── */
-  .automation-templates-panel {
-    padding-top: var(--space-1);
-  }
-
-  .automation-templates-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: var(--space-2);
-  }
-
-  .automation-template-card {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
-    padding: 14px;
-    border-radius: var(--radius-base);
-    border: 1px solid var(--border-hairline);
-    background: var(--bg-raised);
-    cursor: pointer;
-    text-align: left;
-    transition:
-      background 120ms var(--ease-standard),
-      border-color 120ms var(--ease-standard);
-  }
-
-  .automation-template-card:hover {
-    background: var(--bg-hover);
-    border-color: var(--border-strong);
-  }
-
-  .automation-template-card__emoji {
-    font-size: var(--text-xl);
-    line-height: 1;
-    display: block;
-  }
-
-  .automation-template-card__title {
-    font-size: var(--text-sm);
-    line-height: 1.45;
-    color: var(--text-primary);
-    flex: 1;
-  }
-
-  .automation-template-card__schedule {
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    margin-top: 2px;
-  }
-
-  @container (max-width: 540px) {
-    .automation-templates-grid {
-      grid-template-columns: 1fr;
-    }
-  }
 }

@@ -44,7 +44,7 @@ assert.match(
 );
 assert.match(
   styles,
-  /\.board-search-wrap\s*\{[\s\S]*min-width:\s*0/,
+  /\.board-token-search\s*\{[\s\S]*min-width:\s*0/,
   "Desktop board search should be allowed to shrink before forcing toolbar wrapping",
 );
 // The stacked layout is keyed to the surface's own width (@container board) so
@@ -79,7 +79,7 @@ assert.match(kanban, /board-kanban-card--grabbed/, "Grabbed visual affordance pr
 // ───────── Mobile board chrome ─────────
 assert.match(
   styles,
-  /@container board \(max-width: 767px\) \{[\s\S]*\.board-search-input\s*\{[\s\S]*height:\s*44px[\s\S]*\.board-view-toggle\s*\{[\s\S]*display:\s*none[\s\S]*\.board-toolbar-btn,\s*\n\s*\.board-new-card-btn\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
+  /@container board \(max-width: 767px\) \{[\s\S]*\.board-token-field\s*\{[\s\S]*min-height:\s*44px[\s\S]*\.board-view-toggle\s*\{[\s\S]*display:\s*none[\s\S]*\.board-toolbar-btn,\s*\n\s*\.board-new-card-btn\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Narrow board search and toolbar controls should meet thumb-sized touch targets",
 );
 

@@ -29,8 +29,8 @@ assert.match(
 // --- Compose path: offline branches to enqueue, never to the network --------
 assert.match(
   chatView,
-  /if app\.connectionState != \.connected \{[\s\S]{0,220}?thread\.enqueue\(outgoing, attachments: attachments\)/,
-  "ChatView.send parks prose on the thread when disconnected",
+  /let modelBinding = turnModelBinding[\s\S]{0,320}?if app\.connectionState != \.connected \{[\s\S]{0,320}?thread\.enqueue\(outgoing, attachments: attachments,[\s\S]{0,180}?modelControls: modelControlValues,[\s\S]{0,180}?modelOverrideScope: modelBinding\.scope\)/,
+  "ChatView.send parks prose with its selected-model control snapshot when disconnected",
 );
 assert.match(
   chatView,
@@ -39,13 +39,13 @@ assert.match(
 );
 assert.match(
   chatView,
-  /if app\.connectionState != \.connected \{[\s\S]{0,120}?thread\.enqueue\(text\)/,
-  "suggestion chips queue offline too",
+  /private func sendSuggestion[\s\S]{0,260}?let modelBinding = turnModelBinding[\s\S]{0,160}?if app\.connectionState != \.connected \{[\s\S]{0,260}?thread\.enqueue\(text,[\s\S]{0,180}?modelControls: modelControlValues,[\s\S]{0,180}?modelOverrideScope: modelBinding\.scope\)/,
+  "suggestion chips queue offline with the same selected-model control snapshot",
 );
 assert.match(
   thread,
-  /func enqueue\(_ text: String, attachments: \[CaveClient\.ChatAttachment\] = \[\]\)/,
-  "ChatThread.enqueue exists for offline compose",
+  /func enqueue\(_ text: String, attachments: \[CaveClient\.ChatAttachment\] = \[\],[\s\S]{0,240}?modelControls: \[String: String\] = \[:\],[\s\S]{0,180}?modelOverrideScope: ChatModelOverrideScope\? = nil\)/,
+  "ChatThread.enqueue persists the offline selected-model control snapshot and scope",
 );
 
 // --- Transport-failure conversion: only when provably unsent ----------------

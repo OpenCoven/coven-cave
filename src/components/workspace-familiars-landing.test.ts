@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const topBar = readFileSync(new URL("./top-bar.tsx", import.meta.url), "utf8");
 const workspaceMode = readFileSync(
   new URL("../lib/workspace-mode.ts", import.meta.url),
@@ -92,7 +93,7 @@ for (const gate of [
 assert.match(
   workspace,
   /\{\(onboardingOpen \|\| onboardingMounted\) && \(\s*<OnboardingOverlay[\s\S]*open=\{onboardingOpen\}/,
-  "onboarding loads on first open but remains mounted so job polling and one-shot refs survive close/reopen",
+  "onboarding loads on first open but remains mounted so local refs survive close/reopen while the server owns job progress",
 );
 assert.match(
   workspace,
@@ -116,13 +117,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /import \{[\s\S]*shouldApplyStartupOnboardingStatus[\s\S]*\} from "@\/lib\/onboarding-gate"/,
-  "Workspace imports the shared startup-status helper from onboarding-gate",
+  /import \{[\s\S]*shouldApplyStartupOnboardingBootstrap[\s\S]*\} from "@\/lib\/onboarding-gate"/,
+  "Workspace imports the shared bootstrap startup helper from onboarding-gate",
 );
 assert.match(
   workspace,
-  /shouldApplyStartupOnboardingStatus\(\{\s*status: json,\s*cancelled,\s*manuallyOpened: manualOnboardingOpenedRef\.current,\s*\}\)/s,
-  "a delayed startup response delegates the manual/cancelled/status gate to the shared helper",
+  /fetch\("\/api\/onboarding\/bootstrap"[\s\S]*shouldApplyStartupOnboardingBootstrap\(\{\s*status: json,\s*cancelled,\s*manuallyOpened: manualOnboardingOpenedRef\.current,\s*\}\)/s,
+  "a delayed bootstrap response delegates the manual/cancelled/status gate to the shared helper",
 );
 assert.match(
   workspace,
@@ -167,9 +168,9 @@ assert.doesNotMatch(
 );
 
 assert.doesNotMatch(
-  sidebar,
+  navigation,
   /\{ id: "agents", label: "Familiars"/,
-  "Sidebar should not expose a Familiars subpage in Work",
+  "The navigation registry should not expose a Familiars subpage",
 );
 
 assert.doesNotMatch(
@@ -265,10 +266,25 @@ assert.match(
   /if \(!activeFamiliarHydrated\) return;[\s\S]*setFamiliarScope\(\[\.\.\.scopeIds\]\)/,
   "Workspace should not write scope storage until after the mount restore runs",
 );
+// b7ecf460e ("decouple heartbeat from daemon diagnostics") retired the 5s
+// usePausablePoll for daemon status: the connection supervisor owns its own
+// cadence and backoff now, so the workspace only delegates to it. That commit
+// updated daemon-start-button and settings-overview but missed this file, and
+// the stale assertion sat red until the frontend gate ran again.
 assert.match(
   workspace,
-  /usePausablePoll\(\(\) => void refreshDaemonStatus\(\), 5000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
-  "Workspace pauses the daemon-status poll while a mobile text input is active",
+  /createDaemonConnectionSupervisor\(\{/,
+  "Workspace delegates daemon status to the connection supervisor",
+);
+assert.match(
+  workspace,
+  /await daemonConnectionSupervisorRef\.current\?\.refresh\(\{\s*fresh: opts\?\.fresh === true \|\| opts\?\.trusted === true,?\s*\}\)/,
+  "refreshDaemonStatus is a thin delegate to the supervisor, not its own fetch",
+);
+assert.doesNotMatch(
+  workspace,
+  /usePausablePoll\(\(\) => void refreshDaemonStatus\(\)/,
+  "the retired 5s daemon-status poll must not come back — that is the decoupling",
 );
 assert.match(
   workspace,
@@ -293,17 +309,17 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  sidebar,
+  navigation,
   /\{ id: "home", label: "Home", iconName: "ph:house-bold", kbd: "⌘1", description:/,
-  "Sidebar Home keeps its shortcut hint",
+  "Home keeps its canonical shortcut hint",
 );
 
 assert.match(
-  sidebar,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
-  "Browser is kept for ⌘5/palette but navHidden from the sidebar rows",
+  navigation,
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", group: "work", navHidden: true \}/,
+  "Browser is kept for ⌘5/palette but navHidden from rendered navigation rows",
 );
 
-assert.doesNotMatch(sidebar, /id:\s*"terminal"/, "Sidebar does not expose Terminal as a standalone destination");
+assert.doesNotMatch(navigation, /id:\s*"terminal"/, "Navigation does not expose Terminal as a standalone destination");
 
 console.log("workspace-familiars-landing: all assertions passed");

@@ -8,6 +8,23 @@ const source = readFileSync(
 );
 const css = readFileSync(new URL("../styles/globals/shell-responsive.css", import.meta.url), "utf8");
 
+assert.match(
+  source,
+  /import \{ VOICE_PROVIDER_CATALOG \} from "@\/lib\/voice\/provider-catalog"/,
+  "Familiar Studio imports the shared provider catalog",
+);
+assert.match(
+  source,
+  /VOICE_PROVIDER_CATALOG\.map\(\(provider\) => \(\{[\s\S]{0,180}value: provider\.id,[\s\S]{0,120}label: provider\.label,[\s\S]{0,120}disabled: !provider\.available/,
+  "provider order, labels, and availability are derived from the shared catalog",
+);
+assert.match(source, /options=\{voiceProviderOptions\}/, "the shared mapping feeds the Voice provider select");
+assert.doesNotMatch(
+  source,
+  /\{ value: "elevenlabs", label: "ElevenLabs \(true voice\)" \}|\{ value: "openai", label: "OpenAI Realtime" \}|\{ value: "gemini", label: "Gemini Live/,
+  "Familiar Studio keeps no local cloud-provider label or disabled-Gemini option literals",
+);
+
 assert.match(source, /export function FamiliarStudioBrainTab/);
 assert.match(source, /harness/);
 assert.match(source, /model/);
@@ -15,8 +32,23 @@ assert.match(source, /familiar-studio-brain__label">Runtime<\/span>/, "Brain tab
 assert.doesNotMatch(source, /familiar-studio-brain__label">Harness<\/span>/, "Brain tab should not show Harness as the product label");
 assert.match(
   source,
-  /catalogForRuntime/,
-  "Brain tab model menu should source options from the runtime → provider catalog",
+  /useRuntimeModelInventory\(harnessId, familiar\.id\)[\s\S]{0,180}runtimeModelInventory\.allowCustom/,
+  "Brain tab model options and custom-id capability share the familiar-scoped inventory contract",
+);
+assert.match(
+  source,
+  /const harnessId = canonicalHarnessId\(draftHarness \|\| defaultHarnessId\);/,
+  "Brain tab should canonicalize legacy harness aliases before model and availability lookup",
+);
+assert.match(
+  source,
+  /harnesses\.find\([\s\S]{0,100}canonicalHarnessId\(item\.id\) === harnessId/,
+  "Brain tab should match canonical harness reports after alias normalization",
+);
+assert.match(
+  source,
+  /h\.availability && h\.availability\.state !== "ready"[\s\S]*?h\.availability\.message/,
+  "Runtime picker should reuse server-provided launchability remediation instead of treating an installed but unlaunchable CLI as ready",
 );
 assert.match(
   source,
@@ -25,7 +57,7 @@ assert.match(
 );
 assert.match(
   source,
-  /modelOptions\.length > 0[\s\S]{0,160}<StandardSelect/,
+  /modelOptions\.length > 0 \|\| !allowCustomModel[\s\S]{0,160}<StandardSelect/,
   "A runtime with catalog models, including Hermes, must render the dropdown instead of only free text",
 );
 assert.match(
@@ -33,9 +65,9 @@ assert.match(
   /allowCustomModel/,
   "Brain tab should keep a free-text fallback for ids not in the curated catalog",
 );
-// ── Model select: Inherit default must be representable (2026-07-12) ─────────
+// ── Model select: Runtime default must be representable (2026-07-12) ────────
 // The select's value used to be `draftModelIsListed ? draftModel : "__custom__"`,
-// so "" (Inherit default) always rendered as Custom... with an empty text box.
+// so "" (Runtime default) always rendered as Custom... with an empty text box.
 // Custom mode is now explicit state; "" only means inherit.
 assert.match(
   source,
@@ -49,13 +81,13 @@ assert.match(
 );
 assert.match(
   source,
-  /value=\{modelIsCustom \? "__custom__" : draftModel\}/,
-  "Inherit default (empty draft) must render as the empty option, not Custom...",
+  /value=\{modelIsCustom && allowCustomModel \? "__custom__" : draftModel\}/,
+  "Runtime default (empty draft) must render as the empty option, not Custom...",
 );
 assert.match(
   source,
   /if \(!trimmed\) setModelCustomMode\(false\)/,
-  "Blurring an empty custom field falls back to Inherit default",
+  "Blurring an empty custom field falls back to Runtime default",
 );
 assert.match(
   source,
@@ -78,8 +110,33 @@ assert.match(
 );
 assert.match(
   source,
+  /modelForRuntimeSwitch\(next\)/,
+  "switching runtime derives the durable default sentinel",
+);
+assert.match(
+  source,
+  /setDraftModel\(nextModel\)[\s\S]{0,180}save\(\{ harness: next \|\| null, model: nextModel \}\)/,
+  "switching runtime clears the old provider model through the durable default sentinel",
+);
+assert.match(
+  source,
+  /createModelSelectionMutationQueue\(\)/,
+  "runtime and model writes use the shared serialized mutation queue",
+);
+assert.match(
+  source,
+  /modelMutationQueueRef\.current\.enqueue\(\(\) => save\(\{ harness: next \|\| null, model: nextModel \}\)\)/,
+  "a runtime switch cannot be overtaken by an older model write",
+);
+assert.match(
+  source,
   /label: "Available runtimes"[\s\S]{0,360}harnesses\s*\.filter\(\(h\) => isBindableRuntimeChoice\(h\.id\)\)[\s\S]{0,120}\.map/,
   "Other available runtimes group below the inherited default, filtered to bindable choices (no Coven Code)",
+);
+assert.match(
+  source,
+  /h\.availability && h\.availability\.state !== "ready"[\s\S]{0,180}" \(unavailable\)"[\s\S]{0,160}detail: h\.availability\?\.state !== "ready"/,
+  "Runtime picker labels a discovered-but-unlaunchable CLI as unavailable and shows the shared remediation",
 );
 assert.match(
   source,
@@ -105,6 +162,19 @@ assert.match(
   source,
   /familiar-studio-brain__sidecar/,
   "Brain tab should move voice and capabilities into a sidecar column",
+);
+assert.match(
+  source,
+  /import \{ FamiliarXSection \} from "@\/components\/familiar-x-section"/,
+  "Brain tab should load the familiar-scoped X controls",
+);
+assert.match(
+  source,
+  // Still beside Asana, but now behind the cave-lsj8u capability gate: the X
+  // routes never landed, so the section stays hidden until they do. Ordering is
+  // what this pins; the gate itself is pinned in x-surface-gating.test.ts.
+  /<FamiliarAsanaSection familiar=\{familiar\} \/>[\s\S]{0,700}?<FamiliarXSection familiar=\{familiar\} \/>/,
+  "X account and grants should render beside the existing Asana integration",
 );
 assert.match(
   source,
@@ -204,6 +274,91 @@ assert.match(
   css,
   /\.familiar-studio-brain__voice-preview\s*\{/,
   "the preview button has dedicated styling beside the voice select",
+);
+assert.match(
+  source,
+  /previewAbortRef\.current\?\.abort\(\)[\s\S]{0,100}previewAbortRef\.current = null/,
+  "stopping a preview aborts local synthesis instead of only ignoring its result",
+);
+assert.match(
+  source,
+  /signal: localPreviewAbort\?\.signal/,
+  "local preview synthesis carries its abort signal to the sidecar endpoint",
+);
+assert.match(
+  source,
+  /fetch\("\/api\/voice\/engines"/,
+  "local voice choices load from the sidecar engine-readiness endpoint",
+);
+assert.match(
+  source,
+  /const controller = new AbortController\(\);[\s\S]{0,300}LOCAL_VOICE_CATALOG_TIMEOUT_MS[\s\S]{0,300}fetch\("\/api\/voice\/engines", \{[\s\S]{0,100}cache: "no-store",[\s\S]{0,100}signal: controller\.signal,[\s\S]{0,100}\}\)/,
+  "local voice catalog loading has a bounded, non-cached abortable request",
+);
+assert.match(
+  source,
+  /window\.clearTimeout\(timeout\);[\s\S]{0,100}controller\.abort\(\);/,
+  "leaving the local voice picker aborts its readiness request",
+);
+assert.match(
+  source,
+  /voice\?\.ready === true[\s\S]{0,120}voice\?\.verified === true[\s\S]{0,120}\(voice\.engine === "piper" \|\| voice\.engine === "kokoro"\)[\s\S]{0,80}runtimeAvailable\(voice\.engine\)/,
+  "only verified local voices whose engine runtime is available become selectable",
+);
+assert.match(
+  source,
+  /const runtimeAvailable = \(engine: LocalTtsVoice\["engine"\]\) =>\s*runtimes\?\.\[engine\]\?\.available === true;/,
+  "a missing or malformed runtime report must not make a local voice selectable",
+);
+assert.match(
+  source,
+  /options=\{localVoiceOptions\}/,
+  "Familiar Studio renders ready Piper voices in the Voice picker",
+);
+assert.match(
+  source,
+  /\) : localProviderSelected \? \(/,
+  "Local voice configuration keeps the restricted picker while readiness loads or fails, so an arbitrary piper- id cannot be entered through the system-voice fallback",
+);
+assert.match(
+  source,
+  /localProviderSelected &&\s*localCatalogReady &&\s*isLocalTtsVoiceName\(draftVoiceName\)/,
+  "A saved local voice is called unavailable only after a completed catalog check, not while refresh is still loading",
+);
+assert.match(
+  source,
+  /fetch\("\/api\/voice\/local\/tts"/,
+  "local voice previews use the same authenticated sidecar TTS endpoint as calls",
+);
+assert.match(
+  source,
+  /audio\.onerror = \(\) => \{[\s\S]{0,160}stopVoicePreview\(\);[\s\S]{0,280}Couldn't play the local voice preview\./,
+  "failed local audio decoding cleans up playback and gives an actionable preview error",
+);
+assert.match(
+  source,
+  /No local voices downloaded — open Settings to add one, or use the system default\./,
+  "the empty local catalog gives a concrete next step and preserves the system fallback",
+);
+assert.match(
+  source,
+  /localVoiceCatalog\.status === "error"[\s\S]{0,800}<Button[\s\S]{0,500}status: "idle"[\s\S]{0,300}Retry/,
+  "local voice readiness failures expose a real retry action",
+);
+assert.match(
+  source,
+  /setLocalVoiceCatalog\(\(catalog\) => \(\{[\s\S]{0,100}status: "idle"[\s\S]{0,200}setLocalVoiceCatalogAttempt[\s\S]{0,300}Refresh local voices/,
+  "refresh invalidates a ready local catalog before triggering a new readiness request",
+);
+assert.match(
+  source,
+  /setLocalVoiceCatalog\(\{ status: "loading", voices: \[\] \}\)/,
+  "a pending catalog probe must not leave a stale local voice selectable",
+);
+assert.match(
+  source,
+  /setLocalVoiceCatalogAttempt\([\s\S]{0,240}addEventListener\("cave:voice-engines-refresh", refreshLocalVoices\)/,
+  "model downloads and removals invalidate an open Studio voice picker",
 );
 
 console.log("familiar-studio-brain-tab.test.ts: ok");
@@ -356,4 +511,49 @@ assert.match(
   source,
   /const pendingImageModel = draftImageModel\.trim\(\);\s*if \(pendingImageModel !== \(familiar\.imageModel \?\? ""\)\) patch\.imageModel = pendingImageModel \|\| null;/,
   "a dirty custom image model id is tracked for the unmount flush",
+);
+
+// ── Local (on-device) recognition readiness at config time (cave-qfyx) ──────
+// Picking Local probes the native speech engine right here, so a missing
+// on-device dictation model is discovered while configuring — not as
+// stt_on_device_unsupported when a call finally connects.
+assert.match(
+  source,
+  /draftVoiceProvider !== "local" \|\| !isTauri\(\)/,
+  "the readiness probe is desktop-gated and only runs for the Local provider",
+);
+assert.match(
+  source,
+  /nativeSttAvailability\(bridge, navigator\.language\)/,
+  "readiness reuses the same native availability probe as the call path",
+);
+assert.match(
+  source,
+  /kind === "no-on-device"[\s\S]{0,400}System Settings → Keyboard → Dictation/,
+  "the missing-model warning tells the user where to download the dictation model",
+);
+assert.match(
+  source,
+  /familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status"/,
+  "not-ready states render as warning hints announced via role=status",
+);
+assert.match(
+  source,
+  /import type \{ RuntimeAvailabilitySummary \} from "@\/lib\/runtime-availability";[\s\S]*?availability\?: RuntimeAvailabilitySummary;/,
+  "the runtime picker receives the launchability summary returned by /api/harnesses",
+);
+assert.match(
+  source,
+  /const selectedHarnessAvailability = harnesses\.find\([\s\S]{0,120}canonicalHarnessId\(item\.id\) === harnessId,[\s\S]{0,40}\)\?\.availability;[\s\S]*?selectedHarnessAvailability\.state !== "ready"[\s\S]*?selectedHarnessAvailability\.message/,
+  "the selected runtime shows truthful launch remediation rather than only an install bit",
+);
+assert.match(
+  source,
+  /kind === "on-device"[\s\S]{0,200}runs fully on-device/,
+  "the ready state confirms recognition stays on-device",
+);
+assert.match(
+  css,
+  /\.familiar-studio-brain__hint--warn \{ color: var\(--color-warning\); \}/,
+  "the warn hint modifier colors via the warning token only",
 );

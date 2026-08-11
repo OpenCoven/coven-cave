@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
 import { execFile } from "node:child_process";
-import { readdir, stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { callDaemon } from "@/lib/coven-daemon";
 import { loadConfig } from "@/lib/cave-config";
-import { covenLaunchCommand, covenSpawnEnv, pickWindowsLauncher } from "@/lib/coven-bin";
+import { caveHome } from "@/lib/coven-paths";
+import {
+  covenBinaryFromEnvironment,
+  covenLaunchCommandForBinary,
+  covenSpawnEnv,
+  covenWrapperSpawnEnv,
+  pickWindowsLauncher,
+} from "@/lib/coven-bin";
 import {
   openCovenToolReadinessStatuses,
   type OpenCovenToolReadinessStatus,
@@ -19,14 +26,36 @@ import {
   type AdapterReport,
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
+import { listOpenClawAgents } from "@/lib/openclaw-bridge";
+import {
+  bindingReadinessStep,
+  classifyCommandPathFailure,
+  environmentDiscoveryState,
+  isConfirmedMissingPath,
+  onboardingStatusPayload,
+  withinDeadline,
+  type DeadlineResult,
+  type EnvironmentDiscoveryState,
+  type OnboardingStatusStep,
+} from "@/lib/onboarding-status-probes";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const execFileAsync = promisify(execFile);
-const COVEN_CLI_INSTALL_COMMAND = "npm i -g @opencoven/cli@latest";
+const COVEN_CLI_INSTALL_GUIDANCE = "Install Cave-managed Node.js and npm first, then use Cave's reviewed Coven CLI installer.";
+const ONBOARDING_STATUS_DEADLINE_MS = 4_000;
+const ONBOARDING_DISCOVERY_DEADLINE_MS = 2_000;
+const OPENCLAW_ONBOARDING_DEADLINE_MS = 750;
 
-type Step = { ok: boolean; detail?: string; hint?: string; optional?: boolean };
+type Step = OnboardingStatusStep;
+type ProbeResult<T> =
+  | { state: "ready"; value: T }
+  | { state: "absent"; value: null }
+  | { state: "unavailable"; value: null };
+type OpenClawAgentCount =
+  | { state: "ready"; count: number }
+  | { state: "unavailable"; count: 0 };
 
 function gitInstallHint(): string {
   if (process.platform === "darwin") {
@@ -39,25 +68,53 @@ function gitInstallHint(): string {
 }
 
 /**
- * Advisory: Cave boots and chats without git (Node ships inside the app
- * bundle), but the changes panel, project file tree, and checkpoints all
- * shell out to it. Missing git never blocks onboarding completion.
+ * Queue project selection lives on the Tasks page's Queue tab now, not in
+ * onboarding — but it remains a Git-repository boundary. Cave can render some
+ * surfaces without Git, yet it cannot safely initialize or load a selected
+ * Queue project until Git is available.
  */
-async function checkGit(): Promise<Step> {
-  const found = await commandPath("git");
-  if (found) return { ok: true, optional: true, detail: found };
+async function checkGit(
+  env: NodeJS.ProcessEnv,
+  deadline: number,
+  discoveryState: EnvironmentDiscoveryState,
+): Promise<Step> {
+  const found = await commandPath("git", env, deadline, discoveryState);
+  if (found.state === "ready") return { ok: true, detail: found.value };
+  if (found.state === "unavailable") {
+    return {
+      ok: false,
+      state: "unavailable",
+      hint: "Couldn’t verify Git. You can continue and retry later.",
+    };
+  }
   return {
     ok: false,
-    optional: true,
-    hint: `Chat works without it, but the changes panel, project files, and checkpoints need Git. ${gitInstallHint()}`,
+    hint: `Git is required to select and use a Queue project. ${gitInstallHint()}`,
   };
 }
 
-function checkCovenCli(tool: OpenCovenToolReadinessStatus | undefined): Step {
-  if (!tool?.installed) {
+function checkCovenCli(
+  tool: OpenCovenToolReadinessStatus | undefined,
+  pathProbe: ProbeResult<string>,
+): Step {
+  if (!tool || tool.discoveryError) {
     return {
       ok: false,
-      hint: `Install the Coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, make sure it is on PATH, then re-check.`,
+      state: "unavailable",
+      hint: "Couldn’t verify the local Coven CLI. You can continue and retry later.",
+    };
+  }
+  if (!tool.installed) {
+    if (pathProbe.state !== "absent") {
+      return {
+        ok: false,
+        state: "unavailable",
+        hint: "Couldn’t verify the local Coven CLI. You can continue and retry later.",
+      };
+    }
+    return {
+      ok: false,
+      hint: `${COVEN_CLI_INSTALL_GUIDANCE} Then re-check.`,
     };
   }
   if (!tool.compatible) {
@@ -67,7 +124,7 @@ function checkCovenCli(tool: OpenCovenToolReadinessStatus | undefined): Step {
     return {
       ok: false,
       detail,
-      hint: `Update the Coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, then re-check.`,
+      hint: `${COVEN_CLI_INSTALL_GUIDANCE} Then re-check.`,
     };
   }
   const location = tool.path ?? tool.binary;
@@ -77,82 +134,170 @@ function checkCovenCli(tool: OpenCovenToolReadinessStatus | undefined): Step {
   };
 }
 
-async function commandPath(binary: string): Promise<string | null> {
-  const command = process.platform === "win32" ? "where" : "which";
-  try {
-    const { stdout } = await execFileAsync(command, [binary], {
-      env: covenSpawnEnv(),
-      timeout: 1500,
-    });
-    const lines = stdout.split(/\r?\n/);
-    return process.platform === "win32"
-      ? pickWindowsLauncher(lines)
-      : lines.map((l) => l.trim()).find(Boolean) ?? null;
-  } catch {
-    return null;
-  }
+function remainingTimeout(maximum: number, deadline: number): number {
+  return Math.max(1, Math.min(maximum, deadline - Date.now()));
 }
 
-async function countOpenClawAgents(): Promise<number> {
-  const agentsRoot = path.join(homedir(), ".openclaw", "agents");
-  try {
-    const entries = await readdir(agentsRoot, { withFileTypes: true });
-    return entries.filter(
-      (entry) => entry.isDirectory() && !entry.name.startsWith("."),
-    ).length;
-  } catch {
-    return 0;
+async function commandPath(
+  binary: string,
+  env: NodeJS.ProcessEnv,
+  deadline: number,
+  discoveryState: EnvironmentDiscoveryState,
+): Promise<ProbeResult<string>> {
+  if (process.platform === "win32" && binary.toLowerCase() === "coven") {
+    const found = covenBinaryFromEnvironment(env);
+    return found
+      ? { state: "ready", value: found }
+      : discoveryState === "ready"
+        ? { state: "absent", value: null }
+        : { state: "unavailable", value: null };
   }
+  const command = process.platform === "win32" ? "where" : "which";
+  const result = await withinDeadline(async (signal) => {
+    try {
+      const { stdout } = await execFileAsync(command, [binary], {
+        windowsHide: true,
+        env,
+        signal,
+        timeout: remainingTimeout(1500, deadline),
+      });
+      const lines = stdout.split(/\r?\n/);
+      const found = process.platform === "win32"
+        ? pickWindowsLauncher(lines)
+        : lines.map((line) => line.trim()).find(Boolean) ?? null;
+      return found
+        ? { state: "ready" as const, value: found }
+        : discoveryState === "ready"
+          ? { state: "absent" as const, value: null }
+          : { state: "unavailable" as const, value: null };
+    } catch (error) {
+      return classifyCommandPathFailure(error, discoveryState) === "absent"
+        ? { state: "absent" as const, value: null }
+        : { state: "unavailable" as const, value: null };
+    }
+  }, deadline);
+  return result.state === "ready"
+    ? result.value
+    : { state: "unavailable", value: null };
+}
+
+async function countOpenClawAgents(): Promise<OpenClawAgentCount> {
+  const result = await withinDeadline(
+    () => listOpenClawAgents(),
+    Date.now() + OPENCLAW_ONBOARDING_DEADLINE_MS,
+  );
+  return result.state === "ready"
+    ? { state: "ready", count: result.value.length }
+    : { state: "unavailable", count: 0 };
 }
 
 async function checkHarnessAdapters(
-  openclawAgentCount: number,
-): Promise<{ step: Step; reports: AdapterReport[] }> {
-  const localReports: AdapterReport[] = await Promise.all(
-    COMPATIBILITY_ADAPTERS.map(async (adapter) => {
-      const found = await commandPath(adapter.binary);
+  openClawProbePromise: Promise<OpenClawAgentCount>,
+  env: NodeJS.ProcessEnv,
+  deadline: number,
+  discoveryState: EnvironmentDiscoveryState,
+): Promise<{
+  step: Step;
+  reports: AdapterReport[];
+  openClawAgentCount: number;
+  evidenceState: "ready" | "unavailable";
+}> {
+  const [localProbes, covenAdapterSummaries, openClawProbe] = await Promise.all([
+    Promise.all(
+      COMPATIBILITY_ADAPTERS.map((adapter) =>
+        commandPath(adapter.binary, env, deadline, discoveryState)
+      ),
+    ),
+    loadCovenAdapterSummaries(env, deadline, discoveryState),
+    openClawProbePromise,
+  ]);
+  const localReports: AdapterReport[] = COMPATIBILITY_ADAPTERS.map(
+    (adapter, index) => {
+      const probe = localProbes[index];
+      const adapterPath = probe?.state === "ready" ? probe.value : null;
       return {
         id: adapter.id,
         label: adapter.label,
         binary: adapter.binary,
         chatSupported: adapter.chatSupported,
-        installed: !!found,
-        path: found,
+        installed: !!adapterPath,
+        path: adapterPath,
         version: null,
         installHint: adapter.installHint,
         source: adapter.source,
         manifestPath: null,
       };
-    }),
+    },
   );
   const reports = mergeAdapterReports(
     localReports,
-    await loadCovenAdapterSummaries(),
+    covenAdapterSummaries.state === "ready" ? covenAdapterSummaries.value : [],
   );
-  return { step: runtimeSourceSetupState(reports, openclawAgentCount), reports };
+  const openClawAgentCount = openClawProbe.count;
+  const step = runtimeSourceSetupState(reports, openClawAgentCount);
+  const evidenceState = localProbes.every((probe) => probe.state !== "unavailable") &&
+      covenAdapterSummaries.state === "ready" &&
+      openClawProbe.state === "ready"
+    ? "ready"
+    : "unavailable";
+  if (!step.ok && evidenceState === "unavailable") {
+    return {
+      step: {
+        ok: false,
+        state: "unavailable",
+        hint: "Couldn’t verify every available runtime. You can continue and retry later.",
+      },
+      reports,
+      openClawAgentCount: 0,
+      evidenceState,
+    };
+  }
+  return { step, reports, openClawAgentCount, evidenceState };
 }
 
-async function loadCovenAdapterSummaries(): Promise<CovenAdapterSummary[]> {
-  try {
-    const { command, fixedArgs } = covenLaunchCommand();
-    const { stdout: helpText } = await execFileAsync(command, [...fixedArgs, "--help"], {
-      env: covenSpawnEnv(),
-      timeout: 1500,
-    });
+async function loadCovenAdapterSummaries(
+  env: NodeJS.ProcessEnv,
+  deadline: number,
+  discoveryState: EnvironmentDiscoveryState,
+): Promise<DeadlineResult<CovenAdapterSummary[]>> {
+  const pathProbe = await commandPath("coven", env, deadline, discoveryState);
+  if (pathProbe.state === "absent") return { state: "ready", value: [] };
+  if (pathProbe.state === "unavailable") {
+    return { state: "unavailable", value: null };
+  }
+  return withinDeadline(async (signal) => {
+    const { command, fixedArgs, unresolvedWindowsShim } =
+      covenLaunchCommandForBinary(pathProbe.value);
+    if (unresolvedWindowsShim) throw new Error("unresolved Coven launcher");
+    const wrapperEnv = covenWrapperSpawnEnv(env);
+    const { stdout: helpText } = await execFileAsync(
+      command,
+      [...fixedArgs, "--help"],
+      {
+        windowsHide: true,
+        env: wrapperEnv,
+        signal,
+        timeout: remainingTimeout(1500, deadline),
+      },
+    );
     if (!covenHelpSupportsAdapterList(helpText)) return [];
+    if (signal.aborted || Date.now() >= deadline) {
+      throw new Error("onboarding deadline expired");
+    }
     const { stdout } = await execFileAsync(
       command,
       [...fixedArgs, "adapter", "list", "--json"],
       {
-        env: covenSpawnEnv(),
-        timeout: 3000,
+        windowsHide: true,
+        env: wrapperEnv,
+        signal,
+        timeout: remainingTimeout(3000, deadline),
       },
     );
     const parsed = JSON.parse(stdout);
-    return Array.isArray(parsed) ? (parsed as CovenAdapterSummary[]) : [];
-  } catch {
-    return [];
-  }
+    if (!Array.isArray(parsed)) throw new Error("unexpected adapter list");
+    return parsed as CovenAdapterSummary[];
+  }, deadline);
 }
 
 async function checkCovenHome(): Promise<Step> {
@@ -160,10 +305,28 @@ async function checkCovenHome(): Promise<Step> {
   try {
     const s = await stat(p);
     if (s.isDirectory()) return { ok: true, detail: p };
-  } catch {
-    /* missing */
+    return { ok: false, hint: "Cave can replace the non-directory ~/.coven path." };
+  } catch (error) {
+    if (isConfirmedMissingPath(error)) {
+      return { ok: false, hint: "Cave can create ~/.coven for you." };
+    }
+    return {
+      ok: false,
+      state: "unavailable",
+      hint: "Couldn’t verify ~/.coven. You can continue and retry later.",
+    };
   }
-  return { ok: false, hint: "Cave can create ~/.coven for you." };
+}
+
+async function checkConfigEvidence(): Promise<"ready" | "unavailable"> {
+  try {
+    const parsed = JSON.parse(
+      await readFile(path.join(caveHome(), "config.json"), "utf8"),
+    );
+    return parsed && typeof parsed === "object" ? "ready" : "unavailable";
+  } catch (error) {
+    return isConfirmedMissingPath(error) ? "ready" : "unavailable";
+  }
 }
 
 async function checkDaemon(): Promise<Step> {
@@ -172,7 +335,28 @@ async function checkDaemon(): Promise<Step> {
     timeoutMs: 800,
   });
   if (res.ok) return { ok: true, detail: "daemon socket reachable" };
-  return { ok: false, hint: res.error ?? `daemon http ${res.status}` };
+  if (
+    res.error === "malformed response" ||
+    res.error === "daemon response exceeded size limit"
+  ) {
+    return {
+      ok: false,
+      state: "unavailable",
+      hint: "Couldn’t verify the daemon. You can continue and retry later.",
+    };
+  }
+  if (
+    res.error === "daemon offline" ||
+    res.error === "server hub URL is not configured" ||
+    res.status > 0
+  ) {
+    return { ok: false, hint: res.error ?? `daemon http ${res.status}` };
+  }
+  return {
+    ok: false,
+    state: "unavailable",
+    hint: "Couldn’t verify the daemon. You can continue and retry later.",
+  };
 }
 
 /**
@@ -197,6 +381,17 @@ async function checkFamiliars(): Promise<{ step: Step; count: number }> {
       count,
     };
   }
+  if (!res.ok && res.error !== "daemon offline") {
+    return {
+      step: {
+        ok: false,
+        optional: true,
+        state: "unavailable",
+        hint: "Couldn’t verify familiars. You can continue and retry later.",
+      },
+      count,
+    };
+  }
   return {
     step: {
       ok: false,
@@ -209,121 +404,182 @@ async function checkFamiliars(): Promise<{ step: Step; count: number }> {
   };
 }
 
-// A configured default harness is only a real binding if something can
-// actually back it: an installed runtime adapter, or — for OpenClaw —
-// at least one discoverable agent. Without this, a stale `defaults.harness`
-// (e.g. "openclaw") advertises a confident binding on a machine where neither
-// the runtime nor any agent exists.
-function defaultHarnessAvailable(
-  harness: string,
-  reports: AdapterReport[],
-  openclawAgentCount: number,
-): boolean {
-  if (harness === "openclaw" && openclawAgentCount > 0) return true;
-  return reports.some((report) => report.id === harness && report.installed);
-}
-
-function availableRuntimeLabels(
-  reports: AdapterReport[],
-  openclawAgentCount: number,
-): string[] {
-  const labels = reports
-    .filter((report) => report.installed)
-    .map((report) => report.label);
-  if (openclawAgentCount > 0 && !labels.includes("OpenClaw")) {
-    labels.push(
-      `OpenClaw (${openclawAgentCount} agent${openclawAgentCount === 1 ? "" : "s"})`,
-    );
-  }
-  return labels;
-}
-
-async function checkBinding(
-  familiarsAvailable: boolean,
-  daemonOk: boolean,
-  reports: AdapterReport[],
-  openclawAgentCount: number,
-): Promise<Step> {
-  const config = await loadConfig();
-  const { harness, model } = config.defaults;
-  const hasDefaults = !!harness && !!model;
-  if (!hasDefaults) {
-    return {
-      ok: false,
-      hint: "Summon a familiar inside Cave (Familiars → Summon familiar) from Codex, Claude Code, Hermes, or an OpenClaw agent.",
-    };
-  }
-  if (!familiarsAvailable) {
-    // With the daemon down the familiar count is unknown, not zero — point
-    // at the actual blocker instead of blaming the user's bindings.
-    return {
-      ok: false,
-      hint: daemonOk
-        ? "Bindings set but no familiars to bind."
-        : "Waiting for the daemon — familiars load once it starts.",
-    };
-  }
-  // Defaults + familiars exist, but the default harness itself must be live —
-  // otherwise the binding detail advertises a runtime the user can't use.
-  if (!defaultHarnessAvailable(harness, reports, openclawAgentCount)) {
-    const report = reports.find((entry) => entry.id === harness);
-    const label = report?.label ?? harness;
-    const available = availableRuntimeLabels(reports, openclawAgentCount);
-    if (available.length > 0) {
-      return {
-        ok: false,
-        hint: `Default binding "${harness} · ${model}" points at ${label}, which has no installed runtime or agent. Summon a familiar from ${available.join(", ")} to update your default.`,
-      };
-    }
-    return {
-      ok: false,
-      hint: `Default binding "${harness} · ${model}" has no installed runtime or OpenClaw agent.${
-        report?.installHint ? ` ${report.installHint}` : ""
-      }`,
-    };
-  }
-  return {
-    ok: true,
-    detail: `${harness} · ${model}`,
-  };
+function classifyStep(step: Step): Step {
+  if (step.state) return step;
+  return { ...step, state: step.ok ? "ready" : "action-required" };
 }
 
 export async function GET() {
-  const openclawAgentCount = await countOpenClawAgents();
-  const [openCovenTools, covenHome, git, daemon, familiarsRes] = await Promise.all([
-    openCovenToolReadinessStatuses(),
-    checkCovenHome(),
-    checkGit(),
-    checkDaemon(),
-    checkFamiliars(),
+  const requestDeadline = Date.now() + ONBOARDING_STATUS_DEADLINE_MS;
+  const discoveryDeadline = Date.now() + ONBOARDING_DISCOVERY_DEADLINE_MS;
+  let readinessEnv: NodeJS.ProcessEnv;
+  let discoveryState: EnvironmentDiscoveryState;
+  try {
+    readinessEnv = covenSpawnEnv({ discoveryDeadline });
+    discoveryState = environmentDiscoveryState(Date.now(), discoveryDeadline);
+  } catch {
+    const unavailable = {
+      ok: false,
+      state: "unavailable" as const,
+      hint: "Couldn’t verify the local environment. You can continue and retry later.",
+    };
+    const steps: Record<string, Step> = {
+      covenCli: unavailable,
+      covenHome: unavailable,
+      git: { ...unavailable, optional: true },
+      adapters: unavailable,
+      daemon: unavailable,
+      familiars: { ...unavailable, optional: true },
+      binding: { ...unavailable, optional: true },
+    };
+    return NextResponse.json(onboardingStatusPayload(steps, null));
+  }
+  const openClawProbePromise = countOpenClawAgents();
+  const openCovenToolsPromise = withinDeadline(
+    () => openCovenToolReadinessStatuses({ env: readinessEnv }),
+    requestDeadline,
+  );
+  const adaptersPromise = withinDeadline(
+    () => checkHarnessAdapters(
+      openClawProbePromise,
+      readinessEnv,
+      requestDeadline,
+      discoveryState,
+    ),
+    requestDeadline,
+  );
+  const covenPathPromise = commandPath(
+    "coven",
+    readinessEnv,
+    requestDeadline,
+    discoveryState,
+  );
+  const covenHomePromise = withinDeadline(() => checkCovenHome(), requestDeadline);
+  const gitPromise = withinDeadline(
+    () => checkGit(readinessEnv, requestDeadline, discoveryState),
+    requestDeadline,
+  );
+  const daemonPromise = withinDeadline(() => checkDaemon(), requestDeadline);
+  const familiarsPromise = withinDeadline(() => checkFamiliars(), requestDeadline);
+  const configPromise = withinDeadline(() => loadConfig(), requestDeadline);
+  const configEvidencePromise = withinDeadline(
+    () => checkConfigEvidence(),
+    requestDeadline,
+  );
+  const [
+    openCovenToolsResult,
+    adaptersResult,
+    covenPathResult,
+    covenHomeResult,
+    gitResult,
+    daemonResult,
+    familiarsResult,
+    configResult,
+    configEvidenceResult,
+  ] = await Promise.all([
+    openCovenToolsPromise,
+    adaptersPromise,
+    covenPathPromise,
+    covenHomePromise,
+    gitPromise,
+    daemonPromise,
+    familiarsPromise,
+    configPromise,
+    configEvidencePromise,
   ]);
-  const covenCli = checkCovenCli(
-    openCovenTools.find((tool) => tool.id === "coven-cli"),
-  );
-  const adapters = await checkHarnessAdapters(openclawAgentCount);
-  const binding = await checkBinding(
-    familiarsRes.count > 0,
-    daemon.ok,
-    adapters.reports,
-    openclawAgentCount,
-  );
+  const openCovenTools = openCovenToolsResult.state === "ready"
+    ? openCovenToolsResult.value
+    : null;
+  const covenCli: Step = openCovenTools
+    ? checkCovenCli(
+        openCovenTools.find((tool) => tool.id === "coven-cli"),
+        covenPathResult,
+      )
+    : {
+        ok: false,
+        state: "unavailable",
+        hint: "Couldn’t verify the local Coven CLI. You can continue and retry later.",
+      };
+  const covenHome: Step = covenHomeResult.state === "ready"
+    ? covenHomeResult.value
+    : {
+        ok: false,
+        state: "unavailable",
+        hint: "Couldn’t verify ~/.coven. You can continue and retry later.",
+      };
+  const git: Step = gitResult.state === "ready"
+    ? gitResult.value
+    : {
+        ok: false,
+        state: "unavailable",
+        hint: "Couldn’t verify Git. You can continue and retry later.",
+      };
+  const configEvidenceAvailable = configEvidenceResult.state === "ready" &&
+    configEvidenceResult.value === "ready";
+  const daemon: Step = daemonResult.state === "ready" && configEvidenceAvailable
+    ? daemonResult.value
+    : {
+        ok: false,
+        state: "unavailable",
+        hint: "Couldn’t verify the daemon. You can continue and retry later.",
+      };
+  const familiarsRes = familiarsResult.state === "ready" && configEvidenceAvailable
+    ? familiarsResult.value
+    : {
+        step: {
+          ok: false,
+          optional: true,
+          state: "unavailable" as const,
+          hint: "Couldn’t verify familiars. You can continue and retry later.",
+        },
+        count: 0,
+      };
+  const adapters = adaptersResult.state === "ready"
+    ? adaptersResult.value
+    : {
+        step: {
+          ok: false,
+          state: "unavailable" as const,
+          hint: "Couldn’t verify every available runtime. You can continue and retry later.",
+        },
+        reports: [],
+        openClawAgentCount: 0,
+        evidenceState: "unavailable" as const,
+      };
+  const binding: Step = configResult.state === "unavailable" ||
+      !configEvidenceAvailable ||
+      familiarsRes.step.state === "unavailable"
+    ? {
+        ok: false,
+        state: "unavailable",
+        hint: "Couldn’t verify familiar bindings. You can continue and retry later.",
+      }
+    : bindingReadinessStep({
+        defaults: configResult.value.defaults,
+        familiarsAvailable: familiarsRes.count > 0,
+        daemonState: daemon.ok
+          ? "ready"
+          : daemon.state === "unavailable"
+            ? "unavailable"
+            : "offline",
+        reports: adapters.reports,
+        openClawAgentCount: adapters.openClawAgentCount,
+        runtimeEvidenceState: adapters.evidenceState,
+      });
 
-  const steps = {
-    covenCli,
-    covenHome,
-    git,
-    adapters: adapters.step,
-    daemon,
-    familiars: familiarsRes.step,
+  const steps: Record<string, Step> = {
+    covenCli: classifyStep(covenCli),
+    covenHome: classifyStep(covenHome),
+    // Git is a Queue capability gate, not a prerequisite for basic Cave
+    // onboarding or local familiar setup.
+    git: classifyStep({ ...git, optional: true }),
+    adapters: classifyStep(adapters.step),
+    daemon: classifyStep(daemon),
+    familiars: classifyStep(familiarsRes.step),
     // Advisory like `familiars`: creation lives in the in-app Summoning
     // Circle, so setup is complete once the infrastructure is — the binding
     // detail stays informative for the checklist and diagnostics only.
-    binding: { ...binding, optional: true },
+    binding: classifyStep({ ...binding, optional: true }),
   };
-  // Optional steps (git, familiars, binding) surface in the checklist but
-  // never gate completion — `complete` means the INFRASTRUCTURE is ready
-  // (CLI, home, runtime, daemon); the first familiar is summoned in-app.
-  const complete = Object.values(steps).every((s) => s.ok || s.optional);
-
-  return NextResponse.json({ ok: true, complete, steps, tools: openCovenTools });
+  return NextResponse.json(onboardingStatusPayload(steps, openCovenTools));
 }

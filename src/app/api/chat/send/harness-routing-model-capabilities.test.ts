@@ -19,6 +19,14 @@ const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
   "utf8",
 );
+const copilotStream = await readFile(
+  new URL("../../../../lib/copilot-stream.ts", import.meta.url),
+  "utf8",
+);
+const grokBuild = await readFile(
+  new URL("../../../../lib/grok-build.ts", import.meta.url),
+  "utf8",
+);
 const capabilityProbes = await readFile(
   new URL("./chat-send-capabilities.ts", import.meta.url),
   "utf8",
@@ -45,22 +53,113 @@ assert.match(
   /covenRunSupportsModelFlag/,
   "Model forwarding must gate on the coven run --model capability probe",
 );
+// A help probe that could not run is not a CLI that lacks the flag. Keeping
+// the two apart is what stops a spawn failure or a timeout from being reported
+// to the user as an unsupported model.
 assert.match(
   capabilityProbes,
-  /export function hermesChatSupportsModel\(\)/,
-  "Direct Hermes model forwarding must probe hermes chat --help independently of coven run",
+  /export type HelpProbeOutcome =[\s\S]*?\{ ok: true; matched: boolean \}[\s\S]*?\{ ok: false; reason: string \}/,
+  "Help probes report an incomplete probe separately from an unmatched flag",
+);
+for (const failure of [
+  // The deadline is hoisted into ONE binding that both arms the timer and
+  // names itself in the reason. Pinning the shape rather than a bare call is
+  // the point: a message that re-invoked the helper could quote a different
+  // number than the timer actually waited, which is precisely the confusion a
+  // timeout report exists to prevent.
+  /const timeoutMs = openCodeCapabilityProbeTimeoutMs\(\);[\s\S]*?did not respond within \$\{timeoutMs\}ms[\s\S]*?\}, timeoutMs\);/,
+  /child\.on\("error", \(error: Error\) => \{[\s\S]*?ok: false, reason: `\\`\$\{command\}\\` could not be started: \$\{error\.message\}`/,
+]) {
+  assert.match(
+    capabilityProbes,
+    failure,
+    "Timeouts and spawn errors carry the underlying reason instead of resolving false",
+  );
+}
+assert.match(
+  capabilityProbes,
+  /const probe = start\(\)\.then\(\(outcome\) => \{[\s\S]*?if \(!outcome\.ok\) write\(null\);/,
+  "Only answered capability probes are cached; a failed probe must not pin itself for the process lifetime",
+);
+assert.match(
+  capabilityProbes,
+  /export function covenRunModelFlagOutcome\(\): Promise<HelpProbeOutcome>[\s\S]*?export function covenRunSupportsModel\(\): Promise<boolean> \{[\s\S]*?outcome\.ok && outcome\.matched/,
+  "The boolean model capability is derived from the outcome rather than replacing it",
+);
+assert.match(
+  capabilityProbes,
+  /export type HelpProbeOutcome =[\s\S]*?\{ ok: true; matched: boolean \}[\s\S]*?\{ ok: false; reason: string \}/,
+  "Help probes report an incomplete probe separately from an unmatched flag",
+);
+for (const failure of [
+  /did not respond within \$\{timeoutMs\}ms/,
+  /child\.on\("error", \(error: Error\) => \{[\s\S]*?ok: false, reason: `\\`\$\{command\}\\` could not be started: \$\{error\.message\}`/,
+]) {
+  assert.match(
+    capabilityProbes,
+    failure,
+    "Timeouts and spawn errors carry the underlying reason instead of resolving false",
+  );
+}
+assert.match(
+  capabilityProbes,
+  /const probe = start\(\)\.then\(\(outcome\) => \{[\s\S]*?if \(!outcome\.ok\) write\(null\);/,
+  "Only answered capability probes are cached; a failed probe must not pin itself for the process lifetime",
+);
+assert.match(
+  capabilityProbes,
+  /export function covenRunModelFlagOutcome\(\): Promise<HelpProbeOutcome>[\s\S]*?export function covenRunSupportsModel\(\): Promise<boolean> \{[\s\S]*?outcome\.ok && outcome\.matched/,
+  "The boolean model capability is derived from the outcome rather than replacing it",
+);
+assert.match(
+  capabilityProbes,
+  /export function hermesChatSupportsModel\(launch:[\s\S]*?\["chat", "--help"\][\s\S]*?launch\.env[\s\S]*?launch\.cwd/,
+  "Direct Hermes model forwarding must probe hermes chat --help with its resolved command, scoped environment, and spawn cwd",
 );
 
 assert.match(
   chatRoute,
-  /binding\.harness !== "openclaw" && \(await covenRunSupportsModel\(\)\)/,
-  "OpenClaw never forwards --model; every other harness gates on the probe",
+  /const covenModelProbeDecides =[\s\S]*?binding\.harness !== "openclaw";[\s\S]*?const covenModelForwarding = covenModelProbeDecides[\s\S]*?probeCovenCapabilityOutcome\(covenRunModelFlagOutcome\)/,
+  "OpenClaw never forwards --model; generic Coven forwarding uses the ready-plan-gated probe",
 );
+// A probe that never ran, or that could not complete, says nothing about the
+// model. Reporting it as an unsupported model sent users editing a setting
+// that was never the problem.
+assert.match(
+  chatRoute,
+  /const modelForwardingProbeFailure[\s\S]*?covenModelForwarding\.ran === false[\s\S]*?covenModelForwarding\.value\.ok === false/,
+  "A Coven model probe that never ran and one that failed to complete are both kept distinct from an answered probe",
+);
+assert.match(
+  chatRoute,
+  /const covenModelForwardingSupported =[\s\S]*?covenModelForwarding\.ran === true &&[\s\S]*?value\.ok === true &&[\s\S]*?value\.matched === true/,
+  "Model forwarding turns on only for a probe that ran, completed, and matched",
+);
+for (const rejection of [
+  /if \(explicitModelSelection && !modelForwardingEnabled\) \{[\s\S]*?if \(modelForwardingProbeFailure\) \{[\s\S]*?code: "model_forwarding_probe_failed"[\s\S]*?modelApplicationReason: modelForwardingProbeFailure\.reason/,
+  /if \(savedModelRejection === "forwarding"\) \{[\s\S]*?if \(modelForwardingProbeFailure\) \{[\s\S]*?code: "model_forwarding_probe_failed"[\s\S]*?modelApplicationReason: modelForwardingProbeFailure\.reason/,
+]) {
+  assert.match(
+    chatRoute,
+    rejection,
+    "A failed capability probe is reported as a probe failure with its underlying reason, never as an unsupported model",
+  );
+}
 
 assert.match(
   chatRoute,
-  /const forwardModel =\s*\n?\s*modelForwardingEnabled && cleanModelId\(desiredModel\) \? desiredModel : null;/,
-  "forwardModel must require both an enabled probe and a clean model id",
+  /const selectedModel = cleanModelId\(desiredModel\);[\s\S]*?const forwardModel =[\s\S]*?modelForwardingEnabled && selectedModel[\s\S]*?\? modelForRuntimeLaunch\(binding\.harness, selectedModel\)[\s\S]*?: null;/,
+  "forwardModel must gate a clean id and translate only at the native runtime boundary",
+);
+assert.match(
+  chatRoute,
+  /forwardModel && forwardModel !== desiredModel[\s\S]*?\? desiredModel[\s\S]*?: forwardModel/,
+  "retry metadata preserves the canonical Cave id when launch argv uses a runtime alias",
+);
+assert.match(
+  chatRoute,
+  /modelForCaveFromRuntimeEcho\(\s*binding\.harness,\s*selectedModel,\s*echoed,\s*\)/,
+  "runtime echoes must be converted back to Cave's canonical model id",
 );
 
 assert.match(
@@ -73,6 +172,65 @@ assert.match(
   chatRoute,
   /buildSshSpawnArgs\(\{[\s\S]*?model: forwardModel,[\s\S]*?\}\)/,
   "SSH spawn args should forward the same gated model",
+);
+
+// Direct native launches consume registry-owned model-id transforms. Copilot
+// and Grok apply them in their focused argv builders; Hermes and OpenCode do
+// so at the route's direct transport boundary. Generic Coven/SSH delegation
+// retains the provider-qualified id because Coven applies the transform.
+assert.match(
+  copilotStream,
+  /runtimeModelIdForLaunch\("copilot", launch\.model\)/,
+  "Copilot direct argv must consume its registry model-id transform",
+);
+assert.match(
+  grokBuild,
+  /runtimeModelIdForLaunch\("grok", input\.model\)/,
+  "Grok direct argv must consume its registry model-id transform",
+);
+assert.match(
+  chatRoute,
+  /const hermesLaunchModel = hermesDirect\s*\?\s*runtimeModelIdForLaunch\("hermes", forwardModel\)\s*:\s*null;/,
+  "Hermes direct transports must derive their launch-only model from registry metadata",
+);
+assert.match(
+  chatRoute,
+  /const openCodeLaunchModel = openCodeDirect\s*\?\s*runtimeModelIdForLaunch\("opencode", forwardModel\)\s*:\s*null;/,
+  "OpenCode direct argv must derive its launch-only model from registry metadata",
+);
+assert.match(
+  chatRoute,
+  /const grokLaunchModel = grokDirect\s*\?\s*runtimeModelIdForLaunch\("grok", grokForwardModel\)\s*:\s*null;/,
+  "Grok confirmation metadata must share the post-transform launch guard",
+);
+assert.match(
+  chatRoute,
+  /if \(hermesLaunchModel\) a\.push\("--model", hermesLaunchModel\);/,
+  "Hermes native CLI argv uses the transformed launch value",
+);
+assert.match(
+  chatRoute,
+  /body: JSON\.stringify\(\{[\s\S]*?\.\.\.\(hermesLaunchModel \? \{ model: hermesLaunchModel \} : \{\}\)/,
+  "Hermes native API payload omits model field when hermesLaunchModel is null",
+);
+assert.match(
+  chatRoute,
+  /if \(openCodeLaunchModel\) a\.push\("--model", openCodeLaunchModel\);/,
+  "OpenCode native argv uses the transformed launch value",
+);
+const genericCovenArgvBlock = chatRoute.match(
+  /const a = \["run", binding\.harness, "--stream-json"\];[\s\S]*?return a;/,
+);
+assert.ok(genericCovenArgvBlock, "generic Coven argv builder block should be present");
+assert.match(
+  genericCovenArgvBlock[0],
+  /if \(forwardModel\) a\.push\("--model", forwardModel\);/,
+  "Codex/Claude Coven delegation must retain the provider-qualified model id",
+);
+assert.match(
+  chatRoute,
+  /if \(openCodeDirect && openCodeLaunchModel && forwardModel\)[\s\S]*?confirmedModel: forwardModel,[\s\S]*?responseMetadata\.confirmedModel = forwardModel;/,
+  "OpenCode confirms the original provider-qualified id only when its launch guard forwarded a model",
 );
 
 // --model is emitted before the `--` separator, never after (the prompt is a
@@ -95,8 +253,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /binding\.harness !== "grok" &&\s*\n\s*\(await covenRunSupportsAddDir\(\)\)/,
-  "Grok's native direct path must not wait for an unrelated coven run --add-dir probe",
+  /binding\.harness !== "grok" &&\s*binding\.harness !== "hermes" &&\s*\(\(await probeCovenCapability\(covenRunSupportsAddDir\)\) \?\? false\)/,
+  "Direct Grok and Hermes paths must not wait for an unrelated ready-plan-gated coven run --add-dir probe",
 );
 assert.match(
   chatRoute,
@@ -149,8 +307,26 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /modelApplicationForHarness\(\{ supported: true, confirmed: true \}\)/,
-  "Confirming an echoed model should promote the application state to applied",
+  /else if \(confirmedModel\) \{[\s\S]*?modelApplicationFromRun\(\{[\s\S]*?confirmedModel,/,
+  "a direct runtime echo is evaluated as confirmation only in the native-runtime branch",
+);
+
+const covenModelMetadataStart = chatRoute.indexOf('else if (localRuntimePlan?.runner === "coven" && forwardModel) {');
+const nativeModelMetadataStart = chatRoute.indexOf("else if (confirmedModel) {", covenModelMetadataStart);
+assert.ok(
+  covenModelMetadataStart >= 0 && nativeModelMetadataStart > covenModelMetadataStart,
+  "Coven-forwarded model metadata must be handled before generic harness echoes",
+);
+const covenModelMetadataBlock = chatRoute.slice(covenModelMetadataStart, nativeModelMetadataStart);
+assert.match(
+  covenModelMetadataBlock,
+  /Coven forwarded the selected model; downstream acceptance was not confirmed\./,
+  "forwarding a model through Coven must not be described as downstream acceptance",
+);
+assert.doesNotMatch(
+  covenModelMetadataBlock,
+  /responseMetadata\.confirmedModel = confirmedModel/,
+  "a Coven system-init model echo must not be persisted as a confirmed model",
 );
 
 console.log("model parity routing tests passed");

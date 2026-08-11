@@ -7,7 +7,10 @@
  * "Connect custom server", the live plugin/MCP rows from the capability
  * manifest, and a "Well-known servers" grid fed by /api/mcp (the marketplace
  * registry — id/transport/target only; the registry carries no descriptions
- * and we do not invent any).
+ * and we do not invent any). "Check servers" runs the MCP doctor
+ * (/api/mcp/health) on demand and pins an honest verdict on each grid card:
+ * ready / needs config / unavailable, with unmet requirement names in the
+ * tooltip — never values.
  *
  * The connect modal is honest about what the cave can do: there is no backend
  * that persists an MCP server connection, so the primary action copies a
@@ -27,6 +30,7 @@ import { relativeTime } from "@/lib/relative-time";
 import type { FamiliarSectionData } from "@/lib/familiar-tab-section-model";
 import type { CapabilitiesResponse, HarnessCapabilityManifest, HarnessPlugin } from "@/app/api/capabilities/route";
 import type { McpServerInfo } from "@/app/api/mcp/route";
+import type { McpHealthResponse, McpServerHealth } from "@/app/api/mcp/health/route";
 import "@/styles/familiar-tab-mcp.css";
 
 // ── Config-snippet helpers (exported for reuse; pure) ────────────────────────
@@ -77,6 +81,16 @@ function pluginCommandLine(p: HarnessPlugin): string {
 
 // ── Rows ─────────────────────────────────────────────────────────────────────
 
+function HealthPill({ h }: { h: McpServerHealth }) {
+  const label = h.status === "needs-config" ? "needs config" : h.status;
+  const title = h.requires.length > 0 ? `${h.detail} — requires ${h.requires.join(", ")}` : h.detail;
+  return (
+    <span className={`familiar-mcp__pill familiar-mcp__health familiar-mcp__health--${h.status}`} title={title}>
+      {label}
+    </span>
+  );
+}
+
 function PluginRow({ p }: { p: HarnessPlugin }) {
   const cmd = pluginCommandLine(p);
   return (
@@ -108,6 +122,9 @@ export function FamiliarMcpSection({ data }: { data: FamiliarSectionData }) {
   const [rescanning, setRescanning] = useState(false);
   const [rescanError, setRescanError] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<McpServerInfo[] | null>(null);
+  const [health, setHealth] = useState<Record<string, McpServerHealth> | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [healthError, setHealthError] = useState<string | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
@@ -177,6 +194,28 @@ export function FamiliarMcpSection({ data }: { data: FamiliarSectionData }) {
       if (rescanGeneration.current === generation) setRescanning(false);
     }
   }, [data.harnessId]);
+
+  // The MCP doctor probes remote endpoints and checks stdio launchers on the
+  // machine running the cave server — on demand only, never on mount.
+  const checkServers = useCallback(async () => {
+    setChecking(true);
+    setHealthError(null);
+    try {
+      const res = await fetch("/api/mcp/health", { cache: "no-store" });
+      const body = (await res.json()) as McpHealthResponse;
+      const next: Record<string, McpServerHealth> = {};
+      for (const server of Array.isArray(body?.servers) ? body.servers : []) next[server.id] = server;
+      if (Object.keys(next).length === 0) {
+        setHealthError("Health check returned no servers — is the marketplace registry present?");
+      } else {
+        setHealth(next);
+      }
+    } catch {
+      setHealthError("Health check failed — the cave server did not respond.");
+    } finally {
+      setChecking(false);
+    }
+  }, []);
 
   const copyText = useCallback((value: string, field: "name" | "command" | "config") => {
     if (!value) return;
@@ -267,7 +306,24 @@ export function FamiliarMcpSection({ data }: { data: FamiliarSectionData }) {
       ) : null}
 
       <div className="familiar-mcp__catalog">
-        <div className="familiar-mcp__catalog-title">Well-known servers</div>
+        <div className="familiar-mcp__catalog-title-row">
+          <div className="familiar-mcp__catalog-title">Well-known servers</div>
+          <Button
+            variant="ghost"
+            size="xs"
+            leadingIcon="ph:heartbeat"
+            onClick={checkServers}
+            disabled={checking || !catalog || catalog.length === 0}
+            aria-label="Check server health"
+          >
+            {checking ? "Checking…" : "Check servers"}
+          </Button>
+        </div>
+        {healthError ? (
+          <p className="familiar-mcp__catalog-note familiar-mcp__status-error" role="alert">
+            {healthError}
+          </p>
+        ) : null}
         {catalog === null ? (
           <p className="familiar-mcp__catalog-note">Loading registry…</p>
         ) : catalog.length === 0 ? (
@@ -278,6 +334,7 @@ export function FamiliarMcpSection({ data }: { data: FamiliarSectionData }) {
               <div key={server.id} className="familiar-mcp__server">
                 <span className="familiar-mcp__server-name">{server.id}</span>
                 <span className="familiar-mcp__pill">{server.transport}</span>
+                {health?.[server.id] ? <HealthPill h={health[server.id]} /> : null}
                 {server.target ? (
                   <span className="familiar-mcp__server-target" title={server.target}>
                     {server.target}

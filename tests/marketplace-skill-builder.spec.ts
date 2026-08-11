@@ -14,7 +14,7 @@ async function gotoBuildTab(page: Page) {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
   await page.goto("/?mode=marketplace");
-  await expect(page.getByRole("heading", { name: "Marketplace" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Marketplace" }).first()).toBeVisible({ timeout: 30_000 });
   await page.locator("#marketplace-tab-build").click();
   await expect(page.locator("#marketplace-panel-build")).toBeVisible();
 }
@@ -56,7 +56,8 @@ test.describe("marketplace skill builder", () => {
     await expect(save).toBeEnabled();
     await save.click();
 
-    // Success panel with the written path, then jump to the Skills tab.
+    // Success panel with the written path, then jump back to the skills view
+    // (now Explore pre-filtered to the Skills type).
     await expect(page.getByRole("region", { name: "Skill saved" })).toBeVisible();
     await expect(page.getByText("/tmp/e2e/.coven/skills/release-notes-writer/SKILL.md")).toBeVisible();
     // The dry-run tester rides the success panel (cave-cyfc) — presence only;
@@ -72,7 +73,7 @@ test.describe("marketplace skill builder", () => {
     expect(String((postedBody as unknown as Record<string, unknown>).instructions)).toContain("## When to use");
 
     await page.getByRole("button", { name: "View in Skills" }).click();
-    await expect(page.locator("#marketplace-panel-skills")).toBeVisible();
+    await expect(page.locator("#marketplace-panel-browse")).toBeVisible();
   });
 
   test("a duplicate skill id surfaces the 409 as an alert and keeps the form", async ({ page }) => {

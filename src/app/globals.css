@@ -9,15 +9,32 @@
  * unchanged while responsibilities are maintained in focused modules. */
 @import "../styles/globals/foundations.css";
 @import "../styles/globals/shell-navigation.css";
+@import "../styles/globals/rail-header.css";
 @import "../styles/globals/primitives.css";
 @import "../styles/globals/themes.css";
 @import "../styles/globals/desktop-chrome.css";
 @import "../styles/globals/shell-responsive.css";
+@import "../styles/settings-familiars.css";
 @import "../styles/globals/calendar-agenda.css";
 @import "../styles/globals/surface-compact-calendar.css";
-@import "../styles/globals/surface-reporting.css";
+@import "../styles/globals/shell-cards-and-controls.css";
 @import "../styles/globals/surface-chat-overlays.css";
-@import "../styles/globals/surface-marketplace.css";
+@import "../styles/globals/shared-pickers-and-toasts.css";
 @import "../styles/globals/surface-role-workspaces.css";
+@import "../styles/document-reader.css";
 /* The five surface-research-*.css sheets are imported by researcher-surface.tsx
- * so they code-split with the mode-gated Research Desk (#3264 pattern). */
+ * so they code-split with the mode-gated Research Desk (#3264 pattern).
+ * surface-weaves.css follows the same rule: threads-chrome.tsx imports it, so
+ * it ships with /weaves and /proposals instead of the root layout's CSS.
+ * surface-reporting.css joined them too (cave-ii7xi): the daily report, growth
+ * and analytics-retro rules are component-imported by the dashboard and
+ * daily-report views, and nothing rendered on `/` uses them. The chat and shell
+ * chrome that shared that file — edit cards, review modal, thread-signal card,
+ * quick-chat keyframes, GitHub reward flare, next-path, fill button — stays
+ * here as shell-cards-and-controls.css, in the slot surface-reporting.css held.
+ * surface-marketplace.css joined them (cave-ii7xi): marketplace-view.tsx imports
+ * it, so it ships with the MarketplaceView dynamic chunk. The shared project
+ * picker and undo toast it used to carry stay here in
+ * shared-pickers-and-toasts.css — their components are in the always-loaded
+ * shell, and the slot is the one surface-marketplace.css held so they keep
+ * overriding primitives.css at equal specificity. */

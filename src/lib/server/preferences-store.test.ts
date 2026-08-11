@@ -53,7 +53,7 @@ try {
       cornerRadius: "round",
       backdrop: { enabled: true, intensity: 63, matchAccent: false },
     },
-    general: { newsHeadlines: false },
+    general: { celebrations: false },
     phone: { mobileMode: false },
   });
   assert.equal(initialized.initialized, true);
@@ -65,7 +65,7 @@ try {
     store.patchPreferences({ appearance: { reading: { width: "narrow" } } }),
     store.patchPreferences({ appearance: { reading: { weight: "light", hyphens: "on" } } }),
     store.patchPreferences({ appearance: { recentColors: ["#112233", "#aabbcc"] } }),
-    store.patchPreferences({ general: { newsHeadlines: true } }),
+    store.patchPreferences({ general: { celebrations: true } }),
   ]);
   const afterConcurrent = await store.loadPreferences();
   assert.equal(afterConcurrent.appearance.reading.align, "justify");
@@ -73,7 +73,7 @@ try {
   assert.equal(afterConcurrent.appearance.reading.weight, "light");
   assert.equal(afterConcurrent.appearance.reading.hyphens, "on");
   assert.deepEqual(afterConcurrent.appearance.recentColors, ["#112233", "#aabbcc"]);
-  assert.equal(afterConcurrent.general.newsHeadlines, true);
+  assert.equal(afterConcurrent.general.celebrations, true);
   assert.deepEqual(
     concurrent.map((entry) => entry.revision),
     [2, 3, 4, 5, 6],
@@ -104,7 +104,7 @@ try {
     { appearance: { datetime: { date: "off" } } },
     { appearance: { datetime: { density: "compact" } } },
     { appearance: { cornerRadius: "sharp" } },
-    { general: { newsHeadlines: false } },
+    { general: { stopPhrase: "enough" } },
     { phone: { mobileMode: true } },
   ];
   const loaderUrl = pathToFileURL(path.resolve("scripts/test-alias-register.mjs")).href;
@@ -153,7 +153,7 @@ try {
     density: "compact",
   });
   assert.equal(afterCrossProcess.appearance.cornerRadius, "sharp");
-  assert.equal(afterCrossProcess.general.newsHeadlines, false);
+  assert.equal(afterCrossProcess.general.stopPhrase, "enough");
   assert.equal(afterCrossProcess.phone.mobileMode, true);
   assert.deepEqual(
     (await readdir(intentsDir)).filter((name) => name.endsWith(".lock")),
@@ -192,6 +192,35 @@ try {
     false,
     "successful atomic writes leave no temporary files",
   );
+
+  // Same-millisecond double corruption: the aside name's timestamp is
+  // millisecond-resolution, so without the random suffix the second capture
+  // would copy onto the SAME path and destroy the first (see corruptAsidePath).
+  const beforeBurst = new Set((await readdir(root)).filter((name) => name.includes(".corrupt-")));
+  const RealDate = Date;
+  const frozenMs = new RealDate("2026-01-01T00:00:00.000Z").getTime();
+  globalThis.Date = class extends RealDate {
+    constructor() {
+      super(frozenMs);
+    }
+  };
+  try {
+    await writeFile(preferencesFile, "{ corrupt take one", "utf8");
+    await store.patchPreferences({});
+    await writeFile(preferencesFile, "{ corrupt take two", "utf8");
+    await store.patchPreferences({});
+  } finally {
+    globalThis.Date = RealDate;
+  }
+  const burstCaptures = (await readdir(root)).filter(
+    (name) => name.includes(".corrupt-") && !beforeBurst.has(name),
+  );
+  assert.equal(burstCaptures.length, 2, "same-ms corruption events each keep their own capture");
+  const burstContents = await Promise.all(
+    burstCaptures.map((name) => readFile(path.join(root, name), "utf8")),
+  );
+  assert.ok(burstContents.includes("{ corrupt take one"), "the first capture survives");
+  assert.ok(burstContents.includes("{ corrupt take two"), "the second capture survives");
 
   // Empty initialization is meaningful for a genuinely fresh profile.
   await rm(preferencesFile, { force: true });

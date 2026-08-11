@@ -11,14 +11,24 @@ export type EmptyStateProps = {
   actions?: ReactNode;
   compact?: boolean;
   className?: string;
+  /** Set false when a manual live-region announcement already owns the update. */
+  live?: boolean;
 };
 
-export function EmptyState({ icon, headline, subtitle, actions, compact, className }: EmptyStateProps) {
+export function EmptyState({
+  icon,
+  headline,
+  subtitle,
+  actions,
+  compact,
+  className,
+  live = true,
+}: EmptyStateProps) {
   const classes = ["ui-empty-state", compact ? "ui-empty-state--compact" : "", className ?? ""]
     .filter(Boolean)
     .join(" ");
   return (
-    <div className={classes} role="status">
+    <div className={classes} role={live ? "status" : undefined}>
       {icon ? (
         <div className="ui-empty-state-icon" aria-hidden>
           <Icon name={icon} width={20} />

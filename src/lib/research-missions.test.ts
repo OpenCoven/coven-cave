@@ -7,16 +7,96 @@ import {
 import {
   allowedResearchActions,
   describeResearchSchedule,
+  ensureStandardArtifactRefs,
   normalizeResearchBounds,
+  parseResearchMission,
+  RESEARCH_AUDIENCE_MAX_LENGTH,
   RESEARCH_BOUND_LIMITS,
+  RESEARCH_CONSTRAINT_MAX_COUNT,
+  RESEARCH_CONSTRAINT_MAX_LENGTH,
+  RESEARCH_DELIVERABLE_MAX_LENGTH,
   RESEARCH_INTENT_MIN_LENGTH,
+  RESEARCH_PROJECT_ROOT_MAX_LENGTH,
+  RESEARCH_TITLE_MAX_LENGTH,
+  researchArtifactKindForMode,
   researchBoundReadings,
   researchContinueLabel,
   researchIntentAddsContext,
+  researchPhaseMeta,
   researchPhaseStatuses,
   researchSourceStatusCounts,
+  type ResearchMission,
   validateCreateResearchMissionInput,
 } from "./research-missions.ts";
+
+function validMission(): ResearchMission {
+  return {
+    version: 1,
+    id: "mission-1",
+    familiarId: "sage",
+    title: "Mission",
+    intent: "Investigate the evidence",
+    mode: "brief",
+    modeSource: "user",
+    deliverable: "Brief",
+    constraints: [],
+    bounds: {
+      wallClockMinutes: 30,
+      maxIterations: 3,
+      sourceTarget: 5,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: true,
+    },
+    status: "running",
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:01:00.000Z",
+    iterations: [{ number: 1, status: "running" }],
+    artifacts: [],
+    sources: [],
+  };
+}
+
+test("mission parser validates shared-state fields and reconstructs safe data", () => {
+  const parsed = parseResearchMission({ ...validMission(), privatePayload: "do not retain" });
+  assert.deepEqual(parsed, validMission());
+  assert.equal(parseResearchMission({ ...validMission(), bounds: { maxIterations: 3 } }), null);
+  assert.equal(parseResearchMission({
+    ...validMission(),
+    iterations: [{ number: 1, status: "invented" }],
+  }), null);
+  assert.equal(parseResearchMission({
+    ...validMission(),
+    sources: [{ id: "x", title: "X", sourceType: "x", status: "invented" }],
+  }), null);
+  assert.equal(parseResearchMission({ ...validMission(), projectRoot: "/tmp/root\0hidden" }), null);
+  assert.equal(parseResearchMission({
+    ...validMission(),
+    constraints: ["x".repeat(RESEARCH_CONSTRAINT_MAX_LENGTH + 1)],
+  }), null);
+});
+
+test("mission parser strips private process-owner provenance from public state", () => {
+  const parsed = parseResearchMission({
+    ...validMission(),
+    iterations: [{
+      number: 1,
+      status: "running",
+      sessionId: "public-session-reference",
+      sessionAuthority: {
+        kind: "owner-local-daemon",
+        socketPath: "/tmp/private-owner.sock",
+      },
+      sessionOwnerKind: "owner-local-daemon",
+    }],
+  });
+  assert.deepEqual(parsed?.iterations, [{
+    number: 1,
+    status: "running",
+    sessionId: "public-session-reference",
+  }]);
+  assert.equal("sessionAuthority" in (parsed?.iterations[0] ?? {}), false);
+  assert.equal("sessionOwnerKind" in (parsed?.iterations[0] ?? {}), false);
+});
 
 test("Auto-routing is explainable and ambiguous work never loops", () => {
   assert.deepEqual(inferResearchMissionMode("Compare local-first note apps"), {
@@ -128,6 +208,93 @@ test("mission creation validates familiar, intent, mode, and bounded input", () 
     }).ok,
     false,
   );
+});
+
+test("mission input rejects lossful and NUL-bearing prompt fields", () => {
+  const valid = {
+    familiarId: "sage",
+    intent: "Compare two databases",
+    mode: "brief",
+    modeSource: "auto",
+    deliverable: "brief",
+    constraints: [],
+    bounds: {
+      wallClockMinutes: 20,
+      maxIterations: 1,
+      sourceTarget: 6,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: false,
+    },
+  };
+  for (const patch of [
+    { intent: "Compare\0 hidden intent" },
+    { deliverable: "brief\0 hidden deliverable" },
+    { title: "title\0 hidden" },
+    { audience: "audience\0 hidden" },
+    { projectRoot: "/tmp/project\0hidden" },
+    { constraints: ["safe", "unsafe\0hidden"] },
+  ]) {
+    assert.equal(validateCreateResearchMissionInput({ ...valid, ...patch }).ok, false);
+  }
+
+  for (const patch of [
+    { intent: `Compare ${"\ud800"} databases` },
+    { deliverable: `brief${"\udfff"}` },
+    { title: `title${"\ud800"}` },
+    { audience: `audience${"\udfff"}` },
+    { projectRoot: `/tmp/${"\ud800"}` },
+    { constraints: [`safe${"\udfff"}`] },
+  ]) {
+    const rejected = validateCreateResearchMissionInput({ ...valid, ...patch });
+    assert.equal(rejected.ok, false, "unpaired UTF-16 surrogates are rejected before JSON/process transport");
+  }
+
+  for (const text of [
+    "plain BMP text",
+    "astral 😀 text",
+    "combining e\u0301 text",
+  ]) {
+    assert.equal(
+      validateCreateResearchMissionInput({ ...valid, intent: `Compare ${text}` }).ok,
+      true,
+      `${text} remains lossless and valid`,
+    );
+  }
+
+  assert.equal(validateCreateResearchMissionInput({
+    ...valid,
+    constraints: Array.from({ length: RESEARCH_CONSTRAINT_MAX_COUNT + 1 }, () => "bounded"),
+  }).ok, false, "excess constraints are rejected instead of sliced");
+  assert.equal(validateCreateResearchMissionInput({
+    ...valid,
+    constraints: ["valid", 42],
+  }).ok, false, "non-string constraints are rejected instead of discarded");
+  assert.equal(validateCreateResearchMissionInput({
+    ...valid,
+    constraints: ["x".repeat(RESEARCH_CONSTRAINT_MAX_LENGTH + 1)],
+  }).ok, false, "overlong constraints are rejected instead of truncated");
+
+  for (const patch of [
+    { title: "t".repeat(RESEARCH_TITLE_MAX_LENGTH + 1) },
+    { deliverable: "d".repeat(RESEARCH_DELIVERABLE_MAX_LENGTH + 1) },
+    { audience: "a".repeat(RESEARCH_AUDIENCE_MAX_LENGTH + 1) },
+    { projectRoot: `/${"p".repeat(RESEARCH_PROJECT_ROOT_MAX_LENGTH)}` },
+  ]) {
+    assert.equal(validateCreateResearchMissionInput({ ...valid, ...patch }).ok, false);
+  }
+
+  const boundary = validateCreateResearchMissionInput({
+    ...valid,
+    title: "t".repeat(RESEARCH_TITLE_MAX_LENGTH),
+    deliverable: "d".repeat(RESEARCH_DELIVERABLE_MAX_LENGTH),
+    audience: "a".repeat(RESEARCH_AUDIENCE_MAX_LENGTH),
+    constraints: ["c".repeat(RESEARCH_CONSTRAINT_MAX_LENGTH)],
+  });
+  assert.equal(boundary.ok, true);
+  if (boundary.ok) {
+    assert.equal(boundary.value.title?.length, RESEARCH_TITLE_MAX_LENGTH);
+    assert.equal(boundary.value.constraints?.[0]?.length, RESEARCH_CONSTRAINT_MAX_LENGTH);
+  }
 });
 
 test("intent below the minimum never launches a real session", () => {
@@ -618,6 +785,112 @@ test("source status counts drive the triage filters", () => {
   );
 });
 
+// --- researchArtifactKindForMode / ensureStandardArtifactRefs ---
+
+function missionWithArtifacts(
+  artifacts: ResearchMission["artifacts"],
+  iterations: ResearchMission["iterations"] = [{ number: 2, status: "checkpoint" }],
+): ResearchMission {
+  return {
+    version: 1,
+    id: "mission-refs",
+    familiarId: "sage",
+    title: "Storage decision",
+    intent: "Compare SQLite and Postgres",
+    mode: "brief",
+    modeSource: "user",
+    deliverable: "brief",
+    constraints: [],
+    bounds: {
+      wallClockMinutes: 20,
+      maxIterations: 3,
+      sourceTarget: 6,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: false,
+    },
+    status: "checkpoint",
+    createdAt: "2026-07-24T00:00:00.000Z",
+    updatedAt: "2026-07-24T01:00:00.000Z",
+    iterations,
+    artifacts,
+    sources: [],
+  };
+}
+
+test("researchArtifactKindForMode maps every mode to its deliverable kind", () => {
+  assert.equal(researchArtifactKindForMode("sweep"), "report");
+  assert.equal(researchArtifactKindForMode("paper"), "paper");
+  assert.equal(researchArtifactKindForMode("autoresearch"), "findings");
+  assert.equal(researchArtifactKindForMode("brief"), "brief");
+});
+
+test("ensureStandardArtifactRefs appends missing standard refs after existing ones", () => {
+  const primary = {
+    key: "primary",
+    kind: "brief" as const,
+    title: "Storage decision",
+    relativePath: "artifacts/primary.md",
+    iteration: 2,
+    state: "working" as const,
+    updatedAt: "2026-07-24T00:30:00.000Z",
+  };
+  const result = ensureStandardArtifactRefs(missionWithArtifacts([primary]));
+  assert.equal(result.artifacts.length, 4);
+  assert.equal(result.artifacts[0], primary, "primary stays first and untouched");
+  assert.deepEqual(
+    result.artifacts.slice(1).map((artifact) => [artifact.key, artifact.kind, artifact.relativePath]),
+    [
+      ["findings", "findings", "findings.md"],
+      ["source-ledger", "source-ledger", "sources.json"],
+      ["research-log", "research-log", "research-log.md"],
+    ],
+  );
+  for (const artifact of result.artifacts.slice(1)) {
+    assert.equal(artifact.state, "working");
+    assert.equal(artifact.iteration, 2, "backfilled refs adopt the latest iteration number");
+    assert.equal(artifact.updatedAt, "2026-07-24T00:30:00.000Z", "backfilled refs stamped no fresher than the primary");
+  }
+});
+
+test("ensureStandardArtifactRefs stamps refs from createdAt when no primary exists", () => {
+  const result = ensureStandardArtifactRefs(missionWithArtifacts([]));
+  assert.equal(result.artifacts.length, 3);
+  for (const artifact of result.artifacts) {
+    assert.equal(artifact.updatedAt, "2026-07-24T00:00:00.000Z");
+  }
+});
+
+test("ensureStandardArtifactRefs is identity when nothing is missing and never overwrites", () => {
+  const complete = ensureStandardArtifactRefs(missionWithArtifacts([{
+    key: "primary",
+    kind: "brief",
+    title: "Storage decision",
+    relativePath: "artifacts/primary.md",
+    iteration: 1,
+    state: "working",
+    updatedAt: "2026-07-24T00:30:00.000Z",
+  }]));
+  assert.equal(ensureStandardArtifactRefs(complete), complete, "same object when complete");
+
+  const customFindings = {
+    key: "findings",
+    kind: "findings" as const,
+    title: "Custom findings title",
+    relativePath: "findings.md",
+    knowledgeId: "research-mission-refs-findings",
+    iteration: 1,
+    state: "published" as const,
+    updatedAt: "2026-07-24T00:10:00.000Z",
+  };
+  const result = ensureStandardArtifactRefs(missionWithArtifacts([customFindings]));
+  assert.equal(
+    result.artifacts.find((artifact) => artifact.key === "findings"),
+    customFindings,
+    "existing refs are never overwritten",
+  );
+  assert.equal(result.artifacts.length, 3);
+});
+
 // --- researchContinueLabel: Continue must say what it will actually do ---
 
 test("Continue is labeled with its real consequence", () => {
@@ -688,4 +961,142 @@ test("Continue reports every runner stop gate, not just the iteration limit", ()
   );
   assert.equal(noCost.gated, true);
   assert.match(noCost.description, /finished without reporting cost/);
+});
+
+// --- bound readings: a bar only where a denominator exists -----------------
+
+test("bound readings carry a clamped progress ratio, and only where one exists", () => {
+  const mission = validMission();
+  mission.startedAt = new Date(Date.now() - 15 * 60_000).toISOString();
+  mission.sources = [
+    { id: "s1", title: "One", sourceType: "web", status: "used" },
+    { id: "s2", title: "Two", sourceType: "web", status: "used" },
+  ];
+  const byId = Object.fromEntries(
+    researchBoundReadings(mission).map((reading) => [reading.id, reading]),
+  );
+  // 15 of 30 minutes, 2 of 5 sources.
+  assert.equal(byId.time.progress, 0.5);
+  assert.equal(byId.sources.progress, 0.4);
+  // A cadence is not a fraction of anything, and spend with no cap has no
+  // denominator — those readings ship no bar rather than a meaningless one.
+  assert.equal(byId.checkpoint.progress, undefined);
+  assert.equal(byId.spend.progress, undefined);
+});
+
+test("an overrun pins its bar at 1 while the tone still says over", () => {
+  const mission = validMission();
+  mission.startedAt = new Date(Date.now() - 300 * 60_000).toISOString();
+  const time = researchBoundReadings(mission).find((reading) => reading.id === "time");
+  assert.equal(time?.progress, 1, "clamped, never past the track");
+  assert.equal(time?.tone, "over");
+  assert.equal(time?.badge, "over");
+});
+
+test("a zero source target yields no bar instead of a divide-by-zero", () => {
+  const mission = validMission();
+  mission.bounds = { ...mission.bounds, sourceTarget: 0 };
+  const sources = researchBoundReadings(mission).find((reading) => reading.id === "sources");
+  assert.equal(sources?.progress, undefined);
+});
+
+test("a capped spend gets a bar measured against the cap", () => {
+  const mission = validMission();
+  mission.bounds = { ...mission.bounds, maxSpendUsd: 4 };
+  mission.iterations = [{ number: 1, status: "completed", costUsd: 1 }];
+  const spend = researchBoundReadings(mission).find((reading) => reading.id === "spend");
+  assert.equal(spend?.progress, 0.25);
+});
+
+// --- phase meta: reports findings, never invents them ----------------------
+
+test("phase meta reports real counts and says — when it has nothing", () => {
+  const mission = validMission();
+  mission.status = "running";
+  mission.sources = [
+    { id: "s1", title: "One", sourceType: "web", status: "used" },
+    { id: "s2", title: "Two", sourceType: "web", status: "conflicting" },
+  ];
+  mission.artifacts = [];
+  mission.iterations = [{
+    number: 1,
+    status: "running",
+    steps: [
+      { id: "scope", type: "scope", status: "succeeded" },
+      { id: "gather", type: "gather", status: "running" },
+    ],
+  }];
+  const meta = researchPhaseMeta(mission, PHASE_IDS);
+  assert.deepEqual(meta.slice(0, 3), ["bounds set", "2/5 src", "1 conflicting"]);
+  // Nothing has been synthesized and nothing is waiting on a person.
+  assert.equal(meta[4], "—");
+  assert.equal(meta[5], "gated");
+});
+
+test("phase meta flags the checkpoint as the reader's turn", () => {
+  const mission = validMission();
+  mission.status = "checkpoint";
+  mission.iterations = [{ number: 1, status: "checkpoint" }];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[4], "your turn");
+});
+
+test("phase meta counts artifacts but never the rejected ones", () => {
+  const mission = validMission();
+  mission.status = "running";
+  mission.iterations = [{
+    number: 1,
+    status: "running",
+    steps: [{ id: "synthesize", type: "synthesize", status: "running" }],
+  }];
+  mission.artifacts = [
+    { key: "a", kind: "brief", title: "A", relativePath: "a.md", iteration: 1, state: "working", updatedAt: "2026-08-01T00:00:00.000Z" },
+    { key: "b", kind: "brief", title: "B", relativePath: "b.md", iteration: 1, state: "rejected", updatedAt: "2026-08-01T00:00:00.000Z" },
+  ];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[3], "1 artifact");
+});
+
+test("a succeeded publish with nothing published says so, never \"shipped\"", () => {
+  const mission = validMission();
+  mission.status = "completed";
+  mission.artifacts = [];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[5], "none published");
+});
+
+test("phase meta reports published artifacts rather than a bare shipped", () => {
+  const mission = validMission();
+  mission.status = "completed";
+  mission.artifacts = [
+    { key: "a", kind: "brief", title: "A", relativePath: "a.md", iteration: 1, state: "published", updatedAt: "2026-08-01T00:00:00.000Z" },
+  ];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[5], "1 published");
+});
+
+test("a failed challenge says where the run stopped", () => {
+  const mission = validMission();
+  mission.status = "failed";
+  mission.iterations = [{
+    number: 1,
+    status: "failed",
+    steps: [
+      { id: "scope", type: "scope", status: "succeeded" },
+      { id: "gather", type: "gather", status: "succeeded" },
+      { id: "challenge", type: "challenge", status: "failed" },
+    ],
+  }];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[2], "stopped here");
+});
+
+test("a zero source target reports the count alone, never \"N/0 src\"", () => {
+  const mission = validMission();
+  mission.status = "running";
+  mission.bounds = { ...mission.bounds, sourceTarget: 0 };
+  mission.sources = [
+    { id: "s1", title: "One", sourceType: "web", status: "used" },
+  ] as ResearchMission["sources"];
+  mission.iterations = [{
+    number: 1,
+    status: "running",
+    steps: [{ id: "gather", type: "gather", status: "running" }],
+  }];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[1], "1 src");
 });

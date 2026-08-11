@@ -83,6 +83,18 @@ export function deriveStarterSuggestions(opts: {
       label: "Plan a feature and break it into task cards",
       text: "Plan a feature and break it into task cards",
     });
+    // Discovery slot for /auto. Deliberately last: hands-off missions are the
+    // highest-leverage thing the composer can do and are invisible until you
+    // know the command exists, but a mission is never more urgent than named
+    // work already on the board — so it only surfaces on a quiet day, when the
+    // cap hasn't already been spent on cards in review or today's sessions.
+    // The text is a prefix, not a whole prompt: clicking parks the cursor
+    // after `/auto ` so the next thing typed is the mission itself.
+    out.push({
+      id: "auto-mission",
+      label: "Hand off a whole mission, hands-off",
+      text: "/auto ",
+    });
   }
 
   // Pad so the page always offers at least two ways in.

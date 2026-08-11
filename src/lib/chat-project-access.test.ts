@@ -67,15 +67,12 @@ assert.equal(
     resumeCwd: codyWorkspace,
     resolvedCwd: codyWorkspace,
   }),
-  null,
-  "a resumed unregistered cwd is not an explicit project request",
+  `unregistered:${codyWorkspace}`,
+  "a resumed unregistered cwd fails closed instead of bypassing project access",
 );
 
-// REGRESSION (2026-07-01): a no-project chat boots in the familiar's own
-// workspace, the daemon records that dir as the session cwd, and the client
-// echoes it back as an explicit projectRoot on the next turn. That echo must
-// not fail closed — it denied the familiar its own home with a 403
-// "project access denied" on turn 2 of every no-project chat.
+// Chat project launch now requires a registered project. A familiar workspace
+// is no longer a project-free authorization bypass.
 assert.equal(
   chatProjectAccessId({
     projects,
@@ -83,8 +80,8 @@ assert.equal(
     resolvedCwd: codyWorkspace,
     familiarWorkspace: codyWorkspace,
   }),
-  null,
-  "a familiar chatting in its own workspace is allowed (no project scope)",
+  `unregistered:${codyWorkspace}`,
+  "an unregistered familiar workspace fails closed",
 );
 
 assert.equal(
@@ -94,8 +91,8 @@ assert.equal(
     resolvedCwd: codyWorkspace,
     familiarWorkspace: codyWorkspace,
   }),
-  null,
-  "the own-workspace exemption tolerates unnormalized paths",
+  `unregistered:${codyWorkspace}/`,
+  "a trailing slash cannot revive the retired workspace exemption",
 );
 
 assert.equal(
@@ -146,6 +143,71 @@ assert.equal(
   }),
   "unregistered:/Users/me/private-unapproved-workspace",
   "a symlink-swapped Board worktree fails closed when the resolved cwd escapes the assigned project",
+);
+
+// REGRESSION (cave-kv8a): the Code surface's fresh-worktree kickoff sends the
+// just-provisioned `.worktrees/<branch>` checkout as an explicit projectRoot.
+// Worktrees are intentionally not separate project records, so the request
+// must authorize against the PARENT project's grant — not fail closed as an
+// arbitrary unregistered directory (403 on every kickoff).
+assert.equal(
+  chatProjectAccessId({
+    projects,
+    requestedProjectRoot: "/Users/me/dev/cave/.worktrees/feat-x",
+    resolvedCwd: "/Users/me/dev/cave/.worktrees/feat-x",
+  }),
+  "proj-1",
+  "an explicit root under a registered project's .worktrees/ vets the parent project's grant",
+);
+
+assert.equal(
+  chatProjectAccessId({
+    projects,
+    requestedProjectRoot: "/Users/me/dev/cave-evil/.worktrees/feat-x",
+    resolvedCwd: "/Users/me/dev/cave-evil/.worktrees/feat-x",
+  }),
+  "unregistered:/Users/me/dev/cave-evil/.worktrees/feat-x",
+  "sibling-dir evasion (cave-evil) misses the containment check and fails closed",
+);
+
+assert.equal(
+  chatProjectAccessId({
+    projects,
+    requestedProjectRoot: "/Users/me/dev/cave/.worktrees",
+    resolvedCwd: "/Users/me/dev/cave/.worktrees",
+  }),
+  "unregistered:/Users/me/dev/cave/.worktrees",
+  "the .worktrees directory itself is not a worktree — fails closed",
+);
+
+assert.equal(
+  chatProjectAccessId({
+    projects,
+    requestedProjectRoot: "/Users/me/dev/cave/.worktrees/../../elsewhere",
+    resolvedCwd: "/Users/me/dev/cave/.worktrees/../../elsewhere",
+  }),
+  "unregistered:/Users/me/dev/cave/.worktrees/../../elsewhere",
+  "a traversal escape below .worktrees/ resolves outside and fails closed",
+);
+
+assert.equal(
+  chatProjectAccessId({
+    projects,
+    requestedProjectRoot: "/Users/me/dev/cave/.worktrees/feat-x/",
+    resolvedCwd: "/Users/me/dev/cave/.worktrees/feat-x",
+  }),
+  "proj-1",
+  "a trailing slash on the worktree root still maps to the parent project",
+);
+
+assert.equal(
+  chatProjectAccessId({
+    projects,
+    resumeCwd: "/Users/me/dev/cave/.worktrees/feat-x",
+    resolvedCwd: "/Users/me/dev/cave/.worktrees/feat-x",
+  }),
+  "proj-1",
+  "a resumed worktree rechecks access through the registered parent project",
 );
 
 console.log("chat-project-access tests passed");

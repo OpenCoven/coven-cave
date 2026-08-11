@@ -2,10 +2,18 @@ import { NextResponse } from "next/server";
 import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "@/lib/cave-config";
 import { loadBoard, updateCard } from "@/lib/cave-board";
 import { loadProjects, projectById } from "@/lib/cave-projects";
+import { chatProjectAccessId } from "@/lib/chat-project-access";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import { canonicalHarnessId, isTrustedChatHarness } from "@/lib/harness-adapters";
+import { cleanModelId } from "@/lib/chat-model-state";
+import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import { buildInitialTaskChatPrompt } from "@/lib/task-chat-context";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
+import {
+  authorizeChatProjectLaunch,
+  ChatProjectLaunchError,
+} from "@/lib/server/chat-project-launch";
+import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
 import { issueContentionKey, shouldIsolateInWorktree, type IssueWorktreeKind } from "@/lib/issue-worktree";
 import { provisionIssueWorktree, resolveRepoRoot } from "@/lib/server/issue-worktree-provision";
@@ -51,20 +59,6 @@ export async function POST(
     );
   }
 
-  // Unscoped legacy tasks have no project authorization boundary to recheck.
-  // Project-backed cards are handled below, after their current familiar has
-  // been authorized for the assigned project.
-  if (card.sessionId && !card.projectId) {
-    await recordSessionFamiliar(card.sessionId, familiarId);
-    return NextResponse.json({
-      ok: true,
-      reused: true,
-      card,
-      sessionId: card.sessionId,
-      familiarId,
-    });
-  }
-
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
   // Familiar bindings can retain a package or binary alias from older setup
@@ -72,6 +66,15 @@ export async function POST(
   // both model-override validation and bridge routing so the task inspector,
   // Chat, and Board all select the same runtime behavior.
   binding.harness = canonicalHarnessId(binding.harness);
+  if (binding.hasInvalidHermesProfileBinding) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "This familiar's Hermes profile binding is invalid. Choose a saved Hermes profile again before starting a task chat.",
+      },
+      { status: 409 },
+    );
+  }
 
   // Resolve the project the task chat will run in. Security-critical: when the
   // card is assigned to a project we resolve the root SERVER-SIDE from
@@ -85,21 +88,22 @@ export async function POST(
   // project_root on the session, and the chat picker then shows the wrong
   // project for the task.
   let projectRoot: string | null = null;
+  const projects = await loadProjects();
 
   if (card.projectId) {
-    const assignedProject = projectById(card.projectId, await loadProjects());
+    const assignedProject = projectById(card.projectId, projects);
     if (!assignedProject) {
       return NextResponse.json({ ok: false, error: "assigned project not found" }, { status: 409 });
     }
 
-    projectRoot = normalizeProjectRoot(assignedProject.root);
-    if (!projectRoot) {
+    const assignedProjectRoot = normalizeProjectRoot(assignedProject.root);
+    if (!assignedProjectRoot) {
       return NextResponse.json({ ok: false, error: "assigned project root is invalid" }, { status: 409 });
     }
 
     if (body.projectRoot !== undefined && body.projectRoot !== null) {
       const requestedProjectRoot = normalizeProjectRoot(body.projectRoot);
-      if (!requestedProjectRoot || requestedProjectRoot !== projectRoot) {
+      if (!requestedProjectRoot || requestedProjectRoot !== assignedProjectRoot) {
         return NextResponse.json(
           { ok: false, error: "project root does not match assigned task project" },
           { status: 403 },
@@ -107,28 +111,14 @@ export async function POST(
       }
     }
 
-    try {
-      await assertProjectAccess({ familiarId }, assignedProject.id, "session-launch");
-    } catch (error) {
-      if (error instanceof ProjectAccessDeniedError) {
-        return NextResponse.json({ ok: false, error: error.message }, { status: error.status });
-      }
-      throw error;
+    // Reopening an isolated task must prove that its persisted worktree still
+    // exists. A new task starts from the registered project root instead.
+    const persistedSessionRoot =
+      card.sessionId && card.cwd ? normalizeProjectRoot(card.cwd) : null;
+    if (card.sessionId && card.cwd && !persistedSessionRoot) {
+      return NextResponse.json({ ok: false, error: "task chat root is invalid" }, { status: 409 });
     }
-
-    // A persisted card/session link can outlive a permission change or a
-    // reassignment made by another Cave client. Never let that legacy link
-    // bypass the same authorization required to start a new session.
-    if (card.sessionId) {
-      await recordSessionFamiliar(card.sessionId, familiarId);
-      return NextResponse.json({
-        ok: true,
-        reused: true,
-        card,
-        sessionId: card.sessionId,
-        familiarId,
-      });
-    }
+    projectRoot = persistedSessionRoot ?? assignedProjectRoot;
   } else {
     const rawProjectRoot = body.projectRoot ?? card.cwd;
     if (!rawProjectRoot) {
@@ -142,6 +132,66 @@ export async function POST(
 
   if (!projectRoot) {
     return NextResponse.json({ ok: false, error: "invalid project root" }, { status: 400 });
+  }
+
+  try {
+    const authorized = await authorizeChatProjectLaunch(
+      {
+        validateProjectRoot: validateCaveProjectRoot,
+        resolveProjectId: (requestedRoot, resolvedRoot) => {
+          const resolvedProjectId = chatProjectAccessId({
+            projects,
+            requestedProjectRoot: requestedRoot,
+            resolvedCwd: resolvedRoot,
+          });
+          return card.projectId && resolvedProjectId !== card.projectId
+            ? null
+            : resolvedProjectId;
+        },
+        isProjectRegistered: (projectId) =>
+          projects.some((project) => project.id === projectId),
+        hasProjectAccess: async (requestedFamiliarId, projectId, surface) => {
+          try {
+            await assertProjectAccess({ familiarId: requestedFamiliarId }, projectId, surface);
+            return true;
+          } catch (error) {
+            if (error instanceof ProjectAccessDeniedError) return false;
+            throw error;
+          }
+        },
+      },
+      {
+        familiarId,
+        projectRoot,
+        surface: "session-launch",
+      },
+    );
+    projectRoot = authorized.root;
+  } catch (error) {
+    if (error instanceof ChatProjectLaunchError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: error.message,
+          code: error.code,
+        },
+        { status: error.status },
+      );
+    }
+    throw error;
+  }
+
+  // A persisted card/session link can outlive deletion, permission changes, or
+  // reassignment. Reuse it only after the same launch gate as a new session.
+  if (card.sessionId) {
+    await recordSessionFamiliar(card.sessionId, familiarId);
+    return NextResponse.json({
+      ok: true,
+      reused: true,
+      card,
+      sessionId: card.sessionId,
+      familiarId,
+    });
   }
 
   if (!isAllowedHarness(binding.harness)) {
@@ -158,10 +208,54 @@ export async function POST(
   // override that was chosen for this exact canonical harness. Legacy or stale
   // overrides are cleared before launch and the familiar's current default is
   // used instead.
+  const cardModelHarness = card.modelOverrideHarness
+    ? canonicalHarnessId(card.modelOverrideHarness)
+    : null;
   const taskModelOverride =
-    card.modelOverride && card.modelOverrideHarness === binding.harness
-      ? card.modelOverride
+    card.modelOverride && cardModelHarness === binding.harness
+      ? cleanModelId(card.modelOverride)
       : null;
+  if (card.modelOverride && cardModelHarness === binding.harness && !taskModelOverride) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "invalid_model_override",
+        error: "The task model id is not safe for launch.",
+      },
+      { status: 400 },
+    );
+  }
+  if (taskModelOverride && !isModelAllowedByRuntime(binding.harness, taskModelOverride)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "unsupported_model_override",
+        error: "The task model id is not allowed by this runtime.",
+      },
+      { status: 400 },
+    );
+  }
+  const configuredModel = binding.model ? cleanModelId(binding.model) : null;
+  if (binding.model && !configuredModel) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "invalid_configured_model",
+        error: "The familiar's configured model id is not safe for launch.",
+      },
+      { status: 400 },
+    );
+  }
+  if (configuredModel && !isModelAllowedByRuntime(binding.harness, configuredModel)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "unsupported_configured_model",
+        error: "The familiar's configured model is not allowed by this runtime.",
+      },
+      { status: 400 },
+    );
+  }
   if (card.modelOverride && !taskModelOverride) {
     await updateCard(card.id, { modelOverride: null, modelOverrideHarness: null });
   }
@@ -233,6 +327,10 @@ export async function POST(
       projectRoot: sessionRoot,
       worktree,
       initialPrompt: buildInitialTaskChatPrompt(card),
+      // Native Chat owns the first launch for local OpenClaw and Copilot.
+      // Carry only the card's validated explicit choice; ChatView sends it as
+      // a session override, which persists the conversation intent on send.
+      ...(taskModelOverride ? { initialModelOverride: taskModelOverride } : {}),
       bridge: "native-chat",
     });
   };
@@ -255,14 +353,51 @@ export async function POST(
     return reserveNativeChatTask();
   }
 
+  // The daemon session API has no Hermes `-p` field. Reserve the native chat
+  // path instead so the first task turn reaches /api/chat/send, which applies
+  // the stored per-command profile target; never fall back to the daemon's
+  // sticky/default Hermes profile.
+  if (binding.hermesProfile) {
+    if (isSshRuntime(binding.runtime)) {
+      return NextResponse.json(
+        { ok: false, error: "Hermes profiles currently run on this Cave host. Select a local runtime for this familiar." },
+        { status: 409 },
+      );
+    }
+    return reserveNativeChatTask();
+  }
+
+  // Copilot's daemon session is the worst offender behind cave-aikv: the daemon
+  // spawns `copilot --interactive=<prompt>` as an immortal PTY child whose
+  // redraw output pumps millions of events into coven.sqlite3, and nothing in
+  // Cave ever attaches to it (task chat drives a native coven run instead). Its
+  // nonInteractive launch also mangles multi-word prompts. So — exactly as flows
+  // do (flow-executor.ts, cave-yesg) — a local copilot task takes the native
+  // Chat bridge, spawning the CLI directly with no orphaned daemon TUI. SSH/hub
+  // copilot must stay on the daemon path (remote host / hub authority boundary).
+  const sshBound = isSshRuntime(binding.runtime);
+  const hubAuthority = config.multiHost?.mode === "hub";
+  if (binding.harness === "copilot" && !sshBound && !hubAuthority) {
+    return reserveNativeChatTask();
+  }
+
   const res = await callDaemon<{ id: string; status: string }>({
     method: "POST",
     path: "/api/v1/sessions",
     body: {
       projectRoot: sessionRoot,
       harness: binding.harness,
-      model: taskModelOverride ?? binding.model,
+      ...((taskModelOverride ?? configuredModel)
+        ? { model: taskModelOverride ?? configuredModel }
+        : {}),
       prompt: buildInitialTaskChatPrompt(card),
+      // Non-interactive launch: the daemon streams the initial prompt's
+      // assistant output instead of spawning a fullscreen, never-reaped harness
+      // TUI (cave-aikv). Copilot only reaches here when SSH/hub-bound — where it
+      // must stay on the daemon — and there its nonInteractive prompt-mangling
+      // is the pre-existing limitation, so keep its historical interactive
+      // launch rather than regress it.
+      ...(binding.harness === "copilot" ? {} : { launchMode: "nonInteractive" }),
     },
     timeoutMs: 8000,
   });

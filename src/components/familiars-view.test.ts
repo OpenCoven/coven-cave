@@ -1,4 +1,3 @@
-// @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -7,6 +6,14 @@ const source = [
   readFileSync(new URL("./familiars-view-sections.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("../lib/surface-warmup-registry.ts", import.meta.url), "utf8"),
 ].join("\n");
+const canonicalResources = readFileSync(
+  new URL("../lib/canonical-memory-resources.ts", import.meta.url),
+  "utf8",
+);
+const memoryRequestGate = readFileSync(
+  new URL("../lib/memory-feed-request-gate.ts", import.meta.url),
+  "utf8",
+);
 
 assert.match(source, /export function FamiliarsView/, "FamiliarsView must be exported");
 
@@ -42,25 +49,24 @@ assert.match(
 
 assert.match(
   source,
-  /readSurfaceResource<CovenMemoryResponse>\("agents:coven-memory", force\)[\s\S]*readSurfaceResource<FileMemoryResponse>\("memory:list", force\)/,
-  "Memory landing data consumes the shared warm cache",
+  /readSurfaceResource<FileMemoryResponse>\(\s*"memory:list",\s*false,\s*\)/,
+  "file-memory landing data consumes the shared warm cache",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /defineResource\("agents:coven-memory", \(signal\) => json\(signal, "\/api\/coven-memory"\)/,
-  "The shared registry owns the Coven-memory landing endpoint",
+  /agents:coven-memory/,
+  "the retired generic Coven-memory warmup key must not remain in the view or registry",
 );
 
 assert.match(
   source,
-  /usePausablePoll\(\(\) => void loadMemory\(true\), 30_000\)/,
-  "Memory data refreshes on a 30s pausable poll (pauses in a hidden tab)",
+  /usePausablePoll\(\(\) => void loadMemory\(\), 30_000\)/,
+  "background file-memory polls stay non-forced and coalesced",
 );
 
 // (cave-5dnw) FamiliarsView's poll is the ONLY memory poll while the studio is
 // open: the embedded FamiliarsMemoryView mounts consume the parent's data via
-// the memoryFeed prop instead of running a duplicate fetch+poll of the same
-// two endpoints.
+// the memoryFeed prop instead of running a duplicate file fetch+poll.
 assert.match(
   source,
   /const memoryFeed = useMemo<MemoryFeed>\(/,
@@ -68,8 +74,51 @@ assert.match(
 );
 assert.match(
   source,
-  /reload: \(\) => loadMemory\(true\),/,
-  "the feed exposes a cache-bypassing reload for user-triggered refreshes",
+  /const refreshMemory = useCallback\(async \(\): Promise<CanonicalMemoryListLoad> => \{[\s\S]*const request = requestGate\.beginForce\(\);[\s\S]*readSurfaceResource<FileMemoryResponse>\(\s*"memory:list",\s*true,[\s\S]*refreshCanonicalMemory\(\)[\s\S]*requestGate\.isCurrent\(request\)[\s\S]*await fileRefresh;[\s\S]*return canonicalList;[\s\S]*requestGate\.finishForce\(request\)/,
+  "explicit Memory Refresh applies all three independently settled outcomes and returns the canonical result",
+);
+assert.match(
+  memoryRequestGate,
+  /backgroundRequestIds: Record<MemoryFeedRequestDomain, number>[\s\S]*files: 0,[\s\S]*canonical: 0,[\s\S]*startedDuringForce: activeForceEpoch !== null/,
+  "file and canonical backgrounds keep independent request IDs under current-token forced ownership",
+);
+assert.match(
+  memoryRequestGate,
+  /finishForce\(request: ForcedMemoryFeedRequest\)[\s\S]*activeForceEpoch === request\.forceEpoch[\s\S]*activeForceEpoch = null/,
+  "only the current forced token can release background publication",
+);
+assert.match(
+  source,
+  /createMemoryFeedRequestGate\(\)[\s\S]*requestGate\.mount\(\);[\s\S]*requestGate\.unmount\(\)/,
+  "the production parent mounts and invalidates the tested ownership gate",
+);
+assert.match(
+  source,
+  /beginBackground\("files"\)[\s\S]*beginBackground\("canonical"\)/,
+  "each parent background poll enters its own request domain",
+);
+assert.ok(
+  (source.match(/requestGate\.isCurrent\(request\)/g) ?? []).length >= 6,
+  "every async parent feed outcome is publication-gated",
+);
+assert.match(
+  canonicalResources,
+  /createCanonicalMemoryRefresher\([\s\S]*readList\(true\)[\s\S]*readOverview\(true\)/,
+  "the coordinated canonical refresh independently forces both landing resources",
+);
+assert.doesNotMatch(
+  source,
+  /await refreshCanonicalMemory\(\);\s*await loadCanonicalMemory\(\)/,
+  "Familiars must not discard a successful forced list because overview failed",
+);
+assert.match(
+  source,
+  /reload: refreshMemory,/,
+  "embedded memory refreshes use the coordinated explicit refresh",
+);
+assert.ok(
+  (source.match(/onClick=\{\(\) => void refreshMemory\(\)\}/g) ?? []).length >= 2,
+  "both visible roster Refresh actions use the coordinated explicit refresh",
 );
 assert.ok(
   (source.match(/feed=\{memoryFeed\}/g) ?? []).length >= 2,
@@ -77,6 +126,36 @@ assert.ok(
 );
 {
   const memView = readFileSync(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(
+    memView,
+    /RawCovenEntry|normalizeCovenEntry/,
+    "the Task 7 reader must not retain a path-bearing canonical model",
+  );
+  assert.match(
+    memView,
+    /CanonicalMemorySummary/,
+    "the Task 7 reader consumes path-free canonical summaries",
+  );
+  assert.match(
+    memView,
+    /selectedRow\?\.kind === "canonical"[\s\S]*?<CanonicalMemoryReader/,
+    "canonical selections dispatch through the canonical reader",
+  );
+  assert.doesNotMatch(
+    memView,
+    /fetch\(\s*["'`]\/api\/coven-memory["'`]/,
+    "the standalone reader must use shared canonical landing resources",
+  );
+  assert.match(
+    memView,
+    /readSurfaceResource<FileMemoryResponse>\(\s*"memory:list",\s*force,\s*\)/,
+    "the standalone reader keeps loading file memory through the shared resource",
+  );
+  assert.doesNotMatch(
+    memView,
+    /agents:coven-memory/,
+    "reader deletes must not invalidate the retired generic resource",
+  );
   assert.match(
     memView,
     /usePausablePoll\(\(\) => void load\(\), 30_000, \{ enabled: !feed \}\)/,
@@ -87,17 +166,17 @@ assert.ok(
     /if \(!feed\) void load\(\);/,
     "FamiliarsMemoryView skips its initial self-fetch in parent-fed mode",
   );
-  // The parent-fed mirror must keep the pending-delete filter, or a parent poll
-  // landing inside the 4s undo window resurrects the optimistically-removed row.
+  // The parent-fed file mirror must keep the pending-delete filter, or a parent
+  // poll landing inside the 4s undo window resurrects the optimistic file row.
   assert.match(
     memView,
-    /setCovenEntries\(feed\.covenEntries\.filter\(\(e\) => e\.path !== pendingDelete\)\)/,
-    "the feed mirror filters the pending-delete path (coven entries)",
+    /feed\.files\.entries\.filter\(\s*\(entry\) => entry\.fullPath !== pendingDelete,\s*\)/,
+    "the feed mirror filters the pending-delete path for file entries",
   );
-  assert.match(
+  assert.doesNotMatch(
     memView,
-    /setFileEntries\(feed\.fileEntries\.filter\(\(e\) => e\.fullPath !== pendingDelete\)\)/,
-    "the feed mirror filters the pending-delete path (file entries)",
+    /feed\.canonical\.entries\.filter\([\s\S]{0,120}(?:path|fullPath|contentPath)/,
+    "canonical summaries never participate in path-based pending deletion",
   );
 }
 
@@ -105,6 +184,36 @@ assert.match(
   source,
   /buildFamiliarCardStats\(\{[\s\S]*familiars,[\s\S]*sessions,[\s\S]*covenEntries[\s\S]*\}\)/,
   "Per-card stats are derived from buildFamiliarCardStats",
+);
+assert.match(
+  source,
+  /loadCanonicalMemoryList\(\)/,
+  "roster aggregates use the shared non-forced canonical list",
+);
+assert.match(
+  source,
+  /memoryAvailability:\s*canonicalMemoryAvailability/,
+  "canonical availability is threaded into familiar card stats",
+);
+assert.match(
+  source,
+  /stats\.memoryAvailability === "ready"\s*\?\s*compactCount\(stats\.memoryCount\)\s*:\s*"—"/,
+  "the roster never presents an unavailable canonical count as zero",
+);
+assert.match(
+  source,
+  /const renownAvailable = stats\.memoryAvailability === "ready"/,
+  "roster renown presentation checks canonical memory availability",
+);
+assert.match(
+  source,
+  /renownAvailable \? renown\.tier\.label : "—"/,
+  "the roster does not present a fallback-derived tier as confirmed renown",
+);
+assert.match(
+  source,
+  /renownAvailable\s*\?\s*renown\.next[\s\S]*:\s*"Renown unavailable"/,
+  "the roster does not expose a fallback-derived renown score in its tooltip",
 );
 
 assert.match(
@@ -121,8 +230,8 @@ assert.match(
 
 assert.match(
   source,
-  /const memoryFamiliar = selectedFamiliar \?\? resolvedActiveFamiliar \?\? null/,
-  "Familiar memory scope falls back to the resolved workspace-selected familiar",
+  /const memoryFamiliar = pendingCanonicalMemorySelection[\s\S]*\? pendingMemoryFamiliar[\s\S]*: selectedFamiliar \?\? resolvedActiveFamiliar \?\? null/,
+  "normal memory scope keeps its active-familiar fallback while a pending navigation waits for its exact target",
 );
 
 assert.match(
@@ -183,6 +292,27 @@ assert.match(
   source,
   /setViewMode\("agent-memory"\)/,
   "Header button switches to agent-memory mode",
+);
+
+assert.match(
+  source,
+  /pendingCanonicalMemorySelection\?: PendingCanonicalMemorySelection \| null/,
+  "FamiliarsView accepts the typed mount-safe canonical selection",
+);
+assert.match(
+  source,
+  /if \(!pendingCanonicalMemorySelection\) return;[\s\S]*setSelectedFamiliarId\(pendingCanonicalMemorySelection\.familiarId\);[\s\S]*setViewMode\("agent-memory"\)/,
+  "a pending selection first chooses its familiar and opens agent-memory mode",
+);
+assert.match(
+  source,
+  /pendingCanonicalMemorySelection[\s\S]*<FamiliarMemoryOverlay[\s\S]*pendingCanonicalMemorySelection=\{pendingCanonicalMemorySelection\}[\s\S]*onCanonicalMemorySelectionApplied=\{onCanonicalMemorySelectionApplied\}/,
+  "the retained selection and acknowledgement cross the lazy overlay mount",
+);
+assert.match(
+  source,
+  /pendingCanonicalMemorySelection=\{pendingCanonicalMemorySelection\}[\s\S]*onCanonicalMemorySelectionApplied=\{onCanonicalMemorySelectionApplied\}[\s\S]*<FamiliarsMemoryView/,
+  "the overlay threads the typed handoff into the mounted memory view",
 );
 
 assert.doesNotMatch(
@@ -280,8 +410,8 @@ console.log("familiars-view: all assertions passed");
 
 // The detail panel header carries a per-familiar overflow menu — the
 // discoverable entry points for Edit-in-Studio and Remove. Remove must ROUTE
-// to the Studio lifecycle tab (the canonical confirm + undo + tombstone flow),
-// never confirm or DELETE from this surface.
+// to the Studio Identity tab (its lifecycle section owns the canonical
+// confirm + undo + tombstone flow), never confirm or DELETE from this surface.
 assert.match(
   source,
   /aria-label=\{`\$\{familiar\.display_name\} options`\}[\s\S]{0,600}openFamiliarStudio\(familiar\.id, "identity"\)/,
@@ -289,13 +419,13 @@ assert.match(
 );
 assert.match(
   source,
-  /danger[\s\S]{0,200}openFamiliarStudio\(familiar\.id, "lifecycle"\)[\s\S]{0,120}Remove familiar/,
-  "Remove familiar routes to the Studio lifecycle tab where the canonical confirm lives",
+  /danger[\s\S]{0,200}openFamiliarStudio\(familiar\.id, "identity"\)[\s\S]{0,120}Remove familiar/,
+  "Remove familiar routes to the Studio Identity tab where the canonical confirm lives",
 );
 assert.doesNotMatch(
   source,
   /fetch\([^)]*\/api\/familiars\/[^)]*\{\s*method:\s*"DELETE"/,
-  "FamiliarsView never performs the destructive DELETE itself — that stays in the lifecycle tab",
+  "FamiliarsView never performs the destructive DELETE itself — that stays in the lifecycle section",
 );
 
 // Sessions tab: each row keeps its open-in-chat primary action AND gains a
@@ -308,8 +438,8 @@ assert.match(
 );
 assert.match(
   source,
-  /onClick=\{\(\) => setTraceTarget\(\{ id: s\.id, title: s\.title \}\)\}/,
-  "each session row can open its trace",
+  /onClick=\{\(\) => openTrace\(\{ id: s\.id, title: s\.title \}\)\}/,
+  "each session row can open its trace, through the history-aware opener so Back closes it",
 );
 assert.match(
   source,
@@ -318,19 +448,24 @@ assert.match(
 );
 assert.match(
   source,
-  /\{traceTarget \? \(\s*<SessionTraceOverlay target=\{traceTarget\} onClose=\{\(\) => setTraceTarget\(null\)\} \/>\s*\) : null\}/,
-  "the overlay renders from panel state and closes cleanly",
+  /\{traceTarget \? \(\s*<SessionTraceOverlay target=\{traceTarget\} onClose=\{closeTrace\} \/>\s*\) : null\}/,
+  "the overlay renders from panel state and closes through the history-aware closer",
 );
 
 // ── cave-ibvl: the summon-event listener consumes the latch ──────────────────
-// requestSummonFamiliar() arms the module latch unconditionally; a mounted
-// view that only reacted to the event left the latch armed, so the NEXT
-// FamiliarsView mount popped the circle open uninvited. Both intake paths
-// must consume it: the mount check and the live event listener.
+// requestSummonFamiliar() arms the window-scoped latch unconditionally. A fresh
+// FamiliarsView peeks without mutating during render, then consumes after commit;
+// the live listener handles an already-mounted surface and consumes the latch
+// so the next mount is not hijacked.
 assert.match(
   source,
-  /if \(consumeSummonPending\(\)\) setCreateOpen\(true\);/,
-  "a fresh mount consumes the summon latch",
+  /const \[createOpen, setCreateOpen\] = useState\(hasSummonPending\);/,
+  "a fresh mount initializes open state from a pure latch peek",
+);
+assert.match(
+  source,
+  /useLayoutEffect\(\(\) => \{\s*if \(createOpen\) consumeSummonPending\(\);\s*\}, \[createOpen\]\);/,
+  "a committed open render consumes the summon latch before paint",
 );
 assert.match(
   source,

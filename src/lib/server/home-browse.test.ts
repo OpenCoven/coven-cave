@@ -3,7 +3,16 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import {
+  DRIVES_LOCATION,
+  createSubdirInBrowsableDir,
   createSubdirWithinRoot,
+  homeRoot,
+  listDrivePlaces,
+  listKnownFolders,
+  listPlaceGroups,
+  listSubdirs,
+  listSystemRoots,
+  resolveBrowsableDir,
   resolveWithinRoot,
   sanitizeRelSegments,
 } from "./home-browse.ts";
@@ -16,6 +25,24 @@ assert.match(
   source,
   /path\.join\(\/\* turbopackIgnore: true \*\/ parent, name\)/,
   "dynamic user-home creation paths must not trace the entire checkout into the standalone bundle",
+);
+// CodeQL js/path-injection: the walk's anchor must be the allowlist's own
+// element (server-derived), with the request-derived root used only in an
+// equality check. PR #3728 alerts 88/135 regressed exactly this.
+assert.match(
+  source,
+  /for \(const root of listSystemRoots\(\)\) \{\s*if \(fold\(root\) === fold\(wanted\)\) return root;/,
+  "absolute walks must anchor on the listSystemRoots() allowlist element, never request-derived text",
+);
+assert.match(
+  source,
+  /process\.platform === "win32" \? value\.toUpperCase\(\) : value/,
+  "drive-letter matching folds case on win32 (a lowercase USERPROFILE drive must not 403 navigation)",
+);
+assert.doesNotMatch(
+  source,
+  /resolveWithinRoot\(path\.parse\(/,
+  "never anchor the trusted walk on a root parsed straight out of the request",
 );
 
 function withScratchDir(run: (base: string) => void) {
@@ -134,5 +161,135 @@ test("createSubdirWithinRoot rejects parents outside or missing beneath the root
       ok: false,
       reason: "invalid-parent",
     });
+  });
+});
+
+// ── Browsing above $HOME (volume roots / drives) ────────────────────────────
+test("resolveBrowsableDir defaults to $HOME and keeps relative requests home-anchored", () => {
+  assert.equal(resolveBrowsableDir(null), homeRoot());
+  assert.equal(resolveBrowsableDir("   "), homeRoot());
+  // Relative escapes above $HOME are still rejected — going higher requires
+  // naming an absolute path, which then walks from its own volume root.
+  assert.equal(resolveBrowsableDir("../../.."), null);
+});
+
+test("resolveBrowsableDir walks absolute paths from their own volume root", () => {
+  withScratchDir((base) => {
+    fs.mkdirSync(path.join(base, "repos", "app"), { recursive: true });
+
+    assert.equal(resolveBrowsableDir(path.join(base, "repos", "app")), path.join(base, "repos", "app"));
+    // The volume root itself is browsable (the picker just disables selecting it).
+    const root = path.parse(homeRoot()).root;
+    assert.equal(resolveBrowsableDir(root), root);
+    // Nonexistent absolute paths still resolve to null.
+    assert.equal(resolveBrowsableDir(path.join(base, "repos", "ghost")), null);
+  });
+});
+
+test("listSystemRoots lists this machine's volume roots", () => {
+  const roots = listSystemRoots();
+  assert.ok(roots.length >= 1, "at least one volume root exists");
+  for (const root of roots) {
+    assert.equal(path.parse(root).root, root, `${root} is a bare volume root`);
+  }
+  if (process.platform !== "win32") assert.deepEqual(roots, ["/"]);
+});
+
+test("the drives pseudo-location is never a browsable or creatable real path", () => {
+  assert.equal(DRIVES_LOCATION, "::drives");
+  assert.equal(resolveBrowsableDir(DRIVES_LOCATION), null);
+  assert.deepEqual(createSubdirInBrowsableDir(DRIVES_LOCATION, "child"), {
+    ok: false,
+    reason: "invalid-parent",
+  });
+});
+
+test("createSubdirInBrowsableDir creates beneath absolute parents via their volume root", () => {
+  withScratchDir((base) => {
+    fs.mkdirSync(path.join(base, "repos"));
+
+    assert.deepEqual(createSubdirInBrowsableDir(path.join(base, "repos"), "new-app"), {
+      ok: true,
+      path: path.join(base, "repos", "new-app"),
+    });
+    assert.deepEqual(createSubdirInBrowsableDir(path.join(base, "ghost"), "child"), {
+      ok: false,
+      reason: "invalid-parent",
+    });
+  });
+});
+
+// ── Sidebar places (Quick access / This PC) ─────────────────────────────────
+test("known folders resolve to real directories and never repeat a path", () => {
+  const places = listKnownFolders();
+  const seen = new Set<string>();
+  for (const place of places) {
+    assert.equal(place.kind, "known");
+    assert.equal(path.isAbsolute(place.path), true, `${place.path} is absolute`);
+    assert.equal(fs.statSync(place.path).isDirectory(), true, `${place.path} exists`);
+    assert.equal(seen.has(place.path), false, `${place.path} appears once`);
+    seen.add(place.path);
+  }
+});
+
+test("drive places cover every volume root and stay navigable", () => {
+  const roots = listSystemRoots();
+  const places = listDrivePlaces();
+
+  assert.deepEqual(
+    places.map((place) => place.path),
+    roots,
+    "one place per volume root, in the same order",
+  );
+  for (const place of places) {
+    assert.equal(place.kind, "drive");
+    assert.ok(place.name.length > 0, "every drive row is labelled");
+    // The rail only ever hands these back to the browse walk, so each must
+    // survive it — a label that isn't a real path would dead-end the sidebar.
+    assert.equal(resolveBrowsableDir(place.path), place.path);
+  }
+  if (process.platform !== "win32") {
+    assert.deepEqual(places.map((place) => place.name), ["/"]);
+  }
+});
+
+test("place groups lead with home and list volumes separately", () => {
+  const groups = listPlaceGroups();
+
+  assert.deepEqual(groups.map((group) => group.id), ["quick", "this-pc"]);
+  const quick = groups[0];
+  assert.equal(quick.label, "Quick access");
+  assert.deepEqual(quick.places[0], {
+    id: "home",
+    name: "Home",
+    path: homeRoot(),
+    kind: "home",
+  });
+  // $HOME already leads the group; a known folder that resolves to it (a
+  // container-flat profile) must not render a second identical row.
+  assert.equal(
+    quick.places.filter((place) => place.path === homeRoot()).length,
+    1,
+    "home appears exactly once",
+  );
+  assert.equal(groups[1].label, "This PC");
+  assert.ok(groups[1].places.length >= 1, "at least one volume is offered");
+});
+
+test("listSubdirs exposes dot folders while retaining non-dot noise filtering", () => {
+  withScratchDir((base) => {
+    for (const name of [".git", ".next", "visible", "node_modules", "dist"]) {
+      fs.mkdirSync(path.join(base, name));
+    }
+    fs.writeFileSync(path.join(base, ".env"), "not a directory");
+
+    const names = listSubdirs(base).map((entry) => entry.name);
+
+    assert.ok(names.includes(".git"), "ordinary dot folders are visible");
+    assert.ok(names.includes(".next"), "dot-prefixed build folders are visible too");
+    assert.ok(names.includes("visible"), "ordinary folders remain visible");
+    assert.ok(!names.includes("node_modules"), "non-dot dependency noise stays hidden");
+    assert.ok(!names.includes("dist"), "non-dot build noise stays hidden");
+    assert.ok(!names.includes(".env"), "files are never returned as folders");
   });
 });

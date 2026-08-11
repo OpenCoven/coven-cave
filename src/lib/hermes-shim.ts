@@ -2,18 +2,23 @@ import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 /**
- * The `hermes-coven` adapter shim, embedded as a pinned constant so Cave can
- * install it automatically after Hermes's own installer runs — no dependency
- * on a repo file at runtime.
+ * Legacy `hermes-coven` adapter shim retained as pinned migration/test
+ * material for pre-1.0.3 manifests. Current Cave scaffolds the accepted native
+ * `hermes --query` adapter and does not auto-install this shim.
  *
- * Why it exists: the Coven harness appends the user prompt as a POSITIONAL
- * argument behind an options terminator, i.e. `hermes chat <prefix…> -- "<p>"`.
- * But `hermes chat` has no positional prompt slot — the query is only accepted
- * via `-q/--query <value>` — so the raw invocation fails with:
+ * Why it existed: the older Coven harness appended the user prompt as a
+ * POSITIONAL argument behind an options terminator, i.e.
+ * `hermes chat <prefix…> -- "<p>"`. But `hermes chat` has no positional
+ * prompt slot — the query is only accepted via `-q/--query <value>` — so the
+ * raw invocation fails with:
  *     hermes chat: error: argument -q/--query: expected one argument
  * The shim captures the trailing positional prompt and re-emits it as the
  * inline value of `-q`. Keep this byte-for-byte in sync with
- * OpenCoven/coven-runtimes:shims/hermes-coven.
+ * OpenCoven/coven-runtimes:shims/hermes-coven. Its embedded comments describe
+ * that historical installer contract and are intentionally left byte-identical.
+ *
+ * @deprecated Legacy migration/test fixture only; current Cave uses the native
+ * Hermes 1.0.3 adapter.
  */
 export const HERMES_COVEN_SHIM = `#!/usr/bin/env bash
 # hermes-coven — adapter shim so the Coven harness can drive \`hermes chat\`.
@@ -74,12 +79,14 @@ export type ShimInstallResult =
   | { ok: false; error: string };
 
 /**
- * Install the `hermes-coven` shim next to the resolved `hermes` binary so it
- * sits on the same PATH entry Hermes was installed to. POSIX only — the shim
- * is bash and the Hermes runtime is POSIX-only in the registry.
+ * Install the legacy `hermes-coven` shim next to a resolved `hermes` binary.
+ * Current Cave does not call this installer; it remains available only for
+ * explicit migration/testing of pre-1.0.3 manifests. POSIX only.
  *
  * @param hermesBinaryPath absolute path to the `hermes` executable (from the
  *   post-install PATH lookup). The shim is written to its parent directory.
+ * @deprecated Current Cave uses the native Hermes 1.0.3 `--query` adapter and
+ * does not auto-install this shim.
  */
 export async function installHermesShim(
   hermesBinaryPath: string,

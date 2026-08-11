@@ -48,6 +48,17 @@ assert.match(
   /window\.dispatchEvent\(new CustomEvent\("cave:changes-open"\)\)/,
   "the pill keeps the Git-changes drill-through",
 );
+// ── Worktree is a separate chip; branch label no longer folds it in ──────────
+assert.match(
+  pill,
+  /aria-label=\{`Worktree: \$\{context\.worktree\} — open worktree actions`\}/,
+  "the worktree chip carries its own dedicated accessible name",
+);
+assert.doesNotMatch(
+  pill,
+  /name="ph:git-branch"[\s\S]{0,400}?context\.worktree/,
+  "worktree no longer appears inside the branch chip's text content",
+);
 
 // ── Git-less chats render nothing — the chip gates on a loaded repo status ──
 assert.match(
@@ -114,6 +125,11 @@ assert.match(
 );
 assert.match(
   chip,
+  /ariaLabel = "Switch branch"[\s\S]*?menuLabel = "Branches"[\s\S]*?<Popover[\s\S]*?ariaLabel=\{ariaLabel\}[\s\S]*?<PopoverBody role="menu" ariaLabel=\{menuLabel\}>[\s\S]*?<PopoverLabel>\{ariaLabel\}<\/PopoverLabel>/,
+  "the shared branch menu exposes overridable popover and menu labels while preserving branch defaults",
+);
+assert.match(
+  chip,
   /\/api\/changes\?projectRoot=\$\{encodeURIComponent\(root\)\}&branches=1/,
   "opening the menu lists local branches via the changes route's ?branches=1 query",
 );
@@ -124,8 +140,8 @@ assert.match(
 );
 assert.match(
   chip,
-  /closeMenu\(\);\s*\n\s*onSwitched\?\.\(\);/,
-  "a successful switch notifies the host so it can refresh immediately",
+  /closeMenu\(\);\s*\n\s*announce\(`Switched to branch \$\{name\}\.`\);\s*\n\s*onSwitched\?\.\(\);/,
+  "a successful switch announces the result and notifies the host so it can refresh immediately",
 );
 assert.match(
   chip,
@@ -134,8 +150,26 @@ assert.match(
 );
 assert.match(
   chip,
-  /disabled=\{menuBusy \|\| row\.current \|\| row\.worktree !== null\}/,
-  "branches checked out in another worktree (and the current one) are not switch targets",
+  /disabled=\{menuBusy \|\| row\.current \|\| \(row\.worktree !== null && !jumpable\)\}/,
+  "the current branch stays disabled; other-worktree branches only enable as jump targets",
+);
+// REGRESSION (cave-tmst): rows for branches living in another worktree were
+// dead ends — disabled with only a tooltip. They now open a chat rooted in
+// that worktree via the same hand-off event worktree creation uses.
+assert.match(
+  chip,
+  /const jumpable = !row\.current && row\.worktree !== null && !!row\.worktreePath;/,
+  "other-worktree rows become jump targets when the server sends the worktree path",
+);
+assert.match(
+  chip,
+  /if \(jumpable\) openWorktreeChat\(row\);\s*\n\s*else void switchBranch\(row\.name\);/,
+  "selecting a jumpable row opens a chat in that worktree instead of attempting a switch",
+);
+assert.match(
+  chip,
+  /const openWorktreeChat = [\s\S]{0,400}?new CustomEvent\("cave:agents-new-chat", \{\s*\n\s*detail: \{ projectRoot: target \}/,
+  "the worktree jump dispatches the same new-chat hand-off event as creation",
 );
 assert.match(
   chip,
@@ -146,6 +180,16 @@ assert.match(
   chip,
   /action: "create-worktree", branch: name/,
   "creating a worktree posts the create-worktree action",
+);
+assert.match(
+  chip,
+  /announce\(\s*\n?\s*`Worktree \$\{json\.created === false \? "reused" : "created"\} for \$\{json\.branch \?\? name\} — opening a chat there\.`,/,
+  "worktree creation announces created vs reused for assistive tech (the visible UI navigates away)",
+);
+assert.match(
+  chip,
+  /usePopoverEscapeLayer\(menuOpen && creating,/,
+  "Escape in the inline new-branch form backs out to the menu instead of dismissing the popover",
 );
 assert.match(
   chip,

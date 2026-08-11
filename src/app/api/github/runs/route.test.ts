@@ -34,4 +34,22 @@ assert.doesNotMatch(
   "runs route must not return token material",
 );
 
+assert.match(
+  source,
+  /\/\^\\d\{1,16\}\$\/\.test\(idParam\)/,
+  "run id is validated as a positive integer before path interpolation",
+);
+
+assert.match(
+  source,
+  /actions\/runs\/\$\{runId\}/,
+  "an id fetches that exact run instead of scanning the list page",
+);
+
+assert.match(
+  source,
+  /runId\s*\?\s*\[data as Record<string, unknown>\]/,
+  "by-id responses normalize through the same runs[] shape as the list",
+);
+
 console.log("github-runs-route.test.ts OK");

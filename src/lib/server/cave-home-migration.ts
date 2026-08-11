@@ -11,6 +11,8 @@ import {
  * Cave-owned legacy paths and their canonical names/strategies.
  *
  * Entries with schema-aware strategies are merged automatically when safe.
+ * The board strategy is schema-aware but explicit-only: its card-id union is
+ * offered as a resolution action, never run unprompted (cave-6z41).
  * Directory children are merged by name. Every other entry is explicitly
  * manual: differing copies are backed up and left unresolved until the user
  * chooses which copy to keep. Daemon-owned ledgers and ad-hoc backups are not
@@ -19,7 +21,7 @@ import {
 export const CAVE_HOME_MIGRATIONS: readonly CaveHomeReconciliationEntry[] = [
   { legacy: "cave-config.json", next: "config.json", strategy: "manual" },
   { legacy: "cave-state.json", next: "state.json", strategy: "state" },
-  { legacy: "cave-board.json", next: "board.json", strategy: "manual" },
+  { legacy: "cave-board.json", next: "board.json", strategy: "board" },
   { legacy: "cave-canvas.json", next: "canvas.json", strategy: "manual" },
   { legacy: "cave-inbox.json", next: "inbox.json", strategy: "inbox" },
   { legacy: "cave-inbox-prefs.json", next: "inbox-prefs.json", strategy: "manual" },

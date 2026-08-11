@@ -9,6 +9,7 @@ import {
   preferencesToLegacyStorage,
   PreferencesValidationError,
   validatePreferencesPatch,
+  VOICE_PREFERENCE_ID_MAX_LENGTH,
 } from "./preferences-schema.ts";
 
 const defaults = createDefaultPreferences(false);
@@ -17,7 +18,6 @@ assert.equal(defaults.initialized, false);
 assert.equal(defaults.appearance.theme.id, "coven");
 assert.equal(defaults.appearance.fonts.sans, "inter");
 assert.equal(defaults.appearance.datetime.clock, "12h");
-assert.equal(defaults.general.newsHeadlines, true);
 assert.equal(defaults.general.celebrations, true, "progression celebrations default on");
 assert.equal(defaults.phone.mobileMode, true);
 
@@ -44,7 +44,7 @@ const fullPatch = validatePreferencesPatch({
       accentSeed: { L: 0.6, a: 0.1, b: -0.08 },
     },
   },
-  general: { newsHeadlines: false, celebrations: false },
+  general: { celebrations: false },
   phone: { mobileMode: false },
 });
 
@@ -62,7 +62,6 @@ assert.equal(initialized.appearance.reading.width, "narrow");
 assert.equal(initialized.appearance.datetime.density, "verbose");
 assert.equal(initialized.appearance.cornerRadius, "round");
 assert.equal(initialized.appearance.backdrop.intensity, 64);
-assert.equal(initialized.general.newsHeadlines, false);
 assert.equal(initialized.general.celebrations, false, "celebrations patch lands");
 assert.equal(initialized.phone.mobileMode, false);
 
@@ -147,6 +146,7 @@ for (const invalid of [
   { appearance: { theme: { id: "not-a-theme" } } },
   { appearance: { fonts: { sans: "remote-font-url" } } },
   { appearance: { backdrop: { image: { mime: "image/svg+xml" } } } },
+  { general: { newsHeadlines: false } },
   { phone: { mobileMode: "yes" } },
 ]) {
   assert.throws(
@@ -178,6 +178,13 @@ assert.equal(recovered.appearance.backdrop.intensity, 100);
 assert.equal(recovered.appearance.backdrop.image.mime, null);
 assert.equal(Object.hasOwn(recovered, "authToken"), false);
 
+for (const removed of ["grove", "bloom", "dusk", "mist", "hex", "bane", "beacon", "trucker", "meatseeks"]) {
+  const normalized = normalizeCavePreferences({ appearance: { theme: { id: removed } } });
+  assert.equal(normalized.appearance.theme.id, "coven", `${removed} falls back to Coven after removal`);
+  const patch = validatePreferencesPatch({ appearance: { theme: { id: removed } } });
+  assert.equal(patch.appearance?.theme?.id, "coven", `${removed} API updates migrate to Coven before validation`);
+}
+
 const legacyPatch = legacyStorageToPreferencesPatch({
   "coven-theme": "orchid",
   "coven-mode": "light",
@@ -186,22 +193,24 @@ const legacyPatch = legacyStorageToPreferencesPatch({
   "cave:reading-width": "medium",
   "cave:datetime-clock": "24h",
   "cave:corner-radius": "sharp",
-  "cave:home-news-enabled": "false",
   "cave:mobile-mode-enabled": "false",
   "cave:backdrop:v1": JSON.stringify({ enabled: true, intensity: 70 }),
   authToken: "ignored",
   "coven-access-token": "ignored",
 });
-assert.equal(legacyPatch.appearance?.theme?.id, "dusk");
+assert.equal(legacyPatch.appearance?.theme?.id, "coven");
 assert.equal(legacyPatch.appearance?.fonts?.sans, "source-sans-3");
 assert.equal(legacyPatch.appearance?.screenScale, 150);
 assert.equal(legacyPatch.appearance?.reading?.width, "medium");
 assert.equal(legacyPatch.appearance?.datetime?.clock, "24h");
 assert.equal(legacyPatch.appearance?.cornerRadius, "sharp");
 assert.equal(legacyPatch.appearance?.backdrop?.enabled, true);
-assert.equal(legacyPatch.general?.newsHeadlines, false);
 assert.equal(legacyPatch.phone?.mobileMode, false);
 assert.equal(Object.hasOwn(legacyPatch, "authToken"), false);
+
+// Single-theme rename: stored "openai" normalizes to "codex".
+const codexRenamePatch = legacyStorageToPreferencesPatch({ "coven-theme": "openai" });
+assert.equal(codexRenamePatch.appearance?.theme?.id, "codex");
 
 const compatibilityCache = preferencesToLegacyStorage(selectedAgain);
 assert.equal(compatibilityCache["coven-theme"], "tide");
@@ -304,6 +313,41 @@ assert.throws(
   PreferencesValidationError,
   "the strict validator bounds the familiars map size",
 );
+
+// ── appearance.backdrop.style "off" (cave-kbh1) ──────────────────────────────
+// The explicit no-backdrop choice: a persisted style, always disabled.
+const offNormalized = normalizeCavePreferences({
+  appearance: { backdrop: { style: "off", enabled: true } },
+});
+assert.equal(offNormalized.appearance.backdrop.style, "off", "off round-trips as a persisted style");
+assert.equal(
+  offNormalized.appearance.backdrop.enabled,
+  false,
+  "normalize coerces the off style to disabled — no empty-scrim contradiction can persist",
+);
+assert.equal(
+  normalizeCavePreferences({ appearance: { backdrop: { style: "sparkles" } } })
+    .appearance.backdrop.style,
+  "image",
+  "an unknown style still defaults to image",
+);
+assert.equal(
+  normalizeCavePreferences({ appearance: { backdrop: { style: "blaze", enabled: true } } })
+    .appearance.backdrop.enabled,
+  true,
+  "the off coercion leaves the other styles' enablement alone",
+);
+assert.equal(
+  validatePreferencesPatch({ appearance: { backdrop: { style: "off" } } })
+    .appearance?.backdrop?.style,
+  "off",
+  "the strict validator accepts the off style",
+);
+const offApplied = applyPreferencesPatch(createDefaultPreferences(true), {
+  appearance: { backdrop: { style: "off", enabled: false } },
+});
+assert.equal(offApplied.appearance.backdrop.style, "off");
+assert.equal(offApplied.appearance.backdrop.enabled, false);
 assert.throws(
   () => validatePreferencesPatch({
     appearance: { backdrop: { familiars: { ["f".repeat(129)]: true } } },
@@ -339,3 +383,305 @@ assert.throws(
 );
 
 console.log("preferences-schema.test.ts: ok");
+
+// ── Backdrop style option set (cave-99s9) ────────────────────────────────────
+// "image" is the compatible default; unknown styles normalize back to it, the
+// strict patch path rejects them, and the legacy mirror round-trips the choice.
+assert.equal(defaults.appearance.backdrop.style, "image");
+{
+  const normalized = normalizeCavePreferences({ appearance: { backdrop: { style: "blaze" } } });
+  assert.equal(normalized.appearance.backdrop.style, "blaze");
+  const coerced = normalizeCavePreferences({ appearance: { backdrop: { style: "confetti" } } });
+  assert.equal(coerced.appearance.backdrop.style, "image", "unknown styles fall back to image");
+}
+{
+  const patch = validatePreferencesPatch({ appearance: { backdrop: { style: "blaze" } } });
+  assert.equal(patch.appearance?.backdrop?.style, "blaze");
+  assert.throws(
+    () => validatePreferencesPatch({ appearance: { backdrop: { style: "confetti" } } }),
+    PreferencesValidationError,
+    "unknown backdrop styles are rejected",
+  );
+}
+{
+  const prefs = createDefaultPreferences(true);
+  prefs.appearance.backdrop.style = "blaze";
+  const mirrored = preferencesToLegacyStorage(prefs);
+  assert.equal(JSON.parse(mirrored["cave:backdrop:v1"]).style, "blaze", "legacy mirror carries the style");
+  const imported = legacyStorageToPreferencesPatch(mirrored);
+  assert.equal(imported.appearance?.backdrop?.style, "blaze", "legacy import restores the style");
+}
+
+// ── GitHub organization scope (issue #3701) ──────────────────────────────────
+{
+  // Default is "all organizations" → an empty scope list.
+  assert.deepEqual(createDefaultPreferences(false).github.orgScope, []);
+}
+{
+  // Normalize trims, drops non-strings/blanks, and dedupes.
+  const p = normalizeCavePreferences({ github: { orgScope: ["  Acme ", "Acme", "", 5, "Beta", null] } });
+  assert.deepEqual(p.github.orgScope, ["Acme", "Beta"], "orgScope is trimmed, deduped, string-only");
+  assert.deepEqual(normalizeCavePreferences({}).github.orgScope, [], "absent github → empty scope");
+}
+{
+  // Patch validation accepts an orgScope array and rejects a non-array / bad keys.
+  const patch = validatePreferencesPatch({ github: { orgScope: ["OpenCoven", "OpenCoven", " x "] } });
+  assert.deepEqual(patch.github?.orgScope, ["OpenCoven", "x"]);
+  assert.throws(
+    () => validatePreferencesPatch({ github: { orgScope: "OpenCoven" } }),
+    PreferencesValidationError,
+    "orgScope must be an array",
+  );
+  assert.throws(
+    () => validatePreferencesPatch({ github: { unknownKey: true } }),
+    PreferencesValidationError,
+    "unknown github keys are rejected",
+  );
+}
+{
+  // Applying a scope patch replaces the list; clearing returns to all.
+  const scoped = applyPreferencesPatch(createDefaultPreferences(true), { github: { orgScope: ["OpenCoven"] } });
+  assert.deepEqual(scoped.github.orgScope, ["OpenCoven"]);
+  const cleared = applyPreferencesPatch(scoped, { github: { orgScope: [] } });
+  assert.deepEqual(cleared.github.orgScope, [], "empty patch clears back to all");
+}
+{
+  // ── Daemon automation (cave-bqywj) ──────────────────────────────────────
+  // These two restart processes and install binaries on the user's machine.
+  // Every assertion below exists because the failure mode is "the cave did
+  // something unattended that the user never asked for", which no amount of
+  // later UI polish undoes.
+  const daemon = createDefaultPreferences(false).daemon;
+  assert.equal(daemon.autoRestart, false, "auto-restart is opt-in");
+  assert.equal(daemon.autoUpgradeCli, false, "CLI auto-upgrade is opt-in");
+  assert.deepEqual(
+    Object.keys(daemon).sort(),
+    ["autoRestart", "autoUpgradeCli"],
+    "no daemon automation ships without a default asserted here",
+  );
+}
+{
+  // Absent section, and a file written by a build that never had one.
+  assert.equal(normalizeCavePreferences({}).daemon.autoUpgradeCli, false, "absent daemon → off");
+  assert.equal(
+    normalizeCavePreferences({ daemon: {} }).daemon.autoRestart,
+    false,
+    "empty daemon section → off",
+  );
+}
+{
+  // Fails CLOSED. The rest of the schema uses `!== false` for default-on
+  // booleans; a value that merely looks truthy must NOT switch these on.
+  for (const truthy of ["true", 1, "yes", {}, [], "on"]) {
+    const p = normalizeCavePreferences({
+      daemon: { autoRestart: truthy, autoUpgradeCli: truthy },
+    });
+    assert.equal(p.daemon.autoRestart, false, `truthy ${JSON.stringify(truthy)} is not consent`);
+    assert.equal(p.daemon.autoUpgradeCli, false, `truthy ${JSON.stringify(truthy)} is not consent`);
+  }
+  const on = normalizeCavePreferences({ daemon: { autoRestart: true } });
+  assert.equal(on.daemon.autoRestart, true, "an explicit true still turns it on");
+}
+{
+  // Patch validation: booleans only, known keys only.
+  const patch = validatePreferencesPatch({ daemon: { autoUpgradeCli: true } });
+  assert.equal(patch.daemon?.autoUpgradeCli, true);
+  assert.equal(
+    Object.hasOwn(patch.daemon ?? {}, "autoRestart"),
+    false,
+    "a patch touches only the keys it names",
+  );
+  for (const bad of ["true", 1, null]) {
+    assert.throws(
+      () => validatePreferencesPatch({ daemon: { autoRestart: bad } }),
+      PreferencesValidationError,
+      `daemon.autoRestart rejects ${JSON.stringify(bad)}`,
+    );
+  }
+  assert.throws(
+    () => validatePreferencesPatch({ daemon: { autoUpgradeEverything: true } }),
+    PreferencesValidationError,
+    "unknown daemon keys are rejected rather than silently stored",
+  );
+}
+{
+  // Toggling one flag leaves the others alone, and off is reachable again.
+  const base = createDefaultPreferences(true);
+  const on = applyPreferencesPatch(base, { daemon: { autoRestart: true } });
+  assert.equal(on.daemon.autoRestart, true);
+  assert.equal(on.daemon.autoUpgradeCli, false, "one toggle does not enable its neighbours");
+  const off = applyPreferencesPatch(on, { daemon: { autoRestart: false } });
+  assert.equal(off.daemon.autoRestart, false, "the user can always turn it back off");
+}
+
+// ── Canonical non-secret voice preferences ──────────────────────────────────
+{
+  const voiceDefaults = createDefaultPreferences(false).voice;
+  assert.deepEqual(
+    voiceDefaults,
+    { defaultProvider: "", defaultModel: "", defaultVoice: "" },
+    "voice defaults are explicit and empty",
+  );
+  assert.doesNotMatch(
+    JSON.stringify(createDefaultPreferences(false)),
+    /API_KEY/,
+    "serialized preferences never contain provider credential fields",
+  );
+}
+{
+  const oldVersionOne = normalizeCavePreferences({
+    version: 1,
+    initialized: true,
+    revision: 4,
+  });
+  assert.deepEqual(
+    oldVersionOne.voice,
+    { defaultProvider: "", defaultModel: "", defaultVoice: "" },
+    "existing version-1 files without voice upgrade safely through normalization",
+  );
+}
+{
+  const normalized = normalizeCavePreferences({
+    voice: {
+      defaultProvider: "elevenlabs",
+      defaultModel: "  eleven_turbo_v2_5  ",
+      defaultVoice: "  21m00Tcm4TlvDq8ikWAM  ",
+    },
+  });
+  assert.deepEqual(normalized.voice, {
+    defaultProvider: "elevenlabs",
+    defaultModel: "eleven_turbo_v2_5",
+    defaultVoice: "21m00Tcm4TlvDq8ikWAM",
+  });
+
+  const overlong = "x".repeat(VOICE_PREFERENCE_ID_MAX_LENGTH + 20);
+  const capped = normalizeCavePreferences({
+    voice: {
+      defaultProvider: "openai",
+      defaultModel: `  ${overlong}  `,
+      defaultVoice: overlong,
+    },
+  });
+  assert.equal(capped.voice.defaultModel.length, VOICE_PREFERENCE_ID_MAX_LENGTH);
+  assert.equal(capped.voice.defaultVoice.length, VOICE_PREFERENCE_ID_MAX_LENGTH);
+}
+{
+  for (const defaultProvider of ["gemini", "unknown", 42, null]) {
+    const normalized = normalizeCavePreferences({
+      voice: { defaultProvider, defaultModel: "stale-model", defaultVoice: "stale-voice" },
+    });
+    assert.deepEqual(
+      normalized.voice,
+      { defaultProvider: "", defaultModel: "", defaultVoice: "" },
+      `${JSON.stringify(defaultProvider)} cannot persist as a default provider`,
+    );
+  }
+}
+{
+  assert.deepEqual(
+    validatePreferencesPatch({
+      voice: {
+        defaultProvider: "elevenlabs",
+        defaultModel: "  eleven_turbo_v2_5  ",
+        defaultVoice: "  21m00Tcm4TlvDq8ikWAM  ",
+      },
+    }).voice,
+    {
+      defaultProvider: "elevenlabs",
+      defaultModel: "eleven_turbo_v2_5",
+      defaultVoice: "21m00Tcm4TlvDq8ikWAM",
+    },
+    "strict voice patches accept selectable providers and trim identifier strings",
+  );
+  assert.deepEqual(
+    validatePreferencesPatch({ voice: { defaultProvider: "" } }).voice,
+    { defaultProvider: "" },
+    "the empty provider is a valid explicit patch",
+  );
+  for (const invalid of [
+    { voice: { defaultProvider: "gemini" } },
+    { voice: { defaultProvider: "unknown" } },
+    { voice: { defaultProvider: 42 } },
+    { voice: { apiKey: "secret" } },
+    { voice: { defaultModel: 42 } },
+    { voice: { defaultVoice: null } },
+    { voice: { defaultModel: ` ${"m".repeat(VOICE_PREFERENCE_ID_MAX_LENGTH + 1)} ` } },
+    { voice: { defaultVoice: ` ${"v".repeat(VOICE_PREFERENCE_ID_MAX_LENGTH + 1)} ` } },
+  ]) {
+    assert.throws(
+      () => validatePreferencesPatch(invalid),
+      PreferencesValidationError,
+      `strict voice validation rejects ${JSON.stringify(invalid)}`,
+    );
+  }
+}
+{
+  const elevenLabs = applyPreferencesPatch(
+    createDefaultPreferences(true),
+    validatePreferencesPatch({
+      voice: {
+        defaultProvider: "elevenlabs",
+        defaultModel: "eleven_turbo_v2_5",
+        defaultVoice: "21m00Tcm4TlvDq8ikWAM",
+      },
+    }),
+  );
+  const switched = applyPreferencesPatch(
+    elevenLabs,
+    validatePreferencesPatch({ voice: { defaultProvider: "openai" } }),
+  );
+  assert.deepEqual(
+    switched.voice,
+    { defaultProvider: "openai", defaultModel: "", defaultVoice: "" },
+    "changing providers clears stale model and voice ids when replacements are omitted",
+  );
+
+  const switchedWithIds = applyPreferencesPatch(
+    elevenLabs,
+    validatePreferencesPatch({
+      voice: { defaultProvider: "openai", defaultModel: "gpt-realtime", defaultVoice: "marin" },
+    }),
+  );
+  assert.deepEqual(switchedWithIds.voice, {
+    defaultProvider: "openai",
+    defaultModel: "gpt-realtime",
+    defaultVoice: "marin",
+  });
+
+  const sameProvider = applyPreferencesPatch(
+    elevenLabs,
+    validatePreferencesPatch({ voice: { defaultProvider: "elevenlabs" } }),
+  );
+  assert.deepEqual(
+    sameProvider.voice,
+    elevenLabs.voice,
+    "reasserting the same provider preserves its model and voice ids",
+  );
+  assert.equal(sameProvider.revision, elevenLabs.revision, "reasserting the same provider is a no-op");
+
+  const cleared = applyPreferencesPatch(
+    elevenLabs,
+    validatePreferencesPatch({
+      voice: { defaultProvider: "", defaultModel: "ignored", defaultVoice: "ignored" },
+    }),
+  );
+  assert.deepEqual(
+    cleared.voice,
+    { defaultProvider: "", defaultModel: "", defaultVoice: "" },
+    "switching to the empty provider clears every voice preference",
+  );
+
+  const modelOnly = applyPreferencesPatch(
+    elevenLabs,
+    validatePreferencesPatch({ voice: { defaultModel: "eleven_multilingual_v2" } }),
+  );
+  assert.equal(modelOnly.voice.defaultProvider, "elevenlabs", "partial voice patches merge");
+  assert.equal(modelOnly.voice.defaultVoice, "21m00Tcm4TlvDq8ikWAM", "unpatched voice id survives");
+  assert.equal(modelOnly.revision, elevenLabs.revision + 1, "a semantic voice change bumps revision");
+
+  const noOp = applyPreferencesPatch(
+    modelOnly,
+    validatePreferencesPatch({ voice: { defaultModel: "eleven_multilingual_v2" } }),
+  );
+  assert.equal(noOp.revision, modelOnly.revision, "a no-op voice patch does not bump revision");
+}

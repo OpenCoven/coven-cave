@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./use-projects.ts", import.meta.url), "utf8");
 const cacheSource = readFileSync(new URL("./use-projects-cache.ts", import.meta.url), "utf8");
 const mutationSource = readFileSync(new URL("./project-registry-mutation.ts", import.meta.url), "utf8");
+const errorsSource = readFileSync(new URL("./project-errors.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
@@ -84,8 +85,8 @@ assert.match(
 );
 assert.equal(
   (source.match(/emitProjectRegistryMutation\(\);/g) ?? []).length,
-  4,
-  "four successful non-delete mutations still notify every mounted projects hook scope with a generic refresh",
+  5,
+  "five successful non-delete mutations (create, rename, root, color, repoUrl) still notify every mounted projects hook scope with a generic refresh",
 );
 assert.match(
   source,
@@ -123,13 +124,16 @@ assert.match(
 
 assert.match(
   source,
-  /const \[loadedSuccessfully, setLoadedSuccessfully\] = useState\(false\);/,
-  "useProjects tracks whether the current scope has ever completed a successful load",
+  /const scopeKey = projectScopeKey\(familiarId\);[\s\S]*const \[loadedScopeKey, setLoadedScopeKey\] = useState<string \| null>\(null\);[\s\S]*const loadedSuccessfully = enabled && isCurrentProjectScope\(loadedScopeKey, familiarId\);/,
+  "useProjects reports success only when the response belongs to the current familiar scope",
 );
+// The payload arrives already deduped + sorted from the cache (cave-k0gf), so
+// the success branch stores it as-is. What this pin guards is unchanged: only
+// a successful payload marks the scope loaded — an error must not.
 assert.match(
   source,
-  /if \(data\.ok === false\) \{[\s\S]*setError\(data\.error \?\? "Failed to load projects"\);[\s\S]*\} else \{[\s\S]*setProjects\(sortProjectsAlphabetically\(Array\.isArray\(data\.projects\) \? data\.projects : \[\]\)\);[\s\S]*setLoadedSuccessfully\(true\);[\s\S]*\}/,
-  "loadedSuccessfully only flips true after a successful payload, not on error payloads",
+  /if \(data\.ok === false\) \{[\s\S]*setError\(data\.error \?\? "Failed to load projects"\);[\s\S]*\} else \{[\s\S]*setProjects\(Array\.isArray\(data\.projects\) \? data\.projects : \[\]\);[\s\S]*setLoadedScopeKey\(scopeKey\);[\s\S]*\}/,
+  "a scope becomes ready only after its own successful payload, not an error or another scope's payload",
 );
 assert.match(
   source,
@@ -144,8 +148,23 @@ assert.match(
 
 assert.match(
   source,
-  /error: typeof data\?\.error === "string" \? data\.error : `Could not create project \(HTTP \$\{res\.status\}\)`/,
-  "the throwing create path preserves the safe API error string or falls back to a clear HTTP message",
+  /type ProjectMutationPayload = \{ ok\?: boolean; project\?: CaveProject; code\?: string; error\?: string \};/,
+  "project creation reads the stable server error code",
+);
+assert.match(
+  source,
+  /code === LOCAL_REQUEST_REQUIRED_CODE\s*\? LOCAL_PROJECT_CREATION_MESSAGE/,
+  "local-only rejection becomes actionable project-creation copy",
+);
+assert.match(
+  source,
+  /function reportCreateFailure\(options: CreateProjectOptions \| undefined, error: ProjectCreationError\)/,
+  "nullable creation can report the typed failure without changing its null return contract",
+);
+assert.match(
+  source,
+  /reportCreateFailure\(options, new ProjectCreationError\(error, code\)\)/,
+  "the nullable path reports stable response codes to bundled callers",
 );
 
 assert.match(
@@ -156,14 +175,26 @@ assert.match(
 
 assert.match(
   source,
-  /const createProjectOrThrow = useCallback\(async \(name: string, root: string, options\?: CreateProjectOptions\): Promise<CaveProject> => \{[\s\S]*const result = await requestCreateProject\(name, root, options\);[\s\S]*if \(result\.ok\) return result\.project;[\s\S]*throw new Error\(result\.error\);/,
-  "createProjectOrThrow reuses the shared mutation path and throws the actionable error text",
+  /const createProjectOrThrow = useCallback\(async \(name: string, root: string, options\?: CreateProjectOptions\): Promise<CaveProject> => \{[\s\S]*const result = await requestCreateProject\(name, root, options\);[\s\S]*if \(result\.ok\) return result\.project;[\s\S]*throw new ProjectCreationError\(result\.error, result\.code\);/,
+  "createProjectOrThrow reuses the shared mutation path and carries the actionable error code",
 );
+
+assert.match(errorsSource, /LOCAL_REQUEST_REQUIRED_CODE = "local_request_required"/, "local-only code is defined in a shared client-safe module");
+assert.match(errorsSource, /LOCAL_PROJECT_CREATION_MESSAGE =/, "local-only project creation copy is shared with the client path");
 
 assert.match(
   source,
   /return \{[\s\S]*createProject,[\s\S]*createProjectOrThrow,[\s\S]*renameProject,/,
   "the hook returns both the nullable and throwing create helpers",
+);
+
+// The setup modal registers with an explicit color and GitHub link in the
+// same request — createProject must carry optional color/repoUrl through to
+// the POST body the projects route already accepts.
+assert.match(
+  source,
+  /body: JSON\.stringify\(\{\s*name,\s*root,\s*\.\.\.\(options\?\.color \? \{ color: options\.color \} : \{\}\),\s*\.\.\.\(options\?\.repoUrl \? \{ repoUrl: options\.repoUrl \} : \{\}\),\s*\}\)/,
+  "createProject threads optional color/repoUrl into the POST body",
 );
 
 console.log("use-projects.test.ts: ok");

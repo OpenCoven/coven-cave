@@ -170,7 +170,7 @@ export function ComposerActionsMenu({
           setOpen(true);
         }}
       >
-        <Icon name="ph:plus" width={15} aria-hidden />
+        <Icon name="ph:plus" width="var(--icon-md)" aria-hidden />
         {showIndicator ? <span className="composer-actions__indicator" aria-hidden /> : null}
       </button>
 
@@ -181,7 +181,7 @@ export function ComposerActionsMenu({
           else closePanel();
         }}
         anchorRef={triggerRef}
-        placement="top-start"
+        placement={contextProps.popoverPlacement ?? "top-start"}
         minWidth={260}
         ariaLabel="Chat options"
         className="composer-actions__panel"
@@ -192,7 +192,11 @@ export function ComposerActionsMenu({
             onClose={closePanel}
             attach={attach}
             projects={{
-              projects: context.sortedProjects.map((p) => ({ id: p.id, name: p.name })),
+              projects: context.sortedProjects.map((p) => ({
+                id: p.id,
+                name: p.name,
+                access: p.access,
+              })),
               selectedId: selectedProjectId,
               onPick: contextProps.onProjectChange,
               noProjectId: contextProps.allowNoProject ? NO_PROJECT_ID : undefined,

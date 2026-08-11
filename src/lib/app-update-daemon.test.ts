@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {
   compareCaveDaemonVersions,
-  updateDaemonForCaveUpdate,
+  updateCovenCli,
   waitForDaemonUpdateIdle,
 } from "./app-update-daemon.ts";
 
@@ -18,7 +18,7 @@ assert.equal(compareCaveDaemonVersions("invalid", "0.1.4"), null);
 
 {
   let releaseCheck: ((response: Response) => void) | undefined;
-  const operation = updateDaemonForCaveUpdate("0.1.3", {
+  const operation = updateCovenCli({
     fetch: () => new Promise<Response>((resolve) => { releaseCheck = resolve; }),
   });
   let idle = false;
@@ -28,7 +28,7 @@ assert.equal(compareCaveDaemonVersions("invalid", "0.1.4"), null);
   releaseCheck!(json({
     ok: true,
     freshness: "fresh",
-    tools: [{ id: "coven-cli", installed: true, current: "0.1.3", compatible: true }],
+    tools: [{ id: "coven-cli", installed: true, current: "0.1.3", latest: "0.1.3", compatible: true }],
   }));
   await operation;
   await waiting;
@@ -37,13 +37,13 @@ assert.equal(compareCaveDaemonVersions("invalid", "0.1.4"), null);
 
 {
   const calls: string[] = [];
-  const result = await updateDaemonForCaveUpdate("0.1.3", {
+  const result = await updateCovenCli({
     fetch: async (input) => {
       calls.push(String(input));
       return json({
         ok: true,
         freshness: "fresh",
-        tools: [{ id: "coven-cli", installed: true, current: "0.1.3", outdated: false, compatible: true }],
+        tools: [{ id: "coven-cli", installed: true, current: "0.1.3", latest: "0.1.3", outdated: false, compatible: true }],
       });
     },
   });
@@ -56,7 +56,7 @@ assert.equal(compareCaveDaemonVersions("invalid", "0.1.4"), null);
   let installBody: string | undefined;
   let polls = 0;
   let updateStarts = 0;
-  const result = await updateDaemonForCaveUpdate("0.1.3", {
+  const result = await updateCovenCli({
     fetch: async (input, init) => {
       const url = String(input);
       calls.push(url);
@@ -64,7 +64,7 @@ assert.equal(compareCaveDaemonVersions("invalid", "0.1.4"), null);
         return json({
           ok: true,
           freshness: "fresh",
-          tools: [{ id: "coven-cli", installed: true, current: "0.1.2", outdated: true, compatible: true }],
+          tools: [{ id: "coven-cli", installed: true, current: "0.1.2", latest: "0.1.3", outdated: true, compatible: true }],
         });
       }
       if (url === "/api/onboarding/install") {
@@ -95,25 +95,25 @@ assert.equal(compareCaveDaemonVersions("invalid", "0.1.4"), null);
 
 {
   await assert.rejects(
-    updateDaemonForCaveUpdate("0.1.3", {
+    updateCovenCli({
       fetch: async (input) =>
         String(input) === "/api/onboarding/update"
-          ? json({ ok: true, freshness: "fresh", tools: [{ id: "coven-cli", installed: true, current: "0.1.2", compatible: true }] })
+          ? json({ ok: true, freshness: "fresh", tools: [{ id: "coven-cli", installed: true, current: "0.1.2", latest: "0.1.3", compatible: true }] })
           : String(input) === "/api/onboarding/install"
             ? json({ status: "running" })
             : json({ status: "done", ok: true, verification: { current: "0.1.2" } }),
       confirmInstall: true,
     }),
-    /could not verify version 0\.1\.3 or newer/,
-    "a successful npm job cannot install Cave while the resolved daemon remains older",
+    /could not verify version 0\.1\.3 or newer on PATH/,
+    "a successful npm job still requires a verified CLI version on PATH",
   );
 }
 
 {
-  const result = await updateDaemonForCaveUpdate("0.1.3", {
+  const result = await updateCovenCli({
     fetch: async (input) =>
       String(input) === "/api/onboarding/update"
-        ? json({ ok: true, freshness: "fresh", tools: [{ id: "coven-cli", installed: false, current: null }] })
+        ? json({ ok: true, freshness: "fresh", tools: [{ id: "coven-cli", installed: false, current: null, latest: "0.1.3" }] })
         : String(input) === "/api/onboarding/install"
           ? json({ status: "running" })
           : json({ status: "done", ok: true, verification: { current: "0.1.3" } }),
@@ -124,10 +124,10 @@ assert.equal(compareCaveDaemonVersions("invalid", "0.1.4"), null);
 
 {
   await assert.rejects(
-    updateDaemonForCaveUpdate("0.1.3", {
+    updateCovenCli({
       fetch: async (input) =>
         String(input) === "/api/onboarding/update"
-          ? json({ ok: true, freshness: "fresh", tools: [{ id: "coven-cli", installed: false, outdated: false }] })
+          ? json({ ok: true, freshness: "fresh", tools: [{ id: "coven-cli", installed: false, latest: "0.1.3", outdated: false }] })
           : String(input) === "/api/onboarding/install"
             ? json({ status: "running" })
             : json({ status: "done", ok: false, error: "daemon restart verification failed" }),
@@ -140,13 +140,13 @@ assert.equal(compareCaveDaemonVersions("invalid", "0.1.4"), null);
 
 {
   let installStarted = false;
-  const result = await updateDaemonForCaveUpdate("0.1.3", {
+  const result = await updateCovenCli({
     fetch: async (input) => {
       if (String(input) === "/api/onboarding/update") {
         return json({
           ok: true,
           freshness: "fresh",
-          tools: [{ id: "coven-cli", installed: true, current: "0.1.2", compatible: true }],
+          tools: [{ id: "coven-cli", installed: true, current: "0.1.2", latest: "0.1.3", compatible: true }],
         });
       }
       installStarted = true;
@@ -158,17 +158,36 @@ assert.equal(compareCaveDaemonVersions("invalid", "0.1.4"), null);
 }
 
 {
-  await assert.rejects(
-    updateDaemonForCaveUpdate("0.1.3", {
-      fetch: async () => json({
-        ok: true,
-        freshness: "stale",
-        tools: [{ id: "coven-cli", installed: true, current: "0.1.3", compatible: true }],
-      }),
+  const result = await updateCovenCli({
+    fetch: async () => json({
+      ok: true,
+      freshness: "stale",
+      tools: [{ id: "coven-cli", installed: true, current: "0.1.3", latest: "0.1.3", compatible: true }],
     }),
-    /fresh Coven CLI version/,
-    "a stale cached status cannot approve the Cave install",
-  );
+  });
+  assert.equal(result, "status-unavailable", "a stale cached status neither approves nor fails a background CLI check");
+}
+
+{
+  const result = await updateCovenCli({
+    fetch: async () => json({
+      ok: true,
+      freshness: "stale",
+      tools: [{ id: "coven-cli", installed: true, current: "0.1.6", compatible: true }],
+    }),
+  });
+  assert.equal(result, "status-unavailable");
+}
+
+{
+  const result = await updateCovenCli({
+    fetch: async () => json({
+      ok: true,
+      freshness: "fresh",
+      tools: [{ id: "coven-cli", installed: true, current: "0.1.6", latest: "0.1.6", outdated: false, compatible: true }],
+    }),
+  });
+  assert.equal(result, "current", "a fresh independently versioned CLI is current without matching Cave's version");
 }
 
 console.log("app-update-daemon.test.ts: ok");

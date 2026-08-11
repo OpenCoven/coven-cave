@@ -98,11 +98,9 @@ assert.match(
 );
 
 // ---------------------------------------------------------------------------
-// Centered reading column (cave-xsq.1) — supersedes the 2026-06-18 full-width
-// decision: the transcript + composer share ONE comfortable measure
-// (--cave-chat-measure) and sit in a centered column so long responses read
-// like ChatGPT instead of running edge-to-edge on a wide pane. The old 920px /
-// 1180px hardcoded caps stay gone (the measure is now a token).
+// Centered reading column (cave-xsq.1): the transcript keeps one comfortable
+// measure while the composer can use the full dock width. The old 920px /
+// 1180px hardcoded caps stay gone (the reading measure is now a token).
 // ---------------------------------------------------------------------------
 
 assert.match(
@@ -112,7 +110,7 @@ assert.match(
 );
 // The 2026-07-21 wide-column pass supersedes chat-revamp 1b's 760px: the
 // transcript reads on a roomier 1024px (64rem) column — long responses and
-// code blocks get width — still shared by the suggestion row and composer.
+// code blocks get width — still shared by the suggestion row.
 // Pin the exact value so drift in either direction is a deliberate decision.
 {
   const measure = /--cave-chat-measure:\s*([\d.]+)rem/.exec(css);
@@ -141,8 +139,8 @@ assert.doesNotMatch(
 const linearComposerShell = /\.cave-chat-linear \.cave-composer-shell \{[^}]*\}/.exec(css)?.[0] ?? "";
 assert.match(
   linearComposerShell,
-  /max-width:\s*var\(--cave-chat-measure\)/,
-  "Linear composer shell shares the thread's reading measure so the input aligns under the column",
+  /max-width:\s*100%/,
+  "Linear composer shell should use the full dock width",
 );
 
 // ---------------------------------------------------------------------------
@@ -310,11 +308,14 @@ assert.doesNotMatch(
   "The tool clamp must not introduce a second scroll container — the wrap already scrolls",
 );
 
-const renderCodeBlockFn = /async function renderCodeBlock\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+const frameStart = source.indexOf("function renderCodeBlockFrame");
+const frameEnd = source.indexOf("\nasync function renderCodeBlock", frameStart);
+const renderCodeBlockFrameFn =
+  frameStart >= 0 && frameEnd > frameStart ? source.slice(frameStart, frameEnd) : "";
 assert.match(
-  renderCodeBlockFn,
+  renderCodeBlockFrameFn,
   /cave-code-expand-btn/,
-  "renderCodeBlock must emit the Show more footer button for clamp-height blocks",
+  "the shared plain/highlighted code frame must emit the Show more footer for clamp-height blocks",
 );
 assert.match(
   source,

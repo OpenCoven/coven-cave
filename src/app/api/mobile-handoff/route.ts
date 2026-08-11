@@ -18,6 +18,9 @@ import {
   withChatFragment,
   MOBILE_INVITE_TTL_MS,
   nativeAppDiscoveryProof,
+  resolveIosInstallUrl,
+  serveRouteFailure,
+  shouldAllowMagicDnsFallback,
   tailnetDiscoveryProof,
   tailscaleBin,
   tailscaleSpawnEnv,
@@ -37,6 +40,7 @@ function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult
   return new Promise((resolve) => {
     const bin = tailscaleBin();
     const child = spawn(bin, args, {
+      windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: tailscaleSpawnEnv(),
     });
@@ -138,7 +142,7 @@ function normalizeLoopbackBackend(value: string | null | undefined) {
   }
 }
 
-function nativeAppBackendUrl(req: Request) {
+function nativeAppBackendUrl() {
   const configured = normalizeLoopbackBackend(process.env.COVEN_CAVE_NATIVE_APP_BACKEND_URL);
   if (configured) return configured;
 
@@ -159,7 +163,7 @@ function backendPort(backend: string) {
   }
 }
 
-async function verifyNativeAppBackend(req: Request, backend: string) {
+async function verifyNativeAppBackend(backend: string) {
   if (backend === backendUrl()) return { ok: true as const };
 
   const controller = new AbortController();
@@ -276,17 +280,16 @@ async function ensureNativeAppServe(req: Request, chatId?: string | null) {
     return mobileAccessUnavailableResponse();
   }
 
-  const res = await ensureNativeAppServeReady(req, chatId, access.secret);
+  const res = await ensureNativeAppServeReady(chatId, access.secret);
   return access.provisioned ? withBrowserAccessCookie(res, req, access.secret) : res;
 }
 
 async function ensureNativeAppServeReady(
-  req: Request,
   chatId: string | null | undefined,
   accessSecret: string,
 ) {
-  const backend = nativeAppBackendUrl(req);
-  const backendReady = await verifyNativeAppBackend(req, backend);
+  const backend = nativeAppBackendUrl();
+  const backendReady = await verifyNativeAppBackend(backend);
   if (!backendReady.ok) {
     return mobileUnavailableResponse(backendReady.error, {
       backendUrl: backend,
@@ -332,13 +335,31 @@ async function ensureNativeAppServeReady(
     const parsed = parseServeStatus(status.stdout);
     if (!("error" in parsed)) serveStatus = parsed.value;
   }
-  const tailnetDiscovery = tailnetDiscoveryProof({ selfStatus, serveStatus, backendUrl: backend });
+  const tailnetDiscovery = tailnetDiscoveryProof({
+    selfStatus,
+    serveStatus,
+    backendUrl: backend,
+    // A successful status command with no matching handler proves there is no
+    // live route. MagicDNS alone only identifies the node; it does not publish
+    // the loopback backend.
+    allowMagicDnsFallback: shouldAllowMagicDnsFallback({
+      serveOk: serve.ok,
+      statusOk: status.ok,
+    }),
+  });
   let discovery: ReturnType<typeof nativeAppDiscoveryProof> = tailnetDiscovery;
   let fallbackWarning: string | null = null;
   if (!tailnetDiscovery.ok) {
     const httpServe = await runTailscale(["serve", "--bg", `--http=${backendPort(backend)}`, backend]);
     if (httpServe.ok) {
-      discovery = nativeAppDiscoveryProof({ selfStatus, serveStatus, backendUrl: backend });
+      discovery = nativeAppDiscoveryProof({
+        selfStatus,
+        serveStatus,
+        backendUrl: backend,
+        // The explicit HTTP Serve fallback is addressed by Tailscale IP. Do
+        // not replace it with an unproven MagicDNS HTTPS URL.
+        allowMagicDnsFallback: false,
+      });
       if (discovery.ok && discovery.source === "tailscale-ip-http") {
         fallbackWarning = serveWarning
           ? `${serveWarning} Using the Tailscale IP fallback for the native app.`
@@ -357,12 +378,18 @@ async function ensureNativeAppServeReady(
   }
 
   if (!discovery.ok) {
-    const routeDetail = fallbackWarning ?? serveWarning ?? discovery.reason;
+    const routeFailure = serveRouteFailure({
+      backendUrl: backend,
+      serveError: fallbackWarning ?? serveWarning,
+      statusError: status.stderr,
+      routeReason: discovery.reason,
+    });
+    const routeDetail = routeFailure.error;
     return NextResponse.json(
       {
         ok: false,
         error: routeDetail,
-        stderr: fallbackWarning ?? serveWarning ?? status.stderr,
+        stderr: routeFailure.stderr,
         backendUrl: backend,
         steps: buildPairingSteps({
           access: { ok: true },
@@ -455,12 +482,11 @@ async function mobileHandoff(req: Request, chatId?: string | null) {
     return mobileAccessUnavailableResponse();
   }
 
-  const res = await mobileHandoffReady(req, access.secret, chatId);
+  const res = await mobileHandoffReady(access.secret, chatId);
   return access.provisioned ? withBrowserAccessCookie(res, req, access.secret) : res;
 }
 
 async function mobileHandoffReady(
-  req: Request,
   accessSecret: string,
   chatId?: string | null,
 ) {
@@ -495,15 +521,29 @@ async function mobileHandoffReady(
     if (!("error" in parsed)) serveStatus = parsed.value;
   }
 
-  const discovery = tailnetDiscoveryProof({ selfStatus, serveStatus, backendUrl: backend });
+  const discovery = tailnetDiscoveryProof({
+    selfStatus,
+    serveStatus,
+    backendUrl: backend,
+    allowMagicDnsFallback: shouldAllowMagicDnsFallback({
+      serveOk: serve.ok,
+      statusOk: status.ok,
+    }),
+  });
 
   if (!discovery.ok) {
+    const routeFailure = serveRouteFailure({
+      backendUrl: backend,
+      serveError: serveWarning,
+      statusError: status.stderr,
+      routeReason: discovery.reason,
+    });
     // Nothing usable — surface the most actionable error we have.
     return NextResponse.json(
       {
         ok: false,
-        error: serveWarning ?? discovery.reason,
-        stderr: serveWarning ?? status.stderr,
+        error: routeFailure.error,
+        stderr: routeFailure.stderr,
         backendUrl: backend,
       },
       { status: 500 },
@@ -579,6 +619,21 @@ export async function POST(req: Request) {
   // Tailscale spawn, no Serve reconcile — just the last token-refresh beat.
   if (action === "status") {
     return NextResponse.json({ ok: true, lastSeenAt: await readMobileLastSeen() });
+  }
+
+  // Install-the-app QR (cave-jr4r.3): cheap like "status" — no Tailscale
+  // spawn, no invented URL. `configured:false` until the TestFlight link
+  // exists (fill in OFFICIAL_IOS_INSTALL_URL, or set COVEN_CAVE_IOS_INSTALL_URL).
+  if (action === "install-info") {
+    const installUrl = resolveIosInstallUrl();
+    if (!installUrl) return NextResponse.json({ ok: true, configured: false });
+    const installQrSvg = await QRCode.toString(installUrl, {
+      type: "svg",
+      margin: 1,
+      width: 256,
+      errorCorrectionLevel: "M",
+    });
+    return NextResponse.json({ ok: true, configured: true, url: installUrl, qrSvg: installQrSvg });
   }
 
   if (action === "app-start") {

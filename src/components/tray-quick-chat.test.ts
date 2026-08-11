@@ -165,12 +165,12 @@ assert.match(
 assert.match(
   component,
   /selectedFamiliar \? \([\s\S]{0,700}?quick-chat-meta-chips[\s\S]{0,900}?\) : \(\s*\n\s*<p className="min-w-0 truncate text-xs text-\[var\(--fg-muted\)\]">\s*\n\s*@id switches familiars · ⌘N new chat/,
-  "once a familiar is chosen, the composer hint area shows thinking/speed/model as quiet meta chips (cave-fdt5); the @id switch hint remains for the unpicked state",
+  "once a familiar is chosen, the composer hint area shows negotiated capabilities (e.g. Thinking) plus Model as quiet meta chips; the @id switch hint remains for the unpicked state",
 );
 assert.match(
   component,
-  /aria-label=\{`Thinking \$\{thinkingEffort\}, speed \$\{responseSpeed\}, model \$\{modelLabel\}`\}/,
-  "the chips group carries one full accessible reading; individual chips stay aria-hidden with sighted tooltips",
+  /aria-label=\{`\$\{modelCapabilities\s*\n\s*\.map\(\(capability\) => `\$\{controlChipLabel\(capability\)\} \$\{controlValueLabel\(capability, modelControls\)\}`\)\s*\n\s*\.concat\(`Model \$\{modelLabel\}`\)\s*\n\s*\.join\(", "\)\}`\}/,
+  "the chips group carries one full accessible reading built from whichever capabilities the selected runtime/model actually negotiates, plus Model",
 );
 assert.match(component, /<QuickChatComposer/, "tray renders the shared composer");
 assert.match(
@@ -180,18 +180,13 @@ assert.match(
 );
 assert.match(
   controls,
-  /COMMAND_THINKING_OPTIONS/,
-  "quick chat uses the shared thinking effort options",
+  /export function QuickChatControlsRow/,
+  "quick chat keeps the shared compact controls row without global response-control selectors",
 );
-assert.match(
+assert.doesNotMatch(
   controls,
-  /COMMAND_RESPONSE_SPEED_OPTIONS/,
-  "quick chat uses the shared response speed options",
-);
-assert.match(
-  hook,
-  /streamFamiliarText\(\{[\s\S]*reasoningEffort: thinkingEffort,[\s\S]*responseSpeed,[\s\S]*\}\)/,
-  "quick chat forwards compact command controls to the familiar stream helper",
+  /COMMAND_THINKING_OPTIONS|COMMAND_RESPONSE_SPEED_OPTIONS|label="Thinking"|label="Speed"/,
+  "quick chat must not advertise global Thinking or Speed controls without selected-model capabilities",
 );
 assert.match(
   controls,

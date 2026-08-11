@@ -58,11 +58,31 @@ export function getPanelShortcutBindings(
   };
 }
 
+/**
+ * The pressed key, lowercased — or null when the event does not carry one.
+ *
+ * `KeyboardEvent.key` is typed as a string but is absent in practice whenever
+ * the event is not really a keyboard event: a synthetic `new Event("keydown")`
+ * from a password manager or browser extension, and some IME/composition
+ * paths. The desktop shell runs inside WKWebView, which makes an off-spec
+ * event more likely rather than less.
+ *
+ * It matters more than one dropped keystroke: the throw escaped the shell's
+ * keydown handler, so a single malformed event disabled EVERY panel shortcut
+ * until reload (cave-lryhx).
+ */
+export function eventKey(event: KeyboardEvent): string | null {
+  return typeof event.key === "string" ? event.key.toLowerCase() : null;
+}
+
 export function matchesPanelShortcut(
   event: KeyboardEvent,
   shortcut: PanelShortcutBinding,
 ): boolean {
-  const key = event.key.toLowerCase();
+  const key = eventKey(event);
+  // An event we cannot read a key from matches no shortcut. Returning false
+  // rather than throwing lets the handler ignore it and carry on.
+  if (key === null) return false;
   const primary = event.metaKey || event.ctrlKey;
   if (key !== shortcut.key.toLowerCase()) return false;
   if (primary !== shortcut.primary) return false;

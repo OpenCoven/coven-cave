@@ -125,8 +125,13 @@ assert.match(
 );
 assert.match(
   home,
-  /projects=\{\{\s*\n\s*projects: plusMenuProjects,[\s\S]*?noProjectId: NO_PROJECT_ID,[\s\S]*?onStartNewProject: plusAddProject\.beginAddProject,/,
+  /projects=\{\{\s*\n\s*projects: plusMenuProjects,[\s\S]*?onPick: setSelectedProjectId,[\s\S]*?onStartNewProject: plusAddProject\.beginAddProject,/,
   "home wires the project flyout to its selection state and the shared add-project flow",
+);
+assert.doesNotMatch(
+  home,
+  /projects=\{\{[\s\S]{0,300}?noProjectId:/,
+  "home's project flyout does not offer a project-free chat launch",
 );
 assert.match(
   home,

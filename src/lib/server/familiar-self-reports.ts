@@ -61,7 +61,7 @@ async function readAllReports(familiarId: string): Promise<ThreadSelfReport[]> {
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
-        reports.push(redactSecretsDeep(JSON.parse(trimmed) as ThreadSelfReport));
+        reports.push(redactReport(JSON.parse(trimmed) as ThreadSelfReport));
       } catch {
         /* Ignore malformed historical lines; append-only storage should keep listing usable. */
       }
@@ -70,10 +70,35 @@ async function readAllReports(familiarId: string): Promise<ThreadSelfReport[]> {
   return reports.sort(sortNewestFirst);
 }
 
+/**
+ * Redact a report without destroying the identifier it is looked up by.
+ *
+ * `redactSecretsDeep` classifies any `<secret-word>Id` key as a credential, so
+ * it rewrites `sessionId` to "[redacted]" — see SECRET_TERMINAL_WORDS, which
+ * contains "session", and SAFE_SECRET_TRAILING_WORDS, which does not contain
+ * "id". That is correct for a session *token*; it is wrong here. This store's
+ * `sessionId` is the key `findSelfReport` matches on, so redacting it does not
+ * protect a secret, it silently breaks lookup: every stored report collapses to
+ * the same "[redacted]" value and no session can ever be found again. The damage
+ * is invisible because the write still succeeds and listing still works.
+ *
+ * Restoring just this one field is deliberately narrower than adding "id" to the
+ * global safe-trailing-word list, which would also stop redacting `tokenId` and
+ * `authId` everywhere else in the app.
+ *
+ * Applied on read as well as write: reports written while this was broken, and
+ * any redacted on the way back out, both go through here.
+ */
+function redactReport(report: ThreadSelfReport): ThreadSelfReport {
+  const redacted = redactSecretsDeep(report);
+  if (redacted.sessionId === report.sessionId) return redacted;
+  return { ...redacted, sessionId: report.sessionId };
+}
+
 export async function appendSelfReport(familiarId: string, report: ThreadSelfReport): Promise<void> {
   const dir = await reportsDir(familiarId);
   await mkdir(dir, { recursive: true });
-  const redacted = redactSecretsDeep(report);
+  const redacted = redactReport(report);
   await appendFile(path.join(dir, `${reportDate(redacted)}.jsonl`), `${JSON.stringify(redacted)}\n`, "utf8");
   // Also persist the compact metric snapshot (signal trends). Additive:
   // readers backfill from full reports, so a failure here only costs a cache.
@@ -152,14 +177,16 @@ export async function listMetricSnapshots(
 
 export async function listSelfReports(
   familiarId: string,
-  opts: { limit?: number; before?: string },
+  opts: { limit?: number | "all"; before?: string },
 ): Promise<{ reports: ThreadSelfReport[]; total: number }> {
   const reports = await readAllReports(familiarId);
   const beforeMs = opts.before ? new Date(opts.before).getTime() : null;
   const filtered = Number.isFinite(beforeMs)
     ? reports.filter((report) => new Date(report.reportedAt).getTime() < (beforeMs as number))
     : reports;
-  const limit = Math.max(0, Math.min(100, Math.floor(opts.limit ?? 20)));
+  const limit = opts.limit === "all"
+    ? filtered.length
+    : Math.max(0, Math.min(100, Math.floor(opts.limit ?? 20)));
   return { reports: filtered.slice(0, limit), total: filtered.length };
 }
 

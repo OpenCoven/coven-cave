@@ -13,7 +13,6 @@ import {
   INBOX_GROUP_BY_OPTIONS,
   type InboxGroupBy,
 } from "@/lib/inbox-feed";
-import { repoFromGithubSubTag } from "@/lib/github-sub-tags";
 import { GithubSubscriptionsModal } from "@/components/github-subscriptions-modal";
 import type {
   AutomationStatus,
@@ -26,7 +25,6 @@ import { useDateTimePrefs } from "@/lib/datetime-format";
 import { relativeTimeSigned } from "@/lib/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
-import { StandardSelect } from "@/components/ui/select";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { useUndoDelete } from "@/lib/use-undo-delete";
@@ -35,22 +33,15 @@ import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
 import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
 import { useMultiSelect } from "@/lib/use-multi-select";
-import { CwdPickerField } from "@/components/cwd-picker-field";
 import { FamiliarMultiSelect } from "@/components/automation-familiar-select";
-import { SkillSelect } from "@/components/automation-skill-select";
-import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { automationMatchesFilter } from "@/lib/familiar-multiselect";
 import { buildRitualWeek, ritualAgendaItems, ritualLogItems, type RitualDay } from "@/lib/rituals-overview";
-import { AutomationCreateDialog, type AutomationCreateInput, type AutomationCreateInitialValues } from "@/components/automation-create-dialog";
-import type { AutomationTemplate } from "@/lib/automation-templates";
-import { StatusIcon } from "@/components/automations/status-icon";
+import { AutomationCreateDialog, type AutomationCreateInput } from "@/components/automation-create-dialog";
 import { CodexDetailPanel } from "@/components/automations/cron-detail-panel";
 import { DetailPanel } from "@/components/automations/reminder-detail-panel";
 import { AutomationsPanel, ScheduleActionsContext } from "@/components/automations/schedule-list";
-import { AutomationAllList, FlowList } from "@/components/automations/automation-lists";
 import { InboxFeedList } from "@/components/automations/inbox-feed-list";
-import { TemplatesPanel } from "@/components/automations/templates-panel";
 import {
   RitualAgendaThread,
   RitualItemRow,
@@ -59,14 +50,9 @@ import {
   type RitualOverviewPane,
   useRitualNow,
 } from "@/components/automations/ritual-overview";
-import {
-  buildAutomationEntries,
-  filterEntries,
-  countByType,
-  type AutomationEntry,
-} from "@/lib/automations/automation-entry";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 
 // AutomationsView — Schedules surface, redesigned June 2026
@@ -78,7 +64,6 @@ import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-w
 
 type Props = {
   familiars: Familiar[];
-  onOpenSession?: (sessionId: string, familiarId: string | null) => void;
   onNewReminder?: () => void;
   onEdit?: (item: InboxItem) => void;
   onOpenLink?: (link: LinkRef) => void;
@@ -101,8 +86,7 @@ const RITUAL_TABS = [
   { id: "crons", label: "Crons" },
 ] satisfies ReadonlyArray<TabItem<AutomationTab>>;
 
-// Fire a cross-surface navigation so "Open" on a flow jumps to its
-// dedicated editor surface (the Workspace owns setMode; see cave:navigate-mode).
+// Fire a cross-surface navigation from the GitHub subscriptions manager.
 function navigateToMode(mode: string) {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } }));
@@ -112,22 +96,10 @@ function relTime(iso: string | undefined | null): string {
   if (!iso) return "—";
   return relativeTimeSigned(iso);
 }
-
-
-
-// Beginner-facing names for the schedule cadence modes: the presets read as
-// plain cadences, and the raw-RRULE escape hatch is labeled for what it is.
-const SCHEDULE_MODE_LABEL: Record<"weekly" | "daily" | "raw", string> = {
-  weekly: "Weekly",
-  daily: "Daily",
-  raw: "Advanced",
-};
-
-
 // ── Ritual overview ──────────────────────────────────────────────────────────
 
 // ── Root ──────────────────────────────────────────────────────────────────────
-export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdit, onOpenLink, calendarSlot, initialTab }: Props) {
+export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, calendarSlot, initialTab }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const ritualNow = useRitualNow();
   const confirm = useConfirm(); // still used by "Run now" (a non-delete action)
@@ -145,8 +117,14 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // (pause/resume/run/create/save/restore) was silent.
   const { announce } = useAnnouncer();
   // Focus lands here after a delete unmounts the detail panel that held it —
-  // otherwise it falls to <body> and keyboard users lose their place.
+  // otherwise it falls to <body> and keyboard users lose their place. The
+  // overview "New" button and the crons "New cron" button are mounted on
+  // different tabs, so deletes focus whichever header action exists.
   const newBtnRef = useRef<HTMLButtonElement | null>(null);
+  const newCronBtnRef = useRef<HTMLButtonElement | null>(null);
+  const focusHeaderAction = useCallback(() => {
+    window.setTimeout(() => (newBtnRef.current ?? newCronBtnRef.current)?.focus(), 0);
+  }, []);
   const manageBtnRef = useRef<HTMLButtonElement | null>(null);
   const overviewSwipeStartRef = useRef<number | null>(null);
   const [storedActiveTab, setStoredActiveTab] = useSurfacePreference(surfacePreferenceSpecs.schedules.activeTab);
@@ -170,8 +148,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // GitHub subscriptions manager, reachable from the Inbox tab (cave-hlxn).
   const [subsOpen, setSubsOpen] = useState(false);
   const [subsHasPat, setSubsHasPat] = useState(false);
-  const [templateInitialValues, setTemplateInitialValues] = useState<AutomationCreateInitialValues | undefined>();
-  const [templatesQuery, setTemplatesQuery] = useState("");
   const [automationRuns, setAutomationRuns] = useState<AutomationRunRecord[]>([]);
   const [lastRunById, setLastRunById] = useState<Map<string, AutomationRunRecord>>(new Map());
   // Guards async setState after unmount; runsReqRef drops a stale per-automation
@@ -405,7 +381,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       if (prev?.id === id) {
         // The detail panel (which held focus) unmounts — hand focus somewhere
         // stable instead of letting it fall to <body>.
-        window.setTimeout(() => newBtnRef.current?.focus(), 0);
+        focusHeaderAction();
         return null;
       }
       return prev;
@@ -419,7 +395,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         setError(err instanceof Error ? err.message : "delete failed");
       } finally { await reloadAfterMutation(); }
     });
-  }, [items, scheduleDelete, reloadAfterMutation]);
+  }, [items, scheduleDelete, reloadAfterMutation, focusHeaderAction]);
 
   // Confirm before firing — crons and flows already do, and the identical Run
   // buttons on the All tab must not behave differently per type.
@@ -578,7 +554,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
   const deleteCodex = useCallback((auto: CodexAutomation) => {
     setSelectedCodex(null);
-    window.setTimeout(() => newBtnRef.current?.focus(), 0); // panel held focus
+    focusHeaderAction(); // panel held focus
     scheduleDelete([auto.id], `automation “${auto.name}”`, async () => {
       setCodexAutos((prev) => prev.filter((a) => a.id !== auto.id));
       try {
@@ -589,7 +565,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         setError(err instanceof Error ? err.message : "codex delete failed");
       } finally { await reloadAfterMutation(); }
     });
-  }, [scheduleDelete, reloadAfterMutation]);
+  }, [scheduleDelete, reloadAfterMutation, focusHeaderAction]);
 
   const runCodexNow = useCallback(async (auto: CodexAutomation) => {
     if (!(await confirm({ title: `Run “${auto.name}” now?`, body: "This executes the agent immediately.", confirmLabel: "Run now" }))) return;
@@ -623,48 +599,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       setError(err instanceof Error ? err.message : "codex create failed");
     }
   }, [reloadAfterMutation]);
-
-  // "Open" routes to each type's dedicated editor surface.
-  const openEntry = useCallback((entry: AutomationEntry) => {
-    // reminders + crons are edited inline here — select their detail panel.
-    if (entry.type === "reminder") {
-      const item = items.find((i) => i.id === entry.nativeId);
-      if (item) { setSelectedItem(item); setSelectedCodex(null); }
-      return;
-    }
-    const auto = codexAutos.find((a) => a.id === entry.nativeId);
-    if (auto) { setSelectedCodex(auto); setSelectedItem(null); }
-  }, [items, codexAutos]);
-
-  // Run any entry straight from the unified "All" list, dispatching to the right
-  // per-type handler (every type confirms before running).
-  const runEntry = useCallback((entry: AutomationEntry) => {
-    if (entry.type === "reminder") { void runNow(entry.nativeId); return; }
-    if (entry.type === "cron") {
-      const auto = codexAutos.find((a) => a.id === entry.nativeId);
-      if (auto) void runCodexNow(auto);
-    }
-  }, [codexAutos, runNow, runCodexNow]);
-
-  // Pause/resume any entry from the "All" list, mirroring runEntry's dispatch.
-  const togglePauseEntry = useCallback((entry: AutomationEntry) => {
-    if (entry.type === "reminder") {
-      const item = items.find((i) => i.id === entry.nativeId);
-      if (item) void togglePaused(item);
-      return;
-    }
-    if (entry.type === "cron") {
-      const auto = codexAutos.find((a) => a.id === entry.nativeId);
-      if (auto) void toggleCodex(auto);
-    }
-  }, [items, codexAutos, togglePaused, toggleCodex]);
-
-  // Daily summaries ride the reminder pipeline into the All list but aren't
-  // pausable (the Reminders tab applies the same gate) — hide the control.
-  const entryPausable = useCallback((entry: AutomationEntry) => {
-    if (entry.type !== "reminder") return true;
-    return items.find((i) => i.id === entry.nativeId)?.kind === "reminder";
-  }, [items]);
 
   // Ids whose delete is pending in the undo window — hidden everywhere until the
   // window lapses (committing the delete) or Undo restores them.
@@ -813,6 +747,13 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     setSelectedItem(null);
     setSelectedCodex(null);
   };
+  // Overview/Calendar/Crons are destinations — ?mode=calendar lands straight on
+  // one, so Back has to have somewhere to return to.
+  const selectTabTracked = useTrackedSurfaceValue<AutomationTab>({
+    id: "rituals:tab",
+    value: activeTab,
+    onRestore: selectTab,
+  });
 
   const openCalendarDay = (day: RitualDay) => {
     window.sessionStorage.setItem("cave:calendar:pending-open-date", day.key);
@@ -858,7 +799,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             </p>
           )}
           <div className="surface-compact-actions">
-            {activeTab === "overview" && searchOpen && initialLoadDone && items.length > 0 ? (
+            {activeTab === "overview" && searchOpen && initialLoadDone ? (
               <div className="surface-compact-search">
                 <SearchInput
                   value={query}
@@ -970,7 +911,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               </Button>
             ) : null}
             {activeTab === "crons" ? (
-              <Button size="sm" className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
+              <Button ref={newCronBtnRef} size="sm" className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
                 New cron
               </Button>
             ) : null}
@@ -979,7 +920,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         <Tabs
           items={RITUAL_TABS}
           value={activeTab}
-          onChange={selectTab}
+          onChange={selectTabTracked}
           ariaLabel="Rituals sections"
           idPrefix="automations"
           size="sm"
@@ -1177,7 +1118,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                         {overviewPane === "log" ? (
                           <div className="rituals-overview__log">
                             {ritualLog.length > 0 ? ritualLog.map((item) => (
-                              <RitualItemRow key={item.id} item={item} familiarLabel={familiarLabel}
+                              <RitualItemRow key={item.id} item={item} familiarLabel={familiarLabel} timeMode="log"
                                 onSelect={(next) => { setSelectedItem(next); setSelectedCodex(null); }} />
                             )) : <p className="rituals-overview__empty">No quiet activity yet.</p>}
                           </div>
@@ -1282,10 +1223,8 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       {/* ── Create automation dialog ───────────────────────────────────────── */}
       {createOpen && (
         <AutomationCreateDialog
-          key={templateInitialValues?.name ?? "blank"}
           resolvedFamiliars={resolvedFamiliars}
-          initialValues={templateInitialValues}
-          onClose={() => { setCreateOpen(false); setTemplateInitialValues(undefined); }}
+          onClose={() => setCreateOpen(false)}
           onCreate={(i) => void createCodex(i)}
         />
       )}

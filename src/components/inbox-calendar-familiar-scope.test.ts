@@ -13,14 +13,13 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 
 assert.match(
   inbox,
-  /activeFamiliarId\?:\s*string \| null/,
-  "InboxEscalationsView keeps the old inbox prop contract for callers",
-);
-
-assert.match(
-  inbox,
-  /<AutomationsView[\s\S]*familiars=\{familiars \?\? \[\]\}[\s\S]*onNewReminder=\{onNewReminder \?\? \(\(\) => \{\}\)\}[\s\S]*onOpenSession=\{onOpenSession\}/,
+  /<AutomationsView[\s\S]*familiars=\{familiars \?\? \[\]\}[\s\S]*onNewReminder=\{onNewReminder \?\? \(\(\) => \{\}\)\}/,
   "InboxEscalationsView should render only the Schedules surface",
+);
+assert.doesNotMatch(
+  inbox,
+  /\bonOpenSource\b|\bactiveFamiliarId\b|\bonOpenSession\b|\bdefaultTab\b/,
+  "the wrapper should not retain ignored compatibility props",
 );
 
 assert.doesNotMatch(
@@ -70,12 +69,6 @@ assert.match(
 );
 
 // ───────── Workspace wiring ─────────
-
-assert.match(
-  workspace,
-  /<InboxEscalationsView[\s\S]*?activeFamiliarId=\{activeId\}/,
-  "Workspace must pass activeId to InboxEscalationsView",
-);
 
 assert.match(
   workspace,

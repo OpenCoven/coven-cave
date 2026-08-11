@@ -25,8 +25,10 @@ import { readRoleSurfaceState, writeRoleSurfaceState } from "@/lib/role-surface-
 import { watchtowerStatus } from "./sentinel-watch";
 import { deskSummary, scribeStatus } from "./scribe-craft";
 import { chartRoomStatus } from "./navigator-charts";
+import { researchEngineStatus } from "./researcher-status";
 import { reviewDeckStatus } from "./review-deck";
 import {
+  CODE_SURFACE_ID,
   INDEXER_SURFACE_ID,
   MESSENGER_SURFACE_ID,
   NAVIGATOR_SURFACE_ID,
@@ -72,6 +74,10 @@ const ReviewerSurface = dynamic(
   () => import("./reviewer-surface").then((m) => m.ReviewerSurface),
   { ssr: false, loading: RoomFallback },
 );
+const CodeRoom = dynamic(
+  () => import("./code-room").then((m) => m.CodeRoom),
+  { ssr: false, loading: RoomFallback },
+);
 
 /** Flip the shared `drawerOpen` bit of a room's persisted state. The state
  *  hooks shallow-merge stored partials over their initial state, so partial
@@ -98,19 +104,63 @@ registerRoleSurface({
   priority: 30,
   shouldDisplay: () => true,
   getContributions(context) {
+    const state = readRoleSurfaceState<{ lastLiveRunCount?: number | null }>(
+      context.activeFamiliar.id,
+      RESEARCHER_SURFACE_ID,
+    );
+    const status = researchEngineStatus(
+      context.runtimeState.daemonRunning,
+      state?.lastLiveRunCount ?? null,
+    );
     return {
       notifications: daemonNotices(context),
       statusIndicators: [
         {
           id: "researcher.engine",
-          label: context.runtimeState.daemonRunning ? "research engine ready" : "research engine offline",
-          tone: context.runtimeState.daemonRunning ? "ok" : "warn",
+          label: status.label,
+          tone: status.tone,
           detail: "Missions run through the familiar's real Flow sessions",
         },
       ],
     };
   },
   render: (context) => <ResearcherSurface context={context} />,
+});
+
+// The Coding familiar's room (cave-cc5r): the full Code workbench, granted by
+// the "coder" role token — the Studio's Coding type or a role label carrying
+// any of the aliases below. GitHub-item opens also land here, on the room's
+// demand-loaded Activity / PRs / Issues / Reviews tabs.
+//
+// The id stays `code` while the title reads "Coding Desk" (cave-smaji), and
+// that gap is deliberate: the id is a PERSISTED workspace mode (`surface:code`)
+// that the `?mode=code` and `?mode=github` aliases resolve into, so renaming it
+// would strand every stored last-surface and every saved link for a change no
+// one can see.
+registerRoleSurface({
+  id: CODE_SURFACE_ID,
+  role: "coder",
+  aliases: ["coding", "developer", "engineer", "programmer", "software-engineer", "code"],
+  title: "Coding Desk",
+  iconName: "ph:code",
+  description: "Multi-session coding workbench — diffs, files, terminals, branches, and GitHub",
+  accentHue: 250,
+  priority: 40,
+  shouldDisplay: () => true,
+  getContributions(context) {
+    return {
+      notifications: daemonNotices(context),
+      statusIndicators: [
+        {
+          id: "code.engine",
+          label: context.runtimeState.daemonRunning ? "workbench live" : "workbench offline",
+          tone: context.runtimeState.daemonRunning ? "ok" : "warn",
+          detail: "Sessions, diffs, and terminals ride the familiar's live daemon",
+        },
+      ],
+    };
+  },
+  render: (context) => <CodeRoom context={context} />,
 });
 
 registerRoleSurface({
@@ -170,6 +220,10 @@ registerRoleSurface({
 registerRoleSurface({
   id: SENTINEL_SURFACE_ID,
   role: "sentinel",
+  // "watch" was a familiar Type until the vocabulary reduction (cave-lgcb);
+  // these aliases keep the Watchtower reachable from Role labels like
+  // "guardian-watch" now that the type no longer grants it.
+  aliases: ["watch", "guardian"],
   title: "Watchtower",
   iconName: "ph:binoculars",
   description: "Alerts, session watch, and perimeter reachability",
@@ -232,7 +286,7 @@ registerRoleSurface({
 registerRoleSurface({
   id: SCRIBE_SURFACE_ID,
   role: "scribe",
-  aliases: ["editor", "writer"],
+  aliases: ["editor", "writer", "writing"],
   title: "Writing Desk",
   iconName: "ph:feather",
   description: "Drafts, source material, and publishing into the Knowledge Vault",
@@ -288,10 +342,10 @@ registerRoleSurface({
 registerRoleSurface({
   id: NAVIGATOR_SURFACE_ID,
   role: "navigator",
-  aliases: ["planner"],
+  aliases: ["planner", "planning", "navigation"],
   title: "Chart Room",
   iconName: "ph:compass",
-  description: "Course lanes, scheduled legs, and real board moves",
+  description: "The board as a course — flow, graph, orchestration, and what's owed",
   accentHue: 105,
   priority: 22,
   shouldDisplay: () => true,
@@ -414,7 +468,7 @@ registerRoleSurface({
 registerRoleSurface({
   id: INDEXER_SURFACE_ID,
   role: "indexer",
-  aliases: ["archivist"],
+  aliases: ["archivist", "indexing", "memory", "reflection"],
   title: "The Archive",
   iconName: "ph:tree-structure",
   description: "Long-term knowledge, memory, indexes, and provenance",

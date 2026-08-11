@@ -90,16 +90,17 @@ assert.match(bootScript, /reading\.leading[\s\S]*--cave-reading-leading/, "boots
 assert.match(bootScript, /appearance\.cornerRadius[\s\S]*--radius-control/, "bootstrap applies corner radius");
 assert.match(bootScript, /appearance\.backdrop[\s\S]*data-backdrop/, "bootstrap applies backdrop settings");
 
-for (const legacy of ["mood-c", "sky", "orchid", "midnight"]) {
+for (const legacy of ["mood-c", "sky", "orchid", "midnight", "openai"]) {
   assert.ok(bootScript.includes(`"${legacy}"`), `legacy theme migration contains ${legacy}`);
 }
 for (const id of [
-  "coven", "tide", "grove", "ember", "bloom", "dusk", "mist", "hex",
-  "bane", "slate", "ghosty", "claymorphism", "claude", "openai",
-  "pastel-dreams", "meatseeks", "trucker", "snow", "contrast", "beacon",
-  "solstice", "custom",
+  "coven", "tide", "ember", "slate", "ghosty", "claymorphism", "claude",
+  "codex", "pastel-dreams", "snow", "contrast", "solstice", "custom",
 ]) {
   assert.ok(bootScript.includes(`"${id}"`), `pre-paint theme allowlist contains ${id}`);
+}
+for (const removed of ["grove", "bloom", "dusk", "mist", "hex", "bane", "beacon", "trucker", "meatseeks"]) {
+  assert.doesNotMatch(bootScript, new RegExp(`"${removed}"`), `pre-paint theme allowlist omits ${removed}`);
 }
 
 function executeBootstrap(preferences) {

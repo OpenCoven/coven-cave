@@ -1,13 +1,20 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-// Bare-host port discovery (bead cave-y482 part 3): the desktop dev wrapper
-// walks ports 3000-3010 when earlier ones are taken (scripts/dev-app.sh), so
-// a phone that paired against :3000 must rediscover the desktop when it comes
-// back on :3001+. Discovery probes candidates concurrently, so the widened
-// range costs no wall-clock time — but every port in the wrapper's range must
-// actually be a candidate, in ascending order, without disturbing the legacy
-// alternates or the ordered .ok adjudication that relocation depends on.
+// Bare-host port discovery (bead cave-y482 part 3, extended by cave-l3vsw).
+//
+// Originally: the dev wrapper walked 3000-3010, so a phone that paired against
+// :3000 had to rediscover a desktop that came back on :3001+. Cave now has
+// DEDICATED ports (scripts/ports.mjs) and the wrapper no longer scans, so the
+// dedicated pair must lead the candidate list — that is the address a paired
+// phone should find first, and finding it first is the whole point of fixing it.
+//
+// The 3000-3010 sweep is kept behind them rather than deleted: the macOS
+// background-availability daemon still falls back into that range when the
+// dedicated port is occupied (src-tauri/src/desktop_reachability.rs), and a
+// phone paired before this change may still be pointed at one of them.
+// Discovery probes candidates concurrently, so the extra entries cost no
+// wall-clock time — but order still decides adjudication.
 
 const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 const connection = await read("apps/ios/CovenCave/CovenCave/Networking/CaveConnection.swift");
@@ -31,11 +38,27 @@ assert.match(
   "the 3000-3010 range must come first so lower dev ports win adjudication",
 );
 
-// --- The Swift range and the wrapper's range must not drift ------------------
-const seq = devScript.match(/seq (\d+) (\d+)/);
-assert.ok(seq, "dev-app.sh should scan a port range via seq");
-assert.equal(seq[1], "3000", "wrapper range start pinned to the Swift candidates");
-assert.equal(seq[2], "3010", "wrapper range end pinned to the Swift candidates");
+// --- The dedicated ports lead, and the wrapper no longer scans ---------------
+assert.match(
+  connection,
+  /add\("http:\/\/\\\(hostname\):\\\(CavePorts\.production\)"\)[\s\S]*?add\("http:\/\/\\\(hostname\):\\\(CavePorts\.dev\)"\)[\s\S]*?for port in 3000\.\.\.3010/,
+  "the dedicated production and dev ports must be probed before the legacy sweep",
+);
+assert.doesNotMatch(
+  devScript,
+  /seq 3000 3010/,
+  "the dev wrapper no longer scans for a free port — it resolves the dedicated one",
+);
+assert.match(
+  devScript,
+  /resolvePort\('dev', process\.env\)/,
+  "the dev wrapper takes its port from the shared contract (scripts/ports.mjs)",
+);
+assert.match(
+  devScript,
+  /dev-port-owner\.mjs/,
+  "a busy dedicated port is resolved by identity — attach if it is ours, refuse if not",
+);
 
 // --- Discovery semantics the widened range relies on -------------------------
 assert.match(

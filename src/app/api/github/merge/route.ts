@@ -7,6 +7,17 @@
  * checks", "review required", "not mergeable") pass through VERBATIM so the
  * confirm card can show the real reason.
  *
+ * `deleteBranch` adds the usual post-merge tidy as a second, strictly
+ * subordinate step. The merge is irreversible, so a failed ref delete is
+ * reported in the payload (`branchDeleteError`) and never allowed to turn a
+ * landed merge into an `ok: false` the caller might retry.
+ *
+ * The branch name is NOT taken from the request. It is read back from GitHub's
+ * own PR object after the merge, for two reasons: a caller cannot steer this
+ * route at an arbitrary ref path (CodeQL js/request-forgery — and a regex test
+ * is not a sanitiser), and a caller that sent a stale or simply wrong ref would
+ * otherwise have deleted a branch nobody asked about.
+ *
  * Requires a PAT — never echoed, never logged.
  */
 
@@ -20,8 +31,31 @@ const GH = "https://api.github.com";
 const REPO_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 const METHODS = new Set(["squash", "merge", "rebase"]);
 
+// A branch name we are willing to interpolate into `git/refs/heads/…`. Branch
+// names legitimately contain slashes, so REPO_RE cannot be reused: this allows
+// slash-joined segments of [A-Za-z0-9._-] with no empty segment (hence no
+// leading or trailing slash) and no segment starting with "-" (git rejects
+// those). Deliberately narrower than git's own rules. This guards a value that
+// already came from GitHub, so it is defence in depth, not the only barrier.
+const BRANCH_SEGMENTS_RE = /^[A-Za-z0-9._][A-Za-z0-9._-]*(?:\/[A-Za-z0-9._][A-Za-z0-9._-]*)*$/;
+
+function ghHeaders(token: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "Content-Type": "application/json",
+  };
+}
+
+function isSafeBranch(value: string): boolean {
+  // ".." is spellable from the allowed characters and is both a git-invalid ref
+  // and the path-traversal sequence, so it needs its own rejection.
+  return value.length <= 255 && !value.includes("..") && BRANCH_SEGMENTS_RE.test(value);
+}
+
 export async function POST(req: Request) {
-  let body: { repo?: unknown; number?: unknown; method?: unknown };
+  let body: { repo?: unknown; number?: unknown; method?: unknown; deleteBranch?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -31,6 +65,7 @@ export async function POST(req: Request) {
   const repo = typeof body.repo === "string" ? body.repo.trim() : "";
   const number = Number.parseInt(String(body.number ?? ""), 10);
   const method = typeof body.method === "string" ? body.method : "squash";
+  const deleteBranch = body.deleteBranch === true;
 
   if (!REPO_RE.test(repo)) {
     return NextResponse.json({ ok: false, error: "invalid repo" }, { status: 400 });
@@ -51,12 +86,7 @@ export async function POST(req: Request) {
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.
     const res = await fetch(`${GH}/repos/${repo}/pulls/${number}/merge`, {
       method: "PUT",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Content-Type": "application/json",
-      },
+      headers: ghHeaders(token),
       cache: "no-store",
       body: JSON.stringify({ merge_method: method }),
     });
@@ -66,7 +96,57 @@ export async function POST(req: Request) {
       const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
       return NextResponse.json({ ok: false, error: message }, { status: res.status === 403 ? 403 : 502 });
     }
-    return NextResponse.json({ ok: true, merged: true, sha: typeof data.sha === "string" ? data.sha : null });
+
+    let branchDeleted = false;
+    let branchDeleteError: string | null = null;
+    if (deleteBranch) {
+      try {
+        // Ask GitHub which branch this PR merged from, rather than believing the
+        // caller. `head.ref` survives the merge, so this is available here.
+        const prRes = await fetch(`${GH}/repos/${repo}/pulls/${number}`, {
+          headers: ghHeaders(token),
+          cache: "no-store",
+        });
+        const pr = (await prRes.json().catch(() => null)) as { head?: { ref?: unknown } } | null;
+        const ref = typeof pr?.head?.ref === "string" ? pr.head.ref.trim() : "";
+        if (!isSafeBranch(ref)) {
+          branchDeleteError = ref ? "branch name is not one this route will delete" : "could not read the head branch";
+          return NextResponse.json({
+            ok: true,
+            merged: true,
+            sha: typeof data.sha === "string" ? data.sha : null,
+            branchDeleted: false,
+            branchDeleteError,
+          });
+        }
+        // `ref` is GitHub's own value and passed isSafeBranch — safe to
+        // interpolate, and not reachable from the request body.
+        const del = await fetch(`${GH}/repos/${repo}/git/refs/heads/${ref}`, {
+          method: "DELETE",
+          headers: ghHeaders(token),
+          cache: "no-store",
+        });
+        // 404 means the ref is already gone — usually the repo's own
+        // "automatically delete head branches" setting won the race. The
+        // requested end state holds, so report it as deleted.
+        if (del.ok || del.status === 404) {
+          branchDeleted = true;
+        } else {
+          const err = (await del.json().catch(() => null)) as Record<string, unknown> | null;
+          branchDeleteError = typeof err?.message === "string" ? err.message : `github error (${del.status})`;
+        }
+      } catch (e) {
+        branchDeleteError = e instanceof Error ? e.message : "failed to delete branch";
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      merged: true,
+      sha: typeof data.sha === "string" ? data.sha : null,
+      branchDeleted,
+      branchDeleteError,
+    });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "failed to merge" },

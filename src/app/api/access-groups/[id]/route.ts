@@ -82,6 +82,7 @@ export async function PATCH(
       ...(description !== undefined ? { description } : {}),
       ...(memberFamiliarIds !== undefined ? { memberFamiliarIds } : {}),
       ...(projectGrants !== undefined ? { projectGrants } : {}),
+      actor: "loopback",
     });
     return NextResponse.json({ ok: true, group });
   } catch (error) {
@@ -108,7 +109,7 @@ export async function DELETE(
   const rejected = rejectRelayedApproval(payload);
   if (rejected) return rejected;
 
-  const deleted = await deleteAccessGroup(params.id);
+  const deleted = await deleteAccessGroup(params.id, { actor: "loopback" });
   if (!deleted) {
     return NextResponse.json({ ok: false, error: "access group not found" }, { status: 404 });
   }

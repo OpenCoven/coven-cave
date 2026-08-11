@@ -22,7 +22,50 @@ export type MdDocument = {
   body: string;
 };
 
+export type MdLeadingComments = {
+  hiddenPrefix: string;
+  visibleBody: string;
+};
+
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
+
+function isLineBreak(text: string, index: number): boolean {
+  return text[index] === "\n" || (text[index] === "\r" && text[index + 1] === "\n");
+}
+
+function consumeLineBreak(text: string, index: number): number {
+  if (text[index] === "\r" && text[index + 1] === "\n") return index + 2;
+  if (text[index] === "\n") return index + 1;
+  return index;
+}
+
+function consumeBlankLines(text: string, index: number): number {
+  let cursor = index;
+  while (cursor < text.length) {
+    let lineEnd = cursor;
+    while (lineEnd < text.length && !isLineBreak(text, lineEnd)) lineEnd++;
+    if (text.slice(cursor, lineEnd).trim().length !== 0) break;
+    if (lineEnd === text.length) return lineEnd;
+    cursor = consumeLineBreak(text, lineEnd);
+  }
+  return cursor;
+}
+
+function consumeCompleteComment(text: string, index: number): number | null {
+  let cursor = index;
+  while (text[cursor] === " " || text[cursor] === "\t") cursor++;
+  if (!text.startsWith("<!--", cursor)) return null;
+
+  const close = text.indexOf("-->", cursor + 4);
+  if (close === -1) return null;
+
+  cursor = close + 3;
+  let trail = cursor;
+  while (text[trail] === " " || text[trail] === "\t") trail++;
+  if (trail === text.length) return trail;
+  if (isLineBreak(text, trail)) return consumeLineBreak(text, trail);
+  return cursor;
+}
 
 export function normalizeMdTags(value: unknown): string[] {
   let tags: string[] = [];
@@ -35,6 +78,37 @@ export function normalizeMdTags(value: unknown): string[] {
   }
   // Dedupe (first occurrence wins): duplicate tags break React keys downstream.
   return [...new Set(tags)];
+}
+
+export function splitLeadingMdComments(body: string): MdLeadingComments {
+  let cursor = 0;
+  let hiddenEnd = 0;
+  let sawComment = false;
+
+  while (cursor < body.length) {
+    const blankEnd = consumeBlankLines(body, cursor);
+    const commentEnd = consumeCompleteComment(body, blankEnd);
+    if (commentEnd === null) {
+      if (!sawComment) return { hiddenPrefix: "", visibleBody: body };
+      if (blankEnd > cursor) hiddenEnd = blankEnd;
+      break;
+    }
+
+    sawComment = true;
+    cursor = commentEnd;
+    hiddenEnd = cursor;
+  }
+
+  return sawComment
+    ? { hiddenPrefix: body.slice(0, hiddenEnd), visibleBody: body.slice(hiddenEnd) }
+    : { hiddenPrefix: "", visibleBody: body };
+}
+
+export function joinLeadingMdComments(
+  hiddenPrefix: string,
+  visibleBody: string,
+): string {
+  return `${hiddenPrefix}${visibleBody}`;
 }
 
 /** Parse raw markdown (with optional YAML frontmatter) into an MdDocument.

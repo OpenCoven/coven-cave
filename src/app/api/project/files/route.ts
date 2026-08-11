@@ -58,6 +58,7 @@ const cache = new Map<string, { at: number; payload: FilesPayload }>();
 /** Run git via execFile (argument array, no shell interpolation). */
 function git(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return execFileAsync("git", args, {
+    windowsHide: true,
     cwd,
     timeout: GIT_TIMEOUT_MS,
     maxBuffer: MAX_GIT_BUFFER,

@@ -320,8 +320,8 @@ export type ProfileCardInput = {
   /** Every coven session (the share denominator + collaborator source). */
   sessions: SessionRow[];
   familiarIds: string[];
-  /** Coven memory entries for the subject familiar; ignored for the human. */
-  memoryCount?: number;
+  /** Coven memory entries for the subject familiar; null when unavailable. */
+  memoryCount?: number | null;
   /** Distinct familiars roster size; shown on the human card. */
   familiarCount?: number;
   now?: number;
@@ -372,7 +372,10 @@ export function buildProfileCardModel(input: ProfileCardInput): ProfileCardModel
       : [
           { label: "total sessions", value: compactCount(subject.length) },
           { label: "sessions (30d)", value: compactCount(last30d) },
-          { label: "memories", value: compactCount(input.memoryCount ?? 0) },
+          {
+            label: "memories",
+            value: input.memoryCount == null ? "—" : compactCount(input.memoryCount),
+          },
           { label: "active now", value: compactCount(activeNow) },
         ];
 

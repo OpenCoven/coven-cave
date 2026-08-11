@@ -12,13 +12,53 @@ assert.match(
 );
 assert.match(
   route,
-  /const a = \["run", "--format", "json"\];[\s\S]*?a\.push\("--session", resumeSessionId\);[\s\S]*?a\.push\("--model", forwardModel\);/,
-  "OpenCode forwards resume session and selected model to its non-interactive JSON command",
+  /let localRuntimePlan: LocalRuntimePlan \| null = null;[\s\S]*?const openCodeCapabilities = openCodeDirect[\s\S]*?probeReadyLocalRuntimeCapability\(\{[\s\S]*?plan: localRuntimePlan,[\s\S]*?runner: "opencode",[\s\S]*?probe: \(\) => openCodeRunCapabilities\(body\.familiarId, undefined, localRuntimePlan\?\.env\),[\s\S]*?resolveOpenCodeCompatibility\(openCodeCapabilities\)/,
+  "OpenCode capability discovery starts only after its exact local launch plan is ready",
 );
 assert.match(
   route,
-  /const ev = parseOpenCodeRunEvent\(JSON\.parse\(line\)\);[\s\S]*?announceSession\(ev\.sessionId\);/,
-  "the first structured OpenCode event persists its minted session id",
+  /const hermesModelCapability =[\s\S]*?hermesDirect && hermesApi === null[\s\S]*?probeReadyLocalRuntimeCapability\(\{[\s\S]*?plan: localRuntimePlan,[\s\S]*?runner: "hermes",[\s\S]*?probe: \(\) => hermesChatSupportsModel/,
+  "Hermes CLI capability discovery goes through the same exact-plan behavior gate while the API path bypasses it",
+);
+assert.match(
+  route,
+  /const probeCovenCapability = <T,>\(probe: \(\) => Promise<T>\) =>[\s\S]*?probeReadyLocalRuntimeCapability\(\{[\s\S]*?plan: localRuntimePlan,[\s\S]*?runner: "coven",[\s\S]*?allowWithoutLocalPlan: Boolean\(sshRuntime\)/,
+  "Coven capability discovery requires its exact local plan and preserves only the explicit SSH bypass",
+);
+assert.match(
+  route,
+  /const a = \["run"\];[\s\S]*?openCodeCompatibility\?\.mode === "structured"[\s\S]*?const launch = openCodeCompatibility\.schema!\.launch;[\s\S]*?a\.push\([\s\S]*?launch\.structuredOutput\.option,[\s\S]*?launch\.requiredFlags[\s\S]*?launch\.sessionOption[\s\S]*?options\.includes\("--session"\)[\s\S]*?options\.includes\("--resume"\)[\s\S]*?if \(openCodeLaunchModel\)/,
+  "OpenCode uses selected structured syntax and only a help-confirmed plain-mode resume option rather than a version threshold",
+);
+assert.match(
+  route,
+  /import \{ StringDecoder \} from "node:string_decoder";[\s\S]*?const openCodeStdoutDecoder = openCodeDirect \? new StringDecoder\("utf8"\) : null;[\s\S]*?openCodeStdoutDecoder \? openCodeStdoutDecoder\.write\(data\)[\s\S]*?openCodeStdoutDecoder\?\.end\(\)/,
+  "OpenCode stdout uses a streaming UTF-8 decoder and flushes its final bytes before parsing JSONL",
+);
+assert.match(
+  route,
+  /if \(openCodeDirect\) \{[\s\S]*?const a = \["run"\];[\s\S]*?if \(openCodeLaunchModel\) a\.push\("--model", openCodeLaunchModel\);[\s\S]*?OpenCode reads non-TTY stdin verbatim[\s\S]*?return a;/,
+  "OpenCode builds an option-only run argv and leaves the full prompt for the stdin transport",
+);
+assert.doesNotMatch(
+  route,
+  /openCodePromptNeedsDelimiter|a\.push\(prompt\)/,
+  "OpenCode never interprets a flag-shaped or oversized prompt as argv",
+);
+assert.match(
+  route,
+  /const valueOptions = openCodeCompatibility\?\.capabilities\.valueOptions \?\? \[\];[\s\S]*?options\.includes\("--session"\) && valueOptions\.includes\("--session"\)[\s\S]*?options\.includes\("--resume"\) && valueOptions\.includes\("--resume"\)/,
+  "plain-mode OpenCode resumes only through an explicitly argument-taking session option",
+);
+assert.match(
+  route,
+  /\.\.\.\(launch\.structuredOutput\.value === undefined \? \[\] : \[launch\.structuredOutput\.value\]\)/,
+  "a signed valueless structured switch is forwarded without inventing a json argument",
+);
+assert.match(
+  route,
+  /let openCodeNativeResumeUsed = false;[\s\S]*?openCodeNativeResumeUsed = false;[\s\S]*?openCodeNativeResumeUsed = true;[\s\S]*?let openCodeSessionId: string \| null = null;[\s\S]*?onSession: \(nativeSessionId\) => \{[\s\S]*?openCodeSessionId = nativeSessionId;[\s\S]*?if \(!sessionId\) announceSession\(nativeSessionId\);[\s\S]*?openCodeSessionId \?\? \(openCodeNativeResumeUsed/,
+  "OpenCode preserves a native token only when this attempt actually resumed it, while event tokens remain separate from Cave's stable session id",
 );
 assert.match(
   route,
@@ -27,24 +67,61 @@ assert.match(
 );
 assert.match(
   route,
-  /const openCodeLaunchCommand = openCodeDirect \? openCodeLaunch\(spawnArgs\) : null;[\s\S]*?const child = spawn\(command\.command, command\.args, \{[\s\S]*?env: openCodeDirect\s*\? openCodeSpawnEnv\(body\.familiarId\)[\s\S]*?writeOpenCodeLaunchInput\(child, openCodeLaunchCommand\)/,
-  "OpenCode uses its Windows-safe launcher, passes its argv over stdin, and keeps the scoped WSL-compatible spawn environment",
+  /const launch = openCodeLaunch\(\[\], process\.platform, env\);[\s\S]*?const availabilityProbe = openCodeAvailabilityProbe\(launch, env\);[\s\S]*?command: launch\.command,[\s\S]*?fixedArgs: launch\.args,[\s\S]*?unresolvedWindowsShim: launch\.unresolvedWindowsShim,[\s\S]*?availability: evaluateRuntimeAvailability\(availabilityProbe\)/,
+  "OpenCode's canonical passive probe owns the exact direct command, fixed target args, shim-resolution state, and environment",
+);
+assert.match(
+  route,
+  /const openCodeLaunchCommand = openCodeDirect[\s\S]*?openCodeLaunch\(spawnArgs, process\.platform, localPlan\.env\)[\s\S]*?const availability =[\s\S]*?openCodeAvailabilityProbe\([\s\S]*?openCodeLaunchCommand,[\s\S]*?localPlan\.env[\s\S]*?if \(openCodeDirect\) \{[\s\S]*?stdio: \["pipe", "pipe", "pipe"\],[\s\S]*?child\.stdin\.on\("error"[\s\S]*?child\.stdin\.end\(apiPrompt, "utf8"\);/,
+  "OpenCode regenerates its canonical shell-free option argv, rechecks it, and writes the exact attempt prompt through an observed UTF-8 stdin pipe",
+);
+assert.match(
+  route,
+  /openCodeLaunchCommand[\s\S]*?\? openCodeAvailabilityProbe\([\s\S]*?openCodeLaunchCommand,[\s\S]*?localPlan\.env,[\s\S]*?\)/,
+  "the immediate pre-spawn gate probes OpenCode through its canonical mapper over the exact launch plan and environment the child will receive",
+);
+assert.match(
+  route,
+  /const reportLaunchFailure = \(err: NodeJS\.ErrnoException\) => \{[\s\S]*?let localLaunchError: \{ code: string; message: string \} = localRuntimeLaunchError\([\s\S]*?localRuntimePlan\?\.runner \?\? "coven",[\s\S]*?err\.code,[\s\S]*?\);[\s\S]*?if \(hermesDirect\) localLaunchError = hermesLaunchFailure\([\s\S]*?const openCodeCommandMissing =[\s\S]*?const launchCode =[\s\S]*?binding\.harness === "claude"[\s\S]*?RUNTIME_AVAILABILITY_ERROR_CODES\.coven_missing[\s\S]*?openCodeCommandMissing[\s\S]*?"runtime_missing"[\s\S]*?openCodeWindowsOuterLaunchFailure[\s\S]*?"runtime_launch_failed"[\s\S]*?: localLaunchError\.code;[\s\S]*?launchFailure \?\?= \{[\s\S]*?code: sshRuntime \?[\s\S]*?: launchCode,[\s\S]*?message: launchError/,
+  "a post-gate OpenCode spawn failure keeps the shared value-free runner classification instead of leaking host paths or blaming authentication",
 );
 assert.match(
   capabilities,
-  /const launch = openCodeLaunch\(\["run", "--help"\]\);[\s\S]*?launch\.command,[\s\S]*?launch\.args,[\s\S]*?openCodeSpawnEnv\(\),/,
-  "OpenCode probes its CLI with the same Windows-safe command and WSL-compatible environment as a chat run",
+  /const env = openCodeSpawnEnv\(\);[\s\S]*?const launch = openCodeLaunch\(\["run", "--help"\], process\.platform, env\);[\s\S]*?launch\.command,[\s\S]*?launch\.args,[\s\S]*?env,/,
+  "OpenCode resolves and probes its CLI inside the same Windows-safe or WSL-compatible environment as a chat run",
 );
 assert.match(
   route,
-  /!openCodeDirect\s*&&\s*binding\.harness !== "openclaw"\s*&&\s*binding\.harness !== "grok"\s*&&\s*\(await covenRunSupportsPermission\(\)\)/,
-  "OpenCode and Grok do not require the Coven CLI to probe unrelated permission support",
+  /!openCodeDirect\s*&&\s*binding\.harness !== "openclaw"\s*&&\s*binding\.harness !== "grok"\s*&&\s*binding\.harness !== "hermes"\s*&&\s*\(\(await probeCovenCapability\(covenRunSupportsPermission\)\) \?\? false\)/,
+  "OpenCode, Grok, and Hermes do not require the Coven CLI to probe unrelated permission support",
 );
 assert.match(
   route,
-  /!openCodeDirect\s*&&\s*binding\.harness !== "openclaw"\s*&&\s*binding\.harness !== "grok"\s*&&\s*\(await covenRunSupportsAddDir\(\)\)/,
-  "OpenCode and Grok do not require the Coven CLI to probe unrelated directory support",
+  /!openCodeDirect\s*&&\s*binding\.harness !== "openclaw"\s*&&\s*binding\.harness !== "grok"\s*&&\s*binding\.harness !== "hermes"\s*&&\s*\(\(await probeCovenCapability\(covenRunSupportsAddDir\)\) \?\? false\)/,
+  "OpenCode, Grok, and Hermes do not require the Coven CLI to probe unrelated directory support",
 );
+{
+  const earlyGate = route.indexOf("const openCodeCapabilities");
+  assert.ok(earlyGate >= 0, "capability routing begins only after local plans are established");
+  for (const capabilityCall of [
+    "openCodeRunCapabilities(body.familiarId, undefined, localRuntimePlan?.env)",
+    "probe: () => hermesChatSupportsModel",
+    "probeCovenCapabilityOutcome(covenRunModelFlagOutcome)",
+    "probeCovenCapability(covenRunSupportsPermission)",
+    "probeCovenCapability(covenRunSupportsAddDir)",
+  ]) {
+    assert.ok(
+      earlyGate < route.indexOf(capabilityCall),
+      `passive preflight must be established before ${capabilityCall}`,
+    );
+  }
+  const copilotResolution = route.match(/resolveCopilotRuntimeLaunch\(/g) ?? [];
+  assert.equal(
+    copilotResolution.length,
+    1,
+    "chat resolves the exact Copilot launch once and reuses it for capability and model phases",
+  );
+}
 assert.match(
   route,
   /if \(openCodeDirect && body\.permissionMode === "read"\)[\s\S]*?status: 501/,
@@ -57,18 +134,158 @@ assert.match(
 );
 assert.match(
   route,
-  /openCodeDirect && forwardModel[\s\S]*?modelApplicationFromRun\([\s\S]*?isError: result\.is_error === true,[\s\S]*?errorText: \[\.\.\.stderrTail, \.\.\.stdoutErrTail\]\.join\("\\n"\)/,
-  "OpenCode marks model-specific failed runs as rejected instead of confirming the forwarded model",
+  /if \(resumeFailed && body\.sessionId\) \{[\s\S]*?sessionId = null;[\s\S]*?openCodeSessionId = null;[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\)(?:, retry\.prompt)?\)/,
+  "a fresh OpenCode resume retry clears the stale native token before launching without --session",
 );
 assert.match(
   route,
-  /child\.on\("close", \(code\) => \{[\s\S]*?if \(openCodeDirect && code !== 0\)[\s\S]*?is_error: true/,
-  "a non-zero OpenCode exit cannot be treated as a successful model run when no JSON error arrives",
+  /openCodeDirect && openCodeLaunchModel && forwardModel[\s\S]*?modelApplicationFromRun\([\s\S]*?isError: result\.is_error === true,[\s\S]*?errorText: openCodeModelRejected \? "model unavailable" : \[\.\.\.stderrTail, \.\.\.stdoutErrTail\]\.join\("\\n"\)/,
+  "OpenCode marks model-specific failed runs as rejected without retaining raw JSON error messages",
 );
 assert.match(
   route,
-  /ev\.kind === "error"[\s\S]*?recordStdoutErrorTail\(ev\.message, true\)/,
-  "structured OpenCode errors retain model-rejection details even when they lack generic error keywords",
+  /onError: \(ev\) => \{[\s\S]*?openCodeModelRejected \|\|= modelRejectionInError\(ev\.message\);[\s\S]*?resumeFailed \|\|= RESUME_ERR_RE\.test\(ev\.message\);[\s\S]*?recordStdoutErrorTail\("OpenCode reported an error event", true\)/,
+  "structured OpenCode errors retain only safe classifications while a missing native session triggers the fresh-session recovery",
+);
+assert.match(
+  route,
+  /import \{[\s\S]*?quarantineOpenCodeSchema,[\s\S]*?onOther: \(ev, rawEvent\) => \{[\s\S]*?quarantineOpenCodeSchema\(openCodeCompatibility\?\.schema\)/,
+  "an unknown OpenCode envelope quarantines its schema for future turns without replaying the current tool-capable request",
+);
+assert.match(
+  route,
+  /openCodeCompatibilityHealthNoticeSent[\s\S]*?openCodeProtocolQuarantineNoticeSent/,
+  "registry-health and parser-quarantine diagnostics are independently surfaced in the affected turn",
+);
+assert.match(
+  route,
+  /compatibility registry is unavailable; continuing in plain chat without tool activity/,
+  "an unavailable expired registry accurately reports plain fallback rather than a parser that is not active",
+);
+assert.match(
+  route,
+  /Couldn't verify OpenCode JSON events; continuing in plain chat without tool activity[\s\S]*?capability-probe-unavailable[\s\S]*?capability-probe-fallback[\s\S]*?pushProgress\([\s\S]*?"notice"/,
+  "an unavailable capability probe is distinct from confirmed JSON incompatibility and does not create a false error issue",
+);
+assert.doesNotMatch(
+  route,
+  /openCodeStructuredIncompatibility|structured-stream-quarantined/,
+  "an incompatible structured request is never replayed as an unbounded plain retry",
+);
+assert.doesNotMatch(
+  route,
+  /const openCodePlainFallback = openCodeDirect && openCodeCompatibility\?\.mode === "plain";[\s\S]*?if \(openCodePlainFallback && RESUME_ERR_RE\.test\(line\)\) \{[\s\S]*?resumeFailed = true;[\s\S]*?return;/,
+  "unframed plain OpenCode output never discards assistant text merely because it resembles a resume failure",
+);
+assert.match(
+  route,
+  /existingConversation\?\.harnessSessionId \?\? body\.sessionId[\s\S]*?openCodeUnrecordedResume[\s\S]*?announceSession\(crypto\.randomUUID\(\)\)[\s\S]*?not recorded locally and this client cannot resume it; starting a fresh chat/,
+  "an unrecorded OpenCode resume token is attempted when supported or visibly restarted when it is not",
+);
+assert.match(
+  route,
+  /import \{ handleOpenCodeJsonLine \} from "@\/lib\/opencode-stream";[\s\S]*?handleOpenCodeJsonLine\(line, openCodeCompatibility\?\.schema,/,
+  "the route uses the behavioral JSONL handler, whose lifecycle-frame behavior is covered by its focused test",
+);
+assert.match(
+  route,
+  /child\.on\("close", \(code\) => \{[\s\S]*?if \(\(openCodeDirect \|\| copilotStream \|\| grokDirect\) && code !== 0\)[\s\S]*?is_error: true/,
+  "a non-zero direct OpenCode, Copilot, or Grok exit cannot be treated as a successful run when no JSON error arrives",
+);
+assert.match(
+  route,
+  /onError: \(ev\) => \{[\s\S]*?openCodeModelRejected \|\|= modelRejectionInError\(ev\.message\);[\s\S]*?recordStdoutErrorTail\("OpenCode reported an error event", true\)/,
+  "structured OpenCode errors retain model-rejection state without retaining provider-controlled details",
+);
+assert.match(
+  route,
+  /const tailBlock = !openCodeDirect && !grokDirect && tailSource\.length/,
+  "OpenCode and Grok stderr never become assistant-visible or persisted empty-response diagnostics",
+);
+assert.match(
+  route,
+  /openCodeCompatibility\?\.mode === "plain"[\s\S]*?assistant_chunk/,
+  "clients without structured output fall back to plain assistant text instead of dropping a reply",
+);
+assert.match(
+  route,
+  /const harnessSessionId = grokDirect[\s\S]*?: openCodeDirect[\s\S]*?openCodeSessionId \?\? \(openCodeNativeResumeUsed[\s\S]*?existingConversation\?\.harnessSessionId[\s\S]*?: undefined\)/,
+  "a plain OpenCode turn retains a native id only when that token was actually used for the current launch",
+);
+assert.match(
+  route,
+  /else if \(openCodeDirect && existingConversation && !openCodeNativeResumeUsed\) \{[\s\S]*?delete conv\.harnessSessionId/,
+  "a fresh OpenCode compatibility fallback clears the obsolete native token from the persisted conversation",
+);
+assert.match(
+  route,
+  /const openCodeNativeResumeSupported = openCodeCompatibility\?\.mode === "structured"[\s\S]*?schema\?\.launch\.sessionOption[\s\S]*?const openCodeFreshSessionForCompatibility = Boolean\([\s\S]*?!openCodeNativeResumeSupported[\s\S]*?buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
+  "OpenCode replays Cave context when the selected schema cannot launch a native resume",
+);
+assert.match(
+  route,
+  /onToolStart: \(ev\) => \{[\s\S]*?envelopeToolUse[\s\S]*?onToolEnd: \(ev\) => \{[\s\S]*?envelopeToolResult/,
+  "split tool lifecycle frames preserve the stable bubble id across progress and result",
+);
+assert.match(
+  route,
+  /onTool: \(ev\) => \{[\s\S]*?envelopeToolUse[\s\S]*?consumePendingEnvelopeResult\(ev\.id\)[\s\S]*?return;[\s\S]*?envelopeToolResult/,
+  "a reordered split result settles a combined terminal tool frame with the first terminal outcome",
+);
+assert.match(
+  route,
+  /opencode-compatibility[\s\S]*?unrecognized event[\s\S]*?redactedOpenCodeEventFingerprint\(rawEvent\)/,
+  "unknown future event shapes surface a safe visible diagnostic",
+);
+assert.match(
+  route,
+  /quarantineOpenCodeProtocol[\s\S]*?pushProgress\("opencode-compatibility", label, "notice"/,
+  "OpenCode protocol quarantine is presented as a neutral notice",
+);
+assert.match(
+  route,
+  /const diagnostic = openCodeCompatibility\.diagnostic ===[\s\S]*?pushProgress\([\s\S]*?"opencode-compatibility"[\s\S]*?diagnostic,[\s\S]*?"notice"/,
+  "OpenCode compatibility fallback diagnostics are presented as neutral notices",
+);
+assert.match(
+  route,
+  /persistedCompatibilityDiagnostics[\s\S]*?id === "opencode-compatibility" \|\| id === "grok-compatibility"[\s\S]*?progress: persistedCompatibilityDiagnostics/,
+  "safe OpenCode and Grok compatibility diagnostics persist with the completed assistant turn",
+);
+assert.match(
+  route,
+  /const quarantineOpenCodeProtocol[\s\S]*?recordStdoutErrorTail\("OpenCode emitted a malformed JSON event", true\)[\s\S]*?quarantineOpenCodeSchema\(openCodeCompatibility\?\.schema\)[\s\S]*?const handleOpenCodeLine[\s\S]*?onMalformedJson: \(\) => \{[\s\S]*?quarantineOpenCodeProtocol\(/,
+  "malformed structured OpenCode events quarantine future structured launches without copying raw payloads into text or diagnostics",
+);
+assert.match(
+  route,
+  /let openCodeStructuredProtocolQuarantined = false;[\s\S]*?openCodeStructuredProtocolQuarantined = true/,
+  "a malformed or unknown frame latches the active structured stream into quarantine",
+);
+assert.match(
+  route,
+  /if \(openCodeStructuredProtocolQuarantined\) \{[\s\S]*?never allow later frames to create tools, results, or sessions[\s\S]*?handleOpenCodeJsonLine\(line, openCodeCompatibility\?\.schema, \{[\s\S]*?onText: \(ev\)/,
+  "the current stream disables structured tool/session callbacks after quarantine while retaining only schema-validated text",
+);
+assert.match(
+  route,
+  /const MAX_OPENCODE_JSONL_FRAME_BYTES = 256 \* 1024;[\s\S]*?let discardingOpenCodeFrame = false;[\s\S]*?Buffer\.byteLength\(jsonBuf, "utf8"\) > MAX_OPENCODE_JSONL_FRAME_BYTES[\s\S]*?discardingOpenCodeFrame = true;[\s\S]*?oversized-jsonl-event/,
+  "unterminated OpenCode JSONL frames are bounded, discarded through their newline, and quarantined without retaining provider payloads",
+);
+assert.match(
+  route,
+  /openCodeCompatibility\?\.mode === "plain"[\s\S]*?Buffer\.byteLength\(jsonBuf, "utf8"\) > MAX_OPENCODE_JSONL_FRAME_BYTES[\s\S]*?const plainChunk = jsonBuf;[\s\S]*?jsonBuf = "";[\s\S]*?handleLine\(plainChunk\)/,
+  "plain OpenCode compatibility mode flushes oversized partial stdout instead of buffering it indefinitely",
+);
+assert.match(
+  route,
+  /const handleOpenCodeLine = \(line: string\) => \{[\s\S]*?const plainText = resolveBackspaces\(stripAnsi\(line\)\);[\s\S]*?if \(openCodeCompatibility\?\.mode === "plain"\)[\s\S]*?return;[\s\S]*?permission requested[\s\S]*?plainText\.trim\(\)/,
+  "plain OpenCode fallback preserves unframed assistant text while structured JSON filters the known control notice",
+);
+assert.doesNotMatch(
+  capabilities,
+  /openCodeCapabilitiesProbe/,
+  "OpenCode does not use a normal TTL cache that would skip re-probing after an in-place same-version CLI upgrade",
 );
 
 console.log("opencode harness routing tests passed");

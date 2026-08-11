@@ -1,4 +1,4 @@
-// CI guard: every `*.test.ts` / `*.test.mjs` under src/ and scripts/ must be
+// CI guard: every `*.test.ts` / `*.test.tsx` / `*.test.mjs` under src/ and scripts/ must be
 // wired into a CI-run test suite (the SUITES map in scripts/run-tests.mjs,
 // which `test:app` / `test:api` / `test:mobile` execute), so an authored test
 // can't silently never run. (110 of 243 tests were orphaned this way before
@@ -18,10 +18,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // path, value = the reason (printed in the "allowlisted" summary). Keep this
 // short and justified — the whole point of the guard is that orphaning is loud.
 const ALLOWLIST = new Map([
-  [
-    "scripts/release-notes.test.mjs",
-    "needs live git history/tags; absent in CI's shallow checkout (runs in the release workflow)",
-  ],
+  // scripts/release-notes.test.mjs used to live here because it read this
+  // checkout's own tags and CHANGELOG; it now seeds a throwaway fixture repo
+  // and passes COVEN_RELEASE_NOTES_ROOT, so it runs anywhere (cave-5yyj1).
+  // Adding an entry means a test nothing runs — justify it here and expect the
+  // justification to be read.
 ]);
 
 function walk(dir, acc) {
@@ -36,7 +37,7 @@ function walk(dir, acc) {
     if (entry.name === "node_modules" || entry.name === ".next" || entry.name === "target" || entry.name === "gen" || entry.name.startsWith(".")) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(full, acc);
-    else if (/\.test\.(ts|mjs)$/.test(entry.name)) acc.push(path.relative(root, full).split(path.sep).join("/"));
+    else if (/\.test\.(tsx?|mjs)$/.test(entry.name)) acc.push(path.relative(root, full).split(path.sep).join("/"));
   }
   return acc;
 }

@@ -8,11 +8,42 @@ type SessionLike = {
 
 export const MAX_CHAT_TITLE_LENGTH = 120;
 
-// Strip leading/trailing emoji and whitespace from session titles.
-// Emoji in the middle of a title are left intact.
-const EMOJI_RE = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+|[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+$/gu;
+// Strip complete emoji grapheme sequences at title edges without treating plain
+// digits, #, or * as emoji. This covers:
+//   - keycaps such as 1️⃣ ([#*0-9] + optional VS16 + U+20E3)
+//   - variation selectors VS15 (U+FE0E, text presentation) and VS16 (U+FE0F)
+//   - Fitzpatrick skin-tone modifiers (Emoji_Modifier)
+//   - tag sequences used for regional-indicator flag sequences
+//   - ZWJ compounds such as 👩‍💻 and multi-member family sequences 👨‍👩‍👧‍👦
+const PICTOGRAPHIC = String.raw`(?:\p{Emoji_Presentation}|\p{Extended_Pictographic})`;
+const EMOJI_TAG_SEQUENCE = String.raw`(?:[\u{E0020}-\u{E007E}]+\u{E007F})`;
+// VS15 (U+FE0E) requests text presentation; VS16 (U+FE0F) requests emoji
+// presentation. Both must be consumed as part of the preceding base character
+// so they do not leak into the stripped output (e.g. "❤︎ Fix" → "Fix").
+const EMOJI_COMPONENT = String.raw`${PICTOGRAPHIC}(?:\uFE0F|\uFE0E|\p{Emoji_Modifier})?(?:${EMOJI_TAG_SEQUENCE})?`;
+const EMOJI_SEQUENCE = String.raw`(?:[#*0-9][\uFE0F\uFE0E]?\u20E3|${EMOJI_COMPONENT}(?:\u200D${EMOJI_COMPONENT})*)`;
+// Lone tag characters (U+E0020–U+E007F) at a title edge are invisible garbage
+// that can be left behind when a subdivision-flag sequence is only partially
+// present (e.g. tag chars without a preceding base pictographic). They must be
+// consumed at edges without touching tag chars inside a meaningful middle emoji.
+const LONE_TAG_CHAR = String.raw`[\u{E0020}-\u{E007F}]`;
+const LEADING_EMOJI_RE = new RegExp(String.raw`^(?:\s|${EMOJI_SEQUENCE}|${LONE_TAG_CHAR})+`, "gu");
+const TITLE_OPENING_DELIMITER = String.raw`['"(\[{\u2018\u2019\u201C\u201D\u2039\u00AB]`;
+const LEADING_DELIMITED_EMOJI_RE = new RegExp(
+  String.raw`^((?:${TITLE_OPENING_DELIMITER})+)\s*(?:${EMOJI_SEQUENCE}|${LONE_TAG_CHAR})(?:\s|${EMOJI_SEQUENCE}|${LONE_TAG_CHAR})*`,
+  "u",
+);
+const TITLE_CLOSING_DELIMITER = String.raw`['")\]}\u2018\u2019\u201C\u201D\u203A\u00BB]`;
+const TRAILING_EMOJI_RE = new RegExp(
+  String.raw`(?:\s|${EMOJI_SEQUENCE}|${LONE_TAG_CHAR})+(?=(?:${TITLE_CLOSING_DELIMITER})*$)`,
+  "gu",
+);
 export function stripLeadingTrailingEmoji(title: string): string {
-  return title.replace(EMOJI_RE, "").trim();
+  return title
+    .replace(LEADING_EMOJI_RE, "")
+    .replace(LEADING_DELIMITED_EMOJI_RE, "$1")
+    .replace(TRAILING_EMOJI_RE, "")
+    .trim();
 }
 
 export function normalizeChatTitle(input: unknown): string | null {
@@ -31,7 +62,7 @@ const MAX_PROMPT_TITLE_LENGTH = 64;
 // content-initial words like "now"/"just"/"and" are left alone to avoid eating
 // real titles ("Now and Then is a Beatles song …").
 const LEADING_FILLER_RE =
-  /^(?:please|pls|plz|kindly|can you|could you|would you|will you|can we|could we|would we|let'?s|i (?:want|need|wanna) to|i'?d like to|i would like to|help me(?: to)?|go ahead(?: and)?)\b[\s,:;.!?\-–—]*/i;
+  /^(?:please|pls|plz|kindly|can you|could you|would you|will you|can we|could we|would we|let'?s|i (?:want|need|wanna)(?: you)? to|i'?d like(?: you)? to|i would like(?: you)? to|help me(?: to)?|go ahead(?: and)?)\b[\s,:;.!?\-–—]*/i;
 
 // Trailing politeness ("restart it please", "fix this, thanks").
 const TRAILING_FILLER_RE =
@@ -72,7 +103,8 @@ export function chatTitleFromPrompt(prompt: string | null | undefined): string |
 
 // --- Auto-naming: short summary titles -------------------------------------
 
-export const MAX_SUMMARY_TITLE_LENGTH = 48;
+export const MAX_SUMMARY_TITLE_LENGTH = 40;
+export const MAX_SUMMARY_TITLE_WORDS = 7;
 
 // Question/request lead-ins that frame a topic without being part of it.
 // Stripped once from the front of an already filler-cleaned prompt so
@@ -82,55 +114,408 @@ export const MAX_SUMMARY_TITLE_LENGTH = 48;
 const QUESTION_LEAD_IN_RE =
   /^(?:what(?:['’]s| is| are)(?: the)?|how (?:do|can|would|should) (?:i|we|you)|how to|why (?:is|are|does|do|did)|where (?:is|are|can|do)|when (?:is|are|does|do|should)|who (?:is|are)|is there (?:a|any) way to|tell me about|explain(?: to me)?|show me(?: how to)?)\b[\s,:;\-–—]*/i;
 
-function clampAtWordBoundary(text: string, maxLen: number): string {
+// Answer-heading boilerplate: "Here is the ...", "Here are ...", "Here's the ...",
+// "Here's ...", "This is a ..." Stripped once from the front of assistant heading
+// text so the title names the topic, not the meta-framing.
+// Covers the contraction forms with straight (') and Unicode (', ') apostrophes.
+const ANSWER_HEADING_RE =
+  /^(?:here\s+(?:is|are)|here['\u2018\u2019]s|this is)(?:\s+(?:a|an|the))?\s+/i;
+
+// Boilerplate-only guard: "This is.", "Here is.", "Here's.", etc. with no content
+// after the framing phrase must collapse to null, not produce a stub title.
+// Checked before stripping so "This is a test" goes through normally.
+const BOILERPLATE_ONLY_RE =
+  /^(?:here\s+(?:is|are)|here['\u2018\u2019]s|this is)(?:\s+(?:a|an|the))?\s*[.,:;!?]?\s*$/i;
+
+// Returns null only when no word boundary exists (lastSpace < 0), so a truly
+// single over-length token with no spaces produces null and the caller keeps
+// its current title. Multiword strings are always cut at the last word boundary,
+// even when that boundary is early in the string — a short first word followed
+// by a long second word must not collapse to null.
+// Matches sentence-ending punctuation (including Unicode ellipsis U+2026) that
+// immediately precedes only closing delimiter characters (straight and curly
+// quotes, apostrophes, parentheses, brackets, angle-quote marks) and/or the
+// end of the string. The closing delimiters are matched by a lookahead so they
+// are NOT consumed — `"Fix parser."` becomes `"Fix parser"`, not `Fix parser`.
+// Placing the delimiters in the lookahead also means a bare trailing punct run
+// (`Fix parser.`) is handled identically: zero closing chars before `$`.
+// U+203D = interrobang ‽, U+061F = Arabic question mark ؟, U+FF0E = fullwidth
+// full stop ．— all sentence-ending characters not covered by ASCII .!? and
+// must be stripped.
+const TRAILING_TITLE_PUNCTUATION_RE =
+  /[.,:;!?\u2026\u203D\u061F\u3002\uFF01\uFF1F\uFF0E][\s.,:;!?\u2026\u203D\u061F\u3002\uFF01\uFF1F\uFF0E]*(?=['")\]}\u2018\u2019\u201C\u201D\u203A\u00BB]*$)/u;
+const TRAILING_TRUNCATION_PUNCTUATION_RE =
+  /[.,:;!?\-–—\u2026\u203D\u061F\u3002\uFF01\uFF1F\uFF0E][\s.,:;!?\-–—\u2026\u203D\u061F\u3002\uFF01\uFF1F\uFF0E]*$/u;
+
+function stripTrailingTitlePunctuation(text: string): string {
+  return text.replace(TRAILING_TITLE_PUNCTUATION_RE, "").trimEnd();
+}
+
+function appendTruncationEllipsis(text: string): string {
+  const stem = text
+    .trimEnd()
+    .replace(TRAILING_TRUNCATION_PUNCTUATION_RE, "")
+    .trimEnd();
+  return `${stem}…`;
+}
+
+function clampAtWordBoundary(text: string, maxLen: number): string | null {
   if (text.length <= maxLen) return text;
   const slice = text.slice(0, maxLen - 1);
   const lastSpace = slice.lastIndexOf(" ");
-  const trimmed = lastSpace >= maxLen * 0.6 ? slice.slice(0, lastSpace) : slice;
-  return `${trimmed.trimEnd().replace(/[,;:\-–—]$/, "")}…`;
+  if (lastSpace < 0) return null;
+  return appendTruncationEllipsis(slice.slice(0, lastSpace));
+}
+
+function stripLineMarkdown(text: string): string {
+  return text
+    .replace(/^(?:\s{0,3}>\s*)+/gm, "")
+    .replace(/^[\t ]*(?:[-+*]|\d{1,9}[.)])[\t ]+(?:\[[ xX]\][\t ]+)?/gm, "")
+    .replace(/^\s{0,3}\[[^\]]+\]:\s+\S+.*$/gm, " ")
+    .replace(/^#{1,6}[ \t]+/gm, "")
+    .replace(/[ \t]+#{1,6}[ \t]*$/gm, "");
+}
+
+function normalizeGeneratedTitleSource(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const source = input.trim();
+  if (!source) return null;
+  return source;
+}
+
+function isCommonMarkEscapablePunctuation(char: string): boolean {
+  const code = char.charCodeAt(0);
+  return (
+    (code >= 0x21 && code <= 0x2f) ||
+    (code >= 0x3a && code <= 0x40) ||
+    (code >= 0x5b && code <= 0x60) ||
+    (code >= 0x7b && code <= 0x7e)
+  );
+}
+
+function unescapeCommonMarkPunctuation(text: string): string {
+  let result = "";
+  for (let i = 0; i < text.length; i++) {
+    if (
+      text[i] === "\\" &&
+      i + 1 < text.length &&
+      isCommonMarkEscapablePunctuation(text[i + 1])
+    ) {
+      result += text[++i];
+    } else {
+      result += text[i];
+    }
+  }
+  return result;
+}
+
+function flattenMarkdownLabel(label: string): string {
+  let result = "";
+  for (let i = 0; i < label.length && result.length < MAX_CHAT_TITLE_LENGTH; i++) {
+    if (
+      label[i] === "\\" &&
+      i + 1 < label.length &&
+      isCommonMarkEscapablePunctuation(label[i + 1])
+    ) {
+      const escaped = label[++i];
+      result += result.length + 2 <= MAX_CHAT_TITLE_LENGTH ? `\\${escaped}` : escaped;
+    } else if (label[i] === "[" || label[i] === "]") {
+      if (result && !/\s/u.test(result[result.length - 1])) result += " ";
+    } else {
+      result += label[i];
+    }
+  }
+  return result;
+}
+
+/**
+ * Linear normalizer for inline Markdown image and link syntax.
+ * Walks the input once: `![alt](dest)` → alt text, `[label](dest)` → label.
+ * For malformed / unclosed constructs emits the safe human label text without
+ * backtracking. Destination content is always discarded, while visible output
+ * is bounded to the pre-existing generated-title source limit.
+ */
+function normalizeMarkdownInlineLinks(s: string): string {
+  const len = s.length;
+  if (len === 0) return s;
+  let result = "";
+  const append = (value: string) => {
+    const remaining = MAX_CHAT_TITLE_LENGTH - result.length;
+    if (remaining > 0) result += value.slice(0, remaining);
+  };
+  let i = 0;
+  while (i < len) {
+    if (
+      s[i] === "\\" &&
+      i + 1 < len &&
+      isCommonMarkEscapablePunctuation(s[i + 1])
+    ) {
+      append(s.slice(i, i + 2));
+      i += 2;
+      if (result.length >= MAX_CHAT_TITLE_LENGTH) break;
+      continue;
+    }
+    const isImage = s[i] === "!" && i + 1 < len && s[i + 1] === "[";
+    const bracketPos = isImage ? i + 1 : i;
+    if (s[bracketPos] !== "[") {
+      append(s[i++]);
+      if (result.length >= MAX_CHAT_TITLE_LENGTH) break;
+      continue;
+    }
+    const labelStart = bracketPos + 1;
+    let labelEnd = -1;
+    let labelDepth = 1;
+    for (let k = labelStart; k < len; k++) {
+      if (
+        s[k] === "\\" &&
+        k + 1 < len &&
+        isCommonMarkEscapablePunctuation(s[k + 1])
+      ) {
+        k++;
+        continue;
+      }
+      if (s[k] === "[") {
+        labelDepth++;
+      } else if (s[k] === "]") {
+        labelDepth--;
+        if (labelDepth === 0) {
+          labelEnd = k;
+          break;
+        }
+      }
+    }
+    if (labelEnd < 0) {
+      append(flattenMarkdownLabel(s.slice(labelStart)));
+      i = len;
+      continue;
+    }
+    if (labelEnd + 1 >= len || s[labelEnd + 1] !== "(") {
+      append(s.slice(i, labelEnd + 1));
+      i = labelEnd + 1;
+      if (result.length >= MAX_CHAT_TITLE_LENGTH) break;
+      continue;
+    }
+    // Scan the destination exactly once with a depth counter. This handles
+    // long URLs and balanced nested parentheses without a backtracking regex.
+    // Backslash-escaped characters are consumed as destination content and
+    // never treated as nesting or closing delimiters.
+    const destStart = labelEnd + 2;
+    let depth = 1;
+    let j = destStart;
+    let quotedTitle: '"' | "'" | null = null;
+    while (j < len && depth > 0) {
+      if (s[j] === "\\") {
+        j += 2; // escaped char is neither opener nor closer
+        continue;
+      }
+      if (quotedTitle) {
+        if (s[j] === quotedTitle) quotedTitle = null;
+        j++;
+        continue;
+      }
+      if (
+        depth === 1 &&
+        (s[j] === '"' || s[j] === "'") &&
+        j > destStart &&
+        /\s/.test(s[j - 1])
+      ) {
+        quotedTitle = s[j] as '"' | "'";
+        j++;
+        continue;
+      }
+      if (s[j] === "(") depth++;
+      else if (s[j] === ")") depth--;
+      j++;
+    }
+    const rawLabel = isImage
+      ? s.slice(labelStart, labelEnd).trim()
+      : s.slice(labelStart, labelEnd);
+    const label = flattenMarkdownLabel(rawLabel);
+    append(label);
+    // A malformed destination consumes the remainder rather than exposing URL
+    // text. A balanced destination resumes immediately after its closing `)`.
+    i = depth === 0 ? j : len;
+  }
+  return result;
+}
+
+/** Remove unmatched leading opening delimiters when their corresponding closers
+ *  are absent from the truncated stem. Applied repeatedly until no unmatched
+ *  leading opener remains or the stem is balanced. Only runs when the title
+ *  ends with an ellipsis (i.e. was truncated). Balanced pairs (closer present)
+ *  are kept, so short balanced titles pass through unchanged. */
+function stripUnmatchedLeadingDelimiter(text: string): string {
+  if (text.length < 2 || !text.endsWith("…")) return text;
+  const closers: Record<string, string> = {
+    '"': '"', "'": "'",
+    "\u201C": "\u201D", "\u2018": "\u2019",
+    "\u00AB": "\u00BB", "\u2039": "\u203A",
+    "(": ")", "[": "]", "{": "}",
+  };
+  let s = text;
+  let changed = true;
+  while (changed && s.length >= 2 && s.endsWith("…")) {
+    changed = false;
+    const closer = closers[s[0]];
+    if (closer === undefined) break;
+    if (s.indexOf(closer, 1) < 0) {
+      s = s.slice(1).trimStart();
+      changed = true;
+    }
+  }
+  return s;
+}
+
+/**
+ * Shared formatter for all auto-generated titles (first-exchange naming,
+ * periodic auto-rename, sparkle generation). Deterministic offline contract:
+ * normalizes markdown links to their label, removes other markdown and edge
+ * emoji, strips answer-heading boilerplate, conversational filler, and
+ * question/request lead-ins, removes trailing sentence-ending punctuation,
+ * capitalizes, caps at MAX_SUMMARY_TITLE_WORDS words, and clamps at
+ * MAX_SUMMARY_TITLE_LENGTH chars at a word boundary (ellipsis only when cut).
+ * Returns null when nothing useful remains (< 2 chars after cleanup) or when a
+ * single over-length token has no word boundary to cut at cleanly.
+ */
+function formatGeneratedTitle(text: string): string | null {
+  // Remove reference definitions and blockquote prefixes before line structure
+  // is collapsed. Nested blockquotes are consumed as one prefix.
+  let s = stripLineMarkdown(text);
+  // Normalize markdown images and links linearly (no backtracking regex).
+  // ![alt](dest) → alt text; [label](dest) → label; destination discarded.
+  s = normalizeMarkdownInlineLinks(s);
+  // Markdown URL/mailto autolinks have no human-readable label, so discard
+  // the entire construct rather than leaking URL text or angle brackets.
+  s = s.replace(/<(?:https?:\/\/|mailto:)[^>\s]+>/gi, " ");
+  // Markdown email autolinks (<user@example.com>) carry useful content — strip
+  // only the angle brackets so the address remains legible in the title.
+  // RFC 5321 local-part: printable ASCII except <>@,;:\"/[]{}
+  s = s.replace(/<([a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9.-]+)>/g, "$1");
+  s = unescapeCommonMarkPunctuation(s);
+  // Normalize full/collapsed reference links and shortcut reference links.
+  // These simple patterns are safe (no nested quantifiers).
+  s = s
+    .replace(/\[([^\]]+)\]\s*\[[^\]]*\]/g, "$1")
+    .replace(/\[([^\]]+)\](?!\s*\()/g, "$1");
+  // Strip strikethrough: ~~text~~ → text.
+  s = s.replace(/~~([^~]+)~~/g, "$1");
+  // Source ellipses are prose punctuation, not a truncation signal. Remove them
+  // before measuring; appendTruncationEllipsis is the only path that adds one.
+  s = s.replace(/(?:\u2026|\.{3,})+/g, " ");
+  // Strip paired emphasis and code spans contextually, preserving programming
+  // symbols such as C#, issue refs (#123), globs (*.ts), and intra-word
+  // underscores (snake_case). Only paired markers are removed; unpaired `#`,
+  // `*`, and `_` that form part of meaningful content are left intact.
+  // Bold: **text** or __text__
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, "$1").replace(/__([^_\n]+)__/g, "$1");
+  // Italic *text*: strip only when the marker is not adjacent to a word char
+  // or another * on the outside, so globs (*.ts) and ** runs are unaffected.
+  s = s.replace(/(?<![*\w])\*([^*\n]+)\*(?![*\w])/g, "$1");
+  // Code span: `text`
+  s = s.replace(/`([^`\n]+)`/g, "$1");
+  // Remaining isolated backticks (incomplete code spans)
+  s = s.replace(/`+/g, " ");
+  // Underscore emphasis _text_: only when markers are not adjacent to
+  // alphanumeric chars on the outside (preserves snake_case, C_CONSTANT, etc.).
+  s = s.replace(/(?<![A-Za-z0-9])_([^_\n]+)_(?![A-Za-z0-9])/g, "$1");
+  s = s.replace(/\s+/g, " ").trim();
+  // Cleanup loop: trailing punctuation → edge emoji → leading separators exposed by
+  // emoji removal → trailing punctuation again, so "🎉: Fix parser." → "Fix parser"
+  // and "Fix parser 🎉." are both fully cleaned.
+  // Unicode sentence-ending punct (。！？) stripped alongside ASCII .!?
+  s = stripTrailingTitlePunctuation(s).trim();
+  s = stripLeadingTrailingEmoji(s);
+  s = s.replace(/^[\s,:;.!?\-–—]+/, "").trim(); // strip separators exposed after emoji removal
+  s = stripTrailingTitlePunctuation(s).trim();
+  // Boilerplate-only: "This is.", "Here is.", "Here's." → null (no meaningful fallback).
+  if (BOILERPLATE_ONLY_RE.test(s)) return null;
+  // Strip answer-heading boilerplate: "Here is the …", "Here are …", "Here's the …", "This is a …"
+  s = s.replace(ANSWER_HEADING_RE, "").trim();
+  // Strip conversational filler (leading politeness/request framing such as
+  // "can you", "please") so framing is removed from any input path, not only
+  // from text pre-processed through cleanPromptForTitle.
+  let prev = "";
+  while (s && s !== prev) {
+    prev = s;
+    s = s.replace(LEADING_FILLER_RE, "");
+  }
+  s = s.replace(TRAILING_FILLER_RE, "").trim();
+  // Strip question/request lead-ins: "How do I …", "What's the best …", etc.
+  s = s.replace(QUESTION_LEAD_IN_RE, "").trim();
+  // Final trailing-punctuation pass in case stripping exposed new punctuation.
+  // Unicode sentence-ending punct (。！？) stripped alongside ASCII .!?
+  s = stripTrailingTitlePunctuation(s).trim();
+  // Allow two-character acronyms such as "AI"; single chars are not meaningful.
+  if (s.length < 2) return null;
+  // Capitalize.
+  s = s.charAt(0).toUpperCase() + s.slice(1);
+  // Cap at the word limit and make the omission visible. The ellipsis remains
+  // attached to the final retained word, so it does not increase word count.
+  const words = s.split(/\s+/);
+  if (words.length > MAX_SUMMARY_TITLE_WORDS) {
+    s = appendTruncationEllipsis(
+      words
+        .slice(0, MAX_SUMMARY_TITLE_WORDS)
+        .join(" "),
+    );
+  }
+  // Clamp at character limit; null when no word boundary exists (prevents
+  // mid-word fragments from single over-length tokens).
+  const clamped = clampAtWordBoundary(s, MAX_SUMMARY_TITLE_LENGTH);
+  if (clamped === null) return null;
+  // Remove an unmatched leading opening delimiter when truncation left its
+  // closer outside the retained stem (e.g. '"Implement...' → 'Implement...').
+  return stripUnmatchedLeadingDelimiter(clamped);
 }
 
 /** First markdown heading (h1–h3) in the opening lines of an assistant reply,
- *  cleaned of markdown syntax and edge emoji. Assistant headings are often a
+ *  normalized through formatGeneratedTitle. Assistant headings are often a
  *  genuine summary of a long ask ("# Retry policy options"). Null when the
  *  reply doesn't open with a usable heading. */
 export function titleFromAssistantReply(assistantText: string | null | undefined): string | null {
   if (typeof assistantText !== "string") return null;
   const lines = assistantText
     .split(/\r?\n/)
-    .map((line) => line.trim())
+    .map((line) => line.trim().replace(/^(?:>\s*)+/, ""))
     .filter(Boolean)
     .slice(0, 3);
   for (const line of lines) {
     const match = /^#{1,3}\s+(.+)$/.exec(line);
     if (!match) continue;
-    const cleaned = stripLeadingTrailingEmoji(match[1].replace(/[*_`#]+/g, "").trim());
-    if (cleaned.length >= 3 && cleaned.length <= 80) {
-      return clampAtWordBoundary(cleaned, MAX_SUMMARY_TITLE_LENGTH);
-    }
+    const formatted = formatGeneratedTitle(match[1]);
+    if (formatted) return formatted;
   }
   return null;
 }
 
 /** Short summary title for a chat thread, derived from its first exchange.
- *  Pure heuristic (no model call, matching the prompt-enhancer convention):
- *  the filler-cleaned user prompt when it already fits; otherwise an opening
- *  assistant heading when one exists; otherwise the cleaned prompt with its
- *  question lead-in stripped, clamped at a word boundary. Null when nothing
+ *  Pure heuristic (no model call): the filler-cleaned user prompt when it fits
+ *  the summary length, formatted through formatGeneratedTitle (strips question
+ *  lead-ins, trailing punct, etc.); otherwise an assistant heading; otherwise
+ *  the formatted cleaned prompt clamped at a word boundary. Null when nothing
  *  meaningful can be derived — callers keep their current title. */
 export function chatSummaryTitle(input: {
   userText?: string | null;
   assistantText?: string | null;
 }): string | null {
-  const normalized = normalizeChatTitle(input.userText);
-  const cleaned = normalized ? cleanPromptForTitle(normalized) : null;
-  if (cleaned && cleaned.length <= MAX_SUMMARY_TITLE_LENGTH) return cleaned;
+  const normalized = normalizeGeneratedTitleSource(input.userText);
+  const prepared = normalized
+    ? normalizeMarkdownInlineLinks(stripLineMarkdown(normalized))
+    : null;
+  const cleaned = prepared ? cleanPromptForTitle(prepared) : null;
+  // Short prompts: apply shared formatter and return directly when they fit.
+  if (cleaned && cleaned.length <= MAX_SUMMARY_TITLE_LENGTH) {
+    const formatted = formatGeneratedTitle(cleaned);
+    if (formatted) return formatted;
+  }
+  // Long prompts (or short prompts that collapsed to nothing): prefer an
+  // assistant heading — often a more informative summary than a truncated ask.
   const fromReply = titleFromAssistantReply(input.assistantText);
   if (fromReply) return fromReply;
+  // Final fallback: format the full cleaned prompt (question lead-ins stripped,
+  // capped at word/char limits).
   if (!cleaned) return null;
-  const stripped = cleaned.replace(QUESTION_LEAD_IN_RE, "").trim();
-  const topic = stripped.length >= 3 ? stripped.charAt(0).toUpperCase() + stripped.slice(1) : cleaned;
-  return clampAtWordBoundary(topic, MAX_SUMMARY_TITLE_LENGTH);
+  return formatGeneratedTitle(cleaned);
 }
 
 // Matches the current header ("Coven identity canon:") and legacy variants

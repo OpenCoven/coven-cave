@@ -5,7 +5,6 @@ import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { SkeletonRows } from "@/components/ui/skeleton";
-import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { relativeTime } from "@/lib/relative-time";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -20,10 +19,12 @@ import type { PullRequestSummary } from "@/lib/beads-pr-management";
  */
 export function BeadDetailModal({
   id,
+  projectRoot,
   onClose,
   onClaim,
 }: {
   id: string;
+  projectRoot: string;
   onClose: () => void;
   onClaim: () => void;
 }) {
@@ -49,7 +50,10 @@ export function BeadDetailModal({
     let alive = true;
     setDetail(null);
     setDetailError(null);
-    fetch(`/api/beads?mode=show&id=${encodeURIComponent(id)}`, { cache: "no-store" })
+    fetch(
+      `/api/beads?mode=show&id=${encodeURIComponent(id)}&projectRoot=${encodeURIComponent(projectRoot)}`,
+      { cache: "no-store" },
+    )
       .then((res) => res.json())
       .then((json) => {
         if (!alive) return;
@@ -64,7 +68,7 @@ export function BeadDetailModal({
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, projectRoot]);
 
   return (
     <Modal open onClose={onClose} breadcrumb={["Queue", id]} ariaLabel={`Bead ${id}`}>
@@ -222,6 +226,224 @@ export function AttentionStrip({
   );
 }
 
+/** The row's left accent-rail tone (a finite enum → a `fwq-row--rail-*` class,
+ *  so the colour stays in CSS rather than an inline style). Bead-only rows read
+ *  by priority (what to pick up first); PR-backed rows read by lane state (what
+ *  is blocking the merge). */
+function railClass(item: WorkQueueItem): string {
+  if (!item.pr && !item.merged && item.bead) {
+    if (item.bead.priority === 0) return "danger";
+    if (item.bead.priority === 1) return "warning";
+    return "neutral";
+  }
+  switch (item.lane) {
+    case "checks-failing":
+      return "danger";
+    case "changes-requested":
+      return "warning";
+    case "waiting":
+      return "waiting";
+    case "ready-to-merge":
+    case "post-merge-cleanup":
+      return "success";
+    default:
+      return "neutral";
+  }
+}
+
+// ── Inline markdown note editor (queue redesign) ──────────────────────────────
+// A lightweight Write/Preview composer with a formatting toolbar, ported from
+// the design prototype. The heavy CodeMirror MdEditor is overkill for a short
+// handoff note; this stays self-contained and matches the mock pixel-for-pixel.
+
+type MdKind = "bold" | "italic" | "code" | "h" | "ul" | "quote" | "link";
+
+/** Wrap/insert markdown around the textarea's current selection, returning the
+ *  next value and the caret position to restore. */
+function applyMarkdown(value: string, start: number, end: number, kind: MdKind): { next: string; caret: number } {
+  const sel = value.slice(start, end);
+  const atLineStart = start === 0 || value[start - 1] === "\n";
+  const nl = atLineStart ? "" : "\n";
+  let ins: string;
+  switch (kind) {
+    case "bold":
+      ins = `**${sel || "bold"}**`;
+      break;
+    case "italic":
+      ins = `*${sel || "italic"}*`;
+      break;
+    case "code":
+      ins = `\`${sel || "code"}\``;
+      break;
+    case "h":
+      ins = `${nl}## ${sel || "Heading"}`;
+      break;
+    case "ul":
+      ins = `${nl}- ${sel || "List item"}`;
+      break;
+    case "quote":
+      ins = `${nl}> ${sel || "Quote"}`;
+      break;
+    case "link":
+      ins = `[${sel || "label"}](https://)`;
+      break;
+    default:
+      ins = sel;
+  }
+  return { next: value.slice(0, start) + ins + value.slice(end), caret: start + ins.length };
+}
+
+/** Minimal, escaping markdown → HTML for the preview pane. Every user string is
+ *  HTML-escaped before any tag is emitted, so the innerHTML is inert. */
+function renderMarkdown(src: string): string {
+  if (!src || !src.trim()) {
+    return '<p style="color:var(--text-muted);margin:0;">Nothing to preview yet — switch to Write to add details.</p>';
+  }
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const inline = (s: string) =>
+    esc(s)
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+      .replace(
+        /`([^`]+)`/g,
+        '<code style="font-family:var(--font-mono),monospace;font-size:12px;background:var(--bg-elevated);padding:1px 5px;border-radius:6px;">$1</code>',
+      )
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  const lines = src.split(/\r?\n/);
+  let html = "";
+  let list: "ul" | "ol" | null = null;
+  const closeList = () => {
+    if (list) {
+      html += list === "ul" ? "</ul>" : "</ol>";
+      list = null;
+    }
+  };
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, "");
+    let m: RegExpMatchArray | null;
+    if (!line.trim()) {
+      closeList();
+      continue;
+    }
+    if ((m = line.match(/^(#{1,3})\s+(.*)/))) {
+      closeList();
+      const lv = m[1].length;
+      const sz = lv === 1 ? 18 : lv === 2 ? 15.5 : 13.5;
+      html += `<div style="font-weight:600;font-size:${sz}px;margin:12px 0 5px;color:var(--text-primary);">${inline(m[2])}</div>`;
+      continue;
+    }
+    if ((m = line.match(/^>\s?(.*)/))) {
+      closeList();
+      html += `<div style="border-left:2px solid var(--accent-presence);padding:3px 0 3px 12px;margin:7px 0;color:var(--text-secondary);">${inline(m[1])}</div>`;
+      continue;
+    }
+    if ((m = line.match(/^[-*]\s+(.*)/))) {
+      if (list !== "ul") {
+        closeList();
+        html += '<ul style="margin:7px 0;padding-left:20px;">';
+        list = "ul";
+      }
+      html += `<li style="margin:3px 0;">${inline(m[1])}</li>`;
+      continue;
+    }
+    if ((m = line.match(/^\d+\.\s+(.*)/))) {
+      if (list !== "ol") {
+        closeList();
+        html += '<ol style="margin:7px 0;padding-left:22px;">';
+        list = "ol";
+      }
+      html += `<li style="margin:3px 0;">${inline(m[1])}</li>`;
+      continue;
+    }
+    closeList();
+    html += `<p style="margin:7px 0;line-height:1.6;">${inline(line)}</p>`;
+  }
+  closeList();
+  return html;
+}
+
+/** Forward-to-familiar dropdown (queue redesign) — replaces the split
+ *  StandardSelect. Claims the bead on a familiar's behalf (cave-p63a). Keeps
+ *  the "Claim for familiar…" trigger name and menuitemradio items so the a11y
+ *  contract (and the e2e claim-for flow) is unchanged. */
+function ForwardMenu({
+  familiars,
+  disabled,
+  onClaimFor,
+}: {
+  familiars: ResolvedFamiliar[];
+  disabled: boolean;
+  onClaimFor: (familiar: ResolvedFamiliar) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  return (
+    <div className="fwq-forward" ref={rootRef}>
+      {open ? (
+        <button
+          type="button"
+          className="fwq-forward-scrim"
+          aria-hidden
+          tabIndex={-1}
+          onClick={() => setOpen(false)}
+        />
+      ) : null}
+      <button
+        ref={triggerRef}
+        type="button"
+        className={`fwq-forward-trigger${open ? " is-open" : ""}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Claim for familiar…"
+        title="Forward this bead to a familiar (claims it on their behalf)"
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Icon name="ph:user" width={13} aria-hidden />
+        For…
+        <Icon name="ph:caret-down-bold" width={12} className="fwq-forward-caret" aria-hidden />
+      </button>
+      {open ? (
+        <div className="fwq-forward-menu" role="menu" aria-label="Forward to familiar">
+          <p className="fwq-forward-menu-head">Forward to familiar</p>
+          {familiars.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={false}
+              className="fwq-forward-item"
+              onClick={() => {
+                setOpen(false);
+                onClaimFor(f);
+              }}
+            >
+              <span className="fwq-forward-avatar" aria-hidden>
+                {f.display_name.charAt(0).toUpperCase()}
+              </span>
+              <span className="fwq-forward-name">{f.display_name}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function WorkQueueCard({
   item,
   familiarLabel,
@@ -252,8 +474,12 @@ export function WorkQueueCard({
   const title = item.pr?.title ?? item.merged?.title ?? item.bead?.title ?? "Untitled";
   const prNumber = item.pr?.number ?? item.merged?.number ?? null;
   const url = item.pr?.url ?? item.merged?.url ?? null;
+  const isBeadOnly = !item.pr && !item.merged && !!item.bead;
+  const isUnassigned = item.familiar === "unassigned";
+  const checkStatus = item.pr?.checkStatus ?? null;
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState("");
+  const [noteMode, setNoteMode] = useState<"write" | "preview">("write");
   const noteInputRef = useRef<HTMLTextAreaElement | null>(null);
   const noteButtonRef = useRef<HTMLButtonElement | null>(null);
   const isCleanup = item.lane === "post-merge-cleanup";
@@ -262,11 +488,11 @@ export function WorkQueueCard({
   const closeBlocked = isCleanup && !hasEvidence;
 
   // Keyboard/AT flow for the inline composer: focus lands in the textarea when
-  // it opens, and returns to the Note toggle whenever it closes (submit,
-  // Cancel, Escape) — otherwise focus drops to <body> on unmount.
+  // it opens (Write mode), and returns to the Note toggle whenever it closes
+  // (submit, Cancel, Escape) — otherwise focus drops to <body> on unmount.
   useEffect(() => {
-    if (composing) noteInputRef.current?.focus();
-  }, [composing]);
+    if (composing && noteMode === "write") noteInputRef.current?.focus();
+  }, [composing, noteMode]);
 
   const closeComposer = (opts?: { clearDraft?: boolean }) => {
     if (opts?.clearDraft) setDraft("");
@@ -280,177 +506,244 @@ export function WorkQueueCard({
     if (ok) closeComposer({ clearDraft: true });
   };
 
+  const runMd = (kind: MdKind) => {
+    const el = noteInputRef.current;
+    if (!el) return;
+    const { next, caret } = applyMarkdown(draft, el.selectionStart, el.selectionEnd, kind);
+    setDraft(next);
+    requestAnimationFrame(() => {
+      const t = noteInputRef.current;
+      if (t) {
+        t.focus();
+        t.setSelectionRange(caret, caret);
+      }
+    });
+  };
+
   return (
-    <li className={`fwq-card${item.stale ? " is-stale" : ""}`}>
-      <div className="fwq-card-main">
-        <div className="fwq-card-title">
+    <li className={`fwq-row fwq-row--rail-${railClass(item)}${item.stale ? " is-stale" : ""}`}>
+      <div className="fwq-row-main">
+        <div className="fwq-row-title">
           {prNumber != null ? <span className="fwq-pr-num">#{prNumber}</span> : null}
           {onInspect ? (
             <button
               type="button"
-              className="fwq-card-name fwq-card-name--link focus-ring-inset"
+              className="fwq-row-name fwq-row-name--link focus-ring-inset"
               title={`Inspect ${beadId}`}
               onClick={onInspect}
             >
               {title}
             </button>
           ) : (
-            <span className="fwq-card-name">{title}</span>
+            <span className="fwq-row-name">{title}</span>
           )}
         </div>
-        <div className="fwq-card-meta">
-          <span className="fwq-tag fwq-tag--familiar">{familiarLabel}</span>
-          {item.surface ? <span className="fwq-tag">{item.surface}</span> : null}
-          {beadId ? <span className="fwq-tag fwq-tag--bead">{beadId}</span> : null}
-          {item.bead && !item.pr && !item.merged ? (
-            <span className={`fwq-tag fwq-tag--p${Math.min(item.bead.priority, 3)}`}>P{item.bead.priority}</span>
+        <div className="fwq-row-meta">
+          <span className={`fwq-assign${isUnassigned ? "" : " fwq-assign--claimed"}`}>
+            <span className={`fwq-sigil${isUnassigned ? "" : " fwq-sigil--filled"}`} aria-hidden />
+            {familiarLabel}
+          </span>
+          {beadId ? <span className="fwq-bead">{beadId}</span> : null}
+          {checkStatus ? (
+            <span className={`fwq-checks fwq-checks--${checkStatus}`}>
+              <span className="fwq-checks-dot" aria-hidden />
+              checks {checkStatus}
+            </span>
           ) : null}
-          {item.pr ? (
-            <>
-              <span className={`fwq-tag fwq-tag--check-${item.pr.checkStatus ?? "unknown"}`}>
-                checks {item.pr.checkStatus ?? "unknown"}
-              </span>
-              {item.pr.reviewDecision && item.pr.reviewDecision !== "UNKNOWN" ? (
-                <span className="fwq-tag">{item.pr.reviewDecision.toLowerCase().replace(/_/g, " ")}</span>
-              ) : null}
-              {item.lane === "ready-to-merge" ? <span className="fwq-tag fwq-tag--ready">merge eligible</span> : null}
-            </>
+          {item.pr?.reviewDecision && item.pr.reviewDecision !== "UNKNOWN" ? (
+            <span className="fwq-tag">{item.pr.reviewDecision.toLowerCase().replace(/_/g, " ")}</span>
           ) : null}
+          {item.lane === "ready-to-merge" ? <span className="fwq-tag fwq-tag--ready">merge eligible</span> : null}
           {item.stale ? <span className="fwq-tag fwq-tag--stale">stale</span> : null}
-          {item.pr?.updatedAt ? (
-            <span className="fwq-card-time" title={new Date(item.pr.updatedAt).toLocaleString()}>
-              updated {relativeTime(item.pr.updatedAt)}
-            </span>
-          ) : null}
-          {item.merged?.mergedAt ? (
-            <span className="fwq-card-time" title={new Date(item.merged.mergedAt).toLocaleString()}>
-              merged {relativeTime(item.merged.mergedAt)}
-            </span>
-          ) : null}
-          {!item.pr && !item.merged && item.bead?.updated_at ? (
-            <span className="fwq-card-time" title={new Date(item.bead.updated_at).toLocaleString()}>
-              updated {relativeTime(item.bead.updated_at)}
-            </span>
-          ) : null}
+          <span className="fwq-row-trailing">
+            {isBeadOnly && item.bead ? (
+              <span className={`fwq-pri-text fwq-pri-text--p${Math.min(item.bead.priority, 3)}`}>
+                P{item.bead.priority}
+              </span>
+            ) : null}
+            {isBeadOnly && item.bead?.updated_at ? (
+              <>
+                <span className="fwq-dot-sep" aria-hidden>·</span>
+                <span className="fwq-updated" title={new Date(item.bead.updated_at).toLocaleString()}>
+                  updated {relativeTime(item.bead.updated_at)}
+                </span>
+              </>
+            ) : null}
+            {item.pr?.updatedAt ? (
+              <span className="fwq-updated" title={new Date(item.pr.updatedAt).toLocaleString()}>
+                updated {relativeTime(item.pr.updatedAt)}
+              </span>
+            ) : null}
+            {item.merged?.mergedAt ? (
+              <span className="fwq-updated" title={new Date(item.merged.mergedAt).toLocaleString()}>
+                merged {relativeTime(item.merged.mergedAt)}
+              </span>
+            ) : null}
+          </span>
         </div>
       </div>
-      <div className="fwq-card-actions">
+      <div className="fwq-row-actions">
         {url ? (
-          <Button
-            variant="ghost"
-            size="xs"
-            trailingIcon="ph:arrow-square-out"
+          <button
+            type="button"
+            className="fwq-act"
             onClick={() => onOpenUrl?.(url)}
             disabled={!onOpenUrl}
           >
             {item.merged ? "Merged PR" : "Open PR"}
-          </Button>
+            <Icon name="ph:arrow-square-out" width={13} aria-hidden />
+          </button>
         ) : null}
         {beadId ? (
-          <Button
+          <button
             ref={noteButtonRef}
-            variant="ghost"
-            size="xs"
-            leadingIcon="ph:note-pencil"
+            type="button"
+            className={`fwq-act${composing ? " is-active" : ""}`}
             onClick={() => setComposing((v) => !v)}
             aria-expanded={composing}
             aria-label={`Add a handoff note to ${beadId}`}
           >
+            <Icon name="ph:note-pencil" width={13} aria-hidden />
             Note
-          </Button>
+          </button>
         ) : null}
         {item.lane === "no-open-PR" && beadId ? (
           <>
-            <Button
-              variant="secondary"
-              size="xs"
-              loading={busy}
-              leadingIcon="ph:hand"
+            <button
+              type="button"
+              className="fwq-act fwq-act--claim"
               onClick={onClaim}
+              disabled={busy}
               title="Take this work item (bead) — marks it in progress under your name"
             >
+              <Icon name="ph:hand" width={13} aria-hidden />
               Claim
-            </Button>
+            </button>
             {/* Split control: bare Claim assigns the connected user; the picker
                 claims on a familiar's behalf instead (cave-p63a). */}
             {familiars.length > 0 ? (
-              <StandardSelect
-                label="Claim for familiar…"
-                title="Claim this bead for a familiar instead of yourself"
-                value=""
-                placeholder="For…"
-                showCaret
-                className="fwq-claim-for focus-ring-inset"
-                disabled={busy}
-                options={familiars.map((f) => ({ value: f.id, label: f.display_name }))}
-                onChange={(id) => {
-                  const familiar = familiars.find((f) => f.id === id);
-                  if (familiar) onClaimFor(familiar);
-                }}
-              />
+              <ForwardMenu familiars={familiars} disabled={busy} onClaimFor={onClaimFor} />
             ) : null}
           </>
         ) : null}
         {isCleanup && beadId ? (
-          <Button
-            variant="secondary"
-            size="xs"
-            loading={busy}
-            leadingIcon="ph:check"
+          <button
+            type="button"
+            className="fwq-act fwq-act--claim"
             onClick={onClose}
-            disabled={closeBlocked}
+            disabled={closeBlocked || busy}
             title={
               closeBlocked
                 ? "Add a handoff note to record verification before closing"
                 : "Mark this work item (bead) complete — it leaves the queue"
             }
           >
+            <Icon name="ph:check" width={13} aria-hidden />
             Close bead
-          </Button>
+          </button>
         ) : null}
       </div>
       {closeBlocked && !composing ? (
-        <p className="fwq-card-hint">Add a handoff note to record verification before closing.</p>
+        <p className="fwq-row-hint">Add a handoff note to record verification before closing.</p>
       ) : null}
       {composing && beadId ? (
         <div className="fwq-note">
-          <textarea
-            ref={noteInputRef}
-            className="fwq-note-input"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder={`Handoff note for ${beadId} — what you verified…`}
-            aria-label={`Handoff note for ${beadId}`}
-            rows={2}
-            disabled={busy}
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                e.preventDefault();
-                void submitNote();
-              }
-              // Escape closes but keeps the draft — an accidental Escape must
-              // not destroy typed verification text (Cancel is the clear).
-              if (e.key === "Escape") {
-                e.preventDefault();
-                e.stopPropagation();
-                closeComposer();
-              }
-            }}
-          />
-          <div className="fwq-note-actions">
-            <Button variant="ghost" size="xs" onClick={() => closeComposer({ clearDraft: true })} disabled={busy}>
+          <div className="fwq-note-head">
+            <div className="fwq-note-tabs" role="group" aria-label="Note mode">
+              <button
+                type="button"
+                className={`fwq-note-tab${noteMode === "write" ? " is-active" : ""}`}
+                aria-pressed={noteMode === "write"}
+                onClick={() => setNoteMode("write")}
+              >
+                Write
+              </button>
+              <button
+                type="button"
+                className={`fwq-note-tab${noteMode === "preview" ? " is-active" : ""}`}
+                aria-pressed={noteMode === "preview"}
+                onClick={() => setNoteMode("preview")}
+              >
+                Preview
+              </button>
+            </div>
+            {noteMode === "write" ? (
+              <div className="fwq-note-tools" role="group" aria-label="Formatting">
+                <button type="button" className="fwq-note-tool fwq-note-tool--b" title="Bold" onClick={() => runMd("bold")}>
+                  B
+                </button>
+                <button type="button" className="fwq-note-tool fwq-note-tool--i" title="Italic" onClick={() => runMd("italic")}>
+                  i
+                </button>
+                <button type="button" className="fwq-note-tool" title="Code" onClick={() => runMd("code")}>
+                  <Icon name="ph:code" width={14} aria-hidden />
+                </button>
+                <button type="button" className="fwq-note-tool fwq-note-tool--h" title="Heading" onClick={() => runMd("h")}>
+                  H
+                </button>
+                <button type="button" className="fwq-note-tool" title="List" onClick={() => runMd("ul")}>
+                  <Icon name="ph:list-bullets" width={14} aria-hidden />
+                </button>
+                <button type="button" className="fwq-note-tool" title="Quote" onClick={() => runMd("quote")}>
+                  <Icon name="ph:chat-teardrop" width={14} aria-hidden />
+                </button>
+                <button type="button" className="fwq-note-tool" title="Link" onClick={() => runMd("link")}>
+                  <Icon name="ph:link" width={14} aria-hidden />
+                </button>
+              </div>
+            ) : null}
+            <span className="fwq-note-lang">markdown</span>
+          </div>
+          <div className="fwq-note-body">
+            {noteMode === "write" ? (
+              <textarea
+                ref={noteInputRef}
+                className="fwq-note-input"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder={`Handoff note for ${beadId} — **bold**, *italic*, \`code\`, - lists, > quote, [links](url)…`}
+                aria-label={`Handoff note for ${beadId}`}
+                disabled={busy}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                    e.preventDefault();
+                    void submitNote();
+                  }
+                  // Escape closes but keeps the draft — an accidental Escape must
+                  // not destroy typed verification text (Cancel is the clear).
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    closeComposer();
+                  }
+                }}
+              />
+            ) : (
+              <div
+                className="fwq-note-preview"
+                // Inert: renderMarkdown HTML-escapes every user string before
+                // emitting any tag (see the esc() pass), so this cannot inject.
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(draft) }}
+              />
+            )}
+          </div>
+          <div className="fwq-note-foot">
+            <button
+              type="button"
+              className="fwq-note-cancel"
+              onClick={() => closeComposer({ clearDraft: true })}
+              disabled={busy}
+            >
               Cancel
-            </Button>
-            <Button
-              variant="secondary"
-              size="xs"
-              loading={busy}
-              leadingIcon="ph:plus"
+            </button>
+            <button
+              type="button"
+              className="fwq-note-save"
               onClick={() => void submitNote()}
               disabled={!draft.trim() || busy}
             >
-              Add note
-            </Button>
+              Save note
+            </button>
           </div>
         </div>
       ) : null}

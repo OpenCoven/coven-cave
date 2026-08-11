@@ -228,19 +228,38 @@ export function openMermaidViewer(source: SVGSVGElement): void {
     downOnBackdrop = false;
   };
 
+  // Registered capture-phase with stopPropagation so a host surface's own
+  // window-level key handling (e.g. a modal focus trap under the overlay —
+  // the Research Studio viewer hosts diagrams inside one) never sees the keys
+  // this top layer consumes: one Escape peels one layer, and Tab cycles the
+  // overlay's toolbar instead of being recaptured by the trap underneath.
   const onKey = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
       event.preventDefault();
+      event.stopPropagation();
       close();
     } else if (event.key === "+" || event.key === "=") {
       event.preventDefault();
+      event.stopPropagation();
       zoomCenter(ZOOM_STEP);
     } else if (event.key === "-" || event.key === "_") {
       event.preventDefault();
+      event.stopPropagation();
       zoomCenter(1 / ZOOM_STEP);
     } else if (event.key === "0") {
       event.preventDefault();
+      event.stopPropagation();
       fit();
+    } else if (event.key === "Tab") {
+      event.preventDefault();
+      event.stopPropagation();
+      const buttons = Array.from(
+        overlay.querySelectorAll<HTMLElement>("button:not([disabled])"),
+      );
+      if (buttons.length === 0) return;
+      const index = buttons.indexOf(document.activeElement as HTMLElement);
+      const step = event.shiftKey ? -1 : 1;
+      buttons[(index + step + buttons.length) % buttons.length].focus();
     }
   };
 
@@ -258,7 +277,7 @@ export function openMermaidViewer(source: SVGSVGElement): void {
     stage.removeEventListener("pointerdown", onPointerDown);
     window.removeEventListener("pointermove", onPointerMove);
     window.removeEventListener("pointerup", endDrag);
-    window.removeEventListener("keydown", onKey);
+    window.removeEventListener("keydown", onKey, { capture: true });
     stage.removeEventListener("dblclick", onDblClick);
     overlay.remove();
     previousActive?.focus?.();
@@ -273,7 +292,7 @@ export function openMermaidViewer(source: SVGSVGElement): void {
   stage.addEventListener("pointerdown", onPointerDown);
   window.addEventListener("pointermove", onPointerMove);
   window.addEventListener("pointerup", endDrag);
-  window.addEventListener("keydown", onKey);
+  window.addEventListener("keydown", onKey, { capture: true });
   stage.addEventListener("dblclick", onDblClick);
 
   const previousActive = document.activeElement as HTMLElement | null;

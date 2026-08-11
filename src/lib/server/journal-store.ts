@@ -46,13 +46,23 @@ function entryFile(date: string): string {
 
 const EMPTY: JournalEntry = { reflectedBy: null, generatedAt: null, reflection: "" };
 
+function isMissingPath(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && (error as { code?: unknown }).code === "ENOENT";
+}
+
 export async function readJournalEntry(date: string): Promise<JournalRecord> {
   const file = entryFile(date);
   try {
     const [raw, info] = await Promise.all([readFile(file, "utf8"), stat(file)]);
     return { date, exists: true, entry: parseJournalEntry(raw), modified: info.mtime.toISOString() };
-  } catch {
-    return { date, exists: false, entry: { ...EMPTY }, modified: null };
+  } catch (error) {
+    if (isMissingPath(error)) {
+      return { date, exists: false, entry: { ...EMPTY }, modified: null };
+    }
+    throw error;
   }
 }
 
@@ -73,8 +83,9 @@ export async function deleteJournalEntry(date: string): Promise<boolean> {
   try {
     await unlink(file);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (isMissingPath(error)) return false;
+    throw error;
   }
 }
 
@@ -83,14 +94,16 @@ export async function listJournalEntries(): Promise<JournalSummary[]> {
   let names: string[];
   try {
     names = await readdir(journalDir());
-  } catch {
-    return [];
+  } catch (error) {
+    if (isMissingPath(error)) return [];
+    throw error;
   }
   const summaries = await Promise.all(
     names
       .filter((name) => name.endsWith(".md") && isValidNoteDate(name.slice(0, -3)))
       .map(async (name) => {
         const record = await readJournalEntry(name.slice(0, -3));
+        if (!record.exists) return null;
         const summary: JournalSummary = {
           date: record.date,
           preview: entryPreview(record.entry),
@@ -100,5 +113,7 @@ export async function listJournalEntries(): Promise<JournalSummary[]> {
         return summary;
       }),
   );
-  return summaries.sort((a, b) => (a.date < b.date ? 1 : -1));
+  return summaries
+    .filter((summary): summary is JournalSummary => summary !== null)
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
 }

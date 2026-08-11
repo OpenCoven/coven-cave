@@ -8,6 +8,7 @@ import { STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import type { CaveProject } from "@/lib/cave-projects";
 import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-badge";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { assignedDisclosure, isPartial, type AssignedSourcesMeta } from "@/lib/github-assigned-meta";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import { useFleetTokenEnabled } from "@/lib/omnigent/use-fleet-gate";
@@ -25,26 +26,31 @@ import {
   taskAsanaLinkFromAsanaItem,
 } from "@/lib/task-asana";
 import { Icon } from "@/lib/icon";
-import { useCopy } from "@/lib/use-copy";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import type { IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { StandardSelect } from "@/components/ui/select";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
-import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
 import { CHAT_OPEN_PROJECTS_EVENT, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { useDateTimePrefs, formatDate, formatClock } from "@/lib/datetime-format";
-import { openExternalUrl } from "@/lib/open-external";
+import {
+  cancelSystemBrowserUrlWindow,
+  openExternalUrl,
+  openSystemBrowserUrl,
+  reserveSystemBrowserUrlWindow,
+} from "@/lib/open-external";
 import { InlineAsanaPATSetup } from "@/components/asana-connect-inline";
 import { attachmentIcon, fileToAttachment, hasDraggedFiles } from "@/lib/chat-attachments";
 import type { CardPatch } from "@/lib/board-card-ops";
 import { sessionStatusTone, sessionStatusWord } from "@/lib/session-status";
 import { BoardInspectorDebug } from "@/components/board-inspector-debug";
 import { useProjectFamiliars } from "@/lib/use-project-familiars";
+import { useProjects } from "@/lib/use-projects";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -215,6 +221,11 @@ function GitHubAttachSection({
   const [err, setErr] = useState<string | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [patRejected, setPatRejected] = useState(false);
+  // Completeness disclosure (cave-amx2m): the endpoint's per-source metadata,
+  // rendered as one quiet line so a capped or half-loaded list never wears a
+  // definitive "nothing assigned to you".
+  const [disclosure, setDisclosure] = useState<string | null>(null);
+  const [partial, setPartial] = useState(false);
   const [fetchKey, setFetchKey] = useState(0);
   const coarse = useIsCoarsePointer();
 
@@ -225,21 +236,27 @@ function GitHubAttachSection({
     setErr(null);
     fetch("/api/github/assigned", { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { ok: boolean; items?: GitHubItem[]; configured?: boolean; error?: string; patInvalid?: boolean }) => {
+      .then((d: { ok: boolean; items?: GitHubItem[]; configured?: boolean; error?: string; patInvalid?: boolean; sources?: AssignedSourcesMeta }) => {
         // Drop a superseded/post-close response (open toggled or PAT re-saved).
         if (cancelled) return;
         if (d.ok) {
           setItems(d.items ?? []);
           setConfigured(d.configured ?? true);
           setPatRejected(false);
+          setDisclosure(d.sources ? assignedDisclosure(d.sources, (d.items ?? []).length) : null);
+          setPartial(d.sources ? isPartial(d.sources) : false);
         } else if (d.patInvalid) {
           // Rejected token: reopen the connect form (it was gated on
           // configured===false, unreachable with a stored-but-dead PAT).
           setItems([]);
           setConfigured(false);
           setPatRejected(true);
+          setDisclosure(null);
+          setPartial(false);
         } else {
           setErr(d.error ?? "failed");
+          setDisclosure(null);
+          setPartial(false);
         }
       })
       .catch(() => { if (!cancelled) setErr("fetch failed"); })
@@ -367,13 +384,28 @@ function GitHubAttachSection({
                 <InlinePATSetup onSaved={() => { setItems([]); setConfigured(null); setPatRejected(false); setFetchKey((k) => k + 1); }} />
               </>
             )}
+            {/* cave-amx2m: the definitive empty claim is earned only by a
+                complete response — a half-loaded list says so instead. */}
             {!loading && !err && configured !== false && filtered.length === 0 && items.length === 0 && (
               <div className="[padding:var(--space-3)_10px]! [font-size:var(--text-xs)]! [color:var(--text-muted)]! [text-align:center]!">
-                No open issues, PRs, or review requests assigned to you.
+                {partial
+                  ? "Couldn’t load all GitHub sources — there may be work this list can’t see."
+                  : "No open issues, PRs, or review requests assigned to you."}
+                {partial && (
+                  <button
+                    type="button"
+                    className="board-toolbar-btn [font-size:var(--text-2xs)]! [padding:2px_var(--space-2)]! [margin-left:6px]!"
+                    onClick={() => setFetchKey((k) => k + 1)}
+                  >
+                    Retry
+                  </button>
+                )}
               </div>
             )}
             {!loading && !err && configured !== false && items.length > 0 && filtered.length === 0 && (
-              <div className="[padding:var(--space-3)_10px]! [font-size:var(--text-xs)]! [color:var(--text-muted)]! [text-align:center]!">No matches.</div>
+              <div className="[padding:var(--space-3)_10px]! [font-size:var(--text-xs)]! [color:var(--text-muted)]! [text-align:center]!">
+                {disclosure ? `No matches in what loaded — ${disclosure}` : "No matches."}
+              </div>
             )}
             {filtered.map((item) => {
               const attached = attachedUrls.has(item.url);
@@ -427,6 +459,27 @@ function GitHubAttachSection({
                 </div>
               );
             })}
+            {/* Completeness footer (cave-amx2m): rides under a non-empty list
+                whenever a source was capped or down, so partial never reads as
+                complete. */}
+            {!loading && !err && filtered.length > 0 && disclosure && (
+              <div
+                role="note"
+                className="[padding:6px_10px]! [font-size:var(--text-2xs)]! [color:var(--text-muted)]! [border-top:1px_solid_var(--border-hairline)]! [display:flex]! [align-items:center]! [gap:6px]!"
+              >
+                <Icon name={partial ? "ph:warning-circle" : "ph:info"} width={11} className="shrink-0" />
+                <span className="[flex:1]! [min-width:0]!">{disclosure}</span>
+                {partial && (
+                  <button
+                    type="button"
+                    className="board-toolbar-btn [font-size:var(--text-2xs)]! [padding:1px_6px]!"
+                    onClick={() => setFetchKey((k) => k + 1)}
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1128,7 +1181,9 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   const modelHarness = canonicalHarnessId(
     currentFamiliar?.harness ?? currentFamiliar?.defaultHarness ?? "",
   );
-  const runtimeModelOptions = useRuntimeModelOptions(modelHarness, currentFamiliar?.id ?? null);
+  const runtimeModelInventory = useRuntimeModelInventory(modelHarness, currentFamiliar?.id ?? null);
+  const runtimeModelOptions = runtimeModelInventory.models;
+  const allowCustomModel = runtimeModelInventory.allowCustom;
   const [modelCustomMode, setModelCustomMode] = useState(false);
   const [customModelDraft, setCustomModelDraft] = useState(card.modelOverride ?? "");
   const taskModelIsCustom = Boolean(
@@ -1169,8 +1224,17 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   }, [card.modelOverride]);
   const taskModelOptions = [
     { value: "", label: "Familiar default" },
+    ...(taskModelIsCustom && card.modelOverride && !allowCustomModel
+      ? [{
+          value: card.modelOverride,
+          label: `${card.modelOverride} (not offered)`,
+          disabled: true,
+        }]
+      : []),
     ...runtimeModelOptions.map((option) => ({ value: option.id, label: option.label })),
-    ...(runtimeModelOptions.length > 0 ? [{ value: "__custom__", label: "Custom…" }] : []),
+    ...(allowCustomModel && runtimeModelOptions.length > 0
+      ? [{ value: "__custom__", label: "Custom…" }]
+      : []),
   ];
   const resolvedFamiliarList = useResolvedFamiliars(currentFamiliar ? [currentFamiliar] : [], { includeArchived: true });
   const resolvedFamiliar = resolvedFamiliarList[0] ?? null;
@@ -1179,6 +1243,28 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
     loading: eligibleFamiliarsLoading,
     loadedSuccessfully: eligibleFamiliarsLoaded,
   } = useProjectFamiliars({ projectId: card.projectId ?? null });
+  // Cards can already have a familiar before their project is chosen (for
+  // example after an inline familiar assignment). In that direction, only
+  // expose projects the familiar can actually use for session launch.
+  const {
+    projects: accessibleProjects,
+    loading: accessibleProjectsLoading,
+    loadedSuccessfully: accessibleProjectsLoaded,
+  } = useProjects({ familiarId: card.familiarId, enabled: Boolean(card.familiarId) });
+  const projectPickerReady = !card.familiarId || (accessibleProjectsLoaded && !accessibleProjectsLoading);
+  const projectOptions = !card.familiarId
+    ? [
+        { value: "", label: "No project" },
+        ...projects.map((project) => ({ value: project.id, label: project.name })),
+      ]
+    : accessibleProjectsLoading
+      ? [{ value: "", label: "Loading accessible projects…", disabled: true }]
+      : !accessibleProjectsLoaded
+        ? [{ value: "", label: "Could not load accessible projects", disabled: true }]
+        : [
+            { value: "", label: "No project" },
+            ...accessibleProjects.map((project) => ({ value: project.id, label: project.name })),
+          ];
 
   // Preserve an assignment that remains authorized, but fail closed if a
   // project edit makes the card's familiar ineligible for its task launch.
@@ -1330,24 +1416,21 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                 <StandardSelect
                   label="Project"
                   className="board-drawer-field-select board-drawer-field-select--styled"
-                  value={card.projectId ?? ""}
+                  value={projectPickerReady ? card.projectId ?? "" : ""}
                   onChange={(next) => {
-                    const selectedProject = projects.find((project) => project.id === next) ?? null;
-                    // A Project → Familiar assignment is only valid after the
-                    // target project's authorized roster resolves. Clear an
-                    // existing familiar immediately so Start work cannot race
-                    // that lookup with the old project's assignment.
+                    const selectedProject = (card.familiarId ? accessibleProjects : projects)
+                      .find((project) => project.id === next) ?? null;
+                    // A familiar-first project list is server-scoped to that
+                    // familiar's session-launch access, so keep the valid
+                    // assignment. Its linked session may use another project.
                     onPatch(card.id, {
                       projectId: selectedProject?.id ?? null,
                       cwd: selectedProject?.root ?? null,
-                      familiarId: null,
                       sessionId: null,
                     });
                   }}
-                  options={[
-                    { value: "", label: "No project" },
-                    ...projects.map((project) => ({ value: project.id, label: project.name })),
-                  ]}
+                  options={projectOptions}
+                  disabled={!projectPickerReady}
                   showCaret={false}
                 />
                 <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
@@ -1398,8 +1481,13 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
             </div>
 
             <div className="board-drawer-field">
-              <div className="board-drawer-field-label">Model</div>
-              {runtimeModelOptions.length > 0 && !modelCustomMode && !taskModelIsCustom && !hasUnsavedCustomModelDraft ? (
+              <div className="board-drawer-field-label">Model · {inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)}</div>
+              {runtimeModelInventory.loading ? (
+                <p className="board-drawer-field-hint" role="status">Loading model inventory…</p>
+              ) : (runtimeModelOptions.length > 0 || (taskModelIsCustom && !allowCustomModel)) &&
+                !modelCustomMode &&
+                (!taskModelIsCustom || !allowCustomModel) &&
+                (!hasUnsavedCustomModelDraft || !allowCustomModel) ? (
                 <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
                   <span className="board-drawer-project-icon" aria-hidden>
                     <Icon name="ph:brain" width={12} className="text-[var(--text-muted)]" />
@@ -1423,7 +1511,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   />
                   <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
                 </div>
-              ) : (
+              ) : allowCustomModel ? (
                 <input
                   className="board-drawer-field-input"
                   value={customModelDraft}
@@ -1438,6 +1526,10 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   autoCorrect="off"
                   spellCheck={false}
                 />
+              ) : (
+                <p className="board-drawer-field-hint" role="status">
+                  No selectable models are available.
+                </p>
               )}
               <p className="board-drawer-field-hint">
                 {card.sessionId
@@ -1549,21 +1641,29 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                       className="board-drawer-chat-cta"
                       title="Run on Omnigent fleet"
                       onClick={() => {
+                        const systemBrowserReservation = reserveSystemBrowserUrlWindow();
                         void (async () => {
-                          const { startOmnigentRunFromBrowser } = await import("@/lib/omnigent/browser-run");
-                          const { openExternalUrl } = await import("@/lib/open-external");
-                          const result = await startOmnigentRunFromBrowser({
-                            prompt: card.title,
-                            familiarId: card.familiarId ?? undefined,
-                            boardCardId: card.id,
-                            title: card.title,
-                            source: "cave-board",
-                          });
-                          if (!result.ok) {
-                            window.alert(result.error);
-                            return;
+                          let systemBrowserReservationConsumed = false;
+                          try {
+                            const { startOmnigentRunFromBrowser } = await import("@/lib/omnigent/browser-run");
+                            const result = await startOmnigentRunFromBrowser({
+                              prompt: card.title,
+                              familiarId: card.familiarId ?? undefined,
+                              boardCardId: card.id,
+                              title: card.title,
+                              source: "cave-board",
+                            });
+                            if (!result.ok) {
+                              window.alert(result.error);
+                              return;
+                            }
+                            systemBrowserReservationConsumed = true;
+                            void openSystemBrowserUrl(result.webUrl, { reservation: systemBrowserReservation });
+                          } finally {
+                            if (!systemBrowserReservationConsumed) {
+                              cancelSystemBrowserUrlWindow(systemBrowserReservation);
+                            }
                           }
-                          void openExternalUrl(result.webUrl);
                         })();
                       }}
                     >

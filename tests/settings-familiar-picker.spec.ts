@@ -1,4 +1,6 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+test.describe.configure({ mode: "serial" });
 
 const FAMILIARS = Array.from({ length: 60 }, (_, index) => ({
   id: `familiar-${String(index + 1).padStart(2, "0")}`,
@@ -9,17 +11,57 @@ const FAMILIARS = Array.from({ length: 60 }, (_, index) => ({
   status: "active",
 }));
 
-async function gotoFamiliarSettings(page: Page) {
+async function gotoChatFamiliarSettings(page: Page) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    window.localStorage.setItem("cave:familiar-scope", JSON.stringify(["familiar-01"]));
+    window.localStorage.setItem("cave:active-familiar", "familiar-01");
   });
-  await page.route("**/api/familiars", (route) =>
+  // This migration path only needs the roster and session shape below. Abort
+  // unrelated daemon-backed API reads so Cave-home reconciliation cannot hold
+  // the Chat shell behind a live runtime lock in the full CI suite.
+  await page.route("**/api/**", (route) => route.abort());
+  await page.route("**/api/familiars**", (route) =>
     route.fulfill({ json: { ok: true, familiars: FAMILIARS } }),
   );
-  await page.goto("/settings#familiars");
-  await expect(page.locator(".familiar-studio-picker__trigger")).toBeVisible({
-    timeout: 30_000,
-  });
+  await page.route("**/api/sessions/list**", (route) =>
+    route.fulfill({ json: { ok: true, sessions: [] } }),
+  );
+  await page.goto("/?mode=chat");
+  await page.waitForSelector(".shell-frame", { timeout: 30_000 });
+  const surface = page.locator(".chat-surface");
+  try {
+    await surface.waitFor({ state: "visible", timeout: 10_000 });
+  } catch {
+    const nav = page.locator('aside[aria-label="Sidebar"]');
+    const chatDestination = nav.getByRole("button", { name: /^Chat\b/ }).first();
+    if (!(await chatDestination.isVisible().catch(() => false))) {
+      const openNav = page.getByRole("button", { name: "Open navigation (⌘B)" });
+      if (await openNav.isVisible().catch(() => false)) await openNav.click();
+    }
+    // The Chat row lives in the rail's second section (cave-24d2r); when the
+    // Home section is open, that section's tab is the way in. Its LABEL is
+    // "Chat" while its id stays "code" (NAV_SECTIONS) — flipped from "Code" by
+    // fix/cave-vqh94-home-chat-tabs. Same copy of this helper as the one in
+    // chat-sidebar-nav.spec.ts; both were waiting for a name that is gone.
+    if (await chatDestination.isVisible().catch(() => false)) {
+      await chatDestination.click();
+    } else {
+      await nav.getByRole("tab", { name: "Chat", exact: true }).first().click();
+    }
+    await surface.waitFor({ state: "visible", timeout: 30_000 });
+  }
+  const chatSections = page.getByRole("tablist", { name: "Chat sections" });
+  await expect(chatSections).toBeVisible({ timeout: 60_000 });
+  await chatSections.getByRole("tab", { name: "Familiar", exact: true }).click();
+  const familiarSections = page.getByRole("tablist", { name: "Familiar sections" });
+  await expect(familiarSections).toBeVisible({ timeout: 60_000 });
+  const settingsTab = familiarSections.getByRole("tab", { name: "Settings", exact: true });
+  await expect(settingsTab).toBeVisible({ timeout: 60_000 });
+  await settingsTab.click();
+  await expect(
+    page.getByRole("region", { name: "Settings for Familiar 01" }),
+  ).toBeVisible({ timeout: 30_000 });
 }
 
 async function emulateVisualViewport(page: Page, width: number, height: number) {
@@ -43,103 +85,48 @@ async function emulateVisualViewport(page: Page, width: number, height: number) 
   );
 }
 
-async function expectContained(inner: Locator, outer: Locator) {
-  const [innerBox, outerBox] = await Promise.all([
-    inner.boundingBox(),
-    outer.boundingBox(),
-  ]);
-  expect(innerBox, "inner control has layout bounds").not.toBeNull();
-  expect(outerBox, "popover has layout bounds").not.toBeNull();
-  expect(innerBox!.y, "control top stays inside the popover").toBeGreaterThanOrEqual(
-    outerBox!.y - 1,
-  );
-  expect(
-    innerBox!.y + innerBox!.height,
-    "control bottom stays inside the popover",
-  ).toBeLessThanOrEqual(outerBox!.y + outerBox!.height + 1);
-}
-
-test("a keyboard-shrunk visual viewport keeps fixed controls and one full result", async ({ page }) => {
-  // Mobile keyboards can shrink visualViewport without changing the CSS layout
-  // viewport. Keep the latter tall so a max-height media query cannot make this
-  // pass accidentally; Popover must propagate its computed available height.
+test("Chat Familiar Settings remains reachable in a keyboard-shrunk viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 720 });
-  // 270px puts both sides of the anchor below Popover's 120px safety floor.
   await emulateVisualViewport(page, 390, 270);
-  await gotoFamiliarSettings(page);
+  await gotoChatFamiliarSettings(page);
 
-  await page.locator(".familiar-studio-picker__trigger").click();
-  const popover = page.locator(".familiar-studio-picker__popover");
-  const search = page.getByRole("combobox", { name: "Search familiars" });
-  const summon = page.getByRole("button", { name: "Summon familiar" });
-  const results = page.getByRole("listbox", { name: "Familiars" });
-  await expect(popover).toBeVisible();
-  await expect.poll(() => popover.evaluate((element) => element.style.maxHeight)).toBe("120px");
+  const settings = page.getByRole("region", { name: "Settings for Familiar 01" });
+  await expect(settings.getByRole("tablist", { name: "Familiar settings" })).toBeVisible();
+  await expect(settings.getByRole("tab", { name: "Identity", exact: true })).toBeVisible();
+  await expect(settings.getByRole("tab", { name: "Memory", exact: true })).toBeVisible();
+  await expect(settings.getByText("Tune Familiar 01 without leaving Chat.")).toBeVisible();
 
-  await expectContained(search, popover);
-  await expectContained(summon, popover);
-
-  // Wrapping from the first result to the last scrolls the result list. It must
-  // not scroll the containing dialog and carry the still-focused search field
-  // out of view (the failure mode seen with mobile keyboards / short windows).
-  await search.press("ArrowUp");
-  await expect(search).toBeFocused();
-  await expect(search).toHaveAttribute(
-    "aria-activedescendant",
-    "settings-familiar-picker-option-59",
+  await settings.getByRole("tab", { name: "Memory", exact: true }).click();
+  await expect(settings.getByRole("tab", { name: "Memory", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
   );
-  await expectContained(search, popover);
-  await expectContained(summon, popover);
-  const highlighted = page.locator(".familiar-studio-picker__option[data-highlighted]");
-  await expect(highlighted).toContainText("Familiar 60");
-  const resultsBox = await results.boundingBox();
-  expect(resultsBox, "the result scroller has layout bounds").not.toBeNull();
-  expect(resultsBox!.height, "the exact floor preserves a full 44px option").toBeGreaterThanOrEqual(44);
-  await expectContained(highlighted, results);
-
-  const scrollState = await popover.evaluate((element) => ({
-    scrollTop: element.scrollTop,
-    scrollHeight: element.scrollHeight,
-    clientHeight: element.clientHeight,
-  }));
-  expect(scrollState.scrollTop, "the outer dialog must stay fixed").toBe(0);
-  expect(
-    scrollState.scrollHeight - scrollState.clientHeight,
-    "the outer dialog itself must not be the scrolling region",
-  ).toBeLessThanOrEqual(1);
 });
 
-test("a 60-familiar roster stays compact, searchable, and keyboard-selectable", async ({ page }) => {
+test("the migrated Familiar Settings surface keeps its nested controls", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
-  await gotoFamiliarSettings(page);
+  await gotoChatFamiliarSettings(page);
 
-  const trigger = page.locator(".familiar-studio-picker__trigger");
-  await expect(trigger).toContainText("60 familiars");
-  const triggerBox = await trigger.boundingBox();
-  expect(triggerBox, "the familiar trigger has layout bounds").not.toBeNull();
-  expect(triggerBox!.height, "roster size must not grow the Settings header").toBeLessThanOrEqual(50);
+  const settings = page.getByRole("region", { name: "Settings for Familiar 01" });
+  await expect(settings.getByRole("tab", { name: "Chat", exact: true })).toBeVisible();
+  await expect(settings.getByRole("tab", { name: "Brain", exact: true })).toBeVisible();
+  await expect(settings.getByRole("tab", { name: "Memory", exact: true })).toBeVisible();
+  await expect(settings.getByRole("tab", { name: "Vault", exact: true })).toBeVisible();
 
-  await trigger.click();
-  const results = page.getByRole("listbox", { name: "Familiars" });
-  await expect(results.getByRole("option")).toHaveCount(60);
-  const resultsScroll = await results.evaluate((element) => ({
-    clientHeight: element.clientHeight,
-    scrollHeight: element.scrollHeight,
-  }));
-  expect(resultsScroll.clientHeight, "the roster has a bounded viewport").toBeLessThanOrEqual(320);
-  expect(resultsScroll.scrollHeight, "large rosters scroll inside the popup").toBeGreaterThan(
-    resultsScroll.clientHeight,
+  await settings.getByRole("tab", { name: "Vault", exact: true }).click();
+  await expect(settings.getByRole("tab", { name: "Vault", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
   );
+});
 
-  const search = page.getByRole("combobox", { name: "Search familiars" });
-  await search.fill("Researcher familiar-60");
-  const match = results.getByRole("option");
-  await expect(match).toHaveCount(1);
-  await expect(match).toContainText("Familiar 60");
-  await expect(match).toContainText("Researcher");
-  await expect(match).toContainText("familiar-60");
-
-  await search.press("Enter");
-  await expect(page.locator(".familiar-studio-picker__popover")).toHaveCount(0);
-  await expect(trigger).toContainText("Familiar 60");
+test("the retired Settings route no longer exposes the familiar roster", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("cave:onboarding:dismissed", "1");
+  });
+  await page.route("**/api/familiars", (route) =>
+    route.fulfill({ json: { ok: true, familiars: FAMILIARS } }),
+  );
+  await page.goto("/settings#familiars");
+  await expect(page.getByRole("complementary", { name: "Familiar roster" })).toHaveCount(0);
 });

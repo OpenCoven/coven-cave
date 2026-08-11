@@ -15,10 +15,11 @@ export type ResolvedFamiliar = Omit<Familiar, "display_name" | "role"> & {
   /** Always non-empty; falls back to var(--accent-presence). */
   color: string;
   /**
-   * Avatar image source: the familiar's workspace avatar URL (`base.avatarUrl`,
-   * served from `~/.coven/workspaces/familiars/<id>/avatars/`) when present,
-   * else a Cave-local uploaded data URL as fallback. Undefined when neither
-   * exists — the glyph renders instead.
+   * Avatar image source. Two stores can hold a portrait for the same familiar —
+   * the workspace avatar (`base.avatarUrl`, served from
+   * `~/.coven/workspaces/familiars/<id>/avatars/`) and a Cave-local upload — and
+   * when both exist this is the one written most recently. Undefined when
+   * neither exists — the glyph renders instead.
    */
   avatarImage?: string;
   /**
@@ -28,11 +29,6 @@ export type ResolvedFamiliar = Omit<Familiar, "display_name" | "role"> & {
    * only one source exists.
    */
   avatarImageFallback?: string;
-  /** Absolute `~/.coven` workspace avatar path (loads only via Tauri's asset
-   *  protocol, resolved client-side post-mount). Consumed by familiar-avatar-src. */
-  avatarPath?: string;
-  /** Avatar file mtime — cache-buster for the resolved asset URL. */
-  avatarVersion?: number;
   /** Resolved glyph for fallback rendering when no image is set. */
   glyph: FamiliarGlyph;
   archived: boolean;
@@ -45,6 +41,32 @@ type ResolveContext = {
   archived: boolean;
 };
 
+function workspaceAvatarWrittenAt(avatarUrl: string | undefined): number | null {
+  if (!avatarUrl) return null;
+  const stamp = /[?&]v=(\d+)/.exec(avatarUrl)?.[1];
+  if (!stamp) return null;
+  const ms = Number(stamp);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+export function orderAvatarSources(
+  avatarUrl: string | undefined,
+  image: FamiliarImage | undefined,
+): { avatarImage?: string; avatarImageFallback?: string } {
+  const upload = image?.dataUrl || undefined;
+  if (!avatarUrl) return { avatarImage: upload, avatarImageFallback: undefined };
+  if (!upload) return { avatarImage: avatarUrl, avatarImageFallback: undefined };
+
+  const workspaceAt = workspaceAvatarWrittenAt(avatarUrl);
+  const uploadAt = image?.updatedAt ? Date.parse(image.updatedAt) : Number.NaN;
+  const uploadIsNewer =
+    Number.isFinite(uploadAt) && (workspaceAt === null || uploadAt > workspaceAt);
+
+  return uploadIsNewer
+    ? { avatarImage: upload, avatarImageFallback: avatarUrl }
+    : { avatarImage: avatarUrl, avatarImageFallback: upload };
+}
+
 export function resolveFamiliar(base: Familiar, ctx: ResolveContext): ResolvedFamiliar {
   const ov = ctx.override ?? {};
   const glyphOverrides = ctx.glyphOverride ? { [base.id]: ctx.glyphOverride } : {};
@@ -52,17 +74,13 @@ export function resolveFamiliar(base: Familiar, ctx: ResolveContext): ResolvedFa
     ...base,
     display_name: ov.display_name ?? base.display_name,
     role: ov.role ?? base.role,
+    familiarType: ov.familiarType ?? base.familiarType,
     pronouns: ov.pronouns ?? base.pronouns,
     description: ov.description ?? base.description,
     color: ov.color ?? base.color ?? "var(--accent-presence)",
-    // The familiar's workspace avatar (.../familiars/<id>/avatars/<img>) is the
-    // source of truth and wins as the primary; a Cave-local upload is the
-    // fallback. Crucially, when BOTH exist the upload is kept as
-    // `avatarImageFallback` so a failed workspace image degrades to the upload
-    // (not straight to the glyph) — the avatar image is always preferred over
-    // the icon when any source can load.
-    avatarImage: base.avatarUrl ?? ctx.image?.dataUrl,
-    avatarImageFallback: base.avatarUrl ? ctx.image?.dataUrl : undefined,
+    // Rank the two portrait stores by recency, retaining the other source as
+    // the fallback so a failed image never skips straight to the glyph.
+    ...orderAvatarSources(base.avatarUrl, ctx.image),
     glyph: resolveFamiliarGlyph(
       { id: base.id, icon: base.icon, emoji: base.emoji, role: ov.role ?? base.role },
       glyphOverrides,

@@ -95,7 +95,14 @@ export const surfacePreferenceSpecs = {
     section: enumSpec("marketplace.section", "browse", ["browse", "crafts", "skills", "build"] as const),
     category: stringSpec("marketplace.category", "All"),
     kind: enumSpec("marketplace.kind", "all", ["all", "mcp", "api", "skill", "prompt", "craft", "knowledge-pack"] as const),
+    // Yours setup filter. "installed" remains parseable for stored migration.
+    status: enumSpec("marketplace.status", "all", ["all", "installed", "needs-setup"] as const),
+    // Retired discovery value retained so older preferences parse safely.
+    topic: stringSpec("marketplace.topic", "all"),
     sort: enumSpec("marketplace.sort", "recommended", ["recommended", "name", "installed"] as const),
+    // Card layout toggle for the Explore grid.
+    view: enumSpec("marketplace.view", "grid", ["grid", "rows"] as const),
+    // Retired discovery value retained so older preferences parse safely.
     collection: nullableStringSpec("marketplace.collection"),
   },
   grimoire: {

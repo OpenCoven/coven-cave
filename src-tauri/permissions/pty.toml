@@ -74,6 +74,11 @@ description = "Allows opening a URL in the system browser."
 commands.allow = ["shell_open"]
 
 [[permission]]
+identifier = "allow-open-x-oauth-url"
+description = "Allows opening only a validated X OAuth authorization URL."
+commands.allow = ["open_x_oauth_url"]
+
+[[permission]]
 identifier = "allow-browser-report-title"
 description = "Allows child browser webviews to report their document title via Rust."
 commands.allow = ["browser_report_title"]

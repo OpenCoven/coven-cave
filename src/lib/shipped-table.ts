@@ -5,6 +5,10 @@
 
 import type { MergedPr } from "./daily-report-facts.ts";
 
+/** The minimum a row must carry to be filterable — the redesigned report's
+ *  richer ShippedRow satisfies this just as MergedPr does. */
+export type ShippedFilterable = { title: string; repo: string; number: number };
+
 export type ShippedSortKey = "pr" | "repo" | "merged";
 export type ShippedSortDir = "asc" | "desc";
 export type ShippedSort = { key: ShippedSortKey; dir: ShippedSortDir } | null;
@@ -16,7 +20,10 @@ export type ShippedSort = { key: ShippedSortKey; dir: ShippedSortDir } | null;
  * - Bare query → case-insensitive substring match against title, full repo,
  *   and PR number.
  */
-export function filterShippedRows(rows: readonly MergedPr[], query: string): MergedPr[] {
+export function filterShippedRows<T extends ShippedFilterable>(
+  rows: readonly T[],
+  query: string,
+): T[] {
   const q = query.trim().toLowerCase();
   if (!q) return rows.slice();
 

@@ -7,6 +7,7 @@
    tab. Glass panels, minimal chrome, no admin-dashboard flatness. */
 
 .role-surface-host {
+  container: role-surface-host / inline-size;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -17,11 +18,11 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-width: 0;
   padding: 10px var(--space-4);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-hairline);
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 .role-surface-header-title {
@@ -33,26 +34,20 @@
 }
 
 .role-surface-header-title h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--text-base);
   font-weight: 600;
   letter-spacing: 0.01em;
   white-space: nowrap;
 }
 
-.role-surface-header-role {
-  font-size: var(--text-2xs);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  padding: 1px 7px;
-}
-
 .role-surface-header-status {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   margin-left: auto;
   font-size: var(--text-xs);
   color: var(--text-secondary);
@@ -72,14 +67,17 @@
   background: var(--text-muted);
 }
 
-.role-surface-status-dot--ok { background: oklch(0.75 0.14 155); }
+.role-surface-status-dot--ok { background: var(--color-success); }
 .role-surface-status-dot--busy { background: var(--accent-presence); }
-.role-surface-status-dot--warn { background: oklch(0.78 0.14 75); }
+.role-surface-status-dot--warn { background: var(--color-warning); }
+.role-surface-status-dot--muted { background: var(--text-muted); }
 
 .role-surface-header-actions {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  flex-shrink: 0;
 }
 
 .role-surface-chip {
@@ -110,48 +108,58 @@
 
 .role-surface-chip--accent:hover {
   color: var(--accent-presence-foreground);
-  background: color-mix(in oklch, var(--accent-presence) 88%, white);
+  background: var(--accent-presence-hover);
 }
 
-.role-surface-commands { position: relative; }
-
-.role-surface-commands-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  min-width: 220px;
-  padding: var(--space-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--glass-elevated);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.4);
-}
-
-.role-surface-command {
+.role-surface-overflow-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: 6px 10px;
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  text-align: left;
+  width: 100%;
+  min-width: 0;
 }
 
-.role-surface-command:hover { background: var(--bg-hover); }
-
-.role-surface-command-hint {
+.role-surface-overflow-hint {
   font-size: var(--text-2xs);
   color: var(--text-muted);
+  white-space: nowrap;
+}
+
+@container role-surface-host (max-width: 520px) {
+  .role-surface-header {
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+  }
+
+  .role-surface-header-title {
+    flex: 1 1 0;
+  }
+
+  .role-surface-header-title h2 {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .role-surface-header-status {
+    order: 3;
+    flex: 1 1 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .role-surface-status {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .role-surface-header-actions {
+    max-width: 100%;
+    margin-left: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
 }
 
 .role-surface-notices {
@@ -190,6 +198,7 @@
 .role-surface-room {
   --room-accent: oklch(0.74 0.11 var(--room-accent-h, 293));
   --room-accent-soft: color-mix(in oklch, var(--room-accent) 22%, transparent);
+  container: role-surface-room / inline-size;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -211,9 +220,33 @@
   opacity: 0.5;
 }
 
+.role-surface-disclosures {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4) 0;
+}
+
+.role-surface-disclosure {
+  min-width: 0;
+}
+
+.role-surface-disclosure--right {
+  margin-left: auto;
+}
+
+@media (pointer: coarse) {
+  .role-surface-disclosure {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+}
+
 .role-surface-columns {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(220px, 300px);
+  grid-template-areas: "left canvas right";
   gap: var(--space-3);
   flex: 1;
   min-height: 0;
@@ -230,7 +263,16 @@
   padding-right: 2px;
 }
 
+.role-surface-rail--left {
+  grid-area: left;
+}
+
+.role-surface-rail--right {
+  grid-area: right;
+}
+
 .role-surface-canvas {
+  grid-area: canvas;
   min-height: 0;
   overflow-y: auto;
   border: 1px solid var(--border);
@@ -585,17 +627,43 @@
   overflow-y: auto;
 }
 
-.role-surface-empty {
-  display: flex;
-  flex-direction: column;
+.role-surface-state.ui-empty-state,
+.role-surface-state.ui-error-state {
   align-items: flex-start;
-  gap: var(--space-1);
-  padding: 10px var(--space-2);
-  color: var(--text-muted);
+  max-width: none;
+  margin: 0;
+  padding: var(--space-3) var(--space-2);
+  text-align: left;
 }
 
-.role-surface-empty-title { font-size: 12px; }
-.role-surface-empty-hint { font-size: 11px; opacity: 0.8; line-height: 1.5; }
+.role-surface-state .ui-empty-state-icon,
+.role-surface-state .ui-error-state-icon {
+  width: var(--space-8);
+  height: var(--space-8);
+  margin-bottom: 0;
+}
+
+.role-surface-state .ui-empty-state-headline {
+  font-size: var(--text-base);
+}
+
+.role-surface-state .ui-empty-state-subtitle,
+.role-surface-state .ui-error-state-subtitle {
+  max-width: none;
+}
+
+.role-surface-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-2);
+}
+
+.role-surface-state-label {
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
 
 .role-surface-unavailable {
   display: flex;
@@ -622,7 +690,6 @@
   border-top: 1px solid var(--border);
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 .role-surface-drawer-toggle {
@@ -664,15 +731,70 @@
   color: var(--text-muted);
 }
 
-/* Narrow shells: stack the room columns; rails become sections above/below
-   the canvas instead of vanishing. */
-@media (max-width: 1023px) {
+/* Medium rooms retain navigation while moving the inspector on demand. */
+@container role-surface-room (max-width: 860px) {
+  .role-surface-disclosures {
+    display: flex;
+  }
+
+  .role-surface-disclosure--left {
+    display: none;
+  }
+
+  .role-surface-columns {
+    grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+    grid-template-areas: "left canvas";
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .role-surface-rail--right {
+    display: none;
+  }
+
+  .role-surface-rail--right.role-surface-rail--expanded {
+    display: flex;
+    position: absolute;
+    grid-area: canvas;
+    inset: 0;
+    z-index: 1;
+    padding: var(--space-3);
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-raised);
+  }
+}
+
+/* Compact rooms prioritize the canvas and disclose either rail on demand. */
+@container role-surface-room (max-width: 620px) {
+  .role-surface-disclosure--left {
+    display: flex;
+  }
+
   .role-surface-columns {
     grid-template-columns: minmax(0, 1fr);
-    overflow-y: auto;
+    grid-template-areas: "canvas";
+    grid-template-rows: minmax(0, 1fr);
   }
-  .role-surface-rail { overflow-y: visible; }
-  .role-surface-canvas { overflow-y: visible; }
+
+  .role-surface-rail--left,
+  .role-surface-rail--right {
+    display: none;
+    overflow-y: visible;
+  }
+
+  .role-surface-rail--expanded {
+    display: flex;
+    position: absolute;
+    grid-area: canvas;
+    inset: 0;
+    z-index: 1;
+    padding: var(--space-3);
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-raised);
+  }
 }
 
 /* ── Research mission factory ─────────────────────────────────────────────
@@ -860,8 +982,8 @@
   display: flex;
   width: 100%;
   flex-direction: column;
-  gap: 7px;
-  padding: 9px;
+  gap: var(--space-2);
+  padding: 11px;
   color: var(--text-secondary);
   text-align: left;
   border: 1px solid transparent;
@@ -878,9 +1000,9 @@
 }
 
 .research-mission-row:focus-visible { outline: var(--ring-width) solid var(--ring-focus); }
-.research-mission-row__top { display: flex; align-items: flex-start; gap: 7px; }
-.research-mission-row__top strong { font-size: 11.5px; font-weight: 600; line-height: 1.35; }
-.research-mission-row__meta { display: flex; gap: 7px; padding-left: 13px; font-size: 9.5px; text-transform: capitalize; color: var(--text-muted); }
+.research-mission-row__top { display: flex; align-items: flex-start; gap: 8px; }
+.research-mission-row__top strong { font-size: 12.5px; font-weight: 500; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.research-mission-row__meta { display: flex; gap: 8px; padding-left: 15px; font-size: 10.5px; font-family: var(--font-mono); text-transform: capitalize; color: var(--text-muted); }
 .research-mission-row__meta time { margin-left: auto; text-transform: none; }
 .research-mission-detail__eyebrow time { text-transform: none; letter-spacing: 0.02em; }
 
@@ -919,7 +1041,7 @@
 .research-mission-detail { display: flex; min-height: 100%; flex-direction: column; padding: 14px 16px 22px; }
 .research-mission-detail__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 4px 2px 14px; }
 .research-mission-detail__header h2 { margin-top: 4px; font-family: var(--font-serif, ui-serif, serif); font-size: clamp(19px, 2.5vw, 28px); font-weight: 500; color: var(--text-primary); }
-.research-mission-detail__header p { max-width: 780px; margin-top: 5px; color: var(--text-secondary); font-size: 11.5px; line-height: 1.5; }
+.research-mission-detail__header p { max-width: 780px; margin-top: 5px; color: var(--text-muted); font-size: var(--text-base); line-height: 1.6; }
 .research-mission-detail__body { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(230px, 300px); gap: 12px; min-height: 0; }
 
 .research-output-shelf > section {
@@ -958,7 +1080,6 @@
 .research-mission-decision p { color: var(--text-secondary); }
 
 .research-output-shelf { display: flex; flex-direction: column; gap: 10px; }
-.research-output-tabs { width: 100%; }
 .research-output-shelf > section { padding: 10px; }
 .research-output-shelf > section:focus-visible { outline: var(--ring-width) solid var(--ring-focus); outline-offset: 2px; }
 .research-output-shelf h3 { margin-bottom: 7px; }
@@ -1016,4 +1137,3 @@
   .research-mission-detail__header { flex-direction: column; }
   .research-bound-meter, .research-output-shelf { grid-template-columns: 1fr; }
 }
-

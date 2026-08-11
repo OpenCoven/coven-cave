@@ -4,7 +4,6 @@ import {
   attachmentsLib,
   attachStagingHook,
   emptyStateSource,
-  globalsSrc,
   menusHookSource,
   source,
   splitReasoning,
@@ -12,33 +11,33 @@ import {
   turnRow,
 } from "./chat-view-polish-fixtures.ts";
 
-// Suggestion pills lay out as ONE scrollable row: chips keep their intrinsic
-// width and overflow horizontally behind a hidden scrollbar, so any count
-// reads as a single quiet line instead of a growing grid (formerly the
-// data-count-keyed uniform-rows grid — cave-wrso, cave-98bs).
+// Follow-ups are ephemeral intent cards beside the composer, never transcript
+// history. Their visual grammar belongs to the shared component rather than
+// the legacy send-on-click chip row.
 assert.match(
   source,
-  /className="cave-next-paths" data-count=\{nextPaths\.length\}/,
-  "the chip row still stamps its count (tooling/e2e hooks key off it)",
+  /import \{ FollowUpCards \} from "@\/components\/chat-follow-up-cards"/,
+  "ChatView imports the shared typed follow-up cards",
+);
+assert.equal(
+  [...source.matchAll(/<FollowUpCards/g)].length,
+  1,
+  "historical transcript turns never render follow-up cards",
 );
 assert.match(
-  globalsSrc,
-  /\.cave-next-paths \{\s*\n\s*display: flex; flex-wrap: nowrap;[^}]*overflow-x: auto;\s*\n\s*scrollbar-width: none;/,
-  "the chip row is a no-wrap flex line that scrolls horizontally, scrollbar hidden",
+  styles,
+  /\.cave-followup-cards__grid \{[\s\S]*?grid-auto-flow: column;[\s\S]*?grid-auto-columns: minmax\(0, 1fr\)/,
+  "cards use equal shares in one row",
 );
 assert.match(
-  globalsSrc,
-  /\.cave-next-paths::-webkit-scrollbar \{\s*\n\s*display: none;/,
-  "webkit scrollbar is hidden too (same grammar as .cave-chat-linked-context)",
+  styles,
+  /@media \(max-width: 40rem\) \{[\s\S]*?\.cave-followup-cards__grid \{[\s\S]*?grid-auto-flow: row;[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/,
+  "cards stack in a single column in narrow panes",
 );
 assert.match(
-  globalsSrc,
-  /\.cave-next-path \{\s*\n\s*display: inline-flex; align-items: center; flex: 0 0 auto;[^}]*white-space: nowrap;/,
-  "chips keep intrinsic width (no flex-grow) and never wrap internally",
-);
-assert.ok(
-  !/\.cave-next-paths[^{]*\{[^}]*grid-template-columns/.test(globalsSrc) && !/\.cave-next-paths[^{]*\{[^}]*grid-template-columns/.test(styles),
-  "no grid column rules survive anywhere — the row never re-grows into 2×2",
+  styles,
+  /\.cave-followup-card__recommended/,
+  "recommended cards retain a visible non-color marker",
 );
 
 // File picker resets its value synchronously so re-selecting the same file (or
@@ -59,7 +58,7 @@ assert.ok(
 assert.match(source, /cave-edit-card/, "mutation tools render as an inline Codex edit card");
 assert.match(source, /diffStat/, "edit card derives a +/- stat");
 assert.match(source, /Review/, "edit card has a Review action");
-assert.match(globalsSrc, /\.cave-edit-card/, "edit card styling exists");
+assert.match(styles, /\.cave-edit-card/, "edit card styling exists");
 
 // Review adapts to where the edit can actually be reviewed: a file under the
 // session's project root jumps to the code rail's Changes diff; anything else
@@ -82,7 +81,7 @@ assert.match(
   /<EditCardActions targetFile=\{targetFile\} diff=\{inputDiff \?\? ""\} displayPath=\{displayPath\} \/>/,
   "edit-card actions render unconditionally (Review works without an absolute target path)",
 );
-assert.match(globalsSrc, /\.cave-review-modal/, "review modal styling exists");
+assert.match(styles, /\.cave-review-modal/, "review modal styling exists");
 assert.match(
   source,
   /if \(isEditTool\) \{[\s\S]*<details className="cave-tool-block cave-edit-card"[\s\S]*Edited \{base\}[\s\S]*<DurationText durationMs=\{tool\.durationMs\} \/>[\s\S]*Code changes[\s\S]*<SyntaxBlock text=\{inputDiff\} lang="diff" \/>[\s\S]*<\/details>/,
@@ -96,7 +95,7 @@ assert.match(source, /cave-edit-card__undo/, "edit card has an Undo action");
 assert.match(source, /ToolProjectRootContext/, "edit card resolves project root via context for revert");
 assert.match(source, /"\/api\/changes"/, "Undo posts to the changes revert API");
 assert.match(source, /cave:changes-refresh/, "Undo notifies the changes panel to refresh");
-assert.match(globalsSrc, /\.cave-edit-card__undo/, "Undo button styling exists");
+assert.match(styles, /\.cave-edit-card__undo/, "Undo button styling exists");
 
 // cave-zvr: composer send hygiene + picker Escape.
 // (3) send() clears the persisted draft synchronously — the 250ms debounced

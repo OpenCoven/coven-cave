@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-// Consolidated chat settings (the chat page's Settings tab) + auto-archive on
+// Consolidated chat settings (the Familiar page's Chat tab) + auto-archive on
 // thread reflections. Source-contract tests in the repo's house style: the tab
 // must exist on the chat surface, the settings view must round-trip the
 // `chatAutoArchive` policy through /api/config, and the reflect flows must
@@ -12,27 +12,27 @@ const settingsView = readFileSync(new URL("./chat-settings-view.tsx", import.met
 const surface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
-// --- chat-surface: Settings is a first-class chat scope tab -------------------
+// --- chat-surface: Settings is merged into the Familiar scope -----------------
 
 assert.match(
   surface,
-  /type FamiliarsScope = "conversation" \| "projects" \| "coven" \| "familiar" \| "settings"/,
-  "chat surface must know the settings scope",
+  /type FamiliarsScope = "conversation" \| "projects" \| "coven" \| "familiar" \| "canvas"/,
+  "chat surface keeps the Familiar scope and Canvas scope",
 );
-assert.match(
+assert.doesNotMatch(
   surface,
   /\{\s*id:\s*"settings",\s*label:\s*"Settings"\s*\}/,
-  "chat exposes Settings as a dedicated tab beside Sessions/Projects",
+  "chat does not expose Settings as a fifth top-level tab",
 );
-assert.match(
+assert.doesNotMatch(
   surface,
   /scope === "settings" \? \([\s\S]*?<ChatSettingsView \/>/,
-  "the settings scope renders the consolidated ChatSettingsView",
+  "the ChatSurface no longer owns the consolidated ChatSettingsView branch",
 );
 assert.match(
   surface,
-  /import \{[\s\S]*ChatSettingsView[\s\S]*\} from "@\/components\/lazy-surfaces"/,
-  "chat-surface lazy-loads ChatSettingsView",
+  /<ChatFamiliarView[\s\S]*localDaemonReady=\{localDaemonReady\}/,
+  "the Familiar scope receives the daemon readiness needed by merged settings",
 );
 
 // --- chat-settings-view: reads and writes the policy through /api/config ------
@@ -91,6 +91,36 @@ assert.match(
   settingsView,
   /\.catch\(\(\) => \{\s*setPolicy\(previous\);/,
   "failed PATCHes revert the optimistic policy update",
+);
+
+// --- chat-settings-view: auto-rename policy round-trips through /api/config ----
+assert.match(
+  settingsView,
+  /normalizeChatAutoRenamePolicy\(json\.config\?\.chatAutoRename\)/,
+  "settings view normalizes the stored auto-rename policy too",
+);
+assert.match(
+  settingsView,
+  /JSON\.stringify\(\{ chatAutoRename: patch \}\)/,
+  "auto-rename edits persist through the same config PATCH merge",
+);
+for (const field of ["enabled", "everyTurns", "preserveManualTitles"]) {
+  assert.match(
+    settingsView,
+    new RegExp(`updateRename\\(\\{ ${field} \\}\\)`),
+    `settings view edits auto-rename ${field}`,
+  );
+}
+assert.match(
+  settingsView,
+  /\.catch\(\(\) => \{\s*setRenamePolicy\(previous\);/,
+  "failed auto-rename PATCHes revert the optimistic update",
+);
+assert.match(settingsView, /Auto-rename/, "the auto-rename card is labeled");
+assert.match(
+  settingsView,
+  /Keep titles I set/,
+  "the preserve-manual-titles toggle is labeled for what it does",
 );
 
 // --- chat-view: reflect flows react to a reflection-triggered archive ---------

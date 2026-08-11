@@ -14,13 +14,13 @@ function trimTrailingSlashes(value: string): string {
 }
 
 export type OmnigentAuthResolution = {
-  /** Bearer token when available (JWT, env, or minted Databricks OAuth). */
+  /** Bearer token when available (URL-scoped JWT, matching Vault token, or minted Databricks OAuth). */
   token: string | null;
   /** Auth shape for UI/debug. */
   mode: "jwt" | "env" | "databricks" | "none";
   /** Extra headers (e.g. X-Databricks-Org-Id for workspace routing). */
   extraHeaders: Record<string, string>;
-  /** True when we have *some* credential material (JWT, env, or databricks pointer). */
+  /** True when credential material exists for this URL (including a Databricks pointer). */
   authenticated: boolean;
 };
 
@@ -68,18 +68,21 @@ export function isOmnigentFleetActive(omnigent: { enabled?: boolean } | undefine
   return omnigent?.enabled === true && isOmnigentServerUrlConfigured();
 }
 
+function resolveOmnigentServerUrl(): string | null {
+  try {
+    return resolveSecret(OMNIGENT_SERVER_URL_ENV)?.trim() || null;
+  } catch {
+    return process.env[OMNIGENT_SERVER_URL_ENV]?.trim() || null;
+  }
+}
+
 /**
  * The effective Omnigent base URL: `OMNIGENT_SERVER_URL` from the Cave Vault
  * wins over the Cave-config value (which remains a fallback for a configured
  * ref that fails to resolve). Returns "" when neither source has a URL.
  */
 export function resolveOmnigentBaseUrl(configBaseUrl?: string | null): string {
-  let vaultUrl: string | null;
-  try {
-    vaultUrl = resolveSecret(OMNIGENT_SERVER_URL_ENV)?.trim() || null;
-  } catch {
-    vaultUrl = process.env[OMNIGENT_SERVER_URL_ENV]?.trim() || null;
-  }
+  const vaultUrl = resolveOmnigentServerUrl();
   if (vaultUrl) return normalizeOmnigentBaseUrl(vaultUrl);
   return (configBaseUrl ?? "").trim();
 }
@@ -143,7 +146,7 @@ async function mintDatabricksToken(workspaceHost: string): Promise<string | null
     const { stdout } = await execFileAsync(
       "databricks",
       ["auth", "token", "--host", workspaceHost],
-      { timeout: 15_000, maxBuffer: 256 * 1024, env: process.env },
+      { windowsHide: true, timeout: 15_000, maxBuffer: 256 * 1024, env: process.env },
     );
     const text = stdout.trim();
     if (!text) return null;
@@ -169,25 +172,33 @@ async function mintDatabricksToken(workspaceHost: string): Promise<string | null
  *
  * Handles:
  * - Session JWT records (`token` + optional `expires_at`)
- * - `OMNIGENT_TOKEN` fallback, resolved through the Cave Vault chain
- *   (process env → .env.local → encrypted store → op/dl reference)
+ * - `OMNIGENT_TOKEN`, resolved through the Cave Vault chain only when the
+ *   requested URL matches `OMNIGENT_SERVER_URL` (or the base URL is empty)
  * - Databricks pointer records (`auth_type: "databricks"`, no token) by
  *   minting a fresh bearer via `databricks auth token --host <workspace>`
  * - No credential (local/single-user Omnigent) → mode `none`, still usable
  */
 export async function resolveOmnigentAuth(baseUrl: string): Promise<OmnigentAuthResolution> {
+  const key = normalizeOmnigentBaseUrl(baseUrl);
   // Lazy + memoized: the vault chain may shell out to `op`/`dcli`, so only pay
   // for it when the env tier is actually consulted (JWT hits return earlier).
+  // A configured destination receives the Vault token only when the paired
+  // Vault server URL normalizes to the same protocol + host.
   let envTokenMemo: string | null | undefined;
-  const envToken = (): string | null =>
-    envTokenMemo !== undefined ? envTokenMemo : (envTokenMemo = resolveEnvToken());
-  const key = normalizeOmnigentBaseUrl(baseUrl);
+  const envToken = (): string | null => {
+    if (envTokenMemo !== undefined) return envTokenMemo;
+    if (!key) return (envTokenMemo = resolveEnvToken());
+    const configuredUrl = resolveOmnigentServerUrl();
+    const configuredKey = configuredUrl ? normalizeOmnigentBaseUrl(configuredUrl) : "";
+    return (envTokenMemo = configuredKey === key ? resolveEnvToken() : null);
+  };
   if (!key) {
+    const fallbackToken = envToken();
     return {
-      token: envToken(),
-      mode: envToken() ? "env" : "none",
+      token: fallbackToken,
+      mode: fallbackToken ? "env" : "none",
       extraHeaders: {},
-      authenticated: Boolean(envToken()),
+      authenticated: Boolean(fallbackToken),
     };
   }
 
@@ -231,19 +242,21 @@ export async function resolveOmnigentAuth(baseUrl: string): Promise<OmnigentAuth
             authenticated: true,
           };
         }
-        // Pointer present but mint failed — still "authenticated" for UI, token null
+        // Pointer presence is still authenticated for UI even when it cannot
+        // mint yet. A Vault fallback is allowed only for this exact server.
+        const fallbackToken = envToken();
         return {
-          token: envToken(),
-          mode: envToken() ? "env" : "databricks",
+          token: fallbackToken,
+          mode: fallbackToken ? "env" : "databricks",
           extraHeaders,
-          authenticated: Boolean(envToken()) || Boolean(workspaceHost),
+          authenticated: true,
         };
       }
 
       // Session JWT — respect expiry
       const expiresAt = entry.expires_at;
       if (typeof expiresAt === "number" && expiresAt > 0 && expiresAt < Date.now() / 1000) {
-        // expired — fall through to env
+        // expired — fall through to a destination-matched Vault token
       } else {
         const token = typeof entry.token === "string" ? entry.token.trim() : "";
         if (token) {
@@ -257,18 +270,21 @@ export async function resolveOmnigentAuth(baseUrl: string): Promise<OmnigentAuth
       }
     }
   } catch {
-    // missing file / parse error → env / none
+    // missing file / parse error → destination-matched Vault token / none
   }
 
-  if (envToken()) {
-    return { token: envToken(), mode: "env", extraHeaders: {}, authenticated: true };
+  const fallbackToken = envToken();
+  if (fallbackToken) {
+    return { token: fallbackToken, mode: "env", extraHeaders: {}, authenticated: true };
   }
   // Local / single-user Omnigent: no bearer required
   return { token: null, mode: "none", extraHeaders: {}, authenticated: false };
 }
 
 /**
- * Load a JWT (or env token) only — legacy helper.
+ * Load the resolved auth token — legacy helper. Configured URLs receive only
+ * URL-scoped JWT/Databricks credentials or a Vault token paired to that URL;
+ * an empty base URL may still return the Vault token.
  * Prefer {@link resolveOmnigentAuth} for full auth resolution.
  */
 export async function loadOmnigentToken(baseUrl: string): Promise<string | null> {

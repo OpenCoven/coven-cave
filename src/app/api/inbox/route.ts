@@ -42,6 +42,7 @@ export async function POST(req: Request) {
     sessionId?: string | null;
     link?: LinkRef | null;
     media?: InboxMedia | null;
+    auto?: string | null;
   };
   try {
     body = await req.json();
@@ -70,6 +71,7 @@ export async function POST(req: Request) {
     sessionId: body.sessionId,
     link: body.link,
     media: body.media,
+    auto: body.auto,
   });
   broadcastCreated(item);
   return NextResponse.json({ ok: true, item });

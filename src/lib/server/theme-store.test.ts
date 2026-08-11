@@ -77,12 +77,23 @@ try {
   const persisted = JSON.parse(await readFile(preferencesFile, "utf8"));
   assert.equal(persisted.appearance.theme.id, "tide");
   assert.equal(persisted.appearance.theme.tokens["--bg-base"], undefined);
-  assert.equal(persisted.general.newsHeadlines, true);
+  assert.equal(persisted.general.celebrations, true);
   assert.equal(persisted.phone.mobileMode, true);
   assert.equal(
     Object.hasOwn(persisted, "themeId"),
     false,
     "the compatibility theme endpoint must persist through the canonical preference document",
+  );
+
+  const legacySelection = await themeStore.saveTheme({
+    themeId: "grove",
+    modePreference: "dark",
+    resolvedMode: "dark",
+  });
+  assert.equal(
+    legacySelection.themeId,
+    "coven",
+    "removed preset ids from older clients migrate at the compatibility API boundary",
   );
 
   assert.match(

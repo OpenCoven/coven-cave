@@ -165,13 +165,19 @@ for (const rel of [
   "../components/quick-chat-primitives.tsx",
   "../components/familiar-growth-view.tsx",
   "../components/familiar-analytics-view.tsx",
-  "../components/familiars-view.tsx",
+  "../components/familiars-view-sections.tsx",
   // The bento dashboard renders familiar avatars in its roster, board and
   // footer-collaborator rows.
   "../components/dashboard/bento-dashboard.tsx",
 ]) {
+  // The analytics workbench splits across three files — the view owns loading,
+  // the content composes, and the dock is where the familiar's avatar renders.
   const src = rel === "../components/familiar-analytics-view.tsx"
-    ? [read(rel), read("../components/familiar-analytics-content.tsx")].join("\n")
+    ? [
+        read(rel),
+        read("../components/familiar-analytics-content.tsx"),
+        read("../components/familiar-analytics-dock.tsx"),
+      ].join("\n")
     : read(rel);
   assert.match(src, /AuthedImage/, `${rel} renders avatars via <AuthedImage>`);
   assert.doesNotMatch(

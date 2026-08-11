@@ -9,6 +9,7 @@
  */
 
 import type { IconName } from "./icon.tsx";
+import { extractLinks } from "./link-extractor.ts";
 
 export type LinkCategory =
   | "github"
@@ -39,6 +40,8 @@ export const LINK_CATEGORY_META: Record<LinkCategory, { label: string; icon: Ico
   social: { label: "Discussions", icon: "ph:chats-circle" },
   other: { label: "Other", icon: "ph:link" },
 };
+
+export const MAX_LINKS_PER_SAVE = 50;
 
 export type SavedLink = {
   id: string;
@@ -211,6 +214,63 @@ export function normalizeLinkUrl(rawUrl: string): string {
   return out;
 }
 
+export type LinkIntakeItem = {
+  url: string;
+  category: LinkCategory;
+  alreadySaved: boolean;
+};
+
+export type LinkIntakeSummary = {
+  detectedCount: number;
+  ready: LinkIntakeItem[];
+  duplicates: LinkIntakeItem[];
+  categoryCounts: Partial<Record<LinkCategory, number>>;
+  overLimit: boolean;
+  canSubmit: boolean;
+};
+
+/**
+ * Build the Resources intake preview from the same extraction and normalized
+ * dedupe rules the server uses. This is advisory; the server remains the
+ * authoritative validator and writer.
+ */
+export function summarizeLinkIntake(
+  text: string,
+  savedLinks: readonly Pick<SavedLink, "url">[],
+): LinkIntakeSummary {
+  const extracted = extractLinks(text);
+  const existing = new Set(savedLinks.map((link) => normalizeLinkUrl(link.url)));
+  const unique = new Map<string, LinkIntakeItem>();
+
+  for (const url of extracted) {
+    const key = normalizeLinkUrl(url);
+    if (unique.has(key)) continue;
+    unique.set(key, {
+      url,
+      category: categorizeLink(url),
+      alreadySaved: existing.has(key),
+    });
+  }
+
+  const items = [...unique.values()];
+  const ready = items.filter((item) => !item.alreadySaved);
+  const duplicates = items.filter((item) => item.alreadySaved);
+  const categoryCounts: Partial<Record<LinkCategory, number>> = {};
+  for (const item of items) {
+    categoryCounts[item.category] = (categoryCounts[item.category] ?? 0) + 1;
+  }
+  const overLimit = extracted.length > MAX_LINKS_PER_SAVE;
+
+  return {
+    detectedCount: extracted.length,
+    ready,
+    duplicates,
+    categoryCounts,
+    overLimit,
+    canSubmit: extracted.length > 0 && ready.length > 0 && !overLimit,
+  };
+}
+
 /**
  * Meta for a category, tolerating unknown values. The links store is shared
  * across app versions (chat /save, desk, future writers) — an unrecognized
@@ -220,20 +280,58 @@ export function linkCategoryMeta(category: string): { label: string; icon: IconN
   return LINK_CATEGORY_META[category as LinkCategory] ?? LINK_CATEGORY_META.other;
 }
 
-/** Group saved links into ordered category shelves (empty groups omitted). */
-export function groupSavedLinks(
+export type LinkUsageGroupId = "selected" | "uncited" | "cited";
+
+export type LinkUsageGroup = {
+  id: LinkUsageGroupId;
+  label: string;
+  description: string;
+  links: SavedLink[];
+};
+
+/** Group links by how they relate to the selected and prior research runs. */
+export function groupSavedLinksByUsage<TMission extends { id: string }>(
   links: SavedLink[],
-): { category: LinkCategory; label: string; icon: IconName; links: SavedLink[] }[] {
-  const byCategory = new Map<LinkCategory, SavedLink[]>();
+  citedByUrl: ReadonlyMap<string, readonly TMission[]>,
+  selectedMissionId?: string,
+): LinkUsageGroup[] {
+  const selected: SavedLink[] = [];
+  const uncited: SavedLink[] = [];
+  const cited: SavedLink[] = [];
+
   for (const link of links) {
-    const category = LINK_CATEGORY_META[link.category] ? link.category : "other";
-    const bucket = byCategory.get(category) ?? [];
-    bucket.push(link);
-    byCategory.set(category, bucket);
+    const missions = citedByUrl.get(normalizeLinkUrl(link.url)) ?? [];
+    if (selectedMissionId && missions.some((mission) => mission.id === selectedMissionId)) {
+      selected.push(link);
+    } else if (missions.length === 0) {
+      uncited.push(link);
+    } else {
+      cited.push(link);
+    }
   }
-  return LINK_CATEGORY_ORDER.filter((category) => byCategory.has(category)).map((category) => ({
-    category,
-    ...LINK_CATEGORY_META[category],
-    links: byCategory.get(category)!,
-  }));
+
+  const groups: LinkUsageGroup[] = [];
+  if (selectedMissionId) {
+    groups.push({
+      id: "selected",
+      label: "In this run",
+      description: "Already attached to the selected run",
+      links: selected,
+    });
+  }
+  groups.push({
+    id: "uncited",
+    label: "Uncited",
+    description: "Not used by any research run yet",
+    links: uncited,
+  });
+  groups.push({
+    id: "cited",
+    label: selectedMissionId ? "Used in other runs" : "Used in runs",
+    description: selectedMissionId
+      ? "Used elsewhere and available to add here"
+      : "Used by one or more research runs",
+    links: cited,
+  });
+  return groups.filter((group) => group.links.length > 0);
 }

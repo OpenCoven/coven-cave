@@ -11,7 +11,6 @@ import { readFile } from "node:fs/promises";
 const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 const chrome = await read("apps/ios/CovenCave/CovenCave/Theme/ChatChrome.swift");
 const chatView = await read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift");
-const drawer = await read("apps/ios/CovenCave/CovenCave/Views/ChatDrawer.swift");
 const home = await read("apps/ios/CovenCave/CovenCave/Views/ChatsHomeView.swift");
 const modelControl = await read("apps/ios/CovenCave/CovenCave/Views/ChatModelControl.swift");
 const camera = await read("apps/ios/CovenCave/CovenCave/Views/CameraPicker.swift");
@@ -27,17 +26,16 @@ assert.match(
   /onDismiss\(\)\s*\n\s*item\.action\(\)/,
   "floating-menu rows dismiss the menu on selection before acting",
 );
-assert.match(chrome, /struct DrawerRow: View/, "drawer rows are a shared component");
-assert.match(chrome, /accessibilityAddTraits\(active \? \[\.isSelected\] : \[\]\)/, "active drawer row is exposed as selected to AT");
-assert.match(chrome, /struct EmptyChatSuggestionRow: View/, "empty-state suggestion rows are a shared component");
-
-// ── ChatView header: the agent pill opens the model/agent picker ────────────
+assert.match(chatView, /private var sessionDetailsCard: some View/, "session details render in a dedicated dropdown card");
 assert.match(
   chatView,
-  /PillSelector\(label: thread\.title,[\s\S]{0,200}?action: \{ Task \{ await switchModel\(""\) \} \}/,
-  "the direct-chat agent pill opens the model picker via the existing /model path",
+  /showSessionDetails = false\s*\n\s*Task \{ await switchModel\(""\) \}/,
+  "the dropdown model row preserves the existing /model path",
 );
-assert.match(chatView, /if thread\.isGroup \{[\s\S]{0,300}?chevron: false/, "group chats keep a static pill (no single model to switch)");
+assert.match(chatView, /ForEach\(presentedModelControlCapabilities\)/, "session details render only current-scope selected-model capabilities");
+assert.match(chatView, /capability\.delivery == "prompt-only"/, "prompt-only controls are visibly labelled as guidance");
+assert.doesNotMatch(chatView, /Picker\("Thinking"|Picker\("Speed"/, "session details do not claim global Thinking or Speed settings");
+assert.doesNotMatch(chatView, /TODO\(no backend\)/, "session details do not ship known-fake controls");
 assert.doesNotMatch(chatView, /ChatModelBar\(thread:/, "the between-list model bar is retired — model access lives in the header pill");
 
 // ── Composer "+" menu: fan-out + all three dismissal paths ───────────────────
@@ -67,7 +65,7 @@ assert.match(camera, /UIImagePickerController/, "camera capture wraps the system
 // ── Empty state: starter rows FILL the composer (not auto-send) ─────────────
 assert.match(
   chatView,
-  /EmptyChatSuggestionRow\(systemImage: suggestion\.icon, label: suggestion\.label\) \{\s*\n\s*draft = suggestion\.label\s*\n\s*composerFocused = true/,
+  /EmptyChatSuggestionRow\(systemImage: suggestion\.icon,\s*\n\s*label: suggestion\.label,\s*\n\s*hint: suggestion\.hint\) \{\s*\n\s*draft = suggestion\.label\s*\n\s*composerFocused = true/,
   "empty-state suggestions fill the composer for tweak-and-send",
 );
 
@@ -75,27 +73,18 @@ assert.match(
 assert.match(modelControl, /Section\("Current"\)/, "the picker names the current model at the top");
 assert.match(
   modelControl,
-  /var onSwitchFamiliar: \(\(\) -> Void\)\? = nil/,
+  /let onSwitchFamiliar: \(\(\) -> Void\)\?/,
   "the agent hop is optional so other call sites are unaffected",
+);
+assert.match(
+  modelControl,
+  /onSwitchFamiliar: \(\(\) -> Void\)\? = nil/,
+  "the agent hop defaults to nil at the explicit initializer boundary",
 );
 assert.match(modelControl, /Chat with another familiar/, "deeper agent configuration is reachable from the picker");
 assert.match(chatView, /onSwitchFamiliar: \{ showFamiliarPicker = true \}/, "the picker's agent hop opens the familiar picker");
 
-// ── Side drawer: search, sections, pinned, recents, New Chat, dismissals ─────
-assert.match(drawer, /struct ChatDrawer: View/, "the drawer is its own component");
-assert.match(drawer, /TextField\("Search chats", text: \$query\)/, "the drawer leads with search");
-assert.match(drawer, /sectionHeader\("Sections"\)[\s\S]*?sectionHeader\("Pinned"\)[\s\S]*?sectionHeader\("Recent"\)/, "drawer groups: sections, pinned, recents — in that order");
-assert.match(drawer, /app\.selectedTab = tab/, "primary sections route through the existing tab selection");
-assert.match(drawer, /Label\("New Chat", systemImage: "square\.and\.pencil"\)/, "a floating New Chat button sits near the lower edge");
-assert.match(drawer, /onTapGesture \{ close\(\) \}/, "the scrim closes the drawer on outside tap");
-assert.match(drawer, /value\.translation\.width < -40 \{ close\(\) \}/, "a leftward drag closes the drawer");
-assert.match(drawer, /Color\.black\.opacity\(isOpen \? 0\.45 : 0\)/, "the list behind stays visible through a dim scrim, not hidden");
-assert.match(drawer, /reduceMotion \? nil : \.snappy/, "drawer animation respects reduced motion");
-
 // ── Chats home: menu + compose are labelled circular controls ────────────────
-assert.match(home, /CircularIconButton\(systemImage: "line\.3\.horizontal",[\s\S]{0,120}?label: "Menu"\)/, "the header menu button is a labelled circular control");
 assert.match(home, /CircularIconButton\(systemImage: "square\.and\.pencil",\s*\n\s*label: "New chat"\)/, "the header compose button is a labelled circular control");
-assert.match(home, /ChatDrawer\(isOpen: \$drawerOpen/, "the drawer overlays the chats home");
-assert.match(home, /drawerOpen && !reduceMotion \? 16 : 0/, "the content offsets behind the open drawer (reduced-motion aware)");
 
 console.log("ios-chat-restyle.test.mjs: ok");

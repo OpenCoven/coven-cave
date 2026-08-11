@@ -13,50 +13,71 @@
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
+/* One slim band of chrome: where you came from, what you're editing, and the
+   three groups of controls that change how you're looking at it. */
 .canvas-editor__head {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
+  gap: var(--space-3);
+  height: 44px;
+  padding: 0 var(--space-4);
   border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-panel);
   flex: none;
 }
 .canvas-editor__back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 28px;
+  padding: 0 var(--space-3);
+  flex: none;
   border: 0;
   background: transparent;
   cursor: pointer;
-  font-size: var(--text-base);
+  font: inherit;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
-  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-control);
 }
 .canvas-editor__back:hover {
   color: var(--text-primary);
-  background: color-mix(in oklch, var(--text-primary) 6%, transparent);
+  background: color-mix(in oklch, var(--text-primary) 7%, transparent);
 }
 .canvas-editor__title {
   font-size: var(--text-base);
   font-weight: 500;
   color: var(--text-primary);
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 420px;
+  margin-right: auto;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.canvas-editor__modes {
+/* Padded segment tracks, not flush strips: the rider is a lozenge inside the
+   group so adjacent groups never read as one long control bar. */
+.canvas-editor__modes,
+.canvas-editor__view-controls {
   display: inline-flex;
-  height: 30px;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
-  overflow: hidden;
   flex: none;
+}
+.canvas-editor__modes {
+  background: var(--bg-base);
 }
 .canvas-editor__mode {
   display: inline-flex;
   align-items: center;
+  height: 26px;
   padding: 0 var(--space-3);
   border: 0;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font: inherit;
   font-size: var(--text-sm);
@@ -77,9 +98,11 @@
   border: 0;
   cursor: pointer;
   flex: none;
-  font-size: var(--text-base);
-  font-weight: 500;
-  padding: var(--space-1) var(--space-3);
+  height: 28px;
+  padding: 0 var(--space-4);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
   border-radius: var(--radius-control);
   color: var(--accent-presence-foreground);
   background: var(--accent-presence);
@@ -88,20 +111,15 @@
   background: color-mix(in oklch, var(--accent-presence) 88%, var(--text-primary));
 }
 
-/* View controls: in-app expand toggle + native full screen. */
-.canvas-editor__view-controls {
-  display: inline-flex;
-  height: 30px;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  overflow: hidden;
-  flex: none;
-}
+/* View controls: viewport presets, in-app expand toggle, native full screen. */
 .canvas-editor__view {
   display: inline-flex;
   align-items: center;
-  padding: 0 var(--space-2);
+  justify-content: center;
+  width: 30px;
+  height: 26px;
   border: 0;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--text-muted);
   background: transparent;
@@ -129,17 +147,21 @@
   overflow: auto;
   display: grid;
   place-items: center;
+  /* Fill preset: the sketch owns the whole stage — no gutter. */
+  padding: 0;
+}
+/* Sized device presets keep breathing room around the scaled frame (and the
+   scale math reads this padding back, so the footprint never touches edges). */
+.canvas-editor__stage:has(.canvas-editor__frame-shell--viewport) {
   padding: var(--space-6);
 }
 .canvas-editor__frame-shell {
   position: relative;
-  width: min(900px, 100%);
+  /* Fill preset: edge-to-edge — the aside's own border draws the seam. */
+  width: 100%;
   height: 100%;
   min-height: 240px;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-card);
   background: var(--bg-panel);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
   overflow: hidden;
 }
 .canvas-editor__frame {
@@ -148,8 +170,47 @@
   height: 100%;
   border: 0;
   /* Sketch ground, not an interface color: sketches expect a light page (same
-     precedent as the gallery thumbnail's #fff). */
-  background: #fff;
+     precedent as the gallery thumbnail). */
+  background: var(--surface-paper);
+}
+/* Always-mounted wrapper between the shell and the iframe (viewport presets,
+   cave-ztbo): keeping it in the tree in BOTH modes means switching presets
+   never reparents — so never reloads — the sketch iframe. */
+.canvas-editor__frame-box {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+/* A sized preset: the shell keeps its stage-filling box (so nothing about
+   its size feeds back into layout) and turns transparent; the frame box —
+   absolutely centered, which keeps its explicit device dimensions OUT of
+   intrinsic sizing so a transiently stale scale can never stretch ancestor
+   panes — carries the scaled device footprint and the visual chrome. The
+   outline — not a border — keeps the box's content area at exactly the
+   scaled device size, so no device pixels are clipped. */
+.canvas-editor__frame-shell--viewport {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+}
+.canvas-editor__frame-shell--viewport .canvas-editor__frame-box {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  outline: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-panel);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+}
+.canvas-editor__viewport-size {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .canvas-editor__error {
   position: absolute;
@@ -195,9 +256,13 @@
 
 /* ── Aside ───────────────────────────────────────────────────────────────── */
 .canvas-editor__aside {
-  width: 320px;
+  width: 342px;
   flex: none;
   border-left: 1px solid var(--border-hairline);
+  /* Solid panel ground — side panes stay opaque so the chat backdrop image
+     never bleeds through the inspector/design-chat column (backdrop.css
+     side-pane contract). */
+  background: var(--bg-panel);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -206,20 +271,26 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-3);
+  height: 38px;
+  padding: 0 var(--space-3);
   border-bottom: 1px solid var(--border-hairline);
   flex: none;
 }
+/* Mono, wide-tracked, uppercase: a structural label for the pane, not a
+   heading you read as prose. */
 .canvas-editor__panel-title {
-  font-size: var(--text-xs);
-  letter-spacing: 0.08em;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--text-muted);
-  font-weight: 500;
+  font-weight: 600;
+  flex: none;
 }
 .canvas-editor__panel-target {
   margin-left: auto;
-  font-size: var(--text-xs);
+  max-width: 200px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
   min-width: 0;
   white-space: nowrap;
@@ -246,78 +317,123 @@
   text-wrap: pretty;
 }
 
-/* Select mode: quiet details of the selected component. */
+/* Select mode: what you picked, addressed the way the sketch addresses it —
+   a name, its selector, and the markup it actually is. */
 .canvas-editor__sel-card {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-2) var(--space-3);
+  gap: var(--space-2);
+  padding: var(--space-3);
   border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-card);
+  background: var(--bg-base);
 }
 .canvas-editor__sel-label {
-  font-size: var(--text-sm);
-  font-weight: 500;
+  font-size: var(--text-base);
+  font-weight: 600;
   color: var(--text-primary);
 }
 .canvas-editor__sel-selector {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: var(--text-xs);
-  color: var(--text-secondary);
+  color: var(--accent-presence);
   word-break: break-all;
 }
 .canvas-editor__sel-excerpt {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-2xs);
+  line-height: 1.6;
+  color: var(--text-secondary);
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
-  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+/* The two things you can do with a selection that aren't "look at it". */
+.canvas-editor__sel-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.canvas-editor__sel-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 26px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.canvas-editor__sel-action:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.canvas-editor__sel-action[aria-pressed="true"] {
+  color: var(--accent-presence);
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
 }
 
-/* Edit mode: inspector rows. */
+/* Edit mode: a settings list, one property per fixed-height row, so the
+   values line up in a column you can scan without reading the labels. */
 .canvas-editor__insp-row {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  height: 40px;
+  flex: none;
 }
 .canvas-editor__insp-label {
   font-size: var(--text-sm);
   color: var(--text-secondary);
   flex: 1;
+  min-width: 0;
 }
 .canvas-editor__insp-num {
-  width: 60px;
-  min-height: 30px;
-  font-size: var(--text-sm);
-  text-align: center;
+  width: 74px;
+  height: 28px;
+  font: inherit;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-xs);
   flex: none;
+  padding: 0 var(--space-2);
   color: var(--text-primary);
-  background: var(--bg-sunken);
+  background: var(--bg-base);
   border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-sm);
 }
 .canvas-editor__insp-unit {
-  font-size: var(--text-xs);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
   width: 18px;
   flex: none;
 }
 .canvas-editor__weights {
   display: inline-flex;
-  height: 26px;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  flex: none;
   border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
 }
 .canvas-editor__weight {
   display: inline-flex;
   align-items: center;
+  height: 24px;
   padding: 0 var(--space-2);
   border: 0;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font: inherit;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: var(--text-xs);
   color: var(--text-muted);
   background: transparent;
@@ -334,17 +450,39 @@
 .canvas-editor__swatch {
   width: 22px;
   height: 22px;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   flex: none;
   padding: 0;
-  border: 1px solid var(--border-hairline);
+  border: 1px solid var(--border-strong);
   /* The "None" swatch has no literal fill — it shows the app surface, meaning
      "no override". Colored swatches get their sketch-content fill inline. */
   background: var(--bg-sunken);
 }
+/* A ring, not a thicker border: the swatch has to keep its exact fill area so
+   two near-identical colours stay comparable while one is selected. */
 .canvas-editor__swatch.is-selected {
-  border: 2px solid var(--accent-presence);
+  box-shadow: 0 0 0 2px var(--accent-presence);
+}
+/* Style edits are experiments; this is the way back out of one. */
+.canvas-editor__revert {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+  height: 28px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.canvas-editor__revert:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
 }
 
 /* Comment mode. */
@@ -353,42 +491,77 @@
   flex-direction: column;
   gap: var(--space-2);
 }
+/* Numbered spine down the left edge: the number is the comment's handle, and
+   it's what the familiar's applied-changes summary refers back to. */
 .canvas-editor__comment {
-  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-base);
+}
+.canvas-editor__comment-index {
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  color: var(--accent-presence);
+}
+.canvas-editor__comment-body {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
+  flex: 1;
+  min-width: 0;
 }
 .canvas-editor__comment-target {
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: var(--text-2xs);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--accent-presence);
-  padding-right: var(--space-6);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 .canvas-editor__comment-note {
   font-size: var(--text-sm);
+  line-height: 1.55;
   color: var(--text-secondary);
   text-wrap: pretty;
 }
 .canvas-editor__comment-remove {
-  position: absolute;
-  top: 6px;
-  right: 6px;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
   border: 0;
   background: transparent;
   cursor: pointer;
-  padding: var(--space-1);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
 }
 .canvas-editor__comment-remove:hover:not(:disabled) {
-  color: var(--text-primary);
-  background: color-mix(in oklch, var(--text-primary) 7%, transparent);
+  color: var(--color-danger);
+  background: color-mix(in oklch, var(--color-danger) 16%, transparent);
+}
+/* No pins yet: dashed, because it's a slot waiting to be filled rather than
+   an error or a wall. */
+.canvas-editor__comments-empty {
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px dashed var(--border-hairline);
+  border-radius: var(--radius-card);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  text-wrap: pretty;
 }
 .canvas-editor__comment-remove:disabled {
   opacity: 0.5;
@@ -455,12 +628,13 @@
   min-height: 190px;
 }
 .canvas-editor__chat-label {
-  font-size: var(--text-xs);
-  letter-spacing: 0.08em;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--text-muted);
-  font-weight: 500;
-  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-weight: 600;
+  padding: var(--space-3) var(--space-3) var(--space-1);
   flex: none;
 }
 .canvas-editor__chat-scroll {
@@ -474,15 +648,17 @@
 }
 .canvas-editor__msg {
   font-size: var(--text-sm);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-control);
+  line-height: 1.6;
+  padding: var(--space-3);
+  border-radius: var(--radius-card);
   text-wrap: pretty;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 .canvas-editor__msg--agent {
   color: var(--text-secondary);
-  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
   align-self: stretch;
 }
 .canvas-editor__msg--user {
@@ -495,18 +671,43 @@
   color: var(--text-muted);
   font-style: italic;
 }
+/* What the next message carries with it. Dashed + detachable so it reads as
+   an attachment on the draft, not a permanent property of the selection. */
 .canvas-editor__attach {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   margin: 0 var(--space-3);
-  padding: var(--space-1) var(--space-2);
+  padding: 0 var(--space-3);
+  height: 24px;
   align-self: flex-start;
   font-size: var(--text-xs);
-  border: 1px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 45%, transparent);
   border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
   color: var(--accent-presence);
   max-width: calc(100% - 24px);
+}
+.canvas-editor__attach-name {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.canvas-editor__detach {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.canvas-editor__detach:hover {
+  background: color-mix(in oklch, var(--accent-presence) 25%, transparent);
 }
 .canvas-editor__chat-row {
   display: flex;
@@ -522,10 +723,10 @@
   font: inherit;
   font-size: var(--text-sm);
   color: var(--text-primary);
-  background: transparent;
+  background: var(--bg-base);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-3);
 }
 .canvas-editor__input::placeholder {
   color: var(--text-muted);
@@ -540,8 +741,8 @@
   border: 0;
   cursor: pointer;
   flex: none;
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border-radius: var(--radius-control);
   color: var(--accent-presence-foreground);
   background: var(--accent-presence);

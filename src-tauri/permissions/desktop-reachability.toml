@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-desktop-reachability-status"
+description = "Allows the trusted desktop UI to read reachability status."
+commands.allow = ["desktop_reachability_status"]
+
+[[permission]]
+identifier = "allow-desktop-reachability-configure"
+description = "Allows the trusted desktop UI to configure macOS reachability opt-ins."
+commands.allow = ["desktop_reachability_configure"]

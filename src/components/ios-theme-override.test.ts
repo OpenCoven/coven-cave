@@ -26,6 +26,9 @@ assert.deepEqual(
   [...THEME_IDS],
   "ThemeRoster.all must list the same theme ids, in the same order, as the desktop THEME_IDS",
 );
+for (const removed of ["grove", "bloom", "dusk", "mist", "hex", "bane", "beacon", "trucker", "meatseeks"]) {
+  assert.doesNotMatch(roster, new RegExp(`\\.init\\("${removed}"`), `iOS roster omits ${removed}`);
+}
 assert.match(
   roster,
   /func accent\(_ scheme: ColorScheme\) -> Color[\s\S]*func background\(_ scheme: ColorScheme\) -> Color/,

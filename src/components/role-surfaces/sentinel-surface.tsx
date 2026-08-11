@@ -16,10 +16,12 @@
  * say so instead of pretending.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
+import { useLatestAsyncData } from "@/lib/use-role-surfaces";
 import { SEVERITIES, SNOOZE_PRESETS, type Escalation } from "@/lib/escalations-types";
 import { relativeTime } from "@/lib/relative-time";
 import {
@@ -29,7 +31,16 @@ import {
   type AlertScope,
   type AlertSeverityFilter,
 } from "./sentinel-watch";
-import { RailSection, SurfaceCanvas, SurfaceEmpty, SurfaceRail, SurfaceRoom } from "./surface-room";
+import {
+  RailSection,
+  SurfaceCanvas,
+  SurfaceEmpty,
+  SurfaceError,
+  SurfaceLoading,
+  SurfaceRail,
+  SurfaceRoom,
+  useActiveSelectionRail,
+} from "./surface-room";
 import { SENTINEL_SURFACE_ID } from "./ids";
 
 export type SentinelState = {
@@ -75,45 +86,47 @@ const STATE_LABELS: Record<Escalation["state"], string> = {
 export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
   const familiarId = context.activeFamiliar.id;
   const [state, patch] = useRoleSurfaceState<SentinelState>(familiarId, SENTINEL_SURFACE_ID, SENTINEL_INITIAL_STATE);
+  const { announce } = useAnnouncer();
+  const selectedInspectorRef = useRef<HTMLParagraphElement | null>(null);
 
   // ── Alerts: the Cave's real escalations ────────────────────────────────────
-  const [alerts, setAlerts] = useState<Escalation[] | null>(null);
-  const [alertsError, setAlertsError] = useState<string | null>(null);
-  const loadAlerts = useCallback(async () => {
-    setAlertsError(null);
-    try {
-      const res = await fetch("/api/escalations", { cache: "no-store" });
-      const json = res.ok ? ((await res.json()) as { ok?: boolean; items?: Escalation[] }) : null;
-      if (!json?.ok || !Array.isArray(json.items)) throw new Error("bad response");
-      setAlerts(json.items);
-      const summary = summarizeAlerts(json.items);
-      patch({ lastSummary: { open: summary.open, critical: summary.critical } });
-    } catch {
-      setAlertsError("Couldn't load escalations.");
-      setAlerts((prev) => prev ?? []);
-    }
-  }, [patch]);
+  const fetchAlerts = useCallback(async () => {
+    const res = await fetch("/api/escalations", { cache: "no-store" });
+    const json = res.ok ? ((await res.json()) as { ok?: boolean; items?: Escalation[] }) : null;
+    if (!json?.ok || !Array.isArray(json.items)) throw new Error("bad response");
+    return json.items;
+  }, []);
+  const {
+    data: alerts,
+    error: alertsError,
+    reload: loadAlerts,
+  } = useLatestAsyncData<Escalation[]>({
+    scopeKey: "escalations",
+    load: fetchAlerts,
+    errorMessage: "Couldn't load escalations.",
+  });
   useEffect(() => {
-    void loadAlerts();
-  }, [loadAlerts]);
+    if (alerts == null) return;
+    const nextSummary = summarizeAlerts(alerts);
+    patch({ lastSummary: { open: nextSummary.open, critical: nextSummary.critical } });
+  }, [alerts, patch]);
 
   // ── Perimeter: registered hosts with live reachability probes ─────────────
-  const [hosts, setHosts] = useState<HostWire[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/hosts", { cache: "no-store" });
-        const json = res.ok ? ((await res.json()) as { ok?: boolean; hosts?: HostWire[] }) : null;
-        if (!cancelled) setHosts(json?.hosts ?? []);
-      } catch {
-        if (!cancelled) setHosts([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+  const fetchHosts = useCallback(async () => {
+    const res = await fetch("/api/hosts", { cache: "no-store" });
+    const json = res.ok ? ((await res.json()) as { ok?: boolean; hosts?: HostWire[] }) : null;
+    if (!Array.isArray(json?.hosts)) throw new Error("bad response");
+    return json.hosts;
   }, []);
+  const {
+    data: hosts,
+    error: hostsError,
+    reload: loadHosts,
+  } = useLatestAsyncData<HostWire[]>({
+    scopeKey: "registered-hosts",
+    load: fetchHosts,
+    errorMessage: "Couldn't probe registered hosts.",
+  });
 
   const summary = useMemo(() => summarizeAlerts(alerts ?? []), [alerts]);
   const filtered = useMemo(
@@ -124,6 +137,16 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
     () => (alerts ?? []).find((a) => a.id === state.selectedId) ?? null,
     [alerts, state.selectedId],
   );
+  const [detailsExpanded, setDetailsExpanded] = useActiveSelectionRail(state.selectedId);
+  const [watchExpanded, setWatchExpanded] = useState(false);
+  const setWatchRailExpanded = (next: boolean) => {
+    setWatchExpanded(next);
+    if (next) setDetailsExpanded(false);
+  };
+  const setDetailsRailExpanded = (next: boolean) => {
+    setDetailsExpanded(next);
+    if (next) setWatchExpanded(false);
+  };
   const watch = useMemo(() => watchSessions(context.runtimeState.sessions), [context.runtimeState.sessions]);
   const recentlyClosed = useMemo(
     () =>
@@ -139,6 +162,8 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const act = useCallback(
     async (id: string, body: Record<string, string>, actionKey: string) => {
+      const title = (alerts ?? []).find((alert) => alert.id === id)?.title ?? "Alert";
+      const nextState = body.state as Escalation["state"] | undefined;
       setBusyAction(actionKey);
       setActionError(null);
       try {
@@ -148,14 +173,22 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
           body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error(`status ${res.status}`);
-        await loadAlerts();
+        await loadAlerts({ retainData: true });
+        requestAnimationFrame(() => selectedInspectorRef.current?.focus());
+        if (nextState === "resolved") {
+          announce(`Resolved "${title}".`);
+        } else if (nextState) {
+          announce(`Moved "${title}" to ${STATE_LABELS[nextState]}.`);
+        }
       } catch {
-        setActionError("Action failed — the escalation store didn't accept the change.");
+        const message = "Action failed — the escalation store didn't accept the change.";
+        setActionError(message);
+        announce(message, "assertive");
       } finally {
         setBusyAction(null);
       }
     },
-    [loadAlerts],
+    [alerts, announce, loadAlerts],
   );
 
   const runAlertAction = useCallback(
@@ -169,14 +202,18 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
       try {
         const res = await fetch(action.target, { method: "POST" });
         if (!res.ok) throw new Error(`status ${res.status}`);
-        await loadAlerts();
+        await loadAlerts({ retainData: true });
+        requestAnimationFrame(() => selectedInspectorRef.current?.focus());
+        announce(`Ran "${action.label}".`);
       } catch {
-        setActionError(`"${action.label}" failed.`);
+        const message = `"${action.label}" failed.`;
+        setActionError(message);
+        announce(message, "assertive");
       } finally {
         setBusyAction(null);
       }
     },
-    [context, loadAlerts],
+    [announce, context, loadAlerts],
   );
 
   const closed = selected != null && (selected.state === "resolved" || selected.state === "dismissed");
@@ -211,7 +248,16 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
             )}
           </RailSection>
           <RailSection title="Recently closed alerts" iconName="ph:clock">
-            {recentlyClosed.length === 0 ? (
+            {alertsError ? (
+              <SurfaceError
+                title={alertsError}
+                hint="Check the Cave connection, then retry the sweep."
+                onRetry={loadAlerts}
+                live={false}
+              />
+            ) : alerts == null ? (
+              <SurfaceLoading label="Loading recently closed alerts…" live={false} />
+            ) : recentlyClosed.length === 0 ? (
               <SurfaceEmpty title="Nothing closed yet." />
             ) : (
               <ul className="role-surface-list" aria-label="Recently closed alerts">
@@ -227,7 +273,12 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
         </div>
       }
     >
-      <SurfaceRail side="left" label="Watch status">
+      <SurfaceRail
+        side="left"
+        label="Watch status"
+        expanded={watchExpanded}
+        onExpandedChange={setWatchRailExpanded}
+      >
         <RailSection title="Watch status" iconName="ph:heartbeat">
           <ul className="role-surface-list">
             <li className="role-surface-list-row">
@@ -251,37 +302,56 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
               <span className={summary.decisionsRequired > 0 ? "role-surface-metric-warn" : undefined}>
                 Decisions required
               </span>
-              <span className="role-surface-tag">{summary.decisionsRequired}</span>
+              <span className="role-surface-tag">
+                {alerts == null || alertsError ? "—" : summary.decisionsRequired}
+              </span>
             </li>
           </ul>
         </RailSection>
         <RailSection title="Alert queues" iconName="ph:bell">
-          <ul className="role-surface-list">
-            {SCOPES.map((scope) => (
-              <li key={scope.id}>
-                <button
-                  type="button"
-                  className={`role-surface-row-btn focus-ring-inset${state.scope === scope.id ? " role-surface-row-btn--active" : ""}`}
-                  onClick={() => patch({ scope: scope.id })}
-                >
-                  {scope.label}
-                  <span className="role-surface-tag">
-                    {scope.id === "open"
-                      ? summary.open
-                      : scope.id === "snoozed"
-                        ? summary.snoozed
-                        : scope.id === "resolved"
-                          ? (alerts ?? []).filter((a) => a.state === "resolved" || a.state === "dismissed").length
-                          : (alerts ?? []).length}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          {alertsError ? (
+            <SurfaceError
+              title={alertsError}
+              hint="Check the Cave connection, then retry the sweep."
+              onRetry={loadAlerts}
+              live={false}
+            />
+          ) : alerts == null ? (
+            <SurfaceLoading label="Loading alert queues…" live={false} />
+          ) : (
+            <ul className="role-surface-list">
+              {SCOPES.map((scope) => (
+                <li key={scope.id}>
+                  <button
+                    type="button"
+                    className={`role-surface-row-btn focus-ring-inset${state.scope === scope.id ? " role-surface-row-btn--active" : ""}`}
+                    onClick={() => patch({ scope: scope.id })}
+                  >
+                    {scope.label}
+                    <span className="role-surface-tag">
+                      {scope.id === "open"
+                        ? summary.open
+                        : scope.id === "snoozed"
+                          ? summary.snoozed
+                          : scope.id === "resolved"
+                            ? alerts.filter((a) => a.state === "resolved" || a.state === "dismissed").length
+                            : alerts.length}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </RailSection>
         <RailSection title="Perimeter" iconName="ph:globe">
-          {hosts == null ? (
-            <SurfaceEmpty title="Probing perimeter…" hint="Checking each registered host over ssh." />
+          {hostsError ? (
+            <SurfaceError
+              title={hostsError}
+              hint="Check the host configuration, then retry."
+              onRetry={loadHosts}
+            />
+          ) : hosts == null ? (
+            <SurfaceLoading label="Probing registered hosts…" />
           ) : hosts.length === 0 ? (
             <SurfaceEmpty title="No hosts registered." hint="Register remote hosts from the chat host picker." />
           ) : (
@@ -323,16 +393,21 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
               <Icon name="ph:arrow-clockwise" width={12} height={12} aria-hidden /> Sweep again
             </button>
           </div>
-          {alertsError ? (
-            <div role="alert" className="role-surface-hint">
-              {alertsError}{" "}
-              <button type="button" className="role-surface-chip focus-ring" onClick={() => void loadAlerts()}>
-                Try again
-              </button>
-            </div>
+          {alertsError && alerts != null ? (
+            <SurfaceError
+              title={alertsError}
+              hint="Showing the last completed sweep. Retry when the Cave connection returns."
+              onRetry={loadAlerts}
+            />
           ) : null}
-          {alerts == null ? (
-            <SurfaceEmpty title="Sweeping escalations…" />
+          {alertsError && alerts == null ? (
+            <SurfaceError
+              title={alertsError}
+              hint="Check the Cave connection, then retry the sweep."
+              onRetry={loadAlerts}
+            />
+          ) : alerts == null ? (
+            <SurfaceLoading label="Sweeping escalations…" />
           ) : filtered.length === 0 ? (
             <SurfaceEmpty
               iconName="ph:binoculars"
@@ -351,7 +426,10 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
                     type="button"
                     className={`role-surface-card focus-ring${item.id === state.selectedId ? " role-surface-card--active" : ""}`}
                     aria-current={item.id === state.selectedId ? "true" : undefined}
-                    onClick={() => patch({ selectedId: item.id })}
+                    onClick={() => {
+                      patch({ selectedId: item.id });
+                      setDetailsRailExpanded(true);
+                    }}
                   >
                     <span className="role-surface-card-tags">
                       <span className={item.severity === "critical" ? "role-surface-tag role-surface-metric-warn" : "role-surface-tag"}>
@@ -373,15 +451,35 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
         </div>
       </SurfaceCanvas>
 
-      <SurfaceRail side="right" label="Alert details">
-        {!selected ? (
+      <SurfaceRail
+        side="right"
+        label="Alert details"
+        expanded={detailsExpanded}
+        onExpandedChange={setDetailsRailExpanded}
+      >
+        {alertsError && alerts == null ? (
+          <RailSection title="Details" iconName="ph:note">
+            <SurfaceError
+              title={alertsError}
+              hint="Check the Cave connection, then retry the sweep."
+              onRetry={loadAlerts}
+              live={false}
+            />
+          </RailSection>
+        ) : alerts == null ? (
+          <RailSection title="Details" iconName="ph:note">
+            <SurfaceLoading label="Loading alert details…" live={false} />
+          </RailSection>
+        ) : !selected ? (
           <RailSection title="Details" iconName="ph:note">
             <SurfaceEmpty title="Select an alert to triage it." />
           </RailSection>
         ) : (
           <>
             <RailSection title="Selected alert" iconName="ph:note">
-              <p className="role-surface-memory-path">{selected.title}</p>
+              <p ref={selectedInspectorRef} className="role-surface-memory-path focus-ring" tabIndex={-1}>
+                {selected.title}
+              </p>
               {selected.excerpt && <p className="role-surface-memory-excerpt">{selected.excerpt}</p>}
               <dl className="role-surface-facts">
                 <dt>Severity</dt>
@@ -418,7 +516,7 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
             </RailSection>
             <RailSection title="Triage" iconName="ph:shield-warning">
               {actionError ? (
-                <p role="alert" className="role-surface-hint">
+                <p className="role-surface-hint">
                   {actionError}
                 </p>
               ) : null}

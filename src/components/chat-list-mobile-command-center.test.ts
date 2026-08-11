@@ -53,9 +53,14 @@ assert.match(
   "Mobile chat list should drop the desktop keyboard-shortcut footer",
 );
 
+// The row keeps `chat-list-row` as its mobile grid hook; cave-n3jg2 added
+// `chat-session-card` beside it for the DESKTOP card treatment, which is gated
+// to min-width 768px precisely so the mobile command-center grid below still
+// owns the phone layout. Anchoring on the leading class rather than the exact
+// pair keeps this pin about the hook it cares about.
 assert.match(
   source,
-  /"chat-list-row focus-ring-inset/,
+  /"chat-list-row chat-session-card focus-ring-inset/,
   "ChatList rows should expose a mobile grid hook",
 );
 

@@ -22,10 +22,14 @@ const PAIRING_STEP_GLYPH: Record<PairingStep["state"], { icon: IconName; classNa
 export function PairingStepsList({
   steps,
   className,
+  showAllDetails = false,
   children,
 }: {
   steps: PairingStep[];
   className?: string;
+  /** Keep compact callers terse; expanded control sheets may show the
+   * route-provided detail for every rung. */
+  showAllDetails?: boolean;
   /** Optional trailing list item(s), e.g. a Retry row after a failed rung. */
   children?: ReactNode;
 }) {
@@ -44,7 +48,7 @@ export function PairingStepsList({
                 {step.label}
               </span>
               <span className="sr-only"> — {glyph.announce}</span>
-              {step.detail && (step.state === "fail" || step.state === "pending") ? (
+              {step.detail && (showAllDetails || step.state === "fail" || step.state === "pending") ? (
                 <span className={`block text-[length:var(--text-xs)] leading-relaxed ${step.state === "fail" ? "text-[var(--color-warning)]" : "text-[var(--text-muted)]"}`}>
                   {step.detail}
                 </span>

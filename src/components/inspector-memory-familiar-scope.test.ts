@@ -46,7 +46,7 @@ const read = (rel) => readFileSync(path.join(process.cwd(), rel), "utf8");
   // was the original leak: the list was fetched once, unscoped, and reused).
   const fetchEffect = src.slice(src.indexOf('const url = familiar'));
   assert.match(
-    fetchEffect.slice(0, 800),
+    fetchEffect.slice(0, 1_800),
     /\}, \[familiar\?\.id\]\);/,
     "the memory-list effect must depend on familiar?.id",
   );
@@ -54,7 +54,7 @@ const read = (rel) => readFileSync(path.join(process.cwd(), rel), "utf8");
   // Defense in depth: rows are also scoped client-side for ownership + ordering.
   assert.match(
     src,
-    /scopeMemoryFilesToFamiliar\(entries,\s*familiar\?\.id\)/,
+    /scopeMemoryFilesToFamiliar\(filesState\.entries,\s*familiar\?\.id\)/,
     "inspector must scope rows client-side too",
   );
 
@@ -63,6 +63,24 @@ const read = (rel) => readFileSync(path.join(process.cwd(), rel), "utf8");
     src,
     /fetch\(\s*["']\/api\/memory["']\s*,/,
     "inspector must not fetch the unscoped /api/memory list",
+  );
+
+  // Canonical summaries carry their owner as familiarId. Never recover scope
+  // from a path or the removed legacy snake_case field.
+  assert.match(
+    src,
+    /\.filter\(\(entry\) => !familiar \|\| entry\.familiarId === familiar\.id\)/,
+    "canonical rows must scope by the canonical familiarId field",
+  );
+  assert.doesNotMatch(
+    src,
+    /(?:canonical|coven)[\s\S]{0,500}\.familiar_id/,
+    "canonical scope must not use the legacy familiar_id field",
+  );
+  assert.doesNotMatch(
+    src,
+    /(?:canonical|coven)[\s\S]{0,500}(?:path|fullPath)\.(?:includes|startsWith)/,
+    "canonical scope must never be inferred from a filesystem path",
   );
 }
 

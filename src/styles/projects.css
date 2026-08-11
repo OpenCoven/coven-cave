@@ -1,11 +1,14 @@
 /*
  * projects.css — the Chat → Projects "Project access" surface.
  *
- * One familiar's access map: serif display header, a toolbar (familiar
- * picker, search, tally, reset), then WORKSPACES / REPOSITORIES sections
+ * One familiar's access map: compact serif header, a quiet toolbar (familiar
+ * picker, search, grouping toggle, tally, reset), then project sections —
+ * grouped into WORKSPACES / REPOSITORIES or one flat ALL PROJECTS list —
  * whose rows carry a tri-state pill — No access · Read · Full — that cycles
- * on click. Every color routes through theme tokens so the page holds up in
- * light mode and custom accents; the filled "Full" pill pairs
+ * on click. Secondary controls (per-section Set all, the row gear) stay
+ * invisible until hover or keyboard focus reaches them, keeping the resting
+ * page minimal. Every color routes through theme tokens so the page holds up
+ * in light mode and custom accents; the filled "Full" pill pairs
  * --accent-presence with --accent-presence-foreground for contrast.
  */
 
@@ -17,9 +20,8 @@
 }
 
 .projects-access-inner {
-  max-width: 920px;
-  margin: 0 auto;
-  padding: clamp(20px, 4vh, 44px) clamp(16px, 4vw, 40px) calc(var(--space-8) * 2);
+  /* Full-width (2026-07-23): the access map spans the pane (was 920px). */
+  padding: clamp(16px, 3vh, 32px) clamp(16px, 4vw, 40px) calc(var(--space-8) * 2);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -46,7 +48,8 @@
 .projects-access-title {
   margin: 0;
   font-family: var(--font-serif, ui-serif, serif);
-  font-size: clamp(26px, 3.2vw, 34px);
+  /* Compact header (minimal pass): one type-scale step, not a display hero. */
+  font-size: var(--text-xl);
   font-weight: 500;
   line-height: 1.1;
   letter-spacing: 0.01em;
@@ -54,11 +57,27 @@
 }
 
 .projects-access-subtitle {
-  margin: var(--space-1) 0 0;
+  margin: 0;
   max-width: 56ch;
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   line-height: 1.5;
-  color: var(--text-secondary);
+  color: var(--text-muted);
+}
+
+/* ── Panes (Access · Groups · Activity) ─────────────────────────────── */
+
+/* The three peers of the project-permissions protocol. Access groups used to
+   live two levels inside a familiar's settings; promoting them to a tab here
+   is the whole point of the tablist. */
+.projects-access-panes {
+  margin-top: calc(var(--space-1) * -1);
+}
+
+.projects-access-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
 }
 
 /* ── Toolbar ────────────────────────────────────────────────────────── */
@@ -122,35 +141,11 @@
   flex: 0 0 auto;
 }
 
-.projects-access-counts {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-left: auto;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
-}
-
-.projects-access-count {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.projects-access-count.is-none {
-  color: var(--text-muted);
-}
-
-.projects-access-count.is-read {
-  color: var(--accent-presence-soft, var(--accent-presence));
-}
-
-.projects-access-count.is-write {
-  color: var(--accent-presence);
-}
-
 .projects-access-reset {
+  flex: 0 0 auto;
+}
+
+.projects-access-new {
   flex: 0 0 auto;
 }
 
@@ -229,6 +224,22 @@
   display: inline-flex;
   align-items: center;
   font-size: var(--text-xs);
+  /* Quiet chrome: invisible until the section head is hovered or a Set-all
+     button holds keyboard focus (opacity-only — reduced-motion safe). */
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.projects-access-section-head:hover .projects-access-setall,
+.projects-access-section-head:focus-within .projects-access-setall {
+  opacity: 1;
+}
+
+/* No hover on touch — keep the controls always visible there. */
+@media (hover: none) {
+  .projects-access-setall {
+    opacity: 1;
+  }
 }
 
 .projects-access-setall-label {
@@ -258,126 +269,871 @@
   cursor: default;
 }
 
-/* ── Rows ───────────────────────────────────────────────────────────── */
+/* ── Access ledger ──────────────────────────────────────────────────────
+ * A proportional bar plus its key, replacing three loose numbers: the width
+ * of each segment IS the shape of the familiar's reach. */
 
-.projects-access-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.projects-access-header {
+  flex-direction: row;
+  align-items: flex-end;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.projects-access-headline {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  min-width: 0;
+  flex: 1 1 320px;
 }
 
-.projects-access-row {
-  width: 100%;
+.projects-access-ledger {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex: none;
+  min-width: 230px;
+}
+
+.projects-access-ledger-bar {
+  display: flex;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: color-mix(in oklch, var(--text-primary) 8%, transparent);
+}
+
+.projects-access-ledger-bar span {
+  transition: width 260ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.projects-access-ledger-key {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: transparent;
-  font: inherit;
-  font-size: var(--text-base);
-  color: var(--text-primary);
-  text-align: left;
-  cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease;
+  gap: var(--space-3);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
 }
 
-.projects-access-row:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+.projects-access-ledger-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
 }
 
-.projects-access-row:disabled {
-  cursor: default;
+/* One colour vocabulary for every level, everywhere on the page. */
+
+.projects-access-ledger-bar .is-write,
+.projects-access-ledger-key .is-write,
+.projects-access-mix-chip.is-write,
+.projects-access-setall-btn.is-write,
+.projects-access-bulk-btn.is-write {
+  color: var(--accent-presence);
 }
 
-.projects-access-row.is-pending {
-  opacity: 0.55;
+.projects-access-ledger-bar .is-read,
+.projects-access-ledger-key .is-read,
+.projects-access-mix-chip.is-read,
+.projects-access-setall-btn.is-read,
+.projects-access-bulk-btn.is-read {
+  color: var(--accent-presence-soft, var(--accent-presence));
 }
 
-/* Rows holding any access sit slightly raised off the page. */
-.projects-access-row.is-read,
-.projects-access-row.is-write {
-  background: var(--bg-raised);
-  border-color: var(--border-hairline);
-}
-
-.projects-access-row.is-read:hover:not(:disabled),
-.projects-access-row.is-write:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--foreground) 4%, var(--bg-raised));
-}
-
-.projects-access-row.is-flash {
-  border-color: color-mix(in oklch, var(--accent-presence) 70%, transparent);
-  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
-}
-
-.projects-access-row-icon {
-  flex: 0 0 auto;
+.projects-access-ledger-bar .is-none,
+.projects-access-ledger-key .is-none,
+.projects-access-mix-chip.is-none,
+.projects-access-setall-btn.is-none,
+.projects-access-bulk-btn.is-none {
   color: var(--text-muted);
 }
 
-.projects-access-row-name {
+.projects-access-ledger-bar .is-write,
+.projects-access-ledger-bar .is-read,
+.projects-access-ledger-bar .is-none {
+  background: currentColor;
+}
+
+.projects-access-ledger-bar .is-none {
+  background: transparent;
+}
+
+/* ── View switcher ──────────────────────────────────────────────────── */
+
+.projects-access-views {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--text-primary) 3%, transparent);
+}
+
+.projects-access-view {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--space-6);
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-control);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.projects-access-view:hover {
+  color: var(--text-primary);
+}
+
+.projects-access-view.is-on {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--text-primary) 14%, transparent);
+}
+
+/* ── Bulk band ──────────────────────────────────────────────────────── */
+
+.projects-access-bulk {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: 0 var(--space-4);
+  min-height: 38px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+}
+
+.projects-access-bulk-count {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-presence);
+}
+
+.projects-access-bulk-sep {
+  width: 1px;
+  height: var(--space-4);
+  background: color-mix(in oklch, var(--accent-presence) 30%, transparent);
+}
+
+.projects-access-bulk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--space-6);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-elevated);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.projects-access-bulk-btn:hover:not(:disabled) {
+  border-color: currentColor;
+}
+
+.projects-access-bulk-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.projects-access-bulk-done {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.projects-access-bulk-done:hover {
+  color: var(--text-primary);
+}
+
+/* ── Section head extras ────────────────────────────────────────────── */
+
+.projects-access-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.projects-access-caret {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform 140ms ease;
+}
+
+.projects-access-caret.is-closed {
+  transform: rotate(-90deg);
+}
+
+.projects-access-mix {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  padding: 0 var(--space-2);
+  height: 19px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--text-primary) 3%, transparent);
+}
+
+.projects-access-mix-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+}
+
+.projects-access-peek {
   flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ── Grid of cards ──────────────────────────────────────────────────── */
+
+.projects-access-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.projects-access-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-panel) 42%, transparent);
+  overflow: hidden;
+  transition:
+    border-color 140ms ease,
+    transform 140ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.projects-access-card.is-read,
+.projects-access-card.is-write {
+  background: color-mix(in oklch, var(--bg-raised) 46%, transparent);
+}
+
+.projects-access-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
+}
+
+.projects-access-card.is-checked {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 9%, transparent);
+}
+
+.projects-access-card-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+}
+
+.projects-access-card.is-read .projects-access-card-bar,
+.projects-access-tr.is-read .projects-access-card-bar {
+  background: var(--accent-presence-soft, var(--accent-presence));
+}
+
+.projects-access-card.is-write .projects-access-card-bar,
+.projects-access-tr.is-write .projects-access-card-bar {
+  background: var(--accent-presence);
+}
+
+.projects-access-check {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.projects-access-check input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.projects-access-check svg {
+  /* ::before is absolutely positioned, so it paints above non-positioned
+     content — without a stacking bump the checked fill hides the tick. */
+  position: relative;
+  z-index: 1;
+  color: var(--accent-presence-foreground);
+  opacity: 0;
+  /* The tick and the box are painted over the (visually hidden) input; without
+     this they win hit-testing and swallow the click. */
+  pointer-events: none;
+}
+
+.projects-access-check::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--border-strong, var(--border-hairline));
+  border-radius: 5px;
+  pointer-events: none;
+}
+
+.projects-access-check:has(input:checked)::before {
+  background: var(--accent-presence);
+  border-color: var(--accent-presence);
+}
+
+.projects-access-check:has(input:checked) svg {
+  opacity: 1;
+}
+
+.projects-access-check:has(input:focus-visible)::before {
+  outline: 2px solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
+.projects-access-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  padding-bottom: 0;
+}
+
+/* Kind is a category, not a state, so the two get distinct TREATMENTS rather
+   than distinct hues — this system has exactly one accent (--color-info is
+   aliased to it) and a second hue would have to survive 21 palettes × 2 modes.
+   Workspace is filled, repository is ringed: both read as deliberate, where
+   before a repo was encoded only by the ABSENCE of the workspace's accent. */
+.projects-access-kind {
+  display: grid;
+  place-items: center;
+  width: var(--space-6);
+  height: var(--space-6);
+  flex: none;
+  border-radius: var(--radius-control);
+}
+
+/* Coven-native: solid accent fill. */
+.projects-access-kind.is-workspace {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  color: var(--accent-presence);
+}
+
+/* Git-backed: a ring, not a fill — the outline reads as "linked elsewhere",
+   and the ink is a tier stronger than the old muted grey so the icon carries
+   as much weight as its filled sibling. */
+.projects-access-kind.is-repo {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  color: var(--text-primary);
+}
+
+.projects-access-card-id {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.projects-access-card-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: text;
+}
+
+.projects-access-card-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.projects-access-rename {
+  width: 100%;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--accent-presence);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 9%, transparent);
+  outline: none;
+  font: inherit;
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.projects-access-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-3);
+}
+
+.projects-access-card-meta {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.projects-access-row-group {
-  flex: 0 0 auto;
+  text-align: right;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 
-/* ── Pills ──────────────────────────────────────────────────────────── */
-
-.projects-access-pill {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border-hairline);
-  font-size: var(--text-xs);
-  font-weight: 500;
-  line-height: 1.4;
-  white-space: nowrap;
+.projects-access-disclose,
+.projects-access-gear {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 130ms ease;
 }
 
-.projects-access-pill.is-none {
+.projects-access-card:hover .projects-access-disclose,
+.projects-access-card:hover .projects-access-gear,
+.projects-access-card:focus-within .projects-access-disclose,
+.projects-access-card:focus-within .projects-access-gear,
+.projects-access-tr:hover .projects-access-disclose,
+.projects-access-tr:focus-within .projects-access-disclose {
+  opacity: 1;
+}
+
+.projects-access-disclose:hover,
+.projects-access-gear:hover {
+  color: var(--text-primary);
+}
+
+.projects-access-disclose[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.projects-access-disclose[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+@media (hover: none) {
+  .projects-access-disclose,
+  .projects-access-gear {
+    opacity: 1;
+  }
+}
+
+/* ── Disclosed detail ───────────────────────────────────────────────── */
+
+.projects-access-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--text-primary) 3%, transparent);
+}
+
+.projects-access-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+}
+
+.projects-access-facts > div {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.projects-access-facts dt {
+  width: 46px;
+  flex: none;
+  color: var(--text-muted);
+}
+
+.projects-access-facts dd {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.projects-access-grants {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2) 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.projects-access-grants li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 21px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.projects-access-grants li .projects-access-dot {
+  background: currentColor;
+}
+
+.projects-access-grants.is-read li.is-on {
+  color: var(--accent-presence-soft, var(--accent-presence));
+  border-color: color-mix(in oklch, var(--accent-presence) 34%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+.projects-access-grants.is-write li.is-on {
+  color: var(--accent-presence);
+  border-color: color-mix(in oklch, var(--accent-presence) 34%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+/* ── Rows view ──────────────────────────────────────────────────────── */
+
+.projects-access-table {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.projects-access-thead,
+.projects-access-tr-main {
+  display: grid;
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr) minmax(0, 132px) 100px var(--space-5);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.projects-access-thead {
+  height: var(--space-8);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--text-primary) 3%, transparent);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.projects-access-thead span:nth-child(4) {
+  text-align: right;
+}
+
+.projects-access-tbody {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.projects-access-tr {
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 55%, transparent);
+}
+
+.projects-access-tr:last-child {
+  border-bottom: none;
+}
+
+.projects-access-tr-main {
+  position: relative;
+  padding: var(--space-2) var(--space-4);
+}
+
+.projects-access-tr:hover {
+  background: color-mix(in oklch, var(--text-primary) 4%, transparent);
+}
+
+.projects-access-tr-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.projects-access-tr-name .projects-access-card-bar {
+  position: static;
+  width: 2px;
+  height: 15px;
+  border-radius: var(--radius-pill);
+  flex: none;
+}
+
+/* The dense rows view shows the bare glyph, not the tile — so neither the
+   workspace fill nor the repository ring applies here. The icon itself still
+   differs, and the Scope column names the kind in words. */
+.projects-access-tr-name .projects-access-kind {
+  width: auto;
+  height: auto;
+  background: none;
+  box-shadow: none;
+}
+
+.projects-access-tr-path,
+.projects-access-tr-scope {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.projects-access-tr-scope {
+  color: var(--text-secondary);
+}
+
+.projects-access-tr .projects-access-detail {
+  border-top: 1px solid var(--border-hairline);
+}
+
+/* ── Tree view ──────────────────────────────────────────────────────── */
+
+.projects-access-tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.projects-access-level {
+  border: 1px solid var(--border-hairline);
+  border-left: 2px solid var(--text-muted);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.projects-access-level.is-read {
+  border-left-color: var(--accent-presence-soft, var(--accent-presence));
+  background: color-mix(in oklch, var(--accent-presence) 5%, transparent);
+}
+
+.projects-access-level.is-write {
+  border-left-color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 8%, transparent);
+}
+
+.projects-access-level > header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 34px;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.projects-access-level h2 {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.projects-access-level.is-write h2 {
+  color: var(--accent-presence);
+}
+
+.projects-access-level-count {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.projects-access-chips {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.projects-access-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--space-6);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-raised) 50%, transparent);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.projects-access-chip:hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
+}
+
+.projects-access-chip:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.projects-access-chip-meta {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── Access pill (shared by every view) ─────────────────────────────── */
+
+.projects-access-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: none;
+  height: var(--space-5);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
   color: var(--text-muted);
 }
 
 .projects-access-pill.is-read {
+  color: var(--accent-presence-soft, var(--accent-presence));
   border-color: color-mix(in oklch, var(--accent-presence) 40%, transparent);
   background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
-  color: var(--accent-presence);
 }
 
 .projects-access-pill.is-write {
+  color: var(--accent-presence-foreground);
   border-color: transparent;
   background: var(--accent-presence);
-  color: var(--accent-presence-foreground);
 }
 
-/* ── States ─────────────────────────────────────────────────────────── */
-
-.projects-access-skeleton {
-  margin-top: var(--space-3);
+.projects-access-pill:hover:not(:disabled) {
+  border-color: currentColor;
 }
 
-@media (max-width: 640px) {
-  .projects-access-counts {
-    margin-left: 0;
-    order: 4;
+.projects-access-pill:disabled {
+  cursor: default;
+}
+
+.projects-access-pill.is-pending {
+  opacity: 0.6;
+}
+
+.projects-access-pill .projects-access-dot {
+  background: currentColor;
+}
+
+/* Command-palette focus flash. */
+
+.projects-access-card.is-flash,
+.projects-access-tr.is-flash,
+.projects-access-chip.is-flash {
+  animation: projects-access-flash 1.4s ease;
+}
+
+@keyframes projects-access-flash {
+  0%,
+  100% {
+    box-shadow: none;
+  }
+  20%,
+  60% {
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .projects-access-card,
+  .projects-access-caret,
+  .projects-access-disclose,
+  .projects-access-gear,
+  .projects-access-ledger-bar span {
+    transition: none;
   }
 
-  .projects-access-search {
-    max-width: none;
+  .projects-access-card.is-flash,
+  .projects-access-tr.is-flash,
+  .projects-access-chip.is-flash {
+    animation: none;
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  }
+
+  .projects-access-card:hover {
+    transform: none;
   }
 }

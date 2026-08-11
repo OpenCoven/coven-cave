@@ -288,29 +288,241 @@ function hasUnquotedGt(s: string, from: number): boolean {
   return false;
 }
 
-/** Character ranges covered by ```/~~~ fences (delimiters included). Fenced
- *  marker syntax is example text, never live cards (review finding,
- *  cave-m0r6); an unclosed trailing fence protects through the text end. */
-export function fencedRanges(text: string): Array<[number, number]> {
+function mergeRanges(ranges: Array<[number, number]>): Array<[number, number]> {
+  const merged: Array<[number, number]> = [];
+  for (const range of ranges.sort(([a], [b]) => a - b)) {
+    const previous = merged[merged.length - 1];
+    if (previous && range[0] <= previous[1]) {
+      previous[1] = Math.max(previous[1], range[1]);
+    } else {
+      merged.push([...range]);
+    }
+  }
+  return merged;
+}
+
+function leadingWhitespaceLength(line: string): number {
+  return /^[ \t]*/.exec(line)?.[0].length ?? 0;
+}
+
+function rendererFenceRanges(text: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
+  const lines = text.split("\n");
   let offset = 0;
-  let fenceStart = -1;
-  for (const line of text.split("\n")) {
-    if (/^\s*(```|~~~)/.test(line)) {
-      if (fenceStart === -1) fenceStart = offset;
-      else {
-        ranges.push([fenceStart, offset + line.length]);
-        fenceStart = -1;
+  let start = -1;
+  let character = "";
+  let openedFromList = false;
+  let interiorLines = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (start === -1) {
+      const opening = /^([ \t]*)(?:(?:([-+*]|\d{1,9}[.)])[ \t]+))?(`{3,}|~{3,})(.*)$/.exec(line);
+      const validOpening = opening &&
+        !(opening[3][0] === "`" && opening[4].includes("`"));
+      if (validOpening) {
+        start = offset;
+        character = opening[3][0];
+        openedFromList = Boolean(opening[2]);
+        interiorLines = 0;
+      }
+    } else {
+      const closing = /^([ \t]*)(`{3,}|~{3,})[ \t]*$/.exec(line);
+      if (closing && closing[2][0] === character) {
+        ranges.push([start, offset + line.length]);
+        const nextLine = lines[index + 1];
+        const canReopen = nextLine !== undefined
+          && leadingWhitespaceLength(nextLine) >= closing[1].length;
+        if (openedFromList && canReopen) {
+          start = offset;
+          character = closing[2][0];
+          openedFromList = false;
+          interiorLines = 0;
+        } else {
+          start = -1;
+          character = "";
+          openedFromList = false;
+          interiorLines = 0;
+        }
+      } else {
+        interiorLines += 1;
       }
     }
     offset += line.length + 1;
   }
-  if (fenceStart !== -1) ranges.push([fenceStart, text.length]);
+  if (start !== -1) ranges.push([start, text.length]);
   return ranges;
+}
+
+/** Character ranges covered by ```/~~~ fences (delimiters included). Fenced
+ *  marker syntax is example text, never live cards (review finding,
+ *  cave-m0r6); an unclosed trailing fence protects through the text end. */
+export function fencedRanges(text: string): Array<[number, number]> {
+  const containerRanges: Array<[number, number]> = [];
+  const lines = text.split("\n");
+  let offset = 0;
+  let fenceStart = -1;
+  let fenceCharacter = "";
+  let fenceLength = 0;
+  let fenceQuoteDepth = 0;
+  let closingIndent = 3;
+  let openedFromList = false;
+  let interiorLines = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    let contentOffset = 0;
+    let quoteDepth = 0;
+    while (true) {
+      const quote = /^ {0,3}>[ \t]?/.exec(line.slice(contentOffset));
+      if (!quote) break;
+      contentOffset += quote[0].length;
+      quoteDepth += 1;
+    }
+    const containerContent = line.slice(contentOffset);
+
+    if (fenceStart === -1) {
+      const list = /^ {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+/.exec(containerContent);
+      const content = list
+        ? containerContent.slice(list[0].length)
+        : containerContent;
+      const opening = /^([ \t]*)(`{3,}|~{3,})(.*)$/.exec(content);
+      if (opening) {
+        const indent = (list?.[0].length ?? 0) + opening[1].length;
+        const fence = opening[2];
+        const info = opening[3];
+        if (fence[0] === "`" && info.includes("`")) {
+          offset += line.length + 1;
+          continue;
+        }
+        fenceStart = offset;
+        fenceCharacter = fence[0];
+        fenceLength = fence.length;
+        fenceQuoteDepth = quoteDepth;
+        closingIndent = indent + 3;
+        openedFromList = Boolean(list);
+        interiorLines = 0;
+      }
+    } else {
+      const closing = /^([ \t]*)(`{3,}|~{3,})\s*$/.exec(containerContent);
+      if (
+        closing
+        && quoteDepth === fenceQuoteDepth
+        && closing[1].length <= closingIndent
+        && closing[2][0] === fenceCharacter
+        && closing[2].length >= fenceLength
+      ) {
+        containerRanges.push([fenceStart, offset + line.length]);
+        const nextLine = lines[index + 1];
+        let canReopen = false;
+        if (nextLine !== undefined) {
+          let nextContentOffset = 0;
+          let nextQuoteDepth = 0;
+          while (true) {
+            const quote = /^ {0,3}>[ \t]?/.exec(nextLine.slice(nextContentOffset));
+            if (!quote) break;
+            nextContentOffset += quote[0].length;
+            nextQuoteDepth += 1;
+          }
+          canReopen = nextQuoteDepth === quoteDepth
+            && leadingWhitespaceLength(nextLine.slice(nextContentOffset)) >= closing[1].length;
+        }
+        if ((openedFromList || (interiorLines === 0 && quoteDepth > 0)) && canReopen) {
+          fenceStart = offset;
+          fenceCharacter = closing[2][0];
+          fenceLength = closing[2].length;
+          fenceQuoteDepth = quoteDepth;
+          closingIndent = closing[1].length + 3;
+          openedFromList = false;
+          interiorLines = 0;
+        } else {
+          fenceStart = -1;
+          fenceCharacter = "";
+          fenceLength = 0;
+          fenceQuoteDepth = 0;
+          closingIndent = 3;
+          openedFromList = false;
+          interiorLines = 0;
+        }
+      } else {
+        interiorLines += 1;
+      }
+    }
+    offset += line.length + 1;
+  }
+  if (fenceStart !== -1) containerRanges.push([fenceStart, text.length]);
+
+  // The shipped parser also recognizes any whitespace-indented raw fence line
+  // and closes it with the next same-character fence, regardless of run
+  // length. Union that state machine with the container-aware ranges above so
+  // parser quirks can never leave rendered code executable as protocol.
+  return mergeRanges([...containerRanges, ...rendererFenceRanges(text)]);
 }
 
 function inRanges(ranges: Array<[number, number]>, index: number): boolean {
   return ranges.some(([start, end]) => index >= start && index < end);
+}
+
+/** Markdown code ranges, including fenced blocks and inline backtick spans.
+ * Unterminated spans protect through the text end so streamed examples cannot
+ * briefly activate protocol controls before their closing delimiter arrives. */
+export function markdownCodeRanges(text: string): Array<[number, number]> {
+  const fences = fencedRanges(text);
+  const inline: Array<[number, number]> = [];
+  let cursor = 0;
+  let fenceIndex = 0;
+
+  while (cursor < text.length) {
+    while (
+      fenceIndex < fences.length
+      && cursor >= fences[fenceIndex][1]
+    ) {
+      fenceIndex += 1;
+    }
+    const fence = fences[fenceIndex];
+    if (fence && cursor >= fence[0]) {
+      cursor = fence[1];
+      continue;
+    }
+    if (text[cursor] !== "`") {
+      cursor += 1;
+      continue;
+    }
+
+    const start = cursor;
+    while (cursor < text.length && text[cursor] === "`") cursor += 1;
+    const delimiterLength = cursor - start;
+    let closingEnd = -1;
+    let search = cursor;
+    let searchFenceIndex = fenceIndex;
+
+    while (search < text.length) {
+      while (
+        searchFenceIndex < fences.length
+        && search >= fences[searchFenceIndex][1]
+      ) {
+        searchFenceIndex += 1;
+      }
+      const searchFence = fences[searchFenceIndex];
+      if (searchFence && search >= searchFence[0]) {
+        search = searchFence[1];
+        continue;
+      }
+      if (text[search] !== "`") {
+        search += 1;
+        continue;
+      }
+      const closingStart = search;
+      while (search < text.length && text[search] === "`") search += 1;
+      if (search - closingStart === delimiterLength) {
+        closingEnd = search;
+        break;
+      }
+    }
+
+    inline.push([start, closingEnd === -1 ? text.length : closingEnd]);
+    cursor = closingEnd === -1 ? text.length : closingEnd;
+  }
+
+  return mergeRanges([...fences, ...inline]);
 }
 
 /**
@@ -322,22 +534,29 @@ function inRanges(ranges: Array<[number, number]>, index: number): boolean {
  */
 export function stripGitHubMarkers(text: string): string {
   if (!text || !text.includes("<coven:g")) return text;
-  const fences = fencedRanges(text);
+  const codeRanges = markdownCodeRanges(text);
   MARKER_RE.lastIndex = 0;
-  let out = text.replace(MARKER_RE, (m, _action, _attrs, index: number) =>
-    inRanges(fences, index) ? m : "",
+  const out = text.replace(MARKER_RE, (m, _action, _attrs, index: number) =>
+    inRanges(codeRanges, index) ? m : "",
   );
+  return stripIncompleteGitHubMarker(out);
+}
+
+/** Remove only an unterminated marker tail, preserving complete markers for
+ * callers that still need to turn them into cards. */
+export function stripIncompleteGitHubMarker(text: string): string {
+  if (!text || !text.includes("<coven:g")) return text;
   // Partial tail: an unterminated `<coven:github…` (or any prefix of the tag
   // name) with no UNQUOTED closing `>` after it hides from the visible
   // stream — unless it sits inside a fence, where it's example text.
-  const tail = out.lastIndexOf("<coven:g");
-  if (tail !== -1 && !hasUnquotedGt(out, tail) && !inRanges(fencedRanges(out), tail)) {
-    const frag = out.slice(tail);
+  const tail = text.lastIndexOf("<coven:g");
+  if (tail !== -1 && !hasUnquotedGt(text, tail) && !inRanges(markdownCodeRanges(text), tail)) {
+    const frag = text.slice(tail);
     if ("<coven:github-action".startsWith(frag.slice(0, "<coven:github-action".length)) || frag.startsWith("<coven:github")) {
-      out = out.slice(0, tail);
+      return text.slice(0, tail);
     }
   }
-  return out;
+  return text;
 }
 
 /** True when a trimmed line is exactly one unfurlable github.com URL. */
@@ -356,7 +575,10 @@ function bareLineDescriptor(line: string): GitHubBlockDescriptor | null {
  * Inline URL mentions stay plain text. Returns [{kind:"text", text}] unchanged
  * when there is nothing to extract, so callers can cheaply detect "no cards".
  */
-export function sliceGitHubBlocks(text: string): GitHubTextPiece[] {
+export function sliceGitHubBlocks(
+  text: string,
+  { unfurlBareUrls = true }: { unfurlBareUrls?: boolean } = {},
+): GitHubTextPiece[] {
   if (!text) return [{ kind: "text", text }];
   const pieces: GitHubTextPiece[] = [];
   let cursor = 0;
@@ -368,11 +590,11 @@ export function sliceGitHubBlocks(text: string): GitHubTextPiece[] {
     // Fenced markers are example text — leave them literal instead of
     // splitting the fence and mounting a live (possibly armed action) card
     // (review finding, cave-m0r6).
-    const fences = fencedRanges(text);
+    const codeRanges = markdownCodeRanges(text);
     MARKER_RE.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = MARKER_RE.exec(text)) !== null) {
-      if (inRanges(fences, m.index)) continue;
+      if (inRanges(codeRanges, m.index)) continue;
       pushText(text.slice(cursor, m.index));
       cursor = m.index + m[0].length;
       const isAction = Boolean(m[1]);
@@ -391,6 +613,10 @@ export function sliceGitHubBlocks(text: string): GitHubTextPiece[] {
     pushText(text);
   }
 
+  if (!unfurlBareUrls) {
+    return pieces.length ? pieces : [{ kind: "text", text }];
+  }
+
   // Second pass: unfurl bare-line URLs inside the text pieces.
   const out: GitHubTextPiece[] = [];
   for (const piece of pieces) {
@@ -399,27 +625,22 @@ export function sliceGitHubBlocks(text: string): GitHubTextPiece[] {
       continue;
     }
     const lines = piece.text.split("\n");
+    const codeRanges = markdownCodeRanges(piece.text);
     let buf: string[] = [];
-    let inFence = false;
+    let offset = 0;
     const flush = () => {
       if (buf.length) out.push({ kind: "text", text: buf.join("\n") });
       buf = [];
     };
     for (const line of lines) {
-      // Fence tracking: never unfurl inside ```/~~~ blocks — consuming a line
-      // there would split the fence and break the markdown render.
-      if (/^\s*(```|~~~)/.test(line)) {
-        inFence = !inFence;
-        buf.push(line);
-        continue;
-      }
-      const d = inFence ? null : bareLineDescriptor(line);
+      const d = inRanges(codeRanges, offset) ? null : bareLineDescriptor(line);
       if (d) {
         flush();
         out.push({ kind: "card", descriptor: d });
       } else {
         buf.push(line);
       }
+      offset += line.length + 1;
     }
     flush();
   }

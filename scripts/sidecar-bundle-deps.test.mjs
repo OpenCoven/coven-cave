@@ -24,6 +24,15 @@ const [
 const baseConfig = JSON.parse(baseConfigSource);
 const windowsConfig = JSON.parse(windowsConfigSource);
 
+function sourceSection(source, startMarker, endMarker, label) {
+  const startIndex = source.indexOf(startMarker);
+  const endIndex = source.indexOf(endMarker);
+  assert.notEqual(startIndex, -1, `${label} start marker must exist`);
+  assert.notEqual(endIndex, -1, `${label} end marker must exist`);
+  assert.ok(startIndex < endIndex, `${label} markers must stay in source order`);
+  return source.slice(startIndex, endIndex);
+}
+
 // Must use locked pnpm install (frozen lockfile prevents supply chain attacks)
 assert.match(src, /pnpm install --prod --frozen-lockfile/, "sidecar must install from locked pnpm lockfile");
 
@@ -68,8 +77,44 @@ for (const forbiddenRoot of [
 ]) {
   assert.match(closureSource, new RegExp(forbiddenRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `runtime verifier must exclude ${forbiddenRoot}`);
 }
-assert.match(closureSource, /fileCount: 5_654/, "runtime closure must retain combined cross-platform headroom");
+// cave-0ia8h: the budget is declared once, in scripts/sidecar-runtime-budget.json,
+// and every consumer derives from it. This used to pin the literal, which is
+// what made a raise a six-file hand-sync under a red CI — and let the Rust copy
+// drift downward on its own in #4249.
+//
+// So assert the WIRING rather than the value: the closure must read the shared
+// file, and must not carry a literal file count again. The negative is the load
+// bearing half — without it, someone "fixing" a red gate by pasting a number
+// back into this file would silently restore the duplication this removed.
+assert.match(
+  closureSource,
+  /readSidecarFileCountBudget\(\)/,
+  "runtime closure must read the file-count budget from sidecar-runtime-budget.json",
+);
+assert.doesNotMatch(
+  closureSource,
+  /fileCount:\s*[\d_]+/,
+  "runtime closure must not hardcode a file count — edit sidecar-runtime-budget.json instead",
+);
+const declaredSidecarBudget = JSON.parse(
+  await readFile(new URL("./sidecar-runtime-budget.json", import.meta.url), "utf8"),
+);
+assert.ok(
+  Number.isSafeInteger(declaredSidecarBudget.fileCount) && declaredSidecarBudget.fileCount > 0,
+  "the declared sidecar file-count budget must be a positive integer",
+);
 assert.match(closureSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "runtime closure must stay strictly below 200 MiB expanded");
+for (const runtimeFile of [
+  "dist/compiled/webpack/webpack-lib.js",
+  "dist/compiled/webpack/webpack.js",
+  "dist/compiled/webpack/bundle5.js",
+]) {
+  assert.match(
+    closureSource,
+    new RegExp(runtimeFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    `runtime closure must retain Next startup file ${runtimeFile}`,
+  );
+}
 
 // App-size: runtime bundles must drop test/dev packages and metadata that are
 // useful only while developing or debugging the build machine.
@@ -135,17 +180,109 @@ assert.doesNotMatch(
 // Tauri assembles the app.
 assert.deepEqual(
   windowsConfig.bundle.resources,
-  ["resources/server-archive/**/*", "resources/node/**/*"],
-  "Windows resources must replace the expanded sidecar with its bounded archive",
+  [
+    "resources/server-archive/**/*",
+    "resources/node/**/*",
+    "resources/whisper/**/*",
+    "resources/piper/**/*",
+    "resources/kokoro/**/*",
+  ],
+  "Windows resources must replace the expanded sidecar with its bounded archive while retaining bundled runtimes",
 );
 assert.ok(
   baseConfig.bundle.resources.includes("resources/server/**/*"),
   "non-Windows bundles must retain the expanded tree for nested native signing",
 );
+assert.ok(
+  baseConfig.bundle.resources.includes("resources/whisper/**/*"),
+  "desktop bundles must retain the local Whisper runtime",
+);
+assert.match(src, /bundle_piper_runtime\(\)/, "release bundling must provision the pinned Piper runtime");
+assert.match(src, /Piper runtime checksum mismatch/, "Piper runtime downloads must be integrity-checked");
+assert.match(
+  src,
+  /runtime_executable_path="\$\(find[\s\S]*?if \[ -z "\$runtime_executable_path" \]; then[\s\S]*?runtime_root="\$\(dirname "\$runtime_executable_path"\)"/,
+  "Piper staging must reject a missing executable before deriving its runtime directory",
+);
+assert.match(
+  src,
+  /piper-phonemize\/releases\/download\/2023\.11\.14-4/,
+  "macOS Piper bundles must source their missing dylib closure from the pinned piper-phonemize release",
+);
+assert.match(
+  src,
+  /Piper phonemize runtime checksum mismatch/,
+  "the supplemental macOS Piper dylib archive must be integrity-checked",
+);
+assert.match(
+  src,
+  /phonemize_lib_path="\$\(find[\s\S]*?if \[ -z "\$phonemize_lib_path" \]; then[\s\S]*?phonemize_lib_root="\$\(dirname "\$phonemize_lib_path"\)"/,
+  "macOS Piper staging must reject a missing dylib match before deriving its closure directory",
+);
+assert.match(
+  src,
+  /cp -a "\$phonemize_lib_root\/"\*\.dylib "\$PIPER_RUNTIME_DIR\/"/,
+  "macOS Piper bundles must preserve the complete dylib closure and its compatibility symlinks",
+);
+assert.match(
+  src,
+  /install_name_tool -add_rpath @executable_path/,
+  "macOS Piper executables must resolve their staged @rpath dylibs beside the executable",
+);
+assert.ok(
+  baseConfig.bundle.resources.includes("resources/kokoro/**/*"),
+  "desktop bundles must retain the local Kokoro (sherpa-onnx) runtime",
+);
+assert.match(src, /bundle_kokoro_runtime\(\)/, "release bundling must provision the pinned Kokoro runtime");
+assert.match(src, /Kokoro runtime checksum mismatch/, "Kokoro runtime downloads must be integrity-checked");
+assert.match(
+  src,
+  /Kokoro espeak-ng-data checksum mismatch/,
+  "the espeak-ng-data payload that rides with the Kokoro runtime must be integrity-checked",
+);
+assert.match(
+  src,
+  /tar -xjf "\$espeak_archive" -C "\$KOKORO_RUNTIME_DIR"/,
+  "espeak-ng-data must be staged beside the Kokoro executable, not inside the voice-model download",
+);
+assert.doesNotMatch(
+  sourceSection(src, "bundle_kokoro_runtime()", "fix_node_pty_spawn_helpers()", "Kokoro staging section"),
+  /placeholder\.txt/,
+  "the generated Kokoro payload must not spend an MSI row on the source-tree placeholder",
+);
+assert.match(
+  src,
+  /if \[ -f "\$PIPER_RUNTIME_DIR\/espeak-ng" \]; then[\s\S]*chmod \+x "\$PIPER_RUNTIME_DIR\/espeak-ng"/,
+  "Piper's mode-0644 macOS espeak-ng helper must be normalized as executable",
+);
+assert.doesNotMatch(
+  sourceSection(src, "bundle_piper_runtime()", "fix_node_pty_spawn_helpers()", "Piper staging section"),
+  /placeholder\.txt/,
+  "the generated Piper payload must not spend an MSI row on the source-tree placeholder",
+);
+assert.doesNotMatch(
+  sourceSection(
+    src,
+    'echo "==> staging Node runtime',
+    'echo "==> staging bundled Whisper runtime"',
+    "Node staging section",
+  ),
+  /placeholder\.txt/,
+  "the generated Node payload must not spend an MSI row on the source-tree placeholder",
+);
 assert.match(src, /WINDOWS_ARCHIVE/, "Windows sidecar must be emitted as a tar.zst archive");
+assert.match(src, /BUILD_PLATFORM="\$\(node -p 'process\.platform'\)"/, "Windows packaging must derive the host platform from Node, not shell environment");
+assert.match(src, /\[ "\$BUILD_PLATFORM" = "win32" \]/, "Windows archive and node naming must work from Git Bash as well as CI");
+assert.doesNotMatch(src, /\$\{OS:-\}/, "Windows packaging must not rely on Git Bash exporting OS=Windows_NT");
+assert.match(src, /piper_linux_x86_64\.tar\.gz/, "Linux sidecar CI builds must provision a pinned Piper runtime");
 assert.match(src, /sidecar-archive-manifest\.mjs/, "archive generation must emit its integrity and size manifest");
 assert.match(src, /\.server\.tar\.zst\.\$\$\.tmp/, "archive generation must use a same-directory staging path");
 assert.match(src, /sidecar-archive-manifest\.mjs" --publish/, "verified archive publication must use the atomic publisher");
+assert.match(
+  src,
+  /sidecar-archive-manifest\.mjs" --publish[\s\S]*rm -f "\$WINDOWS_ARCHIVE_DIR\/placeholder\.txt"/,
+  "a published Windows archive must remove the source-only glob placeholder before WiX counts resources",
+);
 assert.doesNotMatch(
   src,
   /tar -czf "\$WINDOWS_ARCHIVE/,
@@ -169,10 +306,24 @@ assert.match(
   /fileCount: SIDECAR_RUNTIME_BUDGETS\.fileCount/,
   "archive must share the runtime file-count budget",
 );
+// The Rust const is generated by build.rs from the same JSON (cave-0ia8h), so
+// assert it is included rather than typed. The negative matters most: a literal
+// here is exactly the drift that #4249 introduced, where this const was reverted
+// downward on its own while the JS gate stayed put.
 assert.match(
   rustArchiveSource,
-  /const MAX_FILE_COUNT: u64 = 5_654;/,
-  "Windows archive extractor must accept the shared runtime file-count budget",
+  /include!\(concat!\(env!\("OUT_DIR"\), "\/sidecar_file_count_budget\.rs"\)\)/,
+  "Windows archive extractor must include the generated file-count budget",
+);
+assert.doesNotMatch(
+  rustArchiveSource,
+  /const MAX_FILE_COUNT: u64 = [\d_]+;/,
+  "MAX_FILE_COUNT must be generated from sidecar-runtime-budget.json, never hardcoded",
+);
+assert.match(
+  await readFile(new URL("../src-tauri/build.rs", import.meta.url), "utf8"),
+  /sidecar-runtime-budget\.json/,
+  "build.rs must generate the Rust budget from the shared declaration",
 );
 assert.match(manifestSource, /isSymbolicLink\(\)/, "archive input must reject symlinks");
 assert.match(

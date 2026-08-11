@@ -1,5 +1,7 @@
 use super::{OFFSCREEN_X, OFFSCREEN_Y};
 
+const OFFSCREEN_MARGIN: f64 = 2.0;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) enum BrowserBounds {
     Hidden { w: f64, h: f64 },
@@ -74,4 +76,28 @@ pub(super) fn offscreen_browser_creation_bounds(
             Err("offscreen browser creation unexpectedly produced visible bounds".to_string())
         }
     }
+}
+
+/// Returns a physical position that puts a retained child fully beyond the
+/// main client area's top-left corner. The offset must account for both the
+/// client and child dimensions: a fixed distance can leave part of an
+/// oversized child visible and able to receive input.
+pub(super) fn offscreen_browser_position(
+    client_w: f64,
+    client_h: f64,
+    child_w: f64,
+    child_h: f64,
+) -> Result<(f64, f64), String> {
+    if !client_w.is_finite()
+        || !client_h.is_finite()
+        || !child_w.is_finite()
+        || !child_h.is_finite()
+    {
+        return Err("browser bounds must be finite".to_string());
+    }
+
+    Ok((
+        -(client_w.max(0.0).max(child_w.max(0.0)) + OFFSCREEN_MARGIN),
+        -(client_h.max(0.0).max(child_h.max(0.0)) + OFFSCREEN_MARGIN),
+    ))
 }

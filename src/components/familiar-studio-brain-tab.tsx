@@ -8,12 +8,16 @@ import {
 } from "@/lib/daemon-sync-status";
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select";
-import { isBindableRuntimeChoice } from "@/lib/harness-adapters";
-import { catalogForRuntime } from "@/lib/runtime-models";
+import { canonicalHarnessId, isBindableRuntimeChoice } from "@/lib/harness-adapters";
+import { createModelSelectionMutationQueue } from "@/lib/model-selection-mutation-queue";
+import { modelForRuntimeSwitch, runtimeOwnsModelDefault } from "@/lib/runtime-models";
+import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
 import type { RuntimeModelOption } from "@/lib/grok-build";
-import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { FamiliarAsanaSection } from "@/components/familiar-asana-section";
+import { FamiliarXSection } from "@/components/familiar-x-section";
 import { IconButton } from "@/components/ui/icon-button";
+import { Button } from "@/components/ui/button";
 import { useFleetTokenEnabled } from "@/lib/omnigent/use-fleet-gate";
 import {
   DEFAULT_OPENAI_VOICE_ID,
@@ -35,13 +39,43 @@ import {
   imageGenSizesForModel,
   isImageGenProvider,
 } from "@/lib/image-generation";
+import { isTauri } from "@/lib/tauri-platform";
+import { loadNativeSttBridge, nativeSttAvailability } from "@/lib/voice/native-stt";
+import { isLocalTtsVoiceName } from "@/lib/voice/local-tts";
+import { VOICE_PROVIDER_CATALOG } from "@/lib/voice/provider-catalog";
 
 type Props = { familiar: ResolvedFamiliar };
+const LOCAL_VOICE_CATALOG_TIMEOUT_MS = 15_000;
+
+/**
+ * Recognition-engine readiness for the Local (on-device) provider, probed at
+ * configuration time (cave-qfyx) so "your Mac can't run this strictly
+ * on-device" surfaces here — not as stt_on_device_unsupported when a call
+ * finally connects. Desktop-gated: web builds never probe and render nothing.
+ */
+type LocalSttReadiness =
+  | { kind: "on-device"; locale: string | null }
+  | { kind: "no-on-device"; locale: string | null }
+  | { kind: "unsupported" };
+
+type LocalTtsVoice = {
+  id: string;
+  name: string;
+  engine: "piper" | "kokoro";
+  ready: boolean;
+  verified: boolean;
+};
+
+type PiperRuntime = {
+  available?: boolean;
+  hint?: string;
+};
 
 type HarnessReport = {
   id: string;
   label: string;
   installed: boolean;
+  availability?: RuntimeAvailabilitySummary;
   models?: RuntimeModelOption[];
   defaultModel?: string | null;
 };
@@ -67,8 +101,8 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [draftHarness, setDraftHarness] = useState(familiar.harnessOverride ?? "");
   const [draftModel, setDraftModel] = useState(familiar.model ?? "");
   // Explicit "Custom..." mode. Without this flag an empty draft is ambiguous:
-  // "" is both "Inherit default" and "custom id being typed", so the select
-  // could never actually display Inherit default (it always fell through to
+  // "" is both "Runtime default" and "custom id being typed", so the select
+  // could never actually display Runtime default (it always fell through to
   // Custom). Non-empty unlisted ids still force custom mode via render logic.
   const [modelCustomMode, setModelCustomMode] = useState(false);
   const [draftNote, setDraftNote] = useState(familiar.note ?? "");
@@ -78,6 +112,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     familiar.omnigent?.workspace ?? "",
   );
   const [draftVoiceProvider, setDraftVoiceProvider] = useState(familiar.voiceProvider ?? "");
+  const [localSttReadiness, setLocalSttReadiness] = useState<LocalSttReadiness | null>(null);
   const [draftVoiceModel, setDraftVoiceModel] = useState(familiar.voiceModel ?? "");
   const [draftVoiceName, setDraftVoiceName] = useState(familiar.voiceName ?? "");
   const [draftImageProvider, setDraftImageProvider] = useState(familiar.imageProvider ?? "");
@@ -102,8 +137,16 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     models: ElevenLabsModelOption[];
     note?: string;
   }>({ status: "idle", voices: [], models: [] });
+  const [localVoiceCatalog, setLocalVoiceCatalog] = useState<{
+    status: "idle" | "loading" | "ready" | "error";
+    voices: LocalTtsVoice[];
+    note?: string;
+  }>({ status: "idle", voices: [] });
+  const [localVoiceCatalogAttempt, setLocalVoiceCatalogAttempt] = useState(0);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const previewUrlRef = useRef<string | null>(null);
+  const previewAbortRef = useRef<AbortController | null>(null);
+  const modelMutationQueueRef = useRef(createModelSelectionMutationQueue());
   // Generation counter: bumping it invalidates any preview fetch still in
   // flight, so a stop click (or voice switch) can't be overtaken by late audio.
   const previewGenRef = useRef(0);
@@ -233,23 +276,20 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     return () => { cancelled = true; };
   }, []);
 
-  const defaultHarnessId = familiar.defaultHarness ?? familiar.harness ?? "";
+  const defaultHarnessId = canonicalHarnessId(familiar.defaultHarness ?? familiar.harness ?? "");
   const defaultHarnessLabel = runtimeLabel(defaultHarnessId, harnesses);
-  const harnessId = draftHarness || defaultHarnessId;
+  const harnessId = canonicalHarnessId(draftHarness || defaultHarnessId);
+  const selectedHarnessAvailability = harnesses.find(
+    (item) => canonicalHarnessId(item.id) === harnessId,
+  )?.availability;
 
-  // Model parity: source the per-familiar model menu from the same runtime →
-  // provider catalog the chat picker uses. allowCustom keeps the free-text
-  // field as the escape hatch for ids not in the curated seed.
-  const modelCatalog = catalogForRuntime(harnessId);
-  const liveRuntimeModels = harnesses.find((item) => item.id === harnessId)?.models ?? [];
-  // Grok Build exposes models from the authenticated local CLI. Prefer that
-  // catalog over a compile-time seed so Studio never offers unavailable xAI
-  // models; OpenCode retains its own authenticated runtime inventory.
-  const runtimeModelOptions = useRuntimeModelOptions(harnessId, familiar.id);
-  const modelOptions = harnessId === "grok" ? liveRuntimeModels : runtimeModelOptions;
-  const allowCustomModel = modelCatalog?.allowCustom ?? true;
+  // Model parity: source options and free-type capability from the same live,
+  // familiar-scoped inventory used by chat and task model pickers.
+  const runtimeModelInventory = useRuntimeModelInventory(harnessId, familiar.id);
+  const modelOptions = runtimeModelInventory.models;
+  const allowCustomModel = runtimeModelInventory.allowCustom;
   const draftModelIsListed = modelOptions.some((option) => option.id === draftModel);
-  // "" means Inherit default — only a non-empty unlisted id (or the user
+  // "" means Runtime default — only a non-empty unlisted id (or the user
   // explicitly picking Custom...) should switch the select to Custom.
   const modelIsCustom = modelCustomMode || (draftModel !== "" && !draftModelIsListed);
 
@@ -361,6 +401,8 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
 
   const stopVoicePreview = useCallback(() => {
     previewGenRef.current++;
+    previewAbortRef.current?.abort();
+    previewAbortRef.current = null;
     const audio = previewAudioRef.current;
     previewAudioRef.current = null;
     if (audio) {
@@ -423,6 +465,144 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     return () => { cancelled = true; };
   }, [draftVoiceProvider, elevenCatalog.status]);
 
+  // Downloaded Piper/Kokoro voices are advertised by the local sidecar. Only
+  // verified-ready models become selectable; a saved id stays intact while a
+  // download is incomplete or the readiness request is unavailable.
+  useEffect(() => {
+    const selected =
+      draftVoiceProvider === "local" || draftVoiceProvider === "familiar";
+    if (!selected) {
+      setLocalVoiceCatalog({ status: "idle", voices: [] });
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(
+      () => controller.abort(),
+      LOCAL_VOICE_CATALOG_TIMEOUT_MS,
+    );
+    setLocalVoiceCatalog({ status: "loading", voices: [] });
+    (async () => {
+      try {
+        const res = await fetch("/api/voice/engines", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const json = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (!res.ok || !json?.ok || !Array.isArray(json.tts)) {
+          setLocalVoiceCatalog({
+            status: "error",
+            voices: [],
+            note:
+              "Couldn't load local voices — open Settings, then try again.",
+          });
+          return;
+        }
+        const runtimes = json.runtimes as
+          | Partial<Record<LocalTtsVoice["engine"], PiperRuntime>>
+          | undefined;
+        // Treat an absent/malformed runtime report as unavailable. A ready
+        // model alone cannot synthesize, and offering it during a sidecar
+        // version mismatch only leads to a failing preview/call.
+        const runtimeAvailable = (engine: LocalTtsVoice["engine"]) =>
+          runtimes?.[engine]?.available === true;
+        // Prefer the selection catalog, which expands named Kokoro speakers
+        // sharing one downloaded bundle (cave-xopgb); `tts` stays one row
+        // per download for the management surface (and older sidecars).
+        const voiceCatalog: LocalTtsVoice[] = Array.isArray(json.ttsVoices) ? json.ttsVoices : json.tts;
+        const verifiedVoices = voiceCatalog.filter(
+          (voice: LocalTtsVoice) =>
+            voice?.ready === true &&
+            voice?.verified === true &&
+            (voice.engine === "piper" || voice.engine === "kokoro") &&
+            runtimeAvailable(voice.engine),
+        );
+        const piperUnavailable = !runtimeAvailable("piper");
+        // Kokoro is additive: only surface its runtime hint when it hides a
+        // downloaded voice, so Piper-only setups never see noise about a
+        // runtime they don't use.
+        const kokoroHidden =
+          !runtimeAvailable("kokoro") &&
+          json.tts.some(
+            (voice: LocalTtsVoice) =>
+              voice?.ready === true &&
+              voice?.verified === true &&
+              voice.engine === "kokoro",
+          );
+        const runtimeNotes = [
+          ...(piperUnavailable
+            ? [runtimes?.piper?.hint ?? "The local Piper runtime isn't available on this device."]
+            : []),
+          ...(kokoroHidden
+            ? [runtimes?.kokoro?.hint ?? "The local Kokoro runtime isn't available on this device."]
+            : []),
+        ];
+        setLocalVoiceCatalog({
+          status: "ready",
+          voices: verifiedVoices,
+          note: runtimeNotes.length ? runtimeNotes.join(" ") : undefined,
+        });
+      } catch {
+        if (!cancelled) {
+          setLocalVoiceCatalog({
+            status: "error",
+            voices: [],
+            note:
+              "Couldn't reach the local voice engine — open Settings, then try again.",
+          });
+        }
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [draftVoiceProvider, localVoiceCatalogAttempt]);
+
+  useEffect(() => {
+    const refreshLocalVoices = () => {
+      setLocalVoiceCatalog((catalog) => ({ ...catalog, status: "idle", voices: [] }));
+      setLocalVoiceCatalogAttempt((attempt) => attempt + 1);
+    };
+    window.addEventListener("cave:voice-engines-refresh", refreshLocalVoices);
+    return () => window.removeEventListener("cave:voice-engines-refresh", refreshLocalVoices);
+  }, []);
+
+  // Probe the native speech engine when Local (on-device) is picked, so a
+  // missing dictation model is discovered here instead of at call connect,
+  // where local-loop's requireOnDevice contract rejects the session. Probe
+  // failures and web builds stay silent — no hint rather than a wrong one.
+  useEffect(() => {
+    if (draftVoiceProvider !== "local" || !isTauri()) {
+      setLocalSttReadiness(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const bridge = await loadNativeSttBridge();
+        if (!bridge || cancelled) return;
+        const availability = await nativeSttAvailability(bridge, navigator.language);
+        if (cancelled || !availability) return;
+        const locale = availability.locale ?? navigator.language ?? null;
+        if (availability.supported !== true) {
+          setLocalSttReadiness({ kind: "unsupported" });
+        } else if (availability.onDevice === true) {
+          setLocalSttReadiness({ kind: "on-device", locale });
+        } else {
+          setLocalSttReadiness({ kind: "no-on-device", locale });
+        }
+      } catch {
+        // Silent: readiness is advisory; the call path still enforces it.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [draftVoiceProvider]);
+
   // Dropdown options for the ElevenLabs pickers. A saved id that's no longer
   // in the account library stays selectable so rendering never clears it.
   const elevenVoiceOptions = useMemo(() => {
@@ -457,6 +637,60 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   }, [elevenCatalog.models, draftVoiceModel]);
 
   const elevenCatalogReady = elevenCatalog.status === "ready";
+  const voiceProviderOptions = useMemo(() => [
+    { value: "", label: "None" },
+    ...VOICE_PROVIDER_CATALOG.map((provider) => ({
+      value: provider.id,
+      label: provider.label,
+      disabled: !provider.available,
+    })),
+  ], []);
+  const localVoiceOptions = useMemo(() => {
+    const known = new Set(localVoiceCatalog.voices.map((voice) => voice.id));
+    const options: Array<{
+      value: string;
+      label: string;
+      detail: string;
+      disabled?: boolean;
+    }> = [
+      {
+        value: "",
+        label: "System default",
+        detail: "Built-in device voice",
+      },
+    ];
+    if (draftVoiceName && !known.has(draftVoiceName)) {
+      const staleLocalVoice = isLocalTtsVoiceName(draftVoiceName);
+      options.push({
+        value: draftVoiceName,
+        label: staleLocalVoice
+          ? "Saved local voice"
+          : "Saved system voice",
+        detail: staleLocalVoice
+          ? `${draftVoiceName} (unavailable)`
+          : draftVoiceName,
+        disabled: staleLocalVoice,
+      });
+    }
+    for (const voice of localVoiceCatalog.voices) {
+      options.push({
+        value: voice.id,
+        label: voice.name,
+        detail: `${voice.engine === "piper" ? "Piper" : "Kokoro"} · Offline`,
+      });
+    }
+    return options;
+  }, [draftVoiceName, localVoiceCatalog.voices]);
+  const localCatalogReady = localVoiceCatalog.status === "ready";
+  const localProviderSelected =
+    draftVoiceProvider === "local" || draftVoiceProvider === "familiar";
+  const localNeuralVoiceSelected =
+    localProviderSelected && isLocalTtsVoiceName(draftVoiceName);
+  const savedLocalVoiceUnavailable =
+    localProviderSelected &&
+    localCatalogReady &&
+    isLocalTtsVoiceName(draftVoiceName) &&
+    !localVoiceCatalog.voices.some((voice) => voice.id === draftVoiceName);
 
   async function playVoicePreview() {
     if (previewStatus !== "idle") {
@@ -465,9 +699,9 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     }
     setPreviewNote(null);
 
-    // Local and familiar-brain speech ride the browser/system synthesizer —
-    // free and offline.
-    if (draftVoiceProvider === "local" || draftVoiceProvider === "familiar") {
+    // Local/familiar calls retain the built-in system voice as their fallback.
+    // A downloaded piper-/kokoro- id instead takes the sidecar TTS path below.
+    if (localProviderSelected && !localNeuralVoiceSelected) {
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
         setPreviewNote("Speech synthesis isn't available in this environment.");
         return;
@@ -491,14 +725,29 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
       return;
     }
 
-    // OpenAI / ElevenLabs: fetch the server-minted sample (fetch carries the
-    // sidecar auth token; a bare <audio src> would not), play from a blob URL.
+    // OpenAI / ElevenLabs / local neural TTS: fetch the server-minted sample
+    // (fetch carries the sidecar auth token; a bare <audio src> would not),
+    // then play it from a blob URL.
     const gen = ++previewGenRef.current;
     setPreviewStatus("loading");
     const voiceId = draftVoiceName || DEFAULT_OPENAI_VOICE_ID;
+    const localPreviewAbort = localNeuralVoiceSelected
+      ? new AbortController()
+      : null;
+    if (localPreviewAbort) previewAbortRef.current = localPreviewAbort;
     try {
-      const res = draftVoiceProvider === "elevenlabs"
-        ? await fetch("/api/voice/elevenlabs/tts", {
+      const res = localNeuralVoiceSelected
+        ? await fetch("/api/voice/local/tts", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              text: "Hey — this is how your familiar will sound.",
+              voiceName: draftVoiceName,
+            }),
+            signal: localPreviewAbort?.signal,
+          })
+        : draftVoiceProvider === "elevenlabs"
+          ? await fetch("/api/voice/elevenlabs/tts", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
@@ -507,7 +756,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
               modelId: draftVoiceModel.trim() || DEFAULT_ELEVENLABS_MODEL_ID,
             }),
           })
-        : await fetch(`/api/voice/preview?voice=${encodeURIComponent(voiceId)}`);
+          : await fetch(`/api/voice/preview?voice=${encodeURIComponent(voiceId)}`);
       if (gen !== previewGenRef.current) return;
       const contentType = res.headers.get("content-type") ?? "";
       if (!res.ok || !contentType.includes("audio/")) {
@@ -533,6 +782,15 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
       const audio = new Audio(url);
       previewAudioRef.current = audio;
       audio.onended = () => stopVoicePreview();
+      audio.onerror = () => {
+        if (gen !== previewGenRef.current) return;
+        stopVoicePreview();
+        setPreviewNote(
+          localNeuralVoiceSelected
+            ? "Couldn't play the local voice preview. Try another voice or check your audio device."
+            : "Couldn't play the voice preview. Try again or check your audio device.",
+        );
+      };
       await audio.play();
       if (gen !== previewGenRef.current) return;
       setPreviewStatus("playing");
@@ -540,6 +798,10 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
       if (gen !== previewGenRef.current) return;
       stopVoicePreview();
       setPreviewNote("Couldn't load the voice preview.");
+    } finally {
+      if (previewAbortRef.current === localPreviewAbort) {
+        previewAbortRef.current = null;
+      }
     }
   }
 
@@ -578,8 +840,14 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                     label="Runtime"
                     value={draftHarness}
                     onChange={(next) => {
+                      // A runtime switch invalidates the previous runtime's
+                      // model. Keep an explicit empty sentinel so a stale
+                      // provider-qualified id cannot follow the familiar.
+                      const nextModel = modelForRuntimeSwitch(next);
                       setDraftHarness(next);
-                      void save({ harness: next || null });
+                      setDraftModel(nextModel);
+                      setModelCustomMode(false);
+                      void modelMutationQueueRef.current.enqueue(() => save({ harness: next || null, model: nextModel }));
                     }}
                     className="familiar-studio-brain__input"
                     options={[
@@ -591,23 +859,44 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         // per-familiar runtime choices.
                         options: harnesses
                           .filter((h) => isBindableRuntimeChoice(h.id))
-                          .map((h) => ({
-                            value: h.id,
-                            label: `${h.label}${h.installed ? "" : " (not installed)"}`,
-                          })),
+                          .map((h) => {
+                            const availabilityMessage = h.availability && h.availability.state !== "ready"
+                              ? h.availability.message
+                              : undefined;
+                            return {
+                              value: h.id,
+                              label: `${h.label}${
+                                h.availability && h.availability.state !== "ready"
+                                  ? h.availability.state === "missing"
+                                    ? " (not installed)"
+                                    : " (unavailable)"
+                                  : h.installed ? "" : " (not installed)"
+                              }`,
+                              detail: h.availability?.state !== "ready"
+                                ? h.availability?.message
+                                : availabilityMessage,
+                            };
+                          }),
                       } satisfies StandardSelectGroup<string>,
                     ]}
                   />
+                  {selectedHarnessAvailability?.state !== undefined && selectedHarnessAvailability.state !== "ready" && selectedHarnessAvailability.message ? (
+                    <p className="familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status">
+                      {selectedHarnessAvailability.message}
+                    </p>
+                  ) : null}
                 </div>
               </label>
 
               <label className="familiar-studio-brain__row">
-                <span className="familiar-studio-brain__label">Model</span>
+                <span className="familiar-studio-brain__label">Model · {inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)}</span>
                 <div className="familiar-studio-brain__control">
-                  {modelOptions.length > 0 ? (
+                  {runtimeModelInventory.loading ? (
+                    <p className="familiar-studio-brain__hint" role="status">Loading model inventory…</p>
+                  ) : modelOptions.length > 0 || !allowCustomModel ? (
                     <StandardSelect
                       label="Model"
-                      value={modelIsCustom ? "__custom__" : draftModel}
+                      value={modelIsCustom && allowCustomModel ? "__custom__" : draftModel}
                       onChange={(next) => {
                         if (next === "__custom__") {
                           setModelCustomMode(true);
@@ -616,27 +905,39 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         }
                         setModelCustomMode(false);
                         setDraftModel(next);
-                        void save({ model: next || null });
+                        void modelMutationQueueRef.current.enqueue(() => save({ model: next }));
                       }}
                       className="familiar-studio-brain__input"
                       options={[
-                        { value: "", label: "Inherit default" },
+                        {
+                          value: "",
+                          label: familiar.model === "" || runtimeOwnsModelDefault(harnessId)
+                            ? "Runtime default"
+                            : "Cave default",
+                        },
+                        ...(modelIsCustom && draftModel && !allowCustomModel
+                          ? [{
+                              value: draftModel,
+                              label: `${draftModel} (not offered)`,
+                              disabled: true,
+                            }]
+                          : []),
                         ...modelOptions.map((option) => ({ value: option.id, label: option.label })),
                         ...(allowCustomModel ? [{ value: "__custom__", label: "Custom..." }] : []),
                       ]}
                     />
                   ) : null}
-                  {allowCustomModel && (modelOptions.length === 0 || modelIsCustom) ? (
+                  {!runtimeModelInventory.loading && allowCustomModel && (modelOptions.length === 0 || modelIsCustom) ? (
                     <input
                       type="text"
                       value={draftModel}
                       onChange={(e) => setDraftModel(e.target.value)}
                       onBlur={() => {
                         const trimmed = draftModel.trim();
-                        // Blurring an empty custom field falls back to Inherit
+                        // Blurring an empty custom field falls back to Runtime
                         // default instead of lingering as a blank Custom row.
                         if (!trimmed) setModelCustomMode(false);
-                        void save({ model: trimmed || null });
+                        void modelMutationQueueRef.current.enqueue(() => save({ model: trimmed }));
                       }}
                       placeholder="provider/model"
                       autoCapitalize="none"
@@ -779,14 +1080,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                     void save({ voiceProvider: next || null });
                   }}
                   className="familiar-studio-brain__input"
-                  options={[
-                    { value: "", label: "None" },
-                    { value: "familiar", label: "Familiar brain (true voice)" },
-                    { value: "elevenlabs", label: "ElevenLabs (true voice)" },
-                    { value: "openai", label: "OpenAI Realtime" },
-                    { value: "local", label: "Local (on-device)" },
-                    { value: "gemini", label: "Gemini Live (v1.1)", disabled: true },
-                  ]}
+                  options={voiceProviderOptions}
                 />
               </div>
             </label>
@@ -807,6 +1101,88 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
 
             {draftVoiceProvider === "elevenlabs" && elevenCatalog.status === "error" && elevenCatalog.note && (
               <p className="familiar-studio-brain__hint" role="status">{elevenCatalog.note}</p>
+            )}
+
+            {localProviderSelected && localVoiceCatalog.status === "loading" && (
+              <p className="familiar-studio-brain__hint" role="status">
+                Loading local voices…
+              </p>
+            )}
+
+            {localProviderSelected && localVoiceCatalog.status === "error" && localVoiceCatalog.note && (
+              <>
+                <p className="familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="alert">
+                  {localVoiceCatalog.note}
+                </p>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => {
+                    setLocalVoiceCatalog({
+                      status: "idle",
+                      voices: [],
+                    });
+                    setLocalVoiceCatalogAttempt((attempt) => attempt + 1);
+                  }}
+                >
+                  Retry
+                </Button>
+              </>
+            )}
+
+            {localProviderSelected && localCatalogReady && localVoiceCatalog.voices.length === 0 && (
+              <p className="familiar-studio-brain__hint" role="status">
+                No local voices downloaded — open Settings to add one, or use the system default.
+              </p>
+            )}
+
+            {localProviderSelected && localCatalogReady && localVoiceCatalog.note ? (
+              <p className="familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status">
+                {localVoiceCatalog.note}
+              </p>
+            ) : null}
+
+            {savedLocalVoiceUnavailable ? (
+              <p className="familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status">
+                The saved local voice is unavailable. Download it again or choose another voice.
+              </p>
+            ) : null}
+
+            {localProviderSelected && localCatalogReady ? (
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => {
+                  setLocalVoiceCatalog((catalog) => ({
+                    ...catalog,
+                    status: "idle",
+                  }));
+                  setLocalVoiceCatalogAttempt((attempt) => attempt + 1);
+                }}
+              >
+                Refresh local voices
+              </Button>
+            ) : null}
+
+            {draftVoiceProvider === "local" && localSttReadiness?.kind === "on-device" && (
+              <p className="familiar-studio-brain__hint" role="status">
+                Ready — speech recognition runs fully on-device
+                {localSttReadiness.locale ? ` for ${localSttReadiness.locale}` : ""}.
+              </p>
+            )}
+
+            {draftVoiceProvider === "local" && localSttReadiness?.kind === "no-on-device" && (
+              <p className="familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status">
+                No on-device dictation model
+                {localSttReadiness.locale ? ` for ${localSttReadiness.locale}` : ""} — calls
+                will refuse to start. Download it under System Settings → Keyboard → Dictation.
+              </p>
+            )}
+
+            {draftVoiceProvider === "local" && localSttReadiness?.kind === "unsupported" && (
+              <p className="familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status">
+                This device has no native speech engine — Local calls can&apos;t listen here.
+              </p>
             )}
 
             {(draftVoiceProvider === "openai" || draftVoiceProvider === "local" || draftVoiceProvider === "familiar" || draftVoiceProvider === "elevenlabs") && (
@@ -897,6 +1273,25 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         {openAiVoiceDetail(selectedOpenAiVoice)}
                       </p>
                     ) : null}
+                  </label>
+                ) : localProviderSelected ? (
+                  <label className="familiar-studio-brain__row">
+                    <span className="familiar-studio-brain__label">Voice</span>
+                    <div className="familiar-studio-brain__control">
+                      <StandardSelect
+                        label="Voice"
+                        value={draftVoiceName}
+                        onChange={(next) => {
+                          stopVoicePreview();
+                          setPreviewNote(null);
+                          setDraftVoiceName(next);
+                          void save({ voiceName: next || null });
+                        }}
+                        className="familiar-studio-brain__input"
+                        options={localVoiceOptions}
+                      />
+                      {previewButton}
+                    </div>
                   </label>
                 ) : draftVoiceProvider === "elevenlabs" && elevenCatalogReady && elevenVoiceOptions.length > 1 ? (
                   // The voices saved in the user's ElevenLabs library, loaded
@@ -1139,6 +1534,15 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
           </section>
 
           <FamiliarAsanaSection familiar={familiar} />
+            {/* cave-lsj8u: the X connection routes (/api/x/connection,
+              /api/x/oauth/start) exist only on tag
+              archive/cave-8i8q5-wip-2026-07-29, so this section 404s and shows a
+              permanent ErrorState. Gated on EITHER capability, since the
+              connection serves both: whichever half lands first re-exposes it.
+              Delete this condition when the routes land. */}
+          {familiar.xResearchEnabled || familiar.xPublishEnabled ? (
+            <FamiliarXSection familiar={familiar} />
+          ) : null}
 
           {harnessId ? (
             <details

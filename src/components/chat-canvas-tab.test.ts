@@ -19,13 +19,13 @@ const css = readFileSync(new URL("../styles/chat-canvas.css", import.meta.url), 
 // ── Tab wiring in the chat surface ──────────────────────────────────────────
 assert.match(
   surface,
-  /"conversation" \| "projects" \| "coven" \| "familiar" \| "settings" \| "canvas"/,
+  /"conversation" \| "projects" \| "coven" \| "familiar" \| "canvas"/,
   "FamiliarsScope includes the canvas scope",
 );
 assert.match(
   surface,
-  /\{ id: "projects", label: "Projects" \},\s*\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Skills" \}/,
-  "Canvas is a first-class scope tab between Projects and Skills (familiar scope)",
+  /\{ id: "projects", label: "Projects" \},\s*\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Familiar" \}/,
+  "Canvas is a first-class scope tab between Projects and Familiar",
 );
 assert.match(
   surface,
@@ -130,7 +130,7 @@ assert.match(
 );
 
 // ── Preview modal → editor hand-off ─────────────────────────────────────────
-// Clicking a card opens a non-interactive preview dialog, not the editor.
+// Clicking a card opens a live, interactive preview dialog, not the editor.
 assert.match(view, /onClick=\{\(\) => setPreviewId\(artifact\.id\)\}/, "card click opens the preview modal");
 assert.match(
   view,
@@ -159,10 +159,22 @@ assert.match(
 );
 assert.match(
   view,
+  /chat-canvas-preview__frame"[\s\S]{0,300}?tabIndex=\{0\}/,
+  "keyboard users can enter the live artifact preview",
+);
+assert.match(
+  view,
   /setEditorId\(preview\.id\);\s*setPreviewId\(null\);/,
   "Open in editor closes the preview and enters the editor",
 );
 assert.match(view, /chat-canvas-card--selected/, "the previewed card gets the selected treatment");
+// The thumbnail renders the sketch's own chrome, so it can't advertise itself —
+// the hover pill is what says a click opens it.
+assert.match(
+  view,
+  /chat-canvas-card__reveal-pill"[\s\S]{0,200}?Preview/,
+  "the card thumbnail carries a hover affordance naming what a click does",
+);
 // The editor is a full-surface takeover with the agreed prop contract.
 assert.match(
   view,
@@ -423,10 +435,10 @@ assert.match(
   /\.chat-canvas-card__frame[\s\S]{0,300}?pointer-events: none/,
   "thumbnail iframe never captures pointer input",
 );
-assert.match(
+assert.doesNotMatch(
   css,
   /\.chat-canvas-preview__frame[\s\S]{0,200}?pointer-events: none/,
-  "the preview-modal sketch renders live but never captures pointer input",
+  "the preview-modal sketch receives pointer input",
 );
 
 // ── Pure helpers ────────────────────────────────────────────────────────────
@@ -525,8 +537,15 @@ assert.match(
 );
 assert.match(
   view,
-  /No sketches match &ldquo;\{trimmedQuery\}&rdquo;/,
+  /Nothing matches &ldquo;\{trimmedQuery\}&rdquo;/,
   "a filtered-empty gallery names the query instead of looking empty",
+);
+// A dead end has to be escapable, not just labelled: the reason the set is
+// empty AND the control that undoes it both live in the empty state.
+assert.match(
+  view,
+  /className="chat-canvas-empty__reset focus-ring"[\s\S]{0,200}?setQ\(""\);\s*setKindFilter\("all"\);/,
+  "the filtered-empty state offers a one-click reset of both the query and the kind filter",
 );
 
 assert.match(addTile, /aria-expanded=\{false\}/, "the ghost tile reports its expansion state");
@@ -539,7 +558,16 @@ assert.match(
 assert.match(addTile, /startCanvasGeneration\(\{/, "describe starts the navigation-safe Canvas generation owner");
 assert.match(addTile, /What would you like to create\?/, "default path asks for intent, not an implementation mode");
 assert.match(addTile, /Create preview/, "primary action creates a preview");
-assert.match(addTile, /buildSketchPrompt\(state\.prompt\)/, "prompts are wrapped with the shared sketch contract");
+assert.match(
+  addTile,
+  /buildSketchPrompt\(state\.prompt, \{ playable \}\)/,
+  "prompts are wrapped with the shared sketch contract, carrying the playable flag",
+);
+assert.match(
+  addTile,
+  /aria-pressed=\{playable\}/,
+  "the playable toggle reports its pressed state to assistive tech",
+);
 assert.match(addTile, /buildRefinePrompt\(state\.result\.code, ask, state\.result\.kind\)/, "refine reuses the shared refine contract");
 assert.match(generationRegistry, /buildArtifactRepairPrompt/, "format recovery uses the bounded repair prompt");
 assert.match(generationRegistry, /sessionId: result\.sessionId/, "repair resumes the same hidden Canvas session");
@@ -561,12 +589,12 @@ assert.match(
 );
 assert.match(
   addTile,
-  /if \(event\.key === "Escape" && !codeMenuOpen\) \{[\s\S]{0,120}?collapse\(\);/,
-  "Escape collapses the tile even while generation is active",
+  /if \(event\.key === "Escape" && !codeMenuOpen && !familiarMenuOpen\) \{[\s\S]{0,120}?collapse\(\);/,
+  "Escape collapses the tile even while generation is active — but an open menu owns it first",
 );
 assert.doesNotMatch(
   addTile,
-  /if \(event\.key === "Escape" && !codeMenuOpen\) \{[\s\S]{0,160}?(?:stopCanvasGeneration|stop\(\)|cancel\(\))/,
+  /if \(event\.key === "Escape" && !codeMenuOpen && !familiarMenuOpen\) \{[\s\S]{0,160}?(?:stopCanvasGeneration|stop\(\)|cancel\(\))/,
   "Escape never reaches the registry cancellation path",
 );
 assert.match(

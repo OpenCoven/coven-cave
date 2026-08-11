@@ -62,8 +62,8 @@ assert.match(
 );
 assert.match(
   actions,
-  /projects: context\.sortedProjects\.map\(\(p\) => \(\{ id: p\.id, name: p\.name \}\)\)/,
-  "Add to project › lists the sorted project options",
+  /projects: context\.sortedProjects\.map\(\(p\) => \(\{[\s\S]*?id: p\.id,[\s\S]*?name: p\.name,[\s\S]*?access: p\.access,[\s\S]*?\}\)\)/,
+  "Add to project › lists sorted project options with effective access metadata",
 );
 assert.match(
   actions,
@@ -134,7 +134,7 @@ assert.match(styles, /\.composer-actions__panel[\s\S]*overscroll-behavior: conta
 
 assert.match(
   context,
-  /export\s+type\s+ComposerContextView\s*=\s*null\s*\|\s*"project"\s*\|\s*"model"\s*\|\s*"branch"/,
+  /export\s+type\s+ComposerContextView\s*=\s*null\s*\|\s*"project"\s*\|\s*"model"\s*\|\s*"branch"\s*\|\s*"worktree"/,
 );
 assert.match(context, /export\s+type\s+ComposerContextProps\s*=\s*\{/);
 assert.match(context, /export\s+function\s+useComposerContextActions/);

@@ -1,6 +1,11 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import {
+  clearDaemonDiagnosticEventsForTests,
+  createDaemonDiagnosticContext,
+  listDaemonDiagnosticEvents,
+} from "./server/daemon-diagnostics.ts";
 
 const {
   normalizeDaemonError,
@@ -64,13 +69,22 @@ const {
   else process.env.COVEN_SOCKET = before;
 }
 
-// socketPath() default has the expected suffix
+// The platform-neutral fallback has the expected Unix socket suffix. Do not
+// read the real host's daemon.json here: on Windows an active daemon resolves
+// to its named pipe, making a supposedly default-path assertion flaky.
 {
-  const before = process.env.COVEN_SOCKET;
-  delete process.env.COVEN_SOCKET;
-  const def = socketPath();
-  assert.match(def, /\.coven\/coven\.sock$/);
-  if (before !== undefined) process.env.COVEN_SOCKET = before;
+  const def = resolveDaemonSocketPath({
+    platform: "linux",
+    env: {},
+    homeDir: "/home/cave-test",
+    readFileSync: () => {
+      throw new Error("no daemon status for default socket fixture");
+    },
+  });
+  // `resolveDaemonSocketPath` deliberately uses the host's path module, so
+  // the simulated Linux policy still returns Windows separators in a Windows
+  // test process. The suffix contract itself is separator-independent.
+  assert.match(def.replaceAll("\\", "/"), /\.coven\/coven\.sock$/);
 }
 
 // Windows daemon status stores the pipe name; Node HTTP needs the full pipe path
@@ -163,9 +177,12 @@ const {
   assert.equal(extractDaemonError(res), null);
 }
 
-// Hub URLs accept private-network host:port shorthand and normalize to HTTP.
+// Scheme-less hub shorthand preserves the established explicit HTTP behavior.
 {
   assert.equal(normalizeHubUrl(" server.tailnet:8787 "), "http://server.tailnet:8787");
+  assert.equal(normalizeHubUrl("localhost:8787"), "http://localhost:8787");
+  assert.equal(normalizeHubUrl("127.0.0.1:8787"), "http://127.0.0.1:8787");
+  assert.equal(normalizeHubUrl("[::1]:8787"), "http://[::1]:8787");
   assert.equal(normalizeHubUrl("https://server.tailnet:8787/"), "https://server.tailnet:8787");
 }
 
@@ -181,11 +198,15 @@ const {
     multiHost: { mode: "local", hubUrl: "", executorUrls: [] },
   });
   assert.equal(target.mode, "local");
-  assert.match(target.socketPath, /\.coven\/coven\.sock$/);
+  assert.match(
+    target.socketPath.replaceAll("\\", "/"),
+    /(?:\.coven\/coven\.sock|\/pipe\/coven-daemon-[a-f0-9]+\.sock)$/,
+    "the live local target may use the active Windows daemon pipe or the socket fallback",
+  );
   assert.equal(target.label, "Local daemon");
 }
 
-// Hub mode routes daemon calls to the configured private-network HTTP target.
+// Hub mode preserves the configured private-network HTTP target.
 {
   const target = daemonTargetForConfig({
     version: 1,
@@ -229,9 +250,11 @@ const {
 // Hub requests authenticate with the extracted mobile access token.
 {
   let authorization = "";
+  let correlationId = "";
   let requestedUrl = "";
   const server = createServer((req, res) => {
     authorization = req.headers.authorization ?? "";
+    correlationId = String(req.headers["x-coven-correlation-id"] ?? "");
     requestedUrl = req.url ?? "";
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ ok: true }));
@@ -239,6 +262,11 @@ const {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   assert.ok(address && typeof address === "object");
+  clearDaemonDiagnosticEventsForTests();
+  const diagnostics = createDaemonDiagnosticContext({
+    correlationId: "22222222-2222-4222-8222-222222222222",
+    generation: 9,
+  });
 
   try {
     const res = await callDaemonTarget(
@@ -248,12 +276,68 @@ const {
         url: `http://127.0.0.1:${address.port}`,
         accessToken: "v1.signed",
       },
-      { path: "/api/v1/health", timeoutMs: 500 },
+      {
+        path: "/api/v1/health",
+        timeoutMs: 500,
+        diagnostics,
+        diagnosticOperation: "daemon-probe-health",
+      },
     );
 
     assert.equal(res.ok, true);
     assert.equal(authorization, "Bearer v1.signed");
+    assert.equal(correlationId, diagnostics.correlationId);
     assert.equal(requestedUrl, "/api/v1/health");
+    assert.deepEqual(
+      listDaemonDiagnosticEvents().map(
+        ({ correlationId: eventCorrelationId, generation, operation, endpoint, outcome }) => ({
+          correlationId: eventCorrelationId,
+          generation,
+          operation,
+          endpoint,
+          outcome,
+        }),
+      ),
+      [{
+        correlationId: diagnostics.correlationId,
+        generation: diagnostics.generation,
+        operation: "daemon-probe-health",
+        endpoint: { kind: "hub-http", classification: "online", status: 200 },
+        outcome: "succeeded",
+      }],
+    );
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+// Bearer credentials never leave the host over remote plaintext HTTP.
+{
+  let requests = 0;
+  const server = createServer((_req, res) => {
+    requests += 1;
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+  });
+  await new Promise((resolve) => server.listen(0, "0.0.0.0", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+
+  try {
+    const res = await callDaemonTarget(
+      {
+        mode: "hub",
+        label: "Server hub",
+        url: `http://192.0.2.1:${address.port}`,
+        accessToken: "v1.signed",
+      },
+      { path: "/api/v1/health", timeoutMs: 100 },
+    );
+
+    assert.equal(res.ok, false);
+    assert.equal(res.status, 0);
+    assert.match(res.error ?? "", /HTTPS|secure transport/i);
+    assert.equal(requests, 0);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -336,6 +420,11 @@ const {
 // flake: a briefly-busy daemon shouldn't surface a hard error for a read).
 {
   let attempts = 0;
+  clearDaemonDiagnosticEventsForTests();
+  const diagnostics = createDaemonDiagnosticContext({
+    correlationId: "33333333-3333-4333-8333-333333333333",
+    generation: 11,
+  });
   const server = createServer((req, res) => {
     attempts += 1;
     if (attempts === 1) {
@@ -350,12 +439,184 @@ const {
   try {
     const res = await callDaemonTarget(
       { mode: "hub", label: "Server hub", url: `http://127.0.0.1:${port}` },
-      { path: "/api/v1/familiars", timeoutMs: 500 },
+      {
+        path: "/api/v1/familiars",
+        timeoutMs: 500,
+        diagnostics,
+        diagnosticOperation: "daemon-familiars",
+      },
     );
     assert.equal(res.ok, true, "GET should succeed via the retry");
     assert.equal(attempts, 2, "exactly one retry");
+    assert.deepEqual(
+      listDaemonDiagnosticEvents().map(
+        ({ correlationId, generation, operation, attempt, outcome }) => ({
+          correlationId,
+          generation,
+          operation,
+          attempt,
+          outcome,
+        }),
+      ),
+      [
+        {
+          correlationId: "33333333-3333-4333-8333-333333333333",
+          generation: 11,
+          operation: "daemon-familiars",
+          attempt: 1,
+          outcome: "failed",
+        },
+        {
+          correlationId: "33333333-3333-4333-8333-333333333333",
+          generation: 11,
+          operation: "daemon-familiars",
+          attempt: 2,
+          outcome: "succeeded",
+        },
+      ],
+      "request retries preserve correlation and increment attempt",
+    );
   } finally {
     await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+// Health checks can opt out of transport retries so the recurring heartbeat
+// reports the first failure immediately instead of stretching the outage.
+{
+  let attempts = 0;
+  const server = createServer((req, res) => {
+    attempts += 1;
+    res.socket.destroy();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const res = await callDaemonTarget(
+      { mode: "hub", label: "Server hub", url: `http://127.0.0.1:${port}` },
+      { path: "/api/v1/health", timeoutMs: 25, retryTransportFailure: false },
+    );
+    assert.equal(res.ok, false);
+    assert.equal(res.status, 0);
+    assert.equal(attempts, 1, "health checks must not retry transport failures when disabled");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+// Transport failures retain only the stable OS code and sanitized message.
+{
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  await new Promise((resolve) => server.close(resolve));
+  clearDaemonDiagnosticEventsForTests();
+  const diagnostics = createDaemonDiagnosticContext({
+    correlationId: "44444444-4444-4444-8444-444444444444",
+    generation: 12,
+  });
+  const res = await callDaemonTarget(
+    { mode: "hub", label: "Server hub", url: `http://127.0.0.1:${port}` },
+    {
+      path: "/api/v1/health",
+      timeoutMs: 100,
+      retryTransportFailure: false,
+      diagnostics,
+      diagnosticOperation: "daemon-health",
+    },
+  );
+  assert.equal(res.ok, false);
+  const [event] = listDaemonDiagnosticEvents();
+  assert.equal(event.error?.classification, "transport-error");
+  assert.equal(event.error?.code, "ECONNREFUSED");
+  assert.doesNotMatch(
+    event.error?.message ?? "",
+    /Users|127\.0\.0\.1|coven_access_token|token=/,
+    "OS diagnostics never retain paths, addresses, or credentials",
+  );
+}
+
+// Opt-in response caps accept a body exactly at the boundary, reject the next
+// byte, and retain the HTTP status so the oversized response is not retried.
+{
+  const atLimitBody = JSON.stringify({ ok: true });
+  const maxResponseBytes = Buffer.byteLength(atLimitBody);
+  let requestCount = 0;
+  let resolveOverLimitClose;
+  let resolveLaterWriteAttempt;
+  let closureDeadline;
+  const overLimitClosed = new Promise((resolve) => {
+    resolveOverLimitClose = resolve;
+  });
+  const laterWriteAttempt = new Promise((resolve) => {
+    resolveLaterWriteAttempt = resolve;
+  });
+  const server = createServer((req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    if (req.url === "/at-limit") {
+      res.end(atLimitBody);
+      return;
+    }
+    requestCount += 1;
+    res.once("close", resolveOverLimitClose);
+    // A write after the client destroys the response may surface an expected
+    // stream error. The close event above is the behavior this fixture checks.
+    res.on("error", () => {});
+    res.write(atLimitBody);
+    setImmediate(() => {
+      res.write("\n");
+      setImmediate(() => {
+        try {
+          res.write(" ");
+        } catch {
+          // The client may already have destroyed the response.
+        }
+        resolveLaterWriteAttempt();
+      });
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const target = {
+      mode: "hub",
+      label: "Server hub",
+      url: `http://127.0.0.1:${port}`,
+    };
+    const atLimit = await callDaemonTarget(target, {
+      path: "/at-limit",
+      timeoutMs: 500,
+      maxResponseBytes,
+    });
+    const overLimit = await callDaemonTarget(target, {
+      path: "/over-limit",
+      timeoutMs: 5000,
+      maxResponseBytes,
+    });
+
+    assert.equal(atLimit.ok, true);
+    assert.deepEqual(atLimit.data, { ok: true });
+    assert.equal(overLimit.ok, false);
+    assert.equal(overLimit.status, 200);
+    assert.equal(overLimit.data, null);
+    assert.equal(overLimit.error, "daemon response exceeded size limit");
+    assert.equal(requestCount, 1, "an HTTP response-size failure is not a transport retry");
+    await Promise.race([
+      Promise.all([overLimitClosed, laterWriteAttempt]),
+      new Promise((_, reject) => {
+        closureDeadline = setTimeout(() => {
+          reject(
+            new Error("server did not observe capped client response closure after a later write"),
+          );
+        }, 1000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(closureDeadline);
+    await new Promise((resolve) => {
+      server.close(resolve);
+      server.closeAllConnections();
+    });
   }
 }
 

@@ -1,15 +1,26 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { SECTIONS, SETTINGS_INDEX } from "./settings-sections.ts";
+import { settingsGroupId } from "../lib/settings-group-id.ts";
 
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const sections = readFileSync(new URL("./settings-sections.ts", import.meta.url), "utf8");
 const group = readFileSync(new URL("./ui/settings-group.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const groupId = readFileSync(new URL("../lib/settings-group-id.ts", import.meta.url), "utf8");
+const foundations = readFileSync(
+  new URL("../styles/globals/foundations.css", import.meta.url),
+  "utf8",
+);
 
 // SettingsGroup exposes a stable, label-derived id so search can scroll to it.
-assert.match(group, /export function settingsGroupId\(label: string\): string/, "settings-group exports settingsGroupId");
-assert.match(group, /id=\{settingsGroupId\(label\)\} data-settings-group/, "SettingsGroup renders the derived id");
+assert.match(groupId, /export function settingsGroupId\(label: string\): string/, "the stable group id is dependency-free");
+assert.match(group, /settingsGroupId.*from "@\/lib\/settings-group-id"/, "SettingsGroup consumes the pure id helper");
+assert.match(
+  group,
+  /id=\{settingsGroupId\(label\)\}\s+data-settings-group/,
+  "SettingsGroup renders the derived id",
+);
 
 // The shell builds a search index and a SearchInput over it.
 assert.match(shell, /import \{ SearchInput \}/, "settings-shell imports SearchInput");
@@ -32,26 +43,17 @@ assert.match(shell, /prefersReducedMotion\(\) \? "auto" : "smooth"/, "scroll hon
 assert.match(shell, /No settings match/, "search shows a no-match message");
 
 // Highlight style ships.
-assert.match(css, /\.settings-group--found/, "globals styles the search highlight");
-
-// ── Search reaches inside the Familiars studio panel (2026-07-06) ────────────
-// Each studio tab is indexed with a familiarTab target, so "voice" or
-// "archive" lands on the right tab instead of just the section.
 assert.match(
-  sections,
-  /familiarTab\?: FamiliarStudioTab/,
-  "index entries can target a Familiars studio tab",
+  foundations,
+  /\.settings-group--found/,
+  "global foundations style the search highlight",
 );
-for (const tab of ["identity", "look", "brain", "lifecycle", "memory", "projects", "vault", "journal"]) {
-  assert.match(
-    sections,
-    new RegExp(`familiarTab: "${tab}"`),
-    `the ${tab} studio tab is indexed for search`,
-  );
-}
-// Picking a familiars entry activates the studio tab below the provider
-// instead of scrolling to a SettingsGroup (the panel has none).
-assert.match(shell, /if \(entry\.familiarTab\) \{[\s\S]*?setFamiliarsTabTarget\(entry\.familiarTab\)/, "goToSetting branches familiars entries to the tab target");
+
+// Familiar controls moved to Chat → Familiar → Settings. Settings search must
+// not keep exposing the retired section or its nested studio tabs.
+assert.doesNotMatch(sections, /section: "familiars"/, "Settings search omits the retired Familiars section");
+assert.doesNotMatch(sections, /familiarTab/, "Settings search has no retired studio-tab targets");
+assert.doesNotMatch(shell, /FamiliarsSection|familiarsTabTarget|familiarTab/, "Settings shell has no retired Familiars routing");
 
 assert.match(
   shell,
@@ -59,9 +61,64 @@ assert.match(
   "Settings reads exact group/tab targets passed by the global palette",
 );
 assert.match(shell, /params\.get\("group"\)/, "Settings accepts a group deep-link target");
-assert.match(shell, /params\.get\("familiarTab"\)/, "Settings accepts a familiar studio-tab deep-link target");
-assert.match(shell, /setActiveTab\(tabTarget\)/, "FamiliarsSection activates the targeted studio tab");
-assert.match(shell, /familiar-studio-inline-tab-\$\{tabTarget\}/, "the targeted tab button receives focus");
-assert.match(shell, /onTabTargetConsumed\?\.\(\)/, "the one-shot tab target is handed back to the shell");
+assert.doesNotMatch(shell, /params\.get\("familiarTab"\)/, "Settings no longer accepts a retired familiar studio-tab target");
+
+// One index entry per destination. `section` + `group` is the entire address
+// `open-setting` can navigate to, and BOTH consumers key their rendered rows off
+// exactly that pair — the palette as `setting:${section}:${group ?? "overview"}`
+// (command-palette.tsx) and the settings shell as `${section}:${group ?? ""}`
+// (settings-shell.tsx). The two differ only in what they substitute for a
+// missing group, which is why the check below normalizes to one of them: a pair
+// that collides under either spelling collides under both.
+//
+// A second entry for the same pair is therefore not extra search coverage: it is
+// a duplicate React key plus a second row that opens the identical panel.
+// Profile › Identity was split across a name/pronouns entry and an avatar entry,
+// so any query matching both (e.g. "profile") tripped React's duplicate-key
+// error (cave-x7v6b). Put new keywords on the existing entry for that
+// destination instead of adding a sibling.
+{
+  const seen = new Map();
+  for (const entry of SETTINGS_INDEX) {
+    const address = `${entry.section}:${entry.group ?? "overview"}`;
+    assert.equal(
+      seen.has(address),
+      false,
+      `SETTINGS_INDEX has two entries for ${address} — merge their keywords into one entry instead:\n` +
+        `  kept:      ${seen.get(address)}\n  duplicate: ${entry.keywords}`,
+    );
+    seen.set(address, entry.keywords);
+  }
+}
+
+const voiceDestinations = SETTINGS_INDEX
+  .filter((entry) => entry.section === "voice")
+  .map((entry) => `Voice › ${entry.group}`);
+assert.deepEqual(
+  voiceDestinations,
+  [
+    "Voice › Default for new familiars",
+    "Voice › ElevenLabs",
+    "Voice › OpenAI Realtime",
+    "Voice › Local speech",
+    "Voice › Familiar brain",
+  ],
+  "Voice exposes one search destination per owned settings group",
+);
+assert.equal(
+  SETTINGS_INDEX.some((entry) => entry.section === "general" && entry.group === "Local speech"),
+  false,
+  "General no longer owns Local speech",
+);
+
+const localSpeechDeepLink = new URL("https://cave.local/settings?group=Local+speech#voice");
+assert.equal(localSpeechDeepLink.hash, "#voice");
+assert.equal(SECTIONS.some((section) => section.id === localSpeechDeepLink.hash.slice(1)), true);
+assert.equal(localSpeechDeepLink.searchParams.get("group"), "Local speech");
+assert.equal(
+  settingsGroupId(localSpeechDeepLink.searchParams.get("group")),
+  "settings-group-local-speech",
+  "?group=Local+speech#voice resolves the Voice page's Local speech group id",
+);
 
 console.log("settings-search.test.ts OK");

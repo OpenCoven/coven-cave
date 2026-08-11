@@ -32,8 +32,8 @@
 .recent-activity__model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
 .recent-activity__meta { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .recent-activity__diff { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; }
-.recent-activity__add { color: color-mix(in oklch, #3fb950 80%, var(--text-secondary)); }
-.recent-activity__del { color: color-mix(in oklch, #f85149 80%, var(--text-secondary)); }
+.recent-activity__add { color: color-mix(in oklch, var(--color-success) 80%, var(--text-secondary)); }
+.recent-activity__del { color: color-mix(in oklch, var(--color-danger) 80%, var(--text-secondary)); }
 .recent-activity__time { font-size: 10.5px; color: var(--text-muted); }
 
 /* ── Collapsed icon rail (desktop) ───────────────────────────────────────────
@@ -49,11 +49,15 @@
 }
 
 /* Section headers and the recent-activity rollup have no compact form, so
-   they drop out entirely in the rail. (Rooms cluster label included.) */
+   they drop out entirely in the rail. Section contents stay mounted and
+   visible: a collapsed expanded-panel group must never remove its rail icons. */
 .shell-nav--rail .sidebar-section-label,
-.shell-nav--rail .sidebar-rooms-label,
 .shell-nav--rail .recent-activity {
   display: none;
+}
+
+.shell-nav--rail .sidebar-section--collapsed .sidebar-section__content {
+  display: flex;
 }
 
 /* ── Rail-only bookends (chat-revamp phase D) ────────────────────────────────
@@ -99,38 +103,8 @@
   color: var(--text-primary);
 }
 
-/* Primary-surfaces-only rail (phase D): the quiet cluster (Memories /
-   Marketplace / GitHub) and the Dashboard link stay reachable from the
-   EXPANDED panel (⌘B, hover-peek) and the ⌘K palette, but don't earn rail
-   slots — the rail carries the daily destinations plus Settings + account. */
-.shell-nav--rail .sidebar-folder-row--quiet,
-.shell-nav--rail a.sidebar-foot-btn[href="/dashboard"] {
-  display: none;
-}
-
-/* The header familiar switcher survives the rail as the avatar-only trigger:
-   the trigger label drops, the 28px avatar stays reachable. */
-.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger-label {
-  display: none;
-}
-.shell-nav--rail .sidebar-familiar-switch {
-  padding: 0;
-  justify-content: center;
-}
-.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger,
-.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger--labeled {
-  flex: 0 0 auto;
-  width: 28px;
-  min-width: 28px;
-  min-height: 28px;
-  padding: 0;
-  justify-content: center;
-  border-width: 1px;
-}
-/* The dropdown caret is expanded-state chrome — drop it on the rail. */
-.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger-caret {
-  display: none;
-}
+/* The header's rail behaviour (avatar-only trigger, filled compose square)
+   lives with the header itself in styles/globals/rail-header.css. */
 
 /* Labels and count pills collapse away; the icon is all that stays per row.
    (Footer icons live in `.sidebar-foot-icon-cell`, which is preserved.) */
@@ -225,20 +199,7 @@
   color: var(--text-primary);
 }
 
-/* Compose ("new chat") shares the exact same square — drop its loud 2px accent
-   outline — and stays recognisable purely through its accent glyph. */
-.shell-nav--rail .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row {
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--accent-presence);
-  font-weight: 500;
-}
-.shell-nav--rail .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row:hover {
-  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
-  border-color: color-mix(in oklch, var(--accent-presence) 35%, transparent);
-}
-
-/* The active destination is the one persistent fill: a single accent-tinted
+/* The active destination keeps its own persistent fill: a single accent-tinted
    square (no left bar, which looks off-centre under a centred icon). */
 .shell-nav--rail .sidebar-folder-row--active {
   background: color-mix(in oklch, var(--accent-presence) 16%, transparent);

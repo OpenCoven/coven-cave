@@ -25,13 +25,14 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/palette", hint: "open ⌘K", description: "Open the command palette.", section: "chat" },
   { name: "/shortcuts", aliases: ["/keys"], hint: "open ⌘/ sheet", description: "Open the keyboard shortcuts sheet.", section: "chat" },
   { name: "/new", hint: "new chat", description: "Start a fresh chat with the active familiar.", section: "chat" },
-  { name: "/model", aliases: ["/m"], hint: "switch model", description: "Switch the active model — pass an id or pick from the menu; bare /model lists them.", argPlaceholder: "model", section: "chat" },
+  { name: "/model", aliases: ["/m"], hint: "switch model", description: "Switch the active model — pass an id, use `default` to clear it, or pick from the menu; bare /model lists them.", argPlaceholder: "model", section: "chat" },
   { name: "/skill", hint: "run a skill", description: "Invoke a skill — pass a name or pick from the menu as you type.", argPlaceholder: "name", section: "chat" },
   { name: "/skills", hint: "browse skills", description: "Show every available skill to pick from.", section: "chat" },
   { name: "/prompt", aliases: ["/snippets"], hint: "insert a prompt", description: "Drop a starter prompt into the composer for editing.", argPlaceholder: "name", section: "chat" },
   { name: "/prompts", hint: "browse prompts", description: "Show every prompt template to pick from.", section: "chat" },
   { name: "/save", aliases: ["/link"], hint: "save links", description: "Save one or more links to the Research desk, auto-organized by kind.", argPlaceholder: "url…", section: "chat" },
   { name: "/image", aliases: ["/img", "/imagine"], hint: "generate an image", description: "Generate an image inline in chat (provider set in Familiar Studio → Brain).", argPlaceholder: "describe an image…", section: "chat" },
+  { name: "/auto", aliases: ["/autopilot"], hint: "hands-off mission", description: "Run a mission autonomously: the familiar may ask a few clarifying questions up front, then works silently and only pings you on completion or when blocked. `/auto stop` ends one early, `/auto status` checks. Ends with a quick feedback questionnaire that shapes future missions.", argPlaceholder: "mission…", section: "chat" },
 
   // Familiar
   { name: "/familiar", aliases: ["/agent"], hint: "switch", description: "Open the familiar picker. Pass a name to switch directly.", argPlaceholder: "name", section: "familiar" },
@@ -44,7 +45,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/sessions", hint: "all sessions", description: "Open all sessions across familiars and runtimes.", section: "view" },
   { name: "/attach", hint: "open session", description: "Open a specific daemon session by id.", argPlaceholder: "session-id", section: "view" },
   { name: "/tui", hint: "open in Coven Code", description: "Open the current session in the external Coven Code TUI.", section: "view" },
-  { name: "/journal", hint: "Journal", description: "Open your familiars' journal (Settings → Familiars → Journal).", section: "view" },
+  { name: "/journal", hint: "Journal", description: "Open your familiars' journal (Memories → Journal).", section: "view" },
   { name: "/canvas", hint: "sketch a UI", description: "Generate a UI artifact inline in chat.", argPlaceholder: "describe a UI…", section: "view" },
   { name: "/board", hint: "Tasks", description: "Open the Tasks kanban and table view.", section: "view" },
   { name: "/chats", hint: "Chats", description: "Switch back to the Chats view.", section: "view" },
@@ -89,6 +90,71 @@ export function matchSlash(prefix: string): SlashCommand[] {
       c.name.toLowerCase().startsWith(q) ||
       (c.aliases ?? []).some((a) => a.toLowerCase().startsWith(q)),
   );
+}
+
+export type InlineSlashInvocation = {
+  start: number;
+  caret: number;
+  tokenEnd: number;
+  input: string;
+  commandToken: string;
+};
+
+/**
+ * Find the slash invocation that owns the caret. A slash may begin the draft
+ * or follow whitespace, which keeps URLs and path fragments from opening the
+ * command menu while allowing commands after prose or on later lines.
+ */
+export function inlineSlashInvocation(
+  text: string,
+  caret: number,
+): InlineSlashInvocation | null {
+  const boundedCaret = Math.max(0, Math.min(caret, text.length));
+  const beforeCaret = text.slice(0, boundedCaret);
+  let start = beforeCaret.lastIndexOf("/");
+
+  while (start >= 0) {
+    if (start === 0 || /\s/.test(beforeCaret[start - 1] ?? "")) {
+      const input = beforeCaret.slice(start);
+      if (!input.includes("\n")) {
+        const commandToken = input.split(/\s/, 1)[0] ?? "";
+        let tokenEnd = start + commandToken.length;
+        while (tokenEnd < text.length && !/\s/.test(text[tokenEnd] ?? "")) {
+          tokenEnd += 1;
+        }
+        return { start, caret: boundedCaret, tokenEnd, input, commandToken };
+      }
+    }
+    start = beforeCaret.lastIndexOf("/", start - 1);
+  }
+
+  return null;
+}
+
+export function inlineSlashCommandPrompt(
+  text: string,
+  caret: number,
+  command: string,
+): string {
+  const invocation = inlineSlashInvocation(text, caret);
+  if (!invocation) return command;
+
+  const args = invocation.input.slice(invocation.commandToken.length).trim();
+  return args ? `${command} ${args}` : command;
+}
+
+export function replaceInlineSlashRange(
+  text: string,
+  start: number,
+  end: number,
+  replacement: string,
+): { text: string; caret: number } {
+  const safeStart = Math.max(0, Math.min(start, text.length));
+  const safeEnd = Math.max(safeStart, Math.min(end, text.length));
+  return {
+    text: `${text.slice(0, safeStart)}${replacement}${text.slice(safeEnd)}`,
+    caret: safeStart + replacement.length,
+  };
 }
 
 /** Render a /help block grouped by section. */

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const route = readFileSync(
-  new URL("./api/onboarding/install/route.ts", import.meta.url),
+  new URL("./api/onboarding/install/install-service.ts", import.meta.url),
   "utf8",
 );
 const npmLane = readFileSync(
@@ -55,14 +55,14 @@ assert.doesNotMatch(
 
 assert.match(
   route,
-  /Do not elevate from this API route:[\s\S]*?Require the[\s\S]*?operator to run the sudo command manually instead/,
-  "install route should require manual sudo when global npm dirs are not writable",
+  /Coven CLI repair:[\s\S]*?npm beside[\s\S]*?the detected CLI/,
+  "the reviewed CLI repair must use the npm installation that owns the detected CLI",
 );
 
 assert.match(
   route,
-  /"coven-cli": \{[\s\S]*?packageName: "@opencoven\/cli@latest"/,
-  "Coven install only accepts the fixed allowlisted @opencoven/cli package",
+  /"coven-cli": \{[\s\S]*?packageName: reviewedPackage\("coven-cli"\)/,
+  "the Coven CLI button installs the reviewed maintenance-compatible package",
 );
 assert.doesNotMatch(
   route,
@@ -72,14 +72,14 @@ assert.doesNotMatch(
 
 assert.match(
   route,
-  /reserveGlobalNpmInstall\(targetName\)[\s\S]*?return npmBusyResponse\(owner\)/,
+  /reserveGlobalNpmInstall\(targetName\)[\s\S]*?return npmBusyResult\(owner\)/,
   "all npm installers reserve the shared global npm lane before starting",
 );
 
 assert.match(
   route,
-  /function npmBusyResponse\([\s\S]*?status: 409/,
-  "a competing npm installer receives an actionable busy response",
+  /function npmBusyResult\([\s\S]*?status: 409/,
+  "a competing npm installer receives a reusable actionable busy result",
 );
 
 assert.match(
@@ -90,20 +90,20 @@ assert.match(
 
 assert.match(
   route,
-  /npmMissing: true,[\s\S]*?hint: nodeInstallHint\(\)/,
-  "missing npm returns an actionable Node installation hint",
+  /managedNodeMissing: true,[\s\S]*?hint: managedNodeInstallHint\(\)/,
+  "a missing managed toolchain returns an actionable Node installation hint",
 );
 
 assert.match(
   route,
-  /sudoRequired: true,[\s\S]*?global npm directory from this API route[\s\S]*?plan\.packageName/,
-  "global-prefix permission failures return a copyable manual recovery command",
+  /const launch = managedNpmLaunch\(managed\.paths\);[\s\S]*?args: \[\.\.\.launch\.args, "install", "--global", target\.packageName\]/,
+  "pinned prerequisite installs use the managed Node.js/npm launch plan",
 );
 
-assert.match(
+assert.doesNotMatch(
   route,
-  /\(EACCES\|EPERM\|EROFS\|permission denied\)[\s\S]*?npm couldn't write to the global directory/,
-  "late npm permission failures remain actionable after an install attempt",
+  /sudoRequired: true|global npm directory from this API route|npm couldn't write to the global directory/,
+  "managed installs do not surface stale host-global npm recovery guidance",
 );
 
 console.log("onboarding-install-route.test.ts OK");

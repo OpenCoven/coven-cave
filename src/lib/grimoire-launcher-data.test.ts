@@ -116,9 +116,14 @@ test("journalStreakDays counts back from today, tolerating an unwritten today", 
 test("launcherGraphCounts counts doc nodes, edges, and detached docs (tags excluded)", () => {
   const graph: DocGraph = {
     nodes: [
-      { id: "a", ref: { kind: "knowledge", id: "a" }, kind: "knowledge", title: "A", degree: 1 },
-      { id: "b", ref: { kind: "knowledge", id: "b" }, kind: "knowledge", title: "B", degree: 0 },
-      { id: "t", ref: null, kind: "tag", title: "#t", degree: 1 },
+      // `scanned` marks docs whose content was read, vs leaf nodes that exist
+      // only because something linked to them (cave-ed4s3). It does not affect
+      // these counts — launcherGraphCounts filters on kind and degree — but the
+      // field is required, so the fixture states it rather than pretending the
+      // distinction does not exist.
+      { id: "a", ref: { kind: "knowledge", id: "a" }, kind: "knowledge", title: "A", degree: 1, scanned: true },
+      { id: "b", ref: { kind: "knowledge", id: "b" }, kind: "knowledge", title: "B", degree: 0, scanned: true },
+      { id: "t", ref: null, kind: "tag", title: "#t", degree: 1, scanned: false },
     ],
     edges: [{ id: "e1", source: "a", target: "t", type: "tag" }],
   };

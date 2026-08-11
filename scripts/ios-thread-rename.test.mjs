@@ -6,7 +6,6 @@ const iosRoot = "apps/ios/CovenCave/CovenCave";
 
 const model = await read(`${iosRoot}/State/AppModel.swift`);
 const rename = await read(`${iosRoot}/Views/ThreadRename.swift`);
-const home = await read(`${iosRoot}/Views/ChatsHomeView.swift`);
 const familiarThreads = await read(`${iosRoot}/Views/FamiliarThreadsView.swift`);
 
 // Model renames a thread (trim + no-op + persist).
@@ -25,8 +24,10 @@ assert.match(
   "a threadRenameAlert view modifier should be exposed",
 );
 
-// Both thread lists wire a Rename context-menu action + the alert.
-for (const [name, src] of [["ChatsHomeView", home], ["FamiliarThreadsView", familiarThreads]]) {
+// The thread list wires a Rename context-menu action + the alert. (The Chats
+// home lists familiars, not threads — thread affordances live in the session
+// picker, FamiliarThreadsView.)
+for (const [name, src] of [["FamiliarThreadsView", familiarThreads]]) {
   assert.match(src, /renamingThread = thread/, `${name} should set the renaming thread from a menu`);
   assert.match(src, /Label\("Rename", systemImage: "pencil"\)/, `${name} should offer a Rename action`);
   assert.match(

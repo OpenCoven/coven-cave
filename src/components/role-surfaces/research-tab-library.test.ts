@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const tab = readFileSync(new URL("./research-tab-library.tsx", import.meta.url), "utf8");
+const view = readFileSync(new URL("./research-library-view.ts", import.meta.url), "utf8");
 const css = readFileSync(
   new URL("../../styles/globals/surface-research-library.css", import.meta.url),
   "utf8",
@@ -116,6 +117,23 @@ test("cards/rows toggle persists under cave:research:lib-view with an SSR guard"
 
 // ── Real-counts header ──────────────────────────────────────────────────────
 
+test("library search, sort and paging are total, clamped and honest", () => {
+  // Every comparator falls through to a stable tie-break: a comparator that
+  // returns 0 for distinct rows lets the sort reshuffle them between renders.
+  assert.match(view, /function tieBreak/);
+  assert.match(view, /localeCompare/);
+  // Paging clamps rather than trusts: filtering down while parked on page 4
+  // must show results, not a blank shelf.
+  assert.match(view, /const safePage = Math\.min\(Math\.max\(0, page\), pageCount - 1\)/);
+  // Chip counts stay measured against the unsearched set, so a chip never
+  // reads 0 for a filter that has artifacts the query happens to exclude.
+  assert.match(tab, /const counts = useMemo\(\(\) => \{[\s\S]*?for \(const entry of entries\)/);
+  // Search and filter empties read differently — "no match" is not "nothing yet".
+  assert.match(tab, /Nothing matches “\$\{query\.trim\(\)\}” under this filter/);
+  // The pager only exists past one page.
+  assert.match(tab, /\{paged\.pageCount > 1 \? \(/);
+});
+
 test("header counts are real: flattened artifacts from runs that produced them", () => {
   // Entries are the flattening of every mission's artifacts — counts derive
   // from that, not from copy.
@@ -123,7 +141,11 @@ test("header counts are real: flattened artifacts from runs that produced them",
   assert.match(tab, /const artifactCount = entries\.length/);
   assert.match(tab, /missions\.filter\(\(mission\) => mission\.artifacts\.length > 0\)\.length/);
   assert.match(tab, /\{artifactCount\} artifact\{artifactCount === 1 \? "" : "s"\} from \{runCount\} run\{runCount === 1 \? "" : "s"\}/);
-  assert.match(tab, /Sorted by newest/);
+  // The static "Sorted by newest" caption is now a real control offering the
+  // same default, so the shelf can be re-ordered instead of only described.
+  assert.match(tab, /<StandardSelect<LibrarySort>/);
+  assert.match(tab, /label="Sort artifacts"/);
+  assert.match(view, /\{ id: "newest", label: "Newest first" \}/);
   // Newest-first is enforced, with an invalid-date guard.
   assert.match(tab, /Number\.isFinite\(parsed\) \? parsed : 0/);
   assert.match(tab, /sort\(\(a, b\) => stamp\(b\) - stamp\(a\)\)/);
@@ -155,11 +177,11 @@ test("Open is the Grimoire jump — offered only when a knowledgeId exists, no f
   // Same open path as the evidence ledger's artifact cards.
   assert.match(tab, /openGrimoireDoc\("knowledge", artifact\.knowledgeId!\)/);
   assert.match(tab, /\{artifact\.knowledgeId \? \(/);
-  // Artifacts expose no client-reachable file export (relativePath is
-  // server-side only), so the design's ⤓ md / ⤓ pdf buttons must not ship.
+  // File access ships through the shared ResearchArtifactActions component
+  // (View/Download backed by the files API); the design's ad-hoc ⤓ md / ⤓ pdf
+  // buttons still must not ship on this surface.
   assert.doesNotMatch(tab, /⤓/);
   assert.doesNotMatch(tab, /pdf/i);
-  assert.doesNotMatch(tab, /download/i);
 });
 
 test("empty states are honest with a real next step", () => {
@@ -169,6 +191,69 @@ test("empty states are honest with a real next step", () => {
   // A filtered-out view says so instead of pretending the library is empty.
   assert.match(tab, /Nothing under this filter yet/);
   assert.doesNotMatch(tab, /is being assembled|coming soon/i);
+});
+
+test("library offers view/download for unpublished artifacts without publish", () => {
+  assert.match(tab, /ResearchArtifactActions/);
+  assert.doesNotMatch(tab, /onPublish=/, "library never offers publishing");
+});
+
+// ── Sage autoresearch receipts (cave-19a34) ─────────────────────────────────
+
+test("autoresearch receipts stream from the local read-only API and clean up on unmount", () => {
+  assert.match(tab, /new EventSource\("\/api\/research\/autoloop\/stream"\)/);
+  assert.match(tab, /isAutoresearchSnapshot\(parsed\)/);
+  assert.match(tab, /source\.close\(\)/);
+  assert.match(tab, /autoresearchAvailable \|\| autoresearchError/);
+  assert.match(tab, /autoresearchError && autoresearchRows\.length === 0/);
+  assert.doesNotMatch(tab, /setInterval|usePausablePoll/);
+  assert.doesNotMatch(tab, /method:\s*"(?:POST|PUT|PATCH|DELETE)"/);
+});
+
+test("autoresearch iterations are a collapsed region above mission artifacts", () => {
+  assert.match(tab, /<details className="research-library-autoloop">/);
+  assert.match(
+    tab,
+    /<section className="research-library-autoloop__region" role="region" aria-label="Autoresearch iterations">/,
+  );
+  const autoresearch = tab.indexOf('className="research-library-autoloop"');
+  const artifacts = tab.indexOf("{artifactCount === 0");
+  assert.ok(autoresearch !== -1 && artifacts !== -1 && autoresearch < artifacts);
+  for (const heading of ["Iter", "Date", "Research", "Score", "Verdict", "Skill"]) {
+    assert.match(tab, new RegExp(`<th[^>]*>${heading}<\\/th>`));
+  }
+  assert.match(tab, /row\.score === null \? "—" : `\$\{row\.score\}\/30`/);
+  assert.match(tab, /data-verdict=\{row\.verdict\}/);
+  assert.match(tab, /formatDate\(row\.timestamp, dateTimePrefs, \{ year: true \}\)/);
+  assert.match(tab, /key=\{`\$\{row\.timestamp\}:\$\{row\.iter\}:\$\{row\.slug\}`\}/);
+  assert.doesNotMatch(tab, /key=\{[^}]*index/);
+});
+
+test("autoresearch synthesis and staged skills open in an accessible Markdown reader", () => {
+  assert.match(
+    tab,
+    /fetch\(\s*`\/api\/research\/autoloop\/document\?path=\$\{encodeURIComponent\(documentPath\)\}`/,
+  );
+  assert.match(tab, /<Modal[\s\S]*breadcrumb=\{\["Research library", autoresearchDocument\.title\]\}/);
+  assert.match(tab, /<MarkdownBlock text=\{autoresearchDocument\.content\}/);
+  assert.match(tab, /role="status">Loading research document…/);
+  assert.match(tab, /role="alert">\{autoresearchDocument\.error\}/);
+  assert.match(tab, /aria-label=\{`Open \$\{row\.slug\} synthesis`\}/);
+  assert.match(tab, /aria-label=\{`Open staged skill for \$\{row\.slug\}`\}/);
+});
+
+test("autoresearch verdict badges use one-token derived tints and words", () => {
+  assert.match(css, /\.research-library-autoloop__verdict\[data-verdict="PROMOTE"\]/);
+  assert.match(css, /color-mix\(in oklch, var\(--color-success\) 14%, transparent\)/);
+  assert.match(css, /color-mix\(in oklch, var\(--color-warning\) 14%, transparent\)/);
+  assert.match(
+    css,
+    /\.research-library-autoloop__verdict:where\(\[data-verdict="REJECT"\], \[data-verdict="REVISE"\]\)/,
+  );
+  assert.match(
+    css,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.research-library-autoloop__caret[\s\S]*transition: none/,
+  );
 });
 
 test("library styles ride the desk container and coven tokens", () => {

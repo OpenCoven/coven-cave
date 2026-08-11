@@ -61,11 +61,16 @@ assert.doesNotMatch(
 // The chat surface no longer hosts a memory scope — familiar memory lives in
 // the Familiars surface and the Grimoire editor (cave-liut). The "familiar"
 // scope is the capability panel promoted out of the retired inspector
-// sidepanel, sitting immediately left of Settings.
+// sidepanel; chat settings now live inside the Familiar surface.
 assert.match(
   chatSurface,
-  /type FamiliarsScope = "conversation" \| "projects" \| "coven" \| "familiar" \| "settings"/,
-  "ChatSurface scope union should carry the promoted familiar tab (and no dead memory scope)",
+  /type FamiliarsScope = "conversation" \| "projects" \| "coven" \| "familiar" \| "canvas"/,
+  "ChatSurface scope union should carry the promoted familiar tab and canvas",
+);
+assert.doesNotMatch(
+  chatSurface,
+  /\{\s*id:\s*"settings",\s*label:\s*"Settings"\s*\}/,
+  "ChatSurface should merge chat Settings into the Familiar tab instead of keeping a fifth top-level tab",
 );
 assert.doesNotMatch(
   chatSurface,
@@ -95,8 +100,8 @@ assert.doesNotMatch(
 );
 assert.match(
   chatSurface,
-  /className=\{`chat-scope-group-btn[\s\S]*onClick=\{\(\) => setScope\("coven"\)\}/,
-  "ChatSurface exposes Group as a demoted icon-button that switches to the coven scope",
+  /className=\{`chat-scope-group-btn[\s\S]*onClick=\{\(\) => window\.dispatchEvent\(new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode: "groupchat" \} \}\)\)\}/,
+  "ChatSurface exposes Group as a demoted icon-button that routes through workspace history",
 );
 assert.match(
   chatSurface,
@@ -119,8 +124,31 @@ assert.match(
 
 assert.match(
   chatSurface,
-  /useState<FamiliarsScope>\("conversation"\)/,
+  /\{\s*id:\s*"familiar",\s*label:\s*"Familiar"\s*\}/,
+  "ChatSurface should name the familiar-focused scope Familiar",
+);
+assert.doesNotMatch(
+  chatSurface,
+  /\{\s*id:\s*"familiar",\s*label:\s*"Skills"\s*\}/,
+  "ChatSurface should not leave the merged familiar scope labeled Skills",
+);
+
+assert.match(
+  chatSurface,
+  /useSurfaceHistory<FamiliarsScope>\(\{[\s\S]*?initial:\s*"conversation"/,
   "ChatSurface should default the scope to conversation so the ChatList shows when Chat is selected",
+);
+
+assert.match(
+  chatSurface,
+  /id:\s*"chat:scope"/,
+  "ChatSurface should register its scope strip as a navigation level so Back steps between tabs instead of leaving Chat",
+);
+
+assert.match(
+  chatSurface,
+  /onChange=\{\(s\) => \{\s*selectScope\(s\)/,
+  "The scope tab strip is user-initiated navigation, so it must record a history entry (selectScope, not showScope)",
 );
 
 assert.doesNotMatch(
@@ -137,14 +165,14 @@ assert.doesNotMatch(
 
 assert.match(
   agentsMemoryView,
-  /fetch\("\/api\/coven-memory"/,
-  "Agents memory view should load daemon-backed Coven memory",
+  /loadCanonicalMemoryList\(\)[\s\S]*loadCanonicalMemoryOverview\(\)/,
+  "Familiars memory should load daemon-backed canonical landing resources",
 );
 
 assert.match(
   agentsMemoryView,
-  /fetch\("\/api\/memory"/,
-  "Agents memory view should load filesystem memory indexes",
+  /readSurfaceResource<FileMemoryResponse>\(\s*"memory:list",\s*force,\s*\)/,
+  "Familiars memory should load filesystem memory through the shared resource",
 );
 
 assert.match(
@@ -215,13 +243,18 @@ assert.doesNotMatch(
 );
 
 // The inspector sidepanel is retired: its Familiar section is a first-class
-// chat scope tab (left of Settings), Analytics/Automations are gone from chat,
+// chat scope tab, Analytics/Automations are gone from chat,
 // and the code rail is the only right sidepanel. Canvas (saved sketches) sits
-// between Projects and Familiar.
+// between Projects and Familiar; chat settings live inside Familiar.
 assert.match(
   chatSurface,
-  /\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Skills" \},\s*\{ id: "settings", label: "Settings" \},/,
-  "the Skills tab (familiar scope) sits immediately left of Settings (after Canvas)",
+  /\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Familiar" \},/,
+  "the Familiar tab is the final primary scope after Canvas",
+);
+assert.doesNotMatch(
+  chatSurface,
+  /scope === "settings"|<ChatSettingsView\s*\/>/,
+  "ChatSurface should no longer own a standalone chat-settings branch",
 );
 // The skills-tab latch must be consumed on the LIVE event path too: "Manage
 // skills" from an already-mounted chat doesn't remount this surface, so a
@@ -254,8 +287,8 @@ assert.doesNotMatch(
 // the Familiar chat tab; Git/Changes → the code rail's Changes tab.
 assert.match(
   chatSurface,
-  /const onInspectorOpen = \(\) => setScope\("familiar"\)/,
-  "cave:inspector-open routes to the promoted Familiar tab",
+  /const onInspectorOpen = \(\) => selectScope\("familiar"\)/,
+  "cave:inspector-open routes to the promoted Familiar tab, recording a history entry because it moves only this level",
 );
 assert.match(
   railController,
@@ -328,4 +361,27 @@ assert.match(
   railController,
   /if \(changeCountRootRef\.current !== root\) \{\s*\n\s*setChangeCount\(null\);/,
   "changeCount drops to null (unknown) on a real root change — clears the stale badge AND keeps first-load dirt from faking a fresh-batch reveal (cave-xsq.7)",
+);
+
+// Workspace → ChatSurface onSessionStarted wiring:
+// - Workspace must pass onSessionStarted so GroupChatView can refresh the
+//   session list after a new group chat is created.
+// - ChatSurface must forward onSessionStarted to GroupChatView.
+// - ChatSurface must NOT forward onSessionStarted to ChatRouter: the
+//   single-chat path uses the creation-refresh helper (onSessionsChanged) to
+//   avoid a redundant pre-persistence sidebar load (Task 1 fix).
+assert.match(
+  workspace,
+  /<ChatSurface[\s\S]*?onSessionStarted=\{loadSessions\}/,
+  "Workspace must pass onSessionStarted={loadSessions} to ChatSurface so GroupChatView gets session-list refreshes",
+);
+assert.match(
+  chatSurface,
+  /<GroupChatView[\s\S]*?onSessionStarted=\{onSessionStarted\}/,
+  "ChatSurface must forward onSessionStarted to GroupChatView",
+);
+assert.doesNotMatch(
+  chatSurface,
+  /<ChatRouter\b[\s\S]*?onSessionStarted=/,
+  "ChatSurface must not forward onSessionStarted to ChatRouter (single-chat path uses creation-refresh helper)",
 );

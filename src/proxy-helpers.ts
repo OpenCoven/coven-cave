@@ -33,17 +33,6 @@ function hostnameFromHost(host: string | null) {
     : host.split(":")[0];
 }
 
-function portFromHost(host: string | null) {
-  if (!host) return "";
-  if (host.startsWith("[")) {
-    const close = host.indexOf("]");
-    const rest = close >= 0 ? host.slice(close + 1) : "";
-    return rest.startsWith(":") ? rest.slice(1) : "";
-  }
-  const parts = host.split(":");
-  return parts.length > 1 ? parts[parts.length - 1] : "";
-}
-
 function isTailscaleIpHost(hostname: string) {
   if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
     const parts = hostname.split(".").map((part) => Number(part));
@@ -67,6 +56,13 @@ export function isAllowedApiHost(
 ) {
   if (mobileAccessAuthenticated) return true;
   return isLoopbackHost(host) || (tailnetTrusted && isTailscaleServeHost(host));
+}
+
+export function isTokenlessApiPeerAllowed(
+  trustedLocalPeer: boolean,
+  remoteIngress: boolean,
+) {
+  return trustedLocalPeer || remoteIngress;
 }
 
 export function sameOrigin(value: string | null, expectedOrigin: string) {
@@ -137,7 +133,13 @@ export function shouldRequireMobileAccessCredential(
   _host: string | null,
   _hasSuppliedCredential: boolean,
   trustedLocalPeer = false,
+  tailnetPeerVerified = false,
 ) {
+  // An allowlisted tailnet device (cave-zm6pn) has already proven a stronger
+  // credential than the shared pairing secret this gate asks for: WireGuard
+  // device identity resolved by server.ts off the raw socket. Requiring the
+  // invite token on top would defeat the point of replacing it.
+  if (tailnetPeerVerified) return false;
   // The Host header is client-controlled, so it cannot prove that the actual
   // TCP peer is loopback — a host value alone never exempts a request. The
   // one thing that CAN prove it is server.ts, which sees the raw socket: it
@@ -160,6 +162,27 @@ export function shouldRequireMobileAccessCredential(
 export function isTrustedLocalPeer(headerValue: string | null, secret: string | undefined) {
   if (!headerValue || !secret) return false;
   return timingSafeEqualString(headerValue, secret);
+}
+
+/**
+ * The allowlisted Tailscale stable node ID behind this request, or null.
+ *
+ * Mirrors TAILNET_PEER_HEADER in server.ts, which is the only component that
+ * can mint this stamp: it sees the raw socket, deletes any client-supplied copy
+ * of the header, resolves the forwarded tailnet address against a
+ * `tailscale status` allowlist, and stamps `<perBootSecret>:<nodeId>`. The
+ * secret never leaves that process, so a match proves the peer is an
+ * allowlisted device rather than merely something claiming to be one. An unset
+ * secret — Next running without server.ts in front — fails closed.
+ */
+export function verifiedTailnetNode(headerValue: string | null, secret: string | undefined) {
+  if (!headerValue || !secret) return null;
+  const separator = headerValue.indexOf(":");
+  if (separator <= 0) return null;
+  const supplied = headerValue.slice(0, separator);
+  const nodeId = headerValue.slice(separator + 1);
+  if (!nodeId) return null;
+  return timingSafeEqualString(supplied, secret) ? nodeId : null;
 }
 
 export function bearerFromReferer(value: string | null, expectedOrigin: string) {
@@ -297,6 +320,32 @@ export const ACCESS_TOKEN_COOKIE = "coven_cave_access";
 // requests whose TCP peer it verified as direct loopback. Mirrored in
 // server.ts, which cannot import from src/.
 export const LOCAL_PEER_HEADER = "x-coven-cave-local-peer";
+export const TAILNET_PEER_HEADER = "x-coven-cave-tailnet-peer";
+/**
+ * Whether this request must carry a proven biometric check (cave-brksh).
+ *
+ * Three deliberate exemptions:
+ *
+ *   - Non-API paths. Page navigations have to load, or the surface that runs
+ *     the WebAuthn ceremony can never render and the gate becomes a brick wall
+ *     with no door.
+ *   - `/api/passkey/*`. Obtaining presence cannot itself require presence. The
+ *     sensitive members of that family — enrolling an ADDITIONAL credential and
+ *     revoking one — police themselves at the route layer, where they can read
+ *     the credential store that middleware cannot.
+ *   - Local ingress. A direct loopback peer is someone at the machine; the
+ *     phone is what this control is about.
+ */
+export function requiresPasskeyPresence(
+  pathname: string,
+  remoteIngress: boolean,
+  enabled: boolean,
+): boolean {
+  if (!enabled || !remoteIngress) return false;
+  if (!pathname.startsWith("/api/")) return false;
+  return !(pathname === "/api/passkey" || pathname.startsWith("/api/passkey/"));
+}
+
 export const ACCESS_TOKEN_QUERY_PARAM = "coven_access_token";
 export const TOKEN_PARAM = "covenCaveToken";
 export const TOKEN_HEADER = "x-coven-cave-token";

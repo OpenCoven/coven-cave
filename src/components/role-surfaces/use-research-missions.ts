@@ -25,6 +25,26 @@ export type ResearchMissionViewState = {
   error: string | null;
 };
 
+type ApplyMissionOptions = {
+  select?: boolean;
+};
+
+function isMissionAtLeastAsFresh(
+  incoming: ResearchMission,
+  current: ResearchMission,
+): boolean {
+  const incomingUpdatedAt = Date.parse(incoming.updatedAt);
+  const currentUpdatedAt = Date.parse(current.updatedAt);
+  if (Number.isFinite(incomingUpdatedAt)
+    && Number.isFinite(currentUpdatedAt)
+    && incomingUpdatedAt !== currentUpdatedAt) {
+    return incomingUpdatedAt > currentUpdatedAt;
+  }
+  const incomingIteration = incoming.iterations.at(-1)?.number ?? 0;
+  const currentIteration = current.iterations.at(-1)?.number ?? 0;
+  return incomingIteration >= currentIteration;
+}
+
 const INITIAL_STATE: ResearchMissionViewState = {
   missions: [],
   selectedId: null,
@@ -34,6 +54,8 @@ const INITIAL_STATE: ResearchMissionViewState = {
 
 export function useResearchMissions(familiarId: string) {
   const [state, setState] = useState<ResearchMissionViewState>(INITIAL_STATE);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   // Monotonic load token (the familiar-work-queue-view/daily-notes pattern):
   // every load claims a sequence number and bails before each setState once
   // superseded, and every mutation-applied refresh bumps the token — so an
@@ -94,6 +116,29 @@ export function useResearchMissions(familiarId: string) {
   const select = useCallback((selectedId: string) => {
     setState((current) => ({ ...current, selectedId }));
   }, []);
+
+  const applyMission = useCallback((
+    mission: ResearchMission,
+    options: ApplyMissionOptions = {},
+  ) => {
+    if (mission.familiarId !== familiarId) return;
+    const existing = stateRef.current.missions.find((candidate) => candidate.id === mission.id);
+    if (existing && !isMissionAtLeastAsFresh(mission, existing)) return;
+    loadSeq.current += 1;
+    setState((current) => {
+      const currentMission = current.missions.find((candidate) => candidate.id === mission.id);
+      if (currentMission && !isMissionAtLeastAsFresh(mission, currentMission)) return current;
+      return {
+        ...current,
+        missions: currentMission
+          ? current.missions.map((candidate) => candidate.id === mission.id ? mission : candidate)
+          : [mission, ...current.missions],
+        selectedId: options.select ? mission.id : current.selectedId,
+        loading: false,
+        error: null,
+      };
+    });
+  }, [familiarId]);
 
   const start = useCallback(async (input: CreateResearchMissionInput) => {
     try {
@@ -204,5 +249,15 @@ export function useResearchMissions(familiarId: string) {
     }
   }, [load]);
 
-  return { ...state, selected, select, start, act, schedule, controlAutomation, load };
+  return {
+    ...state,
+    selected,
+    select,
+    applyMission,
+    start,
+    act,
+    schedule,
+    controlAutomation,
+    load,
+  };
 }

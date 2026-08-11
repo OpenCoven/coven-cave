@@ -144,6 +144,8 @@ function readPalette(el: HTMLElement): Palette {
 export function GrimoireGraphView({
   graph,
   meta,
+  scopeLabel,
+  scopedMemoryTotal,
   scanning,
   scanError,
   onOpen,
@@ -152,6 +154,15 @@ export function GrimoireGraphView({
    *  client-built knowledge graph (so something always paints instantly). */
   graph: DocGraph;
   meta?: GrimoireGraphMeta | null;
+  /** Who the shell's familiar multiselect has narrowed memory to, if anyone —
+   *  the graph arrives already scoped, this only makes that visible. */
+  scopeLabel?: string | null;
+  /** How many memory files the active scope owns IN TOTAL, straight off the
+   *  same inventory the Memory rail counts. The scan cap is applied coven-wide
+   *  BEFORE scoping, so this is the number the rail shows and the graph cannot
+   *  match; without it the notice can only talk about coven-wide totals and
+   *  leaves the rail's figure unexplained (cave-ed4s3). Null in All scope. */
+  scopedMemoryTotal?: number | null;
   /** True while the full-corpus scan is still in flight. */
   scanning?: boolean;
   /** Set when the full scan failed — the local graph stays up. */
@@ -751,11 +762,15 @@ export function GrimoireGraphView({
       <div className="grid h-full min-h-0 place-items-center p-8">
         <EmptyState
           icon="ph:graph"
-          headline={scanning ? "Weaving the graph…" : "Nothing to graph yet"}
+          headline={
+            scanning ? "Weaving the graph…" : scopeLabel ? `No relations for ${scopeLabel}` : "Nothing to graph yet"
+          }
           subtitle={
             scanning
               ? "Scanning your knowledge, memory, and journal for connections."
-              : "Create a knowledge entry, memory file, or journal day and it appears here — [[wiki-links]], tags, and mentions weave them together."
+              : scopeLabel
+                ? "Nothing in this scope has anything to weave together. Widen the familiar selection to see the whole coven's relations."
+                : "Create a knowledge entry, memory file, or journal day and it appears here — [[wiki-links]], tags, and mentions weave them together."
           }
         />
       </div>
@@ -764,6 +779,33 @@ export function GrimoireGraphView({
 
   const summary = `${visible.nodes.length} of ${graph.nodes.length} nodes, ${visible.edges.length} connections shown`;
   const memoryTruncated = meta ? meta.memory.scanned < meta.memory.total : false;
+  // How many of the scope's memory files were actually READ. The scan cap is
+  // applied coven-wide BEFORE familiar scoping, so a scoped view is not "this
+  // familiar's memory graph" — it is their slice of the coven's most recent N
+  // files. `meta.memory.scanned` is coven-wide and cannot answer this, so the
+  // count comes off the nodes themselves (cave-ed4s3).
+  //
+  // `scanned` is load-bearing, not defensive: the resolution index spans the
+  // WHOLE corpus while the scan is capped, so a [[link]] into an out-of-window
+  // memory file still resolves and lands as a leaf node with no body. Counting
+  // raw memory nodes would mix files that were read with files merely pointed
+  // at and overcount the window — the exact class of false claim this notice
+  // exists to stop making.
+  const scopedMemoryInWindow = useMemo(
+    () =>
+      scopeLabel
+        ? graph.nodes.reduce((n, node) => n + (node.kind === "memory" && node.scanned ? 1 : 0), 0)
+        : 0,
+    [graph, scopeLabel],
+  );
+  // Only worth saying when the scope actually lost files to the cap. Equal
+  // counts mean the window covered them all, and a shortfall notice would be
+  // noise; `>` cannot happen, but treating it as "nothing to report" keeps the
+  // copy from ever rendering a negative remainder.
+  const scopedShortfall =
+    scopeLabel != null &&
+    typeof scopedMemoryTotal === "number" &&
+    scopedMemoryInWindow < scopedMemoryTotal;
 
   const checkboxRow = (
     label: string,
@@ -951,13 +993,29 @@ export function GrimoireGraphView({
                 />
               </label>
             </div>
+            {scopeLabel ? (
+              <p className="text-[length:var(--text-sm)] leading-snug text-[var(--text-muted)]">
+                Memory is scoped to {scopeLabel}. Stitches and journal days stay coven-wide.
+              </p>
+            ) : null}
             {memoryTruncated && meta ? (
-              <p className="text-[length:var(--text-2xs)] leading-snug text-[var(--text-muted)]">
-                Scanned the {meta.memory.scanned} most recent of {meta.memory.total} memory files.
+              <p className="text-[length:var(--text-sm)] leading-snug text-[var(--text-muted)]">
+                {scopedShortfall ? (
+                  <>
+                    {scopedMemoryInWindow} of {scopeLabel}&rsquo;s {scopedMemoryTotal} memory files are in
+                    the scanned window — the {meta.memory.scanned} most recent of {meta.memory.total}{" "}
+                    across the coven.
+                  </>
+                ) : (
+                  <>
+                    Scanned the {meta.memory.scanned} most recent of {meta.memory.total} memory files
+                    {scopeLabel ? " across the coven" : ""}.
+                  </>
+                )}
               </p>
             ) : null}
             {scanError ? (
-              <p className="text-[length:var(--text-2xs)] leading-snug text-[var(--color-warning)]">
+              <p className="text-[length:var(--text-sm)] leading-snug text-[var(--color-warning)]">
                 Full scan unavailable — showing knowledge-vault connections only.
               </p>
             ) : null}
@@ -988,7 +1046,7 @@ export function GrimoireGraphView({
       </div>
 
       {/* Status line. */}
-      <div className="pointer-events-none absolute bottom-2 left-2 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)]/90 px-2.5 py-1 text-[length:var(--text-2xs)] text-[var(--text-muted)] backdrop-blur">
+      <div className="pointer-events-none absolute bottom-2 left-2 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)]/90 px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-muted)] backdrop-blur">
         {summary}
         {scanning ? " · scanning…" : ""}
       </div>

@@ -11,8 +11,10 @@ const source = readFileSync(
 assert.match(source, /export function ErrorState\s*\(/, "exports ErrorState");
 assert.match(source, /export type ErrorStateProps/, "exports ErrorStateProps");
 
-// role="alert" so failures announce.
-assert.match(source, /role="alert"/, "ErrorState uses role=alert");
+// Failures announce by default, while duplicate dependent copies can opt out.
+assert.match(source, /live\?: boolean/, "ErrorState exposes an announcement opt-out");
+assert.match(source, /live = true/, "ErrorState announces by default");
+assert.match(source, /role=\{live \? "alert" : undefined\}/, "ErrorState makes quiet copies non-live");
 
 // Has icon, headline, subtitle, actions (retry-friendly).
 for (const slot of ["icon", "headline", "subtitle", "actions"]) {

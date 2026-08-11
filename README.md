@@ -66,6 +66,9 @@ persist state offline, and hand a live session off to your phone over Tailscale.
 
 ## Install
 
+Use a prebuilt package to run Coven Cave. Desktop installs do **not** need
+Node.js, pnpm, Rust, or a local source checkout.
+
 ### macOS (Homebrew — recommended)
 
 Install from the [OpenCoven tap](https://github.com/OpenCoven/homebrew-tap):
@@ -83,14 +86,25 @@ Grab the latest desktop build from the releases page:
 
 **→ https://github.com/OpenCoven/coven-cave/releases/latest**
 
-Release assets include macOS, Windows, and Linux builds plus update metadata and
-checksums.
+Choose the asset that matches your platform:
+
+| Platform | Published architectures | Package |
+| --- | --- | --- |
+| macOS | Apple Silicon (`aarch64`) and Intel (`x86_64`) | `.dmg` |
+| Windows | x64 only | `.msi` |
+| Linux | amd64/x86_64 only | `.AppImage` |
+
+The release also includes `SHA256SUMS`, updater signatures, and update metadata.
+Windows on ARM and Linux on ARM do not currently have published desktop
+artifacts.
 
 ### iOS
 
-The iOS client ships through **TestFlight**. See
-[`apps/ios/CovenCave/README.md`](apps/ios/CovenCave/README.md) for the native
-client and widget notes.
+The native iOS client is under active development. Maintainer builds use
+TestFlight, but **no public TestFlight or App Store enrollment link is currently
+published**, so there is no end-user iOS install path yet. Contributors can
+build the client from source by following
+[`apps/ios/CovenCave/README.md`](apps/ios/CovenCave/README.md).
 
 ---
 
@@ -123,7 +137,7 @@ integration.
 │                                    └───────────────────────┘ │
 └──────────────────────────────────────────────────────────────┘
               ▲                                    ▲
-              │ Tailscale handoff                  │ TestFlight
+              │ Tailscale handoff                  │ private TestFlight
               ▼                                    ▼
      ┌──────────────────┐                 ┌──────────────────┐
      │ Browser mobile   │                 │ Native iOS       │
@@ -163,19 +177,41 @@ For deeper design context, start with [`docs/golden-paths.md`](docs/golden-paths
 
 ## Development
 
-### Requirements
+### Contributor quickstart
 
-- **Node.js 22+**
-- **pnpm 10+**
-- **Rust** and Cargo
-- Tauri desktop prerequisites for your platform
-- **Xcode + XcodeGen** for iOS work
-
-### Setup
+Clone the repository and bootstrap the exact package-manager version declared
+in `package.json`:
 
 ```bash
-pnpm install
+git clone https://github.com/OpenCoven/coven-cave.git
+cd coven-cave
+corepack enable
+corepack install
+pnpm --version                    # 10.34.0
+pnpm install --frozen-lockfile
 ```
+
+The repository requires **Node.js 24.18.0 or newer within Node 24**. Corepack
+then selects the pinned **pnpm 10.34.0** release; a generic “pnpm 10+” install is
+not sufficient for a reproducible setup.
+
+### Platform prerequisites
+
+Install [Rust through rustup](https://www.rust-lang.org/tools/install), then
+follow Tauri's authoritative prerequisite section for your development OS:
+
+- [macOS prerequisites](https://v2.tauri.app/start/prerequisites/#macos) —
+  install Xcode Command Line Tools with `xcode-select --install` for desktop
+  work, or full Xcode for iOS work.
+- [Windows prerequisites](https://v2.tauri.app/start/prerequisites/#windows) —
+  install Microsoft C++ Build Tools with **Desktop development with C++** and
+  the WebView2 Evergreen Runtime.
+- [Linux prerequisites](https://v2.tauri.app/start/prerequisites/#linux) —
+  install the WebKitGTK, app-indicator, compiler, and system packages listed for
+  your distribution.
+
+For native iOS work, also install **Xcode 16+** and
+[XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
 
 ### Run the web app
 
@@ -237,8 +273,14 @@ and server builds.
 
 ```bash
 pnpm mobile:tailscale          # browser-based mobile dogfooding over Tailscale
-pnpm mobile:tailscale:native   # native iOS development
+pnpm mobile:tailscale:app      # pair the native iOS app to a daemon over Tailscale
+pnpm mobile:ios:sim            # build & run the native iOS app in the simulator
 ```
+
+The standalone Coven Memory iOS client uses the same **Open on phone**
+bearer/Tailscale boundary and Cave's read-only canonical-memory routes. See
+[`docs/mobile-memory.md`](docs/mobile-memory.md) for enablement, pairing,
+global credential rotation, recovery, and privacy constraints.
 
 The native SwiftUI app has its own notes in
 [`apps/ios/CovenCave/README.md`](apps/ios/CovenCave/README.md).
@@ -263,16 +305,33 @@ pnpm check:tests-wired  # ensure new tests are registered
 ## Contributing
 
 `main` is **protected** — every change goes through a short-lived branch and a
-pull request. Use a worktree:
+pull request. This repository uses Beads for durable task tracking and managed
+worktrees for implementation:
 
 ```bash
-git worktree add -b <branch> .worktrees/<branch> origin/main
-cd .worktrees/<branch>
+git fetch origin main
+bd prime
+bd ready
+bd show <bead-id>
+bd update <bead-id> --claim
+
+pnpm beads:worktrees:create \
+  --bead <bead-id> \
+  --branch fix/<bead-id>-short-description \
+  --owner <your-name> \
+  --purpose "Describe the scoped change"
+
+# Use the exact path printed by the command. For the branch above:
+cd .worktrees/<bead-id>-short-description
+pnpm install --frozen-lockfile
 ```
 
 Make the branch PR-shaped before opening: a scoped diff, relevant local
-verification, and a clear summary of what changed. After merge, delete the
-remote branch and remove the local worktree.
+verification, and a clear summary of what changed. Do not replace the managed
+creation command with raw `git worktree add`; the managed command records the
+lifecycle metadata required for safe retirement. Follow the post-merge
+retirement procedure in [`AGENTS.md`](AGENTS.md) instead of deleting a branch or
+worktree ad hoc.
 
 - **Releases, TestFlight uploads, and updater validation start from clean
   `main`.**
@@ -327,26 +386,28 @@ sessions so familiar work can run on your machine.
 <summary><strong>How does mobile handoff work?</strong></summary>
 
 Two paths. For quick dogfooding, `pnpm mobile:tailscale` exposes the web app to
-your phone over **Tailscale**. For a first-class experience, the native SwiftUI
-iOS client (shipped via TestFlight) has its own chat, code, tasks, and feed
-tabs.
+your phone over **Tailscale**. The native SwiftUI iOS client has its own chat,
+code, tasks, and feed tabs, but no public TestFlight or App Store enrollment
+link is currently available.
 
 </details>
 
 <details>
 <summary><strong>Which platforms are supported?</strong></summary>
 
-Desktop: **macOS, Windows, and Linux**. Mobile: **iOS** (native client) and any
-phone browser via Tailscale.
+Desktop: **macOS** on Apple Silicon and Intel, **Windows** on x64, and **Linux**
+on amd64/x86_64. Mobile: the native **iOS** client can be built from source but
+is not publicly distributed yet; phone browsers can use the Tailscale path.
 
 </details>
 
 <details>
 <summary><strong>The desktop app seems stuck on first launch — is it broken?</strong></summary>
 
-Almost always no. The first `dev:app` or first install compiles Rust crates,
-which can take several minutes. `Compiling ...` output is progress. See the
-[startup diagnostics](#run-the-native-desktop-shell) above.
+Almost always no. A **source** launch through `dev:app` compiles Rust crates and
+can take several minutes. Prebuilt Homebrew, DMG, MSI, and AppImage installs do
+not compile Rust locally. `Compiling ...` output is progress when running from
+source; see the [startup diagnostics](#run-the-native-desktop-shell) above.
 
 </details>
 

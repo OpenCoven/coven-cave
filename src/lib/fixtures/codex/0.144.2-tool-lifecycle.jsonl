@@ -1,0 +1,3 @@
+{"type":"thread.started","thread_id":"thread-legacy"}
+{"type":"item.started","item":{"id":"call-legacy","type":"command_execution","command":"pwd"}}
+{"type":"item.completed","item":{"id":"call-legacy","type":"command_execution","command":"pwd","aggregated_output":"C:\\workspace"}}

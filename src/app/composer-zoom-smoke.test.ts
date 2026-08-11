@@ -30,7 +30,7 @@ const INPUT_SELECTORS = [
   "input",
   "textarea",
   "select",
-  ".board-search-input",
+  ".board-token-input",
   ".board-drawer-field-input",
   ".board-drawer-field-textarea",
   ".board-drawer-field-select",

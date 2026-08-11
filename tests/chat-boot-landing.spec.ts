@@ -1,13 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Verifies the chat surface landing (cave-qvwu): opening chat (home-first
-// boot means via ?mode=chat) paints the
-// zero-turn compose view (ChatEmptyState + composer) without waiting for
-// /api/sessions/list — the fetch that used to gate the boot-compose effect
-// and left users on the ChatList skeleton wall for its full duration. Also
-// pins the landing polish that rode along: board-aware "Continue the task"
-// pills, the hidden-not-disabled pre-session Voice button, and the dosed
-// "/ for commands" discoverability hint.
+// Verifies the chat surface landing: opening chat (home-first boot means via
+// ?mode=chat) paints the brand-new-chat dashboard (ChatNewDashboard — the
+// no-scroll open-work board relocated off Home — over ChatView's real
+// composer) without waiting for /api/sessions/list — the fetch that used to
+// gate the boot-compose effect and left users on the ChatList skeleton wall
+// for its full duration. Also pins the landing affordances: the live board's
+// work surfacing as a tile in the Start-from Tasks band (Chat.dc.html 2b) and
+// the hidden-not-disabled pre-session Voice button.
 //
 // Desktop only (compose-first boot is a desktop affordance — mobile keeps
 // the thread list as the chat home). /api/familiars, /api/sessions/list and
@@ -19,6 +19,16 @@ const iso = (hoursAgo: number) => new Date(NOW - hoursAgo * 3_600_000).toISOStri
 const FAMILIARS = {
   ok: true,
   familiars: [
+    { id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" },
+  ],
+};
+
+// Two familiars, so "whichever sorts first" is an actual choice being made —
+// with one, adopting it is indistinguishable from asking.
+const FAMILIARS_TWO = {
+  ok: true,
+  familiars: [
+    { id: "aster", display_name: "Aster", role: "Builder", status: "active", icon: "ph:sparkle-fill" },
     { id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" },
   ],
 };
@@ -37,7 +47,7 @@ const SESSION_S1 = {
   updated_at: iso(2),
 };
 
-// Unassigned inbox card — fair game for this familiar's resume pills.
+// Familiar-owned inbox card — this landing must only surface Nova's work.
 const BOARD = {
   ok: true,
   cards: [
@@ -46,7 +56,7 @@ const BOARD = {
       title: "Fix login flow",
       status: "inbox",
       priority: "medium",
-      familiarId: null,
+      familiarId: "nova",
       projectId: null,
       cwd: null,
       createdAt: iso(6),
@@ -54,6 +64,15 @@ const BOARD = {
     },
   ],
 };
+
+async function seedWithoutActiveFamiliar(page: Page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("cave:onboarding:dismissed", "1");
+  });
+  await page.route("**/api/familiars**", (route) => route.fulfill({ json: FAMILIARS_TWO }));
+  await page.route("**/api/board**", (route) => route.fulfill({ json: BOARD }));
+  await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
+}
 
 async function seed(page: Page) {
   await page.addInitScript(() => {
@@ -71,6 +90,15 @@ async function seed(page: Page) {
 }
 
 test.describe("chat boot landing", () => {
+  test("dismissed E2E baseline keeps onboarding closed with the seeded Queue project", async ({ page }) => {
+    await seed(page);
+    await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
+
+    await page.goto("/?mode=chat");
+    await expect(page.getByTestId("chat-new-dashboard")).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
+
   test("compose view paints before the sessions list resolves", async ({ page }) => {
     await seed(page);
     // Hold the sessions fetch hostage until the landing has painted — this
@@ -88,12 +116,14 @@ test.describe("chat boot landing", () => {
     });
 
     await page.goto("/?mode=chat");
-    await expect(page.locator(".cave-chat-empty")).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByTestId("chat-new-dashboard")).toBeVisible({ timeout: 45_000 });
     expect(sessionsFulfilled).toBe(false);
 
-    // Unblock the fetch and confirm the settled landing is intact.
+    // Unblock the fetch and confirm the settled landing is intact. (The
+    // headline, not the eyebrow: short panes shed the eyebrow to stay
+    // scroll-free, and the desktop e2e viewport is 1280×720.)
     releaseSessions();
-    await expect(page.locator(".cave-chat-empty-greeting")).toBeVisible();
+    await expect(page.locator(".home-dash__headline")).toBeVisible();
   });
 
   test("a #chat deep link still shows the Opening-chat takeover until sessions settle", async ({ page }) => {
@@ -112,18 +142,21 @@ test.describe("chat boot landing", () => {
     // loosened compose gate must not flash a compose view over it.
     const takeover = page.getByRole("status").filter({ hasText: "Opening chat…" });
     await expect(takeover).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByTestId("chat-new-dashboard")).toHaveCount(0);
     await expect(page.locator(".cave-chat-empty")).toHaveCount(0);
 
     releaseSessions();
     await expect(takeover).toHaveCount(0, { timeout: 15_000 });
   });
 
-  test("landing offers a task-resume pill, voice call from turn zero, and hints at / commands", async ({ page }) => {
+  test("landing surfaces board work and voice call from turn zero", async ({ page }) => {
     await seed(page);
     let voiceConversationCreateCalls = 0;
     await page.route("**/api/sessions/list**", (route) =>
       route.fulfill({ json: { ok: true, sessions: [] } }),
     );
+    // Deterministic needs-you tier: the dashboard also reads the inbox.
+    await page.route("**/api/inbox", (route) => route.fulfill({ json: { ok: true, items: [] } }));
     await page.route("**/api/chat/conversation", (route) => {
       if (route.request().method() !== "POST") return route.continue();
       voiceConversationCreateCalls += 1;
@@ -136,20 +169,38 @@ test.describe("chat boot landing", () => {
       return route.fulfill({ json: { ok: true, conversation: { turns: [] }, context: { task: null, github: [] } } });
     });
 
+    const scopedProjectsLoaded = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === "/api/projects" &&
+        url.searchParams.get("familiarId") === "nova" &&
+        response.request().method() === "GET" &&
+        response.ok()
+      );
+    });
     await page.goto("/?mode=chat");
-    const empty = page.locator(".cave-chat-empty");
-    await expect(empty).toBeVisible({ timeout: 45_000 });
+    await scopedProjectsLoaded;
+    const dash = page.getByTestId("chat-new-dashboard");
+    await expect(dash).toBeVisible({ timeout: 45_000 });
 
-    // Board-aware pill: the unassigned inbox card surfaces as a task pill…
-    const pill = empty.getByRole("button", { name: /Continue the task: Fix login flow/ });
-    await expect(pill).toBeVisible();
-    await expect(pill).toHaveClass(/cave-chat-empty-prompt--task/);
+    // Chat.dc.html 2b: the launcher is a band per SOURCE of work, and the
+    // live board's inbox card surfaces as a tile in the Tasks band…
+    const tasksBand = dash.locator('.cave-sf__band[data-kind="tasks"]');
+    await expect(tasksBand).toBeVisible();
+    const workTile = tasksBand.locator(".cave-sf__tile", { hasText: "Fix login flow" });
+    await expect(workTile).toBeVisible();
+    // …badged with its column, since a medium priority is too quiet to spend
+    // the tile's one badge on (taskTileBadge).
+    await expect(workTile.locator(".cave-sf__tile-badge")).toHaveText("inbox");
+    // The band head states how much of the source is on screen, so the hero
+    // no longer repeats a count that is already there.
+    await expect(tasksBand.locator(".cave-sf__band-count")).toHaveText("1");
+    await expect(dash.locator(".home-dash__headline")).toContainText("What should we begin?");
 
-    // …that inserts into the composer, never auto-sends.
-    await pill.click();
-    const composer = page.getByPlaceholder(/Message Nova/);
-    await expect(composer).toHaveValue(/Continue the task: Fix login flow/);
-    await expect(empty).toBeVisible();
+    // The context rail is retired: no quick-start rows, no rail project
+    // picker — the composer owns those affordances.
+    await expect(dash.locator(".home-dash__quick-row")).toHaveCount(0);
+    await expect(dash.locator(".home-dash__rail")).toHaveCount(0);
 
     // Voice no longer needs a session: the call action is a direct button from
     // turn zero, while the overflow has moved to the dedicated Chat options trigger.
@@ -171,8 +222,26 @@ test.describe("chat boot landing", () => {
     // The unified + menu folds the old Improve section into enhance rows.
     await expect(page.getByRole("menuitem", { name: "Enhance prompt" })).toBeVisible();
     await page.keyboard.press("Escape");
-
-    // Dosed discoverability: the ready line mentions the slash entry point.
-    await expect(empty.getByText("/ for commands", { exact: false })).toBeVisible();
   });
+});
+
+// Boot with NO active familiar — a first run, or after clearing storage or
+// deleting the active familiar. This used to open a composer silently bound to
+// whichever familiar sorted first, so the user's FIRST message went to it.
+// It must ask instead.
+test("booting with no active familiar asks which one instead of picking", async ({ page }) => {
+  await seedWithoutActiveFamiliar(page);
+  await page.goto("/?mode=chat", { waitUntil: "domcontentloaded" });
+
+  // The chat-first landing still happens — we did not fall back to the list.
+  const launch = page.locator(".cave-launch");
+  await expect(launch).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole("heading", { name: "Start a new chat" })).toBeVisible();
+
+  // Both familiars are offered; neither has been chosen for the user.
+  await expect(launch.getByText("Aster")).toBeVisible();
+  await expect(launch.getByText("Nova")).toBeVisible();
+
+  // And no composer is sitting there already bound to one of them.
+  await expect(page.getByTestId("chat-new-dashboard")).toHaveCount(0);
 });

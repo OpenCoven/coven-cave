@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { loadConfig, saveConfig } from "@/lib/cave-config";
+import { covenWorkspaceRoot } from "@/lib/coven-paths";
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 
 const ALLOWED_TOP_LEVEL_KEYS = new Set([
@@ -14,6 +15,7 @@ const ALLOWED_TOP_LEVEL_KEYS = new Set([
   "multiHost",
   "omnigent",
   "chatAutoArchive",
+  "chatAutoRename",
 ]);
 type ConfigPatchBody = Record<string, unknown>;
 
@@ -51,7 +53,8 @@ async function scaffoldAdapterManifestsFromPatch(body: ConfigPatchBody): Promise
 export async function GET() {
   try {
     const config = await loadConfig();
-    return NextResponse.json({ ok: true, config });
+    const workspacePath = covenWorkspaceRoot();
+    return NextResponse.json({ ok: true, config, workspacePath });
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : "failed to load config" },

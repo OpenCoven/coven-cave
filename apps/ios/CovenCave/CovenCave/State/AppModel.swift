@@ -3,21 +3,36 @@ import Network
 import Observation
 import WidgetKit
 
-/// The bottom tabs. Lifted out of the view so slash commands (`/board`,
-/// `/chats`) can drive tab selection from anywhere.
-enum AppTab: String, CaseIterable { case chats, canvas, tasks, calendar, dev, settings, search }
+/// The primary destinations. Lifted out of the drawer shell so slash commands
+/// (`/board`, `/chats`) can drive selection from anywhere.
+enum AppTab: String, CaseIterable { case chats, tasks, terminal, settings }
 
 extension AppTab {
-    /// Tabs pinned to the tab bar. Search is separate — it's declared with
-    /// `role: .search` so the system gives it the trailing search treatment.
-    static let barTabs: [AppTab] = [.chats, .tasks, .canvas]
-    /// Occasional surfaces grouped under "More": shown in the sidebar on iPad
-    /// (`.sidebarAdaptable`), hidden from the iPhone tab bar. Still reachable
-    /// there via the chat drawer, the avatar button (Settings), ⌘ shortcuts,
-    /// slash commands, and deep links — hidden tabs remain selectable.
-    static let moreTabs: [AppTab] = [.calendar, .dev, .settings]
-    /// ⌘1–N keyboard-shortcut order: bar tabs, then search, then More.
-    static let shortcutOrder: [AppTab] = barTabs + [.search] + moreTabs
+    static let drawerDestinations: [AppTab] = [.chats, .tasks, .terminal, .settings]
+    static let shortcutOrder: [AppTab] = drawerDestinations
+}
+
+struct PairingIntent: Equatable {
+    let id = UUID()
+    let host: String
+    let token: String?
+}
+
+enum PairingApprovalPolicy {
+    static func requiresApproval(hasExistingPairing: Bool) -> Bool {
+        hasExistingPairing
+    }
+}
+
+enum PendingPairingProcessorPolicy {
+    static func mayBegin(
+        isLocked: Bool,
+        isAuthenticating: Bool,
+        isProcessing: Bool,
+        isActive: Bool
+    ) -> Bool {
+        !isLocked && !isAuthenticating && !isProcessing && isActive
+    }
 }
 
 /// A transient confirmation banner shown over the chat after a command runs.
@@ -27,6 +42,29 @@ struct ToastMessage: Identifiable, Equatable {
     var text: String
     var systemImage: String
     var style: Style = .info
+}
+
+/// A one-shot, operator-reviewed transfer from Terminal to a new chat.
+///
+/// The value is prefilled into chat but is never submitted by this handoff.
+struct TerminalFamiliarHandoff: Equatable {
+    let draft: String
+    let cwd: String?
+
+    var chatDraft: String {
+        let location = cwd ?? "Home"
+        return """
+        Please review this terminal input before I run it.
+
+        Working directory: \(location)
+
+        ```shell
+        \(draft)
+        ```
+
+        Explain what it does and flag risks. Do not execute anything.
+        """
+    }
 }
 
 @Observable
@@ -62,7 +100,7 @@ final class AppModel {
         }
     }
     /// Stamped each time the state ENTERS `.connected`. RootView uses it to
-    /// show a brief "Connected" confirmation over the freshly mounted tabs
+    /// show a brief "Connected" confirmation over the freshly mounted shell
     /// when pairing just succeeded, so the connect screen's success isn't an
     /// abrupt teleport.
     private(set) var connectedAt: Date?
@@ -78,32 +116,68 @@ final class AppModel {
     var familiarsError: String?
     /// User's preferred familiar order (ids), applied over the server's order
     /// and persisted locally. Unknown/new familiars fall to the end.
-    var familiarOrder: [String] = []
 
     var threads: [ChatThread] = []
+    /// Default Chats destination: the newest active conversation. Pinning only
+    /// affects list order and never makes an older thread the launch default.
+    var mostRecentThread: ChatThread? {
+        threads
+            .filter { !$0.archived }
+            .max { $0.updatedAt < $1.updatedAt }
+    }
+    /// Process-lifetime launch intent. It survives destination remounts until a
+    /// matching hydrated thread can be opened, then is consumed exactly once.
+    var launchThreadId: String?
+
+    /// Messages whose agent-activity trail the reader has opened.
+    ///
+    /// Deliberately not view-local `@State`: a transcript rebuild re-creates
+    /// the row, and state that lives on the row goes with it — silently
+    /// collapsing a trail the reader had just opened (cave-m5tao). Holding the
+    /// choice here means a re-created row re-reads it and stays open. In-memory
+    /// only; expansion is a reading position, not something to persist.
+    var expandedActivityMessages: Set<String> = []
+
+    #if DEBUG
+    /// Process-lifetime marker for the deterministic cold-connection preview.
+    /// The app lifecycle uses it to skip only live connection work.
+    var isConnectingPreview = false
+    #endif
 
     // MARK: - Cross-view command routing
 
-    /// The selected bottom tab. Bound by `MainTabView`; set by `/board` / `/chats`.
-    var selectedTab: AppTab = .chats
+    /// The selected primary destination. Mounted by `MainShellView`; set by
+    /// drawer actions, deep links, and `/board` / `/chats`.
+    var selectedTab: AppTab = {
+        #if DEBUG
+        // Snapshot hook: `simctl launch … --ui-tab settings` boots straight
+        // into a destination for screenshot automation.
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "--ui-tab"), i + 1 < args.count,
+           let tab = AppTab(rawValue: args[i + 1]) {
+            return tab
+        }
+        #endif
+        return .chats
+    }()
 
     /// A thread a command asked to open. `ChatsHomeView` observes this, pushes
     /// the thread, and clears it back to nil (one-shot navigation intent).
     var threadToOpen: ChatThread?
 
-    /// A familiar selected from global Search. `ChatsHomeView` consumes this
-    /// one-shot intent and opens the existing thread-list destination.
-    var familiarToOpen: Familiar?
-
     /// A task the user asked to open from a chat. `TasksView` observes this,
     /// pushes the card, and clears it (mirrors `threadToOpen`).
     var cardToOpen: BoardCard?
 
-    /// The Diary (Pencil-handwriting experiment) is presented from `RootView`,
-    /// ABOVE the connectionState switch — a transient flap to `.checking`
-    /// swaps `MainTabView` out and would destroy any cover presented from
-    /// within it, dismissing the diary mid-reply and aborting its stream.
-    var diaryPresented = false
+    /// Global Claude Design navigation. Any top-level surface can open the
+    /// shared drawer; one-shot requests let its Search/Chat actions hand off to
+    /// the Chats split view without coupling the drawer to local view state.
+    var navigationDrawerOpen = false
+    var newChatRequested = false
+    var chatSearchRequested = false
+    /// Held only while the New Chat flow is selecting a familiar and project.
+    /// `applyTerminalFamiliarHandoff` turns it into an ordinary unsent chat draft.
+    var terminalFamiliarHandoff: TerminalFamiliarHandoff?
 
     /// The active confirmation toast, auto-dismissed by the overlay.
     var toast: ToastMessage?
@@ -122,18 +196,79 @@ final class AppModel {
         Haptics.error()
     }
 
+    /// A batch that partly landed (cave-ioswipe.2). Says how many of how many
+    /// failed, because the old wholesale "reverted" message was actively
+    /// misleading here: most of the batch DID take effect server-side, and only
+    /// the named few came back.
+    private func reportPartial(_ failed: Int, of total: Int, verb: String) {
+        showToast(
+            "Couldn’t \(verb) \(failed) of \(total) — those were restored",
+            systemImage: "exclamationmark.triangle.fill",
+            style: .error,
+        )
+        Haptics.error()
+    }
+
+    private func reportDeletePartial(restoredThreads: Int, failedSessions: Int, totalSessions: Int) {
+        let chats = "\(restoredThreads) chat\(restoredThreads == 1 ? "" : "s")"
+        let sessions = "\(failedSessions) of \(totalSessions) server session\(totalSessions == 1 ? "" : "s")"
+        showToast(
+            "Restored \(chats) — couldn’t delete \(sessions)",
+            systemImage: "exclamationmark.triangle.fill",
+            style: .error,
+        )
+        Haptics.error()
+    }
+
     /// Ask the chat list to open a thread (switches to Chats first).
     func requestOpen(_ thread: ChatThread) {
         selectedTab = .chats
         threadToOpen = thread
     }
 
-    func requestOpenFamiliar(_ familiar: Familiar) {
+    func requestTerminalFamiliarHandoff(draft: String, cwd: String?) {
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        terminalFamiliarHandoff = TerminalFamiliarHandoff(draft: trimmed, cwd: cwd)
         selectedTab = .chats
-        familiarToOpen = familiar
+        newChatRequested = true
     }
 
-    /// Ask the Tasks tab to open a card's detail (switches to Tasks first).
+    func applyTerminalFamiliarHandoff(to thread: ChatThread) {
+        guard let handoff = terminalFamiliarHandoff else { return }
+        setThreadDraft(thread.id, text: handoff.chatDraft)
+        terminalFamiliarHandoff = nil
+    }
+
+    func cancelTerminalFamiliarHandoff() {
+        terminalFamiliarHandoff = nil
+    }
+
+    /// Switch the visible conversation to one chosen in the session picker.
+    ///
+    /// Re-choosing the conversation already open is a no-op: routing it through
+    /// `requestOpen` would tear down and rebuild the very chat being looked at,
+    /// losing scroll position for no gain. Returns whether a switch was
+    /// actually requested, so the caller can skip its haptic when nothing moved.
+    @discardableResult
+    func switchConversation(to chosen: ChatThread, currentThreadId: String?) -> Bool {
+        guard chosen.id != currentThreadId else { return false }
+        requestOpen(chosen)
+        return true
+    }
+
+    /// Consume the launch-thread intent only after its thread is available.
+    /// A delayed thread restore leaves the id pending for `ChatsHomeView` to
+    /// retry when hydration publishes its matching thread.
+    func consumeLaunchThreadIntent() -> ChatThread? {
+        guard let launchThreadId,
+              let thread = threads.first(where: { $0.id == launchThreadId })
+        else { return nil }
+        self.launchThreadId = nil
+        return thread
+    }
+
+    /// Ask the Tasks destination to open a card's detail (selects Tasks first).
     func requestOpenTask(_ card: BoardCard) {
         selectedTab = .tasks
         cardToOpen = card
@@ -169,16 +304,22 @@ final class AppModel {
     var remindersError: String?
     var remindersLoaded = false
 
-    var journalDays: [JournalDay] = []
-    var journalError: String?
-    var journalLoaded = false
-
-    // MARK: - Developer tab
+    // MARK: - Developer surface
 
     /// Configured project roots, shared across the Code and Terminal surfaces.
     var projects: [ProjectInfo] = []
     var projectsError: String?
     var projectsLoaded = false
+
+    /// Recently used chat roots, newest first and de-duplicated. Project
+    /// pickers filter this list against the current familiar-scoped response.
+    var recentProjectRoots: [String] {
+        var seen = Set<String>()
+        return threads
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .compactMap(\.projectRoot)
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
 
     // MARK: - Appearance (desktop theme)
 
@@ -269,24 +410,38 @@ final class AppModel {
         return true
     }
 
-    // MARK: - Canvas (generated UI artifacts)
-
-    var canvasArtifacts: [CanvasArtifact] = []
-    var canvasError: String?
-    var canvasLoaded = false
-    /// Desktop opt-in ("Allow canvas edits from phone"). Fails closed: the
-    /// Canvas tab is view mode until the desktop says otherwise — the server
-    /// enforces the same gate on every canvas write, so this flag only shapes
-    /// the UI (composer/refine/delete affordances), never grants authority.
-    var canvasWritesAllowed = false
-    /// True while a generate/refine stream is in flight.
-    var isGeneratingCanvas = false
-    /// The familiar's reply text as it streams in (for the "sketching…" preview).
-    var canvasStreamText = ""
-
     var client: CaveClient? {
         guard let connection else { return nil }
         return CaveClient(connection: connection)
+    }
+
+    #if DEBUG
+    @ObservationIgnored private var previewChatProjects: [ProjectInfo]?
+    #endif
+
+    var canLoadChatProjects: Bool {
+        #if DEBUG
+        if previewChatProjects != nil { return true }
+        #endif
+        return client != nil
+    }
+
+    var canRecoverChatProjectConnection: Bool {
+        #if DEBUG
+        if previewChatProjects != nil { return false }
+        #endif
+        return connection != nil
+    }
+
+    func loadChatProjects(familiarIds: [String]) async throws -> [ProjectInfo] {
+        #if DEBUG
+        if let previewChatProjects {
+            return previewChatProjects
+        }
+        #endif
+
+        guard let client else { throw CaveError.notConfigured }
+        return try await client.projects(familiarIds: familiarIds)
     }
 
     /// familiarId → when its chats were last viewed. A familiar reads as
@@ -301,14 +456,282 @@ final class AppModel {
 
     init() {
         connection = CaveConnection.load()
+        launchThreadId = ProcessInfo.processInfo.environment["CAVE_OPEN_THREAD"]
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-connecting") {
+            connection = CaveConnection(host: "cave-desktop.example")
+            connectionState = .checking
+            isConnectingPreview = true
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-design-closeout") {
+            configureDesignCloseoutPreview()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        // Deterministic native screenshot fixture for the canonical empty-chat
+        // surface. Launch with `--ui-preview-empty-chat` and
+        // `CAVE_OPEN_THREAD=ui-preview-empty-chat`; release builds never carry
+        // fixture state and the preview never touches the saved thread store.
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-empty-chat") {
+            configureEmptyChatPreview()
+            if ProcessInfo.processInfo.arguments.contains("--ui-preview-second-thread") {
+                // A second conversation with the same familiar, so the session
+                // switcher has somewhere to switch *to*. Without it the picker
+                // lists one row and a UI test cannot tell a working switch
+                // apart from the dead-end it replaced.
+                threads.append(
+                    ChatThread(
+                        id: "ui-preview-second-chat",
+                        title: "Chat with Nyx on Jul 27",
+                        familiarIds: ["nyx"]
+                    )
+                )
+            }
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        // Sibling fixture for the agent-activity trail — a settled turn whose
+        // steps cover every status a tool row can carry. Launch with
+        // `--ui-preview-tool-activity` and
+        // `CAVE_OPEN_THREAD=ui-preview-tool-activity`.
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-tool-activity") {
+            configureToolActivityPreview()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+        #endif
         // Threads hydrate off-main via the store — no file I/O in init.
         Task { await self.hydrateThreads() }
         loadCardLinks()
-        loadFamiliarOrder()
         loadFamiliarViews()
         if connection != nil { connectionState = .checking }
         ChatTurnNotifier.shared.app = self
     }
+
+    #if DEBUG
+    private func configureEmptyChatPreview() {
+        connection = nil
+        familiars = [
+            Familiar(
+                id: "nyx",
+                displayName: "Nyx",
+                role: "Code familiar",
+                description: "Keeps implementation work moving.",
+                pronouns: nil,
+                color: nil,
+                status: "active",
+                harness: "codex",
+                model: "gpt-5.6",
+                icon: "moon.stars.fill",
+                avatarUrl: nil,
+                activeSessions: 1,
+                memoryFreshness: "Fresh"
+            ),
+        ]
+
+        func card(
+            id: String,
+            title: String,
+            status: CardStatus,
+            priority: CardPriority,
+            number: Int
+        ) -> BoardCard {
+            BoardCard(
+                id: id,
+                title: title,
+                notes: nil,
+                statusRaw: status.rawValue,
+                priorityRaw: priority.rawValue,
+                familiarId: "nyx",
+                projectId: "coven-app",
+                sessionId: nil,
+                labels: nil,
+                startDate: nil,
+                endDate: nil,
+                createdAt: nil,
+                updatedAt: nil,
+                needsHuman: nil,
+                steps: nil,
+                github: [
+                    CardGitHubLink(
+                        id: "pr-\(number)",
+                        kind: "pr",
+                        repo: "OpenCoven/coven-cave",
+                        number: number,
+                        title: title,
+                        url: "https://github.com/OpenCoven/coven-cave/pull/\(number)",
+                        state: "open"
+                    ),
+                ]
+            )
+        }
+
+        tasks = [
+            card(
+                id: "cold-launch",
+                title: "cold-launch bug",
+                status: .running,
+                priority: .urgent,
+                number: 128
+            ),
+            card(
+                id: "drawer-fidelity",
+                title: "navigation fidelity",
+                status: .running,
+                priority: .high,
+                number: 129
+            ),
+            card(
+                id: "plugin-setup",
+                title: "plugin setup",
+                status: .blocked,
+                priority: .medium,
+                number: 130
+            ),
+        ]
+        tasksLoaded = true
+        sessionsLoaded = true
+        threads = [
+            ChatThread(
+                id: "ui-preview-empty-chat",
+                title: "Chat with Nyx on Jul 26",
+                familiarIds: ["nyx"]
+            ),
+        ]
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--ui-preview-new-chat-projects")
+            || arguments.contains("--ui-preview-new-chat-project-retry")
+            || arguments.contains("--ui-preview-new-chat-project-empty-retry") {
+            threads.first?.projectRoot = "/repos/coven-cave"
+            previewChatProjects = [
+                ProjectInfo(
+                    id: "coven-cave",
+                    name: "Coven Cave",
+                    root: "/repos/coven-cave",
+                    color: nil,
+                    updatedAt: nil,
+                    access: .write
+                ),
+            ]
+        }
+        connectionState = .connected
+    }
+
+    /// Screenshot fixture for the remaining compatible Claude Design affordances:
+    /// app-wide search, real project activity metadata, and paired GitHub/task
+    /// context. It builds on the canonical preview so all values stay consistent.
+    private func configureDesignCloseoutPreview() {
+        configureEmptyChatPreview()
+        let projectRoot = "/Users/buns/Code/coven-cave"
+        projects = [
+            ProjectInfo(
+                id: "coven-app",
+                name: "Coven Cave",
+                root: projectRoot,
+                color: nil,
+                updatedAt: "2026-08-06T09:00:00Z"
+            ),
+        ]
+        projectsLoaded = true
+        serverSessions = [
+            SessionRow(
+                id: "ui-preview-server-only",
+                title: "Desktop handoff",
+                harness: nil,
+                model: nil,
+                runtime: nil,
+                status: "idle",
+                familiarId: "nyx",
+                createdAt: "2026-08-06T03:30:00Z",
+                updatedAt: "2026-08-06T04:45:00Z",
+                archivedAt: nil,
+                projectRoot: projectRoot,
+                origin: nil,
+                generated: false
+            ),
+        ]
+        sessionsLoaded = true
+
+        if let thread = threads.first {
+            thread.projectRoot = projectRoot
+            thread.messages = [
+                DisplayMessage(
+                    role: .assistant,
+                    familiarId: "nyx",
+                    text: "The iOS design closeout is ready for review."
+                ),
+            ]
+        }
+        cardThreadLinks["cold-launch"] = "ui-preview-empty-chat"
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-light") {
+            chrome.colorScheme = .light
+        }
+    }
+
+    /// Deterministic native screenshot fixture for the agent-activity trail.
+    /// One settled assistant turn whose steps cover every status a tool row can
+    /// carry: a succeeded call, a failed one with its reason, and an
+    /// informational notice. Release builds never carry fixture state.
+    private func configureToolActivityPreview() {
+        connection = nil
+        familiars = [
+            Familiar(
+                id: "nyx",
+                displayName: "Nyx",
+                role: "Code familiar",
+                description: "Keeps implementation work moving.",
+                pronouns: nil,
+                color: nil,
+                status: "active",
+                harness: "codex",
+                model: "gpt-5.6",
+                icon: "moon.stars.fill",
+                avatarUrl: nil,
+                activeSessions: 1,
+                memoryFreshness: "Fresh"
+            ),
+        ]
+        tasksLoaded = true
+        sessionsLoaded = true
+
+        var reply = DisplayMessage(
+            role: .assistant,
+            familiarId: "nyx",
+            text: "Fixed — the summary was reading the first line of a pretty-printed payload."
+        )
+        reply.activity = [
+            ActivityStep(id: "a", kind: .tool, title: "Read",
+                         detail: "src/lib/tool-arg-summary.ts", status: .ok, durationMs: 42),
+            ActivityStep(id: "b", kind: .tool, title: "Bash",
+                         detail: "pnpm test --filter tool-arg", status: .error,
+                         durationMs: 8_400,
+                         errorOutput: "error: cannot find module 'foo'\n  at Object.<anonymous> (tool-arg.test.ts:12:9)"),
+            ActivityStep(id: "c", kind: .progress, title: "Rate limited — retrying in 30s",
+                         status: .notice),
+            ActivityStep(id: "d", kind: .tool, title: "Edit",
+                         detail: "apps/ios/CovenCave/CovenCave/Models/AgentActivity.swift",
+                         status: .ok, durationMs: 1_200),
+        ]
+
+        threads = [
+            ChatThread(
+                id: "ui-preview-tool-activity",
+                title: "Chat with Nyx on Aug 3",
+                familiarIds: ["nyx"],
+                messages: [
+                    DisplayMessage(role: .user, text: "fix the ios tool calls"),
+                    reply,
+                ]
+            ),
+        ]
+        connectionState = .connected
+    }
+    #endif
 
     func familiar(_ id: String) -> Familiar? {
         familiars.first { $0.id == id }
@@ -336,18 +759,56 @@ final class AppModel {
 
     /// Optimistically set a task's status, then reconcile with the server's
     /// echoed card (it stamps lifecycle/updatedAt). Reverts on failure.
+    /// In-flight status writes, keyed by card id, so a newer intent can cancel
+    /// the one it supersedes (cave-ioswipe.4).
+    @ObservationIgnored private var statusWrites: [String: Task<Void, Never>] = [:]
+
+    /// Entry point for every status mutation. Views must call this rather than
+    /// wrapping `setTaskStatus` in their own `Task { }`: a detached task cannot
+    /// be cancelled, so a rapid done/reopen swipe sequence would leave two
+    /// writes racing and let the *older* server response land last, snapping the
+    /// row back to a status the user already moved off of.
+    func requestTaskStatus(_ card: BoardCard, _ status: CardStatus) {
+        statusWrites[card.id]?.cancel()
+        let cardId = card.id
+        statusWrites[cardId] = Task { [weak self] in
+            await self?.setTaskStatus(card, status)
+            // Drop the finished task so the map tracks only in-flight writes
+            // rather than accumulating one retained Task per card ever touched.
+            // Skip when cancelled: being cancelled means a newer write already
+            // replaced this entry, and clearing would lose the handle needed to
+            // cancel *that* one.
+            guard !Task.isCancelled else { return }
+            self?.statusWrites[cardId] = nil
+        }
+    }
+
+    /// Restore a single card, mirroring `revert(_:to:)` for reminders. Assigning
+    /// the whole `tasks` array back would also roll back concurrent edits to
+    /// *other* cards that succeeded while this one was in flight.
+    private func revertTask(id: String, to previous: [BoardCard]) {
+        guard let old = previous.first(where: { $0.id == id }) else { return }
+        applyTask(id: id) { $0 = old }
+    }
+
     func setTaskStatus(_ card: BoardCard, _ status: CardStatus) async {
         guard let client, status != card.status else { return }
         let previous = tasks
         applyTask(id: card.id) { $0.statusRaw = status.rawValue }
         do {
             let updated = try await client.updateTask(cardId: card.id, status: status)
+            // A newer write for this card already applied its own optimistic
+            // state; landing this stale response would undo it.
+            guard !Task.isCancelled else { return }
             applyTask(id: card.id) { $0 = updated }
             Haptics.tap()
             await LiveActivityManager.shared.reconcile(tasks)
             publishWidgetSnapshot()
         } catch {
-            tasks = previous
+            // Cancellation surfaces here as a thrown CancellationError. Reverting
+            // on it would clobber the newer intent that did the cancelling.
+            guard !Task.isCancelled else { return }
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
             reportRevert("update the task")
         }
@@ -363,7 +824,7 @@ final class AppModel {
             applyTask(id: card.id) { $0 = updated }
             Haptics.tap()
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
             reportRevert("update the task")
         }
@@ -381,7 +842,7 @@ final class AppModel {
             let updated = try await client.updateTask(cardId: card.id, steps: newSteps)
             applyTask(id: card.id) { $0 = updated }
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
         }
     }
@@ -421,7 +882,7 @@ final class AppModel {
             let updated = try await client.updateTask(cardId: card.id, steps: steps)
             applyTask(id: card.id) { $0 = updated }
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
         }
     }
@@ -437,7 +898,7 @@ final class AppModel {
             let updated = try await client.updateTask(cardId: card.id, notes: trimmed)
             applyTask(id: card.id) { $0 = updated }
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
         }
     }
@@ -453,7 +914,7 @@ final class AppModel {
             let updated = try await client.updateTaskTitle(cardId: card.id, title: trimmed)
             applyTask(id: card.id) { $0 = updated }
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
         }
     }
@@ -469,7 +930,7 @@ final class AppModel {
             applyTask(id: card.id) { $0 = updated }
             Haptics.tap()
         } catch {
-            tasks = previous
+            revertTask(id: card.id, to: previous)
             tasksError = error.localizedDescription
             reportRevert("reschedule the task")
         }
@@ -477,17 +938,27 @@ final class AppModel {
 
     /// Optimistically remove a task, then DELETE it. Reinserts on failure.
     func deleteTask(_ card: BoardCard) async {
-        guard let client else { return }
-        let previous = tasks
-        tasks.removeAll { $0.id == card.id }
+        guard let client, let index = tasks.firstIndex(where: { $0.id == card.id }) else { return }
+        let removed = tasks[index]
+        tasks.remove(at: index)
         do {
             try await client.deleteTask(cardId: card.id)
             Haptics.success()
         } catch {
-            tasks = previous
+            // `revertTask` edits a card that is still in the array, so it cannot
+            // restore one that was removed: `applyTask` finds no index and
+            // no-ops, silently dropping the task the delete failed to remove.
+            reinsertTask(removed, at: index)
             tasksError = error.localizedDescription
             reportRevert("delete the task")
         }
+    }
+
+    /// Put an optimistically-removed card back at the position it held rather
+    /// than at the end of the list. No-ops if it is already back.
+    private func reinsertTask(_ card: BoardCard, at index: Int) {
+        guard !tasks.contains(where: { $0.id == card.id }) else { return }
+        tasks.insert(card, at: min(index, tasks.count))
     }
 
     private func applyTask(id: String, _ mutate: (inout BoardCard) -> Void) {
@@ -497,7 +968,7 @@ final class AppModel {
         tasks[idx] = card
     }
 
-    // MARK: - Developer tab actions
+    // MARK: - Developer surface actions
 
     func loadProjects() async {
         guard let client else { return }
@@ -528,16 +999,11 @@ final class AppModel {
         await ReminderNotifications.sync(reminders)
     }
 
-    /// Publish a compact snapshot to the shared App Group so the home-screen
-    /// "Up Next" widget renders the next reminder + task counts without its own
-    /// network access. Cheap; called whenever reminders/tasks load or change.
+    /// Publish a compact snapshot to the shared App Group so widgets/controls can
+    /// render task counts without their own network access. Cheap; called whenever
+    /// reminders/tasks load or change.
     func publishWidgetSnapshot() {
         let now = Date()
-        let next = reminders
-            .filter { $0.status == "pending" || $0.status == "fired" }
-            .compactMap { r -> (Reminder, Date)? in caveParseISO(r.whenISO).map { (r, $0) } }
-            .filter { $0.1 >= now }
-            .min { $0.1 < $1.1 }
         let cal = Calendar.current
         let endOfToday = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now)) ?? now
         let due = tasks.filter { $0.status != .done }.filter { card in
@@ -546,12 +1012,8 @@ final class AppModel {
         }.count
         let running = tasks.filter { $0.status == .running }.count
         WidgetSnapshotStore.write(WidgetSnapshot(
-            nextReminderId: next?.0.id,
-            nextReminderTitle: next?.0.title,
-            nextReminderDate: next?.1,
             dueTaskCount: due,
             runningTaskCount: running,
-            apiBaseURL: connection?.baseURL?.absoluteString,
             updatedAt: now
         ))
         WidgetCenter.shared.reloadAllTimelines()
@@ -559,59 +1021,66 @@ final class AppModel {
 
     // MARK: - Deep links (home-screen widget)
 
-    /// Surface a widget tap targets. The widget body deep-links to `.reminders`
-    /// (tap the reminder) / `.tasks` (tap the counts) via the `covencave://` URL
-    /// scheme; `TasksView` opens the reminders sheet when it sees `.reminders`.
-    enum DeepLink: String { case tasks, reminders, calendar, search }
+    /// Surface a widget/control tap targets via the `covencave://` URL scheme.
+    /// Task-related entry points deep-link to `.tasks`.
+    enum DeepLink: String { case tasks, reminders }
 
     var deepLink: DeepLink?
+    private(set) var pendingPairingIntent: PairingIntent?
 
     func handleDeepLink(_ url: URL) {
         guard url.scheme == "covencave" else { return }
         // covencave://connect?host=…&token=… — the desktop's pairing invite.
-        // Tapping it (or scanning its QR) configures host + credential in one
-        // step, replacing any previous pairing.
+        // Queue it for the app-level lock/approval processor rather than
+        // mutating credentials beneath a lock or authentication prompt.
         if url.host == "connect" {
             guard let invite = CaveInvite.parse(url.absoluteString) else { return }
-            Task { await configure(host: invite.host, token: invite.token) }
+            pendingPairingIntent = PairingIntent(host: invite.host, token: invite.token)
             return
         }
         // covencave://thread/<id> — a chat notification / Live Activity tap
         // jumps straight into its thread via the existing one-shot intent.
         if let threadId = ChatNotifications.threadId(fromDeepLink: url) {
-            if let thread = threads.first(where: { $0.id == threadId }) {
-                requestOpen(thread)
-            }
+            launchThreadId = threadId
+            selectedTab = .chats
+            if let thread = consumeLaunchThreadIntent() { requestOpen(thread) }
             return
         }
         guard let target = DeepLink(rawValue: url.host ?? "") else { return }
-        switch target {
-        case .tasks, .reminders: selectedTab = .tasks
-        case .calendar: selectedTab = .calendar
-        case .search: selectedTab = .search
-        }
+        selectedTab = .tasks
         deepLink = target
     }
 
-    func loadJournal() async {
-        guard let client else { return }
-        do {
-            journalDays = try await client.journalDays()
-            journalError = nil
-        } catch {
-            journalError = handleSurfaceError(error)
-        }
-        journalLoaded = true
+    @discardableResult
+    func consumePendingPairingIntent(matching id: UUID) -> Bool {
+        takePendingPairingIntent(matching: id) != nil
     }
 
-    /// Optimistically remove reminders, then DELETE each; reverts on failure.
+    func takePendingPairingIntent(matching id: UUID) -> PairingIntent? {
+        guard let intent = pendingPairingIntent, intent.id == id else { return nil }
+        pendingPairingIntent = nil
+        return intent
+    }
+
+
+    /// Optimistically remove reminders, then delete them in ONE round trip
+    /// (cave-ioswipe.2). Previously this was N sequential DELETEs that reverted
+    /// the whole batch on any failure — so item 20 failing silently undid the
+    /// optimistic removal of items 1-19 whose server-side deletes had already
+    /// succeeded, leaving the UI disagreeing with the server. Now only the ids
+    /// the server did NOT confirm come back.
     func deleteReminders(_ ids: Set<String>) async {
         guard let client, !ids.isEmpty else { return }
         let previous = reminders
         reminders.removeAll { ids.contains($0.id) }
         do {
-            for id in ids { try await client.deleteReminder(id: id) }
-            Haptics.success()
+            let outcome = try await client.bulkInboxAction("delete", ids: Array(ids))
+            let deleted = Set(outcome.deletedIds)
+            let missed = ids.subtracting(deleted)
+            guard !missed.isEmpty else { Haptics.success(); return }
+            // Restore only what did not take effect, preserving list order.
+            reminders = previous.filter { !deleted.contains($0.id) }
+            reportPartial(missed.count, of: ids.count, verb: "delete")
         } catch {
             reminders = previous
             remindersError = error.localizedDescription
@@ -649,32 +1118,108 @@ final class AppModel {
     // MARK: - Bulk reminder actions
 
     func markRemindersDone(_ ids: Set<String>) async {
-        await bulkReminderAction(ids, optimistic: "done") { try await $0.markReminderDone(id: $1) }
+        await bulkServerAction(ids, optimistic: "done", action: "done", verb: "mark done")
     }
     func dismissReminders(_ ids: Set<String>) async {
-        await bulkReminderAction(ids, optimistic: "dismissed") { try await $0.dismissReminder(id: $1) }
-    }
-    func snoozeReminders(_ ids: Set<String>, minutes: Int) async {
-        await bulkReminderAction(ids, optimistic: "snoozed") { try await $0.snoozeReminder(id: $1, minutes: minutes) }
+        await bulkServerAction(ids, optimistic: "dismissed", action: "dismiss", verb: "dismiss")
     }
 
-    /// Apply an action to every selected reminder: optimistic status for all,
-    /// then run each server call reconciling its echoed item; revert all on any
-    /// failure.
-    private func bulkReminderAction(_ ids: Set<String>, optimistic: String,
-                                    _ call: @escaping (CaveClient, String) async throws -> Reminder?) async {
+    /// Snooze is the one bulk action WITHOUT a server counterpart: the bulk
+    /// endpoint has no `snooze` action and no slot for its `minutes` argument.
+    /// The bead's acceptance criteria allow "one round trip OR bounded
+    /// concurrency", so this fans out with a small in-flight cap rather than
+    /// extending a request-guarded API surface as a side effect of a client fix.
+    func snoozeReminders(_ ids: Set<String>, minutes: Int) async {
+        await boundedReminderFanOut(ids, optimistic: "snoozed", verb: "snooze") {
+            try await $0.snoozeReminder(id: $1, minutes: minutes)
+        }
+    }
+
+    /// One round trip for the actions the bulk endpoint supports. Items echoed
+    /// in `updated` succeeded; ids absent from it did not take effect and are
+    /// the only ones reverted — the old all-or-nothing revert made the UI
+    /// disagree with a server that had already applied most of the batch.
+    /// `verb` is what the user is told, and it is passed rather than derived
+    /// from `action` because the two are not the same vocabulary: the wire
+    /// action is "done", the sentence needs "mark done".
+    private func bulkServerAction(_ ids: Set<String>, optimistic: String, action: String, verb: String) async {
         guard let client, !ids.isEmpty else { return }
         let previous = reminders
         for id in ids { applyReminder(id: id) { $0.status = optimistic } }
         do {
-            for id in ids {
-                if let updated = try await call(client, id) { applyReminder(id: id) { $0 = updated } }
+            let outcome = try await client.bulkInboxAction(action, ids: Array(ids))
+            var confirmed = Set<String>()
+            for item in outcome.updated {
+                applyReminder(id: item.id) { $0 = item }
+                confirmed.insert(item.id)
             }
-            Haptics.success()
+            for id in outcome.deletedIds { confirmed.insert(id) }
+            let missed = ids.subtracting(confirmed)
+            guard !missed.isEmpty else { Haptics.success(); return }
+            revert(missed, to: previous)
+            reportPartial(missed.count, of: ids.count, verb: verb)
         } catch {
             reminders = previous
             remindersError = error.localizedDescription
             reportRevert("update the reminders")
+        }
+    }
+
+    /// Bounded concurrent fan-out for actions with no bulk endpoint. Caps
+    /// in-flight requests so a large selection cannot open one socket per item,
+    /// and reverts only the items that actually failed.
+    private static let reminderFanOutWidth = 4
+
+    private func boundedReminderFanOut(
+        _ ids: Set<String>,
+        optimistic: String,
+        verb: String,
+        _ call: @escaping @Sendable (CaveClient, String) async throws -> Reminder?,
+    ) async {
+        guard let client, !ids.isEmpty else { return }
+        let previous = reminders
+        for id in ids { applyReminder(id: id) { $0.status = optimistic } }
+
+        let ordered = Array(ids)
+        let width = min(Self.reminderFanOutWidth, ordered.count)
+        let results = await withTaskGroup(of: (String, Reminder?, Bool).self) { group -> [(String, Reminder?, Bool)] in
+            var next = 0
+            func addTask() {
+                guard next < ordered.count else { return }
+                let id = ordered[next]
+                next += 1
+                group.addTask {
+                    do { return (id, try await call(client, id), true) }
+                    catch { return (id, nil, false) }
+                }
+            }
+            for _ in 0..<width { addTask() }
+            var out: [(String, Reminder?, Bool)] = []
+            while let finished = await group.next() {
+                out.append(finished)
+                addTask()   // keep exactly `width` in flight
+            }
+            return out
+        }
+
+        var failed = Set<String>()
+        for (id, updated, ok) in results {
+            if ok { if let updated { applyReminder(id: id) { $0 = updated } } } else { failed.insert(id) }
+        }
+        guard !failed.isEmpty else { Haptics.success(); return }
+        revert(failed, to: previous)
+        reportPartial(failed.count, of: ids.count, verb: verb)
+    }
+
+    /// Put back only the named ids, leaving successful siblings applied.
+    private func revert(_ ids: Set<String>, to previous: [Reminder]) {
+        for id in ids {
+            guard let old = previous.first(where: { $0.id == id }) else { continue }
+            if let idx = reminders.firstIndex(where: { $0.id == id }) {
+                reminders[idx] = old
+            } else {
+                reminders.append(old)
+            }
         }
     }
 
@@ -683,264 +1228,6 @@ final class AppModel {
         var r = reminders[idx]; mutate(&r); reminders[idx] = r
     }
 
-    // MARK: - Canvas actions
-
-    func loadCanvas() async {
-        guard let client else { return }
-        // The write opt-in rides along with every gallery load so the tab's
-        // mode tracks the desktop toggle without its own refresh path. A
-        // failed permissions read keeps the last known value — the server
-        // gate stays authoritative either way.
-        async let permissionsCall = try? client.mobilePermissions()
-        do {
-            canvasArtifacts = sortedArtifacts(try await client.canvasArtifacts())
-            canvasError = nil
-        } catch {
-            // Shared surface-error path: an auth failure routes to pairing
-            // guidance, and a failure while "connected" schedules the auto
-            // recover — whose surface reload includes canvas (below), so a
-            // transient first-load error heals instead of leaving the gallery
-            // permanently empty behind the view's one-shot load guard.
-            canvasError = handleSurfaceError(error)
-        }
-        if let permissions = await permissionsCall {
-            canvasWritesAllowed = permissions.canvasWrites
-        }
-        canvasLoaded = true
-    }
-
-    /// Generate a new artifact from `prompt` via `familiarId`'s chat bridge,
-    /// extract the renderable document, persist it, and return it. Cancellation
-    /// (the caller cancelling its Task) aborts the stream and returns nil.
-    func generateArtifact(prompt: String, familiarId: String) async -> CanvasArtifact? {
-        guard let client else { return nil }
-        let userPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !userPrompt.isEmpty else { return nil }
-
-        isGeneratingCanvas = true
-        canvasStreamText = ""
-        canvasError = nil
-        defer { isGeneratingCanvas = false }
-
-        do {
-            let text = try await streamText(
-                CanvasArtifact.buildSketchPrompt(userPrompt),
-                familiarId: familiarId, client: client
-            )
-            guard !Task.isCancelled else { return nil }
-            guard let extracted = CanvasArtifact.extractArtifact(text) else {
-                canvasError = "The familiar didn’t return a renderable UI. Try rephrasing."
-                return nil
-            }
-            let now = CanvasArtifact.nowISO()
-            let artifact = CanvasArtifact(
-                id: UUID().uuidString,
-                title: CanvasArtifact.titleFromPrompt(userPrompt),
-                prompt: userPrompt,
-                code: CanvasArtifact.clampCode(extracted.code),
-                kind: extracted.kind,
-                createdAt: now, updatedAt: now
-            )
-            let saved = try await client.saveCanvasArtifact(artifact, expectedAbsent: true)
-            canvasArtifacts = sortedArtifacts(saved.artifacts)
-            return saved.artifact
-        } catch is CancellationError {
-            return nil
-        } catch {
-            canvasError = error.localizedDescription
-            return nil
-        }
-    }
-
-    /// Re-generate an existing artifact with a change request, keeping its id.
-    func refineArtifact(_ artifact: CanvasArtifact, changeRequest: String,
-                        familiarId: String) async -> CanvasArtifact? {
-        guard let client else { return nil }
-        let ask = changeRequest.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !ask.isEmpty else { return nil }
-
-        isGeneratingCanvas = true
-        canvasStreamText = ""
-        canvasError = nil
-        defer { isGeneratingCanvas = false }
-
-        do {
-            let text = try await streamText(
-                CanvasArtifact.buildRefinePrompt(
-                    currentCode: artifact.code, changeRequest: ask, kind: artifact.kind
-                ),
-                familiarId: familiarId, client: client
-            )
-            guard !Task.isCancelled else { return nil }
-            guard let extracted = CanvasArtifact.extractArtifact(text) else {
-                canvasError = "The familiar didn’t return an updated UI. Try rephrasing."
-                return nil
-            }
-            var updated = artifact
-            updated.code = CanvasArtifact.clampCode(extracted.code)
-            updated.kind = extracted.kind
-            updated.updatedAt = CanvasArtifact.nowISO()
-            let saved = try await client.saveCanvasArtifact(
-                updated, expectedUpdatedAt: artifact.updatedAt
-            )
-            canvasArtifacts = sortedArtifacts(saved.artifacts)
-            return saved.artifact
-        } catch is CancellationError {
-            return nil
-        } catch {
-            canvasError = error.localizedDescription
-            return nil
-        }
-    }
-
-    /// Remove an artifact, optimistically; restore on failure.
-    func deleteArtifact(_ artifact: CanvasArtifact) async {
-        guard let client else { return }
-        let previous = canvasArtifacts
-        canvasArtifacts.removeAll { $0.id == artifact.id }
-        do {
-            try await client.deleteCanvasArtifact(id: artifact.id)
-        } catch {
-            canvasArtifacts = previous
-            canvasError = error.localizedDescription
-        }
-    }
-
-    func saveCanvasComment(on artifact: CanvasArtifact, target: CanvasComponentTarget,
-                           note: String) async -> CanvasArtifact? {
-        guard let client else { return nil }
-        let trimmed = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4_000))
-        guard !trimmed.isEmpty else { return nil }
-        let now = CanvasArtifact.nowISO()
-        let existing = artifact.annotations?.first { $0.target.selector == target.selector }
-        let annotation = CanvasAnnotation(
-            id: existing?.id ?? UUID().uuidString,
-            target: target,
-            note: trimmed,
-            createdAt: existing?.createdAt ?? now,
-            updatedAt: now
-        )
-        do {
-            let saved = try await client.saveCanvasAnnotation(
-                artifactId: artifact.id,
-                annotation: annotation,
-                expectedUpdatedAt: existing?.updatedAt
-            )
-            canvasArtifacts = sortedArtifacts(saved.artifacts)
-            return saved.artifact
-        } catch {
-            canvasError = error.localizedDescription
-            return nil
-        }
-    }
-
-    func applyCanvasComments(_ artifact: CanvasArtifact, familiarId: String) async -> CanvasArtifact? {
-        let annotations = artifact.annotations ?? []
-        let prompt = CanvasArtifact.buildCommentsPrompt(annotations)
-        guard !prompt.isEmpty else { return nil }
-        guard let client else { return nil }
-
-        isGeneratingCanvas = true
-        canvasStreamText = ""
-        canvasError = nil
-        defer { isGeneratingCanvas = false }
-        do {
-            let text = try await streamText(
-                CanvasArtifact.buildRefinePrompt(
-                    currentCode: artifact.code,
-                    changeRequest: prompt,
-                    kind: artifact.kind
-                ),
-                familiarId: familiarId,
-                client: client
-            )
-            guard let extracted = CanvasArtifact.extractArtifact(text) else {
-                canvasError = "The familiar didn’t return an updated UI. Try again."
-                return nil
-            }
-            var updated = artifact
-            updated.code = CanvasArtifact.clampCode(extracted.code)
-            updated.kind = extracted.kind
-            updated.updatedAt = CanvasArtifact.nowISO()
-            let tokens = annotations
-                .filter { !$0.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                .map {
-                CaveClient.CanvasResolutionToken(id: $0.id, updatedAt: $0.updatedAt)
-            }
-            let saved = try await client.saveCanvasArtifact(
-                updated,
-                expectedUpdatedAt: artifact.updatedAt,
-                resolvedAnnotations: tokens
-            )
-            canvasArtifacts = sortedArtifacts(saved.artifacts)
-            return saved.artifact
-        } catch {
-            canvasError = error.localizedDescription
-            return nil
-        }
-    }
-
-    /// Consume the chat SSE stream for `prompt`, accumulating assistant text into
-    /// `canvasStreamText`. Throws on a stream `error` event with no text yet.
-    private func streamText(_ prompt: String, familiarId: String,
-                            client: CaveClient) async throws -> String {
-        var text = ""
-        let runId = UUID().uuidString
-        let body = CaveClient.SendBody(
-            familiarId: familiarId, prompt: prompt, sessionId: nil, runId: runId
-        )
-        var stream = client.sendStream(body)
-        var cursor = 0
-        var completed = false
-        var resumeAttempts = 0
-        var reportedError: Error?
-
-        while !completed {
-            do {
-                for try await frame in stream {
-                    try Task.checkCancellation()
-                    if let id = frame.id { cursor = max(cursor, id) }
-                    switch frame.event {
-                    case .assistantChunk(let chunk):
-                        text += chunk
-                        canvasStreamText = text
-                    case .done(let isError, _):
-                        completed = true
-                        if isError && text.isEmpty {
-                            reportedError = CaveError.transport("The familiar reported an error.")
-                        }
-                    case .error(let message):
-                        if text.isEmpty {
-                            reportedError = CaveError.transport(message)
-                            completed = true
-                        }
-                    default:
-                        break
-                    }
-                }
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                guard resumeAttempts < 3 else { throw error }
-            }
-            guard !completed else { break }
-            guard resumeAttempts < 3 else {
-                throw CaveError.transport("The Canvas generation connection ended before completion.")
-            }
-            resumeAttempts += 1
-            try await Task.sleep(for: .milliseconds(350 * resumeAttempts))
-            stream = client.resumeStream(runId: runId, cursor: cursor)
-        }
-        if let reportedError { throw reportedError }
-        return text
-    }
-
-    /// Newest-updated first; the canvas gallery's stable order.
-    private func sortedArtifacts(_ artifacts: [CanvasArtifact]) -> [CanvasArtifact] {
-        artifacts.sorted {
-            ($0.updatedDate ?? .distantPast) > ($1.updatedDate ?? .distantPast)
-        }
-    }
 
     // MARK: - Connection lifecycle
 
@@ -953,10 +1240,14 @@ final class AppModel {
             ? (connection?.baseURL == conn.baseURL)
             : (connection?.baseURL?.host?.lowercased() == conn.baseURL?.host?.lowercased())
         if let token {
-            CaveConnection.saveAccessToken(token)
-        } else if !isSameEndpoint {
-            // Tokens are stored globally, so never carry an old desktop's
-            // credential to a newly configured host from an uncredentialed input.
+            CaveConnection.saveAccessToken(token, for: conn.baseURL)
+        } else if CaveConnection.shouldClearStoredCredential(
+            suppliedToken: token,
+            isSameEndpoint: isSameEndpoint,
+            nextURL: conn.baseURL
+        ) {
+            // Never retain a credential when an uncredentialed configuration
+            // changes authority or downgrades the same authority to remote HTTP.
             CaveConnection.saveAccessToken(nil)
         }
         if !isSameEndpoint {
@@ -984,12 +1275,6 @@ final class AppModel {
         projects = []
         projectsError = nil
         projectsLoaded = false
-        canvasArtifacts = []
-        canvasError = nil
-        canvasLoaded = false
-        journalDays = []
-        journalError = nil
-        journalLoaded = false
         chrome = .fallback
         publishedThemeId = nil
         publishedMode = nil
@@ -1022,17 +1307,17 @@ final class AppModel {
 
     /// Quiet: the state only changes on an outcome, so a healthy path change
     /// (Wi-Fi ↔ LTE) doesn't blink the UI through `.checking` — which would
-    /// flash the reconnect pill over perfectly good tabs.
+    /// flash the reconnect pill over a perfectly good primary destination.
     func recoverConnectionInBackground() async {
         guard connection != nil else { connectionState = .unconfigured; return }
         await refreshConnection(reloadLoadedSurfaces: true, quiet: true)
     }
 
-    /// Any surface holds real data — the tab tree is worth keeping mounted
+    /// Any surface holds real data — the primary shell is worth keeping mounted
     /// through a connection drop (RootView shows the reconnect pill over it
     /// instead of tearing down to the Connect screen).
     var hasLoadedSurfaces: Bool {
-        !familiars.isEmpty || sessionsLoaded || tasksLoaded || remindersLoaded || projectsLoaded || journalLoaded || canvasLoaded
+        !familiars.isEmpty || sessionsLoaded || tasksLoaded || remindersLoaded || projectsLoaded
     }
 
     private var shouldReloadLoadedSurfaces: Bool { hasLoadedSurfaces }
@@ -1076,12 +1361,22 @@ final class AppModel {
     /// retry/discovery path. A successful probe also gives the rolling token
     /// renewal a chance to run for long-foregrounded devices.
     func validateConnectionOnForeground() async {
+        await validateCurrentConnection(refreshProfile: true)
+    }
+
+    /// Keep a long-lived foreground session honest even when the network path
+    /// itself never changes. This prevents the next chat send from being the
+    /// first operation to discover that the desktop restarted or moved.
+    func maintainConnectionWhileActive() async {
+        await validateCurrentConnection(refreshProfile: false)
+    }
+
+    private func validateCurrentConnection(refreshProfile: Bool) async {
         guard connection != nil, connectionState == .connected else { return }
         if let client, await client.ping() {
-            // Profile first (the just-succeeded ping proves the current token is
-            // valid), then the rolling token renewal + queue flush stay adjacent
-            // — the offline-compose flush invariant pins that pair.
-            await loadOperatorProfile()
+            if refreshProfile {
+                await loadOperatorProfile()
+            }
             await refreshAccessTokenIfNeeded()
             flushQueuedMessages()
             return
@@ -1098,7 +1393,7 @@ final class AppModel {
         let payload = await ConnectionBootstrap.load(using: client)
         switch payload.familiars {
         case .success(let loaded):
-            familiars = applyFamiliarOrder(loaded)
+            familiars = loaded
             seedFamiliarViews(familiars.map(\.id))
             familiarsError = nil
         case .failure(let error):
@@ -1122,8 +1417,6 @@ final class AppModel {
             if tasksLoaded { group.addTask { await self.loadTasks() } }
             if remindersLoaded { group.addTask { await self.loadReminders() } }
             if projectsLoaded { group.addTask { await self.loadProjects() } }
-            if journalLoaded { group.addTask { await self.loadJournal() } }
-            if canvasLoaded { group.addTask { await self.loadCanvas() } }
         }
     }
 
@@ -1140,7 +1433,9 @@ final class AppModel {
         // (state + loads must run once, not per caller). A joiner's
         // surface-reload intent is OR-merged onto the probe so the launcher
         // applies it — the joiner returning early must not drop it.
-        let candidates = connection.candidateBaseURLs
+        // Last-good first (cave-ioswipe.3): the ordinary reconnect then costs a
+        // single probe instead of walking the candidate list.
+        let candidates = connection.prioritizedCandidateBaseURLs
         // Identity of the endpoint this probe describes. `configure()` cancels
         // the in-flight probe, but a launcher that already passed its
         // `Task.isCancelled` check races that cancel — without this capture it
@@ -1155,6 +1450,7 @@ final class AppModel {
             switch outcome {
             case .found(let url): return .found(url)
             case .unauthorized: return .unauthorized
+            case .credentialFailure(let message): return .credentialFailure(message)
             case .unreachable(let failure): return .unreachable(failure)
             }
         }
@@ -1174,6 +1470,13 @@ final class AppModel {
             // refresh owns the state.
             return
         case .found(let working):
+            // Remember what answered, keyed by the host we probed, so the next
+            // reconnect starts here (cave-ioswipe.3). Recorded even when the URL
+            // is unchanged: a first success is exactly what makes the fast path
+            // available on the following launch.
+            if let host = self.connection?.host {
+                CaveConnection.saveLastGoodBaseURL(working, forHost: host)
+            }
             if working != self.connection?.baseURL {
                 // Relocate: persist the working endpoint so future launches
                 // connect directly. Stored as bare `host:port` when the
@@ -1199,6 +1502,8 @@ final class AppModel {
             }
         case .unauthorized:
             connectionState = .needsAuth(pairingMessage())
+        case .credentialFailure(let message):
+            connectionState = .unreachable(.credentialFailure(message))
         case .unreachable(let failure):
             connectionState = .unreachable(.diagnosis(for: failure))
         }
@@ -1282,6 +1587,9 @@ final class AppModel {
         /// At least one candidate was a live Cave server that rejected our
         /// credential — pairing is the fix, not another address.
         case unauthorized
+        /// The stored credential cannot safely be sent to this endpoint.
+        /// This is terminal: never adopt a tokenless sibling origin.
+        case credentialFailure(String)
         /// No candidate answered as Cave. Carries the strongest failure class
         /// seen across candidates ("an HTTP server answered but wasn't Cave"
         /// beats "connection refused" beats "DNS failure" beats "timeout") so
@@ -1302,40 +1610,92 @@ final class AppModel {
     /// already succeeded or rejected it. Unpaired probes carry no secret, so they
     /// may still run concurrently for the cold-launch wall-clock win.
     static func discoverBaseURL(_ candidates: [URL]) async -> DiscoveryOutcome {
-        guard !candidates.isEmpty else { return .unreachable(nil) }
+        guard let preferred = candidates.first else { return .unreachable(nil) }
+
+        // Fast path (cave-ioswipe.3): probe the preferred endpoint ALONE first.
+        // Callers put the last-good URL at the head, so the ordinary reconnect —
+        // same desktop, same port — costs exactly one probe instead of walking
+        // up to 16 candidates. This is also what keeps the preferred endpoint
+        // authoritative: racing the whole list could relocate to a different
+        // working port purely on timing, persisting an endpoint the user never
+        // chose.
+        var strongest: ProbeFailure?
+        switch await Self.probe(preferred) {
+        case .ok: return .found(preferred)
+        case .unauthorized: return .unauthorized
+        case .credentialFailure(let message): return .credentialFailure(message)
+        case .failed(let failure): strongest = failure
+        }
+
+        let rest = Array(candidates.dropFirst())
+        guard !rest.isEmpty else { return .unreachable(strongest) }
+
+        // The paired path stays SEQUENTIAL by design: every candidate carries
+        // the Bearer token, and fanning it across ports concurrently would widen
+        // credential exposure. Only the unpaired sweep races.
         if CaveConnection.accessToken != nil {
-            return await discoverBaseURLSequentially(candidates)
+            return await discoverBaseURLSequentially(rest, seededWith: strongest)
         }
 
         let results = await withTaskGroup(of: (Int, ProbeResult).self) { group in
-            for (index, base) in candidates.enumerated() {
+            for (index, base) in rest.enumerated() {
                 group.addTask { (index, await Self.probe(base)) }
             }
-            var collected = [ProbeResult?](repeating: nil, count: candidates.count)
-            for await (index, result) in group { collected[index] = result }
+            var collected = [ProbeResult?](repeating: nil, count: rest.count)
+            // Short-circuit WITHOUT breaking ordered adjudication. Candidate
+            // order is a preference ranking, so cancelling on the first .ok to
+            // *arrive* would let a later port win purely on timing and get
+            // persisted over an earlier one that also worked. Instead, stop only
+            // once some candidate has succeeded AND every candidate ranked above
+            // it has already reported — at which point no earlier winner is
+            // still possible and the remaining probes cannot change the answer.
+            var earliestSuccess: Int?
+            for await (index, result) in group {
+                collected[index] = result
+                if case .ok = result, index < earliestSuccess ?? Int.max {
+                    earliestSuccess = index
+                }
+                if let winner = earliestSuccess,
+                   (0..<winner).allSatisfy({ collected[$0] != nil }) {
+                    group.cancelAll()
+                    break
+                }
+            }
             return collected
         }
-        return adjudicateDiscoveryResults(results, candidates: candidates)
+        return adjudicateDiscoveryResults(results, candidates: rest, seededWith: strongest)
     }
 
-    private static func discoverBaseURLSequentially(_ candidates: [URL]) async -> DiscoveryOutcome {
-        var strongest: ProbeFailure?
+    private static func discoverBaseURLSequentially(
+        _ candidates: [URL],
+        seededWith seed: ProbeFailure? = nil,
+    ) async -> DiscoveryOutcome {
+        var strongest: ProbeFailure? = seed
         for base in candidates {
             switch await Self.probe(base) {
             case .ok: return .found(base)
             case .unauthorized: return .unauthorized
+            case .credentialFailure(let message): return .credentialFailure(message)
             case .failed(let failure): strongest = max(strongest ?? failure, failure)
             }
         }
         return .unreachable(strongest)
     }
 
-    private static func adjudicateDiscoveryResults(_ results: [ProbeResult?], candidates: [URL]) -> DiscoveryOutcome {
-        var strongest: ProbeFailure?
+    private static func adjudicateDiscoveryResults(
+        _ results: [ProbeResult?],
+        candidates: [URL],
+        seededWith seed: ProbeFailure? = nil,
+    ) -> DiscoveryOutcome {
+        // Seeded with the preferred endpoint's failure so the diagnosis the user
+        // sees still reflects the endpoint they configured, not only the
+        // alternates.
+        var strongest: ProbeFailure? = seed
         for (index, result) in results.enumerated() {
             switch result {
             case .ok: return .found(candidates[index])
             case .unauthorized: return .unauthorized
+            case .credentialFailure(let message): return .credentialFailure(message)
             case .failed(let failure): strongest = max(strongest ?? failure, failure)
             default: continue
             }
@@ -1371,7 +1731,12 @@ final class AppModel {
         return CaveConnection(host: compact).baseURL == url ? compact : url.absoluteString
     }
 
-    private enum ProbeResult { case ok, unauthorized, failed(ProbeFailure) }
+    private enum ProbeResult {
+        case ok
+        case unauthorized
+        case credentialFailure(String)
+        case failed(ProbeFailure)
+    }
 
     /// Shared session for discovery probes — ephemeral (no cache/cookie
     /// carry-over) and never recreated, so repeated discovery rounds don't
@@ -1395,8 +1760,14 @@ final class AppModel {
         var req = URLRequest(url: base.appendingPathComponent("api/familiars"))
         req.timeoutInterval = 6
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        if sendCredential, let token = CaveConnection.accessToken {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if sendCredential {
+            do {
+                if let token = try CaveConnection.credentialForRequest(to: req.url!) {
+                    req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                }
+            } catch {
+                return .credentialFailure(error.localizedDescription)
+            }
         }
         let data: Data
         let resp: URLResponse
@@ -1418,7 +1789,7 @@ final class AppModel {
     func loadFamiliars() async {
         guard let client else { return }
         do {
-            familiars = applyFamiliarOrder(try await client.familiars())
+            familiars = try await client.familiars()
             seedFamiliarViews(familiars.map(\.id))
             familiarsError = nil
         } catch {
@@ -1484,28 +1855,6 @@ final class AppModel {
         if changed { persistFamiliarViews() }
     }
 
-    /// Drag-reorder familiars in the Chats tab; persists the new order.
-    func moveFamiliar(fromOffsets source: IndexSet, toOffset destination: Int) {
-        familiars.move(fromOffsets: source, toOffset: destination)
-        familiarOrder = familiars.map(\.id)
-        persistFamiliarOrder()
-    }
-
-    /// Sort a freshly-loaded familiar list by the saved order; ids not in the
-    /// saved order (new familiars) keep their server order at the end.
-    private func applyFamiliarOrder(_ loaded: [Familiar]) -> [Familiar] {
-        guard !familiarOrder.isEmpty else { return loaded }
-        let rank = Dictionary(uniqueKeysWithValues: familiarOrder.enumerated().map { ($1, $0) })
-        return loaded.enumerated().sorted { a, b in
-            let ra = rank[a.element.id], rb = rank[b.element.id]
-            switch (ra, rb) {
-            case let (.some(x), .some(y)): return x < y
-            case (.some, .none): return true
-            case (.none, .some): return false
-            case (.none, .none): return a.offset < b.offset   // stable
-            }
-        }.map(\.element)
-    }
 
     // MARK: - Sessions (server-side, for per-familiar thread lists)
 
@@ -1525,6 +1874,35 @@ final class AppModel {
             sessionsError = handleSurfaceError(error)
         }
         sessionsLoaded = true
+        lastSessionsLoadedAt = Date()
+    }
+
+    /// When the session list was last fetched. Not observable — it gates a
+    /// refetch, it does not drive any view. In an @Observable type stored
+    /// properties are observable by default, so the attribute is what makes
+    /// that true; the comment alone did not.
+    @ObservationIgnored private var lastSessionsLoadedAt: Date?
+
+    /// How long a freshly-loaded session list is considered good enough to
+    /// reuse when a view re-appears (cave-ioswipe.5).
+    nonisolated private static let sessionsStaleAfter: TimeInterval = 30
+
+    /// Load sessions unless they were fetched moments ago.
+    ///
+    /// A view that re-appears often (opening a familiar's threads, backing out,
+    /// opening another) was refetching the WHOLE session list every time, while
+    /// the equivalent call in ChatsHomeView has always been guarded. A bare
+    /// `if !sessionsLoaded` guard would fix the churn but leave the list stale
+    /// until a reconnect or a manual pull, so this expires instead: frequent
+    /// re-appearances reuse, a genuinely old list refetches.
+    ///
+    /// Pull-to-refresh deliberately does NOT come through here — an explicit
+    /// user refresh must always hit the server.
+    func loadSessionsIfStale(maxAge: TimeInterval = AppModel.sessionsStaleAfter) async {
+        if sessionsLoaded, let at = lastSessionsLoadedAt, Date().timeIntervalSince(at) < maxAge {
+            return
+        }
+        await loadSessions()
     }
 
     /// Direct (1:1) on-device threads for a familiar, newest-updated first.
@@ -1535,6 +1913,17 @@ final class AppModel {
                 if a.pinned != b.pinned { return a.pinned }
                 return a.updatedAt > b.updatedAt
             }
+    }
+
+    /// The thread a familiar's chat lands on: its pinned thread if it has an
+    /// unarchived one, otherwise its newest-updated unarchived direct thread.
+    /// Archived threads are never eligible, pinned or not — `directThreads`
+    /// sorts pinned-first, then by recency, and this takes the first eligible
+    /// entry. Callers that render a timestamp are showing the landing thread's
+    /// activity, which is deliberately NOT always the familiar's latest.
+    /// Nil when the familiar has no eligible thread — callers start a new chat.
+    func landingDirectThread(for familiarId: String) -> ChatThread? {
+        directThreads(for: familiarId).first { !$0.archived }
     }
 
     /// Every group thread, newest first — shown as its own rows on the Chats
@@ -1578,7 +1967,8 @@ final class AppModel {
         }
         let title = row.title.isEmpty ? (familiar(familiarId)?.displayName ?? familiarId) : row.title
         let thread = ChatThread(title: title, familiarIds: [familiarId],
-                                sessionIds: [familiarId: row.id])
+                                sessionIds: [familiarId: row.id],
+                                projectRoot: row.projectRoot)
         threads.insert(thread, at: 0)
         persistThreads()
         Task { await loadHistory(into: thread, sessionId: row.id) }
@@ -1647,7 +2037,10 @@ final class AppModel {
             // The card already points at a server session (e.g. started on the
             // desktop) but no local thread carries it — bind one and pull history.
             thread = ChatThread(title: title, familiarIds: [familiarId],
-                                sessionIds: [familiarId: sid])
+                                sessionIds: [familiarId: sid],
+                                projectRoot: serverSessions.first {
+                                    $0.id == sid
+                                }?.projectRoot)
             threads.insert(thread, at: 0)
             Task { await loadHistory(into: thread, sessionId: sid) }
         } else {
@@ -1707,16 +2100,8 @@ final class AppModel {
     private func loadHistory(into thread: ChatThread, sessionId: String) async {
         guard let client, thread.messages.isEmpty,
               let convo = try? await client.conversation(sessionId: sessionId) else { return }
-        let assignee = thread.familiarIds.first
-        thread.messages = convo.turns.map { turn in
-            let role = DisplayMessage.Role(rawValue: turn.role) ?? .assistant
-            return DisplayMessage(role: role,
-                                  familiarId: role == .assistant ? assignee : nil,
-                                  text: turn.text,
-                                  isError: turn.isError ?? false,
-                                  activity: role == .assistant
-                                      ? ActivityFold.steps(fromTools: turn.tools) : nil)
-        }
+        let assignee = thread.familiarIds.first ?? convo.familiarId
+        thread.messages = DisplayMessage.restoredTranscript(from: convo.turns, familiarId: assignee)
         persistThreads()
     }
 
@@ -1734,10 +2119,18 @@ final class AppModel {
         return thread
     }
 
-    func createGroup(familiarIds: [String], title: String?) -> ChatThread {
+    func createGroup(
+        familiarIds: [String],
+        title: String?,
+        projectRoot: String
+    ) -> ChatThread {
         let names = familiarIds.compactMap { familiar($0)?.displayName ?? $0 }
         let derived = title?.isEmpty == false ? title! : names.joined(separator: ", ")
-        let thread = ChatThread(title: derived, familiarIds: familiarIds)
+        let thread = ChatThread(
+            title: derived,
+            familiarIds: familiarIds,
+            projectRoot: projectRoot
+        )
         threads.insert(thread, at: 0)
         persistThreads()
         return thread
@@ -1745,30 +2138,157 @@ final class AppModel {
 
     /// Always create a brand-new thread (no reuse) — backs `/new`. Works for a
     /// single familiar (direct) or several (group).
-    func startFreshThread(familiarIds: [String], title: String? = nil) -> ChatThread {
+    func startFreshThread(
+        familiarIds: [String],
+        title: String? = nil,
+        projectRoot: String?
+    ) -> ChatThread {
         let names = familiarIds.compactMap { familiar($0)?.displayName ?? $0 }
-        let derived = (title?.isEmpty == false) ? title! : names.joined(separator: ", ")
-        let thread = ChatThread(title: derived, familiarIds: familiarIds)
+        let date = Date.now.formatted(.dateTime.month(.abbreviated).day())
+        let derived = (title?.isEmpty == false)
+            ? title!
+            : "Chat with \(names.joined(separator: ", ")) on \(date)"
+        let thread = ChatThread(
+            title: derived,
+            familiarIds: familiarIds,
+            projectRoot: projectRoot
+        )
         threads.insert(thread, at: 0)
         persistThreads()
         return thread
     }
 
     func deleteThread(_ thread: ChatThread) {
-        threads.removeAll { $0.id == thread.id }
+        guard let index = threads.firstIndex(where: { $0.id == thread.id }) else { return }
+        let removed = threads[index]
+        threads.remove(at: index)
         persistThreads()
         Haptics.success()
         showToast("Chat deleted", systemImage: "trash.fill")
+        fanOutThreadDelete([(index, removed)])
     }
 
     /// Delete several threads at once (bulk select); persists once.
     func deleteThreads(_ ids: Set<String>) {
         guard !ids.isEmpty else { return }
-        let n = ids.count
+        // Capture positions before removing so a rejected delete can put each
+        // chat back where it was rather than at the end of the list.
+        let removed = threads.enumerated()
+            .filter { ids.contains($0.element.id) }
+            .map { ($0.offset, $0.element) }
+        // Count what was actually matched, not what was selected: a stale
+        // selection can name ids no longer in the list, and reporting those
+        // would claim deletions that never happened.
+        guard !removed.isEmpty else { return }
+        let n = removed.count
         threads.removeAll { ids.contains($0.id) }
         persistThreads()
         Haptics.success()
         showToast("\(n) chat\(n == 1 ? "" : "s") deleted", systemImage: "trash.fill")
+        fanOutThreadDelete(removed)
+    }
+
+    /// Sacrifice every session behind the removed threads.
+    ///
+    /// Deletion is already applied locally, so this restores any thread whose
+    /// sessions the server refused — a delete that did not happen must not keep
+    /// looking like it did. Threads that own no session (never sent) are dropped
+    /// locally and need no server call. Successful earlier deletions shift the
+    /// failed rows' insertion points left, preserving the surviving original
+    /// order instead of blindly reusing stale absolute indexes.
+    private func fanOutThreadDelete(_ removed: [(Int, ChatThread)]) {
+        guard let client, !removed.isEmpty else { return }
+        let targets = removed.filter { !serverSessionIds($0.1).isEmpty }
+        guard !targets.isEmpty else { return }
+        let targetSessionIDs = Set(targets.flatMap { serverSessionIds($0.1) })
+        let suppressedSessions = Self.suppressServerSessions(
+            serverSessions,
+            withIDs: targetSessionIDs
+        )
+        self.serverSessions = suppressedSessions.remaining
+        Task { [weak self] in
+            var restoreIDs: Set<String> = []
+            var failedSessionIDs: Set<String> = []
+            var successfulSessionIDs: Set<String> = []
+            var failedSessions = 0
+            var totalSessions = 0
+            for (_, thread) in targets {
+                guard let sessionIds = self?.serverSessionIds(thread) else { continue }
+                totalSessions += sessionIds.count
+                var threadFailed = 0
+                await withTaskGroup(of: (String, Bool).self) { group in
+                    for sessionId in sessionIds {
+                        group.addTask {
+                            do {
+                                try await client.deleteSession(sessionId: sessionId)
+                                return (sessionId, true)
+                            } catch {
+                                return (sessionId, false)
+                            }
+                        }
+                    }
+                    for await (sessionId, ok) in group {
+                        if ok {
+                            successfulSessionIDs.insert(sessionId)
+                        } else {
+                            threadFailed += 1
+                            failedSessionIDs.insert(sessionId)
+                        }
+                    }
+                }
+                if threadFailed > 0 {
+                    failedSessions += threadFailed
+                    restoreIDs.insert(thread.id)
+                }
+            }
+            guard let self else { return }
+            self.serverSessions.removeAll { successfulSessionIDs.contains($0.id) }
+            for row in suppressedSessions.suppressed.filter({ failedSessionIDs.contains($0.id) })
+            where !self.serverSessions.contains(where: { $0.id == row.id }) {
+                self.serverSessions.append(row)
+            }
+            guard !restoreIDs.isEmpty else { return }
+            self.threads = Self.restoringDeletedThreads(
+                current: self.threads,
+                removed: removed,
+                restoring: restoreIDs
+            )
+            self.persistThreads()
+            self.reportDeletePartial(
+                restoredThreads: restoreIDs.count,
+                failedSessions: failedSessions,
+                totalSessions: totalSessions
+            )
+        }
+    }
+
+    static func suppressServerSessions(
+        _ sessions: [SessionRow],
+        withIDs ids: Set<String>
+    ) -> (remaining: [SessionRow], suppressed: [SessionRow]) {
+        (
+            sessions.filter { !ids.contains($0.id) },
+            sessions.filter { ids.contains($0.id) }
+        )
+    }
+
+    static func restoringDeletedThreads(
+        current: [ChatThread],
+        removed: [(index: Int, thread: ChatThread)],
+        restoring restoreIDs: Set<String>
+    ) -> [ChatThread] {
+        var restored = current
+        let successfulIndexes = removed
+            .filter { !restoreIDs.contains($0.thread.id) }
+            .map(\.index)
+
+        for item in removed.filter({ restoreIDs.contains($0.thread.id) }).sorted(by: { $0.index < $1.index }) {
+            guard !restored.contains(where: { $0.id == item.thread.id }) else { continue }
+            let successfulBefore = successfulIndexes.count { $0 < item.index }
+            let shiftedIndex = item.index - successfulBefore
+            restored.insert(item.thread, at: min(max(shiftedIndex, 0), restored.count))
+        }
+        return restored
     }
 
     /// Rename a thread (local title only); no-ops on a blank or unchanged name.
@@ -1787,6 +2307,9 @@ final class AppModel {
               target.archived != archived else { return }
         target.archived = archived
         persistThreads()
+        fanOutThreadFlag(target, verb: archived ? "archive" : "unarchive") { client, sessionId in
+            try await client.setSessionFlags(sessionId: sessionId, archived: archived)
+        } rollback: { $0.archived = !archived }
     }
 
     /// Pin or unpin a thread; pinned threads sort to the top of their list.
@@ -1795,6 +2318,59 @@ final class AppModel {
               target.pinned != pinned else { return }
         target.pinned = pinned
         persistThreads()
+        fanOutThreadFlag(target, verb: pinned ? "pin" : "unpin") { client, sessionId in
+            try await client.setSessionFlags(sessionId: sessionId, pinned: pinned)
+        } rollback: { $0.pinned = !pinned }
+    }
+
+    /// Session ids a thread owns on the server. A thread that has never been
+    /// sent owns none — there is nothing to persist remotely and its flags stay
+    /// device-local until the first send creates a session.
+    private func serverSessionIds(_ thread: ChatThread) -> [String] {
+        thread.sessionIds.values.filter { !$0.isEmpty }
+    }
+
+    /// In-flight flag writes per thread, so a rapid pin/unpin cannot let the
+    /// older result land last (same hazard as `statusWrites` for tasks).
+    @ObservationIgnored private var threadFlagWrites: [String: Task<Void, Never>] = [:]
+
+    /// Push a thread-level flag to every session the thread owns.
+    ///
+    /// The caller has already applied the change locally, so this is the
+    /// optimistic tail: on failure it rolls the flag back and says so, rather
+    /// than leaving the list showing a state the server never accepted. A
+    /// thread owns at most one session per familiar, so the fan-out is small
+    /// and runs unbounded — unlike the reminder fan-out, which is over an
+    /// arbitrary selection and is width-limited.
+    private func fanOutThreadFlag(
+        _ thread: ChatThread,
+        verb: String,
+        _ call: @escaping @Sendable (CaveClient, String) async throws -> Void,
+        rollback: @escaping (ChatThread) -> Void,
+    ) {
+        guard let client else { return }
+        let ids = serverSessionIds(thread)
+        guard !ids.isEmpty else { return }
+        let threadId = thread.id
+        threadFlagWrites[threadId]?.cancel()
+        threadFlagWrites[threadId] = Task { [weak self] in
+            var failed = 0
+            await withTaskGroup(of: Bool.self) { group in
+                for sessionId in ids {
+                    group.addTask {
+                        do { try await call(client, sessionId); return true } catch { return false }
+                    }
+                }
+                for await ok in group where !ok { failed += 1 }
+            }
+            guard let self, !Task.isCancelled else { return }
+            if failed > 0 {
+                rollback(thread)
+                self.persistThreads()
+                self.reportPartial(failed, of: ids.count, verb: verb)
+            }
+            self.threadFlagWrites[threadId] = nil
+        }
     }
 
     /// Mute or unmute a thread's notifications (persisted; honoured by the
@@ -1838,12 +2414,17 @@ final class AppModel {
     /// become assistant turns, resolved to a familiar by display name when
     /// possible. Inserts at the top and persists.
     @discardableResult
-    func importMarkdown(_ text: String, fallbackTitle: String = "Imported chat") -> ChatThread {
+    func importMarkdown(
+        _ text: String,
+        fallbackTitle: String = "Imported chat",
+        familiarIds preferredFamiliarIds: [String] = [],
+        projectRoot: String? = nil
+    ) -> ChatThread {
         let parsed = parseThreadMarkdown(text)
         func resolve(_ name: String) -> String? {
             familiars.first { $0.displayName.caseInsensitiveCompare(name) == .orderedSame }?.id
         }
-        var familiarIds: [String] = []
+        var discoveredFamiliarIds: [String] = []
         var messages: [DisplayMessage] = []
         for turn in parsed.turns {
             switch turn.who.lowercased() {
@@ -1853,15 +2434,24 @@ final class AppModel {
                 messages.append(DisplayMessage(role: .system, familiarId: nil, text: turn.text))
             default:
                 let fid = resolve(turn.who)
-                if let fid, !familiarIds.contains(fid) { familiarIds.append(fid) }
+                if let fid { discoveredFamiliarIds.append(fid) }
                 messages.append(DisplayMessage(role: .assistant, familiarId: fid, text: turn.text))
             }
         }
         for name in parsed.participants {
-            if let fid = resolve(name), !familiarIds.contains(fid) { familiarIds.append(fid) }
+            if let fid = resolve(name) { discoveredFamiliarIds.append(fid) }
         }
+        let familiarIds = ChatProjectSelection.importedFamiliarIDs(
+            preferred: preferredFamiliarIds,
+            discovered: discoveredFamiliarIds
+        )
         let title = parsed.title.isEmpty ? fallbackTitle : parsed.title
-        let thread = ChatThread(title: title, familiarIds: familiarIds, messages: messages)
+        let thread = ChatThread(
+            title: title,
+            familiarIds: familiarIds,
+            projectRoot: projectRoot,
+            messages: messages
+        )
         threads.insert(thread, at: 0)
         persistThreads()
         return thread
@@ -1873,13 +2463,11 @@ final class AppModel {
     @discardableResult
     func duplicateThread(_ thread: ChatThread) -> ChatThread {
         let copiedMessages = thread.messages.map { message in
-            DisplayMessage(role: message.role, familiarId: message.familiarId,
-                           text: message.text, isError: message.isError,
-                           attachmentDataUrls: message.attachmentDataUrls,
-                           activity: message.activity)
+            DisplayMessage.duplicate(of: message)
         }
         let copy = ChatThread(title: "\(thread.title) (copy)",
                               familiarIds: thread.familiarIds,
+                              projectRoot: thread.projectRoot,
                               messages: copiedMessages)
         threads.insert(copy, at: 0)
         persistThreads()
@@ -1950,6 +2538,15 @@ final class AppModel {
     /// Pending debounced thread-persist flush. Not observable state.
     @ObservationIgnored private var persistThreadsTask: Task<Void, Never>?
 
+    /// The in-flight snapshot write, kept separate from the debounce timer
+    /// above (cave-2cpo). Two things need it: a newer flush must be able to
+    /// supersede a stale write rather than race it, and a lifecycle caller must
+    /// be able to await durability. `ThreadSnapshotStore` is an actor, so two
+    /// saves can never interleave — but actors make no FIFO promise, so without
+    /// this the OLDER snapshot could still resume last and overwrite newer
+    /// state on disk.
+    @ObservationIgnored private var threadWriteTask: Task<Void, Never>?
+
     /// Guards against saving before the async `hydrateThreads()` restore has
     /// settled. Without it, a background/flush that fires before hydration
     /// publishes would snapshot the not-yet-hydrated (possibly empty) `threads`
@@ -1981,10 +2578,27 @@ final class AppModel {
         persistThreadsTask?.cancel()
         persistThreadsTask = nil
         let snapshots = threads.map(\.snapshot)
-        Task.detached(priority: .utility) { [threadStore] in
+        // Supersede, then chain (cave-2cpo). Cancelling lets `save`'s entry
+        // `checkCancellation` drop a write that has not started, and awaiting
+        // the superseded task before saving means writes land in CALL order —
+        // the actor alone only guarantees they do not overlap, not which one
+        // wins. Without both, a burst could leave the older snapshot on disk.
+        let previous = threadWriteTask
+        previous?.cancel()
+        threadWriteTask = Task.detached(priority: .utility) { [threadStore] in
+            _ = await previous?.value
             // Non-fatal: persistence is best-effort.
             try? await threadStore.save(snapshots)
         }
+    }
+
+    /// Flush and await the write. The scene-phase handler uses this when the
+    /// app leaves the foreground: `flushThreads()` alone returns the instant
+    /// the task is spawned, so the process could be suspended before the bytes
+    /// reach disk — which is exactly the durability the caller believed it had.
+    func flushThreadsAndWait() async {
+        flushThreads()
+        _ = await threadWriteTask?.value
     }
 
     /// One-shot restore at launch: load off-main via the store and publish the
@@ -2026,29 +2640,6 @@ final class AppModel {
             return
         }
         cardThreadLinks = map
-    }
-
-    private var familiarOrderFileURL: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("cave-familiar-order.json")
-    }
-
-    private func persistFamiliarOrder() {
-        do {
-            let data = try JSONEncoder().encode(familiarOrder)
-            try data.write(to: familiarOrderFileURL, options: .atomic)
-        } catch {
-            // Non-fatal: best-effort persistence.
-        }
-    }
-
-    private func loadFamiliarOrder() {
-        guard let data = try? Data(contentsOf: familiarOrderFileURL),
-              let order = try? JSONDecoder().decode([String].self, from: data) else {
-            return
-        }
-        familiarOrder = order
     }
 
     private var familiarViewsFileURL: URL {

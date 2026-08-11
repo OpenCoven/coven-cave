@@ -29,10 +29,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 /** Trailing debounce before an autosave fires once typing pauses. */
 const AUTOSAVE_DEBOUNCE_MS = 1200;
 import { Icon } from "@/lib/icon";
+import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
+import { shouldFlare } from "@/lib/flare-cooldown";
 import { CodeEditor } from "@/components/code-editor";
 import {
   normalizeMdTags,
+  joinLeadingMdComments,
   parseMdDocument,
+  splitLeadingMdComments,
   serializeMdDocument,
 } from "@/lib/md-frontmatter";
 import { computeMdDocStats, formatMdDocStats } from "@/lib/md-doc-stats";
@@ -125,6 +129,7 @@ export function MdEditor({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [saveFlare, setSaveFlare] = useState(false);
   // A 409-style concurrent-write conflict: the transport reported the document
   // changed underneath us. While set, the body shows the resolution panel.
   const [conflict, setConflict] = useState<MdEditorConflict | null>(null);
@@ -163,13 +168,27 @@ export function MdEditor({
     [updateRaw],
   );
 
-  const onBodyChange = useCallback((body: string) => {
+  const presentation = useMemo(() => splitLeadingMdComments(doc.body), [doc.body]);
+  const visualHiddenPrefixRef = useRef(presentation.hiddenPrefix);
+  useEffect(() => {
+    visualHiddenPrefixRef.current = presentation.hiddenPrefix;
+  }, [visualEpoch]);
+
+  const refreshVisualEpoch = useCallback(() => {
+    setVisualEpoch((n) => n + 1);
+  }, []);
+
+  const onBodyChange = useCallback((visibleBody: string) => {
     const next = parseMdDocument(rawRef.current);
-    // Crepe reports the body it was mounted with; only the body changes here.
-    next.body = body;
-    updateRaw(next.hasFrontmatter || next.title !== null || next.tags.length > 0 || Object.keys(next.rest).length > 0
-      ? serializeMdDocument(next)
-      : body);
+    next.body = joinLeadingMdComments(visualHiddenPrefixRef.current, visibleBody);
+    updateRaw(
+      next.hasFrontmatter ||
+        next.title !== null ||
+        next.tags.length > 0 ||
+        Object.keys(next.rest).length > 0
+        ? serializeMdDocument(next)
+        : next.body,
+    );
   }, [updateRaw]);
 
   const switchMode = useCallback((next: MdEditorMode) => {
@@ -181,7 +200,7 @@ export function MdEditor({
     });
   }, []);
 
-  const save = useCallback(async () => {
+  const save = useCallback(async (source: "manual" | "auto" = "manual") => {
     if (readOnly || saving) return;
     const snapshot = rawRef.current;
     setSaving(true);
@@ -193,6 +212,14 @@ export function MdEditor({
         setConflict(null);
         setSavedFlash(true);
         window.setTimeout(() => setSavedFlash(false), 1500);
+        // Memory-save flare (cave-q06w): manual saves only — autosave is
+        // ambient bookkeeping, not an accomplishment — and a global cooldown
+        // keeps save-happy editing from strobing. Visual-only garnish: the
+        // role=status "Saved" flash above is the actual confirmation.
+        if (source === "manual" && readCelebrationsEnabled() && shouldFlare("memory-save")) {
+          setSaveFlare(true);
+          window.setTimeout(() => setSaveFlare(false), 900);
+        }
       } else if (result.conflict) {
         setConflict(result.conflict);
       } else {
@@ -211,34 +238,35 @@ export function MdEditor({
   // adopt the disk version and drop the draft. Merge: three-way merge of
   // baseline/draft/disk; overlapping edits get git-style markers to resolve.
   const resolveKeepMine = useCallback(() => {
+    refreshVisualEpoch();
     setConflict(null);
     void save();
-  }, [save]);
+  }, [refreshVisualEpoch, save]);
 
   const resolveTakeTheirs = useCallback(() => {
     setConflict((current) => {
       if (current) {
         updateRaw(current.currentText);
         setBaseline(current.currentText);
-        setVisualEpoch((n) => n + 1);
+        refreshVisualEpoch();
       }
       return null;
     });
-  }, [updateRaw]);
+  }, [refreshVisualEpoch, updateRaw]);
 
   const resolveMerge = useCallback(() => {
     setConflict((current) => {
       if (current) {
         const merged = mergeThreeWay(baseline, rawRef.current, current.currentText);
         updateRaw(merged.text);
-        setVisualEpoch((n) => n + 1);
+        refreshVisualEpoch();
         // Conflict markers are raw-text constructs — resolve them in MARKDOWN
         // mode so the visual editor doesn't normalize them away.
         if (merged.conflicts > 0) switchMode("markdown");
       }
       return null;
     });
-  }, [baseline, switchMode, updateRaw]);
+  }, [baseline, refreshVisualEpoch, switchMode, updateRaw]);
 
   // Autosave: persist a short while after typing stops (idempotent surfaces
   // only — see the `autoSave` prop doc). A ref keeps the effect from
@@ -252,7 +280,7 @@ export function MdEditor({
   saveRef.current = save;
   useEffect(() => {
     if (!autoSave || readOnly || saving || conflict !== null || !dirty || !raw.trim()) return;
-    const timer = window.setTimeout(() => void saveRef.current(), AUTOSAVE_DEBOUNCE_MS);
+    const timer = window.setTimeout(() => void saveRef.current("auto"), AUTOSAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [autoSave, readOnly, saving, conflict, dirty, raw]);
 
@@ -275,7 +303,7 @@ export function MdEditor({
 
   return (
     <div
-      className="md-editor flex h-full min-h-0 flex-col"
+      className={`md-editor flex h-full min-h-0 flex-col${saveFlare ? " md-editor--reward" : ""}`}
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
           e.preventDefault();
@@ -390,12 +418,15 @@ export function MdEditor({
             onKeepMine={resolveKeepMine}
             onTakeTheirs={resolveTakeTheirs}
             onMerge={resolveMerge}
-            onDismiss={() => setConflict(null)}
+            onDismiss={() => {
+              refreshVisualEpoch();
+              setConflict(null);
+            }}
           />
         ) : mode === "visual" ? (
           <MdEditorVisual
             key={visualEpoch}
-            defaultValue={doc.body}
+            defaultValue={presentation.visibleBody}
             readOnly={readOnly}
             onChange={onBodyChange}
             onSave={() => void save()}

@@ -21,9 +21,8 @@ assert.match(card, /!slim && safe\.links\.length/, "slim hides links");
 // Emoji-free — icons only (Salem guard).
 assert.doesNotMatch(card, /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "no emoji glyphs in the card");
 
-// Panel integration
-assert.match(widget, /import \{ SalemPathfinderCard \}/, "panel imports the card");
-assert.match(widget, /\/api\/salem\/pathfinder/, "panel posts to the pathfinder route");
-assert.match(widget, /<SalemPathfinderCard /, "panel renders the card when present");
+// The rail chat has no Pathfinder trigger; the dedicated entry component owns
+// the reachable integration.
+assert.doesNotMatch(widget, /SalemPathfinderCard|\/api\/salem\/pathfinder/, "rail chat omits dormant Pathfinder integration");
 
 console.log("salem-pathfinder-card.test.ts OK");

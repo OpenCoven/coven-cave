@@ -54,6 +54,7 @@ import {
   selectionKey,
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
+import { shouldRouterPromoteSession } from "@/lib/chat-router-promotion";
 import { useAutoExpandNewGroups } from "@/lib/use-auto-expand-new-groups";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
@@ -109,6 +110,11 @@ type Props = {
    *  full-width main chat surface opts in — the compact companion rail has no
    *  room, and two mounts must not fight over the persisted layout. */
   enableSplitPanes?: boolean;
+  /** Workspace's current sidebar familiar filter, forwarded to every ChatView
+   *  mount (primary and split panes) so attention-clear provenance uses the
+   *  list scope that can actually prove absence, not each pane's own
+   *  familiar. See ChatView's `activeFamiliarId` prop. */
+  activeFamiliarId?: string | null;
 };
 
 export type ChatRouterHandle = {
@@ -162,10 +168,27 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onOpenProjectsTab,
     onActiveSessionChange,
     enableSplitPanes = false,
+    activeFamiliarId,
   },
   ref,
 ) {
   const [view, setView] = useState<View>({ kind: "list" });
+  // Always-current ref so effects that use functional setView can still read
+  // the latest view without a stale closure (e.g. familiar-switch nonce guard).
+  const viewRef = useRef<View>(view);
+  viewRef.current = view;
+  // Monotonically increasing nonce passed to ChatView. Incremented on every
+  // explicit "open a new blank compose" transition so ChatView can revoke the
+  // previous compose's display-run ownership even when both are sessionId=null.
+  // NOT incremented on session promotion (null→sessionId) — that would remount
+  // and lose the live stream.
+  const [composeInstance, setComposeInstance] = useState(0);
+  const composeInstanceRef = useRef(composeInstance);
+  const advanceComposeInstance = useCallback(() => {
+    const next = composeInstanceRef.current + 1;
+    composeInstanceRef.current = next;
+    setComposeInstance(next);
+  }, []);
   // Mirror the active session upward when it *changes*. Seeding the ref with
   // the mount value (always null — view starts as the list) means mount never
   // notifies, so a fresh router can't clobber the Workspace's optimistic
@@ -252,7 +275,6 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     ? familiars.find((entry) => entry.id === activeSession.familiarId) ?? null
     : null;
   const chatFamiliar = selectedViewFamiliar ?? sessionFamiliar ?? familiar ?? null;
-  const fallbackFamiliarId = familiar?.id ?? visibleFamiliars[0]?.id ?? null;
   const { projects } = useProjects();
   const projectOverrides = useProjectOverrides();
 
@@ -330,7 +352,10 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     const hash = window.location.hash;
     if (view.kind === "chat" && view.sessionId) {
       const next = `#chat-${encodeURIComponent(view.sessionId)}`;
-      if (hash !== next) window.history.pushState(null, "", next);
+      if (hash !== next) {
+        window.history.pushState(null, "", next);
+        window.dispatchEvent(new Event("cave:chat-history-push"));
+      }
       return;
     }
     // Mount always lands on the list view; never clear a deep-link hash here
@@ -338,6 +363,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     if (isFirstRun) return;
     if (hash.startsWith("#chat-")) {
       window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      window.dispatchEvent(new Event("cave:chat-history-replace"));
     }
   }, [syncUrlHash, view]);
 
@@ -517,6 +543,18 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     }
     if (previousFamiliarIdRef.current === nextFamiliarId) return;
     previousFamiliarIdRef.current = nextFamiliarId;
+    // A familiar switch in chat mode opens a new blank compose (sessionId:null)
+    // unless the view was already bound to this familiar (router-initiated open).
+    // Increment composeInstance to revoke any in-flight send from the previous
+    // compose — mirrors the condition inside the setView updater below.
+    const currentView = viewRef.current;
+    if (
+      nextFamiliarId !== null &&
+      currentView.kind === "chat" &&
+      currentView.familiarId !== nextFamiliarId
+    ) {
+      advanceComposeInstance();
+    }
     setView((prev) =>
       nextFamiliarId === null
         ? { kind: "list" }
@@ -539,7 +577,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
               }
         : { kind: "list" },
     );
-  }, [familiar?.id]);
+  }, [advanceComposeInstance, familiar?.id]);
 
   // ── Chat-first IA (cave-hsa6): boot into a fresh compose view ──────────────
   // Booting into chat mode should read like ChatGPT — an empty conversation with
@@ -569,13 +607,21 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         return;
       }
     }
-    const bootFamiliarId = familiar?.id ?? fallbackFamiliar?.id ?? null;
-    if (!bootFamiliarId) return; // wait until a familiar is available
+    // Boot into chat rather than the list — but do not choose WHO for the user.
+    // An active familiar carries. Absent one this used to adopt
+    // visibleFamiliars[0], so a first run (or a cleared/deleted active familiar)
+    // landed on a composer silently bound to whichever familiar sorted first,
+    // and the user's FIRST message went to it. Open the compose view unbound
+    // instead: chatFamiliar stays null and NewChatLaunch asks, which keeps the
+    // chat-first landing without making the choice.
+    if (visibleFamiliars.length === 0) return; // wait until the roster has loaded
     bootComposeRef.current = true;
     setView((prev) =>
-      prev.kind === "list" ? { kind: "chat", sessionId: null, familiarId: bootFamiliarId } : prev,
+      prev.kind === "list"
+        ? { kind: "chat", sessionId: null, familiarId: familiar?.id ?? null }
+        : prev,
     );
-  }, [familiar?.id, fallbackFamiliar?.id]);
+  }, [familiar?.id, visibleFamiliars.length]);
 
   useImperativeHandle(
     ref,
@@ -583,6 +629,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       goToList: () => setView({ kind: "list" }),
       newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin, initialControls?: InitialCommandControls, initialAttachments?: ChatAttachment[]) => {
         const next = selectFamiliarForChat(familiarId);
+        advanceComposeInstance();
         setView({
           kind: "chat",
           sessionId: null,
@@ -618,7 +665,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       clearTranscript: () => viewHandle.current?.clearTranscript(),
       runSlash: (command: string) => viewHandle.current?.runSlash(command),
     }),
-    [fallbackFamiliar, familiar, familiars, onSetActiveFamiliar, sessions, view, enableSplit, split],
+    [advanceComposeInstance, fallbackFamiliar, familiar, familiars, onSetActiveFamiliar, sessions, view, enableSplit, split],
   );
 
   if (familiars.length === 0 && !familiar) {
@@ -719,7 +766,11 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           if (fq) setPendingFind({ query: fq, nonce: Date.now() });
         }}
         onNewChat={(projectRoot, familiarId) => {
-          const next = selectFamiliarForChat(familiarId);
+          // No familiar supplied means the user has not chosen one. Leave it
+          // null so NewChatLaunch renders and asks, rather than adopting
+          // visibleFamiliars[0] and silently making it the active familiar.
+          const next = familiarId ? selectFamiliarForChat(familiarId) : null;
+          advanceComposeInstance();
           setView({ kind: "chat", sessionId: null, projectRoot, familiarId: next?.id ?? familiarId ?? null });
         }}
       />
@@ -758,10 +809,13 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     <FamiliarChatoutCodexSurface />
   ) : (
     <ChatView
+      key={`chat-compose-${composeInstance}`}
       ref={viewHandle}
       familiar={chatFamiliar}
+      familiars={familiars}
       sessionId={view.sessionId}
       session={activeSession}
+      activeFamiliarId={activeFamiliarId}
       projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
       initialPrompt={view.kind === "chat" ? view.initialPrompt : undefined}
       initialAttachments={view.kind === "chat" ? view.initialAttachments : undefined}
@@ -773,25 +827,37 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       openVoiceSessionId={pendingVoice?.sessionId}
       daemonRunning={daemonRunning}
       sessions={sessions}
+      composeInstance={composeInstance}
       onSessionsChanged={onSessionsChanged}
       onSessionsDeleted={onSessionsDeleted}
       onBack={() => setView({ kind: "list" })}
-      onSessionStarted={(sid) => {
-        // Only promote the sessionId in the view state when the current chat
-        // has no session yet (null). If a session is already set, leave the
-        // view alone — updating it would re-mount ChatView and lose the live
-        // currentSessionRef, breaking follow-up messages.
-        setView((prev) =>
-          prev.kind === "chat" && prev.sessionId === null
-            ? { kind: "chat", sessionId: sid, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
-            : prev,
-        );
+      onSessionStarted={(request) => {
+        // Match both the originating session and compose lineage. The functional
+        // update makes A→B atomic with navigation, while the synchronously advanced
+        // nonce prevents an old null-origin compose from claiming a newer one.
+        setView((prev) => {
+          if (
+            prev.kind !== "chat"
+            || !shouldRouterPromoteSession(
+              { sessionId: prev.sessionId, composeInstance: composeInstanceRef.current },
+              request,
+            )
+          ) {
+            return prev;
+          }
+          return {
+            kind: "chat",
+            sessionId: request.newSessionId,
+            projectRoot: prev.projectRoot,
+            familiarId: prev.familiarId,
+          };
+        });
         onSessionStarted?.();
       }}
       onVoiceSessionCreated={(sid) => {
         // Pre-session voice call: ChatView created the conversation; promote
-        // it into the view (same null-only guard as onSessionStarted) and arm
-        // the auto-open nonce so the overlay opens once the session mounts.
+        // it into the view (null-only: a voice pre-session is always sessionless)
+        // and arm the auto-open nonce so the overlay opens once the session mounts.
         setView((prev) =>
           prev.kind === "chat" && prev.sessionId === null
             ? { kind: "chat", sessionId: sid, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
@@ -805,6 +871,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         // the same familiar/project (same reset shape as the promotion
         // above, but back to sessionId: null) instead of leaving the user
         // typing into a session that no longer exists.
+        advanceComposeInstance();
         setView((prev) =>
           prev.kind === "chat"
             ? { kind: "chat", sessionId: null, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
@@ -840,6 +907,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
               familiar={paneFamiliar}
               sessionId={paneId}
               session={paneSession}
+              activeFamiliarId={activeFamiliarId}
               daemonRunning={daemonRunning}
               sessions={sessions}
               onSessionsChanged={onSessionsChanged}
@@ -875,8 +943,11 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         onOpenSessionInSplit={enableSplit ? handleOpenSessionInSplit : undefined}
         onNewChat={(root) => {
           const group = sidebarGroups.find((g) => g.projectRoot === root);
-          const nextFamiliarId = group?.defaultFamiliarId ?? fallbackFamiliarId;
-          const next = selectFamiliarForChat(nextFamiliarId);
+          // The group's own latest familiar is a real signal. Absent it, ask
+          // rather than fall back to whichever familiar sorts first.
+          const nextFamiliarId = group?.defaultFamiliarId ?? familiar?.id ?? null;
+          const next = nextFamiliarId ? selectFamiliarForChat(nextFamiliarId) : null;
+          advanceComposeInstance();
           setView({
             kind: "chat",
             sessionId: null,

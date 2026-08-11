@@ -14,11 +14,21 @@
  * and the delivery panel says so honestly.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
-import { RailSection, SurfaceCanvas, SurfaceEmpty, SurfaceRail, SurfaceRoom } from "./surface-room";
+import { useLatestAsyncData } from "@/lib/use-role-surfaces";
+import {
+  RailSection,
+  SurfaceCanvas,
+  SurfaceEmpty,
+  SurfaceError,
+  SurfaceLoading,
+  SurfaceRail,
+  SurfaceRoom,
+  useActiveSelectionRail,
+} from "./surface-room";
 import { MESSENGER_SURFACE_ID } from "./ids";
 
 export type MessageChannel = "email" | "discord" | "slack" | "sms" | "teams" | "social";
@@ -81,26 +91,33 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
   );
 
   // Real inbound items from the Cave inbox, scoped to this familiar.
-  const [inbox, setInbox] = useState<InboxItemWire[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/inbox", { cache: "no-store" });
-        const json = res.ok ? ((await res.json()) as { items?: InboxItemWire[] }) : null;
-        if (!cancelled) {
-          setInbox((json?.items ?? []).filter((item) => !item.familiarId || item.familiarId === familiarId));
-        }
-      } catch {
-        if (!cancelled) setInbox([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+  const fetchInbox = useCallback(async () => {
+    const res = await fetch("/api/inbox", { cache: "no-store" });
+    const json = res.ok ? ((await res.json()) as { items?: InboxItemWire[] }) : null;
+    if (!Array.isArray(json?.items)) throw new Error("bad response");
+    return json.items.filter((item) => !item.familiarId || item.familiarId === familiarId);
   }, [familiarId]);
+  const {
+    data: inbox,
+    error: inboxError,
+    reload: loadInbox,
+  } = useLatestAsyncData<InboxItemWire[]>({
+    scopeKey: familiarId,
+    load: fetchInbox,
+    errorMessage: "Couldn't load the inbox.",
+  });
 
   const selected = state.drafts.find((d) => d.id === state.selectedDraftId) ?? null;
+  const [dispatchExpanded, setDispatchExpanded] = useActiveSelectionRail(state.selectedDraftId);
+  const [trafficExpanded, setTrafficExpanded] = useState(false);
+  const setTrafficRailExpanded = (next: boolean) => {
+    setTrafficExpanded(next);
+    if (next) setDispatchExpanded(false);
+  };
+  const setDispatchRailExpanded = (next: boolean) => {
+    setDispatchExpanded(next);
+    if (next) setTrafficExpanded(false);
+  };
 
   const newDraft = (channel: MessageChannel = "email") => {
     const draft: Draft = {
@@ -114,6 +131,7 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
       createdAt: new Date().toISOString(),
     };
     patch({ drafts: [draft, ...state.drafts], selectedDraftId: draft.id });
+    setDispatchRailExpanded(true);
   };
 
   const updateSelected = (update: Partial<Draft>) => {
@@ -162,7 +180,16 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
             )}
           </RailSection>
           <RailSection title="Scheduled" iconName="ph:clock">
-            {scheduled.length === 0 ? (
+            {inboxError ? (
+              <SurfaceError
+                title={inboxError}
+                hint="Check the Cave connection, then retry."
+                onRetry={loadInbox}
+                live={false}
+              />
+            ) : inbox == null ? (
+              <SurfaceLoading label="Loading scheduled messages…" live={false} />
+            ) : scheduled.length === 0 ? (
               <SurfaceEmpty title="No scheduled messages." />
             ) : (
               <ul className="role-surface-list">
@@ -181,7 +208,12 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
         </div>
       }
     >
-      <SurfaceRail side="left" label="Traffic">
+      <SurfaceRail
+        side="left"
+        label="Traffic"
+        expanded={trafficExpanded}
+        onExpandedChange={setTrafficRailExpanded}
+      >
         <RailSection
           title="Drafts"
           iconName="ph:pencil-simple"
@@ -201,7 +233,10 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
                   <button
                     type="button"
                     className={`role-surface-row-btn focus-ring-inset${draft.id === state.selectedDraftId ? " role-surface-row-btn--active" : ""}`}
-                    onClick={() => patch({ selectedDraftId: draft.id })}
+                    onClick={() => {
+                      patch({ selectedDraftId: draft.id });
+                      setDispatchRailExpanded(true);
+                    }}
                   >
                     <span className="role-surface-tag">{CHANNEL_CONVENTIONS[draft.channel].label}</span>
                     {draft.subject || draft.body.slice(0, 40) || "(empty draft)"}
@@ -212,8 +247,14 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
           )}
         </RailSection>
         <RailSection title="Inbox" iconName="ph:tray">
-          {inbox == null ? (
-            <SurfaceEmpty title="Loading inbox…" />
+          {inboxError ? (
+            <SurfaceError
+              title={inboxError}
+              hint="Check the Cave connection, then retry."
+              onRetry={loadInbox}
+            />
+          ) : inbox == null ? (
+            <SurfaceLoading label="Loading inbox…" />
           ) : inbox.length === 0 ? (
             <SurfaceEmpty title="Inbox is clear." />
           ) : (
@@ -237,7 +278,10 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
                   <button
                     type="button"
                     className="role-surface-row-btn focus-ring-inset"
-                    onClick={() => patch({ selectedDraftId: draft.id })}
+                    onClick={() => {
+                      patch({ selectedDraftId: draft.id });
+                      setDispatchRailExpanded(true);
+                    }}
                   >
                     {draft.subject || draft.body.slice(0, 40) || "(empty draft)"}
                   </button>
@@ -315,7 +359,12 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
         )}
       </SurfaceCanvas>
 
-      <SurfaceRail side="right" label="Dispatch">
+      <SurfaceRail
+        side="right"
+        label="Dispatch"
+        expanded={dispatchExpanded}
+        onExpandedChange={setDispatchRailExpanded}
+      >
         {!selected ? (
           <RailSection title="Dispatch" iconName="ph:paper-plane-tilt">
             <SurfaceEmpty title="Select a draft to manage dispatch." />

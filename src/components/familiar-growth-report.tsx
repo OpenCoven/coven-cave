@@ -190,10 +190,18 @@ export function FamiliarGrowthReport({
         </div>
         <div className="growth-summary__item">
           <Icon name="ph:brain-bold" aria-hidden />
-          <span className="growth-summary__value">{stats ? stats.memoryCount : "—"}</span>
-          <p>{stats?.memoryCount === 1 ? "Memory entry" : "Memory entries"}</p>
+          <span className="growth-summary__value">
+            {stats?.memoryAvailability === "ready" ? stats.memoryCount : "—"}
+          </span>
+          <p>
+            {stats?.memoryAvailability === "ready" && stats.memoryCount === 1
+              ? "Memory entry"
+              : "Memory entries"}
+          </p>
           <small>
-            {stats?.latestMemory ? (
+            {stats?.memoryAvailability !== "ready" ? (
+              "Memory unavailable"
+            ) : stats.latestMemory ? (
               <>updated <RelativeTime iso={stats.latestMemory.updatedAt} now={nowMs} /></>
             ) : (
               "no memory yet"

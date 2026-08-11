@@ -16,10 +16,16 @@
   --pfc-dim: #8f9098;
   --pfc-faint: #5d5e66;
   --pfc-glow: 0 0 14px rgba(255, 255, 255, 0.38);
+  --pfc-mint-0: #17171b;
   --pfc-mint-1: #1c3a30;
   --pfc-mint-2: #2c5f4b;
   --pfc-mint-3: #47a077;
   --pfc-mint-4: #83e3b4;
+  --pfc-amber-border: #4d3a1e;
+  --pfc-amber-bg: #201a10;
+  --pfc-amber-ink: #d8b06a;
+  --pfc-wordmark: #d7d7dc;
+  --pfc-footer-bg: #0c0c0e;
 
   min-height: 100%;
   display: flex;
@@ -69,10 +75,10 @@
   gap: var(--space-2);
   margin: 0 0 10px;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid #4d3a1e;
+  border: 1px solid var(--pfc-amber-border);
   border-radius: 10px;
-  background: #201a10;
-  color: #d8b06a;
+  background: var(--pfc-amber-bg);
+  color: var(--pfc-amber-ink);
   font-size: var(--text-sm);
 }
 
@@ -113,7 +119,7 @@
   font-size: clamp(24px, 2.6vw, 34px);
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: #d7d7dc;
+  color: var(--pfc-wordmark);
   text-shadow: var(--pfc-glow);
   /* Reference card's checkerboard behind the category wordmark. */
   background:
@@ -290,7 +296,7 @@
   border-radius: 2px;
   background: var(--pfc-tile);
 }
-.pfc-cell[data-level="0"] { background: #17171b; }
+.pfc-cell[data-level="0"] { background: var(--pfc-mint-0); }
 .pfc-cell[data-level="1"] { background: var(--pfc-mint-1); }
 .pfc-cell[data-level="2"] { background: var(--pfc-mint-2); }
 .pfc-cell[data-level="3"] { background: var(--pfc-mint-3); }
@@ -430,7 +436,7 @@
   justify-content: space-between;
   padding: 10px 18px;
   border-top: 1px solid var(--pfc-border);
-  background: #0c0c0e;
+  background: var(--pfc-footer-bg);
   color: var(--pfc-dim);
   font-size: var(--text-xs);
   letter-spacing: 0.06em;

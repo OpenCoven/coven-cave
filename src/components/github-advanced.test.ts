@@ -102,8 +102,12 @@ assert.match(checksRoute, /github error \(\$\{runsResp\.res\.status\}, \$\{statu
 
 // The detail panel renders an expandable checks section for PRs only.
 assert.match(source, /function GitHubChecks/, "the checks section component exists");
-assert.match(source, /<GitHubChecks item=\{item\} \/>/, "the checks section is wired into the detail panel");
-assert.match(source, /const isPull = item\.kind === "pr" \|\| item\.kind === "review_request";\s*\n\s*const state = useGitHubChecks/, "checks only load for pull requests");
+assert.match(source, /<GitHubChecks item=\{item\} state=\{checksState\} \/>/, "the checks section is wired into the detail panel");
+// The panel owns the fetch and hands the same state to both readers, so the
+// landing-gate strip and the breakdown below it can never report different runs.
+assert.match(source, /const checksState = useGitHubChecks\(item, isPull\);/, "the detail panel owns the single checks fetch");
+assert.match(source, /const isPull = item != null && \(item\.kind === "pr" \|\| item\.kind === "review_request"\);/, "checks only load for pull requests");
+assert.match(source, /landingGates\(item, detail, checksState\)/, "the landing gates read the panel's checks state");
 assert.match(source, /fetch\(`\/api\/github\/checks\?repo=/, "the section fetches the checks route");
 assert.match(source, /function checkPresentation/, "check runs map status/conclusion to icon + tint");
 assert.match(source, /function checkDuration/, "check runs show a human duration");

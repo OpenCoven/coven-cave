@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const src = await readFile(new URL("./open-coven-tools-update.tsx", import.meta.url), "utf8");
-const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const about = await readFile(new URL("./settings-about.tsx", import.meta.url), "utf8");
 const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
 const status = await readFile(new URL("../lib/opencoven-tools-status.ts", import.meta.url), "utf8");
 const statusDisplay = await readFile(new URL("../lib/opencoven-tools-status-display.ts", import.meta.url), "utf8");
@@ -78,6 +78,7 @@ assert.match(src, /export function OpenCovenToolsBannerTrigger/, "exports a shel
 assert.match(src, /coven-cave:tool-update:dismissed:/, "tool update banners persist dismissal per released tool version");
 assert.match(src, /pushBanner\(/, "tool update trigger publishes through the shared shell banner system");
 assert.match(src, /const incompatibleTools = tools\.filter\(toolNeedsCompatibilityUpdate\)/, "global banner only warns for installed tools below the Cave floor");
+assert.match(src, /tool\.id !== "coven-cli" && tool\.compatible && tool\.outdated/, "ordinary CLI availability is shown only in the detailed About tools surface");
 assert.match(src, /severity: incompatibleTools\.length > 0 \? "warning" : "info"/, "compatibility failures get stronger warning severity than ordinary updates");
 assert.match(src, /Review tools/, "tool update banner sends users to the settings tool surface");
 assert.match(shell, /OpenCovenToolsBannerTrigger/, "Shell imports and mounts the OpenCoven tools banner trigger");
@@ -123,7 +124,7 @@ assert.match(
   /\.settings-tool-action--primary\s*\{[\s\S]*?border:[\s\S]*?box-shadow:/,
   "Primary Settings tool action should have a visible border and elevation",
 );
-assert.match(status, /minimumVersion: "0\.1\.1"/, "Coven CLI compatibility floor unified to v0.1.1 (CLI self-manages the engine)");
+assert.match(status, /minimumVersion: "0\.2\.5"/, "Coven CLI compatibility floor requires the released maintenance protocol");
 assert.doesNotMatch(status, /minimumVersion: "0\.6\.0"/, "coven-code compatibility floor removed after unification");
 assert.match(status, /installCommand: "npm i -g @opencoven\/cli@latest"/, "Coven CLI exposes the exact update command");
 assert.doesNotMatch(status, /installCommand: "npm i -g @opencoven\/coven-code@latest"/, "coven-code install command removed after unification");
@@ -133,8 +134,17 @@ assert.match(status, /const compatible =[\s\S]*packageVerified[\s\S]*!!probe\.ve
 assert.match(status, /const state = openCovenToolState/, "server status derives a truthful explicit state");
 assert.match(status, /state,/, "server status returns the derived state");
 assert.match(status, /verifyOpenCovenToolInstall[\s\S]*refreshCovenSpawnEnv\(\)/, "post-install verification refreshes PATH before probing the selected tool");
-assert.match(settings, /import \{ OpenCovenToolsUpdate \}/, "Settings imports the OpenCoven tools update component");
-assert.match(settings, /<SettingsGroup label="OpenCoven tools">[\s\S]*<OpenCovenToolsUpdate \/>/, "About settings renders the OpenCoven tools group");
+assert.match(about, /import \{[\s\S]*OpenCovenToolsUpdate[\s\S]*\}/, "About imports the OpenCoven tools update component");
+assert.match(
+  about,
+  /<OpenCovenToolsUpdate[\s\S]*showDiagnosticsAction=\{false\}[\s\S]*onSnapshotChange=\{handleToolSnapshot\}/,
+  "About renders the live OpenCoven tools control sheet and consumes its live diagnostic snapshot",
+);
+assert.match(
+  src,
+  /onSnapshotChange\?\.\(\{[\s\S]*tools,[\s\S]*installJobs,[\s\S]*installResults/,
+  "the live tools sheet reports installer jobs and results to the About hero",
+);
 assert.match(runner, /src\/components\/open-coven-tools-update\.test\.ts/, "OpenCoven tools update test is wired into the test:app suite (scripts/run-tests.mjs)");
 assert.match(runner, /src\/lib\/opencoven-tools-state\.test\.ts/, "OpenCoven tool state tests are wired into the test suite");
 assert.match(runner, /src\/lib\/opencoven-tool-verification\.test\.ts/, "post-install verification scenarios are wired into the app test suite");
