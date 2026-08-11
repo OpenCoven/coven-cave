@@ -8,12 +8,18 @@ import {
   CopilotPromptTransportError,
   copilotPromptTransportFailure,
 } from "./flow-copilot-session.ts";
-import { ResearchFileIntegrityError } from "./research-mission-store.ts";
+import {
+  RESEARCH_SESSION_OWNER_WRITE_GRANT_DIAGNOSTIC,
+  ResearchFileIntegrityError,
+} from "./research-mission-store.ts";
 import {
   cancelResearchSession,
   makeResearchMissionRunner,
   parseResearchSourcesFile,
+  researchDaemonSessionState,
+  RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT,
   ResearchMissionLaunchInputError,
+  RESEARCH_SESSION_OWNER_REPAIR_REQUIRED,
   type ResearchMissionRunnerDeps,
 } from "./research-mission-runner.ts";
 
@@ -42,6 +48,47 @@ test("Research cancellation uses the daemon only when no direct owner exists", a
     },
   });
   assert.deepEqual(calls, ["POST:/api/v1/sessions/daemon%2Fsession/kill"]);
+});
+
+test("Research cancellation stays on its persisted owner-local daemon authority", async () => {
+  const calls: string[] = [];
+  const authority = { kind: "owner-local-daemon" as const, socketPath: "/tmp/coven-original.sock" };
+  await cancelResearchSession("daemon/session", {
+    cancelDirect: async () => { throw new Error("owner-local daemon must not probe direct ids"); },
+    callDaemonImpl: async () => {
+      calls.push("generic-config-target");
+      return { ok: false, status: 404 };
+    },
+    callDaemonTargetImpl: async (target, request) => {
+      calls.push(`${target.socketPath}:${request.path}`);
+      return { ok: true, status: 200 };
+    },
+  }, authority, "owner-local-daemon");
+  assert.deepEqual(calls, ["/tmp/coven-original.sock:/api/v1/sessions/daemon%2Fsession/kill"]);
+});
+
+test("Research liveness stays on its persisted owner-local daemon authority", async () => {
+  const calls: string[] = [];
+  const state = await researchDaemonSessionState(
+    "session-1",
+    { kind: "owner-local-daemon", socketPath: "\\\\.\\pipe\\coven-original" },
+    {
+      callDaemonImpl: async () => {
+        calls.push("generic-config-target");
+        return { ok: true, status: 200, data: [] };
+      },
+      callDaemonTargetImpl: async (target) => {
+        calls.push(target.socketPath);
+        return {
+          ok: true,
+          status: 200,
+          data: [{ id: "session-1", status: "running", exit_code: null }],
+        };
+      },
+    },
+  );
+  assert.equal(state, "running");
+  assert.deepEqual(calls, ["\\\\.\\pipe\\coven-original"]);
 });
 
 test("a direct cancellation failure never falls through to a misleading daemon kill", async () => {
@@ -111,10 +158,15 @@ const INPUT = {
 };
 
 function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissionRunnerDeps {
+  let sessionOwner: Awaited<ReturnType<ResearchMissionRunnerDeps["loadSessionOwner"]>> = null;
   return {
     createWorkspace: async (mission) => mission,
     loadMission: async () => null,
     saveMission: async () => {},
+    loadSessionOwner: async () => sessionOwner ? structuredClone(sessionOwner) : null,
+    recordSessionOwner: async (owner) => { sessionOwner = structuredClone(owner); },
+    clearSessionOwner: async () => { sessionOwner = null; },
+    assertSessionOwnerPrivate: async () => {},
     startFlow: async () => ({
       ok: true,
       run: RUN,
@@ -221,6 +273,77 @@ test("create/start persists before launch and records the real session", async (
   assert.equal(result.status, "running");
 });
 
+test("create/start records exact daemon authority outside public mission state", async () => {
+  const sessionAuthority = {
+    kind: "owner-local-daemon" as const,
+    socketPath: "/tmp/coven-start.sock",
+  };
+  const owners: unknown[] = [];
+  const runner = makeResearchMissionRunner(deps({
+    recordSessionOwner: async (owner) => {
+      if (owners.length === 0) owners.push(structuredClone(owner));
+      else assert.deepEqual(owner, owners[0], "post-return publication is an exact idempotent retry");
+    },
+    startFlow: async (_flow, options) => {
+      await options.publishSessionOwner?.(
+        "session-1",
+        "owner-local-daemon",
+        sessionAuthority,
+      );
+      assert.equal(owners.length, 1, "authority is durable before startFlow returns");
+      return {
+        ok: true,
+        run: RUN,
+        sessionId: "session-1",
+        sessionAuthority,
+        sessionOwnerKind: "owner-local-daemon",
+        executor: "session",
+      };
+    },
+  }));
+  const result = await runner.createAndStart(INPUT);
+  assert.equal("sessionAuthority" in (result.iterations[0] ?? {}), false);
+  assert.deepEqual(owners, [{
+    missionId: "mission-1",
+    iteration: 1,
+    sessionId: "session-1",
+    ownerKind: "owner-local-daemon",
+    authority: sessionAuthority,
+    recordedAt: NOW.toISOString(),
+  }]);
+});
+
+test("direct Copilot ownership is private and durable before startFlow returns", async () => {
+  let recorded: unknown = null;
+  const runner = makeResearchMissionRunner(deps({
+    recordSessionOwner: async (owner) => {
+      if (recorded === null) recorded = structuredClone(owner);
+      else assert.deepEqual(owner, recorded);
+    },
+    startFlow: async (_flow, options) => {
+      await options.publishSessionOwner?.("direct-session", "direct-copilot");
+      assert.ok(recorded);
+      return {
+        ok: true,
+        run: { ...RUN, sessionId: "direct-session" },
+        sessionId: "direct-session",
+        sessionOwnerKind: "direct-copilot",
+        executor: "session",
+      };
+    },
+  }));
+
+  const result = await runner.createAndStart(INPUT);
+  assert.deepEqual(recorded, {
+    missionId: "mission-1",
+    iteration: 1,
+    sessionId: "direct-session",
+    ownerKind: "direct-copilot",
+    recordedAt: NOW.toISOString(),
+  });
+  assert.equal("sessionOwnerKind" in (result.iterations[0] ?? {}), false);
+});
+
 test("every Research start path stops a launched session when the final mission save fails", async () => {
   const cases = [
     {
@@ -275,6 +398,35 @@ test("every Research start path stops a launched session when the final mission 
     assert.equal(stored?.status, "failed");
     assert.equal(stored?.iterations.at(-1)?.sessionId, undefined, "a proved-stopped owner is not retained as live");
   }
+});
+
+test("post-launch save compensation uses the exact cleanup owner returned by startFlow", async () => {
+  let stored: ResearchMission | null = null;
+  let saveCount = 0;
+  let exactCleanupCalls = 0;
+  let fallbackCleanupCalls = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => stored ? structuredClone(stored) : null,
+    saveMission: async (mission) => {
+      saveCount += 1;
+      if (saveCount === 2) throw new Error("result save failed after authority-pinned launch");
+      stored = structuredClone(mission);
+    },
+    startFlow: async () => ({
+      ok: true,
+      run: RUN,
+      sessionId: "pinned-owner-session",
+      executor: "session",
+      cleanupSession: async () => { exactCleanupCalls += 1; },
+    }),
+    killSession: async () => { fallbackCleanupCalls += 1; },
+  }));
+
+  const result = await runner.createAndStart(INPUT);
+  assert.equal(exactCleanupCalls, 1);
+  assert.equal(fallbackCleanupCalls, 0, "config-aware fallback cannot replace the launch authority");
+  assert.equal(result.status, "failed");
+  assert.equal((stored as ResearchMission | null)?.status, "failed");
 });
 
 test("a failed post-launch save retains the exact session when cleanup cannot be proved", async () => {
@@ -487,6 +639,34 @@ test("a distinct canonical mission workspace remains the narrow write grant", as
   await runner.createAndStart({ ...INPUT, projectRoot: "/allowed/repo" });
   assert.deepEqual(roots, ["/allowed/repo"]);
   assert.deepEqual(grants, [["/tmp/research-missions/mission-1"]]);
+});
+
+test("a project write grant containing the private owner ledger fails before spawn", async () => {
+  let starts = 0;
+  const checkedRoots: string[][] = [];
+  const runner = makeResearchMissionRunner(deps({
+    assertSessionOwnerPrivate: async (roots) => {
+      checkedRoots.push(roots);
+      throw new Error(RESEARCH_SESSION_OWNER_WRITE_GRANT_DIAGNOSTIC);
+    },
+    startFlow: async () => {
+      starts += 1;
+      return { ok: true, run: RUN, sessionId: "must-not-start", executor: "session" };
+    },
+  }));
+
+  const result = await runner.createAndStart({
+    ...INPUT,
+    projectRoot: "/home/user/.coven",
+  });
+
+  assert.equal(starts, 0);
+  assert.deepEqual(checkedRoots, [[
+    "/home/user/.coven",
+    "/tmp/research-missions/mission-1",
+  ]]);
+  assert.equal(result.status, "failed");
+  assert.equal(result.lastError, RESEARCH_SESSION_OWNER_WRITE_GRANT_DIAGNOSTIC);
 });
 
 test("an unallowed configured project root fails fast with an actionable error", async () => {
@@ -736,24 +916,118 @@ test("cost-unavailable policy pauses before another iteration", async () => {
 });
 
 test("cancel kills the active session and preserves artifacts", async () => {
-  const killed: string[] = [];
+  const killed: Array<[string, unknown, unknown]> = [];
+  let cleared = 0;
+  const sessionAuthority = {
+    kind: "owner-local-daemon" as const,
+    socketPath: "/tmp/coven-cancel.sock",
+  };
   let stored = checkpointMission({
     status: "running",
     iterations: [{
       ...checkpointMission().iterations[0],
       status: "running",
       finishedAt: undefined,
+      sessionId: "attacker-replaced-session",
     }],
   });
   const runner = makeResearchMissionRunner(deps({
     loadMission: async () => structuredClone(stored),
     saveMission: async (mission) => { stored = structuredClone(mission); },
-    killSession: async (sessionId) => { killed.push(sessionId); },
+    loadSessionOwner: async () => ({
+      missionId: stored.id,
+      iteration: 1,
+      sessionId: "session-1",
+      ownerKind: "owner-local-daemon",
+      authority: sessionAuthority,
+      recordedAt: NOW.toISOString(),
+    }),
+    clearSessionOwner: async () => { cleared += 1; },
+    killSession: async (sessionId, authority, ownerKind) => {
+      killed.push([sessionId, authority, ownerKind]);
+    },
   }));
   const result = await runner.act(stored.id, { action: "cancel" });
-  assert.deepEqual(killed, ["session-1"]);
+  assert.deepEqual(killed, [["session-1", sessionAuthority, "owner-local-daemon"]]);
+  assert.equal(cleared, 1);
   assert.equal(result.status, "cancelled");
   assert.equal(result.artifacts.length, 1);
+});
+
+test("private direct ownership defeats mission session-id and terminal-state tampering", async () => {
+  let stored = checkpointMission({
+    status: "cancelled",
+    finishedAt: NOW.toISOString(),
+    iterations: [{
+      number: 1,
+      status: "cancelled",
+      sessionId: "attacker-selected-session",
+      finishedAt: NOW.toISOString(),
+    }],
+  });
+  const owner = {
+    missionId: stored.id,
+    iteration: 1,
+    sessionId: "real-direct-session",
+    ownerKind: "direct-copilot" as const,
+    recordedAt: NOW.toISOString(),
+  };
+  const killed: Array<[string, unknown, unknown]> = [];
+  const order: string[] = [];
+  let cleared = false;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => {
+      order.push("save-cancelled");
+      stored = structuredClone(mission);
+    },
+    loadSessionOwner: async () => structuredClone(owner),
+    sessionState: async () => "unknown",
+    killSession: async (sessionId, authority, ownerKind) => {
+      order.push("kill");
+      killed.push([sessionId, authority, ownerKind]);
+    },
+    clearSessionOwner: async (clearedOwner) => {
+      order.push("clear-owner");
+      assert.deepEqual(clearedOwner, owner);
+      cleared = true;
+    },
+  }));
+
+  const result = await runner.act(stored.id, { action: "cancel" });
+  assert.deepEqual(killed, [["real-direct-session", undefined, "direct-copilot"]]);
+  assert.deepEqual(order, ["kill", "save-cancelled", "clear-owner"]);
+  assert.equal(cleared, true);
+  assert.equal(result.status, "cancelled");
+});
+
+test("cancel retains private ownership when terminal mission persistence fails", async () => {
+  const stored = checkpointMission({
+    status: "running",
+    iterations: [{ number: 1, status: "running", sessionId: "writable-session" }],
+  });
+  const owner = {
+    missionId: stored.id,
+    iteration: 1,
+    sessionId: "private-session",
+    ownerKind: "direct-copilot" as const,
+    recordedAt: NOW.toISOString(),
+  };
+  let clearCalls = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    loadSessionOwner: async () => structuredClone(owner),
+    sessionState: async () => "unknown",
+    killSession: async () => {},
+    saveMission: async () => { throw new Error("mission disk unavailable"); },
+    clearSessionOwner: async () => { clearCalls += 1; },
+  }));
+
+  await assert.rejects(
+    runner.act(stored.id, { action: "cancel" }),
+    /mission disk unavailable/,
+  );
+  assert.equal(clearCalls, 0, "private owner remains retryable until cancelled state is durable");
 });
 
 test("cancel does not mark the mission cancelled until process termination is acknowledged", async () => {
@@ -833,6 +1107,82 @@ test("daemon offline and hub timeout cancellation preserve durable running state
     assert.equal(stored.iterations[0].status, "running");
     assert.equal(stored.finishedAt, undefined);
   }
+});
+
+test("missing or unreadable mission state cannot suppress exact-owner cancellation", async () => {
+  const owner = {
+    missionId: "mission-actions",
+    iteration: 1,
+    sessionId: "private-daemon-session",
+    ownerKind: "owner-local-daemon" as const,
+    authority: {
+      kind: "owner-local-daemon" as const,
+      socketPath: "/tmp/private-owner.sock",
+    },
+    recordedAt: NOW.toISOString(),
+  };
+
+  for (const loadMission of [
+    async () => null,
+    async (): Promise<ResearchMission | null> => { throw new Error("mission JSON malformed"); },
+  ]) {
+    const killed: unknown[] = [];
+    let clears = 0;
+    const runner = makeResearchMissionRunner(deps({
+      loadMission,
+      loadSessionOwner: async () => structuredClone(owner),
+      killSession: async (...args) => { killed.push(args); },
+      clearSessionOwner: async () => { clears += 1; },
+    }));
+
+    await assert.rejects(
+      runner.act(owner.missionId, { action: "cancel" }),
+      (error: unknown) => (
+        error instanceof Error && error.message === RESEARCH_SESSION_OWNER_REPAIR_REQUIRED
+      ),
+    );
+    assert.deepEqual(killed, [[owner.sessionId, owner.authority, owner.ownerKind]]);
+    assert.equal(clears, 0, "repair-required cancellation must retain the private owner tombstone");
+  }
+});
+
+test("an active private owner blocks lifecycle, artifact, and schedule mutations", async () => {
+  const stored = checkpointMission({ mode: "autoresearch" });
+  const owner = {
+    missionId: stored.id,
+    iteration: 1,
+    sessionId: "private-direct-session",
+    ownerKind: "direct-copilot" as const,
+    recordedAt: NOW.toISOString(),
+  };
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    loadSessionOwner: async () => structuredClone(owner),
+    sessionState: async () => "running",
+  }));
+
+  for (const action of [
+    { action: "attach-source" as const, source: { id: "manual", title: "Manual" } },
+    { action: "update-source" as const, sourceId: "manual", patch: { note: "later" } },
+    { action: "finish" as const },
+    { action: "archive" as const },
+    { action: "continue" as const },
+    { action: "reject-artifact" as const, artifactKey: "primary", reason: "not yet" },
+    { action: "publish-artifact" as const, artifactKey: "primary" },
+  ]) {
+    await assert.rejects(
+      runner.act(stored.id, action),
+      (error: unknown) => (
+        error instanceof Error && error.message === RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT
+      ),
+    );
+  }
+  await assert.rejects(
+    runner.schedule(stored.id, { rrule: "RRULE:FREQ=DAILY" }),
+    (error: unknown) => (
+      error instanceof Error && error.message === RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT
+    ),
+  );
 });
 
 test("manual sources normalize, dedupe, and remain revisable", async () => {

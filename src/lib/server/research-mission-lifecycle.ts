@@ -2,6 +2,10 @@ import type {
   CreateResearchMissionInput,
   ResearchMission,
 } from "../research-missions.ts";
+import type {
+  ResearchSessionAuthority,
+  ResearchSessionOwnerKind,
+} from "./research-session-authority.ts";
 import {
   researchArtifactKindForMode,
   STANDARD_RESEARCH_ARTIFACTS,
@@ -14,11 +18,17 @@ export type ResearchFlowStartResult = {
   status?: number;
   executor?: "session" | "travel-queue";
   sessionId?: string;
+  /** Durable exact daemon authority for later reconciliation/cancellation. */
+  sessionAuthority?: ResearchSessionAuthority;
+  /** Private process-owner class; never serialized into mission.json. */
+  sessionOwnerKind?: ResearchSessionOwnerKind;
   run?: FlowRunRecord;
   queued?: boolean;
   unavailable?: boolean;
   /** A start failed after launch and its process owner could not prove cleanup. */
   cleanupUnconfirmed?: boolean;
+  /** Exact in-process owner cleanup; ignored by durable mission serialization. */
+  cleanupSession?: () => Promise<void>;
   error?: string;
 };
 

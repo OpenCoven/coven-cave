@@ -47,6 +47,8 @@ test("errors map by kind: unknown action 400, client mistakes 400, missing missi
   // mission-not-found → 404, and EVERYTHING else (fs errors, bugs) → 500 —
   // internal failures must not masquerade as client errors.
   assert.match(source, /research mission not found"\) return 404/);
+  assert.match(source, /message === RESEARCH_SESSION_OWNER_REPAIR_REQUIRED\) return 409/);
+  assert.match(source, /message === RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT\) return 409/);
   assert.match(source, /VALIDATION_ERRORS\.has\(message\)/);
   assert.match(source, /startsWith\('Project root "'\)/);
   assert.match(source, /startsWith\("invalid source"\)/);

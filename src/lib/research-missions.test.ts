@@ -75,6 +75,29 @@ test("mission parser validates shared-state fields and reconstructs safe data", 
   }), null);
 });
 
+test("mission parser strips private process-owner provenance from public state", () => {
+  const parsed = parseResearchMission({
+    ...validMission(),
+    iterations: [{
+      number: 1,
+      status: "running",
+      sessionId: "public-session-reference",
+      sessionAuthority: {
+        kind: "owner-local-daemon",
+        socketPath: "/tmp/private-owner.sock",
+      },
+      sessionOwnerKind: "owner-local-daemon",
+    }],
+  });
+  assert.deepEqual(parsed?.iterations, [{
+    number: 1,
+    status: "running",
+    sessionId: "public-session-reference",
+  }]);
+  assert.equal("sessionAuthority" in (parsed?.iterations[0] ?? {}), false);
+  assert.equal("sessionOwnerKind" in (parsed?.iterations[0] ?? {}), false);
+});
+
 test("Auto-routing is explainable and ambiguous work never loops", () => {
   assert.deepEqual(inferResearchMissionMode("Compare local-first note apps"), {
     mode: "brief",
