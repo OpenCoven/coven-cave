@@ -517,12 +517,25 @@ async function installDaemonlessFixture(page: Page): Promise<FixtureState> {
   });
   await page.route(/\/api\/project-tree(?:\?.*)?$/, (route) => {
     expect(route.request().method()).toBe("GET");
+    // Pin the query contract the real route reads (root/depth/familiarId), so
+    // this baseline fails closed if the client stops sending them instead of
+    // passing on a fixture that accepts any query string. `root` is the
+    // directory being expanded — the tree root on first load, a child on
+    // expansion — so it is asserted as inside the worktree, not equal to it.
+    // `familiarId` is asserted present but not truthy: fetchChildren defaults
+    // it to "" and sends the key regardless.
+    const params = new URL(route.request().url()).searchParams;
+    const root = params.get("root");
+    expect(root).toBeTruthy();
+    expect(root!.startsWith(WORKTREE_ROOT)).toBe(true);
+    expect(Number(params.get("depth"))).toBeGreaterThan(0);
+    expect(params.has("familiarId")).toBe(true);
     return route.fulfill({
       json: {
         ok: true,
         entries: [{
           name: "src",
-          path: `${WORKTREE_ROOT}/src`,
+          path: `${root}/src`,
           isDir: true,
         }],
       },
@@ -530,6 +543,11 @@ async function installDaemonlessFixture(page: Page): Promise<FixtureState> {
   });
   await page.route(/\/api\/project-file(?:\?.*)?$/, (route) => {
     expect(route.request().method()).toBe("GET");
+    // Same reasoning: the real route reads `path`, so pin that the client
+    // still asks for a file inside the worktree.
+    const filePath = new URL(route.request().url()).searchParams.get("path");
+    expect(filePath).toBeTruthy();
+    expect(filePath!.startsWith(WORKTREE_ROOT)).toBe(true);
     return route.fulfill({
       json: {
         ok: true,
