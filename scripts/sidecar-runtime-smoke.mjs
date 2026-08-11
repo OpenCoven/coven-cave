@@ -229,7 +229,7 @@ async function writeHangingDaemonFixture(rootDir, marker) {
         "@ECHO off",
         "SETLOCAL",
         "CALL :find_dp0",
-        'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%hanging-daemon-child.cjs" %*',
+        'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\hanging-daemon-child.cjs" %*',
         "",
       ].join("\r\n"),
       "utf8",
