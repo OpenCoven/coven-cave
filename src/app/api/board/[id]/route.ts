@@ -2,29 +2,37 @@ import { NextResponse } from "next/server";
 import {
   deleteCard,
   loadBoard,
+  OrchestrationValidationError,
+  STATUSES,
   updateCard,
-  type CardLifecycle,
   type CardPriority,
   type CardStatus,
 } from "@/lib/cave-board";
-import type { CardStep } from "@/lib/cave-board-types";
+import type { CardStep, TaskDependency, TaskNextStep } from "@/lib/cave-board-types";
 import type { CardAsanaLink, CardGitHubLink } from "@/lib/cave-board-types";
 import type { ChatAttachment } from "@/lib/chat-attachments";
-import type { CardOps } from "@/lib/board-card-ops";
+import type { CardOps, CardPatch } from "@/lib/board-card-ops";
 import { trustedProjectCwd } from "@/lib/cave-projects";
 
 export const dynamic = "force-dynamic";
+
+const PATCH_FIELDS = [
+  "title", "notes", "status", "lifecycleReason", "priority",
+  "familiarId", "modelOverride", "modelOverrideHarness", "sessionId", "cwd",
+  "projectId", "links", "github", "asana", "labels", "startDate", "endDate",
+  "needsHuman", "steps", "attachments", "dependencies",
+  "primaryBlockerId", "primaryBlockerPinned", "nextStep", "ops",
+] as const satisfies readonly (keyof CardPatch)[];
 
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  let body: Partial<{
+  type PatchBody = Partial<{
     title: string;
     notes: string;
     status: CardStatus;
-    lifecycle: CardLifecycle;
     lifecycleReason: string | undefined;
     priority: CardPriority;
     familiarId: string | null;
@@ -40,17 +48,34 @@ export async function PATCH(
     startDate: string | null;
     endDate: string | null;
     needsHuman: boolean;
-    runningSince: string | undefined;
     steps: CardStep[];
     attachments: ChatAttachment[];
+    dependencies: TaskDependency[];
+    primaryBlockerId: string | null;
+    primaryBlockerPinned: boolean;
+    nextStep: TaskNextStep | null;
     /** Intent ops for array fields — applied against the current card under
      * the board lock so concurrent element edits don't clobber each other. */
     ops: CardOps;
   }>;
+  let rawBody: unknown;
   try {
-    body = await req.json();
+    rawBody = await req.json();
   } catch {
     return NextResponse.json({ ok: false, error: "invalid json body" }, { status: 400 });
+  }
+  if (!rawBody || typeof rawBody !== "object" || Array.isArray(rawBody)) {
+    return NextResponse.json({ ok: false, error: "invalid json body" }, { status: 400 });
+  }
+  let body = rawBody as PatchBody;
+  if (body.status !== undefined && !STATUSES.includes(body.status as CardStatus)) {
+    return NextResponse.json({ ok: false, error: "invalid status" }, { status: 400 });
+  }
+  if (body.lifecycleReason !== undefined && typeof body.lifecycleReason !== "string") {
+    return NextResponse.json({ ok: false, error: "invalid lifecycle reason" }, { status: 400 });
+  }
+  if (body.needsHuman !== undefined && typeof body.needsHuman !== "boolean") {
+    return NextResponse.json({ ok: false, error: "invalid needs-human flag" }, { status: 400 });
   }
   // Keep a card's cwd consistent with its project, server-side (cave-pw83):
   //  - assigning a project (projectId set) → derive cwd from it, ignoring the body's;
@@ -71,7 +96,22 @@ export async function PATCH(
       if (resolved.ok) body = { ...body, cwd: resolved.root };
     }
   }
-  const card = await updateCard(id, body);
+  const patch = Object.fromEntries(
+    PATCH_FIELDS.filter((field) => Object.prototype.hasOwnProperty.call(body, field))
+      .map((field) => [field, body[field]]),
+  ) as CardPatch;
+  let card;
+  try {
+    card = await updateCard(id, patch);
+  } catch (error) {
+    if (error instanceof OrchestrationValidationError) {
+      return NextResponse.json(
+        { ok: false, error: "orchestration_invalid", errors: error.errors },
+        { status: 422 },
+      );
+    }
+    throw error;
+  }
   if (!card) {
     return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   }
