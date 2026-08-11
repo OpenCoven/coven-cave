@@ -485,6 +485,11 @@ assert.doesNotMatch(
   /isProjectlessGenerationOrigin\([^)]*body\.origin/,
   "client-supplied origin must never decide whether project authorization is required",
 );
+assert.match(
+  chatRoute,
+  /const persistedOrigin = persistedConversationOrigin\(body\.origin\)/,
+  "projectless origins from request JSON should be stripped before transcript persistence",
+);
 
 const authorizeLaunchIndex = chatRoute.indexOf("await authorizeChatProjectLaunch");
 const offlineLaunchIndex = chatRoute.indexOf("const offlineChatResponse = await maybeQueueOfflineChat");

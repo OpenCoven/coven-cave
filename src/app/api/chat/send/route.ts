@@ -274,6 +274,15 @@ type OfflineChatQueuePayload = Pick<
   responseMetadata: ChatResponseMetadata;
 };
 
+function persistedConversationOrigin(
+  origin: SessionOrigin | null | undefined,
+): SessionOrigin | undefined {
+  // `origin` arrives from request JSON. Projectless generation origins may only
+  // come from server-owned provenance, never directly from a client payload.
+  if (isProjectlessGenerationOrigin(origin)) return undefined;
+  return origin ?? undefined;
+}
+
 
 // Hook-line shapes emitted by codex/claude harnesses while a tool runs.
 // Examples:
@@ -389,6 +398,7 @@ async function maybeQueueOfflineChat(args: {
   if (travelStatus.authority !== "travel-local") return null;
 
   const sessionId = args.body.sessionId ?? crypto.randomUUID();
+  const persistedOrigin = persistedConversationOrigin(args.body.origin);
   const payload: OfflineChatQueuePayload = {
     familiarId: args.body.familiarId,
     prompt: args.promptText,
@@ -402,7 +412,7 @@ async function maybeQueueOfflineChat(args: {
     mentionedFiles: args.body.mentionedFiles,
     mentionedFilesRoot: args.body.mentionedFilesRoot,
     parentTurnId: args.body.parentTurnId,
-    origin: args.body.origin,
+    origin: persistedOrigin,
     responseMetadata: args.responseMetadata,
   };
   const queued = await enqueueOfflineTravelItem({
@@ -642,6 +652,7 @@ function openClawChatResponse(args: {
       // chats. The close handler strips the stub turn and re-appends the
       // authoritative one under the same id.
       const pendingUserTurnId = crypto.randomUUID();
+      const persistedOrigin = persistedConversationOrigin(args.body.origin);
       const stubTitle =
         chatTitleFromPrompt(args.promptText) ?? defaultChatTitleForSession(conversationId);
       void setDefaultSessionTitleIfMissing(conversationId, stubTitle).catch(() => undefined);
@@ -652,7 +663,7 @@ function openClawChatResponse(args: {
         ...(responseMetadata.model ? { model: responseMetadata.model } : {}),
         ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
         title: stubTitle,
-        ...(args.body.origin ? { origin: args.body.origin } : {}),
+        ...(persistedOrigin ? { origin: persistedOrigin } : {}),
         userTurn: {
           id: pendingUserTurnId,
           text: args.promptText,
@@ -795,7 +806,7 @@ function openClawChatResponse(args: {
             model: responseMetadata.model,
             runtime: responseMetadata.runtime,
             title: chatTitle,
-            ...(args.body.origin ? { origin: args.body.origin } : {}),
+            ...(persistedOrigin ? { origin: persistedOrigin } : {}),
             createdAt: now,
             updatedAt: now,
             turns: [],
@@ -881,6 +892,7 @@ export async function POST(req: Request) {
     );
   }
   const attachments = normalizeChatAttachments(body.attachments);
+  const persistedOrigin = persistedConversationOrigin(body.origin);
   const promptText = body.prompt?.trim() ?? "";
   if (!body.familiarId || (!promptText && attachments.length === 0)) {
     return new Response(
@@ -1908,7 +1920,7 @@ export async function POST(req: Request) {
           ...(responseMetadata.model ? { model: responseMetadata.model } : {}),
           ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
           title: chatTitleFromPrompt(promptText) ?? defaultChatTitleForSession(announcedId),
-          ...(body.origin ? { origin: body.origin } : {}),
+          ...(persistedOrigin ? { origin: persistedOrigin } : {}),
           userTurn: {
             id: pendingUserTurnId,
             text: promptText,
@@ -3424,7 +3436,7 @@ export async function POST(req: Request) {
           model: responseMetadata.model,
           runtime: responseMetadata.runtime,
           title: chatTitle,
-          ...(body.origin ? { origin: body.origin } : {}),
+          ...(persistedOrigin ? { origin: persistedOrigin } : {}),
           createdAt: now,
           updatedAt: now,
           turns: [],
