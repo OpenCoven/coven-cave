@@ -42,8 +42,8 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(id === "codex"\) \{[\s\S]*?await probeCodexRuntimeAvailability\(\{[\s\S]*?launch: covenLaunchCommand\(\),[\s\S]*?env,[\s\S]*?\}\)/,
-  "Codex status uses the resolved Coven launch plan and its scoped spawn environment",
+  /if \(id === "codex"\) \{[\s\S]*?const launch = resolvedCovenLaunch\(\);[\s\S]*?if \(!launch\)[\s\S]*?await probeCodexRuntimeAvailability\(\{[\s\S]*?launch,[\s\S]*?env,[\s\S]*?\}\)/,
+  "Codex status fails closed on a missing Coven CLI and otherwise probes the exact resolved plan",
 );
 assert.match(
   source,

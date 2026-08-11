@@ -17,7 +17,6 @@ import {
   setGroupResponseMode,
   setGroupDetails,
   orderRoundRobinFamiliarIds,
-  nextRoundRobinLeadId,
   parseMentions,
   extractCovenDelegations,
   isCovenDelegationTaskVisible,
@@ -210,7 +209,7 @@ test("makeGroup: dedupes participants and defaults the name", () => {
   assert.equal(g.name, "New coven");
   assert.deepEqual(g.sessions, {});
   assert.equal(g.responseMode, "broadcast");
-  assert.equal(g.nextRoundRobinLeadId, "a");
+  assert.equal("nextRoundRobinLeadId" in g, false);
 });
 
 test("upsertGroup: replaces by id and sorts newest-first", () => {
@@ -262,30 +261,20 @@ test("setGroupParticipants: drops session pins for removed familiars", () => {
   assert.deepEqual(g.familiarIds, ["a", "c"]);
   assert.equal(g.sessions.a, "sess-a");
   assert.equal(g.sessions.b, undefined);
-  assert.equal(g.nextRoundRobinLeadId, "a");
 });
 
-test("setGroupParticipants: repairs a removed round-robin lead", () => {
-  let g = makeGroup("X", ["a", "b"], "2026-06-24T00:00:00.000Z", "g1");
-  g = { ...g, nextRoundRobinLeadId: "b" };
-  g = setGroupParticipants(g, ["a", "c"], "2026-06-24T01:00:00.000Z");
-  assert.equal(g.nextRoundRobinLeadId, "a");
-});
-
-test("setGroupResponseMode: preserves sessions and initializes the lead", () => {
+test("setGroupResponseMode: preserves sessions and selected roster order", () => {
   let g = makeGroup("X", ["a", "b"], "2026-06-24T00:00:00.000Z", "g1");
   g = setGroupSession(g, "a", "sess-a", "2026-06-24T00:30:00.000Z");
-  g = setGroupResponseMode({ ...g, nextRoundRobinLeadId: undefined }, "round-robin", "2026-06-24T01:00:00.000Z");
+  g = setGroupResponseMode(g, "round-robin", "2026-06-24T01:00:00.000Z");
   assert.equal(g.responseMode, "round-robin");
-  assert.equal(g.nextRoundRobinLeadId, "a");
+  assert.deepEqual(g.familiarIds, ["a", "b"]);
   assert.equal(g.sessions.a, "sess-a");
 });
 
-test("round-robin ordering rotates the lead and filters to mentioned targets", () => {
-  assert.deepEqual(orderRoundRobinFamiliarIds(["a", "b", "c"], ["a", "b", "c"], "b"), ["b", "c", "a"]);
-  assert.deepEqual(orderRoundRobinFamiliarIds(["a", "b", "c"], ["a", "c"], "b"), ["c", "a"]);
-  assert.equal(nextRoundRobinLeadId(["a", "b", "c"], "a"), "b");
-  assert.equal(nextRoundRobinLeadId(["a", "b", "c"], "c"), "a");
+test("round-robin ordering follows the selected roster order and filters targets", () => {
+  assert.deepEqual(orderRoundRobinFamiliarIds(["a", "b", "c"], ["a", "b", "c"]), ["a", "b", "c"]);
+  assert.deepEqual(orderRoundRobinFamiliarIds(["a", "b", "c"], ["c", "a"]), ["a", "c"]);
 });
 
 test("loadGroups: legacy groups default to broadcast without losing session pins", () => {
@@ -295,6 +284,7 @@ test("loadGroups: legacy groups default to broadcast without losing session pins
     name: "Legacy coven",
     familiarIds: ["a", "b"],
     sessions: { a: "sess-a" },
+    nextRoundRobinLeadId: "b",
     createdAt: "t1",
     updatedAt: "t2",
   };
@@ -305,7 +295,7 @@ test("loadGroups: legacy groups default to broadcast without losing session pins
   try {
     const [loaded] = loadGroups();
     assert.equal(loaded.responseMode, "broadcast");
-    assert.equal(loaded.nextRoundRobinLeadId, "a");
+    assert.equal("nextRoundRobinLeadId" in loaded, false);
     assert.equal(loaded.sessions.a, "sess-a");
   } finally {
     if (previous) Object.defineProperty(globalThis, "localStorage", previous);
@@ -1189,7 +1179,7 @@ test("setGroupParticipants: removing a familiar clears its sit-out flag", () => 
   assert.deepEqual(includedGroupParticipants(g), ["a", "b"]);
 });
 
-test("moveGroupParticipant: reorders the rotation, and no-ops at the ends", () => {
+test("moveGroupParticipant: reorders the reply sequence, and no-ops at the ends", () => {
   const g = makeGroup("Coven", ["a", "b", "c"], "2026-08-09T00:00:00.000Z", "g1");
   assert.deepEqual(
     moveGroupParticipant(g, "c", -1, "2026-08-09T00:01:00.000Z").familiarIds,

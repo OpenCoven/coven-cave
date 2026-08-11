@@ -113,7 +113,7 @@ const managedNodeArtifacts = {
   },
   "linux-x64": {
     url: `${NODE_BASE}/node-v${MANAGED_NODE_VERSION}-linux-x64.tar.gz`,
-    sha256: "783130984963dbba9cbd01089eaf2c2efb055c7c1693c943174b967b3050cb8",
+    sha256: "783130984963db7ba9cbd01089eaf2c2efb055c7c1693c943174b967b3050cb8",
     maxBytes: NODE_MAX_BYTES,
     format: "tar.gz",
   },

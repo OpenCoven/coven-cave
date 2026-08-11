@@ -37,6 +37,11 @@ assert.match(
 assert.match(source, /targetName === "coven-cli"[\s\S]*npmLaunchCommandForPath/);
 assert.match(
   source,
+  /canRepairDetectedCovenWithHostNpm[\s\S]*platform !== "win32" \|\| \/\\\.\(\?:cmd\|bat\)\$\/i[\s\S]*detected && path\.isAbsolute\(detected\) && canRepairDetectedCovenWithHostNpm\(detected\)/,
+  "Windows native coven.exe launchers fall back to Cave's managed npm lane instead of being mistaken for npm shims",
+);
+assert.match(
+  source,
   /verificationPath: detected[\s\S]*verifyOpenCovenToolInstall\(targetName, \{[\s\S]*binaryPath: plan\.verificationPath,[\s\S]*env: plan\.env/,
   "post-install verification checks the exact CLI launcher that npm targeted",
 );
@@ -49,6 +54,11 @@ assert.doesNotMatch(
   source,
   /!isVerifiedOpenCovenInstallSuccess\(code, verification\)/,
   "the Coven install path must not require the mutable npm latest tag",
+);
+assert.match(
+  source,
+  /const installOk = verification\s*\? isVerifiedReviewedInstallSuccess\(targetName, code, verification\)/,
+  "the final install outcome must use the reviewed version gate too",
 );
 assert.match(
   source,
@@ -82,5 +92,25 @@ assert.match(source, /verifyOpenCovenToolInstall\(targetName, \{/, "Coven uses a
 assert.match(source, /prepareDaemonForCliUpdate\(dependencies\)/, "Coven updates preserve daemon lifecycle handling");
 assert.match(source, /recoverDaemonAfterCliUpdate\(job\.daemon, daemonLifecycleDependencies\(job\)\)/, "Coven daemon is recovered after install");
 assert.match(installOutput, /redactSensitiveInstallOutput/, "installer output is redacted");
+assert.match(
+  source,
+  /diagnosticTrace: \[\.\.\.job\.trace\]/,
+  "diagnostics retain bounded lifecycle facts independently from a long output tail",
+);
+assert.match(
+  source,
+  /failureCode\?: OnboardingInstallFailureCode/,
+  "installer jobs preserve a stable server-classified failure code",
+);
+assert.match(
+  source,
+  /\(EACCES\|EPERM\|EROFS\|permission denied\)[\s\S]*return "filesystem_failed"/,
+  "host npm permission errors remain generic filesystem failures",
+);
+assert.match(
+  source,
+  /!result\.ok && result\.applicationData/,
+  "only the managed toolchain's safe write-probe facts enter an install job",
+);
 
 console.log("onboarding install route.test.ts: ok");

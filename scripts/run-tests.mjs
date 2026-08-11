@@ -40,6 +40,7 @@ export const SUITES = {
     "src/lib/use-code-rail.test.ts",
     "src/lib/initial-prompt-handoff.test.ts",
     "src/lib/cave-board-retention.test.ts",
+    "src/lib/cave-board-backfill-idempotence.test.ts",
     "src/components/board-retention.test.ts",
     "src/lib/workspace-tiles.test.ts",
     "src/lib/page-drag.test.ts",
@@ -348,6 +349,7 @@ export const SUITES = {
     "src/lib/research-mission-flow.test.ts",
     "src/lib/flow/flow-webhook.test.ts",
     "src/lib/server/flow-executor.test.ts",
+    "src/lib/server/coven-process-supervisor.test.ts",
     "src/lib/server/flow-copilot-session.test.ts",
     "src/lib/server/research-mission-store.test.ts",
     "src/lib/server/research-mission-lifecycle.test.ts",
@@ -961,6 +963,10 @@ export const SUITES = {
     "src/lib/onboarding-gate.test.ts",
     "src/lib/onboarding-prerequisites.test.ts",
     "src/lib/server/managed-node-toolchain.test.ts",
+    "src/lib/server/owned-directory-write.test.ts",
+    "src/lib/server/onboarding-diagnostics.test.ts",
+    "src/lib/server/onboarding-core-tools.test.ts",
+    "src/lib/server/onboarding-bootstrap.test.ts",
     "src/lib/onboarding-install-queue.test.ts",
     "src/lib/onboarding-setup-failure.test.ts",
     "src/app/onboarding-install-route.test.ts",
@@ -1108,6 +1114,7 @@ export const SUITES = {
     "src/lib/server/codex-oauth-port.test.ts",
     "src/lib/env-local-bundle.test.ts",
     "src/lib/cave-board-schedule.test.ts",
+    "src/lib/cave-board-orchestration.test.ts",
     "src/lib/cave-board-model-override.test.ts",
     "src/components/ui/tabs.test.ts",
     "src/components/ui/charts/charts.test.ts",
@@ -1327,6 +1334,7 @@ export const SUITES = {
     "src/lib/server/runtime-compatibility-registry.test.ts",
     "src/app/api/board/enrich-steps/route.test.ts",
     "src/app/api/board/route.test.ts",
+    "src/app/api/board/orchestration-route.test.ts",
     "src/app/api/board/[id]/chat/route.test.ts",
     "src/app/api/sessions/route.test.ts",
     "src/app/api/sessions/list/route.test.ts",
@@ -1360,6 +1368,7 @@ export const SUITES = {
     "src/app/api/chat/send/first-turn-stub.test.ts",
     "src/app/api/onboarding/status/route.test.ts",
     "src/app/api/onboarding/bootstrap/route.test.ts",
+    "src/app/api/onboarding/install/install-service.test.ts",
     "src/app/api/onboarding/install/route.test.ts",
     "src/app/api/onboarding/setup/route.test.ts",
     "src/app/api/onboarding/codex-port-preflight/route.test.ts",
@@ -1673,12 +1682,22 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  // onboarding diagnostics and core tools resolve shared server/API aliases.
+  "src/lib/server/onboarding-diagnostics.test.ts",
+  "src/lib/server/onboarding-core-tools.test.ts",
+  "src/lib/server/onboarding-bootstrap.test.ts",
+  "src/app/api/onboarding/bootstrap/route.test.ts",
+  "src/app/api/onboarding/install/install-service.test.ts",
+  // Imports flow-executor.ts, whose production graph uses @/lib aliases.
+  "src/lib/server/flow-executor.test.ts",
   // the file provider wraps server/project-paths.ts, which resolves "@/lib/..."
   // for the project allow-list; the suite cannot load without the resolver.
   "src/lib/search-provider.test.ts",
   // cave-board.ts resolves "@/lib/cave-board-types", "@/lib/task-github" and
   // friends, so the retention suite cannot load without the alias resolver.
   "src/lib/cave-board-retention.test.ts",
+  // same reason: the idempotence suite loads cave-board.ts directly.
+  "src/lib/cave-board-backfill-idempotence.test.ts",
   // the picker imports the module under test, which resolves
   // "@/lib/code-surface" for the shared session-visibility rule.
   "src/lib/code-session-picker.test.ts",
@@ -1689,6 +1708,8 @@ const ALIAS_LOADER = new Set([
   "src/components/role-surfaces/research-library-view.test.ts",
   "src/components/role-surfaces/research-studio-providers.test.ts",
   "src/lib/daemon-desktop-auto-start.test.ts",
+  "src/lib/cave-board-orchestration.test.ts",
+  "src/app/api/board/orchestration-route.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
   "src/lib/podcast-script.test.ts",
   // resolves "@/lib/tool-visual" for the batch band's tint
@@ -1835,6 +1856,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/cave-board-ops.test.ts",
   "src/lib/cave-board-attachments.test.ts",
   "src/lib/cave-board-schedule.test.ts",
+  "src/lib/cave-board-orchestration.test.ts",
   "src/lib/cave-board-model-override.test.ts",
   "src/lib/salem/pathfinder-feedback.test.ts",
   "src/lib/message-feedback-rollup.test.ts",

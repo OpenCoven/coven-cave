@@ -176,9 +176,11 @@ function describeParams(node: FlowNode): string {
     if (node.type === "familiar" && field.key === "prompt" && typeof value === "string") {
       // Familiar prompts are executable instructions, not card summaries. A
       // 120-character preview silently changes the requested work and can drop
-      // required output contracts. Keep the complete bounded instruction block
-      // while preserving line breaks used by exact marker protocols.
-      instructionParts.push(`${field.label}:\n${value.trim().slice(0, 32_000)}`);
+      // required output contracts. Keep the complete instruction block while
+      // preserving line breaks used by exact marker protocols. Transport owns
+      // its platform bound and rejects before spawn; compilation must never
+      // silently amputate valid Research instructions to make argv fit.
+      instructionParts.push(`${field.label}:\n${value.trim()}`);
       continue;
     }
     const text = typeof value === "string" ? value.replace(/\s+/g, " ").slice(0, 120) : String(value);

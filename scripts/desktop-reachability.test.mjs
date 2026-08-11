@@ -14,6 +14,7 @@ const [
   uninstall,
   docs,
   server,
+  copilotFlow,
 ] = await Promise.all([
   read("../src-tauri/src/desktop_reachability.rs"),
   read("../src-tauri/src/tauri_setup.rs"),
@@ -25,6 +26,7 @@ const [
   read("./uninstall-app.sh"),
   read("../docs/mobile-tailscale.md"),
   read("../server.ts"),
+  read("../src/lib/server/flow-copilot-session.ts"),
 ]);
 
 assert.match(
@@ -207,6 +209,11 @@ assert.match(
   "normal Unix cleanup must close the same parent lease with a bounded fallback",
 );
 assert.match(
+  copilotFlow,
+  /PACKAGED_UNIX_SIDECAR_SHUTDOWN_LEASE_MS = 2_000[\s\S]*COPILOT_SHUTDOWN_TERMINATION_ATTEMPTS = 1[\s\S]*COPILOT_PROCESS_TERMINATION_GRACE_MS = 400/,
+  "direct Copilot group cleanup must retain real headroom beneath the native two-second lease",
+);
+assert.match(
   server,
   /COVEN_CAVE_PARENT_WATCHDOG === "stdin-eof"[\s\S]*process\.stdin\.once\("end"[\s\S]*process\.stdin\.once\("error"[\s\S]*process\.stdin\.resume\(\)/,
   "the packaged server must attach exact-parent EOF handlers before starting stdin flow",
@@ -215,6 +222,16 @@ assert.match(
   server,
   /function terminatePackagedUnixSidecarTree[\s\S]*process\.kill\(-process\.pid, "SIGKILL"\)/,
   "parent EOF must kill the packaged server's owned Unix process group",
+);
+assert.match(
+  server,
+  /terminatePackagedUnixSidecarTree[\s\S]*terminatePtySessions\(\)[\s\S]*Promise\.race\([\s\S]*PACKAGED_CHILD_SHUTDOWN_BUDGET_MS[\s\S]*finally[\s\S]*terminatePtySessions\(\)[\s\S]*process\.kill\(-process\.pid, "SIGKILL"\)/,
+  "parent EOF must kill PTYs first and bound direct-run cleanup before the native lease expires",
+);
+assert.match(
+  server,
+  /direct Copilot process-tree shutdown could not be proved/,
+  "parent EOF must expose the fail-closed boundary when an isolated tree cannot be proved stopped",
 );
 assert.match(
   reachability,

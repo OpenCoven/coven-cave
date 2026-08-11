@@ -9,6 +9,7 @@ import {
 } from "../src/lib/worktree-lifecycle.ts";
 import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
 import {
+  createFenceRenewal,
   heartbeatMaintenanceGate,
   MAX_FENCED_MUTATION_TIMEOUT_MS,
   verifyMaintenanceGateOwnership,
@@ -418,17 +419,55 @@ export function createGitRetirementOperations({
   repo,
   gateHandle,
   nowMs,
+  // Injected so a test can observe renewal without waiting out the throttle.
+  // The real factory skips its first call and then renews at most every
+  // FENCE_RENEWAL_INTERVAL_MS, so against a small fixture inventory every call
+  // is throttled and a missing hook looks exactly like a working one.
+  createFenceRenewal: makeFenceRenewal = createFenceRenewal,
 }: {
   root: string;
   repo: string;
   gateHandle: GitRetirementHandle;
   nowMs?: number | (() => number);
+  createFenceRenewal?: typeof createFenceRenewal;
 }): RetirementOperations {
   const normalizedRoot = realpathSync(root);
   const maintenanceHandle = gateHandle;
 
   const readNowMs = (): number =>
     typeof nowMs === "function" ? nowMs() : (nowMs ?? Date.now());
+
+  // Renew the fence while reprobe's inventory runs.
+  //
+  // reprobe() below rebuilds the WHOLE lifecycle inventory to re-verify one
+  // unit, and that is not a quick read: 134s for 47 units when measured on the
+  // checkout this was found on, against a COVEN_OWNER_LEASE_MS of 120s. It runs
+  // inside the fence, between the "before retirement" and "before ignored
+  // cleanup" checkpoints, so without renewal the lease is always dead by the
+  // time retirement takes its next step — every retirement blocked with
+  // "maintenance lease expired", and no worktree on that checkout had ever been
+  // retired. Traced by pointing COVEN_BIN at a logging shim: 129 seconds passed
+  // between two heartbeats with no coven call of any kind in between.
+  //
+  // One renewal is shared by both reprobe call sites (the pre-retirement probe
+  // and the post-cleanup one) so the 30s throttle is applied across the whole
+  // retirement rather than reset per probe.
+  //
+  // Progress-anchored rather than timed, because the inventory is synchronous
+  // throughout and never yields — see createFenceRenewal. A failed heartbeat
+  // throws, which is its documented fail-closed contract; reprobe's own
+  // try/catch turns that into a probe failure, so the unit is reported as
+  // blocked instead of being retired behind a fence nobody holds.
+  const renewFenceDuringProbe = makeFenceRenewal(() => {
+    const renewed = heartbeatMaintenanceGate(maintenanceHandle);
+    if (!renewed.ok) {
+      throw new Error(
+        `failed to heartbeat maintenance gate during retirement probe: ${
+          renewed.reason ?? "unknown heartbeat error"
+        }`,
+      );
+    }
+  });
 
   return {
     verifyGate() {
@@ -462,6 +501,20 @@ export function createGitRetirementOperations({
           repo,
           root: normalizedRoot,
           nowMs: readNowMs(),
+          onProgress: renewFenceDuringProbe,
+          // Only this candidate needs a fresh GitHub answer. Probing all of
+          // them cost ~2 GraphQL round trips per unit — ~104 calls and ~95s of
+          // a ~134s inventory on a 47-unit checkout — and every result but one
+          // was discarded by the ref filter below. Retirement reprobes twice
+          // per unit, so a --max-retire 3 run paid it up to six times
+          // (cave-imhf0).
+          //
+          // Scoping does not weaken the check this probe exists to perform.
+          // The candidate itself is probed exactly as before, so its lane and
+          // reasons are unchanged; every other unit fails closed to
+          // `uncertain`, which is the safe direction and is asserted by the
+          // inventory's own tests.
+          focusRefs: [item.ref],
         });
       } catch (error) {
         return {

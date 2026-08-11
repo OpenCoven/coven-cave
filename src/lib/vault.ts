@@ -356,6 +356,7 @@ function cliRead(cli: "op" | "dcli", ref: string): string | null {
       stdio: ["pipe", "pipe", "pipe"],
       timeout,
       env: resolverEnv(),
+      windowsHide: true,
     }])).trim();
 
   try {

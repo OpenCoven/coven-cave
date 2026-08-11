@@ -4,7 +4,11 @@ import { createReadStream } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import type { Readable, Writable } from "node:stream";
-import { covenLaunchCommand } from "@/lib/coven-bin";
+import {
+  COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC,
+  covenLaunchCommand,
+  covenWrapperSpawnEnv,
+} from "@/lib/coven-bin";
 import {
   covenRunSupportsAddDirFlag,
   covenRunSupportsModelFlag,
@@ -194,11 +198,11 @@ export function probeHelpOutcome(
     };
     try {
       const child = spawn(/* turbopackIgnore: true */ command, args, {
+        ...openCodeProbeSpawnOptions(),
         windowsHide: true,
         env,
         cwd,
         stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
-        ...openCodeProbeSpawnOptions(),
       }) as ChildProcessByStdio<Writable, Readable, Readable>;
       if (input !== undefined) child.stdin.end(input, "utf8");
       child.stdout.on("data", (chunk) => (output += chunk.toString()));
@@ -289,10 +293,10 @@ function probeOutput(
     };
     try {
       const child = spawn(/* turbopackIgnore: true */ command, args, {
+        ...openCodeProbeSpawnOptions(),
         windowsHide: true,
         env,
         stdio: ["ignore", "pipe", "pipe"],
-        ...openCodeProbeSpawnOptions(),
       });
       let overflowed = false;
       const append = (chunk: Buffer) => {
@@ -664,11 +668,22 @@ function cachedHelpOutcome(
 
 /** The `coven run --model` capability with its probe failures intact. */
 export function covenRunModelFlagOutcome(): Promise<HelpProbeOutcome> {
-  const { command, fixedArgs } = covenLaunchCommand();
+  let launch;
+  try {
+    launch = covenLaunchCommand();
+  } catch {
+    return Promise.resolve({ ok: false, reason: COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC });
+  }
+  const { command, fixedArgs } = launch;
   return cachedHelpOutcome(
     () => modelFlagProbe,
     (probe) => { modelFlagProbe = probe; },
-    () => probeHelpOutcome(command, [...fixedArgs, "run", "--help"], covenRunSupportsModelFlag),
+    () => probeHelpOutcome(
+      command,
+      [...fixedArgs, "run", "--help"],
+      covenRunSupportsModelFlag,
+      covenWrapperSpawnEnv(harnessSpawnEnv()),
+    ),
   );
 }
 
@@ -677,20 +692,34 @@ export function covenRunSupportsModel(): Promise<boolean> {
 }
 
 export function covenRunSupportsPermission(): Promise<boolean> {
-  const { command, fixedArgs } = covenLaunchCommand();
+  let launch;
+  try {
+    launch = covenLaunchCommand();
+  } catch {
+    return Promise.resolve(false);
+  }
+  const { command, fixedArgs } = launch;
   return (permissionFlagProbe ??= probeHelp(
     command,
     [...fixedArgs, "run", "--help"],
     covenRunSupportsPermissionFlag,
+    covenWrapperSpawnEnv(harnessSpawnEnv()),
   ));
 }
 
 export function covenRunSupportsAddDir(): Promise<boolean> {
-  const { command, fixedArgs } = covenLaunchCommand();
+  let launch;
+  try {
+    launch = covenLaunchCommand();
+  } catch {
+    return Promise.resolve(false);
+  }
+  const { command, fixedArgs } = launch;
   return (addDirFlagProbe ??= probeHelp(
     command,
     [...fixedArgs, "run", "--help"],
     covenRunSupportsAddDirFlag,
+    covenWrapperSpawnEnv(harnessSpawnEnv()),
   ));
 }
 

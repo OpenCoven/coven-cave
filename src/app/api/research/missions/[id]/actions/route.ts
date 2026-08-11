@@ -5,7 +5,12 @@ import {
   type ResearchMissionStatus,
 } from "@/lib/research-missions";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
-import { makeProductionResearchMissionRunner } from "@/lib/server/research-mission-runner";
+import {
+  makeProductionResearchMissionRunner,
+  RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT,
+  ResearchMissionLaunchInputError,
+  RESEARCH_SESSION_OWNER_REPAIR_REQUIRED,
+} from "@/lib/server/research-mission-runner";
 import {
   isResearchFileIntegrityError,
   isValidResearchMissionId,
@@ -41,6 +46,8 @@ const VALIDATION_ERRORS = new Set([
   "research artifact not found",
   "research source not found",
   "refined direction required",
+  "invalid refined direction",
+  "refined direction must be at most 2000 characters",
   "invalid project root override",
   "research mission is not settled yet",
   "rejected artifacts need a new working version before publishing",
@@ -51,6 +58,8 @@ const VALIDATION_ERRORS = new Set([
 
 function actionErrorStatus(message: string): number {
   if (message === "research mission not found") return 404;
+  if (message === RESEARCH_SESSION_OWNER_REPAIR_REQUIRED) return 409;
+  if (message === RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT) return 409;
   // Manual runs are refused while the linked automation is ACTIVE — a state
   // conflict the user resolves by pausing the schedule, not a bad request.
   if (message === "pause the linked automation before running manually") return 409;
@@ -90,6 +99,12 @@ export async function POST(
     const mission = await runner.act(id, parsed.body);
     return NextResponse.json({ ok: true, mission });
   } catch (error) {
+    if (error instanceof ResearchMissionLaunchInputError) {
+      return NextResponse.json(
+        { ok: false, error: error.message, mission: error.mission },
+        { status: error.status },
+      );
+    }
     // Workspace-containment failures (symlinked/oversized/escaping artifact
     // reached during a manual publish/finish) are 4xx — the request was valid,
     // the target file fails the sandbox — never a 500 (cave-v73d).

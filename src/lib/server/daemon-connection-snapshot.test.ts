@@ -63,7 +63,7 @@ function explicitUnhealthyResponse(): DaemonResponse<unknown> {
 }
 
 function legacyHealthyResponse(): DaemonResponse<unknown> {
-  return { ok: true, status: 200, data: { apiVersion: "1" } };
+  return { ok: true, status: 200, data: { apiVersion: "coven.daemon.v1" } };
 }
 
 function hubUnhealthyResponse(): DaemonResponse<unknown> {

@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
 import { stripAnsi } from "@/lib/ansi";
-import { covenLaunchCommand, covenSpawnEnv } from "@/lib/coven-bin";
+import {
+  COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC,
+  covenLaunchCommand,
+  covenWrapperSpawnEnv,
+} from "@/lib/coven-bin";
 import { covenCliMissingError, isMissingExecutableError } from "@/lib/coven-spawn-error";
 import {
   daemonDiagnosticContextFromRequest,
@@ -54,13 +58,20 @@ export async function POST(req: Request) {
     endpoint: { kind: "cli", classification: "allowlisted-command" },
   });
 
+  let launch;
+  try {
+    launch = covenLaunchCommand();
+  } catch {
+    return respond({ ok: false, error: COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC }, 409);
+  }
+
   return new Promise<Response>((resolve) => {
-    const { command, fixedArgs } = covenLaunchCommand();
+    const { command, fixedArgs } = launch;
     const child = spawn(command, [...fixedArgs, ...args], {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: {
-        ...covenSpawnEnv(),
+        ...covenWrapperSpawnEnv(),
         COVEN_CAVE_CORRELATION_ID: diagnostics.correlationId,
         COVEN_CAVE_DIAGNOSTIC_GENERATION: String(diagnostics.generation),
         COVEN_CAVE_DIAGNOSTIC_OPERATION: operation,

@@ -9,7 +9,7 @@ const TRIO = [
   { id: "kitty", name: "Kitty" },
 ];
 
-test("a rotation names the order, never a bare count", () => {
+test("round robin names the selected order, never a bare count", () => {
   const routing = covenComposerRouting({ mode: "round-robin", members: TRIO, running: false });
   assert.equal(routing.placeholder, "Send to Cody, then Echo, then Kitty…");
   assert.equal(routing.lead, "Sends in turn to");
@@ -34,7 +34,7 @@ test("Enter queues during a run and the button says so", () => {
   assert.match(routing.enterNote, /Enter queues your message; it won't interrupt anyone/);
 });
 
-test("an @mention routes to one familiar and says the rotation holds", () => {
+test("an @mention routes to one familiar and says the selected order holds", () => {
   const routing = covenComposerRouting({
     mode: "round-robin",
     members: TRIO,
@@ -45,7 +45,7 @@ test("an @mention routes to one familiar and says the rotation holds", () => {
   assert.deepEqual(routing.chips.map((c) => c.name), ["Echo"]);
   assert.equal(routing.placeholder, "Reply to Echo…");
   assert.equal(routing.sendLabel, "Send to Echo");
-  assert.match(routing.enterNote, /the rotation doesn't advance/);
+  assert.match(routing.enterNote, /the selected order stays unchanged/);
 });
 
 test("a coven of one is just a chat — no mode control", () => {

@@ -34,7 +34,8 @@ const E2E_LOCAL_PEER_FIXTURE = "cave-e2e-local-peer-fixture";
 const E2E_MOBILE_ACCESS_FIXTURE = "test-fixture";
 
 const PERSISTED_SCREEN_SCALE_TEST = /persisted screen magnification scales the app without window scroll$/;
-const SETUP_FOCUS_VISIBILITY_TEST = /keeps setup controls focus-visible in WebKit$/;
+const SETUP_FOCUS_VISIBILITY_TEST =
+  /keeps setup (?:controls focus-visible|diagnostics focus contained) in WebKit$/;
 const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
 
 // Most existing specs exercise an already-onboarded workspace. Seed that

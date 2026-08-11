@@ -94,13 +94,17 @@ export type OrchestrationErrorCode =
   | "dependency_cycle"
   | "dependency_dangling"
   | "dependency_needs_evidence"
+  | "dependency_invalid"
+  | "primary_blocker_invalid"
+  | "next_step_invalid"
+  | "next_step_requires_approval"
   | "dependency_authorship"
   | "next_step_authorship";
 
 export type OrchestrationError = {
   code: OrchestrationErrorCode;
   /** Card field the error belongs to, for inspector focus. */
-  field: "dependencies" | "primaryBlockerId" | "nextStep";
+  field: "dependencies" | "primaryBlockerId" | "primaryBlockerPinned" | "nextStep";
   message: string;
   /** The dependency at fault, when the error is about one. */
   dependencyId?: string;

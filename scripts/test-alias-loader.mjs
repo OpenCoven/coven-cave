@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 
 // repo/src/ — this file lives in repo/scripts/.
 const SRC_BASE = new URL("../src/", import.meta.url);
+const ROOT_PACKAGE_JSON = new URL("../package.json", import.meta.url).href;
 const TRANSFORM_ROOTS = [
   SRC_BASE,
   new URL("../scripts/", import.meta.url),
@@ -82,7 +83,10 @@ function isRepoOwnedTransformUrl(url) {
 }
 
 export async function load(url, context, nextLoad) {
-  if (isRepoOwnedTransformUrl(url) && url.endsWith(".json")) {
+  if (
+    (isRepoOwnedTransformUrl(url) || url === ROOT_PACKAGE_JSON) &&
+    url.endsWith(".json")
+  ) {
     const parsed = JSON.parse(await readFile(new URL(url), "utf8"));
     return {
       format: "module",
