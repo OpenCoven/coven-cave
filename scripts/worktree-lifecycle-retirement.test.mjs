@@ -1468,6 +1468,51 @@ process.stdout.write(JSON.stringify(output) + "\\n");
   }
 });
 
+test("adapter reprobe renews the maintenance fence while its inventory runs", () => {
+  // reprobe() rebuilds the WHOLE lifecycle inventory to re-verify one unit.
+  // On a real checkout that measured 134s for 47 units, against a 120s Coven
+  // lease, and it runs inside the fence between two retirement checkpoints. With
+  // no renewal the lease was always dead by the next checkpoint, so every
+  // retirement blocked with "maintenance lease expired" and nothing was ever
+  // retired. See cave-wsayy.
+  //
+  // The renewal factory is injected unthrottled AND non-forwarding: it counts
+  // invocations without calling the wrapped renew, so this test never spawns
+  // `coven`. The real factory would throttle every call away against a fixture
+  // inventory this small, which is exactly the case where a missing hook and a
+  // working one are indistinguishable.
+  const fixture = createGitFixture();
+  try {
+    let renewals = 0;
+    const operations = createGitRetirementOperations({
+      root: fixture.repo,
+      repo: "OpenCoven/coven-cave",
+      gateHandle: { generation: 1, token: "tok", ownerId: "owner", root: "/gate" },
+      nowMs: 1_754_000_000_000,
+      createFenceRenewal: () => () => {
+        renewals += 1;
+      },
+    });
+
+    const item = {
+      ref: "refs/heads/feat/absent-from-this-fixture",
+      branch: "feat/absent-from-this-fixture",
+      head: "0".repeat(40),
+    };
+    withPathPrefix(fixture.bin, () => operations.reprobe(item));
+
+    // The probe's verdict is beside the point — this pins that the inventory it
+    // runs is given a progress hook and that the hook actually fires, which is
+    // the whole difference between holding a live fence and an expired one.
+    assert.ok(
+      renewals > 0,
+      "reprobe's inventory must drive fence renewal; it ran with no hook at all before this fix",
+    );
+  } finally {
+    cleanupFixture(fixture.fixtureRoot);
+  }
+});
+
 test("adapter reprobe catches inventory exceptions and returns a blocked result", () => {
   const fixture = createGitFixture();
   try {
