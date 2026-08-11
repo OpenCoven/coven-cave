@@ -7,7 +7,9 @@ import {
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   makeProductionResearchMissionRunner,
+  RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT,
   ResearchMissionLaunchInputError,
+  RESEARCH_SESSION_OWNER_REPAIR_REQUIRED,
 } from "@/lib/server/research-mission-runner";
 import {
   isResearchFileIntegrityError,
@@ -56,6 +58,8 @@ const VALIDATION_ERRORS = new Set([
 
 function actionErrorStatus(message: string): number {
   if (message === "research mission not found") return 404;
+  if (message === RESEARCH_SESSION_OWNER_REPAIR_REQUIRED) return 409;
+  if (message === RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT) return 409;
   // Manual runs are refused while the linked automation is ACTIVE — a state
   // conflict the user resolves by pausing the schedule, not a bad request.
   if (message === "pause the linked automation before running manually") return 409;

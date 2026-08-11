@@ -11,6 +11,9 @@ import {
   callDaemonTarget,
   extractDaemonError,
   localDaemonTarget,
+  type DaemonRequest,
+  type DaemonResponse,
+  type DaemonTarget,
 } from "@/lib/coven-daemon";
 import { catalogNode } from "@/lib/flow/flow-catalog";
 import {
@@ -58,17 +61,31 @@ import {
   validatedResearchLaunchAddDirs,
 } from "@/lib/server/research-launch-policy";
 import { daemonSessionAlreadyGone } from "@/lib/server/daemon-session-error";
+import type {
+  ResearchSessionAuthority,
+  ResearchSessionOwnerKind,
+} from "@/lib/server/research-session-authority";
+import {
+  RESEARCH_SESSION_OWNER_WRITE_GRANT_DIAGNOSTIC,
+  assertResearchSessionOwnerOutsideWriteRoots,
+} from "@/lib/server/research-mission-store";
 
 export type StartFlowSessionResult = {
   ok: boolean;
   status?: number;
   executor?: "session" | "travel-queue";
   sessionId?: string;
+  /** Durable exact daemon authority for later reconciliation/cancellation. */
+  sessionAuthority?: ResearchSessionAuthority;
+  /** Private process-owner class; never serialized into Flow or mission data. */
+  sessionOwnerKind?: ResearchSessionOwnerKind;
   run?: FlowRunRecord;
   queued?: boolean;
   queueItem?: CaveTravelQueueItem;
   unavailable?: boolean;
   cleanupUnconfirmed?: boolean;
+  /** Exact in-process owner cleanup; functions are intentionally not persisted. */
+  cleanupSession?: () => Promise<void>;
   error?: string;
 };
 
@@ -77,14 +94,39 @@ const FLOW_BOOKKEEPING_FAILURE =
 const FLOW_BOOKKEEPING_CLEANUP_UNCONFIRMED =
   "The agent session started, but Cave could not record its Flow run or confirm process cleanup. The session remains owned and must be cancelled before retrying.";
 
-async function stopDaemonSessionAfterBookkeepingFailure(
-  sessionId: string,
+type DaemonCleanupDependencies = {
+  callDaemon: <T>(request: DaemonRequest) => Promise<DaemonResponse<T>>;
+  callDaemonTarget: <T>(
+    target: DaemonTarget,
+    request: DaemonRequest,
+  ) => Promise<DaemonResponse<T>>;
+};
+
+export async function researchSessionOwnerWriteRootsArePrivate(
+  writeRoots: string[],
+  assertPrivate: (roots: string[]) => Promise<void> = assertResearchSessionOwnerOutsideWriteRoots,
 ): Promise<boolean> {
-  const response = await callDaemon<unknown>({
+  try {
+    await assertPrivate(writeRoots);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function stopDaemonSessionAfterBookkeepingFailure(
+  sessionId: string,
+  pinnedTarget?: DaemonTarget,
+  dependencies: DaemonCleanupDependencies = { callDaemon, callDaemonTarget },
+): Promise<boolean> {
+  const request = {
     method: "POST",
     path: `/api/v1/sessions/${encodeURIComponent(sessionId)}/kill`,
     timeoutMs: 4_000,
-  });
+  } as const;
+  const response = pinnedTarget
+    ? await dependencies.callDaemonTarget<unknown>(pinnedTarget, request)
+    : await dependencies.callDaemon<unknown>(request);
   return response.ok || daemonSessionAlreadyGone(response);
 }
 
@@ -156,6 +198,17 @@ export async function startFlowSession(
      * prompt, so an untrusted workspace write hard-fails.
      */
     addDirs?: string[];
+    /**
+     * Private owner publication supplied only by the Research mission runner.
+     * It is invoked immediately after process/session creation, before ordinary
+     * Flow bookkeeping can yield or fail, and returns the exact retirement
+     * callback for confirmed cleanup.
+     */
+    publishSessionOwner?: (
+      sessionId: string,
+      ownerKind: ResearchSessionOwnerKind,
+      authority?: ResearchSessionAuthority,
+    ) => Promise<() => Promise<void>>;
     /**
      * Internal trust marker set only by the Research mission runner. It is not
      * accepted from flow API request bodies. Local daemon sessions must prove
@@ -335,7 +388,21 @@ export async function startFlowSession(
       capability.launchCommand,
     );
     if (spec) {
-      return startCopilotFlowRunWithTransportBoundary({
+      const familiarAddDirs = await flowFamiliarAddDirs(familiarId, projectRoot);
+      if (options.publishSessionOwner && !await researchSessionOwnerWriteRootsArePrivate([
+        projectRoot,
+        ...(options.addDirs ?? []),
+        ...familiarAddDirs,
+      ])) {
+        return {
+          ok: false,
+          status: 409,
+          error: RESEARCH_SESSION_OWNER_WRITE_GRANT_DIAGNOSTIC,
+        };
+      }
+      let publishedSessionId: string | undefined;
+      let releaseSessionOwner: (() => Promise<void>) | undefined;
+      const result = await startCopilotFlowRunWithTransportBoundary({
         spec,
         prompt,
         projectRoot,
@@ -344,15 +411,49 @@ export async function startFlowSession(
         familiarRole: "role" in binding ? binding.role : undefined,
         addDirs: [
           ...(options.addDirs ?? []),
-          ...await flowFamiliarAddDirs(familiarId, projectRoot),
+          ...familiarAddDirs,
         ],
         permissionMode: options.triggerInput?.source === "webhook" ? "read" : "unattended",
-      }, finishStart);
+      }, async (sessionId) => {
+        publishedSessionId = sessionId;
+        releaseSessionOwner = await options.publishSessionOwner?.(
+          sessionId,
+          "direct-copilot",
+        );
+        return finishStart(sessionId);
+      });
+      if (!result.ok && !result.cleanupUnconfirmed && releaseSessionOwner) {
+        try {
+          await releaseSessionOwner();
+        } catch {
+          return {
+            ...result,
+            sessionId: publishedSessionId,
+            sessionOwnerKind: "direct-copilot",
+            cleanupUnconfirmed: true,
+            error: FLOW_BOOKKEEPING_CLEANUP_UNCONFIRMED,
+          };
+        }
+      }
+      return options.publishSessionOwner && result.sessionId
+        ? { ...result, sessionOwnerKind: "direct-copilot" }
+        : result;
     }
     return {
       ok: false,
       status: 409,
       error: "This Copilot CLI version is not compatible with Cave flow execution. Update the Copilot runtime schema or CLI.",
+    };
+  }
+
+  if (options.publishSessionOwner && !await researchSessionOwnerWriteRootsArePrivate([
+    projectRoot,
+    ...(options.addDirs ?? []),
+  ])) {
+    return {
+      ok: false,
+      status: 409,
+      error: RESEARCH_SESSION_OWNER_WRITE_GRANT_DIAGNOSTIC,
     };
   }
 
@@ -448,23 +549,92 @@ export async function startFlowSession(
   }
 
   const sessionId = res.data.id;
+  const cleanupTarget = launchPolicy ? pinnedResearchDaemonTarget! : undefined;
+  const sessionAuthority: ResearchSessionAuthority | undefined = cleanupTarget
+    ? { kind: "owner-local-daemon", socketPath: cleanupTarget.socketPath }
+    : undefined;
+  let releaseSessionOwner: (() => Promise<void>) | undefined;
+  if (sessionAuthority && options.publishSessionOwner) {
+    try {
+      releaseSessionOwner = await options.publishSessionOwner(
+        sessionId,
+        "owner-local-daemon",
+        sessionAuthority,
+      );
+    } catch {
+      let stopped = false;
+      try {
+        stopped = await stopDaemonSessionAfterBookkeepingFailure(sessionId, cleanupTarget);
+      } catch {
+        // The runner receives the exact identity below and retries publication
+        // before persisting any attacker-writable mission state.
+      }
+      return stopped
+        ? { ok: false, status: 500, error: FLOW_BOOKKEEPING_FAILURE }
+        : {
+            ok: false,
+            status: 500,
+            error: FLOW_BOOKKEEPING_CLEANUP_UNCONFIRMED,
+            sessionId,
+            sessionAuthority,
+            sessionOwnerKind: "owner-local-daemon",
+            cleanupUnconfirmed: true,
+          };
+    }
+  }
+  const retireSessionOwner = async (): Promise<void> => {
+    if (!releaseSessionOwner) return;
+    const release = releaseSessionOwner;
+    await release();
+    releaseSessionOwner = undefined;
+  };
+  const cleanupSession = async (): Promise<void> => {
+    const stopped = await stopDaemonSessionAfterBookkeepingFailure(sessionId, cleanupTarget);
+    if (!stopped) {
+      throw new Error("Research session cleanup could not be confirmed through its launch authority");
+    }
+    await retireSessionOwner();
+  };
   try {
-    return await finishStart(sessionId);
+    return {
+      ...await finishStart(sessionId),
+      ...(sessionAuthority ? { sessionAuthority } : {}),
+      ...(sessionAuthority ? { sessionOwnerKind: "owner-local-daemon" as const } : {}),
+      cleanupSession,
+    };
   } catch {
     let stopped = false;
     try {
-      stopped = await stopDaemonSessionAfterBookkeepingFailure(sessionId);
+      stopped = await stopDaemonSessionAfterBookkeepingFailure(sessionId, cleanupTarget);
     } catch {
       // Transport and malformed-response failures retain the session id below.
     }
-    return stopped
-      ? { ok: false, status: 500, error: FLOW_BOOKKEEPING_FAILURE }
-      : {
+    if (stopped) {
+      try {
+        await retireSessionOwner();
+      } catch {
+        return {
           ok: false,
           status: 500,
           error: FLOW_BOOKKEEPING_CLEANUP_UNCONFIRMED,
           sessionId,
+          ...(sessionAuthority ? { sessionAuthority } : {}),
+          ...(sessionAuthority ? { sessionOwnerKind: "owner-local-daemon" as const } : {}),
           cleanupUnconfirmed: true,
+          cleanupSession,
         };
+      }
+      return { ok: false, status: 500, error: FLOW_BOOKKEEPING_FAILURE };
+    }
+    return {
+      ok: false,
+      status: 500,
+      error: FLOW_BOOKKEEPING_CLEANUP_UNCONFIRMED,
+      sessionId,
+      ...(sessionAuthority ? { sessionAuthority } : {}),
+      ...(sessionAuthority ? { sessionOwnerKind: "owner-local-daemon" as const } : {}),
+      cleanupUnconfirmed: true,
+      cleanupSession,
+    };
   }
 }

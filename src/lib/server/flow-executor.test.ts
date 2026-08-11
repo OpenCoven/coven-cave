@@ -19,9 +19,56 @@ import {
   supportsSessionLaunchPolicy,
   validatedResearchLaunchAddDirs,
 } from "./research-launch-policy.ts";
+import {
+  researchSessionOwnerWriteRootsArePrivate,
+  stopDaemonSessionAfterBookkeepingFailure,
+} from "./flow-executor.ts";
 
 const source = readFileSync(new URL("./flow-executor.ts", import.meta.url), "utf8");
 const researchRunner = readFileSync(new URL("./research-mission-runner.ts", import.meta.url), "utf8");
+
+{
+  const calls: string[] = [];
+  const pinnedTarget = {
+    mode: "local" as const,
+    label: "Local daemon" as const,
+    socketPath: "/tmp/original-owner.sock",
+  };
+  const stopped = await stopDaemonSessionAfterBookkeepingFailure(
+    "session/one",
+    pinnedTarget,
+    {
+      callDaemon: async () => {
+        calls.push("generic-target");
+        return { ok: false, status: 404, data: null };
+      },
+      callDaemonTarget: async (target, request) => {
+        assert.equal(target.mode, "local");
+        calls.push(`${target.socketPath}:${request.path}`);
+        return { ok: true, status: 200, data: null };
+      },
+    },
+  );
+  assert.equal(stopped, true);
+  assert.deepEqual(calls, ["/tmp/original-owner.sock:/api/v1/sessions/session%2Fone/kill"]);
+}
+
+{
+  const observed: string[][] = [];
+  const privateRoots = await researchSessionOwnerWriteRootsArePrivate(
+    ["/project", "/mission", "/familiar-containing-private-owner"],
+    async (roots) => {
+      observed.push(roots);
+      throw new Error("overlapping private owner root");
+    },
+  );
+  assert.equal(privateRoots, false);
+  assert.deepEqual(observed, [[
+    "/project",
+    "/mission",
+    "/familiar-containing-private-owner",
+  ]]);
+}
 
 // A flow runs as a plain harness session. Passing `familiarId` natively to the
 // daemon makes some setups try to run the session *as* that familiar and reject
@@ -94,12 +141,17 @@ assert.match(
 // missions) can grant additional roots such as the mission workspace.
 assert.match(
   source,
-  /startCopilotFlowRunWithTransportBoundary\(\{[\s\S]*?addDirs: \[[\s\S]*?\.\.\.\(options\.addDirs \?\? \[\]\),[\s\S]*?\.\.\.await flowFamiliarAddDirs\(familiarId, projectRoot\),[\s\S]*?\],[\s\S]*?\}, finishStart\);/,
+  /startCopilotFlowRunWithTransportBoundary\(\{[\s\S]*?addDirs: \[[\s\S]*?\.\.\.\(options\.addDirs \?\? \[\]\),[\s\S]*?\.\.\.familiarAddDirs,[\s\S]*?\],[\s\S]*?\}, async \(sessionId\) => \{[\s\S]*?return finishStart\(sessionId\);[\s\S]*?\}\);/,
   "direct copilot flow spawn must trust caller grants and the familiar's own workspace via addDirs",
 );
 assert.match(
   source,
-  /return startCopilotFlowRunWithTransportBoundary\(\{[\s\S]*?permissionMode:[\s\S]*?\}, finishStart\)/,
+  /researchSessionOwnerWriteRootsArePrivate\(\[[\s\S]*?projectRoot,[\s\S]*?\.\.\.\(options\.addDirs \?\? \[\]\),[\s\S]*?\.\.\.familiarAddDirs,[\s\S]*?\]\)/,
+  "direct Research validates every final write grant, including the familiar workspace, before spawn",
+);
+assert.match(
+  source,
+  /const result = await startCopilotFlowRunWithTransportBoundary\(\{[\s\S]*?permissionMode:[\s\S]*?\}, async \(sessionId\) => \{[\s\S]*?return finishStart\(sessionId\);[\s\S]*?\}\);[\s\S]*?return options\.publishSessionOwner/,
   "a typed pre-spawn Windows prompt refusal must return through the ordinary launch-result contract",
 );
 assert.match(
@@ -275,8 +327,13 @@ try {
 }
 assert.match(
   researchRunner,
-  /startFlowSession\(flow, \{\s*projectRoot: options\.projectRoot,\s*addDirs: options\.addDirs,\s*trustedLocalResearch: true,\s*offlinePolicy: options\.offlinePolicy,\s*\}\)/,
-  "only the production Research mission adapter requests the internal trusted launch policy",
+  /startFlowSession\(flow, \{\s*projectRoot: options\.projectRoot,\s*addDirs: options\.addDirs,\s*trustedLocalResearch: true,\s*offlinePolicy: options\.offlinePolicy,\s*publishSessionOwner: options\.publishSessionOwner,\s*\}\)/,
+  "only the production Research mission adapter requests trusted launch policy and rejects offline replay",
+);
+assert.match(
+  source,
+  /const sessionAuthority: ResearchSessionAuthority \| undefined = cleanupTarget[\s\S]*socketPath: cleanupTarget\.socketPath[\s\S]*publishSessionOwner\([\s\S]*"owner-local-daemon"[\s\S]*\.\.\.await finishStart\(sessionId\),[\s\S]*sessionOwnerKind: "owner-local-daemon"[\s\S]*cleanupSession,[\s\S]*stopDaemonSessionAfterBookkeepingFailure\(sessionId, cleanupTarget\)/,
+  "a started daemon session returns durable provenance and the pinned cleanup owner used by immediate rollback",
 );
 
 console.log("flow-executor.test.ts: ok");

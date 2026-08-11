@@ -23,10 +23,15 @@ const RUN: FlowRunRecord = {
 };
 
 function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissionRunnerDeps {
+  let sessionOwner: Awaited<ReturnType<ResearchMissionRunnerDeps["loadSessionOwner"]>> = null;
   return {
     createWorkspace: async (mission) => mission,
     loadMission: async () => null,
     saveMission: async () => {},
+    loadSessionOwner: async () => sessionOwner ? structuredClone(sessionOwner) : null,
+    recordSessionOwner: async (owner) => { sessionOwner = structuredClone(owner); },
+    clearSessionOwner: async () => { sessionOwner = null; },
+    assertSessionOwnerPrivate: async () => {},
     startFlow: async () => ({
       ok: true,
       run: RUN,
