@@ -207,10 +207,9 @@ test("the probe leaves no connection open on the daemon it probed", async () => 
 // Upgrade skew — the daemon is reachable and healthy-looking, but wrong.
 // ---------------------------------------------------------------------------
 
-test("a supported API and matching runtime version is adopted", () => {
+test("a supported API and valid daemon runtime version is adopted", () => {
   const result = assessDaemonStartupCompatibility(
     { ok: true, apiVersion: "coven.daemon.v1", covenVersion: "0.2.5" },
-    "0.2.5",
   );
   assert.equal(result.ok, true);
   if (result.ok) {
@@ -222,28 +221,21 @@ test("a supported API and matching runtime version is adopted", () => {
 test("an unsupported API version is refused rather than adopted", () => {
   const result = assessDaemonStartupCompatibility(
     { ok: true, apiVersion: "99", covenVersion: "0.2.5" },
-    "0.2.5",
   );
   assert.equal(result.ok, false);
   if (!result.ok) assert.equal(result.code, "unsupported_api");
 });
 
-test("a daemon running a different build than the one Cave manages is refused", () => {
-  // The upgrade-skew case that matters: an older daemon left running across an
-  // update can open newer persisted state before its own migration guard sees
-  // it, so this fails closed.
+test("a daemon runtime on a different release line is adopted when its API is supported", () => {
   const result = assessDaemonStartupCompatibility(
-    { ok: true, apiVersion: "coven.daemon.v1", covenVersion: "0.2.4" },
-    "0.2.5",
+    { ok: true, apiVersion: "coven.daemon.v1", covenVersion: "0.0.0" },
   );
-  assert.equal(result.ok, false);
-  if (!result.ok) assert.equal(result.code, "runtime_version_mismatch");
+  assert.equal(result.ok, true);
 });
 
 test("a health document that reports failure is not mined for a version", () => {
   const result = assessDaemonStartupCompatibility(
     { ok: false, apiVersion: "coven.daemon.v1", covenVersion: "0.2.5" },
-    "0.2.5",
   );
   assert.equal(result.ok, false);
   if (!result.ok) assert.equal(result.code, "invalid_health");
@@ -251,7 +243,7 @@ test("a health document that reports failure is not mined for a version", () => 
 
 test("a missing or malformed health document is refused, not defaulted", () => {
   for (const health of [null, undefined, {}, { ok: true }, { ok: true, apiVersion: "coven.daemon.v1" }]) {
-    const result = assessDaemonStartupCompatibility(health as never, "0.2.5");
+    const result = assessDaemonStartupCompatibility(health as never);
     assert.equal(result.ok, false, `health ${JSON.stringify(health)} must not be adopted`);
     if (!result.ok) {
       assert.ok(

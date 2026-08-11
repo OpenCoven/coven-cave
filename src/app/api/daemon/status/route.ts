@@ -143,7 +143,7 @@ export async function GET(request: Request) {
     ? await installedCovenVersion()
     : null;
   const compatibility = daemonHealthy && target.mode === "local"
-    ? assessDaemonStartupCompatibility(health, installedVersion)
+    ? assessDaemonStartupCompatibility(health)
     : null;
   const { travelStatus, travelReplay } = await reconcileDaemonTravelState({
     config,

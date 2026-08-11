@@ -10,7 +10,6 @@ import { covenCliMissingError, isMissingExecutableError } from "./coven-spawn-er
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 import { waitForDaemonReadiness } from "./daemon-readiness.ts";
 import { sanitizeAboutDiagnosticText } from "./about-diagnostics.ts";
-import { installedCovenVersion } from "./coven-version.ts";
 import {
   assessDaemonStartupCompatibility,
   type DaemonStartupCompatibility,
@@ -218,8 +217,6 @@ type StartLocalDaemonOptions = {
   probe?: () => Promise<{ ok: boolean }>;
   /** Injectable health document that still exercises compatibility assessment. */
   readHealthDocument?: () => Promise<DaemonStartupHealth | null>;
-  /** Injectable installed-version seam for deterministic startup coherence tests. */
-  installedVersion?: () => Promise<string | null>;
   /** Injectable address-occupancy seam for deterministic already-bound tests. */
   inspectAddress?: () => Promise<DaemonAddressOccupancy>;
   /** Injectable command seam keeps fault scenarios independent of host PATH state. */
@@ -473,7 +470,6 @@ async function runLocalDaemonStartCore({
   const restart = automatic ? false : restartRequested;
   const compatibilityState: { current: DaemonStartupCompatibility | null } = { current: null };
   const currentCompatibility = (): DaemonStartupCompatibility | null => compatibilityState.current;
-  const expectedVersion = probeOverride ? null : await (installedVersion ?? installedCovenVersion)();
   const readHealthDocument = readHealthDocumentOverride ?? (async () => {
     const response = await callDaemonTarget<DaemonStartupHealth>(localDaemonTarget(), {
       path: "/api/v1/health",
@@ -487,7 +483,7 @@ async function runLocalDaemonStartCore({
   const probe = probeOverride ?? (async () => {
     const health = await readHealthDocument();
     if (!health) return { ok: false };
-    compatibilityState.current = assessDaemonStartupCompatibility(health, expectedVersion);
+    compatibilityState.current = assessDaemonStartupCompatibility(health);
     return { ok: compatibilityState.current.ok };
   });
   const startedAt = Date.now();
