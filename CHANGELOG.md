@@ -7,6 +7,67 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-11
+
+> Search that understands Cave's workspace, more legible multi-agent Chat,
+> safer operator-controlled handoffs, and sturdier local runtime boundaries.
+
+Coven Cave 0.3.0 is a minor release on top of v0.2.5.
+
+### Added
+
+- Added workspace-wide Search with a deterministic query parser, SQLite FTS5
+  index, provider registry, file-backed sources, and a ranked `/api/search`
+  surface (#4481, #4482, #4484, #4490, #4502).
+- Added Cave agent filesystem surfaces, a Chat run rail, inline audio and video
+  playback, and grouped multi-agent runs with earlier runs folded into the
+  transcript (#4457, #4460, #4461, #4486, #4504).
+- Added orchestration validation at the Board write boundary, including
+  actionable failure blockers while preserving human-authored direction (#4527).
+- Added an accessible iOS terminal composer and macOS CI compilation for iOS
+  changes (#4475, #4446, #4516).
+
+### Changed
+
+- Redesigned streamed Chat responses with stable rendering, accessible status
+  controls, copy/retry/collapse affordances, and clearer task-work and code
+  rails (#4515, #4462, #4463, #4478).
+- Made first-run setup more guided and diagnosable, including honest progress,
+  managed-NPM timeout diagnosis, checksums, and Windows CLI repair (#4477,
+  #4476, #4518, #4523, #4539).
+- Improved worktree lifecycle operation with bounded reprobes, explicit
+  deferred states, retention proof, local-plane apply, and more precise
+  per-unit metadata diagnostics (#4471, #4480, #4499, #4519, #4520, #4526,
+  #4529, #4530, #4532, #4536, #4538, #4540).
+
+### Security
+
+- Loopback access-token deployments now require user-bound authorization, and
+  familiar handoffs are operator-approved proposals rather than automatic work
+  dispatch (#4533, #4551).
+- Hardened local process and workspace boundaries: private research ownership,
+  cross-platform process launches, resolved-CWD authorization, bounded prompt
+  transport, constrained worktree handoffs, and authenticated sidecar readiness
+  (#4524, #4531, #4537, #4543, #4546, #4550).
+
+### Fixed
+
+- Stabilized daemon connectivity, lifecycle diagnostics, sidecar recovery, and
+  iOS credential-failure handling (#4487, #4489, #4495, #4496, #4497, #4498,
+  #4500, #4506, #4509, #4510).
+- Corrected Board mirrored-card retention, stored Asana/GitHub titles, Chat
+  reply ordering, reader typography, and task/journal controls (#4469, #4507,
+  #4508, #4514, #4535, #4459).
+
+### Build and release
+
+- Decoupled Cave release readiness from the daemon's version while retaining
+  the requirement that a published daemon package is available (#4450).
+- Reduced routine CI fan-out, recovered cancelled coverage safely, and added
+  regression coverage for Chat-to-Coding workflows (#4503, #4505, #4517,
+  #4549).
+
+
 ## [0.2.5] - 2026-08-08
 
 > A reading-first Coding Desk, a rebuilt Research Desk, safer remote access,
