@@ -42,7 +42,8 @@ export async function probeDaemonUrl(
   if (target.mode !== "hub") {
     throw new Error(target.mode === "unconfigured-hub" ? target.error : "invalid hub URL");
   }
-  const probeTarget = explicitHubAccessToken(url) ? target : { ...target, accessToken: undefined };
+  const { accessToken: _accessToken, ...targetWithoutToken } = target;
+  const probeTarget = explicitHubAccessToken(url) ? target : targetWithoutToken;
   const startedAt = now();
   const response = await call(probeTarget, { path: "/api/v1/health", timeoutMs: 1500 });
   const latencyMs = Math.max(0, now() - startedAt);
