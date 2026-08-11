@@ -33,6 +33,7 @@ export type DaemonStartupCompatibility =
  */
 export function assessDaemonStartupCompatibility(
   health: DaemonStartupHealth | null | undefined,
+  _installedVersion?: string | null,
 ): DaemonStartupCompatibility {
   if (!health || typeof health !== "object" || health.ok !== true) {
     return {
