@@ -134,12 +134,12 @@ export type ResearchMissionRunnerDeps = {
   resolveProjectRoot(root: string): Promise<string | null>;
   /**
    * Run-start preflight: make sure the mission's familiar can reach the
-   * standard research landing root (where every mission workspace lives), so
-   * finished research is visible from the familiar's later sessions without a
-   * manual grant. Best-effort by contract — implementations MUST NOT throw; a
-   * failed grant degrades to results that land but aren't chat-reachable.
+   * mission's own workspace, so finished research is visible from the
+   * familiar's later sessions without exposing sibling mission workspaces.
+   * Best-effort by contract — implementations MUST NOT throw; a failed grant
+   * degrades to results that land but aren't chat-reachable.
    */
-  ensureResearchAccess(familiarId: string): Promise<void>;
+  ensureResearchAccess(familiarId: string, missionId: string): Promise<void>;
   /**
    * Familiar-level access check for a configured project root at run start.
    * Returns an actionable error message when the root is a registered project
@@ -558,18 +558,16 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
    * message (the flow executor would only say "invalid project root"); the
    * default mission workspace always resolves. Every start path (create,
    * next iteration, retry) routes through here, so this is also where run
-   * preflight lives: the familiar's standard-landing grant is ensured, and a
+   * preflight lives: the familiar's mission-workspace grant is ensured, and a
    * configured registered root the familiar cannot use is refused before a
    * session is spent.
    */
   const missionStartTarget = async (
     mission: ResearchMission,
   ): Promise<{ ok: true; projectRoot: string } | { ok: false; error: string }> => {
-    // Standard landing access: research artifacts always land in the mission
-    // workspace under the research landing root — make sure the mission's
-    // familiar can reach them from later sessions before this run produces
-    // anything. Best-effort by contract: implementations never throw.
-    await deps.ensureResearchAccess(mission.familiarId);
+    // Grant only this mission workspace so the familiar can reach its output
+    // later without receiving access to sibling missions.
+    await deps.ensureResearchAccess(mission.familiarId, mission.id);
     if (mission.projectRoot) {
       const resolved = await deps.resolveProjectRoot(mission.projectRoot);
       if (!resolved) {
@@ -1571,14 +1569,14 @@ export function makeProductionResearchMissionRunner() {
       const { normalizeProjectRoot } = await import("./session-security.ts");
       return normalizeProjectRoot(root);
     },
-    ensureResearchAccess: async (familiarId) => {
+    ensureResearchAccess: async (familiarId, missionId) => {
       // Never let a landing-grant failure block the run itself: the mission
       // workspace stays writable through builtInProjectRoots either way, so
       // the worst outcome of a failure here is today's status quo (results
       // land but need a manual grant to be chat-reachable).
       try {
         const { ensureResearchLandingAccess } = await import("./research-landing.ts");
-        await ensureResearchLandingAccess(familiarId);
+        await ensureResearchLandingAccess(familiarId, missionId);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`research landing grant for ${familiarId} failed: ${message}`);

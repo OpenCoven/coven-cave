@@ -217,15 +217,15 @@ test("an unallowed configured project root fails fast with an actionable error",
   assert.ok(allowedResearchActions(result).includes("retry"));
 });
 
-test("run start ensures the familiar's standard research landing access", async () => {
-  const ensured: string[] = [];
+test("run start ensures the familiar's mission-scoped research access", async () => {
+  const ensured: Array<[string, string]> = [];
   const runner = makeResearchMissionRunner(deps({
-    ensureResearchAccess: async (familiarId) => {
-      ensured.push(familiarId);
+    ensureResearchAccess: async (familiarId, missionId) => {
+      ensured.push([familiarId, missionId]);
     },
   }));
   const result = await runner.createAndStart(INPUT);
-  assert.deepEqual(ensured, ["sage"]);
+  assert.deepEqual(ensured, [["sage", "mission-1"]]);
   assert.equal(result.status, "running");
 });
 
