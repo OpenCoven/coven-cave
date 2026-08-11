@@ -57,6 +57,11 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
+  /const installOk = verification\s*\? isVerifiedReviewedInstallSuccess\(targetName, code, verification\)/,
+  "the final install outcome must use the reviewed version gate too",
+);
+assert.match(
+  source,
   /resolveStaleOpenCovenLaunchers\([\s\S]*targetName === "coven-cli"[\s\S]*reviewedPackageManifest\("coven-cli"\)\.version/,
   "stale-launcher repair verifies the pinned replacement against the reviewed version",
 );

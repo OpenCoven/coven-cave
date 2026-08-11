@@ -789,8 +789,11 @@ async function finishInstallJob(
           job.output,
           priorError,
         );
+    // Coven CLI is deliberately installed from Cave's reviewed manifest. Do
+    // not turn a successful exact-version install into a failure merely
+    // because npm's mutable `latest` tag has advanced past that manifest.
     const installOk = verification
-      ? isVerifiedOpenCovenInstallSuccess(code, verification)
+      ? isVerifiedReviewedInstallSuccess(targetName, code, verification)
       : !installError && code === 0 && !!installed.path;
     if (isOpenCovenToolInstallTarget(targetName)) {
       appendTrace(
