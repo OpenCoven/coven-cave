@@ -24,6 +24,7 @@ const covenDaemon = await readFile(new URL("./coven-daemon.ts", import.meta.url)
 
 assert.match(covenDaemon, /export function localDaemonTarget\(\)[\s\S]*mode: "local"[\s\S]*socketPath: socketPath\(\)/);
 assert.match(daemonStart, /waitForDaemonReadiness/);
+assert.match(daemonStart, /runnerExitGraceMs: startTimeoutMs/, "the daemonizing CLI launcher gets the complete health deadline");
 assert.match(daemonStart, /path: "\/api\/v1\/health"/);
 assert.match(daemonStart, /detached: platform !== "win32"/, "POSIX launch owns a process group");
 assert.match(daemonStart, /windowsHide: true/, "daemon launch suppresses Windows console allocation");

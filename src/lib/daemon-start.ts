@@ -616,7 +616,12 @@ async function runLocalDaemonStartCore({
     probe,
     timeoutMs: startTimeoutMs,
     pollMs: readinessPollMs,
-    runnerExitGraceMs: Math.min(1_500, startTimeoutMs),
+    // `coven daemon start` deliberately exits after handing its detached
+    // service to the OS. Under a cold first-run filesystem, that service can
+    // take longer than the old 1.5 s launcher grace to publish its socket.
+    // Health—not the short-lived launcher—is the authority for the entire
+    // startup deadline.
+    runnerExitGraceMs: startTimeoutMs,
     runnerExited: () => spawnError !== null || exitCode !== undefined,
   });
   if (readiness.ready) {
