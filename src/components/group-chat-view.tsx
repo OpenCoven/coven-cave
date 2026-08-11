@@ -568,11 +568,22 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
             const target = byId.get(targetId);
             if (!target) continue;
             const delegatedBy = byId.get(source.familiarId)?.display_name ?? source.familiarId;
-            const approved = await confirm({
-              title: `Approve handoff to ${target.display_name}?`,
-              body: `${delegatedBy} proposed this task:\n\n${delegation.task}`,
-              confirmLabel: "Approve handoff",
+            const abortPromise = new Promise<false>((resolve) => {
+              if (controller.signal.aborted) { resolve(false); return; }
+              controller.signal.addEventListener("abort", () => resolve(false), { once: true });
             });
+            const approved = await Promise.race([
+              confirm({
+                title: `Approve handoff to ${target.display_name}?`,
+                body: (
+                  <div style={{ whiteSpace: "pre-wrap" }}>
+                    {`${delegatedBy} proposed this task:\n\n${delegation.task}`}
+                  </div>
+                ),
+                confirmLabel: "Approve handoff",
+              }),
+              abortPromise,
+            ]);
             // A model cannot authorize work for another familiar. Declining
             // stops the delegation tree rather than presenting more prompts
             // emitted by the same untrusted reply.
