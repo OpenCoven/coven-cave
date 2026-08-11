@@ -44,8 +44,16 @@ export function codexAutomationFailureSummary(
   stderr: string,
 ): string {
   const diagnostic = sanitizeAboutDiagnosticText(stderr.trim());
-  return diagnostic
-    ? `Codex failed: ${diagnostic}`
+  // Node's spawn errors usually include a local executable path before their
+  // stable error code. Sanitization must remove the path, but retain the code
+  // because it tells a person whether the binary was missing, denied, or busy.
+  const errorCode = stderr.match(/\bE[A-Z0-9_]{2,}\b/)?.[0];
+  const detail = [
+    diagnostic,
+    errorCode && !diagnostic.includes(errorCode) ? errorCode : null,
+  ].filter(Boolean).join(" ");
+  return detail
+    ? `Codex failed: ${detail}`
     : `Codex exited with code ${exitCode ?? "unknown"}. Check the run log for details.`;
 }
 
