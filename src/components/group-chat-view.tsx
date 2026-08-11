@@ -1001,8 +1001,10 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
           return streamOne(group, reply, prompt, projectRoot, scopeId, controller.signal);
         },
       });
-      // A familiar can perform an explicit human-requested handoff by emitting
-      // a validated delegation trailer. Plain assistant @mentions remain prose.
+      // A familiar can PROPOSE a handoff by emitting a validated delegation
+      // trailer, but assistant output is never sufficient authority to execute
+      // it — every handoff waits on an operator decision. Plain assistant
+      // @mentions remain prose.
       // Process the small delegation tree sequentially so Stop prevents queued
       // work from starting and each target keeps its resumable familiar session.
       const delivered = new Set(
@@ -1038,6 +1040,32 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
             ) continue;
             const target = byId.get(targetId);
             if (!target) continue;
+            const delegatedBy = byId.get(source.familiarId)?.display_name ?? source.familiarId;
+            // Assistant output is a PROPOSAL, never authority. A familiar can
+            // emit a delegation trailer for any in-coven target, so executing
+            // one unprompted lets a model start work — with the operator's
+            // grants, in another familiar's session — that the human never
+            // asked for. Race the decision against Stop so aborting mid-prompt
+            // does not leave the dialog waiting on a run that is already over.
+            const abortPromise = new Promise<false>((resolve) => {
+              if (controller.signal.aborted) { resolve(false); return; }
+              controller.signal.addEventListener("abort", () => resolve(false), { once: true });
+            });
+            const approved = await Promise.race([
+              confirm({
+                title: `Approve handoff to ${target.display_name}?`,
+                body: (
+                  <div className="[white-space:pre-wrap]!">
+                    {`${delegatedBy} proposed this task:\n\n${delegation.task}`}
+                  </div>
+                ),
+                confirmLabel: "Approve handoff",
+              }),
+              abortPromise,
+            ]);
+            // Declining stops the whole delegation tree rather than walking on
+            // to more prompts emitted by the same untrusted reply.
+            if (!approved || controller.signal.aborted) return;
             const at = nowIso();
             const delegatedTurn: GroupUserTurn = {
               id: newId(),
@@ -1062,7 +1090,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
             delivered.add(dedupeKey);
             delegationCount += 1;
             setTranscript((prev) => [...prev, delegatedTurn, delegatedReply]);
-            const delegatedBy = byId.get(source.familiarId)?.display_name ?? source.familiarId;
             const child = await streamOne(
               group,
               delegatedReply,
