@@ -129,6 +129,101 @@ export type ThreadSelfReport = {
   }[];
 };
 
+const CONTEXT_PRESSURES: ReadonlySet<string> = new Set(["adequate", "tight", "excess", "critical"]);
+const CAPABILITY_STATES: ReadonlySet<string> = new Set(["available", "degraded", "missing"]);
+const CAPABILITY_IMPORTANCE: ReadonlySet<string> = new Set(["nice-to-have", "important", "blocking"]);
+const BLOCKER_CATEGORIES: ReadonlySet<string> = new Set(["auth", "tooling", "permission", "infra", "context", "skill", "other"]);
+const BLOCKER_IMPACTS: ReadonlySet<string> = new Set(["low", "medium", "high", "blocking"]);
+
+function reportRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function reportText(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function reportRequiredText(value: unknown): value is string {
+  return reportText(value) && Boolean(value.trim());
+}
+
+function reportOptionalText(value: unknown): value is string | undefined {
+  return value === undefined || reportText(value);
+}
+
+function reportScore(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
+}
+
+function reportStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(reportText);
+}
+
+function reportObjectArray(
+  value: unknown,
+  validate: (record: Record<string, unknown>) => boolean,
+): boolean {
+  return Array.isArray(value) && value.every((item) => {
+    const record = reportRecord(item);
+    return record !== null && validate(record);
+  });
+}
+
+/** Runtime guard for append-only JSONL rows read from disk. */
+export function isThreadSelfReport(value: unknown): value is ThreadSelfReport {
+  const report = reportRecord(value);
+  const toolReliability = reportRecord(report?.toolReliability);
+  return Boolean(
+    report &&
+    reportRequiredText(report.id) &&
+    reportRequiredText(report.familiarId) &&
+    reportRequiredText(report.sessionId) &&
+    reportText(report.reportedAt) &&
+    Number.isFinite(Date.parse(report.reportedAt)) &&
+    reportScore(report.overallConfidence) &&
+    reportOptionalText(report.overallConfidenceReason) &&
+    toolReliability &&
+    reportScore(toolReliability.score) &&
+    reportStringArray(toolReliability.failedTools) &&
+    reportStringArray(toolReliability.unreliableTools) &&
+    reportOptionalText(toolReliability.notes) &&
+    reportText(report.contextPressure) &&
+    CONTEXT_PRESSURES.has(report.contextPressure) &&
+    reportOptionalText(report.contextNotes) &&
+    reportStringArray(report.skillsUsed) &&
+    reportObjectArray(report.skillsNeedingClarity, (item) =>
+      reportRequiredText(item.skillId) && reportRequiredText(item.reason)) &&
+    reportObjectArray(report.skillsNeedingAccess, (item) =>
+      reportRequiredText(item.skillId) && reportRequiredText(item.reason)) &&
+    reportObjectArray(report.capabilitiesLacking, (item) =>
+      reportRequiredText(item.name) &&
+      reportText(item.importance) &&
+      CAPABILITY_IMPORTANCE.has(item.importance) &&
+      reportRequiredText(item.detail)) &&
+    reportObjectArray(report.capabilitiesVital, (item) =>
+      reportRequiredText(item.name) &&
+      reportText(item.currentState) &&
+      CAPABILITY_STATES.has(item.currentState) &&
+      reportOptionalText(item.notes)) &&
+    reportScore(report.memoryRecallScore) &&
+    reportOptionalText(report.memoryRecallNotes) &&
+    reportScore(report.fileLocatabilityScore) &&
+    reportOptionalText(report.fileLocatabilityNotes) &&
+    reportObjectArray(report.persistentBlockers, (item) =>
+      reportRequiredText(item.id) &&
+      reportRequiredText(item.title) &&
+      reportText(item.category) &&
+      BLOCKER_CATEGORIES.has(item.category) &&
+      reportOptionalText(item.firstSeenAt) &&
+      reportText(item.impact) &&
+      BLOCKER_IMPACTS.has(item.impact) &&
+      reportRequiredText(item.detail) &&
+      reportOptionalText(item.suggestedResolution)),
+  );
+}
+
 export function deriveThreadScore(report: ThreadSelfReport): number {
   return Math.round(
     report.overallConfidence * 0.35 +

@@ -8,6 +8,7 @@ import {
   type ThreadMetricSnapshot,
 } from "@/lib/signal-trends";
 import {
+  isThreadSelfReport,
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
 import { isValidFamiliarId } from "./familiar-id";
@@ -61,7 +62,13 @@ async function readAllReports(familiarId: string): Promise<ThreadSelfReport[]> {
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
-        reports.push(redactReport(JSON.parse(trimmed) as ThreadSelfReport));
+        const parsed: unknown = JSON.parse(trimmed);
+        // `id` has been required since the first persisted schema. Do not
+        // invent identity for a corrupt row: ids drive dedupe and recency
+        // tie-breaking. Match this store's existing malformed-line policy by
+        // dropping the row while preserving the rest of the append-only ledger.
+        if (!isThreadSelfReport(parsed)) continue;
+        reports.push(redactReport(parsed));
       } catch {
         /* Ignore malformed historical lines; append-only storage should keep listing usable. */
       }
