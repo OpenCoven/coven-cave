@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import type { CaveProject } from "./cave-projects-types.ts";
-import { projectForRoot } from "./cave-projects.ts";
+import { projectById, projectForRoot } from "./cave-projects.ts";
 
 export type ChatProjectAccessArgs = {
   projects: CaveProject[];
@@ -29,6 +29,57 @@ function worktreeParentProject(root: string, projects: CaveProject[]): CaveProje
     if (resolved.startsWith(prefix) && resolved.length > prefix.length) return project;
   }
   return null;
+}
+
+function isInsideRoot(root: string, candidate: string): boolean {
+  const rel = path.relative(path.resolve(root), path.resolve(candidate));
+  return (
+    rel === "" ||
+    (
+      rel !== ".." &&
+      !rel.startsWith(".." + path.sep) &&
+      !path.isAbsolute(rel) &&
+      !rel.split(path.sep).includes("..")
+    )
+  );
+}
+
+export type TaskWorktreeProjectAccessArgs = {
+  projects: CaveProject[];
+  startNewConversation: boolean;
+  hasExistingConversation: boolean;
+  taskProjectId?: string | null;
+  taskCwd?: string | null;
+  requestedProjectRoot?: string;
+  resolvedCwd: string;
+};
+
+export function taskWorktreeProjectAccessId(
+  args: TaskWorktreeProjectAccessArgs,
+): string | null {
+  if (
+    !args.startNewConversation ||
+    args.hasExistingConversation ||
+    !args.taskProjectId ||
+    !args.taskCwd ||
+    !args.requestedProjectRoot ||
+    args.taskCwd !== args.requestedProjectRoot
+  ) {
+    return null;
+  }
+
+  const taskProject = projectById(args.taskProjectId, args.projects);
+  if (!taskProject) return `unregistered:${args.requestedProjectRoot}`;
+
+  // Board worktrees are allowed as a first-turn shortcut only when the
+  // symlink-resolved runtime cwd remains inside the task's registered project.
+  // Otherwise the normal unregistered-project chokepoint must deny the turn
+  // instead of authorizing one project while spawning the harness elsewhere.
+  if (!isInsideRoot(taskProject.root, args.resolvedCwd)) {
+    return `unregistered:${args.resolvedCwd}`;
+  }
+
+  return args.taskProjectId;
 }
 
 /**
