@@ -502,6 +502,19 @@ export function createGitRetirementOperations({
           root: normalizedRoot,
           nowMs: readNowMs(),
           onProgress: renewFenceDuringProbe,
+          // Only this candidate needs a fresh GitHub answer. Probing all of
+          // them cost ~2 GraphQL round trips per unit — ~104 calls and ~95s of
+          // a ~134s inventory on a 47-unit checkout — and every result but one
+          // was discarded by the ref filter below. Retirement reprobes twice
+          // per unit, so a --max-retire 3 run paid it up to six times
+          // (cave-imhf0).
+          //
+          // Scoping does not weaken the check this probe exists to perform.
+          // The candidate itself is probed exactly as before, so its lane and
+          // reasons are unchanged; every other unit fails closed to
+          // `uncertain`, which is the safe direction and is asserted by the
+          // inventory's own tests.
+          focusRefs: [item.ref],
         });
       } catch (error) {
         return {

@@ -42,6 +42,34 @@ export interface WorktreeLifecycleInventoryOptions {
    * throw.
    */
   onProgress?: () => void;
+
+  /**
+   * Restrict the per-unit GitHub probing to these full local refs.
+   *
+   * The pull-request probe costs one GraphQL round trip per head oid and
+   * another per branch — measured at ~2 calls and ~2s per unit, so ~104 calls
+   * and ~95s of a ~134s inventory on a 47-unit checkout. Retirement's reprobe
+   * pays all of it to re-verify ONE candidate and then discards every other
+   * unit, twice per retirement (cave-imhf0).
+   *
+   * Scoping narrows ONLY that GitHub probing. Every unit is still enumerated
+   * locally, so cross-unit checks that do not need the network — conflicting
+   * structured paths, duplicate branch claims, orphaned metadata — see exactly
+   * what they see in a full inventory, and the focused unit's own
+   * classification is unchanged.
+   *
+   * Units outside the scope FAIL CLOSED: each is given an explicit
+   * "not probed" probe error, so it classifies `uncertain` rather than
+   * appearing to have no pull request. That direction is not optional. The
+   * absence of a PR association is precisely what makes a unit look landed and
+   * retirable, so treating "not asked" as "no PR" would turn a cost
+   * optimisation into a gate that offers up live worktrees for destruction.
+   *
+   * A unit whose head oid or branch is shared with a focused unit keeps its
+   * real answer: the probe result is keyed by oid and branch, not by unit, so
+   * poisoning it would corrupt the focused unit's own data.
+   */
+  focusRefs?: string[];
 }
 
 export interface WorktreeLifecycleInventory {
@@ -2956,13 +2984,45 @@ function collectInventory(
           oid: null,
           error: originIdentity.error,
         };
+  const focusRefs = options.focusRefs ? new Set(options.focusRefs) : null;
+  const probedUnits =
+    focusRefs === null ? units : units.filter((unit) => unit.ref !== null && focusRefs.has(unit.ref));
   const prs = fetchPullRequests(
     options.repo,
     root,
-    units.map((unit) => unit.head),
-    units.flatMap((unit) => (unit.branch ? [unit.branch] : [])),
+    probedUnits.map((unit) => unit.head),
+    probedUnits.flatMap((unit) => (unit.branch ? [unit.branch] : [])),
     defaultBranch.branch,
   );
+  if (focusRefs !== null) {
+    // Fail closed for everything that was not asked about. Without this the
+    // unprobed units would read as "no pull request", which is the signal that
+    // makes a unit look landed and retirable — a scoped inventory would then
+    // offer live worktrees up for destruction.
+    //
+    // Keyed by oid and branch rather than by unit, because that is how the
+    // probe result is keyed: two units can share a head oid, and marking it
+    // unprobed on behalf of an unfocused unit would corrupt the focused unit's
+    // own answer. So skip any key a focused unit depends on.
+    const probedHeads = new Set(probedUnits.map((unit) => unit.head));
+    const probedBranches = new Set(
+      probedUnits.flatMap((unit) => (unit.branch ? [unit.branch] : [])),
+    );
+    const scopedError =
+      "pull request association not probed: inventory was scoped to the retirement candidate";
+    for (const unit of units) {
+      if (!probedHeads.has(unit.head) && !prs.errorsByOid.has(unit.head)) {
+        prs.errorsByOid.set(unit.head, scopedError);
+      }
+      if (
+        unit.branch !== null &&
+        !probedBranches.has(unit.branch) &&
+        !prs.errorsByBranch.has(unit.branch)
+      ) {
+        prs.errorsByBranch.set(unit.branch, scopedError);
+      }
+    }
+  }
   const workflows = fetchWorkflows(options.repo, root);
   const claims = fetchClaims(root);
   const sessions = fetchSessions(root);
