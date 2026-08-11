@@ -18,11 +18,21 @@ const PNG2 = "https://example.com/b.png";
 
 // ── src allow-list (a security barrier, not a nicety) ────────────────────────
 
-test("src: accepts https, data:image, blob:, and same-origin /api paths", () => {
+test("src: accepts https, data:image, blob:, and the chat attachment API", () => {
   assert.ok(isRenderableImageSrc(PNG));
   assert.ok(isRenderableImageSrc("data:image/png;base64,iVBORw0KGgo="));
   assert.ok(isRenderableImageSrc("blob:http://localhost/abc"));
   assert.ok(isRenderableImageSrc("/api/chat/attachment?id=x.png"));
+});
+
+test("src: refuses other same-origin API routes", () => {
+  for (const bad of [
+    "/api/flows/webhook/launch?input=poc",
+    "/api/images/generate",
+    "/api/chat/attachment/other",
+  ]) {
+    assert.equal(isRenderableImageSrc(bad), false, `refused: ${bad}`);
+  }
 });
 
 test("src: refuses script, file, bare http, protocol-relative, and SVG payloads", () => {

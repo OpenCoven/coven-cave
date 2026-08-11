@@ -50,7 +50,7 @@ local-file-read surface. `isRenderableImageSrc` accepts only:
 | `https://…` | remote pictures |
 | `data:image/{png,jpeg,jpg,gif,webp,avif};base64,…` | inline payloads |
 | `blob:…` | in-process object URLs |
-| `/api/…` (same origin) | the attachment store |
+| `/api/chat/attachment` (same origin) | the read-only attachment store |
 
 Everything else is refused, explicitly including `javascript:`, `vbscript:`,
 `file:`, bare `http:`, protocol-relative `//host/…`, `data:image/svg+xml`

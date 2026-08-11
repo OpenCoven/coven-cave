@@ -75,7 +75,7 @@ function parseAttrs(raw: string): Record<string, string> | null {
  * - `https:` — remote pictures (generated images, docs, avatars).
  * - `data:image/…` — inline payloads the turn already carries.
  * - `blob:` — object URLs minted in-process.
- * - same-origin `/api/…` — the attachment store, fetched through
+ * - same-origin `/api/chat/attachment` — the attachment store, fetched through
  *   {@link file://src/lib/authed-image.ts} so the packaged sidecar's auth gate
  *   is satisfied.
  *
@@ -93,7 +93,10 @@ export function isRenderableImageSrc(src: string | null | undefined): boolean {
   if (/[\u0000-\u001f\u007f]/.test(src)) return false;
   const value = src.trim();
   if (value.startsWith("//")) return false;
-  if (value.startsWith("/api/")) return true;
+  // Model output must not be allowed to turn image rendering into an
+  // authenticated GET to an arbitrary API route. Only the read-only image
+  // endpoint used by persisted chat attachments is safe here.
+  if (/^\/api\/chat\/attachment(?:[?#]|$)/.test(value)) return true;
   if (value.startsWith("blob:")) return true;
   // `image/svg+xml` is deliberately absent: an inline SVG can carry script, and
   // nothing here can render it inert.
