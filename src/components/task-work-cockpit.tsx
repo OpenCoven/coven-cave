@@ -61,6 +61,7 @@ export function TaskWorkCockpit({
   // session id after starting. Keep the first key for this live prompt: a
   // changing key would look like a new handoff and send the prompt twice.
   const initialPromptHandoffIdRef = useRef<string | null>(null);
+  const handoffReleaseTimerRef = useRef<number | null>(null);
   if (initialPrompt) {
     initialPromptHandoffIdRef.current ??= card.sessionId ?? card.id;
   } else {
@@ -163,8 +164,21 @@ export function TaskWorkCockpit({
   // the same card would sit on a claimed id and never send its first prompt.
   const handoffId = conversation?.handoffId ?? null;
   useEffect(() => {
+    if (handoffReleaseTimerRef.current !== null) {
+      clearTimeout(handoffReleaseTimerRef.current);
+      handoffReleaseTimerRef.current = null;
+    }
     if (!handoffId) return;
-    return () => releaseInitialPromptHandoff(CHAT_VIEW_HANDOFF_SCOPE, handoffId);
+    return () => {
+      // React's development effect replay runs a cleanup before immediately
+      // mounting the same cockpit again. Delay the release one turn so that
+      // replay can cancel it; a real unmount still releases the handoff for a
+      // later, genuinely new task launch.
+      handoffReleaseTimerRef.current = window.setTimeout(() => {
+        releaseInitialPromptHandoff(CHAT_VIEW_HANDOFF_SCOPE, handoffId);
+        handoffReleaseTimerRef.current = null;
+      }, 0);
+    };
   }, [handoffId]);
 
   const unlinkMissingSession = async () => {

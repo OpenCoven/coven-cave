@@ -75,11 +75,18 @@ assert.match(
   "a resumed task has no handoff to latch",
 );
 // The latch is module-scoped on purpose, so leaving the task must release it —
-// otherwise reopening the card sits on a claimed id and never sends.
+// otherwise reopening the card sits on a claimed id and never sends. React's
+// development effect replay calls cleanup before immediately mounting again,
+// so the release is deferred one turn and cancelled by that remount.
 assert.match(
   source,
-  /return \(\) => releaseInitialPromptHandoff\(CHAT_VIEW_HANDOFF_SCOPE, handoffId\)/,
-  "the cockpit releases its handoff latch on unmount",
+  /handoffReleaseTimerRef\.current = window\.setTimeout\(\(\) => \{\s*releaseInitialPromptHandoff\(CHAT_VIEW_HANDOFF_SCOPE, handoffId\)/,
+  "the cockpit defers its handoff release so development effect replay cannot re-send the first prompt",
+);
+assert.match(
+  source,
+  /clearTimeout\(handoffReleaseTimerRef\.current\)/,
+  "the replayed cockpit mount cancels the deferred handoff release",
 );
 // The rail mounts for BOTH paths now; gating it on the ready branch is what
 // made the reopen strip a dead end during a bridge-start session.
