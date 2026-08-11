@@ -319,7 +319,6 @@ function hasTestSeam(options: StartLocalDaemonOptions): boolean {
     || options.readHealthDocument
     || options.spawnImpl
     || options.terminateLaunchTree
-    || options.installedVersion
     || options.inspectAddress
     || options.launchCommand
     || options.spawnEnvironment
@@ -453,7 +452,6 @@ async function runLocalDaemonStartCore({
   readinessPollMs = 250,
   probe: probeOverride,
   readHealthDocument: readHealthDocumentOverride,
-  installedVersion,
   inspectAddress = () => inspectDaemonAddress({ socketPath: socketPath() }),
   launchCommand = directDaemonLaunchCommand,
   spawnEnvironment = harnessSpawnEnv,
