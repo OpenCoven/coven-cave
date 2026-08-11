@@ -18,11 +18,50 @@ const PNG2 = "https://example.com/b.png";
 
 // ── src allow-list (a security barrier, not a nicety) ────────────────────────
 
-test("src: accepts https, data:image, blob:, and same-origin /api paths", () => {
+test("src: accepts https, data:image, blob:, and the chat attachment API", () => {
   assert.ok(isRenderableImageSrc(PNG));
   assert.ok(isRenderableImageSrc("data:image/png;base64,iVBORw0KGgo="));
   assert.ok(isRenderableImageSrc("blob:http://localhost/abc"));
   assert.ok(isRenderableImageSrc("/api/chat/attachment?id=x.png"));
+});
+
+test("src: refuses other same-origin API routes", () => {
+  for (const bad of [
+    "/api/flows/webhook/launch?input=poc",
+    "/api/images/generate",
+    "/api/chat/attachment/other",
+  ]) {
+    assert.equal(isRenderableImageSrc(bad), false, `refused: ${bad}`);
+  }
+});
+
+test("src: refuses an absolute URL that re-enters /api/, whatever the host", () => {
+  // `needsAuthedImageFetch` turns any same-origin `/api/*` into an
+  // authenticated GET, so allowing the absolute spelling of a route the
+  // relative check already refuses would reopen the hole from the other side.
+  for (const bad of [
+    "https://localhost:3000/api/flows/webhook/launch?input=poc",
+    "https://localhost:3000/api/images/generate",
+    "https://example.com/api/chat/attachment/other",
+    "https://example.com/api/secret",
+  ]) {
+    assert.equal(isRenderableImageSrc(bad), false, `refused: ${bad}`);
+  }
+  // The attachment endpoint itself still passes in absolute form, and a path
+  // that merely starts with the letters "api" is not an API route.
+  assert.ok(isRenderableImageSrc("https://localhost:3000/api/chat/attachment?id=x.png"));
+  assert.ok(isRenderableImageSrc("https://example.com/apixyz/pic.png"));
+  // Neither casing nor a backslash may walk around the check.
+  assert.equal(isRenderableImageSrc("https://localhost:3000/API/projects"), false);
+  assert.equal(isRenderableImageSrc("https://localhost:3000/api\\..\\projects"), false);
+});
+
+test("src: the documented placeholder still parses", () => {
+  // `coven-marker-directive` teaches `https://…/shot.png`, with a real
+  // ellipsis for the host. That is not a parseable URL, so any check that
+  // resolves the value instead of slicing it refuses the one example every
+  // model is shown.
+  assert.ok(isRenderableImageSrc("https://…/shot.png"));
 });
 
 test("src: refuses script, file, bare http, protocol-relative, and SVG payloads", () => {
