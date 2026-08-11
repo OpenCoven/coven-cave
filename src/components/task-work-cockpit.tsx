@@ -57,6 +57,15 @@ export function TaskWorkCockpit({
   const [lookupState, setLookupState] = useState<"idle" | "checking" | "missing" | "error">("idle");
   const [unlinking, setUnlinking] = useState(false);
   const [unlinkError, setUnlinkError] = useState<string | null>(null);
+  // The bridge replaces the card's id-based placeholder with its reserved
+  // session id after starting. Keep the first key for this live prompt: a
+  // changing key would look like a new handoff and send the prompt twice.
+  const initialPromptHandoffIdRef = useRef<string | null>(null);
+  if (initialPrompt) {
+    initialPromptHandoffIdRef.current ??= card.sessionId ?? card.id;
+  } else {
+    initialPromptHandoffIdRef.current = null;
+  }
   const target = resolveTaskWorkTarget(
     card.sessionId,
     fallbackSession ? [...sessions, fallbackSession] : sessions,
@@ -133,7 +142,7 @@ export function TaskWorkCockpit({
           // Stable across the Group's pane-set remount, and specific to THIS
           // handoff: a later task, or this task started again, gets a different
           // reserved conversation id and may send again.
-          handoffId: card.sessionId ?? card.id,
+          handoffId: initialPromptHandoffIdRef.current,
           railSessionId: railSession?.id ?? card.sessionId ?? null,
         }
       : target.kind === "ready"

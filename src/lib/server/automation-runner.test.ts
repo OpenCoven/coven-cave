@@ -469,7 +469,9 @@ test("an asynchronous missing executable closes prompt delivery and persists ter
   assert.equal(delivery.ok, false, "stdin close makes the failed delivery terminal");
   const update = await Promise.race([terminal, timeout]);
   assert.equal(update.status, "failed");
-  assert.match(String(update.summary), /Codex failed.*(?:ENOENT|not found|could not be started)/i);
+  const summary = String(update.summary);
+  assert.match(summary, /Codex failed.*(?:ENOENT|not found|could not be started)/i);
+  assert.equal(summary.includes(missing), false, "the missing executable path remains private");
 });
 
 test("an executable that closes stdin early reports large-prompt EPIPE without an unhandled stream error", async () => {

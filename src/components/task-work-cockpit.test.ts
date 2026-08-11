@@ -61,8 +61,13 @@ assert.match(
 );
 assert.match(
   source,
-  /handoffId: card\.sessionId \?\? card\.id/,
-  "the handoff id is the reserved conversation id, stable across the Group remount",
+  /initialPromptHandoffIdRef\.current \?\?= card\.sessionId \?\? card\.id/,
+  "the handoff id stays stable when the bridge replaces the card placeholder with its reserved session id",
+);
+assert.match(
+  source,
+  /handoffId: initialPromptHandoffIdRef\.current/,
+  "the bridge hands ChatView the stable first-handoff id across Group remounts",
 );
 assert.match(
   source,
