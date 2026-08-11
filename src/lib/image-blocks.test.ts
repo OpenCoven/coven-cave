@@ -35,6 +35,24 @@ test("src: refuses other same-origin API routes", () => {
   }
 });
 
+test("src: refuses an absolute URL that re-enters /api/, whatever the host", () => {
+  // `needsAuthedImageFetch` turns any same-origin `/api/*` into an
+  // authenticated GET, so allowing the absolute spelling of a route the
+  // relative check already refuses would reopen the hole from the other side.
+  for (const bad of [
+    "https://localhost:3000/api/flows/webhook/launch?input=poc",
+    "https://localhost:3000/api/images/generate",
+    "https://example.com/api/chat/attachment/other",
+    "https://example.com/api/secret",
+  ]) {
+    assert.equal(isRenderableImageSrc(bad), false, `refused: ${bad}`);
+  }
+  // The attachment endpoint itself still passes in absolute form, and a path
+  // that merely starts with the letters "api" is not an API route.
+  assert.ok(isRenderableImageSrc("https://localhost:3000/api/chat/attachment?id=x.png"));
+  assert.ok(isRenderableImageSrc("https://example.com/apixyz/pic.png"));
+});
+
 test("src: refuses script, file, bare http, protocol-relative, and SVG payloads", () => {
   for (const bad of [
     "javascript:alert(1)",
