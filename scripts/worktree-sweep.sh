@@ -1,22 +1,14 @@
 #!/bin/bash
 # Scheduled worktree lifecycle sweep.
 #
-# Drives a real agent rather than scripting `git worktree remove` directly, and
-# that is deliberate. Deciding whether a worktree is retirable needs judgement
-# the guard rails encode: is the unit in cooldown, does it hold uncommitted
-# work, is another live session sitting in it, are its commits reachable from
-# any remote ref. A blind script removing `cleanup-ready` units would sooner or
-# later destroy live work — which is what happened on 2026-07-03.
-#
-# The agent's instructions live in worktree-sweep-prompt.md beside this file.
-# Both are versioned here rather than only on one machine, because the prompt
-# carries the retirement discipline (the --max-retire bound, why a held gate is
-# not a reason to fall back to hand-retirement) and that reasoning is worth
-# more than the twenty lines of shell around it. See cave-6qzo0.
+# Runs the lifecycle tool directly. The tool owns the retirement guard rails:
+# cooldown, dirty-state and live-process checks, retention proof, the maintenance
+# fence, and the bounded retirement count. Do not put an unattended LLM between
+# this wrapper and that policy: lifecycle inventory contains untrusted text from
+# filenames and repository metadata.
 #
 # Machine-specific wiring — the launchd plist and, on macOS, an app bundle that
-# holds the Full Disk Access grant — stays out of the repo. See the header of
-# worktree-sweep-prompt.md for what that wiring has to provide.
+# holds the Full Disk Access grant — stays out of the repo.
 #
 # Environment:
 #   SWEEP_LOG   override the log path (default: $HOME/.claude/logs/…)
@@ -33,10 +25,9 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 # linked worktree targets that worktree — and `git worktree list` there still
 # enumerates every unit in the repository. The scheduled job is pinned to the
 # primary checkout, which is what you want; running it by hand from a worktree
-# is a live sweep of the whole repository, not a scoped one. Use --dry-run
-# semantics by reading the prompt first, or set SWEEP_REPO deliberately.
+# is a live sweep of the whole repository, not a scoped one. Set SWEEP_REPO
+# deliberately when invoking it outside the scheduled primary checkout.
 REPO="${SWEEP_REPO:-$(cd "$script_dir/.." && pwd -P)}"
-PROMPT_FILE="$script_dir/worktree-sweep-prompt.md"
 LOG="${SWEEP_LOG:-$HOME/.claude/logs/coven-cave-worktree-sweep.log}"
 # Keyed by checkout, so two clones on one machine cannot block each other.
 LOCK="/tmp/worktree-sweep-$(printf '%s' "$REPO" | shasum | cut -c1-12).lock"
@@ -91,25 +82,21 @@ fi
 echo $$ >"$LOCK/pid"
 trap 'rm -rf "$LOCK" 2>/dev/null' EXIT
 
-if [[ ! -f "$PROMPT_FILE" ]]; then
-  echo "[sweep] ABORT: prompt file missing at $PROMPT_FILE"
-  exit 1
-fi
 cd "$REPO" || { echo "[sweep] ABORT: cannot cd to $REPO"; exit 1; }
 
 # A scheduler does not source a login profile.
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
-if ! command -v claude >/dev/null 2>&1; then
-  echo "[sweep] ABORT: claude CLI not on PATH"
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "[sweep] ABORT: pnpm not on PATH"
   exit 1
 fi
 
 # Filesystem-permission preflight. On macOS a scheduled job gets no access to a
 # protected directory (~/Documents and friends) unless the launching binary has
 # been granted it. Without this check the symptom is subtle: `cd` succeeds, then
-# every git call fails and the agent runs against an empty view of the
-# repository — which looks exactly like "nothing to retire".
+# every git call fails and the lifecycle command runs against an empty view of
+# the repository — which looks exactly like "nothing to retire".
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
   echo "[sweep] ABORT: cannot read the git repository at $REPO."
   echo "[sweep] On macOS this is usually a Full Disk Access gap: scheduled jobs"
@@ -123,47 +110,23 @@ before=$(git worktree list | wc -l | tr -d ' ')
 echo "[sweep] repo: $REPO"
 echo "[sweep] repo HEAD: $(git rev-parse --short HEAD 2>/dev/null) on $(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
 echo "[sweep] registered worktrees: $before"
-echo "[sweep] --- agent output follows ---"
-# Byte offset of the agent's output, so its report can be inspected afterwards
-# without teeing (stdout is already redirected to the log).
-agent_offset=$(wc -c <"$LOG")
-
-# Tools are scoped deliberately: no Write, no Edit. This job inspects, retires
-# worktrees, and closes beads. It has no business editing source files.
-claude -p "$(cat "$PROMPT_FILE")" \
-  --allowed-tools "Bash,Read,Grep,Glob" \
-  --output-format text
+echo "[sweep] --- lifecycle apply output follows ---"
+# The lifecycle command performs its own complete inventory and retires only
+# cleanup-ready units. The explicit override is audited by the command; the
+# local maintenance plane remains enforced. Keep the blast radius bounded.
+pnpm beads:worktrees:apply --allow-unenforced-planes --max-retire 3
 status=$?
 
 after=$(git worktree list | wc -l | tr -d ' ')
-echo "[sweep] --- agent exited with status $status ---"
+echo "[sweep] --- lifecycle apply exited with status $status ---"
 echo "[sweep] worktrees remaining: $after"
 
-# A run that never assessed anything must not read as one that assessed and
-# found nothing. Both leave the worktree count unchanged, so without this the
-# log line and the (absent) notification are identical — which is how a quota
-# deferral looked like a clean sweep on 2026-08-10T15:10.
-# Only the FIRST non-empty line counts, because the prompt requires the marker
-# there. Matching it anywhere would misread a normal report that merely quotes
-# the phrase — and now that the marker is documented, a report explaining why it
-# did NOT defer is a realistic way to trip that.
-deferred=""
-first_line="$(tail -c "+$((agent_offset + 1))" "$LOG" | grep -m1 -v '^[[:space:]]*$' || true)"
-case "$first_line" in
-  "SWEEP DEFERRED"*) deferred="$first_line" ;;
-esac
-
-# Count the worktrees here rather than trusting the agent's summary — a
+# Count the worktrees here rather than trusting command output — a
 # retirement is a filesystem fact, not a claim.
-# A non-zero exit is checked FIRST and always notifies. Letting the deferral
-# branch swallow it would hide a real failure behind the marker — the same
-# silent-success shape this whole guard exists to close.
+# A non-zero exit always notifies, including incomplete inventory caused by a
+# transient GitHub failure. It must never look like a successful no-op.
 if [[ "$status" -ne 0 ]]; then
-  notify "Worktree sweep errored" "Agent exited $status. Check the log."
-  [[ -n "$deferred" ]] && echo "[sweep] (the run also reported: $deferred)"
-elif [[ -n "$deferred" ]]; then
-  echo "[sweep] DEFERRED — the patrol did not run: $deferred"
-  echo "[sweep] this run assessed nothing; the next scheduled sweep is the retry"
+  notify "Worktree sweep errored" "Lifecycle apply exited $status. Check the log."
 elif [[ "$after" -lt "$before" ]]; then
   notify "Worktree sweep: $(( before - after )) retired" \
     "$before -> $after worktrees. Log: $LOG"
