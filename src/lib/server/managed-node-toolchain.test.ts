@@ -234,6 +234,39 @@ test("managed Node probe runs Node before the npm cold-start check", async () =>
   }
 });
 
+test("managed Node probe retries one empty Node version read", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "coven-managed-node-empty-version-"));
+  const env = { NODE_ENV: "test" } satisfies NodeJS.ProcessEnv;
+  const paths = managedNodePaths("linux", "x64", env, home);
+  assert.ok(paths);
+  await mkdir(path.dirname(paths.node), { recursive: true });
+  await mkdir(path.dirname(paths.npmCli), { recursive: true });
+  await writeFile(paths.node, "");
+  await writeFile(paths.npmCli, "");
+
+  let nodeRuns = 0;
+  try {
+    const probe = await probeManagedNodeToolchain({
+      platform: "linux",
+      architecture: "x64",
+      env,
+      home,
+      exec: async (_command, args) => {
+        if (args[0] === "--version") {
+          nodeRuns += 1;
+          return { stdout: nodeRuns === 1 ? "" : `v${MANAGED_NODE_VERSION}\n`, stderr: "" };
+        }
+        return { stdout: "11.0.0\n", stderr: "" };
+      },
+    });
+
+    assert.equal(probe.status, "ready");
+    assert.equal(nodeRuns, 2);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test("managed Node probe labels npm timeouts with an actionable deadline", async () => {
   const home = await mkdtemp(path.join(tmpdir(), "coven-managed-node-timeout-"));
   const env = { NODE_ENV: "test" } satisfies NodeJS.ProcessEnv;
