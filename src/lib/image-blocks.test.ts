@@ -51,6 +51,17 @@ test("src: refuses an absolute URL that re-enters /api/, whatever the host", () 
   // that merely starts with the letters "api" is not an API route.
   assert.ok(isRenderableImageSrc("https://localhost:3000/api/chat/attachment?id=x.png"));
   assert.ok(isRenderableImageSrc("https://example.com/apixyz/pic.png"));
+  // Neither casing nor a backslash may walk around the check.
+  assert.equal(isRenderableImageSrc("https://localhost:3000/API/projects"), false);
+  assert.equal(isRenderableImageSrc("https://localhost:3000/api\\..\\projects"), false);
+});
+
+test("src: the documented placeholder still parses", () => {
+  // `coven-marker-directive` teaches `https://…/shot.png`, with a real
+  // ellipsis for the host. That is not a parseable URL, so any check that
+  // resolves the value instead of slicing it refuses the one example every
+  // model is shown.
+  assert.ok(isRenderableImageSrc("https://…/shot.png"));
 });
 
 test("src: refuses script, file, bare http, protocol-relative, and SVG payloads", () => {
