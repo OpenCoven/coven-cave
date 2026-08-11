@@ -37,6 +37,11 @@ assert.match(
 assert.match(source, /targetName === "coven-cli"[\s\S]*npmLaunchCommandForPath/);
 assert.match(
   source,
+  /canRepairDetectedCovenWithHostNpm[\s\S]*platform !== "win32" \|\| \/\\\.\(\?:cmd\|bat\)\$\/i[\s\S]*detected && path\.isAbsolute\(detected\) && canRepairDetectedCovenWithHostNpm\(detected\)/,
+  "Windows native coven.exe launchers fall back to Cave's managed npm lane instead of being mistaken for npm shims",
+);
+assert.match(
+  source,
   /verificationPath: detected[\s\S]*verifyOpenCovenToolInstall\(targetName, \{[\s\S]*binaryPath: plan\.verificationPath,[\s\S]*env: plan\.env/,
   "post-install verification checks the exact CLI launcher that npm targeted",
 );
