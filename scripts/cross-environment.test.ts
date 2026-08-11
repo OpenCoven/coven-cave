@@ -171,9 +171,11 @@ function skip(reason: string): void {
     codeShim,
     'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@opencoven\\coven-code\\bin\\coven-code" %*\r\n',
   );
+  const resolvedCodeShim = covenLaunchCommandForBinary(codeShim, "win32");
+  assert.equal(resolvedCodeShim.command, process.execPath, "win32 Coven Code shims launch through node");
   assert.deepEqual(
-    covenLaunchCommandForBinary(codeShim, "win32"),
-    { command: process.execPath, fixedArgs: [codeShimScript] },
+    resolvedCodeShim.fixedArgs?.map((target) => statSync(target).ino),
+    [statSync(codeShimScript).ino],
     "win32 npm shims resolve extensionless Coven Code targets from their own package",
   );
 
