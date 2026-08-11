@@ -17,6 +17,15 @@ export async function ensureResearchLandingAccess(
   familiarId: string,
   missionId: string,
 ): Promise<{ project: CaveProject; granted: boolean }> {
+  // Remove the insecure project created by older releases first. Keeping even
+  // one grant on this shared parent makes every mission workspace accessible,
+  // and this cleanup must run regardless of whether the per-mission grant succeeds.
+  const shared = projectForRoot(researchMissionsRoot(), await loadProjects());
+  if (shared) {
+    await revokeAllGrantsForProject(shared.id);
+    await deleteProject(shared.id);
+  }
+
   const root = researchMissionWorkspacePath(missionId);
   await mkdir(/* turbopackIgnore: true */ root, { recursive: true });
   const existing = projectForRoot(root, await loadProjects());
@@ -31,14 +40,6 @@ export async function ensureResearchLandingAccess(
       access: "write",
       actor: "system",
     });
-  }
-
-  // Remove the insecure project created by older releases. Keeping even one
-  // grant on this shared parent makes every mission workspace accessible.
-  const shared = projectForRoot(researchMissionsRoot(), await loadProjects());
-  if (shared) {
-    await revokeAllGrantsForProject(shared.id);
-    await deleteProject(shared.id);
   }
   return { project, granted: !effective.level };
 }
