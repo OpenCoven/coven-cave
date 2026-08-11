@@ -63,6 +63,16 @@ assert.match(
   /sidecarTokenConfigured: Boolean\(SIDECAR_TOKEN\),\s*accessTokenConfigured: Boolean\(accessToken\(\)\),\s*tokenAuthenticated,/,
   "PTY upgrade authentication closes the credential-less path whenever either token is configured",
 );
+// ...and it decides that WITHOUT consulting loopback at all. The positive
+// assertion above would still pass if someone re-introduced a direct-loopback
+// escape hatch beside it, which is exactly the bypass cave-ruw4z removed: TCP
+// loopback proves the caller is on this machine, never which OS user it is, so
+// any local account could otherwise adopt a shell as the Cave process owner.
+assert.doesNotMatch(
+  src,
+  /shouldRejectUnauthenticatedPtyUpgrade\([\s\S]{0,400}?isDirectLoopbackRequest/,
+  "no direct-loopback term may re-enter the PTY rejection decision",
+);
 // Direct-loopback classification (cave-vn2r): trusted only because ALL three
 // hold — the socket peer is loopback, no forwarding markers are present
 // (tailscale serve delivers remote phones over loopback WITH x-forwarded-*),

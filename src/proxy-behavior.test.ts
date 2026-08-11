@@ -383,8 +383,13 @@ assert.equal(
 );
 assert.equal(
   shouldRequireMobileAccessCredential("localhost:3000", false, true),
+  true,
+  "a direct loopback peer still needs user-bound credentials on a shared machine",
+);
+assert.equal(
+  shouldRequireMobileAccessCredential("localhost:3000", false, true, false, true),
   false,
-  "a server-verified direct loopback peer is exempt from the mobile gate (cave-vn2r)",
+  "the Tauri app's verified per-launch sidecar credential bypasses the mobile gate",
 );
 assert.equal(
   shouldRequireMobileAccessCredential("cave.tailnet.example.ts.net", false, false),
@@ -393,8 +398,8 @@ assert.equal(
 );
 
 // ─── isTrustedLocalPeer ───────────────────────────────────────────────────
-// The exemption above is keyed to server.ts's per-boot secret; only an exact
-// match counts, and a missing secret (Next without server.ts) fails closed.
+// The local-peer stamp still distinguishes direct from forwarded traffic, but
+// it is not user identity and cannot bypass an armed credential gate.
 assert.equal(isTrustedLocalPeer("per-boot-secret", "per-boot-secret"), true);
 assert.equal(
   isTrustedLocalPeer("guessed-value", "per-boot-secret"),

@@ -1167,6 +1167,14 @@ server.on("upgrade", (req, socket, head) => {
   // Any configured PTY credential closes the credential-less path, including
   // direct loopback: another local account or process is not the paired app.
   // Plain development remains credential-less only when neither token exists.
+  //
+  // Keep the credential-less case exactly that narrow. #714 removed it and
+  // 401'd every local terminal, reintroducing the v0.0.72 "Terminal connection
+  // failed" regression that server-pty-ws.test.ts still guards. What makes
+  // closing it safe HERE is that both peers now have a credential to present:
+  // the Tauri shell its per-launch sidecar token, and a local browser the
+  // access gate. TCP loopback proves only that the caller is on this machine,
+  // never which OS user it is.
   if (shouldRejectUnauthenticatedPtyUpgrade({
     sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
     accessTokenConfigured: Boolean(accessToken()),

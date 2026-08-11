@@ -132,23 +132,17 @@ export function isAllowedRequestSourceAny(value: string | null, expectedOrigins:
 export function shouldRequireMobileAccessCredential(
   _host: string | null,
   _hasSuppliedCredential: boolean,
-  trustedLocalPeer = false,
+  _trustedLocalPeer = false,
   tailnetPeerVerified = false,
+  sidecarAuthenticated = false,
 ) {
-  // An allowlisted tailnet device (cave-zm6pn) has already proven a stronger
-  // credential than the shared pairing secret this gate asks for: WireGuard
-  // device identity resolved by server.ts off the raw socket. Requiring the
-  // invite token on top would defeat the point of replacing it.
-  if (tailnetPeerVerified) return false;
-  // The Host header is client-controlled, so it cannot prove that the actual
-  // TCP peer is loopback — a host value alone never exempts a request. The
-  // one thing that CAN prove it is server.ts, which sees the raw socket: it
-  // stamps LOCAL_PEER_HEADER with the per-boot COVEN_CAVE_LOCAL_PEER_SECRET
-  // only when the TCP peer is loopback, the request carries no forwarding
-  // markers (a Tailscale-Serve-forwarded phone arrives over loopback too, but
-  // always with x-forwarded-* headers), and the Host is loopback. Callers
-  // verify that stamp with isTrustedLocalPeer and pass the result here.
-  return !trustedLocalPeer;
+  // Forwarded tailnet identity is context for presence policy, not a bearer
+  // credential: a local process can forge proxy headers on a loopback socket.
+  void tailnetPeerVerified;
+  // The Tauri sidecar credential is minted per launch and delivered only to
+  // the owning app. Unlike TCP loopback, it distinguishes the intended local
+  // user from other OS users on a shared machine.
+  return !sidecarAuthenticated;
 }
 
 /**
