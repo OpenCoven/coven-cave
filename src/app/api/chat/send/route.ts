@@ -171,7 +171,7 @@ import {
 } from "@/lib/server/local-runtime-capability-gate";
 import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { loadProjects } from "@/lib/cave-projects";
-import { chatProjectAccessId } from "@/lib/chat-project-access";
+import { chatProjectAccessId, taskWorktreeProjectAccessId } from "@/lib/chat-project-access";
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
@@ -2086,17 +2086,9 @@ export async function POST(req: Request) {
   // The worktree itself is intentionally not a separate project record, so
   // its first native-chat turn must authorize against the card's server-owned
   // project instead of failing as an arbitrary unregistered directory. This
-  // narrow exception applies only to the fresh reserved handoff and only when
-  // the browser submits the exact CWD persisted on that task card.
-  const taskWorktreeProjectId =
-    body.startNewConversation &&
-    !existingConversation &&
-    taskCard?.projectId &&
-    taskCard.cwd &&
-    body.projectRoot &&
-    taskCard.cwd === body.projectRoot
-      ? taskCard.projectId
-      : null;
+  // narrow exception applies only to the fresh reserved handoff, only when
+  // the browser submits the exact CWD persisted on that task card, and only
+  // when the symlink-resolved runtime cwd remains inside the task project.
   let authorizedProjectRoot: string;
   try {
     if (projectlessGeneration) {
@@ -2114,6 +2106,15 @@ export async function POST(req: Request) {
         {
           validateProjectRoot: validateCaveProjectRoot,
           resolveProjectId: (requestedRoot, resolvedRoot) =>
+            taskWorktreeProjectAccessId({
+              projects,
+              startNewConversation: Boolean(body.startNewConversation),
+              hasExistingConversation: Boolean(existingConversation),
+              taskProjectId: taskCard?.projectId,
+              taskCwd: taskCard?.cwd,
+              requestedProjectRoot: requestedRoot,
+              resolvedCwd: resolvedRoot,
+            }) ??
             chatProjectAccessId({
               projects,
               requestedProjectRoot: requestedRoot,
@@ -2134,7 +2135,6 @@ export async function POST(req: Request) {
         {
           familiarId: body.familiarId,
           projectRoot: projectRootForLaunch,
-          projectIdOverride: taskWorktreeProjectId,
           surface: "chat",
         },
       );
