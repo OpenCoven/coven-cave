@@ -198,7 +198,7 @@ test("managed Node probe distinguishes an absent toolchain from an unusable one"
   assert.equal(missing.status, "missing");
 });
 
-test("managed Node probe gives npm a cold-start budget without slowing the Node check", async () => {
+test("managed Node probe runs Node before the npm cold-start check", async () => {
   const home = await mkdtemp(path.join(tmpdir(), "coven-managed-node-probe-"));
   const env = { NODE_ENV: "test" } satisfies NodeJS.ProcessEnv;
   const paths = managedNodePaths("linux", "x64", env, home);

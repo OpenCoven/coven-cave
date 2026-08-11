@@ -223,12 +223,28 @@ export async function probeManagedNodeToolchain(
   if (!env) return { status: "missing", paths };
   const run = options.exec ?? execFileAsync;
   try {
-    const [{ stdout }, npm] = await Promise.all([
-      runManagedNodeProbe(run, "Node.js", paths.node, ["--version"], env, NODE_PROBE_TIMEOUT_MS),
-      runManagedNodeProbe(run, "npm", paths.node, [paths.npmCli, "--version"], env, NPM_PROBE_TIMEOUT_MS),
-    ]);
+    // npm uses the same managed prefix as the runtime probe. Run these
+    // independently rather than concurrently: the first process can create
+    // prefix-local state on a fresh toolchain, and a concurrent Node probe
+    // must never be misclassified from an incomplete child result.
+    const node = await runManagedNodeProbe(
+      run,
+      "Node.js",
+      paths.node,
+      ["--version"],
+      env,
+      NODE_PROBE_TIMEOUT_MS,
+    );
+    const npm = await runManagedNodeProbe(
+      run,
+      "npm",
+      paths.node,
+      [paths.npmCli, "--version"],
+      env,
+      NPM_PROBE_TIMEOUT_MS,
+    );
     if (!npm.stdout.trim()) return { status: "unusable", detail: "npm did not report a version", paths };
-    const version = stdout.trim().replace(/^v/, "");
+    const version = node.stdout.trim().replace(/^v/, "");
     if (!version.startsWith(`${MANAGED_NODE_VERSION.split(".").slice(0, 2).join(".")}.`)) {
       return { status: "incompatible", version, paths };
     }
