@@ -82,12 +82,10 @@ test("delayed readiness, partial health, crash, hang, reset, and version skew st
 
   for (const [name, health, expectedCode] of [
     ["partial", { ok: true }, "runtime_incompatible"],
-    ["version-skew", { ok: true, apiVersion: "coven.daemon.v1", covenVersion: "1.2.2" }, "runtime_incompatible"],
   ] as const) {
     const result = await startLocalDaemon({
       restart: true,
       startTimeoutMs: 0,
-      installedVersion: async () => "1.2.3",
       readHealthDocument: async () => health,
       launchCommand: fixtureLaunch,
       spawnEnvironment: fixtureEnvironment,
@@ -103,6 +101,21 @@ test("delayed readiness, partial health, crash, hang, reset, and version skew st
     assert.equal(result.code, expectedCode);
     assert.equal(result.cleanup?.completed, true);
   }
+
+  const independentVersion = await startLocalDaemon({
+    restart: true,
+    startTimeoutMs: 0,
+    readHealthDocument: async () => ({
+      ok: true,
+      apiVersion: "coven.daemon.v1",
+      covenVersion: "0.0.0",
+    }),
+    launchCommand: fixtureLaunch,
+    spawnEnvironment: fixtureEnvironment,
+    spawnImpl: () => fakeChild(),
+    platform: process.platform,
+  });
+  assert.equal(independentVersion.ok, true, "a valid daemon release line is not compared to the CLI package version");
 
   const crashed = await startLocalDaemon({
     restart: true,

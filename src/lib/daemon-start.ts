@@ -10,7 +10,6 @@ import { covenCliMissingError, isMissingExecutableError } from "./coven-spawn-er
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 import { waitForDaemonReadiness } from "./daemon-readiness.ts";
 import { sanitizeAboutDiagnosticText } from "./about-diagnostics.ts";
-import { installedCovenVersion } from "./coven-version.ts";
 import {
   assessDaemonStartupCompatibility,
   type DaemonStartupCompatibility,
@@ -218,8 +217,6 @@ type StartLocalDaemonOptions = {
   probe?: () => Promise<{ ok: boolean }>;
   /** Injectable health document that still exercises compatibility assessment. */
   readHealthDocument?: () => Promise<DaemonStartupHealth | null>;
-  /** Injectable installed-version seam for deterministic startup coherence tests. */
-  installedVersion?: () => Promise<string | null>;
   /** Injectable address-occupancy seam for deterministic already-bound tests. */
   inspectAddress?: () => Promise<DaemonAddressOccupancy>;
   /** Injectable command seam keeps fault scenarios independent of host PATH state. */
@@ -322,7 +319,6 @@ function hasTestSeam(options: StartLocalDaemonOptions): boolean {
     || options.readHealthDocument
     || options.spawnImpl
     || options.terminateLaunchTree
-    || options.installedVersion
     || options.inspectAddress
     || options.launchCommand
     || options.spawnEnvironment
@@ -456,7 +452,6 @@ async function runLocalDaemonStartCore({
   readinessPollMs = 250,
   probe: probeOverride,
   readHealthDocument: readHealthDocumentOverride,
-  installedVersion,
   inspectAddress = () => inspectDaemonAddress({ socketPath: socketPath() }),
   launchCommand = directDaemonLaunchCommand,
   spawnEnvironment = harnessSpawnEnv,
@@ -473,7 +468,6 @@ async function runLocalDaemonStartCore({
   const restart = automatic ? false : restartRequested;
   const compatibilityState: { current: DaemonStartupCompatibility | null } = { current: null };
   const currentCompatibility = (): DaemonStartupCompatibility | null => compatibilityState.current;
-  const expectedVersion = probeOverride ? null : await (installedVersion ?? installedCovenVersion)();
   const readHealthDocument = readHealthDocumentOverride ?? (async () => {
     const response = await callDaemonTarget<DaemonStartupHealth>(localDaemonTarget(), {
       path: "/api/v1/health",
@@ -487,7 +481,7 @@ async function runLocalDaemonStartCore({
   const probe = probeOverride ?? (async () => {
     const health = await readHealthDocument();
     if (!health) return { ok: false };
-    compatibilityState.current = assessDaemonStartupCompatibility(health, expectedVersion);
+    compatibilityState.current = assessDaemonStartupCompatibility(health);
     return { ok: compatibilityState.current.ok };
   });
   const startedAt = Date.now();
@@ -616,7 +610,12 @@ async function runLocalDaemonStartCore({
     probe,
     timeoutMs: startTimeoutMs,
     pollMs: readinessPollMs,
-    runnerExitGraceMs: Math.min(1_500, startTimeoutMs),
+    // `coven daemon start` deliberately exits after handing its detached
+    // service to the OS. Under a cold first-run filesystem, that service can
+    // take longer than the old 1.5 s launcher grace to publish its socket.
+    // Health—not the short-lived launcher—is the authority for the entire
+    // startup deadline.
+    runnerExitGraceMs: startTimeoutMs,
     runnerExited: () => spawnError !== null || exitCode !== undefined,
   });
   if (readiness.ready) {

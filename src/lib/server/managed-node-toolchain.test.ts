@@ -20,7 +20,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-type TarEntry = { name: string; body?: string; mode?: number; type?: "0" | "1" | "2" | "5"; linkName?: string };
+type TarEntry = { name: string; body?: string; mode?: number; type?: "0" | "1" | "2" | "5" | "L"; linkName?: string };
 
 function tarArchive(entries: TarEntry[]): Buffer {
   const blocks: Buffer[] = [];
@@ -83,6 +83,27 @@ test("safe tar extraction accepts ordinary files and rejects traversal", async (
     await extractSafeTarGz(gzipSync(tarFile("node-v22/bin/node", "node")), root);
     assert.equal(await readFile(path.join(root, "node-v22", "bin", "node"), "utf8"), "node");
     await assert.rejects(extractSafeTarGz(gzipSync(tarFile("../outside", "no")), root), /escapes/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("safe tar extraction supports GNU long-name metadata without weakening path validation", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "coven-managed-node-long-name-"));
+  const longName = `node-v24/${"nested-".repeat(20)}node`;
+  try {
+    await extractSafeTarGz(gzipSync(tarArchive([
+      { name: "././@LongLink", type: "L", body: `${longName}\0` },
+      { name: "short-name", body: "node" },
+    ])), root);
+    assert.equal(await readFile(path.join(root, longName), "utf8"), "node");
+    await assert.rejects(
+      extractSafeTarGz(gzipSync(tarArchive([
+        { name: "././@LongLink", type: "L", body: "../outside\0" },
+        { name: "short-name", body: "no" },
+      ])), root),
+      /escapes/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -177,7 +198,7 @@ test("managed Node probe distinguishes an absent toolchain from an unusable one"
   assert.equal(missing.status, "missing");
 });
 
-test("managed Node probe gives npm a cold-start budget without slowing the Node check", async () => {
+test("managed Node probe runs Node before the npm cold-start check", async () => {
   const home = await mkdtemp(path.join(tmpdir(), "coven-managed-node-probe-"));
   const env = { NODE_ENV: "test" } satisfies NodeJS.ProcessEnv;
   const paths = managedNodePaths("linux", "x64", env, home);
@@ -208,6 +229,39 @@ test("managed Node probe gives npm a cold-start budget without slowing the Node 
       { args: ["--version"], timeout: 1_500 },
       { args: [paths.npmCli, "--version"], timeout: 15_000 },
     ]);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("managed Node probe retries one empty Node version read", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "coven-managed-node-empty-version-"));
+  const env = { NODE_ENV: "test" } satisfies NodeJS.ProcessEnv;
+  const paths = managedNodePaths("linux", "x64", env, home);
+  assert.ok(paths);
+  await mkdir(path.dirname(paths.node), { recursive: true });
+  await mkdir(path.dirname(paths.npmCli), { recursive: true });
+  await writeFile(paths.node, "");
+  await writeFile(paths.npmCli, "");
+
+  let nodeRuns = 0;
+  try {
+    const probe = await probeManagedNodeToolchain({
+      platform: "linux",
+      architecture: "x64",
+      env,
+      home,
+      exec: async (_command, args) => {
+        if (args[0] === "--version") {
+          nodeRuns += 1;
+          return { stdout: nodeRuns === 1 ? "" : `v${MANAGED_NODE_VERSION}\n`, stderr: "" };
+        }
+        return { stdout: "11.0.0\n", stderr: "" };
+      },
+    });
+
+    assert.equal(probe.status, "ready");
+    assert.equal(nodeRuns, 2);
   } finally {
     await rm(home, { recursive: true, force: true });
   }

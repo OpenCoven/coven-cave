@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyOnboardingInstallFailure } from "./install-service.ts";
+import {
+  canRepairDetectedCovenWithHostNpm,
+  classifyOnboardingInstallFailure,
+} from "./install-service.ts";
+
+test("Coven CLI repair uses host npm only for Windows npm command shims", () => {
+  assert.equal(canRepairDetectedCovenWithHostNpm("C:\\Users\\coven.cmd", "win32"), true);
+  assert.equal(canRepairDetectedCovenWithHostNpm("C:\\Users\\coven.bat", "win32"), true);
+  assert.equal(canRepairDetectedCovenWithHostNpm("C:\\Program Files\\Coven\\coven.exe", "win32"), false);
+  assert.equal(canRepairDetectedCovenWithHostNpm("/usr/local/bin/coven", "linux"), true);
+});
 
 const cases = [
   {

@@ -24,6 +24,7 @@ const covenDaemon = await readFile(new URL("./coven-daemon.ts", import.meta.url)
 
 assert.match(covenDaemon, /export function localDaemonTarget\(\)[\s\S]*mode: "local"[\s\S]*socketPath: socketPath\(\)/);
 assert.match(daemonStart, /waitForDaemonReadiness/);
+assert.match(daemonStart, /runnerExitGraceMs: startTimeoutMs/, "the daemonizing CLI launcher gets the complete health deadline");
 assert.match(daemonStart, /path: "\/api\/v1\/health"/);
 assert.match(daemonStart, /detached: platform !== "win32"/, "POSIX launch owns a process group");
 assert.match(daemonStart, /windowsHide: true/, "daemon launch suppresses Windows console allocation");
@@ -508,17 +509,16 @@ test("automatic recovery checks lifecycle ownership before it checks the address
   assert.equal(result.code, "address_in_use");
 });
 
-test("a stale runtime discovered after launch is rejected and the owned tree is cleaned up", async () => {
+test("a daemon runtime on an independent release line is adopted after launch", async () => {
   const child = fakeChild();
   let cleanupCalls = 0;
   const result = await startLocalDaemon({
     restart: true,
     startTimeoutMs: 0,
-    installedVersion: async () => "1.2.3",
     readHealthDocument: async () => ({
       ok: true,
       apiVersion: "coven.daemon.v1",
-      covenVersion: "1.2.2",
+      covenVersion: "0.0.0",
     }),
     spawnImpl: () => child,
     terminateLaunchTree: async () => {
@@ -528,12 +528,8 @@ test("a stale runtime discovered after launch is rejected and the owned tree is 
     platform: "linux",
   });
 
-  assert.equal(cleanupCalls, 1);
-  assert.equal(result.ok, false);
-  assert.equal(result.code, "runtime_incompatible");
-  assert.equal(result.status, 409);
-  assert.match(result.error, /does not match the installed runtime/i);
-  assert.deepEqual(result.cleanup, { attempted: true, completed: true, mode: "process-group" });
+  assert.equal(cleanupCalls, 0);
+  assert.equal(result.ok, true);
 });
 
 test("Windows cleanup delegates the complete owned tree to taskkill", async () => {

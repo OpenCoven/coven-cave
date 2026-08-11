@@ -240,6 +240,19 @@ async function npmForDetectedCoven(detected: string): Promise<{ npmPath: string;
   };
 }
 
+/**
+ * npm publishes Windows command shims as `.cmd`/`.bat`, never as `.exe`.
+ * A detected native `coven.exe` may be a separate, incompatible launcher;
+ * using its directory as an npm prefix would install one CLI and then verify
+ * the unrelated executable. Fall back to Cave's managed npm lane instead.
+ */
+export function canRepairDetectedCovenWithHostNpm(
+  detected: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return platform !== "win32" || /\.(?:cmd|bat)$/i.test(detected);
+}
+
 function hostNpmSpawnEnv(npmPath: string, prefix: string): NodeJS.ProcessEnv {
   const env = caveToolSpawnEnv();
   for (const key of Object.keys(env)) {
@@ -274,7 +287,7 @@ async function spawnPlanFor(
         // Continue onto Cave's reviewed managed npm toolchain; never replace
         // the miss with a bare `coven`/`coven.exe` process lookup.
       }
-      if (detected && path.isAbsolute(detected)) {
+      if (detected && path.isAbsolute(detected) && canRepairDetectedCovenWithHostNpm(detected)) {
         const npm = await npmForDetectedCoven(detected);
         if (!npm) return { npmMissing: true };
         const launch = npmLaunchCommandForPath(npm.npmPath);
@@ -776,8 +789,11 @@ async function finishInstallJob(
           job.output,
           priorError,
         );
+    // Coven CLI is deliberately installed from Cave's reviewed manifest. Do
+    // not turn a successful exact-version install into a failure merely
+    // because npm's mutable `latest` tag has advanced past that manifest.
     const installOk = verification
-      ? isVerifiedOpenCovenInstallSuccess(code, verification)
+      ? isVerifiedReviewedInstallSuccess(targetName, code, verification)
       : !installError && code === 0 && !!installed.path;
     if (isOpenCovenToolInstallTarget(targetName)) {
       appendTrace(

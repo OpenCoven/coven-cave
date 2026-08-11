@@ -119,6 +119,7 @@ export async function extractSafeTarGz(archive: Buffer, destination: string): Pr
   let entries = 0;
   let expanded = 0;
   const links: Array<{ name: string; target: string }> = [];
+  let pendingLongName: string | null = null;
   while (offset < tar.length) {
     const header = tar.subarray(offset, offset + 512);
     if (header.length !== 512) throw archiveError("tar header is truncated");
@@ -126,7 +127,7 @@ export async function extractSafeTarGz(archive: Buffer, destination: string): Pr
     if (++entries > MAX_ENTRIES) throw archiveError("too many archive entries");
     const name = header.subarray(0, 100).toString("utf8").replace(/\0.*$/, "");
     const prefix = header.subarray(345, 500).toString("utf8").replace(/\0.*$/, "");
-    const entryName = prefix ? `${prefix}/${name}` : name;
+    const headerEntryName = prefix ? `${prefix}/${name}` : name;
     const mode = tarNumber(header.subarray(100, 108), "mode");
     const size = tarNumber(header.subarray(124, 136), "size");
     const type = String.fromCharCode(header[156] || 0);
@@ -135,19 +136,32 @@ export async function extractSafeTarGz(archive: Buffer, destination: string): Pr
     if (dataEnd > tar.length) throw archiveError("tar entry is truncated");
     expanded += size;
     if (expanded > MAX_EXPANDED_BYTES) throw archiveError("expanded archive exceeds the safe limit");
-    if (type === "0" || type === "\0") {
+    if (type === "L") {
+      if (pendingLongName) throw archiveError("tar long-name metadata is not followed by an entry");
+      const longName = tar.subarray(dataStart, dataEnd).toString("utf8").replace(/\0.*$/, "");
+      // GNU tar uses this metadata record for the following entry's path. It
+      // never creates a file itself, but validate it now so no unsafe name can
+      // be carried into that next entry.
+      safeArchiveDestination(destination, longName);
+      pendingLongName = longName;
+    } else {
+      const entryName = pendingLongName ?? headerEntryName;
+      pendingLongName = null;
+      if (type === "0" || type === "\0") {
       await writeArchiveEntry(destination, entryName, tar.subarray(dataStart, dataEnd), false, mode);
-    } else if (type === "5") {
+      } else if (type === "5") {
       await writeArchiveEntry(destination, entryName, Buffer.alloc(0), true, mode);
-    } else if (type === "2") {
+      } else if (type === "2") {
       const target = header.subarray(157, 257).toString("utf8").replace(/\0.*$/, "");
       safeArchiveLinkTarget(destination, entryName, target);
       links.push({ name: entryName, target });
-    } else {
+      } else {
       throw archiveError("archive contains an unsupported entry type");
+      }
     }
     offset = dataStart + Math.ceil(size / 512) * 512;
   }
+  if (pendingLongName) throw archiveError("tar long-name metadata is not followed by an entry");
   for (const link of links) await writeArchiveLink(destination, link.name, link.target);
 }
 
