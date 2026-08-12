@@ -885,9 +885,13 @@ export function renderWorktreeLifecycleReport(
   const globalErrors = summary.globalErrors;
   const globalErrorSet = new Set(globalErrors);
   if (globalErrors.length > 0) {
+    // Deliberately does NOT claim every unit is affected: a protected unit
+    // returns from classification before probe errors are read, so it carries
+    // none of these. Overclaiming here would be the same kind of error this
+    // section exists to correct, one direction over.
     lines.push(
       "",
-      `Repository-wide probe failures (${globalErrors.length}) — these describe the checkout, not any one unit, and every unit below fails closed on them:`,
+      `Repository-wide probe failures (${globalErrors.length}) — these describe the checkout rather than any one unit. Each affected unit fails closed on them and does not repeat them below:`,
     );
     for (const error of globalErrors) lines.push(`- ${error}`);
   }
@@ -918,10 +922,13 @@ export function renderWorktreeLifecycleReport(
       );
       const suppressed = item.reasons.length - ownReasons.length;
       for (const reason of ownReasons) lines.push(`  ${humanReason(item, reason)}`);
-      // A unit whose ONLY reason was repository-wide would otherwise render as
-      // a bare line with no explanation at all, which reads like a bug in the
-      // report rather than a deliberate omission.
-      if (suppressed > 0) {
+      // Only when suppression would otherwise leave the unit with NO
+      // explanation at all: a bare line reads like a bug in the report rather
+      // than a deliberate omission. A unit that still shows a reason of its own
+      // needs no pointer — the heading above already accounts for the
+      // repository-wide failures, and repeating that per unit is the noise this
+      // whole change exists to remove.
+      if (suppressed > 0 && ownReasons.length === 0) {
         lines.push(
           `  ${suppressed} repository-wide probe failure${suppressed === 1 ? "" : "s"} (listed above)`,
         );

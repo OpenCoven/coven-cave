@@ -938,10 +938,35 @@ function legacyObservation(overrides = {}) {
     "the repository-wide failure is printed exactly once, not once per unit",
   );
   assert.match(text, /Repository-wide probe failures \(1\)/);
+  assert.doesNotMatch(
+    text,
+    /every unit below/,
+    "the heading must not claim every unit: a protected unit never reads probe errors at all",
+  );
   assert.match(
     text,
     /1 repository-wide probe failure \(listed above\)/,
     "a unit left with no reason of its own still says why it is held",
+  );
+  // The pointer is a fallback for an otherwise-empty unit, not a per-unit echo
+  // of the heading. The active unit here keeps its own "active claim" reason,
+  // so adding a pointer to it would reintroduce the per-unit repetition this
+  // change removes.
+  assert.equal(
+    text.split("repository-wide probe failure (listed above)").length - 1,
+    1,
+    "only the unit with nothing else to say gets the pointer",
+  );
+  // Just this unit's block — up to the blank line before the next lane, or the
+  // slice runs on into other units and asserts about the wrong one.
+  const activeStart = text.indexOf("- feat/b");
+  const activeEnd = text.indexOf("\n\n", activeStart);
+  const activeBlock = text.slice(activeStart, activeEnd === -1 ? undefined : activeEnd);
+  assert.match(activeBlock, /active claim/, "the active unit still shows its own reason");
+  assert.doesNotMatch(
+    activeBlock,
+    /listed above/,
+    "a unit that still has a reason of its own gets no pointer line",
   );
   assert.doesNotMatch(
     text,
