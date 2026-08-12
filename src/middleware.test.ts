@@ -201,7 +201,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const sidecarAuthenticatedAtGate = sidecarTokenMatches\(\s*req\.headers\.get\(TOKEN_HEADER\) \?\? req\.nextUrl\.searchParams\.get\(TOKEN_PARAM\),?\s*\)/,
+  /const sidecarAuthenticatedAtGate = sidecarTokenMatches\(\s*req\.headers\.get\(TOKEN_HEADER\) \?\? req\.nextUrl\.searchParams\.get\(TOKEN_PARAM\)(?: \?\? refererToken)?,?\s*\)/,
   "the Tauri bypass must validate its per-launch sidecar credential",
 );
 // The marker classifies mobile INGRESS, not credential possession: a mobile
