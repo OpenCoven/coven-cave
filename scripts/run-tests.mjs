@@ -141,6 +141,7 @@ export const SUITES = {
     "src/lib/app-version.test.ts",
     "src/lib/endpoint-validators.test.ts",
     "src/lib/x-api.test.ts",
+    "src/lib/server/familiar-avatar-mutation.test.ts",
     "src/lib/server/x-app-config.test.ts",
     "src/lib/server/x-client.test.ts",
     "src/lib/server/x-credentials.test.ts",
