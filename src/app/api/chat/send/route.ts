@@ -175,7 +175,7 @@ import { chatProjectAccessId, taskWorktreeProjectAccessId } from "@/lib/chat-pro
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
-  isProjectlessGenerationOrigin,
+  projectlessGenerationLaunch,
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { resolveRuntimeSkillRoots } from "@/lib/server/skill-scan";
@@ -2082,8 +2082,19 @@ export async function POST(req: Request) {
   // A persisted conversation owns its provenance. Never let a request relabel
   // an existing user chat as a hidden generator to bypass project checks.
   const generationOrigin = existingConversation?.origin ?? body.origin;
-  const projectlessGeneration =
-    !body.projectRoot && isProjectlessGenerationOrigin(generationOrigin);
+  // A hidden generation is exempt from the launch gate only for the familiar's
+  // OWN workspace. A resume root — the conversation's persisted runtime, or a
+  // daemon session's project_root (cave-yjnr) — names a real project and is
+  // gated like every other root, because the daemon's session list is global
+  // and its rows carry no familiar id to scope it by (cave-o3nq7).
+  const projectlessLaunch = projectlessGenerationLaunch({
+    origin: generationOrigin,
+    hasRequestedProjectRoot: Boolean(body.projectRoot),
+    sshRuntime: Boolean(sshRuntime),
+    sshHome: homedir(),
+    resumeCwd,
+    familiarWorkspace: resolvedFamiliarWorkspace,
+  });
   // A Board task may be isolated in a worktree below its registered project.
   // The worktree itself is intentionally not a separate project record, so
   // its first native-chat turn must authorize against the card's server-owned
@@ -2093,16 +2104,15 @@ export async function POST(req: Request) {
   // when the symlink-resolved runtime cwd remains inside the task project.
   let authorizedProjectRoot: string;
   try {
-    if (projectlessGeneration) {
-      const generationRoot = sshRuntime ? homedir() : (resumeCwd ?? resolvedFamiliarWorkspace);
-      if (!generationRoot) {
-        throw new ChatProjectLaunchError(
-          "project_root_required",
-          400,
-          "This hidden generation has no safe familiar workspace.",
-        );
-      }
-      authorizedProjectRoot = generationRoot;
+    if (projectlessLaunch.kind === "unavailable") {
+      throw new ChatProjectLaunchError(
+        "project_root_required",
+        400,
+        "This hidden generation has no safe familiar workspace.",
+      );
+    }
+    if (projectlessLaunch.kind === "workspace") {
+      authorizedProjectRoot = projectlessLaunch.root;
     } else {
       const authorized = await authorizeChatProjectLaunch(
         {

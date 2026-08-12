@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { ProjectPermissionSurface } from "../project-access-levels.ts";
 import type { SessionOrigin } from "../types.ts";
 
@@ -16,6 +18,77 @@ export function isProjectlessGenerationOrigin(
   origin: SessionOrigin | null | undefined,
 ): boolean {
   return Boolean(origin && PROJECTLESS_GENERATION_ORIGINS.has(origin));
+}
+
+function isInsideRoot(root: string, candidate: string): boolean {
+  const rel = path.relative(root, candidate);
+  return (
+    rel === "" ||
+    (
+      rel !== ".." &&
+      !rel.startsWith(".." + path.sep) &&
+      !path.isAbsolute(rel) &&
+      !rel.split(path.sep).includes("..")
+    )
+  );
+}
+
+export type ProjectlessGenerationLaunchInput = {
+  origin: SessionOrigin | null | undefined;
+  /** True when the request named a project root of its own. */
+  hasRequestedProjectRoot: boolean;
+  sshRuntime: boolean;
+  /** Remote home directory used for the ssh generation runtime. */
+  sshHome: string;
+  /**
+   * Resume root recovered from the conversation's persisted runtime or, for a
+   * daemon-spawned thread, from the daemon's session list.
+   */
+  resumeCwd?: string;
+  familiarWorkspace?: string;
+};
+
+export type ProjectlessGenerationLaunchDecision =
+  /** Auth-free: the familiar's own workspace (or its ssh equivalent). */
+  | { kind: "workspace"; root: string }
+  /** A hidden generation with no safe workspace to fall back to. */
+  | { kind: "unavailable" }
+  /** Must pass authorizeChatProjectLaunch like any other root. */
+  | { kind: "gated" };
+
+/**
+ * Decide whether a hidden generation may skip the project launch gate.
+ *
+ * A hidden generation is exempt because it runs in the familiar's OWN
+ * workspace, which is not a registered project and carries no grant to check.
+ * That exemption never extended to a resume root: the conversation runtime and
+ * the daemon session list (cave-yjnr) both name real project directories, and
+ * the daemon's list is global — it is not scoped to the requesting familiar,
+ * and its rows carry no familiar id to scope it by. Adopting one unchecked let
+ * a caller name any session's id with a hidden origin and be launched in that
+ * session's project without holding a grant for it (cave-o3nq7).
+ *
+ * So a resume root is gated exactly like the typed-chat path already gates it,
+ * unless it resolves inside the familiar's own workspace — the multi-turn
+ * canvas case, where turn 1 legitimately ran auth-free in that workspace and
+ * persisted it as the conversation runtime.
+ */
+export function projectlessGenerationLaunch(
+  input: ProjectlessGenerationLaunchInput,
+): ProjectlessGenerationLaunchDecision {
+  if (input.hasRequestedProjectRoot) return { kind: "gated" };
+  if (!isProjectlessGenerationOrigin(input.origin)) return { kind: "gated" };
+  if (input.sshRuntime) return { kind: "workspace", root: input.sshHome };
+
+  const workspace = input.familiarWorkspace?.trim();
+  const resume = input.resumeCwd?.trim();
+  if (!resume) {
+    return workspace ? { kind: "workspace", root: workspace } : { kind: "unavailable" };
+  }
+  if (workspace && isInsideRoot(workspace, resume)) {
+    return { kind: "workspace", root: resume };
+  }
+  return { kind: "gated" };
 }
 
 export type ChatProjectLaunchErrorCode =
