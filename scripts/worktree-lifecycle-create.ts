@@ -18,6 +18,7 @@ import {
   type OrphanedWorktreeMetadataRecord,
   type WorktreeMetadataClaimError,
 } from "./worktree-lifecycle-inventory.ts";
+import { fenceRefusalMessage } from "./fence-refusal-message.mjs";
 import {
   acquireMaintenanceGate,
   createFenceRenewal,
@@ -1056,6 +1057,15 @@ function createdOutcome(
   };
 }
 
+type FenceRefusal = {
+  reason?: string;
+  holder?: string;
+  holderPid?: number;
+  holderHost?: string;
+  phase?: string;
+  expiresAt?: string;
+};
+
 function heartbeatBoth(leases: MaintenanceFence[], stage: string): void {
   if (leases.length !== 1) {
     throw new CliError(`maintenance fence unavailable during ${stage}`);
@@ -1700,7 +1710,7 @@ function execute(
     quiesceTimeoutMs: 30_000,
   });
   if (!acquired.ok) {
-    throw new CliError(`maintenance fence acquisition failed: ${acquired.reason}`);
+    throw new CliError(fenceRefusalMessage(acquired as FenceRefusal));
   }
   leases.push(acquired.handle as MaintenanceFence);
   // The preflight above reduces needless drain time; this second proof is the
