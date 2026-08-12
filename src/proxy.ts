@@ -195,8 +195,17 @@ export async function proxy(req: NextRequest) {
     if (!sidecarToken || !supplied) return false;
     return timingSafeEqualString(supplied, sidecarToken);
   };
+  const refererToken = (() => {
+    const referer = req.headers.get("referer");
+    if (!referer) return null;
+    try {
+      return new URL(referer).searchParams.get(TOKEN_PARAM);
+    } catch {
+      return null;
+    }
+  })();
   const sidecarAuthenticatedAtGate = sidecarTokenMatches(
-    req.headers.get(TOKEN_HEADER) ?? req.nextUrl.searchParams.get(TOKEN_PARAM),
+    req.headers.get(TOKEN_HEADER) ?? req.nextUrl.searchParams.get(TOKEN_PARAM) ?? refererToken,
   );
   // The local-peer stamp distinguishes direct from forwarded traffic, but TCP
   // loopback is not OS-user identity. When mobile access is armed, the Tauri
