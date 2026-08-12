@@ -7,6 +7,28 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-08-12
+
+> A maintenance patch for the worktree lifecycle tooling: retention now counts a
+> pushed tag, a refused maintenance fence says what to do about it, and project
+> deletion cleans up after itself.
+
+Patch release on top of v0.3.2. No user-facing surface changed; this is operator
+tooling plus one API correctness fix.
+
+### Fixed
+
+- The worktree auto-lock now counts a **pushed tag** as retention, matching the
+  guard it claimed to mirror. It had used `git rev-list --count HEAD --not
+  --remotes`, which consults only remote-tracking *branches* — git keeps no
+  remote-tracking refs for tags — so a branch archived as a pushed tag was still
+  treated as at-risk (#4573).
+- A refused maintenance fence now explains itself and prints the admissible
+  rerun instead of failing with an opaque message (#4572).
+- Deleting a project now cascades correctly, the worktree lifecycle patrol
+  reports managed-creation exceptions, and a flaky standalone-budget assertion
+  was stabilised (#4567).
+
 ## [0.3.2] - 2026-08-12
 
 > A maintenance patch: worktree-lifecycle reporting states a repository-wide

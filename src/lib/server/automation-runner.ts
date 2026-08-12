@@ -12,6 +12,12 @@ import {
   type CodexManagedPackage,
 } from "../codex-bin.ts";
 import { sanitizeAboutDiagnosticText } from "../about-diagnostics.ts";
+import { MAX_RUN_LOG_BYTES } from "./automation-log-paths.ts";
+import {
+  BoundedProcessOutput,
+  safeProcessErrorMessage,
+  terminateProcessTree,
+} from "@/lib/process-execution";
 import type { CodexAutomation } from "@/lib/codex-automations-types";
 import {
   recordRun,
@@ -19,6 +25,8 @@ import {
   hasRunningRun,
   type AutomationRunRecord,
 } from "@/lib/automation-runs.ts";
+
+const AUTOMATION_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 
 export type CodexExecInvocation = {
   command: string;
@@ -141,6 +149,7 @@ export function spawnCodexExecInvocation(
       ),
       shell: false,
       windowsHide: true,
+      detached: process.platform !== "win32",
     },
   ]);
   // Install the stream error handler before the first byte is written. A
@@ -189,11 +198,15 @@ export function monitorCodexAutomationCompletion(
   runId: string,
   dependencies: {
     output?: Writable;
+    outputBuffer?: BoundedProcessOutput;
+    timeoutMs?: number;
+    terminateProcessTreeImpl?: typeof terminateProcessTree;
     updateRunImpl?: UpdateRunImpl;
     reportPersistenceError?: (error: Error) => void;
   } = {},
 ): void {
   const updateRunImpl = dependencies.updateRunImpl ?? updateRun;
+  const terminateProcessTreeImpl = dependencies.terminateProcessTreeImpl ?? terminateProcessTree;
   const reportPersistenceError = dependencies.reportPersistenceError ?? ((error: Error) => {
     const detail = sanitizeAboutDiagnosticText(error.message);
     console.error(
@@ -208,6 +221,8 @@ export function monitorCodexAutomationCompletion(
   let closeCode: number | null = null;
   let childError: Error | null = null;
   let deliveryResult: CodexPromptDeliveryResult | null = null;
+  let timedOut = false;
+  let timeout: NodeJS.Timeout | null = null;
   let logResult: CodexPromptDeliveryResult | null = dependencies.output
     ? null
     : { ok: true };
@@ -257,6 +272,14 @@ export function monitorCodexAutomationCompletion(
     // Waiting for it lets a real runtime exit code/stderr outrank an earlier
     // secondary EPIPE without risking a later status overwrite.
     if (terminalPersisted || !closeSeen || !deliveryResult || !logResult) return;
+    if (timedOut) {
+      persist({
+        status: "failed",
+        finishedAt: new Date().toISOString(),
+        summary: "Run exceeded the two-hour execution limit",
+      });
+      return;
+    }
     if (childError) {
       persist({
         status: "failed",
@@ -320,6 +343,7 @@ export function monitorCodexAutomationCompletion(
     },
   );
   child.once("close", (code) => {
+    if (timeout) clearTimeout(timeout);
     closeSeen = true;
     closeCode = code;
     maybeEndOutput();
@@ -327,6 +351,7 @@ export function monitorCodexAutomationCompletion(
   });
 
   const output = dependencies.output;
+  const outputBuffer = dependencies.outputBuffer;
   const sources = [child.stdout, child.stderr]
     .filter((source): source is Readable => source !== null);
   const pendingSources = new Set<Readable>(sources);
@@ -345,7 +370,7 @@ export function monitorCodexAutomationCompletion(
     if (!output || outputEndRequested || logResult || !closeSeen || pendingSources.size > 0) return;
     outputEndRequested = true;
     try {
-      output.end();
+      output.end(outputBuffer?.text());
     } catch (error) {
       logResult = { ok: false, error: asError(error, "Codex output log failed") };
       maybePersistTerminal();
@@ -369,6 +394,13 @@ export function monitorCodexAutomationCompletion(
         source.unpipe(output);
         source.resume();
       }
+      if (!closeSeen) {
+        void terminateProcessTreeImpl(child).finally(() => {
+          closeSeen = true;
+          pendingSources.clear();
+          maybePersistTerminal();
+        });
+      }
       maybePersistTerminal();
     });
     for (const source of sources) {
@@ -377,11 +409,29 @@ export function monitorCodexAutomationCompletion(
       source.once("error", (error) => settleSource(source, error));
       if (source.readableEnded || source.destroyed) {
         settleSource(source);
+      } else if (outputBuffer) {
+        source.on("data", (chunk: Buffer | string) => outputBuffer.append(chunk));
       } else {
         source.pipe(output, { end: false });
       }
     }
     maybeEndOutput();
+  }
+
+  if (dependencies.timeoutMs !== undefined) {
+    timeout = setTimeout(() => {
+      timedOut = true;
+      deliveryResult ??= {
+        ok: false,
+        error: new Error("Codex automation timed out before prompt delivery completed"),
+      };
+      void terminateProcessTreeImpl(child).finally(() => {
+        closeSeen = true;
+        pendingSources.clear();
+        maybeEndOutput();
+        maybePersistTerminal();
+      });
+    }, dependencies.timeoutMs);
   }
 }
 
@@ -412,7 +462,12 @@ export function startCodexExecWithOwnedLog(
       launched.child,
       launched.promptDelivery,
       runId,
-      { output, ...(updateRunImpl ? { updateRunImpl } : {}) },
+      {
+        output,
+        outputBuffer: new BoundedProcessOutput(MAX_RUN_LOG_BYTES),
+        timeoutMs: AUTOMATION_TIMEOUT_MS,
+        ...(updateRunImpl ? { updateRunImpl } : {}),
+      },
     );
     return launched;
   } catch (error) {
@@ -424,7 +479,7 @@ export function startCodexExecWithOwnedLog(
     // and stop the child rather than leaving it blocked on an unread pipe.
     launched.child.stdout?.resume();
     launched.child.stderr?.resume();
-    try { launched.child.kill(); } catch { /* child already settled */ }
+    void terminateProcessTree(launched.child);
     throw error;
   }
 }
@@ -470,7 +525,7 @@ export async function startAutomationRun(auto: CodexAutomation): Promise<Automat
     await updateRun(run.id, {
       status: "failed",
       finishedAt: new Date().toISOString(),
-      summary: err instanceof Error ? err.message : "could not start run",
+      summary: safeProcessErrorMessage(err, "Automation runtime"),
     });
   }
   return run;
