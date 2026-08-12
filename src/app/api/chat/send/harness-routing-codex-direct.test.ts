@@ -260,6 +260,56 @@ try {
     "a verified direct turn never starts `coven run codex`",
   );
 
+  // A project grant approved between turns changes process authority. Codex
+  // resume cannot widen an already-created sandbox reliably, so Cave must
+  // launch a fresh native thread with both the new --add-dir and bounded
+  // transcript replay. This is the end-to-end regression for cave-jf5o0.
+  const newlyGrantedRoot = path.join(home, "newly-granted-project");
+  await mkdir(newlyGrantedRoot, { recursive: true });
+  const newlyGrantedProject = await createProject({
+    name: "Newly granted fixture",
+    root: newlyGrantedRoot,
+  });
+  await grantProjectToFamiliar({
+    familiarId: "opal",
+    projectId: newlyGrantedProject.id,
+    source: "human",
+    access: "write",
+  });
+  const grantRefreshResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "opal",
+      sessionId: done.sessionId,
+      prompt: "continue after approving the extra project",
+    }),
+  }));
+  const { events: grantRefreshEvents } = await readSse(grantRefreshResponse);
+  assert.ok(
+    grantRefreshEvents.some(
+      (event) => event.kind === "progress" &&
+        event.id === "runtime-access-refresh" &&
+        event.status === "done",
+    ),
+    "the turn acknowledges that its live filesystem boundary was refreshed",
+  );
+  const refreshedExec = (await loggedCalls(codexLog))
+    .filter((argv) => argv[0] === "exec" && !argv.includes("--help"))
+    .at(-1);
+  assert.ok(refreshedExec, "grant refresh starts a new direct Codex process");
+  assert.equal(refreshedExec.includes("resume"), false, "the stale native sandbox is not resumed");
+  assert.deepEqual(
+    refreshedExec.slice(refreshedExec.indexOf("--add-dir"), refreshedExec.indexOf("--add-dir") + 2),
+    ["--add-dir", newlyGrantedRoot],
+    "the fresh sandbox receives the newly approved root",
+  );
+  assert.match(
+    refreshedExec.at(-1) ?? "",
+    /## Prior conversation[\s\S]*codex direct fixture prompt[\s\S]*continue after approving the extra project/,
+    "the fresh sandbox keeps recent thread context while applying the new grants",
+  );
+
   // A submitted daemon session id is resume provenance even before Cave has a
   // local transcript. Materialize the follow-up, but never claim its title.
   assert.equal(await loadConversation(daemonOnlySessionId), null);

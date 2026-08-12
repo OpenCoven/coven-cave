@@ -614,6 +614,30 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /const runtimeAccessFingerprint = buildRuntimeAccessFingerprint\(/,
+  "Every local turn should fingerprint the effective project grants handed to the harness",
+);
+
+assert.match(
+  chatRoute,
+  /existingConversation[\s\S]*runtimeAccessFingerprint !== runtimeAccessFingerprint[\s\S]*buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
+  "A resumed conversation whose live grant set changed should start a fresh sandbox with bounded transcript replay",
+);
+
+assert.match(
+  chatRoute,
+  /conv\.runtimeAccessFingerprint = runtimeAccessFingerprint/,
+  "Successful turns should persist the grant fingerprint used by their native harness session",
+);
+
+assert.match(
+  chatRoute,
+  /pushProgress\([\s\S]*?"runtime-access-refresh"[\s\S]*?"Filesystem access refreshed"[\s\S]*?"done"/,
+  "A grant-triggered sandbox refresh should be observable in the turn timeline",
+);
+
+assert.match(
+  chatRoute,
   /parseClaudeMessageEnvelope\(ev, claudeCompatibility\.profile\)[\s\S]*?boundarySentinel\?\.observe\(claudeEvent\.name, claudeEvent\.input\)/,
   "Profile-selected envelope tool_use blocks should feed the boundary sentinel",
 );

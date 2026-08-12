@@ -215,6 +215,7 @@ import {
 } from "@/lib/chat-model-state";
 import {
   RuntimeScopeError,
+  buildRuntimeAccessFingerprint,
   buildPromptWithRuntimeScope,
   resolveLocalRuntimeCwd,
   type RuntimeScope,
@@ -2634,6 +2635,12 @@ export async function POST(req: Request) {
       )
     : [];
   const forwardAddDirs = addDirForwardingEnabled && !sshRuntime ? grantDirs : [];
+  const runtimeAccessFingerprint = buildRuntimeAccessFingerprint({
+    primaryRoot: cwd,
+    grantedProjectRoots,
+    projectRootAccess: grantedProjectRootAccess,
+    additionalRoots: resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : [],
+  });
   // The accepted Hermes 1.0.3 adapter binds prompts natively with `--query`.
   // Cave still spawns Hermes directly for local chats because this path owns
   // richer local streaming, session, and optional API behavior than the
@@ -2815,6 +2822,22 @@ export async function POST(req: Request) {
         ? existingConversation?.harnessSessionId ?? body.sessionId
         : existingConversation?.harnessSessionId ?? body.sessionId
       : null;
+  // Runtime grant changes are process-boundary changes, not prompt changes.
+  // Rebuilding the boundary preamble and passing new --add-dir flags cannot
+  // reliably widen a native session whose sandbox was created on an earlier
+  // turn. Replace it atomically and replay the bounded active transcript.
+  // Legacy conversations have no fingerprint, so their first resumed turn
+  // after this upgrade also refreshes once instead of guessing that stale
+  // process authority matches the live grant store.
+  const runtimeAccessRefreshNeeded = Boolean(
+    !sshRuntime &&
+    existingConversation &&
+    resumeTarget &&
+    existingConversation.runtimeAccessFingerprint !== runtimeAccessFingerprint,
+  );
+  const runtimeAccessRetry = runtimeAccessRefreshNeeded
+    ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
+    : null;
   // Grok deliberately refuses to change a resumed session's sandbox. Persist
   // the profile used for the previous native session and transparently start a
   // fresh one (with recent context replayed) when the access chip changed. An
@@ -2855,8 +2878,10 @@ export async function POST(req: Request) {
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
     : null;
   const args = buildArgs(
-    grokFreshSessionForSandbox || openCodeFreshSessionForCompatibility ? null : resumeTarget,
-    grokSandboxRetry?.prompt ?? openCodeCompatibilityRetry?.prompt,
+    runtimeAccessRefreshNeeded || grokFreshSessionForSandbox || openCodeFreshSessionForCompatibility
+      ? null
+      : resumeTarget,
+    runtimeAccessRetry?.prompt ?? grokSandboxRetry?.prompt ?? openCodeCompatibilityRetry?.prompt,
   );
 
   // Resume failures from common harnesses. Codex emits
@@ -2984,6 +3009,16 @@ export async function POST(req: Request) {
           "grok-sandbox-restart",
           "Access mode changed; starting a fresh Grok session with recent context",
           "done",
+        );
+      }
+      if (runtimeAccessRefreshNeeded) {
+        pushProgress(
+          "runtime-access-refresh",
+          "Filesystem access refreshed",
+          "done",
+          runtimeAccessRetry?.replayedHistory
+            ? "Started a fresh harness session with the current grants and recent context."
+            : "Started a fresh harness session with the current grants.",
         );
       }
 
@@ -5551,6 +5586,9 @@ export async function POST(req: Request) {
             delete conv.harnessSessionId;
           }
           if (grokDirect && grokSessionId) conv.grokSandboxProfile = grokSandboxProfile;
+          if (!result.is_error && !cancelledByUser) {
+            conv.runtimeAccessFingerprint = runtimeAccessFingerprint;
+          }
           conv.turns.push(userTurn, assistantTurn);
           conv.activeLeafId = assistantTurnId;
           await saveConversation(conv);
