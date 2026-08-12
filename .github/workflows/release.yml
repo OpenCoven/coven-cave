@@ -1,7 +1,7 @@
 name: Release
 
-# Builds all three Cave artifacts and uploads them to the GitHub Release
-# matching the pushed tag:
+# Builds the Cave desktop artifacts, uploads them to the GitHub Release matching
+# the pushed tag, and publishes the native iOS app to TestFlight:
 #
 #   - macOS (DMG) — signed with the Soul Protocol LLC Developer ID and
 #     notarized via the App Store Connect API. The workflow refuses to
@@ -10,6 +10,8 @@ name: Release
 #   - Linux (AppImage) — unsigned.
 #   - Windows (MSI) — unsigned (users see SmartScreen on first run; we'll
 #     wire WINDOWS_CERTIFICATE secrets when we buy a code-signing cert).
+#   - iOS (IPA) — signed with Apple Distribution assets, validated and uploaded
+#     to App Store Connect, then held until Apple reports processing complete.
 #
 # Once artifacts + SHA256SUMS are attached, the `homebrew` job nudges
 # OpenCoven/homebrew-tap so `brew install --cask opencoven/tap/coven-cave`
@@ -39,6 +41,24 @@ name: Release
 #   APPLE_PASSWORD             app-specific password for APPLE_ID.
 #   APPLE_TEAM_ID              Developer Team ID.
 #
+# Additional required repository secrets for the iOS/TestFlight job:
+#   IOS_DISTRIBUTION_CERTIFICATE_BASE64
+#                                base64-encoded Apple Distribution .p12.
+#   IOS_DISTRIBUTION_CERTIFICATE_PASSWORD
+#                                password used to export the .p12.
+#   IOS_APP_PROVISIONING_PROFILE_BASE64
+#                                base64 App Store profile for ai.opencoven.cave.
+#   IOS_WIDGET_PROVISIONING_PROFILE_BASE64
+#                                base64 App Store profile for
+#                                ai.opencoven.cave.widgets.
+# Required repository variable:
+#   IOS_APP_STORE_ID             numeric App Store Connect app ID used to
+#                                resume processing instead of re-uploading the
+#                                same immutable build on a workflow retry.
+# Optional repository variable:
+#   APPLE_API_KEY_SUBJECT        set to "user" for an individual App Store
+#                                Connect key; omit for a team API key.
+#
 # The macOS leg intentionally uses scripts/release.sh instead of tauri-action
 # because it assembles + notarizes the DMG in a more reliable way for this
 # repository. Linux and Windows still ship via tauri-action on the tag-push.
@@ -62,6 +82,7 @@ on:
           - macos
           - linux
           - windows
+          - ios
       allow_unconfigured_registries:
         description: "EMERGENCY ONLY: skip the signed OpenCode/Grok schema-registry gates and ship with the built-in baseline parsers. Tag pushes always stay fail-closed."
         required: false
@@ -486,32 +507,286 @@ jobs:
         run: .\scripts\windows-upgrade-diagnostics.test.ps1
 
   release-ios-build:
-    name: Validate release iOS build
+    name: Archive and upload release iOS build
     needs:
       - daemon-package
       - source-version
+      - release-web-validation
+      - release-platform-validation
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
         with:
           ref: ${{ needs.source-version.outputs.release-commit }}
           persist-credentials: false
 
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
         with:
           node-version: 24
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
-      - run: brew install xcodegen
-      - run: bash scripts/ios-xcodegen.sh
+      - name: Select Xcode 26.3 and verify App Store tooling
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          XCODE_PATH="/Applications/Xcode_26.3.app"
+          [ -d "$XCODE_PATH" ] || { echo "::error::$XCODE_PATH is unavailable on the macos-15 runner"; exit 1; }
+          sudo xcode-select --switch "$XCODE_PATH"
+          xcodebuild -version
+          xcrun altool --help 2>&1 | grep -q -- '--build-status'
+          xcrun altool --help 2>&1 | grep -q -- '--api-key-subject'
 
-      - name: Build the iOS app
+      - run: pnpm install --frozen-lockfile
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
+      - run: brew install xcodegen
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
+      - run: bash scripts/ios-xcodegen.sh
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
+
+      - name: Stage App Store Connect API key
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
+        shell: bash
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          [ -n "$APPLE_API_KEY" ] || { echo "::error::APPLE_API_KEY is required"; exit 1; }
+          [ -n "$APPLE_API_KEY_BASE64" ] || { echo "::error::APPLE_API_KEY_BASE64 is required"; exit 1; }
+          decode_base64() {
+            if base64 --decode </dev/null >/dev/null 2>&1; then
+              base64 --decode
+            else
+              base64 -D
+            fi
+          }
+          KEY_DIR="$RUNNER_TEMP/app-store-connect-private-keys"
+          KEY_PATH="$KEY_DIR/AuthKey_${APPLE_API_KEY}.p8"
+          mkdir -p "$KEY_DIR"
+          printf '%s' "$APPLE_API_KEY_BASE64" | decode_base64 > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Resolve iOS release metadata
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
+        id: ios-metadata
         working-directory: apps/ios/CovenCave
-        run: xcodebuild -scheme CovenCave -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+        shell: bash
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_SUBJECT: ${{ vars.APPLE_API_KEY_SUBJECT }}
+          IOS_APP_STORE_ID: ${{ vars.IOS_APP_STORE_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "$APPLE_API_KEY" ] || { echo "::error::APPLE_API_KEY is required"; exit 1; }
+          [ -n "$APPLE_API_ISSUER" ] || { echo "::error::APPLE_API_ISSUER is required"; exit 1; }
+          [ -n "$IOS_APP_STORE_ID" ] || { echo "::error::IOS_APP_STORE_ID repository variable is required"; exit 1; }
+          BUILD_SETTINGS="$(xcodebuild -project CovenCave.xcodeproj -scheme CovenCave -showBuildSettings)"
+          BUILD_VERSION="$(printf '%s\n' "$BUILD_SETTINGS" | awk -F ' = ' '/^[[:space:]]*CURRENT_PROJECT_VERSION = / { print $2; exit }')"
+          SHORT_VERSION="$(printf '%s\n' "$BUILD_SETTINGS" | awk -F ' = ' '/^[[:space:]]*MARKETING_VERSION = / { print $2; exit }')"
+          [ -n "$BUILD_VERSION" ] || { echo "::error::Could not resolve CURRENT_PROJECT_VERSION"; exit 1; }
+          [ -n "$SHORT_VERSION" ] || { echo "::error::Could not resolve MARKETING_VERSION"; exit 1; }
+          {
+            echo "build-version=$BUILD_VERSION"
+            echo "short-version=$SHORT_VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+          set +e
+          pnpm --dir "$GITHUB_WORKSPACE" appstore:status \
+            --apple-id "$IOS_APP_STORE_ID" \
+            --bundle-version "$BUILD_VERSION" \
+            --short-version "$SHORT_VERSION" \
+            --wait \
+            --allow-missing
+          STATUS_EXIT=$?
+          set -e
+          case "$STATUS_EXIT" in
+            0)
+              echo "already-uploaded=true" >> "$GITHUB_OUTPUT"
+              echo "App Store Connect already has iOS $SHORT_VERSION ($BUILD_VERSION); processing is confirmed."
+              ;;
+            3)
+              echo "already-uploaded=false" >> "$GITHUB_OUTPUT"
+              echo "Apple explicitly reports no matching build; a new archive will be uploaded."
+              ;;
+            *)
+              echo "::error::App Store Connect preflight failed; refusing to treat an operational error as a missing build."
+              exit "$STATUS_EXIT"
+              ;;
+          esac
+
+      - name: Install iOS signing assets
+        if: >-
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios') &&
+          steps.ios-metadata.outputs.already-uploaded != 'true'
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IOS_APP_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_APP_PROVISIONING_PROFILE_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          IOS_WIDGET_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_WIDGET_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          for required in \
+            APPLE_TEAM_ID \
+            IOS_APP_PROVISIONING_PROFILE_BASE64 \
+            IOS_DISTRIBUTION_CERTIFICATE_BASE64 \
+            IOS_DISTRIBUTION_CERTIFICATE_PASSWORD \
+            IOS_WIDGET_PROVISIONING_PROFILE_BASE64; do
+            [ -n "${!required:-}" ] || { echo "::error::$required is required"; exit 1; }
+          done
+          decode_base64() {
+            if base64 --decode </dev/null >/dev/null 2>&1; then
+              base64 --decode
+            else
+              base64 -D
+            fi
+          }
+
+          CERT_PATH="$RUNNER_TEMP/ios-distribution.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/ios-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE_BASE64" | decode_base64 > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 7200 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" \
+            -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -d user -s "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep 'Apple Distribution'
+          echo "IOS_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+          PROFILE_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILE_DIR"
+          install_profile() {
+            local encoded="$1"
+            local label="$2"
+            local expected_bundle="$3"
+            local source="$RUNNER_TEMP/${label}.mobileprovision"
+            local plist="$RUNNER_TEMP/${label}.plist"
+            printf '%s' "$encoded" | decode_base64 > "$source"
+            security cms -D -i "$source" > "$plist"
+            local uuid
+            local app_identifier
+            local get_task_allow
+            uuid="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$plist")"
+            app_identifier="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$plist")"
+            get_task_allow="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:get-task-allow' "$plist")"
+            [ "$app_identifier" = "${APPLE_TEAM_ID}.${expected_bundle}" ] || {
+              echo "::error::$label profile is for $app_identifier, expected ${APPLE_TEAM_ID}.${expected_bundle}"
+              exit 1
+            }
+            [ "$get_task_allow" = "false" ] || {
+              echo "::error::$label profile permits development debugging; an App Store profile is required"
+              exit 1
+            }
+            if /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$plist" >/dev/null 2>&1; then
+              echo "::error::$label profile contains provisioned devices; an App Store profile is required"
+              exit 1
+            fi
+            cp "$source" "$PROFILE_DIR/${uuid}.mobileprovision"
+            local output_name
+            output_name="$(printf '%s' "$label" | tr '[:lower:]' '[:upper:]')"
+            echo "IOS_PROFILE_PATH_${output_name}=$PROFILE_DIR/${uuid}.mobileprovision" >> "$GITHUB_ENV"
+          }
+          install_profile "$IOS_APP_PROVISIONING_PROFILE_BASE64" app ai.opencoven.cave
+          install_profile "$IOS_WIDGET_PROVISIONING_PROFILE_BASE64" widget ai.opencoven.cave.widgets
+
+      - name: Archive and export the iOS app
+        if: >-
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios') &&
+          steps.ios-metadata.outputs.already-uploaded != 'true'
+        working-directory: apps/ios/CovenCave
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          ARCHIVE_PATH="$RUNNER_TEMP/CovenCave.xcarchive"
+          EXPORT_PATH="$RUNNER_TEMP/CovenCave-TestFlight"
+          EXPORT_OPTIONS_PATH="$RUNNER_TEMP/CovenCave-ExportOptions.plist"
+          cat > "$EXPORT_OPTIONS_PATH" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>destination</key>
+            <string>export</string>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>teamID</key>
+            <string>$APPLE_TEAM_ID</string>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild \
+            -project CovenCave.xcodeproj \
+            -scheme CovenCave \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$ARCHIVE_PATH" \
+            archive
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportOptionsPlist "$EXPORT_OPTIONS_PATH" \
+            -exportPath "$EXPORT_PATH"
+          IPA_COUNT="$(find "$EXPORT_PATH" -maxdepth 1 -type f -name '*.ipa' | wc -l | tr -d ' ')"
+          [ "$IPA_COUNT" -eq 1 ] || {
+            echo "::error::Expected exactly one exported IPA, found $IPA_COUNT"
+            exit 1
+          }
+          IPA_PATH="$(find "$EXPORT_PATH" -maxdepth 1 -type f -name '*.ipa' -print -quit)"
+          echo "IOS_IPA_PATH=$IPA_PATH" >> "$GITHUB_ENV"
+
+      - name: Validate, upload, and confirm TestFlight processing
+        if: >-
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios') &&
+          steps.ios-metadata.outputs.already-uploaded != 'true'
+        shell: bash
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_SUBJECT: ${{ vars.APPLE_API_KEY_SUBJECT }}
+          IPA_PATH: ${{ env.IOS_IPA_PATH }}
+        run: |
+          set -euo pipefail
+          pnpm appstore:validate "$IPA_PATH"
+          pnpm appstore:upload "$IPA_PATH" --wait
+          {
+            echo "### TestFlight"
+            echo
+            echo "Uploaded and processed iOS ${{ steps.ios-metadata.outputs.short-version }} (${{ steps.ios-metadata.outputs.build-version }})."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up iOS signing material
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${IOS_KEYCHAIN_PATH:-}" ] && [ -e "$IOS_KEYCHAIN_PATH" ]; then
+            security delete-keychain "$IOS_KEYCHAIN_PATH"
+          fi
+          for profile in "${IOS_PROFILE_PATH_APP:-}" "${IOS_PROFILE_PATH_WIDGET:-}"; do
+            [ -z "$profile" ] || rm -f "$profile"
+          done
+          rm -rf "$RUNNER_TEMP/app-store-connect-private-keys"
 
   build:
     name: Build ${{ matrix.label }}
