@@ -654,7 +654,7 @@ function normalizeWorktreeObservation(
       processOwners: observation.processOwners,
       claimOwners: observation.claimOwners,
       taskIds: observation.taskIds,
-      mentionTaskIds: observation.mentionTaskIds,
+      mentionTaskIds: observation.mentionTaskIds ?? [],
       openPrs: observation.openPrs,
       mergedPr: observation.mergedPr,
       activeWorkflowUrls: observation.activeWorkflowUrls,
