@@ -122,18 +122,20 @@ test("mobile-handoff route provisions, arms, cookies the session, and retires on
   );
 });
 
-test("custom server re-arms at boot and reads the token lazily", () => {
+// The custom server used to re-arm COVEN_CAVE_ACCESS_TOKEN from the persisted
+// state file at boot, so a provisioned secret survived a dev-server restart and
+// kept the PTY gate armed. Removing the access-token requirement (cave-f4emr)
+// removed that gate, so the re-arm went with it: nothing in server.ts reads the
+// variable any more, and re-arming it would resurrect a credential no gate
+// consults. The provisioning seams above still work — they are what the pairing
+// flow signs invites with — they simply no longer arm anything.
+test("the custom server no longer re-arms or reads the access token", () => {
   const server = readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
-  assert.match(server, /persistedMobileAccessSecretFile/, "boot re-arm reads the persisted state file");
-  assert.match(
-    server,
-    /COVEN_CAVE_BUNDLE !== "1"[\s\S]{0,200}COVEN_CAVE_E2E !== "1"/,
-    "re-arm is guarded off in the packaged bundle and e2e",
-  );
-  assert.match(server, /function accessToken\(\)/, "PTY gate reads the access token lazily");
+  assert.doesNotMatch(server, /persistedMobileAccessSecretFile/, "the boot re-arm is gone");
   assert.doesNotMatch(
     server,
-    /const ACCESS_TOKEN = process\.env\.COVEN_CAVE_ACCESS_TOKEN/,
-    "no boot-time snapshot — mid-session arming must reach the PTY gate",
+    /process\.env\.COVEN_CAVE_ACCESS_TOKEN/,
+    "the server neither reads nor writes the access-token secret",
   );
+  assert.doesNotMatch(server, /function accessToken\(\)/, "no lazy access-token accessor remains");
 });
