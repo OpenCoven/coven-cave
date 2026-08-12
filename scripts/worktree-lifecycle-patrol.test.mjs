@@ -18,6 +18,7 @@ import {
   maintenanceGateRoot,
   releaseMaintenanceGate,
 } from "./maintenance-gate.mjs";
+import { refreshCovenBin } from "../src/lib/coven-bin.ts";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
@@ -43,6 +44,16 @@ const origin = path.join(fixtureRoot, "origin.git");
 const bin = path.join(fixtureRoot, "bin");
 const repairBin = path.join(fixtureRoot, "repair-bin");
 const gitBin = path.join(fixtureRoot, "git-bin");
+// Putting `bin` on PATH is not enough to make the fixture's coven the one that
+// answers. covenBin() walks candidateDirs() — ~/.local/bin, /opt/homebrew/bin,
+// the nvm/fnm/pnpm/bun bins — and returns the first ABSOLUTE hit, falling back
+// to the bare name (and therefore to PATH) only when no candidate dir holds
+// one. That split the suite by machine: CI has no coven anywhere, so it reached
+// the stub and passed, while any developer box with one installed drove the
+// real CLI and asserted against its version. COVEN_BIN is the documented
+// override that always wins, so pin it wherever the stub is meant to answer.
+const covenStub = path.join(bin, "coven");
+const repairCovenStub = path.join(repairBin, "coven");
 const registeredDrift = path.join(fixtureRoot, "registered-drift");
 const duplicateRegisteredPath = path.join(fixtureRoot, "duplicate-registered");
 const duplicateWorktreeInventory = path.join(fixtureRoot, "duplicate-worktree-inventory");
@@ -916,7 +927,7 @@ process.exit(93);
 `,
   );
   executable(
-    path.join(repairBin, "coven"),
+    repairCovenStub,
     `#!/usr/bin/env node
 const fs = require("node:fs");
 const statePath = ${JSON.stringify(path.join(fixtureRoot, "metadata-repair-coven.json"))};
@@ -962,7 +973,16 @@ process.exit(2);
   );
 
   const originalPath = process.env.PATH;
+  const originalCovenBin = process.env.COVEN_BIN;
   process.env.PATH = `${repairBin}${path.delimiter}${originalPath ?? ""}`;
+  // Same override as the spawned patrols, plus one wrinkle unique to running
+  // IN-PROCESS: covenBin() memoises into cachedBin and returns that cache
+  // before it ever consults COVEN_BIN, so setting the variable after anything
+  // in this process has already resolved the binary is a silent no-op. Drop the
+  // cache as well. The spawned helpers need no refresh — each spawn is a fresh
+  // process whose cache starts empty.
+  process.env.COVEN_BIN = repairCovenStub;
+  refreshCovenBin();
   process.env.METADATA_REPAIR_STATE = repairState;
   process.env.METADATA_REPAIR_LOG = repairLog;
   try {
@@ -1191,6 +1211,11 @@ process.exit(2);
     assert.match(invalidGate.reason, /heartbeat failed: invalid-composite-handle/);
   } finally {
     process.env.PATH = originalPath;
+    if (originalCovenBin === undefined) delete process.env.COVEN_BIN;
+    else process.env.COVEN_BIN = originalCovenBin;
+    // Drop the cache again so the repair fixture's binary does not leak into
+    // whatever resolves coven next in this process.
+    refreshCovenBin();
     delete process.env.METADATA_REPAIR_STATE;
     delete process.env.METADATA_REPAIR_LOG;
     delete process.env.METADATA_REPAIR_BD_MODE;
@@ -2455,7 +2480,7 @@ fi
 `,
   );
   executable(
-    path.join(bin, "coven"),
+    covenStub,
     `#!/bin/sh
 if [ "$1" = "--version" ]; then
   printf '%s\n' 'coven 0.2.5'
@@ -2624,6 +2649,7 @@ exit 0
         env: {
           ...process.env,
           PATH: `${gitBin}${path.delimiter}${bin}${path.delimiter}${process.env.PATH}`,
+          COVEN_BIN: covenStub,
           LIFECYCLE_TEST_INVOCATION: lastPatrolInvocation,
           ...extraEnv,
         },
@@ -2655,6 +2681,7 @@ exit 0
           ...process.env,
           NODE_NO_WARNINGS: "1",
           PATH: `${gitBin}${path.delimiter}${bin}${path.delimiter}${process.env.PATH}`,
+          COVEN_BIN: covenStub,
           LIFECYCLE_TEST_INVOCATION: lastPatrolInvocation,
           ...extraEnv,
         },
