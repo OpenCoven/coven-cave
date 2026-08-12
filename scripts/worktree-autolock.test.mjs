@@ -13,7 +13,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parseWorktrees, reasonFor, riskOf } from "./worktree-autolock.mjs";
+import {
+  headShaOf,
+  parseWorktrees,
+  reasonFor,
+  remoteTagCommits,
+  riskOf,
+} from "./worktree-autolock.mjs";
 
 const NULL_DEVICE = process.platform === "win32" ? "NUL" : "/dev/null";
 
@@ -205,6 +211,96 @@ try {
     );
   } finally {
     rmSync(box, { recursive: true, force: true });
+  }
+}
+
+// --- a pushed tag is retention, exactly as the guard counts it ---------------
+// cave-qbr34. `--remotes` is remote-tracking BRANCHES; git keeps no
+// remote-tracking refs for tags. So a branch retired the RECOMMENDED way —
+// archived as a pushed tag, then deleted — read as unretained and was re-locked
+// on every tool call, which is what defeated two `beads:worktrees:apply` runs.
+{
+  const scratch = mkdtempSync(path.join(tmpdir(), "autolock-tag-"));
+  try {
+    const origin = path.join(scratch, "origin.git");
+    git(["init", "--quiet", "--bare", "-b", "main", origin], scratch);
+
+    const repo = path.join(scratch, "repo");
+    git(["init", "--quiet", "-b", "main", repo], scratch);
+    writeFileSync(path.join(repo, "seed.txt"), "seed\n");
+    git(["add", "."], repo);
+    git(["commit", "--quiet", "--no-gpg-sign", "-m", "seed"], repo);
+    git(["remote", "add", "origin", origin], repo);
+    git(["push", "--quiet", "origin", "main"], repo);
+
+    git(["checkout", "--quiet", "-b", "fix/archived"], repo);
+    writeFileSync(path.join(repo, "work.txt"), "shipped\n");
+    git(["add", "."], repo);
+    git(["commit", "--quiet", "--no-gpg-sign", "-m", "work"], repo);
+    git(["push", "--quiet", "origin", "fix/archived"], repo);
+    const head = git(["rev-parse", "HEAD"], repo).trim();
+
+    // Retire it the way the docs prescribe: archive tag pushed, branch deleted.
+    git(["tag", "-a", "archive/fix-archived-2026-08-12", "-m", "archive", head], repo);
+    git(["push", "--quiet", "origin", "archive/fix-archived-2026-08-12"], repo);
+    git(["push", "--quiet", "origin", "--delete", "fix/archived"], repo);
+    git(["fetch", "--quiet", "--prune", "origin"], repo);
+
+    // Precondition: the branch-only test still calls this unretained. If this
+    // ever stops holding, the bug is gone for another reason and the assertion
+    // below would be passing vacuously.
+    const branchOnly = riskOf(repo);
+    assert.ok(branchOnly, "precondition: --remotes alone calls a tag-archived head unretained");
+    assert.equal(branchOnly.unpushed, 1);
+
+    // The real lookup, against real `ls-remote` output — the parsing is where
+    // this class of bug lives, so a stub alone would not prove much.
+    const live = remoteTagCommits(repo);
+    assert.ok(live instanceof Set, "the remote answered");
+    assert.equal(headShaOf(repo), head);
+    assert.ok(live.has(head), "ls-remote's peeled ^{} line puts the commit oid in the set");
+    assert.equal(
+      riskOf(repo, (p) => {
+        const oids = remoteTagCommits(p);
+        const h = headShaOf(p);
+        return Boolean(oids && h && oids.has(h));
+      }),
+      null,
+      "wired end to end, a tag-archived head is not locked",
+    );
+
+    // The fix: a tag the REMOTE actually has counts as retention.
+    const remoteTags = new Set([head]);
+    assert.equal(
+      riskOf(repo, () => remoteTags.has(head)),
+      null,
+      "a head held by a pushed tag is retained, so the hook must not lock it",
+    );
+
+    // A LOCAL-only tag must NOT count — it dies with the checkout, which is the
+    // hole the guard exists to close, and is why `--tags` is the wrong fix.
+    git(["tag", "-a", "archive/local-only", "-m", "local", head], repo);
+    const localOnly = riskOf(repo, () => false);
+    assert.ok(localOnly, "a local-only tag is not retention");
+    assert.equal(localOnly.unpushed, 1);
+
+    // An unreachable remote must fail CLOSED: still locked. A lock is
+    // reversible; "retained" is the verdict that permits destruction.
+    assert.ok(
+      riskOf(repo, () => false),
+      "an unanswerable remote leaves the tree locked rather than declaring it safe",
+    );
+
+    // Dirtiness is still decisive even when the head is tag-retained: the
+    // uncommitted content exists nowhere else.
+    writeFileSync(path.join(repo, "seed.txt"), "edited\n");
+    touchForward(path.join(repo, "seed.txt"));
+    const dirtyButRetained = riskOf(repo, () => remoteTags.has(head));
+    assert.ok(dirtyButRetained, "uncommitted work is at risk regardless of tag retention");
+    assert.equal(dirtyButRetained.dirty, 1);
+    assert.equal(dirtyButRetained.unpushed, 0);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
   }
 }
 
