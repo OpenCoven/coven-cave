@@ -17,6 +17,9 @@ import {
   RESEARCH_DELIVERABLE_MAX_LENGTH,
   RESEARCH_INTENT_MIN_LENGTH,
   RESEARCH_PROJECT_ROOT_MAX_LENGTH,
+  RESEARCH_HARNESS_IDS,
+  RESEARCH_MODEL_MAX_LENGTH,
+  RESEARCH_RUNTIME_DEFAULT_HARNESS,
   RESEARCH_TITLE_MAX_LENGTH,
   researchArtifactKindForMode,
   researchBoundReadings,
@@ -1100,3 +1103,65 @@ test("a zero source target reports the count alone, never \"N/0 src\"", () => {
   }];
   assert.equal(researchPhaseMeta(mission, PHASE_IDS)[1], "1 src");
 });
+
+// ─── mission runtime selection (cave-hhwc5) ──────────────────────────────────
+// A mission used to inherit the familiar's Coven binding with no override, so a
+// codex-bound familiar could not run Research at all against a daemon lacking
+// `sessionLaunchPolicy`. The runtime is now chosen per mission and defaults to
+// copilot, the one Cave launches directly.
+{
+  const { COMPATIBILITY_ADAPTERS } = await import("./harness-adapters.ts");
+  // The allowlist is duplicated in research-missions.ts to keep this shared
+  // client/server contract free of adapter-registry imports. Pin the two
+  // together so a new adapter cannot drift out of it unnoticed.
+  assert.deepEqual(
+    [...RESEARCH_HARNESS_IDS].sort(),
+    COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id).sort(),
+    "every compatibility adapter must be selectable as a research runtime",
+  );
+  assert.ok(
+    (RESEARCH_HARNESS_IDS as readonly string[]).includes(RESEARCH_RUNTIME_DEFAULT_HARNESS),
+    "the default runtime must itself be an accepted harness",
+  );
+
+  const base = {
+    familiarId: "sage",
+    intent: "Runtime selection contract probe with enough characters.",
+    mode: "brief" as const,
+    modeSource: "user" as const,
+    deliverable: "One sentence.",
+    bounds: {
+      wallClockMinutes: 10,
+      maxIterations: 2,
+      sourceTarget: 3,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: false,
+    },
+  };
+
+  const omitted = validateCreateResearchMissionInput({ ...base });
+  assert.equal(omitted.ok, true, "omitting the runtime is valid");
+  assert.equal(omitted.value.harness, undefined, "validation does not invent a harness");
+
+  const chosen = validateCreateResearchMissionInput({ ...base, harness: "codex", model: "gpt-5" });
+  assert.equal(chosen.ok, true);
+  assert.equal(chosen.value.harness, "codex");
+  assert.equal(chosen.value.model, "gpt-5");
+
+  // An unknown harness is REFUSED, never silently replaced with the default —
+  // running somewhere the caller did not ask for is the lock-in this removes.
+  const unknown = validateCreateResearchMissionInput({ ...base, harness: "definitely-not-real" });
+  assert.equal(unknown.ok, false);
+  assert.match(unknown.error, /harness must be one of/);
+
+  // A flag-shaped model would be parsed as an option rather than its value.
+  const flagModel = validateCreateResearchMissionInput({ ...base, model: "--sandbox" });
+  assert.equal(flagModel.ok, false);
+  assert.match(flagModel.error, /must not begin with '-'/);
+
+  const longModel = validateCreateResearchMissionInput({
+    ...base,
+    model: "m".repeat(RESEARCH_MODEL_MAX_LENGTH + 1),
+  });
+  assert.equal(longModel.ok, false);
+}

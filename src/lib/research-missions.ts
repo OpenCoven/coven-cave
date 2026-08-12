@@ -186,6 +186,9 @@ export type ResearchMission = {
   projectRoot?: string;
   constraints: string[];
   bounds: ResearchBounds;
+  /** Resolved at creation so a mission's runtime cannot drift mid-flight. */
+  harness?: string;
+  model?: string;
   status: ResearchMissionStatus;
   createdAt: string;
   updatedAt: string;
@@ -200,6 +203,35 @@ export type ResearchMission = {
   lastError?: string;
 };
 
+/**
+ * Runtime the mission's iterations execute on, chosen per mission.
+ *
+ * Before this existed, a mission silently inherited the familiar's Coven
+ * binding, so a familiar bound to `codex` could not run Research at all on a
+ * daemon lacking the `sessionLaunchPolicy` capability — the launch failed with
+ * "This Coven daemon cannot safely run unattended Research with workspace
+ * writes" and there was no way to pick a runtime that works.
+ */
+export const RESEARCH_RUNTIME_DEFAULT_HARNESS = "copilot";
+export const RESEARCH_MODEL_MAX_LENGTH = 200;
+/**
+ * Harness ids accepted for a mission, mirroring COMPATIBILITY_ADAPTERS.
+ *
+ * Duplicated as a literal rather than imported because this module is the
+ * shared client/server contract and must stay free of adapter-registry
+ * imports; research-missions.test.ts pins the two lists together so a new
+ * adapter cannot drift out of this allowlist unnoticed.
+ */
+export const RESEARCH_HARNESS_IDS = [
+  "codex",
+  "claude",
+  "copilot",
+  "hermes",
+  "grok",
+  "openclaw",
+  "opencode",
+] as const;
+
 export type CreateResearchMissionInput = {
   familiarId: string;
   title?: string;
@@ -211,6 +243,14 @@ export type CreateResearchMissionInput = {
   projectRoot?: string;
   constraints?: string[];
   bounds: ResearchBounds;
+  /**
+   * Harness id (see COMPATIBILITY_ADAPTERS). Omitted means
+   * RESEARCH_RUNTIME_DEFAULT_HARNESS — deliberately copilot, which is the
+   * runtime Cave can launch directly without a daemon capability.
+   */
+  harness?: string;
+  /** Harness-specific model id, passed through verbatim when supported. */
+  model?: string;
 };
 
 export type ResearchMissionActionInput =
@@ -513,13 +553,29 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
   const finishedAt = optionalTimestamp(value, "finishedAt");
   const automationId = optionalString(value, "automationId");
   const lastError = optionalString(value, "lastError");
+  // The mission's runtime must survive a read/write round trip. This parser
+  // rebuilds from an explicit field list, so a field it does not name is
+  // silently dropped — which is what happened to `harness`: it was written at
+  // creation, then erased the first time the mission was re-read and saved.
+  const harness = optionalString(value, "harness");
+  const model = optionalString(value, "model");
   if (direction === null
     || audience === null
     || projectRoot === null
     || startedAt === null
     || finishedAt === null
     || automationId === null
-    || lastError === null) {
+    || lastError === null
+    || harness === null
+    || model === null) {
+    return null;
+  }
+  // An unrecognised harness on disk is refused rather than coerced: the record
+  // would otherwise claim a runtime the launcher cannot honour.
+  if (harness !== undefined && !(RESEARCH_HARNESS_IDS as readonly string[]).includes(harness)) {
+    return null;
+  }
+  if (model !== undefined && !validResearchPromptText(model, RESEARCH_MODEL_MAX_LENGTH)) {
     return null;
   }
   if ((direction !== undefined && !validResearchPromptText(direction, RESEARCH_DIRECTION_MAX_LENGTH))
@@ -553,6 +609,8 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     ...(projectRoot !== undefined ? { projectRoot } : {}),
     constraints: value.constraints as string[],
     bounds: bounds.value,
+    ...(harness !== undefined ? { harness } : {}),
+    ...(model !== undefined ? { model } : {}),
     status: value.status as ResearchMissionStatus,
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
@@ -685,6 +743,46 @@ export function validateCreateResearchMissionInput(
   if (projectRoot === null) {
     return { ok: false, error: `projectRoot must be valid Unicode text without NUL and at most ${RESEARCH_PROJECT_ROOT_MAX_LENGTH} characters` };
   }
+  // An unknown harness is REFUSED rather than quietly replaced with the
+  // default: a mission that silently ran on a different runtime than the caller
+  // asked for is the lock-in this field exists to remove, wearing a friendlier
+  // face. Omitting the field is the only way to accept the default.
+  const rawHarness = value.harness;
+  let harness: string | undefined;
+  if (rawHarness !== undefined && rawHarness !== null && rawHarness !== "") {
+    if (
+      typeof rawHarness !== "string"
+      || !(RESEARCH_HARNESS_IDS as readonly string[]).includes(rawHarness)
+    ) {
+      return {
+        ok: false,
+        error: `harness must be one of: ${RESEARCH_HARNESS_IDS.join(", ")}`,
+      };
+    }
+    harness = rawHarness;
+  }
+  const rawModel = value.model;
+  let model: string | undefined;
+  if (rawModel !== undefined && rawModel !== null && rawModel !== "") {
+    if (
+      typeof rawModel !== "string"
+      || rawModel.includes("\0")
+      || hasUnpairedUtf16Surrogate(rawModel)
+      || rawModel.trim().length > RESEARCH_MODEL_MAX_LENGTH
+    ) {
+      return {
+        ok: false,
+        error: `model must be valid Unicode text without NUL and at most ${RESEARCH_MODEL_MAX_LENGTH} characters`,
+      };
+    }
+    // A flag-shaped model would be read as an option by the harness CLI rather
+    // than as its value, so refuse it at the boundary instead of building argv
+    // that means something else.
+    if (rawModel.trim().startsWith("-")) {
+      return { ok: false, error: "model must not begin with '-'" };
+    }
+    model = rawModel.trim();
+  }
   return {
     ok: true,
     value: {
@@ -698,6 +796,8 @@ export function validateCreateResearchMissionInput(
       ...(projectRoot ? { projectRoot } : {}),
       constraints,
       bounds: bounds.value,
+      ...(harness ? { harness } : {}),
+      ...(model ? { model } : {}),
     },
   };
 }
