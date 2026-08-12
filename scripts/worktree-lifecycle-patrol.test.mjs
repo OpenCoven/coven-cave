@@ -18,10 +18,12 @@ import {
   maintenanceGateRoot,
   releaseMaintenanceGate,
 } from "./maintenance-gate.mjs";
+import { refreshCovenBin } from "../src/lib/coven-bin.ts";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   evaluateRetirementApplyOutcome,
+  listExpiredOrphanedExceptions,
   renderApplyReport,
   runRetirementApply,
 } from "./worktree-lifecycle-patrol.ts";
@@ -43,6 +45,16 @@ const origin = path.join(fixtureRoot, "origin.git");
 const bin = path.join(fixtureRoot, "bin");
 const repairBin = path.join(fixtureRoot, "repair-bin");
 const gitBin = path.join(fixtureRoot, "git-bin");
+// Putting `bin` on PATH is not enough to make the fixture's coven the one that
+// answers. covenBin() walks candidateDirs() — ~/.local/bin, /opt/homebrew/bin,
+// the nvm/fnm/pnpm/bun bins — and returns the first ABSOLUTE hit, falling back
+// to the bare name (and therefore to PATH) only when no candidate dir holds
+// one. That split the suite by machine: CI has no coven anywhere, so it reached
+// the stub and passed, while any developer box with one installed drove the
+// real CLI and asserted against its version. COVEN_BIN is the documented
+// override that always wins, so pin it wherever the stub is meant to answer.
+const covenStub = path.join(bin, "coven");
+const repairCovenStub = path.join(repairBin, "coven");
 const registeredDrift = path.join(fixtureRoot, "registered-drift");
 const duplicateRegisteredPath = path.join(fixtureRoot, "duplicate-registered");
 const duplicateWorktreeInventory = path.join(fixtureRoot, "duplicate-worktree-inventory");
@@ -916,7 +928,7 @@ process.exit(93);
 `,
   );
   executable(
-    path.join(repairBin, "coven"),
+    repairCovenStub,
     `#!/usr/bin/env node
 const fs = require("node:fs");
 const statePath = ${JSON.stringify(path.join(fixtureRoot, "metadata-repair-coven.json"))};
@@ -962,7 +974,16 @@ process.exit(2);
   );
 
   const originalPath = process.env.PATH;
+  const originalCovenBin = process.env.COVEN_BIN;
   process.env.PATH = `${repairBin}${path.delimiter}${originalPath ?? ""}`;
+  // Same override as the spawned patrols, plus one wrinkle unique to running
+  // IN-PROCESS: covenBin() memoises into cachedBin and returns that cache
+  // before it ever consults COVEN_BIN, so setting the variable after anything
+  // in this process has already resolved the binary is a silent no-op. Drop the
+  // cache as well. The spawned helpers need no refresh — each spawn is a fresh
+  // process whose cache starts empty.
+  process.env.COVEN_BIN = repairCovenStub;
+  refreshCovenBin();
   process.env.METADATA_REPAIR_STATE = repairState;
   process.env.METADATA_REPAIR_LOG = repairLog;
   try {
@@ -1191,6 +1212,11 @@ process.exit(2);
     assert.match(invalidGate.reason, /heartbeat failed: invalid-composite-handle/);
   } finally {
     process.env.PATH = originalPath;
+    if (originalCovenBin === undefined) delete process.env.COVEN_BIN;
+    else process.env.COVEN_BIN = originalCovenBin;
+    // Drop the cache again so the repair fixture's binary does not leak into
+    // whatever resolves coven next in this process.
+    refreshCovenBin();
     delete process.env.METADATA_REPAIR_STATE;
     delete process.env.METADATA_REPAIR_LOG;
     delete process.env.METADATA_REPAIR_BD_MODE;
@@ -1535,6 +1561,25 @@ process.exit(2);
         title: "Investigate abbreviated commit",
         description: "",
         notes: branchOnlyHead.slice(0, 12),
+        external_ref: null,
+      },
+    ]),
+  );
+  // The scenario cave-p6wkk demonstrated on 2026-08-10: a bug report is filed
+  // about a unit, quotes its branch name as evidence, and the unit flips from
+  // cleanup-ready to active on the next run — so the better the documentation,
+  // the less retirable the unit.
+  writeFileSync(
+    path.join(fixtureRoot, "tasks-branch-mention.json"),
+    JSON.stringify([
+      branchOnlyMetadataTask,
+      {
+        id: "cave-branch-mention",
+        status: "open",
+        title: "Post-mortem: retirement stalled",
+        description:
+          "The unit on feat/branch-only sat past its cooldown. Quoting the branch here as evidence.",
+        notes: "",
         external_ref: null,
       },
     ]),
@@ -2396,6 +2441,8 @@ if [ "\${LIFECYCLE_OID_ONLY_TASK:-0}" = "1" ]; then
   cat ${JSON.stringify(path.join(fixtureRoot, "tasks-oid-only.json"))}
 elif [ "\${LIFECYCLE_SHORT_OID_TASK:-0}" = "1" ]; then
   cat ${JSON.stringify(path.join(fixtureRoot, "tasks-short-oid.json"))}
+elif [ "\${LIFECYCLE_BRANCH_MENTION_TASK:-0}" = "1" ]; then
+  cat ${JSON.stringify(path.join(fixtureRoot, "tasks-branch-mention.json"))}
 elif [ "\${LIFECYCLE_NUL_METADATA_PATH:-0}" = "1" ]; then
   cat ${JSON.stringify(path.join(fixtureRoot, "tasks-nul-metadata-path.json"))}
 elif [ "\${LIFECYCLE_NUL_EXCEPTION_PATH:-0}" = "1" ]; then
@@ -2455,7 +2502,7 @@ fi
 `,
   );
   executable(
-    path.join(bin, "coven"),
+    covenStub,
     `#!/bin/sh
 if [ "$1" = "--version" ]; then
   printf '%s\n' 'coven 0.2.5'
@@ -2624,6 +2671,7 @@ exit 0
         env: {
           ...process.env,
           PATH: `${gitBin}${path.delimiter}${bin}${path.delimiter}${process.env.PATH}`,
+          COVEN_BIN: covenStub,
           LIFECYCLE_TEST_INVOCATION: lastPatrolInvocation,
           ...extraEnv,
         },
@@ -2655,6 +2703,7 @@ exit 0
           ...process.env,
           NODE_NO_WARNINGS: "1",
           PATH: `${gitBin}${path.delimiter}${bin}${path.delimiter}${process.env.PATH}`,
+          COVEN_BIN: covenStub,
           LIFECYCLE_TEST_INVOCATION: lastPatrolInvocation,
           ...extraEnv,
         },
@@ -3189,15 +3238,41 @@ exit 0
   }
 
 
-  verifySafetyRegression("exact OID Bead ownership", () => {
+  verifySafetyRegression("exact OID in Bead text is a mention, not ownership", () => {
+    // The fixture bead is titled "Investigate captured commit" and carries the
+    // head OID in external_ref. That is a bead ABOUT the unit, not a claim on
+    // it, and treating it as open work is what made documenting a unit enough
+    // to make the unit unretirable. It is now reported and does not block.
     const oidOwnerReport = JSON.parse(
       patrol(["--json"], { LIFECYCLE_OID_ONLY_TASK: "1" }),
     );
     const oidOwnedBranch = oidOwnerReport.items.find(
       (item) => item.branch === "feat/branch-only",
     );
-    assert.equal(oidOwnedBranch.lane, "active");
-    assert.deepEqual(oidOwnedBranch.taskIds, ["cave-oid-owner"]);
+    assert.equal(oidOwnedBranch.lane, "retire-after-gate");
+    assert.deepEqual(oidOwnedBranch.taskIds, []);
+    assert.deepEqual(oidOwnedBranch.mentionTaskIds, ["cave-oid-owner"]);
+    assert.doesNotMatch(
+      oidOwnedBranch.reasons.join("\n"),
+      /cave-oid-owner/,
+      "a mention must not appear among the reasons that hold a unit active",
+    );
+  });
+
+  verifySafetyRegression("quoting a branch name does not make the unit active", () => {
+    const mentionReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_BRANCH_MENTION_TASK: "1" }),
+    );
+    const mentionedBranch = mentionReport.items.find(
+      (item) => item.branch === "feat/branch-only",
+    );
+    assert.equal(
+      mentionedBranch.lane,
+      "retire-after-gate",
+      "filing a post-mortem about a unit must not reclassify it as in-flight work",
+    );
+    assert.deepEqual(mentionedBranch.taskIds, []);
+    assert.deepEqual(mentionedBranch.mentionTaskIds, ["cave-branch-mention"]);
   });
 
   verifySafetyRegression("abbreviated OID is not Bead ownership", () => {
@@ -3209,6 +3284,11 @@ exit 0
     );
     assert.equal(shortOidBranch.lane, "retire-after-gate");
     assert.deepEqual(shortOidBranch.taskIds, []);
+    assert.deepEqual(
+      shortOidBranch.mentionTaskIds,
+      [],
+      "an abbreviated OID is not even a mention — the match must stay exact",
+    );
   });
 
   verifySafetyRegression("duplicate registered local branch ref", () => {
@@ -5057,6 +5137,87 @@ exit 0
     git(["worktree", "remove", registeredDrift], repo);
   }
   rmSync(fixtureRoot, { recursive: true, force: true });
+}
+
+// cave-4oor6: expired exceptions on beads whose worktrees are gone must surface
+// in the read-only report, not vanish because inventory only tallies unit-matched
+// exceptions.
+{
+  const nowMs = Date.parse("2026-08-12T00:00:00.000Z");
+  const inventory = {
+    orphanedMetadata: [
+      {
+        beadId: "cave-oenag",
+        beadStatus: "open",
+        location: "metadata.coven.worktree",
+        branch: "fix/cave-oenag-detached-budget",
+        path: "/repo/.worktrees/cave-oenag-detached-budget",
+        rawRecord: {},
+        record: {
+          branch: "fix/cave-oenag-detached-budget",
+          path: "/repo/.worktrees/cave-oenag-detached-budget",
+          owner: "kitty",
+          purpose: "budget exception",
+          disposition: "active",
+          createdAt: "2026-08-07T00:00:00.000Z",
+          exception: {
+            owner: "kitty",
+            reason: "over budget",
+            expiresAt: "2026-08-08T00:00:00.000Z",
+            additionalPaths: ["/repo/.worktrees/cave-oenag-detached-budget"],
+          },
+        },
+        repairable: false,
+        reasons: ["worktree path is not registered"],
+      },
+      {
+        beadId: "cave-live-exception",
+        beadStatus: "open",
+        location: "metadata.coven.worktree",
+        branch: "fix/live",
+        path: "/repo/.worktrees/live",
+        rawRecord: {},
+        record: {
+          branch: "fix/live",
+          path: "/repo/.worktrees/live",
+          owner: "kitty",
+          purpose: "still active grant",
+          disposition: "active",
+          createdAt: "2026-08-10T00:00:00.000Z",
+          exception: {
+            owner: "kitty",
+            reason: "still live",
+            expiresAt: "2026-08-15T00:00:00.000Z",
+            additionalPaths: ["/repo/.worktrees/live"],
+          },
+        },
+        repairable: false,
+        reasons: ["worktree path is not registered"],
+      },
+      {
+        beadId: "cave-no-exception",
+        beadStatus: "open",
+        location: "metadata.coven.worktree",
+        branch: "fix/plain",
+        path: "/repo/.worktrees/plain",
+        rawRecord: {},
+        record: {
+          branch: "fix/plain",
+          path: "/repo/.worktrees/plain",
+          owner: "kitty",
+          purpose: "no exception",
+          disposition: "active",
+          createdAt: "2026-08-01T00:00:00.000Z",
+        },
+        repairable: false,
+        reasons: ["worktree path is not registered"],
+      },
+    ],
+  };
+  const listed = listExpiredOrphanedExceptions(inventory, nowMs);
+  assert.equal(listed.length, 1, "only expired exceptions on orphaned records surface");
+  assert.equal(listed[0].beadId, "cave-oenag");
+  assert.equal(listed[0].expiresAt, "2026-08-08T00:00:00.000Z");
 }
 
 console.log("worktree-lifecycle-patrol.test.mjs: ok");

@@ -75,6 +75,7 @@ function makeItem(overrides = {}) {
     processOwners: [],
     claimOwners: [],
     taskIds: [],
+    mentionTaskIds: [],
     openPrs: [],
     mergedPr: null,
     activeWorkflowUrls: [],

@@ -2413,12 +2413,47 @@ function remoteDefaultBranch(root: string): RemoteDefaultBranch {
   };
 }
 
+/**
+ * Split the non-closed beads touching a unit into the ones that OWN it and the
+ * ones that merely MENTION it.
+ *
+ * Only ownership blocks retirement. The distinction matters because the two
+ * signals have opposite reliability:
+ *
+ *   - `owns` — a structured lifecycle record naming this branch or path, or a
+ *     bead id embedded in the branch name. Both are claims of ownership; the
+ *     record is written by the creation script and the branch name is chosen by
+ *     the owner.
+ *   - `mentions` — the bead's free TEXT happens to contain the branch string or
+ *     the head OID. That is not a claim of anything. It is what writing a bug
+ *     report, a post-mortem, or a handoff note looks like.
+ *
+ * Treating a mention as open work made the failure self-perpetuating and
+ * inverted: the better you documented a retirement problem, the less retirable
+ * the unit became, and a bead explaining why worktrees cannot be retired was
+ * itself a reason a worktree could not be retired. Demonstrated in two
+ * consecutive apply runs on 2026-08-10 — a unit classified `cleanup-ready`,
+ * then `active, non-closed Beads: <the bug report filed about it>` once that
+ * report quoted its branch name and head OID as evidence. It punished exactly
+ * the behaviour this repository asks for everywhere else.
+ *
+ * Measured over the live checkout before this change: of 42 units, 9 picked up
+ * blockers from the free-text clauses and 6 had no other blocker at all. One
+ * cross-session coordination report blocked three units purely by naming the
+ * branches it existed to compare. Of those 6, four had their structured record
+ * on a CLOSED bead — the owner was done and only someone else's prose still
+ * held them — and the remaining two carry no record at all, so the metadata
+ * gate holds them regardless of what this function returns.
+ *
+ * Mentions are still reported, because "who is talking about this unit" is
+ * genuinely useful; they are just no longer mistaken for a claim on it.
+ */
 function matchingTasks(
   branch: string | null,
   worktreePath: string | null,
   head: string,
   tasks: BeadTask[],
-): string[] {
+): { owns: string[]; mentions: string[] } {
   const matchedBranch =
     branch !== null && !PROTECTED_BRANCHES.has(branch) ? branch : null;
   const branchBeadIds = new Set(matchedBranch ? beadIdsInText(matchedBranch) : []);
@@ -2426,24 +2461,30 @@ function matchingTasks(
     worktreePath === null ? null : normalizeAbsoluteWorktreePath(worktreePath);
 
   const exactOid = new RegExp(`(?:^|[^0-9a-f])${head}(?:$|[^0-9a-f])`, "i");
-  return tasks
-    .filter((task) => task.status !== "closed")
-    .filter(
-      (task) =>
-        task.structured.some(
-          (record) =>
-            (matchedBranch !== null && record.branch === matchedBranch) ||
-            (normalizedWorktreePath !== null &&
-              normalizeAbsoluteWorktreePath(record.path) === normalizedWorktreePath),
-        ) ||
-        branchBeadIds.has(task.id.toLowerCase()) ||
-        exactOid.test(task.text) ||
-        (matchedBranch !== null && task.text.includes(matchedBranch)) ||
-        (matchedBranch !== null &&
-          worktreePath !== null &&
-          task.text.includes(worktreePath)),
-    )
-    .map((task) => task.id);
+  const owns: string[] = [];
+  const mentions: string[] = [];
+  for (const task of tasks) {
+    if (task.status === "closed") continue;
+    const ownsUnit =
+      task.structured.some(
+        (record) =>
+          (matchedBranch !== null && record.branch === matchedBranch) ||
+          (normalizedWorktreePath !== null &&
+            normalizeAbsoluteWorktreePath(record.path) === normalizedWorktreePath),
+      ) || branchBeadIds.has(task.id.toLowerCase());
+    if (ownsUnit) {
+      owns.push(task.id);
+      continue;
+    }
+    const mentionsUnit =
+      exactOid.test(task.text) ||
+      (matchedBranch !== null && task.text.includes(matchedBranch)) ||
+      (matchedBranch !== null &&
+        worktreePath !== null &&
+        task.text.includes(worktreePath));
+    if (mentionsUnit) mentions.push(task.id);
+  }
+  return { owns, mentions };
 }
 
 /**
@@ -3047,7 +3088,17 @@ function collectInventory(
     ...initialHistoryOverrides.errors,
     initialGrafts.error,
     originIdentity.error,
-
+    // remoteDefaultBranch(root) reads only the checkout root, so its failure is
+    // repository-wide by construction, exactly like originIdentity.error above.
+    // It reached every unit anyway — via ancestry.error, which falls back to it
+    // whenever defaultBranch.oid is null — but it never reached this bucket, so
+    // `globalErrors` in the inventory output did not mention it at all. A
+    // consumer then saw N identical per-unit probe errors with no global signal
+    // and could not tell that ONE checkout-level fact had disqualified
+    // everything. Listing it here changes no unit's classification: the
+    // identical string is already stamped per unit, and both this list and
+    // probeErrors dedup through a Set.
+    defaultBranch.error,
     ...prs.globalErrors,
     workflows.error,
     claims.error,
@@ -3150,6 +3201,7 @@ function collectInventory(
       ),
     ];
 
+    const unitTasks = matchingTasks(unit.branch, unit.path, unit.head, tasks.tasks);
 
     return {
       kind: unit.kind,
@@ -3177,7 +3229,8 @@ function collectInventory(
             .map((claim) => claim.agent_id),
         ),
       ],
-      taskIds: matchingTasks(unit.branch, unit.path, unit.head, tasks.tasks),
+      taskIds: unitTasks.owns,
+      mentionTaskIds: unitTasks.mentions,
       openPrs,
       mergedPr: exactMerged
         ? {
