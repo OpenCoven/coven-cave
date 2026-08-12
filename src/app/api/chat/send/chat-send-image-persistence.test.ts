@@ -4,19 +4,23 @@
 // behind a durable copy whose id the transcript keeps.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 const ROOT = mkdtempSync(join(tmpdir(), "chat-send-image-persistence-"));
+const DELIVERY_ROOT = mkdtempSync(join(tmpdir(), "chat-send-image-delivery-root-"));
 process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR = ROOT;
 
-const { persistImageAttachments } = await import("./chat-send-attachments.ts");
+const attachmentDelivery = await import("./chat-send-attachments.ts");
+const { persistImageAttachments } = attachmentDelivery;
 const { normalizeChatAttachments, stripPreviewOnlyAttachmentFields, chatAttachmentSrc } =
   await import("@/lib/chat-attachments");
 
-after(() => rmSync(ROOT, { recursive: true, force: true }));
+after(() => {
+  rmSync(ROOT, { recursive: true, force: true });
+  rmSync(DELIVERY_ROOT, { recursive: true, force: true });
+});
 
 const PIXEL_B64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -28,6 +32,29 @@ const IMAGE = {
   dataUrl: `data:image/png;base64,${PIXEL_B64}`,
 };
 const TEXT_FILE = { name: "notes.txt", type: "text/plain", size: 12, text: "hello there" };
+
+test("image-tool delivery stays inside the explicitly granted workspace root", async () => {
+  assert.equal(
+    typeof attachmentDelivery.writeImageAttachmentsToWorkspace,
+    "function",
+    "the delivery helper must accept a granted root instead of choosing OS temp storage",
+  );
+  assert.equal(typeof attachmentDelivery.cleanupImageAttachmentDelivery, "function");
+
+  const delivery = await attachmentDelivery.writeImageAttachmentsToWorkspace(
+    normalizeChatAttachments([IMAGE, TEXT_FILE]),
+    DELIVERY_ROOT,
+  );
+  const imagePath = delivery.filePaths.get(0);
+  assert.ok(imagePath, "the image receives a file path");
+  const rel = relative(realpathSync(DELIVERY_ROOT), imagePath);
+  assert.ok(rel && rel !== ".." && !rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`));
+  assert.deepEqual(readFileSync(imagePath), Buffer.from(PIXEL_B64, "base64"));
+  assert.equal(statSync(imagePath).mode & 0o777, 0o600, "the staged image stays owner-only");
+
+  await attachmentDelivery.cleanupImageAttachmentDelivery(delivery);
+  assert.equal(existsSync(delivery.stagingDir), false, "cleanup removes the private staging directory");
+});
 
 test("an image gains a storedId while its payload stays out of the transcript", async () => {
   const attachments = normalizeChatAttachments([IMAGE, TEXT_FILE]);

@@ -1,5 +1,4 @@
-import { mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   cleanMediaDataUrl,
@@ -12,7 +11,6 @@ import {
   sweepChatImageAttachments,
 } from "@/lib/server/chat-attachment-store";
 
-const ATTACHMENT_TMP_DIR = path.join(tmpdir(), "coven-cave-attachments");
 const IMAGE_EXT_BY_SUBTYPE: Record<string, string> = {
   jpeg: "jpg",
   "svg+xml": "svg",
@@ -25,29 +23,57 @@ function imageExtension(mimeType?: string): string {
   return /^[a-z0-9]{1,8}$/.test(mapped) ? mapped : "img";
 }
 
-/** Write validated image payloads to owner-only files for local harnesses. */
-export async function writeImageAttachmentsToTemp(
+export type ImageAttachmentDelivery = {
+  filePaths: Map<number, string>;
+  stagingDir: string | null;
+};
+
+/**
+ * Write validated image payloads to an owner-only directory inside a root the
+ * runtime already grants. A path in the OS temp directory is not enough: the
+ * chat boundary and harness sandbox both reject it, even if Cave can write it.
+ */
+export async function writeImageAttachmentsToWorkspace(
   attachments: ChatAttachment[],
-): Promise<Map<number, string>> {
+  deliveryRoot: string,
+): Promise<ImageAttachmentDelivery> {
   const filePaths = new Map<number, string>();
+  const eligible = attachments.some(
+    (attachment) => attachment.dataUrl && attachment.mimeType?.startsWith("image/"),
+  );
+  if (!eligible) return { filePaths, stagingDir: null };
+
+  let stagingDir: string | null = null;
+  try {
+    const root = await realpath(deliveryRoot);
+    if (!(await stat(root)).isDirectory()) return { filePaths, stagingDir: null };
+    stagingDir = await mkdtemp(path.join(root, ".coven-cave-attachments-"));
+    await chmod(stagingDir, 0o700);
+  } catch {
+    return { filePaths, stagingDir: null };
+  }
+
   for (const [index, attachment] of attachments.entries()) {
     if (!attachment.dataUrl || !attachment.mimeType?.startsWith("image/")) continue;
     const base64 = attachment.dataUrl.slice(attachment.dataUrl.indexOf(",") + 1);
     const payload = Buffer.from(base64, "base64");
     if (payload.byteLength === 0 || payload.byteLength > MAX_ATTACHMENT_IMAGE_BYTES) continue;
     try {
-      await mkdir(ATTACHMENT_TMP_DIR, { recursive: true, mode: 0o700 });
       const filePath = path.join(
-        ATTACHMENT_TMP_DIR,
+        stagingDir,
         `${crypto.randomUUID()}.${imageExtension(attachment.mimeType)}`,
       );
-      await writeFile(filePath, payload, { mode: 0o600 });
+      await writeFile(filePath, payload, { mode: 0o600, flag: "wx" });
       filePaths.set(index, filePath);
     } catch {
       // Best effort: callers render a not-delivered attachment notice instead.
     }
   }
-  return filePaths;
+  if (filePaths.size === 0) {
+    await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
+    return { filePaths, stagingDir: null };
+  }
+  return { filePaths, stagingDir };
 }
 
 /**
@@ -88,10 +114,9 @@ export async function persistImageAttachments(
   return stored;
 }
 
-export function cleanupImageTempFiles(filePaths: ReadonlyMap<number, string>) {
-  for (const filePath of filePaths.values()) {
-    void rm(filePath, { force: true }).catch(() => undefined);
-  }
+export async function cleanupImageAttachmentDelivery(delivery: ImageAttachmentDelivery) {
+  if (!delivery.stagingDir) return;
+  await rm(delivery.stagingDir, { recursive: true, force: true }).catch(() => undefined);
 }
 
 /**

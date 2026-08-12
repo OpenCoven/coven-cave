@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,8 +26,9 @@ const FAMILIAR_ID = "milo";
 
 function writeContractFile(name: string, content: string, familiarId = FAMILIAR_ID) {
   const dir = join(TMP, ".coven", "workspaces", "familiars", familiarId);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, name), content);
+  const target = join(dir, name);
+  mkdirSync(join(target, ".."), { recursive: true });
+  writeFileSync(target, content);
 }
 
 function repoFile(relative: string): string {
@@ -49,6 +50,38 @@ test("SOUL.md and IDENTITY.md are inlined under FAMILIAR_CONTRACT", async () => 
   assert.match(block, /My purpose is scouting\./);
   assert.match(block, /## IDENTITY\.md/);
   assert.match(block, /\*\*Creature:\*\* fox/);
+});
+
+test("familiar-local skill entrypoints outrank generic same-name skills", async () => {
+  writeContractFile("SOUL.md", "## I am Milo", "skilled");
+  writeContractFile(
+    "skills/imagegen/SKILL.md",
+    "---\nname: imagegen\ndescription: Milo's boundary-safe image workflow.\n---\n",
+    "skilled",
+  );
+
+  const block = await buildFamiliarContractBlock("skilled");
+  assert.match(block, /## Familiar-local skills/);
+  assert.match(block, /skills\/imagegen\/SKILL\.md/);
+  assert.match(block, /local same-name skill takes precedence over a generic skill/);
+});
+
+test("a symlinked skills root cannot advertise entrypoints outside the familiar workspace", async (t) => {
+  writeContractFile("SOUL.md", "## I am Milo", "skill-escape");
+  const workspace = join(TMP, ".coven", "workspaces", "familiars", "skill-escape");
+  const outside = join(TMP, "outside-familiar-skills");
+  mkdirSync(join(outside, "imagegen"), { recursive: true });
+  writeFileSync(join(outside, "imagegen", "SKILL.md"), "---\nname: imagegen\n---\n");
+  try {
+    symlinkSync(outside, join(workspace, "skills"), process.platform === "win32" ? "junction" : "dir");
+  } catch (error) {
+    t.skip(`symlink unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+
+  const block = await buildFamiliarContractBlock("skill-escape");
+  assert.doesNotMatch(block, /outside-familiar-skills/);
+  assert.doesNotMatch(block, /## Familiar-local skills/);
 });
 
 test("chat omits MEMORY.md by default; voice opts in", async () => {

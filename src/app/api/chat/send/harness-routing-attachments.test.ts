@@ -52,8 +52,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /imagesSupported\s*\?\s*await writeImageAttachmentsToTemp\(attachments\)/,
-  "Image payloads should be written to temp files before the harness prompt is built",
+  /imagesSupported\s*\?\s*await writeImageAttachmentsToWorkspace\(\s*attachments,\s*resolvedFamiliarWorkspace \?\? cwd,\s*\)/,
+  "Image payloads should be written inside a root the runtime already grants",
 );
 
 assert.match(
@@ -110,8 +110,8 @@ assert.match(
 
 assert.match(
   attachmentDelivery,
-  /await writeFile\(filePath, payload, \{ mode: 0o600 \}\)/,
-  "Saved image payloads should be private temp files (mode 0600)",
+  /await writeFile\(filePath, payload, \{ mode: 0o600, flag: "wx" \}\)/,
+  "Saved image payloads should be private, exclusively-created files (mode 0600)",
 );
 
 assert.match(
@@ -122,8 +122,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /cleanupImageTempFiles\(imageFilePaths\);/,
-  "Image temp files should be best-effort deleted after the harness child has exited",
+  /cleanupImageAttachmentDelivery\(imageDelivery\);/,
+  "The workspace-local staging directory should be deleted after the harness child has exited",
 );
 
 // The transcript still never receives a base64 payload. Since cave-cysu4 the
@@ -176,7 +176,7 @@ const smallPng = `data:image/png;base64,${Buffer.from("png-payload-bytes").toStr
   const attachments = normalizeChatAttachments([
     { name: "shot.png", type: "image/png", mimeType: "image/png", size: 17, dataUrl: smallPng },
   ]);
-  const savedPath = "/tmp/coven-cave-attachments/00000000-0000-0000-0000-000000000000.png";
+  const savedPath = "/workspace/.coven-cave-attachments-000000/00000000-0000-0000-0000-000000000000.png";
   const withPath = buildPromptWithAttachments("Look at this.", attachments, {
     imagesSupported: true,
     imageFilePaths: new Map([[0, savedPath]]),

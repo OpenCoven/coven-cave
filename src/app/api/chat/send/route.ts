@@ -266,10 +266,10 @@ import type { StreamEvent } from "@/lib/stream-events";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import {
   appendMentionedFilesBlock,
-  cleanupImageTempFiles,
+  cleanupImageAttachmentDelivery,
   persistImageAttachments,
   resolveMentionedFiles,
-  writeImageAttachmentsToTemp,
+  writeImageAttachmentsToWorkspace,
 } from "./chat-send-attachments";
 import {
   covenRunSupportsAddDir,
@@ -2486,14 +2486,20 @@ export async function POST(req: Request) {
   });
   if (offlineChatResponse) return offlineChatResponse;
 
-  // Image delivery channel: only harnesses that can read Cave's local temp
-  // files may receive image paths. Remote Hermes Responses endpoints cannot,
+  // Image delivery channel: only harnesses that can read Cave's local files
+  // may receive image paths. Remote Hermes Responses endpoints cannot,
   // so they receive the same explicit unsupported notice as bridge/SSH runs.
   const imagesSupported = !sshRuntime && binding.harness !== "openclaw" &&
     !(hermesApi && !hermesApiCanAccessLocalFiles(hermesApi));
-  const imageFilePaths = imagesSupported
-    ? await writeImageAttachmentsToTemp(attachments)
-    : new Map<number, string>();
+  // The copy must live inside a root already present in the runtime boundary.
+  // OS temp storage is Cave-readable but denied to the familiar and its tools.
+  const imageDelivery = imagesSupported
+    ? await writeImageAttachmentsToWorkspace(
+        attachments,
+        resolvedFamiliarWorkspace ?? cwd,
+      )
+    : { filePaths: new Map<number, string>(), stagingDir: null };
+  const imageFilePaths = imageDelivery.filePaths;
   // @-mentioned files share the image-delivery constraint: only local
   // coven-run harnesses can Read this machine's filesystem, so bridges and
   // SSH runtimes never get a block of unreachable absolute paths.
@@ -5609,10 +5615,11 @@ export async function POST(req: Request) {
         ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
         responseMetadata,
       });
-      // Best-effort temp cleanup: the harness child process has already
+      // Best-effort staging cleanup: the harness child process has already
       // exited (including any resume retry), so nothing can still be reading
-      // the saved images. Failures just leave files in tmpdir.
-      cleanupImageTempFiles(imageFilePaths);
+      // the saved images. Await it so a successful turn leaves no transient
+      // directory behind in the familiar workspace.
+      await cleanupImageAttachmentDelivery(imageDelivery);
       if (detachKillTimer != null) clearTimeout(detachKillTimer);
       unregisterChatRun(runHandle);
       runBuffer?.finish();
