@@ -9,12 +9,15 @@ breaking config changes; patch releases stay additive.
 
 ## [0.3.1] - 2026-08-12
 
-> Tokenless access across trusted local and tailnet surfaces, with optional
-> passkey presence and local-only boundaries preserved.
+> ⚠️ Removes the access-token requirement. A Cave published over Tailscale
+> Serve is reachable by anything on the tailnet with no credential. This
+> partly reverts the loopback authorization added in 0.3.0 (#4533).
 
-Patch release on top of v0.3.0.
+Patch release on top of v0.3.0. Note that it is **not** additive in the sense
+the preamble above describes: it removes a security control rather than adding
+behavior.
 
-### Changed
+### Removed
 
 - Removed the `COVEN_CAVE_ACCESS_TOKEN` request gate, access page, and
   query-to-cookie exchange. Remote ingress remains classified separately so
