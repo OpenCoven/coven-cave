@@ -4,7 +4,18 @@
 // behind a durable copy whose id the transcript keeps.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
@@ -139,6 +150,48 @@ test("a turn with no images does no store work", async () => {
   );
   assert.deepEqual(persisted, stripPreviewOnlyAttachmentFields(attachments));
   assert.equal(readdirSync(ROOT).length, before, "nothing was written");
+});
+
+// A staging directory that a previous turn failed to clean up must not survive
+// in the familiar's workspace. `cleanupImageAttachmentDelivery` runs at ONE site
+// near the end of the chat stream callback with no `finally` around it, so any
+// throw above that line skips it. The old code leaked into OS temp storage,
+// which the system reaps; this leaks into a granted workspace, which nothing
+// reaps -- `sweepChatImageAttachments` only matches FILES named like an
+// attachment id in the persistent store, never directories in a workspace.
+test("a stale staging directory from a crashed turn is swept on the next delivery", async () => {
+  const root = realpathSync(DELIVERY_ROOT);
+
+  // Old enough to be unambiguously abandoned, and holding a real payload so the
+  // assertion is about user content rather than an empty husk.
+  const stale = join(root, ".coven-cave-attachments-stale");
+  mkdirSync(stale, { recursive: true, mode: 0o700 });
+  writeFileSync(join(stale, "leaked.png"), Buffer.from(PIXEL_B64, "base64"), { mode: 0o600 });
+  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  utimesSync(stale, twoHoursAgo, twoHoursAgo);
+
+  // A directory from a turn that could still be running must be left alone.
+  const fresh = join(root, ".coven-cave-attachments-fresh");
+  mkdirSync(fresh, { recursive: true, mode: 0o700 });
+
+  // An unrelated dot-directory must never be touched, however old.
+  const bystander = join(root, ".git-ish");
+  mkdirSync(bystander, { recursive: true });
+  utimesSync(bystander, twoHoursAgo, twoHoursAgo);
+
+  const delivery = await attachmentDelivery.writeImageAttachmentsToWorkspace(
+    normalizeChatAttachments([IMAGE]),
+    DELIVERY_ROOT,
+  );
+
+  assert.equal(existsSync(stale), false, "the abandoned staging directory is swept");
+  assert.equal(existsSync(fresh), true, "a recent staging directory is left for its live turn");
+  assert.equal(existsSync(bystander), true, "unrelated directories are never swept");
+  assert.ok(delivery.stagingDir, "the sweep does not prevent this turn's delivery");
+
+  await attachmentDelivery.cleanupImageAttachmentDelivery(delivery);
+  rmSync(fresh, { recursive: true, force: true });
+  rmSync(bystander, { recursive: true, force: true });
 });
 
 console.log("chat-send-image-persistence.test.ts: ok");

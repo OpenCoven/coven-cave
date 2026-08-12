@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdtemp, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   cleanMediaDataUrl,
@@ -16,6 +16,47 @@ const IMAGE_EXT_BY_SUBTYPE: Record<string, string> = {
   "svg+xml": "svg",
 };
 const MAX_MENTIONED_FILES = 10;
+const STAGING_PREFIX = ".coven-cave-attachments-";
+/** Old enough that no live turn could still be reading it. */
+const STAGING_MAX_AGE_MS = 60 * 60 * 1000;
+const STAGING_SWEEP_SCAN_LIMIT = 200;
+
+/**
+ * Remove staging directories a previous turn left behind.
+ *
+ * `cleanupImageAttachmentDelivery` runs at ONE site, near the end of the chat
+ * stream callback, and nothing wraps that callback in `finally` — so a throw
+ * anywhere above it skips cleanup. That used to be harmless because the copies
+ * lived in OS temp storage, which the system reaps; now they live inside the
+ * familiar's granted workspace, where they are user-visible, readable by the
+ * familiar, and reaped by nobody. `sweepChatImageAttachments` does not cover
+ * them: it matches FILES named like an attachment id in the persistent store,
+ * never directories in a workspace.
+ *
+ * Sweeping on the next delivery is self-healing and stays local to this module,
+ * rather than restructuring a 2,700-line stream callback around a try/finally.
+ */
+async function sweepStaleStagingDirs(root: string, now = Date.now()): Promise<void> {
+  try {
+    const entries = await readdir(root, { withFileTypes: true });
+    for (const entry of entries.slice(0, STAGING_SWEEP_SCAN_LIMIT)) {
+      if (!entry.isDirectory() || !entry.name.startsWith(STAGING_PREFIX)) continue;
+      const target = path.join(root, entry.name);
+      try {
+        const meta = await lstat(target);
+        // A symlink wearing the staging prefix is not ours; following it would
+        // delete whatever it points at.
+        if (meta.isSymbolicLink()) continue;
+        if (now - meta.mtimeMs <= STAGING_MAX_AGE_MS) continue;
+        await rm(target, { recursive: true, force: true });
+      } catch {
+        // Skip anything that races us.
+      }
+    }
+  } catch {
+    // Unreadable root — the delivery below will fail closed on its own.
+  }
+}
 
 function imageExtension(mimeType?: string): string {
   const subtype = mimeType?.split("/")[1]?.toLowerCase() ?? "";
@@ -47,7 +88,8 @@ export async function writeImageAttachmentsToWorkspace(
   try {
     const root = await realpath(deliveryRoot);
     if (!(await stat(root)).isDirectory()) return { filePaths, stagingDir: null };
-    stagingDir = await mkdtemp(path.join(root, ".coven-cave-attachments-"));
+    await sweepStaleStagingDirs(root);
+    stagingDir = await mkdtemp(path.join(root, STAGING_PREFIX));
     await chmod(stagingDir, 0o700);
   } catch {
     return { filePaths, stagingDir: null };
