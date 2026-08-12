@@ -6,7 +6,7 @@
 // ~78% of the canvas. Dropping the raw brand square in would put a hard-edged
 // black tile in the macOS Dock and shrink the mark to ~55%.
 //
-// Usage: node compose-icon.mjs <brand.png> <out-icon.png> <out-tray-source.png>
+// Usage: node scripts/compose-app-icon.mjs <brand.png> <out-icon.png> <out-tray-source.png>
 import sharp from "sharp";
 
 const [brand, outIcon, outTray] = process.argv.slice(2);
