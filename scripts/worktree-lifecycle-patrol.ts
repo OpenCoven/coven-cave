@@ -233,6 +233,54 @@ function summarizeInventory(inventory: PatrolInventory): PatrolSummary {
 }
 
 /**
+ * Managed-creation exceptions on beads whose worktrees are already gone.
+ *
+ * Inventory only tallies exceptions for units it still sees (validMetadata ∩
+ * registered units). When a unit is removed but the exception sub-object stays
+ * on the bead, the budget line reads "0 expired" and the residue is invisible
+ * (cave-4oor6). An expired exception grants nothing, so this is hygiene — make
+ * it visible in the read-only report. Dropping the sub-object is apply-side
+ * work and stays gated with everything else.
+ */
+export type ExpiredOrphanedException = {
+  beadId: string;
+  path: string;
+  branch: string;
+  owner: string;
+  expiresAt: string;
+  reason: string;
+};
+
+export function listExpiredOrphanedExceptions(
+  inventory: Pick<PatrolInventory, "orphanedMetadata">,
+  nowMs: number,
+): ExpiredOrphanedException[] {
+  const found: ExpiredOrphanedException[] = [];
+  for (const candidate of inventory.orphanedMetadata) {
+    const exception = candidate.record.exception;
+    if (!exception) continue;
+    const expiresAtMs = Date.parse(exception.expiresAt);
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs > nowMs) continue;
+    found.push({
+      beadId: candidate.beadId,
+      path: candidate.path,
+      branch: candidate.branch,
+      owner: exception.owner,
+      expiresAt: exception.expiresAt,
+      reason: exception.reason,
+    });
+  }
+  return found.sort(
+    (left, right) =>
+      left.beadId.localeCompare(right.beadId) || left.path.localeCompare(right.path),
+  );
+}
+
+function formatExpiredOrphanedException(entry: ExpiredOrphanedException): string {
+  return `- ${entry.beadId} ${entry.branch} @ ${entry.path} (owner ${entry.owner}; expired ${entry.expiresAt})`;
+}
+
+/**
  * Malformed metadata records that describe no unit the patrol can see.
  *
  * A record is charged to the branch and path it names (cave-g9byt), so one
@@ -280,6 +328,7 @@ function buildJsonReport(
   extras: Record<string, unknown> = {},
 ) {
   const orphanedClaims = orphanedMetadataClaims(inventory);
+  const expiredOrphanedExceptions = listExpiredOrphanedExceptions(inventory, options.nowMs);
   return {
     ok: true,
     generatedAt: new Date(options.nowMs).toISOString(),
@@ -289,6 +338,8 @@ function buildJsonReport(
     orphanedMetadataErrors: inventory.orphanedMetadataErrors,
     orphanedMetadataErrorCount: inventory.orphanedMetadataErrors.length,
     inventoryFingerprint: inventory.inventoryFingerprint,
+    expiredOrphanedExceptions,
+    expiredOrphanedExceptionCount: expiredOrphanedExceptions.length,
     ...(orphanedClaims.length > 0 ? { orphanedMetadataClaims: orphanedClaims } : {}),
     ...extras,
   };
@@ -488,8 +539,25 @@ function formatMetadataRepairBlock(
 function renderPatrolReport(
   summary: PatrolSummary,
   inventory: PatrolInventory,
+  nowMs: number = Date.now(),
 ): string {
-  const lines = [renderWorktreeLifecycleReport(summary, { includeFooter: false })];
+  // Annotate the budget line so expired-orphaned exceptions are not invisible
+  // (cave-4oor6). Inventory still counts only unit-matched exceptions; the
+  // third term is residue on beads whose worktrees are already gone.
+  const expiredOrphaned = listExpiredOrphanedExceptions(inventory, nowMs);
+  let lifecycleReport = renderWorktreeLifecycleReport(summary, { includeFooter: false });
+  if (expiredOrphaned.length > 0) {
+    lifecycleReport = lifecycleReport.replace(
+      /^(Managed exceptions: \d+ active \| \d+ expired)$/m,
+      `$1 | ${expiredOrphaned.length} expired, orphaned`,
+    );
+  }
+  const lines = [lifecycleReport];
+  pushSection(
+    lines,
+    "Expired, orphaned managed-creation exceptions (grants nothing; drop under --apply when gated)",
+    expiredOrphaned.map(formatExpiredOrphanedException),
+  );
   const orphaned = inventory.orphanedMetadata.map((candidate) => {
     const disposition = candidate.repairable
       ? "repairable by gated apply"
@@ -852,7 +920,7 @@ export function main(argv = process.argv.slice(2)): number {
   console.log(
     options.json
       ? renderJsonReport(options, inventory, summary)
-      : renderPatrolReport(summary, inventory),
+      : renderPatrolReport(summary, inventory, options.nowMs),
   );
   return 0;
 }
