@@ -20,6 +20,13 @@ const MAX_MENTIONED_FILES = 10;
 /** Old enough that no live turn could still be reading it. */
 const STAGED_FILE_MAX_AGE_MS = 60 * 60 * 1000;
 const STAGING_SWEEP_SCAN_LIMIT = 200;
+/**
+ * Exactly the shape the write path below produces: `crypto.randomUUID()` plus
+ * the extension `imageExtension()` allows (`[a-z0-9]{1,8}`, or its `img`
+ * fallback). The sweep matches this and nothing else.
+ */
+const STAGED_FILE_NAME =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{1,8}$/;
 
 /**
  * Remove staged image files a previous turn failed to clean up.
@@ -43,6 +50,13 @@ async function sweepStaleStagedFiles(stagingDir: string, now = Date.now()): Prom
     const entries = await readdir(stagingDir, { withFileTypes: true });
     for (const entry of entries.slice(0, STAGING_SWEEP_SCAN_LIMIT)) {
       if (!entry.isFile()) continue;
+      // Delete only what THIS module writes. The staging directory sits inside
+      // the user's workspace, so "any file older than an hour" would be a
+      // delete primitive for anything that ever lands here — a familiar's own
+      // output, a user's file, another tool's scratch. Matching the exact
+      // `<uuid>.<ext>` shape from the write path keeps the sweep to its own
+      // litter.
+      if (!STAGED_FILE_NAME.test(entry.name)) continue;
       const target = path.join(stagingDir, entry.name);
       try {
         const meta = await lstat(target);

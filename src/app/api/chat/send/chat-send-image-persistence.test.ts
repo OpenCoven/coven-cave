@@ -168,10 +168,27 @@ test("a staged file orphaned by a crashed turn is swept on the next delivery", a
     const inFlight = join(stagingDir, "22222222-2222-4222-8222-222222222222.png");
     writeFileSync(inFlight, Buffer.from(PIXEL_B64, "base64"), { mode: 0o600 });
 
+    // Not ours, however old. The staging directory lives inside the user's
+    // workspace, so an unfiltered sweep would be a delete primitive for
+    // anything that lands here — a familiar's output, a user's file, another
+    // tool's scratch.
+    const foreign = join(stagingDir, "notes.md");
+    writeFileSync(foreign, "someone else's file\n");
+    utimesSync(foreign, twoHoursAgo, twoHoursAgo);
+    const foreignish = join(stagingDir, "not-a-uuid.png");
+    writeFileSync(foreignish, Buffer.from(PIXEL_B64, "base64"));
+    utimesSync(foreignish, twoHoursAgo, twoHoursAgo);
+
     const files = await writeImageAttachmentsToRuntime([IMAGE], grantedRoot);
 
     assert.equal(existsSync(orphan), false, "the abandoned staged file is swept");
     assert.equal(existsSync(inFlight), true, "a concurrent turn's file is left alone");
+    assert.equal(existsSync(foreign), true, "an unrelated file is never swept, however old");
+    assert.equal(
+      existsSync(foreignish),
+      true,
+      "a same-extension file that is not UUID-named is still not ours",
+    );
     assert.ok(files.get(0), "the sweep does not prevent this turn's delivery");
 
     cleanupStagedImageFiles(files);
