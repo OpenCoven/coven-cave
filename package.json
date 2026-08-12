@@ -45,6 +45,7 @@
     "check:ui-consistency": "node scripts/ui-consistency.mjs",
     "check:beads-jsonl": "node scripts/check-beads-jsonl-duplicates.mjs",
     "check:conflict-markers": "node scripts/check-conflict-markers.mjs",
+    "test:onboarding-feedback": "node scripts/onboarding-feedback-report.test.mjs",
     "test": "node scripts/run-tests.mjs app",
     "test:app": "node scripts/run-tests.mjs app",
     "test:api": "node scripts/run-tests.mjs api",
