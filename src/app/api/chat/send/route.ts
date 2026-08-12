@@ -5403,7 +5403,7 @@ export async function POST(req: Request) {
               ? { supported: true, confirmed: true }
               : { supported: true },
         );
-        if (confirmed && confirmedModel) responseMetadata.confirmedModel = confirmedModel;
+        if (confirmed) responseMetadata.confirmedModel = confirmedModel ?? undefined;
         responseMetadata.modelApplicationState = application.state;
         responseMetadata.modelApplicationReason = rejected
           ? application.reason
