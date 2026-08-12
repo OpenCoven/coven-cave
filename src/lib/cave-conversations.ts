@@ -105,6 +105,9 @@ export type ConversationFile = {
   harnessSessionId?: string;
   /** Grok pins its OS sandbox when a native session is created. */
   grokSandboxProfile?: GrokSandboxProfile;
+  /** Effective local filesystem grants used to create the latest successful
+   * native harness session. A changed value requires a fresh sandbox. */
+  runtimeAccessFingerprint?: string;
   familiarId: string;
   harness: string;
   model?: string;

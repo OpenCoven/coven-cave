@@ -93,6 +93,14 @@ property of how reflection works, never evidence about the thread. So:
 - If the transcript is too thin to judge, use "adequate" and say so in
   "contextNotes" — an honest "not enough evidence" beats an inflated rating.
 
+Delivery evidence rule:
+- Do NOT infer completion from plans, narration, or intent ("I will push", "about
+  to schedule", "finishing the artifact").
+- A concrete deliverable is verified only when the transcript contains its
+  remote ref, artifact path, receipt, message id, or equivalent checkable proof.
+- If that evidence is absent, describe the work as incomplete or unverified and
+  put the exact remaining proof gap in persistentBlockers.
+
 Evidence rule for generated or delivered files:
 - A prose claim that an image was shown is not delivery evidence.
 - A \`[visible attachments: ...]\` annotation is host-derived proof that Cave
@@ -248,6 +256,7 @@ export function buildThreadSignalResolutionPrompt(item: ThreadSignalReviewItem):
     "1. Diagnose the root cause.",
     "2. Apply the concrete fix now — update the prompt, memory, skill, config, or workflow at fault. If the fix needs something only I can grant (credentials, permissions, a product decision), stop and tell me exactly what to provide.",
     "3. Verify the fix and summarize what changed, so future threads stop reporting this signal.",
+    "4. Before the final response, classify every requested deliverable as verified with exact evidence, incomplete, or blocked. Do not infer delivery from plans or narration.",
   ].join("\n");
 }
 
@@ -269,6 +278,7 @@ export function buildThreadSignalBatchResolutionPrompt(items: readonly ThreadSig
     "1. Diagnose each root cause, and say so if several share one.",
     "2. Apply the concrete fixes now — update the prompt, memory, skill, config, or workflow at fault. If a fix needs something only I can grant (credentials, permissions, a product decision), stop and tell me exactly what to provide.",
     "3. Verify each fix and summarize what changed, so future threads stop reporting these signals.",
+    "4. Before the final response, classify every requested deliverable as verified with exact evidence, incomplete, or blocked. Do not infer delivery from plans or narration.",
   ].join("\n");
 }
 

@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   RuntimeScopeError,
+  buildRuntimeAccessFingerprint,
   buildPromptWithRuntimeScope,
   buildRuntimeScopePreamble,
   resolveLocalRuntimeCwd,
@@ -35,6 +36,44 @@ assert.equal(
   realpathSync(nested),
   "project roots inside home should resolve to their real directory",
 );
+
+{
+  const docs = path.join(home, "docs");
+  const skills = path.join(home, ".agents");
+  const first = buildRuntimeAccessFingerprint({
+    primaryRoot: repo,
+    grantedProjectRoots: [docs],
+    projectRootAccess: { [docs]: "read" },
+    additionalRoots: [skills],
+  });
+  const reordered = buildRuntimeAccessFingerprint({
+    primaryRoot: `${repo}/`,
+    grantedProjectRoots: [docs, docs],
+    projectRootAccess: { [docs]: "read" },
+    additionalRoots: [skills],
+  });
+  assert.equal(first, reordered, "equivalent grant sets have one stable fingerprint");
+  assert.notEqual(
+    first,
+    buildRuntimeAccessFingerprint({
+      primaryRoot: repo,
+      grantedProjectRoots: [docs],
+      projectRootAccess: { [docs]: "write" },
+      additionalRoots: [skills],
+    }),
+    "an access-level change invalidates the native sandbox fingerprint",
+  );
+  assert.notEqual(
+    first,
+    buildRuntimeAccessFingerprint({
+      primaryRoot: repo,
+      grantedProjectRoots: [docs, path.join(home, "newly-approved")],
+      projectRootAccess: { [docs]: "read" },
+      additionalRoots: [skills],
+    }),
+    "a newly approved root invalidates the native sandbox fingerprint",
+  );
+}
 
 await assert.rejects(
   () => resolveLocalRuntimeCwd(outside, { homeDir: home }),
