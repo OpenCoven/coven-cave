@@ -7,6 +7,32 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-08-12
+
+> A maintenance patch: worktree-lifecycle reporting states a repository-wide
+> failure once rather than once per unit, and the Coven brand assets now live
+> in the repository.
+
+Patch release on top of v0.3.1. Headline: a single checkout-level probe failure
+no longer reads as N independent problems in the worktree lifecycle report.
+
+### Added
+
+- Added the Coven brand assets under `assets/brand` — logo, Discord banner, and
+  a wordmark banner variant.
+
+### Fixed
+
+- The worktree lifecycle inventory now reports a repository-wide default-branch
+  probe failure in its global errors, and the patrol states it once under its
+  own heading instead of stamping the identical sentence onto every affected
+  unit. Classification is deliberately unchanged: each unit still fails closed
+  on the error and still carries it in its own probe errors (#4565).
+- Retargeted a stale comment that cited the removed
+  `scripts/worktree-sweep-prompt.md` to `scripts/worktree-sweep.sh`, and the
+  patrol report now hints that a retired worktree's bead may still be open so a
+  human can close it from the sweep log (#4568).
+
 ## [0.3.1] - 2026-08-12
 
 > ⚠️ Removes the access-token requirement. A Cave published over Tailscale

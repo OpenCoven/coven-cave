@@ -1,6 +1,6 @@
 {
   "name": "coven-cave",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "type": "module",
   "description": "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions.",
