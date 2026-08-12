@@ -90,6 +90,28 @@ async function mobileAccessGate(
   const expected = configuredMobileAccessToken();
   if (!expected) return null;
 
+  // A server.ts-stamped direct loopback DOCUMENT navigation is this machine's
+  // own window asking for a page, and it is the one request shape that cannot
+  // carry a credential: a navigation is not a fetch, so SidecarAuthBridge —
+  // which attaches x-coven-cave-token to `/api/*` fetches — never sees it, and
+  // the sidecar token is not exchanged for a cookie. Gating it serves the
+  // access page instead of the app on any hard reload, which is the v0.3.0
+  // lockout (#4559 removed the whole gate because of it).
+  //
+  // This does NOT reopen the bypass this change exists to close. The stamp is
+  // minted per boot, never leaves server.ts, and is applied only to loopback
+  // sockets carrying no forwarding markers — Tailscale-Serve traffic always
+  // arrives with x-forwarded-*, so it can never earn the stamp. `/api/*` is
+  // deliberately still gated: there the sidecar credential keeps doing the work
+  // the comment on shouldRequireMobileAccessCredential describes, distinguishing
+  // the intended local user from other OS users on a shared machine.
+  if (
+    trustedLocalPeer &&
+    isHtmlNavigationRequest(req.method, req.nextUrl.pathname, req.headers.get("accept"))
+  ) {
+    return null;
+  }
+
   const suppliedTokens = mobileAccessSuppliedTokens(req);
   if (
     !shouldRequireMobileAccessCredential(

@@ -199,6 +199,25 @@ assert.match(
   /shouldRequireMobileAccessCredential\(\s*req\.headers\.get\("host"\),\s*suppliedTokens\.length > 0,\s*trustedLocalPeer,\s*tailnetPeerVerified,\s*sidecarAuthenticated,?\s*\)/,
   "the mobile gate must require user-bound sidecar or mobile credentials even for local peers",
 );
+// ...with exactly one exemption: a stamped direct-loopback DOCUMENT navigation.
+// That request cannot carry a credential (a navigation is not a fetch, so
+// SidecarAuthBridge never sees it, and the sidecar token gets no cookie), so
+// gating it serves the access page instead of the app on every hard reload —
+// the v0.3.0 lockout. The stamp is only ever applied to unforwarded loopback
+// sockets, so Serve/tailnet traffic can never reach this branch.
+assert.match(
+  source,
+  /if \(\s*trustedLocalPeer &&\s*isHtmlNavigationRequest\(req\.method, req\.nextUrl\.pathname, req\.headers\.get\("accept"\)\)\s*\) \{\s*return null;/,
+  "a stamped local-peer document navigation must skip the mobile gate so the app can always load",
+);
+// The exemption must be navigation-scoped, never a blanket local-peer bypass:
+// `/api/*` keeps requiring the sidecar credential, which is what distinguishes
+// this user from other OS users on a shared machine.
+assert.doesNotMatch(
+  source,
+  /if \(trustedLocalPeer\) return null;/,
+  "the local-peer exemption must not extend past document navigations to the API surface",
+);
 assert.match(
   source,
   /const sidecarAuthenticatedAtGate = sidecarTokenMatches\(\s*req\.headers\.get\(TOKEN_HEADER\) \?\? req\.nextUrl\.searchParams\.get\(TOKEN_PARAM\)(?: \?\? refererToken)?,?\s*\)/,
