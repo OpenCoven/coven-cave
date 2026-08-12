@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessByStdio, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
@@ -175,7 +176,7 @@ import { chatProjectAccessId, taskWorktreeProjectAccessId } from "@/lib/chat-pro
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
-  isProjectlessGenerationOrigin,
+  projectlessGenerationLaunch,
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { resolveRuntimeSkillRoots } from "@/lib/server/skill-scan";
@@ -2082,8 +2083,28 @@ export async function POST(req: Request) {
   // A persisted conversation owns its provenance. Never let a request relabel
   // an existing user chat as a hidden generator to bypass project checks.
   const generationOrigin = existingConversation?.origin ?? body.origin;
-  const projectlessGeneration =
-    !body.projectRoot && isProjectlessGenerationOrigin(generationOrigin);
+  // A hidden generation is exempt from the launch gate only for the familiar's
+  // OWN workspace. A resume root — the conversation's persisted runtime, or a
+  // daemon session's project_root (cave-yjnr) — names a real project and is
+  // gated like every other root, because the daemon's session list is global
+  // and its rows carry no familiar id to scope it by (cave-o3nq7).
+  // Resolve symlinks before the containment test. The spawn below realpaths the
+  // root and enforces only "inside $HOME", so a lexical check on the raw string
+  // would let a symlink inside the familiar's own workspace — a directory the
+  // familiar can write to — resolve into another project with the gate skipped.
+  // An unresolvable root yields undefined, which the helper treats as gated.
+  const resumeCwdResolved = resumeCwd
+    ? await realpath(resumeCwd).catch(() => undefined)
+    : undefined;
+  const projectlessLaunch = projectlessGenerationLaunch({
+    origin: generationOrigin,
+    hasRequestedProjectRoot: Boolean(body.projectRoot),
+    sshRuntime: Boolean(sshRuntime),
+    sshHome: homedir(),
+    resumeCwd,
+    resumeCwdResolved,
+    familiarWorkspace: resolvedFamiliarWorkspace,
+  });
   // A Board task may be isolated in a worktree below its registered project.
   // The worktree itself is intentionally not a separate project record, so
   // its first native-chat turn must authorize against the card's server-owned
@@ -2093,16 +2114,15 @@ export async function POST(req: Request) {
   // when the symlink-resolved runtime cwd remains inside the task project.
   let authorizedProjectRoot: string;
   try {
-    if (projectlessGeneration) {
-      const generationRoot = sshRuntime ? homedir() : (resumeCwd ?? resolvedFamiliarWorkspace);
-      if (!generationRoot) {
-        throw new ChatProjectLaunchError(
-          "project_root_required",
-          400,
-          "This hidden generation has no safe familiar workspace.",
-        );
-      }
-      authorizedProjectRoot = generationRoot;
+    if (projectlessLaunch.kind === "unavailable") {
+      throw new ChatProjectLaunchError(
+        "project_root_required",
+        400,
+        "This hidden generation has no safe familiar workspace.",
+      );
+    }
+    if (projectlessLaunch.kind === "workspace") {
+      authorizedProjectRoot = projectlessLaunch.root;
     } else {
       const authorized = await authorizeChatProjectLaunch(
         {
