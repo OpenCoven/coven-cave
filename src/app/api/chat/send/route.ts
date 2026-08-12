@@ -178,6 +178,7 @@ import {
   isProjectlessGenerationOrigin,
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
+import { resolveRuntimeSkillRoots } from "@/lib/server/skill-scan";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
   dispatchOpenClawGatewayTurn,
@@ -266,10 +267,10 @@ import type { StreamEvent } from "@/lib/stream-events";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import {
   appendMentionedFilesBlock,
-  cleanupImageTempFiles,
+  cleanupStagedImageFiles,
   persistImageAttachments,
   resolveMentionedFiles,
-  writeImageAttachmentsToTemp,
+  writeImageAttachmentsToRuntime,
 } from "./chat-send-attachments";
 import {
   covenRunSupportsAddDir,
@@ -2435,6 +2436,15 @@ export async function POST(req: Request) {
   const grantedProjectRootAccess: Record<string, ProjectAccessLevel> = Object.fromEntries(
     accessibleProjects.map((entry) => [entry.project.root, entry.access]),
   );
+  const runtimeResourceRoots = sshRuntime
+    ? []
+    : await resolveRuntimeSkillRoots({
+        coveredRoots: [
+          cwd,
+          ...grantedProjectRoots,
+          ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
+        ],
+      });
   // The selected project is always the runtime root. Familiar identity files
   // are injected separately and remain an allowed side directory below.
   const runtimeScope: RuntimeScope = sshRuntime
@@ -2444,6 +2454,7 @@ export async function POST(req: Request) {
         root: cwd,
         allowedProjectRoots: grantedProjectRoots,
         projectRootAccess: grantedProjectRootAccess,
+        readOnlyResourceRoots: runtimeResourceRoots,
       };
   // Boundary sentinel: watches the harness's streamed tool calls for paths
   // outside the granted roots. Never blocks the stream — violations surface
@@ -2457,6 +2468,7 @@ export async function POST(req: Request) {
           cwd,
           ...grantedProjectRoots,
           ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
+          ...runtimeResourceRoots,
         ],
       });
   const responseMetadata: ChatResponseMetadata = {
@@ -2486,13 +2498,14 @@ export async function POST(req: Request) {
   });
   if (offlineChatResponse) return offlineChatResponse;
 
-  // Image delivery channel: only harnesses that can read Cave's local temp
-  // files may receive image paths. Remote Hermes Responses endpoints cannot,
+  // Image delivery channel: only harnesses that can read a local granted root
+  // may receive image paths. Remote Hermes Responses endpoints cannot,
   // so they receive the same explicit unsupported notice as bridge/SSH runs.
   const imagesSupported = !sshRuntime && binding.harness !== "openclaw" &&
     !(hermesApi && !hermesApiCanAccessLocalFiles(hermesApi));
+  const attachmentStagingRoot = resolvedFamiliarWorkspace ?? cwd;
   const imageFilePaths = imagesSupported
-    ? await writeImageAttachmentsToTemp(attachments)
+    ? await writeImageAttachmentsToRuntime(attachments, attachmentStagingRoot)
     : new Map<number, string>();
   // @-mentioned files share the image-delivery constraint: only local
   // coven-run harnesses can Read this machine's filesystem, so bridges and
@@ -2655,6 +2668,7 @@ export async function POST(req: Request) {
           [
             ...grantedProjectRoots,
             ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
+            ...runtimeResourceRoots,
           ]
             .map((root) => root.trim())
             .filter((root) => root && root !== spawnRoot),
@@ -5333,7 +5347,13 @@ export async function POST(req: Request) {
         (openCodeDirect && openCodeCompatibility?.mode === "plain") || (grokDirect && grokCompatibility?.mode === "plain")
           ? { text: assistantTextForPersistence, attachments: [] }
           : parseAgentAttachments(assistantTextForPersistence, {
-              allowedRoots: sshRuntime ? [] : [cwd, ...grantedProjectRoots],
+              allowedRoots: sshRuntime
+                ? []
+                : [
+                    cwd,
+                    ...grantedProjectRoots,
+                    ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
+                  ],
             });
       for (const attachment of agentAttachments) {
         push({ kind: "attachment", attachment });
@@ -5622,7 +5642,7 @@ export async function POST(req: Request) {
       // Best-effort temp cleanup: the harness child process has already
       // exited (including any resume retry), so nothing can still be reading
       // the saved images. Failures just leave files in tmpdir.
-      cleanupImageTempFiles(imageFilePaths);
+      cleanupStagedImageFiles(imageFilePaths);
       if (detachKillTimer != null) clearTimeout(detachKillTimer);
       unregisterChatRun(runHandle);
       runBuffer?.finish();

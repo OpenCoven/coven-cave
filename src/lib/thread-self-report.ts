@@ -5,7 +5,11 @@ export type BlockerImpact = "low" | "medium" | "high" | "blocking";
 export type CapabilityImportance = "nice-to-have" | "important" | "blocking";
 
 /** One settled turn of a thread, condensed for the reflection prompt. */
-export type ReflectTranscriptTurn = { role: "user" | "assistant" | "system"; text: string };
+export type ReflectTranscriptTurn = {
+  role: "user" | "assistant" | "system";
+  text: string;
+  attachments?: readonly { name?: string; type?: string; mimeType?: string }[];
+};
 
 const REFLECT_MAX_TURNS = 36;
 const REFLECT_MAX_CHARS_PER_TURN = 900;
@@ -13,14 +17,28 @@ const REFLECT_MAX_CHARS_PER_TURN = 900;
 /** Render a compact, size-bounded transcript for embedding in the reflect prompt. */
 export function buildReflectTranscript(turns: readonly ReflectTranscriptTurn[]): string {
   const lines = turns
-    .filter((t) => (t.role === "user" || t.role === "assistant") && t.text.trim())
+    .filter((t) => (
+      (t.role === "user" || t.role === "assistant")
+      && (t.text.trim() || t.attachments?.length)
+    ))
     .slice(-REFLECT_MAX_TURNS)
     .map((t) => {
       const body = t.text.trim().replace(/\s+/g, " ");
       const clipped = body.length > REFLECT_MAX_CHARS_PER_TURN
         ? `${body.slice(0, REFLECT_MAX_CHARS_PER_TURN)}…`
         : body;
-      return `${t.role}: ${clipped}`;
+      const visibleAttachments = (t.attachments ?? []).slice(0, 6).map((attachment) => {
+        const name = (attachment.name?.trim() || "attachment")
+          .replace(/[\u0000-\u001f\u007f]+/g, " ")
+          .replace(/\s+/g, " ")
+          .slice(0, 120);
+        const mimeType = (attachment.mimeType ?? attachment.type)?.trim().slice(0, 80);
+        return mimeType ? `${name} (${mimeType})` : name;
+      });
+      const evidence = visibleAttachments.length
+        ? `[visible attachments: ${visibleAttachments.join(", ")}]`
+        : "";
+      return `${t.role}: ${[clipped, evidence].filter(Boolean).join(" ")}`;
     });
   return lines.join("\n");
 }
@@ -74,6 +92,13 @@ property of how reflection works, never evidence about the thread. So:
   thread was given far more material than its task required.
 - If the transcript is too thin to judge, use "adequate" and say so in
   "contextNotes" — an honest "not enough evidence" beats an inflated rating.
+
+Evidence rule for generated or delivered files:
+- A prose claim that an image was shown is not delivery evidence.
+- A \`[visible attachments: ...]\` annotation is host-derived proof that Cave
+  rendered and persisted the attachment on that turn.
+- If a reply claimed delivery without that annotation or a renderable image
+  marker in the transcript, report the proof gap honestly.
 
 Be honest. Underconfidence is more useful than overconfidence. Only report what you actually experienced.`;
 }
