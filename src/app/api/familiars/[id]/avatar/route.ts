@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { constants } from "node:fs";
-import { mkdir, open, writeFile } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { familiarWorkspace } from "@/lib/coven-paths";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
+import {
+  removeAvatarFiles,
+  writeCanonicalAvatar,
+} from "@/lib/server/familiar-avatar-mutation";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -148,12 +152,40 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   const dir = await avatarsDirFor(id);
-  await mkdir(dir, { recursive: true });
-  // `id` is a validated slug (no separators / `..`); basename is a belt-and-
-  // suspenders sanitizer on the filename sink (mirrors familiar-notes.ts).
-  await writeFile(path.join(dir, `${path.basename(id)}.png`), png);
+  let result;
+  try {
+    result = await writeCanonicalAvatar(dir, id, png);
+  } catch (error) {
+    return avatarMutationError(error, "save");
+  }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    avatarUrl: revisionedAvatarUrl(id, result.revision),
+    revision: result.revision,
+  });
+}
+
+/** Clear every supported workspace avatar image. Missing avatars are already
+ *  clear, so repeated DELETE requests succeed with `removed: false`. */
+export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
+  if (!id || !isValidFamiliarId(id)) {
+    return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
+  }
+
+  const dir = await avatarsDirFor(id);
+  try {
+    const result = await removeAvatarFiles(dir);
+    return NextResponse.json({
+      ok: true,
+      avatarUrl: null,
+      revision: null,
+      removed: result.removed,
+    });
+  } catch (error) {
+    return avatarMutationError(error, "remove");
+  }
 }
 
 /** Resolve a familiar's avatars dir, re-asserting the slug guard inline so the
@@ -162,6 +194,24 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 async function avatarsDirFor(id: string): Promise<string> {
   if (!isValidFamiliarId(id)) throw new Error("invalid familiar id");
   return path.join(await familiarWorkspace(id), "avatars");
+}
+
+function revisionedAvatarUrl(id: string, revision: number): string {
+  return `/api/familiars/${encodeURIComponent(id)}/avatar?v=${revision}&format=png`;
+}
+
+function avatarMutationError(error: unknown, action: "save" | "remove"): NextResponse {
+  const message = error instanceof Error ? error.message : "";
+  if (/symbolic link|not a directory|not a regular file/i.test(message)) {
+    return NextResponse.json(
+      { ok: false, error: `Could not ${action} avatar: unsafe workspace avatar path.` },
+      { status: 409 },
+    );
+  }
+  return NextResponse.json(
+    { ok: false, error: `Could not ${action} avatar.` },
+    { status: 500 },
+  );
 }
 
 function imageResponse({ body, contentType }: RenderedAvatar): NextResponse {
