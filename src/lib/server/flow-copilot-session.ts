@@ -418,6 +418,28 @@ function absoluteForPlatform(value: string, platform: NodeJS.Platform): boolean 
   return platform === "win32" ? path.win32.isAbsolute(value) : path.posix.isAbsolute(value);
 }
 
+/**
+ * The launch-payload size refusal, independent of transport.
+ *
+ * This bound is about how much data one start may carry, not about the
+ * supervisor's wire format, so the direct path enforces it too — otherwise a
+ * payload that earns a typed lossless 413 under the supervisor would instead
+ * become an oversized argv that the OS truncates or refuses.
+ */
+export function assertCopilotSupervisorRequestFitsProvider(
+  request: CopilotSupervisorRequest,
+): string {
+  const frame = `${JSON.stringify(request)}\n`;
+  const frameBytes = Buffer.byteLength(frame, "utf8");
+  if (frameBytes > COVEN_PROCESS_SUPERVISOR_MAX_REQUEST_BYTES) {
+    throw new CopilotSupervisorRequestTransportError(
+      frameBytes,
+      COVEN_PROCESS_SUPERVISOR_MAX_REQUEST_BYTES,
+    );
+  }
+  return frame;
+}
+
 export function buildCopilotSupervisorRequestFrame(
   request: CopilotSupervisorRequest,
   platform: NodeJS.Platform = process.platform,
@@ -431,15 +453,7 @@ export function buildCopilotSupervisorRequestFrame(
   ) {
     throw new CopilotProcessSupervisorError();
   }
-  const frame = `${JSON.stringify(request)}\n`;
-  const frameBytes = Buffer.byteLength(frame, "utf8");
-  if (frameBytes > COVEN_PROCESS_SUPERVISOR_MAX_REQUEST_BYTES) {
-    throw new CopilotSupervisorRequestTransportError(
-      frameBytes,
-      COVEN_PROCESS_SUPERVISOR_MAX_REQUEST_BYTES,
-    );
-  }
-  return frame;
+  return assertCopilotSupervisorRequestFitsProvider(request);
 }
 
 function awaitCopilotSupervisorAdmission(
@@ -697,12 +711,6 @@ export async function startCopilotFlowRun(
   const spawnArgs = [...command.fixedArgs, ...args];
   const platform = runtime.platform ?? process.platform;
   assertCopilotCommandLineFitsWindows(command.command, spawnArgs, platform);
-  const requestFrame = buildCopilotSupervisorRequestFrame({
-    version: 1,
-    program: command.command,
-    args: spawnArgs,
-    cwd: launch.projectRoot,
-  }, platform);
   // The native supervisor is the supported transport, but no PUBLISHED
   // @opencoven/cli provides it: `coven --print-native-binary-path` is an
   // unrecognized flag as of 0.3.1, which is the newest release. Since #4524
@@ -737,6 +745,30 @@ export async function startCopilotFlowRun(
   // guard and ACTIVE_RUNS.set below.
   if (globalThis.__covenCaveCopilotFlowShutdownStarted) {
     throw new Error("Cave is shutting down; a new direct Copilot flow cannot be started");
+  }
+  // Build the request frame only for the transport that consumes it. It is the
+  // supervisor's wire format and it REJECTS a non-absolute program path, so
+  // constructing it on the direct path would throw
+  // CopilotProcessSupervisorError for a bare `copilot` on PATH — killing the
+  // fallback before it ever spawned, with an error blaming the supervisor for a
+  // run that was not going to use one.
+  const request = {
+    version: 1 as const,
+    program: command.command,
+    args: spawnArgs,
+    cwd: launch.projectRoot,
+  };
+  let requestFrame = "";
+  if (supervisorCommand) {
+    requestFrame = buildCopilotSupervisorRequestFrame(request, platform);
+  } else {
+    // The launch payload ceiling is NOT supervisor-specific: it bounds how much
+    // data a single start may carry, and dropping it on the direct path would
+    // turn a typed lossless 413 into an oversized argv the OS truncates or
+    // refuses. So keep the size refusal on both transports and skip only the
+    // guard that genuinely belongs to the wire format — the absolute-program
+    // requirement, which would reject a bare `copilot` resolved from PATH.
+    assertCopilotSupervisorRequestFitsProvider(request);
   }
   // Unsupervised runs carry the prompt in argv again, which is exactly the
   // Windows command-line hazard #4524 moved into the request frame. The
