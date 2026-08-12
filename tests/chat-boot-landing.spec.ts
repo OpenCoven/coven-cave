@@ -265,14 +265,24 @@ test("booting with no active familiar asks which one instead of picking", async 
   await page.goto("/?mode=chat", { waitUntil: "domcontentloaded" });
 
   // The chat-first landing still happens — we did not fall back to the list.
-  // Heading visibility uses the same 15s margin as sibling flaky boot specs
-  // (cave-pw3l0): the 5s default was short enough that aborted boot fetches
-  // burned both retries on main while the same code passed elsewhere.
   const launch = page.locator(".cave-launch");
   await expect(launch).toBeVisible({ timeout: 45_000 });
-  await expect(page.getByRole("heading", { name: "Start a new chat" })).toBeVisible({
-    timeout: 15_000,
-  });
+
+  await projectScopeResolved;
+
+  // Named explicitly so a regression here reports the surface that TOOK OVER
+  // rather than an absent heading. This is what cave-pw3l0 actually was: the
+  // first-project gate displacing the picker once accessible projects resolved
+  // empty, which reads as "element(s) not found" and sends you hunting a
+  // rendering delay that does not exist.
+  await expect(
+    page.getByRole("heading", { name: "Give this familiar project access" }),
+    "the first-project gate displaced the familiar picker — is /api/projects still mocked?",
+  ).toHaveCount(0);
+  // Still standing AFTER the policy had its data — the displacement window is
+  // shut, not merely not-yet-open.
+  await expect(launch).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Start a new chat" })).toBeVisible();
 
   // Both familiars are offered; neither has been chosen for the user.
   await expect(launch.getByText("Aster")).toBeVisible();
