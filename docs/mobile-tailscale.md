@@ -101,39 +101,21 @@ pnpm mobile:tailscale:invite
 
 The agent should verify that the invite redirects, stores the cookie, and loads the app shell before reporting success. It should not paste the raw invite into chat by default. If a fresh invite expires while you are away from the laptop, ask the agent to run `pnpm mobile:tailscale:invite`; the command refreshes the invite without restarting the dev server.
 
-> ⚠️ **The access-token requirement was removed at the owner's direction
-> (`cave-f4emr`).** `COVEN_CAVE_ACCESS_TOKEN` no longer gates anything: the
-> proxy/middleware no longer serves an access page, no longer 401s a request
-> for missing a credential, and no longer performs the access-gate
-> cookie/query-token exchange. Whatever can reach the Serve URL reaches the
-> app.
->
-> The pairing machinery below is **unchanged** — `/api/mobile-handoff` and
-> `/api/mobile-token/refresh` still mint signed invite URLs, still set the
-> access cookie, and the phone still carries a token. What changed is that
-> nothing verifies any of it, so an invite is now a convenience link (it
-> carries the host) rather than a credential. **Publishing a Serve route
-> therefore publishes the whole app to everything on the tailnet.** If you want
-> a control back, the one that survives is the passkey-presence requirement
-> (`COVEN_CAVE_PASSKEY_REQUIRED=1`, see below), which binds remote `/api/*`
-> access to a WebAuthn assertion on an allowlisted tailnet device.
+Do not open the Serve URL without the invite query. When `COVEN_CAVE_ACCESS_TOKEN` is set, CovenCave rejects requests until a valid signed `coven_access_token` invite is supplied by query, cookie, bearer header, or the equivalent internal request path. A loopback-looking `Host` header is not treated as proof of a local connection because remote clients can spoof it.
 
-Every `/api/*` request still has to satisfy loopback/same-origin/referer/content-type checks — those guards apply in plain browser dev too, not just in bundled mode. Remote (Serve-forwarded) ingress satisfies the host gate on the strength of being classified remote rather than by presenting anything; mismatched origins still hit a 403 before any handler runs.
+Independent of the mobile token, every `/api/*` request also has to satisfy loopback/same-origin/referer/content-type checks — those guards apply in plain browser dev too, not just in bundled mode. A valid mobile token lets Tailscale Serve satisfy the host/origin/referer gates while it proxies to the loopback dev server; anything else (LAN scanners, accidental `-H 0.0.0.0`, mismatched origins without the token) hits a 403 before any handler runs.
 
 Next.js dev internals are separately origin-checked. `next.config.ts` allowlists `**.ts.net` for development so Tailscale Serve can load HMR/runtime resources while the actual server remains bound to loopback.
 
 ## Manual Equivalent
 
-Keep the Next.js server bound to loopback so only Tailscale Serve can proxy it. In one terminal, start Cave:
+Use a strong random token and keep the Next.js server bound to loopback so only Tailscale Serve can proxy it. In one terminal, start Cave:
 
 ```bash
-pnpm exec next dev -H 127.0.0.1 -p 3000
+TOKEN=$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))")
+echo "$TOKEN"
+COVEN_CAVE_ACCESS_TOKEN="$TOKEN" pnpm exec next dev -H 127.0.0.1 -p 3000
 ```
-
-`COVEN_CAVE_ACCESS_TOKEN` used to belong here and no longer does: setting it
-gates nothing (`cave-f4emr`). It is still read by the pairing flow to sign
-invite URLs, so the Tauri app keeps providing one, but it is not a credential
-any request is checked against.
 
 In another terminal, publish the loopback server:
 
@@ -314,7 +296,7 @@ Expose the daemon over Tailscale Serve and print a pairing URL for the app:
 pnpm mobile:tailscale:app      # tailscale serve + a QR/pairing URL carrying the access token
 ```
 
-Scan or paste that URL in the app. The `coven_access_token` query param it carries is no longer checked (`cave-f4emr`) — the URL's value is now the host it points at, not the credential it carries. Serve exposes every `/api` route to anything on the tailnet.
+Scan or paste that URL in the app. The `coven_access_token` query param authorizes the client against the gated API (tailnet membership alone is not sufficient — Serve exposes every `/api` route).
 
 ### Building / running the app
 

@@ -45,23 +45,23 @@ assert.match(
   /try \{\s*\(\{ pathname, query \} = parseUpgradeTarget\(req\.url \?\? "\/"\)\);\s*\} catch \{\s*socket\.write\("HTTP\/1\.1 400 Bad Request\\r\\n\\r\\n"\);\s*socket\.destroy\(\);\s*return;/,
   "malformed upgrade targets fail with HTTP 400 and a closed socket",
 );
-// ── The access token is gone from this gate too (cave-f4emr) ──────────────
-// It was removed from the whole request path at the owner's direction, so the
-// server must neither read the secret nor honour the cookie/query credential
-// derived from it. The per-launch sidecar token is the only PTY credential
-// left.
-assert.doesNotMatch(src, /process\.env\.COVEN_CAVE_ACCESS_TOKEN/, "the server must not read the access-token secret");
-assert.doesNotMatch(src, /ACCESS_COOKIE|ACCESS_QUERY_PARAM/, "the access cookie and its query parameter are no longer credentials");
-assert.doesNotMatch(src, /isValidSignedAccessToken|isExpectedAccessToken/, "signed mobile invites are no longer verified here");
-// The 401 applies when the sidecar credential is configured. Without it (plain
-// local development) the loopback host+origin gate is the protection. Once it
-// exists, even loopback callers must prove they hold it before the server will
-// spawn or adopt a shell.
-assert.match(src, /function isPtyAuthRequired\(\): boolean \{\s*return Boolean\(SIDECAR_TOKEN\);\s*\}/, "PTY auth is required exactly when the sidecar token is configured");
+assert.match(src, /COVEN_CAVE_ACCESS_TOKEN/, "server checks sidecar access token");
+assert.match(src, /ACCESS_COOKIE = "coven_cave_access"/, "server accepts the same access cookie as REST middleware");
+assert.match(src, /ACCESS_QUERY_PARAM = "coven_access_token"/, "server accepts the mobile access token query param for WebSocket auth");
 assert.match(
   src,
-  /sidecarTokenConfigured: Boolean\(SIDECAR_TOKEN\),\s*tokenAuthenticated,/,
-  "PTY upgrade authentication closes the credential-less path whenever the sidecar token is configured",
+  /const secret = accessToken\(\);\s*if \(!secret \|\| !value\) return false/,
+  "PTY WebSocket access-token auth fails closed when no access token is configured, reading the token lazily so mid-session arming (cave-os73) reaches the gate",
+);
+// The 401 applies when a remote/mobile credential is configured. With neither
+// token (plain local development) the loopback host+origin gate is the
+// protection. Once either credential exists, even loopback callers must prove
+// they hold it before the server will spawn or adopt a shell.
+assert.match(src, /function isPtyAuthRequired\(\): boolean \{\s*return Boolean\(accessToken\(\) \|\| SIDECAR_TOKEN\);\s*\}/, "PTY auth is required when either the mobile access token or sidecar token is configured");
+assert.match(
+  src,
+  /sidecarTokenConfigured: Boolean\(SIDECAR_TOKEN\),\s*accessTokenConfigured: Boolean\(accessToken\(\)\),\s*tokenAuthenticated,/,
+  "PTY upgrade authentication closes the credential-less path whenever either token is configured",
 );
 // ...and it decides that WITHOUT consulting loopback at all. The positive
 // assertion above would still pass if someone re-introduced a direct-loopback
@@ -145,12 +145,39 @@ assert.match(
   "origin gate accepts a scheme-agnostic same-host Origin (Serve-terminated TLS)",
 );
 assert.match(src, /Bearer /, "server accepts bearer auth for non-cookie clients");
-// Signed mobile invites (v1.<expiresAt>.<nonce>.<sig>) are no longer a PTY
-// credential: the secret that signed them is not read here any more.
-assert.doesNotMatch(
+// Paired devices hold SIGNED tokens (v1.<expiresAt>.<nonce>.<sig> — see
+// src/lib/mobile-access-token.ts), not the raw secret: the QR/deep-link
+// pairing flow mints them and the phone renews them monthly. The WS gate must
+// verify those or every paired terminal 401s while REST works fine.
+assert.match(
   src,
-  /createHmac/,
-  "no token signature is verified at the PTY boundary any more",
+  /function isValidSignedAccessToken\(value: string, secret: string\): boolean/,
+  "PTY WebSocket auth verifies signed mobile access tokens, not only the raw secret",
+);
+assert.match(
+  src,
+  /if \(timingSafeEqualString\(value, secret\)\) return true;\s*\n\s*return isValidSignedAccessToken\(value, secret\);/,
+  "isExpectedAccessToken accepts the raw secret OR a valid signed token",
+);
+assert.match(
+  src,
+  /parts\.length !== 4 \|\| parts\[0\] !== "v1"/,
+  "signed-token verification pins the v1 wire format",
+);
+assert.match(
+  src,
+  /expiresAt <= Date\.now\(\)/,
+  "signed-token verification rejects expired tokens",
+);
+assert.match(
+  src,
+  /createHmac\("sha256", secret\)[\s\S]{0,120}digest\("base64url"\)/,
+  "signed-token verification recomputes the HMAC-SHA256 base64url signature",
+);
+assert.match(
+  src,
+  /timingSafeEqualString\(parts\[3\], expected\)/,
+  "signed-token signatures compare in constant time",
 );
 assert.match(src, /isAllowedUpgradeSource/, "server validates WebSocket upgrade host and origin");
 assert.match(src, /if \(!isLoopbackHost\(host\)\)/, "server classifies loopback WebSocket hosts");
@@ -484,7 +511,7 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
 // actual socket. This protects both the one-large-chunk memory cap and exact
 // cursor slicing used for reconnect replay.
 {
-  const ringBlock = src.match(/type PtySession[\s\S]+?(?=\nfunction timingSafeEqualString)/);
+  const ringBlock = src.match(/type PtySession[\s\S]+?(?=\nfunction getTokensFromCookie)/);
   assert.ok(ringBlock, "scrollback helpers are available for behavioral coverage");
   const { transformSync } = await import("esbuild");
   const transformed = transformSync(
@@ -528,7 +555,7 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
 // source-pattern test cannot: small bursts must become one frame, every frame
 // stays capped, and a slow consumer is detached without killing its PTY.
 {
-  const stateBlock = src.match(/type PtySession[\s\S]+?(?=\nfunction timingSafeEqualString)/);
+  const stateBlock = src.match(/type PtySession[\s\S]+?(?=\nfunction getTokensFromCookie)/);
   const streamingBlock = src.match(/function sendPtyData[\s\S]+?(?=\nfunction sendPtyExit)/);
   assert.ok(stateBlock && streamingBlock, "streaming helpers are available for behavioral coverage");
   const { transformSync } = await import("esbuild");
