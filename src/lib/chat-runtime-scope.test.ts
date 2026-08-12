@@ -99,6 +99,41 @@ await assert.rejects(
 }
 
 {
+  const codexSkills = path.join(home, ".codex", "skills");
+  const pluginCache = path.join(home, ".codex", "plugins", "cache");
+  const preamble = buildRuntimeScopePreamble({
+    kind: "local",
+    root: repo,
+    readOnlyResourceRoots: [codexSkills, pluginCache, codexSkills],
+  });
+  assert.match(preamble, /Read-only runtime resources:/);
+  assert.match(
+    preamble,
+    new RegExp(codexSkills.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    "installed skill roots should be declared readable even when no extra project is granted",
+  );
+  assert.match(
+    preamble,
+    new RegExp(pluginCache.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    "plugin skill roots should be declared readable",
+  );
+  assert.match(
+    preamble,
+    /Runtime resources are read-only — read their instructions and assets, but do not edit, create, delete, commit, push, or run commands inside them/,
+  );
+  assert.equal(
+    preamble.match(new RegExp(codexSkills.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))?.length,
+    1,
+    "duplicate resource roots should be listed once",
+  );
+  assert.doesNotMatch(
+    preamble,
+    /ask the user to reopen/,
+    "a local scope with readable resources should use the grant-aware boundary wording",
+  );
+}
+
+{
   const preamble = buildRuntimeScopePreamble({
     kind: "ssh",
     host: "build-box",
