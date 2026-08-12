@@ -323,10 +323,10 @@ assert.match(
   "Mentions are only delivered to harnesses that can Read this machine's filesystem, against the validated familiar workspace",
 );
 
-// The top suggested follow-up is visibly marked as the recommendation by the
-// shared typed-card component, so the most useful next step stands out.
+// The latest suggestions use the shared typed-card component and carry their
+// source turn into activation without embedding it in the model-authored path.
 assert.match(
   source,
-  /<FollowUpCards paths=\{followUp\.suggestions\} onActivate=\{handleFollowUp\} \/>/,
-  "the latest follow-up row uses the shared recommended-card treatment",
+  /<FollowUpCards[\s\S]{0,180}?paths=\{followUp\.suggestions\}[\s\S]{0,240}?handleFollowUp\(\{ path, sourceText: followUp\.sourceText \}\)/,
+  "the latest follow-up row uses shared typed cards with source-aware activation",
 );

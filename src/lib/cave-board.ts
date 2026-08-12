@@ -31,7 +31,12 @@ import {
   stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
-import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
+import {
+  applyCardOps,
+  hasCardOps,
+  type CardOpsOutcome,
+  type CardPatch,
+} from "@/lib/board-card-ops";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 
 export {
@@ -359,6 +364,9 @@ export async function createCard(input: NewCardInput): Promise<Card> {
 export async function updateCard(
   id: string,
   patchWithOps: CardPatch,
+  options: {
+    onOperationOutcome?: (outcome: CardOpsOutcome) => void;
+  } = {},
 ): Promise<Card | null> {
   return withBoardLock(async () => {
   const board = await loadBoard();
@@ -370,8 +378,23 @@ export async function updateCard(
   // another (the full-array clobber the board audit flagged). The resolved
   // arrays then flow through the exact same normalization as plain patches.
   const { ops, ...plain } = patchWithOps;
+  let operationOutcome: CardOpsOutcome | undefined;
   const patch: Partial<Omit<Card, "id" | "createdAt">> = hasCardOps(ops)
-    ? { ...plain, ...applyCardOps(current, ops, new Date().toISOString()) }
+    ? {
+        ...plain,
+        ...applyCardOps(
+          current,
+          ops,
+          new Date().toISOString(),
+          options.onOperationOutcome
+            ? {
+                onOperationOutcome: (outcome) => {
+                  operationOutcome = outcome;
+                },
+              }
+            : undefined,
+        ),
+      }
     : plain;
   // Resolve the structured connection lists once, then fold both back into
   // `links` so the URL list stays the union of everything attached (github +
@@ -436,6 +459,7 @@ export async function updateCard(
   }
   board.cards[idx] = next;
   await saveBoard(board);
+  if (operationOutcome) options.onOperationOutcome?.(operationOutcome);
   return next;
   });
 }

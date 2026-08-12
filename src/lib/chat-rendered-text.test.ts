@@ -32,7 +32,12 @@ test("rendered assistant text keeps prose while removing every non-prose control
   assert.deepEqual(result.autoStatusUpdate, { state: "done" });
   assert.deepEqual(result.attentionRequest, { reason: "decision" });
   assert.deepEqual(result.nextPaths, [
-    { kind: "reply", label: "Hidden follow-up", prompt: "Hidden follow-up" },
+    {
+      kind: "reply",
+      label: "Hidden follow-up",
+      prompt: "Hidden follow-up",
+      recommended: false,
+    },
   ]);
   assert.match(result.cardText, /<coven:github/);
   assert.match(result.cardText, /<coven:image/);

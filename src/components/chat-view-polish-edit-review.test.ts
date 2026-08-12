@@ -22,8 +22,8 @@ assert.match(
 );
 assert.match(
   source,
-  /<FollowUpCards paths=\{nextPaths\} onActivate=\{onSuggestion\} \/>/,
-  "historical transcript turns use the same cards",
+  /<FollowUpCards[\s\S]{0,180}?paths=\{nextPaths\}[\s\S]{0,180}?saveAvailable=\{linksFromFollowUpSource\(turn\.text\)\.length > 0\}[\s\S]{0,120}?onActivate=\{onSuggestion\}/,
+  "historical transcript turns use the same cards with source-aware Save availability",
 );
 assert.match(
   styles,

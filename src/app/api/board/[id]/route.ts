@@ -10,7 +10,7 @@ import {
 import type { CardStep } from "@/lib/cave-board-types";
 import type { CardAsanaLink, CardGitHubLink } from "@/lib/cave-board-types";
 import type { ChatAttachment } from "@/lib/chat-attachments";
-import type { CardOps } from "@/lib/board-card-ops";
+import type { CardOps, CardOpsOutcome } from "@/lib/board-card-ops";
 import { trustedProjectCwd } from "@/lib/cave-projects";
 
 export const dynamic = "force-dynamic";
@@ -71,11 +71,20 @@ export async function PATCH(
       if (resolved.ok) body = { ...body, cwd: resolved.root };
     }
   }
-  const card = await updateCard(id, body);
+  let operationOutcome: CardOpsOutcome | undefined;
+  const card = await updateCard(id, body, {
+    onOperationOutcome: (outcome) => {
+      operationOutcome = outcome;
+    },
+  });
   if (!card) {
     return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   }
-  return NextResponse.json({ ok: true, card });
+  return NextResponse.json({
+    ok: true,
+    card,
+    ...(operationOutcome ? { operationOutcome } : {}),
+  });
 }
 
 export async function DELETE(

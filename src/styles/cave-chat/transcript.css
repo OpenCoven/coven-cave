@@ -378,9 +378,9 @@
 }
 
 .cave-chat-followups .cave-followup-cards__grid {
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  grid-template-columns: none;
+  grid-auto-flow: row;
+  grid-auto-columns: unset;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 /* The footer is the one place next steps read as a compact prompt palette: the
@@ -391,20 +391,15 @@
 }
 
 .cave-chat-followups .cave-followup-card {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   min-width: 0;
-  border-color: var(--border-strong);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
-  padding: var(--space-1) var(--space-3);
+  padding: var(--space-1) var(--space-2);
   color: var(--text-secondary);
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition:
-    background-color var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
+  text-align: left;
 }
 
 .cave-chat-followups .cave-followup-card:hover {
@@ -413,17 +408,54 @@
   color: var(--text-primary);
 }
 
-.cave-chat-followups .cave-followup-card__type,
+.cave-chat-followups .cave-followup-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.cave-chat-followups .cave-followup-card--recommended:hover {
+  border-color: color-mix(
+    in oklch,
+    var(--color-success) 42%,
+    var(--border-hairline)
+  );
+}
+
+.cave-chat-followups .cave-followup-card__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+}
+
+.cave-chat-followups .cave-followup-card__type {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: var(--space-1);
+}
+
 .cave-chat-followups .cave-followup-card__outcome {
   display: none;
 }
 
 .cave-chat-followups .cave-followup-card__title {
-  display: block;
+  min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
-  font-size: var(--text-sm);
-  font-weight: 500;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cave-chat-followups .cave-followup-card__recommended {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 /* Typed assistant suggestions keep their effect legible before activation.
@@ -450,16 +482,49 @@
   text-align: left;
 }
 
-.cave-followup-card__type {
+.cave-followup-card--recommended {
+  border-color: color-mix(
+    in oklch,
+    var(--color-success) 42%,
+    var(--border-hairline)
+  );
+}
+
+.cave-followup-card__summary {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.cave-followup-card__type {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.cave-followup-card__separator {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.cave-followup-card__title {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cave-followup-card__recommended {
   color: var(--color-success);
+  flex: 0 0 auto;
   font-weight: 650;
-  margin-left: auto;
 }
 
 .cave-followup-card__outcome {
@@ -472,6 +537,10 @@
     grid-auto-flow: row;
     grid-auto-columns: unset;
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cave-chat-followups .cave-followup-cards__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .cave-chat-followups .cave-followup-card {

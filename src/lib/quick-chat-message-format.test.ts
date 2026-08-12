@@ -39,13 +39,19 @@ test("settled quick-chat text returns cards and typed next paths without control
 
   assert.equal(formatted.copyText, "Ready for review.");
   assert.deepEqual(formatted.suggestions, [
-    { kind: "reply", label: "Open the pull request", prompt: "Open the pull request" },
-    { kind: "task", label: "Review the diff", prompt: "Review the diff" },
+    {
+      kind: "reply",
+      label: "Open the pull request",
+      prompt: "Open the pull request",
+      recommended: false,
+    },
+    { kind: "task", label: "Review the diff", prompt: "Review the diff", recommended: false },
     {
       kind: "action",
       actionId: "open-tasks",
       label: "Show open tasks",
       prompt: "Show open tasks",
+      recommended: false,
     },
   ]);
   assert.equal(formatted.pieces[1]?.kind, "card");
@@ -102,7 +108,7 @@ test("partial next-path opening and closing prefixes stay hidden", () => {
   );
   assert.equal(closing.copyText, "Checks finished.");
   assert.deepEqual(closing.suggestions, [
-    { kind: "reply", label: "Continue", prompt: "Continue" },
+    { kind: "reply", label: "Continue", prompt: "Continue", recommended: false },
   ]);
 });
 
@@ -129,7 +135,7 @@ test("interrupted next-path markers hide all trailing control content", () => {
   assert.equal(closing.copyText, "Checks finished.");
   assert.deepEqual(closing.pieces, [{ kind: "text", text: "Checks finished." }]);
   assert.deepEqual(closing.suggestions, [
-    { kind: "reply", label: "Continue", prompt: "Continue" },
+    { kind: "reply", label: "Continue", prompt: "Continue", recommended: false },
   ]);
 });
 

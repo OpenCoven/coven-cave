@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { applyCardOps, hasCardOps } from "./board-card-ops.ts";
 
 const NOW = "2026-07-03T12:00:00.000Z";
+const MAX_HTTP_URL = `https://example.com/${"a".repeat(1980)}`;
 const base = {
   steps: [
     { id: "s1", text: "First", done: false, addedAt: "2026-07-01T00:00:00.000Z" },
@@ -18,6 +19,16 @@ assert.equal(hasCardOps(undefined), false);
 assert.equal(hasCardOps({}), false);
 assert.equal(hasCardOps({ stepOps: [] }), false, "empty op arrays are not ops");
 assert.equal(hasCardOps({ labelOps: [{ op: "add", value: "x" }] }), true);
+assert.equal(
+  hasCardOps({ linkOps: { length: 1 } }),
+  false,
+  "array-like malformed collections are not ops",
+);
+assert.deepEqual(
+  applyCardOps(base, { linkOps: { length: 1 } }, NOW),
+  {},
+  "malformed collections are ignored without throwing",
+);
 
 // ── step ops ──────────────────────────────────────────────────────────────────
 let out = applyCardOps(base, { stepOps: [{ op: "toggle", id: "s1" }] }, NOW);
@@ -75,6 +86,139 @@ out = applyCardOps(base, { labelOps: [{ op: "remove", value: "alpha" }] }, NOW);
 assert.deepEqual(out.labels, []);
 out = applyCardOps(base, { linkOps: [{ op: "add", value: "https://b.example" }, { op: "remove", value: "https://a.example" }] }, NOW);
 assert.deepEqual(out.links, ["https://b.example"], "link ops apply in order");
+out = applyCardOps(
+  { ...base, links: ["https://example.com/docs/", "https://example.com/human-note"] },
+  {
+    linkOps: [
+      { op: "addNormalizedUrl", value: "https://example.com/docs#intro" },
+      { op: "addNormalizedUrl", value: "https://example.com/new/" },
+    ],
+  },
+  NOW,
+);
+assert.deepEqual(
+  out.links,
+  ["https://example.com/docs/", "https://example.com/human-note", "https://example.com/new/"],
+  "plan example dedupes docs while appending the new URL",
+);
+out = applyCardOps(
+  { ...base, links: ["https://a.example/"] },
+  { linkOps: [{ op: "addNormalizedUrl", value: " https://A.example#frag " }] },
+  NOW,
+);
+assert.deepEqual(out.links, ["https://a.example/"], "fragments and trailing slashes dedupe existing links");
+out = applyCardOps(
+  { ...base, links: ["https://a.example"] },
+  { linkOps: [{ op: "addNormalizedUrl", value: " https://b.example/path/ " }] },
+  NOW,
+);
+assert.deepEqual(out.links, ["https://a.example", "https://b.example/path/"], "valid normalized URLs append trimmed originals");
+out = applyCardOps(
+  { ...base, links: ["https://a.example", " human string "] },
+  { linkOps: [{ op: "addNormalizedUrl", value: "https://c.example" }] },
+  NOW,
+);
+assert.deepEqual(out.links, ["https://a.example", " human string ", "https://c.example"], "existing unrelated strings stay byte-for-byte");
+out = applyCardOps(
+  { ...base, links: ["https://a.example"] },
+  {
+    linkOps: [
+      { op: "add", value: " https://b.example/ " },
+      { op: "addNormalizedUrl", value: "https://B.example#frag" },
+    ],
+  },
+  NOW,
+);
+assert.deepEqual(out.links, ["https://a.example", "https://b.example/"], "normalized dedupe is recomputed after generic ops");
+out = applyCardOps(
+  { ...base, links: ["https://a.example"] },
+  {
+    linkOps: [
+      { op: "addNormalizedUrl", value: "mailto:test@example.com" },
+      { op: "addNormalizedUrl", value: "not a url" },
+      { op: "addNormalizedUrl", value: "ftp://example.com" },
+    ],
+  },
+  NOW,
+);
+assert.deepEqual(out.links, ["https://a.example"], "non-http(s) URLs are ignored");
+let normalizedOutcome;
+out = applyCardOps(
+  { ...base, links: ["https://example.com/present/"] },
+  {
+    linkOps: [
+      { op: "addNormalizedUrl", value: "https://example.com/present#selected" },
+      { op: "addNormalizedUrl", value: " https://example.com/new#original " },
+      { op: "addNormalizedUrl", value: "not a URL" },
+      { op: "addNormalizedUrl", value: "https://example.com/new/" },
+    ],
+  },
+  NOW,
+  {
+    onOperationOutcome: (outcome) => {
+      normalizedOutcome = outcome;
+    },
+  },
+);
+assert.deepEqual(out.links, [
+  "https://example.com/present/",
+  "https://example.com/new#original",
+]);
+assert.deepEqual(
+  normalizedOutcome,
+  {
+    addNormalizedUrl: {
+      added: ["https://example.com/new#original"],
+      duplicates: [
+        "https://example.com/present#selected",
+        "https://example.com/new/",
+      ],
+      invalid: ["not a URL"],
+    },
+  },
+  "normalized add outcomes are classified sequentially against the current links",
+);
+let genericOutcomeCalled = false;
+applyCardOps(
+  base,
+  { linkOps: [{ op: "add", value: "https://generic.example" }] },
+  NOW,
+  { onOperationOutcome: () => { genericOutcomeCalled = true; } },
+);
+assert.equal(genericOutcomeCalled, false, "generic link operations do not produce an outcome");
+assert.equal(MAX_HTTP_URL.length, 2_000, "test fixture stays at the max URL length");
+out = applyCardOps(
+  { ...base, links: ["https://a.example"] },
+  { linkOps: [{ op: "addNormalizedUrl", value: ` ${MAX_HTTP_URL} ` }] },
+  NOW,
+);
+assert.deepEqual(out.links, ["https://a.example", MAX_HTTP_URL], "max-length valid HTTP URLs are preserved");
+const oversizedHttpUrl = `${MAX_HTTP_URL}x`;
+let oversizedOutcome: unknown;
+out = applyCardOps(
+  { ...base, links: ["https://a.example"] },
+  { linkOps: [{ op: "addNormalizedUrl", value: oversizedHttpUrl }] },
+  NOW,
+  { onOperationOutcome: (outcome) => { oversizedOutcome = outcome; } },
+);
+assert.deepEqual(out.links, ["https://a.example"], "oversized HTTP URLs are rejected instead of truncated");
+assert.deepEqual(
+  oversizedOutcome,
+  {
+    addNormalizedUrl: {
+      added: [],
+      duplicates: [],
+      invalid: [oversizedHttpUrl],
+    },
+  },
+  "oversized HTTP URLs are reported as invalid without changing their value",
+);
+out = applyCardOps(
+  { ...base, links: ["alpha"] },
+  { linkOps: [{ op: "add", value: " beta " }, { op: "remove", value: "alpha" }] },
+  NOW,
+);
+assert.deepEqual(out.links, ["beta"], "generic add/remove behavior is preserved");
 
 // ── attachment ops ────────────────────────────────────────────────────────────
 out = applyCardOps(base, { attachmentOps: [{ op: "add", attachments: [{ name: "b.txt", type: "text/plain", size: 1, text: "b" }] }] }, NOW);

@@ -269,6 +269,7 @@ export const ICON_NAMES = [
   "ph:dots-three",
   "ph:minus-circle",
   "ph:arrow-down-bold",
+  "ph:list-checks",
   "ph:list-checks-bold",
   "ph:pencil-bold",
   "ph:rocket-bold",

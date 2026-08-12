@@ -56,7 +56,7 @@ for (const pattern of [
   /handlers\(\)\.regenerateFor\(t\)/,
   /handlers\(\)\.replyFor\(t\)/,
   /handlers\(\)\.editTurnInComposer\(t\)/,
-  /handlers\(\)\.activateFollowUp\(path\)/,
+  /handlers\(\)\.activateFollowUp\(\{ path, sourceText: t\.text \}\)/,
   /handlers\(\)\.send\(prompt\)/,
   /handlers\(\)\.switchBranch\(t\.id, -1\)/,
   /handlers\(\)\.siblingsFor\(t\.id\)/,

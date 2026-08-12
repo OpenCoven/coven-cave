@@ -16,22 +16,57 @@ assert.match(
 );
 assert.match(
   styles,
-  /\.cave-chat-followups \.cave-followup-cards__grid \{[\s\S]*?grid-auto-flow: column;[\s\S]*?grid-auto-columns: minmax\(0, 1fr\);[\s\S]*?grid-template-columns: none;/,
-  "composer follow-ups stretch one to three equal options across the prompt width",
-);
-assert.doesNotMatch(
-  styles,
-  /\.cave-chat-followups \.cave-followup-cards__grid \{[\s\S]*?grid-template-columns: repeat\(3,/,
-  "composer follow-ups do not reserve empty columns for malformed output",
+  /\.cave-chat-followups \.cave-followup-cards__grid \{[\s\S]*?grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/,
+  "composer follow-ups render four equal columns across the prompt width",
 );
 assert.match(
   styles,
-  /\.cave-chat-followups \.cave-followup-card \{[\s\S]*?padding: var\(--space-1\) var\(--space-3\);/,
+  /\.cave-chat-followups \.cave-followup-card \{[\s\S]*?border-radius: var\(--radius-control\);/,
+  "composer follow-ups use control radii",
+);
+assert.match(
+  styles,
+  /\.cave-chat-followups \.cave-followup-card \{[\s\S]*?padding: var\(--space-1\) var\(--space-2\);/,
   "desktop composer follow-ups use compact token spacing",
 );
 assert.match(
   styles,
-  /@media \(max-width: 40rem\) \{[\s\S]*?\.cave-chat-followups \.cave-followup-card \{[\s\S]*?min-height: var\(--touch-target\);/,
+  /\.cave-chat-followups \.cave-followup-card__summary \{[\s\S]*?flex-wrap: nowrap;/,
+  "composer follow-up summaries stay on one line in the compact footer",
+);
+assert.match(
+  styles,
+  /\.cave-chat-followups \.cave-followup-card__title \{[\s\S]*?min-width: 0;[\s\S]*?overflow: hidden;[\s\S]*?text-overflow: ellipsis;[\s\S]*?white-space: nowrap;/,
+  "composer follow-up titles truncate cleanly in the compact footer",
+);
+assert.match(
+  styles,
+  /\.cave-chat-followups \.cave-followup-card__title \{[\s\S]*?flex: 1 1 auto;/,
+  "composer follow-up titles keep flex room for ellipsis",
+);
+assert.match(
+  styles,
+  /\.cave-followup-card__summary \{[\s\S]*?flex-wrap: wrap;/,
+  "historical follow-up cards keep the fuller wrapped presentation",
+);
+assert.match(
+  styles,
+  /\.cave-chat-followups \.cave-followup-card__outcome \{[\s\S]*?display: none;/,
+  "composer follow-ups hide outcomes in the compact footer",
+);
+assert.match(
+  styles,
+  /\.cave-chat-followups \.cave-followup-card__recommended \{[\s\S]*?position: absolute;[\s\S]*?clip: rect\(0 0 0 0\);/,
+  "composer follow-ups keep recommended text in the DOM while visually hiding it",
+);
+assert.match(
+  styles,
+  /\.cave-followup-card--recommended \{[\s\S]*?var\(--color-success\)[\s\S]*?var\(--border-hairline\)/,
+  "recommended follow-ups use a success-tinted border",
+);
+assert.match(
+  styles,
+  /@media \(max-width: 40rem\) \{[\s\S]*?\.cave-chat-followups \.cave-followup-cards__grid \{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);[\s\S]*?\.cave-chat-followups \.cave-followup-card \{[\s\S]*?min-height: var\(--touch-target\);/,
   "narrow composer follow-ups preserve touch-safe targets",
 );
 assert.doesNotMatch(

@@ -51,6 +51,48 @@ const withAtt = await board.updateCard(card.id, {
 assert.equal(withAtt.attachments.length, 2, "attachment ops add");
 assert.equal(withAtt.attachments[1].dataUrl, undefined, "op-added images stored lean (dataUrl stripped)");
 
+let lockedOutcome;
+const [, normalizedCard] = await Promise.all([
+  board.updateCard(card.id, {
+    ops: {
+      linkOps: [{ op: "add", value: "https://example.com/present/" }],
+    },
+  }),
+  board.updateCard(
+    card.id,
+    {
+      ops: {
+        linkOps: [
+          { op: "addNormalizedUrl", value: "https://example.com/present#selected" },
+          { op: "addNormalizedUrl", value: "https://example.com/new" },
+          { op: "addNormalizedUrl", value: "not a URL" },
+        ],
+      },
+    },
+    {
+      onOperationOutcome: (outcome) => {
+        lockedOutcome = outcome;
+      },
+    },
+  ),
+]);
+assert.deepEqual(
+  lockedOutcome,
+  {
+    addNormalizedUrl: {
+      added: ["https://example.com/new"],
+      duplicates: ["https://example.com/present#selected"],
+      invalid: ["not a URL"],
+    },
+  },
+  "the outcome is classified against links present when the mutation obtains the lock",
+);
+assert.deepEqual(
+  normalizedCard.links,
+  ["https://example.com/present/", "https://example.com/new"],
+  "updateCard still returns the Card while exposing the optional outcome",
+);
+
 const removed = await board.updateCard(card.id, {
   ops: { attachmentOps: [{ op: "remove", name: "shot.png" }] },
 });

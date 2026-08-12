@@ -207,7 +207,9 @@ import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
 import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
 import type { NextPath } from "@/lib/next-paths";
 import { FollowUpCards } from "@/components/chat-follow-up-cards";
+import { FollowUpLinkReview } from "@/components/chat-follow-up-link-review";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
+import { linksFromFollowUpSource } from "@/lib/chat-follow-up-links";
 import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { imageCarouselKey, sliceImageBlocks } from "@/lib/image-blocks";
 import { parseSkillInvocation } from "@/lib/skill-blocks";
@@ -501,6 +503,8 @@ type ChatSendControls = {
    *  automatic host choice rather than reading a later composer selection. */
   queuedRuntimeHost?: string | null;
 };
+type FollowUpActivation = { path: NextPath; sourceText: string };
+type LinkSuggestion = { links: string[] };
 /** A follow-up held until the active turn settles successfully. Kept outside
  *  the transcript until delivery so a queued prompt is never mistaken for a
  *  turn the familiar has already received. */
@@ -2129,6 +2133,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
+  const [linkSuggestion, setLinkSuggestion] = useState<LinkSuggestion | null>(null);
   const [taskSuggestion, setTaskSuggestion] = useState<Extract<NextPath, { kind: "task" }> | null>(null);
   const { announce } = useAnnouncer();
   // "Start a task" (card-follows-chat): the starting page arms this, and the
@@ -3781,7 +3786,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return null;
-    return extractChatRenderedText(last.text).nextPaths.find((path) => path.kind === "reply") ?? null;
+    return extractChatRenderedText(last.text).nextPaths.find((path) => path.kind === "reply" && path.recommended) ?? null;
   }, [activePath]);
 
   // Chat-revamp 1b: the LATEST settled turn's follow-up suggestions render as
@@ -3791,16 +3796,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // never render twice; older turns keep their in-turn rows. The parser owns
   // the product cap so every renderer stays aligned.
   const followUp = useMemo(() => {
-    const empty = { turnId: null as string | null, suggestions: [] as NextPath[] };
+    const empty = { turnId: null as string | null, sourceText: "", suggestions: [] as NextPath[] };
     const last = [...activePath]
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return empty;
     const suggestions = extractChatRenderedText(last.text).nextPaths;
-    return suggestions.length ? { turnId: last.id, suggestions } : empty;
+    return suggestions.length ? { turnId: last.id, sourceText: last.text, suggestions } : empty;
   }, [activePath]);
 
-  const handleFollowUp = useCallback((path: NextPath) => {
+  const handleFollowUp = useCallback(({ path, sourceText }: FollowUpActivation) => {
     if (path.kind === "reply") {
       setInput(path.prompt);
       requestAnimationFrame(() => inputRef.current?.focus());
@@ -3810,10 +3815,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setTaskSuggestion(path);
       return;
     }
+    if (path.actionId === "save-link") {
+      const links = linksFromFollowUpSource(sourceText);
+      if (links.length === 0) {
+        announce("No links available to save", "assertive");
+        return;
+      }
+      setLinkSuggestion({ links });
+      return;
+    }
     if (path.actionId === "open-tasks") {
       window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "board" } }));
+      return;
     }
-  }, []);
+  }, [announce]);
 
   const handleTaskCreated = useCallback((card: Card) => {
     const linked = {
@@ -7473,7 +7488,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 {linkedContextRow}
                 {followUp.suggestions.length > 0 && !busy ? (
                   <div className="cave-chat-followups">
-                    <FollowUpCards paths={followUp.suggestions} onActivate={handleFollowUp} />
+                    <FollowUpCards
+                      paths={followUp.suggestions}
+                      saveAvailable={linksFromFollowUpSource(followUp.sourceText).length > 0}
+                      onActivate={(path) => handleFollowUp({ path, sourceText: followUp.sourceText })}
+                    />
                   </div>
                 ) : null}
               </div>
@@ -8001,6 +8020,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ) : null}
 
       {inlineComposer ? null : composerNode}
+      {linkSuggestion ? (
+        <FollowUpLinkReview
+          open
+          links={linkSuggestion.links}
+          task={linkedContext?.task ? { id: linkedContext.task.id, title: linkedContext.task.title } : null}
+          onClose={() => setLinkSuggestion(null)}
+        />
+      ) : null}
       {taskSuggestion && sessionId ? (
         <FollowUpTaskReview
           open
@@ -8280,7 +8307,7 @@ type TranscriptHandlers = {
   readerPromptFor: (turn: Turn) => { text: string; createdAt?: string } | undefined;
   rerunWithFor: (turn: Turn) => ((prompt: string) => void) | undefined;
   send: (override?: string) => Promise<void>;
-  activateFollowUp: (path: NextPath) => void;
+  activateFollowUp: (activation: FollowUpActivation) => void;
 };
 
 /**
@@ -8402,7 +8429,7 @@ const TranscriptRows = memo(function TranscriptRows({
           readerPrompt={handlers().readerPromptFor(t)}
           onRerunWith={handlers().rerunWithFor(t)}
           onOpenUrl={onOpenUrl}
-          onSuggestion={(path) => handlers().activateFollowUp(path)}
+          onSuggestion={(path) => handlers().activateFollowUp({ path, sourceText: t.text })}
           onRequest={(prompt) => void handlers().send(prompt)}
           feedbackContext={feedbackContext}
           expanded={expandedAvatarTurnId === t.id}
@@ -8469,7 +8496,7 @@ const TranscriptRows = memo(function TranscriptRows({
               readerPrompt={handlers().readerPromptFor(t)}
               onRerunWith={handlers().rerunWithFor(t)}
               onOpenUrl={onOpenUrl}
-              onSuggestion={(path) => handlers().activateFollowUp(path)}
+              onSuggestion={(path) => handlers().activateFollowUp({ path, sourceText: t.text })}
               onRequest={(prompt) => void handlers().send(prompt)}
               feedbackContext={feedbackContext}
               expanded={expandedAvatarTurnId === t.id}
@@ -9007,7 +9034,11 @@ function TurnRowImpl({
                 opens review, and action routes to Tasks; they sit closest to
                 the composer and aren't pushed up by tool activity. */}
             {nextPaths.length > 0 && !turn.pending && !suppressSuggestions && onSuggestion ? (
-              <FollowUpCards paths={nextPaths} onActivate={onSuggestion} />
+              <FollowUpCards
+                paths={nextPaths}
+                saveAvailable={linksFromFollowUpSource(turn.text).length > 0}
+                onActivate={onSuggestion}
+              />
             ) : null}
             {/* Comment on the markdown artifact this turn produced: select any
                 passage above to leave a comment, then request a revision that

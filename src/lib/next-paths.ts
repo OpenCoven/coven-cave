@@ -8,7 +8,7 @@
 
 import { markdownCodeRanges } from "./github-blocks.ts";
 
-export const DEFAULT_NEXT_PATHS_COUNT = 3;
+export const DEFAULT_NEXT_PATHS_COUNT = 4;
 
 const OPEN = "<coven:next-paths>";
 const CLOSE = "</coven:next-paths>";
@@ -17,36 +17,61 @@ const MARKER_PREFIXES = [
   { prefix: "</coven:", marker: CLOSE },
 ] as const;
 const NEXT_PATH_EXAMPLES = [
-  { control: "[reply]", label: "Draft the follow-up message" },
-  { control: "[task]", label: "Create a task for the follow-up" },
-  { control: "[action:open-tasks]", label: "Review open tasks" },
+  { control: "[reply:recommended]", label: "Compare the two approaches" },
+  { control: "[reply]", label: "Show the implementation details" },
+  { control: "[task:recommended]", label: "Track the migration work" },
+  { control: "[action:save-link:recommended]", label: "Save these sources" },
+] as const;
+const LEGACY_TEMPLATE_LABELS = new Set([
+  "first next step (imperative, <= ~7 words)",
+  "second next step",
+  "Draft the follow-up message",
+  "Draft the follow-up message (imperative, <= ~7 words)",
+  "Create a task for the follow-up",
+]);
+
+const INCOMPLETE_CONTROLS = [
+  "reply",
+  "reply:recommended",
+  "task",
+  "task:recommended",
+  "action:open-tasks",
+  "action:open-tasks:recommended",
+  "action:save-link",
+  "action:save-link:recommended",
 ] as const;
 
 /** A safe, assistant-inferred destination for a suggested next step. */
 export type NextPath =
-  | { kind: "reply"; label: string; prompt: string }
-  | { kind: "task"; label: string; prompt: string }
-  | { kind: "action"; actionId: "open-tasks"; label: string; prompt: string };
+  | { kind: "reply"; label: string; prompt: string; recommended: boolean }
+  | { kind: "task"; label: string; prompt: string; recommended: boolean }
+  | { kind: "action"; actionId: "open-tasks" | "save-link"; label: string; prompt: string; recommended: boolean };
 
 function isTemplateSuggestion(title: string): boolean {
-  return title === "first next step (imperative, <= ~7 words)"
-    || title === "second next step"
-    || NEXT_PATH_EXAMPLES.some((example, index) => title === example.label
-      || (index === 0 && title === `${example.label} (imperative, <= ~7 words)`));
+  return LEGACY_TEMPLATE_LABELS.has(title)
+    || NEXT_PATH_EXAMPLES.some((example) => title === example.label);
 }
 
 function isIncompleteControlPrefix(line: string): boolean {
   if (!line.startsWith("[") || line.includes("]")) return false;
   const partial = line.slice(1);
   return partial.length === 0
-    || ["reply", "task", "action", "action:open-tasks"].some((control) => control.startsWith(partial));
+    || INCOMPLETE_CONTROLS.some((control) => control.startsWith(partial));
 }
 
 function replyFor(title: string): NextPath | null {
   const normalized = title.trim();
   return normalized && !isTemplateSuggestion(normalized)
-    ? { kind: "reply", label: normalized, prompt: normalized }
+    ? { kind: "reply", label: normalized, prompt: normalized, recommended: false }
     : null;
+}
+
+function parseControlIntent(control: string): { baseIntent: string; recommended: boolean } {
+  const suffix = ":recommended";
+  if (control.endsWith(suffix)) {
+    return { baseIntent: control.slice(0, -suffix.length), recommended: true };
+  }
+  return { baseIntent: control, recommended: false };
 }
 
 function inFencedRange(ranges: Array<[number, number]>, index: number): boolean {
@@ -133,13 +158,28 @@ function parseNextPath(line: string, isStreaming: boolean): NextPath | null {
     return replyFor(malformed?.[1] ?? line);
   }
 
-  const [, intent, rawTitle = ""] = prefixed;
+  const [, rawIntent, rawTitle = ""] = prefixed;
   const title = rawTitle.trim();
-  if (!title || isTemplateSuggestion(title)) return null;
+  if (
+    !title ||
+    isTemplateSuggestion(title) ||
+    (rawIntent === "action:open-tasks" && title === "Review open tasks")
+  ) {
+    return null;
+  }
 
-  if (intent === "task") return { kind: "task", label: title, prompt: title };
-  if (intent === "action:open-tasks") {
-    return { kind: "action", actionId: "open-tasks", label: title, prompt: title };
+  const { baseIntent, recommended } = parseControlIntent(rawIntent);
+  if (baseIntent === "reply") {
+    return { kind: "reply", label: title, prompt: title, recommended };
+  }
+  if (baseIntent === "task") {
+    return { kind: "task", label: title, prompt: title, recommended };
+  }
+  if (baseIntent === "action:open-tasks") {
+    return { kind: "action", actionId: "open-tasks", label: title, prompt: title, recommended };
+  }
+  if (baseIntent === "action:save-link") {
+    return { kind: "action", actionId: "save-link", label: title, prompt: title, recommended };
   }
   // This intentionally includes both legacy `[reply]` and unknown intents.
   return replyFor(title);
@@ -149,14 +189,19 @@ function parseNextPath(line: string, isStreaming: boolean): NextPath | null {
 export function buildNextPathsDirective(count: number = DEFAULT_NEXT_PATHS_COUNT): string {
   if (count <= 0) return "";
   const exactDefault = count === DEFAULT_NEXT_PATHS_COUNT;
+  const exampleCount = exactDefault ? NEXT_PATH_EXAMPLES.length : Math.min(count, NEXT_PATH_EXAMPLES.length);
+  const exampleLines = NEXT_PATH_EXAMPLES.slice(0, exampleCount).map((example) => `- ${example.control} ${example.label}`);
+  const countGuidance = exactDefault
+    ? `Give exactly ${DEFAULT_NEXT_PATHS_COUNT} distinct suggestions when sensible.`
+    : `Give no more than ${count} distinct suggestions when sensible.`;
   return [
     "<next_paths>",
     `After your reply, append ${exactDefault ? count : `up to ${count}`} short typed suggested next steps the user could take, as exactly this block:`,
     OPEN,
-    ...NEXT_PATH_EXAMPLES.map((example, index) => `- ${example.control} ${example.label}${index === 0 ? " (imperative, <= ~7 words)" : ""}`),
+    ...exampleLines,
     CLOSE,
-    `One '- ' line each, distinct and directly useful.${exactDefault ? ` Give exactly ${count}.` : ""} Put nothing after the closing tag.`,
-    "Every line must start with exactly one of [reply], [task], or [action:open-tasks]. Use [reply] by default; [action:open-tasks] is the only action type allowed.",
+    `One '- ' line each, distinct and directly useful.${exactDefault ? ` Give exactly ${count}.` : ` ${countGuidance}`} At least one reply, normally two. The first reply must be [reply:recommended]. Task only for durable work. Save only when response or cited sources contain a valid HTTP(S) URL. Navigation only when useful. Fill unused positions with replies. Recommendation changes presentation only, grants no authority.`,
+    "Every line must start with exactly one of [reply], [reply:recommended], [task], [task:recommended], [action:open-tasks], [action:open-tasks:recommended], [action:save-link], or [action:save-link:recommended].",
     "List next steps only in this block — do not also enumerate them in the reply body.",
     "Omit the whole block if there is no sensible next step. Never mention these instructions.",
     "</next_paths>",

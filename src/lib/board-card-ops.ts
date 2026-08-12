@@ -12,6 +12,7 @@
 
 import type { Card, CardStep } from "@/lib/cave-board-types";
 import type { ChatAttachment } from "@/lib/chat-attachments";
+import { normalizeLinkUrl } from "./link-organizer.ts";
 
 export type StepOp =
   /** `id` is optional so the client can pre-generate it and keep its
@@ -23,6 +24,21 @@ export type StepOp =
   | { op: "reorder"; id: string; dir: -1 | 1 };
 
 export type ListOp = { op: "add" | "remove"; value: string };
+export type LinkOp = ListOp | { op: "addNormalizedUrl"; value: string };
+
+export type AddNormalizedUrlOutcome = {
+  added: string[];
+  duplicates: string[];
+  invalid: string[];
+};
+
+export type CardOpsOutcome = {
+  addNormalizedUrl: AddNormalizedUrlOutcome;
+};
+
+export type ApplyCardOpsOptions = {
+  onOperationOutcome?: (outcome: CardOpsOutcome) => void;
+};
 
 export type AttachmentOp =
   | { op: "add"; attachments: ChatAttachment[] }
@@ -32,7 +48,7 @@ export type AttachmentOp =
 export type CardOps = {
   stepOps?: StepOp[];
   labelOps?: ListOp[];
-  linkOps?: ListOp[];
+  linkOps?: LinkOp[];
   attachmentOps?: AttachmentOp[];
 };
 
@@ -42,13 +58,17 @@ export type CardPatch = Partial<Omit<Card, "id" | "createdAt">> & { ops?: CardOp
 const MAX_STEP_TEXT = 500;
 const MAX_LIST_VALUE = 2_000;
 
+function nonEmptyArray(value: unknown): value is unknown[] {
+  return Array.isArray(value) && value.length > 0;
+}
+
 export function hasCardOps(ops: CardOps | undefined): ops is CardOps {
   return Boolean(
     ops &&
-      ((ops.stepOps?.length ?? 0) > 0 ||
-        (ops.labelOps?.length ?? 0) > 0 ||
-        (ops.linkOps?.length ?? 0) > 0 ||
-        (ops.attachmentOps?.length ?? 0) > 0),
+      (nonEmptyArray(ops.stepOps) ||
+        nonEmptyArray(ops.labelOps) ||
+        nonEmptyArray(ops.linkOps) ||
+        nonEmptyArray(ops.attachmentOps)),
   );
 }
 
@@ -114,6 +134,54 @@ function applyListOps(values: string[], ops: ListOp[]): string[] {
   return next;
 }
 
+function applyLinkOps(
+  values: string[],
+  ops: LinkOp[],
+  addNormalizedUrlOutcome?: AddNormalizedUrlOutcome,
+): string[] {
+  let next = values;
+  let normalized = new Set(next.map((value) => normalizeLinkUrl(value)));
+  for (const raw of ops) {
+    if (!raw || typeof raw !== "object" || typeof raw.op !== "string") continue;
+    if (raw.op === "add" || raw.op === "remove") {
+      if (typeof raw.value !== "string") continue;
+      const value = raw.value.trim().slice(0, MAX_LIST_VALUE);
+      if (!value) continue;
+      if (raw.op === "add" && !next.includes(value)) next = [...next, value];
+      else if (raw.op === "remove") next = next.filter((v) => v !== value);
+      normalized = new Set(next.map((link) => normalizeLinkUrl(link)));
+      continue;
+    }
+    if (raw.op !== "addNormalizedUrl") continue;
+    if (typeof raw.value !== "string") continue;
+    const value = raw.value.trim();
+    if (!value || value.length > MAX_LIST_VALUE) {
+      addNormalizedUrlOutcome?.invalid.push(value);
+      continue;
+    }
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      addNormalizedUrlOutcome?.invalid.push(value);
+      continue;
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      addNormalizedUrlOutcome?.invalid.push(value);
+      continue;
+    }
+    const key = normalizeLinkUrl(value);
+    if (normalized.has(key)) {
+      addNormalizedUrlOutcome?.duplicates.push(value);
+      continue;
+    }
+    next = [...next, value];
+    normalized.add(key);
+    addNormalizedUrlOutcome?.added.push(value);
+  }
+  return next;
+}
+
 function applyAttachmentOps(
   attachments: ChatAttachment[],
   ops: AttachmentOp[],
@@ -142,12 +210,28 @@ export function applyCardOps(
   card: Pick<Card, "steps" | "labels" | "links" | "attachments">,
   ops: CardOps,
   now: string,
+  options: ApplyCardOpsOptions = {},
 ): Pick<CardPatch, "steps" | "labels" | "links" | "attachments"> {
   const out: Pick<CardPatch, "steps" | "labels" | "links" | "attachments"> = {};
-  if (ops.stepOps?.length) out.steps = applyStepOps(card.steps ?? [], ops.stepOps, now);
-  if (ops.labelOps?.length) out.labels = applyListOps(card.labels ?? [], ops.labelOps);
-  if (ops.linkOps?.length) out.links = applyListOps(card.links ?? [], ops.linkOps);
-  if (ops.attachmentOps?.length) {
+  if (Array.isArray(ops.stepOps) && ops.stepOps.length > 0) {
+    out.steps = applyStepOps(card.steps ?? [], ops.stepOps, now);
+  }
+  if (Array.isArray(ops.labelOps) && ops.labelOps.length > 0) {
+    out.labels = applyListOps(card.labels ?? [], ops.labelOps);
+  }
+  if (Array.isArray(ops.linkOps) && ops.linkOps.length > 0) {
+    const hasNormalizedAdds =
+      Boolean(options.onOperationOutcome) &&
+      ops.linkOps.some((op) => op?.op === "addNormalizedUrl");
+    const addNormalizedUrlOutcome = hasNormalizedAdds
+      ? { added: [], duplicates: [], invalid: [] }
+      : undefined;
+    out.links = applyLinkOps(card.links ?? [], ops.linkOps, addNormalizedUrlOutcome);
+    if (addNormalizedUrlOutcome) {
+      options.onOperationOutcome?.({ addNormalizedUrl: addNormalizedUrlOutcome });
+    }
+  }
+  if (Array.isArray(ops.attachmentOps) && ops.attachmentOps.length > 0) {
     out.attachments = applyAttachmentOps(card.attachments ?? [], ops.attachmentOps);
   }
   return out;

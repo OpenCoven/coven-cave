@@ -140,23 +140,23 @@ test("2a — the title row and turn names wear the display serif", () => {
   );
 });
 
-test("2a ⑤ — composer follow-ups are equal-width recommendation pills", () => {
-  // The typed follow-ups keep their equal-width one-row geometry, but their
-  // composer placement reads as quiet single-line recommendation pills.
+test("2a ⑤ — composer follow-ups are compact equal-width typed actions", () => {
+  // The typed follow-ups keep their equal-width one-row geometry while making
+  // the action type visible and leaving the longer outcome to assistive tech.
   assert.match(
     styles,
-    /\.cave-followup-cards__grid \{[\s\S]*?grid-auto-flow: column;[\s\S]*?grid-auto-columns: minmax\(0, 1fr\);/,
-    "follow-up cards take equal shares of one row",
+    /\.cave-chat-followups \.cave-followup-cards__grid \{[\s\S]*?grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/,
+    "follow-up cards take equal shares of a four-column row",
   );
   assert.match(
     styles,
-    /\.cave-chat-followups \.cave-followup-card \{[\s\S]*?border-radius: var\(--radius-pill\);[\s\S]*?text-align: center;/,
-    "composer follow-ups use the shared pill radius and centered label",
+    /\.cave-chat-followups \.cave-followup-card \{[\s\S]*?border-radius: var\(--radius-control\);[\s\S]*?text-align: left;/,
+    "composer follow-ups use the shared control radius and compact left alignment",
   );
   assert.match(
     styles,
-    /\.cave-chat-followups \.cave-followup-card__type,\s*\.cave-chat-followups \.cave-followup-card__outcome \{[\s\S]*?display: none;/,
-    "composer pills suppress visual metadata while preserving their accessible name",
+    /\.cave-chat-followups \.cave-followup-card__type \{[\s\S]*?display: inline-flex;[\s\S]*?\.cave-chat-followups \.cave-followup-card__outcome \{[\s\S]*?display: none;/,
+    "composer actions show their type while keeping the verbose outcome accessible",
   );
   // The pill-era override is gone: nothing renders .cave-next-path inside the
   // follow-up strip, so the orphaned selector must not linger in the cascade.

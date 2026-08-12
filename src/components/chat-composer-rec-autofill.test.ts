@@ -13,8 +13,8 @@ const transcriptCss = readFileSync(new URL("../styles/cave-chat/transcript.css",
 // assistant turn — but only a reply can be keyboard-filled.
 assert.match(
   source,
-  /const recommendedNextPath = useMemo\(\(\) => \{[\s\S]*?extractChatRenderedText\(last\.text\)\.nextPaths\.find\(\(path\) => path\.kind === "reply"\) \?\? null;[\s\S]*?\}, \[activePath\]\);/,
-  "recommendedNextPath only reads reply suggestions from the active path's last settled assistant turn",
+  /const recommendedNextPath = useMemo\(\(\) => \{[\s\S]*?extractChatRenderedText\(last\.text\)\.nextPaths\.find\(\(path\) => path\.kind === "reply" && path\.recommended\) \?\? null;[\s\S]*?\}, \[activePath\]\);/,
+  "recommendedNextPath only reads recommended reply suggestions from the active path's last settled assistant turn",
 );
 assert.match(
   source,

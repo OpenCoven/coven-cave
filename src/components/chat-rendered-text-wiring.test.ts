@@ -25,7 +25,7 @@ assert.match(
 );
 assert.match(
   view,
-  /extractChatRenderedText\(last\.text\)\.nextPaths\.find\(\(path\) => path\.kind === "reply"\) \?\? null/,
+  /extractChatRenderedText\(last\.text\)\.nextPaths\.find\(\s*\(path\) => path\.kind === "reply" && path\.recommended,?\s*\) \?\? null/,
   "recommended composer autofill reads reply suggestions from the shared projection",
 );
 assert.match(

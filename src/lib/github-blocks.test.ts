@@ -385,7 +385,9 @@ test("shared code ranges let every live marker execute after a list fence closes
         const text = `${fenced}\n<coven:next-paths>\n- [reply] Continue the work\n</coven:next-paths>`;
         assert.deepEqual(extractNextPaths(text), {
           visible: fenced,
-          suggestions: [{ kind: "reply", label: "Continue the work", prompt: "Continue the work" }],
+          suggestions: [
+            { kind: "reply", label: "Continue the work", prompt: "Continue the work", recommended: false },
+          ],
         });
       },
     },
