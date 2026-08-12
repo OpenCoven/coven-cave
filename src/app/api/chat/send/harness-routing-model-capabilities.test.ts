@@ -321,12 +321,17 @@ const covenModelMetadataBlock = chatRoute.slice(covenModelMetadataStart, nativeM
 assert.match(
   covenModelMetadataBlock,
   /Coven forwarded the selected model; downstream acceptance was not confirmed\./,
-  "forwarding a model through Coven must not be described as downstream acceptance",
+  "the no-echo fallback still describes forwarding as unconfirmed",
 );
-assert.doesNotMatch(
+assert.match(
   covenModelMetadataBlock,
-  /responseMetadata\.confirmedModel = confirmedModel/,
-  "a Coven system-init model echo must not be persisted as a confirmed model",
+  /confirmed.*confirmedModel != null/,
+  "a downstream harness echo (confirmedModel) on a successful run resolves the model to applied",
+);
+assert.match(
+  covenModelMetadataBlock,
+  /if \(confirmed\) responseMetadata\.confirmedModel = confirmedModel/,
+  "confirmedModel is persisted only when the downstream harness echoed and the run succeeded",
 );
 
 console.log("model parity routing tests passed");

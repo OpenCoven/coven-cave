@@ -162,6 +162,20 @@ export type WorktreeLifecycleSummary = {
   items: WorktreeLifecycleItem[];
   counts: Record<WorktreeLifecycleLane, number>;
   budgets: WorktreeLifecycleBudgets;
+  /**
+   * Probe failures that describe the CHECKOUT rather than any single unit — a
+   * stale default-branch tracking ref, an unreadable origin identity, a Beads
+   * or workflow query that did not answer.
+   *
+   * Every unit still fails closed on these, and each one still carries the
+   * string in its own `probeErrors`; that is what stops a unit being retired
+   * while the fact it depends on is unverified, and it must not be traded away
+   * for a tidier report. What this field buys is the ability to SAY SO ONCE.
+   * Without it, one stale tracking ref is indistinguishable from N genuinely
+   * uncertain units: on 2026-08-11 that produced 39 uncertain units all
+   * carrying the same sentence, with nothing to indicate it was a single fact.
+   */
+  globalErrors: string[];
 };
 
 export type WorktreeLifecycleRenderOptions = {
@@ -272,6 +286,26 @@ const DISPOSABLE_IGNORED_ROOTS = [
   "target",
   "test-results",
 ];
+
+/** Hook artifacts written under `.claude/` that are machine-local bookkeeping,
+ *  gitignored, and safe to discard during worktree retirement. */
+const DISPOSABLE_HOOK_ARTIFACTS = new Set([
+  ".claude/worktree-autolock.stamp",
+  ".claude/worktree-autolock.log",
+  ".claude/worktree-retention-push.stamp",
+  ".claude/worktree-retention-push.log",
+  ".claude/worktree-guard-bypass.log",
+]);
+
+/**
+ * Prefix an `active` unit's probe errors carry in its reason list, where an
+ * `uncertain` unit carries them verbatim. Shared so the renderer can recognise
+ * a repository-wide failure in either spelling — matching only the bare form
+ * left every active unit repeating a fact the report had already stated.
+ */
+const PROBE_WARNING_PREFIX = "probe warning: ";
+
+
 const HUMAN_LANE_LABELS: Record<WorktreeLifecycleLane, string> = {
   active: "active",
   recovery: "recovery",
@@ -289,6 +323,9 @@ export function isDisposableIgnoredPath(candidate: string): boolean {
     normalized === "next-env.d.ts" ||
     normalized.endsWith(".tsbuildinfo")
   ) {
+    return true;
+  }
+  if (DISPOSABLE_HOOK_ARTIFACTS.has(normalized)) {
     return true;
   }
   return DISPOSABLE_IGNORED_ROOTS.some(
@@ -460,7 +497,7 @@ function classifyLifecycleUnitInternal(
   if (live.length > 0) {
     return withReasons(observation, "active", [
       ...live,
-      ...observation.probeErrors.map((error) => `probe warning: ${error}`),
+      ...observation.probeErrors.map((error) => `${PROBE_WARNING_PREFIX}${error}`),
     ]);
   }
 
@@ -693,13 +730,14 @@ const LANE_ORDER: WorktreeLifecycleLane[] = [
 export function summarizeWorktreeLifecycle(
   items: WorktreeLifecycleItem[],
   budgets: WorktreeLifecycleBudgets,
+  globalErrors: string[] = [],
 ): WorktreeLifecycleSummary {
   const counts = Object.fromEntries(LANE_ORDER.map((lane) => [lane, 0])) as Record<
     WorktreeLifecycleLane,
     number
   >;
   for (const item of items) counts[item.lane] += 1;
-  return { items, counts, budgets };
+  return { items, counts, budgets, globalErrors: [...new Set(globalErrors)] };
 }
 
 function assertNonnegativeInteger(name: string, value: number): void {
@@ -839,6 +877,25 @@ export function renderWorktreeLifecycleReport(
     `Managed exceptions: ${summary.budgets.exceptions.active} active | ${summary.budgets.exceptions.expired} expired`,
   ];
 
+  // State the checkout-level failures ONCE, before the lanes. Each affected
+  // unit still fails closed on them and still carries them in probeErrors —
+  // this only stops the report repeating one fact N times, where N is however
+  // many units the checkout happens to hold, and where the repetition is
+  // indistinguishable from N independent problems.
+  const globalErrors = summary.globalErrors;
+  const globalErrorSet = new Set(globalErrors);
+  if (globalErrors.length > 0) {
+    // Deliberately does NOT claim every unit is affected: a protected unit
+    // returns from classification before probe errors are read, so it carries
+    // none of these. Overclaiming here would be the same kind of error this
+    // section exists to correct, one direction over.
+    lines.push(
+      "",
+      `Repository-wide probe failures (${globalErrors.length}) — these describe the checkout rather than any one unit. Each affected unit fails closed on them and does not repeat them below:`,
+    );
+    for (const error of globalErrors) lines.push(`- ${error}`);
+  }
+
   for (const lane of LANE_ORDER) {
     const items = summary.items.filter((item) => item.lane === lane);
     if (items.length === 0) continue;
@@ -847,7 +904,35 @@ export function renderWorktreeLifecycleReport(
       const location = item.kind === "branch-only" || !item.path ? "" : ` @ ${item.path}`;
       const kind = item.kind === "branch-only" ? " [branch-only]" : "";
       lines.push(`- ${labelFor(item)}${kind}${location}`);
-      for (const reason of item.reasons) lines.push(`  ${humanReason(item, reason)}`);
+      // Drop the copies of a checkout-level failure that were already stated
+      // above. `reasons` keeps them — this is presentation, not classification,
+      // and every consumer reading the item still sees the full list.
+      //
+      // Both spellings have to be matched: an `uncertain` unit carries the
+      // probe error verbatim, while an `active` unit carries it prefixed with
+      // "probe warning: " (classifyLifecycleUnitInternal). Matching only the
+      // bare form would leave every active unit still repeating it.
+      const ownReasons = item.reasons.filter(
+        (reason) =>
+          !globalErrorSet.has(reason) &&
+          !(
+            reason.startsWith(PROBE_WARNING_PREFIX) &&
+            globalErrorSet.has(reason.slice(PROBE_WARNING_PREFIX.length))
+          ),
+      );
+      const suppressed = item.reasons.length - ownReasons.length;
+      for (const reason of ownReasons) lines.push(`  ${humanReason(item, reason)}`);
+      // Only when suppression would otherwise leave the unit with NO
+      // explanation at all: a bare line reads like a bug in the report rather
+      // than a deliberate omission. A unit that still shows a reason of its own
+      // needs no pointer — the heading above already accounts for the
+      // repository-wide failures, and repeating that per unit is the noise this
+      // whole change exists to remove.
+      if (suppressed > 0 && ownReasons.length === 0) {
+        lines.push(
+          `  ${suppressed} repository-wide probe failure${suppressed === 1 ? "" : "s"} (listed above)`,
+        );
+      }
       // Informational, never a lane input: these beads name the unit without
       // claiming it. Printed so the reader can still find the conversation.
       if (item.mentionTaskIds.length > 0) {
