@@ -106,6 +106,40 @@ if ! git rev-parse --git-dir >/dev/null 2>&1; then
   exit 1
 fi
 
+# Refresh remote-tracking refs BEFORE the lifecycle tool builds its inventory.
+#
+# The inventory compares refs/remotes/origin/main against the authoritative ref
+# on the remote, and a mismatch is a probe error stamped on EVERY unit, which
+# pushes all of them out of the retirable lanes. So one stale tracking ref
+# degrades the whole sweep to a no-op — and to a no-op that reads as healthy,
+# because "no change (39 -> 39)" looks exactly like a sweep with nothing to do.
+#
+# This was not an occasional race. The wrapper never fetched, so it read
+# whatever tracking refs the checkout happened to hold, and on a repository
+# this busy those go stale within minutes of any human `git pull <refspec>` —
+# which moves refs/heads/main without necessarily syncing the tracking ref.
+# Four consecutive scheduled runs on 2026-08-11 retired nothing with units
+# sitting past their cooldowns, and a single `git fetch --prune origin` fixed
+# it immediately.
+#
+# Deliberately a fetch and NOT a fast-forward of local main: other sessions
+# share this checkout, and moving their branch under them is not the scheduled
+# job's business. Only the tracking ref has to be current.
+#
+# Tags come along on purpose — `--prune` drops stale remote-tracking branches,
+# but retention proof reads pushed archive tags, so this must not use
+# --no-tags or --prune-tags.
+echo "[sweep] fetching remote-tracking refs from origin"
+fetch_failed=""
+if ! git fetch --prune --quiet origin; then
+  fetch_failed=1
+  echo "[sweep] WARNING: git fetch failed. The inventory will compare a stale"
+  echo "[sweep] tracking ref against the remote and is likely to stamp a probe"
+  echo "[sweep] error on every unit, retiring nothing. Treat any 'no change'"
+  echo "[sweep] below as unproven rather than as a clean sweep."
+fi
+echo "[sweep] main: local $(git rev-parse --short refs/heads/main 2>/dev/null), tracking $(git rev-parse --short refs/remotes/origin/main 2>/dev/null)"
+
 before=$(git worktree list | wc -l | tr -d ' ')
 echo "[sweep] repo: $REPO"
 echo "[sweep] repo HEAD: $(git rev-parse --short HEAD 2>/dev/null) on $(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
@@ -130,6 +164,14 @@ if [[ "$status" -ne 0 ]]; then
 elif [[ "$after" -lt "$before" ]]; then
   notify "Worktree sweep: $(( before - after )) retired" \
     "$before -> $after worktrees. Log: $LOG"
+elif [[ -n "$fetch_failed" ]]; then
+  # A no-op after a failed fetch is the exact state this wrapper used to report
+  # as healthy: the tool exits 0 having refused every unit over a tracking ref
+  # nothing refreshed. Say so, because silence here is indistinguishable from a
+  # sweep that genuinely had nothing to do.
+  echo "[sweep] no change ($before -> $after) but the fetch failed; result is unproven"
+  notify "Worktree sweep: result unproven" \
+    "git fetch failed, so nothing was retired on possibly stale refs. Log: $LOG"
 else
   echo "[sweep] no change ($before -> $after); no notification sent"
 fi
