@@ -297,6 +297,13 @@ export type CopilotFlowRuntimeOptions = CopilotProcessTreeDependencies & {
   /** Test seam; production always resolves the exact native Coven command. */
   supervisorCommand?: { command: string; fixedArgs: string[] };
   resolveSupervisorCommand?: typeof resolveCovenProcessSupervisorCommand;
+  /**
+   * Refuse the degraded direct-spawn transport. A caller that genuinely needs
+   * an owned process tree — one that must be able to prove descendants died on
+   * cancel — sets this and gets the original hard failure instead of a run
+   * whose children outlive it.
+   */
+  requireProcessSupervisor?: boolean;
   terminateProcessTree?: (
     supervisor: ChildProcess,
     dependencies: CopilotProcessTreeDependencies,
@@ -696,8 +703,34 @@ export async function startCopilotFlowRun(
     args: spawnArgs,
     cwd: launch.projectRoot,
   }, platform);
-  const supervisorCommand = runtime.supervisorCommand
-    ?? await (runtime.resolveSupervisorCommand ?? resolveCovenProcessSupervisorCommand)();
+  // The native supervisor is the supported transport, but no PUBLISHED
+  // @opencoven/cli provides it: `coven --print-native-binary-path` is an
+  // unrecognized flag as of 0.3.1, which is the newest release. Since #4524
+  // every research mission has therefore failed at its first iteration with
+  // "Coven's native process supervisor is unavailable", and the error's own
+  // advice — update the CLI — cannot be followed because there is nothing
+  // newer to install.
+  //
+  // So fall back to the pre-#4524 transport: spawn Copilot directly. Only
+  // CovenProcessSupervisorUnavailableError is caught, so a supervisor that
+  // exists but misbehaves still fails loudly rather than silently degrading.
+  let supervisorCommand: { command: string; fixedArgs: string[] } | null = null;
+  let unsupervisedReason: string | null = null;
+  try {
+    supervisorCommand = runtime.supervisorCommand
+      ?? await (runtime.resolveSupervisorCommand ?? resolveCovenProcessSupervisorCommand)();
+  } catch (error) {
+    if (
+      !(error instanceof CovenProcessSupervisorUnavailableError) ||
+      runtime.requireProcessSupervisor
+    ) {
+      throw error;
+    }
+    unsupervisedReason =
+      "Coven's native process supervisor is unavailable, so this run was launched directly. " +
+      "Cancelling or timing out stops Copilot itself, but any processes it spawns are not owned " +
+      "and may keep running. Update the Coven CLI once a build ships the process supervisor.";
+  }
   // Resolution can yield to a wrapper probe. App shutdown may seal admission
   // while that probe is in flight, so re-check immediately before the single
   // synchronous spawn+registry section. Nothing can interleave between this
@@ -705,7 +738,14 @@ export async function startCopilotFlowRun(
   if (globalThis.__covenCaveCopilotFlowShutdownStarted) {
     throw new Error("Cave is shutting down; a new direct Copilot flow cannot be started");
   }
-  const child = (runtime.spawnImpl ?? spawn)(supervisorCommand.command, supervisorCommand.fixedArgs, {
+  // Unsupervised runs carry the prompt in argv again, which is exactly the
+  // Windows command-line hazard #4524 moved into the request frame. The
+  // assertion above already ran unconditionally, so an oversized prompt still
+  // fails closed here instead of being silently truncated by the OS.
+  const [spawnProgram, spawnProgramArgs] = supervisorCommand
+    ? [supervisorCommand.command, supervisorCommand.fixedArgs]
+    : [command.command, spawnArgs];
+  const child = (runtime.spawnImpl ?? spawn)(spawnProgram, spawnProgramArgs, {
     windowsHide: true,
     cwd: launch.projectRoot,
     env: harnessSpawnEnv(launch.familiarId),
@@ -723,6 +763,12 @@ export async function startCopilotFlowRun(
   const pendingToolCompletions = new Map<string, { output: string | undefined; isError: boolean }>();
   const MAX_PENDING_TOOL_COMPLETIONS = 64;
   const compatibilityDiagnostics = new Map<string, string>();
+  // Surface the degraded transport on the run itself. A mission that quietly
+  // succeeded without process-tree ownership would look identical to a
+  // supervised one, and the difference matters the moment someone cancels.
+  if (unsupervisedReason) {
+    compatibilityDiagnostics.set("unsupervised-process-tree", unsupervisedReason);
+  }
   let protocolReportedFailure = false;
 
   const rememberPendingToolCompletion = (
@@ -1007,19 +1053,26 @@ export async function startCopilotFlowRun(
   });
   child.on("close", (code) => finalize(code, true));
 
-  try {
-    await awaitCopilotSupervisorAdmission(
-      child,
-      requestFrame,
-      runtime.admissionTimeoutMs ?? COPILOT_SUPERVISOR_ADMISSION_TIMEOUT_MS,
-    );
-  } catch {
+  // The admission handshake is the supervisor's own protocol: it acknowledges
+  // the request frame before Copilot starts. A directly spawned Copilot never
+  // speaks it and would simply time out, so the handshake is skipped rather
+  // than failed. Copilot's stdout is the same JSONL stream either way, which
+  // is why every frame handler below is transport-agnostic.
+  if (supervisorCommand) {
     try {
-      await active.abortStart();
+      await awaitCopilotSupervisorAdmission(
+        child,
+        requestFrame,
+        runtime.admissionTimeoutMs ?? COPILOT_SUPERVISOR_ADMISSION_TIMEOUT_MS,
+      );
     } catch {
-      throw new CopilotProcessSupervisorError({ sessionId, cleanupUnconfirmed: true });
+      try {
+        await active.abortStart();
+      } catch {
+        throw new CopilotProcessSupervisorError({ sessionId, cleanupUnconfirmed: true });
+      }
+      throw new CopilotProcessSupervisorError();
     }
-    throw new CopilotProcessSupervisorError();
   }
 
   timeout = setTimeout(() => {
