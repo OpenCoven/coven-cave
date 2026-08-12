@@ -36,7 +36,12 @@ import {
   toPersistedTools,
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
-import { covenLaunchCommand, type CovenLaunchCommand } from "@/lib/coven-bin";
+import {
+  COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC,
+  covenLaunchCommand,
+  covenWrapperSpawnEnv,
+  type CovenLaunchCommand,
+} from "@/lib/coven-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
 import {
@@ -166,13 +171,14 @@ import {
 } from "@/lib/server/local-runtime-capability-gate";
 import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { loadProjects } from "@/lib/cave-projects";
-import { chatProjectAccessId } from "@/lib/chat-project-access";
+import { chatProjectAccessId, taskWorktreeProjectAccessId } from "@/lib/chat-project-access";
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
   isProjectlessGenerationOrigin,
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
+import { resolveRuntimeSkillRoots } from "@/lib/server/skill-scan";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
   dispatchOpenClawGatewayTurn,
@@ -262,10 +268,10 @@ import type { StreamEvent } from "@/lib/stream-events";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import {
   appendMentionedFilesBlock,
-  cleanupImageTempFiles,
+  cleanupStagedImageFiles,
   persistImageAttachments,
   resolveMentionedFiles,
-  writeImageAttachmentsToTemp,
+  writeImageAttachmentsToRuntime,
 } from "./chat-send-attachments";
 import {
   covenRunSupportsAddDir,
@@ -1845,7 +1851,18 @@ export async function POST(req: Request) {
       : null;
   const codexSpawnEnv =
     !sshRuntime && binding.harness === "codex" ? harnessSpawnEnv(body.familiarId) : null;
-  const codexDirectLaunch = codexSpawnEnv ? codexLaunchCommand() : null;
+  const codexDirectLaunch = codexSpawnEnv
+    ? (() => {
+        try {
+          return codexLaunchCommand();
+        } catch {
+          // A missing Windows CLI has no safe bare-name fallback. Preserve the
+          // existing Coven-backed route, whose adapter preflight reports the
+          // actionable missing-runtime diagnostic without spawning from cwd.
+          return null;
+        }
+      })()
+    : null;
   // The same passive availability contract every direct runner uses. The
   // bounded capability probe below only runs against a launch-ready plan,
   // mirroring how Copilot gates its capability probe on launch readiness.
@@ -1929,8 +1946,20 @@ export async function POST(req: Request) {
         ...(codexLaunchAvailability ? { availability: codexLaunchAvailability } : {}),
       });
     } else if (!hermesDirect) {
-      const env = harnessSpawnEnv(body.familiarId);
-      const launch = covenLaunchCommand();
+      const env = covenWrapperSpawnEnv(harnessSpawnEnv(body.familiarId));
+      let launch: CovenLaunchCommand;
+      try {
+        launch = covenLaunchCommand();
+      } catch {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC,
+            code: RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing,
+          }),
+          { status: 409, headers: { "content-type": "application/json" } },
+        );
+      }
       localRuntimePlan = createLocalRuntimePlan({
         runner: "coven",
         launch,
@@ -2059,17 +2088,9 @@ export async function POST(req: Request) {
   // The worktree itself is intentionally not a separate project record, so
   // its first native-chat turn must authorize against the card's server-owned
   // project instead of failing as an arbitrary unregistered directory. This
-  // narrow exception applies only to the fresh reserved handoff and only when
-  // the browser submits the exact CWD persisted on that task card.
-  const taskWorktreeProjectId =
-    body.startNewConversation &&
-    !existingConversation &&
-    taskCard?.projectId &&
-    taskCard.cwd &&
-    body.projectRoot &&
-    taskCard.cwd === body.projectRoot
-      ? taskCard.projectId
-      : null;
+  // narrow exception applies only to the fresh reserved handoff, only when
+  // the browser submits the exact CWD persisted on that task card, and only
+  // when the symlink-resolved runtime cwd remains inside the task project.
   let authorizedProjectRoot: string;
   try {
     if (projectlessGeneration) {
@@ -2087,6 +2108,15 @@ export async function POST(req: Request) {
         {
           validateProjectRoot: validateCaveProjectRoot,
           resolveProjectId: (requestedRoot, resolvedRoot) =>
+            taskWorktreeProjectAccessId({
+              projects,
+              startNewConversation: Boolean(body.startNewConversation),
+              hasExistingConversation: Boolean(existingConversation),
+              taskProjectId: taskCard?.projectId,
+              taskCwd: taskCard?.cwd,
+              requestedProjectRoot: requestedRoot,
+              resolvedCwd: resolvedRoot,
+            }) ??
             chatProjectAccessId({
               projects,
               requestedProjectRoot: requestedRoot,
@@ -2107,7 +2137,6 @@ export async function POST(req: Request) {
         {
           familiarId: body.familiarId,
           projectRoot: projectRootForLaunch,
-          projectIdOverride: taskWorktreeProjectId,
           surface: "chat",
         },
       );
@@ -2408,6 +2437,15 @@ export async function POST(req: Request) {
   const grantedProjectRootAccess: Record<string, ProjectAccessLevel> = Object.fromEntries(
     accessibleProjects.map((entry) => [entry.project.root, entry.access]),
   );
+  const runtimeResourceRoots = sshRuntime
+    ? []
+    : await resolveRuntimeSkillRoots({
+        coveredRoots: [
+          cwd,
+          ...grantedProjectRoots,
+          ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
+        ],
+      });
   // The selected project is always the runtime root. Familiar identity files
   // are injected separately and remain an allowed side directory below.
   const runtimeScope: RuntimeScope = sshRuntime
@@ -2417,6 +2455,7 @@ export async function POST(req: Request) {
         root: cwd,
         allowedProjectRoots: grantedProjectRoots,
         projectRootAccess: grantedProjectRootAccess,
+        readOnlyResourceRoots: runtimeResourceRoots,
       };
   // Boundary sentinel: watches the harness's streamed tool calls for paths
   // outside the granted roots. Never blocks the stream — violations surface
@@ -2430,6 +2469,7 @@ export async function POST(req: Request) {
           cwd,
           ...grantedProjectRoots,
           ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
+          ...runtimeResourceRoots,
         ],
       });
   const responseMetadata: ChatResponseMetadata = {
@@ -2459,13 +2499,14 @@ export async function POST(req: Request) {
   });
   if (offlineChatResponse) return offlineChatResponse;
 
-  // Image delivery channel: only harnesses that can read Cave's local temp
-  // files may receive image paths. Remote Hermes Responses endpoints cannot,
+  // Image delivery channel: only harnesses that can read a local granted root
+  // may receive image paths. Remote Hermes Responses endpoints cannot,
   // so they receive the same explicit unsupported notice as bridge/SSH runs.
   const imagesSupported = !sshRuntime && binding.harness !== "openclaw" &&
     !(hermesApi && !hermesApiCanAccessLocalFiles(hermesApi));
+  const attachmentStagingRoot = resolvedFamiliarWorkspace ?? cwd;
   const imageFilePaths = imagesSupported
-    ? await writeImageAttachmentsToTemp(attachments)
+    ? await writeImageAttachmentsToRuntime(attachments, attachmentStagingRoot)
     : new Map<number, string>();
   // @-mentioned files share the image-delivery constraint: only local
   // coven-run harnesses can Read this machine's filesystem, so bridges and
@@ -2628,6 +2669,7 @@ export async function POST(req: Request) {
           [
             ...grantedProjectRoots,
             ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
+            ...runtimeResourceRoots,
           ]
             .map((root) => root.trim())
             .filter((root) => root && root !== spawnRoot),
@@ -5340,7 +5382,13 @@ export async function POST(req: Request) {
         (openCodeDirect && openCodeCompatibility?.mode === "plain") || (grokDirect && grokCompatibility?.mode === "plain")
           ? { text: assistantTextForPersistence, attachments: [] }
           : parseAgentAttachments(assistantTextForPersistence, {
-              allowedRoots: sshRuntime ? [] : [cwd, ...grantedProjectRoots],
+              allowedRoots: sshRuntime
+                ? []
+                : [
+                    cwd,
+                    ...grantedProjectRoots,
+                    ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
+                  ],
             });
       for (const attachment of agentAttachments) {
         push({ kind: "attachment", attachment });
@@ -5394,19 +5442,29 @@ export async function POST(req: Request) {
       // `coven run` can echo the forwarded model in system.init before it has
       // started the downstream harness. That establishes argv forwarding, not
       // downstream acceptance, so keep the model pending unless the error
-      // itself safely identifies a rejected model. In particular, do not mark
-      // a successful wrapper response as proof that Codex accepted `--model`.
+      // itself safely identifies a rejected model. When the downstream harness
+      // DID echo back a model (confirmedModel is set from the init/system
+      // event, not from coven run's own argv), treat a successful run as
+      // confirmed — that IS downstream acceptance.
       else if (localRuntimePlan?.runner === "coven" && forwardModel) {
         const rejected = result.is_error === true && modelRejectionInError(
           [...stderrTail, ...stdoutErrTail].join("\n"),
         );
+        const confirmed = !result.is_error && confirmedModel != null;
         const application = modelApplicationForHarness(
-          rejected ? { failed: true } : { supported: true },
+          rejected
+            ? { failed: true }
+            : confirmed
+              ? { supported: true, confirmed: true }
+              : { supported: true },
         );
+        if (confirmed) responseMetadata.confirmedModel = confirmedModel ?? undefined;
         responseMetadata.modelApplicationState = application.state;
         responseMetadata.modelApplicationReason = rejected
           ? application.reason
-          : "Coven forwarded the selected model; downstream acceptance was not confirmed.";
+          : confirmed
+            ? application.reason
+            : "Coven forwarded the selected model; downstream acceptance was not confirmed.";
         modelState.applicationState = application.state;
         modelState.reason = responseMetadata.modelApplicationReason;
       }
@@ -5622,7 +5680,7 @@ export async function POST(req: Request) {
       // Best-effort temp cleanup: the harness child process has already
       // exited (including any resume retry), so nothing can still be reading
       // the saved images. Failures just leave files in tmpdir.
-      cleanupImageTempFiles(imageFilePaths);
+      cleanupStagedImageFiles(imageFilePaths);
       if (detachKillTimer != null) clearTimeout(detachKillTimer);
       unregisterChatRun(runHandle);
       runBuffer?.finish();

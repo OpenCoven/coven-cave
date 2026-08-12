@@ -28,6 +28,7 @@ const contracts: RouteContract[] = [
   { route: "/afs/[id]/timeline", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/app/build-info", methods: ["GET"], kind: "json" },
   { route: "/app/latest-release", methods: ["GET"], kind: "json" },
+  { route: "/app/native-readiness", methods: ["GET"], kind: "json" },
   { route: "/asana/assigned", methods: ["GET"], kind: "json" },
   { route: "/asana/workspaces", methods: ["GET"], kind: "json" },
   { route: "/asana/pat", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
@@ -72,13 +73,17 @@ const contracts: RouteContract[] = [
   { route: "/coven/exec", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/daemon/capabilities", methods: ["GET"], kind: "json" },
   { route: "/daemon/connection", methods: ["GET"], kind: "json" },
+  { route: "/daemon/diagnostics", methods: ["GET"], kind: "json" },
   { route: "/daemon/probe", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/daemon/start", methods: ["POST"], kind: "json" },
   { route: "/daemon/status", methods: ["GET"], kind: "json" },
   { route: "/daemon/travel/reconcile", methods: ["POST"], kind: "json" },
   { route: "/escalations/[id]", methods: ["PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/escalations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/familiars/[id]/avatar", methods: ["GET", "POST"], kind: "stream", pathGuard: true },
+  // DELETE added deliberately by cave-nv1dk.1: clearing an avatar is now a host
+  // mutation, not a browser-local IndexedDB delete. Mirrors the sibling
+  // /backdrop route, which already exposes GET/PUT/DELETE.
+  { route: "/familiars/[id]/avatar", methods: ["GET", "POST", "DELETE"], kind: "stream", pathGuard: true },
   { route: "/familiars/[id]/backdrop", methods: ["GET", "PUT", "DELETE"], kind: "stream", localOriginGuard: true },
   { route: "/familiars/[id]/contract", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/familiars/[id]/icon", methods: ["PUT"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
@@ -236,6 +241,7 @@ const contracts: RouteContract[] = [
   { route: "/salem", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/salem/pathfinder", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/salem/pathfinder/feedback", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/search", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/sessions/[id]/events", methods: ["GET"], kind: "json" },
   { route: "/sessions/[id]/input", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/sessions/[id]/kill", methods: ["POST"], kind: "json" },
@@ -351,6 +357,12 @@ function effectiveRouteSource(file: string, source: string): string {
   // nothing.
   if (source.includes('from "@/lib/server/x-oauth-start-route"')) {
     parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "x-oauth-start-route.ts"), "utf8"));
+  }
+  // The onboarding bootstrap route keeps GET and POST wiring in the App
+  // Router module while its injectable handlers live beside the bootstrap
+  // service. Inline that reviewed helper just like the OAuth route above.
+  if (source.includes('from "@/lib/server/onboarding-bootstrap-route"')) {
+    parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "onboarding-bootstrap-route.ts"), "utf8"));
   }
   if (source.includes('from "./install-service"')) {
     parts.push(readFileSync(path.join(path.dirname(file), "install-service.ts"), "utf8"));

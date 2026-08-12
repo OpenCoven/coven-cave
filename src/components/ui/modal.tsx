@@ -24,6 +24,8 @@ type ModalProps = {
   dismissOnEscape?: boolean;
   /** Accessible label when there is no breadcrumb. */
   ariaLabel?: string;
+  /** Description element inside the modal body. */
+  ariaDescribedBy?: string;
 };
 
 export function Modal({
@@ -37,6 +39,7 @@ export function Modal({
   dismissOnBackdrop = true,
   dismissOnEscape = true,
   ariaLabel,
+  ariaDescribedBy,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const headingId = useId();
@@ -65,6 +68,7 @@ export function Modal({
         // when there's no breadcrumb to point at.
         aria-labelledby={breadcrumb ? headingId : undefined}
         aria-label={breadcrumb ? undefined : ariaLabel}
+        aria-describedby={ariaDescribedBy}
         tabIndex={-1}
       >
         {breadcrumb ? (

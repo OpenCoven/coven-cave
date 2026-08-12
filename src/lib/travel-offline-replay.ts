@@ -26,6 +26,7 @@ import type { FlowDoc } from "@/lib/flow/flow-doc";
 import { catalogNode } from "@/lib/flow/flow-catalog";
 import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import { flowRunRedactsData } from "@/lib/flow/flow-doc";
+import { isResearchMissionFlowSnapshot } from "@/lib/research-mission-flow";
 import type { FlowRunStepStatus } from "@/lib/flows";
 import { startAutomationRun } from "@/lib/server/automation-runner";
 import { recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
@@ -390,6 +391,11 @@ async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const payload = record(item.payload);
   const flow = payload.flow as FlowDoc | undefined;
   if (!flow?.id || !Array.isArray(flow.nodes)) throw new Error("queued flow payload missing flow snapshot");
+  if (isResearchMissionFlowSnapshot(flow)) {
+    throw new Error(
+      "Queued Research work is not replayed. Open the mission and start a fresh iteration while execution is connected.",
+    );
+  }
   const options = record(payload.options);
   const targetNodeId = stringValue(options.targetNodeId) ?? undefined;
   const familiarId = stringValue(payload.familiarId) ?? flowFamiliar(flow);

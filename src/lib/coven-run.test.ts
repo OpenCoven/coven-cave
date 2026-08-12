@@ -7,6 +7,9 @@ import {
   covenAgentRunStatus,
   covenRailStatus,
   covenRunElapsedMs,
+  covenHistoryFold,
+  covenHistoryLabel,
+  covenRunPill,
   covenRunProgressLabel,
   formatCovenDuration,
   hasCovenAgentStarted,
@@ -228,4 +231,158 @@ test("the rail carries one status line, and failure outranks the mode", () => {
   )[0];
   assert.equal(covenRailStatus({ memberCount: 2, run: running }).text, "Round robin · 1 of 2");
   assert.equal(covenRailStatus({ memberCount: 2, run: running, paused: true }).text, "Paused · 1 of 2");
+});
+
+test("the run pill echoes the header without inventing state", () => {
+  const running = buildCovenRuns(
+    [
+      user({ id: "u1", responseMode: "round-robin" }),
+      reply({ id: "a", replyTo: "u1", status: "done", text: "ok" }),
+      reply({ id: "b", familiarId: "echo", replyTo: "u1", status: "streaming", text: "x" }),
+    ],
+    { fallbackMode: "round-robin" },
+  )[0];
+  const pill = covenRunPill({ run: running });
+  assert.equal(pill?.label, "Round robin");
+  assert.equal(pill?.tone, "accent");
+  assert.equal(pill?.live, true);
+  // The clock is not baked into the label — the renderer ticks it from here, so
+  // a live run does not re-derive the whole pill once a second.
+  assert.equal(pill?.startedAtMs, Date.parse(AT));
+  assert.ok(!pill?.label.includes(":"));
+});
+
+test("a paused run does not pulse as if it were working", () => {
+  const running = buildCovenRuns(
+    [
+      user({ id: "u1", responseMode: "round-robin" }),
+      reply({ id: "a", replyTo: "u1", status: "done", text: "ok" }),
+      reply({ id: "b", familiarId: "echo", replyTo: "u1" }),
+    ],
+    { fallbackMode: "round-robin" },
+  )[0];
+  const pill = covenRunPill({ run: running, paused: true });
+  assert.equal(pill?.label, "Paused");
+  assert.equal(pill?.tone, "warning");
+  assert.equal(pill?.live, false);
+});
+
+test("a failure outranks the mode in the pill, as it does in the rail", () => {
+  const failing = buildCovenRuns(
+    [
+      user({ id: "u1", responseMode: "broadcast" }),
+      reply({ id: "a", replyTo: "u1", status: "streaming", text: "x" }),
+      reply({ id: "b", familiarId: "echo", replyTo: "u1", status: "error", error: "boom" }),
+      reply({ id: "c", familiarId: "kitty", replyTo: "u1" }),
+    ],
+    { fallbackMode: "broadcast" },
+  )[0];
+  const pill = covenRunPill({ run: failing });
+  assert.equal(pill?.label, "Broadcast — 1 failed");
+  assert.equal(pill?.tone, "danger");
+  assert.equal(pill?.live, false);
+});
+
+test("a settled run keeps its last word, with its final duration", () => {
+  const done = buildCovenRuns(
+    [
+      user({ id: "u1", responseMode: "round-robin" }),
+      reply({ id: "a", replyTo: "u1", status: "done", text: "ok", durationMs: 74_000 }),
+    ],
+    { fallbackMode: "round-robin" },
+  )[0];
+  const pill = covenRunPill({ run: done });
+  assert.equal(pill?.label, "Run complete");
+  assert.equal(pill?.tone, "success");
+  assert.equal(pill?.live, false);
+  // No live clock; the settled duration travels with it so a reload agrees.
+  assert.equal(pill?.startedAtMs, null);
+  assert.equal(formatCovenDuration(pill?.elapsedMs ?? 0), "1m 14s");
+});
+
+test("no coven, no pill", () => {
+  assert.equal(covenRunPill({ run: null }), null);
+  // A user turn whose targets all left has no summary and nothing to report.
+  const empty = buildCovenRuns([user({ id: "u1" })], { fallbackMode: "round-robin" })[0];
+  assert.equal(covenRunPill({ run: empty }), null);
+});
+
+// --- earlier-runs history fold (frame lines 288-318, proposal §6) -----------
+
+const NOW = Date.parse("2026-08-10T12:00:00.000Z");
+const DAY = 86_400_000;
+
+function settledRun(id: string, at: string, text: string) {
+  return [
+    user({ id, text, responseMode: "round-robin", createdAt: at }),
+    reply({ id: `${id}-a`, replyTo: id, status: "done", text: "ok", createdAt: at, durationMs: 1000 }),
+  ];
+}
+
+test("the fold needs something earlier to fold", () => {
+  // One run is the live conversation, never history.
+  const one = buildCovenRuns(settledRun("u1", AT, "go"), { fallbackMode: "round-robin" });
+  assert.equal(covenHistoryFold(one, { now: NOW }), null);
+  assert.equal(covenHistoryFold([], { now: NOW }), null);
+});
+
+test("the fold summarises the most recent EARLIER run, never the live one", () => {
+  const turns = [
+    ...settledRun("u1", "2026-08-09T17:38:00.000Z", "Standup please"),
+    ...settledRun("u2", "2026-08-09T17:40:00.000Z", "Tidy the board"),
+    ...settledRun("u3", "2026-08-10T11:00:00.000Z", "Merge PR #26"),
+  ];
+  const runs = buildCovenRuns(turns, { fallbackMode: "round-robin" });
+  const fold = covenHistoryFold(runs, { now: NOW });
+  // u3 is the live conversation; u2 is the newest thing folded away.
+  assert.equal(fold?.title, "Tidy the board");
+  assert.equal(fold?.count, 2);
+  assert.match(fold?.meta ?? "", /Round robin · 1 of 1 complete/);
+  assert.equal(fold?.turns.length, 1);
+});
+
+test("a run still in flight is not history", () => {
+  const turns = [
+    ...settledRun("u1", AT, "first"),
+    user({ id: "u2", responseMode: "round-robin", createdAt: AT }),
+    reply({ id: "u2-a", replyTo: "u2", status: "streaming", text: "working" }),
+    ...settledRun("u3", AT, "latest"),
+  ];
+  const runs = buildCovenRuns(turns, { fallbackMode: "round-robin" });
+  // u2 is the newest earlier run but has not settled — no card to show.
+  assert.equal(covenHistoryFold(runs, { now: NOW }), null);
+});
+
+test("the title comes from the instruction, since nothing names a run", () => {
+  const long = "Audit the release checklist from every angle and report anything that drifted since the 2.0 template";
+  const runs = buildCovenRuns(
+    [...settledRun("u1", AT, long), ...settledRun("u2", AT, "next")],
+    { fallbackMode: "round-robin" },
+  );
+  const fold = covenHistoryFold(runs, { now: NOW });
+  assert.ok((fold?.title.length ?? 0) <= 72, "long instructions are trimmed");
+  assert.ok(fold?.title.endsWith("…"), "trimming is visible");
+  assert.ok(!/Standup sweep|Signature sweep/.test(fold?.title ?? ""), "no invented run name");
+});
+
+test("the divider counts runs and reads in calendar days", () => {
+  assert.equal(covenHistoryLabel(1, NOW - 3600_000, NOW), "Earlier today · 1 run");
+  assert.equal(covenHistoryLabel(2, NOW - 3600_000, NOW), "Earlier today · 2 runs");
+  assert.equal(covenHistoryLabel(2, NOW - DAY, NOW), "Yesterday · 2 earlier runs");
+  assert.equal(covenHistoryLabel(1, NOW - DAY, NOW), "Yesterday · 1 earlier run");
+  assert.equal(covenHistoryLabel(4, NOW - 3 * DAY, NOW), "3 days ago · 4 earlier runs");
+});
+
+test("folded turns carry their own status, not a blanket Complete", () => {
+  const turns = [
+    user({ id: "u1", responseMode: "broadcast", createdAt: AT }),
+    reply({ id: "a", replyTo: "u1", status: "done", text: "ok", createdAt: AT }),
+    reply({ id: "b", familiarId: "echo", replyTo: "u1", status: "error", error: "timed out", createdAt: AT }),
+    ...settledRun("u2", AT, "next"),
+  ];
+  const fold = covenHistoryFold(buildCovenRuns(turns, { fallbackMode: "broadcast" }), { now: NOW });
+  assert.deepEqual(fold?.turns.map((t) => t.status), ["complete", "failed"]);
+  // The frame hardcodes "Complete" on every history row; a real failure must
+  // not be laundered into a success on the way into the fold.
+  assert.match(fold?.meta ?? "", /with failures|1 failed/);
 });

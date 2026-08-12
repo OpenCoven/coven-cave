@@ -3,6 +3,11 @@ export function parseExecutorUrls(text: string): string[] {
   return Array.from(new Set(text.split(/\r?\n|,/).map((entry) => entry.trim()).filter(Boolean)));
 }
 
+export function suggestedHubEndpoint(host: string, port = 8787): string {
+  const normalized = host.trim().replace(/\.+$/, "");
+  return `http://${normalized}:${port}`;
+}
+
 /** Parse `host = /workspace` lines into the persisted host-workspace mapping. */
 export function parseHostWorkspaceText(text: string): Record<string, string> {
   const out: Record<string, string> = {};

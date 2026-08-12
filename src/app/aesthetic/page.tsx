@@ -3,6 +3,11 @@
 // Lives at /aesthetic so designers/contributors can sanity-check tokens
 // without booting the full app.
 
+import { Field } from "@/components/ui/field";
+import { TextArea } from "@/components/ui/text-area";
+import { TextInput } from "@/components/ui/text-input";
+import "./aesthetic.css";
+
 const PALETTE: Array<{ name: string; cssVar: string; note?: string }> = [
   { name: "bg-base", cssVar: "--bg-base", note: "page background" },
   { name: "bg-raised", cssVar: "--bg-raised", note: "cards, panels" },
@@ -203,6 +208,40 @@ export default function AestheticPage() {
               Idle
             </span>
           </div>
+        </div>
+      </Section>
+
+      <Section title="Fields">
+        <div className="shell-card aesthetic-field-grid">
+          <Field
+            label="Project name"
+            description="Use the name people recognize in task and chat pickers."
+            required
+          >
+            <TextInput placeholder="e.g., Coven Cave" />
+          </Field>
+
+          <Field label="Summary" optional>
+            <TextArea placeholder="Describe the task…" />
+          </Field>
+
+          <Field label="Repository path" error="Enter an absolute project path">
+            <TextInput defaultValue="coven-cave" />
+          </Field>
+
+          <Field
+            label="Saved owner"
+            description="Read-only values remain selectable."
+          >
+            <TextInput defaultValue="Sage" readOnly />
+          </Field>
+
+          <Field
+            label="Unavailable runtime"
+            description="Install a runtime before choosing a model."
+          >
+            <TextInput placeholder="Choose a runtime first" disabled />
+          </Field>
         </div>
       </Section>
 

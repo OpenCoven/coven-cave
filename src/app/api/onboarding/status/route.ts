@@ -8,8 +8,10 @@ import { callDaemon } from "@/lib/coven-daemon";
 import { loadConfig } from "@/lib/cave-config";
 import { caveHome } from "@/lib/coven-paths";
 import {
+  covenBinaryFromEnvironment,
   covenLaunchCommandForBinary,
   covenSpawnEnv,
+  covenWrapperSpawnEnv,
   pickWindowsLauncher,
 } from "@/lib/coven-bin";
 import {
@@ -142,6 +144,14 @@ async function commandPath(
   deadline: number,
   discoveryState: EnvironmentDiscoveryState,
 ): Promise<ProbeResult<string>> {
+  if (process.platform === "win32" && binary.toLowerCase() === "coven") {
+    const found = covenBinaryFromEnvironment(env);
+    return found
+      ? { state: "ready", value: found }
+      : discoveryState === "ready"
+        ? { state: "absent", value: null }
+        : { state: "unavailable", value: null };
+  }
   const command = process.platform === "win32" ? "where" : "which";
   const result = await withinDeadline(async (signal) => {
     try {
@@ -259,12 +269,13 @@ async function loadCovenAdapterSummaries(
     const { command, fixedArgs, unresolvedWindowsShim } =
       covenLaunchCommandForBinary(pathProbe.value);
     if (unresolvedWindowsShim) throw new Error("unresolved Coven launcher");
+    const wrapperEnv = covenWrapperSpawnEnv(env);
     const { stdout: helpText } = await execFileAsync(
       command,
       [...fixedArgs, "--help"],
       {
         windowsHide: true,
-        env,
+        env: wrapperEnv,
         signal,
         timeout: remainingTimeout(1500, deadline),
       },
@@ -278,7 +289,7 @@ async function loadCovenAdapterSummaries(
       [...fixedArgs, "adapter", "list", "--json"],
       {
         windowsHide: true,
-        env,
+        env: wrapperEnv,
         signal,
         timeout: remainingTimeout(3000, deadline),
       },

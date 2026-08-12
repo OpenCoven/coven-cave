@@ -25,6 +25,51 @@ export interface WorktreeLifecycleInventoryOptions {
   repo: string;
   root: string;
   nowMs: number;
+  /**
+   * Called after every external command this inventory runs.
+   *
+   * A caller holding a lease over the inventory cannot renew it with a timer:
+   * this function is synchronous and every second of it is spent inside
+   * `spawnSync`, so the event loop never turns and no `setInterval` fires. The
+   * hook is the only place renewal can happen, and anchoring it to commands
+   * rather than to wall-clock means renewal tracks work actually done — the
+   * inventory gets slower as the checkout grows, and so does the renewal.
+   *
+   * Throwing from the hook aborts the inventory. That is deliberate: a caller
+   * whose fence has been lost should stop reading a repository it no longer
+   * excludes writers from, rather than finishing and reporting a snapshot
+   * taken without exclusion. Callers that merely want progress should not
+   * throw.
+   */
+  onProgress?: () => void;
+
+  /**
+   * Restrict the per-unit GitHub probing to these full local refs.
+   *
+   * The pull-request probe costs one GraphQL round trip per head oid and
+   * another per branch — measured at ~2 calls and ~2s per unit, so ~104 calls
+   * and ~95s of a ~134s inventory on a 47-unit checkout. Retirement's reprobe
+   * pays all of it to re-verify ONE candidate and then discards every other
+   * unit, twice per retirement (cave-imhf0).
+   *
+   * Scoping narrows ONLY that GitHub probing. Every unit is still enumerated
+   * locally, so cross-unit checks that do not need the network — conflicting
+   * structured paths, duplicate branch claims, orphaned metadata — see exactly
+   * what they see in a full inventory, and the focused unit's own
+   * classification is unchanged.
+   *
+   * Units outside the scope FAIL CLOSED: each is given an explicit
+   * "not probed" probe error, so it classifies `uncertain` rather than
+   * appearing to have no pull request. That direction is not optional. The
+   * absence of a PR association is precisely what makes a unit look landed and
+   * retirable, so treating "not asked" as "no PR" would turn a cost
+   * optimisation into a gate that offers up live worktrees for destruction.
+   *
+   * A unit whose head oid or branch is shared with a focused unit keeps its
+   * real answer: the probe result is keyed by oid and branch, not by unit, so
+   * poisoning it would corrupt the focused unit's own data.
+   */
+  focusRefs?: string[];
 }
 
 export interface WorktreeLifecycleInventory {
@@ -274,12 +319,55 @@ function isIsoCalendarDate(value: string): boolean {
   );
 }
 
+/**
+ * Progress hook for the in-flight inventory, or null when none is running.
+ *
+ * Module state rather than a threaded parameter because `command` is called
+ * from well over a hundred sites; threading it would be a large diff for no
+ * added safety. `collectWorktreeLifecycleInventory` is synchronous and
+ * single-threaded, so the only way two inventories could interleave is
+ * re-entrance from inside the hook, which `runProgressHook` refuses.
+ */
+let activeProgressHook: (() => void) | null = null;
+let insideProgressHook = false;
+
+function runProgressHook(): void {
+  // A hook that ran a command would re-enter this and recurse without bound.
+  // Note the reach of this guard: anything the hook does — including starting
+  // a whole nested inventory — runs with progress reporting suppressed, so a
+  // nested read never drives its own hook. That is intended (the outer fence
+  // is the one being held) but it means a nested inventory cannot abort
+  // through its own hook.
+  if (activeProgressHook === null || insideProgressHook) return;
+  insideProgressHook = true;
+  try {
+    activeProgressHook();
+  } finally {
+    insideProgressHook = false;
+  }
+}
+
 function command(
   executable: string,
   args: string[],
   cwd: string,
   timeout = 30_000,
   env: NodeJS.ProcessEnv = process.env,
+): CommandResult {
+  const result = runCommand(executable, args, cwd, timeout, env);
+  // Deliberately OUTSIDE runCommand's catch: a hook that throws is reporting a
+  // lost fence, and swallowing it there would turn that into an ordinary
+  // "invocation failed" result and let the inventory continue unfenced.
+  runProgressHook();
+  return result;
+}
+
+function runCommand(
+  executable: string,
+  args: string[],
+  cwd: string,
+  timeout: number,
+  env: NodeJS.ProcessEnv,
 ): CommandResult {
   try {
     const result = spawnSync(executable, args, {
@@ -2325,12 +2413,47 @@ function remoteDefaultBranch(root: string): RemoteDefaultBranch {
   };
 }
 
+/**
+ * Split the non-closed beads touching a unit into the ones that OWN it and the
+ * ones that merely MENTION it.
+ *
+ * Only ownership blocks retirement. The distinction matters because the two
+ * signals have opposite reliability:
+ *
+ *   - `owns` — a structured lifecycle record naming this branch or path, or a
+ *     bead id embedded in the branch name. Both are claims of ownership; the
+ *     record is written by the creation script and the branch name is chosen by
+ *     the owner.
+ *   - `mentions` — the bead's free TEXT happens to contain the branch string or
+ *     the head OID. That is not a claim of anything. It is what writing a bug
+ *     report, a post-mortem, or a handoff note looks like.
+ *
+ * Treating a mention as open work made the failure self-perpetuating and
+ * inverted: the better you documented a retirement problem, the less retirable
+ * the unit became, and a bead explaining why worktrees cannot be retired was
+ * itself a reason a worktree could not be retired. Demonstrated in two
+ * consecutive apply runs on 2026-08-10 — a unit classified `cleanup-ready`,
+ * then `active, non-closed Beads: <the bug report filed about it>` once that
+ * report quoted its branch name and head OID as evidence. It punished exactly
+ * the behaviour this repository asks for everywhere else.
+ *
+ * Measured over the live checkout before this change: of 42 units, 9 picked up
+ * blockers from the free-text clauses and 6 had no other blocker at all. One
+ * cross-session coordination report blocked three units purely by naming the
+ * branches it existed to compare. Of those 6, four had their structured record
+ * on a CLOSED bead — the owner was done and only someone else's prose still
+ * held them — and the remaining two carry no record at all, so the metadata
+ * gate holds them regardless of what this function returns.
+ *
+ * Mentions are still reported, because "who is talking about this unit" is
+ * genuinely useful; they are just no longer mistaken for a claim on it.
+ */
 function matchingTasks(
   branch: string | null,
   worktreePath: string | null,
   head: string,
   tasks: BeadTask[],
-): string[] {
+): { owns: string[]; mentions: string[] } {
   const matchedBranch =
     branch !== null && !PROTECTED_BRANCHES.has(branch) ? branch : null;
   const branchBeadIds = new Set(matchedBranch ? beadIdsInText(matchedBranch) : []);
@@ -2338,24 +2461,30 @@ function matchingTasks(
     worktreePath === null ? null : normalizeAbsoluteWorktreePath(worktreePath);
 
   const exactOid = new RegExp(`(?:^|[^0-9a-f])${head}(?:$|[^0-9a-f])`, "i");
-  return tasks
-    .filter((task) => task.status !== "closed")
-    .filter(
-      (task) =>
-        task.structured.some(
-          (record) =>
-            (matchedBranch !== null && record.branch === matchedBranch) ||
-            (normalizedWorktreePath !== null &&
-              normalizeAbsoluteWorktreePath(record.path) === normalizedWorktreePath),
-        ) ||
-        branchBeadIds.has(task.id.toLowerCase()) ||
-        exactOid.test(task.text) ||
-        (matchedBranch !== null && task.text.includes(matchedBranch)) ||
-        (matchedBranch !== null &&
-          worktreePath !== null &&
-          task.text.includes(worktreePath)),
-    )
-    .map((task) => task.id);
+  const owns: string[] = [];
+  const mentions: string[] = [];
+  for (const task of tasks) {
+    if (task.status === "closed") continue;
+    const ownsUnit =
+      task.structured.some(
+        (record) =>
+          (matchedBranch !== null && record.branch === matchedBranch) ||
+          (normalizedWorktreePath !== null &&
+            normalizeAbsoluteWorktreePath(record.path) === normalizedWorktreePath),
+      ) || branchBeadIds.has(task.id.toLowerCase());
+    if (ownsUnit) {
+      owns.push(task.id);
+      continue;
+    }
+    const mentionsUnit =
+      exactOid.test(task.text) ||
+      (matchedBranch !== null && task.text.includes(matchedBranch)) ||
+      (matchedBranch !== null &&
+        worktreePath !== null &&
+        task.text.includes(worktreePath));
+    if (mentionsUnit) mentions.push(task.id);
+  }
+  return { owns, mentions };
 }
 
 /**
@@ -2374,12 +2503,39 @@ function recordIsAttributable(record: StructuredMetadataRecord): boolean {
   return record.branchUsable || normalizeAbsoluteWorktreePath(record.path) !== null;
 }
 
+/**
+ * Resolve one unit's lifecycle metadata.
+ *
+ * Returns errors in TWO buckets, and the split is the whole point:
+ *
+ *   - `errors` — everything that disqualifies THIS unit. The unit fails closed
+ *     on all of it, exactly as before.
+ *   - `globalErrors` — the subset of `errors` that is repository-wide, i.e.
+ *     true regardless of which unit is being resolved. Only these may abort an
+ *     operation on some OTHER unit.
+ *
+ * Before cave-1x9pz the two were returned as one list, and `create.ts` tried to
+ * recover the distinction downstream by subtracting the record-level claim
+ * errors from it by string equality. That only ever identified one of the five
+ * kinds produced here, so an ownership conflict, a duplicate record, a
+ * duplicate path or a path/branch mismatch — all of them attributable to a
+ * single named unit — leaked out as repository-wide and refused creation for
+ * every unrelated bead. Which is the same outage cave-g9byt fixed for
+ * record-level errors, resurfacing through the four cases it did not cover.
+ *
+ * Nothing downstream has to guess now: the classification is made here, where
+ * the reason each error exists is still in scope.
+ */
 function metadataFor(
   branch: string | null,
   worktreePath: string | null,
   tasks: BeadTask[],
-): { metadata: WorktreeLifecycleMetadata | null; errors: string[] } {
-  if (!branch) return { metadata: null, errors: [] };
+): {
+  metadata: WorktreeLifecycleMetadata | null;
+  errors: string[];
+  globalErrors: string[];
+} {
+  if (!branch) return { metadata: null, errors: [], globalErrors: [] };
   const allRecords = tasks.flatMap((task) => task.structured);
   // One malformed record used to deny every unit in the repository, because
   // every task's record errors were folded in here wholesale. cave-l11sw wrote
@@ -2412,18 +2568,24 @@ function metadataFor(
             ...new Set(conflictingPathRecords.map((record) => record.branch || "<invalid branch>")),
           ].join(", ")}`,
         ];
+  // `globalErrors` above does not read `branch` or `worktreePath` at all — it is
+  // derived from `tasks` alone and is therefore identical for every unit. That
+  // is what makes it safe to abort someone else's operation on. The ownership
+  // conflict beside it names THIS unit's contested path, so it is not.
+  const repositoryWide = [...new Set(globalErrors)];
   const inventoryErrors = [...new Set([...globalErrors, ...ownershipErrors])];
   if (inventoryErrors.length > 0) {
-    return { metadata: null, errors: inventoryErrors };
+    return { metadata: null, errors: inventoryErrors, globalErrors: repositoryWide };
   }
   if (records.length > 1) {
     return {
       metadata: null,
       errors: [`duplicate structured worktree metadata records for ${branch}`],
+      globalErrors: [],
     };
   }
   const record = records[0];
-  if (!record) return { metadata: null, errors: [] };
+  if (!record) return { metadata: null, errors: [], globalErrors: [] };
   const normalizedRecordPath = normalizeAbsoluteWorktreePath(record.path);
   if (
     normalizedRecordPath !== null &&
@@ -2435,10 +2597,11 @@ function metadataFor(
     return {
       metadata: null,
       errors: [`duplicate structured worktree metadata paths for ${record.path}`],
+      globalErrors: [],
     };
   }
   if (record.errors.length > 0 || !record.metadata) {
-    return { metadata: null, errors: record.errors };
+    return { metadata: null, errors: record.errors, globalErrors: [] };
   }
   if (
     normalizedWorktreePath !== null &&
@@ -2447,9 +2610,10 @@ function metadataFor(
     return {
       metadata: null,
       errors: [`structured worktree metadata path does not match ${branch}`],
+      globalErrors: [],
     };
   }
-  return { metadata: record.metadata, errors: [] };
+  return { metadata: record.metadata, errors: [], globalErrors: [] };
 }
 
 export function probeRecordedPathAbsence(
@@ -2764,6 +2928,20 @@ function classifyInventoryObservation(
 export function collectWorktreeLifecycleInventory(
   options: WorktreeLifecycleInventoryOptions,
 ): WorktreeLifecycleInventory {
+  const previousHook = activeProgressHook;
+  activeProgressHook = options.onProgress ?? null;
+  try {
+    return collectInventory(options);
+  } finally {
+    // Restore rather than null out, so a nested call (tests, tooling) cannot
+    // silently disarm an outer inventory's fence renewal.
+    activeProgressHook = previousHook;
+  }
+}
+
+function collectInventory(
+  options: WorktreeLifecycleInventoryOptions,
+): WorktreeLifecycleInventory {
   const requestedRoot = normalizeAbsoluteWorktreePath(options.root);
   if (requestedRoot === null) throw new Error("root must be an absolute worktree path");
   const root = realpathSync(requestedRoot);
@@ -2847,13 +3025,49 @@ export function collectWorktreeLifecycleInventory(
           oid: null,
           error: originIdentity.error,
         };
+  const focusRefs = options.focusRefs ? new Set(options.focusRefs) : null;
+  const probedUnits =
+    focusRefs === null ? units : units.filter((unit) => unit.ref !== null && focusRefs.has(unit.ref));
   const prs = fetchPullRequests(
     options.repo,
     root,
-    units.map((unit) => unit.head),
-    units.flatMap((unit) => (unit.branch ? [unit.branch] : [])),
+    probedUnits.map((unit) => unit.head),
+    probedUnits.flatMap((unit) => (unit.branch ? [unit.branch] : [])),
     defaultBranch.branch,
   );
+  if (focusRefs !== null) {
+    // Fail closed for everything that was not asked about. Without this the
+    // unprobed units would read as "no pull request", which is the signal that
+    // makes a unit look landed and retirable — a scoped inventory would then
+    // offer live worktrees up for destruction.
+    //
+    // Keyed by oid and branch rather than by unit, because that is how the
+    // probe result is keyed: two units can share a head oid, and marking it
+    // unprobed on behalf of an unfocused unit would corrupt the focused unit's
+    // own answer. So skip any key a focused unit depends on.
+    const probedHeads = new Set(probedUnits.map((unit) => unit.head));
+    const probedBranches = new Set(
+      probedUnits.flatMap((unit) => (unit.branch ? [unit.branch] : [])),
+    );
+    // Describes the MECHANISM, not whoever happens to call it today. focusRefs
+    // is a general inventory option, and this string surfaces in unit reasons
+    // and CLI diagnostics — naming one caller would misdescribe the next one.
+    const scopedError =
+      `pull request association not probed: this unit was outside the inventory's ` +
+      `focusRefs scope (${focusRefs.size} ref${focusRefs.size === 1 ? "" : "s"})`;
+    for (const unit of units) {
+      if (!probedHeads.has(unit.head) && !prs.errorsByOid.has(unit.head)) {
+        prs.errorsByOid.set(unit.head, scopedError);
+      }
+      if (
+        unit.branch !== null &&
+        !probedBranches.has(unit.branch) &&
+        !prs.errorsByBranch.has(unit.branch)
+      ) {
+        prs.errorsByBranch.set(unit.branch, scopedError);
+      }
+    }
+  }
   const workflows = fetchWorkflows(options.repo, root);
   const claims = fetchClaims(root);
   const sessions = fetchSessions(root);
@@ -2874,7 +3088,17 @@ export function collectWorktreeLifecycleInventory(
     ...initialHistoryOverrides.errors,
     initialGrafts.error,
     originIdentity.error,
-
+    // remoteDefaultBranch(root) reads only the checkout root, so its failure is
+    // repository-wide by construction, exactly like originIdentity.error above.
+    // It reached every unit anyway — via ancestry.error, which falls back to it
+    // whenever defaultBranch.oid is null — but it never reached this bucket, so
+    // `globalErrors` in the inventory output did not mention it at all. A
+    // consumer then saw N identical per-unit probe errors with no global signal
+    // and could not tell that ONE checkout-level fact had disqualified
+    // everything. Listing it here changes no unit's classification: the
+    // identical string is already stamped per unit, and both this list and
+    // probeErrors dedup through a Set.
+    defaultBranch.error,
     ...prs.globalErrors,
     workflows.error,
     claims.error,
@@ -2977,6 +3201,7 @@ export function collectWorktreeLifecycleInventory(
       ),
     ];
 
+    const unitTasks = matchingTasks(unit.branch, unit.path, unit.head, tasks.tasks);
 
     return {
       kind: unit.kind,
@@ -3004,7 +3229,8 @@ export function collectWorktreeLifecycleInventory(
             .map((claim) => claim.agent_id),
         ),
       ],
-      taskIds: matchingTasks(unit.branch, unit.path, unit.head, tasks.tasks),
+      taskIds: unitTasks.owns,
+      mentionTaskIds: unitTasks.mentions,
       openPrs,
       mergedPr: exactMerged
         ? {
@@ -3020,6 +3246,7 @@ export function collectWorktreeLifecycleInventory(
       probeErrors,
       metadata: metadata.metadata,
       metadataErrors: metadata.errors,
+      metadataGlobalErrors: metadata.globalErrors,
       remoteRef: remote.remoteRef,
       sessionIds: unit.path
         ? (sessionOwnership.sessionIdsByPath.get(unit.path) ?? [])

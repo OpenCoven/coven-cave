@@ -1963,7 +1963,7 @@ function StepCovenCli({
               const toolJob = installJobs[tool.id];
               const toolBusy = toolJob?.status === "running";
               const toolBlockedByNpm = npmBusy && !toolBusy;
-              const needsAction = !tool.installed || tool.outdated || !tool.compatible;
+              const needsAction = actionTargets.includes(tool.id);
               const currentVerified =
                 tool.installed &&
                 hasVerifiedLatestVersion(tool) &&
@@ -2026,9 +2026,11 @@ function StepCovenCli({
                             ? `Installing… ${formatElapsed(toolJob.elapsedMs)}`
                             : toolBlockedByNpm
                               ? `Waiting for ${npmBusyLabel}`
-                            : tool.outdated || !tool.compatible
-                              ? "Update"
-                              : "Install"}
+: !tool.installed
+  ? "Install"
+  : !tool.compatible
+    ? "Update"
+    : "Install"}
                         </button>
                       ) : null}
                     </div>

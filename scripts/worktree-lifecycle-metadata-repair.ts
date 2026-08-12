@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { isDeepStrictEqual } from "node:util";
 import {
   heartbeatMaintenanceGate,
+  MAX_FENCED_MUTATION_TIMEOUT_MS,
   verifyMaintenanceGateOwnership,
 } from "./maintenance-gate.mjs";
 import { normalizeAbsoluteWorktreePath } from "../src/lib/worktree-lifecycle.ts";
@@ -19,12 +20,7 @@ type PresenceResult =
   | { ok: true; present: boolean }
   | { ok: false; reason: string };
 
-export type MetadataRepairGateHandle = {
-  root: string;
-  ownerId: string;
-  generation: number;
-  token: string;
-};
+export type MetadataRepairGateHandle = object;
 
 export type ExactMetadataBead = {
   id: string;
@@ -630,13 +626,14 @@ function command(
   args: string[],
   cwd: string,
   env: NodeJS.ProcessEnv = process.env,
+  timeout = COMMAND_TIMEOUT_MS,
 ): CommandResult {
   const result = spawnSync(executable, args, {
     cwd,
     env,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
-    timeout: COMMAND_TIMEOUT_MS,
+    timeout,
     stdio: ["ignore", "pipe", "pipe"],
   });
   return {
@@ -917,6 +914,8 @@ export function createMetadataRepairOperations({
             "--json",
           ],
           normalizedRoot,
+          process.env,
+          MAX_FENCED_MUTATION_TIMEOUT_MS,
         );
         parseExactBead(
           parseJsonCommand(result, `bd update ${beadId}`),

@@ -11,7 +11,12 @@ assert.match(settings, /fetch\("\/api\/daemon\/start", \{ method: "POST" \}\)/);
 assert.match(settings, /Start daemon/);
 assert.match(settings, /Restart daemon/);
 assert.match(settings, /rocket-launch-bold/);
-assert.match(settings, /!loading && !status\?\.running/);
+assert.match(
+  settings,
+  /const canStartDaemon =[\s\S]*?status\?\.availability === undefined \|\| status\.availability === "offline"/,
+  "daemon settings should offer Start only for explicit offline or legacy status",
+);
+assert.match(settings, /\{canStartDaemon && \(/);
 assert.match(settings, /status\?\.running && \(/);
 assert.match(
   settings,

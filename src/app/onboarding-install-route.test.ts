@@ -55,14 +55,14 @@ assert.doesNotMatch(
 
 assert.match(
   route,
-  /Coven CLI self-update:[\s\S]*?npm beside the detected CLI/,
-  "the CLI update must use the npm installation that owns the detected CLI",
+  /Coven CLI repair:[\s\S]*?npm beside[\s\S]*?the detected CLI/,
+  "the reviewed CLI repair must use the npm installation that owns the detected CLI",
 );
 
 assert.match(
   route,
-  /"coven-cli": \{[\s\S]*?packageName: "@opencoven\/cli@latest"/,
-  "the Coven CLI button installs the latest published package",
+  /"coven-cli": \{[\s\S]*?packageName: reviewedPackage\("coven-cli"\)/,
+  "the Coven CLI button installs the reviewed maintenance-compatible package",
 );
 assert.doesNotMatch(
   route,

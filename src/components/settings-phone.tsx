@@ -32,6 +32,7 @@ import {
 import { relativeTime } from "@/lib/relative-time";
 import { classifyTailscaleFailureKind } from "@/lib/tailscale-failure";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { suggestedHubEndpoint } from "./settings-multihost";
 
 type MobileHandoffCardState = {
   nativeHost: string | null;
@@ -1027,7 +1028,7 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
                       variant="secondary"
                       leadingIcon="ph:desktop"
                       onClick={() =>
-                        onUseAsHub(`http://${handoff.nativeHost}:8787`)
+                        onUseAsHub(suggestedHubEndpoint(handoff.nativeHost ?? ""))
                       }
                     >
                       Use this device as hub

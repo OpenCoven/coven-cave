@@ -566,8 +566,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /import \{ chatProjectAccessId \} from "@\/lib\/chat-project-access";/,
-  "Chat send should resolve exact and worktree roots through the shared chat-project-access helper",
+  /import \{ chatProjectAccessId, taskWorktreeProjectAccessId \} from "@\/lib\/chat-project-access";/,
+  "Chat send should resolve exact, worktree, and Board handoff roots through the shared chat-project-access helpers",
 );
 
 assert.match(
@@ -584,8 +584,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /body\.startNewConversation[\s\S]*!existingConversation[\s\S]*taskCard\?\.projectId[\s\S]*taskCard\.cwd === body\.projectRoot[\s\S]*projectIdOverride: taskWorktreeProjectId/,
-  "A fresh Board worktree handoff should authorize through its persisted task project instead of treating the worktree as an unregistered project",
+  /authorizeChatProjectLaunch\([\s\S]*resolveProjectId: \(requestedRoot, resolvedRoot\) =>[\s\S]*taskWorktreeProjectAccessId\(\{[\s\S]*startNewConversation: Boolean\(body\.startNewConversation\),[\s\S]*hasExistingConversation: Boolean\(existingConversation\),[\s\S]*taskProjectId: taskCard\?\.projectId,[\s\S]*taskCwd: taskCard\?\.cwd,[\s\S]*requestedProjectRoot: requestedRoot,[\s\S]*resolvedCwd: resolvedRoot,[\s\S]*\}\) \?\?[\s\S]*chatProjectAccessId/,
+  "A fresh Board worktree handoff should authorize through its persisted task project only after checking the resolved cwd remains inside that project",
 );
 
 assert.doesNotMatch(

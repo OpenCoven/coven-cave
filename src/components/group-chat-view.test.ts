@@ -66,6 +66,11 @@ test("GroupChatView schedules Broadcast and Round robin replies through /api/cha
   );
   assert.match(
     view,
+    /const isLatestRun = runIndex === visibleRuns\.length - 1;[\s\S]*?isLatestRun && agent\.status === "complete"/,
+    "renders next-path actions only for the newest coven run",
+  );
+  assert.match(
+    view,
     /sendSuggestion\(\s*\n\s*path\.prompt,\s*\n\s*agent\.familiarId,\s*\n\s*familiar\?\.display_name \?\? agent\.familiarId,/,
     "clicking a chip targets the familiar who authored it",
   );
@@ -198,7 +203,7 @@ test("completed @mentions close autocomplete and render as standout targets", ()
   );
   assert.match(
     routingModule,
-    /@name routes to one familiar without advancing the rotation\./,
+    /@name routes to one familiar without changing the selected order\./,
     "keeps the @ instruction visible outside the placeholder",
   );
   assert.match(view, /const mentionGuidanceId = useId\(\)/, "gives the persistent guidance a stable local id");
@@ -208,7 +213,7 @@ test("completed @mentions close autocomplete and render as standout targets", ()
     "connects the textarea to the guidance, which is now always rendered",
   );
   // Parsed @mention targets show in the composer's routing preview, which also
-  // states that a mention does not advance the rotation.
+  // states that a mention does not change the selected order.
   assert.match(
     view,
     /mentioned: composerTargets\.map\(\(f\) => \(\{ id: f\.id, name: f\.display_name \}\)\)/,
@@ -240,7 +245,7 @@ test("completed @mentions close autocomplete and render as standout targets", ()
   assert.match(
     routingModule,
     /`Send to \$\{joinNames\(names, "then"\)\}…`/,
-    "a rotation's placeholder names the order",
+    "round robin's placeholder names the selected order",
   );
   assert.match(
     routingModule,
@@ -262,7 +267,7 @@ test("completed @mentions close autocomplete and render as standout targets", ()
   );
 });
 
-test("completed familiar delegation trailers route bounded, attributable follow-up work", () => {
+test("completed familiar delegation trailers require approval before bounded, attributable follow-up work", () => {
   assert.match(view, /extractCovenDelegations\(withoutNextPaths\)/, "parses only the tested structured trailer after removing next-path controls");
   assert.match(view, /source\.status !== "done"/, "never routes a partial or failed familiar reply");
   assert.match(view, /!group\.familiarIds\.includes\(targetId\)/, "rejects out-of-coven targets");
@@ -276,6 +281,14 @@ test("completed familiar delegation trailers route bounded, attributable follow-
   assert.match(view, /targetId === source\.familiarId/, "rejects self-delegation");
   assert.match(view, /lineage\.has\(targetId\)/, "rejects delegation cycles");
   assert.match(view, /delivered\.has\(dedupeKey\)/, "deduplicates source-to-target deliveries");
+  assert.match(view, /const approved = await Promise\.race\(\[\s*\n\s*confirm\(\{/, "requires an operator decision before accepting assistant-proposed work");
+  assert.match(view, /title: `Approve handoff to \$\{target\.display_name\}\?`/, "the approval names the receiving familiar");
+  assert.match(view, /proposed this task/, "shows the exact proposed task during approval");
+  assert.match(view, /if \(!approved \|\| controller\.signal\.aborted\) return;/, "never sends a declined or stopped handoff");
+  assert.ok(
+    view.indexOf("const approved = await Promise.race([") < view.indexOf("const child = await streamOne("),
+    "approval happens before the delegated request is streamed",
+  );
   assert.match(view, /MAX_COVEN_DELEGATION_DEPTH/, "bounds delegation depth");
   assert.match(view, /MAX_COVEN_DELEGATIONS_PER_TURN/, "bounds total delegated sends per human turn");
   assert.match(view, /controller\.signal\.aborted/, "Stop prevents queued delegated sends from starting");
@@ -301,6 +314,11 @@ test("response mode is configured per Coven and locked while a turn is running",
     "a mid-run switch states that it applies to the next message",
   );
   assert.match(
+    composerBar,
+    /without changing the selected order\./,
+    "the mode explainer does not imply a hidden rotating lead",
+  );
+  assert.match(
     view,
     /"Broadcast mode for your next message\. This run keeps its mode\."/,
     "the mid-run switch announces the same contract to assistive technology",
@@ -308,9 +326,13 @@ test("response mode is configured per Coven and locked while a turn is running",
   assert.doesNotMatch(view, /<fieldset disabled=\{busy\}/, "the selector is no longer dead during a run");
   assert.match(view, /setGroupResponseMode\(group, responseMode, nowIso\(\)\)/, "persists the setting on the active Coven");
   assert.match(view, /responseMode: group\.responseMode/, "snapshots mode on each user turn for stable retries");
-  assert.match(view, /nextRoundRobinLeadId\(current\.familiarIds, leadId\)/, "rotates the next round-robin lead");
-  // Who leads is no longer a sentence fragment in the header: the rotation is
-  // shown as order — arrows between recipient chips in the composer preview,
+  assert.doesNotMatch(view, /nextRoundRobinLeadId/, "does not silently rotate away from the selected order");
+  assert.match(
+    view,
+    /orderRoundRobinFamiliarIds\(group\.familiarIds, targetIds\)/,
+    "builds queued replies from the selected roster order",
+  );
+  // The selected order is shown consistently — arrows between recipient chips,
   // numbered positions in the roster, and the run header's stepper.
   assert.match(
     routingModule,
@@ -694,8 +716,8 @@ test("coven bubbles strip attention markers before next-paths/delegations/Messag
   );
   assert.match(
     view,
-    /ev\.kind === "assistant_chunk"[\s\S]{0,240}kind: "assistant_replace", text: attentionText\.append\(ev\.text\)[\s\S]{0,240}ev\.kind === "assistant_replace"[\s\S]{0,180}attentionText\.replace\(ev\.text\)/,
-    "chunk and replacement frames become authoritative safe replacements before transcript storage",
+    /ev\.kind === "assistant_chunk"[\s\S]{0,180}responseText\.append\(ev\.text\)[\s\S]{0,240}attentionText\.replace\(canonicalText\)[\s\S]{0,240}ev\.kind === "assistant_replace"[\s\S]{0,180}responseText\.replace\(ev\.text\)[\s\S]{0,240}attentionText\.replace\(canonicalText\)/,
+    "chunk and replacement frames update one canonical buffer before safe transcript storage",
   );
   assert.match(
     view,

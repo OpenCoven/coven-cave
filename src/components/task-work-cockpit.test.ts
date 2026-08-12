@@ -61,8 +61,13 @@ assert.match(
 );
 assert.match(
   source,
-  /handoffId: card\.sessionId \?\? card\.id/,
-  "the handoff id is the reserved conversation id, stable across the Group remount",
+  /initialPromptHandoffIdRef\.current \?\?= card\.sessionId \?\? card\.id/,
+  "the handoff id stays stable when the bridge replaces the card placeholder with its reserved session id",
+);
+assert.match(
+  source,
+  /handoffId: initialPromptHandoffIdRef\.current/,
+  "the bridge hands ChatView the stable first-handoff id across Group remounts",
 );
 assert.match(
   source,
@@ -70,11 +75,28 @@ assert.match(
   "a resumed task has no handoff to latch",
 );
 // The latch is module-scoped on purpose, so leaving the task must release it —
-// otherwise reopening the card sits on a claimed id and never sends.
+// otherwise reopening the card sits on a claimed id and never sends. React's
+// development effect replay calls cleanup before immediately mounting again,
+// so the release is deferred one turn and cancelled by that remount.
+//
+// The generation counter is the belt-and-suspenders guard: if clearTimeout
+// loses the scheduler race (e.g. MessageChannel vs. setTimeout ordering in
+// React 19 Strict Mode), the callback checks whether a newer effect body has
+// run before releasing, so a stale timer can never fire a release.
 assert.match(
   source,
-  /return \(\) => releaseInitialPromptHandoff\(CHAT_VIEW_HANDOFF_SCOPE, handoffId\)/,
-  "the cockpit releases its handoff latch on unmount",
+  /handoffReleaseTimerRef\.current = window\.setTimeout\(\(\) => \{/,
+  "the cockpit defers its handoff release so development effect replay cannot re-send the first prompt",
+);
+assert.match(
+  source,
+  /handoffReleaseGenRef\.current !== gen/,
+  "the deferred release is guarded by a generation counter that survives a clearTimeout race",
+);
+assert.match(
+  source,
+  /clearTimeout\(handoffReleaseTimerRef\.current\)/,
+  "the replayed cockpit mount cancels the deferred handoff release",
 );
 // The rail mounts for BOTH paths now; gating it on the ready branch is what
 // made the reopen strip a dead end during a bridge-start session.

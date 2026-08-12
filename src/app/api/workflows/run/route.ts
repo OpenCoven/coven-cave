@@ -12,7 +12,7 @@ import { copilotStreamSpec, type RuntimeEventProtocolSchema } from "@/lib/copilo
 import { isSshRuntime } from "@/lib/familiar-runtime";
 import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
 import { familiarWorkspace } from "@/lib/coven-paths";
-import { startCopilotFlowRun } from "@/lib/server/flow-copilot-session";
+import { startCopilotFlowRunWithTransportBoundary } from "@/lib/server/flow-copilot-session";
 import {
   copilotCapabilityFailureMessage,
   probeCopilotCapability,
@@ -347,7 +347,7 @@ async function runViaSession(body: RunBody) {
     }
     // No workflow run exists until the compatibility gate has selected a
     // direct launch contract and the session has actually been started.
-    const { sessionId } = startCopilotFlowRun({
+    const direct = await startCopilotFlowRunWithTransportBoundary({
       spec,
       prompt,
       projectRoot,
@@ -358,8 +358,9 @@ async function runViaSession(body: RunBody) {
       // This route rejects non-local requests before building the workflow
       // prompt, so it may use the reviewed local automation contract.
       permissionMode: "unattended",
-    });
-    return finishSession(sessionId);
+    }, finishSession);
+    if (direct instanceof Response) return direct;
+    return NextResponse.json(direct, { status: direct.status });
   }
 
   const res = await callDaemon<{ id: string; status: string }>({

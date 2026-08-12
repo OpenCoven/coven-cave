@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { OnboardingSetupDiagnosticsModal } from "@/components/onboarding-setup-diagnostics";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
@@ -59,7 +60,10 @@ export function OnboardingOverlay({
   );
   const [loading, setLoading] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const diagnosticsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const restoreDiagnosticsFocusRef = useRef(false);
   const autoFinishFiredRef = useRef(false);
   const requestQueueRef = useRef<Promise<unknown>>(Promise.resolve());
   const { announce } = useAnnouncer();
@@ -82,7 +86,21 @@ export function OnboardingOverlay({
     onDismiss();
   }, [onDismiss, persistDismissal]);
 
-  useFocusTrap(open, dialogRef, { onEscape: dismiss });
+  useFocusTrap(open && !diagnosticsOpen, dialogRef, { onEscape: dismiss });
+
+  useEffect(() => {
+    if (diagnosticsOpen || !restoreDiagnosticsFocusRef.current) return;
+    restoreDiagnosticsFocusRef.current = false;
+    const frame = requestAnimationFrame(() => {
+      diagnosticsTriggerRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [diagnosticsOpen]);
+
+  const closeDiagnostics = useCallback(() => {
+    restoreDiagnosticsFocusRef.current = true;
+    setDiagnosticsOpen(false);
+  }, []);
 
   const performRequest = useCallback(
     async (method: "GET" | "POST", body?: object) => {
@@ -144,6 +162,10 @@ export function OnboardingOverlay({
   }, [open, request]);
 
   useEffect(() => {
+    if (!open || !state.failure?.diagnostics) setDiagnosticsOpen(false);
+  }, [open, state.failure?.diagnostics]);
+
+  useEffect(() => {
     if (!open || !state.confirmed || state.complete || state.status !== "idle") {
       return;
     }
@@ -198,14 +220,16 @@ export function OnboardingOverlay({
   const started = state.confirmed || running || state.status === "failed";
 
   return (
-    <div
-      ref={dialogRef}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Set up Cave"
-      tabIndex={-1}
-      className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[color-mix(in_oklch,var(--bg-base)_94%,transparent)] p-4 backdrop-blur-sm"
-    >
+    <>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal={diagnosticsOpen ? undefined : true}
+        inert={diagnosticsOpen || undefined}
+        aria-label="Set up Cave"
+        tabIndex={-1}
+        className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[color-mix(in_oklch,var(--bg-base)_94%,transparent)] p-4 backdrop-blur-sm"
+      >
       <section className="w-full max-w-2xl rounded-[var(--radius-panel)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] shadow-[var(--shadow-elevated)]">
         <header className="flex items-start justify-between gap-4 border-b border-[var(--border-hairline)] p-5">
           <div>
@@ -266,15 +290,31 @@ export function OnboardingOverlay({
               <p className="mt-1 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
                 {state.failure.message}
               </p>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="mt-3"
-                loading={loading}
-                onClick={() => void request("POST", { resume: true })}
-              >
-                {state.failure.recoveryLabel}
-              </Button>
+              {state.failure.stage === "core-tools" ? (
+                <p className="mt-2 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
+                  This step prepares Cave’s private Node.js/npm runtime and the Coven CLI. It does not create Cave defaults or start a familiar runtime.
+                </p>
+              ) : null}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={loading}
+                  onClick={() => void request("POST", { resume: true })}
+                >
+                  {state.failure.recoveryLabel}
+                </Button>
+                {state.failure.diagnostics ? (
+                  <Button
+                    ref={diagnosticsTriggerRef}
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setDiagnosticsOpen(true)}
+                  >
+                    View diagnostics
+                  </Button>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
@@ -348,6 +388,14 @@ export function OnboardingOverlay({
           </div>
         </footer>
       </section>
-    </div>
+      </div>
+      {state.failure?.diagnostics && diagnosticsOpen ? (
+        <OnboardingSetupDiagnosticsModal
+          diagnostics={state.failure.diagnostics}
+          open
+          onClose={closeDiagnostics}
+        />
+      ) : null}
+    </>
   );
 }

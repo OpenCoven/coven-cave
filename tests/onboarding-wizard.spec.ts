@@ -10,6 +10,37 @@ const BOUNDARIES = {
 
 type StageStatus = "pending" | "running" | "complete" | "skipped" | "failed";
 
+type SetupDiagnostics = {
+  version: 1;
+  capturedAt: string;
+  stage: "core-tools" | "workspace" | "daemon";
+  code: string;
+  summary: string;
+  nextStep: string;
+  environment: {
+    appVersion: string;
+    platform: "win32" | "darwin" | "linux" | "unsupported";
+    architecture: "x64" | "arm64" | "other";
+  };
+  applicationData: {
+    displayLocation: "Cave application data";
+    exists: boolean | null;
+    writeProbe: "passed" | "failed" | "not_run";
+  };
+  components: {
+    managedNode: string;
+    covenCli: string;
+    localService: string;
+  };
+  installer?: {
+    target: "managed-node" | "coven-cli";
+    status: "idle" | "running" | "done" | "busy" | "unavailable";
+    elapsedMs: number | null;
+    exitCode: number | null;
+    outputTail: string[];
+  };
+};
+
 type BootstrapState = {
   confirmed: boolean;
   complete: boolean;
@@ -27,7 +58,43 @@ type BootstrapState = {
     stageLabel: string;
     message: string;
     recoveryLabel: "Retry setup";
+    code?: string;
+    diagnostics?: SetupDiagnostics;
   };
+};
+
+const DIAGNOSTICS: SetupDiagnostics = {
+  version: 1,
+  capturedAt: "2026-08-10T12:34:56.000Z",
+  stage: "core-tools",
+  code: "download_failed",
+  summary: "Cave couldn’t download its local components.",
+  nextStep: "Check your connection, then retry setup.",
+  environment: {
+    appVersion: "1.4.2",
+    platform: "linux",
+    architecture: "x64",
+  },
+  applicationData: {
+    displayLocation: "Cave application data",
+    exists: true,
+    writeProbe: "passed",
+  },
+  components: {
+    managedNode: "missing",
+    covenCli: "missing",
+    localService: "not_checked",
+  },
+  installer: {
+    target: "managed-node",
+    status: "done",
+    elapsedMs: 431,
+    exitCode: 1,
+    outputTail: [
+      "Managed Node installer: starting verified setup.",
+      "Download failed with EAI_AGAIN at [local path omitted]",
+    ],
+  },
 };
 
 function state(overrides: Partial<BootstrapState> = {}): BootstrapState {
@@ -42,19 +109,22 @@ function state(overrides: Partial<BootstrapState> = {}): BootstrapState {
         id: "core-tools",
         label: "Prepare local components",
         status: "pending",
-        detail: "Cave will verify the local components it needs.",
+        detail:
+          "Cave will check its private Node.js and npm runtime, then verify the Coven CLI.",
       },
       {
         id: "workspace",
         label: "Create Cave defaults",
         status: "pending",
-        detail: "Cave will create user-scoped folders and defaults.",
+        detail:
+          "Waiting for local components. Cave will then create user-scoped folders and defaults.",
       },
       {
         id: "daemon",
         label: "Start local services",
         status: "pending",
-        detail: "Cave will start its local background service.",
+        detail:
+          "Waiting for setup. Cave will check the local service and start it only when needed.",
       },
     ],
     failure: null,
@@ -145,6 +215,35 @@ test.describe("onboarding bootstrap", () => {
     expect(focusStyle.outlineWidth).toBeGreaterThan(0);
   });
 
+  test("keeps setup diagnostics focus contained in WebKit", async ({ page }) => {
+    const failed = state({
+      confirmed: true,
+      status: "failed",
+      activeStage: "core-tools",
+      failure: {
+        stage: "core-tools",
+        stageLabel: "Prepare local components",
+        message: DIAGNOSTICS.summary,
+        recoveryLabel: "Retry setup",
+        code: DIAGNOSTICS.code,
+        diagnostics: DIAGNOSTICS,
+      },
+    });
+    await gotoApp(page, (route) => route.fulfill({ json: payload(failed) }), {
+      dismissed: true,
+    });
+
+    const trigger = setup(page).getByRole("button", { name: "View diagnostics" });
+    await trigger.click();
+    const modal = page.getByRole("dialog", { name: /Setup diagnostics/ });
+    await expect(modal.locator(":focus")).toHaveCount(1);
+    await page.keyboard.press("Tab");
+    await expect(modal.locator(":focus")).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    await expect(modal).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  });
+
   test("one confirmation starts a visible serialized stage flow", async ({
     page,
   }) => {
@@ -162,7 +261,7 @@ test.describe("onboarding bootstrap", () => {
               id: "core-tools",
               label: "Prepare local components",
               status: "running",
-              detail: "Preparing Cave’s local runtime…",
+              detail: "Setting up Cave’s private Node.js and npm runtime…",
             },
             ...state().stages.slice(1),
           ],
@@ -173,24 +272,14 @@ test.describe("onboarding bootstrap", () => {
 
     const dialog = setup(page);
     await dialog.getByRole("button", { name: "Set up Cave", exact: true }).click();
-    await expect(dialog.getByText("Preparing Cave’s local runtime…")).toBeVisible();
+    await expect(dialog.getByText("Setting up Cave’s private Node.js and npm runtime…")).toBeVisible();
     await expect(dialog.locator('[aria-current="step"]')).toContainText(
       "Prepare local components",
     );
-    expect(confirmations).toBe(1);
+    await expect.poll(() => confirmations).toBe(1);
 
-    const visibleText = await dialog.innerText();
-    for (const hidden of [
-      "Node.js",
-      "npm",
-      "Coven CLI",
-      "Codex",
-      "Claude",
-      "Copilot",
-      "OpenClaw",
-    ]) {
-      expect(visibleText).not.toContain(hidden);
-    }
+    await expect(dialog.getByText(/private Node\.js and npm runtime/)).toBeVisible();
+    await expect(dialog.getByText(/Waiting for local components/)).toBeVisible();
     await expect(dialog.getByText(/Provider sign-in is deferred/)).toBeVisible();
     await expect(dialog.getByText(/never asks for an administrator password/)).toBeVisible();
     await expect(dialog.getByText(/Git is optional/)).toBeVisible();
@@ -236,8 +325,239 @@ test.describe("onboarding bootstrap", () => {
     const alert = setup(page).getByRole("alert");
     await expect(alert).toContainText("Create Cave defaults is blocked");
     await expect(alert.getByRole("button", { name: "Retry setup" })).toHaveCount(1);
+    await expect(alert.getByRole("button", { name: "View diagnostics" })).toHaveCount(0);
     await alert.getByRole("button", { name: "Retry setup" }).click();
-    expect(retries).toBe(1);
+    await expect.poll(() => retries).toBe(1);
+  });
+
+  test("opens selectable setup diagnostics without resuming installation and returns focus", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 360, height: 640 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: async (text: string) => {
+            window.sessionStorage.setItem("copied-setup-diagnostics", text);
+          },
+        },
+      });
+    });
+    let posts = 0;
+    const failed = state({
+      confirmed: true,
+      status: "failed",
+      activeStage: "core-tools",
+      stages: state().stages.map((stage) =>
+        stage.id === "core-tools"
+          ? {
+              ...stage,
+              status: "failed",
+              detail: `Setup stopped at Prepare local components. ${DIAGNOSTICS.summary} ${DIAGNOSTICS.nextStep}`,
+            }
+          : stage,
+      ),
+      failure: {
+        stage: "core-tools",
+        stageLabel: "Prepare local components",
+        message: `Setup stopped at Prepare local components. ${DIAGNOSTICS.summary} ${DIAGNOSTICS.nextStep}`,
+        recoveryLabel: "Retry setup",
+        code: DIAGNOSTICS.code,
+        diagnostics: DIAGNOSTICS,
+      },
+    });
+    await gotoApp(
+      page,
+      async (route) => {
+        if (route.request().method() === "POST") posts += 1;
+        await route.fulfill({ json: payload(failed) });
+      },
+      { dismissed: true },
+    );
+
+    const outer = setup(page);
+    const trigger = outer.getByRole("button", { name: "View diagnostics" });
+    await expect(trigger).toBeVisible({ timeout: 30_000 });
+    await trigger.click();
+    expect(posts).toBe(0);
+
+    const modal = page.getByRole("dialog", { name: /Setup diagnostics/ });
+    await expect(modal).toBeVisible();
+    await expect(modal).toContainText(DIAGNOSTICS.summary);
+    await expect(modal).toContainText(DIAGNOSTICS.nextStep);
+    await expect(modal.getByText("Missing", { exact: true })).toHaveCount(2);
+    await expect(modal).toHaveCSS("animation-name", "none");
+    await modal.getByRole("button", { name: "Close", exact: true }).last().click();
+    await expect(modal).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await trigger.click();
+    await expect(modal).toBeVisible();
+    expect(posts).toBe(0);
+    const bounds = await modal.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.y).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(360);
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(640);
+    await expect(modal.getByText("download_failed", { exact: true })).toBeVisible();
+    await expect(modal.getByText("Passed at capture time", { exact: true })).toBeVisible();
+    await expect(modal.getByText("Managed Node.js", { exact: true })).toBeVisible();
+    await expect(modal.getByText("Coven CLI", { exact: true })).toBeVisible();
+    await expect(modal.getByText("Not checked", { exact: true })).toBeVisible();
+
+    const focusedInside = await page.evaluate(() =>
+      Boolean(document.activeElement?.closest('[role="dialog"][aria-describedby]')),
+    );
+    expect(focusedInside).toBe(true);
+    for (let index = 0; index < 5; index += 1) {
+      await page.keyboard.press("Tab");
+      expect(
+        await page.evaluate(() =>
+          Boolean(document.activeElement?.closest('[role="dialog"][aria-describedby]')),
+        ),
+      ).toBe(true);
+    }
+
+    await modal.getByText("Sanitized installer output").click();
+    const output = modal.getByText(/Download failed with EAI_AGAIN/);
+    await expect(output).toBeVisible();
+    expect(
+      await output.evaluate((element) => getComputedStyle(element).userSelect),
+    ).not.toBe("none");
+
+    await modal.getByRole("button", { name: "Copy diagnostics" }).click();
+    await expect(modal.getByText("Diagnostics copied.")).toBeVisible();
+    const copied = await page.evaluate(() =>
+      window.sessionStorage.getItem("copied-setup-diagnostics"),
+    );
+    expect(copied).toContain("Failure code: download_failed");
+    expect(copied).toContain("EAI_AGAIN");
+    expect(copied).not.toContain("/home/");
+
+    await page.keyboard.press("Escape");
+    await expect(modal).toHaveCount(0);
+    await expect(outer).toBeVisible();
+    await expect(trigger).toBeFocused();
+    expect(posts).toBe(0);
+
+    await outer.getByRole("button", { name: "Retry setup" }).click();
+    await expect.poll(() => posts).toBe(1);
+  });
+
+  test("reports clipboard failure without hiding Retry", async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: async () => Promise.reject(new Error("denied")) },
+      });
+      Object.defineProperty(document, "execCommand", {
+        configurable: true,
+        value: () => false,
+      });
+    });
+    const failed = state({
+      confirmed: true,
+      status: "failed",
+      activeStage: "core-tools",
+      failure: {
+        stage: "core-tools",
+        stageLabel: "Prepare local components",
+        message: DIAGNOSTICS.summary,
+        recoveryLabel: "Retry setup",
+        code: DIAGNOSTICS.code,
+        diagnostics: DIAGNOSTICS,
+      },
+    });
+    await gotoApp(page, (route) => route.fulfill({ json: payload(failed) }), {
+      dismissed: true,
+    });
+
+    const outer = setup(page);
+    await outer.getByRole("button", { name: "View diagnostics" }).click();
+    const modal = page.getByRole("dialog", { name: /Setup diagnostics/ });
+    await modal.getByRole("button", { name: "Copy diagnostics" }).click();
+    await expect(modal.getByText(/Couldn’t copy diagnostics/)).toBeVisible();
+    await expect(
+      page.locator('[aria-label="Set up Cave"] button', { hasText: "Retry setup" }),
+    ).toHaveCount(1);
+  });
+
+  test("keeps the legacy copy fallback inside setup diagnostics", async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: undefined,
+      });
+      Object.defineProperty(document, "execCommand", {
+        configurable: true,
+        value: () => true,
+      });
+    });
+    const failed = state({
+      confirmed: true,
+      status: "failed",
+      activeStage: "core-tools",
+      failure: {
+        stage: "core-tools",
+        stageLabel: "Prepare local components",
+        message: DIAGNOSTICS.summary,
+        recoveryLabel: "Retry setup",
+        code: DIAGNOSTICS.code,
+        diagnostics: DIAGNOSTICS,
+      },
+    });
+    await gotoApp(page, (route) => route.fulfill({ json: payload(failed) }), {
+      dismissed: true,
+    });
+
+    await setup(page).getByRole("button", { name: "View diagnostics" }).click();
+    const modal = page.getByRole("dialog", { name: /Setup diagnostics/ });
+    const copy = modal.getByRole("button", { name: "Copy diagnostics" });
+    await copy.click();
+
+    await expect(modal.getByText("Diagnostics copied.")).toBeVisible();
+    await expect(modal.getByRole("button", { name: "Copied" })).toBeFocused();
+    expect(
+      await page.evaluate(() =>
+        Boolean(document.activeElement?.closest('[role="dialog"][aria-describedby]')),
+      ),
+    ).toBe(true);
+  });
+
+  test("explains what a local-components failure did and did not do", async ({
+    page,
+  }) => {
+    const failed = state({
+      confirmed: true,
+      status: "failed",
+      activeStage: "core-tools",
+      stages: state().stages.map((stage) =>
+        stage.id === "core-tools"
+          ? {
+              ...stage,
+              status: "failed",
+              detail: "Setup stopped at Prepare local components. Cave couldn’t prepare its private Node.js and npm runtime.",
+            }
+          : stage,
+      ),
+      failure: {
+        stage: "core-tools",
+        stageLabel: "Prepare local components",
+        message: "Setup stopped at Prepare local components. Cave couldn’t prepare its private Node.js and npm runtime. No Cave defaults were created. Retry setup; if it happens again, restart Cave and try once more.",
+        recoveryLabel: "Retry setup",
+      },
+    });
+    await gotoApp(page, (route) => route.fulfill({ json: payload(failed) }), {
+      dismissed: true,
+    });
+
+    const alert = setup(page).getByRole("alert");
+    await expect(alert).toContainText("No Cave defaults were created.");
+    await expect(alert).toContainText(
+      "It does not create Cave defaults or start a familiar runtime.",
+    );
   });
 
   test("skips onboarding when an existing setup is already ready", async ({

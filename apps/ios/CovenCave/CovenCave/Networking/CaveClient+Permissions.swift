@@ -22,10 +22,11 @@ extension CaveClient {
         body: Data? = nil
     ) throws -> URLRequest {
         guard let base = connection.baseURL else { throw CaveError.notConfigured }
-        var req = URLRequest(url: base.appendingPathComponent(path))
+        let url = base.appendingPathComponent(path)
+        var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let token = CaveConnection.accessToken {
+        if let token = try CaveConnection.credentialForRequest(to: url) {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         if let body {

@@ -257,6 +257,7 @@ export function CovenAgentSection({
                 timestamp={reply.createdAt}
                 showTimestamp={false}
                 onOpenUrl={onOpenUrl}
+                collapsible={false}
               />
             </div>
           ) : null}

@@ -6,7 +6,7 @@
  * Position, name, role, reorder and an "in the next run" switch per familiar,
  * under one stated contract: changes apply to the next run, never to a run in
  * progress (design proposal §9). Sitting a familiar out is not removing it —
- * it keeps its membership, its place in the rotation and its pinned session.
+ * it keeps its membership, its place in the order and its pinned session.
  */
 
 import { Icon } from "@/lib/icon";
@@ -15,7 +15,7 @@ import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 export type CovenRosterEntry = {
   familiar: ResolvedFamiliar;
-  /** 1-based rotation position; null in broadcast, where order is meaningless. */
+  /** 1-based reply position; null in broadcast, where order is meaningless. */
   position: number | null;
   included: boolean;
 };
@@ -140,7 +140,7 @@ export function CovenRosterPopover({
 
       <p className="coven-roster__note">
         {roundRobin
-          ? "Order is the round-robin rotation. Changes apply to the next run — never a run in progress."
+          ? "This is the round-robin reply order. Changes apply to the next run — never a run in progress."
           : "Changes apply to the next run — never a run in progress."}
       </p>
     </div>

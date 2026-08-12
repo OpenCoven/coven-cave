@@ -87,6 +87,7 @@ import {
   createDaemonConnectionSupervisor,
   type DaemonConnectionPoll,
 } from "@/lib/daemon-connection-supervisor";
+import { createTauriDaemonReliabilityObserver } from "@/lib/daemon-reliability";
 import { createDaemonTravelReconcileRequester } from "@/lib/daemon-travel-reconcile-client";
 import {
   createDaemonDesktopAutoStartCoordinator,
@@ -188,6 +189,12 @@ import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
 import { RunningSessionsPopover } from "@/components/running-sessions-popover";
 import { NotificationBell } from "@/components/notification-bell";
 import { StatusBar } from "@/components/status-bar";
+import {
+  COVEN_JUMP_TO_RUN_EVENT,
+  covenRunPillServerSnapshot,
+  covenRunPillSnapshot,
+  subscribeCovenRunPill,
+} from "@/lib/coven-run-signal";
 import { sessionStatusTone } from "@/lib/session-status";
 import { sessionPrStatus } from "@/lib/session-pr-status";
 import { normalizeProjectRoot } from "@/lib/cave-projects-types";
@@ -580,6 +587,14 @@ export function Workspace() {
     subscribeSurfaceHistory,
     () => canMoveSurfaceHistory(-1),
     () => false,
+  );
+  // The active coven run, for the status bar's pill. GroupChatView lives three
+  // layers down inside ChatSurface; subscribing here keeps ChatSurface out of a
+  // relay role it has no stake in. Empty on the server, where no coven mounts.
+  const covenRun = useSyncExternalStore(
+    subscribeCovenRunPill,
+    covenRunPillSnapshot,
+    covenRunPillServerSnapshot,
   );
   const surfaceCanGoForward = useSyncExternalStore(
     subscribeSurfaceHistory,
@@ -1055,6 +1070,9 @@ export function Workspace() {
   }, [tauriPlatform]);
 
   useEffect(() => {
+    const reliabilityObserver = createTauriDaemonReliabilityObserver({
+      tauriAvailable: () => tauriPlatform === "desktop",
+    });
     const requester = createDaemonTravelReconcileRequester({
       request: async ({ signal }) => {
         const response = await fetch("/api/daemon/travel/reconcile", {
@@ -1079,6 +1097,7 @@ export function Workspace() {
         };
       },
       publish: applyDaemonConnectionPoll,
+      observe: reliabilityObserver,
       isVisible: () => !document.hidden,
     });
     daemonTravelReconcileRequesterRef.current = requester;
@@ -1100,7 +1119,7 @@ export function Workspace() {
       daemonTravelReconcileRequesterRef.current = null;
       daemonConnectionSupervisorRef.current = null;
     };
-  }, [applyDaemonConnectionPoll]);
+  }, [applyDaemonConnectionPoll, tauriPlatform]);
 
   useRefreshOnFocus(() => {
     void daemonConnectionSupervisorRef.current?.refresh({ fresh: true });
@@ -3570,6 +3589,17 @@ export function Workspace() {
         taskCount={boardTaskCount}
         onViewTasks={() => setMode("board")}
         onOpenPr={(url) => openUrlInApp(url)}
+        run={covenRun}
+        onJumpToRun={() => {
+          // setMode("groupchat") already owns the whole open-the-coven-tab
+          // path (latch + mode commit + event), so the pill reuses it rather
+          // than growing a second navigation route into the same surface.
+          setMode("groupchat");
+          window.setTimeout(
+            () => window.dispatchEvent(new CustomEvent(COVEN_JUMP_TO_RUN_EVENT)),
+            0,
+          );
+        }}
       />
     ) : null;
 

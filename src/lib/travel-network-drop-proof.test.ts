@@ -31,7 +31,7 @@ function createHubServer(): http.Server {
     const url = req.url ?? "/";
     if (method === "GET" && url === "/api/v1/health") {
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ apiVersion: "1", covenVersion: "test", daemon: { status: "ok" } }));
+      res.end(JSON.stringify({ apiVersion: "coven.daemon.v1", covenVersion: "test", daemon: { status: "ok" } }));
       return;
     }
     if (method === "POST" && url === "/api/v1/sessions") {

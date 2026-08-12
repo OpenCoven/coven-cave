@@ -95,7 +95,14 @@ final class PtyTerminal {
         // through the token gate too on a paired desktop.
         var wsRequest = URLRequest(url: url)
         wsRequest.timeoutInterval = Self.handshakeTimeout
-        if let token = CaveConnection.accessToken {
+        let credential: String?
+        do {
+            credential = try CaveConnection.credentialForRequest(to: url)
+        } catch {
+            self.error = error.localizedDescription
+            return
+        }
+        if let token = credential {
             wsRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         let ws = Self.wsSession.webSocketTask(with: wsRequest)

@@ -9,7 +9,7 @@ import "@/styles/coven-tab.css";
  * GroupChatView — the "coven" group-chat surface.
  *
  * A coven is a saved set of familiars you talk to together. Broadcast mode fans
- * a prompt out in parallel; Round robin mode rotates the lead and relays settled
+ * a prompt out in parallel; Round robin follows the selected order and relays settled
  * peer replies before the next familiar takes its turn. Each familiar still has
  * its own resumable `/api/chat/send` session because there is no server-side
  * group-session primitive.
@@ -26,6 +26,7 @@ import {
 import { Icon } from "@/lib/icon";
 import { extractNextPaths } from "@/lib/next-paths";
 import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
+import { createCanonicalResponseBuffer } from "@/lib/canonical-response-buffer";
 import { Button } from "@/components/ui/button";
 import { ProjectPicker } from "@/components/project-picker";
 import { modelForRuntimeSwitch } from "@/lib/runtime-models";
@@ -68,7 +69,6 @@ import {
   moveGroupParticipant,
   includedGroupParticipants,
   orderRoundRobinFamiliarIds,
-  nextRoundRobinLeadId,
   renderCovenRoundtablePrompt,
   renderCovenRoundRobinPrompt,
   runCovenReplySchedule,
@@ -94,9 +94,16 @@ import { groupChatTranscriptThreads } from "@/lib/group-chat-transcript";
 import {
   COVEN_RUN_STATUS,
   buildCovenRunFromThread,
+  covenHistoryFold,
   covenRailStatus,
+  covenRunPill,
   type CovenRun,
 } from "@/lib/coven-run";
+import { CovenHistoryFoldView } from "@/components/coven-history-fold";
+import {
+  COVEN_JUMP_TO_RUN_EVENT,
+  publishCovenRunPill,
+} from "@/lib/coven-run-signal";
 import { covenComposerRouting } from "@/lib/coven-composer-routing";
 import type { CovenStopScope } from "@/lib/coven-stop-scope";
 import { CovenRunHeader } from "@/components/coven-run-header";
@@ -175,7 +182,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   const [inspectorOpen, setInspectorOpen] = useState(false);
   // Stepper focus: show one familiar's replies and hide (never stop) the rest.
   const [focusId, setFocusId] = useState<string | null>(null);
-  // Pause holds the rotation between turns; `pausePending` is the window where
+  // Pause holds the ordered queue between turns; `pausePending` is the window where
   // the request is in but the current reply is still finishing.
   const [paused, setPaused] = useState(false);
   const [pausePending, setPausePending] = useState(false);
@@ -315,7 +322,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     runScopeRef.current += 1;
     abortRef.current = null;
     setBusy(false);
-    // Release any held rotation on the way out. A pause is an awaited promise
+    // Release any held reply queue on the way out. A pause is an awaited promise
     // inside the retiring schedule; leaving it held would strand that schedule
     // forever, and the pause state would follow the reader into a coven that
     // has no run at all.
@@ -630,22 +637,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     [announce, busy, persistGroups],
   );
 
-  const advanceRoundRobinLead = useCallback((groupId: string, leadId: string) => {
-    setGroups((prev) => {
-      const current = prev.find((group) => group.id === groupId);
-      if (!current) return prev;
-      const nextLead = nextRoundRobinLeadId(current.familiarIds, leadId);
-      if (current.nextRoundRobinLeadId === nextLead) return prev;
-      const next = upsertGroup(prev, {
-        ...current,
-        nextRoundRobinLeadId: nextLead,
-        updatedAt: nowIso(),
-      });
-      saveGroups(next);
-      return next;
-    });
-  }, []);
-
   async function stopServerRun(entry: { runId: string; sessionId: string | null }) {
     const response = await fetch("/api/chat/stop", {
       method: "POST",
@@ -697,7 +688,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   /**
    * Stop exactly one familiar's turn (design proposal §8, "Stop <name>").
    *
-   * Scoped to that reply's server run, so a rotation continues to the next
+   * Scoped to that reply's server run, so the queue continues to the next
    * familiar and a broadcast's other familiars are untouched. Whatever had
    * streamed is kept and labelled Stopped.
    */
@@ -728,7 +719,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     });
   }
 
-  /** Release a held rotation, whatever the reason it was held. */
+  /** Release a held reply queue, whatever the reason it was held. */
   const releasePause = useCallback(() => {
     pauseRequestedRef.current = false;
     pauseReleaseRef.current?.();
@@ -790,6 +781,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       // reply state without waiting for React to render. Apply every update to both.
       let settled = reply;
       const replyRunId = newGroupReplyRunId();
+      const responseText = createCanonicalResponseBuffer(reply.text);
       const attentionText = createAttentionSafeTextAccumulator();
       const apply = (fn: (r: GroupReply) => GroupReply) => {
         settled = fn(settled);
@@ -850,12 +842,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
               if (scopeId === runScopeRef.current) recordSession(group.id, reply.familiarId, ev.sessionId);
             }
             if (ev.kind === "assistant_chunk") {
+              const canonicalText = responseText.append(ev.text);
               apply((r) => applyGroupEvent(r, {
-                kind: "assistant_replace", text: attentionText.append(ev.text),
+                kind: "assistant_replace", text: attentionText.replace(canonicalText),
               }));
             } else if (ev.kind === "assistant_replace") {
+              const canonicalText = responseText.replace(ev.text);
               apply((r) => applyGroupEvent(r, {
-                kind: "assistant_replace", text: attentionText.replace(ev.text),
+                kind: "assistant_replace", text: attentionText.replace(canonicalText),
               }));
             } else {
               apply((r) => applyGroupEvent(r, ev));
@@ -919,7 +913,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
         return;
       }
       const orderedTargetIds = group.responseMode === "round-robin"
-        ? orderRoundRobinFamiliarIds(group.familiarIds, targetIds, group.nextRoundRobinLeadId)
+        ? orderRoundRobinFamiliarIds(group.familiarIds, targetIds)
         : targetIds;
       // Roster reflects the FULL coven (not just @mention targets) — a familiar
       // should know who else is in the room even when addressed alone. Composed
@@ -978,9 +972,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       const scopeId = runScopeRef.current;
       const controller = new AbortController();
       abortRef.current = controller;
-      if (group.responseMode === "round-robin" && replies.length > 1) {
-        advanceRoundRobinLead(group.id, replies[0].familiarId);
-      }
       const settled = await runCovenReplySchedule({
         mode: group.responseMode,
         replies,
@@ -1010,8 +1001,10 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
           return streamOne(group, reply, prompt, projectRoot, scopeId, controller.signal);
         },
       });
-      // A familiar can perform an explicit human-requested handoff by emitting
-      // a validated delegation trailer. Plain assistant @mentions remain prose.
+      // A familiar can PROPOSE a handoff by emitting a validated delegation
+      // trailer, but assistant output is never sufficient authority to execute
+      // it — every handoff waits on an operator decision. Plain assistant
+      // @mentions remain prose.
       // Process the small delegation tree sequentially so Stop prevents queued
       // work from starting and each target keeps its resumable familiar session.
       const delivered = new Set(
@@ -1047,6 +1040,32 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
             ) continue;
             const target = byId.get(targetId);
             if (!target) continue;
+            const delegatedBy = byId.get(source.familiarId)?.display_name ?? source.familiarId;
+            // Assistant output is a PROPOSAL, never authority. A familiar can
+            // emit a delegation trailer for any in-coven target, so executing
+            // one unprompted lets a model start work — with the operator's
+            // grants, in another familiar's session — that the human never
+            // asked for. Race the decision against Stop so aborting mid-prompt
+            // does not leave the dialog waiting on a run that is already over.
+            const abortPromise = new Promise<false>((resolve) => {
+              if (controller.signal.aborted) { resolve(false); return; }
+              controller.signal.addEventListener("abort", () => resolve(false), { once: true });
+            });
+            const approved = await Promise.race([
+              confirm({
+                title: `Approve handoff to ${target.display_name}?`,
+                body: (
+                  <div className="[white-space:pre-wrap]!">
+                    {`${delegatedBy} proposed this task:\n\n${delegation.task}`}
+                  </div>
+                ),
+                confirmLabel: "Approve handoff",
+              }),
+              abortPromise,
+            ]);
+            // Declining stops the whole delegation tree rather than walking on
+            // to more prompts emitted by the same untrusted reply.
+            if (!approved || controller.signal.aborted) return;
             const at = nowIso();
             const delegatedTurn: GroupUserTurn = {
               id: newId(),
@@ -1071,7 +1090,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
             delivered.add(dedupeKey);
             delegationCount += 1;
             setTranscript((prev) => [...prev, delegatedTurn, delegatedReply]);
-            const delegatedBy = byId.get(source.familiarId)?.display_name ?? source.familiarId;
             const child = await streamOne(
               group,
               delegatedReply,
@@ -1116,7 +1134,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       }
     },
     [
-      advanceRoundRobinLead,
       busy,
       streamOne,
       byId,
@@ -1386,7 +1403,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       if (next === group) return;
       persistGroups(upsertGroup(groupsRef.current, next));
       const name = byId.get(familiarId)?.display_name ?? familiarId;
-      announce(`${name} moved ${delta < 0 ? "earlier" : "later"} in the rotation.`);
+      announce(`${name} moved ${delta < 0 ? "earlier" : "later"} in the reply order.`);
     },
     [announce, byId, persistGroups],
   );
@@ -1403,6 +1420,46 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     );
   }, [transcript, activeGroup?.responseMode]);
   const activeRun = useMemo(() => runs.find((run) => run.active) ?? null, [runs]);
+
+  // Earlier runs fold above the transcript (design proposal §6) so scrolling
+  // back through yesterday's work is a choice rather than the default. Derived
+  // from the runs already built — no second pass over the transcript.
+  const historyFold = useMemo(
+    () => covenHistoryFold(runs, { now: Date.now() }),
+    [runs],
+  );
+  // Only the runs the fold does NOT stand for are rendered in full.
+  const visibleRuns = useMemo(
+    () => (historyFold ? runs.slice(historyFold.count) : runs),
+    [runs, historyFold],
+  );
+
+  // Publish the run to the status bar's pill (design proposal §11), so run
+  // state survives scrolling deep into history. Cleared on unmount and on
+  // coven switch by the effect below — a pill that outlives its surface would
+  // keep claiming a run is live after the reader has navigated away.
+  // The LATEST run, not just a live one: `covenRunPill` reports a settled run's
+  // summary and final duration, and §11 asks the bar to keep that last word
+  // ("● Run complete"). Publishing only `activeRun` made the pill vanish the
+  // instant a run finished, which left that whole branch unreachable.
+  const pillRun = activeRun ?? runs[runs.length - 1] ?? null;
+  useEffect(() => {
+    publishCovenRunPill(covenRunPill({ run: pillRun, paused }));
+  }, [pillRun, paused]);
+  useEffect(() => () => publishCovenRunPill(null), []);
+  useEffect(() => {
+    if (!activeId) publishCovenRunPill(null);
+  }, [activeId]);
+
+  // The pill is a jump-off as well as a readout: clicking it lands here.
+  useEffect(() => {
+    const jump = () => {
+      stick();
+      setShowJump(false);
+    };
+    window.addEventListener(COVEN_JUMP_TO_RUN_EVENT, jump);
+    return () => window.removeEventListener(COVEN_JUMP_TO_RUN_EVENT, jump);
+  }, [stick]);
 
   // Rail rows: "N familiars · last activity". Last activity prefers the
   // stored transcript's newest turn and falls back to the group's updatedAt.
@@ -1724,7 +1781,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                                 ? projectLaunchMessage
                                 : activeGroup.responseMode === "broadcast"
                                   ? "Every familiar answers at once, independently, in its own thread."
-                                  : "Familiars respond in turn and see earlier replies. @name routes to one without advancing the rotation."
+                                  : "Familiars respond in the selected order and see earlier replies. @name routes to one without changing that order."
                           }
                           actions={
                             participants.length === 0 ? (
@@ -1738,7 +1795,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                       </div>
                     ) : (
                       <div className="coven-tab__runs">
-                        {runs.map((run) => {
+                        {historyFold ? (
+                          <CovenHistoryFoldView
+                            fold={historyFold}
+                            byId={byId}
+                            formatTime={(iso) => formatChatRecency(iso, dtPrefs)}
+                          />
+                        ) : null}
+                        {visibleRuns.map((run, runIndex) => {
                           const targets = run.user.targetFamiliarIds
                             ?.map((id) => byId.get(id))
                             .filter((f): f is ResolvedFamiliar => Boolean(f));
@@ -1746,6 +1810,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                             ? byId.get(run.user.delegatedByFamiliarId)
                             : undefined;
                           const collapsed = collapsedRuns.has(run.id);
+                          const isLatestRun = runIndex === visibleRuns.length - 1;
                           // While one familiar is live, settled replies soft-clamp
                           // so the turn in progress owns the viewport (§4).
                           const someoneLive = run.agents.some(
@@ -1888,7 +1953,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                                       // click here sends an ordinary message, never
                                       // a side effect, so only replies are offered.
                                       const suggestions: CovenSuggestion[] =
-                                        agent.status === "complete"
+                                        isLatestRun && agent.status === "complete"
                                           ? typed
                                               .filter((path) => path.kind === "reply")
                                               .map((path) => ({

@@ -3,7 +3,7 @@
  *
  * A *coven* is a saved set of familiars you talk to together. Each Coven chooses
  * whether a prompt fans out to everyone in parallel (broadcast) or moves through
- * a rotating speaking order with peer-reply relay (round robin). Both modes use
+ * the selected speaking order with peer-reply relay (round robin). Both modes use
  * one `/api/chat/send` stream and resumable session per familiar because the
  * daemon/Coven CLI has no server-side "group session" concept.
  *
@@ -45,8 +45,6 @@ export type CovenGroup = {
   projectId?: string;
   /** How a multi-recipient human turn is dispatched. */
   responseMode: CovenResponseMode;
-  /** Familiar that should lead the next multi-recipient round-robin turn. */
-  nextRoundRobinLeadId?: string;
   /** Optional one-line "what is this coven about?" (details drawer). */
   subject?: string;
   /** Optional short running summary of the conversation (details drawer). */
@@ -589,7 +587,6 @@ export function makeGroup(
     familiarIds: dedupe(familiarIds),
     sessions: {},
     responseMode: "broadcast",
-    nextRoundRobinLeadId: dedupe(familiarIds)[0],
     createdAt: now,
     updatedAt: now,
   };
@@ -649,9 +646,6 @@ export function setGroupParticipants(
   for (const id of ids) {
     if (group.sessions[id]) sessions[id] = group.sessions[id];
   }
-  const nextRoundRobinLeadId = ids.includes(group.nextRoundRobinLeadId ?? "")
-    ? group.nextRoundRobinLeadId
-    : ids[0];
   // A familiar removed from the coven cannot stay on the sit-out list: it would
   // silently sit the familiar out again if it were ever re-added.
   const excludedFamiliarIds = (group.excludedFamiliarIds ?? []).filter((id) => ids.includes(id));
@@ -659,14 +653,13 @@ export function setGroupParticipants(
     ...group,
     familiarIds: ids,
     sessions,
-    nextRoundRobinLeadId,
     ...(excludedFamiliarIds.length > 0 ? { excludedFamiliarIds } : { excludedFamiliarIds: undefined }),
     updatedAt: now,
   };
 }
 
 /**
- * The familiars that take part in the next run, in rotation order.
+ * The familiars that take part in the next run, in the selected order.
  *
  * Sitting a familiar out is not removing it: it keeps its membership, its
  * pinned session and its place in the order, and simply does not receive the
@@ -698,7 +691,7 @@ export function setGroupParticipantIncluded(
 }
 
 /**
- * Move one familiar earlier (-1) or later (+1) in the rotation.
+ * Move one familiar earlier (-1) or later (+1) in the selected order.
  *
  * Returns the SAME object at either end of the list, so a no-op arrow press
  * does not bump `updatedAt` and reshuffle the rail.
@@ -725,10 +718,6 @@ export function setGroupResponseMode(
   return {
     ...group,
     responseMode,
-    nextRoundRobinLeadId:
-      group.nextRoundRobinLeadId && group.familiarIds.includes(group.nextRoundRobinLeadId)
-        ? group.nextRoundRobinLeadId
-        : group.familiarIds[0],
     updatedAt: now,
   };
 }
@@ -749,26 +738,15 @@ export function setGroupDetails(
   return { ...group, subject, summary, updatedAt: now };
 }
 
-/** Rotate selected recipients around the persisted Coven lead. */
+/** Filter recipients without changing the user-selected Coven order. */
 export function orderRoundRobinFamiliarIds(
   familiarIds: string[],
   targetIds: string[],
-  nextLeadId?: string,
 ): string[] {
   const roster = dedupe(familiarIds);
   const targets = new Set(dedupe(targetIds));
   if (roster.length === 0 || targets.size === 0) return [];
-  const start = Math.max(0, nextLeadId ? roster.indexOf(nextLeadId) : 0);
-  const rotated = [...roster.slice(start), ...roster.slice(0, start)];
-  return rotated.filter((id) => targets.has(id));
-}
-
-/** Advance the persisted lead one roster slot after the familiar that led. */
-export function nextRoundRobinLeadId(familiarIds: string[], leadId: string): string | undefined {
-  const roster = dedupe(familiarIds);
-  if (roster.length === 0) return undefined;
-  const leadIndex = roster.indexOf(leadId);
-  return roster[(leadIndex < 0 ? 0 : leadIndex + 1) % roster.length];
+  return roster.filter((id) => targets.has(id));
 }
 
 function dedupe(ids: string[]): string[] {
@@ -892,7 +870,7 @@ export type CovenReplyRunner = (
   settledBefore: GroupReply[],
 ) => Promise<GroupReply>;
 
-/** What the operator decided about the next queued familiar in a rotation. */
+/** What the operator decided about the next familiar in the ordered queue. */
 export type CovenTurnDecision = "run" | "stop";
 
 /**
@@ -1134,12 +1112,11 @@ function normalizeCovenGroup(group: CovenGroup): CovenGroup {
   const responseMode: CovenResponseMode = COVEN_RESPONSE_MODES.includes(group.responseMode)
     ? group.responseMode
     : "broadcast";
-  const nextLead = group.nextRoundRobinLeadId;
+  const normalized = { ...group } as CovenGroup & { nextRoundRobinLeadId?: unknown };
+  delete normalized.nextRoundRobinLeadId;
   return {
-    ...group,
+    ...normalized,
     responseMode,
-    nextRoundRobinLeadId:
-      nextLead && group.familiarIds.includes(nextLead) ? nextLead : group.familiarIds[0],
     // Details fields are optional and later additions: absent on legacy groups
     // (stays undefined), and non-string garbage is dropped rather than crashing
     // the details drawer.

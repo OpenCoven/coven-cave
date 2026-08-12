@@ -42,7 +42,7 @@ async function listenHub(port = 0): Promise<number> {
     }
     if (req.method === "GET" && req.url === "/api/v1/health") {
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ apiVersion: "1", covenVersion: "test", daemon: { status: "ok" } }));
+      res.end(JSON.stringify({ apiVersion: "coven.daemon.v1", covenVersion: "test", daemon: { status: "ok" } }));
       return;
     }
     res.writeHead(404, { "content-type": "application/json" });
