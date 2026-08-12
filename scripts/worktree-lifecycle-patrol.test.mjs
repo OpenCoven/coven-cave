@@ -32,6 +32,7 @@ import {
   removeLifecycleRecord,
   repairOrphanedWorktreeMetadata,
 } from "./worktree-lifecycle-metadata-repair.ts";
+import { refreshCovenBin } from "../src/lib/coven-bin.ts";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(sourceRoot, "scripts", "worktree-lifecycle-patrol.ts");
@@ -962,7 +963,10 @@ process.exit(2);
   );
 
   const originalPath = process.env.PATH;
+  const originalCovenBin = process.env.COVEN_BIN;
   process.env.PATH = `${repairBin}${path.delimiter}${originalPath ?? ""}`;
+  process.env.COVEN_BIN = path.join(repairBin, "coven");
+  refreshCovenBin();
   process.env.METADATA_REPAIR_STATE = repairState;
   process.env.METADATA_REPAIR_LOG = repairLog;
   try {
@@ -1191,6 +1195,9 @@ process.exit(2);
     assert.match(invalidGate.reason, /heartbeat failed: invalid-composite-handle/);
   } finally {
     process.env.PATH = originalPath;
+    if (originalCovenBin === undefined) delete process.env.COVEN_BIN;
+    else process.env.COVEN_BIN = originalCovenBin;
+    refreshCovenBin();
     delete process.env.METADATA_REPAIR_STATE;
     delete process.env.METADATA_REPAIR_LOG;
     delete process.env.METADATA_REPAIR_BD_MODE;
