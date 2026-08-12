@@ -252,11 +252,24 @@ test.describe("chat boot landing", () => {
 // It must ask instead.
 test("booting with no active familiar asks which one instead of picking", async ({ page }) => {
   await seedWithoutActiveFamiliar(page);
+  // Armed BEFORE navigating so the response cannot be missed. The gate policy
+  // cannot decide until this familiar-scoped read lands (it is the
+  // `accessibleProjects` input), so every assertion about the gate has to wait
+  // for it — a bare toHaveCount(0) beforehand passes vacuously against a page
+  // that has simply not rendered the gate YET, which is the exact race this
+  // test is being fixed for.
+  const projectScopeResolved = page.waitForResponse(
+    (res) => res.url().includes("/api/projects?familiarId="),
+    { timeout: 45_000 },
+  );
   await page.goto("/?mode=chat", { waitUntil: "domcontentloaded" });
 
   // The chat-first landing still happens — we did not fall back to the list.
   const launch = page.locator(".cave-launch");
   await expect(launch).toBeVisible({ timeout: 45_000 });
+
+  await projectScopeResolved;
+
   // Named explicitly so a regression here reports the surface that TOOK OVER
   // rather than an absent heading. This is what cave-pw3l0 actually was: the
   // first-project gate displacing the picker once accessible projects resolved
@@ -266,6 +279,9 @@ test("booting with no active familiar asks which one instead of picking", async 
     page.getByRole("heading", { name: "Give this familiar project access" }),
     "the first-project gate displaced the familiar picker — is /api/projects still mocked?",
   ).toHaveCount(0);
+  // Still standing AFTER the policy had its data — the displacement window is
+  // shut, not merely not-yet-open.
+  await expect(launch).toBeVisible();
   await expect(page.getByRole("heading", { name: "Start a new chat" })).toBeVisible();
 
   // Both familiars are offered; neither has been chosen for the user.
