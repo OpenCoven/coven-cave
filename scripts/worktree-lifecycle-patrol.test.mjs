@@ -23,6 +23,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   evaluateRetirementApplyOutcome,
+  listExpiredOrphanedExceptions,
   renderApplyReport,
   runRetirementApply,
 } from "./worktree-lifecycle-patrol.ts";
@@ -5136,6 +5137,87 @@ exit 0
     git(["worktree", "remove", registeredDrift], repo);
   }
   rmSync(fixtureRoot, { recursive: true, force: true });
+}
+
+// cave-4oor6: expired exceptions on beads whose worktrees are gone must surface
+// in the read-only report, not vanish because inventory only tallies unit-matched
+// exceptions.
+{
+  const nowMs = Date.parse("2026-08-12T00:00:00.000Z");
+  const inventory = {
+    orphanedMetadata: [
+      {
+        beadId: "cave-oenag",
+        beadStatus: "open",
+        location: "metadata.coven.worktree",
+        branch: "fix/cave-oenag-detached-budget",
+        path: "/repo/.worktrees/cave-oenag-detached-budget",
+        rawRecord: {},
+        record: {
+          branch: "fix/cave-oenag-detached-budget",
+          path: "/repo/.worktrees/cave-oenag-detached-budget",
+          owner: "kitty",
+          purpose: "budget exception",
+          disposition: "active",
+          createdAt: "2026-08-07T00:00:00.000Z",
+          exception: {
+            owner: "kitty",
+            reason: "over budget",
+            expiresAt: "2026-08-08T00:00:00.000Z",
+            additionalPaths: ["/repo/.worktrees/cave-oenag-detached-budget"],
+          },
+        },
+        repairable: false,
+        reasons: ["worktree path is not registered"],
+      },
+      {
+        beadId: "cave-live-exception",
+        beadStatus: "open",
+        location: "metadata.coven.worktree",
+        branch: "fix/live",
+        path: "/repo/.worktrees/live",
+        rawRecord: {},
+        record: {
+          branch: "fix/live",
+          path: "/repo/.worktrees/live",
+          owner: "kitty",
+          purpose: "still active grant",
+          disposition: "active",
+          createdAt: "2026-08-10T00:00:00.000Z",
+          exception: {
+            owner: "kitty",
+            reason: "still live",
+            expiresAt: "2026-08-15T00:00:00.000Z",
+            additionalPaths: ["/repo/.worktrees/live"],
+          },
+        },
+        repairable: false,
+        reasons: ["worktree path is not registered"],
+      },
+      {
+        beadId: "cave-no-exception",
+        beadStatus: "open",
+        location: "metadata.coven.worktree",
+        branch: "fix/plain",
+        path: "/repo/.worktrees/plain",
+        rawRecord: {},
+        record: {
+          branch: "fix/plain",
+          path: "/repo/.worktrees/plain",
+          owner: "kitty",
+          purpose: "no exception",
+          disposition: "active",
+          createdAt: "2026-08-01T00:00:00.000Z",
+        },
+        repairable: false,
+        reasons: ["worktree path is not registered"],
+      },
+    ],
+  };
+  const listed = listExpiredOrphanedExceptions(inventory, nowMs);
+  assert.equal(listed.length, 1, "only expired exceptions on orphaned records surface");
+  assert.equal(listed[0].beadId, "cave-oenag");
+  assert.equal(listed[0].expiresAt, "2026-08-08T00:00:00.000Z");
 }
 
 console.log("worktree-lifecycle-patrol.test.mjs: ok");
