@@ -32,6 +32,9 @@ no longer reads as N independent problems in the worktree lifecycle report.
   `scripts/worktree-sweep-prompt.md` to `scripts/worktree-sweep.sh`, and the
   patrol report now hints that a retired worktree's bead may still be open so a
   human can close it from the sweep log (#4568).
+- Resolved Chat model application state when the downstream harness echoes the
+  request, so the applied model is reported from the harness response rather
+  than assumed from what was sent (#4569).
 
 ## [0.3.1] - 2026-08-12
 
