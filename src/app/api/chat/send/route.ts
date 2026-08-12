@@ -5407,19 +5407,29 @@ export async function POST(req: Request) {
       // `coven run` can echo the forwarded model in system.init before it has
       // started the downstream harness. That establishes argv forwarding, not
       // downstream acceptance, so keep the model pending unless the error
-      // itself safely identifies a rejected model. In particular, do not mark
-      // a successful wrapper response as proof that Codex accepted `--model`.
+      // itself safely identifies a rejected model. When the downstream harness
+      // DID echo back a model (confirmedModel is set from the init/system
+      // event, not from coven run's own argv), treat a successful run as
+      // confirmed — that IS downstream acceptance.
       else if (localRuntimePlan?.runner === "coven" && forwardModel) {
         const rejected = result.is_error === true && modelRejectionInError(
           [...stderrTail, ...stdoutErrTail].join("\n"),
         );
+        const confirmed = !result.is_error && confirmedModel != null;
         const application = modelApplicationForHarness(
-          rejected ? { failed: true } : { supported: true },
+          rejected
+            ? { failed: true }
+            : confirmed
+              ? { supported: true, confirmed: true }
+              : { supported: true },
         );
+        if (confirmed) responseMetadata.confirmedModel = confirmedModel ?? undefined;
         responseMetadata.modelApplicationState = application.state;
         responseMetadata.modelApplicationReason = rejected
           ? application.reason
-          : "Coven forwarded the selected model; downstream acceptance was not confirmed.";
+          : confirmed
+            ? application.reason
+            : "Coven forwarded the selected model; downstream acceptance was not confirmed.";
         modelState.applicationState = application.state;
         modelState.reason = responseMetadata.modelApplicationReason;
       }
