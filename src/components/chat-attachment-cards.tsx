@@ -27,10 +27,14 @@ function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachmen
   // chip trigger on dismissal, including Escape.
   useFocusTrap(true, dialogRef, { onEscape: onClose });
   // The transcript establishes containing blocks, so the preview must portal
-  // to body for a viewport-sized fixed overlay.
+  // to body for a viewport-sized fixed overlay. That places it in the root
+  // stacking context next to the other portalled overlays, so it carries the
+  // same z-index as the carousel lightbox and for the same reason — an
+  // attachment expanded inside the message reader must not land under the
+  // reader's scrim (cave-yin71).
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/80 backdrop-blur-sm"
       onClick={onClose}
       role="presentation"
     >
