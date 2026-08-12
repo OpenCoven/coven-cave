@@ -24,6 +24,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { StandardSelect } from "@/components/ui/select";
 import { settleEnhance } from "@/lib/prompt-enhancer";
 import {
   defaultResearchPlan,
@@ -811,15 +812,16 @@ export function ResearchMissionComposer({
           </label>
           <label>
             <span>Runtime</span>
-            <select
+            <StandardSelect
               id="research-runtime-harness"
+              label="Runtime"
               value={harness}
-              onChange={(event) => setHarness(event.target.value)}
-            >
-              {RESEARCH_HARNESS_IDS.map((id) => (
-                <option key={id} value={id}>{HARNESS_LABELS[id] ?? id}</option>
-              ))}
-            </select>
+              onChange={setHarness}
+              options={RESEARCH_HARNESS_IDS.map((id) => ({
+                value: id,
+                label: HARNESS_LABELS[id] ?? id,
+              }))}
+            />
           </label>
           <label>
             <span>Model</span>
