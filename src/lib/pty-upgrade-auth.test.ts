@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 const serverSource = readFileSync(new URL("../../server.ts", import.meta.url), "utf8");
 const helperSource = serverSource.match(
-  /function shouldRejectUnauthenticatedPtyUpgrade\([\s\S]*?return sidecarTokenConfigured \|\| accessTokenConfigured;\n}/,
+  /function shouldRejectUnauthenticatedPtyUpgrade\([\s\S]*?return sidecarTokenConfigured;\n}/,
 )?.[0];
 
 assert.ok(helperSource, "server defines one testable PTY upgrade authentication decision");
@@ -18,7 +18,6 @@ for (const [name, input, expected] of [
     "packaged sidecar rejects credential-less loopback clients",
     {
       sidecarTokenConfigured: true,
-      accessTokenConfigured: false,
       tokenAuthenticated: false,
       directLoopback: true,
     },
@@ -28,7 +27,6 @@ for (const [name, input, expected] of [
     "packaged sidecar accepts its authenticated webview",
     {
       sidecarTokenConfigured: true,
-      accessTokenConfigured: false,
       tokenAuthenticated: true,
       directLoopback: true,
     },
@@ -38,37 +36,15 @@ for (const [name, input, expected] of [
     "plain local development remains credential-less",
     {
       sidecarTokenConfigured: false,
-      accessTokenConfigured: false,
       tokenAuthenticated: false,
       directLoopback: true,
     },
     false,
   ],
   [
-    "access-token-only servers reject credential-less loopback clients",
-    {
-      sidecarTokenConfigured: false,
-      accessTokenConfigured: true,
-      tokenAuthenticated: false,
-      directLoopback: true,
-    },
-    true,
-  ],
-  [
-    "access-token-only forwarded clients still need authentication",
-    {
-      sidecarTokenConfigured: false,
-      accessTokenConfigured: true,
-      tokenAuthenticated: false,
-      directLoopback: false,
-    },
-    true,
-  ],
-  [
-    "allowlisted or token-authenticated forwarded clients are accepted",
+    "token-authenticated forwarded clients are accepted",
     {
       sidecarTokenConfigured: true,
-      accessTokenConfigured: true,
       tokenAuthenticated: true,
       directLoopback: false,
     },
