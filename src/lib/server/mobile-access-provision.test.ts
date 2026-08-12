@@ -122,5 +122,20 @@ test("mobile-handoff route provisions, arms, cookies the session, and retires on
   );
 });
 
-// cave-f4emr removed the boot re-arm and the accessToken() gate from server.ts;
-// the wiring-pin test that checked for them is no longer applicable.
+// The custom server used to re-arm COVEN_CAVE_ACCESS_TOKEN from the persisted
+// state file at boot, so a provisioned secret survived a dev-server restart and
+// kept the PTY gate armed. Removing the access-token requirement (cave-f4emr)
+// removed that gate, so the re-arm went with it: nothing in server.ts reads the
+// variable any more, and re-arming it would resurrect a credential no gate
+// consults. The provisioning seams above still work — they are what the pairing
+// flow signs invites with — they simply no longer arm anything.
+test("the custom server no longer re-arms or reads the access token", () => {
+  const server = readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
+  assert.doesNotMatch(server, /persistedMobileAccessSecretFile/, "the boot re-arm is gone");
+  assert.doesNotMatch(
+    server,
+    /process\.env\.COVEN_CAVE_ACCESS_TOKEN/,
+    "the server neither reads nor writes the access-token secret",
+  );
+  assert.doesNotMatch(server, /function accessToken\(\)/, "no lazy access-token accessor remains");
+});
