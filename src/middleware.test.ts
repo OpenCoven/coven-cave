@@ -22,38 +22,19 @@ assert.match(source, /export async function proxy\(req: NextRequest\)/, "Next 16
 assert.match(source, /matcher:\s*\["\/\(\(\?!_next\/static\|_next\/image\|favicon\.ico\)\.\*\)"\]/, "proxy should guard API and mobile browser routes");
 assert.match(source, /process\.env\.COVEN_CAVE_AUTH_TOKEN/, "proxy should require the per-launch sidecar token");
 assert.match(source, /process\.env\.COVEN_CAVE_BUNDLE === "1"[\s\S]*missing sidecar auth token/, "bundled sidecar mode should fail closed when its auth token is missing");
-
-// ── The access-token requirement is gone (cave-f4emr) ─────────────────────
-// Removed at the owner's direction. Nothing may reintroduce a credential
-// demand on the request path: no gate, no HTML access page, no cookie/query
-// exchange, and no 401 for a caller that simply presented nothing.
-assert.doesNotMatch(source, /COVEN_CAVE_ACCESS_TOKEN/, "the proxy must not read the access-token secret");
-assert.doesNotMatch(source, /mobileAccessGate|accessGatePage|isValidMobileAccessCredential/, "the access gate and its page must stay deleted");
-assert.doesNotMatch(source, /ACCESS_TOKEN_COOKIE|ACCESS_TOKEN_QUERY_PARAM/, "the proxy must not consult the access cookie or its query parameter");
-assert.doesNotMatch(source, /jsonError\(401, "unauthorized"\)/, "no request path may 401 for a missing credential");
-// The one 401 left is the armed passkey-presence requirement, which is opt-in
-// (COVEN_CAVE_PASSKEY_REQUIRED) and about proving a human, not a shared secret.
-assert.match(source, /jsonError\(401, "passkey presence required"\)/, "an armed passkey-presence requirement still fails closed");
+assert.match(
+  source,
+  /forbidden peer: missing trusted local peer or verified remote ingress/,
+  "tokenless peer failures should identify the missing authorization proof",
+);
 assert.match(source, /req\.headers\.get\("origin"\)/, "middleware should reject unsafe origins");
 assert.match(source, /req\.headers\.get\("host"\)/, "middleware should reject unsafe hosts");
 assert.match(source, /const requestHost = req\.headers\.get\("host"\)/, "proxy should capture the forwarded request host once");
-// Remote ingress is now CLASSIFICATION, not authentication (cave-f4emr): with
-// no credential left to present, anything server.ts did not stamp as a direct
-// loopback peer is treated as remote — admitted, but held to the mobile side
-// of every local-vs-remote split. Gated on the stamp secret existing so a bare
-// `next dev` (nothing stamps anything) does not read its own silence as "every
-// request is a phone" and 403 desktop-only routes for a local user.
-assert.match(
-  source,
-  /const localPeerStampActive = Boolean\(process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET\)/,
-  "remote-ingress classification must know whether server.ts is stamping at all",
-);
-assert.match(
-  source,
-  /const remoteIngress = localPeerStampActive && !trustedLocalPeer/,
-  "remote ingress is every non-direct-loopback peer once the stamp is active",
-);
-assert.match(source, /isAllowedApiHost\(requestHost, remoteIngress\)/, "remote ingress should satisfy the API host gate");
+// Remote ingress is a verified mobile invite OR an allowlisted tailnet device
+// Tailnet forwarding metadata is not a credential: a local process can forge
+// it. Remote ingress requires a bearer credential (mobile or sidecar).
+assert.match(source, /const remoteIngress =\s*mobileAccessAuthenticated \|\| \(sidecarAuthenticatedAtGate && !trustedLocalPeer\)/, "remote ingress requires a verified bearer credential");
+assert.match(source, /isAllowedApiHost\(requestHost, remoteIngress\)/, "verified remote ingress should satisfy the API host gate");
 assert.doesNotMatch(source, /isAllowedApiHost\([^)]*tailnetTrusted[^)]*\)/, "tailnet membership alone must not relax the API host gate");
 assert.match(source, /const tailnetTrusted = process\.env\.COVEN_CAVE_TAILNET_TRUST === "1"/, "the tailnet-trust flag should survive only as a taint marker that further restricts automation ingress");
 // The tailnet half of remoteIngress must come from the server.ts-minted stamp
@@ -63,6 +44,11 @@ assert.match(
   source,
   /const tailnetNodeId = verifiedTailnetNode\(\s*req\.headers\.get\(TAILNET_PEER_HEADER\),\s*process\.env\.COVEN_CAVE_TAILNET_PEER_SECRET,\s*\)/,
   "tailnet ingress is authorized by the verified per-boot stamp, not by a client-controlled header",
+);
+assert.match(
+  source,
+  /const tailnetPeerVerified = tailnetNodeId !== null/,
+  "tailnet verification is derived from a resolved node id",
 );
 assert.match(
   source,
@@ -104,20 +90,19 @@ assert.match(source, /isProductionWebhookGet\(req\.nextUrl\.pathname, req\.metho
 assert.match(source, /isLocalOnlyAutomationRun\(req\.nextUrl\.pathname, req\.method\)/, "run-now automation execution should have a dedicated local-only proxy guard");
 assert.match(source, /remoteIngress \|\| tailnetTrusted \|\| !isLoopbackHost\(requestHost\)/, "run-now automation execution must deny mobile, tailnet-device, tailnet-flagged, and non-loopback proxy ingress");
 assert.match(source, /missing request source/, "tokenless GET webhooks should reject absent Origin and Referer headers");
-// The final sidecar gate is gone with the access token (cave-f4emr): the
-// sidecar credential still identifies the desktop webview for the CSRF
-// relaxation, but is no longer demanded of anyone. In exchange the webhook-GET
-// missing-source guard now covers ALL remote ingress, which after this change
-// carries no credential at all.
-assert.doesNotMatch(
+// cave-gzje: a verified signed mobile invite is the paired phone's credential.
+// The final sidecar gate must admit it (the phone can never learn the
+// webview's per-launch token), and the webhook-GET missing-source guard must
+// extend to mobile-cookie-authenticated requests in exchange.
+assert.match(
   source,
-  /const sidecarAuthenticated = /,
-  "no request may be turned away for failing to present the sidecar token",
+  /if \(!sidecarAuthenticated && !mobileAccessVerified\) \{/,
+  "the final sidecar gate must independently admit a verified access token",
 );
 assert.match(
   source,
-  /\(!sidecarToken \|\| remoteIngress\) &&\s*isProductionWebhookGet/,
-  "the webhook-GET missing-source guard must cover tokenless servers and every remote caller",
+  /\(!sidecarToken \|\| mobileAccessVerified\) &&\s*isProductionWebhookGet/,
+  "the webhook-GET missing-source guard must cover tokenless servers and mobile-cookie-authenticated requests",
 );
 
 // Tailscale Serve fix (re-applies #618; #716 reverted it): a request bearing the
@@ -135,6 +120,11 @@ assert.match(
   source,
   /const sidecarTokenMatches = \(supplied: string \| null \| undefined\) => \{\s*if \(!sidecarToken \|\| !supplied\) return false;\s*return timingSafeEqualString\(supplied, sidecarToken\);\s*\}/,
   "sidecar auth must compare the supplied token with timingSafeEqualString",
+);
+assert.match(
+  source,
+  /const sidecarAuthenticated = sidecarTokenMatches\(suppliedToken\)/,
+  "sidecarAuthenticated must use the shared timing-safe matcher",
 );
 assert.match(
   source,
@@ -180,10 +170,20 @@ assert.doesNotMatch(
     "dev-mode token bypass must run AFTER host/origin/referer/content-type guards",
   );
 }
-// ── Local-peer classification (cave-ruw4z, repurposed by cave-f4emr) ──────
-// The stamp no longer decides admission — nothing does — but it is still the
-// only trustworthy local/remote signal, and it must keep coming from the
-// server-minted per-boot secret rather than a client-settable marker.
+assert.match(source, /isValidMobileAccessCredential/, "mobile token bootstrap should verify signed or legacy credentials");
+assert.match(
+  source,
+  /isValidMobileAccessCredential\(\{\s*supplied:\s*queryToken,\s*expectedSecret:\s*expected,\s*\}\)/,
+  "mobile token bootstrap should validate the query token before writing cookie state",
+);
+assert.match(source, /if \(queryVerification\.ok\)/, "invalid query tokens should not overwrite the access cookie");
+assert.match(source, /maxAge/, "signed mobile cookie lifetime should track token expiry");
+assert.match(source, /req\.method === "GET" \|\| req\.method === "HEAD"/, "mobile token bootstrap should avoid redirects for mutating requests");
+
+// ── User-bound local authentication (cave-ruw4z) ──────────────────────────
+// The local-peer stamp still distinguishes direct from forwarded ingress, but
+// cannot bypass authentication because TCP loopback does not identify an OS
+// user. Only the per-launch sidecar credential exempts the owning Tauri app.
 assert.match(
   source,
   /isTrustedLocalPeer\(\s*req\.headers\.get\(LOCAL_PEER_HEADER\),\s*process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET,?\s*\)/,
@@ -193,6 +193,50 @@ assert.doesNotMatch(
   source,
   /LOCAL_PEER_HEADER\)\s*===\s*"1"/,
   "a bare marker value must never satisfy local-peer classification",
+);
+assert.match(
+  source,
+  /shouldRequireMobileAccessCredential\(\s*req\.headers\.get\("host"\),\s*suppliedTokens\.length > 0,\s*trustedLocalPeer,\s*tailnetPeerVerified,\s*sidecarAuthenticated,?\s*\)/,
+  "the mobile gate must require user-bound sidecar or mobile credentials even for local peers",
+);
+assert.match(
+  source,
+  /const sidecarAuthenticatedAtGate = sidecarTokenMatches\(\s*req\.headers\.get\(TOKEN_HEADER\) \?\? req\.nextUrl\.searchParams\.get\(TOKEN_PARAM\),?\s*\)/,
+  "the Tauri bypass must validate its per-launch sidecar credential",
+);
+// The marker classifies mobile INGRESS, not credential possession: a mobile
+// invite cookie in a local desktop browser (auto-sent after a pairing link
+// was once opened there) must not reclassify a trusted local peer as a
+// phone — that marker makes isLocalOrigin() 403 every desktop-only route
+// (research missions/links, automations) for a genuinely local user.
+assert.match(
+  source,
+  /const mobileAccessVerified = mobileAccessToken\s*\?[\s\S]*?const mobileAccessAuthenticated = !trustedLocalPeer && mobileAccessVerified/,
+  "a trusted local peer must never be marked as mobile ingress, even when a mobile access cookie rides along",
+);
+assert.match(
+  source,
+  /mobileAccessGate\(\s*req,\s*trustedLocalPeer,\s*tailnetPeerVerified,\s*sidecarAuthenticatedAtGate,?\s*\)/,
+  "the local-peer, tailnet, and sidecar evidence is shared with the mobile gate",
+);
+
+// ── HTML access gate for unauthenticated browser navigations ──────────────
+// Same 401 fail-closed posture; only the body differs by client. The page's
+// form re-enters the query-token exchange above — no new auth logic.
+assert.match(
+  source,
+  /isHtmlNavigationRequest\(req\.method, req\.nextUrl\.pathname, req\.headers\.get\("accept"\)\)/,
+  "unauthenticated browser page navigations should get the HTML access gate",
+);
+assert.match(
+  source,
+  /if \(!verification\) \{[\s\S]*?accessGatePage\(\{ invalidToken: suppliedTokens\.length > 0 \}\)[\s\S]*?status: 401[\s\S]*?return jsonError\(401, "unauthorized"\);[\s\S]*?\}/,
+  "the HTML gate must live inside the failed-verification branch, still 401, with the JSON envelope retained for non-navigations",
+);
+assert.match(
+  source,
+  /"cache-control": "no-store"/,
+  "the access gate page must never be cached",
 );
 assert.match(
   sidecarBridgeSource,

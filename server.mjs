@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
@@ -35,6 +35,25 @@ function cavePort() {
   const channelDefault = process.env.COVEN_CAVE_BUNDLE === "1" ? CAVE_PRODUCTION_PORT : CAVE_DEV_PORT;
   return parseCavePort(process.env.COVEN_CAVE_PORT) ?? parseCavePort(process.env.PORT) ?? channelDefault;
 }
+function persistedMobileAccessSecretFile() {
+  const port2 = String(cavePort());
+  const stateRoot = process.env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim() || join(
+    process.env.XDG_STATE_HOME?.trim() || join(homedir(), ".local", "state"),
+    "coven-cave"
+  );
+  const stateDir = process.env.COVEN_CAVE_MOBILE_STATE_DIR?.trim() || join(stateRoot, `mobile-tailscale-${port2}`);
+  return join(stateDir, "access-token");
+}
+if (process.env.COVEN_CAVE_BUNDLE !== "1" && process.env.COVEN_CAVE_E2E !== "1" && !process.env.COVEN_CAVE_ACCESS_TOKEN?.trim()) {
+  try {
+    const persisted = readFileSync(persistedMobileAccessSecretFile(), "utf8").trim();
+    if (persisted) process.env.COVEN_CAVE_ACCESS_TOKEN = persisted;
+  } catch {
+  }
+}
+function accessToken() {
+  return process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
+}
 const SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN ?? "";
 const LOCAL_PEER_HEADER = "x-coven-cave-local-peer";
 const LOCAL_PEER_SECRET = randomUUID();
@@ -46,6 +65,9 @@ const FORWARDING_HEADERS = [
   "x-forwarded-proto",
   "via"
 ];
+const ACCESS_COOKIE = "coven_cave_access";
+const LEGACY_ACCESS_COOKIE = "coven_access_token";
+const ACCESS_QUERY_PARAM = "coven_access_token";
 const SIDECAR_QUERY_PARAM = "covenCaveToken";
 const sessions = /* @__PURE__ */ new Map();
 const PACKAGED_CHILD_SHUTDOWN_BUDGET_MS = 1200;
@@ -139,6 +161,17 @@ function scrollbackFrom(session, cursor) {
   }
   return output;
 }
+function getTokensFromCookie(header) {
+  if (!header) return [];
+  const tokens = [];
+  for (const part of header.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key === ACCESS_COOKIE || key === LEGACY_ACCESS_COOKIE) {
+      tokens.push(decodeURIComponent(rest.join("=") ?? ""));
+    }
+  }
+  return tokens;
+}
 function timingSafeEqualString(a, b) {
   const aBytes = Buffer.from(a);
   const bBytes = Buffer.from(b);
@@ -149,8 +182,26 @@ function timingSafeEqualString(a, b) {
   }
   return diff === 0;
 }
-function isExpectedPtyToken(value) {
+function isExpectedAccessToken(value) {
+  const secret = accessToken();
+  if (!secret || !value) return false;
+  if (timingSafeEqualString(value, secret)) return true;
+  return isValidSignedAccessToken(value, secret);
+}
+function isExpectedSidecarToken(value) {
   return Boolean(SIDECAR_TOKEN && value && timingSafeEqualString(value, SIDECAR_TOKEN));
+}
+function isExpectedPtyToken(value) {
+  return isExpectedAccessToken(value) || isExpectedSidecarToken(value);
+}
+function isValidSignedAccessToken(value, secret) {
+  const parts = value.split(".");
+  if (parts.length !== 4 || parts[0] !== "v1") return false;
+  const expiresAt = Number(parts[1]);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
+  if (!parts[2] || !parts[3]) return false;
+  const expected = createHmac("sha256", secret).update(`v1.${parts[1]}.${parts[2]}`).digest("base64url");
+  return timingSafeEqualString(parts[3], expected);
 }
 function bearerToken(req) {
   const auth = req.headers.authorization ?? "";
@@ -318,19 +369,21 @@ function parseUpgradeTarget(rawUrl) {
   return { pathname, query };
 }
 function isPtyAuthRequired() {
-  return Boolean(SIDECAR_TOKEN);
+  return Boolean(accessToken() || SIDECAR_TOKEN);
 }
 function shouldRejectUnauthenticatedPtyUpgrade({
   sidecarTokenConfigured = false,
+  accessTokenConfigured = false,
   tokenAuthenticated = false
 } = {}) {
   if (tokenAuthenticated) return false;
-  return sidecarTokenConfigured;
+  return sidecarTokenConfigured || accessTokenConfigured;
 }
 function isAuthorized(req, query) {
   if (!isPtyAuthRequired()) return false;
+  const queryToken = firstQueryValue(query[ACCESS_QUERY_PARAM]);
   const sidecarQueryToken = firstQueryValue(query[SIDECAR_QUERY_PARAM]);
-  const candidates = [bearerToken(req), sidecarQueryToken];
+  const candidates = [bearerToken(req), queryToken, sidecarQueryToken, ...getTokensFromCookie(req.headers.cookie)];
   return candidates.some(isExpectedPtyToken);
 }
 function defaultShell() {
@@ -690,6 +743,7 @@ server.on("upgrade", (req, socket, head) => {
   }
   if (shouldRejectUnauthenticatedPtyUpgrade({
     sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
+    accessTokenConfigured: Boolean(accessToken()),
     tokenAuthenticated
   })) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
