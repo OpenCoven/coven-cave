@@ -46,6 +46,64 @@ test("extract: partial marker at the stream tail is hidden", () => {
   assert.equal(shorter.visible, "text ");
 });
 
+test("extract: an incomplete prefix before a later complete marker stays hidden", () => {
+  const { visible, updates } = extractSkillMarkers(
+    [
+      "before <coven:sk",
+      "middle <coven:ski",
+      '<coven:skill name="live" stage="done" note="parsed later" />',
+      "after",
+    ].join("\n"),
+  );
+
+  assert.equal(visible, "before \nmiddle \n\nafter");
+  assert.deepEqual(updates, [
+    { name: "live", stage: "done", note: "parsed later" },
+  ]);
+});
+
+test("extract: an unclosed quoted partial resynchronizes at a later marker", () => {
+  const { visible, updates } = extractSkillMarkers(
+    [
+      'before <coven:skill name="partial',
+      '<coven:skill name="live" stage="done" />',
+      "after",
+    ].join("\n"),
+  );
+
+  assert.equal(visible, "before \nafter");
+  assert.deepEqual(updates, [{ name: "live", stage: "done" }]);
+});
+
+test("extract: incomplete prefixes inside code and opaque ranges stay literal", () => {
+  const opaque = "<coven:sk";
+  const opaqueLine = `Keep ${opaque} as an opaque label fragment.`;
+  const text = [
+    "Keep `<coven:sk` as code.",
+    "```text",
+    "<coven:ski",
+    "```",
+    opaqueLine,
+    '<coven:skill name="live" stage="done" />',
+  ].join("\n");
+  const start = text.indexOf(opaqueLine) + "Keep ".length;
+
+  assert.deepEqual(
+    extractSkillMarkers(text, text, [[start, start + opaque.length]]),
+    {
+      visible: [
+        "Keep `<coven:sk` as code.",
+        "```text",
+        "<coven:ski",
+        "```",
+        opaqueLine,
+        "",
+      ].join("\n"),
+      updates: [{ name: "live", stage: "done" }],
+    },
+  );
+});
+
 test("extract: plain text passes through untouched", () => {
   const text = "no markers here";
   assert.deepEqual(extractSkillMarkers(text), { visible: text, updates: [] });
@@ -92,6 +150,21 @@ test("extract: quoted note containing '>' stays atomic (no early tag close)", ()
   assert.equal(visible, "x  y");
 });
 
+test("extract: quoted Markdown backticks stay inside a complete marker", () => {
+  const { visible, updates } = extractSkillMarkers(
+    [
+      '<coven:skill name="first" stage="done" note="ran `test`" />',
+      '<coven:skill name="later" stage="done" />',
+    ].join("\n"),
+  );
+
+  assert.equal(visible, "\n");
+  assert.deepEqual(updates, [
+    { name: "first", stage: "done", note: "ran `test`" },
+    { name: "later", stage: "done" },
+  ]);
+});
+
 // ── Review-fix pins (cave-m0r6) ──────────────────────────────────────────────
 
 test("extract: partial tail with '>' inside an open quoted note stays hidden", () => {
@@ -104,4 +177,42 @@ test("extract: fenced skill markers are example text — literal, no updates", (
   const { visible, updates } = extractSkillMarkers(text);
   assert.deepEqual(updates, []);
   assert.equal(visible, text);
+});
+
+test("extract: an optional Markdown range source preserves original text slices", () => {
+  const text =
+    'Prefix ` noise <coven:skill name="verification" stage="done" /> Visible.';
+  const rangeSource = text.replace("`", " ");
+
+  assert.deepEqual(extractSkillMarkers(text, rangeSource), {
+    visible: "Prefix ` noise  Visible.",
+    updates: [{ name: "verification", stage: "done" }],
+  });
+});
+
+test("extract: optional opaque ranges preserve literal skill markers", () => {
+  const literal = '<coven:skill name="literal" stage="error" />';
+  const live = '<coven:skill name="live" stage="done" />';
+  const text = `Keep ${literal} exact.\n${live}`;
+  const start = text.indexOf(literal);
+
+  assert.deepEqual(
+    extractSkillMarkers(text, text, [[start, start + literal.length]]),
+    {
+      visible: `Keep ${literal} exact.\n`,
+      updates: [{ name: "live", stage: "done" }],
+    },
+  );
+});
+
+test("extract: skill range inputs reject mismatched sources and invalid opaque ranges", () => {
+  const text = "0123456789";
+  assert.throws(
+    () => extractSkillMarkers(text, text.slice(1)),
+    /range source must match text length/,
+  );
+  assert.throws(
+    () => extractSkillMarkers(text, text, [[0, text.length + 1]]),
+    /protected range must stay within text/,
+  );
 });

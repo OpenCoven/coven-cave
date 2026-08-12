@@ -1,4 +1,9 @@
 import type { IconName } from "@/lib/icon";
+import { markdownCodeRanges } from "./github-blocks.ts";
+import {
+  type ProtectedTextRange,
+  validateProtectedTextRanges,
+} from "./protected-text-ranges.ts";
 
 export const MAX_ATTACHMENT_TEXT_CHARS = 64_000;
 /** Hard cap on a decoded image payload, enforced on capture (client) and on
@@ -85,6 +90,80 @@ export function chatAttachmentSrc(attachment: ChatAttachment): string | null {
  *   ``` */
 const AGENT_ATTACHMENT_BLOCK_RE = /```coven:attachment[^\n]*\n([\s\S]*?)\n```/g;
 
+type AttachmentMarkerMatch = {
+  start: number;
+  end: number;
+  body: string;
+};
+
+function mergeProtectedRanges(
+  ranges: ReadonlyArray<ProtectedTextRange>,
+): ProtectedTextRange[] {
+  const merged: Array<[number, number]> = [];
+  for (const [start, end] of [...ranges].sort(([left], [right]) => left - right)) {
+    const previous = merged[merged.length - 1];
+    if (previous && start <= previous[1]) {
+      previous[1] = Math.max(previous[1], end);
+    } else {
+      merged.push([start, end]);
+    }
+  }
+  return merged;
+}
+
+function rangesOutsideRemovedMarkers(
+  ranges: ReadonlyArray<ProtectedTextRange>,
+  removed: ReadonlyArray<AttachmentMarkerMatch>,
+): ProtectedTextRange[] {
+  const kept: ProtectedTextRange[] = [];
+  let removedIndex = 0;
+  for (const range of ranges) {
+    while (
+      removedIndex < removed.length
+      && removed[removedIndex].end <= range[0]
+    ) {
+      removedIndex += 1;
+    }
+    const entry = removed[removedIndex];
+    if (!entry || entry.start >= range[1]) kept.push(range);
+  }
+  return kept;
+}
+
+function mappedPreservedRanges(
+  ranges: ReadonlyArray<ProtectedTextRange>,
+  removed: ReadonlyArray<AttachmentMarkerMatch>,
+): ProtectedTextRange[] {
+  const mapped: ProtectedTextRange[] = [];
+  let removedIndex = 0;
+  let removedLength = 0;
+  for (const [start, end] of ranges) {
+    while (removedIndex < removed.length && removed[removedIndex].end <= start) {
+      removedLength += removed[removedIndex].end - removed[removedIndex].start;
+      removedIndex += 1;
+    }
+    mapped.push([start - removedLength, end - removedLength]);
+  }
+  return mapped;
+}
+
+function normalizeExtractedAttachmentText(
+  text: string,
+  preservedRanges: ReadonlyArray<ProtectedTextRange>,
+): string {
+  if (preservedRanges.length === 0) return text.replace(/\n{3,}/g, "\n\n").trim();
+
+  const parts: string[] = [];
+  let cursor = 0;
+  for (const [start, end] of preservedRanges) {
+    const gap = text.slice(cursor, start).replace(/\n{3,}/g, "\n\n");
+    parts.push(cursor === 0 ? gap.trimStart() : gap, text.slice(start, end));
+    cursor = end;
+  }
+  parts.push(text.slice(cursor).replace(/\n{3,}/g, "\n\n").trimEnd());
+  return parts.join("");
+}
+
 /**
  * Strip `coven:attachment` marker blocks from agent text, returning the cleaned
  * text and the raw JSON marker bodies. Pure (no `node:fs`) so it is safe in the
@@ -92,14 +171,85 @@ const AGENT_ATTACHMENT_BLOCK_RE = /```coven:attachment[^\n]*\n([\s\S]*?)\n```/g;
  * live-streamed turn), while the server (`lib/server/agent-attachments`) parses
  * `.markers` to read the referenced files.
  */
-export function extractAgentAttachmentMarkers(text: string): { text: string; markers: string[] } {
+export function extractAgentAttachmentMarkers(
+  text: string,
+  markdownRangeSource: string = text,
+  protectedRanges: ReadonlyArray<ProtectedTextRange> = [],
+): { text: string; markers: string[] } {
+  if (markdownRangeSource.length !== text.length) {
+    throw new RangeError("extractAgentAttachmentMarkers range source must match text length");
+  }
+  const opaqueRanges = validateProtectedTextRanges(
+    text.length,
+    protectedRanges,
+    "extractAgentAttachmentMarkers",
+  );
   if (!text || !text.includes("```coven:attachment")) return { text, markers: [] };
-  const markers: string[] = [];
-  const cleaned = text.replace(AGENT_ATTACHMENT_BLOCK_RE, (_match, body: string) => {
-    markers.push(body);
-    return "";
-  });
-  return { text: cleaned.replace(/\n{3,}/g, "\n\n").trim(), markers };
+
+  const codeRanges = markdownCodeRanges(markdownRangeSource);
+  const removed: AttachmentMarkerMatch[] = [];
+  let codeRangeIndex = 0;
+  let opaqueRangeIndex = 0;
+  AGENT_ATTACHMENT_BLOCK_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = AGENT_ATTACHMENT_BLOCK_RE.exec(text)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
+    while (codeRangeIndex < codeRanges.length && codeRanges[codeRangeIndex][1] <= start) {
+      codeRangeIndex += 1;
+    }
+    while (
+      opaqueRangeIndex < opaqueRanges.length
+      && opaqueRanges[opaqueRangeIndex][1] <= start
+    ) {
+      opaqueRangeIndex += 1;
+    }
+
+    const codeRange = codeRanges[codeRangeIndex];
+    const lineStart = markdownRangeSource.lastIndexOf("\n", start - 1) + 1;
+    const opensOwnFence = Boolean(
+      codeRange
+      && codeRange[0] === lineStart
+      && /^[ \t]*$/.test(markdownRangeSource.slice(lineStart, start)),
+    );
+    const insideOuterCode = Boolean(
+      codeRange
+      && start >= codeRange[0]
+      && start < codeRange[1]
+      && !opensOwnFence,
+    );
+    const opaqueRange = opaqueRanges[opaqueRangeIndex];
+    const overlapsOpaque = Boolean(
+      opaqueRange
+      && opaqueRange[0] < end
+      && opaqueRange[1] > start,
+    );
+    if (insideOuterCode || overlapsOpaque) continue;
+
+    removed.push({ start, end, body: match[1] });
+  }
+
+  if (removed.length === 0) return { text, markers: [] };
+
+  const parts: string[] = [];
+  let cursor = 0;
+  for (const entry of removed) {
+    parts.push(text.slice(cursor, entry.start));
+    cursor = entry.end;
+  }
+  parts.push(text.slice(cursor));
+  const cleaned = parts.join("");
+
+  const preservedSourceRanges = mergeProtectedRanges([
+    ...opaqueRanges,
+    ...rangesOutsideRemovedMarkers(codeRanges, removed),
+  ]);
+  const preservedRanges = mappedPreservedRanges(preservedSourceRanges, removed);
+  return {
+    text: normalizeExtractedAttachmentText(cleaned, preservedRanges),
+    markers: removed.map((entry) => entry.body),
+  };
 }
 
 function cleanName(name: unknown): string {

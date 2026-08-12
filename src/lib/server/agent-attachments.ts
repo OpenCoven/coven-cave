@@ -8,6 +8,7 @@ import {
   MAX_ATTACHMENT_TEXT_CHARS,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
+import { scanChatResultProtocol } from "@/lib/chat-result-markers";
 import { saveChatMediaAttachmentFromFileSync } from "@/lib/server/chat-attachment-store";
 
 /**
@@ -198,13 +199,19 @@ function buildAttachment(marker: AttachmentMarker, options: AgentAttachmentParse
  * referenced files (allowlist-guarded, size-capped), and return the cleaned
  * text alongside the resulting attachments. Capped at
  * {@link MAX_AGENT_ATTACHMENTS} files; markers that don't resolve are dropped
- * but still stripped from the text.
+ * but still stripped from the text. Raw result-protocol spans stay opaque and
+ * byte-exact for the later result projection.
  */
 export function parseAgentAttachments(
   text: string,
   options: AgentAttachmentParseOptions = {},
 ): { text: string; attachments: ChatAttachment[] } {
-  const { text: cleaned, markers } = extractAgentAttachmentMarkers(text);
+  const resultProtocol = scanChatResultProtocol(text);
+  const { text: cleaned, markers } = extractAgentAttachmentMarkers(
+    text,
+    resultProtocol.markdownRangeSource,
+    resultProtocol.protectedRanges,
+  );
   const attachments: ChatAttachment[] = [];
   for (const body of markers) {
     if (attachments.length >= MAX_AGENT_ATTACHMENTS) break;

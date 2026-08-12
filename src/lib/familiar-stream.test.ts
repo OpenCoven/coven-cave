@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
+import { createAttentionSafeTextAccumulator } from "./chat-attention-stream.ts";
+import { scanChatResultProtocol } from "./chat-result-markers.ts";
 import { streamFamiliarText } from "./familiar-stream.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 
@@ -388,5 +390,52 @@ describe("streamFamiliarText", () => {
     for (const t of seen) {
       assert.doesNotMatch(t, /<coven:attention/, "the replace event's marker never reaches onText raw");
     }
+  });
+
+  it("lets Quick Chat project each exact raw snapshot through result-aware attention ranges", async () => {
+    const label = "Literal <coven:attention /> and <coven:atten stay exact";
+    const resultMarker = `<coven:result id="quick-stream" state="passed" label="${label}" />`;
+    const partialAttentionBoundary =
+      resultMarker.indexOf("<coven:attention") + "<coven:atten".length;
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: resultMarker.slice(0, partialAttentionBoundary) }),
+      frame({ kind: "assistant_chunk", text: resultMarker.slice(partialAttentionBoundary) }),
+      frame({ kind: "assistant_chunk", text: '\n<coven:attention reason="decision" />' }),
+      frame({ kind: "done" }),
+    ])) as typeof fetch;
+
+    const attentionText = createAttentionSafeTextAccumulator();
+    const rawSnapshots: string[] = [];
+    const seen: string[] = [];
+    const { text, error } = await streamFamiliarText({
+      familiarId: "nova",
+      prompt: "hi",
+      projectAssistantText: (rawText, phase) => {
+        rawSnapshots.push(rawText);
+        const resultProtocol = scanChatResultProtocol(rawText);
+        attentionText.replace(
+          rawText,
+          resultProtocol.markdownRangeSource,
+          resultProtocol.protectedRanges,
+        );
+        if (phase === "terminal") return attentionText.terminal();
+        if (phase === "settled") return attentionText.settled();
+        return attentionText.visible();
+      },
+      onText: (value) => seen.push(value),
+    });
+
+    assert.equal(error, null);
+    assert.equal(text, `${resultMarker}\n`);
+    assert.equal(
+      seen[0],
+      resultMarker.slice(0, partialAttentionBoundary),
+      "a partial attention prefix at the end of an unfinished result stays byte-exact",
+    );
+    assert.equal(seen.at(-1), `${resultMarker}\n`);
+    assert.ok(
+      rawSnapshots.some((snapshot) => snapshot.endsWith('<coven:attention reason="decision" />')),
+      "the projector receives the unmodified accumulated assistant bytes",
+    );
   });
 });

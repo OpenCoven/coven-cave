@@ -17,6 +17,10 @@
  */
 
 import { markdownCodeRanges } from "./github-blocks.ts";
+import {
+  type ProtectedTextRange,
+  validateProtectedTextRanges,
+} from "./protected-text-ranges.ts";
 
 export type SkillStage = "loaded" | "running" | "done" | "error";
 
@@ -28,9 +32,8 @@ export type SkillStageUpdate = {
 
 const STAGES: ReadonlySet<string> = new Set(["loaded", "running", "done", "error"]);
 
-// Attributes segment treats quoted strings as atomic so a `>` inside a quoted
-// note can't terminate the match early (review finding on #3175).
-const MARKER_RE = /<coven:skill\b((?:[^">]|"[^"]*")*?)\/?>/g;
+const MARKER_CANDIDATE = "<coven:s";
+const MARKER_NAME = "<coven:skill";
 const ATTR_RE = /([a-zA-Z-]+)="([^"]*)"/g;
 
 function parseAttrs(raw: string): Record<string, string> {
@@ -41,69 +44,183 @@ function parseAttrs(raw: string): Record<string, string> {
   return out;
 }
 
-/**
- * Extract skill markers from a turn's text. Streaming-safe: complete markers
- * are removed from `visible` (never rendered raw) and a PARTIAL marker at the
- * very end of the text is hidden until the stream completes it. Updates keep
- * the last stage per skill name (in-place update semantics), in first-seen
- * name order.
- */
-export function extractSkillMarkers(text: string): { visible: string; updates: SkillStageUpdate[] } {
-  if (!text || !text.includes("<coven:s")) return { visible: text, updates: [] };
+function removeRanges(text: string, ranges: Array<[number, number]>): string {
+  if (ranges.length === 0) return text;
+  const parts: string[] = [];
+  let cursor = 0;
+  for (const [start, end] of ranges) {
+    parts.push(text.slice(cursor, start));
+    cursor = end;
+  }
+  parts.push(text.slice(cursor));
+  return parts.join("");
+}
 
-  const byName = new Map<string, SkillStageUpdate>();
-  let visible = text;
+function isNameContinuation(character: string): boolean {
+  return /[A-Za-z0-9_.:-]/.test(character);
+}
 
-  if (text.includes("<coven:skill")) {
-    // Fenced markers are example text — stay literal, no updates
-    // (review finding, cave-m0r6; same contract as coven:github).
-    const codeRanges = markdownCodeRanges(text);
-    MARKER_RE.lastIndex = 0;
-    visible = text.replace(MARKER_RE, (m, rawAttrs: string, index: number) => {
-      if (codeRanges.some(([start, end]) => index >= start && index < end)) return m;
-      const attrs = parseAttrs(rawAttrs ?? "");
+function scanSkillMarkers(
+  text: string,
+  codeRanges: ReadonlyArray<ProtectedTextRange>,
+  opaqueRanges: ReadonlyArray<ProtectedTextRange>,
+  byName: Map<string, SkillStageUpdate>,
+): Array<[number, number]> {
+  const removedRanges: Array<[number, number]> = [];
+  let cursor = 0;
+  let codeRangeIndex = 0;
+  let opaqueRangeIndex = 0;
+
+  while (cursor < text.length) {
+    const start = text.indexOf(MARKER_CANDIDATE, cursor);
+    if (start === -1) break;
+
+    while (
+      codeRangeIndex < codeRanges.length
+      && codeRanges[codeRangeIndex][1] <= start
+    ) {
+      codeRangeIndex += 1;
+    }
+    while (
+      opaqueRangeIndex < opaqueRanges.length
+      && opaqueRanges[opaqueRangeIndex][1] <= start
+    ) {
+      opaqueRangeIndex += 1;
+    }
+
+    const codeRange = codeRanges[codeRangeIndex];
+    const opaqueRange = opaqueRanges[opaqueRangeIndex];
+    let containingRangeEnd = 0;
+    if (codeRange && start >= codeRange[0] && start < codeRange[1]) {
+      containingRangeEnd = codeRange[1];
+    }
+    if (opaqueRange && start >= opaqueRange[0] && start < opaqueRange[1]) {
+      containingRangeEnd = Math.max(containingRangeEnd, opaqueRange[1]);
+    }
+    if (containingRangeEnd > 0) {
+      cursor = containingRangeEnd;
+      continue;
+    }
+
+    let nameOffset = MARKER_CANDIDATE.length;
+    while (
+      nameOffset < MARKER_NAME.length
+      && start + nameOffset < text.length
+      && text[start + nameOffset] === MARKER_NAME[nameOffset]
+    ) {
+      nameOffset += 1;
+    }
+    if (nameOffset < MARKER_NAME.length) {
+      const end = start + nameOffset;
+      if (end === text.length) {
+        removedRanges.push([start, end]);
+        break;
+      }
+      if (!isNameContinuation(text[end])) removedRanges.push([start, end]);
+      cursor = Math.max(end, start + MARKER_CANDIDATE.length);
+      continue;
+    }
+
+    const contentStart = start + MARKER_NAME.length;
+    if (
+      contentStart < text.length
+      && /[A-Za-z0-9_]/.test(text[contentStart])
+    ) {
+      cursor = contentStart;
+      continue;
+    }
+
+    let limit = text.length;
+    if (opaqueRange && opaqueRange[0] > start) {
+      limit = Math.min(limit, opaqueRange[0]);
+    }
+    const codeBoundary = codeRange && codeRange[0] > start
+      ? codeRange[0]
+      : null;
+
+    let inQuote = false;
+    let codeBoundaryFallback: number | null = null;
+    let nestedCandidate: number | null = null;
+    let unquotedNestedCandidate: number | null = null;
+    let closeIndex: number | null = null;
+    for (let index = contentStart; index < limit; index += 1) {
+      if (index === codeBoundary) {
+        codeBoundaryFallback = index;
+        if (!inQuote) break;
+      }
+      if (text.startsWith(MARKER_CANDIDATE, index)) {
+        nestedCandidate ??= index;
+        if (!inQuote) {
+          unquotedNestedCandidate = index;
+          break;
+        }
+      }
+      const character = text[index];
+      if (character === '"') {
+        inQuote = !inQuote;
+      } else if (character === ">" && !inQuote) {
+        closeIndex = index;
+        break;
+      }
+    }
+
+    if (closeIndex !== null) {
+      const attrs = parseAttrs(text.slice(contentStart, closeIndex));
       const name = attrs.name?.trim();
       const stage = attrs.stage?.trim();
       if (name && stage && STAGES.has(stage)) {
         const update: SkillStageUpdate = { name, stage: stage as SkillStage };
         const note = attrs.note?.trim();
         if (note) update.note = note;
-        // Map.set keeps first-insertion order while the value carries the
-        // LAST marker's stage — exactly the in-place update semantics.
         byName.set(name, update);
       }
-      // Malformed markers are dropped silently — never raw tags.
-      return "";
-    });
-  }
-
-  // Partial tail: an unterminated `<coven:skill…` (or any prefix of the tag
-  // name) with no UNQUOTED closing `>` hides from the visible stream — a `>`
-  // inside a still-open quoted note must not read as the tag close (review
-  // finding, cave-m0r6). Fenced tails are example text and stay literal.
-  const tail = visible.lastIndexOf("<coven:s");
-  if (
-    tail !== -1 &&
-    !hasUnquotedGtAfter(visible, tail) &&
-    !markdownCodeRanges(visible).some(([start, end]) => tail >= start && tail < end)
-  ) {
-    const frag = visible.slice(tail);
-    if ("<coven:skill".startsWith(frag.slice(0, "<coven:skill".length))) {
-      visible = visible.slice(0, tail);
+      removedRanges.push([start, closeIndex + 1]);
+      cursor = closeIndex + 1;
+      continue;
     }
+
+    const end = Math.min(
+      unquotedNestedCandidate ?? limit,
+      nestedCandidate ?? limit,
+      codeBoundaryFallback ?? limit,
+    );
+    if (end > start) removedRanges.push([start, end]);
+    cursor = Math.max(end, start + MARKER_CANDIDATE.length);
   }
 
-  return { visible, updates: [...byName.values()] };
+  return removedRanges;
 }
 
-function hasUnquotedGtAfter(s: string, from: number): boolean {
-  let inQuote = false;
-  for (let i = from; i < s.length; i++) {
-    const c = s[i];
-    if (c === '"') inQuote = !inQuote;
-    else if (c === ">" && !inQuote) return true;
+/**
+ * Extract skill markers from a turn's text. Streaming-safe: complete markers
+ * are removed from `visible` (never rendered raw), and incomplete marker
+ * prefixes are hidden without preventing later complete markers from parsing.
+ * Updates keep the last stage per skill name (in-place update semantics), in
+ * first-seen name order.
+ */
+export function extractSkillMarkers(
+  text: string,
+  markdownRangeSource: string = text,
+  protectedRanges: ReadonlyArray<ProtectedTextRange> = [],
+): { visible: string; updates: SkillStageUpdate[] } {
+  if (markdownRangeSource.length !== text.length) {
+    throw new RangeError("extractSkillMarkers range source must match text length");
   }
-  return false;
+  const opaqueRanges = validateProtectedTextRanges(
+    text.length,
+    protectedRanges,
+    "extractSkillMarkers",
+  );
+  if (!text || !text.includes("<coven:s")) return { visible: text, updates: [] };
+
+  const byName = new Map<string, SkillStageUpdate>();
+  const codeRanges = markdownCodeRanges(markdownRangeSource);
+  const removedRanges = scanSkillMarkers(text, codeRanges, opaqueRanges, byName);
+
+  return {
+    visible: removeRanges(text, removedRanges),
+    updates: [...byName.values()],
+  };
 }
 
 // buildSkillPrompt (src/lib/slash-skill.ts) shapes — anchored so ordinary

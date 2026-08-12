@@ -1,8 +1,10 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import test from "node:test";
 import {
   attachmentMediaKind,
   buildPromptWithAttachments,
+  extractAgentAttachmentMarkers,
   normalizeChatAttachments,
   stripPreviewOnlyAttachmentFields,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
@@ -353,5 +355,82 @@ assert.ok(compared > 10_000, `compared ${compared} shapes`);
     "the old whole-string pattern must not come back as the live one",
   );
 }
+
+test("agent attachment extraction preserves protected marker bytes and extracts real controls", () => {
+  const protectedText = [
+    "Result-owned prefix.",
+    "```coven:attachment",
+    "path: /workspace/protected.png",
+    "```",
+    "",
+    "",
+    "Result-owned suffix.",
+  ].join("\n");
+  const realMarker = [
+    "```coven:attachment",
+    "path: /workspace/real.png",
+    "```",
+  ].join("\n");
+  const text = `${protectedText}\n\n${realMarker}`;
+
+  const extracted = extractAgentAttachmentMarkers(
+    text,
+    text,
+    [[0, protectedText.length]],
+  );
+
+  assert.equal(extracted.text, protectedText);
+  assert.deepEqual(extracted.markers, ["path: /workspace/real.png"]);
+});
+
+test("agent attachment syntax inside Markdown code stays literal", () => {
+  const literalMarker = [
+    "````markdown",
+    "```coven:attachment",
+    "path: /workspace/literal.png",
+    "```",
+    "````",
+  ].join("\n");
+  const realMarker = [
+    "```coven:attachment",
+    "path: /workspace/real.png",
+    "```",
+  ].join("\n");
+  const text = `${realMarker}\n\n${literalMarker}`;
+
+  const extracted = extractAgentAttachmentMarkers(text);
+
+  assert.equal(extracted.text, literalMarker);
+  assert.deepEqual(extracted.markers, ["path: /workspace/real.png"]);
+});
+
+test("agent attachment syntax inside multiline inline code stays literal", () => {
+  const text = [
+    "`prefix ```coven:attachment",
+    "path: /workspace/inline-literal.png",
+    "``` suffix`",
+  ].join("\n");
+
+  assert.deepEqual(extractAgentAttachmentMarkers(text), {
+    text,
+    markers: [],
+  });
+});
+
+test("agent attachment range inputs reject mismatched sources and invalid opaque ranges", () => {
+  const text = "0123456789 ```coven:attachment\npayload\n```";
+  assert.throws(
+    () => extractAgentAttachmentMarkers(text, text.slice(1)),
+    /range source must match text length/,
+  );
+  assert.throws(
+    () => extractAgentAttachmentMarkers(text, text, [[5, 7], [1, 3]]),
+    /protected ranges must be sorted and non-overlapping/,
+  );
+  assert.throws(
+    () => extractAgentAttachmentMarkers(text, text, [[0, text.length + 1]]),
+    /protected range must stay within text/,
+  );
+});
 
 console.log("chat-attachments: acceptance unchanged across " + compared + " shapes");

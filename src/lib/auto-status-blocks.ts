@@ -19,6 +19,10 @@
  */
 
 import { markdownCodeRanges } from "./github-blocks.ts";
+import {
+  type ProtectedTextRange,
+  validateProtectedTextRanges,
+} from "./protected-text-ranges.ts";
 
 export type AutoMissionState = "clarifying" | "working" | "blocked" | "failed" | "done";
 
@@ -61,9 +65,8 @@ function canonicalState(raw: string | undefined): AutoMissionState | null {
   return STATE_ALIASES.get(raw.trim().toLowerCase()) ?? null;
 }
 
-// Attributes segment treats quoted strings as atomic so a `>` inside a quoted
-// note can't terminate the match early (same guard as skill-blocks.ts).
-const MARKER_RE = /<coven:auto-status\b((?:[^">]|"[^"]*")*?)\/?>/g;
+const MARKER_CANDIDATE = "<coven:a";
+const MARKER_NAME = "<coven:auto-status";
 const ATTR_RE = /([a-zA-Z-]+)="([^"]*)"/g;
 
 function parseAttrs(raw: string): Record<string, string> {
@@ -74,26 +77,128 @@ function parseAttrs(raw: string): Record<string, string> {
   return out;
 }
 
-/**
- * Extract auto-mission status markers from a turn's text. Streaming-safe:
- * complete markers are removed from `visible` (never rendered raw) and a
- * partial marker at the very end of the text is hidden until the stream
- * completes it. Keeps only the LAST state seen (in-place update semantics),
- * matching extractSkillMarkers.
- */
-export function extractAutoStatusMarkers(text: string): { visible: string; update: AutoStatusUpdate | null } {
-  if (!text || !text.includes("<coven:a")) return { visible: text, update: null };
+function removeRanges(text: string, ranges: Array<[number, number]>): string {
+  if (ranges.length === 0) return text;
+  const parts: string[] = [];
+  let cursor = 0;
+  for (const [start, end] of ranges) {
+    parts.push(text.slice(cursor, start));
+    cursor = end;
+  }
+  parts.push(text.slice(cursor));
+  return parts.join("");
+}
 
+function isNameContinuation(character: string): boolean {
+  return /[A-Za-z0-9_.:-]/.test(character);
+}
+
+function scanAutoStatusMarkers(
+  text: string,
+  codeRanges: ReadonlyArray<ProtectedTextRange>,
+  opaqueRanges: ReadonlyArray<ProtectedTextRange>,
+): { removedRanges: Array<[number, number]>; update: AutoStatusUpdate | null } {
+  const removedRanges: Array<[number, number]> = [];
   let update: AutoStatusUpdate | null = null;
-  let visible = text;
+  let cursor = 0;
+  let codeRangeIndex = 0;
+  let opaqueRangeIndex = 0;
 
-  if (text.includes("<coven:auto-status")) {
-    // Fenced markers are example text — stay literal, no updates.
-    const codeRanges = markdownCodeRanges(text);
-    MARKER_RE.lastIndex = 0;
-    visible = text.replace(MARKER_RE, (m, rawAttrs: string, index: number) => {
-      if (codeRanges.some(([start, end]) => index >= start && index < end)) return m;
-      const attrs = parseAttrs(rawAttrs ?? "");
+  while (cursor < text.length) {
+    const start = text.indexOf(MARKER_CANDIDATE, cursor);
+    if (start === -1) break;
+
+    while (
+      codeRangeIndex < codeRanges.length
+      && codeRanges[codeRangeIndex][1] <= start
+    ) {
+      codeRangeIndex += 1;
+    }
+    while (
+      opaqueRangeIndex < opaqueRanges.length
+      && opaqueRanges[opaqueRangeIndex][1] <= start
+    ) {
+      opaqueRangeIndex += 1;
+    }
+
+    const codeRange = codeRanges[codeRangeIndex];
+    const opaqueRange = opaqueRanges[opaqueRangeIndex];
+    let containingRangeEnd = 0;
+    if (codeRange && start >= codeRange[0] && start < codeRange[1]) {
+      containingRangeEnd = codeRange[1];
+    }
+    if (opaqueRange && start >= opaqueRange[0] && start < opaqueRange[1]) {
+      containingRangeEnd = Math.max(containingRangeEnd, opaqueRange[1]);
+    }
+    if (containingRangeEnd > 0) {
+      cursor = containingRangeEnd;
+      continue;
+    }
+
+    let nameOffset = MARKER_CANDIDATE.length;
+    while (
+      nameOffset < MARKER_NAME.length
+      && start + nameOffset < text.length
+      && text[start + nameOffset] === MARKER_NAME[nameOffset]
+    ) {
+      nameOffset += 1;
+    }
+    if (nameOffset < MARKER_NAME.length) {
+      const end = start + nameOffset;
+      if (end === text.length) {
+        removedRanges.push([start, end]);
+        break;
+      }
+      if (!isNameContinuation(text[end])) removedRanges.push([start, end]);
+      cursor = Math.max(end, start + MARKER_CANDIDATE.length);
+      continue;
+    }
+
+    const contentStart = start + MARKER_NAME.length;
+    if (
+      contentStart < text.length
+      && /[A-Za-z0-9_]/.test(text[contentStart])
+    ) {
+      cursor = contentStart;
+      continue;
+    }
+
+    let limit = text.length;
+    if (opaqueRange && opaqueRange[0] > start) {
+      limit = Math.min(limit, opaqueRange[0]);
+    }
+    const codeBoundary = codeRange && codeRange[0] > start
+      ? codeRange[0]
+      : null;
+
+    let inQuote = false;
+    let codeBoundaryFallback: number | null = null;
+    let nestedCandidate: number | null = null;
+    let unquotedNestedCandidate: number | null = null;
+    let closeIndex: number | null = null;
+    for (let index = contentStart; index < limit; index += 1) {
+      if (index === codeBoundary) {
+        codeBoundaryFallback = index;
+        if (!inQuote) break;
+      }
+      if (text.startsWith(MARKER_CANDIDATE, index)) {
+        nestedCandidate ??= index;
+        if (!inQuote) {
+          unquotedNestedCandidate = index;
+          break;
+        }
+      }
+      const character = text[index];
+      if (character === '"') {
+        inQuote = !inQuote;
+      } else if (character === ">" && !inQuote) {
+        closeIndex = index;
+        break;
+      }
+    }
+
+    if (closeIndex !== null) {
+      const attrs = parseAttrs(text.slice(contentStart, closeIndex));
       const state = canonicalState(attrs.state);
       if (state) {
         const next: AutoStatusUpdate = { state };
@@ -101,34 +206,51 @@ export function extractAutoStatusMarkers(text: string): { visible: string; updat
         if (note) next.note = note;
         update = next;
       }
-      // Malformed markers are dropped silently — never raw tags.
-      return "";
-    });
-  }
-
-  // Partial tail: an unterminated `<coven:auto-status…` hides from the
-  // visible stream until it either completes or the stream settles.
-  const tail = visible.lastIndexOf("<coven:a");
-  if (
-    tail !== -1 &&
-    !hasUnquotedGtAfter(visible, tail) &&
-    !markdownCodeRanges(visible).some(([start, end]) => tail >= start && tail < end)
-  ) {
-    const frag = visible.slice(tail);
-    if ("<coven:auto-status".startsWith(frag.slice(0, "<coven:auto-status".length))) {
-      visible = visible.slice(0, tail);
+      removedRanges.push([start, closeIndex + 1]);
+      cursor = closeIndex + 1;
+      continue;
     }
+
+    const end = Math.min(
+      unquotedNestedCandidate ?? limit,
+      nestedCandidate ?? limit,
+      codeBoundaryFallback ?? limit,
+    );
+    if (end > start) removedRanges.push([start, end]);
+    cursor = Math.max(end, start + MARKER_CANDIDATE.length);
   }
 
-  return { visible, update };
+  return { removedRanges, update };
 }
 
-function hasUnquotedGtAfter(s: string, from: number): boolean {
-  let inQuote = false;
-  for (let i = from; i < s.length; i++) {
-    const c = s[i];
-    if (c === '"') inQuote = !inQuote;
-    else if (c === ">" && !inQuote) return true;
+/**
+ * Extract auto-mission status markers from a turn's text. Streaming-safe:
+ * complete markers are removed from `visible` (never rendered raw), and
+ * incomplete marker prefixes are hidden without preventing later complete
+ * markers from parsing. Keeps only the LAST state seen (in-place update
+ * semantics), matching extractSkillMarkers.
+ */
+export function extractAutoStatusMarkers(
+  text: string,
+  markdownRangeSource: string = text,
+  protectedRanges: ReadonlyArray<ProtectedTextRange> = [],
+): { visible: string; update: AutoStatusUpdate | null } {
+  if (markdownRangeSource.length !== text.length) {
+    throw new RangeError("extractAutoStatusMarkers range source must match text length");
   }
-  return false;
+  const opaqueRanges = validateProtectedTextRanges(
+    text.length,
+    protectedRanges,
+    "extractAutoStatusMarkers",
+  );
+  if (!text || !text.includes("<coven:a")) return { visible: text, update: null };
+
+  const codeRanges = markdownCodeRanges(markdownRangeSource);
+  const { removedRanges, update } = scanAutoStatusMarkers(
+    text,
+    codeRanges,
+    opaqueRanges,
+  );
+
+  return { visible: removeRanges(text, removedRanges), update };
 }

@@ -4,30 +4,87 @@
 // get a deterministic card under the user turn.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import ts from "typescript";
 
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const card = readFileSync(new URL("./skill-stage-card.tsx", import.meta.url), "utf8");
 const renderedText = readFileSync(new URL("../lib/chat-rendered-text.ts", import.meta.url), "utf8");
+const renderedTextSource = ts.createSourceFile(
+  "chat-rendered-text.ts",
+  renderedText,
+  ts.ScriptTarget.Latest,
+  true,
+  ts.ScriptKind.TS,
+);
+
+function assignedPipelineCall(variableName: string, calleeName: string): ts.CallExpression {
+  const matches: ts.CallExpression[] = [];
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isVariableDeclaration(node)
+      && ts.isIdentifier(node.name)
+      && node.name.text === variableName
+      && node.initializer
+    ) {
+      const findCall = (child: ts.Node) => {
+        if (
+          ts.isCallExpression(child)
+          && ts.isIdentifier(child.expression)
+          && child.expression.text === calleeName
+        ) {
+          matches.push(child);
+        }
+        ts.forEachChild(child, findCall);
+      };
+      findCall(node.initializer);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(renderedTextSource);
+  assert.equal(matches.length, 1, `${variableName} must be assigned exactly once from ${calleeName}`);
+  return matches[0];
+}
 
 assert.match(
   chatView,
   /import \{ parseSkillInvocation \} from "@\/lib\/skill-blocks"/,
   "chat-view imports the skill-blocks lib",
 );
-assert.match(
-  renderedText,
-  /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);/,
-  "the shared projection extracts skill markers on both streaming and settled paths",
+const skillRanges = assignedPipelineCall(
+  "skillRanges",
+  "resultAwareRangeInputs",
+);
+const skillSplit = assignedPipelineCall("skillSplit", "extractSkillMarkers");
+assert.deepEqual(
+  skillRanges.arguments.map((argument) => argument.getText(renderedTextSource)),
+  ["context", "hasSkillCandidate"],
+  "skill opacity is derived lazily from the shared current-source context",
+);
+assert.deepEqual(
+  skillSplit.arguments.map((argument) => argument.getText(renderedTextSource)),
+  [
+    "context.text",
+    "skillRanges.markdownRangeSource",
+    "skillRanges.protectedRanges",
+  ],
+  "skill extraction receives current text plus the context's exact result-protection outputs",
 );
 // Pinned as a flow, not a call site: marker extractors keep being inserted
 // between the skill split and next-paths (auto-mission status was the last),
 // so naming `extractNextPaths(skillSplit.visible)` goes stale every time. What
 // must hold is that the skill-stripped visible feeds the rest of the chain and
 // that next-paths never runs on text still carrying skill markers.
+assert.equal(
+  assignedPipelineCall("autoStatusSplit", "extractAutoStatusMarkers").arguments[0]?.getText(
+    renderedTextSource,
+  ),
+  "context.text",
+  "downstream text flows through the context after skill markers are stripped",
+);
 assert.match(
   renderedText,
-  /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);[\s\S]{0,300}extractAutoStatusMarkers\(skillSplit\.visible\)/,
-  "downstream text flows from the skill-stripped visible — raw markers never render",
+  /context\.setText\(skillSplit\.visible\);[\s\S]*const hasAutoStatusCandidate/,
+  "the skill-stripped source updates the context before downstream extraction",
 );
 assert.doesNotMatch(
   renderedText,

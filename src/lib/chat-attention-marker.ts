@@ -1,4 +1,9 @@
 import { markdownCodeRanges } from "./github-blocks.ts";
+import {
+  indexInProtectedTextRanges,
+  type ProtectedTextRange,
+  validateProtectedTextRanges,
+} from "./protected-text-ranges.ts";
 
 export const CHAT_ATTENTION_REASONS = [
   "input",
@@ -18,67 +23,228 @@ const ATTENTION_MARKER_START = "<coven:attention";
 const MARKER_RE = /<coven:attention\b((?:[^">]|"[^"]*")*?)\/?>/g;
 const EXACT_REASON_ATTR_RE = /^\s*reason\s*=\s*"([^"]*)"\s*$/;
 
-export function extractChatAttentionMarker(
-  text: string,
-  options: { pending?: boolean } = {},
-): { visible: string; request: ChatAttentionMarker | null } {
-  if (!text) return { visible: text, request: null };
-  if (!text.includes("<coven:a")) {
-    if (!options.pending) return { visible: text, request: null };
-    const tail = trailingMarkerPrefixStart(text);
-    if (
-      tail === -1
-      || markdownCodeRanges(text).some(([start, end]) => tail >= start && tail < end)
-    ) {
-      return { visible: text, request: null };
+export type ChatAttentionMarkerOptions = {
+  pending?: boolean;
+};
+
+type AttentionProjection = {
+  text: string;
+  markdownRangeSource: string;
+  protectedRanges: ProtectedTextRange[];
+};
+
+function rangesIntersect(
+  ranges: ReadonlyArray<ProtectedTextRange>,
+  start: number,
+  end: number,
+): boolean {
+  let low = 0;
+  let high = ranges.length - 1;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    const [rangeStart, rangeEnd] = ranges[middle];
+    if (rangeEnd <= start) {
+      low = middle + 1;
+    } else if (rangeStart >= end) {
+      high = middle - 1;
+    } else {
+      return true;
     }
-    return { visible: text.slice(0, tail), request: null };
+  }
+  return false;
+}
+
+function removeProjectionRanges(
+  projection: AttentionProjection,
+  ranges: ReadonlyArray<ProtectedTextRange>,
+): AttentionProjection {
+  if (ranges.length === 0) return projection;
+
+  const textParts: string[] = [];
+  const rangeSourceParts: string[] = [];
+  let cursor = 0;
+  for (const [start, end] of ranges) {
+    textParts.push(projection.text.slice(cursor, start));
+    rangeSourceParts.push(projection.markdownRangeSource.slice(cursor, start));
+    cursor = end;
+  }
+  textParts.push(projection.text.slice(cursor));
+  rangeSourceParts.push(projection.markdownRangeSource.slice(cursor));
+
+  const mappedProtectedRanges: ProtectedTextRange[] = [];
+  let removedIndex = 0;
+  let shift = 0;
+  for (const [start, end] of projection.protectedRanges) {
+    while (removedIndex < ranges.length && ranges[removedIndex][1] <= start) {
+      const removed = ranges[removedIndex];
+      shift += removed[1] - removed[0];
+      removedIndex += 1;
+    }
+    mappedProtectedRanges.push([start - shift, end - shift]);
   }
 
-  const codeRanges = markdownCodeRanges(text);
-  let request: ChatAttentionMarker | null = null;
+  return {
+    text: textParts.join(""),
+    markdownRangeSource: rangeSourceParts.join(""),
+    protectedRanges: mappedProtectedRanges,
+  };
+}
 
-  let visible = text.replace(MARKER_RE, (marker, rawAttrs: string, index: number) => {
-    if (codeRanges.some(([start, end]) => index >= start && index < end)) return marker;
-    const reason = parseAttentionReason(marker, rawAttrs ?? "");
+function markerStartIsProtected(
+  index: number,
+  codeRanges: ReadonlyArray<ProtectedTextRange>,
+  opaqueRanges: ReadonlyArray<ProtectedTextRange>,
+): boolean {
+  return (
+    indexInProtectedTextRanges(codeRanges, index)
+    || indexInProtectedTextRanges(opaqueRanges, index)
+  );
+}
+
+function normalizeAttentionProjection(
+  text: string,
+  markdownRangeSource: string,
+  protectedRanges: ReadonlyArray<ProtectedTextRange>,
+  caller: string,
+): AttentionProjection {
+  if (markdownRangeSource.length !== text.length) {
+    throw new RangeError(`${caller} range source must match text length`);
+  }
+  return {
+    text,
+    markdownRangeSource,
+    protectedRanges: validateProtectedTextRanges(
+      text.length,
+      protectedRanges,
+      caller,
+    ),
+  };
+}
+
+function extractChatAttentionMarkerProjection(
+  text: string,
+  options: ChatAttentionMarkerOptions,
+  markdownRangeSource: string,
+  protectedRanges: ReadonlyArray<ProtectedTextRange>,
+  caller: string,
+): {
+  projection: AttentionProjection;
+  request: ChatAttentionMarker | null;
+} {
+  let projection = normalizeAttentionProjection(
+    text,
+    markdownRangeSource,
+    protectedRanges,
+    caller,
+  );
+  if (!text) return { projection, request: null };
+  if (!text.includes("<coven:a")) {
+    if (!options.pending) return { projection, request: null };
+    const tail = trailingMarkerPrefixStart(text);
+    const codeRanges = markdownCodeRanges(projection.markdownRangeSource);
+    if (
+      tail === -1
+      || markerStartIsProtected(tail, codeRanges, projection.protectedRanges)
+    ) {
+      return { projection, request: null };
+    }
+    return {
+      projection: removeProjectionRanges(projection, [[tail, text.length]]),
+      request: null,
+    };
+  }
+
+  const codeRanges = markdownCodeRanges(projection.markdownRangeSource);
+  const removedRanges: ProtectedTextRange[] = [];
+  let request: ChatAttentionMarker | null = null;
+  MARKER_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = MARKER_RE.exec(projection.text)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (
+      markerStartIsProtected(start, codeRanges, projection.protectedRanges)
+      || rangesIntersect(projection.protectedRanges, start, end)
+    ) {
+      continue;
+    }
+    const reason = parseAttentionReason(match[0], match[1] ?? "");
     if (reason && ATTENTION_REASON_SET.has(reason)) {
       request = { reason: reason as ChatAttentionReason };
     }
-    return "";
-  });
-  visible = stripMalformedCompleteAttentionMarkers(visible, Boolean(options.pending));
-
-  const pendingTail = options.pending ? trailingMarkerPrefixStart(visible) : -1;
-  if (
-    pendingTail !== -1
-    && !markdownCodeRanges(visible).some(([start, end]) => pendingTail >= start && pendingTail < end)
-  ) {
-    visible = visible.slice(0, pendingTail);
+    removedRanges.push([start, end]);
   }
+  projection = removeProjectionRanges(projection, removedRanges);
+  projection = stripMalformedCompleteAttentionMarkers(
+    projection,
+    Boolean(options.pending),
+  );
 
-  const tail = visible.lastIndexOf("<coven:a");
-  if (
-    options.pending
-    &&
-    tail !== -1
-    && !hasUnquotedGtAfter(visible, tail)
-    && !markdownCodeRanges(visible).some(([start, end]) => tail >= start && tail < end)
-  ) {
-    const frag = visible.slice(tail);
-    if (isPotentialAttentionMarkerFragment(frag)) {
-      visible = visible.slice(0, tail);
+  if (options.pending) {
+    let pendingTail = trailingMarkerPrefixStart(projection.text);
+    let currentCodeRanges = markdownCodeRanges(projection.markdownRangeSource);
+    if (
+      pendingTail !== -1
+      && !markerStartIsProtected(
+        pendingTail,
+        currentCodeRanges,
+        projection.protectedRanges,
+      )
+    ) {
+      projection = removeProjectionRanges(
+        projection,
+        [[pendingTail, projection.text.length]],
+      );
+    }
+
+    const tail = projection.text.lastIndexOf("<coven:a");
+    currentCodeRanges = markdownCodeRanges(projection.markdownRangeSource);
+    if (
+      tail !== -1
+      && !hasUnquotedGtAfter(projection.text, tail)
+      && !markerStartIsProtected(tail, currentCodeRanges, projection.protectedRanges)
+      && isPotentialAttentionMarkerFragment(projection.text.slice(tail))
+    ) {
+      projection = removeProjectionRanges(
+        projection,
+        [[tail, projection.text.length]],
+      );
     }
   }
 
-  return { visible, request };
+  return { projection, request };
+}
+
+export function extractChatAttentionMarker(
+  text: string,
+  options: ChatAttentionMarkerOptions = {},
+  markdownRangeSource: string = text,
+  protectedRanges: ReadonlyArray<ProtectedTextRange> = [],
+): { visible: string; request: ChatAttentionMarker | null } {
+  const { projection, request } = extractChatAttentionMarkerProjection(
+    text,
+    options,
+    markdownRangeSource,
+    protectedRanges,
+    "extractChatAttentionMarker",
+  );
+  return { visible: projection.text, request };
 }
 
 export function extractIncompleteChatAttentionMarker(
   text: string,
+  markdownRangeSource: string = text,
+  protectedRanges: ReadonlyArray<ProtectedTextRange> = [],
 ): { visible: string; request: ChatAttentionMarker | null } {
-  const settled = extractChatAttentionMarker(text);
+  const settled = extractChatAttentionMarkerProjection(
+    text,
+    {},
+    markdownRangeSource,
+    protectedRanges,
+    "extractIncompleteChatAttentionMarker",
+  );
   return {
-    visible: stripIncompleteMarkerTail(settled.visible),
+    visible: stripIncompleteMarkerTail(settled.projection).text,
     request: settled.request,
   };
 }
@@ -93,30 +259,43 @@ function trailingMarkerPrefixStart(text: string): number {
   return -1;
 }
 
-function stripIncompleteMarkerTail(text: string): string {
-  let visible = text;
-  const codeRanges = markdownCodeRanges(visible);
-  const pendingTail = trailingMarkerPrefixStart(visible);
+function stripIncompleteMarkerTail(
+  initialProjection: AttentionProjection,
+): AttentionProjection {
+  let projection = initialProjection;
+  let codeRanges = markdownCodeRanges(projection.markdownRangeSource);
+  const pendingTail = trailingMarkerPrefixStart(projection.text);
   if (
     pendingTail !== -1
-    && visible.length - pendingTail > 1
-    && !codeRanges.some(([start, end]) => pendingTail >= start && pendingTail < end)
+    && projection.text.length - pendingTail > 1
+    && !markerStartIsProtected(
+      pendingTail,
+      codeRanges,
+      projection.protectedRanges,
+    )
   ) {
-    visible = visible.slice(0, pendingTail);
+    projection = removeProjectionRanges(
+      projection,
+      [[pendingTail, projection.text.length]],
+    );
   }
 
-  const tail = visible.lastIndexOf("<coven:a");
+  const tail = projection.text.lastIndexOf("<coven:a");
+  codeRanges = markdownCodeRanges(projection.markdownRangeSource);
   if (
     tail !== -1
-    && !hasUnquotedGtAfter(visible, tail)
-    && !markdownCodeRanges(visible).some(([start, end]) => tail >= start && tail < end)
+    && !hasUnquotedGtAfter(projection.text, tail)
+    && !markerStartIsProtected(tail, codeRanges, projection.protectedRanges)
   ) {
-    const frag = visible.slice(tail);
+    const frag = projection.text.slice(tail);
     if (isPotentialAttentionMarkerFragment(frag)) {
-      visible = visible.slice(0, tail);
+      projection = removeProjectionRanges(
+        projection,
+        [[tail, projection.text.length]],
+      );
     }
   }
-  return visible;
+  return projection;
 }
 
 function isPotentialAttentionMarkerFragment(fragment: string): boolean {
@@ -154,47 +333,69 @@ function isPotentialAttentionMarkerFragment(fragment: string): boolean {
   return true;
 }
 
-function stripMalformedCompleteAttentionMarkers(text: string, pending: boolean): string {
-  if (!text.includes(ATTENTION_MARKER_START)) return text;
-  const codeRanges = markdownCodeRanges(text);
-  let out = "";
-  let cursor = 0;
-  let start = text.indexOf(ATTENTION_MARKER_START);
+function stripMalformedCompleteAttentionMarkers(
+  projection: AttentionProjection,
+  pending: boolean,
+): AttentionProjection {
+  if (!projection.text.includes(ATTENTION_MARKER_START)) return projection;
+  const codeRanges = markdownCodeRanges(projection.markdownRangeSource);
+  const removedRanges: ProtectedTextRange[] = [];
+  let start = projection.text.indexOf(ATTENTION_MARKER_START);
 
   while (start !== -1) {
-    if (codeRanges.some(([rangeStart, rangeEnd]) => start >= rangeStart && start < rangeEnd)) {
-      start = text.indexOf(ATTENTION_MARKER_START, start + ATTENTION_MARKER_START.length);
+    if (markerStartIsProtected(start, codeRanges, projection.protectedRanges)) {
+      start = projection.text.indexOf(
+        ATTENTION_MARKER_START,
+        start + ATTENTION_MARKER_START.length,
+      );
       continue;
     }
-    const boundary = text[start + ATTENTION_MARKER_START.length] ?? "";
+    const boundary = projection.text[start + ATTENTION_MARKER_START.length] ?? "";
     if (boundary && /[A-Za-z0-9:_-]/.test(boundary)) {
-      start = text.indexOf(ATTENTION_MARKER_START, start + ATTENTION_MARKER_START.length);
+      start = projection.text.indexOf(
+        ATTENTION_MARKER_START,
+        start + ATTENTION_MARKER_START.length,
+      );
       continue;
     }
 
-    const lineEnd = text.indexOf("\n", start);
-    const rawEnd = text.indexOf(">", start + ATTENTION_MARKER_START.length);
+    const lineEnd = projection.text.indexOf("\n", start);
+    const rawEnd = projection.text.indexOf(
+      ">",
+      start + ATTENTION_MARKER_START.length,
+    );
     if (rawEnd === -1 || (lineEnd !== -1 && rawEnd > lineEnd)) {
-      start = text.indexOf(ATTENTION_MARKER_START, start + ATTENTION_MARKER_START.length);
+      start = projection.text.indexOf(
+        ATTENTION_MARKER_START,
+        start + ATTENTION_MARKER_START.length,
+      );
       continue;
     }
-    const protectedRange = codeRanges.find(([rangeStart]) => rangeStart > start && rangeStart < rawEnd);
-    if (protectedRange) {
-      start = text.indexOf(ATTENTION_MARKER_START, protectedRange[1]);
+    const end = rawEnd + 1;
+    if (
+      rangesIntersect(codeRanges, start, end)
+      || rangesIntersect(projection.protectedRanges, start, end)
+    ) {
+      start = projection.text.indexOf(
+        ATTENTION_MARKER_START,
+        start + ATTENTION_MARKER_START.length,
+      );
       continue;
     }
 
-    const fragment = text.slice(start);
+    const fragment = projection.text.slice(start);
     if (pending && isPotentialAttentionMarkerFragment(fragment)) {
-      start = text.indexOf(ATTENTION_MARKER_START, start + ATTENTION_MARKER_START.length);
+      start = projection.text.indexOf(
+        ATTENTION_MARKER_START,
+        start + ATTENTION_MARKER_START.length,
+      );
       continue;
     }
-    out += text.slice(cursor, start);
-    cursor = rawEnd + 1;
-    start = text.indexOf(ATTENTION_MARKER_START, cursor);
+    removedRanges.push([start, end]);
+    start = projection.text.indexOf(ATTENTION_MARKER_START, end);
   }
 
-  return out + text.slice(cursor);
+  return removeProjectionRanges(projection, removedRanges);
 }
 
 function parseAttentionReason(marker: string, rawAttrs: string): string | null {

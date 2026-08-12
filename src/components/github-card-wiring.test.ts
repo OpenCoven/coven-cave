@@ -4,10 +4,46 @@
 // bead cave-fpqx.6).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import ts from "typescript";
 
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const card = readFileSync(new URL("./github-card.tsx", import.meta.url), "utf8");
 const renderedText = readFileSync(new URL("../lib/chat-rendered-text.ts", import.meta.url), "utf8");
+const renderedTextSource = ts.createSourceFile(
+  "chat-rendered-text.ts",
+  renderedText,
+  ts.ScriptTarget.Latest,
+  true,
+  ts.ScriptKind.TS,
+);
+
+function assignedPipelineCall(variableName: string, calleeName: string): ts.CallExpression {
+  const matches: ts.CallExpression[] = [];
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isVariableDeclaration(node)
+      && ts.isIdentifier(node.name)
+      && node.name.text === variableName
+      && node.initializer
+    ) {
+      const findCall = (child: ts.Node) => {
+        if (
+          ts.isCallExpression(child)
+          && ts.isIdentifier(child.expression)
+          && child.expression.text === calleeName
+        ) {
+          matches.push(child);
+        }
+        ts.forEachChild(child, findCall);
+      };
+      findCall(node.initializer);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(renderedTextSource);
+  assert.equal(matches.length, 1, `${variableName} must be assigned exactly once from ${calleeName}`);
+  return matches[0];
+}
 
 // chat-view: imports and render paths.
 assert.match(
@@ -33,10 +69,83 @@ assert.match(
   /extractChatRenderedText\(turn\.text, \{ pending: Boolean\(turn\.pending\) \}\)/,
   "both pending and settled turns render through the shared marker pipeline",
 );
+const projectionCalls = [
+  ["attachmentSplit", "extractAgentAttachmentMarkers", "context.text"],
+  ["reasoningSplit", "splitReasoning", "context.text"],
+  ["skillSplit", "extractSkillMarkers", "context.text"],
+  ["autoStatusSplit", "extractAutoStatusMarkers", "context.text"],
+  ["resultSplit", "extractChatResultMarkersFromScan", "context.text"],
+  ["attentionSplit", "extractChatAttentionMarker", "resultSplit.visible"],
+  ["nextPathSplit", "extractNextPaths", "attentionSplit.visible"],
+] as const;
+const projectionCallNodes = projectionCalls.map(([variableName, calleeName, input]) => {
+  const call = assignedPipelineCall(variableName, calleeName);
+  assert.equal(
+    call.arguments[0]?.getText(renderedTextSource),
+    input,
+    `${calleeName}'s first argument must be the previous stage's visible result`,
+  );
+  return call;
+});
+const protectedProjectionStages = [
+  [
+    "attachmentRanges",
+    "hasAttachmentCandidate",
+    "attachmentSplit",
+    "extractAgentAttachmentMarkers",
+  ],
+  [
+    "reasoningRanges",
+    "hasReasoningCandidate",
+    "reasoningSplit",
+    "splitReasoning",
+  ],
+  [
+    "skillRanges",
+    "hasSkillCandidate",
+    "skillSplit",
+    "extractSkillMarkers",
+  ],
+  [
+    "autoStatusRanges",
+    "hasAutoStatusCandidate",
+    "autoStatusSplit",
+    "extractAutoStatusMarkers",
+  ],
+] as const;
+for (
+  const [rangesVariable, candidateVariable, extractorVariable, extractorName]
+  of protectedProjectionStages
+) {
+  const rangesCall = assignedPipelineCall(
+    rangesVariable,
+    "resultAwareRangeInputs",
+  );
+  const extractorCall = assignedPipelineCall(extractorVariable, extractorName);
+  assert.deepEqual(
+    rangesCall.arguments.map((argument) => argument.getText(renderedTextSource)),
+    ["context", candidateVariable],
+    `${rangesVariable} lazily protects only its candidate family`,
+  );
+  assert.deepEqual(
+    extractorCall.arguments.map((argument) => argument.getText(renderedTextSource)),
+    [
+      "context.text",
+      `${rangesVariable}.markdownRangeSource`,
+      `${rangesVariable}.protectedRanges`,
+    ],
+    `${extractorName} receives the exact current source and shared scan outputs`,
+  );
+}
 assert.match(
   renderedText,
-  /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);[\s\S]*const autoStatusSplit = extractAutoStatusMarkers\(skillSplit\.visible\);[\s\S]*const attentionSplit = extractChatAttentionMarker\(autoStatusSplit\.visible,[\s\S]*const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);/,
-  "the shared projection resolves skill, auto-status, attention, then next paths before card markers",
+  /context\.setText\(attachmentSplit\.text\);[\s\S]*context\.setText\(reasoningSplit\.visible\);[\s\S]*context\.setText\(skillSplit\.visible\);[\s\S]*context\.setText\(autoStatusSplit\.visible\);/,
+  "each transforming stage updates the scan context before the next stage",
+);
+assert.deepEqual(
+  projectionCallNodes.map((call) => call.getStart(renderedTextSource)),
+  projectionCallNodes.map((call) => call.getStart(renderedTextSource)).toSorted((a, b) => a - b),
+  "the shared projection resolves attachment, reasoning, skill, auto-status, result, attention, then next paths before card markers",
 );
 assert.match(
   renderedText,

@@ -391,6 +391,7 @@ export const SUITES = {
     "src/lib/chat-reply.test.ts",
     "src/components/chat-reply-wiring.test.ts",
     "src/lib/chat-reasoning.test.ts",
+    "src/lib/chat-result-markers.test.ts",
     "src/lib/chat-rendered-text.test.ts",
     "src/components/chat-rendered-text-wiring.test.ts",
     "src/lib/artifact-comments.test.ts",

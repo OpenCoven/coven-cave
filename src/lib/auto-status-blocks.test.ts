@@ -39,6 +39,62 @@ test("extract: a partial trailing marker stays hidden until it completes", () =>
   assert.equal(visible, "Some text ");
 });
 
+test("extract: an incomplete prefix before a later complete marker stays hidden", () => {
+  const { visible, update } = extractAutoStatusMarkers(
+    [
+      "before <coven:a",
+      "middle <coven:auto-st",
+      '<coven:auto-status state="done" note="parsed later" />',
+      "after",
+    ].join("\n"),
+  );
+
+  assert.equal(visible, "before \nmiddle \n\nafter");
+  assert.deepEqual(update, { state: "done", note: "parsed later" });
+});
+
+test("extract: an unclosed quoted partial resynchronizes at a later marker", () => {
+  const { visible, update } = extractAutoStatusMarkers(
+    [
+      'before <coven:auto-status state="wor',
+      '<coven:auto-status state="done" />',
+      "after",
+    ].join("\n"),
+  );
+
+  assert.equal(visible, "before \nafter");
+  assert.deepEqual(update, { state: "done" });
+});
+
+test("extract: incomplete prefixes inside code and opaque ranges stay literal", () => {
+  const opaque = "<coven:a";
+  const opaqueLine = `Keep ${opaque} as an opaque label fragment.`;
+  const text = [
+    "Keep `<coven:a` as code.",
+    "```text",
+    "<coven:auto-st",
+    "```",
+    opaqueLine,
+    '<coven:auto-status state="done" />',
+  ].join("\n");
+  const start = text.indexOf(opaqueLine) + "Keep ".length;
+
+  assert.deepEqual(
+    extractAutoStatusMarkers(text, text, [[start, start + opaque.length]]),
+    {
+      visible: [
+        "Keep `<coven:a` as code.",
+        "```text",
+        "<coven:auto-st",
+        "```",
+        opaqueLine,
+        "",
+      ].join("\n"),
+      update: { state: "done" },
+    },
+  );
+});
+
 test("extract: fenced markers stay literal example text", () => {
   const text = ['```', '<coven:auto-status state="done" />', '```'].join("\n");
   const { visible, update } = extractAutoStatusMarkers(text);
@@ -76,6 +132,55 @@ test("failed is a first-class state, distinct from blocked", () => {
   assert.equal(visible.trim(), "ran out of road");
 });
 
+test("quoted Markdown backticks stay inside a complete marker", () => {
+  const { visible, update } = extractAutoStatusMarkers(
+    [
+      '<coven:auto-status state="working" note="ran `test`" />',
+      '<coven:auto-status state="done" />',
+    ].join("\n"),
+  );
+
+  assert.equal(visible, "\n");
+  assert.deepEqual(update, { state: "done" });
+});
+
 test("a genuinely unknown state is still dropped rather than guessed at", () => {
   assert.equal(extractAutoStatusMarkers('<coven:auto-status state="banana" />').update, null);
+});
+
+test("an optional Markdown range source preserves original text slices", () => {
+  const text = 'Prefix ` noise <coven:auto-status state="done" /> Visible.';
+  const rangeSource = text.replace("`", " ");
+
+  assert.deepEqual(extractAutoStatusMarkers(text, rangeSource), {
+    visible: "Prefix ` noise  Visible.",
+    update: { state: "done" },
+  });
+});
+
+test("optional opaque ranges preserve literal auto-status markers", () => {
+  const literal = '<coven:auto-status state="failed" note="literal" />';
+  const live = '<coven:auto-status state="done" note="live" />';
+  const text = `Keep ${literal} exact.\n${live}`;
+  const start = text.indexOf(literal);
+
+  assert.deepEqual(
+    extractAutoStatusMarkers(text, text, [[start, start + literal.length]]),
+    {
+      visible: `Keep ${literal} exact.\n`,
+      update: { state: "done", note: "live" },
+    },
+  );
+});
+
+test("auto-status range inputs reject mismatched sources and unsorted opaque ranges", () => {
+  const text = "0123456789";
+  assert.throws(
+    () => extractAutoStatusMarkers(text, text.slice(1)),
+    /range source must match text length/,
+  );
+  assert.throws(
+    () => extractAutoStatusMarkers(text, text, [[5, 7], [1, 3]]),
+    /protected ranges must be sorted and non-overlapping/,
+  );
 });

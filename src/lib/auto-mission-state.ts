@@ -16,6 +16,7 @@
  */
 
 import { extractAutoStatusMarkers } from "./auto-status-blocks.ts";
+import { scanChatResultProtocol } from "./chat-result-markers.ts";
 
 /** Minimal Storage surface — window.localStorage or a test fake. */
 export type AutoMissionStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -151,7 +152,12 @@ export function pendingAutoMissionPings(
   for (const t of turns) {
     if (t.role !== "assistant" || t.pending || !t.text) continue;
     if (seen.has(t.id)) continue;
-    const { update } = extractAutoStatusMarkers(t.text);
+    const resultProtocol = scanChatResultProtocol(t.text);
+    const { update } = extractAutoStatusMarkers(
+      t.text,
+      resultProtocol.markdownRangeSource,
+      resultProtocol.protectedRanges,
+    );
     if (!update) continue;
     if (update.state !== "blocked" && update.state !== "failed" && update.state !== "done") continue;
     out.push({ turnId: t.id, state: update.state, note: update.note });

@@ -15,6 +15,8 @@ import type { SessionOrigin } from "./types";
 import { parseSseFrame } from "@/lib/canvas-generate";
 import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
 
+export type FamiliarAssistantTextProjectionPhase = "pending" | "settled" | "terminal";
+
 export async function streamFamiliarText(opts: {
   familiarId: string;
   prompt: string;
@@ -51,6 +53,13 @@ export async function streamFamiliarText(opts: {
    *  the server route (`/api/chat/send`) owns parsing and persisting the
    *  actual `attentionRequest` metadata; nothing here fabricates it. */
   onText?: (text: string) => void;
+  /** Override the default attention-only projection for a consumer whose later
+   *  formatter owns additional opaque protocols. Receives the exact accumulated
+   *  assistant bytes; it must return display-safe text for every phase. */
+  projectAssistantText?: (
+    rawText: string,
+    phase: FamiliarAssistantTextProjectionPhase,
+  ) => string;
   /** Called the moment the bridge announces the backing session id — before
    *  the stream completes — so callers can keep the thread resumable even if
    *  the run is aborted mid-stream. */
@@ -97,6 +106,7 @@ export async function streamFamiliarText(opts: {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let rawText = "";
   const attentionText = createAttentionSafeTextAccumulator();
   let error: string | null = null;
   let sessionId: string | undefined;
@@ -111,10 +121,24 @@ export async function streamFamiliarText(opts: {
     const ev = parseSseFrame(frame);
     if (!ev) return;
     if (ev.kind === "assistant_chunk") {
-      const visible = attentionText.append(ev.text ?? "");
+      const chunk = ev.text ?? "";
+      let visible: string;
+      if (opts.projectAssistantText) {
+        rawText += chunk;
+        visible = opts.projectAssistantText(rawText, "pending");
+      } else {
+        visible = attentionText.append(chunk);
+      }
       opts.onText?.(visible);
     } else if (ev.kind === "assistant_replace") {
-      const visible = attentionText.replace(ev.text ?? "");
+      const replacement = ev.text ?? "";
+      let visible: string;
+      if (opts.projectAssistantText) {
+        rawText = replacement;
+        visible = opts.projectAssistantText(rawText, "pending");
+      } else {
+        visible = attentionText.replace(replacement);
+      }
       opts.onText?.(visible);
     } else if (ev.kind === "session") noteSession(ev.sessionId);
     else if (ev.kind === "done") {
@@ -147,8 +171,13 @@ export async function streamFamiliarText(opts: {
       ? "cancelled"
       : error ?? (err as Error)?.message ?? "the connection dropped mid-generation";
   }
+  const projectionPhase = error !== null ? "terminal" : "settled";
   return {
-    text: error !== null ? attentionText.terminal() : attentionText.settled(),
+    text: opts.projectAssistantText
+      ? opts.projectAssistantText(rawText, projectionPhase)
+      : projectionPhase === "terminal"
+        ? attentionText.terminal()
+        : attentionText.settled(),
     error,
     sessionId,
     responseMetadata,

@@ -316,3 +316,70 @@ test("incomplete extraction preserves fenced partial markup, ordinary trailing l
     request: null,
   });
 });
+
+test("optional result-protocol ranges preserve literal markers while a later real request extracts", () => {
+  const literal = '<coven:attention reason="approval" />';
+  const live = '<coven:attention reason="decision" />';
+  const text = `Keep ${literal} exact.\n${live}`;
+  const start = text.indexOf(literal);
+
+  assert.deepEqual(
+    extractChatAttentionMarker(
+      text,
+      {},
+      text,
+      [[start, start + literal.length]],
+    ),
+    {
+      visible: `Keep ${literal} exact.\n`,
+      request: { reason: "decision" },
+    },
+  );
+});
+
+test("incomplete extraction leaves attention-like bytes in opaque result spans exact", () => {
+  const literal = '<coven:attention reason="credentials" />';
+  const text = `Keep ${literal} exact.`;
+  const start = text.indexOf(literal);
+
+  assert.deepEqual(
+    extractIncompleteChatAttentionMarker(
+      text,
+      text,
+      [[start, start + literal.length]],
+    ),
+    {
+      visible: text,
+      request: null,
+    },
+  );
+});
+
+test("an optional Markdown range source controls code detection without changing source slices", () => {
+  const text = 'Prefix ` noise <coven:attention reason="input" /> Visible.';
+  const rangeSource = text.replace("`", " ");
+
+  assert.deepEqual(
+    extractChatAttentionMarker(text, {}, rangeSource),
+    {
+      visible: "Prefix ` noise  Visible.",
+      request: { reason: "input" },
+    },
+  );
+});
+
+test("attention range inputs reject mismatched sources and invalid protected ranges", () => {
+  const text = "0123456789";
+  assert.throws(
+    () => extractChatAttentionMarker(text, {}, text.slice(1)),
+    /range source must match text length/,
+  );
+  assert.throws(
+    () => extractChatAttentionMarker(text, {}, text, [[5, 7], [1, 3]]),
+    /protected ranges must be sorted and non-overlapping/,
+  );
+  assert.throws(
+    () => extractIncompleteChatAttentionMarker(text, text, [[1, 11]]),
+    /protected range must stay within text/,
+  );
+});

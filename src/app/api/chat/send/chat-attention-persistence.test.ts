@@ -13,6 +13,16 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import ts from "typescript";
+import {
+  extractChatAttentionMarker,
+  extractIncompleteChatAttentionMarker,
+} from "../../../../lib/chat-attention-marker.ts";
+import {
+  extractChatResultMarkers,
+  scanChatResultProtocol,
+} from "../../../../lib/chat-result-markers.ts";
+import { splitReasoning } from "../../../../lib/chat-reasoning.ts";
 
 const route = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 const chatView = await readFile(
@@ -23,13 +33,137 @@ const renderedText = await readFile(
   new URL("../../../../lib/chat-rendered-text.ts", import.meta.url),
   "utf8",
 );
+const renderedTextSource = ts.createSourceFile(
+  "chat-rendered-text.ts",
+  renderedText,
+  ts.ScriptTarget.Latest,
+  true,
+  ts.ScriptKind.TS,
+);
+const routeSource = ts.createSourceFile(
+  "route.ts",
+  route,
+  ts.ScriptTarget.Latest,
+  true,
+  ts.ScriptKind.TS,
+);
+
+function routeFunction(name: string): ts.FunctionDeclaration {
+  const matches: ts.FunctionDeclaration[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name) {
+      matches.push(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(routeSource);
+  assert.equal(matches.length, 1, `${name} must be declared exactly once`);
+  return matches[0];
+}
+
+function assignedRouteHelperCall(
+  root: ts.FunctionDeclaration,
+  variableName: string,
+  calleeName: string,
+): ts.CallExpression {
+  const matches: ts.CallExpression[] = [];
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isVariableDeclaration(node)
+      && ts.isIdentifier(node.name)
+      && node.name.text === variableName
+      && node.initializer
+      && ts.isCallExpression(node.initializer)
+      && ts.isIdentifier(node.initializer.expression)
+      && node.initializer.expression.text === calleeName
+    ) {
+      matches.push(node.initializer);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(root);
+  assert.equal(
+    matches.length,
+    1,
+    `${variableName} must be assigned exactly once from ${calleeName}`,
+  );
+  return matches[0];
+}
+
+type PreparedAttention = {
+  text: string;
+  reasoning?: string;
+  request: {
+    sessionId: string;
+    turnId: string;
+    requestedAt: string;
+    reason: string;
+  } | null;
+};
+
+const prepareFunction = routeFunction("prepareAttentionRequest");
+const transpiledPrepareFunction = ts.transpileModule(
+  prepareFunction.getText(routeSource),
+  {
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.None,
+    },
+  },
+).outputText;
+const prepareAttentionRequest = new Function(
+  "splitReasoning",
+  "scanChatResultProtocol",
+  "extractChatAttentionMarker",
+  "extractIncompleteChatAttentionMarker",
+  `${transpiledPrepareFunction}; return prepareAttentionRequest;`,
+)(
+  splitReasoning,
+  scanChatResultProtocol,
+  extractChatAttentionMarker,
+  extractIncompleteChatAttentionMarker,
+) as (args: {
+  text: string;
+  sessionId: string;
+  turnId: string;
+  requestedAt: string;
+  incomplete?: boolean;
+}) => PreparedAttention;
+
+function assignedPipelineCall(variableName: string, calleeName: string): ts.CallExpression {
+  const matches: ts.CallExpression[] = [];
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isVariableDeclaration(node)
+      && ts.isIdentifier(node.name)
+      && node.name.text === variableName
+      && node.initializer
+    ) {
+      const findCall = (child: ts.Node) => {
+        if (
+          ts.isCallExpression(child)
+          && ts.isIdentifier(child.expression)
+          && child.expression.text === calleeName
+        ) {
+          matches.push(child);
+        }
+        ts.forEachChild(child, findCall);
+      };
+      findCall(node.initializer);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(renderedTextSource);
+  assert.equal(matches.length, 1, `${variableName} must be assigned exactly once from ${calleeName}`);
+  return matches[0];
+}
 
 function renderedTextAttentionPipeline() {
   const start = renderedText.indexOf(
-    "const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(text).text);",
+    "const context = createChatResultScanContext(text, scanResultProtocol);",
   );
   const end = renderedText.indexOf("\nexport function chatTurnVisibleText", start);
-  assert.notEqual(start, -1, "expected the shared marker pipeline to start at reasoningSplit");
+  assert.notEqual(start, -1, "expected the shared marker pipeline to start at its per-call scan context");
   assert.notEqual(end, -1, "expected the shared marker pipeline to end before the turn helper");
   return renderedText.slice(start, end);
 }
@@ -45,6 +179,11 @@ test("route imports the attention marker parser", () => {
     /import \{ splitReasoning \} from "@\/lib\/chat-reasoning";/,
     "the send route should use the same hidden-reasoning semantics as ChatView",
   );
+  assert.match(
+    route,
+    /import \{ scanChatResultProtocol \} from "@\/lib\/chat-result-markers";/,
+    "the send route should apply the shared result-protocol opacity contract",
+  );
 });
 
 test("exactly one shared prepareAttentionRequest helper is defined", () => {
@@ -59,11 +198,187 @@ test("exactly one shared prepareAttentionRequest helper is defined", () => {
     /function prepareAttentionRequest\(args: \{\s*text: string;\s*sessionId: string;\s*turnId: string;\s*requestedAt: string;\s*incomplete\?: boolean;\s*\}\): \{\s*text: string;\s*reasoning\?: string;\s*request: ChatResponseMetadata\["attentionRequest"\] \| null;\s*\} \{/,
     "the helper accepts text/sessionId/turnId/requestedAt plus optional incomplete mode and returns cleaned visible text, optional persisted reasoning, and a nullable stamped request",
   );
-  assert.match(
-    route,
-    /function prepareAttentionRequest\([\s\S]{0,400}const \{ visible: visibleBody, reasoning: reasoningBody \} = splitReasoning\(args\.text\);[\s\S]{0,220}args\.incomplete\s*\?\s*extractIncompleteChatAttentionMarker\(visibleBody\)\s*:\s*extractChatAttentionMarker\(visibleBody\);[\s\S]{0,320}args\.incomplete\s*\?\s*extractIncompleteChatAttentionMarker\(reasoningBody\)\s*:\s*extractChatAttentionMarker\(reasoningBody\)/,
-    "the helper must parse markers only from visible text while separately scrubbing reasoning for persisted reloads; incomplete mode uses the shared pending-tail sanitizer in both places",
+});
+
+test("prepareAttentionRequest passes stage-local result scans into reasoning and attention extraction", () => {
+  const rawScan = assignedRouteHelperCall(
+    prepareFunction,
+    "reasoningResultProtocol",
+    "scanChatResultProtocol",
   );
+  const reasoningCall = assignedRouteHelperCall(
+    prepareFunction,
+    "reasoningSplit",
+    "splitReasoning",
+  );
+  const visibleScan = assignedRouteHelperCall(
+    prepareFunction,
+    "visibleAttentionResultProtocol",
+    "scanChatResultProtocol",
+  );
+
+  assert.deepEqual(
+    rawScan.arguments.map((argument) => argument.getText(routeSource)),
+    ["args.text"],
+    "reasoning protection must scan the exact raw persistence text",
+  );
+  assert.deepEqual(
+    reasoningCall.arguments.map((argument) => argument.getText(routeSource)),
+    [
+      "args.text",
+      "reasoningResultProtocol.markdownRangeSource",
+      "reasoningResultProtocol.protectedRanges",
+    ],
+    "splitReasoning must consume both outputs from the raw result scan",
+  );
+  assert.deepEqual(
+    visibleScan.arguments.map((argument) => argument.getText(routeSource)),
+    ["reasoningSplit.visible"],
+    "attention protection must rescan the current visible text after reasoning changes offsets",
+  );
+
+  const attentionCalls: ts.CallExpression[] = [];
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node)
+      && ts.isIdentifier(node.expression)
+      && (
+        node.expression.text === "extractChatAttentionMarker"
+        || node.expression.text === "extractIncompleteChatAttentionMarker"
+      )
+      && node.arguments[0]?.getText(routeSource) === "reasoningSplit.visible"
+    ) {
+      attentionCalls.push(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(prepareFunction);
+  assert.equal(
+    attentionCalls.length,
+    2,
+    "settled and incomplete persistence must share visible result opacity",
+  );
+  for (const call of attentionCalls) {
+    const rangeArguments = [
+      "reasoningSplit.visible",
+      "visibleAttentionResultProtocol.markdownRangeSource",
+      "visibleAttentionResultProtocol.protectedRanges",
+    ];
+    if (call.expression.getText(routeSource) === "extractChatAttentionMarker") {
+      rangeArguments.splice(1, 0, "{}");
+    }
+    assert.deepEqual(
+      call.arguments.map((argument) => argument.getText(routeSource)),
+      rangeArguments,
+      `${call.expression.getText(routeSource)} must receive both fresh result-scan outputs`,
+    );
+  }
+});
+
+test("valid result-label control literals stay exact in persisted text", () => {
+  const label = [
+    "Literal <thinking>label reasoning</thinking>",
+    "<coven:attention reason='approval' />",
+  ].join(" and ");
+  const marker =
+    `<coven:result id="opaque-label" state="passed" label="${label}" />`;
+  const prepared = prepareAttentionRequest({
+    text: marker,
+    sessionId: "session-result-label",
+    turnId: "turn-result-label",
+    requestedAt: "2026-08-10T00:00:00.000Z",
+  });
+
+  assert.equal(prepared.text, marker);
+  assert.equal(prepared.reasoning, undefined);
+  assert.equal(prepared.request, null);
+  assert.deepEqual(extractChatResultMarkers(prepared.text).results, [{
+    id: "opaque-label",
+    label,
+    state: "passed",
+    source: "familiar",
+  }]);
+});
+
+test("a real attention request after an opaque result still persists", () => {
+  const label =
+    "Literal <thinking>label reasoning</thinking> and <coven:attention reason='approval' />";
+  const marker =
+    `<coven:result id="before-live" state="passed" label="${label}" />`;
+  const prepared = prepareAttentionRequest({
+    text: `${marker}\n<coven:attention reason="decision" />`,
+    sessionId: "session-live-attention",
+    turnId: "turn-live-attention",
+    requestedAt: "2026-08-10T00:00:01.000Z",
+  });
+
+  assert.equal(prepared.text, `${marker}\n`);
+  assert.deepEqual(prepared.request, {
+    sessionId: "session-live-attention",
+    turnId: "turn-live-attention",
+    requestedAt: "2026-08-10T00:00:01.000Z",
+    reason: "decision",
+  });
+});
+
+test("malformed and oversized result spans cannot fabricate durable attention", () => {
+  const attention = '<coven:attention reason="credentials" />';
+  const malformed = [
+    "<coven:result",
+    '  id="malformed-attention"',
+    '  state="passed"',
+    '  label="Malformed"',
+    `  note="${attention}"`,
+    "/>",
+  ].join("\n");
+  const oversized = [
+    "<coven:result",
+    '  id="oversized-attention"',
+    '  state="passed"',
+    `  label="${"x".repeat(2_048)}`,
+    attention,
+    'exact tail"',
+    "/>",
+  ].join("\n");
+
+  for (const [name, marker] of [
+    ["malformed", malformed],
+    ["oversized", oversized],
+  ] as const) {
+    const prepared = prepareAttentionRequest({
+      text: marker,
+      sessionId: `session-${name}`,
+      turnId: `turn-${name}`,
+      requestedAt: "2026-08-10T00:00:02.000Z",
+    });
+    assert.equal(
+      prepared.text,
+      marker,
+      `${name} result bytes must stay owned by the result protocol`,
+    );
+    assert.equal(prepared.request, null);
+    assert.deepEqual(
+      extractChatResultMarkers(prepared.text),
+      { visible: "", results: [] },
+      `${name} result fail-closed cleanup must still hide its embedded control`,
+    );
+  }
+});
+
+test("a result marker nested in real reasoning cannot surface in persisted visible text", () => {
+  const nested =
+    '<coven:result id="reasoning-result" state="failed" label="Hidden result" />';
+  const prepared = prepareAttentionRequest({
+    text: `<thinking>Private ${nested}</thinking>\nVisible answer.`,
+    sessionId: "session-reasoning-result",
+    turnId: "turn-reasoning-result",
+    requestedAt: "2026-08-10T00:00:03.000Z",
+  });
+
+  assert.equal(prepared.text, "Visible answer.");
+  assert.doesNotMatch(prepared.text, /reasoning-result|coven:result/);
+  assert.equal(prepared.reasoning, `Private ${nested}`);
+  assert.equal(prepared.request, null);
 });
 
 test("the shared responseMetadata object is never mutated with an attentionRequest field", () => {
@@ -174,32 +489,98 @@ test("ChatView renders through the shared attention-aware text projection", () =
   );
 });
 
-test("the shared projection extracts attention after skill/auto-status and before next-path/GitHub/image stripping", () => {
+test("the shared projection extracts attention after result markers and before next-path/GitHub/image stripping", () => {
   // Pinned as a flow (per the skill-stage-card-wiring precedent above this
-  // file): what must hold is that autoStatusSplit's visible text feeds the
-  // attention extractor, and the attention-stripped visible feeds
+  // file): what must hold is that resultSplit's visible text feeds the attention
+  // extractor, and the attention-stripped visible feeds
   // extractNextPaths — never the reverse and never skipped, so a complete OR
   // partial `<coven:attention>` tag can't flash mid-stream.
-  const pipeline = renderedTextAttentionPipeline();
-  const autoStatusIndex = pipeline.indexOf(
-    "const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);",
+  const calls = [
+    ["attachmentSplit", "extractAgentAttachmentMarkers", "context.text"],
+    ["reasoningSplit", "splitReasoning", "context.text"],
+    ["skillSplit", "extractSkillMarkers", "context.text"],
+    ["autoStatusSplit", "extractAutoStatusMarkers", "context.text"],
+    ["resultSplit", "extractChatResultMarkersFromScan", "context.text"],
+    ["attentionSplit", "extractChatAttentionMarker", "resultSplit.visible"],
+    ["nextPathSplit", "extractNextPaths", "attentionSplit.visible"],
+  ] as const;
+  const callNodes = calls.map(([variableName, calleeName, input]) => {
+    const call = assignedPipelineCall(variableName, calleeName);
+    assert.equal(
+      call.arguments[0]?.getText(renderedTextSource),
+      input,
+      `${calleeName}'s first argument must be the previous stage's exact result`,
+    );
+    return call;
+  });
+  assert.deepEqual(
+    callNodes.map((call) => call.getStart(renderedTextSource)),
+    callNodes.map((call) => call.getStart(renderedTextSource)).toSorted((a, b) => a - b),
+    "the shared control pipeline must preserve attachment → reasoning → skill → auto-status → result → attention → next paths",
   );
-  const attentionIndex = pipeline.indexOf(
-    "const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible, {",
-  );
-  const nextPathsIndex = pipeline.indexOf(
-    "const nextPathSplit = extractNextPaths(attentionSplit.visible);",
-  );
-  assert.notEqual(autoStatusIndex, -1, "auto-status extraction should read skillSplit.visible");
-  assert.notEqual(attentionIndex, -1, "attention extraction should read autoStatusSplit.visible");
-  assert.notEqual(nextPathsIndex, -1, "next-path extraction should read attentionSplit.visible");
-  assert.ok(
-    autoStatusIndex < attentionIndex && attentionIndex < nextPathsIndex,
-    "attention extraction must run strictly between auto-status extraction and next-path extraction",
+  const protectedStages = [
+    [
+      "attachmentRanges",
+      "hasAttachmentCandidate",
+      "attachmentSplit",
+      "extractAgentAttachmentMarkers",
+    ],
+    [
+      "reasoningRanges",
+      "hasReasoningCandidate",
+      "reasoningSplit",
+      "splitReasoning",
+    ],
+    [
+      "skillRanges",
+      "hasSkillCandidate",
+      "skillSplit",
+      "extractSkillMarkers",
+    ],
+    [
+      "autoStatusRanges",
+      "hasAutoStatusCandidate",
+      "autoStatusSplit",
+      "extractAutoStatusMarkers",
+    ],
+  ] as const;
+  for (
+    const [rangesVariable, candidateVariable, extractorVariable, extractorName]
+    of protectedStages
+  ) {
+    const rangesCall = assignedPipelineCall(
+      rangesVariable,
+      "resultAwareRangeInputs",
+    );
+    const extractorCall = assignedPipelineCall(extractorVariable, extractorName);
+    assert.deepEqual(
+      rangesCall.arguments.map((argument) => argument.getText(renderedTextSource)),
+      ["context", candidateVariable],
+      `${rangesVariable} must lazily derive opacity for its candidate family`,
+    );
+    assert.deepEqual(
+      extractorCall.arguments.map((argument) => argument.getText(renderedTextSource)),
+      [
+        "context.text",
+        `${rangesVariable}.markdownRangeSource`,
+        `${rangesVariable}.protectedRanges`,
+      ],
+      `${extractorName} must receive the exact current source and shared scan outputs`,
+    );
+    assert.ok(
+      rangesCall.getStart(renderedTextSource)
+        < extractorCall.getStart(renderedTextSource),
+      `${rangesVariable} must be derived before ${extractorName}`,
+    );
+  }
+  assert.match(
+    renderedText,
+    /context\.setText\(attachmentSplit\.text\);[\s\S]*context\.setText\(reasoningSplit\.visible\);[\s\S]*context\.setText\(skillSplit\.visible\);[\s\S]*context\.setText\(autoStatusSplit\.visible\);/,
+    "each stage must update the context before downstream extraction",
   );
   assert.doesNotMatch(
     renderedText,
-    /extractNextPaths\((?:text|reasoningSplit\.visible|skillSplit\.visible|autoStatusSplit\.visible)\)/,
+    /extractNextPaths\((?:text|context\.text|reasoningSplit\.visible|skillSplit\.visible|autoStatusSplit\.visible|resultSplit\.visible)\)/,
     "next-paths must never run on text upstream of the attention split — a raw or partial marker would flash",
   );
 });
@@ -212,13 +593,18 @@ test("the shared projection never strips GitHub/image markers before attention e
   // ran. Pin the actual head of the pipeline: extractSkillMarkers must consume
   // reasoningSplit.visible directly, with no intermediate stripped variable.
   const pipeline = renderedTextAttentionPipeline();
-  assert.match(
-    pipeline,
-    /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);/,
-    "skill markers must extract directly from reasoningSplit.visible — nothing may strip GitHub/image markers out of the marker-bearing text before skill/auto-status/attention/next-path all see it",
+  const skillCall = assignedPipelineCall("skillSplit", "extractSkillMarkers");
+  assert.deepEqual(
+    skillCall.arguments.map((argument) => argument.getText(renderedTextSource)),
+    [
+      "context.text",
+      "skillRanges.markdownRangeSource",
+      "skillRanges.protectedRanges",
+    ],
+    "skill markers must receive the current context text plus both exact result-protection outputs",
   );
   const attentionIndex = pipeline.indexOf(
-    "const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible, {",
+    "const attentionSplit = extractChatAttentionMarker(resultSplit.visible, {",
   );
   const stripGitHubIndex = pipeline.indexOf("stripGitHubMarkers(");
   const stripImageIndex = pipeline.indexOf("stripImageMarkers(");

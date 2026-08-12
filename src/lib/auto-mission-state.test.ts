@@ -1,5 +1,6 @@
 // Behavioral tests for /auto mission persistence + the ping decision.
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   AUTO_MISSION_TIMEOUT_MS,
@@ -79,6 +80,10 @@ test("armed until completed", () => {
 const done = '<coven:auto-status state="done" note="fixed 3 tests" />';
 const blocked = '<coven:auto-status state="blocked" note="needs npm token" />';
 const working = '<coven:auto-status state="working" />';
+const autoMissionSource = await readFile(
+  new URL("./auto-mission-state.ts", import.meta.url),
+  "utf8",
+);
 
 test("a settled done turn pings once", () => {
   const pings = pendingAutoMissionPings(base, [
@@ -144,6 +149,95 @@ test("nothing after a done is considered — the mission ended there", () => {
 
 test("no record means no pings", () => {
   assert.deepEqual(pendingAutoMissionPings(null, [{ id: "t1", role: "assistant", text: done }]), []);
+});
+
+test("auto-status syntax inside valid, malformed, and oversized result spans is inert", () => {
+  const validLiteral = [
+    "<coven:auto-status state='done' />",
+    "<coven:auto-status state='failed' />",
+  ].join(" and ");
+  const valid = `<coven:result id="literal-status" state="passed" label="${validLiteral}" />`;
+  const malformed = [
+    "<coven:result",
+    '  id="malformed-status"',
+    '  state="passed"',
+    '  label="Malformed"',
+    `  note="${done}"`,
+    "/>",
+  ].join("\n");
+  const oversized = [
+    "<coven:result",
+    '  id="oversized-status"',
+    '  state="passed"',
+    `  label="${"x".repeat(2_048)}`,
+    '<coven:auto-status state="failed" note="must stay inert" />',
+    'exact tail"',
+    "/>",
+  ].join("\n");
+
+  for (const [name, text] of [
+    ["valid", valid],
+    ["malformed", malformed],
+    ["oversized", oversized],
+  ] as const) {
+    assert.deepEqual(
+      pendingAutoMissionPings(base, [{ id: `t-${name}`, role: "assistant", text }]),
+      [],
+      `${name} result protocol must own embedded auto-status syntax`,
+    );
+  }
+});
+
+test("a real auto-status after an opaque result span still transitions the mission", () => {
+  const result = [
+    "<coven:result",
+    '  id="oversized-before-live"',
+    '  state="passed"',
+    `  label="${"x".repeat(2_048)}`,
+    '<coven:auto-status state="failed" note="inert" />',
+    'exact tail"',
+    "/>",
+  ].join("\n");
+
+  assert.deepEqual(
+    pendingAutoMissionPings(base, [
+      {
+        id: "t-live-after-result",
+        role: "assistant",
+        text: `${result}\n<coven:auto-status state="done" note="real completion" />`,
+      },
+    ]),
+    [{
+      turnId: "t-live-after-result",
+      state: "done",
+      note: "real completion",
+    }],
+  );
+});
+
+test("auto-mission watcher keeps fenced status examples inert", () => {
+  const text = [
+    "```xml",
+    '<coven:auto-status state="done" note="literal" />',
+    "```",
+  ].join("\n");
+  assert.deepEqual(
+    pendingAutoMissionPings(base, [{ id: "t-code", role: "assistant", text }]),
+    [],
+  );
+});
+
+test("auto-mission watcher wires each current turn through one stage-local result scan", () => {
+  assert.match(
+    autoMissionSource,
+    /import \{ scanChatResultProtocol \} from "\.\/chat-result-markers\.ts";/,
+    "the watcher should use the shared result-protocol scanner",
+  );
+  assert.match(
+    autoMissionSource,
+    /const resultProtocol = scanChatResultProtocol\(t\.text\);\s*const \{ update \} = extractAutoStatusMarkers\(\s*t\.text,\s*resultProtocol\.markdownRangeSource,\s*resultProtocol\.protectedRanges,\s*\);/,
+    "the same current turn must supply text, Markdown range source, and opaque result spans to auto-status extraction",
+  );
 });
 
 // ── the watchdog: the mission that never says anything ───────────────────────

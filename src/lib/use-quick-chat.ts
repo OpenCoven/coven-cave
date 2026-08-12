@@ -14,6 +14,7 @@ import {
   stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
+import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import type {
   ModelControlCapability,
@@ -485,6 +486,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       }
       const assistantId = nextId("a");
       const controller = new AbortController();
+      const attentionText = createAttentionSafeTextAccumulator();
       abortRef.current = controller;
       setMessages((prev) => [
         ...prev,
@@ -517,6 +519,12 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
             ? { modelControls: intent.modelControls }
             : {}),
           signal: controller.signal,
+          projectAssistantText: (rawText, phase) => {
+            const pendingText = attentionText.replace(rawText);
+            if (phase === "terminal") return attentionText.terminal();
+            if (phase === "settled") return attentionText.settled();
+            return pendingText;
+          },
           // Capture the backing session the moment the bridge announces it —
           // if the user stops the stream mid-turn, the thread stays resumable
           // and Open-in-full-chat still works. The aborted guard keeps a late

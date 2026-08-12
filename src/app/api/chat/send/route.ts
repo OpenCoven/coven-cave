@@ -256,6 +256,7 @@ import {
   extractChatAttentionMarker,
   extractIncompleteChatAttentionMarker,
 } from "@/lib/chat-attention-marker";
+import { scanChatResultProtocol } from "@/lib/chat-result-markers";
 import { splitReasoning } from "@/lib/chat-reasoning";
 import type { StreamEvent } from "@/lib/stream-events";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
@@ -471,13 +472,38 @@ function prepareAttentionRequest(args: {
   reasoning?: string;
   request: ChatResponseMetadata["attentionRequest"] | null;
 } {
-  const { visible: visibleBody, reasoning: reasoningBody } = splitReasoning(args.text);
+  const reasoningResultProtocol = scanChatResultProtocol(args.text);
+  const reasoningSplit = splitReasoning(
+    args.text,
+    reasoningResultProtocol.markdownRangeSource,
+    reasoningResultProtocol.protectedRanges,
+  );
+  const visibleAttentionResultProtocol = scanChatResultProtocol(reasoningSplit.visible);
   const { visible, request: marker } = args.incomplete
-    ? extractIncompleteChatAttentionMarker(visibleBody)
-    : extractChatAttentionMarker(visibleBody);
+    ? extractIncompleteChatAttentionMarker(
+        reasoningSplit.visible,
+        visibleAttentionResultProtocol.markdownRangeSource,
+        visibleAttentionResultProtocol.protectedRanges,
+      )
+    : extractChatAttentionMarker(
+        reasoningSplit.visible,
+        {},
+        visibleAttentionResultProtocol.markdownRangeSource,
+        visibleAttentionResultProtocol.protectedRanges,
+      );
+  const reasoningAttentionResultProtocol = scanChatResultProtocol(reasoningSplit.reasoning);
   const { visible: cleanedReasoning } = args.incomplete
-    ? extractIncompleteChatAttentionMarker(reasoningBody)
-    : extractChatAttentionMarker(reasoningBody);
+    ? extractIncompleteChatAttentionMarker(
+        reasoningSplit.reasoning,
+        reasoningAttentionResultProtocol.markdownRangeSource,
+        reasoningAttentionResultProtocol.protectedRanges,
+      )
+    : extractChatAttentionMarker(
+        reasoningSplit.reasoning,
+        {},
+        reasoningAttentionResultProtocol.markdownRangeSource,
+        reasoningAttentionResultProtocol.protectedRanges,
+      );
   return {
     text: visible,
     ...(cleanedReasoning.trim() ? { reasoning: cleanedReasoning.trim() } : {}),

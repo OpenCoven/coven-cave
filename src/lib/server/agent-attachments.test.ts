@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -53,6 +53,7 @@ try {
   await writeFile(globalOnlyPath, "should not be read");
 
   const { extractAgentAttachmentMarkers } = await import("../chat-attachments.ts");
+  const { extractChatResultMarkers } = await import("../chat-result-markers.ts");
   const { parseAgentAttachments } = await import("./agent-attachments.ts");
 
   // --- pure marker extraction (client-safe, no fs) ---
@@ -89,6 +90,146 @@ try {
     assert.equal(out.attachments[0].name, "notes.txt");
     assert.equal(out.attachments[0].text, "hello\nworld");
     assert.equal(out.attachments[0].dataUrl, undefined, "text attachment has no data URL");
+  }
+
+  // --- result protocol is opaque to server-side attachment execution ---
+  {
+    const label = [
+      "Literal attachment JSON:",
+      "```coven:attachment",
+      "{}",
+      "```",
+      "Exact tail.",
+    ].join("\n");
+    const resultMarker =
+      `<coven:result id="literal-attachment" state="passed" label="${label}" />`;
+    const realMarker = [
+      "```coven:attachment",
+      JSON.stringify({ path: txtPath }),
+      "```",
+    ].join("\n");
+
+    const out = parseAgentAttachments(
+      `${resultMarker}\n\n${realMarker}`,
+      { allowedRoots: [allowed] },
+    );
+
+    assert.deepEqual(
+      out.attachments.map(({ name }) => name),
+      ["notes.txt"],
+      "only the real attachment outside the valid result span executes",
+    );
+    assert.equal(out.text, resultMarker, "the valid result label remains byte-exact");
+    assert.deepEqual(extractChatResultMarkers(out.text).results, [
+      {
+        id: "literal-attachment",
+        label,
+        state: "passed",
+        source: "familiar",
+      },
+    ]);
+  }
+  {
+    const malformedResult = [
+      '<coven:result id="malformed-attachment" state="unknown" label="Literal payload:',
+      "```coven:attachment",
+      JSON.stringify({ path: imgPath, name: "must-not-run.png" }),
+      "```",
+      'Exact tail." />',
+    ].join("\n");
+    const realMarker = [
+      "```coven:attachment",
+      JSON.stringify({ path: txtPath }),
+      "```",
+    ].join("\n");
+
+    const out = parseAgentAttachments(
+      `${malformedResult}\n\n${realMarker}`,
+      { allowedRoots: [allowed] },
+    );
+
+    assert.deepEqual(
+      out.attachments.map(({ name }) => name),
+      ["notes.txt"],
+      "attachment JSON inside a malformed result candidate must stay inert",
+    );
+    assert.equal(
+      out.text,
+      malformedResult,
+      "the malformed result span remains available to the result projection",
+    );
+    assert.deepEqual(extractChatResultMarkers(out.text), {
+      visible: "",
+      results: [],
+    });
+  }
+  {
+    const oversizedResult = [
+      "<coven:result",
+      '  id="oversized-attachment"',
+      '  state="passed"',
+      `  label="${"x".repeat(2_048)}`,
+      "```coven:attachment",
+      JSON.stringify({ path: imgPath, name: "must-not-run.png" }),
+      "```",
+      'Exact oversized tail."',
+      "/>",
+    ].join("\n");
+    const realMarker = [
+      "```coven:attachment",
+      JSON.stringify({ path: txtPath }),
+      "```",
+    ].join("\n");
+
+    const out = parseAgentAttachments(
+      `${oversizedResult}\n\n${realMarker}`,
+      { allowedRoots: [allowed] },
+    );
+
+    assert.deepEqual(
+      out.attachments.map(({ name }) => name),
+      ["notes.txt"],
+      "an attachment inside an oversized complete result must stay inert",
+    );
+    assert.equal(
+      out.text,
+      oversizedResult,
+      "the entire oversized result remains available to result cleanup",
+    );
+    assert.deepEqual(extractChatResultMarkers(out.text), {
+      visible: "",
+      results: [],
+    });
+  }
+  {
+    const nestedResult =
+      '<coven:result id="nested" state="failed" label="Must stay hidden" />';
+    const text = [
+      "Visible before.",
+      "```coven:attachment",
+      JSON.stringify({ path: txtPath, note: nestedResult }),
+      "```",
+      "Visible after.",
+    ].join("\n");
+    const out = parseAgentAttachments(text, { allowedRoots: [allowed] });
+
+    assert.deepEqual(out.attachments.map(({ name }) => name), ["notes.txt"]);
+    assert.equal(out.text, "Visible before.\n\nVisible after.");
+    assert.doesNotMatch(out.text, /nested|coven:result/);
+  }
+
+  {
+    const source = await readFile(new URL("./agent-attachments.ts", import.meta.url), "utf8");
+    assert.match(
+      source,
+      /import \{ scanChatResultProtocol \} from "@\/lib\/chat-result-markers";/,
+      "the server parser must use the pure shared result scanner",
+    );
+    assert.match(
+      source,
+      /const resultProtocol = scanChatResultProtocol\(text\);[\s\S]{0,300}extractAgentAttachmentMarkers\(\s*text,\s*resultProtocol\.markdownRangeSource,\s*resultProtocol\.protectedRanges,\s*\)/,
+      "raw result opacity must be derived before and passed directly into attachment extraction",
+    );
   }
 
   // --- in-root names beginning with two dots remain allowed ---

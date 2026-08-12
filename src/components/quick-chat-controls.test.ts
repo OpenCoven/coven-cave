@@ -1,13 +1,50 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import ts from "typescript";
 
 const source = readFileSync(new URL("./quick-chat-controls.tsx", import.meta.url), "utf8");
 const primitives = readFileSync(new URL("./quick-chat-primitives.tsx", import.meta.url), "utf8");
 const thread = readFileSync(new URL("./quick-chat-thread.tsx", import.meta.url), "utf8");
 const messageBubble = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
 const messageFormat = readFileSync(new URL("../lib/quick-chat-message-format.ts", import.meta.url), "utf8");
+const quickChatHook = readFileSync(new URL("../lib/use-quick-chat.ts", import.meta.url), "utf8");
+const messageFormatSource = ts.createSourceFile(
+  "quick-chat-message-format.ts",
+  messageFormat,
+  ts.ScriptTarget.Latest,
+  true,
+  ts.ScriptKind.TS,
+);
 const tray = readFileSync(new URL("./tray-quick-chat.tsx", import.meta.url), "utf8");
+
+function assignedMessageFormatCall(variableName: string, calleeName: string): ts.CallExpression {
+  const matches: ts.CallExpression[] = [];
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isVariableDeclaration(node)
+      && ts.isIdentifier(node.name)
+      && node.name.text === variableName
+      && node.initializer
+    ) {
+      const findCall = (child: ts.Node) => {
+        if (
+          ts.isCallExpression(child)
+          && ts.isIdentifier(child.expression)
+          && child.expression.text === calleeName
+        ) {
+          matches.push(child);
+        }
+        ts.forEachChild(child, findCall);
+      };
+      findCall(node.initializer);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(messageFormatSource);
+  assert.equal(matches.length, 1, `${variableName} must be assigned exactly once from ${calleeName}`);
+  return matches[0];
+}
 
 assert.match(primitives, /StandardSelect/, "quick-chat select helper should delegate to StandardSelect");
 assert.doesNotMatch(primitives, /PopoverBody|PopoverItem|anchorRef/, "quick-chat select helper should not maintain its own popover implementation");
@@ -39,6 +76,47 @@ assert.match(
   thread,
   /formatQuickChatAssistantMessage\(message\.text, streaming\)/,
   "quick chat uses the shared marker-safe formatter for human-readable reply details",
+);
+const quickSkillSplit = assignedMessageFormatCall(
+  "skillSplit",
+  "extractSkillMarkers",
+);
+assert.deepEqual(
+  quickSkillSplit.arguments.map((argument) => argument.getText(messageFormatSource)),
+  [
+    "context.text",
+    "skillResultProtocol?.markdownRangeSource ?? context.text",
+    "skillResultProtocol?.protectedRanges ?? []",
+  ],
+  "quick skill extraction receives the current source and its optional shared scan",
+);
+assert.match(
+  messageFormat,
+  /const skillResultProtocol = \(\s*hasSkillCandidate\s*&& hasChatResultProtocolCandidate\(context\.text\)\s*\)\s*\?\s*context\.getScan\(\)\s*:\s*null;/,
+  "Quick formatting derives result opacity only when skill and result candidates coexist",
+);
+assert.match(
+  messageFormat,
+  /context\.setText\(skillSplit\.visible\);[\s\S]*extractChatResultMarkersFromScan\(\s*context\.text,\s*context\.getScan\(\),/,
+  "result extraction reuses the skill source scan or lazily scans the transformed source",
+);
+assert.match(
+  quickChatHook,
+  /import \{ createAttentionSafeTextAccumulator \} from "@\/lib\/chat-attention-stream"/,
+  "Quick Chat owns an attention accumulator for its raw assistant stream",
+);
+const quickAttentionProjection = quickChatHook.match(
+  /projectAssistantText: \(rawText, phase\) => \{[\s\S]*?\n\s*\},/,
+)?.[0] ?? "";
+assert.match(
+  quickAttentionProjection,
+  /const pendingText = attentionText\.replace\(rawText\);/,
+  "the accumulator lazily derives result opacity only when attention syntax needs it",
+);
+assert.doesNotMatch(
+  quickChatHook,
+  /scanChatResultProtocol/,
+  "Quick Chat does not pre-scan result-only snapshots before attention sanitization",
 );
 assert.match(thread, /<SkillStageCard/, "quick chat renders live skill details as readable status cards");
 assert.match(thread, /<GitHubCard/, "quick chat renders settled GitHub details as preview cards");
@@ -241,7 +319,7 @@ assert.match(
 );
 assert.match(
   messageFormat,
-  /extractNextPaths\(skillSplit\.visible\)/,
+  /extractNextPaths\(resultSplit\.visible\)/,
   "the formatter strips the trailer from familiar turns after protocol markers (never shown raw)",
 );
 assert.match(
