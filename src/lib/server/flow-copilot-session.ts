@@ -362,6 +362,29 @@ function processIsGone(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ESRCH";
 }
 
+async function terminateCopilotFlowChildProcess(
+  child: ChildProcess,
+  dependencies: Pick<CopilotProcessTreeDependencies, "platform" | "graceMs" | "waitForClose"> = {},
+): Promise<void> {
+  const graceMs = dependencies.graceMs ?? COPILOT_PROCESS_TERMINATION_GRACE_MS;
+  const waitForClose = dependencies.waitForClose ?? waitForChildClose;
+  if (CLOSED_SUPERVISORS.has(child)) return;
+  const signal = (dependencies.platform ?? process.platform) === "win32" ? undefined : "SIGTERM";
+  try {
+    child.kill(signal);
+  } catch (error) {
+    if (
+      processIsGone(error)
+      && (CLOSED_SUPERVISORS.has(child) || child.exitCode !== null || child.signalCode !== null)
+    ) {
+      return;
+    }
+    throw error;
+  }
+  if (await waitForClose(child, graceMs)) return;
+  throw new Error("Direct Copilot child did not close after termination");
+}
+
 function closeSupervisorOwnerInput(supervisor: ChildProcess): Promise<void> {
   const input = supervisor.stdin;
   if (!input || input.destroyed || input.writableEnded) return Promise.resolve();
@@ -652,7 +675,7 @@ export async function cancelCopilotFlowRun(sessionId: string): Promise<CopilotFl
   return wasAlreadyFinished ? "already-finished" : "terminated";
 }
 
-/** App/server shutdown uses the same owned-tree termination as cancel/timeout. */
+/** App/server shutdown uses the same owned-process termination as cancel/timeout. */
 export async function shutdownCopilotFlowRuns(): Promise<void> {
   // Set the one-way gate before taking the snapshot. JavaScript runs these two
   // statements synchronously, so no request can register a detached group in
@@ -804,6 +827,7 @@ export async function startCopilotFlowRun(
     detached: false,
   });
   observeSupervisorClose(child);
+  const launchedThroughSupervisor = supervisorCommand !== null;
 
   const startedAt = new Date().toISOString();
   let assistantText = "";
@@ -936,13 +960,21 @@ export async function startCopilotFlowRun(
     if (active.treeProven) return Promise.resolve();
     if (active.terminationPromise) return active.terminationPromise;
     const attempt = (async () => {
-      await (runtime.terminateProcessTree ?? terminateCopilotFlowProcessTree)(child, {
-        platform,
-        graceMs: runtime.graceMs,
-        closeOwnerInput: runtime.closeOwnerInput,
-        signalSupervisor: runtime.signalSupervisor,
-        waitForClose: runtime.waitForClose,
-      });
+      // A supervised run terminates through the exact native owner handle. The
+      // degraded fallback owns only Copilot itself, so stop just that child.
+      await (launchedThroughSupervisor
+        ? (runtime.terminateProcessTree ?? terminateCopilotFlowProcessTree)(child, {
+          platform,
+          graceMs: runtime.graceMs,
+          closeOwnerInput: runtime.closeOwnerInput,
+          signalSupervisor: runtime.signalSupervisor,
+          waitForClose: runtime.waitForClose,
+        })
+        : terminateCopilotFlowChildProcess(child, {
+          platform,
+          graceMs: runtime.graceMs,
+          waitForClose: runtime.waitForClose,
+        }));
       active.treeProven = true;
     })();
     const shared = attempt.catch((error) => {
@@ -959,8 +991,9 @@ export async function startCopilotFlowRun(
     if (active.finishPromise) return active.finishPromise;
     const attempt = (async () => {
       await childClosed;
-      // A native supervisor exits only after its strict target tree is reaped.
-      // This is the OS-backed proof on both natural completion and cancellation.
+      // A supervised run exits only after its strict target tree is reaped. The
+      // degraded fallback owns only Copilot itself, so close there proves only
+      // the immediate child stopped.
       active.treeProven = true;
       if (timeout) clearTimeout(timeout);
       await bookkeepingDecided;

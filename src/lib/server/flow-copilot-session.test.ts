@@ -776,6 +776,13 @@ process.on("SIGTERM", () => {
 });
 setInterval(() => appendFileSync(marker, "parent\\n"), 10);
 `);
+const DIRECT_TERM_FIXTURE = join(TMP, "fake-copilot-direct-term.js");
+writeFileSync(DIRECT_TERM_FIXTURE, `
+const { appendFileSync } = require("node:fs");
+const marker = process.argv[2];
+process.on("SIGTERM", () => process.exit(0));
+setInterval(() => appendFileSync(marker, "direct\\n"), 10);
+`);
 
 async function startTreeFixture(runRoot, marker, runtime = {}, fixture = TREE_FIXTURE) {
   return startConfirmed({
@@ -1211,6 +1218,32 @@ test("an absent native supervisor falls back to spawning Copilot directly", asyn
   // one, and the difference only shows up when someone cancels.
   assert.match(assistant.text, /native process supervisor is unavailable/i);
   assert.match(assistant.text, /may keep running/i);
+});
+
+test("the degraded fallback cancels by terminating the direct Copilot child", async () => {
+  admitStarts();
+  const runRoot = mkdtempSync(join(TMP, "direct-fallback-cancel-"));
+  const marker = join(runRoot, "heartbeat.log");
+  const started = await startCopilotFlowRun({
+    spec: SPEC,
+    prompt: "hello",
+    projectRoot: runRoot,
+    familiarId: null,
+    spawnCommand: { command: process.execPath, fixedArgs: [DIRECT_TERM_FIXTURE, marker] },
+  }, {
+    platform: "win32",
+    resolveSupervisorCommand: async () => {
+      throw new CovenProcessSupervisorUnavailableError();
+    },
+  });
+  started.confirmBookkeeping();
+  await waitUntil(() => existsSync(marker) && statSync(marker).size > 0);
+  assert.equal(await cancelCopilotFlowRun(started.sessionId), "terminated");
+  await started.done;
+  assert.equal(isCopilotFlowRunActive(started.sessionId), false);
+  const stableSize = statSync(marker).size;
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(statSync(marker).size, stableSize, "direct fallback cancellation stops the immediate Copilot child");
 });
 
 test("requireProcessSupervisor refuses the degraded fallback", async () => {
