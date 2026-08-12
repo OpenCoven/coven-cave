@@ -89,18 +89,37 @@ console.log("chat-attachment-cards.test.ts: ok");
 // the reader's own scrim. Pin the cleared band so a future edit cannot quietly
 // drop either overlay back under it.
 const carousel = await readFile(new URL("./image-carousel.tsx", import.meta.url), "utf8");
+// Match the classes independently of their order inside the attribute: a
+// harmless reorder or an inserted class must not fail this, only a z-index that
+// drops back under the reader.
+function overlayZIndex(source) {
+  for (const attr of source.matchAll(/className="([^"]*)"/g)) {
+    const classes = attr[1].split(/\s+/);
+    if (!classes.includes("fixed") || !classes.includes("inset-0")) continue;
+    const z = classes.find((cls) => /^z-\[?\d+\]?$/.test(cls));
+    if (z) return Number(z.replace(/\D/g, ""));
+  }
+  return null;
+}
 for (const [name, source] of [
   ["attachment lightbox", cards],
   ["carousel lightbox", carousel],
 ]) {
-  const overlay = source.match(/className="fixed inset-0 z-\[?(\d+)\]?/);
-  assert.ok(overlay, `${name} keeps a full-viewport fixed overlay`);
-  assert.ok(
-    Number(overlay[1]) > 80,
-    `${name} must sit above the reader/modal overlay band (found z-${overlay[1]})`,
-  );
-  assert.ok(
-    Number(overlay[1]) < 100,
-    `${name} must stay below inspector-pane (100) and the directory picker (200)`,
+  const z = overlayZIndex(source);
+  assert.ok(z !== null, `${name} keeps a full-viewport fixed overlay with an explicit z-index`);
+  assert.ok(z > 80, `${name} must sit above the reader/modal overlay band (found z-${z})`);
+  assert.ok(z < 100, `${name} must stay below inspector-pane (100) and the directory picker (200)`);
+}
+
+// The scrim is a token, not a literal — both lightboxes share the one the
+// reader and every other full-viewport overlay use.
+for (const [name, source] of [
+  ["attachment lightbox", cards],
+  ["carousel lightbox", carousel],
+]) {
+  assert.match(
+    source,
+    /bg-\[var\(--backdrop-scrim\)\]/,
+    `${name} scrims with the shared --backdrop-scrim token`,
   );
 }
