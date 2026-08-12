@@ -213,12 +213,21 @@ async function hydrate(): Promise<void> {
 
   cached = Object.keys(migrated).length > 0 ? migrated : EMPTY;
   notify();
-  if (
-    legacy &&
-    Object.keys(legacy).every((id) =>
-      cached[id]?.dataUrl.startsWith("/api/familiars/") || pending[id] !== undefined
-    )
-  ) {
+  // Drop the legacy copy only once every legacy image is durable SOMEWHERE
+  // ELSE: on the host, or in the IndexedDB backup written above.
+  //
+  // The previous test also accepted `pending[id] !== undefined`, which is true
+  // for every legacy id by construction — `pending` is what we READ, not what
+  // we persisted. So a double failure (IndexedDB write rejected by quota or
+  // private mode, AND the host upload failing) still deleted the last copy, and
+  // the image was gone on reload. `legacyBackedUp` is the signal the
+  // early-return path above already uses for exactly this; it is all-or-nothing,
+  // so a single failed write keeps the legacy key and we simply migrate again
+  // next time.
+  const everyLegacyOnHost = legacy
+    ? Object.keys(legacy).every((id) => cached[id]?.dataUrl.startsWith("/api/familiars/"))
+    : false;
+  if (legacy && (legacyBackedUp || everyLegacyOnHost)) {
     try {
       window.localStorage.removeItem(LEGACY_IMAGES_KEY);
     } catch {

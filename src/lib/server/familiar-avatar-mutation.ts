@@ -19,7 +19,36 @@ export type AvatarMutationResult = {
   revision: number;
 };
 
+/**
+ * O_NOFOLLOW is absent or unreliable on Windows, so gate it the same way
+ * `research-media-store.ts` does rather than inventing a second convention.
+ * Applying it unconditionally made every avatar write fail on a Windows host.
+ */
+function noFollowFlag(): number {
+  if (process.platform === "win32") return 0;
+  return typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+}
+
 async function assertRealDirectory(dir: string): Promise<void> {
+  // INSPECT BEFORE CREATING. `mkdir(recursive)` on a path that already exists
+  // as a symlink or a regular file throws EEXIST/ENOTDIR, which surfaced as an
+  // unexpected 500 instead of the intended "unsafe path" error — and the
+  // symlink check below never ran at all, because mkdir threw first.
+  try {
+    const existing = await lstat(dir);
+    if (existing.isSymbolicLink()) {
+      throw new Error("Avatar directory cannot be a symbolic link.");
+    }
+    if (!existing.isDirectory()) {
+      throw new Error("Avatar path is not a directory.");
+    }
+    return;
+  } catch (error) {
+    // Only absence is recoverable; a symlink or non-directory verdict above is
+    // a real refusal and must not be swallowed by the create path.
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+
   await mkdir(dir, { recursive: true });
   const entry = await lstat(dir);
   if (entry.isSymbolicLink()) {
@@ -55,7 +84,7 @@ export async function writeCanonicalAvatar(
   const temporary = path.join(dir, `.${fileName}.${process.pid}.${randomUUID()}.tmp`);
   const file = await open(
     temporary,
-    constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+    constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | noFollowFlag(),
     0o600,
   );
   try {
