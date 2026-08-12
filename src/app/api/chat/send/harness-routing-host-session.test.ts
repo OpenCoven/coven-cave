@@ -770,3 +770,19 @@ assert.match(
   /isTrustedChatHarness\(binding\.harness\)/,
   "Board step enrichment should enforce the same trusted Coven harness gate",
 );
+
+// cave-o3nq7 review (#4582): the exemption's containment test must run on a
+// symlink-RESOLVED resume root. resolveLocalRuntimeCwd realpaths the root it is
+// handed and enforces only "inside $HOME", so a lexical check on the raw string
+// would let a symlink inside the familiar's own workspace resolve into another
+// project with authorizeChatProjectLaunch skipped.
+assert.match(
+  chatRoute,
+  /const resumeCwdResolved = resumeCwd\s*\?\s*await realpath\(resumeCwd\)\.catch\(\(\) => undefined\)\s*:\s*undefined/,
+  "the resume root is symlink-resolved, and an unresolvable root yields undefined",
+);
+assert.match(
+  chatRoute,
+  /projectlessGenerationLaunch\(\{[\s\S]*?resumeCwdResolved,[\s\S]*?\}\)/,
+  "the launch decision receives the resolved resume root",
+);

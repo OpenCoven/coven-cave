@@ -18,14 +18,20 @@ const {
 } = await import(moduleUrl.href);
 
 function launch(overrides = {}) {
-  return projectlessGenerationLaunch({
+  const input = {
     origin: "canvas",
     hasRequestedProjectRoot: false,
     sshRuntime: false,
     sshHome: "/home/val",
     familiarWorkspace: "/home/val/.coven/workspaces/familiars/milo",
     ...overrides,
-  });
+  };
+  // Most cases have no symlink in play, so default the resolved form to the raw
+  // one. A case that cares about symlinks passes resumeCwdResolved explicitly.
+  if (input.resumeCwd !== undefined && !("resumeCwdResolved" in overrides)) {
+    input.resumeCwdResolved = input.resumeCwd;
+  }
+  return projectlessGenerationLaunch(input);
 }
 
 function harness(overrides = {}) {
@@ -263,4 +269,39 @@ test("every non-hidden origin is gated regardless of resume root", () => {
 
 test("a request that names its own project root is always gated", () => {
   assert.deepEqual(launch({ hasRequestedProjectRoot: true }), { kind: "gated" });
+});
+
+// ── cave-o3nq7 review (#4582): the containment test runs on the SYMLINK-RESOLVED
+// resume root. The spawn realpaths the root and enforces only "inside $HOME", so
+// a lexical check on the raw string would let a symlink planted in the familiar's
+// own workspace — a directory the familiar can write to — resolve into another
+// project with the launch gate skipped.
+
+test("a workspace path that resolves outside the workspace is gated", () => {
+  assert.deepEqual(
+    launch({
+      resumeCwd: "/home/val/.coven/workspaces/familiars/milo/link",
+      resumeCwdResolved: "/home/val/code/someone-elses-project",
+    }),
+    { kind: "gated" },
+    "a symlink out of the workspace must not inherit the exemption",
+  );
+});
+
+test("an exempt resume root launches at its resolved path, not the raw one", () => {
+  assert.deepEqual(
+    launch({
+      resumeCwd: "/home/val/.coven/workspaces/familiars/milo/link",
+      resumeCwdResolved: "/home/val/.coven/workspaces/familiars/milo/real",
+    }),
+    { kind: "workspace", root: "/home/val/.coven/workspaces/familiars/milo/real" },
+    "the decision and the launched root must be the same path",
+  );
+});
+
+test("an unresolvable resume root is gated, never dropped back to the workspace", () => {
+  assert.deepEqual(
+    launch({ resumeCwd: "/home/val/code/gone", resumeCwdResolved: undefined }),
+    { kind: "gated" },
+  );
 });

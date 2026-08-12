@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessByStdio, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
@@ -2087,12 +2088,21 @@ export async function POST(req: Request) {
   // daemon session's project_root (cave-yjnr) — names a real project and is
   // gated like every other root, because the daemon's session list is global
   // and its rows carry no familiar id to scope it by (cave-o3nq7).
+  // Resolve symlinks before the containment test. The spawn below realpaths the
+  // root and enforces only "inside $HOME", so a lexical check on the raw string
+  // would let a symlink inside the familiar's own workspace — a directory the
+  // familiar can write to — resolve into another project with the gate skipped.
+  // An unresolvable root yields undefined, which the helper treats as gated.
+  const resumeCwdResolved = resumeCwd
+    ? await realpath(resumeCwd).catch(() => undefined)
+    : undefined;
   const projectlessLaunch = projectlessGenerationLaunch({
     origin: generationOrigin,
     hasRequestedProjectRoot: Boolean(body.projectRoot),
     sshRuntime: Boolean(sshRuntime),
     sshHome: homedir(),
     resumeCwd,
+    resumeCwdResolved,
     familiarWorkspace: resolvedFamiliarWorkspace,
   });
   // A Board task may be isolated in a worktree below its registered project.

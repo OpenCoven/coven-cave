@@ -45,6 +45,16 @@ export type ProjectlessGenerationLaunchInput = {
    * daemon-spawned thread, from the daemon's session list.
    */
   resumeCwd?: string;
+  /**
+   * `resumeCwd` with symlinks resolved, or undefined when it could not be
+   * resolved. The containment test below MUST run on this rather than on the
+   * raw string: the spawn later realpaths the root and enforces only "inside
+   * $HOME", so a symlink planted in the familiar's own workspace — which the
+   * familiar can write to — would otherwise pass a lexical check here and land
+   * the run in a different project entirely, with the gate skipped.
+   */
+  resumeCwdResolved?: string;
+  /** Already symlink-resolved by resolveFamiliarWorkspace. */
   familiarWorkspace?: string;
 };
 
@@ -85,8 +95,13 @@ export function projectlessGenerationLaunch(
   if (!resume) {
     return workspace ? { kind: "workspace", root: workspace } : { kind: "unavailable" };
   }
-  if (workspace && isInsideRoot(workspace, resume)) {
-    return { kind: "workspace", root: resume };
+  // A resume root that would not resolve is gated rather than dropped back to
+  // the workspace: falling back would hand an auth-free run to a caller who
+  // named an unresolvable root.
+  const resolved = input.resumeCwdResolved?.trim();
+  if (!resolved) return { kind: "gated" };
+  if (workspace && isInsideRoot(workspace, resolved)) {
+    return { kind: "workspace", root: resolved };
   }
   return { kind: "gated" };
 }
