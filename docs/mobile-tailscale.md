@@ -102,13 +102,18 @@ pnpm mobile:tailscale:invite
 The agent should verify that the invite redirects, stores the cookie, and loads the app shell before reporting success. It should not paste the raw invite into chat by default. If a fresh invite expires while you are away from the laptop, ask the agent to run `pnpm mobile:tailscale:invite`; the command refreshes the invite without restarting the dev server.
 
 > ⚠️ **The access-token requirement was removed at the owner's direction
-> (`cave-f4emr`).** `COVEN_CAVE_ACCESS_TOKEN` no longer gates anything: there is
-> no access page, no 401 for a missing credential, and no cookie/query
-> exchange. Whatever can reach the Serve URL reaches the app. The pairing flow
-> below still mints signed invites — the desktop signs them from that secret
-> and the phone still carries one — but nothing verifies them any more, so an
-> invite is a convenience link rather than a credential. **Publishing a Serve
-> route now publishes the whole app to everything on the tailnet.** If you want
+> (`cave-f4emr`).** `COVEN_CAVE_ACCESS_TOKEN` no longer gates anything: the
+> proxy/middleware no longer serves an access page, no longer 401s a request
+> for missing a credential, and no longer performs the access-gate
+> cookie/query-token exchange. Whatever can reach the Serve URL reaches the
+> app.
+>
+> The pairing machinery below is **unchanged** — `/api/mobile-handoff` and
+> `/api/mobile-token/refresh` still mint signed invite URLs, still set the
+> access cookie, and the phone still carries a token. What changed is that
+> nothing verifies any of it, so an invite is now a convenience link (it
+> carries the host) rather than a credential. **Publishing a Serve route
+> therefore publishes the whole app to everything on the tailnet.** If you want
 > a control back, the one that survives is the passkey-presence requirement
 > (`COVEN_CAVE_PASSKEY_REQUIRED=1`, see below), which binds remote `/api/*`
 > access to a WebAuthn assertion on an allowlisted tailnet device.

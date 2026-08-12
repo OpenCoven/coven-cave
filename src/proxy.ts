@@ -239,9 +239,14 @@ export async function proxy(req: NextRequest) {
   // token remains the desktop webview's identifier — it is what relaxes the
   // CSRF source gate for the mobile-capable paths above — but it is no longer
   // demanded of anyone, because the access token that let a phone answer that
-  // demand is gone. What still applies to every request: the host allowlist,
-  // the Origin/Referer gates, the content-type gate, the local-only
-  // automation guard, and any armed passkey-presence requirement.
+  // demand is gone.
+  //
+  // What still applies to EVERY request: the Origin/Referer gates, the
+  // content-type gate, and any armed passkey-presence requirement. What
+  // applies only to LOCAL ingress: the Host allowlist (remote ingress
+  // satisfies isAllowedApiHost outright, so a forwarded caller's Host is not
+  // allow-listed at all) and the local-only automation guard, which remote
+  // ingress fails by construction rather than passes.
   return nextWithMobileAccessMarker(req, remoteIngress);
 }
 
