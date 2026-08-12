@@ -81,3 +81,26 @@ assert.match(
 );
 
 console.log("chat-attachment-cards.test.ts: ok");
+
+// ── cave-yin71: both expand overlays portal to body, which puts them in the
+// ROOT stacking context alongside the message reader (.cave-reader-backdrop,
+// z-index 60), the research reader (70) and .rr-kroverlay / the daily-report PR
+// modal (80). At z-50 an image expanded from inside a reader rendered behind
+// the reader's own scrim. Pin the cleared band so a future edit cannot quietly
+// drop either overlay back under it.
+const carousel = await readFile(new URL("./image-carousel.tsx", import.meta.url), "utf8");
+for (const [name, source] of [
+  ["attachment lightbox", cards],
+  ["carousel lightbox", carousel],
+]) {
+  const overlay = source.match(/className="fixed inset-0 z-\[?(\d+)\]?/);
+  assert.ok(overlay, `${name} keeps a full-viewport fixed overlay`);
+  assert.ok(
+    Number(overlay[1]) > 80,
+    `${name} must sit above the reader/modal overlay band (found z-${overlay[1]})`,
+  );
+  assert.ok(
+    Number(overlay[1]) < 100,
+    `${name} must stay below inspector-pane (100) and the directory picker (200)`,
+  );
+}
