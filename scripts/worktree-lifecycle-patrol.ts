@@ -229,7 +229,7 @@ function errorMessage(error: unknown): string {
 }
 
 function summarizeInventory(inventory: PatrolInventory): PatrolSummary {
-  return summarizeWorktreeLifecycle(inventory.items, inventory.budgets);
+  return summarizeWorktreeLifecycle(inventory.items, inventory.budgets, inventory.globalErrors);
 }
 
 /**
