@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const FAMILIAR_ID = "rida";
 const MISSION_ID = "m-media";
+const ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
 const now = new Date().toISOString();
 
 const MISSION = {
@@ -249,7 +250,7 @@ async function boot(
               },
               elevenlabs: {
                 ready,
-                defaultVoiceId: "eleven-default",
+                defaultVoiceId: ELEVENLABS_VOICE_ID,
                 hint: ready ? undefined : "Configure ElevenLabs in Vault.",
               },
             },
@@ -412,7 +413,7 @@ test.describe("Research Studio media honesty and playback", () => {
     await expect(config.getByLabel("Local voice")).toHaveValue("piper-amy");
     await provider.selectOption("elevenlabs");
     await expect(config.getByLabel("ElevenLabs voice ID")).toHaveValue(
-      "eleven-default",
+      ELEVENLABS_VOICE_ID,
     );
     await expect(config.getByLabel("Length").locator("option")).toHaveCount(3);
     await expect(config.getByLabel("Style").locator("option")).toHaveText([
@@ -435,9 +436,9 @@ test.describe("Research Studio media honesty and playback", () => {
     await config.getByRole("button", { name: /Draft for review Podcast/ }).click();
     expect(controls.createBodies.at(-1)?.renderConfig).toEqual({
       provider: "elevenlabs",
-      voice: "eleven-default",
+      voice: ELEVENLABS_VOICE_ID,
       length: "standard",
-      voices: { host: "eleven-default", guest: "eleven-guest" },
+      voices: { host: ELEVENLABS_VOICE_ID, guest: "eleven-guest" },
       style: "debate",
     });
     let review = page.getByRole("dialog", {
@@ -468,6 +469,35 @@ test.describe("Research Studio media honesty and playback", () => {
       "href",
       /download=1/,
     );
+  });
+
+  test("defaults short videos to ElevenLabs Rachel at standard length", async ({
+    page,
+  }) => {
+    const controls = await boot(page, { ready: true });
+    const studio = page.locator(".research-studio");
+    await studio.locator('button[data-kind="short-video"]').click();
+
+    const config = page.getByRole("dialog", { name: "Generate Short video" });
+    await expect(config.getByLabel("Voice provider")).toHaveValue("elevenlabs");
+    await expect(config.getByLabel("ElevenLabs voice ID")).toHaveValue(
+      ELEVENLABS_VOICE_ID,
+    );
+    await expect(config.getByLabel("Length")).toHaveValue("standard");
+
+    await config
+      .getByRole("button", { name: /Draft for review Short video/ })
+      .click();
+    expect(controls.createBodies.at(-1)).toEqual({
+      familiarId: FAMILIAR_ID,
+      kind: "short-video",
+      sourceMissionId: MISSION_ID,
+      renderConfig: {
+        provider: "elevenlabs",
+        voice: ELEVENLABS_VOICE_ID,
+        length: "standard",
+      },
+    });
   });
 
   test("resumes drafts, retries failures, cancels progress, and opens both video players", async ({
