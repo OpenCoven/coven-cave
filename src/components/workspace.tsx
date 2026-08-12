@@ -44,8 +44,8 @@ import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
 import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
 import {
-  shouldApplyStartupOnboardingStatus,
-  type OnboardingStatusPayload,
+  shouldApplyStartupOnboardingBootstrap,
+  type OnboardingBootstrapStatusPayload,
 } from "@/lib/onboarding-gate";
 import { draftFromSlashArgs } from "@/lib/reminder-slash-draft";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
@@ -87,6 +87,7 @@ import {
   createDaemonConnectionSupervisor,
   type DaemonConnectionPoll,
 } from "@/lib/daemon-connection-supervisor";
+import { createTauriDaemonReliabilityObserver } from "@/lib/daemon-reliability";
 import { createDaemonTravelReconcileRequester } from "@/lib/daemon-travel-reconcile-client";
 import {
   createDaemonDesktopAutoStartCoordinator,
@@ -188,6 +189,12 @@ import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
 import { RunningSessionsPopover } from "@/components/running-sessions-popover";
 import { NotificationBell } from "@/components/notification-bell";
 import { StatusBar } from "@/components/status-bar";
+import {
+  COVEN_JUMP_TO_RUN_EVENT,
+  covenRunPillServerSnapshot,
+  covenRunPillSnapshot,
+  subscribeCovenRunPill,
+} from "@/lib/coven-run-signal";
 import { sessionStatusTone } from "@/lib/session-status";
 import { sessionPrStatus } from "@/lib/session-pr-status";
 import { normalizeProjectRoot } from "@/lib/cave-projects-types";
@@ -581,6 +588,14 @@ export function Workspace() {
     () => canMoveSurfaceHistory(-1),
     () => false,
   );
+  // The active coven run, for the status bar's pill. GroupChatView lives three
+  // layers down inside ChatSurface; subscribing here keeps ChatSurface out of a
+  // relay role it has no stake in. Empty on the server, where no coven mounts.
+  const covenRun = useSyncExternalStore(
+    subscribeCovenRunPill,
+    covenRunPillSnapshot,
+    covenRunPillServerSnapshot,
+  );
   const surfaceCanGoForward = useSyncExternalStore(
     subscribeSurfaceHistory,
     () => canMoveSurfaceHistory(1),
@@ -831,8 +846,8 @@ export function Workspace() {
   const [onboardingResolved, setOnboardingResolved] = useState(false);
   const [autoFinishOnboarding, setAutoFinishOnboarding] = useState(false);
   // Lazy-load onboarding on first use, then keep its host mounted while closed.
-  // Its refs and job polling intentionally survive close/reopen cycles so an
-  // in-flight install is not forgotten and daemon auto-start stays one-shot.
+  // Server-owned bootstrap progress persists independently; keeping the host
+  // mounted makes close/reopen cheap and retains local focus/announcement refs.
   const [onboardingMounted, setOnboardingMounted] = useState(false);
   const [projectsInitiallyResolved, setProjectsInitiallyResolved] = useState(false);
   const [pendingFirstProjectGrant, setPendingFirstProjectGrant] = useState<PendingFirstProjectAccessSnapshot | null>(() => readPendingFirstProjectAccessSnapshot());
@@ -1055,6 +1070,9 @@ export function Workspace() {
   }, [tauriPlatform]);
 
   useEffect(() => {
+    const reliabilityObserver = createTauriDaemonReliabilityObserver({
+      tauriAvailable: () => tauriPlatform === "desktop",
+    });
     const requester = createDaemonTravelReconcileRequester({
       request: async ({ signal }) => {
         const response = await fetch("/api/daemon/travel/reconcile", {
@@ -1079,6 +1097,7 @@ export function Workspace() {
         };
       },
       publish: applyDaemonConnectionPoll,
+      observe: reliabilityObserver,
       isVisible: () => !document.hidden,
     });
     daemonTravelReconcileRequesterRef.current = requester;
@@ -1100,7 +1119,7 @@ export function Workspace() {
       daemonTravelReconcileRequesterRef.current = null;
       daemonConnectionSupervisorRef.current = null;
     };
-  }, [applyDaemonConnectionPoll]);
+  }, [applyDaemonConnectionPoll, tauriPlatform]);
 
   useRefreshOnFocus(() => {
     void daemonConnectionSupervisorRef.current?.refresh({ fresh: true });
@@ -1867,28 +1886,25 @@ export function Workspace() {
     setPendingFirstProjectGrant(null);
   }, [canReconcilePendingFirstProjectGrant, pendingFirstProjectGrant, reconciledPendingFirstProjectGrant]);
 
-  // First-run: auto-open onboarding if setup is missing and the user hasn't
-  // explicitly skipped or finished it. The decision lives in the shared
-  // shouldAutoOpenOnboarding gate so it can't diverge from the wizard's
-  // finish-state (cave-219): both read bare server `complete` now that Coven
-  // Code is an optional runtime rather than a requirement. See
-  // onboarding-gate.ts for the structural-steps vs daemon-down rationale.
+  // First-run uses the staged bootstrap state instead of the legacy technical
+  // readiness checklist. A confirmed interrupted job always resumes; before
+  // confirmation the existing dismissal flag still suppresses auto-open.
   useEffect(() => {
     let cancelled = false;
     const skipped =
       typeof window !== "undefined" && window.localStorage.getItem("cave:onboarding:dismissed") === "1";
     void (async () => {
       try {
-        const res = await fetch("/api/onboarding/status", { cache: "no-store" });
+        const res = await fetch("/api/onboarding/bootstrap", { cache: "no-store" });
         if (!res.ok || cancelled) return;
-        const json = (await res.json()) as OnboardingStatusPayload;
+        const json = (await res.json()) as OnboardingBootstrapStatusPayload;
         if (
-          shouldApplyStartupOnboardingStatus({
+          shouldApplyStartupOnboardingBootstrap({
             status: json,
             cancelled,
             manuallyOpened: manualOnboardingOpenedRef.current,
           }) &&
-          !skipped
+          (!skipped || json.confirmed === true)
         ) {
           setAutoFinishOnboarding(true);
           setOnboardingOpen(true);
@@ -3573,6 +3589,17 @@ export function Workspace() {
         taskCount={boardTaskCount}
         onViewTasks={() => setMode("board")}
         onOpenPr={(url) => openUrlInApp(url)}
+        run={covenRun}
+        onJumpToRun={() => {
+          // setMode("groupchat") already owns the whole open-the-coven-tab
+          // path (latch + mode commit + event), so the pill reuses it rather
+          // than growing a second navigation route into the same surface.
+          setMode("groupchat");
+          window.setTimeout(
+            () => window.dispatchEvent(new CustomEvent(COVEN_JUMP_TO_RUN_EVENT)),
+            0,
+          );
+        }}
       />
     ) : null;
 

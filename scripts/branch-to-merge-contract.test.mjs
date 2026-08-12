@@ -1,7 +1,7 @@
 // Contract test for the `branch-to-merge` skill.
 //
 // The skill tells agents how to land a branch on protected `main`. Its value is
-// entirely in the facts it asserts — the nine required checks, the PR-only path,
+// entirely in the facts it asserts — the required check, the PR-only path,
 // the no-AI-attribution rule, the lifecycle retirement route. A skill that
 // drifts from those facts is worse than no skill: it is confidently wrong at the
 // exact moment an agent is about to mutate `main`.
@@ -16,10 +16,7 @@ const skill = fs.readFileSync(".agents/skills/branch-to-merge/SKILL.md", "utf8")
 const claude = fs.readFileSync("CLAUDE.md", "utf8");
 const agents = fs.readFileSync("AGENTS.md", "utf8");
 
-// Derive the check list from CLAUDE.md rather than restating it. A hardcoded
-// list only catches removals, and the change that actually happened here was an
-// addition (five contexts widened to nine on 2026-08-01) — which a
-// presence-only assertion sails straight past.
+// Derive the check list from CLAUDE.md rather than restating it.
 const NUMBER_WORDS = ["ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "ELEVEN", "TWELVE"];
 
 function backticked(source) {
@@ -28,7 +25,7 @@ function backticked(source) {
 
 function documentedChecks() {
   const bullet =
-    /- Required status checks — \*\*all ([A-Z]+)\*\* must pass[^:]*:(.*?)\. The four matrix legs/s.exec(
+    /- Required status checks — \*\*(?:all )?([A-Z]+)\*\* must pass[^:]*:(.*?)\. Routine PR CI/s.exec(
       claude,
     );
   assert.ok(bullet, "CLAUDE.md no longer states the required status checks in the expected shape");
@@ -36,11 +33,11 @@ function documentedChecks() {
 }
 
 function skillChecks() {
-  const section = /required checks must pass:\n\n```bash\n.*?```\n\n(.*?)\n\nCodeQL is retired/s.exec(
+  const section = /required checks? must pass:\n\n```bash\n.*?```\n\n(.*?)\n\nCodeQL is retired/s.exec(
     skill,
   );
   assert.ok(section, "skill no longer lists the required checks in the expected shape");
-  const word = /\n([A-Za-z]+) required checks must pass:/.exec(skill)?.[1];
+  const word = /\n([A-Za-z]+) required checks? must pass:/.exec(skill)?.[1];
   assert.ok(word, "skill no longer states how many checks are required");
   return { word, names: backticked(section[1]) };
 }

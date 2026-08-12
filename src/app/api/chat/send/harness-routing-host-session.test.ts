@@ -542,8 +542,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /filterProjectsForFamiliar\(projects, body\.familiarId\)/,
-  "Local Cave chat should derive grant-aware project roots for the familiar before building the runtime prompt",
+  /listAccessibleProjects\(projects, body\.familiarId\)/,
+  "Local Cave chat should derive grant-aware project roots (with each root's access level) for the familiar before building the runtime prompt",
 );
 
 assert.match(
@@ -554,14 +554,20 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /projectRootAccess: grantedProjectRootAccess/,
+  "The runtime prompt should carry each granted root's read/write access level so the boundary preamble can annotate it",
+);
+
+assert.match(
+  chatRoute,
   /import \{[\s\S]*ProjectAccessDeniedError,[\s\S]*assertProjectAccess,[\s\S]*\} from "@\/lib\/project-permissions";/,
   "Chat send should import the shared project-permission chokepoint",
 );
 
 assert.match(
   chatRoute,
-  /import \{ chatProjectAccessId \} from "@\/lib\/chat-project-access";/,
-  "Chat send should resolve exact and worktree roots through the shared chat-project-access helper",
+  /import \{ chatProjectAccessId, taskWorktreeProjectAccessId \} from "@\/lib\/chat-project-access";/,
+  "Chat send should resolve exact, worktree, and Board handoff roots through the shared chat-project-access helpers",
 );
 
 assert.match(
@@ -578,8 +584,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /body\.startNewConversation[\s\S]*!existingConversation[\s\S]*taskCard\?\.projectId[\s\S]*taskCard\.cwd === body\.projectRoot[\s\S]*projectIdOverride: taskWorktreeProjectId/,
-  "A fresh Board worktree handoff should authorize through its persisted task project instead of treating the worktree as an unregistered project",
+  /authorizeChatProjectLaunch\([\s\S]*resolveProjectId: \(requestedRoot, resolvedRoot\) =>[\s\S]*taskWorktreeProjectAccessId\(\{[\s\S]*startNewConversation: Boolean\(body\.startNewConversation\),[\s\S]*hasExistingConversation: Boolean\(existingConversation\),[\s\S]*taskProjectId: taskCard\?\.projectId,[\s\S]*taskCwd: taskCard\?\.cwd,[\s\S]*requestedProjectRoot: requestedRoot,[\s\S]*resolvedCwd: resolvedRoot,[\s\S]*\}\) \?\?[\s\S]*chatProjectAccessId/,
+  "A fresh Board worktree handoff should authorize through its persisted task project only after checking the resolved cwd remains inside that project",
 );
 
 assert.doesNotMatch(

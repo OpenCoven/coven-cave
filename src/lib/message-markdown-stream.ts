@@ -60,6 +60,94 @@ export function closeTrailingFence(markdown: string): string {
   return inFence ? `${markdown}\n\`\`\`` : markdown;
 }
 
+function isEscaped(text: string, index: number): boolean {
+  let slashCount = 0;
+  for (let i = index - 1; i >= 0 && text[i] === "\\"; i -= 1) slashCount += 1;
+  return slashCount % 2 === 1;
+}
+
+/**
+ * Presentation-only completion for an in-flight Markdown snapshot.
+ *
+ * The source buffer remains untouched. This closes only delimiters that are
+ * currently unmatched at the stream tail so the parser never exposes raw
+ * emphasis/backtick markers while waiting for their closing token.
+ */
+export function stabilizeStreamingMarkdown(markdown: string): string {
+  const source = closeTrailingFence(markdown);
+  type Delimiter = "`" | "**" | "__" | "*" | "_";
+  const stack: Array<{ token: Delimiter; index: number }> = [];
+  const lines = source.split("\n");
+  let inFence = false;
+  let lineOffset = 0;
+
+  for (const line of lines) {
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      lineOffset += line.length + 1;
+      continue;
+    }
+    if (inFence) {
+      lineOffset += line.length + 1;
+      continue;
+    }
+
+    for (let i = 0; i < line.length; i += 1) {
+      if (isEscaped(line, i)) continue;
+      const current = line[i];
+      const top = stack[stack.length - 1]?.token;
+
+      if (current === "`") {
+        if (top === "`") stack.pop();
+        else stack.push({ token: "`", index: lineOffset + i });
+        continue;
+      }
+      if (top === "`") continue;
+
+      const pair = line.slice(i, i + 2);
+      if (pair === "**" || pair === "__") {
+        if (top === pair) stack.pop();
+        else stack.push({ token: pair, index: lineOffset + i });
+        i += 1;
+        continue;
+      }
+      if (current !== "*" && current !== "_") continue;
+
+      const before = line[i - 1] ?? "";
+      const after = line[i + 1] ?? "";
+      const isBullet = current === "*" && /^\s*$/.test(line.slice(0, i)) && /\s/.test(after);
+      const isIntrawordUnderscore =
+        current === "_" && /[A-Za-z0-9]/.test(before) && /[A-Za-z0-9]/.test(after);
+      if (isBullet || isIntrawordUnderscore) continue;
+
+      if (top === current) stack.pop();
+      else stack.push({ token: current, index: lineOffset + i });
+    }
+    lineOffset += line.length + 1;
+  }
+
+  let stabilized = source;
+  const neutralizedOpeners = stack
+    .filter(({ token, index }) => {
+      const tail = source.slice(index + token.length);
+      const blockBoundary = /\n\s*\n/.test(tail);
+      return blockBoundary || !/[^\s*_`]/.test(tail);
+    })
+    .sort((a, b) => b.index - a.index);
+  const removed = new Set(neutralizedOpeners);
+  for (const { token, index } of neutralizedOpeners) {
+    stabilized = `${stabilized.slice(0, index)}${stabilized.slice(index + token.length)}`;
+  }
+  for (let i = stack.length - 1; i >= 0; i -= 1) {
+    if (!removed.has(stack[i])) stabilized += stack[i].token;
+  }
+
+  // A partial destination is safe to close transiently. The final settled
+  // render still receives the exact source and therefore owns real validity.
+  if (/\[[^\]\n]+\]\([^)\n]*$/.test(stabilized)) stabilized += ")";
+  return stabilized;
+}
+
 // ── Pseudo-list normalization ────────────────────────────────────────────────
 // @create-markdown/core has no lazy-continuation support: a wrapped list-item
 // line splits the list into `numberedList, paragraph, numberedList` fragments,

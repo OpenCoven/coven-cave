@@ -165,12 +165,12 @@ assert.match(
 assert.match(
   component,
   /selectedFamiliar \? \([\s\S]{0,700}?quick-chat-meta-chips[\s\S]{0,900}?\) : \(\s*\n\s*<p className="min-w-0 truncate text-xs text-\[var\(--fg-muted\)\]">\s*\n\s*@id switches familiars · ⌘N new chat/,
-  "once a familiar is chosen, the composer hint area shows the selected model only; the @id switch hint remains for the unpicked state",
+  "once a familiar is chosen, the composer hint area shows negotiated capabilities (e.g. Thinking) plus Model as quiet meta chips; the @id switch hint remains for the unpicked state",
 );
 assert.match(
   component,
-  /aria-label=\{`Model \$\{modelLabel\}`\}/,
-  "the chips group names only the selected model; it must not imply a global speed setting",
+  /aria-label=\{`\$\{modelCapabilities\s*\n\s*\.map\(\(capability\) => `\$\{controlChipLabel\(capability\)\} \$\{controlValueLabel\(capability, modelControls\)\}`\)\s*\n\s*\.concat\(`Model \$\{modelLabel\}`\)\s*\n\s*\.join\(", "\)\}`\}/,
+  "the chips group carries one full accessible reading built from whichever capabilities the selected runtime/model actually negotiates, plus Model",
 );
 assert.match(component, /<QuickChatComposer/, "tray renders the shared composer");
 assert.match(

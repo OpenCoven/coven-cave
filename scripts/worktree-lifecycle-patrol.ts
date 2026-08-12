@@ -7,17 +7,26 @@ import {
 } from "../src/lib/worktree-lifecycle.ts";
 import {
   acquireMaintenanceGate,
+  createFenceRenewal,
   heartbeatMaintenanceGate,
   releaseMaintenanceGate,
   repositoryMaintenanceCapabilities,
   verifyMaintenanceGateOwnership,
 } from "./maintenance-gate.mjs";
+import {
+  assessMaintenancePlaneAdmission,
+  type MaintenancePlaneCapabilities,
+} from "../src/lib/maintenance-plane-admission.ts";
 import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
 import {
   createGitRetirementOperations,
   parseMaxRetire,
   retireLifecycleUnits,
 } from "./worktree-lifecycle-retirement.ts";
+import {
+  createMetadataRepairOperations,
+  repairOrphanedWorktreeMetadata,
+} from "./worktree-lifecycle-metadata-repair.ts";
 
 type Options = {
   repo: string | null;
@@ -26,21 +35,24 @@ type Options = {
   nowMs: number;
   apply: boolean;
   maxRetire: number;
+  /**
+   * Opt in to running --apply while the known-pending maintenance planes
+   * (coven/beads/github, cave-wqa0b.2/.3/.4) are unenforced. Never implicit:
+   * absent this, --apply behaves exactly as it did. The local plane is still
+   * required — see assessMaintenancePlaneAdmission.
+   */
+  allowUnenforcedPlanes: boolean;
 };
 
 type PatrolInventory = ReturnType<typeof collectWorktreeLifecycleInventory>;
 type PatrolSummary = ReturnType<typeof summarizeWorktreeLifecycle>;
 type MaintenanceCapabilities = ReturnType<typeof repositoryMaintenanceCapabilities>;
 type RetirementReport = ReturnType<typeof retireLifecycleUnits>;
+type MetadataRepairReport = ReturnType<typeof repairOrphanedWorktreeMetadata>;
 type PatrolItem = PatrolSummary["items"][number];
 type RetirementBlock = RetirementReport["blocked"][number];
 type RemoteDeletionProposal = RetirementReport["remoteDeletionProposals"][number];
-type MaintenanceGateHandle = {
-  root: string;
-  ownerId: string;
-  generation: number;
-  token: string;
-};
+type MaintenanceGateHandle = object;
 type AcquireMaintenanceGateResult =
   | {
       ok: true;
@@ -71,36 +83,58 @@ type RetirementApplyDependencies = {
   };
   createGitRetirementOperations: typeof createGitRetirementOperations;
   retireLifecycleUnits: typeof retireLifecycleUnits;
+  createMetadataRepairOperations: typeof createMetadataRepairOperations;
+  repairOrphanedWorktreeMetadata: typeof repairOrphanedWorktreeMetadata;
   collectWorktreeLifecycleInventory: typeof collectWorktreeLifecycleInventory;
+  /**
+   * Optional, and injected so a test can observe renewal without waiting out
+   * the throttle.
+   *
+   * Optional because the existing apply tests build explicit dependency
+   * literals rather than spreading the defaults, so a required field would
+   * arrive undefined in every one of them and fail as a TypeError inside the
+   * inventory try/catch — which surfaces as a confusing postInventoryError
+   * rather than as the missing wiring it actually is.
+   *
+   * The real {@link createFenceRenewal} deliberately skips the first call and
+   * then renews at most every FENCE_RENEWAL_INTERVAL_MS, which is correct in
+   * production and invisible in a test that finishes in milliseconds — every
+   * call would be throttled, so a missing renewal and a working one look
+   * identical. Injecting the factory lets a test supply an unthrottled one.
+   */
+  createFenceRenewal?: typeof createFenceRenewal;
 };
 
 const APPLY_OWNER_ID = "worktree-lifecycle-patrol";
-const APPLY_PURPOSE = "worktree lifecycle retirement apply";
+const APPLY_PURPOSE = "worktree lifecycle metadata repair and retirement apply";
 const defaultRetirementApplyDependencies: RetirementApplyDependencies = {
-  acquireMaintenanceGate,
-  heartbeatMaintenanceGate,
-  releaseMaintenanceGate,
-  verifyMaintenanceGateOwnership,
+  acquireMaintenanceGate: acquireMaintenanceGate as unknown as RetirementApplyDependencies["acquireMaintenanceGate"],
+  heartbeatMaintenanceGate: heartbeatMaintenanceGate as unknown as RetirementApplyDependencies["heartbeatMaintenanceGate"],
+  releaseMaintenanceGate: releaseMaintenanceGate as unknown as RetirementApplyDependencies["releaseMaintenanceGate"],
+  verifyMaintenanceGateOwnership: verifyMaintenanceGateOwnership as unknown as RetirementApplyDependencies["verifyMaintenanceGateOwnership"],
   createGitRetirementOperations,
   retireLifecycleUnits,
+  createMetadataRepairOperations,
+  repairOrphanedWorktreeMetadata,
   collectWorktreeLifecycleInventory,
+  createFenceRenewal,
 };
 
 type RetirementApplyResult = {
+  metadataRepair: MetadataRepairReport;
   retirement: RetirementReport;
   postInventory?: PatrolInventory;
   postInventoryError?: string;
   warning?: string;
 };
 
-type RetirementApplyOutcomeReason =
+type ApplyFailureReason =
+  | "metadata-repair-blocked"
   | "retirement-blocked"
   | "maintenance-gate-release-failed"
-  | "post-apply-inventory-failed"
-  | "retirement-blocked-and-maintenance-gate-release-failed"
-  | "retirement-blocked-and-post-apply-inventory-failed"
-  | "maintenance-gate-release-failed-and-post-apply-inventory-failed"
-  | "retirement-blocked-and-maintenance-gate-release-failed-and-post-apply-inventory-failed";
+  | "post-apply-inventory-failed";
+
+type RetirementApplyOutcomeReason = string;
 
 type RetirementApplyOutcome = {
   ok: boolean;
@@ -116,6 +150,7 @@ export function parseArgs(argv: string[]): Options {
     nowMs: Date.now(),
     apply: false,
     maxRetire: parseMaxRetire(undefined),
+    allowUnenforcedPlanes: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -133,6 +168,9 @@ export function parseArgs(argv: string[]): Options {
         break;
       case "--apply":
         options.apply = true;
+        break;
+      case "--allow-unenforced-planes":
+        options.allowUnenforcedPlanes = true;
         break;
       case "--max-retire": {
         const value = argv[++index];
@@ -169,13 +207,21 @@ function printHelp() {
 Builds a read-only lifecycle report for every registered worktree and direct
 local branch. The patrol correlates local state with claims, Beads, Coven
 sessions, pull requests, workflow runs, and live process cwd ownership. It never
-removes worktrees or branches unless --apply becomes available after all
+repairs metadata, removes worktrees, or removes branches unless --apply becomes
 maintenance planes are enforced.
 
---apply is currently unusable: the coven, beads and github planes are hard-coded
-off in scripts/maintenance-gate.mjs pending unbuilt work, so it refuses with
-exit 2 before assessing any unit. Retire cleanup-ready units by hand through the
-archive-tag route in CLAUDE.md until that changes (cave-3aqvr).`);
+--apply refuses with exit 2 before assessing any unit while the Beads or GitHub
+maintenance planes are unenforced (cave-3aqvr). The coven plane is
+opportunistic -- enforced when Coven's released maintenance protocol is
+available, unenforced when it is not -- so it may be missing too. Retire
+cleanup-ready units by hand through the archive-tag route in CLAUDE.md, or opt
+in below.
+
+--allow-unenforced-planes opts in to running --apply while the known-pending
+planes (coven/beads/github, cave-wqa0b.2/.3/.4) are unenforced. The local plane
+is still required and is never waivable: it performs the exclusion that stops
+two actors retiring the same unit. Every degraded run is announced on stderr
+naming the waived planes before any unit is touched (cave-s03wp).`);
 }
 
 function errorMessage(error: unknown): string {
@@ -183,7 +229,96 @@ function errorMessage(error: unknown): string {
 }
 
 function summarizeInventory(inventory: PatrolInventory): PatrolSummary {
-  return summarizeWorktreeLifecycle(inventory.items, inventory.budgets);
+  return summarizeWorktreeLifecycle(inventory.items, inventory.budgets, inventory.globalErrors);
+}
+
+/**
+ * Managed-creation exceptions on beads whose worktrees are already gone.
+ *
+ * Inventory only tallies exceptions for units it still sees (validMetadata ∩
+ * registered units). When a unit is removed but the exception sub-object stays
+ * on the bead, the budget line reads "0 expired" and the residue is invisible
+ * (cave-4oor6). An expired exception grants nothing, so this is hygiene — make
+ * it visible in the read-only report. Dropping the sub-object is apply-side
+ * work and stays gated with everything else.
+ */
+export type ExpiredOrphanedException = {
+  beadId: string;
+  path: string;
+  branch: string;
+  owner: string;
+  expiresAt: string;
+  reason: string;
+};
+
+export function listExpiredOrphanedExceptions(
+  inventory: Pick<PatrolInventory, "orphanedMetadata">,
+  nowMs: number,
+): ExpiredOrphanedException[] {
+  const found: ExpiredOrphanedException[] = [];
+  for (const candidate of inventory.orphanedMetadata) {
+    const exception = candidate.record.exception;
+    if (!exception) continue;
+    const expiresAtMs = Date.parse(exception.expiresAt);
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs > nowMs) continue;
+    found.push({
+      beadId: candidate.beadId,
+      path: candidate.path,
+      branch: candidate.branch,
+      owner: exception.owner,
+      expiresAt: exception.expiresAt,
+      reason: exception.reason,
+    });
+  }
+  return found.sort(
+    (left, right) =>
+      left.beadId.localeCompare(right.beadId) || left.path.localeCompare(right.path),
+  );
+}
+
+function formatExpiredOrphanedException(entry: ExpiredOrphanedException): string {
+  return `- ${entry.beadId} ${entry.branch} @ ${entry.path} (owner ${entry.owner}; expired ${entry.expiresAt})`;
+}
+
+/**
+ * Malformed metadata records that describe no unit the patrol can see.
+ *
+ * A record is charged to the branch and path it names (cave-g9byt), so one
+ * whose worktree was removed outside the lifecycle lands on nothing and would
+ * report as clean. It is still a defect on someone's bead — and the record that
+ * caused cave-g9byt was exactly this shape — so the patrol names it without
+ * moving any unit into a lane over it.
+ */
+function orphanedMetadataClaims(inventory: PatrolInventory): string[] {
+  return [
+    ...new Set(
+      inventory.metadataClaimErrors
+        .filter((claim) => {
+          // A record naming neither a usable branch nor a usable path is not
+          // orphaned — it is unnameable, so it stays charged to every unit and
+          // is already visible in their lanes. Reporting it here would say the
+          // opposite of what the header promises: that nothing is blocked by it.
+          if (claim.branch.length === 0 && claim.path === null) return false;
+          return !inventory.items.some(
+            (item) =>
+              (claim.branch.length > 0 && item.branch === claim.branch) ||
+              (claim.path !== null && item.path === claim.path),
+          );
+        })
+        .flatMap((claim) => claim.errors),
+    ),
+  ];
+}
+
+function renderOrphanedMetadataClaims(inventory: PatrolInventory): string {
+  const claims = orphanedMetadataClaims(inventory);
+  if (claims.length === 0) return "";
+  return [
+    "",
+    "Malformed worktree metadata on beads whose units are gone (no unit is blocked by these;",
+    "the owning bead should repair or drop the record):",
+    ...claims.map((claim) => `- ${claim}`),
+  ].join("\n");
 }
 
 function buildJsonReport(
@@ -192,11 +327,20 @@ function buildJsonReport(
   summary: PatrolSummary,
   extras: Record<string, unknown> = {},
 ) {
+  const orphanedClaims = orphanedMetadataClaims(inventory);
+  const expiredOrphanedExceptions = listExpiredOrphanedExceptions(inventory, options.nowMs);
   return {
     ok: true,
     generatedAt: new Date(options.nowMs).toISOString(),
     ...summary,
+    orphanedMetadata: inventory.orphanedMetadata,
+    orphanedMetadataCount: inventory.orphanedMetadata.length,
+    orphanedMetadataErrors: inventory.orphanedMetadataErrors,
+    orphanedMetadataErrorCount: inventory.orphanedMetadataErrors.length,
     inventoryFingerprint: inventory.inventoryFingerprint,
+    expiredOrphanedExceptions,
+    expiredOrphanedExceptionCount: expiredOrphanedExceptions.length,
+    ...(orphanedClaims.length > 0 ? { orphanedMetadataClaims: orphanedClaims } : {}),
     ...extras,
   };
 }
@@ -241,7 +385,7 @@ function renderApplyUnavailable(
         `worktree-lifecycle-patrol: --apply unavailable; missing maintenance planes: ${missingPlanes.join(", ")}`,
         "",
         "This is not a local fault and a retry will not clear it. These planes are",
-        "hard-coded off in scripts/maintenance-gate.mjs pending unbuilt work:",
+        "not yet enforced by their listed maintenance-plane owners:",
         ...missingPlanes.map(
           (plane) => `  ${plane.padEnd(7)} blocked on ${capabilities[plane].source || "an unfiled Bead"}`,
         ),
@@ -261,9 +405,19 @@ function renderApplyUnavailable(
 }
 
 export function evaluateRetirementApplyOutcome(
-  result: RetirementApplyResult,
+  result: Pick<
+    RetirementApplyResult,
+    "retirement" | "metadataRepair" | "warning" | "postInventoryError"
+  > & { metadataRepair?: MetadataRepairReport },
 ): RetirementApplyOutcome {
-  const failures: string[] = [];
+  const failures: ApplyFailureReason[] = [];
+  if (
+    result.metadataRepair &&
+    (result.metadataRepair.blocked.length > 0 ||
+      result.metadataRepair.partial.length > 0)
+  ) {
+    failures.push("metadata-repair-blocked");
+  }
   if (result.retirement.blocked.length > 0) failures.push("retirement-blocked");
   if (result.warning) failures.push("maintenance-gate-release-failed");
   if (result.postInventoryError) failures.push("post-apply-inventory-failed");
@@ -282,8 +436,10 @@ export function renderApplyReport(
   retirement: RetirementReport,
   warning?: string,
   postInventoryError?: string,
+  metadataRepair: MetadataRepairReport = emptyMetadataRepairReport(),
 ) {
   const outcome = evaluateRetirementApplyOutcome({
+    metadataRepair,
     retirement,
     warning,
     postInventoryError,
@@ -296,6 +452,10 @@ export function renderApplyReport(
   const remoteDeletionProposals = [...retirement.remoteDeletionProposals]
     .sort(compareRemoteDeletionProposals)
     .map(formatRemoteDeletionProposal);
+  const repairedMetadata = metadataRepair.repaired.map(formatMetadataRepairCandidate);
+  const blockedMetadata = metadataRepair.blocked.map(formatMetadataRepairBlock);
+  const partialMetadata = metadataRepair.partial.map(formatMetadataRepairBlock);
+  const pendingMetadata = metadataRepair.pending.map(formatMetadataRepairCandidate);
   const lines = [
     ...(postInventoryError
       ? [
@@ -307,12 +467,18 @@ export function renderApplyReport(
     renderWorktreeLifecycleReport(summary, { includeFooter: false }),
     "",
     `Apply result: ${outcome.ok ? "ok" : `failed (${outcome.reason})`}`,
+    `Metadata repaired: ${metadataRepair.repaired.length}`,
+    `Metadata blocked: ${metadataRepair.blocked.length + metadataRepair.partial.length}`,
     `Retired: ${retirement.retired.length}`,
     `Blocked: ${retirement.blocked.length}`,
     `Cleanup-ready remaining: ${
       postInventoryError ? "unknown" : summary.counts["retire-after-gate"]
     }`,
   ];
+  pushSection(lines, "Orphaned metadata repaired", repairedMetadata);
+  pushSection(lines, "Orphaned metadata blocked", blockedMetadata);
+  pushSection(lines, "Orphaned metadata partial", partialMetadata);
+  pushSection(lines, "Orphaned metadata pending", pendingMetadata);
   pushSection(lines, "Locally retired", retired);
   pushSection(lines, "Cleanup-ready but not processed", cleanupReady);
   pushSection(lines, "Blocked during apply", blocked);
@@ -335,7 +501,10 @@ function formatItemIdentity(item: PatrolItem): string {
 }
 
 function formatRetiredItem(item: PatrolItem): string {
-  return `- ${formatItemIdentity(item)} (oid ${item.head})`;
+  const beadHint = item.metadata?.beadId
+    ? ` — bead ${item.metadata.beadId} may still be open; close it if acceptance criteria landed`
+    : "";
+  return `- ${formatItemIdentity(item)} (oid ${item.head})${beadHint}`;
 }
 
 function formatBlockedItem(item: RetirementBlock): string {
@@ -347,6 +516,64 @@ function formatRemoteDeletionProposal(proposal: RemoteDeletionProposal): string 
   const mergedPr =
     proposal.mergedPr === null ? "merged PR none" : `merged PR #${proposal.mergedPr}`;
   return `- ${proposal.ref} remote oid ${proposal.oid}; local retirement oid ${proposal.localRetirementOid}; ${mergedPr}; separate authorization required before any remote deletion`;
+}
+
+function emptyMetadataRepairReport(): MetadataRepairReport {
+  return {
+    repaired: [],
+    blocked: [],
+    partial: [],
+    pending: [],
+  };
+}
+
+function formatMetadataRepairCandidate(
+  candidate: PatrolInventory["orphanedMetadata"][number],
+): string {
+  return `- ${candidate.beadId} ${candidate.location} ${candidate.branch} at ${candidate.path}`;
+}
+
+function formatMetadataRepairBlock(
+  blocked: MetadataRepairReport["blocked"][number] | MetadataRepairReport["partial"][number],
+): string {
+  return `- ${blocked.beadId} ${blocked.location}: ${blocked.reason}`;
+}
+
+function renderPatrolReport(
+  summary: PatrolSummary,
+  inventory: PatrolInventory,
+  nowMs: number = Date.now(),
+): string {
+  // Annotate the budget line so expired-orphaned exceptions are not invisible
+  // (cave-4oor6). Inventory still counts only unit-matched exceptions; the
+  // third term is residue on beads whose worktrees are already gone.
+  const expiredOrphaned = listExpiredOrphanedExceptions(inventory, nowMs);
+  let lifecycleReport = renderWorktreeLifecycleReport(summary, { includeFooter: false });
+  if (expiredOrphaned.length > 0) {
+    lifecycleReport = lifecycleReport.replace(
+      /^(Managed exceptions: \d+ active \| \d+ expired)$/m,
+      `$1 | ${expiredOrphaned.length} expired, orphaned`,
+    );
+  }
+  const lines = [lifecycleReport];
+  pushSection(
+    lines,
+    "Expired, orphaned managed-creation exceptions (grants nothing; drop under --apply when gated)",
+    expiredOrphaned.map(formatExpiredOrphanedException),
+  );
+  const orphaned = inventory.orphanedMetadata.map((candidate) => {
+    const disposition = candidate.repairable
+      ? "repairable by gated apply"
+      : `not repairable: ${candidate.reasons.join("; ")}`;
+    return `${formatMetadataRepairCandidate(candidate)}; ${disposition}`;
+  });
+  pushSection(lines, "Orphaned metadata", orphaned);
+  const malformedClaims = renderOrphanedMetadataClaims(inventory);
+  if (malformedClaims) {
+    lines.push(malformedClaims);
+  }
+  lines.push("", "Report only. No worktree, branch, or Bead metadata was changed.");
+  return lines.join("\n");
 }
 
 function compareText(left: string, right: string): number {
@@ -407,26 +634,84 @@ export function runRetirementApply(
     throw new Error(formatGateFailure("acquire", acquired.reason));
   }
 
+  let metadataRepair: MetadataRepairReport | undefined;
   let retirement: RetirementReport | undefined;
   let postInventory: PatrolInventory | undefined;
   let postInventoryError: string | undefined;
   let thrown: unknown;
   try {
+    const repairableOrphans = (inventory.orphanedMetadata ?? []).filter(
+      (candidate) => candidate.repairable,
+    );
+    // Reserve a retirement slot before metadata repair spends the budget.
+    //
+    // --max-retire is one allowance shared by two jobs, and repair is served
+    // first. Whenever there were at least maxRetire repairable records, repair
+    // took all of it, gitLimit fell to 0, and retireLifecycleUnits was never
+    // called — so the run retired nothing while still listing the units it
+    // could have retired, which reads as "considered and declined" rather than
+    // "never got a slot". Measured on two consecutive runs against this
+    // checkout: 3 repaired, 0 retired, with 15 records pending; at three
+    // repairs a run it would take five clean runs before a single worktree
+    // became eligible, and hand-retirement keeps adding residue faster than
+    // that (cave-xbc87). See cave-1si7i.
+    //
+    // The reservation is one slot, not a second budget: total mutations still
+    // cannot exceed maxRetire, which is what bounds an unattended sweep's blast
+    // radius (scripts/worktree-sweep.sh pins --max-retire 3 and says not
+    // to raise it). It is taken only when something is actually retirable, so a
+    // run with nothing to retire still spends the whole allowance on repair,
+    // exactly as before.
+    //
+    // The lane test matches retireLifecycleUnits' own eligibility filter
+    // (worktree-lifecycle-retirement.ts:161); anything else would reserve a
+    // slot for work that cannot happen.
+    const retirableAtGate = inventory.items.some(
+      (item) => item.lane === "retire-after-gate",
+    );
+    // Only reserve when there is more than one slot to divide. With
+    // --max-retire 1 a reservation would not share the budget, it would just
+    // move the starvation onto repair — which is the same defect wearing the
+    // other hat, and it would contradict the established behaviour that a
+    // single-slot run spends it on repair.
+    const retirementReservation = retirableAtGate && options.maxRetire >= 2 ? 1 : 0;
+    const repairLimit = Math.min(
+      Math.max(0, options.maxRetire - retirementReservation),
+      repairableOrphans.length,
+    );
+    metadataRepair = dependencies.repairOrphanedWorktreeMetadata({
+      candidates: inventory.orphanedMetadata ?? [],
+      maxRepairs: repairLimit,
+      gateHandle: acquired.handle,
+      repositoryRoot: options.root,
+      operations: dependencies.createMetadataRepairOperations({
+        root: options.root,
+      }),
+    });
+    const gitLimit = options.maxRetire - repairLimit;
     const operations = dependencies.createGitRetirementOperations({
       root: options.root,
       repo: options.repo!,
       gateHandle: acquired.handle,
       nowMs: options.nowMs,
     });
-    retirement = dependencies.retireLifecycleUnits({
-      items: inventory.items,
-      gateHandle: {
-        generation: acquired.handle.generation,
-        token: acquired.handle.token,
-      },
-      operations,
-      maxRetire: String(options.maxRetire),
-    });
+    retirement =
+      gitLimit > 0
+        ? dependencies.retireLifecycleUnits({
+            items: inventory.items,
+            gateHandle: acquired.handle,
+            operations,
+            maxRetire: String(gitLimit),
+          })
+        : {
+            retired: [],
+            blocked: [],
+            cleanupReady: inventory.items
+              .filter((item) => item.lane === "retire-after-gate")
+              .sort(comparePatrolItems),
+            attempts: [],
+            remoteDeletionProposals: [],
+          };
     const heartbeat = dependencies.heartbeatMaintenanceGate(acquired.handle);
     if (!heartbeat.ok) {
       postInventoryError =
@@ -443,11 +728,47 @@ export function runRetirementApply(
           }`;
       } else {
         try {
+          // Renew the fence AS the inventory works, not merely before it.
+          //
+          // This is the longest operation inside the fence — on a large
+          // checkout it outlives the 120s Coven lease on its own (measured at
+          // 141s against COVEN_OWNER_LEASE_MS), so heartbeating once above and
+          // verifying ownership afterwards is not enough: the lease is already
+          // gone by the time the inventory returns, the ownership check below
+          // cannot pass, and the release at the end of this function fails with
+          // "maintenance lease expired".
+          //
+          // createFenceRenewal anchors renewal to progress rather than to a
+          // timer, which is the only thing that works here: the inventory is
+          // synchronous throughout (spawnSync for git and gh), so it never
+          // yields and no timer callback would ever run. The create path solved
+          // exactly this for its own inventory in cave-cs9g1; this call site
+          // was left behind. See cave-ykj47.
+          //
+          // Throwing on a failed heartbeat is deliberate and matches
+          // createFenceRenewal's fail-closed contract: if the fence is gone,
+          // continuing would do unexcluded work while believing otherwise. The
+          // catch below turns that into a reported postInventoryError rather
+          // than an abort, because the retirement above has already happened
+          // and its result must still be reported.
+          const makeFenceRenewal =
+            dependencies.createFenceRenewal ?? createFenceRenewal;
+          const renewFenceDuringPostInventory = makeFenceRenewal(() => {
+            const renewed = dependencies.heartbeatMaintenanceGate(acquired.handle);
+            if (!renewed.ok) {
+              throw new Error(
+                `failed to heartbeat maintenance gate during post-apply inventory: ${
+                  renewed.reason ?? "unknown heartbeat error"
+                }`,
+              );
+            }
+          });
           const candidatePostInventory =
             dependencies.collectWorktreeLifecycleInventory({
               repo: options.repo!,
               root: options.root,
               nowMs: options.nowMs,
+              onProgress: renewFenceDuringPostInventory,
             });
           const ownershipAfter =
             dependencies.verifyMaintenanceGateOwnership(acquired.handle);
@@ -457,7 +778,23 @@ export function runRetirementApply(
                 ownershipAfter.reason ?? "unknown ownership error"
               }`;
           } else {
-            postInventory = candidatePostInventory;
+            const unreconciled = metadataRepair.repaired.filter((repaired) =>
+              (candidatePostInventory.orphanedMetadata ?? []).some(
+                (candidate) =>
+                  candidate.beadId === repaired.beadId &&
+                  candidate.location === repaired.location &&
+                  candidate.branch === repaired.branch &&
+                  candidate.path === repaired.path,
+              ),
+            );
+            if (unreconciled.length > 0) {
+              postInventoryError =
+                `post-apply inventory still reports repaired orphaned metadata: ${unreconciled
+                  .map((candidate) => `${candidate.beadId}:${candidate.location}`)
+                  .join(", ")}`;
+            } else {
+              postInventory = candidatePostInventory;
+            }
           }
         } catch (error) {
           postInventoryError =
@@ -488,11 +825,12 @@ export function runRetirementApply(
     throw thrown;
   }
 
-  if (retirement === undefined) {
-    throw new Error("retirement apply completed without a retirement result");
+  if (metadataRepair === undefined || retirement === undefined) {
+    throw new Error("apply completed without metadata repair and retirement results");
   }
 
   return {
+    metadataRepair,
     retirement,
     ...(postInventory ? { postInventory } : {}),
     ...(postInventoryError ? { postInventoryError } : {}),
@@ -511,19 +849,49 @@ export function main(argv = process.argv.slice(2)): number {
 
   if (options.apply) {
     const capabilities = repositoryMaintenanceCapabilities();
-    if (!capabilities.complete) {
+    const admission = assessMaintenancePlaneAdmission({
+      capabilities: capabilities as unknown as MaintenancePlaneCapabilities,
+      allowUnenforcedPlanes: options.allowUnenforcedPlanes,
+    });
+    if (!admission.ok) {
+      // A refusal the flag cannot lift reads differently from the ordinary
+      // gate-incomplete one, and saying so stops an operator adding the flag
+      // again harder when the local plane is what is missing.
+      if (admission.code !== "gate-incomplete") {
+        console.error(`worktree-lifecycle-patrol: --apply refused; ${admission.diagnostic}`);
+        return 2;
+      }
       return renderApplyUnavailable(options, inventory, summary, capabilities);
+    }
+    if (admission.degraded) {
+      // Audit before acting, not after: if the run dies mid-retirement, the
+      // record of which planes were waived must already exist. stderr so it
+      // survives --json consumers reading stdout.
+      console.error(
+        [
+          "worktree-lifecycle-patrol: DEGRADED APPLY — proceeding with unenforced maintenance planes",
+          `  waived: ${admission.waivedPlanes.join(", ")}`,
+          ...admission.waivedPlanes.map(
+            (plane) =>
+              `    ${plane.padEnd(7)} ${capabilities[plane]?.source || "no source recorded"}`,
+          ),
+          "  local plane is enforced; exclusion still applies.",
+          "  Authorized by --allow-unenforced-planes (cave-s03wp).",
+        ].join("\n"),
+      );
     }
   }
 
   if (options.apply) {
     const {
+      metadataRepair,
       retirement,
       postInventory,
       postInventoryError,
       warning,
     } = runRetirementApply(options, inventory);
     const outcome = evaluateRetirementApplyOutcome({
+      metadataRepair,
       retirement,
       postInventoryError,
       warning,
@@ -538,14 +906,16 @@ export function main(argv = process.argv.slice(2)): number {
             ...(warning ? { warning } : {}),
             inventoryPhase: postInventory ? "post-apply" : "pre-apply-fallback",
             ...(postInventoryError ? { postInventoryError } : {}),
+            metadataRepair,
             retirement,
           })
-        : renderApplyReport(
+        : `${renderApplyReport(
             postSummary,
             retirement,
             warning,
             postInventoryError,
-          ),
+            metadataRepair,
+          )}${renderOrphanedMetadataClaims(reportingInventory)}`,
     );
     return outcome.status;
   }
@@ -553,7 +923,7 @@ export function main(argv = process.argv.slice(2)): number {
   console.log(
     options.json
       ? renderJsonReport(options, inventory, summary)
-      : renderWorktreeLifecycleReport(summary),
+      : renderPatrolReport(summary, inventory, options.nowMs),
   );
   return 0;
 }

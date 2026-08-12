@@ -18,7 +18,7 @@
   the fallback.** Telling them apart is the whole game, because the wrong choice
   creates a worktree nothing can ever retire.
   - **Exit 2 — refused by the admission gate** (`creating a worktree would
-    exceed the 20-worktree budget`, or `Bead … already owns a registered
+    exceed the 28-worktree budget`, or `Bead … already owns a registered
     worktree`). The gate ran fine and declined. **Do not fall back to `git worktree add` here.** Every refusal
     from this path is lifted by an attributed, expiring exception, and the
     refusal itself now prints the exact rerun. The budget counts every
@@ -57,8 +57,12 @@
     So the order is **check quota → rerun → only then fall back**. Genuinely
     structural failures name the repository itself (`canonical repository
     identity mismatch`, `canonical repository identity changed between pages`);
-    those do not improve with a retry. Reach for the fallback only after a
-    retry failed:
+    those do not improve with a retry. A malformed worktree record on a bead
+    (`Bead cave-… worktree metadata: …`) is structural too, but since
+    `cave-g9byt` it is charged only to the unit it names — so if one reaches
+    you, it claims the exact branch or path you asked for. Pick another branch
+    or have its owner repair it; do not hand-edit someone else's record. Reach
+    for the fallback only after a retry failed:
 
     ```bash
     git worktree add -b <branch> .worktrees/<branch> origin/main   # last resort
@@ -72,11 +76,13 @@
     Bead — that record is the evidence the retirement gate checks.
 - After a PR merges, run `pnpm beads:worktrees` and record the merged unit's
   disposition. **`pnpm beads:worktrees:apply` cannot retire anything today** — it
-  exits 2 with `missing maintenance planes: coven, beads, github`, which
-  `scripts/maintenance-gate.mjs` hard-codes off pending `cave-wqa0b.2/.3/.4`
-  (all BLOCKED). That is not a local fault and a retry will not clear it, so
+  exits 2 with `missing maintenance planes: beads, github`. Cave now holds its
+  local writer-intent fence together with Coven's released 0.2.5 maintenance
+  protocol; the remaining Beads and GitHub planes are still unenforced. That is
+  not a local fault and a retry will not clear it, so
   hand-retirement through the archive-tag route in [`CLAUDE.md`](CLAUDE.md) is
-  the expected path until those land (`cave-3aqvr`). Prove retention first: a
+  the expected path until those land (`cave-wqa0b.3` and `cave-wqa0b.4`; the
+  residue they leave behind is `cave-xbc87`). Prove retention first: a
   squash-merge leaves the branch commits on no remote ref, so a merged PR is not
   retention and a pushed archive tag is. Local cleanup is bounded and exact-OID
   guarded; remote deletion remains proposal-only.
@@ -86,6 +92,11 @@
   authority. Automatic retirement requires the full maintenance gate. Explicit
   maintainer authorization in the current task may activate Branch Curator's
   bounded manual deletion proof.
+- Before you assume a dirty worktree is another session's live work, run
+  `pnpm wt:status`. It is network-free and sub-second, and it separates real
+  in-flight edits from a worktree **wedged** in an abandoned merge or rebase —
+  a state that otherwise reads as ordinary dirtiness and gets stepped around
+  indefinitely. See the `pnpm wt:status` section of [`CLAUDE.md`](CLAUDE.md).
 - Do not push directly to `main`; use the protected PR path for repository changes.
 - Before release or TestFlight work, reconcile through clean `main`, then verify from that state.
 

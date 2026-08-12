@@ -9,7 +9,7 @@ import "@/styles/coven-tab.css";
  * GroupChatView — the "coven" group-chat surface.
  *
  * A coven is a saved set of familiars you talk to together. Broadcast mode fans
- * a prompt out in parallel; Round robin mode rotates the lead and relays settled
+ * a prompt out in parallel; Round robin follows the selected order and relays settled
  * peer replies before the next familiar takes its turn. Each familiar still has
  * its own resumable `/api/chat/send` session because there is no server-side
  * group-session primitive.
@@ -26,10 +26,9 @@ import {
 import { Icon } from "@/lib/icon";
 import { extractNextPaths } from "@/lib/next-paths";
 import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
+import { createCanonicalResponseBuffer } from "@/lib/canonical-response-buffer";
 import { Button } from "@/components/ui/button";
 import { ProjectPicker } from "@/components/project-picker";
-import { HarnessFixActions } from "@/components/harness-fix-actions";
-import { parseHarnessFailure } from "@/lib/harness-failure";
 import { modelForRuntimeSwitch } from "@/lib/runtime-models";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Popover } from "@/components/ui/popover";
@@ -42,7 +41,6 @@ import { MessageBubble } from "@/components/message-bubble";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { UserChatAvatar } from "@/components/user-chat-avatar";
-import { Segmented } from "@/components/ui/settings-controls";
 import { consumeCovenGroupPending } from "@/lib/chat-tab-events";
 import { formatChatRecency, useDateTimePrefs } from "@/lib/datetime-format";
 import { useUserProfile, userDisplayName } from "@/lib/user-profile";
@@ -67,12 +65,13 @@ import {
   mentionSuggestionAuthor,
   setGroupResponseMode,
   setGroupDetails,
+  setGroupParticipantIncluded,
+  moveGroupParticipant,
+  includedGroupParticipants,
   orderRoundRobinFamiliarIds,
-  nextRoundRobinLeadId,
   renderCovenRoundtablePrompt,
   renderCovenRoundRobinPrompt,
   runCovenReplySchedule,
-  COVEN_RESPONSE_MODES,
   findActiveMention,
   reconcileMentionCompletions,
   matchMentions,
@@ -92,6 +91,26 @@ import {
 } from "@/lib/group-chat";
 import { newId, nowIso } from "@/lib/group-chat-ids";
 import { groupChatTranscriptThreads } from "@/lib/group-chat-transcript";
+import {
+  COVEN_RUN_STATUS,
+  buildCovenRunFromThread,
+  covenHistoryFold,
+  covenRailStatus,
+  covenRunPill,
+  type CovenRun,
+} from "@/lib/coven-run";
+import { CovenHistoryFoldView } from "@/components/coven-history-fold";
+import {
+  COVEN_JUMP_TO_RUN_EVENT,
+  publishCovenRunPill,
+} from "@/lib/coven-run-signal";
+import { covenComposerRouting } from "@/lib/coven-composer-routing";
+import type { CovenStopScope } from "@/lib/coven-stop-scope";
+import { CovenRunHeader } from "@/components/coven-run-header";
+import { CovenAgentSection, type CovenSuggestion } from "@/components/coven-agent-section";
+import { CovenComposerBar } from "@/components/coven-composer-bar";
+import { CovenInspector } from "@/components/coven-inspector";
+import { CovenRosterPopover, type CovenRosterEntry } from "@/components/coven-roster-popover";
 import {
   listActiveGroupReplyRuns,
   newGroupReplyRunId,
@@ -158,9 +177,19 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
-  // Rail search query + the Details drawer disclosure (session-local UI state).
+  // Rail search query + the details inspector disclosure (session-local UI state).
   const [railQuery, setRailQuery] = useState("");
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  // Stepper focus: show one familiar's replies and hide (never stop) the rest.
+  const [focusId, setFocusId] = useState<string | null>(null);
+  // Pause holds the ordered queue between turns; `pausePending` is the window where
+  // the request is in but the current reply is still finishing.
+  const [paused, setPaused] = useState(false);
+  const [pausePending, setPausePending] = useState(false);
+  // A draft typed during a run: Enter queues rather than interrupting.
+  const [queuedDraft, setQueuedDraft] = useState<string | null>(null);
+  // Finished runs the reader has folded away to one summary line.
+  const [collapsedRuns, setCollapsedRuns] = useState<ReadonlySet<string>>(() => new Set());
   // @mention autocomplete in the composer.
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -173,8 +202,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   const { announce } = useAnnouncer();
   const mentionGuidanceId = useId();
 
-  const addBtnRef = useRef<HTMLButtonElement | null>(null);
+  const rosterBtnRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Pause plumbing for the round-robin turn gate. Refs, not state: the gate is
+  // awaited inside a running schedule and must read the CURRENT decision, not
+  // the value captured when the schedule started.
+  const pauseRequestedRef = useRef(false);
+  const pauseReleaseRef = useRef<(() => void) | null>(null);
+  const stopAllRef = useRef(false);
   const activeRunsRef = useRef(new Map<string, ActiveGroupReplyRun>());
   const runScopeRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -287,6 +322,18 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     runScopeRef.current += 1;
     abortRef.current = null;
     setBusy(false);
+    // Release any held reply queue on the way out. A pause is an awaited promise
+    // inside the retiring schedule; leaving it held would strand that schedule
+    // forever, and the pause state would follow the reader into a coven that
+    // has no run at all.
+    stopAllRef.current = true;
+    pauseRequestedRef.current = false;
+    pauseReleaseRef.current?.();
+    pauseReleaseRef.current = null;
+    setPaused(false);
+    setPausePending(false);
+    setFocusId(null);
+    setQueuedDraft(null);
     void stopScopeRuns(retiringScopeId, { quiet: false });
     // Persist the outgoing coven's tail before swapping — the pending record
     // carries ITS group id, so this can never write under the new coven's key.
@@ -568,34 +615,27 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   const changeResponseMode = useCallback(
     (responseMode: CovenResponseMode) => {
       const group = activeGroupRef.current;
-      if (!group || busy || group.responseMode === responseMode) return;
+      if (!group || group.responseMode === responseMode) return;
       persistGroups(
         upsertGroup(groupsRef.current, setGroupResponseMode(group, responseMode, nowIso())),
       );
+      // Deliberately NOT blocked while a run is in flight. A run's ownership of
+      // its mode is never ambiguous — the schedule captured its mode when it
+      // started and each user turn snapshots its own — so switching mid-run can
+      // only affect the next message, which is what the composer says it does.
+      // Blocking the switch until Stop would punish planning ahead.
       announce(
-        responseMode === "broadcast"
-          ? "Broadcast mode. Familiars will respond at the same time."
-          : "Round robin mode. Familiars will respond in turn and see earlier replies.",
+        busy
+          ? responseMode === "broadcast"
+            ? "Broadcast mode for your next message. This run keeps its mode."
+            : "Round robin mode for your next message. This run keeps its mode."
+          : responseMode === "broadcast"
+            ? "Broadcast mode. Familiars will respond at the same time."
+            : "Round robin mode. Familiars will respond in turn and see earlier replies.",
       );
     },
     [announce, busy, persistGroups],
   );
-
-  const advanceRoundRobinLead = useCallback((groupId: string, leadId: string) => {
-    setGroups((prev) => {
-      const current = prev.find((group) => group.id === groupId);
-      if (!current) return prev;
-      const nextLead = nextRoundRobinLeadId(current.familiarIds, leadId);
-      if (current.nextRoundRobinLeadId === nextLead) return prev;
-      const next = upsertGroup(prev, {
-        ...current,
-        nextRoundRobinLeadId: nextLead,
-        updatedAt: nowIso(),
-      });
-      saveGroups(next);
-      return next;
-    });
-  }, []);
 
   async function stopServerRun(entry: { runId: string; sessionId: string | null }) {
     const response = await fetch("/api/chat/stop", {
@@ -645,6 +685,88 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     });
   }
 
+  /**
+   * Stop exactly one familiar's turn (design proposal §8, "Stop <name>").
+   *
+   * Scoped to that reply's server run, so the queue continues to the next
+   * familiar and a broadcast's other familiars are untouched. Whatever had
+   * streamed is kept and labelled Stopped.
+   */
+  async function stopReplyRun(replyId: string) {
+    const entries = listActiveGroupReplyRuns(activeRunsRef.current, runScopeRef.current).filter(
+      (entry) => entry.replyId === replyId,
+    );
+    if (entries.length === 0) return;
+    updateReply(replyId, (reply) => ({
+      ...reply,
+      status: "done",
+      outcome: "stopped",
+      activity: undefined,
+      activityKind: undefined,
+    }));
+    await stopActiveGroupReplyRuns({
+      entries,
+      stopRun: stopServerRun,
+      onError: (result, entry) => {
+        console.warn("[group-chat] stop failed", {
+          runId: result.runId,
+          familiarId: entry.familiarId,
+          status: result.status,
+          error: result.error,
+        });
+        announce("That reply may keep running on the server.", "assertive");
+      },
+    });
+  }
+
+  /** Release a held reply queue, whatever the reason it was held. */
+  const releasePause = useCallback(() => {
+    pauseRequestedRef.current = false;
+    pauseReleaseRef.current?.();
+    pauseReleaseRef.current = null;
+    setPaused(false);
+    setPausePending(false);
+  }, []);
+
+  /**
+   * The round-robin turn gate: consulted between turns, so a pause holds the
+   * queue without cancelling anything and Stop cannot then start the very turn
+   * the pause was holding.
+   */
+  const turnGate = useCallback(async (): Promise<"run" | "stop"> => {
+    if (stopAllRef.current) return "stop";
+    if (pauseRequestedRef.current) {
+      setPaused(true);
+      setPausePending(false);
+      await new Promise<void>((resolve) => {
+        pauseReleaseRef.current = resolve;
+      });
+      setPaused(false);
+    }
+    return stopAllRef.current ? "stop" : "run";
+  }, []);
+
+  const handleStopScope = useCallback(
+    (scope: CovenStopScope, currentReplyId: string | null) => {
+      if (scope === "pause") {
+        pauseRequestedRef.current = true;
+        setPausePending(true);
+        announce("Pausing after the current reply.");
+        return;
+      }
+      if (scope === "current") {
+        if (currentReplyId) void stopReplyRun(currentReplyId);
+        return;
+      }
+      stopAllRef.current = true;
+      // Release first: a held gate must wake up to see the stop rather than
+      // stranding the run in a pause nothing can now resolve.
+      releasePause();
+      void stopScopeRuns(runScopeRef.current);
+    },
+    [announce, releasePause, stopScopeRuns],
+  );
+
   // --- mode-aware group send ----------------------------------------------
   const streamOne = useCallback(
     async (
@@ -659,6 +781,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       // reply state without waiting for React to render. Apply every update to both.
       let settled = reply;
       const replyRunId = newGroupReplyRunId();
+      const responseText = createCanonicalResponseBuffer(reply.text);
       const attentionText = createAttentionSafeTextAccumulator();
       const apply = (fn: (r: GroupReply) => GroupReply) => {
         settled = fn(settled);
@@ -719,12 +842,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
               if (scopeId === runScopeRef.current) recordSession(group.id, reply.familiarId, ev.sessionId);
             }
             if (ev.kind === "assistant_chunk") {
+              const canonicalText = responseText.append(ev.text);
               apply((r) => applyGroupEvent(r, {
-                kind: "assistant_replace", text: attentionText.append(ev.text),
+                kind: "assistant_replace", text: attentionText.replace(canonicalText),
               }));
             } else if (ev.kind === "assistant_replace") {
+              const canonicalText = responseText.replace(ev.text);
               apply((r) => applyGroupEvent(r, {
-                kind: "assistant_replace", text: attentionText.replace(ev.text),
+                kind: "assistant_replace", text: attentionText.replace(canonicalText),
               }));
             } else {
               apply((r) => applyGroupEvent(r, ev));
@@ -769,11 +894,16 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
         id,
         name: byId.get(id)?.display_name ?? "",
       }));
+      // An untargeted message goes to the familiars included in the next run;
+      // a sat-out familiar keeps its membership but does not receive it. An
+      // @mention still reaches anyone in the coven — addressing someone
+      // directly is the explicit override of their sit-out.
       const { targetIds, targeted } = resolveGroupMessageTargets(
         text,
         group.familiarIds,
         mentionable,
         explicitTargetFamiliarIds,
+        includedGroupParticipants(group),
       );
       // Historical replies remain in the transcript after roster edits. If their
       // author has left this coven, do not create a stranded user turn or unlock a
@@ -783,7 +913,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
         return;
       }
       const orderedTargetIds = group.responseMode === "round-robin"
-        ? orderRoundRobinFamiliarIds(group.familiarIds, targetIds, group.nextRoundRobinLeadId)
+        ? orderRoundRobinFamiliarIds(group.familiarIds, targetIds)
         : targetIds;
       // Roster reflects the FULL coven (not just @mention targets) — a familiar
       // should know who else is in the room even when addressed alone. Composed
@@ -830,17 +960,23 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       setMention(null);
       completedMentionsRef.current = [];
       setBusy(true);
+      // A new run starts unpaused and unstopped: decisions belong to the run
+      // they were made in, and a stale flag here would silently kill the next.
+      pauseRequestedRef.current = false;
+      pauseReleaseRef.current = null;
+      stopAllRef.current = false;
+      setPaused(false);
+      setPausePending(false);
+      setFocusId(null);
       runScopeRef.current += 1;
       const scopeId = runScopeRef.current;
       const controller = new AbortController();
       abortRef.current = controller;
-      if (group.responseMode === "round-robin" && replies.length > 1) {
-        advanceRoundRobinLead(group.id, replies[0].familiarId);
-      }
       const settled = await runCovenReplySchedule({
         mode: group.responseMode,
         replies,
         signal: controller.signal,
+        gate: turnGate,
         onCancelled: (cancelled) => updateReply(cancelled.id, () => cancelled),
         runReply: (reply, settledBefore) => {
           const prompt = group.responseMode === "round-robin"
@@ -865,8 +1001,10 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
           return streamOne(group, reply, prompt, projectRoot, scopeId, controller.signal);
         },
       });
-      // A familiar can perform an explicit human-requested handoff by emitting
-      // a validated delegation trailer. Plain assistant @mentions remain prose.
+      // A familiar can PROPOSE a handoff by emitting a validated delegation
+      // trailer, but assistant output is never sufficient authority to execute
+      // it — every handoff waits on an operator decision. Plain assistant
+      // @mentions remain prose.
       // Process the small delegation tree sequentially so Stop prevents queued
       // work from starting and each target keeps its resumable familiar session.
       const delivered = new Set(
@@ -902,6 +1040,32 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
             ) continue;
             const target = byId.get(targetId);
             if (!target) continue;
+            const delegatedBy = byId.get(source.familiarId)?.display_name ?? source.familiarId;
+            // Assistant output is a PROPOSAL, never authority. A familiar can
+            // emit a delegation trailer for any in-coven target, so executing
+            // one unprompted lets a model start work — with the operator's
+            // grants, in another familiar's session — that the human never
+            // asked for. Race the decision against Stop so aborting mid-prompt
+            // does not leave the dialog waiting on a run that is already over.
+            const abortPromise = new Promise<false>((resolve) => {
+              if (controller.signal.aborted) { resolve(false); return; }
+              controller.signal.addEventListener("abort", () => resolve(false), { once: true });
+            });
+            const approved = await Promise.race([
+              confirm({
+                title: `Approve handoff to ${target.display_name}?`,
+                body: (
+                  <div className="[white-space:pre-wrap]!">
+                    {`${delegatedBy} proposed this task:\n\n${delegation.task}`}
+                  </div>
+                ),
+                confirmLabel: "Approve handoff",
+              }),
+              abortPromise,
+            ]);
+            // Declining stops the whole delegation tree rather than walking on
+            // to more prompts emitted by the same untrusted reply.
+            if (!approved || controller.signal.aborted) return;
             const at = nowIso();
             const delegatedTurn: GroupUserTurn = {
               id: newId(),
@@ -926,7 +1090,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
             delivered.add(dedupeKey);
             delegationCount += 1;
             setTranscript((prev) => [...prev, delegatedTurn, delegatedReply]);
-            const delegatedBy = byId.get(source.familiarId)?.display_name ?? source.familiarId;
             const child = await streamOne(
               group,
               delegatedReply,
@@ -954,6 +1117,10 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       if (abortRef.current === controller) {
         abortRef.current = null;
         setBusy(false);
+        setPaused(false);
+        setPausePending(false);
+        pauseRequestedRef.current = false;
+        pauseReleaseRef.current = null;
       }
       // The streaming bubbles are visual-only — announce the outcome for AT.
       const failed = settled.filter((r) => r.status === "error").length;
@@ -967,7 +1134,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       }
     },
     [
-      advanceRoundRobinLead,
       busy,
       streamOne,
       byId,
@@ -976,22 +1142,46 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       projectLaunchMessage,
       projectLaunchReady,
       selectedGroupProject,
+      turnGate,
       updateReply,
     ],
   );
 
+  /**
+   * Enter during a run **queues** — the safe default. Interrupting is only ever
+   * explicit, via Stop (design proposal §7). The held draft sends itself once
+   * the run settles, so the message the user pressed Enter on is never lost.
+   */
+  const send = useCallback(() => {
+    const text = draft.trim();
+    if (!text) return;
+    if (busy) {
+      setQueuedDraft(text);
+      draftRef.current = "";
+      setDraft("");
+      setMention(null);
+      completedMentionsRef.current = [];
+      announce("Queued — sends when this run finishes.");
+      return;
+    }
+    void broadcast(text);
+  }, [announce, broadcast, busy, draft]);
+
+  // Release the queued draft the moment the run that held it finishes.
+  useEffect(() => {
+    if (busy || !queuedDraft) return;
+    const pending = queuedDraft;
+    setQueuedDraft(null);
+    void broadcast(pending);
+  }, [broadcast, busy, queuedDraft]);
+
   // Composer sends and suggestion chips share the stream path, but a suggestion
   // is an explicitly targeted follow-up to the familiar that authored it.
-  const send = useCallback(() => broadcast(draft), [broadcast, draft]);
   const sendSuggestion = useCallback(
     (suggestion: string, familiarId: string, displayName: string) =>
       broadcast(mentionSuggestionAuthor(suggestion, displayName), [familiarId]),
     [broadcast],
   );
-
-  const stop = useCallback(async () => {
-    await stopScopeRuns(runScopeRef.current);
-  }, [stopScopeRuns]);
 
   // Re-run a single familiar's reply after a failure (or a cancel), reusing the
   // original user turn's text + targeting so the roundtable context is identical.
@@ -1190,13 +1380,86 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     [mention, draft, announce],
   );
 
+  // --- roster edits (design proposal §9) -----------------------------------
+  // All three apply to the NEXT run; none of them touch a run in progress.
+  const toggleParticipantIncluded = useCallback(
+    (familiarId: string, included: boolean) => {
+      const group = activeGroupRef.current;
+      if (!group) return;
+      const next = setGroupParticipantIncluded(group, familiarId, included, nowIso());
+      if (next === group) return;
+      persistGroups(upsertGroup(groupsRef.current, next));
+      const name = byId.get(familiarId)?.display_name ?? familiarId;
+      announce(included ? `${name} joins the next run.` : `${name} sits out the next run.`);
+    },
+    [announce, byId, persistGroups],
+  );
+
+  const moveParticipant = useCallback(
+    (familiarId: string, delta: -1 | 1) => {
+      const group = activeGroupRef.current;
+      if (!group) return;
+      const next = moveGroupParticipant(group, familiarId, delta, nowIso());
+      if (next === group) return;
+      persistGroups(upsertGroup(groupsRef.current, next));
+      const name = byId.get(familiarId)?.display_name ?? familiarId;
+      announce(`${name} moved ${delta < 0 ? "earlier" : "later"} in the reply order.`);
+    },
+    [announce, byId, persistGroups],
+  );
+
   // --- derived transcript view --------------------------------------------
-  // Group replies under the user turn they answer for a clean threaded layout.
+  // Group replies under the user turn they answer, then widen each group into a
+  // run: mode, per-familiar run status, progress and (once settled) a summary.
   // Single pass: this memo recomputes on every streaming token, so the old
   // users.map(… transcript.filter …) shape was O(userTurns × transcript).
-  const threads = useMemo(() => {
-    return groupChatTranscriptThreads(transcript);
-  }, [transcript]);
+  const runs = useMemo<CovenRun[]>(() => {
+    const fallbackMode = activeGroup?.responseMode ?? "broadcast";
+    return groupChatTranscriptThreads(transcript).map((thread) =>
+      buildCovenRunFromThread(thread, { fallbackMode }),
+    );
+  }, [transcript, activeGroup?.responseMode]);
+  const activeRun = useMemo(() => runs.find((run) => run.active) ?? null, [runs]);
+
+  // Earlier runs fold above the transcript (design proposal §6) so scrolling
+  // back through yesterday's work is a choice rather than the default. Derived
+  // from the runs already built — no second pass over the transcript.
+  const historyFold = useMemo(
+    () => covenHistoryFold(runs, { now: Date.now() }),
+    [runs],
+  );
+  // Only the runs the fold does NOT stand for are rendered in full.
+  const visibleRuns = useMemo(
+    () => (historyFold ? runs.slice(historyFold.count) : runs),
+    [runs, historyFold],
+  );
+
+  // Publish the run to the status bar's pill (design proposal §11), so run
+  // state survives scrolling deep into history. Cleared on unmount and on
+  // coven switch by the effect below — a pill that outlives its surface would
+  // keep claiming a run is live after the reader has navigated away.
+  // The LATEST run, not just a live one: `covenRunPill` reports a settled run's
+  // summary and final duration, and §11 asks the bar to keep that last word
+  // ("● Run complete"). Publishing only `activeRun` made the pill vanish the
+  // instant a run finished, which left that whole branch unreachable.
+  const pillRun = activeRun ?? runs[runs.length - 1] ?? null;
+  useEffect(() => {
+    publishCovenRunPill(covenRunPill({ run: pillRun, paused }));
+  }, [pillRun, paused]);
+  useEffect(() => () => publishCovenRunPill(null), []);
+  useEffect(() => {
+    if (!activeId) publishCovenRunPill(null);
+  }, [activeId]);
+
+  // The pill is a jump-off as well as a readout: clicking it lands here.
+  useEffect(() => {
+    const jump = () => {
+      stick();
+      setShowJump(false);
+    };
+    window.addEventListener(COVEN_JUMP_TO_RUN_EVENT, jump);
+    return () => window.removeEventListener(COVEN_JUMP_TO_RUN_EVENT, jump);
+  }, [stick]);
 
   // Rail rows: "N familiars · last activity". Last activity prefers the
   // stored transcript's newest turn and falls back to the group's updatedAt.
@@ -1218,25 +1481,30 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     ? groups.filter((g) => g.name.toLowerCase().includes(railNeedle))
     : groups;
 
-  // Names for the "… replying" typing line — replies still in flight this turn.
-  const replyingNames = useMemo(() => {
-    if (!busy) return [];
-    const names: string[] = [];
-    for (const t of transcript) {
-      if (t.role !== "assistant") continue;
-      if (t.status !== "queued" && t.status !== "streaming") continue;
-      const name = byId.get(t.familiarId)?.display_name ?? t.familiarId;
-      if (!names.includes(name)) names.push(name);
-    }
-    return names;
-  }, [busy, transcript, byId]);
-
   const participants = activeGroup
     ? activeGroup.familiarIds.map((id) => byId.get(id)).filter(Boolean as unknown as (f: ResolvedFamiliar | undefined) => f is ResolvedFamiliar)
     : [];
-  const nextRoundRobinLead = activeGroup?.nextRoundRobinLeadId
-    ? byId.get(activeGroup.nextRoundRobinLeadId) ?? null
-    : participants[0] ?? null;
+  const includedIds = activeGroup ? includedGroupParticipants(activeGroup) : [];
+  const includedParticipants = includedIds
+    .map((id) => byId.get(id))
+    .filter((f): f is ResolvedFamiliar => Boolean(f));
+  const availableFamiliars = activeGroup
+    ? familiars.filter((f) => !activeGroup.familiarIds.includes(f.id))
+    : [];
+  const rosterEntries: CovenRosterEntry[] = participants.map((familiar, index) => ({
+    familiar,
+    position: index + 1,
+    included: includedIds.includes(familiar.id),
+  }));
+
+  // The composer states what Enter does right now, derived from the same
+  // inputs the send path uses so the two cannot disagree.
+  const routing = covenComposerRouting({
+    mode: activeGroup?.responseMode ?? "broadcast",
+    members: includedParticipants.map((f) => ({ id: f.id, name: f.display_name })),
+    mentioned: composerTargets.map((f) => ({ id: f.id, name: f.display_name })),
+    running: busy,
+  });
 
   // --- render --------------------------------------------------------------
   return (
@@ -1284,6 +1552,12 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                   const isActive = g.id === activeId;
                   const lastActivity =
                     (isActive && liveLastTurnAt) || lastActivityByGroup.get(g.id) || g.updatedAt;
+                  // One status line, never a dashboard (design proposal §11).
+                  // Only the open coven has a live run to report; the others
+                  // fall back to their roster size and last activity.
+                  const railStatus = isActive
+                    ? covenRailStatus({ memberCount, run: activeRun, paused })
+                    : null;
                   return (
                     // Row = a real button (keyboard + roving focus). The delete
                     // control is a sibling overlay, not a nested button (which is
@@ -1305,8 +1579,28 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                             <span className="coven-tab__rail-name" title={g.name}>
                               {g.name}
                             </span>
-                            <span className="coven-tab__rail-meta">
-                              {memberCount} familiar{memberCount === 1 ? "" : "s"} · <RelativeTime iso={lastActivity} />
+                            <span
+                              className="coven-tab__rail-meta"
+                              data-tone={railStatus?.tone ?? "muted"}
+                              data-live={railStatus?.live ? "true" : "false"}
+                            >
+                              {railStatus?.icon ? (
+                                <Icon
+                                  name={railStatus.icon}
+                                  width={10}
+                                  height={10}
+                                  className="coven-tab__rail-status-glyph"
+                                  aria-hidden
+                                />
+                              ) : null}
+                              {railStatus ? (
+                                railStatus.text
+                              ) : (
+                                <>
+                                  {memberCount} familiar{memberCount === 1 ? "" : "s"} ·{" "}
+                                  <RelativeTime iso={lastActivity} />
+                                </>
+                              )}
                             </span>
                           </span>
                         ) : null}
@@ -1385,533 +1679,522 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                   {activeGroup.name}
                 </button>
               )}
-              <div className="coven-tab__members">
+              {/* Avatar stack + roster popover: identity, not a control panel.
+                  Subject, summary, threads and access moved to the inspector so
+                  the transcript never pays for them (design proposal §2). */}
+              <div className="coven-tab__avatars">
                 {participants.map((f) => (
-                  <span key={f.id} className="coven-tab__member-chip">
-                    <FamiliarAvatar familiar={f} size="sm" className="rounded-full object-cover" />
-                    {f.display_name}
+                  <span
+                    key={f.id}
+                    className="coven-tab__avatar"
+                    data-included={includedIds.includes(f.id) ? "true" : "false"}
+                    title={`${f.display_name} — ${f.role}${includedIds.includes(f.id) ? "" : " · sitting out the next run"}`}
+                  >
+                    <FamiliarAvatar familiar={f} size="sm" />
                   </span>
                 ))}
-                <button
-                  ref={addBtnRef}
-                  type="button"
-                  className="coven-tab__add-member focus-ring"
-                  aria-label="Add familiars to this coven"
-                  aria-haspopup="dialog"
-                  aria-expanded={pickerOpen}
-                  onClick={() => setPickerOpen((v) => !v)}
-                >
-                  + Add
-                </button>
               </div>
-              <div className="coven-tab__mode">
-                <ProjectPicker
-                  projects={groupProjects}
-                  value={activeGroup.projectId ?? null}
-                  onChange={changeGroupProject}
-                  defaultToFirst={false}
-                  disabled={
-                    busy ||
-                    participants.length === 0 ||
-                    groupProjectsLoading ||
-                    Boolean(groupProjectsError)
-                  }
-                  ariaLabel="Project for this coven"
-                  className="max-w-52"
-                />
-                <fieldset disabled={busy} className="disabled:opacity-60">
-                  <Segmented
-                    options={COVEN_RESPONSE_MODES}
-                    value={activeGroup.responseMode}
-                    onChange={changeResponseMode}
-                    getLabel={(mode) => mode === "broadcast" ? "Broadcast" : "Round robin"}
-                    getTitle={(mode) =>
-                      mode === "broadcast"
-                        ? "Everyone responds at once"
-                        : "One familiar at a time, in turn"
-                    }
-                    ariaLabel="Coven response mode"
-                  />
-                </fieldset>
-                {/* The surface's status line: roster size + how it responds. */}
-                <span className="coven-tab__status">
-                  {participants.length} familiar{participants.length === 1 ? "" : "s"} ·{" "}
-                  {activeGroup.responseMode === "broadcast"
-                    ? "broadcast"
-                    : `${nextRoundRobinLead?.display_name ?? "First familiar"} leads next`}
-                </span>
-              </div>
+              <button
+                ref={rosterBtnRef}
+                type="button"
+                className="coven-tab__roster-trigger focus-ring"
+                aria-haspopup="dialog"
+                aria-expanded={pickerOpen}
+                onClick={() => setPickerOpen((v) => !v)}
+              >
+                {participants.length} familiar{participants.length === 1 ? "" : "s"}
+                {includedIds.length !== participants.length ? (
+                  <span className="coven-tab__roster-sitting">
+                    {participants.length - includedIds.length} out
+                  </span>
+                ) : null}
+                <Icon name="ph:caret-down" width={10} height={10} aria-hidden />
+              </button>
               <Popover
                 open={pickerOpen}
                 onOpenChange={setPickerOpen}
-                anchorRef={addBtnRef}
+                anchorRef={rosterBtnRef}
                 placement="bottom-start"
-                ariaLabel="Choose familiars"
-                minWidth={240}
+                ariaLabel="Coven roster"
+                minWidth={320}
               >
-                <div className="max-h-80 overflow-y-auto p-1">
-                  {familiars.length === 0 ? (
-                    <p className="px-2 py-2 text-[length:var(--text-sm)] [color:var(--text-muted)]!">
-                      No familiars available.
-                    </p>
-                  ) : (
-                    familiars.map((f) => {
-                      const checked = activeGroup.familiarIds.includes(f.id);
-                      return (
-                        <button
-                          key={f.id}
-                          type="button"
-                          className="focus-ring flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-[var(--bg-raised)]"
-                          onClick={() => toggleParticipant(f.id)}
-                        >
-                          <FamiliarAvatar familiar={f} size="md" className="rounded-full object-cover" />
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-[length:var(--text-base)] [color:var(--text-primary)]!">{f.display_name}</div>
-                            <div className="truncate text-[length:var(--text-xs)] [color:var(--text-muted)]!">{f.role}</div>
-                          </div>
-                          <Icon
-                            name={checked ? "ph:check-circle-fill" : "ph:circle"}
-                            width={18}
-                            height={18}
-                            className={checked ? "text-[var(--accent-presence)]" : "text-[var(--text-muted)]"}
-                          />
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
+                <CovenRosterPopover
+                  entries={rosterEntries}
+                  available={availableFamiliars}
+                  roundRobin={activeGroup.responseMode === "round-robin"}
+                  running={busy}
+                  onToggleIncluded={toggleParticipantIncluded}
+                  onMove={moveParticipant}
+                  onAdd={toggleParticipant}
+                  onRemove={toggleParticipant}
+                />
               </Popover>
+
+              <span className="coven-tab__header-spacer" />
+
+              <ProjectPicker
+                projects={groupProjects}
+                value={activeGroup.projectId ?? null}
+                onChange={changeGroupProject}
+                defaultToFirst={false}
+                disabled={
+                  busy ||
+                  participants.length === 0 ||
+                  groupProjectsLoading ||
+                  Boolean(groupProjectsError)
+                }
+                ariaLabel="Project for this coven"
+                className="max-w-52"
+              />
+              <button
+                type="button"
+                className="coven-tab__inspector-toggle focus-ring"
+                aria-label="Conversation details"
+                aria-pressed={inspectorOpen}
+                title="Conversation details"
+                onClick={() => setInspectorOpen((v) => !v)}
+              >
+                <Icon name="ph:sidebar-simple" width={14} height={14} aria-hidden />
+              </button>
             </header>
 
-            {/* Details drawer — subject + running summary, saved on blur. */}
-            <button
-              type="button"
-              className="coven-tab__details-toggle focus-ring-inset"
-              aria-expanded={detailsOpen}
-              onClick={() => setDetailsOpen((v) => !v)}
-            >
-              <Icon name="ph:caret-right" width={11} height={11} className="coven-tab__details-chevron" aria-hidden />
-              <span className="coven-tab__details-kicker">Details</span>
-              <span className="coven-tab__details-preview">
-                {activeGroup.subject || activeGroup.summary || "Add a subject and summary"}
-              </span>
-            </button>
-            {detailsOpen ? (
-              <div className="coven-tab__details">
-                <label className="coven-tab__field">
-                  <span className="coven-tab__field-label">Subject</span>
-                  {/* key: re-seed the uncontrolled draft when the coven changes. */}
-                  <input
-                    key={`${activeGroup.id}:subject`}
-                    type="text"
-                    defaultValue={activeGroup.subject ?? ""}
-                    placeholder="What is this coven about?"
-                    className="coven-tab__field-input focus-ring-inset"
-                    onBlur={(e) => commitDetails({ subject: e.target.value })}
-                  />
-                </label>
-                <label className="coven-tab__field">
-                  <span className="coven-tab__field-label">Summary</span>
-                  <textarea
-                    key={`${activeGroup.id}:summary`}
-                    rows={2}
-                    defaultValue={activeGroup.summary ?? ""}
-                    placeholder="Short running summary of the conversation…"
-                    className="coven-tab__field-input focus-ring-inset"
-                    onBlur={(e) => commitDetails({ summary: e.target.value })}
-                  />
-                </label>
-                <span className="coven-tab__details-meta">
-                  Created <RelativeTime iso={activeGroup.createdAt} /> · updated{" "}
-                  <RelativeTime iso={activeGroup.updatedAt} />
-                </span>
-                {/* Threads: each participant answers in its own resumable daemon
-                    session (group-chat.ts sessions map). Debug jumps to that
-                    session as a regular conversation with the debug modal
-                    latched — the coven tab has no DebugPane of its own. */}
-                {onDebugSession && participants.some((f) => activeGroup.sessions[f.id]) ? (
-                  <div className="coven-tab__threads">
-                    <span className="coven-tab__field-label">Threads</span>
-                    <ul className="coven-tab__threads-list">
-                      {participants.map((f) => {
-                        const sessionId = activeGroup.sessions[f.id];
-                        if (!sessionId) return null;
-                        return (
-                          <li key={f.id} className="coven-tab__thread-row">
-                            <FamiliarAvatar familiar={f} size="sm" />
-                            <span className="coven-tab__thread-name">{f.display_name}</span>
-                            <button
-                              type="button"
-                              className="coven-tab__thread-debug focus-ring"
-                              title={`Debug ${f.display_name}'s session`}
-                              onClick={() => onDebugSession(sessionId, f.id)}
-                            >
-                              <Icon name="ph:bug-bold" width={12} height={12} aria-hidden />
-                              Debug
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {/* Transcript */}
-            <div className="relative min-h-0 flex-1">
-            <div
-              ref={scrollRef}
-              role="log"
-              aria-label="Coven transcript"
-              aria-live="off"
-              className="h-full overflow-y-auto px-6 py-5"
-            >
-              {threads.length === 0 ? (
-                <div className="grid h-full place-items-center">
-                  <EmptyState
-                    icon="ph:chats-circle"
-                    headline={participants.length === 0 ? "Add familiars to begin" : "Start the conversation"}
-                    subtitle={
-                      participants.length === 0
-                        ? "A coven is a group chat — pick who's in it."
-                        : !projectLaunchReady
-                          ? projectLaunchMessage
-                        : activeGroup.responseMode === "broadcast"
-                          ? "Every familiar responds at once in its own thread."
-                          : "Familiars respond in turn and see earlier replies."
-                    }
-                    actions={
-                      participants.length === 0 ? (
-                        <Button variant="primary" leadingIcon="ph:plus-bold" onClick={() => setPickerOpen(true)}>
-                          Add familiars
-                        </Button>
-                      ) : undefined
-                    }
-                    compact
-                  />
-                </div>
-              ) : (
-                <div className="mx-auto flex max-w-3xl flex-col gap-5">
-                  {threads.map(({ user, replies }) => {
-                    const targets = user.targetFamiliarIds
-                      ?.map((id) => byId.get(id))
-                      .filter((f): f is ResolvedFamiliar => Boolean(f));
-                    const delegator = user.delegatedByFamiliarId
-                      ? byId.get(user.delegatedByFamiliarId)
-                      : undefined;
-                    return (
-                    <div key={user.id} className="flex flex-col gap-2">
-                      <CovenMentionPills familiars={targets ?? []} align="end" />
-                      <div className="cave-group-chat-turn cave-group-chat-turn--user">
-                        {delegator ? (
-                          <div className="cave-group-chat-avatar">
-                            <FamiliarAvatar familiar={delegator} size="xl" className="cave-group-chat-avatar__image" title={delegator.display_name} />
-                          </div>
-                        ) : (
-                          <UserChatAvatar className="cave-group-chat-avatar cave-group-chat-avatar--human" />
-                        )}
-                        <div className="cave-group-chat-message">
-                          <div className="cave-group-chat-meta">
-                            <span className="cave-group-chat-name">{delegator?.display_name ?? operatorDisplayName}</span>
-                            <span className={`cave-group-chat-badge${delegator ? "" : " cave-group-chat-badge--op"}`}>
-                              {delegator ? "HANDOFF" : "OP"}
-                            </span>
-                            <time className="cave-group-chat-recency" dateTime={user.createdAt}>
-                              {formatChatRecency(user.createdAt, dtPrefs)}
-                            </time>
-                          </div>
-                          <MessageBubble role={delegator ? "assistant" : "user"} content={user.text} timestamp={user.createdAt} showTimestamp={false} onOpenUrl={onOpenUrl} />
-                        </div>
+            {/* Transcript + details inspector */}
+            <div className="coven-tab__body">
+              <div className="coven-tab__stream">
+                <div className="relative min-h-0 flex-1">
+                  <div
+                    ref={scrollRef}
+                    role="log"
+                    aria-label="Coven transcript"
+                    aria-live="off"
+                    className="coven-tab__scroll"
+                  >
+                    {runs.length === 0 ? (
+                      <div className="grid h-full place-items-center">
+                        <EmptyState
+                          icon="ph:chats-circle"
+                          headline={participants.length === 0 ? "Add familiars to begin" : "Start the conversation"}
+                          subtitle={
+                            participants.length === 0
+                              ? "A coven is a group chat — pick who's in it. Response modes appear once two or more familiars join."
+                              : !projectLaunchReady
+                                ? projectLaunchMessage
+                                : activeGroup.responseMode === "broadcast"
+                                  ? "Every familiar answers at once, independently, in its own thread."
+                                  : "Familiars respond in the selected order and see earlier replies. @name routes to one without changing that order."
+                          }
+                          actions={
+                            participants.length === 0 ? (
+                              <Button variant="primary" leadingIcon="ph:plus-bold" onClick={() => setPickerOpen(true)}>
+                                Add familiars
+                              </Button>
+                            ) : undefined
+                          }
+                          compact
+                        />
                       </div>
-                      <div className="flex flex-col gap-3 pl-1">
-                        {replies.map((r) => {
-                          const f = byId.get(r.familiarId);
-                          // Explicit human-attention marker (chat sidebar
-                          // attention task, holistic-review fix): strip BEFORE
-                          // next-paths/delegations/MessageBubble, same order as
-                          // the single-chat surface, so a complete or partial
-                          // `<coven:attention …>` tag never flashes as raw text
-                          // in the coven bubble. No inline card renders here —
-                          // attention surfaces in the sidebar, derived from the
-                          // persisted `attentionRequest` metadata the server
-                          // route owns.
-                          // Strip the piggybacked `<coven:next-paths>` suggestions
-                          // block (and its streaming partial) from the visible
-                          // reply, mirroring the single-chat surface; otherwise
-                          // the raw control markup leaks into the coven bubble.
-                          // The parsed lines render as click-to-send chips below.
-                          const { visible: withoutNextPaths, suggestions: typedSuggestions } = extractNextPaths(r.text);
-                          // Group chat has no task-review or action router.
-                          // Never offer task/action suggestions here: a click
-                          // sends an ordinary group message, not a side effect.
-                          const suggestions = typedSuggestions
-                            .filter((path) => path.kind === "reply")
-                            .map((path) => path.prompt);
-                          const { visible: visibleText } = extractCovenDelegations(withoutNextPaths);
-                          const replyTargets = parseMentions(visibleText, mentionable)
-                            .map((id) => byId.get(id))
-                            .filter((target): target is ResolvedFamiliar => Boolean(target));
+                    ) : (
+                      <div className="coven-tab__runs">
+                        {historyFold ? (
+                          <CovenHistoryFoldView
+                            fold={historyFold}
+                            byId={byId}
+                            formatTime={(iso) => formatChatRecency(iso, dtPrefs)}
+                          />
+                        ) : null}
+                        {visibleRuns.map((run, runIndex) => {
+                          const targets = run.user.targetFamiliarIds
+                            ?.map((id) => byId.get(id))
+                            .filter((f): f is ResolvedFamiliar => Boolean(f));
+                          const delegator = run.user.delegatedByFamiliarId
+                            ? byId.get(run.user.delegatedByFamiliarId)
+                            : undefined;
+                          const collapsed = collapsedRuns.has(run.id);
+                          const isLatestRun = runIndex === visibleRuns.length - 1;
+                          // While one familiar is live, settled replies soft-clamp
+                          // so the turn in progress owns the viewport (§4).
+                          const someoneLive = run.agents.some(
+                            (agent) => COVEN_RUN_STATUS[agent.status].live,
+                          );
+                          const currentAgent = run.agents.find(
+                            (agent) => COVEN_RUN_STATUS[agent.status].live,
+                          );
                           return (
-                            <div key={r.id} className="cave-group-chat-turn cave-group-chat-turn--assistant">
-                              <div className="cave-group-chat-avatar">
-                                {f ? (
-                                  <FamiliarAvatar familiar={f} size="xl" className="cave-group-chat-avatar__image" title={f.display_name} />
-                                ) : (
-                                  <Icon name="ph:sparkle" width={24} height={24} />
-                                )}
-                              </div>
-                              <div className="cave-group-chat-message">
-                                <div className="cave-group-chat-meta">
-                                  <span className="cave-group-chat-name">{f?.display_name ?? r.familiarId}</span>
-                                  <span className="cave-group-chat-crest" aria-hidden="true">
-                                    <Icon name="ph:sparkle" width={13} height={13} />
-                                  </span>
-                                  {f?.role ? <span className="cave-group-chat-badge">{f.role}</span> : null}
-                                  <time className="cave-group-chat-recency" dateTime={r.createdAt}>
-                                    {formatChatRecency(r.createdAt, dtPrefs)}
-                                  </time>
-                                </div>
-                                <CovenMentionPills familiars={replyTargets} />
-                                <MessageBubble
-                                  role="assistant"
-                                  label={f?.display_name ?? r.familiarId}
-                                  content={
-                                    visibleText ||
-                                    (r.status === "error"
-                                      ? `⚠️ ${r.error ?? "failed"}`
-                                      : r.activity
-                                        ? `_${r.activity}_`
-                                        : "")
-                                  }
-                                  pending={r.status === "queued" || r.status === "streaming"}
-                                  isError={r.status === "error"}
-                                  timestamp={r.createdAt}
-                                  onOpenUrl={onOpenUrl}
-                                  showTimestamp={false}
-                                />
-                                {r.status === "error" ? (
-                                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                                    <Button
-                                      size="xs"
-                                      variant="secondary"
-                                      leadingIcon="ph:arrow-clockwise"
-                                      onClick={() => void retryReply(r)}
-                                      disabled={busy}
-                                    >
-                                      Retry
-                                    </Button>
-                                    {(() => {
-                                      const failure = parseHarnessFailure(r.error);
-                                      return failure ? (
-                                        <HarnessFixActions
-                                          failure={failure}
-                                          busy={busy}
-                                          onUseHarness={(runtime) => void useHarnessForReply(r, runtime)}
-                                        />
-                                      ) : null;
-                                    })()}
+                            <article key={run.id} className="coven-run">
+                              <div className="cave-group-chat-turn cave-group-chat-turn--user">
+                                {delegator ? (
+                                  <div className="cave-group-chat-avatar">
+                                    <FamiliarAvatar
+                                      familiar={delegator}
+                                      size="xl"
+                                      className="cave-group-chat-avatar__image"
+                                      title={delegator.display_name}
+                                    />
                                   </div>
-                                ) : null}
-                                {r.status === "done" && suggestions.length > 0 ? (
-                                  <div className="cave-next-paths mt-1.5" data-count={suggestions.length}>
-                                    {suggestions.map((s, i) => {
-                                      // The agent lists next steps best-first, so
-                                      // flag the top one as the recommendation.
-                                      const recommended = i === 0;
+                                ) : (
+                                  <UserChatAvatar className="cave-group-chat-avatar cave-group-chat-avatar--human" />
+                                )}
+                                <div className="cave-group-chat-message">
+                                  <div className="cave-group-chat-meta">
+                                    <span className="cave-group-chat-name">
+                                      {delegator?.display_name ?? operatorDisplayName}
+                                    </span>
+                                    <span
+                                      className={`cave-group-chat-badge${delegator ? "" : " cave-group-chat-badge--op"}`}
+                                    >
+                                      {delegator ? "HANDOFF" : "OP"}
+                                    </span>
+                                    <time className="cave-group-chat-recency" dateTime={run.user.createdAt}>
+                                      {formatChatRecency(run.user.createdAt, dtPrefs)}
+                                    </time>
+                                  </div>
+                                  <MessageBubble
+                                    role={delegator ? "assistant" : "user"}
+                                    content={run.user.text}
+                                    timestamp={run.user.createdAt}
+                                    showTimestamp={false}
+                                    onOpenUrl={onOpenUrl}
+                                  />
+                                  <CovenMentionPills familiars={targets ?? []} align="end" />
+                                </div>
+                              </div>
+
+                              {run.agents.length === 0 ? null : collapsed && run.summary ? (
+                                <button
+                                  type="button"
+                                  className="coven-run__collapsed focus-ring"
+                                  title="Expand this run"
+                                  onClick={() =>
+                                    setCollapsedRuns((prev) => {
+                                      const next = new Set(prev);
+                                      next.delete(run.id);
+                                      return next;
+                                    })
+                                  }
+                                >
+                                  <Icon
+                                    name={run.summary.icon}
+                                    width={12}
+                                    height={12}
+                                    data-tone={run.summary.tone}
+                                    aria-hidden
+                                  />
+                                  <span className="coven-run__collapsed-title">{run.summary.title}</span>
+                                  <span className="coven-run__collapsed-meta">{run.summary.meta}</span>
+                                  <span className="coven-run__collapsed-expand">Expand</span>
+                                </button>
+                              ) : (
+                                <div className="coven-run__block">
+                                  <CovenRunHeader
+                                    run={run}
+                                    byId={byId}
+                                    focusId={focusId}
+                                    onFocus={setFocusId}
+                                    paused={paused && run.active}
+                                    pausePending={pausePending && run.active}
+                                    onPause={() => handleStopScope("pause", null)}
+                                    onResume={releasePause}
+                                    onStop={(scope) =>
+                                      handleStopScope(scope, currentAgent?.reply.id ?? null)
+                                    }
+                                  />
+
+                                  {run.active && paused ? (
+                                    <div className="coven-run__banner" data-tone="warning" role="status">
+                                      <Icon name="ph:pause-fill" width={12} height={12} aria-hidden />
+                                      <span>
+                                        Paused —{" "}
+                                        {run.agents.find((agent) => agent.status === "queued")
+                                          ? `${byId.get(run.agents.find((agent) => agent.status === "queued")!.familiarId)?.display_name ?? "the next familiar"} holds until you resume.`
+                                          : "the queue holds until you resume."}{" "}
+                                        Completed replies are kept.
+                                      </span>
+                                      <button
+                                        type="button"
+                                        className="coven-run__banner-action focus-ring"
+                                        onClick={releasePause}
+                                      >
+                                        Resume
+                                      </button>
+                                    </div>
+                                  ) : null}
+
+                                  {focusId ? (
+                                    <div className="coven-run__banner" data-tone="muted">
+                                      <Icon name="ph:magnifying-glass" width={12} height={12} aria-hidden />
+                                      <span>
+                                        Focused on {byId.get(focusId)?.display_name ?? focusId} — other
+                                        replies are hidden, not stopped.
+                                      </span>
+                                      <button
+                                        type="button"
+                                        className="coven-run__banner-action focus-ring"
+                                        onClick={() => setFocusId(null)}
+                                      >
+                                        Show all
+                                      </button>
+                                    </div>
+                                  ) : null}
+
+                                  <div className="coven-run__sections">
+                                    {run.started.map((agent) => {
+                                      const familiar = byId.get(agent.familiarId);
+                                      // Strip control markup in the same order as
+                                      // the single-chat surface, so no partial tag
+                                      // ever flashes as prose.
+                                      const { visible: withoutNextPaths, suggestions: typed } =
+                                        extractNextPaths(agent.reply.text);
+                                      const { visible: visibleText } =
+                                        extractCovenDelegations(withoutNextPaths);
+                                      const replyTargets = parseMentions(visibleText, mentionable)
+                                        .map((id) => byId.get(id))
+                                        .filter((f): f is ResolvedFamiliar => Boolean(f));
+                                      // Group chat has no task or action router: a
+                                      // click here sends an ordinary message, never
+                                      // a side effect, so only replies are offered.
+                                      const suggestions: CovenSuggestion[] =
+                                        isLatestRun && agent.status === "complete"
+                                          ? typed
+                                              .filter((path) => path.kind === "reply")
+                                              .map((path) => ({
+                                                path,
+                                                onSelect: () =>
+                                                  void sendSuggestion(
+                                                    path.prompt,
+                                                    agent.familiarId,
+                                                    familiar?.display_name ?? agent.familiarId,
+                                                  ),
+                                              }))
+                                          : [];
                                       return (
-                                        <button
-                                          key={i}
-                                          type="button"
-                                          className={`cave-next-path${recommended ? " cave-next-path--recommended" : ""}`}
-                                          onClick={() => void sendSuggestion(s, r.familiarId, f?.display_name ?? r.familiarId)}
-                                          disabled={busy}
-                                          aria-label={recommended ? `Recommended: ${s}` : undefined}
-                                          title={recommended ? "Recommended next step" : undefined}
-                                        >
-                                          {s}
-                                        </button>
+                                        <CovenAgentSection
+                                          key={agent.reply.id}
+                                          agent={agent}
+                                          familiar={familiar}
+                                          timestamp={formatChatRecency(agent.reply.createdAt, dtPrefs)}
+                                          hidden={focusId !== null && focusId !== agent.familiarId}
+                                          clampable={someoneLive && run.active}
+                                          showStop={COVEN_RUN_STATUS[agent.status].live}
+                                          onStop={() => void stopReplyRun(agent.reply.id)}
+                                          onRetry={() => void retryReply(agent.reply)}
+                                          onSkip={null}
+                                          onUseHarness={(runtime) =>
+                                            void useHarnessForReply(agent.reply, runtime)
+                                          }
+                                          busy={busy}
+                                          visibleText={
+                                            visibleText ||
+                                            (agent.status === "failed" ? "" : agent.reply.activity ?? "")
+                                          }
+                                          suggestions={suggestions}
+                                          mentionPills={<CovenMentionPills familiars={replyTargets} />}
+                                          onOpenUrl={onOpenUrl}
+                                        />
                                       );
                                     })}
                                   </div>
-                                ) : null}
-                              </div>
-                            </div>
+
+                                  {run.summary ? (
+                                    <div className="coven-run__summary" data-tone={run.summary.tone}>
+                                      <Icon name={run.summary.icon} width={13} height={13} aria-hidden />
+                                      <span className="coven-run__summary-title">{run.summary.title}</span>
+                                      <span className="coven-run__summary-meta">{run.summary.meta}</span>
+                                      <button
+                                        type="button"
+                                        className="coven-run__summary-action focus-ring"
+                                        onClick={() =>
+                                          setCollapsedRuns((prev) => new Set(prev).add(run.id))
+                                        }
+                                      >
+                                        Collapse run
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              )}
+                            </article>
                           );
                         })}
                       </div>
-                    </div>
-                    );
-                  })}
-                  {/* Typing line: who is still replying this turn (the bubbles
-                      above carry the detailed queued/streaming affordances). */}
-                  {replyingNames.length > 0 ? (
-                    <div className="coven-tab__typing">
-                      <span>{replyingNames.join(", ")} replying…</span>
-                    </div>
-                  ) : null}
-                </div>
-              )}
-            </div>
-              {/* Jump-to-latest: shown when new replies land while the reader has
-                  scrolled up. Clicking snaps back to the newest message. */}
-              {showJump && (
-                <button
-                  type="button"
-                  onClick={jumpToLatest}
-                  className="focus-ring absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[length:var(--text-sm)] font-medium shadow-md [background:var(--bg-raised)]! [border-color:var(--border-hairline)]! [color:var(--text-primary)]!"
-                >
-                  <Icon name="ph:arrow-down" width={13} height={13} />
-                  {busy ? "New replies" : "Jump to latest"}
-                </button>
-              )}
-            </div>
-
-            {/* Composer */}
-            <div className="border-t px-5 py-3.5 [border-color:var(--border-hairline)]!">
-              {participants.length > 0 && !projectLaunchReady ? (
-                <p
-                  role={groupProjectsError ? "alert" : "status"}
-                  className="mx-auto mb-2 max-w-3xl text-[length:var(--text-xs)] [color:var(--text-muted)]!"
-                >
-                  {projectLaunchMessage}
-                </p>
-              ) : null}
-              <div ref={composerRef} className="mx-auto flex max-w-3xl items-end gap-2">
-                <div className="coven-tab__composer-field">
-                  <CovenMentionPills
-                    id={mentionGuidanceId}
-                    familiars={composerTargets}
-                    emptyHint={participants.length > 0 ? "Use @ to tag a familiar" : undefined}
-                  />
-                  <textarea
-                    ref={textareaRef}
-                    value={draft}
-                    onChange={(e) => {
-                      const nextDraft = e.target.value;
-                      completedMentionsRef.current = reconcileMentionCompletions(
-                        draftRef.current,
-                        nextDraft,
-                        completedMentionsRef.current,
-                      );
-                      draftRef.current = nextDraft;
-                      setDraft(nextDraft);
-                      syncMention();
-                    }}
-                    onKeyUp={syncMention}
-                    onClick={syncMention}
-                    onBlur={() => setMention(null)}
-                    onKeyDown={(e) => {
-                      // `isComposing` is true for the Enter/Tab that confirms an
-                      // IME candidate (CJK input) — confirming a character must
-                      // never pick a mention or broadcast the half-composed
-                      // draft. Mirrors ChatView's composer guard.
-                      if (e.nativeEvent.isComposing) return;
-                      if (mentionOpen) {
-                        if (e.key === "ArrowDown" && mentionMatches.length > 0) {
-                          e.preventDefault();
-                          setMentionIndex((i) => (i + 1) % mentionMatches.length);
-                          return;
-                        }
-                        if (e.key === "ArrowUp" && mentionMatches.length > 0) {
-                          e.preventDefault();
-                          setMentionIndex((i) => (i - 1 + mentionMatches.length) % mentionMatches.length);
-                          return;
-                        }
-                        if ((e.key === "Enter" || e.key === "Tab") && mentionMatches.length > 0) {
-                          e.preventDefault();
-                          chooseMention(mentionMatches[mentionIndex] ?? mentionMatches[0]);
-                          return;
-                        }
-                        if (e.key === "Escape") {
-                          e.preventDefault();
-                          setMention(null);
-                          return;
-                        }
-                      }
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        void send();
-                      }
-                    }}
-                    rows={1}
-                    aria-label={activeGroup ? `Message the ${activeGroup.name} coven` : "Message the coven"}
-                    aria-describedby={participants.length > 0 ? mentionGuidanceId : undefined}
-                    placeholder={
-                      participants.length === 0
-                        ? "Add familiars to this coven first…"
-                        : !projectLaunchReady
-                          ? "Choose a shared project above…"
-                        : `Message ${participants.length} familiar${participants.length === 1 ? "" : "s"}…`
-                    }
-                    disabled={participants.length === 0}
-                    className="max-h-40 min-h-[var(--space-10)] w-full resize-none rounded-lg border px-3 py-2 text-[length:var(--text-md)] outline-none disabled:opacity-50 [border-color:var(--border-hairline)]! [background:color-mix(in_oklch,var(--bg-raised)_70%,transparent)]! [color:var(--text-primary)]!"
-                  />
-                </div>
-                <Popover
-                  open={mentionOpen}
-                  onOpenChange={(next) => {
-                    if (!next) setMention(null);
-                  }}
-                  anchorRef={composerRef}
-                  placement="top-start"
-                  ariaLabel="Tag a familiar"
-                  minWidth={220}
-                >
-                  <div className="max-h-64 overflow-y-auto p-1">
-                    <span className="coven-tab__mention-kicker">Tag a familiar</span>
-                    {mentionMatches.length === 0 ? (
-                      <p className="coven-tab__mention-empty">No matching familiar in this coven</p>
-                    ) : null}
-                    {mentionMatches.map((f, i) => {
-                      const resolved = byId.get(f.id);
-                      return (
-                        <button
-                          key={f.id}
-                          type="button"
-                          className="focus-ring flex w-full items-center gap-2 rounded px-2 py-1.5 text-left"
-                          style={i === mentionIndex ? { background: "var(--bg-raised)" } : undefined}
-                          // Use mousedown so the textarea's onBlur doesn't fire first and close us.
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            chooseMention(f);
-                          }}
-                          onMouseEnter={() => setMentionIndex(i)}
-                        >
-                          {resolved && (
-                            <FamiliarAvatar familiar={resolved} size="md" className="rounded-full object-cover" />
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-[length:var(--text-base)] [color:var(--text-primary)]!">
-                              {f.name}
-                            </div>
-                            {resolved?.role && (
-                              <div className="truncate text-[length:var(--text-xs)] [color:var(--text-muted)]!">
-                                {resolved.role}
-                              </div>
-                            )}
-                          </div>
-                          <Icon name="ph:at" width={14} height={14} className="text-[var(--text-muted)]" />
-                        </button>
-                      );
-                    })}
+                    )}
                   </div>
-                </Popover>
-                {busy ? (
-                  <Button variant="secondary" className="coven-tab__stop" leadingIcon="ph:stop-fill" onClick={stop}>
-                    Stop
-                  </Button>
-                ) : (
-                  <Button
-                    variant="primary"
-                    leadingIcon="ph:arrow-up-bold"
-                    disabled={participants.length === 0 || !draft.trim() || !projectLaunchReady}
-                    onClick={() => void send()}
+                  {/* Jump-to-latest: shown when new replies land while the reader
+                      has scrolled up. Clicking snaps back to the newest message. */}
+                  {showJump && (
+                    <button type="button" onClick={jumpToLatest} className="coven-jump focus-ring">
+                      <Icon name="ph:arrow-down" width={13} height={13} aria-hidden />
+                      {busy ? "New replies" : "Jump to latest"}
+                    </button>
+                  )}
+                </div>
+
+                {/* Composer */}
+                <div className="coven-composer">
+                  <div className="coven-composer__inner">
+                    {participants.length > 0 && !projectLaunchReady ? (
+                      <p
+                        role={groupProjectsError ? "alert" : "status"}
+                        className="coven-composer__gate"
+                      >
+                        {projectLaunchMessage}
+                      </p>
+                    ) : null}
+
+                    <CovenComposerBar
+                      routing={routing}
+                      mode={activeGroup.responseMode}
+                      onModeChange={changeResponseMode}
+                      modeLocked={busy}
+                      byId={byId}
+                      queued={queuedDraft}
+                      onDiscardQueued={() => setQueuedDraft(null)}
+                    />
+
+                    <div ref={composerRef} className="coven-composer__row">
+                      <textarea
+                        ref={textareaRef}
+                        value={draft}
+                        onChange={(e) => {
+                          const nextDraft = e.target.value;
+                          completedMentionsRef.current = reconcileMentionCompletions(
+                            draftRef.current,
+                            nextDraft,
+                            completedMentionsRef.current,
+                          );
+                          draftRef.current = nextDraft;
+                          setDraft(nextDraft);
+                          syncMention();
+                        }}
+                        onKeyUp={syncMention}
+                        onClick={syncMention}
+                        onBlur={() => setMention(null)}
+                        onKeyDown={(e) => {
+                          // `isComposing` is true for the Enter/Tab that confirms an
+                          // IME candidate (CJK input) — confirming a character must
+                          // never pick a mention or broadcast the half-composed
+                          // draft. Mirrors ChatView's composer guard.
+                          if (e.nativeEvent.isComposing) return;
+                          if (mentionOpen) {
+                            if (e.key === "ArrowDown" && mentionMatches.length > 0) {
+                              e.preventDefault();
+                              setMentionIndex((i) => (i + 1) % mentionMatches.length);
+                              return;
+                            }
+                            if (e.key === "ArrowUp" && mentionMatches.length > 0) {
+                              e.preventDefault();
+                              setMentionIndex(
+                                (i) => (i - 1 + mentionMatches.length) % mentionMatches.length,
+                              );
+                              return;
+                            }
+                            if ((e.key === "Enter" || e.key === "Tab") && mentionMatches.length > 0) {
+                              e.preventDefault();
+                              chooseMention(mentionMatches[mentionIndex] ?? mentionMatches[0]);
+                              return;
+                            }
+                            if (e.key === "Escape") {
+                              e.preventDefault();
+                              setMention(null);
+                              return;
+                            }
+                          }
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            send();
+                          }
+                        }}
+                        rows={1}
+                        aria-label={`Message the ${activeGroup.name} coven`}
+                        aria-describedby={mentionGuidanceId}
+                        placeholder={
+                          !projectLaunchReady && participants.length > 0
+                            ? "Choose a shared project above…"
+                            : routing.placeholder
+                        }
+                        disabled={participants.length === 0}
+                        className="coven-composer__field"
+                      />
+                      <Button
+                        variant="primary"
+                        leadingIcon={routing.queues ? "ph:clock" : "ph:arrow-up-bold"}
+                        disabled={
+                          participants.length === 0 || !draft.trim() || !projectLaunchReady
+                        }
+                        title={routing.sendTitle}
+                        onClick={send}
+                      >
+                        {routing.sendLabel}
+                      </Button>
+                    </div>
+
+                    {/* Always states what Enter does right now. */}
+                    <p id={mentionGuidanceId} className="coven-composer__note">
+                      {routing.enterNote}
+                    </p>
+                  </div>
+
+                  <Popover
+                    open={mentionOpen}
+                    onOpenChange={(next) => {
+                      if (!next) setMention(null);
+                    }}
+                    anchorRef={composerRef}
+                    placement="top-start"
+                    ariaLabel="Tag a familiar"
+                    minWidth={220}
                   >
-                    Send
-                  </Button>
-                )}
+                    <div className="max-h-64 overflow-y-auto p-1">
+                      <span className="coven-tab__mention-kicker">Tag a familiar</span>
+                      {mentionMatches.length === 0 ? (
+                        <p className="coven-tab__mention-empty">No matching familiar in this coven</p>
+                      ) : null}
+                      {mentionMatches.map((f, i) => {
+                        const resolved = byId.get(f.id);
+                        return (
+                          <button
+                            key={f.id}
+                            type="button"
+                            className="focus-ring flex w-full items-center gap-2 rounded px-2 py-1.5 text-left"
+                            data-active={i === mentionIndex ? "true" : "false"}
+                            // Use mousedown so the textarea's onBlur doesn't fire first and close us.
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              chooseMention(f);
+                            }}
+                            onMouseEnter={() => setMentionIndex(i)}
+                          >
+                            {resolved && (
+                              <FamiliarAvatar familiar={resolved} size="md" className="rounded-full object-cover" />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-[length:var(--text-base)] [color:var(--text-primary)]!">
+                                {f.name}
+                              </div>
+                              {resolved?.role && (
+                                <div className="truncate text-[length:var(--text-xs)] [color:var(--text-muted)]!">
+                                  {resolved.role}
+                                </div>
+                              )}
+                            </div>
+                            <Icon name="ph:at" width={14} height={14} className="text-[var(--text-muted)]" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </Popover>
+                </div>
               </div>
+
+              {inspectorOpen ? (
+                <CovenInspector
+                  group={activeGroup}
+                  participants={participants}
+                  projectName={selectedGroupProject?.name ?? null}
+                  onClose={() => setInspectorOpen(false)}
+                  onCommitDetails={commitDetails}
+                  onDebugSession={onDebugSession}
+                />
+              ) : null}
             </div>
           </>
         )}

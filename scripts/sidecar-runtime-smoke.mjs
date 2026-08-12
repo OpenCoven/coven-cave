@@ -225,7 +225,13 @@ async function writeHangingDaemonFixture(rootDir, marker) {
   if (process.platform === "win32") {
     await writeFile(
       fixture,
-      `@echo off\r\n"${bundledNode}" "${daemonScript}"\r\n`,
+      [
+        "@ECHO off",
+        "SETLOCAL",
+        "CALL :find_dp0",
+        'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\hanging-daemon-child.cjs" %*',
+        "",
+      ].join("\r\n"),
       "utf8",
     );
   } else {

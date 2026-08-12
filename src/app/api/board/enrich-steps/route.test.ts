@@ -116,6 +116,16 @@ assert.match(
   /await updateCard\(card\.id, \{[\s\S]*notes:[\s\S]*startDate:[\s\S]*endDate:[\s\S]*links:[\s\S]*github:[\s\S]*sessionId:/,
   "Enrich route should persist simplified description, dates, associated issue links, and chat assignment together",
 );
+assert.match(
+  source,
+  /\}, \{ automated: true \}\)/,
+  "Enrich writes must identify themselves as automation for authorship enforcement",
+);
+assert.match(
+  source,
+  /error instanceof OrchestrationValidationError[\s\S]*reason: "orchestration_invalid"[\s\S]*errors: error\.errors/,
+  "Enrich should report field-specific orchestration rejections per card",
+);
 
 assert.match(
   source,

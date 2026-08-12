@@ -130,7 +130,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const replaceAssistantText = \(\s*text: string,\s*correction: ToolOffsetCorrection \| undefined,[\s\S]*?t\.id === assistantId\s*\? \{[\s\S]*?text,[\s\S]*?tools: rebaseToolTextOffsets\(t\.tools, correction\),[\s\S]*?pending: true,[\s\S]*?lifecycle: "streaming"/,
+  /const replaceAssistantText = \(\s*text: string,\s*correction: ToolOffsetCorrection \| undefined,[\s\S]*?const canonicalText = liveGeneration\.responseText\.replace\(text\);[\s\S]*?t\.id === assistantId\s*\? \{[\s\S]*?text: canonicalText,[\s\S]*?tools: rebaseToolTextOffsets\(t\.tools, correction\),[\s\S]*?pending: true,[\s\S]*?lifecycle: "streaming"/,
   "authoritative text replacement should atomically rebase the same assistant turn's live tools",
 );
 assert.match(
@@ -442,8 +442,8 @@ assert.match(
 
 assert.match(
   bubbleSource,
-  /aria-label="Regenerate response"[\s\S]{0,200}className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"/,
-  "Regenerate renders in the assistant bubble's CSS-revealed action row with the shared button styling (CHAT-D6-02)",
+  /aria-label="Retry response"[\s\S]{0,200}className="cave-copy-btn cave-copy-btn-bubble cave-response-action focus-ring"/,
+  "Retry renders in the assistant bubble's CSS-revealed action row with the shared button styling (CHAT-D6-02)",
 );
 
 // ── CHAT-D12-03: visible retry at failed turns on desktop ──

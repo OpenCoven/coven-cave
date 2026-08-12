@@ -18,6 +18,7 @@ import {
   acquireMaintenanceGate,
   releaseMaintenanceGate,
 } from "./maintenance-gate.mjs";
+import { refreshCovenBin } from "../src/lib/coven-bin.ts";
 import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -25,6 +26,15 @@ const moduleUrl = pathToFileURL(
   path.join(scriptDir, "worktree-lifecycle-retirement.ts"),
 ).href;
 const sourceRoot = path.resolve(scriptDir, "..");
+const retirementSource = readFileSync(
+  path.join(scriptDir, "worktree-lifecycle-retirement.ts"),
+  "utf8",
+);
+assert.match(
+  retirementSource,
+  /for \(const rawCandidate[\s\S]*?heartbeatMaintenanceGate\(maintenanceHandle\)[\s\S]*?verifyMaintenanceGateOwnership\(maintenanceHandle\)[\s\S]*?MAX_FENCED_MUTATION_TIMEOUT_MS/,
+  "each disposable cleanup receives a fresh verified lease before its bounded mutation",
+);
 const realGit = process.env.PATH.split(path.delimiter)
   .map((entry) => path.join(entry, "git"))
   .find((candidate) => existsSync(candidate));
@@ -65,6 +75,7 @@ function makeItem(overrides = {}) {
     processOwners: [],
     claimOwners: [],
     taskIds: [],
+    mentionTaskIds: [],
     openPrs: [],
     mergedPr: null,
     activeWorkflowUrls: [],
@@ -180,11 +191,17 @@ function executable(file, contents) {
 
 function withPathPrefix(bin, fn) {
   const originalPath = process.env.PATH;
+  const originalCovenBin = process.env.COVEN_BIN;
   process.env.PATH = `${bin}${path.delimiter}${originalPath}`;
+  process.env.COVEN_BIN = path.join(bin, "coven");
+  refreshCovenBin();
   try {
     return fn();
   } finally {
     process.env.PATH = originalPath;
+    if (originalCovenBin === undefined) delete process.env.COVEN_BIN;
+    else process.env.COVEN_BIN = originalCovenBin;
+    refreshCovenBin();
   }
 }
 
@@ -193,9 +210,11 @@ function createGitFixture() {
   const repoEntry = path.join(fixtureRoot, "repo");
   const origin = path.join(fixtureRoot, "origin.git");
   const bin = path.join(fixtureRoot, "bin");
+  const state = path.join(fixtureRoot, "state");
   mkdirSync(repoEntry, { recursive: true });
   mkdirSync(origin, { recursive: true });
   mkdirSync(bin, { recursive: true });
+  mkdirSync(state, { recursive: true });
   const repo = realpathSync(repoEntry);
 
   git(["init", "-q", "-b", "main"], repo);
@@ -247,15 +266,60 @@ esac
 
   executable(
     path.join(bin, "coven"),
-    `#!/bin/sh
-case "$1" in
-  sessions) printf '%s\\n' '{"sessions":[]}' ;;
-  claim) printf '%s\\n' '{"claims":[]}' ;;
-  *)
-    printf 'unexpected coven command: %s\\n' "$*" >&2
-    exit 2
-    ;;
-esac
+    `#!/usr/bin/env node
+const { readFileSync, writeFileSync } = require("node:fs");
+const path = require("node:path");
+const stateFile = path.join(__dirname, "..", "state", "coven-maintenance.json");
+const state = (() => {
+  try { return JSON.parse(readFileSync(stateFile, "utf8")); }
+  catch { return { owner: null, writers: [] }; }
+})();
+const save = () => writeFileSync(stateFile, JSON.stringify(state));
+const json = () => process.stdout.write(JSON.stringify({ owner: state.owner, writers: state.writers }) + "\\n");
+const [, , group, command, ownerId, generation] = process.argv;
+if (group === "--version") {
+  process.stdout.write("coven 0.2.5\\n");
+  process.exit(0);
+}
+if (group === "sessions") {
+  process.stdout.write('{"sessions":[]}\\n');
+  process.exit(0);
+}
+if (group === "claim") {
+  process.stdout.write('{"claims":[]}\\n');
+  process.exit(0);
+}
+if (group !== "maintenance") process.exit(2);
+if (command === "acquire") {
+  if (state.owner !== null) process.exit(1);
+  state.owner = {
+    owner_id: ownerId,
+    generation: "fixture-generation",
+    expires_at: Math.floor(Date.now() / 1000) + 120,
+    phase: state.writers.length === 0 ? "held" : "draining",
+  };
+  save();
+  json();
+  process.exit(0);
+}
+if (command === "heartbeat") {
+  if (!state.owner || state.owner.owner_id !== ownerId || state.owner.generation !== generation) process.exit(1);
+  state.owner.expires_at = Math.floor(Date.now() / 1000) + 120;
+  save();
+  json();
+  process.exit(0);
+}
+if (command === "release") {
+  if (!state.owner || state.owner.owner_id !== ownerId || state.owner.generation !== generation) process.exit(1);
+  state.owner = null;
+  save();
+  process.exit(0);
+}
+if (command === "status") {
+  json();
+  process.exit(0);
+}
+process.exit(2);
 `,
   );
 
@@ -1399,6 +1463,199 @@ process.stdout.write(JSON.stringify(output) + "\\n");
     assert.match(
       reprobed.reason,
       /retirement candidate (?:lane changed during final retirement probe|is no longer clean enough to retire)/,
+    );
+  } finally {
+    cleanupFixture(fixture.fixtureRoot);
+  }
+});
+
+test("a scoped inventory keeps the focused unit's verdict and fails every other unit closed", () => {
+  // reprobe asks about ONE candidate but used to probe every unit's pull
+  // request association: ~2 GraphQL round trips per unit, ~104 calls and ~95s
+  // of a ~134s inventory on a 47-unit checkout, all but one result discarded.
+  // focusRefs narrows that probing (cave-imhf0).
+  //
+  // The danger is not the saving, it is the direction of the error. A unit with
+  // no pull request association looks landed, and landed is what makes a unit
+  // retirable — so "we did not ask" must never be recorded as "there is no PR".
+  // This pins both halves: the focused unit's verdict is identical to a full
+  // run, and a unit that a full run calls retirable becomes `uncertain` when it
+  // is out of scope.
+  const fixture = createGitFixture();
+  try {
+    const agedEnv = {
+      GIT_AUTHOR_DATE: "2026-07-20T12:00:00Z",
+      GIT_COMMITTER_DATE: "2026-07-20T12:00:00Z",
+    };
+    const focused = "fix/scoped-focused";
+    const other = "fix/scoped-other";
+    const worktrees = {};
+    // Both branches must be LANDED (an ancestor of the pushed default tip) and
+    // must have DISTINCT head oids. Cutting both from one commit satisfies
+    // "landed" but gives them the same oid, and the pull-request probe is keyed
+    // by oid — one association shared by two units is its own ambiguity, which
+    // classifies both `uncertain` for a reason unrelated to scoping. Committing
+    // ON each branch gives distinct oids but stops them being ancestors of main.
+    // So advance main between the two cuts: each branch is a distinct earlier
+    // point of the default branch's own history.
+    for (const branch of [focused, other]) {
+      // Under fixture.repo, which is already realpath'd. Basing this on
+      // fixture.fixtureRoot instead yields /var/... while git reports
+      // /private/var/..., and the metadata path check rejects the mismatch.
+      worktrees[branch] = path.join(
+        fixture.repo,
+        ".worktrees",
+        branch.replace(/[^A-Za-z0-9]/g, "-"),
+      );
+      git(["commit", "-q", "--allow-empty", "-m", `base for ${branch}`], fixture.repo, {
+        env: agedEnv,
+      });
+      git(["branch", branch, "HEAD"], fixture.repo, { env: agedEnv });
+      git(["push", "-q", "-u", "origin", branch], fixture.repo);
+      git(["worktree", "add", worktrees[branch], branch], fixture.repo, { env: agedEnv });
+    }
+    // Advance and push main past both, so each branch is strictly behind the
+    // default tip and its landing time is provable.
+    git(["commit", "-q", "--allow-empty", "-m", "land scoped fixtures"], fixture.repo, {
+      env: agedEnv,
+    });
+    git(["push", "-q", "origin", "main"], fixture.repo);
+
+    const beadFor = (id, branch) => ({
+      id,
+      status: "closed",
+      title: "Scoped inventory fixture",
+      description: "",
+      notes: "",
+      external_ref: null,
+      metadata: {
+        coven: {
+          worktree: {
+            branch,
+            path: worktrees[branch],
+            owner: "retirement-test",
+            purpose: "managed fixture",
+            disposition: "pr",
+            createdAt: "2026-07-20T12:00:00Z",
+          },
+        },
+      },
+    });
+    executable(
+      path.join(fixture.bin, "bd"),
+      `#!/usr/bin/env node
+console.log(JSON.stringify(${JSON.stringify([
+        beadFor("cave-scoped-focused", focused),
+        beadFor("cave-scoped-other", other),
+      ])}));
+`,
+    );
+
+    const nowMs = Date.parse("2026-08-01T12:00:00Z");
+    const focusedRef = `refs/heads/${focused}`;
+    const otherRef = `refs/heads/${other}`;
+    const run = (focusRefs) =>
+      withPathPrefix(fixture.bin, () =>
+        collectWorktreeLifecycleInventory({
+          repo: "OpenCoven/coven-cave",
+          root: fixture.repo,
+          nowMs,
+          ...(focusRefs ? { focusRefs } : {}),
+        }),
+      );
+
+    const full = run(null);
+    const fullFocused = findItem(full.items, focusedRef);
+    const fullOther = findItem(full.items, otherRef);
+
+    const scoped = run([focusedRef]);
+    const scopedFocused = findItem(scoped.items, focusedRef);
+    const scopedOther = findItem(scoped.items, otherRef);
+
+    // The verdict the retirement gate acts on must be untouched by scoping.
+    assert.equal(
+      scopedFocused.lane,
+      fullFocused.lane,
+      `focused lane changed under scoping: ${fullFocused.lane} -> ${scopedFocused.lane}`,
+    );
+    assert.deepEqual(
+      scopedFocused.reasons,
+      fullFocused.reasons,
+      "the focused unit's reasons must be identical to a full run",
+    );
+    assert.ok(
+      !scopedFocused.probeErrors.some((error) => error.includes("not probed")),
+      "the focused unit must actually be probed",
+    );
+
+    // And the other unit must move only in the safe direction.
+    assert.ok(
+      scopedOther.probeErrors.some((error) => error.includes("not probed")),
+      "an out-of-scope unit must record that its association was never asked for",
+    );
+    assert.equal(
+      scopedOther.lane,
+      "uncertain",
+      `an out-of-scope unit must fail closed; it was ${scopedOther.lane}`,
+    );
+    assert.notEqual(
+      scopedOther.lane,
+      "retire-after-gate",
+      "scoping must never be able to present an unprobed unit as retirable",
+    );
+    // Guard the guard: if the fixture stopped making this unit retirable, the
+    // assertion above would pass for the wrong reason and this test would quietly
+    // stop covering the hazard it exists for.
+    assert.equal(
+      fullOther.lane,
+      "retire-after-gate",
+      `fixture no longer produces a second retirable unit (was ${fullOther.lane}); ` +
+        "the fail-closed assertion above is only meaningful against one",
+    );
+  } finally {
+    cleanupFixture(fixture.fixtureRoot);
+  }
+});
+
+test("adapter reprobe renews the maintenance fence while its inventory runs", () => {
+  // reprobe() rebuilds the WHOLE lifecycle inventory to re-verify one unit.
+  // On a real checkout that measured 134s for 47 units, against a 120s Coven
+  // lease, and it runs inside the fence between two retirement checkpoints. With
+  // no renewal the lease was always dead by the next checkpoint, so every
+  // retirement blocked with "maintenance lease expired" and nothing was ever
+  // retired. See cave-wsayy.
+  //
+  // The renewal factory is injected unthrottled AND non-forwarding: it counts
+  // invocations without calling the wrapped renew, so this test never spawns
+  // `coven`. The real factory would throttle every call away against a fixture
+  // inventory this small, which is exactly the case where a missing hook and a
+  // working one are indistinguishable.
+  const fixture = createGitFixture();
+  try {
+    let renewals = 0;
+    const operations = createGitRetirementOperations({
+      root: fixture.repo,
+      repo: "OpenCoven/coven-cave",
+      gateHandle: { generation: 1, token: "tok", ownerId: "owner", root: "/gate" },
+      nowMs: 1_754_000_000_000,
+      createFenceRenewal: () => () => {
+        renewals += 1;
+      },
+    });
+
+    const item = {
+      ref: "refs/heads/feat/absent-from-this-fixture",
+      branch: "feat/absent-from-this-fixture",
+      head: "0".repeat(40),
+    };
+    withPathPrefix(fixture.bin, () => operations.reprobe(item));
+
+    // The probe's verdict is beside the point — this pins that the inventory it
+    // runs is given a progress hook and that the hook actually fires, which is
+    // the whole difference between holding a live fence and an expired one.
+    assert.ok(
+      renewals > 0,
+      "reprobe's inventory must drive fence renewal; it ran with no hook at all before this fix",
     );
   } finally {
     cleanupFixture(fixture.fixtureRoot);

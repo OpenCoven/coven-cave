@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { createHmac, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
@@ -35,25 +35,6 @@ function cavePort() {
   const channelDefault = process.env.COVEN_CAVE_BUNDLE === "1" ? CAVE_PRODUCTION_PORT : CAVE_DEV_PORT;
   return parseCavePort(process.env.COVEN_CAVE_PORT) ?? parseCavePort(process.env.PORT) ?? channelDefault;
 }
-function persistedMobileAccessSecretFile() {
-  const port2 = String(cavePort());
-  const stateRoot = process.env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim() || join(
-    process.env.XDG_STATE_HOME?.trim() || join(homedir(), ".local", "state"),
-    "coven-cave"
-  );
-  const stateDir = process.env.COVEN_CAVE_MOBILE_STATE_DIR?.trim() || join(stateRoot, `mobile-tailscale-${port2}`);
-  return join(stateDir, "access-token");
-}
-if (process.env.COVEN_CAVE_BUNDLE !== "1" && process.env.COVEN_CAVE_E2E !== "1" && !process.env.COVEN_CAVE_ACCESS_TOKEN?.trim()) {
-  try {
-    const persisted = readFileSync(persistedMobileAccessSecretFile(), "utf8").trim();
-    if (persisted) process.env.COVEN_CAVE_ACCESS_TOKEN = persisted;
-  } catch {
-  }
-}
-function accessToken() {
-  return process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
-}
 const SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN ?? "";
 const LOCAL_PEER_HEADER = "x-coven-cave-local-peer";
 const LOCAL_PEER_SECRET = randomUUID();
@@ -65,12 +46,10 @@ const FORWARDING_HEADERS = [
   "x-forwarded-proto",
   "via"
 ];
-const ACCESS_COOKIE = "coven_cave_access";
-const LEGACY_ACCESS_COOKIE = "coven_access_token";
-const ACCESS_QUERY_PARAM = "coven_access_token";
 const SIDECAR_QUERY_PARAM = "covenCaveToken";
 const sessions = /* @__PURE__ */ new Map();
-function terminatePackagedUnixSidecarTree() {
+const PACKAGED_CHILD_SHUTDOWN_BUDGET_MS = 1200;
+function terminatePtySessions() {
   for (const session of sessions.values()) {
     try {
       session.pty.kill();
@@ -78,15 +57,43 @@ function terminatePackagedUnixSidecarTree() {
     }
   }
   sessions.clear();
+}
+async function terminatePackagedUnixSidecarTree() {
+  terminatePtySessions();
   try {
-    process.kill(-process.pid, "SIGKILL");
-  } catch {
-    process.exit(1);
+    const terminateDirectRuns = globalThis.__covenCaveTerminateCopilotFlowRuns;
+    if (terminateDirectRuns) {
+      await Promise.race([
+        terminateDirectRuns(),
+        new Promise((_resolve, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error("direct Copilot shutdown exceeded its native parent lease")),
+            PACKAGED_CHILD_SHUTDOWN_BUDGET_MS
+          );
+          timer.unref?.();
+        })
+      ]);
+    }
+  } catch (error) {
+    console.error("[cave] direct Copilot process-tree shutdown could not be proved", error);
+  } finally {
+    terminatePtySessions();
+    try {
+      process.kill(-process.pid, "SIGKILL");
+    } catch {
+      process.exit(1);
+    }
   }
 }
 if (process.platform !== "win32" && process.env.COVEN_CAVE_PARENT_WATCHDOG === "stdin-eof") {
-  process.stdin.once("end", terminatePackagedUnixSidecarTree);
-  process.stdin.once("error", terminatePackagedUnixSidecarTree);
+  let parentShutdownStarted = false;
+  const onParentShutdown = () => {
+    if (parentShutdownStarted) return;
+    parentShutdownStarted = true;
+    void terminatePackagedUnixSidecarTree();
+  };
+  process.stdin.once("end", onParentShutdown);
+  process.stdin.once("error", onParentShutdown);
   process.stdin.resume();
 }
 const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
@@ -132,17 +139,6 @@ function scrollbackFrom(session, cursor) {
   }
   return output;
 }
-function getTokensFromCookie(header) {
-  if (!header) return [];
-  const tokens = [];
-  for (const part of header.split(";")) {
-    const [key, ...rest] = part.trim().split("=");
-    if (key === ACCESS_COOKIE || key === LEGACY_ACCESS_COOKIE) {
-      tokens.push(decodeURIComponent(rest.join("=") ?? ""));
-    }
-  }
-  return tokens;
-}
 function timingSafeEqualString(a, b) {
   const aBytes = Buffer.from(a);
   const bBytes = Buffer.from(b);
@@ -153,26 +149,8 @@ function timingSafeEqualString(a, b) {
   }
   return diff === 0;
 }
-function isExpectedAccessToken(value) {
-  const secret = accessToken();
-  if (!secret || !value) return false;
-  if (timingSafeEqualString(value, secret)) return true;
-  return isValidSignedAccessToken(value, secret);
-}
-function isExpectedSidecarToken(value) {
-  return Boolean(SIDECAR_TOKEN && value && timingSafeEqualString(value, SIDECAR_TOKEN));
-}
 function isExpectedPtyToken(value) {
-  return isExpectedAccessToken(value) || isExpectedSidecarToken(value);
-}
-function isValidSignedAccessToken(value, secret) {
-  const parts = value.split(".");
-  if (parts.length !== 4 || parts[0] !== "v1") return false;
-  const expiresAt = Number(parts[1]);
-  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
-  if (!parts[2] || !parts[3]) return false;
-  const expected = createHmac("sha256", secret).update(`v1.${parts[1]}.${parts[2]}`).digest("base64url");
-  return timingSafeEqualString(parts[3], expected);
+  return Boolean(SIDECAR_TOKEN && value && timingSafeEqualString(value, SIDECAR_TOKEN));
 }
 function bearerToken(req) {
   const auth = req.headers.authorization ?? "";
@@ -232,7 +210,7 @@ async function refreshTailnetPeers() {
     const { stdout } = await execFileAsync(
       process.env.COVEN_CAVE_TAILSCALE_BIN ?? "tailscale",
       ["status", "--json"],
-      { timeout: 1e4, maxBuffer: 16 * 1024 * 1024 }
+      { timeout: 1e4, maxBuffer: 16 * 1024 * 1024, windowsHide: true }
     );
     const status = JSON.parse(stdout);
     const next2 = /* @__PURE__ */ new Map();
@@ -340,13 +318,19 @@ function parseUpgradeTarget(rawUrl) {
   return { pathname, query };
 }
 function isPtyAuthRequired() {
-  return Boolean(accessToken() || SIDECAR_TOKEN);
+  return Boolean(SIDECAR_TOKEN);
+}
+function shouldRejectUnauthenticatedPtyUpgrade({
+  sidecarTokenConfigured = false,
+  tokenAuthenticated = false
+} = {}) {
+  if (tokenAuthenticated) return false;
+  return sidecarTokenConfigured;
 }
 function isAuthorized(req, query) {
   if (!isPtyAuthRequired()) return false;
-  const queryToken = firstQueryValue(query[ACCESS_QUERY_PARAM]);
   const sidecarQueryToken = firstQueryValue(query[SIDECAR_QUERY_PARAM]);
-  const candidates = [bearerToken(req), queryToken, sidecarQueryToken, ...getTokensFromCookie(req.headers.cookie)];
+  const candidates = [bearerToken(req), sidecarQueryToken];
   return candidates.some(isExpectedPtyToken);
 }
 function defaultShell() {
@@ -655,8 +639,14 @@ function handlePtyConnection(ws, threadId, cols, rows, cwd, replayCursor) {
     detachPtyConsumer(threadId, session, ws);
   });
 }
+function loopbackHostname(raw = process.env.HOSTNAME) {
+  if (raw === "127.0.0.1" || raw === "localhost" || raw === "::1") {
+    return raw;
+  }
+  return "127.0.0.1";
+}
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME ?? "127.0.0.1";
+const hostname = loopbackHostname();
 const port = cavePort();
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
@@ -692,14 +682,16 @@ server.on("upgrade", (req, socket, head) => {
     });
     return;
   }
-  const tailnetAuthenticated = resolveTailnetPeer(req) !== null;
-  const tokenAuthenticated = tailnetAuthenticated || (isPtyAuthRequired() ? isAuthorized(req, query) : false);
+  const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     socket.destroy();
     return;
   }
-  if (isPtyAuthRequired() && !tokenAuthenticated && !isDirectLoopbackRequest(req)) {
+  if (shouldRejectUnauthenticatedPtyUpgrade({
+    sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
+    tokenAuthenticated
+  })) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;

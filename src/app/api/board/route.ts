@@ -2,12 +2,18 @@ import { NextResponse } from "next/server";
 import {
   createCard,
   loadBoard,
+  OrchestrationValidationError,
   PRIORITIES,
   STATUSES,
   type CardPriority,
   type CardStatus,
 } from "@/lib/cave-board";
-import type { CardAsanaLink, CardGitHubLink } from "@/lib/cave-board-types";
+import type {
+  CardAsanaLink,
+  CardGitHubLink,
+  TaskDependency,
+  TaskNextStep,
+} from "@/lib/cave-board-types";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import { trustedProjectCwd } from "@/lib/cave-projects";
 
@@ -42,6 +48,10 @@ export async function POST(req: Request) {
     template?: string | null;
     steps?: { text: string }[];
     attachments?: ChatAttachment[];
+    dependencies?: TaskDependency[];
+    primaryBlockerId?: string | null;
+    primaryBlockerPinned?: boolean;
+    nextStep?: TaskNextStep | null;
   };
   try {
     body = await req.json();
@@ -69,26 +79,41 @@ export async function POST(req: Request) {
     }
     cwd = resolved.root;
   }
-  const card = await createCard({
-    title: body.title,
-    notes: body.notes,
-    status: body.status,
-    priority: body.priority,
-    familiarId: body.familiarId,
-    modelOverride: body.modelOverride,
-    modelOverrideHarness: body.modelOverrideHarness,
-    sessionId: body.sessionId,
-    cwd,
-    projectId: body.projectId,
-    links: body.links,
-    github: body.github,
-    asana: body.asana,
-    labels: body.labels,
-    startDate: body.startDate,
-    endDate: body.endDate,
-    template: body.template,
-    steps: body.steps,
-    attachments: body.attachments,
-  });
+  let card;
+  try {
+    card = await createCard({
+      title: body.title,
+      notes: body.notes,
+      status: body.status,
+      priority: body.priority,
+      familiarId: body.familiarId,
+      modelOverride: body.modelOverride,
+      modelOverrideHarness: body.modelOverrideHarness,
+      sessionId: body.sessionId,
+      cwd,
+      projectId: body.projectId,
+      links: body.links,
+      github: body.github,
+      asana: body.asana,
+      labels: body.labels,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      template: body.template,
+      steps: body.steps,
+      attachments: body.attachments,
+      dependencies: body.dependencies,
+      primaryBlockerId: body.primaryBlockerId,
+      primaryBlockerPinned: body.primaryBlockerPinned,
+      nextStep: body.nextStep,
+    });
+  } catch (error) {
+    if (error instanceof OrchestrationValidationError) {
+      return NextResponse.json(
+        { ok: false, error: "orchestration_invalid", errors: error.errors },
+        { status: 422 },
+      );
+    }
+    throw error;
+  }
   return NextResponse.json({ ok: true, card });
 }

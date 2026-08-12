@@ -7,12 +7,42 @@ const {
   closeTrailingFence,
   getRenderedMarkdown,
   scanFenceFilenames,
+  stabilizeStreamingMarkdown,
 } = markdownStream;
 
 test("markdown stream helpers preserve filename fences and close only incomplete fences", () => {
   assert.equal(closeTrailingFence("```ts\nconst x = 1"), "```ts\nconst x = 1\n```");
   assert.equal(closeTrailingFence("```ts\nconst x = 1\n```"), "```ts\nconst x = 1\n```");
   assert.deepEqual(scanFenceFilenames("```ts:src/a.ts\na\n```\n```\nb\n```"), ["src/a.ts", null]);
+});
+
+test("streaming markdown closes incomplete inline formatting only for presentation", () => {
+  assert.equal(stabilizeStreamingMarkdown("A **bold"), "A **bold**");
+  assert.equal(stabilizeStreamingMarkdown("An _italic"), "An _italic_");
+  assert.equal(stabilizeStreamingMarkdown("Use `code"), "Use `code`");
+  assert.equal(
+    stabilizeStreamingMarkdown("Open [the docs](https://example.com"),
+    "Open [the docs](https://example.com)",
+  );
+  assert.equal(stabilizeStreamingMarkdown("* list item"), "* list item");
+  assert.equal(stabilizeStreamingMarkdown("threads_dgg"), "threads_dgg");
+});
+
+test("streaming markdown closes nested inline delimiters in reverse order", () => {
+  assert.equal(stabilizeStreamingMarkdown("A **bold and _soft"), "A **bold and _soft_**");
+});
+
+test("streaming markdown removes empty trailing openers instead of exposing markers", () => {
+  assert.equal(stabilizeStreamingMarkdown("Waiting **"), "Waiting ");
+  assert.equal(stabilizeStreamingMarkdown("Waiting `"), "Waiting ");
+  assert.equal(stabilizeStreamingMarkdown("Waiting _"), "Waiting ");
+});
+
+test("streaming markdown does not carry incomplete emphasis across paragraphs", () => {
+  assert.equal(
+    stabilizeStreamingMarkdown("Start *unfinished\n\nNext paragraph"),
+    "Start unfinished\n\nNext paragraph",
+  );
 });
 
 test("rendered markdown cache refreshes recency before eviction", () => {

@@ -57,6 +57,20 @@ export function TaskWorkCockpit({
   const [lookupState, setLookupState] = useState<"idle" | "checking" | "missing" | "error">("idle");
   const [unlinking, setUnlinking] = useState(false);
   const [unlinkError, setUnlinkError] = useState<string | null>(null);
+  // The bridge replaces the card's id-based placeholder with its reserved
+  // session id after starting. Keep the first key for this live prompt: a
+  // changing key would look like a new handoff and send the prompt twice.
+  const initialPromptHandoffIdRef = useRef<string | null>(null);
+  const handoffReleaseTimerRef = useRef<number | null>(null);
+  // Incremented by every effect body run; captured by the matching cleanup so
+  // that a stale setTimeout callback can detect a superseding body run and
+  // skip the release even when clearTimeout lost the race.
+  const handoffReleaseGenRef = useRef(0);
+  if (initialPrompt) {
+    initialPromptHandoffIdRef.current ??= card.sessionId ?? card.id;
+  } else {
+    initialPromptHandoffIdRef.current = null;
+  }
   const target = resolveTaskWorkTarget(
     card.sessionId,
     fallbackSession ? [...sessions, fallbackSession] : sessions,
@@ -133,7 +147,7 @@ export function TaskWorkCockpit({
           // Stable across the Group's pane-set remount, and specific to THIS
           // handoff: a later task, or this task started again, gets a different
           // reserved conversation id and may send again.
-          handoffId: card.sessionId ?? card.id,
+          handoffId: initialPromptHandoffIdRef.current,
           railSessionId: railSession?.id ?? card.sessionId ?? null,
         }
       : target.kind === "ready"
@@ -154,8 +168,29 @@ export function TaskWorkCockpit({
   // the same card would sit on a claimed id and never send its first prompt.
   const handoffId = conversation?.handoffId ?? null;
   useEffect(() => {
+    // Stamp this body run so any in-flight release timer can detect it.
+    const gen = ++handoffReleaseGenRef.current;
+    if (handoffReleaseTimerRef.current !== null) {
+      clearTimeout(handoffReleaseTimerRef.current);
+      handoffReleaseTimerRef.current = null;
+    }
     if (!handoffId) return;
-    return () => releaseInitialPromptHandoff(CHAT_VIEW_HANDOFF_SCOPE, handoffId);
+    return () => {
+      // React's development effect replay runs a cleanup before immediately
+      // mounting the same cockpit again. Delay the release one turn so that
+      // replay can cancel it; a real unmount still releases the handoff for a
+      // later, genuinely new task launch.
+      //
+      // The generation check is the belt-and-suspenders guard: if clearTimeout
+      // loses a scheduler race (e.g. MessageChannel vs. setTimeout ordering in
+      // React 19 Strict Mode), the callback still detects that a newer effect
+      // body has run and skips the release.
+      handoffReleaseTimerRef.current = window.setTimeout(() => {
+        handoffReleaseTimerRef.current = null;
+        if (handoffReleaseGenRef.current !== gen) return;
+        releaseInitialPromptHandoff(CHAT_VIEW_HANDOFF_SCOPE, handoffId);
+      }, 0);
+    };
   }, [handoffId]);
 
   const unlinkMissingSession = async () => {

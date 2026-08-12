@@ -98,6 +98,26 @@ describe("buildReflectTranscript", () => {
     assert.equal(out, "user: hi there\nassistant: hello");
   });
 
+  it("records visible attachment evidence, including attachment-only turns", () => {
+    const out = buildReflectTranscript([
+      {
+        role: "assistant",
+        text: "The banner is shown below.",
+        attachments: [{ name: "launch-banner.png", mimeType: "image/png" }],
+      },
+      {
+        role: "assistant",
+        text: "",
+        attachments: [{ name: "alternate.webp", type: "image/webp" }],
+      },
+    ]);
+    assert.equal(
+      out,
+      "assistant: The banner is shown below. [visible attachments: launch-banner.png (image/png)]\n"
+        + "assistant: [visible attachments: alternate.webp (image/webp)]",
+    );
+  });
+
   it("keeps only the most recent turns and truncates long ones", () => {
     const many = Array.from({ length: 40 }, (_, i) => ({ role: "user" as const, text: `m${i}` }));
     const out = buildReflectTranscript(many);
@@ -152,6 +172,15 @@ describe("buildThreadReflectPrompt", () => {
       /too thin to judge, use "adequate"/i.test(prompt),
       "insufficient evidence falls back to adequate, not an inflated rating",
     );
+  });
+
+  it("treats rendered attachment metadata as delivery proof instead of trusting prose", () => {
+    const prompt = buildThreadReflectPrompt({
+      sessionId: "sess-image",
+      transcript: "assistant: The banner is complete.",
+    });
+    assert.match(prompt, /A prose claim that an image was shown is not delivery evidence/i);
+    assert.match(prompt, /\[visible attachments:/i);
   });
 
   it("builds a resolution prompt that directs the thread to fix a selected review item", () => {

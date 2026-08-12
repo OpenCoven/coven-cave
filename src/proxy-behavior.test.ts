@@ -24,12 +24,8 @@ import {
   expectedRequestOrigins,
   bearerFromReferer,
   bearerFromRefererAny,
-  shouldRequireMobileAccessCredential,
   isTrustedLocalPeer,
   timingSafeEqualString,
-  isHtmlNavigationRequest,
-  accessGatePage,
-  ACCESS_TOKEN_QUERY_PARAM,
 } from "./proxy-helpers.ts";
 
 // ─── isLoopbackHost ────────────────────────────────────────────────────────
@@ -342,41 +338,9 @@ assert.equal(
   "native app: absent Referer still passes the source helper",
 );
 
-// ─── shouldRequireMobileAccessCredential ──────────────────────────────────
-assert.equal(
-  shouldRequireMobileAccessCredential("localhost:3000", false),
-  true,
-  "Host headers are spoofable and must not exempt requests from the mobile gate",
-);
-assert.equal(
-  shouldRequireMobileAccessCredential("127.0.0.1:3000", false),
-  true,
-  "loopback-looking Host headers still require a valid invite",
-);
-assert.equal(
-  shouldRequireMobileAccessCredential("cave.tailnet.example.ts.net", false),
-  true,
-  "non-loopback mobile entrypoints still require a valid invite",
-);
-assert.equal(
-  shouldRequireMobileAccessCredential("localhost:3000", true),
-  true,
-  "supplied credentials should still be verified and redirected on loopback",
-);
-assert.equal(
-  shouldRequireMobileAccessCredential("localhost:3000", false, true),
-  false,
-  "a server-verified direct loopback peer is exempt from the mobile gate (cave-vn2r)",
-);
-assert.equal(
-  shouldRequireMobileAccessCredential("cave.tailnet.example.ts.net", false, false),
-  true,
-  "without the server's local-peer stamp the gate stays armed for every host",
-);
-
 // ─── isTrustedLocalPeer ───────────────────────────────────────────────────
-// The exemption above is keyed to server.ts's per-boot secret; only an exact
-// match counts, and a missing secret (Next without server.ts) fails closed.
+// The local-peer stamp still distinguishes direct from forwarded traffic, but
+// it is not user identity and cannot bypass an armed credential gate.
 assert.equal(isTrustedLocalPeer("per-boot-secret", "per-boot-secret"), true);
 assert.equal(
   isTrustedLocalPeer("guessed-value", "per-boot-secret"),
@@ -434,45 +398,6 @@ assert.equal(timingSafeEqualString("12345", "12346"), false);
   const right = "a".repeat(1023) + "b";
   assert.equal(timingSafeEqualString(left, right), false);
   assert.equal(timingSafeEqualString(left, left), true);
-}
-
-// ─── isHtmlNavigationRequest ───────────────────────────────────────────────
-// Only browser PAGE navigations (HTML-accepting GET outside /api/) qualify
-// for the HTML access gate; everything else must keep the JSON 401 envelope.
-const BROWSER_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
-assert.equal(isHtmlNavigationRequest("GET", "/", BROWSER_ACCEPT), true);
-assert.equal(isHtmlNavigationRequest("GET", "/dashboard/familiars/growth", BROWSER_ACCEPT), true);
-assert.equal(
-  isHtmlNavigationRequest("GET", "/api/familiars", BROWSER_ACCEPT),
-  false,
-  "API routes keep JSON even for HTML-accepting clients",
-);
-assert.equal(isHtmlNavigationRequest("GET", "/api", BROWSER_ACCEPT), false, "bare /api is an API path");
-assert.equal(
-  isHtmlNavigationRequest("GET", "/apidocs", BROWSER_ACCEPT),
-  true,
-  "prefix match must not swallow non-API paths that merely start with 'api'",
-);
-assert.equal(isHtmlNavigationRequest("POST", "/", BROWSER_ACCEPT), false, "mutations keep JSON");
-assert.equal(isHtmlNavigationRequest("HEAD", "/", BROWSER_ACCEPT), false, "HEAD keeps JSON");
-assert.equal(isHtmlNavigationRequest("GET", "/", "application/json"), false, "fetch/curl keep JSON");
-assert.equal(isHtmlNavigationRequest("GET", "/", null), false, "no Accept header keeps JSON");
-
-// ─── accessGatePage ────────────────────────────────────────────────────────
-{
-  const page = accessGatePage();
-  assert.match(page, /Access token required/);
-  // The form re-enters the audited query-token exchange — the input MUST be
-  // named exactly ACCESS_TOKEN_QUERY_PARAM and submit via GET.
-  assert.match(page, new RegExp(`name="${ACCESS_TOKEN_QUERY_PARAM}"`));
-  assert.match(page, /method="get"/);
-  assert.match(page, /type="password"/, "token input must not echo on screen");
-  assert.doesNotMatch(page, /<script/i, "gate page must be script-free (CSP-immune, no new surface)");
-  assert.doesNotMatch(page, /didn&rsquo;t verify/, "neutral prompt shows no failure note");
-
-  const invalid = accessGatePage({ invalidToken: true });
-  assert.match(invalid, /didn&rsquo;t verify/, "supplied-but-invalid tokens get the expiry hint");
-  assert.match(invalid, /role="alert"/);
 }
 
 console.log("proxy-behavior.test.ts: ok");

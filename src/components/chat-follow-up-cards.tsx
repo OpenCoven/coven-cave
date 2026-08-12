@@ -28,7 +28,7 @@ const FOLLOW_UP_META: Record<NextPath["kind"], FollowUpMeta> = {
     outcome: "Opens a linked task review",
   },
   action: {
-    icon: "ph:arrow-square-out",
+    icon: "ph:list-checks",
     label: "Action",
     outcome: "Opens Tasks",
   },
@@ -66,6 +66,9 @@ export function FollowUpCards({ paths, onActivate, recommended = true }: FollowU
                 {isRecommended ? (
                   <span className="cave-followup-card__recommended">Recommended</span>
                 ) : null}
+              </span>
+              <span className="cave-followup-card__separator" aria-hidden>
+                ·
               </span>
               <strong className="cave-followup-card__title">{path.label}</strong>
               <span className="cave-followup-card__outcome">{meta.outcome}</span>

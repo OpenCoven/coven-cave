@@ -111,11 +111,18 @@ struct CaveConnection: Codable, Equatable {
 
     static let storageKey = "cave.connection.host"
     static let tokenKey = "cave.access-token"
+    static let tokenOriginKey = "cave.access-token-origin"
 
     static func load() -> CaveConnection? {
         guard let host = UserDefaults.standard.string(forKey: storageKey),
               !host.isEmpty else { return nil }
-        return CaveConnection(host: host)
+        let connection = CaveConnection(host: host)
+        if accessToken != nil, accessTokenOrigin == nil,
+           let baseURL = connection.baseURL,
+           let origin = credentialOrigin(for: baseURL) {
+            KeychainStore.set(origin, forKey: tokenOriginKey)
+        }
+        return connection
     }
 
     func save() {
@@ -126,6 +133,7 @@ struct CaveConnection: Codable, Equatable {
         UserDefaults.standard.removeObject(forKey: storageKey)
         UserDefaults.standard.removeObject(forKey: lastGoodKey)
         KeychainStore.remove(tokenKey)
+        KeychainStore.remove(tokenOriginKey)
     }
 
     /// The base URL that last answered a successful probe, per host
@@ -175,17 +183,78 @@ struct CaveConnection: Codable, Equatable {
         KeychainStore.string(forKey: tokenKey)
     }
 
-    static func saveAccessToken(_ token: String?) {
+    static var accessTokenOrigin: String? {
+        KeychainStore.string(forKey: tokenOriginKey)
+    }
+
+    static func credentialOrigin(for url: URL) -> String? {
+        guard let rawScheme = url.scheme?.lowercased(),
+              let rawHost = url.host?.lowercased()
+        else { return nil }
+        let scheme: String
+        switch rawScheme {
+        case "https", "wss": scheme = "https"
+        case "http", "ws": scheme = "http"
+        default: return nil
+        }
+        let host = rawHost.contains(":") ? "[\(rawHost)]" : rawHost
+        let defaultPort = scheme == "https" ? 443 : 80
+        let port = url.port.flatMap { $0 == defaultPort ? nil : ":\($0)" } ?? ""
+        return "\(scheme)://\(host)\(port)"
+    }
+
+    static func isCredentialTransportSecure(_ url: URL) -> Bool {
+        let scheme = url.scheme?.lowercased()
+        if scheme == "https" || scheme == "wss" { return true }
+        guard scheme == "http" || scheme == "ws" else { return false }
+        let host = url.host?.lowercased()
+        return host == "127.0.0.1" || host == "localhost" || host == "::1"
+    }
+
+    static func credentialOriginMatches(_ storedOrigin: String?, requestURL: URL) -> Bool {
+        guard let storedOrigin else { return false }
+        return credentialOrigin(for: requestURL) == storedOrigin
+    }
+
+    static func credentialForRequest(to url: URL) throws -> String? {
+        guard let token = accessToken else { return nil }
+        guard isCredentialTransportSecure(url) else {
+            throw CaveError.insecureCredentialTransport
+        }
+        guard credentialOriginMatches(accessTokenOrigin, requestURL: url) else {
+            throw CaveError.credentialOriginMismatch
+        }
+        return token
+    }
+
+    static func shouldClearStoredCredential(
+        suppliedToken: String?,
+        isSameEndpoint: Bool,
+        nextURL: URL?
+    ) -> Bool {
+        guard suppliedToken == nil else { return false }
+        if !isSameEndpoint { return true }
+        guard let nextURL else { return true }
+        return !isCredentialTransportSecure(nextURL)
+    }
+
+    static func saveAccessToken(_ token: String?, for baseURL: URL? = nil) {
         if let token, !token.isEmpty {
             KeychainStore.set(token, forKey: tokenKey)
+            if let baseURL, let origin = credentialOrigin(for: baseURL) {
+                KeychainStore.set(origin, forKey: tokenOriginKey)
+            }
         } else {
             KeychainStore.remove(tokenKey)
+            KeychainStore.remove(tokenOriginKey)
         }
     }
 }
 
 enum CaveError: LocalizedError {
     case notConfigured
+    case insecureCredentialTransport
+    case credentialOriginMismatch
     case badResponse(Int)
     case serverResponse(status: Int, code: String?, message: String?)
     case decoding(String)
@@ -230,6 +299,10 @@ enum CaveError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notConfigured: return "No host configured."
+        case .insecureCredentialTransport:
+            return "This paired connection requires HTTPS. Use a secure Cave address and reconnect."
+        case .credentialOriginMismatch:
+            return "This address does not match the paired Cave. Pair this endpoint before sending credentials."
         case .badResponse(let code): return "Server returned status \(code)."
         case .serverResponse(let status, _, let message):
             let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -1,6 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import type { ProjectAccessLevel } from "@/lib/project-access-levels";
 
 type RuntimeScopeErrorCode =
   | "project_root_required"
@@ -24,7 +25,19 @@ type ResolveLocalRuntimeOptions = {
 };
 
 export type RuntimeScope =
-  | { kind: "local"; root: string; allowedProjectRoots?: string[] }
+  | {
+      kind: "local";
+      root: string;
+      allowedProjectRoots?: string[];
+      /** Per-root effective access level (keyed by the exact string in
+       * `allowedProjectRoots`), so the preamble can tell the familiar which
+       * granted roots are read-only vs. read+write. Roots absent from this
+       * map render unannotated (legacy behavior — treated as full access). */
+      projectRootAccess?: Record<string, ProjectAccessLevel>;
+      /** Narrow instruction/asset roots advertised by the runtime. These are
+       * readable so a skill can be followed, but never writable project roots. */
+      readOnlyResourceRoots?: string[];
+    }
   | { kind: "ssh"; host: string; root: string };
 
 /** Normalize a path so Node's fs functions don't EISDIR on bare Windows
@@ -115,14 +128,48 @@ export async function resolveLocalRuntimeCwd(
 export function buildRuntimeScopePreamble(scope: RuntimeScope): string {
   if (scope.kind === "local") {
     const allowedProjectRoots = uniqueAllowedProjectRoots(scope.root, scope.allowedProjectRoots);
-    if (allowedProjectRoots.length > 0) {
+    const readOnlyResourceRoots = uniqueAllowedProjectRoots(scope.root, scope.readOnlyResourceRoots);
+    if (allowedProjectRoots.length > 0 || readOnlyResourceRoots.length > 0) {
+      const access = scope.projectRootAccess;
+      // Only annotate when the caller actually threaded per-root levels
+      // through — omitting `projectRootAccess` keeps prior behavior (and
+      // prior test expectations) byte-for-byte unchanged.
+      const readOnlyRoots = access
+        ? allowedProjectRoots.filter((root) => access[root] === "read")
+        : [];
       return [
         "Runtime filesystem boundary:",
         "- This is the local runtime boundary for this Cave session.",
         `- Primary root: ${scope.root}`,
-        "- Granted project roots:",
-        ...allowedProjectRoots.map((root) => `  - ${root}`),
-        "- You may read, edit, create, delete, commit, push, and run commands inside the primary root and the granted project roots listed above.",
+        ...(allowedProjectRoots.length > 0
+          ? [
+              "- Granted project roots:",
+              ...allowedProjectRoots.map((root) => {
+                const level = access?.[root];
+                const suffix = level === "read" ? " (read-only)" : level === "write" ? " (read + write)" : "";
+                return `  - ${root}${suffix}`;
+              }),
+            ]
+          : []),
+        ...(readOnlyResourceRoots.length > 0
+          ? [
+              "- Read-only runtime resources:",
+              ...readOnlyResourceRoots.map((root) => `  - ${root} (read-only)`),
+            ]
+          : []),
+        allowedProjectRoots.length > 0
+          ? "- You may read, edit, create, delete, commit, push, and run commands inside the primary root and the granted project roots listed above."
+          : "- You may read, edit, create, delete, commit, push, and run commands inside the primary root.",
+        ...(readOnlyRoots.length > 0
+          ? [
+              "- Roots marked (read-only) above permit reading, browsing, and chatting only — do not edit, create, delete, commit, or push inside them, and do not run shell commands there.",
+            ]
+          : []),
+        ...(readOnlyResourceRoots.length > 0
+          ? [
+              "- Runtime resources are read-only — read their instructions and assets, but do not edit, create, delete, commit, push, or run commands inside them.",
+            ]
+          : []),
         "- Do not read, edit, create, delete, commit, push, or run commands against files outside those listed roots.",
       ].join("\n");
     }

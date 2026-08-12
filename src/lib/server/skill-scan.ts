@@ -1,6 +1,7 @@
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
+import { caveHome } from "../coven-paths.ts";
 
 /**
  * Shared SKILL.md directory scanner. Used by /api/skills/local (shared Coven
@@ -37,6 +38,60 @@ export type LocalSkillEntry = {
   path: string;
   familiar: LocalSkillScope;
 };
+
+type RuntimeSkillRootOptions = {
+  homeDir?: string;
+  covenSkillsRoot?: string;
+  coveredRoots?: string[];
+};
+
+function isWithinRoot(candidate: string, root: string): boolean {
+  const rel = path.relative(root, candidate);
+  return rel === "" || (
+    rel !== ".."
+    && !rel.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(rel)
+  );
+}
+
+/**
+ * Existing user-level roots from which Cave and local harnesses advertise
+ * skills. Chat grants these exact directories read-only; it never broadens the
+ * boundary to an entire harness home such as `~/.codex`.
+ */
+export async function resolveRuntimeSkillRoots(
+  options: RuntimeSkillRootOptions = {},
+): Promise<string[]> {
+  const home = options.homeDir ?? homedir();
+  const candidates = [
+    options.covenSkillsRoot ?? path.join(caveHome(), "skills"),
+    path.join(home, ".codex", "skills"),
+    path.join(home, ".codex", "plugins", "cache"),
+    path.join(home, ".claude", "skills"),
+    path.join(home, ".agents", "skills"),
+  ];
+  const covered = await Promise.all(
+    (options.coveredRoots ?? []).map(async (root) => {
+      try {
+        return await realpath(root);
+      } catch {
+        return path.resolve(root);
+      }
+    }),
+  );
+  const roots: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      const resolved = await realpath(candidate);
+      if (!(await stat(resolved)).isDirectory()) continue;
+      if (covered.some((root) => isWithinRoot(resolved, root))) continue;
+      if (!roots.includes(resolved)) roots.push(resolved);
+    } catch {
+      // An absent skill source advertises nothing and receives no grant.
+    }
+  }
+  return roots;
+}
 
 export function parseFrontmatter(text: string): Record<string, string> {
   const fm: Record<string, string> = {};

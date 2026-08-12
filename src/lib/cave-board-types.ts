@@ -94,13 +94,17 @@ export type OrchestrationErrorCode =
   | "dependency_cycle"
   | "dependency_dangling"
   | "dependency_needs_evidence"
+  | "dependency_invalid"
+  | "primary_blocker_invalid"
+  | "next_step_invalid"
+  | "next_step_requires_approval"
   | "dependency_authorship"
   | "next_step_authorship";
 
 export type OrchestrationError = {
   code: OrchestrationErrorCode;
   /** Card field the error belongs to, for inspector focus. */
-  field: "dependencies" | "primaryBlockerId" | "nextStep";
+  field: "dependencies" | "primaryBlockerId" | "primaryBlockerPinned" | "nextStep";
   message: string;
   /** The dependency at fault, when the error is about one. */
   dependencyId?: string;
@@ -149,6 +153,23 @@ export type CardAsanaLink = {
   updatedAt?: string;
 };
 
+/**
+ * An explicit link from a Board card to the Bead it mirrors.
+ *
+ * The project id rides the reference even though the card already has a
+ * `projectId`: a task's execution project may be repointed later, and that must
+ * never silently repoint its delivery link at another repository.
+ *
+ * Shape deliberately matches the `cave-tjact` delivery-accounting design so the
+ * two efforts converge rather than fork — see that spec's "Board data model".
+ * Nothing infers a link: no title, note, label, PR or issue reference is read as
+ * one. A link exists only because someone set it.
+ */
+export type CardBeadRef = {
+  id: string;
+  projectId: string;
+};
+
 export type Card = {
   id: string;
   title: string;
@@ -164,6 +185,13 @@ export type Card = {
   cwd: string | null;
   /** Stable project ID from cave-projects.json. Preferred over cwd. */
   projectId?: string | null;
+  /**
+   * The Bead this card mirrors, when one was explicitly linked. Its presence is
+   * what makes the card a durable reference target, so routine Board cleanup
+   * refuses to delete it (see `deleteCard`) — a linked mirror must be unlinked
+   * deliberately before it can go.
+   */
+  beadRef?: CardBeadRef | null;
   links: string[];
   github: CardGitHubLink[];
   asana: CardAsanaLink[];

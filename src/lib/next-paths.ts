@@ -21,6 +21,15 @@ const NEXT_PATH_EXAMPLES = [
   { control: "[task]", label: "Create a task for the follow-up" },
   { control: "[action:open-tasks]", label: "Review open tasks" },
 ] as const;
+const LEGACY_TEMPLATE_LABELS = [
+  "first next step (imperative, <= ~7 words)",
+  "second next step",
+] as const;
+const TEMPLATE_SUGGESTION_LABELS = new Set<string>([
+  ...LEGACY_TEMPLATE_LABELS,
+  ...NEXT_PATH_EXAMPLES.map((example) => example.label),
+  `${NEXT_PATH_EXAMPLES[0].label} (imperative, <= ~7 words)`,
+]);
 
 /** A safe, assistant-inferred destination for a suggested next step. */
 export type NextPath =
@@ -29,10 +38,7 @@ export type NextPath =
   | { kind: "action"; actionId: "open-tasks"; label: string; prompt: string };
 
 function isTemplateSuggestion(title: string): boolean {
-  return title === "first next step (imperative, <= ~7 words)"
-    || title === "second next step"
-    || NEXT_PATH_EXAMPLES.some((example, index) => title === example.label
-      || (index === 0 && title === `${example.label} (imperative, <= ~7 words)`));
+  return TEMPLATE_SUGGESTION_LABELS.has(title);
 }
 
 function isIncompleteControlPrefix(line: string): boolean {

@@ -57,8 +57,8 @@ assert.match(
 );
 assert.match(
   linkedWork,
-  /lifecycle: "completed",\s*lifecycleReason: sessionId/,
-  "the linked-work action flips through the card lifecycle machine with an audit reason (status derives server-side)",
+  /status: "done",\s*lifecycleReason: sessionId/,
+  "the linked-work action marks the card done with an audit reason and lets the server derive lifecycle",
 );
 assert.match(
   chatView,
