@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
-import { stripAnsi } from "@/lib/ansi";
 import {
   COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC,
   covenLaunchCommand,
