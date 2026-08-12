@@ -286,8 +286,13 @@ try {
 
     // An unreachable remote must fail CLOSED: still locked. A lock is
     // reversible; "retained" is the verdict that permits destruction.
+    rmSync(origin, { recursive: true, force: true });
     assert.ok(
-      riskOf(repo, () => false),
+      riskOf(repo, (p) => {
+        const oids = remoteTagCommits(p);
+        const h = headShaOf(p);
+        return Boolean(oids && h && oids.has(h));
+      }),
       "an unanswerable remote leaves the tree locked rather than declaring it safe",
     );
 
