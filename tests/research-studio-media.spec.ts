@@ -1,8 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
+import { DEFAULT_ELEVENLABS_VOICE_ID } from "../src/lib/voice/elevenlabs-shared";
 
 const FAMILIAR_ID = "rida";
 const MISSION_ID = "m-media";
-const ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
+const ELEVENLABS_VOICE_ID = DEFAULT_ELEVENLABS_VOICE_ID;
 const now = new Date().toISOString();
 
 const MISSION = {
