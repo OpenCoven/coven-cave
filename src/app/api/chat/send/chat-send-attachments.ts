@@ -43,6 +43,7 @@ async function sweepStaleStagedFiles(stagingDir: string, now = Date.now()): Prom
     const entries = await readdir(stagingDir, { withFileTypes: true });
     for (const entry of entries.slice(0, STAGING_SWEEP_SCAN_LIMIT)) {
       if (!entry.isFile()) continue;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{1,8}$/i.test(entry.name)) continue;
       const target = path.join(stagingDir, entry.name);
       try {
         const meta = await lstat(target);
