@@ -70,6 +70,22 @@ async function seedWithoutActiveFamiliar(page: Page) {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
   await page.route("**/api/familiars**", (route) => route.fulfill({ json: FAMILIARS_TWO }));
+  await page.route(
+    (url) => url.pathname === "/api/projects",
+    (route) => route.fulfill({
+      json: {
+        ok: true,
+        projects: [{
+          id: "e2e-project",
+          name: "E2E Project",
+          root: "/repo/alpha",
+          access: "write",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }],
+      },
+    }),
+  );
   await page.route("**/api/board**", (route) => route.fulfill({ json: BOARD }));
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
 }
