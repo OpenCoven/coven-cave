@@ -128,6 +128,24 @@ test("media outside the allowlist is refused", async () => {
   assert.equal(saveChatMediaAttachmentFromFileSync("/tmp/whatever.mkv", "video/x-matroska"), null);
 });
 
+test("a media payload is validated before it is decoded", async () => {
+  const clip = Buffer.from("small-but-mislabeled");
+  // Caller-declared mime disagreeing with the data URL header → refused.
+  assert.equal(
+    await saveChatMediaAttachment(`data:video/mp4;base64,${clip.toString("base64")}`, "audio/mpeg"),
+    null,
+  );
+  // Malformed base64 body → refused without throwing.
+  assert.equal(
+    await saveChatMediaAttachment("data:video/mp4;base64,not base64!!", "video/mp4"),
+    null,
+  );
+  // A data URL whose char count alone exceeds the media cap is refused by
+  // length before any Buffer allocation.
+  const oversize = `data:video/mp4;base64,${"A".repeat(Math.ceil((51 * 1024 * 1024) / 3) * 4)}`;
+  assert.equal(await saveChatMediaAttachment(oversize, "video/mp4"), null);
+});
+
 test("a media file copies into the store synchronously", async () => {
   const source = path.join(outside, "teaser.mp4");
   const clip = Buffer.from("fake-mp4-bytes-for-file-copy");

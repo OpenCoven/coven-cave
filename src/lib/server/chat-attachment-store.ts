@@ -4,6 +4,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 
 import {
+  cleanMediaDataUrl,
   MAX_ATTACHMENT_IMAGE_BYTES,
   MAX_ATTACHMENT_MEDIA_BYTES,
   MEDIA_EXT_BY_MIME,
@@ -171,10 +172,13 @@ export async function saveChatMediaAttachment(
   dataUrl: string,
   mimeType: string,
 ): Promise<string | null> {
-  const ext = MEDIA_EXT_BY_MIME[mimeType.toLowerCase()];
+  // Full header/allowlist/size validation BEFORE any base64 decode, so an
+  // oversized or mislabeled payload never allocates a giant Buffer here.
+  const cleaned = cleanMediaDataUrl(dataUrl);
+  if (!cleaned || cleaned.mimeType !== mimeType.toLowerCase()) return null;
+  const ext = MEDIA_EXT_BY_MIME[cleaned.mimeType];
   if (!ext) return null;
   const comma = dataUrl.indexOf(",");
-  if (comma === -1) return null;
   const payload = Buffer.from(dataUrl.slice(comma + 1), "base64");
   if (payload.byteLength === 0 || payload.byteLength > MAX_ATTACHMENT_MEDIA_BYTES) return null;
   try {
