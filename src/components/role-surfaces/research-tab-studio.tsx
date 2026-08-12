@@ -265,6 +265,10 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
     setCreateError(null);
     setDirections("");
     if (!isResearchGenerationKind(kind) && readiness) {
+      const elevenLabsShortVideoDefaultIsReady =
+        kind === "short-video" &&
+        readiness.providers.elevenlabs.ready &&
+        readiness.providers.elevenlabs.defaultVoiceId.trim().length > 0;
       const localSelectionIsValid =
         mediaProvider === "local" &&
         readiness.providers.local.ready &&
@@ -275,7 +279,10 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
         mediaProvider === "elevenlabs" &&
         readiness.providers.elevenlabs.ready &&
         mediaVoice.trim().length > 0;
-      if (!localSelectionIsValid && !elevenLabsSelectionIsValid) {
+      if (elevenLabsShortVideoDefaultIsReady) {
+        setMediaProvider("elevenlabs");
+        setMediaVoice(readiness.providers.elevenlabs.defaultVoiceId);
+      } else if (!localSelectionIsValid && !elevenLabsSelectionIsValid) {
         const firstLocalVoice = readiness.providers.local.voices[0];
         if (readiness.providers.local.ready && firstLocalVoice) {
           setMediaProvider("local");
@@ -285,7 +292,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
           setMediaVoice(readiness.providers.elevenlabs.defaultVoiceId);
         }
       }
-      if (kind === "short-video" && mediaLength === "extended") {
+      if (kind === "short-video") {
         setMediaLength("standard");
       }
     }
