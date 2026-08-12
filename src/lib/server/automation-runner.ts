@@ -386,10 +386,7 @@ export function monitorCodexAutomationCompletion(
     });
     output.on("error", (error) => {
       if (!logResult) {
-        logResult = {
-          ok: false,
-          error: new Error(safeProcessErrorMessage(error, "Automation log")),
-        };
+        logResult = { ok: false, error: asError(error, "Codex output log failed") };
       }
       // Once the sink fails, drain both pipes so the child cannot block on a
       // full stdout/stderr buffer while we wait for its authoritative close.

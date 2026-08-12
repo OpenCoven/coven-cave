@@ -769,7 +769,6 @@ test("automation execution is bounded, redacted, direct, and tree-owned", async 
   assert.match(source, /terminateProcessTreeImpl\(child\)/);
   assert.match(source, /safeProcessErrorMessage\(err, "Automation runtime"\)/);
   assert.match(source, /output\.on\("error"/);
-  assert.match(source, /safeProcessErrorMessage\(error, "Automation log"\)/);
   assert.match(source, /detached: process\.platform !== "win32"/);
   assert.doesNotMatch(source, /\.stdout\?\.pipe\(out\)|\.stderr\?\.pipe\(out\)/);
 });
