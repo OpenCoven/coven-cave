@@ -3088,7 +3088,17 @@ function collectInventory(
     ...initialHistoryOverrides.errors,
     initialGrafts.error,
     originIdentity.error,
-
+    // remoteDefaultBranch(root) reads only the checkout root, so its failure is
+    // repository-wide by construction, exactly like originIdentity.error above.
+    // It reached every unit anyway — via ancestry.error, which falls back to it
+    // whenever defaultBranch.oid is null — but it never reached this bucket, so
+    // `globalErrors` in the inventory output did not mention it at all. A
+    // consumer then saw N identical per-unit probe errors with no global signal
+    // and could not tell that ONE checkout-level fact had disqualified
+    // everything. Listing it here changes no unit's classification: the
+    // identical string is already stamped per unit, and both this list and
+    // probeErrors dedup through a Set.
+    defaultBranch.error,
     ...prs.globalErrors,
     workflows.error,
     claims.error,

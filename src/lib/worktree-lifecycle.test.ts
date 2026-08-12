@@ -897,6 +897,66 @@ function legacyObservation(overrides = {}) {
   );
 }
 
+// cave-we34s: a checkout-level probe failure is stated once, not once per unit.
+// It still fails every unit closed; what changes is that the report can no
+// longer be misread as N independent problems.
+{
+  const stale =
+    "default branch inventory tracking ref refs/remotes/origin/main is stale or mismatched with authoritative refs/heads/main";
+  const budgets = {
+    worktrees: { count: 3, registered: 3, detached: 0, warning: 28, exceeded: false },
+    branches: { count: 3, warning: 38, exceeded: false },
+    exceptions: { active: 0, expired: 0 },
+  };
+  // Two units disqualified by the SAME repository-wide fact, one of which is
+  // also independently active — so it takes the "probe warning: " spelling.
+  const uncertainUnit = classifyLifecycleUnit(
+    observation({ branch: "feat/a", probeErrors: [stale] }),
+    NOW,
+  );
+  const activeUnit = classifyLifecycleUnit(
+    observation({ branch: "feat/b", claimOwners: ["buns@coven-cave"], probeErrors: [stale] }),
+    NOW,
+  );
+  assert.equal(uncertainUnit.lane, "uncertain", "the unit still fails closed on the global fact");
+  assert.ok(
+    uncertainUnit.reasons.includes(stale),
+    "the item keeps the full reason list; suppression is presentation only",
+  );
+  assert.ok(
+    activeUnit.reasons.includes(`probe warning: ${stale}`),
+    "an active unit carries the prefixed spelling",
+  );
+
+  const summary = summarizeWorktreeLifecycle([uncertainUnit, activeUnit], budgets, [stale, stale]);
+  assert.deepEqual(summary.globalErrors, [stale], "the summary dedupes repository-wide failures");
+
+  const text = renderWorktreeLifecycleReport(summary);
+  assert.equal(
+    text.split(stale).length - 1,
+    1,
+    "the repository-wide failure is printed exactly once, not once per unit",
+  );
+  assert.match(text, /Repository-wide probe failures \(1\)/);
+  assert.match(
+    text,
+    /1 repository-wide probe failure \(listed above\)/,
+    "a unit left with no reason of its own still says why it is held",
+  );
+  assert.doesNotMatch(
+    text,
+    /probe warning: default branch inventory/,
+    "the prefixed spelling is suppressed too, or active units keep repeating it",
+  );
+
+  // Absent any global failure the report gains nothing at all — no empty
+  // heading, no stray pointer line.
+  const clean = renderWorktreeLifecycleReport(summarizeWorktreeLifecycle([uncertainUnit], budgets));
+  assert.doesNotMatch(clean, /Repository-wide probe failures/);
+  assert.doesNotMatch(clean, /listed above/);
+  assert.match(clean, /default branch inventory tracking ref/, "and the unit still states it");
+}
+
 // cave-oenag: the exclusion is reported, not silent — otherwise the assessed
 // number and the registered one differ with nothing to explain the gap.
 {
