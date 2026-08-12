@@ -242,6 +242,26 @@ function gateExpired(gate, now) {
   return now > Date.parse(gate.heartbeatAt) + gate.ttlMs;
 }
 
+/**
+ * Everything a refused acquirer needs to choose what to do next, rather than
+ * only that it lost. `reason` alone named neither the holder's process nor the
+ * instant the lease lapses, so the natural reaction to a refusal was to retry
+ * blind or reach for an unmanaged fallback (cave-8zkkj).
+ *
+ * `holder` keeps its original name and meaning; the rest is additive, so any
+ * caller reading only `reason`/`holder` is unaffected. `holderHost` is omitted
+ * rather than emitted as undefined when the record predates host recording.
+ */
+function refusalDetail(gate) {
+  return {
+    holder: gate.ownerId,
+    holderPid: gate.pid,
+    ...(gate.host === undefined ? {} : { holderHost: gate.host }),
+    phase: gate.phase,
+    expiresAt: new Date(Date.parse(gate.heartbeatAt) + gate.ttlMs).toISOString(),
+  };
+}
+
 function clockRegressed(lease, now) {
   return now < Date.parse(lease.heartbeatAt);
 }
@@ -565,7 +585,7 @@ export function acquireMaintenanceGate({
     // test produced three simultaneous winners when this was tried, because
     // each short-lived winner's exit let the next acquirer straight in.
     if (existing.ok && !gateExpired(existing.value, now)) {
-      return { ok: false, reason: "gate-held", holder: existing.value.ownerId };
+      return { ok: false, reason: "gate-held", ...refusalDetail(existing.value) };
     }
     if (!existing.ok && existing.malformed) {
       audit(root, "acquire-rejected", { ownerId, reason: "malformed-gate" });
@@ -583,7 +603,7 @@ export function acquireMaintenanceGate({
     // explicit opt-in requirement.
     const abandoned = existing.ok && ownerProcessGone(existing.value);
     if (existing.ok && !takeoverStale && !abandoned) {
-      return { ok: false, reason: "gate-stale", holder: existing.value.ownerId };
+      return { ok: false, reason: "gate-stale", ...refusalDetail(existing.value) };
     }
 
     const advanced = nextGeneration(root, existing.ok ? existing.value.generation : 0);

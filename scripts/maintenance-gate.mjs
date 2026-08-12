@@ -400,7 +400,16 @@ export function createRepositoryMaintenanceCoordinator({
         quiesceTimeoutMs,
       });
       if (!local.ok) {
-        return { ok: false, reason: `local-acquire-failed: ${local.reason ?? "unknown"}` };
+        // Carry the local fence's refusal detail (holder, pid, expiry) through
+        // the wrapper. Interpolating only `reason` discarded every field a
+        // caller could have acted on, which is what made the composite
+        // refusal unactionable at the CLI (cave-8zkkj).
+        const { ok: _ok, reason: _reason, ...detail } = local;
+        return {
+          ok: false,
+          reason: `local-acquire-failed: ${local.reason ?? "unknown"}`,
+          ...detail,
+        };
       }
 
       const coven = covenClient.acquire({
