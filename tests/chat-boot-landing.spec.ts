@@ -65,6 +65,26 @@ const BOARD = {
   ],
 };
 
+// A project both mocked familiars can launch in. Without this the familiar
+// picker is racing a completely different surface (cave-pw3l0): FAMILIARS_TWO
+// invents `aster`/`nova`, which the E2E harness's seeded project does not grant,
+// so `/api/projects?familiarId=` resolves to zero accessible projects and
+// resolveFirstProjectGatePolicy opens the first-project gate — whose "Give this
+// familiar project access" panel REPLACES the launch surface in <main>.
+//
+// That made the test a coin flip on fetch ordering: `.cave-launch` renders while
+// the accessible-projects fetch is still in flight, and the gate displaces it the
+// moment that fetch settles. Locally, 4 of 15 runs under 4 workers lost the race.
+// Serving an accessible project keeps the gate shut, so what remains under test
+// is the thing the test is named for — whether boot ASKS which familiar or picks
+// one for you.
+const ACCESSIBLE_PROJECT = {
+  ok: true,
+  projects: [
+    { id: "p1", name: "Queue", root: "/repo/queue", access: "write" },
+  ],
+};
+
 async function seedWithoutActiveFamiliar(page: Page) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
@@ -72,6 +92,7 @@ async function seedWithoutActiveFamiliar(page: Page) {
   await page.route("**/api/familiars**", (route) => route.fulfill({ json: FAMILIARS_TWO }));
   await page.route("**/api/board**", (route) => route.fulfill({ json: BOARD }));
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
+  await page.route("**/api/projects**", (route) => route.fulfill({ json: ACCESSIBLE_PROJECT }));
 }
 
 async function seed(page: Page) {
@@ -231,17 +252,37 @@ test.describe("chat boot landing", () => {
 // It must ask instead.
 test("booting with no active familiar asks which one instead of picking", async ({ page }) => {
   await seedWithoutActiveFamiliar(page);
+  // Armed BEFORE navigating so the response cannot be missed. The gate policy
+  // cannot decide until this familiar-scoped read lands (it is the
+  // `accessibleProjects` input), so every assertion about the gate has to wait
+  // for it — a bare toHaveCount(0) beforehand passes vacuously against a page
+  // that has simply not rendered the gate YET, which is the exact race this
+  // test is being fixed for.
+  const projectScopeResolved = page.waitForResponse(
+    (res) => res.url().includes("/api/projects?familiarId="),
+    { timeout: 45_000 },
+  );
   await page.goto("/?mode=chat", { waitUntil: "domcontentloaded" });
 
   // The chat-first landing still happens — we did not fall back to the list.
-  // Heading visibility uses the same 15s margin as sibling flaky boot specs
-  // (cave-pw3l0): the 5s default was short enough that aborted boot fetches
-  // burned both retries on main while the same code passed elsewhere.
   const launch = page.locator(".cave-launch");
   await expect(launch).toBeVisible({ timeout: 45_000 });
-  await expect(page.getByRole("heading", { name: "Start a new chat" })).toBeVisible({
-    timeout: 15_000,
-  });
+
+  await projectScopeResolved;
+
+  // Named explicitly so a regression here reports the surface that TOOK OVER
+  // rather than an absent heading. This is what cave-pw3l0 actually was: the
+  // first-project gate displacing the picker once accessible projects resolved
+  // empty, which reads as "element(s) not found" and sends you hunting a
+  // rendering delay that does not exist.
+  await expect(
+    page.getByRole("heading", { name: "Give this familiar project access" }),
+    "the first-project gate displaced the familiar picker — is /api/projects still mocked?",
+  ).toHaveCount(0);
+  // Still standing AFTER the policy had its data — the displacement window is
+  // shut, not merely not-yet-open.
+  await expect(launch).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Start a new chat" })).toBeVisible();
 
   // Both familiars are offered; neither has been chosen for the user.
   await expect(launch.getByText("Aster")).toBeVisible();

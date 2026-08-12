@@ -229,7 +229,7 @@ function errorMessage(error: unknown): string {
 }
 
 function summarizeInventory(inventory: PatrolInventory): PatrolSummary {
-  return summarizeWorktreeLifecycle(inventory.items, inventory.budgets);
+  return summarizeWorktreeLifecycle(inventory.items, inventory.budgets, inventory.globalErrors);
 }
 
 /**
@@ -501,7 +501,10 @@ function formatItemIdentity(item: PatrolItem): string {
 }
 
 function formatRetiredItem(item: PatrolItem): string {
-  return `- ${formatItemIdentity(item)} (oid ${item.head})`;
+  const beadHint = item.metadata?.beadId
+    ? ` — bead ${item.metadata.beadId} may still be open; close it if acceptance criteria landed`
+    : "";
+  return `- ${formatItemIdentity(item)} (oid ${item.head})${beadHint}`;
 }
 
 function formatBlockedItem(item: RetirementBlock): string {
@@ -655,7 +658,7 @@ export function runRetirementApply(
     //
     // The reservation is one slot, not a second budget: total mutations still
     // cannot exceed maxRetire, which is what bounds an unattended sweep's blast
-    // radius (scripts/worktree-sweep-prompt.md pins --max-retire 3 and says not
+    // radius (scripts/worktree-sweep.sh pins --max-retire 3 and says not
     // to raise it). It is taken only when something is actually retirable, so a
     // run with nothing to retire still spends the whole allowance on repair,
     // exactly as before.
