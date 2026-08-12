@@ -166,6 +166,27 @@ export function copilotPromptTransportFailure(
   return null;
 }
 
+/**
+ * True for "the native supervisor is not installed", identified WITHOUT relying
+ * on `instanceof` alone.
+ *
+ * Next bundles `src/lib/server/*` into every route chunk that imports it, so a
+ * single request path can hold more than one compiled copy of
+ * coven-process-supervisor.ts. An error constructed by one copy fails
+ * `instanceof` against the class from another, and the fallback below would
+ * rethrow — which is exactly what happened: one launch spawned directly while a
+ * second, in a different chunk, surfaced "Coven's native process supervisor is
+ * unavailable" and started no process, overwriting the running iteration.
+ * Matching the name as well makes the check identity-independent.
+ */
+function isSupervisorUnavailable(error: unknown): boolean {
+  if (error instanceof CovenProcessSupervisorUnavailableError) return true;
+  return Boolean(
+    error && typeof error === "object" &&
+    (error as { name?: unknown }).name === "CovenProcessSupervisorUnavailableError",
+  );
+}
+
 function copilotStartFailure(error: unknown): CopilotStartFailure | null {
   const promptFailure = copilotPromptTransportFailure(error);
   if (promptFailure) return promptFailure;
@@ -728,10 +749,7 @@ export async function startCopilotFlowRun(
     supervisorCommand = runtime.supervisorCommand
       ?? await (runtime.resolveSupervisorCommand ?? resolveCovenProcessSupervisorCommand)();
   } catch (error) {
-    if (
-      !(error instanceof CovenProcessSupervisorUnavailableError) ||
-      runtime.requireProcessSupervisor
-    ) {
+    if (!isSupervisorUnavailable(error) || runtime.requireProcessSupervisor) {
       throw error;
     }
     unsupervisedReason =

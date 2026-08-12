@@ -1572,6 +1572,21 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         await deps.clearSessionOwner(sessionOwner);
         return reconciled;
       }
+      // "gone" is the ABSENCE of evidence, not evidence of death, and for a
+      // direct-copilot owner it is routinely wrong while the run is healthy.
+      // sessionState proves liveness from the in-process ACTIVE_RUNS registry
+      // and death from a persisted transcript, so a live run that has not
+      // closed yet reports "gone" from any reader that does not share that
+      // registry — and the transcript only appears at child close. Failing
+      // immediately therefore killed working missions: measured repeatedly here
+      // with the mission orphaned ~20s after launch while Copilot kept working,
+      // its transcript landing afterwards.
+      //
+      // The recovery grace window above already models exactly this "cannot
+      // prove it either way yet" state; honour it here instead of treating
+      // silence as a terminal verdict. Past the window the orphan verdict still
+      // stands, so a genuinely dead run is not pinned forever.
+      if (state === "gone" && !pastRecoveryGrace) return mission;
       return failOrphan(
         "The owned Research session ended without reporting — Retry starts a fresh iteration.",
         "Owned session ended",
