@@ -598,6 +598,12 @@ export type CopilotFlowLaunch = {
    * be listed (cave-n1yc contract).
    */
   addDirs?: string[];
+  /**
+   * Harness model id, passed through verbatim when the spec exposes a model
+   * flag. Validated at the mission boundary (no leading "-", bounded length),
+   * so it can never be read here as an option rather than its value.
+   */
+  model?: string | null;
   /** Only trusted local automation may pre-approve tools and URLs. */
   permissionMode?: "read" | "unattended";
   /** Injected only by direct-spawn tests; production resolves the CLI safely. */
@@ -736,7 +742,7 @@ export async function startCopilotFlowRun(
     prompt,
     resumeSessionId: null,
     newSessionId: sessionId,
-    model: null,
+    model: launch.model ?? null,
     // Flow runs are Cave-initiated one-shots with nobody at the prompt: they
     // need pre-approved tools/URLs or the CLI auto-denies every write and the
     // iteration "completes" with an untouched workspace (the research-mission

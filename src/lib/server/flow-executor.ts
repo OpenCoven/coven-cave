@@ -217,6 +217,14 @@ export async function startFlowSession(
     trustedLocalResearch?: true;
     /** Research must start now; replaying it later races durable cancellation. */
     offlinePolicy?: "queue" | "reject";
+    /**
+     * Runtime chosen by the caller (a Research mission), overriding the
+     * familiar's Coven binding for THIS run only. Nothing is written back to
+     * the familiar, so a mission's runtime choice cannot leak into chat or
+     * other flows.
+     */
+    harness?: string;
+    model?: string;
   } = {},
 ): Promise<StartFlowSessionResult> {
   const blocked = flowRunBlockReason(flow, options.targetNodeId);
@@ -237,10 +245,15 @@ export async function startFlowSession(
   const config = await loadConfig();
   const familiarId = flowFamiliar(flow);
   const binding = familiarId ? bindingFor(config, familiarId) : { harness: config.defaults.harness };
-  if (!isAllowedHarness(binding.harness)) {
+  // The caller's runtime overrides the familiar's Coven binding for THIS run
+  // only; nothing is written back, so a mission's choice cannot leak into chat
+  // or other flows. Resolved as a separate value rather than by spreading over
+  // `binding`, which would widen the binding union and lose its other fields.
+  const harness = options.harness ?? binding.harness;
+  if (!isAllowedHarness(harness)) {
     return {
       ok: false,
-      error: `harness '${binding.harness}' can't run as an agent session`,
+      error: `harness '${harness}' can't run as an agent session`,
       status: 409,
     };
   }
@@ -287,7 +300,7 @@ export async function startFlowSession(
           flow,
           options,
           familiarId,
-          harness: binding.harness,
+          harness,
           placeholderRunId: run.id,
         },
       });
@@ -369,7 +382,7 @@ export async function startFlowSession(
   // research-mission reconcile already look first.
   const sshBound = "runtime" in binding && isSshRuntime(binding.runtime);
   const hubAuthority = config.multiHost?.mode === "hub";
-  if (binding.harness === "copilot" && !sshBound && !hubAuthority) {
+  if (harness === "copilot" && !sshBound && !hubAuthority) {
     const [capability, compatibility] = await Promise.all([
       probeCopilotCapability(),
       resolveRuntimeCompatibility("copilot"),
@@ -413,6 +426,7 @@ export async function startFlowSession(
           ...(options.addDirs ?? []),
           ...familiarAddDirs,
         ],
+        ...(options.model ? { model: options.model } : {}),
         permissionMode: options.triggerInput?.source === "webhook" ? "read" : "unattended",
       }, async (sessionId) => {
         publishedSessionId = sessionId;
@@ -461,7 +475,7 @@ export async function startFlowSession(
   let pinnedResearchDaemonTarget: ReturnType<typeof localDaemonTarget> | undefined;
   if (shouldRequestResearchSessionLaunchPolicy({
     trustedLocalResearch: options.trustedLocalResearch === true,
-    harness: binding.harness,
+    harness,
     sshBound,
     hubAuthority,
   })) {
@@ -522,7 +536,7 @@ export async function startFlowSession(
     // and the run→familiar link survive.
     body: {
       projectRoot,
-      harness: binding.harness,
+      harness,
       prompt,
       launchMode: "nonInteractive",
       ...(launchPolicy ? { launchPolicy } : {}),

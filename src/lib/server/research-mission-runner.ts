@@ -146,6 +146,9 @@ export type ResearchMissionRunnerDeps = {
       projectRoot: string | null;
       addDirs?: string[];
       offlinePolicy?: "queue" | "reject";
+      /** Mission-selected runtime; overrides the familiar's Coven binding. */
+      harness?: string;
+      model?: string;
       publishSessionOwner?: (
         sessionId: string,
         ownerKind: ResearchSessionOwnerKind,
@@ -807,10 +810,13 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     iteration: number,
     projectRoot: string,
     missionWorkspace: string,
+    runtime?: { harness?: string; model?: string },
   ): {
     projectRoot: string;
     addDirs: string[];
     offlinePolicy: "reject";
+    harness?: string;
+    model?: string;
     publishSessionOwner: (
       sessionId: string,
       ownerKind: ResearchSessionOwnerKind,
@@ -819,6 +825,8 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
   } => ({
     projectRoot,
     addDirs: missionWorkspace === projectRoot ? [] : [missionWorkspace],
+    ...(runtime?.harness ? { harness: runtime.harness } : {}),
+    ...(runtime?.model ? { model: runtime.model } : {}),
     // A queued Research iteration has no live session handle to terminate.
     // Replaying it after Cancel would revive work against a terminal mission.
     offlinePolicy: "reject",
@@ -917,7 +925,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     const result = target.ok
       ? await deps.startFlow(
           buildResearchMissionFlow(next, number),
-          missionStartOptions(next.id, number, target.projectRoot, target.missionWorkspace),
+          missionStartOptions(next.id, number, target.projectRoot, target.missionWorkspace, next),
         )
       : { ok: false, error: target.error };
     return persistLaunchResult(next, result);
@@ -961,7 +969,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     const result = target.ok
       ? await deps.startFlow(
           buildResearchMissionFlow(retried, current.number),
-          missionStartOptions(retried.id, current.number, target.projectRoot, target.missionWorkspace),
+          missionStartOptions(retried.id, current.number, target.projectRoot, target.missionWorkspace, retried),
         )
       : { ok: false, error: target.error };
     return persistLaunchResult(retried, result);
@@ -1732,7 +1740,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         const result = target.ok
           ? await deps.startFlow(
             buildResearchMissionFlow(current, 1),
-            missionStartOptions(current.id, 1, target.projectRoot, target.missionWorkspace),
+            missionStartOptions(current.id, 1, target.projectRoot, target.missionWorkspace, current),
           )
           : { ok: false, error: target.error };
         return persistLaunchResult(current, result);
@@ -1993,6 +2001,8 @@ export function makeProductionResearchMissionRunner() {
         addDirs: options.addDirs,
         trustedLocalResearch: true,
         offlinePolicy: options.offlinePolicy,
+        harness: options.harness,
+        model: options.model,
         publishSessionOwner: options.publishSessionOwner,
       });
     },
