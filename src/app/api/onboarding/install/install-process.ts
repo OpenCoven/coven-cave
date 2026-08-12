@@ -17,14 +17,14 @@ export type InstallProcessResult = {
 export function runInstallProcess(
   command: string,
   args: string[],
-  options: { shell: boolean; timeoutMs: number; env?: NodeJS.ProcessEnv },
+  options: { timeoutMs: number; env?: NodeJS.ProcessEnv },
 ): Promise<InstallProcessResult> {
   return new Promise((resolve) => {
     const child = spawn(command, args, {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: options.env ?? covenSpawnEnv(),
-      shell: options.shell,
+      shell: false,
       detached: process.platform !== "win32",
     });
     const output = new BoundedProcessOutput(8_192);

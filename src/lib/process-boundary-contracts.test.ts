@@ -48,7 +48,7 @@ for (const [name, source] of [
 assert.match(install, /shell: false/, "installer stop should never execute through a shell");
 assert.match(
   installService,
-  /if \(launch\.unresolvedWindowsShim\)/,
+  /if \(unresolvedWindowsShim\)/,
   "installer daemon stop should reject an unresolved Windows batch shim",
 );
 assert.match(
