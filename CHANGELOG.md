@@ -7,6 +7,27 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-12
+
+> Tokenless access across trusted local and tailnet surfaces, with optional
+> passkey presence and local-only boundaries preserved.
+
+Patch release on top of v0.3.0.
+
+### Changed
+
+- Removed the `COVEN_CAVE_ACCESS_TOKEN` request gate, access page, and
+  query-to-cookie exchange. Remote ingress remains classified separately so
+  host, passkey-presence, automation, and desktop-only route policies can keep
+  applying at their existing boundaries (#4559).
+
+### Security
+
+- Remote deployments no longer authenticate callers with an access token:
+  anything that can reach the Cave port can reach the app unless
+  `COVEN_CAVE_PASSKEY_REQUIRED=1` is enabled. The PTY sidecar-token gate remains
+  in place, which also means paired phones cannot open the packaged terminal
+  without a sidecar credential (#4559).
 ## [0.3.0] - 2026-08-11
 
 > Search that understands Cave's workspace, more legible multi-agent Chat,
