@@ -1185,3 +1185,57 @@ test("every transition lands in the audit log with its generation", () => {
   );
   rmSync(repo, { recursive: true, force: true });
 });
+
+// cave-8zkkj. A refusal named only that the caller had lost, so the reaction to
+// it was to retry blind or reach for the unmanaged `git worktree add` fallback
+// — which produces a worktree that can never be retired (cave-l52dt). The
+// holder's identity, its process, and the instant the lease lapses were all
+// already known at the refusal site and thrown away.
+test("a gate-held refusal names the holder, its process, and the lease expiry", () => {
+  const repo = makeRepo();
+  const acquired = acquireMaintenanceGate({ ownerId: "first", repoDir: repo });
+  assert.equal(acquired.ok, true);
+
+  const refused = acquireMaintenanceGate({ ownerId: "second", repoDir: repo });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reason, "gate-held", "the reason stays the stable contract");
+  assert.equal(refused.holder, "first");
+  assert.equal(refused.holderPid, process.pid, "the refusal names the holding process");
+  assert.equal(refused.holderHost, hostname());
+  assert.equal(refused.phase, "held");
+
+  // The expiry must be a real future instant, not a placeholder: the whole
+  // point is that the reader can decide whether waiting is worth it.
+  const expiresAtMs = Date.parse(refused.expiresAt);
+  assert.ok(Number.isFinite(expiresAtMs), "expiresAt parses as an instant");
+  assert.ok(expiresAtMs > Date.now(), "an unexpired gate reports a future expiry");
+
+  assert.equal(releaseMaintenanceGate(acquired.handle).ok, true);
+  rmSync(repo, { recursive: true, force: true });
+});
+
+// The same detail has to survive the composite wrapper. It previously
+// interpolated `reason` into a string and dropped every other field, so the
+// CLI — which only ever sees the composite result — could not have rendered
+// the holder even after the local fence started reporting it.
+test("the composite fence carries local refusal detail through local-acquire-failed", async () => {
+  const { acquireMaintenanceGate: acquireComposite } = await import("./maintenance-gate.mjs");
+  const repo = makeRepo();
+  const acquired = acquireMaintenanceGate({ ownerId: "first", repoDir: repo });
+  assert.equal(acquired.ok, true);
+
+  const refused = acquireComposite({
+    ownerId: "second",
+    purpose: "cave-8zkkj detail propagation",
+    repoDir: repo,
+    quiesceTimeoutMs: 0,
+  });
+  assert.equal(refused.ok, false);
+  assert.match(refused.reason, /^local-acquire-failed: gate-held$/);
+  assert.equal(refused.holder, "first", "the wrapper no longer discards the holder");
+  assert.equal(refused.holderPid, process.pid);
+  assert.ok(Number.isFinite(Date.parse(refused.expiresAt)));
+
+  assert.equal(releaseMaintenanceGate(acquired.handle).ok, true);
+  rmSync(repo, { recursive: true, force: true });
+});
