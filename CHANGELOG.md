@@ -28,6 +28,7 @@ Patch release on top of v0.3.0.
   `COVEN_CAVE_PASSKEY_REQUIRED=1` is enabled. The PTY sidecar-token gate remains
   in place, which also means paired phones cannot open the packaged terminal
   without a sidecar credential (#4559).
+
 ## [0.3.0] - 2026-08-11
 
 > Search that understands Cave's workspace, more legible multi-agent Chat,
