@@ -1,6 +1,9 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { parseFrontmatter } from "./skill-scan.ts";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { parseFrontmatter, resolveRuntimeSkillRoots } from "./skill-scan.ts";
 
 // Regression: skill `description:` is almost always a YAML block scalar
 // (`description: |`). The old single-line parser captured just the "|"
@@ -63,6 +66,43 @@ description: |
 // No frontmatter → empty object.
 {
   assert.deepEqual(parseFrontmatter("just a body, no frontmatter"), {});
+}
+
+// A harness can advertise skills from user and plugin roots only if the chat
+// runtime grants those exact directories. Missing roots stay absent rather
+// than broadening access to a harness home directory.
+{
+  const home = await mkdtemp(path.join(tmpdir(), "cave-runtime-skill-roots-"));
+  const covenSkillsRoot = path.join(home, "custom-coven", "skills");
+  const codexSkills = path.join(home, ".codex", "skills");
+  const pluginCache = path.join(home, ".codex", "plugins", "cache");
+  const agentsSkills = path.join(home, ".agents", "skills");
+  try {
+    await Promise.all([
+      mkdir(covenSkillsRoot, { recursive: true }),
+      mkdir(codexSkills, { recursive: true }),
+      mkdir(pluginCache, { recursive: true }),
+      mkdir(agentsSkills, { recursive: true }),
+    ]);
+    assert.deepEqual(
+      await resolveRuntimeSkillRoots({ homeDir: home, covenSkillsRoot }),
+      await Promise.all(
+        [covenSkillsRoot, codexSkills, pluginCache, agentsSkills].map((root) => realpath(root)),
+      ),
+      "only existing, narrow skill roots should become runtime resources",
+    );
+    assert.deepEqual(
+      await resolveRuntimeSkillRoots({
+        homeDir: home,
+        covenSkillsRoot,
+        coveredRoots: [path.join(home, ".agents")],
+      }),
+      await Promise.all([covenSkillsRoot, codexSkills, pluginCache].map((root) => realpath(root))),
+      "a skill root already covered by a project grant should not receive a contradictory read-only grant",
+    );
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
 }
 
 console.log("skill-scan.test.ts: ok");

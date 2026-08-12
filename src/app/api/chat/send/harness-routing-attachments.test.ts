@@ -52,8 +52,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /imagesSupported\s*\?\s*await writeImageAttachmentsToTemp\(attachments\)/,
-  "Image payloads should be written to temp files before the harness prompt is built",
+  /imagesSupported\s*\?\s*await writeImageAttachmentsToRuntime\(attachments, attachmentStagingRoot\)/,
+  "Image payloads should be staged inside a granted runtime root before the harness prompt is built",
 );
 
 assert.match(
@@ -111,9 +111,8 @@ assert.match(
 assert.match(
   attachmentDelivery,
   /await writeFile\(filePath, payload, \{ mode: 0o600 \}\)/,
-  "Saved image payloads should be private temp files (mode 0600)",
+  "Staged image payloads should be private files (mode 0600)",
 );
-
 assert.match(
   attachmentDelivery,
   /crypto\.randomUUID\(\)\}\.\$\{imageExtension\(attachment\.mimeType\)/,
@@ -122,8 +121,32 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /cleanupImageTempFiles\(imageFilePaths\);/,
-  "Image temp files should be best-effort deleted after the harness child has exited",
+  /const runtimeResourceRoots = sshRuntime[\s\S]*?resolveRuntimeSkillRoots\([\s\S]*?readOnlyResourceRoots: runtimeResourceRoots/,
+  "Local skill sources should be declared as read-only runtime resources in the boundary prompt",
+);
+
+assert.match(
+  chatRoute,
+  /createBoundarySentinel\([\s\S]*?allowedRoots:[\s\S]*?\.\.\.runtimeResourceRoots/,
+  "Reading an advertised skill should not be reported as a boundary violation",
+);
+
+assert.match(
+  chatRoute,
+  /const grantDirs = !sshRuntime[\s\S]*?\.\.\.runtimeResourceRoots/,
+  "Harness launches should receive the same skill-resource directories as the boundary prompt",
+);
+
+assert.match(
+  chatRoute,
+  /cleanupStagedImageFiles\(imageFilePaths\);/,
+  "Staged image files should be best-effort deleted after the harness child has exited",
+);
+
+assert.match(
+  chatRoute,
+  /parseAgentAttachments\(assistantTextForPersistence, \{[\s\S]*?allowedRoots: sshRuntime[\s\S]*?\.\.\.\(resolvedFamiliarWorkspace \? \[resolvedFamiliarWorkspace\] : \[\]\)/,
+  "workspace-local familiar outputs should be eligible for visible attachment delivery",
 );
 
 // The transcript still never receives a base64 payload. Since cave-cysu4 the

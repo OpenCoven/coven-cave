@@ -4,15 +4,19 @@
 // behind a durable copy whose id the transcript keeps.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 
 const ROOT = mkdtempSync(join(tmpdir(), "chat-send-image-persistence-"));
 process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR = ROOT;
 
-const { persistImageAttachments } = await import("./chat-send-attachments.ts");
+const {
+  cleanupStagedImageFiles,
+  persistImageAttachments,
+  writeImageAttachmentsToRuntime,
+} = await import("./chat-send-attachments.ts");
 const { normalizeChatAttachments, stripPreviewOnlyAttachmentFields, chatAttachmentSrc } =
   await import("@/lib/chat-attachments");
 
@@ -54,6 +58,21 @@ test("an image gains a storedId while its payload stays out of the transcript", 
     `/api/chat/attachment?id=${encodeURIComponent(image.storedId)}`,
     "a reopened transcript resolves the image to the serving route",
   );
+});
+
+test("a tool-readable image is staged inside the granted runtime root", async () => {
+  const grantedRoot = mkdtempSync(join(tmpdir(), "cave-granted-image-stage-"));
+  try {
+    const files = await writeImageAttachmentsToRuntime([IMAGE], grantedRoot);
+    const staged = files.get(0);
+    assert.ok(staged, "a valid image should be staged for local harnesses");
+    const rel = relative(realpathSync(grantedRoot), staged);
+    assert.equal(isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`), false);
+    assert.equal(statSync(staged).isFile(), true);
+    cleanupStagedImageFiles(files);
+  } finally {
+    rmSync(grantedRoot, { recursive: true, force: true });
+  }
 });
 
 test("a storedId survives the round trip through normalization", async () => {

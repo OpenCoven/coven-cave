@@ -1,5 +1,4 @@
 import { mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   cleanMediaDataUrl,
@@ -12,7 +11,7 @@ import {
   sweepChatImageAttachments,
 } from "@/lib/server/chat-attachment-store";
 
-const ATTACHMENT_TMP_DIR = path.join(tmpdir(), "coven-cave-attachments");
+const ATTACHMENT_STAGING_DIR = ".coven-cave-attachments";
 const IMAGE_EXT_BY_SUBTYPE: Record<string, string> = {
   jpeg: "jpg",
   "svg+xml": "svg",
@@ -25,20 +24,29 @@ function imageExtension(mimeType?: string): string {
   return /^[a-z0-9]{1,8}$/.test(mapped) ? mapped : "img";
 }
 
-/** Write validated image payloads to owner-only files for local harnesses. */
-export async function writeImageAttachmentsToTemp(
+/** Write validated image payloads to owner-only files inside a granted root. */
+export async function writeImageAttachmentsToRuntime(
   attachments: ChatAttachment[],
+  stagingRoot: string,
 ): Promise<Map<number, string>> {
   const filePaths = new Map<number, string>();
+  let realStagingRoot: string;
+  try {
+    realStagingRoot = await realpath(stagingRoot);
+    if (!(await stat(realStagingRoot)).isDirectory()) return filePaths;
+  } catch {
+    return filePaths;
+  }
+  const stagingDir = path.join(realStagingRoot, ATTACHMENT_STAGING_DIR);
   for (const [index, attachment] of attachments.entries()) {
     if (!attachment.dataUrl || !attachment.mimeType?.startsWith("image/")) continue;
     const base64 = attachment.dataUrl.slice(attachment.dataUrl.indexOf(",") + 1);
     const payload = Buffer.from(base64, "base64");
     if (payload.byteLength === 0 || payload.byteLength > MAX_ATTACHMENT_IMAGE_BYTES) continue;
     try {
-      await mkdir(ATTACHMENT_TMP_DIR, { recursive: true, mode: 0o700 });
+      await mkdir(stagingDir, { recursive: true, mode: 0o700 });
       const filePath = path.join(
-        ATTACHMENT_TMP_DIR,
+        stagingDir,
         `${crypto.randomUUID()}.${imageExtension(attachment.mimeType)}`,
       );
       await writeFile(filePath, payload, { mode: 0o600 });
@@ -88,9 +96,16 @@ export async function persistImageAttachments(
   return stored;
 }
 
-export function cleanupImageTempFiles(filePaths: ReadonlyMap<number, string>) {
+export function cleanupStagedImageFiles(filePaths: ReadonlyMap<number, string>) {
+  const stagingDirs = new Set<string>();
   for (const filePath of filePaths.values()) {
+    stagingDirs.add(path.dirname(filePath));
     void rm(filePath, { force: true }).catch(() => undefined);
+  }
+  for (const stagingDir of stagingDirs) {
+    // Non-recursive removal succeeds only after the last concurrent turn has
+    // removed its file; an occupied directory is intentionally preserved.
+    void rm(stagingDir).catch(() => undefined);
   }
 }
 

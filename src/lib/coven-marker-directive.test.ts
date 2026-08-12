@@ -90,6 +90,16 @@ assert.match(
   /group="…"/,
   "the group attribute must be taught alongside adjacency",
 );
+assert.match(
+  directive,
+  /To deliver a workspace-local file as a visible chat attachment, emit a fenced `coven:attachment` marker/,
+  "the runtime teaches the server-backed local-file handoff",
+);
+assert.match(
+  directive,
+  /Do not claim an image or file was shown unless the reply contains a renderable image marker or a workspace-local attachment marker/,
+  "completion language is gated on visible delivery evidence",
+);
 
 const exampleSpec = directive.match(/`{3,}spec title="[^"]+"\n[\s\S]*?\n`{3,}/)?.[0];
 assert.ok(exampleSpec, "directive carries a spec-fence example");
