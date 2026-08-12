@@ -1564,6 +1564,25 @@ process.exit(2);
       },
     ]),
   );
+  // The scenario cave-p6wkk demonstrated on 2026-08-10: a bug report is filed
+  // about a unit, quotes its branch name as evidence, and the unit flips from
+  // cleanup-ready to active on the next run — so the better the documentation,
+  // the less retirable the unit.
+  writeFileSync(
+    path.join(fixtureRoot, "tasks-branch-mention.json"),
+    JSON.stringify([
+      branchOnlyMetadataTask,
+      {
+        id: "cave-branch-mention",
+        status: "open",
+        title: "Post-mortem: retirement stalled",
+        description:
+          "The unit on feat/branch-only sat past its cooldown. Quoting the branch here as evidence.",
+        notes: "",
+        external_ref: null,
+      },
+    ]),
+  );
   writeFileSync(
     path.join(fixtureRoot, "tasks-nul-metadata-path.json"),
     JSON.stringify([
@@ -2421,6 +2440,8 @@ if [ "\${LIFECYCLE_OID_ONLY_TASK:-0}" = "1" ]; then
   cat ${JSON.stringify(path.join(fixtureRoot, "tasks-oid-only.json"))}
 elif [ "\${LIFECYCLE_SHORT_OID_TASK:-0}" = "1" ]; then
   cat ${JSON.stringify(path.join(fixtureRoot, "tasks-short-oid.json"))}
+elif [ "\${LIFECYCLE_BRANCH_MENTION_TASK:-0}" = "1" ]; then
+  cat ${JSON.stringify(path.join(fixtureRoot, "tasks-branch-mention.json"))}
 elif [ "\${LIFECYCLE_NUL_METADATA_PATH:-0}" = "1" ]; then
   cat ${JSON.stringify(path.join(fixtureRoot, "tasks-nul-metadata-path.json"))}
 elif [ "\${LIFECYCLE_NUL_EXCEPTION_PATH:-0}" = "1" ]; then
@@ -3216,15 +3237,41 @@ exit 0
   }
 
 
-  verifySafetyRegression("exact OID Bead ownership", () => {
+  verifySafetyRegression("exact OID in Bead text is a mention, not ownership", () => {
+    // The fixture bead is titled "Investigate captured commit" and carries the
+    // head OID in external_ref. That is a bead ABOUT the unit, not a claim on
+    // it, and treating it as open work is what made documenting a unit enough
+    // to make the unit unretirable. It is now reported and does not block.
     const oidOwnerReport = JSON.parse(
       patrol(["--json"], { LIFECYCLE_OID_ONLY_TASK: "1" }),
     );
     const oidOwnedBranch = oidOwnerReport.items.find(
       (item) => item.branch === "feat/branch-only",
     );
-    assert.equal(oidOwnedBranch.lane, "active");
-    assert.deepEqual(oidOwnedBranch.taskIds, ["cave-oid-owner"]);
+    assert.equal(oidOwnedBranch.lane, "retire-after-gate");
+    assert.deepEqual(oidOwnedBranch.taskIds, []);
+    assert.deepEqual(oidOwnedBranch.mentionTaskIds, ["cave-oid-owner"]);
+    assert.doesNotMatch(
+      oidOwnedBranch.reasons.join("\n"),
+      /cave-oid-owner/,
+      "a mention must not appear among the reasons that hold a unit active",
+    );
+  });
+
+  verifySafetyRegression("quoting a branch name does not make the unit active", () => {
+    const mentionReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_BRANCH_MENTION_TASK: "1" }),
+    );
+    const mentionedBranch = mentionReport.items.find(
+      (item) => item.branch === "feat/branch-only",
+    );
+    assert.equal(
+      mentionedBranch.lane,
+      "retire-after-gate",
+      "filing a post-mortem about a unit must not reclassify it as in-flight work",
+    );
+    assert.deepEqual(mentionedBranch.taskIds, []);
+    assert.deepEqual(mentionedBranch.mentionTaskIds, ["cave-branch-mention"]);
   });
 
   verifySafetyRegression("abbreviated OID is not Bead ownership", () => {
@@ -3236,6 +3283,11 @@ exit 0
     );
     assert.equal(shortOidBranch.lane, "retire-after-gate");
     assert.deepEqual(shortOidBranch.taskIds, []);
+    assert.deepEqual(
+      shortOidBranch.mentionTaskIds,
+      [],
+      "an abbreviated OID is not even a mention — the match must stay exact",
+    );
   });
 
   verifySafetyRegression("duplicate registered local branch ref", () => {

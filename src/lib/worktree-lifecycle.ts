@@ -67,7 +67,19 @@ export type WorktreeLifecycleObservation = {
   indexFlags: string[];
   processOwners: WorktreeProcessOwner[];
   claimOwners: string[];
+  /**
+   * Non-closed beads that OWN this unit — a structured lifecycle record naming
+   * its branch or path, or a bead id embedded in the branch name. These block
+   * retirement.
+   */
   taskIds: string[];
+  /**
+   * Non-closed beads whose free text merely NAMES this unit's branch or head
+   * OID. Reported so the reader can see who is discussing the unit, never
+   * treated as a claim on it — see matchingTasks in
+   * scripts/worktree-lifecycle-inventory.ts for why a mention is not ownership.
+   */
+  mentionTaskIds: string[];
   openPrs: WorktreePrRef[];
   mergedPr: WorktreeMergedPrRef | null;
   activeWorkflowUrls: string[];
@@ -110,6 +122,7 @@ type LegacyWorktreeObservation = Pick<
   | "processOwners"
   | "claimOwners"
   | "taskIds"
+  | "mentionTaskIds"
   | "openPrs"
   | "mergedPr"
   | "activeWorkflowUrls"
@@ -313,7 +326,12 @@ function activeReasons(observation: WorktreeLifecycleObservation): string[] {
     reasons.push(`active claim: ${observation.claimOwners.join(", ")}`);
   }
   if (observation.taskIds.length > 0) {
-    reasons.push(`non-closed Beads: ${observation.taskIds.join(", ")}`);
+    // Say what the relationship IS. "non-closed Beads: <id>" could not
+    // distinguish "this bead owns the unit" from "this bead mentions it", so a
+    // false blocker read exactly like genuine in-flight work and the next
+    // operator correctly preserved the unit. Mentions are deliberately absent
+    // from this list: they are rendered separately and block nothing.
+    reasons.push(`non-closed Beads (owns): ${observation.taskIds.join(", ")}`);
   }
   if (observation.openPrs.length > 0) {
     reasons.push(`open PR ${observation.openPrs.map((pr) => `#${pr.number}`).join(", ")}`);
@@ -636,6 +654,7 @@ function normalizeWorktreeObservation(
       processOwners: observation.processOwners,
       claimOwners: observation.claimOwners,
       taskIds: observation.taskIds,
+      mentionTaskIds: observation.mentionTaskIds ?? [],
       openPrs: observation.openPrs,
       mergedPr: observation.mergedPr,
       activeWorkflowUrls: observation.activeWorkflowUrls,
@@ -829,6 +848,11 @@ export function renderWorktreeLifecycleReport(
       const kind = item.kind === "branch-only" ? " [branch-only]" : "";
       lines.push(`- ${labelFor(item)}${kind}${location}`);
       for (const reason of item.reasons) lines.push(`  ${humanReason(item, reason)}`);
+      // Informational, never a lane input: these beads name the unit without
+      // claiming it. Printed so the reader can still find the conversation.
+      if (item.mentionTaskIds.length > 0) {
+        lines.push(`  mentions (not blocking): ${item.mentionTaskIds.join(", ")}`);
+      }
       for (const change of item.changes) lines.push(`  change: ${change}`);
       for (const ignoredPath of item.nonDisposableIgnoredPaths) {
         lines.push(`  non-disposable ignored: ${ignoredPath}`);
