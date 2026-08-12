@@ -65,6 +65,14 @@ const harnessPromptIndex = chatRoute.indexOf("const harnessPrompt =", queueIndex
 assert.ok(postIndex >= 0, "Chat send POST handler should exist");
 assert.ok(accessIndex >= 0, "Chat send should still run the project launch gate");
 assert.ok(queueIndex > accessIndex, "Offline queueing must run after project launch authorization");
+// Checked separately from the ordering below: `indexOf` returns -1 when the
+// symbol is renamed, and `queueIndex < -1` then fails as an ORDERING violation,
+// which sends the next reader looking for a reordered handler that is fine.
+// The cave-cxwgy rename cost exactly that detour before this guard existed.
+assert.ok(
+  imageWriteIndex >= 0,
+  "Image staging call not found in the chat route — if it was renamed, update this probe",
+);
 assert.ok(
   queueIndex < imageWriteIndex,
   "Offline queueing should run before image staging writes",

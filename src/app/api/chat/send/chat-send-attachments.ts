@@ -1,4 +1,4 @@
-import { mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   cleanMediaDataUrl,
@@ -17,6 +17,48 @@ const IMAGE_EXT_BY_SUBTYPE: Record<string, string> = {
   "svg+xml": "svg",
 };
 const MAX_MENTIONED_FILES = 10;
+/** Old enough that no live turn could still be reading it. */
+const STAGED_FILE_MAX_AGE_MS = 60 * 60 * 1000;
+const STAGING_SWEEP_SCAN_LIMIT = 200;
+
+/**
+ * Remove staged image files a previous turn failed to clean up.
+ *
+ * `cleanupStagedImageFiles` runs at ONE site near the end of the chat stream
+ * callback, and nothing wraps that callback in `finally`, so a throw above it
+ * strands the files. That was harmless while they lived in OS temp storage,
+ * which the system reaps; inside the familiar's granted workspace they are
+ * user-visible, readable by the familiar, and reaped by nobody.
+ * `sweepChatImageAttachments` does not cover them — it matches files whose name
+ * is a valid attachment id in the persistent store, not UUID-named files in a
+ * workspace staging directory.
+ *
+ * Sweeping on the next delivery is self-healing and stays local to this module,
+ * rather than restructuring a 2,700-line stream callback around a try/finally.
+ * Files only: the directory itself is shared with concurrent turns and is
+ * removed non-recursively by cleanup once the last of them is done.
+ */
+async function sweepStaleStagedFiles(stagingDir: string, now = Date.now()): Promise<void> {
+  try {
+    const entries = await readdir(stagingDir, { withFileTypes: true });
+    for (const entry of entries.slice(0, STAGING_SWEEP_SCAN_LIMIT)) {
+      if (!entry.isFile()) continue;
+      const target = path.join(stagingDir, entry.name);
+      try {
+        const meta = await lstat(target);
+        // A symlink planted here is not ours; removing what it points at would
+        // turn a cleanup into a delete primitive.
+        if (meta.isSymbolicLink()) continue;
+        if (now - meta.mtimeMs <= STAGED_FILE_MAX_AGE_MS) continue;
+        await rm(target, { force: true });
+      } catch {
+        // Skip anything that races us.
+      }
+    }
+  } catch {
+    // No staging directory yet, or unreadable — nothing to sweep.
+  }
+}
 
 function imageExtension(mimeType?: string): string {
   const subtype = mimeType?.split("/")[1]?.toLowerCase() ?? "";
@@ -38,6 +80,7 @@ export async function writeImageAttachmentsToRuntime(
     return filePaths;
   }
   const stagingDir = path.join(realStagingRoot, ATTACHMENT_STAGING_DIR);
+  await sweepStaleStagedFiles(stagingDir);
   for (const [index, attachment] of attachments.entries()) {
     if (!attachment.dataUrl || !attachment.mimeType?.startsWith("image/")) continue;
     const base64 = attachment.dataUrl.slice(attachment.dataUrl.indexOf(",") + 1);
