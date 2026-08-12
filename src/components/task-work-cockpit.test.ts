@@ -78,10 +78,20 @@ assert.match(
 // otherwise reopening the card sits on a claimed id and never sends. React's
 // development effect replay calls cleanup before immediately mounting again,
 // so the release is deferred one turn and cancelled by that remount.
+//
+// The generation counter is the belt-and-suspenders guard: if clearTimeout
+// loses the scheduler race (e.g. MessageChannel vs. setTimeout ordering in
+// React 19 Strict Mode), the callback checks whether a newer effect body has
+// run before releasing, so a stale timer can never fire a release.
 assert.match(
   source,
-  /handoffReleaseTimerRef\.current = window\.setTimeout\(\(\) => \{\s*releaseInitialPromptHandoff\(CHAT_VIEW_HANDOFF_SCOPE, handoffId\)/,
+  /handoffReleaseTimerRef\.current = window\.setTimeout\(\(\) => \{/,
   "the cockpit defers its handoff release so development effect replay cannot re-send the first prompt",
+);
+assert.match(
+  source,
+  /handoffReleaseGenRef\.current !== gen/,
+  "the deferred release is guarded by a generation counter that survives a clearTimeout race",
 );
 assert.match(
   source,

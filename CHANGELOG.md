@@ -7,6 +7,82 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-08-12
+
+> A maintenance patch for the worktree lifecycle tooling: retention now counts a
+> pushed tag, a refused maintenance fence says what to do about it, and project
+> deletion cleans up after itself.
+
+Patch release on top of v0.3.2. No user-facing surface changed; this is operator
+tooling plus one API correctness fix.
+
+### Fixed
+
+- The worktree auto-lock now counts a **pushed tag** as retention, matching the
+  guard it claimed to mirror. It had used `git rev-list --count HEAD --not
+  --remotes`, which consults only remote-tracking *branches* — git keeps no
+  remote-tracking refs for tags — so a branch archived as a pushed tag was still
+  treated as at-risk (#4573).
+- A refused maintenance fence now explains itself and prints the admissible
+  rerun instead of failing with an opaque message (#4572).
+- Deleting a project now cascades correctly, the worktree lifecycle patrol
+  reports managed-creation exceptions, and a flaky standalone-budget assertion
+  was stabilised (#4567).
+
+## [0.3.2] - 2026-08-12
+
+> A maintenance patch: worktree-lifecycle reporting states a repository-wide
+> failure once rather than once per unit, and the Coven brand assets now live
+> in the repository.
+
+Patch release on top of v0.3.1. Headline: a single checkout-level probe failure
+no longer reads as N independent problems in the worktree lifecycle report.
+
+### Added
+
+- Added the Coven brand assets under `assets/brand` — logo, Discord banner, and
+  a wordmark banner variant.
+
+### Fixed
+
+- The worktree lifecycle inventory now reports a repository-wide default-branch
+  probe failure in its global errors, and the patrol states it once under its
+  own heading instead of stamping the identical sentence onto every affected
+  unit. Classification is deliberately unchanged: each unit still fails closed
+  on the error and still carries it in its own probe errors (#4565).
+- Retargeted a stale comment that cited the removed
+  `scripts/worktree-sweep-prompt.md` to `scripts/worktree-sweep.sh`, and the
+  patrol report now hints that a retired worktree's bead may still be open so a
+  human can close it from the sweep log (#4568).
+- Resolved Chat model application state when the downstream harness echoes the
+  request, so the applied model is reported from the harness response rather
+  than assumed from what was sent (#4569).
+
+## [0.3.1] - 2026-08-12
+
+> ⚠️ Removes the access-token requirement. A Cave published over Tailscale
+> Serve is reachable by anything on the tailnet with no credential. This
+> partly reverts the loopback authorization added in 0.3.0 (#4533).
+
+Patch release on top of v0.3.0. Note that it is **not** additive in the sense
+the preamble above describes: it removes a security control rather than adding
+behavior.
+
+### Removed
+
+- Removed the `COVEN_CAVE_ACCESS_TOKEN` request gate, access page, and
+  query-to-cookie exchange. Remote ingress remains classified separately so
+  host, passkey-presence, automation, and desktop-only route policies can keep
+  applying at their existing boundaries (#4559).
+
+### Security
+
+- Remote deployments no longer authenticate callers with an access token:
+  anything that can reach the Cave port can reach the app unless
+  `COVEN_CAVE_PASSKEY_REQUIRED=1` is enabled. The PTY sidecar-token gate remains
+  in place, which also means paired phones cannot open the packaged terminal
+  without a sidecar credential (#4559).
+
 ## [0.3.0] - 2026-08-11
 
 > Search that understands Cave's workspace, more legible multi-agent Chat,
