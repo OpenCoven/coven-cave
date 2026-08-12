@@ -103,6 +103,24 @@ assert.equal(
     process.platform === "win32",
     "backslashes are path separators only on platforms that define them that way",
   );
+  for (const hookArtifact of [
+    ".claude/worktree-autolock.stamp",
+    ".claude/worktree-autolock.log",
+    ".claude/worktree-retention-push.stamp",
+    ".claude/worktree-retention-push.log",
+    ".claude/worktree-guard-bypass.log",
+  ]) {
+    assert.equal(
+      isDisposableIgnoredPath(hookArtifact),
+      true,
+      `${hookArtifact} is a hook artifact that must not block retirement`,
+    );
+  }
+  assert.equal(
+    isDisposableIgnoredPath(".claude/settings.json"),
+    false,
+    "tracked .claude files are not disposable",
+  );
 }
 
 function metadata(overrides = {}) {

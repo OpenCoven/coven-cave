@@ -272,6 +272,16 @@ const DISPOSABLE_IGNORED_ROOTS = [
   "target",
   "test-results",
 ];
+
+/** Hook artifacts written under `.claude/` that are machine-local bookkeeping,
+ *  gitignored, and safe to discard during worktree retirement. */
+const DISPOSABLE_HOOK_ARTIFACTS = new Set([
+  ".claude/worktree-autolock.stamp",
+  ".claude/worktree-autolock.log",
+  ".claude/worktree-retention-push.stamp",
+  ".claude/worktree-retention-push.log",
+  ".claude/worktree-guard-bypass.log",
+]);
 const HUMAN_LANE_LABELS: Record<WorktreeLifecycleLane, string> = {
   active: "active",
   recovery: "recovery",
@@ -289,6 +299,9 @@ export function isDisposableIgnoredPath(candidate: string): boolean {
     normalized === "next-env.d.ts" ||
     normalized.endsWith(".tsbuildinfo")
   ) {
+    return true;
+  }
+  if (DISPOSABLE_HOOK_ARTIFACTS.has(normalized)) {
     return true;
   }
   return DISPOSABLE_IGNORED_ROOTS.some(
