@@ -167,7 +167,11 @@ function getTokensFromCookie(header) {
   for (const part of header.split(";")) {
     const [key, ...rest] = part.trim().split("=");
     if (key === ACCESS_COOKIE || key === LEGACY_ACCESS_COOKIE) {
-      tokens.push(decodeURIComponent(rest.join("=") ?? ""));
+      const raw = rest.join("=") ?? "";
+      try {
+        tokens.push(decodeURIComponent(raw));
+      } catch {
+      }
     }
   }
   return tokens;
