@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
 import QRCode from "qrcode";
-import { stripAnsi } from "@/lib/ansi";
+import {
+  BoundedProcessOutput,
+  safeProcessErrorMessage,
+  terminateProcessTree,
+} from "@/lib/process-execution";
 import { readMobileLastSeen } from "@/lib/server/mobile-paired";
 import {
   armMobileAccessSecret,
@@ -43,44 +47,62 @@ function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: tailscaleSpawnEnv(),
+      detached: process.platform !== "win32",
     });
-    let stdout = "";
-    let stderr = "";
+    const stdout = new BoundedProcessOutput(64 * 1024);
+    const stderr = new BoundedProcessOutput(64 * 1024);
+    let settled = false;
+    let timedOut = false;
+    const finish = (result: TailscaleResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
     const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      resolve({
-        ok: false,
-        status: null,
-        stdout: stripAnsi(stdout),
-        stderr: `tailscale ${args.join(" ")} timed out`,
+      timedOut = true;
+      void terminateProcessTree(child).then(() => {
+        finish({
+          ok: false,
+          status: null,
+          stdout: stdout.text(),
+          stderr: "Tailscale command timed out",
+        });
       });
     }, timeoutMs);
 
     child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
+      stdout.append(chunk);
     });
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+      stderr.append(chunk);
     });
     child.on("error", (error) => {
-      clearTimeout(timer);
       const missing = (error as NodeJS.ErrnoException).code === "ENOENT";
-      resolve({
+      finish({
         ok: false,
         status: null,
-        stdout: stripAnsi(stdout),
+        stdout: stdout.text(),
         stderr: missing
           ? "Tailscale CLI not found. Install Tailscale or set TAILSCALE_BIN to the tailscale executable."
-          : error.message,
+          : safeProcessErrorMessage(error, "Tailscale CLI"),
       });
     });
     child.on("close", (status) => {
-      clearTimeout(timer);
-      resolve({
+      if (timedOut) {
+        finish({
+          ok: false,
+          status: null,
+          stdout: stdout.text(),
+          stderr: "Tailscale command timed out",
+        });
+        return;
+      }
+      finish({
         ok: status === 0,
         status,
-        stdout: stripAnsi(stdout),
-        stderr: stripAnsi(stderr),
+        stdout: stdout.text(),
+        stderr: stderr.text(),
       });
     });
   });

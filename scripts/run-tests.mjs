@@ -1302,6 +1302,8 @@ export const SUITES = {
     "src/lib/daemon-startup-contract.test.ts",
     "src/lib/runtime-startup-throttle.test.ts",
     "src/lib/daemon-update-lifecycle.test.ts",
+    "src/lib/process-execution.test.ts",
+    "src/lib/process-boundary-contracts.test.ts",
     "src/app/api/projects/route.test.ts",
     "src/app/api/coven/exec/route.test.ts",
     "src/lib/coven-daemon.test.ts",

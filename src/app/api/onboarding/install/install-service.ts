@@ -519,7 +519,6 @@ function daemonLifecycleDependencies(job: InstallJob): DaemonUpdateDependencies 
         return { ok: false, detail: "Cave could not safely resolve the Coven Windows command shim." };
       }
       const stop = await runInstallProcess(command, [...fixedArgs, "daemon", "stop"], {
-        shell: false,
         timeoutMs: 8_000,
         env: covenWrapperSpawnEnv(),
       });
