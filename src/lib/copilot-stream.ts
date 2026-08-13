@@ -87,13 +87,19 @@ export type RuntimeEventProtocolSchema = {
  * intentionally data-driven: a registry refresh can add a later schema with
  * its own range and aliases, while older installed clients keep this one.
  */
+const COPILOT_SESSION_ID_MIN_CLIENT_VERSION = "1.0.70";
+
 export const COPILOT_EVENT_PROTOCOL_SCHEMAS: RuntimeEventProtocolSchema[] = [
   {
     id: "copilot-jsonl-v1",
     runtime: "copilot",
     eventTypeFields: ["type"],
     diagnosticEventPrefixes: ["tool.", "assistant.tool"],
-    minClientVersion: "1.0.0",
+    // 1.0.64 advertises --session-id in --help but rejects it at runtime.
+    // Cave requires that flag to pre-assign durable chat/Research ownership;
+    // 1.0.70 is the first version whose complete launch + JSONL contract we
+    // have verified end to end.
+    minClientVersion: COPILOT_SESSION_ID_MIN_CLIENT_VERSION,
     // A future major must opt in with a separately reviewed registry schema.
     // Never guess that an incompatible 2.x frame still has the 1.x shape.
     maxClientVersionExclusive: "2.0.0",
@@ -363,6 +369,16 @@ export function copilotStreamSpec(
   compatibleEventProtocols?: unknown,
   launchCommand?: CopilotLaunchCommand,
 ): CopilotStreamSpec | null {
+  if (clientVersion !== undefined) {
+    const normalizedClientVersion = parseRuntimeClientVersion(clientVersion);
+    const launchFloor = normalizedClientVersion
+      ? compareRuntimeClientVersions(
+          normalizedClientVersion,
+          COPILOT_SESSION_ID_MIN_CLIENT_VERSION,
+        )
+      : null;
+    if (launchFloor === null || launchFloor < 0) return null;
+  }
   const runtime = REGISTRY_RUNTIMES.find((entry) => entry.id === "copilot");
   if (!runtime || !runtime.capabilities.stream) return null;
   const manifest = runtime.adapterManifest as {
