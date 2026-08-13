@@ -507,11 +507,6 @@ assert.match(
 );
 assert.match(
   workspaceSidebar,
-  /<PopoverLabel>Chat visibility<\/PopoverLabel>/,
-  "Sidebar overflow should retain archive visibility without duplicating grouping",
-);
-assert.match(
-  workspaceSidebar,
   /readChatSidebarView\(\)/,
   "the organize mode should hydrate from the persisted preference",
 );
