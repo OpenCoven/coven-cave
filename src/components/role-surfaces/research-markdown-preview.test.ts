@@ -10,8 +10,8 @@ test("the preview uses the same lazy serializer chat renders through", () => {
   // Browser-only chunk: importing it eagerly would evaluate during server render.
   assert.match(source, /loadMarkdownPreview\(\)/);
   // renderAsync takes a parsed document, not raw text.
-  assert.match(source, /renderAsync\(parse\(markdown\)\)/);
-  assert.match(source, /unwrapPreviewShell\(rendered\)/);
+  assert.match(source, /renderAsync\(parse\(markdown\), \{ sanitize: sanitizeHtml \}\)/);
+  assert.match(source, /unwrapPreviewShell\(sanitizeHtml\(rendered\)\)/);
 });
 
 test("a slow render cannot overwrite a newer one", () => {
