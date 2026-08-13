@@ -77,7 +77,7 @@ const researchRunner = readFileSync(new URL("./research-mission-runner.ts", impo
 // the daemon body must NOT include familiarId.
 assert.match(
   source,
-  /body: \{\s*projectRoot,\s*harness: binding\.harness,\s*prompt,\s*launchMode: "nonInteractive",\s*\.\.\.\(launchPolicy \? \{ launchPolicy \} : \{\}\),\s*\},/,
+  /body: \{\s*projectRoot,\s*harness,\s*prompt,\s*launchMode: "nonInteractive",\s*\.\.\.\(launchPolicy \? \{ launchPolicy \} : \{\}\),\s*\},/,
   "flow session spawn must not pass familiarId natively to the daemon",
 );
 assert.match(
@@ -110,7 +110,7 @@ assert.match(
 
 assert.match(
   source,
-  /const hubAuthority = config\.multiHost\?\.mode === "hub";[\s\S]*binding\.harness === "copilot" && !sshBound && !hubAuthority/,
+  /const hubAuthority = config\.multiHost\?\.mode === "hub";[\s\S]*harness === "copilot" && !sshBound && !hubAuthority/,
   "direct copilot flow spawn must not bypass configured hub authority",
 );
 assert.match(
@@ -120,7 +120,7 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(binding\.harness === "copilot" && !sshBound && !hubAuthority\)[\s\S]*?if \(spec\)[\s\S]*?return \{\s*ok: false,\s*status: 409,/,
+  /if \(harness === "copilot" && !sshBound && !hubAuthority\)[\s\S]*?if \(spec\)[\s\S]*?return \{\s*ok: false,\s*status: 409,/,
   "an unsupported local Copilot flow fails explicitly instead of falling through to the known prompt-mangling daemon path",
 );
 assert.match(
@@ -211,7 +211,7 @@ for (const [socketPath, platform, expected] of [
 }
 assert.match(
   source,
-  /shouldRequestResearchSessionLaunchPolicy\(\{[\s\S]*trustedLocalResearch: options\.trustedLocalResearch === true,[\s\S]*harness: binding\.harness,[\s\S]*pinnedResearchDaemonTarget = localDaemonTarget\(\);[\s\S]*isOwnerLocalResearchDaemonTarget\(pinnedResearchDaemonTarget\)[\s\S]*OWNER_LOCAL_RESEARCH_DAEMON_REQUIRED_DIAGNOSTIC[\s\S]*callDaemonTarget<Record<string, unknown>>\(\s*pinnedResearchDaemonTarget,\s*daemonHealthRequest\(\),[\s\S]*supportsSessionLaunchPolicy\(health\.data\)[\s\S]*SESSION_LAUNCH_POLICY_REQUIRED_DIAGNOSTIC/,
+  /shouldRequestResearchSessionLaunchPolicy\(\{[\s\S]*trustedLocalResearch: options\.trustedLocalResearch === true,[\s\S]*harness,[\s\S]*pinnedResearchDaemonTarget = localDaemonTarget\(\);[\s\S]*isOwnerLocalResearchDaemonTarget\(pinnedResearchDaemonTarget\)[\s\S]*OWNER_LOCAL_RESEARCH_DAEMON_REQUIRED_DIAGNOSTIC[\s\S]*callDaemonTarget<Record<string, unknown>>\(\s*pinnedResearchDaemonTarget,\s*daemonHealthRequest\(\),[\s\S]*supportsSessionLaunchPolicy\(health\.data\)[\s\S]*SESSION_LAUNCH_POLICY_REQUIRED_DIAGNOSTIC/,
   "only trusted local Research probes one pinned local daemon target and old daemons fail closed",
 );
 assert.equal(
@@ -327,7 +327,7 @@ try {
 }
 assert.match(
   researchRunner,
-  /startFlowSession\(flow, \{\s*projectRoot: options\.projectRoot,\s*addDirs: options\.addDirs,\s*trustedLocalResearch: true,\s*offlinePolicy: options\.offlinePolicy,\s*publishSessionOwner: options\.publishSessionOwner,\s*\}\)/,
+  /startFlowSession\(flow, \{\s*projectRoot: options\.projectRoot,\s*addDirs: options\.addDirs,\s*trustedLocalResearch: true,\s*offlinePolicy: options\.offlinePolicy,\s*harness: options\.harness,\s*model: options\.model,\s*publishSessionOwner: options\.publishSessionOwner,\s*\}\)/,
   "only the production Research mission adapter requests trusted launch policy and rejects offline replay",
 );
 assert.match(
@@ -356,4 +356,28 @@ assert.match(
   source,
   /status: "failed",[\s\S]*?summary: "offline enqueue failed",/,
   "an enqueue failure must not leave an un-replayable queued run behind",
+);
+
+// ─── mission-selected runtime (cave-hhwc5) ───────────────────────────────────
+// The harness is no longer read straight off the familiar's Coven binding: a
+// Research mission chooses its own runtime, which is what lets it avoid the
+// codex-only daemon launch-policy gate. Pin the override itself, not just its
+// absence, so the binding cannot quietly become authoritative again.
+assert.match(
+  source,
+  /const harness = options\.harness \?\? binding\.harness;/,
+  "the caller's runtime must override the familiar's binding for this run",
+);
+// The override has to reach the DECISIONS, not merely exist: the direct-spawn
+// branch and the launch-policy gate are the two that determine whether a
+// mission can run at all on a daemon without sessionLaunchPolicy.
+assert.match(
+  source,
+  /if \(harness === "copilot" && !sshBound && !hubAuthority\)/,
+  "the direct-spawn branch must honour the selected runtime",
+);
+assert.doesNotMatch(
+  source,
+  /harness: binding\.harness/,
+  "no runtime decision may bypass the override by reading the binding directly",
 );

@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { Icon } from "@/lib/icon";
 import {
   researchSourceStatusCounts,
   type ResearchMission,
@@ -12,6 +11,7 @@ import {
 } from "@/lib/research-missions";
 import { relativeTime } from "@/lib/relative-time";
 import { ResearchArtifactActions } from "./research-artifact-actions";
+import { ResearchSourceRows } from "./research-source-rows";
 
 export type ResearchOutputTab = "artifacts" | "sources";
 
@@ -273,34 +273,14 @@ export function ResearchEvidenceLedger({
         ) : visibleSources.length === 0 ? (
           <p className="research-output-empty">No {sourceFilter} sources.</p>
         ) : (
-          <ul>
-            {visibleSources.map((source) => (
-              <li
-                key={source.id}
-                className={`research-source-card${source.id === latestSourceId ? " is-latest" : ""}`}
-              >
-                <span className={`research-source-status research-source-status--${source.status}`}>
-                  <i aria-hidden />{source.status}
-                </span>
-                {source.url ? (
-                  <button
-                    type="button"
-                    className="research-source-card__title"
-                    onClick={() => onOpenUrl(source.url!)}
-                  >
-                    <strong>{source.title}</strong>
-                    <Icon name="ph:arrow-square-out" width={11} height={11} aria-hidden />
-                    <span className="sr-only"> — opens the source</span>
-                  </button>
-                ) : (
-                  <strong>{source.title}</strong>
-                )}
-                {source.claim ? <p>{source.claim}</p> : null}
-                {source.id === latestSourceId ? (
-                  <span className="sr-only">Most recently added</span>
-                ) : null}
+          <ResearchSourceRows
+            sources={visibleSources}
+            onOpenUrl={onOpenUrl}
+            latestSourceId={latestSourceId}
+            renderActions={(source) => (
+              <>
                 {/* Checkpoint triage: the verdicts the pass is actually waiting
-                    on, as one-tap buttons. The status control below stays for
+                    on, as one-tap buttons. The status control stays for
                     revisiting any source at any time. */}
                 {triage && (source.status === "candidate" || source.status === "conflicting") ? (
                   <div className="research-desk-delta__actions">
@@ -362,9 +342,9 @@ export function ResearchEvidenceLedger({
                   </select>
                 </label>
                 {!source.url && source.localPath ? <span>{source.localPath}</span> : null}
-              </li>
-            ))}
-          </ul>
+              </>
+            )}
+          />
         )}
       </section>
     </div>
