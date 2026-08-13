@@ -15,6 +15,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { parse } from "@create-markdown/core";
+import { sanitizeHtml } from "@/lib/html-sanitize";
 import { loadMarkdownPreview } from "@/lib/markdown-preview";
 import { unwrapPreviewShell } from "@/lib/markdown-preview-shell";
 
@@ -50,9 +51,9 @@ export function ResearchMarkdownPreview({
         const { renderAsync } = await loadMarkdownPreview();
         // renderAsync takes a parsed document, not raw text — the same
         // parse() → renderAsync() pair chat renders every message through.
-        const rendered = await renderAsync(parse(markdown));
+        const rendered = await renderAsync(parse(markdown), { sanitize: sanitizeHtml });
         if (cancelled || token !== renderToken.current) return;
-        setHtml(unwrapPreviewShell(rendered));
+        setHtml(unwrapPreviewShell(sanitizeHtml(rendered)));
         setFailed(false);
       } catch {
         if (cancelled || token !== renderToken.current) return;
@@ -82,8 +83,7 @@ export function ResearchMarkdownPreview({
     <div
       className="research-markdown-preview"
       aria-label={ariaLabel}
-      // Sanitised by the same preview serializer chat renders every assistant
-      // message through; the source is a local mission file, never remote HTML.
+      // Sanitised with chat's shared policy before reaching the DOM.
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
