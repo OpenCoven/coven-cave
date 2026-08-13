@@ -1768,6 +1768,8 @@ const ALIAS_LOADER = new Set([
   // "@/lib/research-missions" and "@/lib/link-organizer"
   "src/lib/research-prompt-brief.test.ts",
   "src/lib/research-refine-direction.test.ts",
+  // Imports the next-step helpers, which resolve the shared mission contract.
+  "src/components/role-surfaces/research-next-step.test.ts",
   "src/components/role-surfaces/research-quick-saves.test.ts",
   "src/components/role-surfaces/research-library-view.test.ts",
   "src/components/role-surfaces/research-studio-providers.test.ts",
