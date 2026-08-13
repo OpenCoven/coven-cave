@@ -69,7 +69,11 @@ assert.match(
   /name=\{archived \? "ph:arrow-counter-clockwise" : "ph:archive"\}/,
   "the archive button must flip to unarchive on archived rows",
 );
-assert.doesNotMatch(workspaceSidebar, /Show archived/, "the sidebar must not expose archived visibility controls");
+assert.doesNotMatch(
+  workspaceSidebar,
+  />\s*Show archived\s*<\//,
+  "the sidebar must not expose archived visibility controls",
+);
 // Outer CSS classes for e2e compat
 assert.match(workspaceSidebar, /workspace-sidebar chat-sidebar/, "outer div must include both CSS classes for e2e compat");
 assert.doesNotMatch(workspaceSidebar, /workspace-sidebar__rail|chat-sidebar__rail/, "chat sidebar no longer renders a collapsed rail child");

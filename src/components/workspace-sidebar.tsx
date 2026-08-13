@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { SidebarRailHeader } from "@/components/sidebar-rail-header";
 import { Icon, type IconName } from "@/lib/icon";
@@ -527,9 +526,6 @@ export function WorkspaceSidebar({
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [view, setView] = useState<ChatSidebarView>("recent");
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuAnchorRef = useRef<HTMLButtonElement>(null);
-  const menuBodyRef = useRef<HTMLDivElement>(null);
   const normalizedSessions = useMemo(
     () => sessions.map(normalizeSessionAttention),
     [sessions],
@@ -543,55 +539,16 @@ export function WorkspaceSidebar({
   // stale buckets alongside a fresher bare time for the same session).
   const now = useMemo(() => Date.now(), [minuteTick]);
 
-  // Trap focus inside the Organize menu while it is open (same convention as
-  // the GitHub action popover, #2288). Also hydrates the organize-view preference.
-  useFocusTrap(menuOpen, menuBodyRef, { onEscape: () => setMenuOpen(false) });
-
   // The organize-view preference loads after mount so SSR and first client
   // render agree (same idiom as the chat list).
   useEffect(() => {
     setView(readChatSidebarView());
   }, []);
 
-  // Archived sessions only load while "Show archived" is on; archive/unarchive
-  // bumps archiveNonce so the opt-in list refetches after each change (same
-  // idiom as the chat list's toggle).
-  useEffect(() => {
-    if (!showArchived) {
-      setArchivedRows([]);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        // Scope archived rows to the active familiar's projects, same as the
-        // live list — keeps forbidden-project sessions out of the archive view.
-        const scope = activeFamiliarId ? `&familiarId=${encodeURIComponent(activeFamiliarId)}` : "";
-        const res = await fetch(`/api/sessions/list?includeArchived=1${scope}`, { cache: "no-store" });
-        const json = await res.json().catch(() => ({ ok: false }));
-        if (cancelled || !json.ok || !Array.isArray(json.sessions)) return;
-        setArchivedRows(
-          (json.sessions as SessionRow[])
-            .filter((session) => session.archived_at)
-            .map(normalizeSessionAttention),
-        );
-      } catch {
-        // keep whatever archived rows we already have
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [showArchived, archiveNonce, activeFamiliarId]);
-
-  const visibleSessions = useMemo(() => {
-    let rows: SessionRow[] = normalizedSessions;
-    if (showArchived && archivedRows.length > 0) {
-      const seen = new Set(normalizedSessions.map((session) => session.id));
-      rows = [...normalizedSessions, ...archivedRows.filter((session) => !seen.has(session.id))];
-    }
-    return filterVisibleChatSessions(rows, activeFamiliarId ?? null, { includeArchived: showArchived });
-  }, [normalizedSessions, showArchived, archivedRows, activeFamiliarId]);
+  const visibleSessions = useMemo(
+    () => filterVisibleChatSessions(normalizedSessions, activeFamiliarId ?? null),
+    [normalizedSessions, activeFamiliarId],
+  );
 
   const groups = useMemo(
     () => deriveChatProjectGroups(applyProjectOverrides(visibleSessions, overrides), projects),

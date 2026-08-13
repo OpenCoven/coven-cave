@@ -81,7 +81,7 @@ assert.doesNotMatch(
 );
 assert.match(
   workspaceSidebar,
-  /const visibleSessions = useMemo\(\s*\(\) =>\s*filterVisibleChatSessions\(sessions, activeFamiliarId \?\? null\),\s*\[sessions, activeFamiliarId\],\s*\);/,
+  /const visibleSessions = useMemo\(\s*\(\) => filterVisibleChatSessions\(normalizedSessions, activeFamiliarId \?\? null\),\s*\[normalizedSessions, activeFamiliarId\],\s*\);/,
   "the Chat side rail must derive visible sessions with the archive-free default",
 );
 assert.doesNotMatch(
