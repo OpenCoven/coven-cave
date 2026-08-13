@@ -128,6 +128,54 @@ export function remoteTagCommits(worktreePath) {
   }
 }
 
+/**
+ * Branch names the remote currently advertises.
+ *
+ * Collected so this hook can tell a branch that was never pushed from one the
+ * remote has since DELETED. Both are absent from `ls-remote`; only the second
+ * must not be re-created.
+ *
+ * Returns null when the remote cannot be reached, which the caller treats as
+ * "no proof of deletion" and falls back to the branch-first path — the same
+ * safe direction remoteTagCommits takes.
+ */
+export function remoteBranchNames(worktreePath) {
+  try {
+    const output = git(["ls-remote", "--heads", "origin"], worktreePath, PUSH_TIMEOUT_MS);
+    const names = new Set();
+    for (const line of output.split("\n")) {
+      const ref = line.slice(41).trim();
+      if (ref.startsWith("refs/heads/")) names.add(ref.slice("refs/heads/".length));
+    }
+    return names;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Did this branch ever exist on the remote?
+ *
+ * `refs/remotes/origin/<branch>` is written by a push or fetch of that branch
+ * and survives the remote deleting it, until something prunes. So a local
+ * remote-tracking ref plus an absence from `ls-remote --heads` is a branch the
+ * remote deleted — a merged-and-auto-deleted PR head, in practice.
+ *
+ * A branch that has never been pushed has no such ref, so it stays on the
+ * branch-first path and is still retained as a branch. If a prune has already
+ * run, this reads false and the branch is pushed as before: a resurrected
+ * branch, which is the pre-existing behaviour, never a lost commit.
+ */
+export function hadRemoteTracking(worktreePath, branch) {
+  if (!branch) return false;
+  try {
+    git(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`], worktreePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function branchOf(worktreePath) {
   try {
     const name = git(["rev-parse", "--abbrev-ref", "HEAD"], worktreePath).trim();
@@ -170,9 +218,12 @@ function record(root, entry) {
 // created branch above 40 — fall back to a tag named for the exact commit.
 // The tag is immutable and unique, so it never force-updates and never
 // collides, and `branch-cap.yml` ignores it (`ref_type == 'branch'` only).
-export function retain(worktreePath, root, branch) {
+// `preferTag` skips the branch push entirely rather than letting it fail into
+// the fallback: when the remote deleted the branch, pushing it SUCCEEDS and
+// re-creates it, so there is no failure to fall back from.
+export function retain(worktreePath, root, branch, { preferTag = false } = {}) {
   const sha = git(["rev-parse", "HEAD"], worktreePath).trim();
-  if (branch) {
+  if (branch && !preferTag) {
     try {
       git(["push", "origin", `refs/heads/${branch}:refs/heads/${branch}`], worktreePath, PUSH_TIMEOUT_MS);
       return { verdict: "pushed-branch", branch, sha };
@@ -187,7 +238,13 @@ export function retain(worktreePath, root, branch) {
   }
   const tag = retentionTag(branch ?? "detached", sha);
   git(["push", "origin", `${sha}:refs/tags/${tag}`], worktreePath, PUSH_TIMEOUT_MS);
-  return { verdict: "pushed-tag", branch, sha, tag };
+  return {
+    verdict: "pushed-tag",
+    branch,
+    sha,
+    tag,
+    ...(preferTag ? { reason: "branch-deleted-upstream" } : {}),
+  };
 }
 
 function main() {
@@ -210,6 +267,17 @@ function main() {
     if (!tagCommits || tagCommits.size === 0) return false;
     const head = headSha(worktreePath);
     return head !== null && tagCommits.has(head);
+  };
+
+  // Same lazy-once-per-pass shape as tagRetained: a pass where nothing is at
+  // risk never reaches the network.
+  let branchNames;
+  const deletedUpstream = (worktreePath, branch) => {
+    if (!branch) return false;
+    if (branchNames === undefined) branchNames = remoteBranchNames(root);
+    if (!branchNames) return false; // remote unreachable — no proof, stay branch-first
+    if (branchNames.has(branch)) return false;
+    return hadRemoteTracking(worktreePath, branch);
   };
 
   let pushes = 0;
@@ -237,9 +305,21 @@ function main() {
       continue;
     }
 
+    // The remote deleted this branch — a squash-merged PR head under
+    // `delete_branch_on_merge`, in practice. Pushing the branch here SUCCEEDS
+    // and resurrects it, which undoes a deliberate deletion, puts the branch
+    // back against `branch-cap.yml`'s 40-branch ceiling, and can then lose the
+    // retention again when the cap rolls it back. Retain as a tag instead: the
+    // guard already reads a pushed tag as retention, and `branch-cap.yml`
+    // ignores tags (`ref_type == 'branch'` only).
+    //
+    // The commits still need retaining — a squash merge puts a DIFFERENT
+    // commit on main, so this head is on no remote ref at all (cave-fud4p).
+    const preferTag = deletedUpstream(wt.path, branch);
+
     pushes += 1;
     try {
-      record(root, { worktree: wt.path, unpushed, ...retain(wt.path, root, branch) });
+      record(root, { worktree: wt.path, unpushed, ...retain(wt.path, root, branch, { preferTag }) });
     } catch (error) {
       record(root, {
         verdict: "retention-failed",

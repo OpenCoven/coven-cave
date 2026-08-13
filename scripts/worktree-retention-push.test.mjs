@@ -8,8 +8,10 @@ import test from "node:test";
 const NULL_DEVICE = process.platform === "win32" ? "NUL" : "/dev/null";
 
 import {
+  hadRemoteTracking,
   headSha,
   parseWorktrees,
+  remoteBranchNames,
   remoteTagCommits,
   retain,
   retentionTag,
@@ -232,6 +234,134 @@ test("remoteTagCommits returns null when the remote cannot be reached", () => {
   try {
     git(["remote", "set-url", "origin", path.join(root, "does-not-exist.git")], work);
     assert.equal(remoteTagCommits(work), null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remoteBranchNames reads the heads the remote advertises", () => {
+  const { root, work } = scaffold();
+  try {
+    git(["checkout", "-q", "-b", "feat/live"], work);
+    commit(work, "one");
+    git(["push", "-q", "origin", "feat/live"], work);
+
+    const names = remoteBranchNames(work);
+    assert.ok(names instanceof Set);
+    assert.ok(names.has("feat/live"), "a pushed branch is advertised");
+    assert.ok(names.has("main"));
+    assert.ok(!names.has("feat/never-pushed"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remoteBranchNames returns null when the remote cannot be reached", () => {
+  // Null is "no proof of deletion", which keeps the branch-first path — the
+  // same safe direction remoteTagCommits takes.
+  const { root, work } = scaffold();
+  try {
+    git(["remote", "set-url", "origin", path.join(root, "does-not-exist.git")], work);
+    assert.equal(remoteBranchNames(work), null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("hadRemoteTracking separates a deleted branch from one never pushed", () => {
+  // This is the whole distinction the deleted-upstream rule rests on: both are
+  // absent from `ls-remote --heads`, and only one must not be re-created.
+  //
+  // The branch is dropped ON THE REMOTE rather than with `git push --delete`,
+  // because that is what GitHub's delete_branch_on_merge does — and the two are
+  // not equivalent locally: `push --delete` also removes this clone's
+  // refs/remotes/origin/<branch>, while a server-side deletion leaves it until
+  // something prunes. Deleting through the clone here would test a shape that
+  // never occurs and would report the rule broken when it is not.
+  const { root, remote, work } = scaffold();
+  try {
+    git(["checkout", "-q", "-b", "feat/was-pushed"], work);
+    commit(work, "one");
+    git(["push", "-q", "origin", "feat/was-pushed"], work);
+    bare(["update-ref", "-d", "refs/heads/feat/was-pushed"], remote);
+
+    assert.equal(
+      hadRemoteTracking(work, "feat/was-pushed"),
+      true,
+      "the remote-tracking ref survives the remote deleting the branch",
+    );
+
+    git(["checkout", "-q", "-b", "feat/fresh"], work);
+    commit(work, "two");
+    assert.equal(
+      hadRemoteTracking(work, "feat/fresh"),
+      false,
+      "a branch that never left the machine has no remote-tracking ref",
+    );
+    assert.equal(hadRemoteTracking(work, null), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("retain with preferTag archives the head WITHOUT resurrecting the deleted branch", () => {
+  // The cave-fud4p case end to end: squash-merge + delete_branch_on_merge. The
+  // branch is gone from the remote and the squash put a DIFFERENT commit on
+  // main, so this head is on no remote ref at all. Pushing the branch would
+  // succeed and undo the deletion, so retention has to be the tag.
+  const { root, remote, work } = scaffold();
+  try {
+    git(["checkout", "-q", "-b", "fix/merged-topic"], work);
+    commit(work, "one");
+    git(["push", "-q", "origin", "fix/merged-topic"], work);
+    const sha = git(["rev-parse", "HEAD"], work).trim();
+
+    // Squash the work onto main as a different commit, exactly as GitHub does.
+    git(["checkout", "-q", "main"], work);
+    git(["merge", "-q", "--squash", "fix/merged-topic"], work);
+    git(["commit", "-q", "-m", "squashed topic (#1)"], work);
+    git(["push", "-q", "origin", "main"], work);
+    // ...then auto-delete the head branch, server-side as GitHub does.
+    bare(["update-ref", "-d", "refs/heads/fix/merged-topic"], remote);
+    git(["checkout", "-q", "fix/merged-topic"], work);
+
+    assert.ok(
+      !remoteBranchNames(work).has("fix/merged-topic"),
+      "precondition: the remote no longer has the branch",
+    );
+    assert.notEqual(
+      bare(["rev-parse", "refs/heads/main"], remote).trim(),
+      sha,
+      "precondition: the squash landed a different commit, so this head is unretained",
+    );
+
+    const result = retain(work, root, "fix/merged-topic", { preferTag: true });
+
+    assert.equal(result.verdict, "pushed-tag");
+    assert.equal(result.reason, "branch-deleted-upstream");
+    assert.equal(bare(["rev-parse", `refs/tags/${result.tag}^{commit}`], remote).trim(), sha);
+    assert.throws(
+      () => bare(["rev-parse", "--verify", "refs/heads/fix/merged-topic"], remote),
+      "the deleted branch must NOT come back",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("retain still pushes the branch when preferTag is not set", () => {
+  // Guards the default: only a proven upstream deletion diverts to a tag, so
+  // ordinary in-progress work is still retained as a readable branch.
+  const { root, remote, work } = scaffold();
+  try {
+    git(["checkout", "-q", "-b", "feat/in-progress"], work);
+    commit(work, "one");
+    const sha = git(["rev-parse", "HEAD"], work).trim();
+
+    const result = retain(work, root, "feat/in-progress");
+
+    assert.equal(result.verdict, "pushed-branch");
+    assert.equal(bare(["rev-parse", "refs/heads/feat/in-progress"], remote).trim(), sha);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

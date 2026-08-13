@@ -656,6 +656,27 @@ immutable and unique, so it never force-updates, never collides, and
 never opens a PR, never deletes or rewrites a ref, and **skips `main`** —
 pushing that is the direct-to-main move this file forbids.
 
+**One case skips the branch push entirely: a branch the remote has deleted**
+(`cave-fud4p`). The repository sets `delete_branch_on_merge: true`, so a merged
+PR head disappears from origin — and because a squash merge lands a *different*
+commit on `main`, the branch's own tip is then on no remote ref at all. That is
+exactly when a session turns to retiring the worktree, so retention matters
+most precisely when it has just evaporated. Pushing the branch here would
+*succeed* and resurrect it, which undoes a deliberate deletion and pushes back
+against the 40-branch cap — the `cave-nw3hq` resurrection, whose existing fix
+only covers heads that already carry an archive tag. So the hook archives the
+head as its `retention/…` tag instead, and the log entry carries
+`reason: "branch-deleted-upstream"`.
+
+Deleted is distinguished from never-pushed by the local remote-tracking ref:
+`refs/remotes/origin/<branch>` is written by a push and survives the remote
+dropping the branch, so tracking-ref-present + absent-from-`ls-remote` means
+deleted. A branch that never left the machine has no such ref and is still
+retained as a readable branch. Note `git push --delete` is **not** equivalent to
+a server-side deletion — it removes the local tracking ref too — and if a
+`fetch --prune` has already run the signal is gone, in which case the hook falls
+back to its previous behaviour: a resurrected branch, never a lost commit.
+
 Throttled to once a minute (`.claude/worktree-retention-push.stamp`) and capped
 at 3 pushes per pass to bound the latency added to one tool call; pushed
 worktrees drop out of the at-risk set, so successive passes reach the rest.
