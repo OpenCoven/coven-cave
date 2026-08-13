@@ -61,7 +61,13 @@ export async function loopbackOriginResponds({
         redirect: "manual",
         signal: AbortSignal.timeout(remainingMs),
       });
-      if (response.status >= 200 && response.status < 400) return true;
+      // A persisted mobile-access secret deliberately protects direct browser
+      // navigation with the access gate (401).  The native WebView receives
+      // server.ts's loopback-peer stamp and therefore renders the document;
+      // this unauthenticated probe cannot.  A 401 still proves that Next has
+      // compiled and answered the root document, whereas a transport failure
+      // or 5xx response does not.
+      if ((response.status >= 200 && response.status < 400) || response.status === 401) return true;
       await awaitByDeadline(response.body?.cancel(), deadline);
     } catch {}
 
