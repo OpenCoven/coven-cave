@@ -910,6 +910,7 @@ export const SUITES = {
     "src/components/github-card-wiring.test.ts",
     "src/components/image-carousel-wiring.test.ts",
     "src/components/chat-spec-card.test.ts",
+    "src/components/chat-spec-card-fragment-links.test.ts",
     "src/components/chat-spec-card-wiring.test.ts",
     "src/lib/gh-card-commands.test.ts",
     "src/lib/gh-review-draft.test.ts",
@@ -1732,6 +1733,8 @@ const ALIAS_LOADER = new Set([
   // the file provider wraps server/project-paths.ts, which resolves "@/lib/..."
   // for the project allow-list; the suite cannot load without the resolver.
   "src/lib/search-provider.test.ts",
+  // Exercises the markdown DOM wiring against a reader heading fragment.
+  "src/components/chat-spec-card-fragment-links.test.ts",
   // cave-board.ts resolves "@/lib/cave-board-types", "@/lib/task-github" and
   // friends, so the retention suite cannot load without the alias resolver.
   "src/lib/cave-board-retention.test.ts",
