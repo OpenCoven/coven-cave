@@ -24,6 +24,7 @@ import {
   researchArtifactKindForMode,
   researchBoundReadings,
   researchContinueLabel,
+  researchDiagnosticTrace,
   researchIntentAddsContext,
   researchPhaseMeta,
   researchPhaseStatuses,
@@ -99,6 +100,73 @@ test("mission parser strips private process-owner provenance from public state",
   }]);
   assert.equal("sessionAuthority" in (parsed?.iterations[0] ?? {}), false);
   assert.equal("sessionOwnerKind" in (parsed?.iterations[0] ?? {}), false);
+});
+
+test("diagnostic trace keeps the clipboard record bounded to non-content state", () => {
+  const mission = validMission();
+  mission.intent = "Private research brief: https://example.test/secret";
+  mission.projectRoot = "/private/workspace";
+  mission.lastError = "Failed reading /private/workspace/source.md";
+  mission.iterations = [{
+    number: 1,
+    status: "failed",
+    flowRunId: "file:C:private-workspace-run-1",
+    sessionId: "Private research brief",
+    automationRunId: "private research brief",
+    summary: "private source https://example.test/secret",
+    decisionReason: "private brief detail",
+    steps: Array.from({ length: 51 }, () => ({
+      id: "private-step-id",
+      type: "private phase name",
+      status: "failed" as const,
+      detail: "failed at /private/workspace/source.md",
+    })),
+  }];
+  mission.artifacts = [{
+    key: "private-key",
+    kind: "brief",
+    title: "Private artifact",
+    relativePath: "/private/workspace/artifact.md",
+    iteration: 1,
+    state: "rejected",
+    rejectionReason: "private source https://example.test/secret",
+    updatedAt: mission.updatedAt,
+  }];
+  mission.sources = [{
+    id: "source-1",
+    title: "Private source",
+    url: "https://example.test/secret",
+    localPath: "/private/workspace/source.md",
+    sourceType: "web",
+    status: "rejected",
+  }];
+
+  const trace = researchDiagnosticTrace(mission);
+  const json = JSON.stringify(trace);
+
+  assert.equal(trace.outcome.hasError, true);
+  assert.deepEqual(trace.latestIteration?.flowRun, { value: null, redacted: true });
+  assert.deepEqual(trace.latestIteration?.session, { value: null, redacted: true });
+  assert.deepEqual(trace.latestIteration?.automationRun, { value: null, redacted: true });
+  assert.equal(trace.latestIteration?.phases.recorded, 51);
+  assert.equal(trace.latestIteration?.phases.captured, 50);
+  assert.equal(trace.latestIteration?.phases.truncated, true);
+  assert.equal(trace.latestIteration?.phases.statuses.length, 50);
+  assert.deepEqual(trace.evidence.artifacts, {
+    recorded: 1,
+    byState: { working: 0, published: 0, rejected: 1 },
+    byKind: { brief: 1, report: 0, paper: 0, findings: 0, "source-ledger": 0, "research-log": 0, presentation: 0 },
+  });
+  for (const privateValue of [
+    "Private research brief",
+    "private research brief",
+    "file:C:private-workspace-run-1",
+    "https://example.test/secret",
+    "/private/workspace",
+    "private phase name",
+    "private-step-id",
+    "private-key",
+  ]) assert.doesNotMatch(json, new RegExp(privateValue.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
 test("Auto-routing is explainable and ambiguous work never loops", () => {
