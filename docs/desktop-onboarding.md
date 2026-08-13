@@ -65,14 +65,15 @@ useful evidence; reactivating the monolith is not the proposed architecture.
 
 ## Platform comparison
 
-Release v0.2.5 publishes the following user installers:
+Published release [v0.3.2](https://github.com/OpenCoven/coven-cave/releases/tag/v0.3.2)
+publishes the following user installers:
 
 | Platform | Published installer | Current trust state | Main risks |
 | --- | --- | --- | --- |
-| macOS Apple Silicon | `CovenCave-v0.2.5-aarch64.dmg` | Signed and notarized | Wrong Intel asset, packaged WKWebView behavior, folder picker, inherited runtime PATH. |
-| macOS Intel | `CovenCave-v0.2.5-x86_64.dmg` | Signed and notarized | Wrong Apple Silicon asset, packaged WKWebView behavior, folder picker, inherited runtime PATH. |
-| Windows x64 | `CovenCave_0.2.5_x64_en-US.msi` | Not code-signed | SmartScreen/Smart App Control, slow MSI upgrades, app-data permissions, npm `.cmd` launchers, PTY behavior. |
-| Linux x64 | `CovenCave_0.2.5_amd64.AppImage` | Detached signature published | Executable bit, FUSE availability, desktop integration, picker/PTY differences. |
+| macOS Apple Silicon | `CovenCave-v0.3.2-aarch64.dmg` | SHA-256 published in `SHA256SUMS`; no detached DMG signature is published | Wrong Intel asset, packaged WKWebView behavior, folder picker, inherited runtime PATH. |
+| macOS Intel | `CovenCave-v0.3.2-x86_64.dmg` | SHA-256 published in `SHA256SUMS`; no detached DMG signature is published | Wrong Apple Silicon asset, packaged WKWebView behavior, folder picker, inherited runtime PATH. |
+| Windows x64 | `CovenCave_0.3.2_x64_en-US.msi` | Detached `.sig` and SHA-256 in `SHA256SUMS` published; Authenticode signing is not established by the release assets | SmartScreen/Smart App Control, slow MSI upgrades, app-data permissions, npm `.cmd` launchers, PTY behavior. |
+| Linux x64 | `CovenCave_0.3.2_amd64.AppImage` | Detached `.sig` and SHA-256 in `SHA256SUMS` published | Executable bit, FUSE availability, desktop integration, picker/PTY differences. |
 | Windows ARM64 | Not published | Unsupported | Architecture must be identified before download. |
 | Linux ARM64 | Not published | Unsupported | Architecture must be identified before download. |
 
