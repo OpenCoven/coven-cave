@@ -27,6 +27,8 @@ files or resolves resume roots outside the boundaries it grants.
   workspace and refresh from it, replacing the split model where desktop
   uploads lived in IndexedDB while host avatars lived in the workspace (#4579).
 - Research Desk short videos now default to the ElevenLabs Rachel voice (#4581).
+- Research diagnostics now carry a fuller trace (#4585).
+- Release automation can publish an authenticated TestFlight build (#4587).
 
 ### Security
 
@@ -50,6 +52,10 @@ files or resolves resume roots outside the boundaries it grants.
 
 - Chat sandboxes now refresh after grant changes instead of holding the
   boundaries they were created with (#4580).
+- Both chat expand lightboxes — attachment and carousel — now sit above the
+  reader overlay band. They portal to `body`, which puts them in the root
+  stacking context competing with every other portalled overlay rather than
+  with the transcript (#4584).
 - Research missions fall back to a direct Copilot spawn when Coven's native
   process supervisor is absent. Every mission had failed at its first iteration
   since #4524 with advice — update the Coven CLI — that no published CLI could
