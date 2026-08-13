@@ -11,10 +11,56 @@ export type SpecTextPiece =
   | { kind: "text"; text: string }
   | { kind: "spec"; spec: SpecBlock };
 
-const OPEN_RE = /^(`{3,})spec(?:[ \t]+title="([^"\r\n]*)")?[ \t]*\r?$/gm;
+const SPEC_OPEN_RE = /^(`{3,})spec(?:[ \t]+title="([^"\r\n]*)")?[ \t]*$/;
+const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+const FENCE_CLOSE_RE = /^ {0,3}(`+|~+)[ \t]*$/;
 
-function closingFence(fence: string): RegExp {
-  return new RegExp(`^${fence}[ \\t]*\\r?$`, "gm");
+type SourceLine = {
+  start: number;
+  contentEnd: number;
+  end: number;
+  content: string;
+};
+
+function sourceLines(text: string): SourceLine[] {
+  const lines: SourceLine[] = [];
+  let start = 0;
+  while (start < text.length) {
+    const newline = text.indexOf("\n", start);
+    const contentEnd = newline === -1 ? text.length : newline;
+    const end = newline === -1 ? text.length : newline + 1;
+    const contentWithoutReturn =
+      contentEnd > start && text[contentEnd - 1] === "\r"
+        ? contentEnd - 1
+        : contentEnd;
+    lines.push({
+      start,
+      contentEnd,
+      end,
+      content: text.slice(start, contentWithoutReturn),
+    });
+    start = end;
+  }
+  return lines;
+}
+
+function findFenceClose(
+  lines: SourceLine[],
+  openingIndex: number,
+  fence: string,
+  exact: boolean,
+): number {
+  for (let index = openingIndex + 1; index < lines.length; index += 1) {
+    const closing = lines[index].content.match(FENCE_CLOSE_RE);
+    if (
+      closing &&
+      closing[1][0] === fence[0] &&
+      (exact ? closing[1].length === fence.length : closing[1].length >= fence.length)
+    ) {
+      return index;
+    }
+  }
+  return -1;
 }
 
 function specFrom(markdown: string, explicitTitle: string | undefined): SpecBlock {
@@ -30,37 +76,44 @@ function specFrom(markdown: string, explicitTitle: string | undefined): SpecBloc
 export function sliceSpecBlocks(text: string): SpecTextPiece[] {
   if (!text.includes("```")) return [{ kind: "text", text }];
 
+  const lines = sourceLines(text);
   const pieces: SpecTextPiece[] = [];
   let cursor = 0;
-  let opening: RegExpExecArray | null;
-  OPEN_RE.lastIndex = 0;
+  let index = 0;
 
-  while ((opening = OPEN_RE.exec(text)) !== null) {
-    const lineEnd = opening.index + opening[0].length;
-    const newline = text.slice(lineEnd).match(/^\r?\n/);
-    if (!newline) continue;
+  while (index < lines.length) {
+    const line = lines[index];
+    const opening = line.content.match(SPEC_OPEN_RE);
+    if (opening) {
+      if (line.end === line.contentEnd) break;
+      const closeIndex = findFenceClose(lines, index, opening[1], true);
+      if (closeIndex === -1) break;
 
-    const bodyStart = lineEnd + newline[0].length;
-    const closeRe = closingFence(opening[1]);
-    closeRe.lastIndex = bodyStart;
-    const close = closeRe.exec(text);
-    if (!close) continue;
+      const close = lines[closeIndex];
+      const rawBody = text.slice(line.end, close.start);
+      const markdown = rawBody.replace(/\r?\n$/, "");
+      if (!markdown.trim()) {
+        index = closeIndex + 1;
+        continue;
+      }
 
-    const rawBody = text.slice(bodyStart, close.index);
-    const markdown = rawBody.replace(/\r?\n$/, "");
-    const blockEnd = close.index + close[0].length;
-
-    if (!markdown.trim()) {
-      OPEN_RE.lastIndex = blockEnd;
+      if (line.start > cursor) {
+        pieces.push({ kind: "text", text: text.slice(cursor, line.start) });
+      }
+      pieces.push({ kind: "spec", spec: specFrom(markdown, opening[2]) });
+      cursor = close.contentEnd;
+      index = closeIndex + 1;
       continue;
     }
 
-    if (opening.index > cursor) {
-      pieces.push({ kind: "text", text: text.slice(cursor, opening.index) });
+    const ordinaryFence = line.content.match(FENCE_OPEN_RE);
+    if (!ordinaryFence) {
+      index += 1;
+      continue;
     }
-    pieces.push({ kind: "spec", spec: specFrom(markdown, opening[2]) });
-    cursor = blockEnd;
-    OPEN_RE.lastIndex = blockEnd;
+    const closeIndex = findFenceClose(lines, index, ordinaryFence[1], false);
+    if (closeIndex === -1) break;
+    index = closeIndex + 1;
   }
 
   if (cursor === 0) return [{ kind: "text", text }];
