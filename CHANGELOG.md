@@ -9,15 +9,51 @@ breaking config changes; patch releases stay additive.
 
 ## [0.3.3] - 2026-08-12
 
-> A maintenance patch for the worktree lifecycle tooling: retention now counts a
-> pushed tag, a refused maintenance fence says what to do about it, and project
-> deletion cleans up after itself.
+> Closes an access-gate bypass on mobile, keeps chat attachments and skills
+> inside their runtime boundaries, revives Research Desk missions that had been
+> failing at their first iteration, and dresses every surface in the Coven crown.
 
-Patch release on top of v0.3.2. No user-facing surface changed; this is operator
-tooling plus one API correctness fix.
+Patch release on top of v0.3.2. Headline: the mobile access gate is restored
+without locking the desktop webview out, and the chat runtime no longer stages
+files or resolves resume roots outside the boundaries it grants.
+
+### Added
+
+- The Coven crown is now the app icon on every surface — the Tauri desktop set,
+  Windows tiles, Android mipmaps, the iOS asset catalog, the PWA icons, the
+  macOS tray glyph, and the Tauri startup splash, all regenerated from the
+  brand art as rounded-rect tiles with transparent corners (#4577).
+- Familiar avatars are now stored host-authoritatively in the desktop host
+  workspace and refresh from it, replacing the split model where desktop
+  uploads lived in IndexedDB while host avatars lived in the workspace (#4579).
+- Research Desk short videos now default to the ElevenLabs Rachel voice (#4581).
+
+### Security
+
+- Restored the mobile access gates that had been removed, closing an auth
+  bypass, and fixed the gate's own blind spot in the same change: a document
+  navigation is not a fetch, so it never carried the sidecar token and could
+  not exchange it for a cookie. The gate now admits that one request shape
+  rather than refusing the desktop webview outright (#4571).
+- Chat attachments and advertised skills now stay inside runtime boundaries.
+  Per-turn image files stage beneath the familiar workspace instead of
+  `os.tmpdir`, which sat outside every runtime grant; narrow skill roots are
+  granted read-only; and staged files a crashed turn stranded are swept on the
+  next delivery, matched strictly against the names Cave itself writes (#4576).
+- A hidden generation's resume root is now authorized rather than exempted.
+  Canvas, enhance, and journal turns skipped the project-launch check because
+  they run in the familiar's own workspace — but with no Cave conversation
+  record the resume root falls back to the daemon's global session list, which
+  is not the familiar's directory (#4582).
 
 ### Fixed
 
+- Chat sandboxes now refresh after grant changes instead of holding the
+  boundaries they were created with (#4580).
+- Research missions fall back to a direct Copilot spawn when Coven's native
+  process supervisor is absent. Every mission had failed at its first iteration
+  since #4524 with advice — update the Coven CLI — that no published CLI could
+  satisfy, so the feature was dead for every user (#4578).
 - The worktree auto-lock now counts a **pushed tag** as retention, matching the
   guard it claimed to mirror. It had used `git rev-list --count HEAD --not
   --remotes`, which consults only remote-tracking *branches* — git keeps no
