@@ -325,11 +325,10 @@ export function NotificationBell({
             warning-hued control with distinct treatments.
 
             Sized with the same headerAction token as every other action glyph
-            in the mobile top bar. Passing NO size leaves both dimensions at the
-            1em default, so the bell scaled with the inherited font-size rather
-            than the icon scale — a 16px glyph's worth of intent inside a 44px
-            touch target. Both dimensions are required: `width` alone is not
-            enough, because height independently defaults to 1em (see Icon). On
+            in the mobile top bar. BOTH dimensions are deliberate: Icon defaults
+            width and height to 1em independently, so passing neither (as this
+            call previously did) leaves the glyph scaling with the inherited
+            font-size, and passing width alone still leaves height at 1em. On
             desktop the top-chrome rule in desktop-chrome.css narrows this to
             --icon-sm, exactly as it does for the menu-bar siblings. */}
         <Icon

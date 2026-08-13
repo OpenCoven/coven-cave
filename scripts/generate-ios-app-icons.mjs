@@ -18,7 +18,7 @@
 // to rebuild iOS without rediscovering both constraints above.
 //
 // Usage: node scripts/generate-ios-app-icons.mjs <composed-tile.png> [out-dir]
-import { readdir } from "node:fs/promises";
+import { mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 
@@ -52,6 +52,12 @@ const SLOTS = {
   "AppIcon-76x76@2x.png": 152,
   "AppIcon-83.5x83.5@2x.png": 167,
 };
+
+// The usage string offers an out-dir, so honour it for a path that does not
+// exist yet: sharp's toFile() does not create parents, and without this the
+// script fails with a bare ENOENT that reads like a bug in the pipeline rather
+// than a missing directory. Recursive, so it is also a no-op for the default.
+await mkdir(outDir, { recursive: true });
 
 // Flatten to opaque black once, at full resolution, then downsample. Flattening
 // after the resize would let the transparent corners blend toward grey at small

@@ -856,9 +856,11 @@ button:active > .edge-rail-chip {
 
    The notification bell is in this list because it sits in the same status
    cluster as .menu-bar__status and must match it. It was previously omitted,
-   and because its own <Icon> passes no size, the glyph fell through to the 1em
-   default and rendered at the inherited font-size instead of the 14px standard
-   — the one control in the bar sized by accident rather than by this rule. */
+   and its own <Icon> passed no size at the time, so the glyph fell through to
+   the 1em default and rendered at the inherited font-size instead of the 14px
+   standard — the one control in the bar sized by accident rather than by this
+   rule. The component now passes an explicit size too; this rule is what
+   narrows it to the compact standard on desktop. */
 .menu-bar__task > svg,
 .menu-bar__status > svg,
 .menu-bar__group--status .notification-bell__trigger > svg {
