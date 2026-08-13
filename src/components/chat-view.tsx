@@ -705,24 +705,31 @@ function safeRuntimeProcessDetail(step: ErrorStripStep): string | null {
   if (step.id !== "runtime-launch-diagnostics") return null;
   try {
     const value = JSON.parse(step.detail) as {
-      schemaVersion?: unknown; runner?: unknown; failure?: { exitCode?: unknown; emittedDiagnostic?: unknown };
+      schemaVersion?: unknown; runner?: unknown; privacy?: unknown; failure?: { kind?: unknown; exitCode?: unknown; emittedDiagnostic?: unknown };
       launcher?: { command?: unknown; availability?: unknown; source?: unknown; pathEntryIndex?: unknown; installKind?: unknown };
       adapter?: { command?: unknown; availability?: unknown; source?: unknown; pathEntryIndex?: unknown; installKind?: unknown };
     };
     const command = (entry: typeof value.launcher): string | null => {
       if (!entry || !["coven", "codex"].includes(String(entry.command))) return null;
       if (!["ready", "missing", "unlaunchable", "probe_failed", "unsupported_runtime"].includes(String(entry.availability))) return null;
-      if (!["absolute-command", "PATH", "unresolved"].includes(String(entry.source))) return null;
-      const index = Number.isInteger(entry.pathEntryIndex) && Number(entry.pathEntryIndex) >= 0
-        ? `, PATH entry ${entry.pathEntryIndex}`
-        : "";
-      const install = ["managed", "node-package", "system", "user-local", "custom"].includes(String(entry.installKind))
-        ? `, ${entry.installKind}`
-        : "";
+      if (!["absolute-command", "PATH", "coven-adapter", "unresolved"].includes(String(entry.source))) return null;
+      if (entry.pathEntryIndex !== undefined && (!Number.isInteger(entry.pathEntryIndex) || Number(entry.pathEntryIndex) < 0 || Number(entry.pathEntryIndex) >= 512)) return null;
+      if (entry.pathEntryIndex !== undefined && entry.source !== "PATH") return null;
+      if (entry.installKind !== undefined && !["managed", "node-package", "system", "user-local", "custom"].includes(String(entry.installKind))) return null;
+      const index = entry.pathEntryIndex === undefined ? "" : `, PATH entry ${entry.pathEntryIndex}`;
+      const install = entry.installKind === undefined ? "" : `, ${entry.installKind}`;
       return `${entry.command}: ${entry.availability} via ${entry.source}${index}${install}`;
     };
-    if (value.schemaVersion !== 1 || !["coven", "codex", "claude"].includes(String(value.runner))) return null;
-    const exit = Number.isInteger(value.failure?.exitCode) ? `exit code ${value.failure?.exitCode}` : "exit code unavailable";
+    if (
+      value.schemaVersion !== 1 ||
+      value.privacy !== "paths-and-environment-values-redacted" ||
+      !["coven", "codex", "claude"].includes(String(value.runner)) ||
+      !value.failure ||
+      value.failure.kind !== "process-exit" ||
+      (value.failure.exitCode !== null && !Number.isInteger(value.failure.exitCode)) ||
+      typeof value.failure.emittedDiagnostic !== "boolean"
+    ) return null;
+    const exit = value.failure.exitCode === null ? "exit code unavailable" : `exit code ${value.failure.exitCode}`;
     const entries = [command(value.launcher), command(value.adapter)].filter((entry): entry is string => Boolean(entry));
     return entries.length ? `${exit}; ${entries.join("; ")}.` : exit;
   } catch {

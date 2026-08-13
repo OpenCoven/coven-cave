@@ -1899,6 +1899,9 @@ export async function POST(req: Request) {
     codexRouting.mode === "direct" ? codexRouting.report.capabilities : null;
 
   let localRuntimePlan: LocalRuntimePlan | null = null;
+  // Preserve the actual `coven adapter list --json` preflight result for a
+  // later silent-exit record. A direct Codex probe is not adapter evidence.
+  let codexFallbackAdapterAvailability: RuntimeAvailability | null = null;
   if (!sshRuntime && binding.harness !== "openclaw" && !(hermesDirect && hermesApi)) {
     if (
       copilotRuntimeLaunch &&
@@ -5037,6 +5040,7 @@ export async function POST(req: Request) {
           launch: codexLaunchPlan,
           env: localRuntimePlan.env,
         });
+        codexFallbackAdapterAvailability = availability;
         if (availability.state !== "ready") {
           launchFailure = { code: availability.code, message: availability.message };
           result.is_error = true;
@@ -5301,18 +5305,21 @@ export async function POST(req: Request) {
           ...(localRuntimePlan
             ? {
                 launcher: {
+                  identity: "coven",
                   command: localRuntimePlan.command,
                   availability: localRuntimePlan.availability,
                   env: localRuntimePlan.env,
                 },
               }
             : {}),
-          ...(binding.harness === "codex" && codexDirectLaunch && codexSpawnEnv
+          ...(binding.harness === "codex" && codexFallbackAdapterAvailability && localRuntimePlan
             ? {
                 adapter: {
-                  command: codexDirectLaunch.command,
-                  availability: codexLaunchAvailability,
-                  env: codexSpawnEnv,
+                  identity: "codex",
+                  command: localRuntimePlan.command,
+                  availability: codexFallbackAdapterAvailability,
+                  env: localRuntimePlan.env,
+                  source: "coven-adapter" as const,
                 },
               }
             : {}),

@@ -68,14 +68,28 @@ try {
     runner: "codex",
     exitCode: 1,
     emittedDiagnostic: false,
-    launcher: { command: "coven", availability: ready, env: { PATH: [emptyDir, binDir].join(path.delimiter) } },
-    adapter: { command: executable, availability: ready, env: { PATH: binDir } },
+    launcher: { identity: "coven", command: "coven", availability: ready, env: { PATH: [emptyDir, binDir].join(path.delimiter) } },
+    adapter: { identity: "codex", command: executable, availability: ready, env: { PATH: binDir } },
   });
   assert.deepEqual(redactedDiagnostics.failure, { kind: "process-exit", exitCode: 1, emittedDiagnostic: false });
   assert.equal(redactedDiagnostics.launcher?.source, "PATH");
   assert.equal(redactedDiagnostics.launcher?.pathEntryIndex, 1);
   assert.equal(redactedDiagnostics.adapter?.source, "absolute-command");
   assert.equal(JSON.stringify(redactedDiagnostics).includes(scratch), false, "diagnostics must not expose local paths");
+  const overrideRedaction = runtimeLaunchDiagnostics({
+    runner: "codex", emittedDiagnostic: false,
+    launcher: { identity: "coven", command: "/private/customer-secret-launcher", availability: ready, env: {} },
+  });
+  assert.equal(overrideRedaction.launcher?.command, "coven", "override-derived filenames must never persist");
+  const windowsPathIndex = runtimeLaunchDiagnostics({
+    runner: "codex", emittedDiagnostic: false, platform: "win32",
+    launcher: {
+      identity: "coven", command: "coven.exe",
+      availability: { state: "ready", runner: "coven", resolvedPath: "c:\\tools\\coven.exe" },
+      env: { Path: "C:\\Tools;C:\\Elsewhere" },
+    },
+  });
+  assert.equal(windowsPathIndex.launcher?.pathEntryIndex, 0, "Windows PATH matching is case-insensitive");
 
   const linuxBinDir = "/runtime-availability/bin";
   const linuxClaudeDir = "/runtime-availability/claude-bin";
