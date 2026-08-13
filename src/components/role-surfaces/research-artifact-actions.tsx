@@ -7,6 +7,7 @@ import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { getResearchMissionFile, type ResearchMissionFile } from "@/lib/research-mission-client";
+import { ResearchMarkdownPreview } from "./research-markdown-preview";
 import type { ResearchArtifactKind, ResearchArtifactRef, ResearchMission } from "@/lib/research-missions";
 
 // The typeset reader is interaction-only and carries its own stylesheet; lazy
@@ -56,6 +57,14 @@ export async function fetchResearchWorkspacePath(
   } catch {
     return null;
   }
+}
+
+/** True for artifacts whose content is Markdown. Checked on the real file name
+ *  first and the ref's path second, so a mission whose file was renamed still
+ *  renders correctly. */
+function isMarkdownArtifact(fileName: string | undefined, relativePath: string): boolean {
+  const name = (fileName ?? relativePath).toLowerCase();
+  return name.endsWith(".md") || name.endsWith(".markdown");
 }
 
 export function ResearchArtifactActions({ mission, artifact, busy, onPublish }: ResearchArtifactActionsProps) {
@@ -182,6 +191,17 @@ export function ResearchArtifactActions({ mission, artifact, busy, onPublish }: 
       >
         {viewing?.content === null || viewing?.content === undefined ? (
           <p className="research-artifact-viewer__empty">This file has not been written yet.</p>
+        ) : isMarkdownArtifact(viewing.fileName, artifact.relativePath) ? (
+          // The research log and findings are Markdown the harness wrote —
+          // headings per pass, bullets, links to sources. As <pre> the reader
+          // does the parsing: every "##" visible, no hierarchy to skim, links
+          // dead. Only genuinely Markdown files switch; sources.json and any
+          // other non-Markdown artifact keeps the verbatim view.
+          <ResearchMarkdownPreview
+            markdown={viewing.content}
+            ariaLabel={artifact.title}
+            emptyLabel="This file has not been written yet."
+          />
         ) : (
           <pre className="research-artifact-viewer__content">{viewing.content}</pre>
         )}

@@ -26,9 +26,10 @@ test("sources triage at scale: filters, quiet attach, title-open affordance", ()
   assert.match(source, /No \{sourceFilter\} sources\./);
   // The attach form waits behind a disclosure instead of topping the list.
   assert.match(source, /<details className="research-source-attach-disclosure">\s*<summary>Attach source<\/summary>/);
-  // The card title is the open affordance; the separate button is gone.
-  assert.match(source, /className="research-source-card__title"/);
-  assert.match(source, /onClick=\{\(\) => onOpenUrl\(source\.url!\)\}/);
+  // The ledger renders as rows (research-source-rows.tsx); the title remains
+  // the open affordance, now owned by the row component this delegates to.
+  assert.match(source, /<ResearchSourceRows/);
+  assert.match(source, /onOpenUrl=\{onOpenUrl\}/);
   assert.doesNotMatch(source, />Open source</);
   // The per-card status control keeps an accessible per-source name.
   assert.match(source, /<span className="sr-only">Status of \{source\.title\}<\/span>/);
