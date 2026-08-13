@@ -852,9 +852,16 @@ button:active > .edge-rail-chip {
 
 /* One compact standard across the top chrome (var(--icon-sm), 14px): action
    and status glyphs, the search glyph, and the sidepanel toggle all share this
-   size, rather than scaling with their own label. */
+   size, rather than scaling with their own label.
+
+   The notification bell is in this list because it sits in the same status
+   cluster as .menu-bar__status and must match it. It was previously omitted,
+   and because its own <Icon> passes no size, the glyph fell through to the 1em
+   default and rendered at the inherited font-size instead of the 14px standard
+   — the one control in the bar sized by accident rather than by this rule. */
 .menu-bar__task > svg,
-.menu-bar__status > svg {
+.menu-bar__status > svg,
+.menu-bar__group--status .notification-bell__trigger > svg {
   flex-shrink: 0;
   width: var(--icon-sm);
   height: var(--icon-sm);

@@ -563,6 +563,7 @@ export const SUITES = {
     "src/components/fire-and-forget-fetch.test.ts",
     "src/components/notification-bell-mutations.test.ts",
     "src/components/notification-bell-series.test.ts",
+    "src/components/notification-bell-glyph-size.test.ts",
     "src/components/surface-error-states.test.ts",
     "src/components/glass-overlay-chrome.test.ts",
     "src/components/surface-loading-states.test.ts",
