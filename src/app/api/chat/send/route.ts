@@ -101,6 +101,7 @@ import {
   missingRunnerMessage,
   RUNTIME_AVAILABILITY_ERROR_CODES,
   resolveHermesLaunch,
+  runtimeLaunchDiagnostics,
   runtimeProcessFailure,
   type DirectRunnerId,
   type RuntimeAvailability,
@@ -1898,6 +1899,9 @@ export async function POST(req: Request) {
     codexRouting.mode === "direct" ? codexRouting.report.capabilities : null;
 
   let localRuntimePlan: LocalRuntimePlan | null = null;
+  // Preserve the actual `coven adapter list --json` preflight result for a
+  // later silent-exit record. A direct Codex probe is not adapter evidence.
+  let codexFallbackAdapterAvailability: RuntimeAvailability | null = null;
   if (!sshRuntime && binding.harness !== "openclaw" && !(hermesDirect && hermesApi)) {
     if (
       copilotRuntimeLaunch &&
@@ -3006,7 +3010,8 @@ export async function POST(req: Request) {
           // from a reloaded or exported transcript, long after the live SSE
           // buffer has expired. It carries file names only, never contents.
           id === "familiar-contract" ||
-          id === "runtime-process"
+          id === "runtime-process" ||
+          id === "runtime-launch-diagnostics"
         ) {
           persistedCompatibilityDiagnostics.push({
             id,
@@ -5035,6 +5040,7 @@ export async function POST(req: Request) {
           launch: codexLaunchPlan,
           env: localRuntimePlan.env,
         });
+        codexFallbackAdapterAvailability = availability;
         if (availability.state !== "ready") {
           launchFailure = { code: availability.code, message: availability.message };
           result.is_error = true;
@@ -5292,6 +5298,38 @@ export async function POST(req: Request) {
         result.is_error = true;
         pushProgress("harness-start", `${binding.harness} exited with an error`, "error", failure.message);
         pushProgress("runtime-process", `${binding.harness} process failure`, "error", detail);
+        const diagnostics = runtimeLaunchDiagnostics({
+          runner: failedRunner,
+          exitCode: covenBackedExitCode,
+          emittedDiagnostic,
+          ...(localRuntimePlan
+            ? {
+                launcher: {
+                  identity: "coven",
+                  command: localRuntimePlan.command,
+                  availability: localRuntimePlan.availability,
+                  env: localRuntimePlan.env,
+                },
+              }
+            : {}),
+          ...(binding.harness === "codex" && codexFallbackAdapterAvailability && localRuntimePlan
+            ? {
+                adapter: {
+                  identity: "codex",
+                  command: localRuntimePlan.command,
+                  availability: codexFallbackAdapterAvailability,
+                  env: localRuntimePlan.env,
+                  source: "coven-adapter" as const,
+                },
+              }
+            : {}),
+        });
+        pushProgress(
+          "runtime-launch-diagnostics",
+          "Runtime launch diagnostics captured",
+          "error",
+          JSON.stringify(diagnostics),
+        );
         push({ kind: "error", code: failure.code, message: failure.message });
       }
 
