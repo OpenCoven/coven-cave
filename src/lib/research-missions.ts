@@ -204,6 +204,7 @@ export type ResearchMission = {
 };
 
 const DIAGNOSTIC_REFERENCE_MAX_LENGTH = 256;
+const DIAGNOSTIC_REFERENCE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function diagnosticReference(value: string | undefined) {
   if (value === undefined) return { value: null, redacted: false } as const;
@@ -212,12 +213,11 @@ function diagnosticReference(value: string | undefined) {
   // clipboard into a path or URL disclosure channel.
   if (
     value.length > DIAGNOSTIC_REFERENCE_MAX_LENGTH
-    // Persisted IDs are not schema-bound. Only retain opaque identifier
-    // shapes: a human-readable value could otherwise be a copied brief even
-    // when it has no URL or filesystem separator.
-    || !/^[a-z\d][a-z\d._:-]*$/i.test(value)
-    || /^[a-z][a-z\d+.-]*:/i.test(value)
-    || /(?:^|[._-])www(?:[._-]|$)/i.test(value)
+    // These fields are persisted as unrestricted strings. A permissive slug
+    // check still accepts a hyphenated research brief, so retain only the UUID
+    // references minted by the flow/session stores; redact legacy or malformed
+    // values rather than turning the support record into a content channel.
+    || !DIAGNOSTIC_REFERENCE_UUID_RE.test(value)
   ) {
     return { value: null, redacted: true } as const;
   }

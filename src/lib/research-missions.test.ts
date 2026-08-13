@@ -111,7 +111,7 @@ test("diagnostic trace keeps the clipboard record bounded to non-content state",
     number: 1,
     status: "failed",
     flowRunId: "file:C:private-workspace-run-1",
-    sessionId: "Private research brief",
+    sessionId: "private-research-brief",
     automationRunId: "private research brief",
     summary: "private source https://example.test/secret",
     decisionReason: "private brief detail",
@@ -152,6 +152,7 @@ test("diagnostic trace keeps the clipboard record bounded to non-content state",
   assert.equal(trace.latestIteration?.phases.captured, 50);
   assert.equal(trace.latestIteration?.phases.truncated, true);
   assert.equal(trace.latestIteration?.phases.statuses.length, 50);
+  assert.deepEqual(trace.latestIteration?.session, { value: null, redacted: true });
   assert.deepEqual(trace.evidence.artifacts, {
     recorded: 1,
     byState: { working: 0, published: 0, rejected: 1 },
@@ -160,6 +161,7 @@ test("diagnostic trace keeps the clipboard record bounded to non-content state",
   for (const privateValue of [
     "Private research brief",
     "private research brief",
+    "private-research-brief",
     "file:C:private-workspace-run-1",
     "https://example.test/secret",
     "/private/workspace",
@@ -167,6 +169,29 @@ test("diagnostic trace keeps the clipboard record bounded to non-content state",
     "private-step-id",
     "private-key",
   ]) assert.doesNotMatch(json, new RegExp(privateValue.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("diagnostic trace retains UUID run references for support correlation", () => {
+  const mission = validMission();
+  mission.iterations = [{
+    number: 1,
+    status: "failed",
+    flowRunId: "0f8fad5b-d9cb-469f-a165-70867728950e",
+    sessionId: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    automationRunId: "550e8400-e29b-41d4-a716-446655440000",
+  }];
+
+  assert.deepEqual(researchDiagnosticTrace(mission).latestIteration, {
+    number: 1,
+    status: "failed",
+    flowRun: { value: "0f8fad5b-d9cb-469f-a165-70867728950e", redacted: false },
+    session: { value: "7c9e6679-7425-40de-944b-e07fc1f90ae7", redacted: false },
+    automationRun: { value: "550e8400-e29b-41d4-a716-446655440000", redacted: false },
+    startedAt: null,
+    finishedAt: null,
+    costUsd: null,
+    phases: { recorded: 0, captured: 0, truncated: false, statuses: [] },
+  });
 });
 
 test("Auto-routing is explainable and ambiguous work never loops", () => {
