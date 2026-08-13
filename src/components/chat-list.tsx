@@ -133,16 +133,6 @@ type Props = {
   hideRail?: boolean;
 };
 
-const CHAT_GROUP_BY_OPTIONS: ReadonlyArray<{
-  id: ChatSessionGroupBy;
-  label: string;
-  title: string;
-}> = [
-  { id: "none", label: "Flat", title: "No grouping" },
-  { id: "project", label: "Project", title: "Group by project" },
-  { id: "date", label: "Date", title: "Group by date" },
-];
-
 function chatDate(iso: string, prefs: DateTimePrefs): string {
   // Absolute session date — honors the user's date-order preference
   // (month-first "Jun 19, 2026" vs day-first "19 Jun 2026") set in Settings.
@@ -923,32 +913,16 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
           {!compact && (
             <>
-              <div
-                role="group"
+              <select
+                value={groupBy}
+                onChange={(e) => setGroupBy(normalizeChatGroupBy(e.target.value))}
                 aria-label="Group sessions by"
-                className="chat-list-group-tabs shrink-0 flex items-center gap-1 rounded-lg border border-[var(--border-hairline)] p-1"
+                className="chat-list-group-select focus-ring h-7 shrink-0 cursor-pointer rounded-[var(--radius-pill)] border border-[var(--border-hairline)] bg-transparent px-2.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
               >
-                {CHAT_GROUP_BY_OPTIONS.map((option) => {
-                  const selected = groupBy === option.id;
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      aria-pressed={groupBy === option.id}
-                      title={option.title}
-                      onClick={() => setGroupBy(option.id)}
-                      className={[
-                        "focus-ring relative inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2.5 py-1 text-[length:var(--text-xs)] font-medium transition-colors",
-                        selected
-                          ? "bg-[var(--bg-raised)] text-[var(--text-primary)] border-[var(--border-strong)]"
-                          : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
-                      ].join(" ")}
-                    >
-                      <span className="truncate">{option.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+                <option value="none">No grouping</option>
+                <option value="project">Group by project</option>
+                <option value="date">Group by date</option>
+              </select>
               {/* The title row's pill already carries the total, so this line
                   only earns its place when the two numbers differ — i.e. when
                   a search or a status chip is actually hiding something. An
