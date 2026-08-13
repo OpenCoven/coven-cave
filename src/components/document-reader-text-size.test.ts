@@ -34,8 +34,9 @@ function render(navigation: "compact" | "rail" | "none") {
     createElement(DocumentReader<Block, Block>, {
       document: doc,
       navigation,
-      renderLede: (lede) => createElement(MarkdownReaderBlock, { block: lede }),
-      renderBlock: (block, key) => createElement(MarkdownReaderBlock, { block, key }),
+      renderLede: (lede) => createElement(MarkdownReaderBlock, { block: lede, blockKey: "lede" }),
+      renderBlock: (block, key) =>
+        createElement(MarkdownReaderBlock, { block, blockKey: key }),
     }),
   );
 }
