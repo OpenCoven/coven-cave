@@ -203,6 +203,105 @@ export type ResearchMission = {
   lastError?: string;
 };
 
+const DIAGNOSTIC_REFERENCE_MAX_LENGTH = 256;
+const DIAGNOSTIC_REFERENCE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function diagnosticReference(value: string | undefined) {
+  if (value === undefined) return { value: null, redacted: false } as const;
+  // Run references are useful support correlators, but the persisted schema
+  // does not constrain them. Do not let a malformed runtime value turn the
+  // clipboard into a path or URL disclosure channel.
+  if (
+    value.length > DIAGNOSTIC_REFERENCE_MAX_LENGTH
+    // These fields are persisted as unrestricted strings. A permissive slug
+    // check still accepts a hyphenated research brief, so retain only the UUID
+    // references minted by the flow/session stores; redact legacy or malformed
+    // values rather than turning the support record into a content channel.
+    || !DIAGNOSTIC_REFERENCE_UUID_RE.test(value)
+  ) {
+    return { value: null, redacted: true } as const;
+  }
+  return { value, redacted: false } as const;
+}
+
+/**
+ * A deliberately bounded, shareable support record. It is derived entirely
+ * from persisted mission state: it never claims to be a daemon log, and it
+ * omits local paths, source URLs, the research brief, and other content that
+ * would make a clipboard handoff unexpectedly disclose workspace data.
+ */
+export function researchDiagnosticTrace(mission: ResearchMission) {
+  const latestIteration = mission.iterations.at(-1) ?? null;
+  const sourceCounts = researchSourceStatusCounts(mission.sources);
+  const steps = latestIteration?.steps ?? [];
+  // Iteration fields are persisted free text, so never put their contents in a
+  // clipboard report. Keep a small, ordered status trace instead: it is enough
+  // to locate the failed phase without turning support copy into a channel for
+  // a prompt, source, filesystem path, or daemon output.
+  const capturedPhases = steps.slice(0, 50).map((step) => step.status);
+  const artifactStates = { working: 0, published: 0, rejected: 0 };
+  const artifactKinds = Object.fromEntries(
+    RESEARCH_ARTIFACT_KINDS.map((kind) => [kind, 0]),
+  ) as Record<ResearchArtifactKind, number>;
+  for (const artifact of mission.artifacts) {
+    artifactStates[artifact.state] += 1;
+    artifactKinds[artifact.kind] += 1;
+  }
+  return {
+    schema: "coven-cave.research-diagnostic.v1",
+    // The record is a snapshot of persisted state, not a live daemon event.
+    // Keeping this deterministic also prevents a server/client hydration drift
+    // when the diagnostics dialog is rendered in a Client Component.
+    generatedAt: mission.updatedAt,
+    mission: {
+      id: mission.id,
+      mode: mission.mode,
+      status: mission.status,
+      createdAt: mission.createdAt,
+      startedAt: mission.startedAt ?? null,
+      updatedAt: mission.updatedAt,
+      finishedAt: mission.finishedAt ?? null,
+      hasProjectRoot: Boolean(mission.projectRoot),
+    },
+    bounds: mission.bounds,
+    outcome: {
+      hasError: Boolean(mission.lastError),
+      decision: latestIteration?.decision ?? null,
+    },
+    latestIteration: latestIteration ? {
+      number: latestIteration.number,
+      status: latestIteration.status,
+      flowRun: diagnosticReference(latestIteration.flowRunId),
+      session: diagnosticReference(latestIteration.sessionId),
+      automationRun: diagnosticReference(latestIteration.automationRunId),
+      startedAt: latestIteration.startedAt ?? null,
+      finishedAt: latestIteration.finishedAt ?? null,
+      costUsd: latestIteration.costUsd ?? null,
+      phases: {
+        recorded: steps.length,
+        captured: capturedPhases.length,
+        truncated: steps.length > capturedPhases.length,
+        statuses: capturedPhases,
+      },
+    } : null,
+    evidence: {
+      sources: {
+        recorded: mission.sources.length,
+        byStatus: sourceCounts,
+      },
+      artifacts: {
+        recorded: mission.artifacts.length,
+        byState: artifactStates,
+        byKind: artifactKinds,
+      },
+    },
+    availability: {
+      daemonTrace: "not-recorded",
+      note: "This report contains persisted research-mission state only; no daemon trace was recorded for this run.",
+    },
+  } as const;
+}
+
 /**
  * Runtime the mission's iterations execute on, chosen per mission.
  *

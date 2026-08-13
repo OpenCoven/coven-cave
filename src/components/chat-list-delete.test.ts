@@ -185,6 +185,100 @@ assert.match(
   /aria-pressed=\{showArchived\}[\s\S]*?aria-label=\{showArchived \? "Hide archived sessions" : "Show archived sessions"\}/,
   "Show archived filter should be an aria-labeled toggle alongside the existing filters",
 );
+const groupByOptionsMatch = source.match(
+  /const CHAT_GROUP_BY_OPTIONS[\s\S]*?=\s*\[(?<body>[\s\S]*?)\]\s*;/,
+);
+assert.ok(
+  groupByOptionsMatch?.groups?.body,
+  "Sessions grouping should define a local button-group options list",
+);
+assert.deepEqual(
+  Array.from(
+    groupByOptionsMatch.groups.body.matchAll(
+      /\{\s*id:\s*"([^"]+)",\s*label:\s*"([^"]+)",\s*title:\s*"([^"]+)"\s*\}/g,
+    ),
+    ([, id, label, title]) => ({ id, label, title }),
+  ),
+  [
+    { id: "none", label: "Flat", title: "No grouping" },
+    { id: "project", label: "Project", title: "Group by project" },
+    { id: "date", label: "Date", title: "Group by date" },
+  ],
+  "Sessions grouping must expose exactly Flat, Project, and Date choices with the required titles and no extras",
+);
+const groupingSourceMatch = source.match(
+  /const CHAT_GROUP_BY_OPTIONS[\s\S]*?<button[\s\S]*?aria-label=\{showArchived \? "Hide archived sessions" : "Show archived sessions"\}/,
+);
+assert.ok(
+  groupingSourceMatch,
+  "Sessions grouping block should be bounded from the options config through the archive filter boundary",
+);
+const groupingSource = groupingSourceMatch?.[0] ?? "";
+assert.match(
+  groupingSource,
+  /<div[\s\S]*?role="group"[\s\S]*?aria-label="Group sessions by"/,
+  "Sessions grouping must expose an explicitly labeled pressed-button group",
+);
+assert.match(
+  groupingSource,
+  /aria-pressed=\{groupBy === option\.id\}/,
+  "Sessions grouping buttons must bind pressed state to the current groupBy value",
+);
+assert.match(
+  groupingSource,
+  /onClick=\{\(\) => setGroupBy\(option\.id\)\}/,
+  "Sessions grouping buttons must switch grouping directly on click",
+);
+assert.doesNotMatch(
+  groupingSource,
+  /<select[\s\S]*?aria-label="Group sessions by"/,
+  "Sessions grouping must not use a native select",
+);
+assert.doesNotMatch(
+  groupingSource,
+  /<Tabs<ChatSessionGroupBy>/,
+  "Sessions grouping must not use the tab-role Tabs primitive for this button group",
+);
+assert.doesNotMatch(
+  groupingSource,
+  /role="tab"/,
+  "Sessions grouping must not regress to tab roles",
+);
+assert.doesNotMatch(
+  groupingSource,
+  /role="tablist"/,
+  "Sessions grouping must not regress to a tablist wrapper",
+);
+assert.doesNotMatch(
+  groupingSource,
+  /aria-controls=/,
+  "Sessions grouping must not wire tabpanel controls",
+);
+assert.doesNotMatch(
+  groupingSource,
+  /idPrefix/,
+  "Sessions grouping must not use tab id prefixes",
+);
+assert.match(
+  groupingSource,
+  /title=\{option\.title\}/,
+  "Sessions grouping buttons must carry the option title tooltip",
+);
+assert.match(
+  groupingSource,
+  /"focus-ring relative inline-flex min-w-0 flex-1 items-center justify-center gap-1\.5 rounded-md border border-transparent px-2\.5 py-1 text-\[length:var\(--text-xs\)\] font-medium transition-colors"/,
+  "Sessions grouping buttons must include the focus-ring class",
+);
+assert.match(
+  groupingSource,
+  /groupBy === option\.id[\s\S]{0,500}?bg-\[var\(--bg-raised\)\][\s\S]{0,500}?text-\[var\(--text-primary\)\][\s\S]{0,500}?border-\[var\(--border-strong\)\]/,
+  "Selected grouping buttons must use the selected-state tokens",
+);
+assert.match(
+  groupingSource,
+  /"text-\[var\(--text-muted\)\] hover:text-\[var\(--text-secondary\)\]"/,
+  "Unselected grouping buttons must use muted and hover text tokens",
+);
 
 // ── Content search (CHAT-D9-02) ──────────────────────────────────────────────
 

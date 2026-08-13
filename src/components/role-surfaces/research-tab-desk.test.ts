@@ -78,13 +78,28 @@ test("running and completed blocks stay honest about their data", () => {
 test("run failures disclose persisted diagnostics without fabricating a cause", () => {
   assert.match(detail, /View diagnostics/);
   assert.match(detail, /<Modal[\s\S]*?breadcrumb=\{\["Research", "Diagnostics"\]\}/);
+  assert.match(detail, /researchDiagnosticTrace\(mission\)/);
+  assert.match(detail, /Copy trace JSON/);
+  assert.match(detail, /copyDiagnosticTrace/);
+  // Bind the transient copy confirmation to its mission at render time: an
+  // effect-only reset would paint the next mission as copied for one frame.
+  assert.match(detail, /const diagnosticsCopied = diagnosticsCopiedFor === missionId/);
+  assert.match(detail, /setDiagnosticsCopiedFor\(startedFor\)/);
+  assert.match(detail, /setActionError\(null\);\n    const copied = await copyText\(traceJson\)/);
+  assert.match(detail, /\{actionError \? <p className="research-mission-error" role="alert">\{actionError\}<\/p> : null\}/);
+  assert.match(detail, /actionError && !diagnosticsOpen/);
+  assert.match(detail, /Daemon trace: not recorded/);
   assert.match(detail, /\["Error", mission\.lastError \?\? "No current error"\]/);
   assert.match(detail, /\["Flow run", iteration\?\.flowRunId \?\? "No flow run recorded"\]/);
   assert.match(detail, /\["Session", sessionId \?\? "No session recorded"\]/);
   assert.match(detail, /primaryArtifact\.relativePath/);
   assert.match(detail, /\["Sources", `\$\{mission\.sources\.length\} recorded/);
   assert.match(css, /\.research-mission-diagnostics/);
+  assert.match(css, /\.research-mission-diagnostics__timeline/);
+  assert.match(css, /\.research-mission-diagnostics__finding/);
   assert.match(css, /var\(--bg-sunken\)/);
+  assert.match(css, /research-mission-diagnostics__phase[^\n]*var\(--radius-pill\)/);
+  assert.doesNotMatch(css, /--radius-full/);
 });
 
 // ── Evidence triage: exact ledger source-update mechanism ──────────────────
