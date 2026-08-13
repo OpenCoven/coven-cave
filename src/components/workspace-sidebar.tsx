@@ -535,9 +535,7 @@ export function WorkspaceSidebar({
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [view, setView] = useState<ChatSidebarView>("recent");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [showArchived] = useState(false);
-  const [archivedRows, setArchivedRows] = useState<SessionRow[]>([]);
-  const [archiveNonce] = useState(0);
+  const menuAnchorRef = useRef<HTMLButtonElement>(null);
   const menuBodyRef = useRef<HTMLDivElement>(null);
   const normalizedSessions = useMemo(
     () => sessions.map(normalizeSessionAttention),
