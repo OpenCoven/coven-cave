@@ -796,7 +796,6 @@ jobs:
       - release-web-validation
       - release-platform-validation
       - release-windows-native
-      - release-ios-build
     env:
       COVEN_CAVE_X_PRODUCTION_CLIENT_ID: ${{ vars.COVEN_CAVE_X_PRODUCTION_CLIENT_ID }}
       # Public Discord application ID, read by option_env! at compile time in

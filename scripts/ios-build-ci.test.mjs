@@ -114,10 +114,10 @@ assert.doesNotMatch(
   "never call xcodegen generate directly — it scans before the bundles exist (cave-d8ma3)",
 );
 
-assert.match(
+assert.doesNotMatch(
   workflow,
   /build:[\s\S]{0,300}needs:[\s\S]{0,300}- release-ios-build/,
-  "desktop artifact publication waits for the TestFlight release gate",
+  "TestFlight publication failures must not block unrelated desktop artifacts",
 );
 
 console.log("ios-build-ci.test.mjs: ok");
