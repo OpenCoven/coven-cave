@@ -114,9 +114,8 @@ assert.deepEqual(
     "release-web-validation",
     "release-platform-validation",
     "release-windows-native",
-    "release-ios-build",
   ],
-  "artifact builds must wait for every comprehensive release validation job",
+  "artifact builds wait for release validation without depending on TestFlight publication",
 );
 
 console.log("ci-recovery-workflow.test.mjs: ok");
