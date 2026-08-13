@@ -118,8 +118,8 @@ test("the Citation UI exposes inline provider previews through the shared Popove
   );
   assert.match(
     domWiring,
-    /link\.getAttribute\("href"\)\?\.startsWith\("#cite-"\)/,
-    "generic markdown link wiring leaves citation links to the preview component",
+    /link\.getAttribute\("href"\)\?\.startsWith\("#"\)/,
+    "generic markdown link wiring leaves native fragment links untouched",
   );
 });
 
