@@ -1029,3 +1029,193 @@
   font-size: var(--text-2xs);
   color: var(--text-muted);
 }
+
+/* ── Source ledger rows (cave-hhwc5) ─────────────────────────────────────────
+   A ledger is compared column-by-column ("which are unverified", "who said
+   this"), which stacked cards cannot support. Real table semantics carry the
+   row/column relationships for assistive tech; these rules only handle
+   density, alignment and overflow. */
+.research-source-rows {
+  /* The claim column is the one that grows, so the table scrolls horizontally
+     inside its own box rather than widening the whole desk pane. */
+  overflow-x: auto;
+}
+.research-source-rows table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-2xs);
+}
+.research-source-rows thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-base);
+  color: var(--text-muted);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+.research-source-rows tbody tr {
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+}
+.research-source-rows tbody tr:last-child { border-bottom: 0; }
+.research-source-rows tbody tr:hover {
+  background: color-mix(in oklch, var(--bg-base) 42%, transparent);
+}
+.research-source-rows tbody tr.is-latest {
+  background: var(--research-accent-soft);
+  box-shadow: inset 2px 0 0 var(--research-accent);
+}
+.research-source-rows td,
+.research-source-rows tbody th {
+  padding: var(--space-1) var(--space-2);
+  vertical-align: top;
+  text-align: left;
+  font-weight: 400;
+}
+.research-source-rows__title { min-width: 14rem; }
+.research-source-rows__title button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--research-accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.research-source-rows__title button:hover { text-decoration: underline; }
+.research-source-rows__meta {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.research-source-rows__claim {
+  min-width: 18rem;
+  color: var(--text-muted);
+}
+.research-source-rows__actions {
+  /* Controls stay on one line per row so the row height does not jump between
+     triaged and untriaged sources. */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+/* ── Rendered Markdown for mission text artifacts (cave-hhwc5) ─────────────── */
+.research-markdown-preview {
+  font-size: var(--text-2xs);
+  line-height: 1.55;
+  color: var(--text-base);
+}
+.research-markdown-preview > :first-child { margin-top: 0; }
+.research-markdown-preview > :last-child { margin-bottom: 0; }
+.research-markdown-preview h1,
+.research-markdown-preview h2,
+.research-markdown-preview h3 {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+.research-markdown-preview p,
+.research-markdown-preview ul,
+.research-markdown-preview ol { margin: 0 0 var(--space-2); }
+.research-markdown-preview ul,
+.research-markdown-preview ol { padding-left: var(--space-4); }
+.research-markdown-preview li { margin-bottom: var(--space-1); }
+.research-markdown-preview a { color: var(--research-accent); }
+.research-markdown-preview code {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--bg-base) 42%, transparent);
+}
+.research-markdown-preview pre {
+  overflow-x: auto;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--bg-base) 42%, transparent);
+}
+/* The raw fallback keeps the log readable when the serializer fails, so an
+   unrenderable document never becomes an empty pane. */
+.research-markdown-preview--raw {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-muted);
+}
+
+/* ── Next step (cave-hhwc5) ──────────────────────────────────────────────────
+   Reads before the controls, and its accent says WHO the mission waits on:
+   the familiar (working), you (stopped, needs a decision), or nobody. The dot
+   is decorative — the same distinction is carried by the headline text, so
+   nothing here is colour-only. */
+.research-next-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-left-width: 2px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--bg-base) 42%, transparent);
+}
+.research-next-step__headline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-base);
+}
+.research-next-step__detail,
+.research-next-step__automation {
+  margin: 0;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.research-next-step__automation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.research-next-step__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex: none;
+}
+/* Waiting on the familiar: work is happening, nothing is asked of the reader. */
+.research-next-step--familiar { border-left-color: var(--research-accent); }
+.research-next-step--familiar .research-next-step__dot {
+  background: var(--research-accent);
+  /* A live pulse distinguishes "running" from "stopped" at a glance. */
+  animation: research-next-step-pulse 1.8s ease-in-out infinite;
+}
+/* Waiting on YOU: the mission has stopped and will not resume by itself. */
+.research-next-step--you { border-left-color: var(--warning, var(--research-accent)); }
+.research-next-step--you .research-next-step__dot { background: var(--warning, var(--research-accent)); }
+.research-next-step--nobody { border-left-color: var(--border); }
+
+@keyframes research-next-step-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .research-next-step--familiar .research-next-step__dot { animation: none; }
+}
+
+/* Automation health states beyond the ACTIVE/PAUSED pair the summary pill
+   already styles. "failing" must not read as healthy. */
+.research-automation__status--failing,
+.research-automation__status--stopped {
+  color: var(--danger, var(--text-base));
+}
+.research-automation__status--running { color: var(--research-accent); }
+.research-automation__status--none { color: var(--text-muted); }

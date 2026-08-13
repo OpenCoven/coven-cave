@@ -7,6 +7,7 @@ const list = readFileSync(new URL("./research-mission-list.tsx", import.meta.url
 const detail = readFileSync(new URL("./research-mission-detail.tsx", import.meta.url), "utf8");
 const pane = readFileSync(new URL("./use-research-pane.ts", import.meta.url), "utf8");
 const ledger = readFileSync(new URL("./research-evidence-ledger.tsx", import.meta.url), "utf8");
+const sourceRows = readFileSync(new URL("./research-source-rows.tsx", import.meta.url), "utf8");
 // The desk sheet rides with the mode-gated surface (bundle budget, #3264
 // pattern), so selector pins read the sheet itself, not the root globals.
 const css = readFileSync(new URL("../../styles/globals/surface-research-desk.css", import.meta.url), "utf8");
@@ -299,8 +300,12 @@ test("run state picks the opening pane and the pane's context line", () => {
   assert.match(detail, /targeted — streaming in, review anytime/);
   assert.match(detail, /highlightLatest=\{isLive\}/);
   // The streaming highlight marks the newest ledger entry without faking times.
+  // The ledger still CHOOSES the newest id; the row component now renders the
+  // mark, and does it with aria-current so it is not colour-only.
   assert.match(ledger, /mission\.sources\[mission\.sources\.length - 1\]\.id/);
-  assert.match(ledger, /is-latest/);
+  assert.match(ledger, /latestSourceId=\{latestSourceId\}/);
+  assert.match(sourceRows, /is-latest/);
+  assert.match(sourceRows, /aria-current=/);
   assert.doesNotMatch(detail, /Reading: /);
 });
 
