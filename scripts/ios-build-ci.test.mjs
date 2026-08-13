@@ -17,6 +17,8 @@ import { readFileSync } from "node:fs";
 const workflow = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
 const iosJobStart = workflow.indexOf("  release-ios-build:");
 const iosJobEnd = workflow.indexOf("\n  build:", iosJobStart);
+assert.notEqual(iosJobStart, -1, "release.yml defines the iOS build job delimiter");
+assert.notEqual(iosJobEnd, -1, "release.yml defines the build job after the iOS job");
 const iosJob = workflow.slice(iosJobStart, iosJobEnd);
 
 // ── The job exists and publishes a signed TestFlight build ──────────────────

@@ -186,7 +186,8 @@ test("recognizes only explicit build-not-found responses", () => {
 test("allow-missing reserves exit 3 for Apple's explicit not-found response", () => {
   const directory = mkdtempSync(join(tmpdir(), "app-store-connect-test-"));
   const fakeXcrun = join(directory, "xcrun");
-  const cliPath = fileURLToPath(new URL("./app-store-connect.mjs", import.meta.url));
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const cliPath = "scripts/app-store-connect.mjs";
 
   try {
     writeFileSync(
@@ -216,6 +217,7 @@ process.exit(1);
     ];
 
     const missing = spawnSync(process.execPath, args, {
+      cwd: root,
       encoding: "utf8",
       env: {
         ...baseEnv,
@@ -226,6 +228,7 @@ process.exit(1);
     assert.match(missing.stderr, /Apple reports no matching build/);
 
     const authFailure = spawnSync(process.execPath, args, {
+      cwd: root,
       encoding: "utf8",
       env: {
         ...baseEnv,
