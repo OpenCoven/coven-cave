@@ -1067,6 +1067,7 @@ export const SUITES = {
     "src/components/familiars-memory-master-detail.test.ts",
     "src/components/canonical-memory-markdown.test.ts",
     "src/components/document-reader-view.test.ts",
+    "src/components/document-reader-text-size.test.ts",
     "src/components/canonical-memory-reader.test.ts",
     "src/components/familiars-memory-recovery.test.tsx",
     "src/components/familiars-view-memory-ownership.test.tsx",
@@ -1940,6 +1941,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
   "src/components/document-reader-view.test.ts",
+  "src/components/document-reader-text-size.test.ts",
   "src/components/role-surfaces/familiar-room-interactions.test.tsx",
   "src/components/familiars-memory-recovery.test.tsx",
   "src/components/familiars-view-memory-ownership.test.tsx",
