@@ -46,6 +46,7 @@ import {
 } from "@/lib/research-missions";
 import { generateResearchRefineDirection } from "@/lib/research-refine-direction";
 import { relativeTime } from "@/lib/relative-time";
+import { researchAutomationHealth, researchNextStep } from "./research-next-step";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { fetchResearchWorkspacePath } from "./research-artifact-actions";
 import { ResearchEvidenceLedger, type ResearchOutputTab } from "./research-evidence-ledger";
@@ -309,6 +310,8 @@ export function ResearchMissionDetail({
   // Archived missions are read-only: automation controls gate on this the
   // same way "Create schedule" already does.
   const isArchived = mission.status === "archived";
+  const nextStep = researchNextStep(mission);
+  const automationHealth = researchAutomationHealth(mission);
 
   // Root-blocked failures get a self-healing Retry: untouched config clears the
   // rejected root so the retried iteration runs in the mission workspace.
@@ -557,6 +560,30 @@ export function ResearchMissionDetail({
               </Button>
             ) : null}
           </header>
+
+          {/* What is happening and who it waits on, before any control. A
+              status word alone ("checkpoint") does not tell a reader that the
+              mission has STOPPED and will not resume without them. */}
+          <section
+            className={`research-next-step research-next-step--${nextStep.waitingOn}`}
+            aria-label="Next step"
+          >
+            <p className="research-next-step__headline">
+              <span className="research-next-step__dot" aria-hidden />
+              {nextStep.headline}
+            </p>
+            <p className="research-next-step__detail">{nextStep.detail}</p>
+            {/* Answers "is the schedule actually working?" — an ACTIVE schedule
+                whose last run failed is NOT working, and only says so here. */}
+            {mission.automation || nextStep.waitingOn !== "nobody" ? (
+              <p className="research-next-step__automation">
+                <span className={`research-automation__status research-automation__status--${automationHealth.state}`}>
+                  Schedule: {automationHealth.label}
+                </span>
+                <span>{automationHealth.detail}</span>
+              </p>
+            ) : null}
+          </section>
 
           {/* ── Stepper card: 6 reconciled phases + bounds row ──
              Each node carries a meta line derived from the mission (source
