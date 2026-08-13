@@ -101,6 +101,7 @@ import {
   missingRunnerMessage,
   RUNTIME_AVAILABILITY_ERROR_CODES,
   resolveHermesLaunch,
+  runtimeLaunchDiagnostics,
   runtimeProcessFailure,
   type DirectRunnerId,
   type RuntimeAvailability,
@@ -3006,7 +3007,8 @@ export async function POST(req: Request) {
           // from a reloaded or exported transcript, long after the live SSE
           // buffer has expired. It carries file names only, never contents.
           id === "familiar-contract" ||
-          id === "runtime-process"
+          id === "runtime-process" ||
+          id === "runtime-launch-diagnostics"
         ) {
           persistedCompatibilityDiagnostics.push({
             id,
@@ -5292,6 +5294,35 @@ export async function POST(req: Request) {
         result.is_error = true;
         pushProgress("harness-start", `${binding.harness} exited with an error`, "error", failure.message);
         pushProgress("runtime-process", `${binding.harness} process failure`, "error", detail);
+        const diagnostics = runtimeLaunchDiagnostics({
+          runner: failedRunner,
+          exitCode: covenBackedExitCode,
+          emittedDiagnostic,
+          ...(localRuntimePlan
+            ? {
+                launcher: {
+                  command: localRuntimePlan.command,
+                  availability: localRuntimePlan.availability,
+                  env: localRuntimePlan.env,
+                },
+              }
+            : {}),
+          ...(binding.harness === "codex" && codexDirectLaunch && codexSpawnEnv
+            ? {
+                adapter: {
+                  command: codexDirectLaunch.command,
+                  availability: codexLaunchAvailability,
+                  env: codexSpawnEnv,
+                },
+              }
+            : {}),
+        });
+        pushProgress(
+          "runtime-launch-diagnostics",
+          "Runtime launch diagnostics captured",
+          "error",
+          JSON.stringify(diagnostics),
+        );
         push({ kind: "error", code: failure.code, message: failure.message });
       }
 

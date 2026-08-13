@@ -694,13 +694,40 @@ type ErrorStripTool = { id: string; name: string; input?: string; output?: strin
 type ErrorStripStep = { id: string; label: string; detail?: string; status: "running" | "done" | "notice" | "error" };
 type ErrorStripTurn = { tools?: ErrorStripTool[]; progress?: ErrorStripStep[]; lifecycle?: string };
 
-/** Only display the fixed, server-produced runtime-process diagnostic shape.
- * Progress detail normally can contain project output, so every other value
- * remains withheld in the error strip. */
+/** Only display fixed server output or a strictly validated redacted launch
+ * record. Progress detail normally can contain project output. */
 function safeRuntimeProcessDetail(step: ErrorStripStep): string | null {
-  if (step.id !== "runtime-process" || !step.detail) return null;
-  const match = /^Exit code (\d+); (runtime diagnostic output was withheld to protect local data|the runtime did not emit an error message)\.$/.exec(step.detail);
-  return match ? `Exit code ${match[1]}. ${match[2]}.` : null;
+  if (!step.detail) return null;
+  if (step.id === "runtime-process") {
+    const match = /^Exit code (\d+); (runtime diagnostic output was withheld to protect local data|the runtime did not emit an error message)\.$/.exec(step.detail);
+    return match ? `Exit code ${match[1]}. ${match[2]}.` : null;
+  }
+  if (step.id !== "runtime-launch-diagnostics") return null;
+  try {
+    const value = JSON.parse(step.detail) as {
+      schemaVersion?: unknown; runner?: unknown; failure?: { exitCode?: unknown; emittedDiagnostic?: unknown };
+      launcher?: { command?: unknown; availability?: unknown; source?: unknown; pathEntryIndex?: unknown; installKind?: unknown };
+      adapter?: { command?: unknown; availability?: unknown; source?: unknown; pathEntryIndex?: unknown; installKind?: unknown };
+    };
+    const command = (entry: typeof value.launcher): string | null => {
+      if (!entry || !["coven", "codex"].includes(String(entry.command))) return null;
+      if (!["ready", "missing", "unlaunchable", "probe_failed", "unsupported_runtime"].includes(String(entry.availability))) return null;
+      if (!["absolute-command", "PATH", "unresolved"].includes(String(entry.source))) return null;
+      const index = Number.isInteger(entry.pathEntryIndex) && Number(entry.pathEntryIndex) >= 0
+        ? `, PATH entry ${entry.pathEntryIndex}`
+        : "";
+      const install = ["managed", "node-package", "system", "user-local", "custom"].includes(String(entry.installKind))
+        ? `, ${entry.installKind}`
+        : "";
+      return `${entry.command}: ${entry.availability} via ${entry.source}${index}${install}`;
+    };
+    if (value.schemaVersion !== 1 || !["coven", "codex", "claude"].includes(String(value.runner))) return null;
+    const exit = Number.isInteger(value.failure?.exitCode) ? `exit code ${value.failure?.exitCode}` : "exit code unavailable";
+    const entries = [command(value.launcher), command(value.adapter)].filter((entry): entry is string => Boolean(entry));
+    return entries.length ? `${exit}; ${entries.join("; ")}.` : exit;
+  } catch {
+    return null;
+  }
 }
 
 /** Inline error/debug strip between the transcript and the composer. Shows the

@@ -16,7 +16,12 @@ assert.match(source, /detail is withheld to protect project data/, "step detail 
 assert.match(
   source,
   /function safeRuntimeProcessDetail[\s\S]*?runtime diagnostic output was withheld to protect local data/,
-  "only the fixed runtime-process exit-code diagnostic may be disclosed",
+  "the fixed runtime-process exit-code diagnostic remains safe to disclose",
+);
+assert.match(
+  source,
+  /step\.id !== "runtime-launch-diagnostics"[\s\S]*?JSON\.parse\(step\.detail\)/,
+  "the launch record is parsed and validated before it can be disclosed",
 );
 assert.match(
   source,

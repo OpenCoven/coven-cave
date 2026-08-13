@@ -17,6 +17,7 @@ import {
   missingRunnerMessage,
   resolveHermesLaunch,
   runtimeProcessFailure,
+  runtimeLaunchDiagnostics,
   runtimeLaunchFailedMessage,
   summarizeRuntimeAvailability,
   RUNTIME_AVAILABILITY_ERROR_CODES,
@@ -63,6 +64,18 @@ try {
     /(?:^|[\\/])grok(?:\.exe)?$/,
     "ready reports the exact executable name selected from the spawn PATH",
   );
+  const redactedDiagnostics = runtimeLaunchDiagnostics({
+    runner: "codex",
+    exitCode: 1,
+    emittedDiagnostic: false,
+    launcher: { command: "coven", availability: ready, env: { PATH: [emptyDir, binDir].join(path.delimiter) } },
+    adapter: { command: executable, availability: ready, env: { PATH: binDir } },
+  });
+  assert.deepEqual(redactedDiagnostics.failure, { kind: "process-exit", exitCode: 1, emittedDiagnostic: false });
+  assert.equal(redactedDiagnostics.launcher?.source, "PATH");
+  assert.equal(redactedDiagnostics.launcher?.pathEntryIndex, 1);
+  assert.equal(redactedDiagnostics.adapter?.source, "absolute-command");
+  assert.equal(JSON.stringify(redactedDiagnostics).includes(scratch), false, "diagnostics must not expose local paths");
 
   const linuxBinDir = "/runtime-availability/bin";
   const linuxClaudeDir = "/runtime-availability/claude-bin";
