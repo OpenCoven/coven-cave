@@ -22,6 +22,7 @@
     "read_files",
     "write_files"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/framer-motion-patterns",
   "x-coven": {
     "displayName": "Motion (Framer Motion) Patterns",

@@ -206,13 +206,11 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
   return (
     <nav className="sidebar-minimal" aria-label="Primary">
-      {/* App brand mark — rail-only chrome (chat-revamp phase D): a 28px
-          accent-tinted rounded square with the star glyph, shown by CSS only
-          when the nav is collapsed to the 56px icon rail. The expanded panel
-          keeps leading with the familiar switcher. Decorative — hidden from AT. */}
-      <div className="sidebar-brand-mark" aria-hidden="true">
-        <Icon name="ph:sparkle" width={CAVE_ICON_SIZE.shellNav} height={CAVE_ICON_SIZE.shellNav} />
-      </div>
+      {/* No rail-only brand mark here any more (it was chat-revamp phase D
+          chrome, decorative and aria-hidden). The expanded panel never had a
+          counterpart for it, so in the 56px rail it pushed every control below
+          it ~32px out of line with its own hover-peek position — see #4351 and
+          the retirement note in styles/sidebar-minimal/activity-rail.css. */}
       {/* Static wordmark. Collapsing the sidebar is now owned by the shell's
           floating top-left toggle (and ⌘B), so the header is no longer a
           button — it just leaves room for the float. */}
@@ -303,22 +301,13 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       </div>
 
       {/* Bottom: Dashboard + Settings, then the version line — shared with the
-          WorkspaceSidebar that replaces this host during Chat. */}
+          WorkspaceSidebar that replaces this host during Chat, and the last
+          thing in the rail as well as in the panel. The rail-only account
+          avatar that used to close the column is gone: its onClick was
+          onOpenSettings, i.e. the same action as the Settings button directly
+          above it, and being rail-only it left the footer sitting at a
+          different height than its own hover-peek form (#4351). */}
       <SidebarFooter onOpenSettings={onOpenSettings} />
-
-      {/* Account avatar — rail-only (CSS-gated, like the brand mark): the 28px
-          circle closing the rail per the phase-D design. There is no user
-          profile store yet, so it renders the generic account glyph and opens
-          Settings, same as the footer's Settings button. */}
-      <button
-        type="button"
-        className="sidebar-user-avatar focus-ring"
-        onClick={onOpenSettings}
-        aria-label="Account and settings"
-        title="Account & settings"
-      >
-        <Icon name="ph:user" width={CAVE_ICON_SIZE.shellNav} height={CAVE_ICON_SIZE.shellNav} aria-hidden />
-      </button>
     </nav>
   );
 }

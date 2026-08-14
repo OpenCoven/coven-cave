@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessByStdio, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
@@ -100,6 +101,7 @@ import {
   missingRunnerMessage,
   RUNTIME_AVAILABILITY_ERROR_CODES,
   resolveHermesLaunch,
+  runtimeLaunchDiagnostics,
   runtimeProcessFailure,
   type DirectRunnerId,
   type RuntimeAvailability,
@@ -140,6 +142,7 @@ import {
 } from "@/lib/hermes-responses-stream";
 import { redactSecretText, redactSecretsDeep } from "@/lib/secret-redaction";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
+import { buildPromptWithDeliveryEvidenceContract } from "@/lib/delivery-evidence-contract";
 import {
   buildFamiliarContractContext,
   buildPromptWithFamiliarContract,
@@ -175,10 +178,11 @@ import { chatProjectAccessId, taskWorktreeProjectAccessId } from "@/lib/chat-pro
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
-  isProjectlessGenerationOrigin,
+  projectlessGenerationLaunch,
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { resolveRuntimeSkillRoots } from "@/lib/server/skill-scan";
+import { resolveBundledCopilotPluginDirs } from "@/lib/server/bundled-copilot-plugins";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
   dispatchOpenClawGatewayTurn,
@@ -221,6 +225,7 @@ import {
 } from "@/lib/chat-model-state";
 import {
   RuntimeScopeError,
+  buildRuntimeAccessFingerprint,
   buildPromptWithRuntimeScope,
   resolveLocalRuntimeCwd,
   type RuntimeScope,
@@ -284,6 +289,7 @@ import {
   modelIntentForSend,
   isModelOverrideScope,
   isValidModelOverrideIntent,
+  needsClaudeOpus5Routability,
   offlineQueuedModelIntent,
   persistedTurnControls,
   persistSendModelIntent,
@@ -291,6 +297,7 @@ import {
   savedModelSelectionRejection,
   turnRetryModel,
 } from "./chat-send-models";
+import { claudeOpus5Routability } from "@/lib/server/claude-models";
 import {
   appliedModelControls,
   modelControlCapabilities,
@@ -1774,6 +1781,9 @@ export async function POST(req: Request) {
   const openCodeDirect = !sshRuntime && binding.harness === "opencode";
   const grokDirect = !sshRuntime && binding.harness === "grok";
   const copilotDirect = !sshRuntime && binding.harness === "copilot";
+  const copilotPluginDirs = copilotDirect
+    ? await resolveBundledCopilotPluginDirs()
+    : [];
   // Cave's Read-only control is a security promise, not a prompt hint.
   // OpenCode's one-shot CLI exposes no read-only/sandbox flag, so do not even
   // run its capability probes with the familiar-scoped credentials here.
@@ -1896,6 +1906,9 @@ export async function POST(req: Request) {
     codexRouting.mode === "direct" ? codexRouting.report.capabilities : null;
 
   let localRuntimePlan: LocalRuntimePlan | null = null;
+  // Preserve the actual `coven adapter list --json` preflight result for a
+  // later silent-exit record. A direct Codex probe is not adapter evidence.
+  let codexFallbackAdapterAvailability: RuntimeAvailability | null = null;
   if (!sshRuntime && binding.harness !== "openclaw" && !(hermesDirect && hermesApi)) {
     if (
       copilotRuntimeLaunch &&
@@ -2081,8 +2094,28 @@ export async function POST(req: Request) {
   // A persisted conversation owns its provenance. Never let a request relabel
   // an existing user chat as a hidden generator to bypass project checks.
   const generationOrigin = existingConversation?.origin ?? body.origin;
-  const projectlessGeneration =
-    !body.projectRoot && isProjectlessGenerationOrigin(generationOrigin);
+  // A hidden generation is exempt from the launch gate only for the familiar's
+  // OWN workspace. A resume root — the conversation's persisted runtime, or a
+  // daemon session's project_root (cave-yjnr) — names a real project and is
+  // gated like every other root, because the daemon's session list is global
+  // and its rows carry no familiar id to scope it by (cave-o3nq7).
+  // Resolve symlinks before the containment test. The spawn below realpaths the
+  // root and enforces only "inside $HOME", so a lexical check on the raw string
+  // would let a symlink inside the familiar's own workspace — a directory the
+  // familiar can write to — resolve into another project with the gate skipped.
+  // An unresolvable root yields undefined, which the helper treats as gated.
+  const resumeCwdResolved = resumeCwd
+    ? await realpath(resumeCwd).catch(() => undefined)
+    : undefined;
+  const projectlessLaunch = projectlessGenerationLaunch({
+    origin: generationOrigin,
+    hasRequestedProjectRoot: Boolean(body.projectRoot),
+    sshRuntime: Boolean(sshRuntime),
+    sshHome: homedir(),
+    resumeCwd,
+    resumeCwdResolved,
+    familiarWorkspace: resolvedFamiliarWorkspace,
+  });
   // A Board task may be isolated in a worktree below its registered project.
   // The worktree itself is intentionally not a separate project record, so
   // its first native-chat turn must authorize against the card's server-owned
@@ -2092,16 +2125,15 @@ export async function POST(req: Request) {
   // when the symlink-resolved runtime cwd remains inside the task project.
   let authorizedProjectRoot: string;
   try {
-    if (projectlessGeneration) {
-      const generationRoot = sshRuntime ? homedir() : (resumeCwd ?? resolvedFamiliarWorkspace);
-      if (!generationRoot) {
-        throw new ChatProjectLaunchError(
-          "project_root_required",
-          400,
-          "This hidden generation has no safe familiar workspace.",
-        );
-      }
-      authorizedProjectRoot = generationRoot;
+    if (projectlessLaunch.kind === "unavailable") {
+      throw new ChatProjectLaunchError(
+        "project_root_required",
+        400,
+        "This hidden generation has no safe familiar workspace.",
+      );
+    }
+    if (projectlessLaunch.kind === "workspace") {
+      authorizedProjectRoot = projectlessLaunch.root;
     } else {
       const authorized = await authorizeChatProjectLaunch(
         {
@@ -2385,6 +2417,27 @@ export async function POST(req: Request) {
       modelApplicationReason: "Model forwarding is unavailable for this runtime binding.",
     }, { status: 400 });
   }
+  // Opus 5 is the one selection whose launch value is an alias: it is forwarded
+  // as `anthropic/opus` and the echo is mapped back to the Cave id. That is
+  // only truthful while the probe that gated the picker still holds, and a
+  // selection persisted to a conversation or familiar default outlives it. Ask
+  // again here rather than reporting a model this install can no longer route.
+  // `unknown` proceeds unchanged — a probe that could not run is not evidence
+  // about the model, the same reasoning the forwarding probe applies above.
+  if (needsClaudeOpus5Routability({ harness: binding.harness, desiredModel })) {
+    const routability = await claudeOpus5Routability(body.familiarId);
+    if (routability === "unavailable") {
+      return NextResponse.json({
+        ok: false,
+        code: "unroutable_opus5_selection",
+        error: "This Claude Code install can no longer route Claude Opus 5, so the turn was not run.",
+        desiredModel,
+        modelApplicationState: "rejected",
+        modelApplicationReason:
+          "Claude Opus 5 is selected, but this install no longer resolves the Opus alias to it. Pick another model or restore the Claude Code version and provider configuration that offered it.",
+      }, { status: 400 });
+    }
+  }
   const grokForwardModel = grokShouldUseCliDefault({
     modelSource: modelState.source,
     globalDefaultModel: config.defaults.model,
@@ -2569,35 +2622,37 @@ export async function POST(req: Request) {
   // the permission decision and prompt context on the same task snapshot.
   const taskContext = taskCard ? buildTaskContext(taskCard) : null;
   const scopedPrompt = buildPromptWithRuntimeScope(
-    buildPromptWithCovenIdentityCanon(
-      // Sits directly inside the canon so the files land next to the rule that
-      // names them, and ahead of the vault/task/memory data blocks so persona
-      // frames how the familiar reads them. The genuine runtime boundary is
-      // applied outermost and therefore still leads the assembled prompt.
-      buildPromptWithFamiliarContract(
-        buildTaskAwarePrompt(
-          buildPromptWithKnowledgeVault(
-            buildPromptWithFamiliarStartupContext(
-              appendMentionedFilesBlock(
-                buildPromptWithResponseControls(
-                  buildPromptWithAttachments(promptText, attachments, {
-                    imagesSupported,
-                    imageFilePaths,
-                  }),
-                  { modelControls: promptModelControls },
+    buildPromptWithDeliveryEvidenceContract(
+      buildPromptWithCovenIdentityCanon(
+        // Sits directly inside the canon so the files land next to the rule that
+        // names them, and ahead of the vault/task/memory data blocks so persona
+        // frames how the familiar reads them. The genuine runtime boundary is
+        // applied outermost and therefore still leads the assembled prompt.
+        buildPromptWithFamiliarContract(
+          buildTaskAwarePrompt(
+            buildPromptWithKnowledgeVault(
+              buildPromptWithFamiliarStartupContext(
+                appendMentionedFilesBlock(
+                  buildPromptWithResponseControls(
+                    buildPromptWithAttachments(promptText, attachments, {
+                      imagesSupported,
+                      imageFilePaths,
+                    }),
+                    { modelControls: promptModelControls },
+                  ),
+                  mentionedFiles,
                 ),
-                mentionedFiles,
+                [operatorProfileContext, dailyMemoryContext],
               ),
-              [operatorProfileContext, dailyMemoryContext],
+              knowledgeVaultEntries,
+              knowledgeVaultCollections,
             ),
-            knowledgeVaultEntries,
-            knowledgeVaultCollections,
+            taskContext,
           ),
-          taskContext,
+          familiarContractBlock,
         ),
-        familiarContractBlock,
+        body.familiarId,
       ),
-      body.familiarId,
     ),
     runtimeScope,
   );
@@ -2675,6 +2730,12 @@ export async function POST(req: Request) {
       )
     : [];
   const forwardAddDirs = addDirForwardingEnabled && !sshRuntime ? grantDirs : [];
+  const runtimeAccessFingerprint = buildRuntimeAccessFingerprint({
+    primaryRoot: cwd,
+    grantedProjectRoots,
+    projectRootAccess: grantedProjectRootAccess,
+    additionalRoots: resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : [],
+  });
   // The accepted Hermes 1.0.3 adapter binds prompts natively with `--query`.
   // Cave still spawns Hermes directly for local chats because this path owns
   // richer local streaming, session, and optional API behavior than the
@@ -2741,6 +2802,7 @@ export async function POST(req: Request) {
         // this stream path supports, same trust basis as the manifest's
         // session/sandbox flags above.
         addDirs: grantDirs,
+        pluginDirs: copilotPluginDirs,
       });
     }
     if (hermesDirect) {
@@ -2856,6 +2918,22 @@ export async function POST(req: Request) {
         ? existingConversation?.harnessSessionId ?? body.sessionId
         : existingConversation?.harnessSessionId ?? body.sessionId
       : null;
+  // Runtime grant changes are process-boundary changes, not prompt changes.
+  // Rebuilding the boundary preamble and passing new --add-dir flags cannot
+  // reliably widen a native session whose sandbox was created on an earlier
+  // turn. Replace it atomically and replay the bounded active transcript.
+  // Legacy conversations have no fingerprint, so their first resumed turn
+  // after this upgrade also refreshes once instead of guessing that stale
+  // process authority matches the live grant store.
+  const runtimeAccessRefreshNeeded = Boolean(
+    !sshRuntime &&
+    existingConversation &&
+    resumeTarget &&
+    existingConversation.runtimeAccessFingerprint !== runtimeAccessFingerprint,
+  );
+  const runtimeAccessRetry = runtimeAccessRefreshNeeded
+    ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
+    : null;
   // Grok deliberately refuses to change a resumed session's sandbox. Persist
   // the profile used for the previous native session and transparently start a
   // fresh one (with recent context replayed) when the access chip changed. An
@@ -2896,8 +2974,10 @@ export async function POST(req: Request) {
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
     : null;
   const args = buildArgs(
-    grokFreshSessionForSandbox || openCodeFreshSessionForCompatibility ? null : resumeTarget,
-    grokSandboxRetry?.prompt ?? openCodeCompatibilityRetry?.prompt,
+    runtimeAccessRefreshNeeded || grokFreshSessionForSandbox || openCodeFreshSessionForCompatibility
+      ? null
+      : resumeTarget,
+    runtimeAccessRetry?.prompt ?? grokSandboxRetry?.prompt ?? openCodeCompatibilityRetry?.prompt,
   );
 
   // Resume failures from common harnesses. Codex emits
@@ -2960,7 +3040,8 @@ export async function POST(req: Request) {
           // from a reloaded or exported transcript, long after the live SSE
           // buffer has expired. It carries file names only, never contents.
           id === "familiar-contract" ||
-          id === "runtime-process"
+          id === "runtime-process" ||
+          id === "runtime-launch-diagnostics"
         ) {
           persistedCompatibilityDiagnostics.push({
             id,
@@ -3025,6 +3106,16 @@ export async function POST(req: Request) {
           "grok-sandbox-restart",
           "Access mode changed; starting a fresh Grok session with recent context",
           "done",
+        );
+      }
+      if (runtimeAccessRefreshNeeded) {
+        pushProgress(
+          "runtime-access-refresh",
+          "Filesystem access refreshed",
+          "done",
+          runtimeAccessRetry?.replayedHistory
+            ? "Started a fresh harness session with the current grants and recent context."
+            : "Started a fresh harness session with the current grants.",
         );
       }
 
@@ -4979,6 +5070,7 @@ export async function POST(req: Request) {
           launch: codexLaunchPlan,
           env: localRuntimePlan.env,
         });
+        codexFallbackAdapterAvailability = availability;
         if (availability.state !== "ready") {
           launchFailure = { code: availability.code, message: availability.message };
           result.is_error = true;
@@ -5236,6 +5328,38 @@ export async function POST(req: Request) {
         result.is_error = true;
         pushProgress("harness-start", `${binding.harness} exited with an error`, "error", failure.message);
         pushProgress("runtime-process", `${binding.harness} process failure`, "error", detail);
+        const diagnostics = runtimeLaunchDiagnostics({
+          runner: failedRunner,
+          exitCode: covenBackedExitCode,
+          emittedDiagnostic,
+          ...(localRuntimePlan
+            ? {
+                launcher: {
+                  identity: "coven",
+                  command: localRuntimePlan.command,
+                  availability: localRuntimePlan.availability,
+                  env: localRuntimePlan.env,
+                },
+              }
+            : {}),
+          ...(binding.harness === "codex" && codexFallbackAdapterAvailability && localRuntimePlan
+            ? {
+                adapter: {
+                  identity: "codex",
+                  command: localRuntimePlan.command,
+                  availability: codexFallbackAdapterAvailability,
+                  env: localRuntimePlan.env,
+                  source: "coven-adapter" as const,
+                },
+              }
+            : {}),
+        });
+        pushProgress(
+          "runtime-launch-diagnostics",
+          "Runtime launch diagnostics captured",
+          "error",
+          JSON.stringify(diagnostics),
+        );
         push({ kind: "error", code: failure.code, message: failure.message });
       }
 
@@ -5608,6 +5732,9 @@ export async function POST(req: Request) {
             delete conv.harnessSessionId;
           }
           if (grokDirect && grokSessionId) conv.grokSandboxProfile = grokSandboxProfile;
+          if (!result.is_error && !cancelledByUser) {
+            conv.runtimeAccessFingerprint = runtimeAccessFingerprint;
+          }
           conv.turns.push(userTurn, assistantTurn);
           conv.activeLeafId = assistantTurnId;
           await saveConversation(conv);

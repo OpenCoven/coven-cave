@@ -12,11 +12,17 @@ assert.match(
   chatView,
   /import \{ ChatSpecCard \} from "@\/components\/chat-spec-card"/,
 );
-assert.match(chatView, /function splitSegmentsForSpecs\(/);
-assert.match(chatView, /<ChatSpecCard spec=\{piece\.spec\} \/>/);
 assert.match(
   chatView,
-  /splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\]\)/,
+  /function splitSegmentsForSpecs\(\s*segments: MessageBubbleSegment\[\],\s*onOpenUrl\?: \(url: string\) => void,/,
+);
+assert.match(
+  chatView,
+  /<ChatSpecCard spec=\{piece\.spec\} onOpenUrl=\{onOpenUrl\} \/>/,
+);
+assert.match(
+  chatView,
+  /splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\], onOpenUrl\)/,
 );
 assert.match(
   chatView,

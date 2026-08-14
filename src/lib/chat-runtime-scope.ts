@@ -40,6 +40,46 @@ export type RuntimeScope =
     }
   | { kind: "ssh"; host: string; root: string };
 
+export type RuntimeAccessFingerprintInput = {
+  primaryRoot: string;
+  grantedProjectRoots: readonly string[];
+  projectRootAccess?: Readonly<Record<string, ProjectAccessLevel>>;
+  additionalRoots?: readonly string[];
+};
+
+function canonicalFingerprintRoot(value: string): string {
+  const normalized = value.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
+/**
+ * Stable identity for the filesystem authority handed to one native harness
+ * session. Prompt text is rebuilt on every turn, but several harnesses pin
+ * their process sandbox when the native session is first created. Persisting
+ * this value lets chat detect a later human grant and replace that stale
+ * native session instead of repeatedly describing access the process lacks.
+ */
+export function buildRuntimeAccessFingerprint(input: RuntimeAccessFingerprintInput): string {
+  const primaryRoot = canonicalFingerprintRoot(input.primaryRoot);
+  const roots = new Map<string, ProjectAccessLevel>();
+  for (const root of input.additionalRoots ?? []) {
+    const canonical = canonicalFingerprintRoot(root);
+    if (canonical && canonical !== primaryRoot) roots.set(canonical, "write");
+  }
+  for (const root of input.grantedProjectRoots) {
+    const canonical = canonicalFingerprintRoot(root);
+    if (!canonical || canonical === primaryRoot) continue;
+    roots.set(canonical, input.projectRootAccess?.[root] ?? "write");
+  }
+  return JSON.stringify({
+    version: 1,
+    primaryRoot,
+    roots: [...roots.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([root, access]) => ({ root, access })),
+  });
+}
+
 /** Normalize a path so Node's fs functions don't EISDIR on bare Windows
  * drive letters. "C:" -> "C:\\" on Windows; no-op elsewhere. */
 function normalizePath(p: string): string {

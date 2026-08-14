@@ -22,6 +22,7 @@
     "read_files",
     "write_files"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/form-ux-patterns",
   "x-coven": {
     "displayName": "Form UX Patterns",

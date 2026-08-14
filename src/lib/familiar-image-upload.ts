@@ -135,7 +135,16 @@ export function useFamiliarImageUpload(familiarId: string) {
     [familiarId, announce],
   );
 
-  const clear = useCallback(() => void clearFamiliarImage(familiarId), [familiarId]);
+  const clear = useCallback(async () => {
+    setToast(null);
+    const res = await clearFamiliarImage(familiarId);
+    if (!res.ok) {
+      setToast(res.reason);
+      announce(res.reason, "assertive");
+      return;
+    }
+    announce("Avatar removed.");
+  }, [familiarId, announce]);
 
   return { onFile, clear, toast, setToast };
 }

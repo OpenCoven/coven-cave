@@ -75,11 +75,23 @@ const researchRunner = readFileSync(new URL("./research-mission-runner.ts", impo
 // it with "no familiar configured for this harness". The familiar is carried in
 // the compiled prompt and mirrored into cave-state via recordSessionFamiliar, so
 // the daemon body must NOT include familiarId.
-assert.match(
-  source,
-  /body: \{\s*projectRoot,\s*harness: binding\.harness,\s*prompt,\s*launchMode: "nonInteractive",\s*\.\.\.\(launchPolicy \? \{ launchPolicy \} : \{\}\),\s*\},/,
-  "flow session spawn must not pass familiarId natively to the daemon",
-);
+// Asserted structurally rather than by pinning the exact spelling of the body:
+// the property that matters is the ABSENCE of familiarId, and an exact-literal
+// regex fails on any unrelated refactor of the surrounding lines while still
+// passing if familiarId were added under a different formatting.
+{
+  const spawnBody = source.match(
+    /path: "\/api\/v1\/sessions",[\s\S]*?body: \{([\s\S]*?)\n {4}\},/,
+  );
+  assert.ok(spawnBody, "flow session spawn body should be locatable for inspection");
+  assert.match(spawnBody[1], /projectRoot/, "flow session spawn must send the project root");
+  assert.match(spawnBody[1], /launchMode: "nonInteractive"/, "flow session spawn must be non-interactive");
+  assert.doesNotMatch(
+    spawnBody[1],
+    /familiarId/,
+    "flow session spawn must not pass familiarId natively to the daemon",
+  );
+}
 assert.match(
   source,
   /if \(options\.offlinePolicy === "reject"\)[\s\S]*?was not queued for later replay/,
@@ -110,7 +122,7 @@ assert.match(
 
 assert.match(
   source,
-  /const hubAuthority = config\.multiHost\?\.mode === "hub";[\s\S]*binding\.harness === "copilot" && !sshBound && !hubAuthority/,
+  /const hubAuthority = config\.multiHost\?\.mode === "hub";[\s\S]*(?:binding\.)?harness === "copilot" && !sshBound && !hubAuthority/,
   "direct copilot flow spawn must not bypass configured hub authority",
 );
 assert.match(
@@ -120,7 +132,7 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(binding\.harness === "copilot" && !sshBound && !hubAuthority\)[\s\S]*?if \(spec\)[\s\S]*?return \{\s*ok: false,\s*status: 409,/,
+  /if \((?:binding\.)?harness === "copilot" && !sshBound && !hubAuthority\)[\s\S]*?if \(spec\)[\s\S]*?return \{\s*ok: false,\s*status: 409,/,
   "an unsupported local Copilot flow fails explicitly instead of falling through to the known prompt-mangling daemon path",
 );
 assert.match(
@@ -211,7 +223,7 @@ for (const [socketPath, platform, expected] of [
 }
 assert.match(
   source,
-  /shouldRequestResearchSessionLaunchPolicy\(\{[\s\S]*trustedLocalResearch: options\.trustedLocalResearch === true,[\s\S]*harness: binding\.harness,[\s\S]*pinnedResearchDaemonTarget = localDaemonTarget\(\);[\s\S]*isOwnerLocalResearchDaemonTarget\(pinnedResearchDaemonTarget\)[\s\S]*OWNER_LOCAL_RESEARCH_DAEMON_REQUIRED_DIAGNOSTIC[\s\S]*callDaemonTarget<Record<string, unknown>>\(\s*pinnedResearchDaemonTarget,\s*daemonHealthRequest\(\),[\s\S]*supportsSessionLaunchPolicy\(health\.data\)[\s\S]*SESSION_LAUNCH_POLICY_REQUIRED_DIAGNOSTIC/,
+  /shouldRequestResearchSessionLaunchPolicy\(\{[\s\S]*trustedLocalResearch: options\.trustedLocalResearch === true,[\s\S]*harness(?:: binding\.harness)?,[\s\S]*pinnedResearchDaemonTarget = localDaemonTarget\(\);[\s\S]*isOwnerLocalResearchDaemonTarget\(pinnedResearchDaemonTarget\)[\s\S]*OWNER_LOCAL_RESEARCH_DAEMON_REQUIRED_DIAGNOSTIC[\s\S]*callDaemonTarget<Record<string, unknown>>\(\s*pinnedResearchDaemonTarget,\s*daemonHealthRequest\(\),[\s\S]*supportsSessionLaunchPolicy\(health\.data\)[\s\S]*SESSION_LAUNCH_POLICY_REQUIRED_DIAGNOSTIC/,
   "only trusted local Research probes one pinned local daemon target and old daemons fail closed",
 );
 assert.equal(
@@ -327,7 +339,7 @@ try {
 }
 assert.match(
   researchRunner,
-  /startFlowSession\(flow, \{\s*projectRoot: options\.projectRoot,\s*addDirs: options\.addDirs,\s*trustedLocalResearch: true,\s*offlinePolicy: options\.offlinePolicy,\s*publishSessionOwner: options\.publishSessionOwner,\s*\}\)/,
+  /startFlowSession\(flow, \{\s*projectRoot: options\.projectRoot,\s*addDirs: options\.addDirs,\s*trustedLocalResearch: true,\s*offlinePolicy: options\.offlinePolicy,[\s\S]*?publishSessionOwner: options\.publishSessionOwner,\s*\}\)/,
   "only the production Research mission adapter requests trusted launch policy and rejects offline replay",
 );
 assert.match(

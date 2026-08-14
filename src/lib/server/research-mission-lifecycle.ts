@@ -8,6 +8,7 @@ import type {
 } from "./research-session-authority.ts";
 import {
   researchArtifactKindForMode,
+  RESEARCH_RUNTIME_DEFAULT_HARNESS,
   STANDARD_RESEARCH_ARTIFACTS,
 } from "../research-missions.ts";
 import type { FlowRunRecord } from "../flows.ts";
@@ -60,6 +61,12 @@ export function createMissionRecord(
     ...(input.projectRoot?.trim() ? { projectRoot: input.projectRoot.trim() } : {}),
     constraints: (input.constraints ?? []).map((item) => item.trim()).filter(Boolean),
     bounds: { ...input.bounds },
+    // Resolve the runtime ONCE, at creation. Reading it per iteration would let
+    // a mission change harness mid-flight if the familiar's binding or the
+    // default moved, so a resumed iteration could run somewhere its earlier
+    // ones never did.
+    harness: input.harness ?? RESEARCH_RUNTIME_DEFAULT_HARNESS,
+    ...(input.model ? { model: input.model } : {}),
     status: "planning",
     createdAt: timestamp,
     updatedAt: timestamp,

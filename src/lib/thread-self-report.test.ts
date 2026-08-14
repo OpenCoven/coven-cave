@@ -174,6 +174,16 @@ describe("buildThreadReflectPrompt", () => {
     );
   });
 
+  it("requires concrete delivery evidence instead of inferring completion from narration", () => {
+    const prompt = buildThreadReflectPrompt({
+      sessionId: "sess-delivery",
+      transcript: "assistant: I am about to push the branch and schedule the reminder.",
+    });
+    assert.match(prompt, /Do NOT infer completion from plans, narration, or intent/i);
+    assert.match(prompt, /remote ref, artifact path, receipt, message id, or equivalent/i);
+    assert.match(prompt, /incomplete or unverified/i);
+  });
+
   it("treats rendered attachment metadata as delivery proof instead of trusting prose", () => {
     const prompt = buildThreadReflectPrompt({
       sessionId: "sess-image",
@@ -197,6 +207,8 @@ describe("buildThreadReflectPrompt", () => {
     assert.ok(/root cause/i.test(prompt), "asks for a root-cause diagnosis");
     assert.ok(/apply the concrete fix/i.test(prompt), "instructs the thread to actually apply the fix");
     assert.ok(/verify the fix/i.test(prompt), "requires verification, not just discussion");
+    assert.match(prompt, /classify every requested deliverable/i);
+    assert.match(prompt, /verified with exact evidence, incomplete, or blocked/i);
     assert.match(prompt, /^Resolve this /, "opens as a resolution directive");
     // every review kind maps to a label (no "undefined" leaking into the prompt)
     for (const kind of ["blocker", "skill-clarity", "capability", "context-pressure", "low-score"] as const) {

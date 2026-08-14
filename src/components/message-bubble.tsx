@@ -422,9 +422,17 @@ export function SyntaxBlock({ text, lang, className, highlightLine }: SyntaxBloc
 // Public: MarkdownBlock — renders full markdown (prose + code) via @create-markdown/preview
 // ---------------------------------------------------------------------------
 
-export function MarkdownBlock({ text, className }: { text: string; className?: string }) {
+export function MarkdownBlock({
+  text,
+  className,
+  onOpenUrl,
+}: {
+  text: string;
+  className?: string;
+  onOpenUrl?: (url: string) => void;
+}) {
   const [html, setHtml] = useState<string | null>(null);
-  const containerRef = useWireCopyButtons(html);
+  const containerRef = useWireCopyButtons(html, onOpenUrl);
 
   useEffect(() => {
     if (!text) return;

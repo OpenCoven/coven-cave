@@ -3,13 +3,16 @@ import test from "node:test";
 
 import { classifyCiPaths } from "./ci-paths.mjs";
 
-test("documentation-only changes run only the baseline CI contract", () => {
+test("documentation changes run the docs contract and nothing heavier", () => {
   assert.deepEqual(classifyCiPaths(["docs/ci.md", "README.md"]), {
     frontend: false,
     rust: false,
     e2e: false,
     ios: false,
+    docs: true,
   });
+  // A root markdown file is not under docs/, so it stays fully baseline.
+  assert.equal(classifyCiPaths(["README.md"]).docs, false);
 });
 
 test("workflow and script changes run frontend validation", () => {
@@ -18,6 +21,7 @@ test("workflow and script changes run frontend validation", () => {
     rust: false,
     e2e: false,
     ios: true,
+    docs: false,
   });
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).frontend, true);
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).ios, false);
@@ -29,6 +33,7 @@ test("Rust-only changes avoid frontend and E2E work", () => {
     rust: true,
     e2e: false,
     ios: false,
+    docs: false,
   });
 });
 
@@ -38,6 +43,7 @@ test("user-facing frontend changes include E2E", () => {
     rust: false,
     e2e: true,
     ios: false,
+    docs: false,
   });
 });
 
@@ -47,6 +53,7 @@ test("shared dependency changes exercise every relevant web gate", () => {
     rust: true,
     e2e: true,
     ios: true,
+    docs: false,
   });
 });
 
@@ -56,6 +63,7 @@ test("root runtime hooks receive frontend and end-to-end validation", () => {
     rust: false,
     e2e: true,
     ios: false,
+    docs: false,
   });
 });
 
@@ -65,6 +73,7 @@ test("iOS sources and generators request the macOS build", () => {
     rust: false,
     e2e: false,
     ios: true,
+    docs: false,
   });
   for (const path of [
     "scripts/ios-xcodegen.sh",

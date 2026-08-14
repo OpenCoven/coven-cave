@@ -186,6 +186,9 @@ export type ResearchMission = {
   projectRoot?: string;
   constraints: string[];
   bounds: ResearchBounds;
+  /** Resolved at creation so a mission's runtime cannot drift mid-flight. */
+  harness?: string;
+  model?: string;
   status: ResearchMissionStatus;
   createdAt: string;
   updatedAt: string;
@@ -200,6 +203,134 @@ export type ResearchMission = {
   lastError?: string;
 };
 
+const DIAGNOSTIC_REFERENCE_MAX_LENGTH = 256;
+const DIAGNOSTIC_REFERENCE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function diagnosticReference(value: string | undefined) {
+  if (value === undefined) return { value: null, redacted: false } as const;
+  // Run references are useful support correlators, but the persisted schema
+  // does not constrain them. Do not let a malformed runtime value turn the
+  // clipboard into a path or URL disclosure channel.
+  if (
+    value.length > DIAGNOSTIC_REFERENCE_MAX_LENGTH
+    // These fields are persisted as unrestricted strings. A permissive slug
+    // check still accepts a hyphenated research brief, so retain only the UUID
+    // references minted by the flow/session stores; redact legacy or malformed
+    // values rather than turning the support record into a content channel.
+    || !DIAGNOSTIC_REFERENCE_UUID_RE.test(value)
+  ) {
+    return { value: null, redacted: true } as const;
+  }
+  return { value, redacted: false } as const;
+}
+
+/**
+ * A deliberately bounded, shareable support record. It is derived entirely
+ * from persisted mission state: it never claims to be a daemon log, and it
+ * omits local paths, source URLs, the research brief, and other content that
+ * would make a clipboard handoff unexpectedly disclose workspace data.
+ */
+export function researchDiagnosticTrace(mission: ResearchMission) {
+  const latestIteration = mission.iterations.at(-1) ?? null;
+  const sourceCounts = researchSourceStatusCounts(mission.sources);
+  const steps = latestIteration?.steps ?? [];
+  // Iteration fields are persisted free text, so never put their contents in a
+  // clipboard report. Keep a small, ordered status trace instead: it is enough
+  // to locate the failed phase without turning support copy into a channel for
+  // a prompt, source, filesystem path, or daemon output.
+  const capturedPhases = steps.slice(0, 50).map((step) => step.status);
+  const artifactStates = { working: 0, published: 0, rejected: 0 };
+  const artifactKinds = Object.fromEntries(
+    RESEARCH_ARTIFACT_KINDS.map((kind) => [kind, 0]),
+  ) as Record<ResearchArtifactKind, number>;
+  for (const artifact of mission.artifacts) {
+    artifactStates[artifact.state] += 1;
+    artifactKinds[artifact.kind] += 1;
+  }
+  return {
+    schema: "coven-cave.research-diagnostic.v1",
+    // The record is a snapshot of persisted state, not a live daemon event.
+    // Keeping this deterministic also prevents a server/client hydration drift
+    // when the diagnostics dialog is rendered in a Client Component.
+    generatedAt: mission.updatedAt,
+    mission: {
+      id: mission.id,
+      mode: mission.mode,
+      status: mission.status,
+      createdAt: mission.createdAt,
+      startedAt: mission.startedAt ?? null,
+      updatedAt: mission.updatedAt,
+      finishedAt: mission.finishedAt ?? null,
+      hasProjectRoot: Boolean(mission.projectRoot),
+    },
+    bounds: mission.bounds,
+    outcome: {
+      hasError: Boolean(mission.lastError),
+      decision: latestIteration?.decision ?? null,
+    },
+    latestIteration: latestIteration ? {
+      number: latestIteration.number,
+      status: latestIteration.status,
+      flowRun: diagnosticReference(latestIteration.flowRunId),
+      session: diagnosticReference(latestIteration.sessionId),
+      automationRun: diagnosticReference(latestIteration.automationRunId),
+      startedAt: latestIteration.startedAt ?? null,
+      finishedAt: latestIteration.finishedAt ?? null,
+      costUsd: latestIteration.costUsd ?? null,
+      phases: {
+        recorded: steps.length,
+        captured: capturedPhases.length,
+        truncated: steps.length > capturedPhases.length,
+        statuses: capturedPhases,
+      },
+    } : null,
+    evidence: {
+      sources: {
+        recorded: mission.sources.length,
+        byStatus: sourceCounts,
+      },
+      artifacts: {
+        recorded: mission.artifacts.length,
+        byState: artifactStates,
+        byKind: artifactKinds,
+      },
+    },
+    availability: {
+      daemonTrace: "not-recorded",
+      note: "This report contains persisted research-mission state only; no daemon trace was recorded for this run.",
+    },
+  } as const;
+}
+
+/**
+ * Runtime the mission's iterations execute on, chosen per mission.
+ *
+ * Before this existed, a mission silently inherited the familiar's Coven
+ * binding, so a familiar bound to `codex` could not run Research at all on a
+ * daemon lacking the `sessionLaunchPolicy` capability — the launch failed with
+ * "This Coven daemon cannot safely run unattended Research with workspace
+ * writes" and there was no way to pick a runtime that works.
+ */
+export const RESEARCH_RUNTIME_DEFAULT_HARNESS = "copilot";
+export const RESEARCH_MODEL_MAX_LENGTH = 200;
+/**
+ * Harness ids accepted for a mission, mirroring COMPATIBILITY_ADAPTERS.
+ *
+ * Duplicated as a literal rather than imported because this module is the
+ * shared client/server contract and must stay free of adapter-registry
+ * imports; research-missions.test.ts pins the two lists together so a new
+ * adapter cannot drift out of this allowlist unnoticed.
+ */
+export const RESEARCH_HARNESS_IDS = [
+  "codex",
+  "claude",
+  "copilot",
+  "hermes",
+  "grok",
+  "openclaw",
+  "opencode",
+] as const;
+
 export type CreateResearchMissionInput = {
   familiarId: string;
   title?: string;
@@ -211,6 +342,14 @@ export type CreateResearchMissionInput = {
   projectRoot?: string;
   constraints?: string[];
   bounds: ResearchBounds;
+  /**
+   * Harness id (see COMPATIBILITY_ADAPTERS). Omitted means
+   * RESEARCH_RUNTIME_DEFAULT_HARNESS — deliberately copilot, which is the
+   * runtime Cave can launch directly without a daemon capability.
+   */
+  harness?: string;
+  /** Harness-specific model id, passed through verbatim when supported. */
+  model?: string;
 };
 
 export type ResearchMissionActionInput =
@@ -513,13 +652,29 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
   const finishedAt = optionalTimestamp(value, "finishedAt");
   const automationId = optionalString(value, "automationId");
   const lastError = optionalString(value, "lastError");
+  // The mission's runtime must survive a read/write round trip. This parser
+  // rebuilds from an explicit field list, so a field it does not name is
+  // silently dropped — which is what happened to `harness`: it was written at
+  // creation, then erased the first time the mission was re-read and saved.
+  const harness = optionalString(value, "harness");
+  const model = optionalString(value, "model");
   if (direction === null
     || audience === null
     || projectRoot === null
     || startedAt === null
     || finishedAt === null
     || automationId === null
-    || lastError === null) {
+    || lastError === null
+    || harness === null
+    || model === null) {
+    return null;
+  }
+  // An unrecognised harness on disk is refused rather than coerced: the record
+  // would otherwise claim a runtime the launcher cannot honour.
+  if (harness !== undefined && !(RESEARCH_HARNESS_IDS as readonly string[]).includes(harness)) {
+    return null;
+  }
+  if (model !== undefined && !validResearchPromptText(model, RESEARCH_MODEL_MAX_LENGTH)) {
     return null;
   }
   if ((direction !== undefined && !validResearchPromptText(direction, RESEARCH_DIRECTION_MAX_LENGTH))
@@ -553,6 +708,8 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     ...(projectRoot !== undefined ? { projectRoot } : {}),
     constraints: value.constraints as string[],
     bounds: bounds.value,
+    ...(harness !== undefined ? { harness } : {}),
+    ...(model !== undefined ? { model } : {}),
     status: value.status as ResearchMissionStatus,
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
@@ -685,6 +842,46 @@ export function validateCreateResearchMissionInput(
   if (projectRoot === null) {
     return { ok: false, error: `projectRoot must be valid Unicode text without NUL and at most ${RESEARCH_PROJECT_ROOT_MAX_LENGTH} characters` };
   }
+  // An unknown harness is REFUSED rather than quietly replaced with the
+  // default: a mission that silently ran on a different runtime than the caller
+  // asked for is the lock-in this field exists to remove, wearing a friendlier
+  // face. Omitting the field is the only way to accept the default.
+  const rawHarness = value.harness;
+  let harness: string | undefined;
+  if (rawHarness !== undefined && rawHarness !== null && rawHarness !== "") {
+    if (
+      typeof rawHarness !== "string"
+      || !(RESEARCH_HARNESS_IDS as readonly string[]).includes(rawHarness)
+    ) {
+      return {
+        ok: false,
+        error: `harness must be one of: ${RESEARCH_HARNESS_IDS.join(", ")}`,
+      };
+    }
+    harness = rawHarness;
+  }
+  const rawModel = value.model;
+  let model: string | undefined;
+  if (rawModel !== undefined && rawModel !== null && rawModel !== "") {
+    if (
+      typeof rawModel !== "string"
+      || rawModel.includes("\0")
+      || hasUnpairedUtf16Surrogate(rawModel)
+      || rawModel.trim().length > RESEARCH_MODEL_MAX_LENGTH
+    ) {
+      return {
+        ok: false,
+        error: `model must be valid Unicode text without NUL and at most ${RESEARCH_MODEL_MAX_LENGTH} characters`,
+      };
+    }
+    // A flag-shaped model would be read as an option by the harness CLI rather
+    // than as its value, so refuse it at the boundary instead of building argv
+    // that means something else.
+    if (rawModel.trim().startsWith("-")) {
+      return { ok: false, error: "model must not begin with '-'" };
+    }
+    model = rawModel.trim();
+  }
   return {
     ok: true,
     value: {
@@ -698,6 +895,8 @@ export function validateCreateResearchMissionInput(
       ...(projectRoot ? { projectRoot } : {}),
       constraints,
       bounds: bounds.value,
+      ...(harness ? { harness } : {}),
+      ...(model ? { model } : {}),
     },
   };
 }

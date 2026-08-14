@@ -721,10 +721,15 @@
   gap: 10px;
 }
 
-/* Sidebar cluster label for Role Surface rooms */
+/* Sidebar cluster label for Role Surface rooms. The explicit line box is load
+   bearing: the collapsed rail replaces the word with a hairline of the same
+   height (styles/sidebar-minimal/activity-rail.css), so the room rows below it
+   keep the same vertical position in both states (issue 4351). */
 .sidebar-rooms-label {
-  margin: 14px 10px 3px;
+  margin: var(--space-3) var(--rail-lead) var(--space-1);
+  min-height: 12px;
   font-size: 9.5px;
+  line-height: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;

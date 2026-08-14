@@ -164,8 +164,8 @@ assert.match(
 );
 assert.match(
   source,
-  /onSessionsDeleted\(\[sessionId\]\);\s*\n\s*onBack\?\.\(\);/,
-  "Successful delete reaches the shared boundary and navigates back to the list",
+  /onSessionsDeleted\(\[sessionId\]\);\s*\n\s*onSessionRemoved\?\.\(sessionId, "deleted"\);\s*\n\s*onBack\?\.\(sessionId\);/,
+  "Successful delete reaches the shared boundary, reports the narrow removal signal, and navigates back to the list",
 );
 
 // The delete is a two-step guard: the trash button arms a confirm popover
@@ -467,8 +467,8 @@ assert.match(
 );
 assert.match(
   source,
-  /onSessionsChanged\?\.\(\);\s*\/\/ Leaving mirrors delete only for archive; unarchive keeps you in place\.\s*if \(archived\) onBack\?\.\(\);/,
-  "archiving refreshes the rails and leaves the chat; unarchiving stays put",
+  /onSessionsChanged\?\.\(\);\s*\/\/ Leaving mirrors delete only for archive; unarchive keeps you in place\.\s*if \(archived\) \{\s*\n\s*onSessionRemoved\?\.\(sessionId, "archived"\);\s*\n\s*onBack\?\.\(sessionId\);\s*\n\s*\}/,
+  "archiving refreshes the rails, reports the narrow removal signal, and leaves the chat; unarchiving stays put",
 );
 assert.match(
   source,

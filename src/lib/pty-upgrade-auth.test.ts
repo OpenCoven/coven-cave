@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 const serverSource = readFileSync(new URL("../../server.ts", import.meta.url), "utf8");
 const helperSource = serverSource.match(
-  /function shouldRejectUnauthenticatedPtyUpgrade\([\s\S]*?return sidecarTokenConfigured;\n}/,
+  /function shouldRejectUnauthenticatedPtyUpgrade\([\s\S]*?return sidecarTokenConfigured \|\| accessTokenConfigured;\n}/,
 )?.[0];
 
 assert.ok(helperSource, "server defines one testable PTY upgrade authentication decision");
@@ -13,17 +13,12 @@ const shouldRejectUnauthenticatedPtyUpgrade = new Function(
   `${helperSource}; return shouldRejectUnauthenticatedPtyUpgrade;`,
 )();
 
-// The access token was removed from this decision (cave-f4emr), so the sidecar
-// credential is the only thing left that can close the credential-less path.
-// `directLoopback` is deliberately still passed in every case below even though
-// the helper ignores it: cave-ruw4z removed the direct-loopback escape hatch —
-// TCP loopback proves the machine, not the OS user — and these cases are what
-// would catch it being reintroduced.
 for (const [name, input, expected] of [
   [
     "packaged sidecar rejects credential-less loopback clients",
     {
       sidecarTokenConfigured: true,
+      accessTokenConfigured: false,
       tokenAuthenticated: false,
       directLoopback: true,
     },
@@ -33,6 +28,7 @@ for (const [name, input, expected] of [
     "packaged sidecar accepts its authenticated webview",
     {
       sidecarTokenConfigured: true,
+      accessTokenConfigured: false,
       tokenAuthenticated: true,
       directLoopback: true,
     },
@@ -42,33 +38,37 @@ for (const [name, input, expected] of [
     "plain local development remains credential-less",
     {
       sidecarTokenConfigured: false,
+      accessTokenConfigured: false,
       tokenAuthenticated: false,
       directLoopback: true,
     },
     false,
   ],
   [
-    "a server with no sidecar token no longer rejects anyone: the access token that used to close this path is gone",
+    "access-token-only servers reject credential-less loopback clients",
     {
       sidecarTokenConfigured: false,
+      accessTokenConfigured: true,
       tokenAuthenticated: false,
-      directLoopback: false,
+      directLoopback: true,
     },
-    false,
+    true,
   ],
   [
-    "packaged sidecar rejects credential-less forwarded clients",
+    "access-token-only forwarded clients still need authentication",
     {
-      sidecarTokenConfigured: true,
+      sidecarTokenConfigured: false,
+      accessTokenConfigured: true,
       tokenAuthenticated: false,
       directLoopback: false,
     },
     true,
   ],
   [
-    "token-authenticated forwarded clients are accepted",
+    "allowlisted or token-authenticated forwarded clients are accepted",
     {
       sidecarTokenConfigured: true,
+      accessTokenConfigured: true,
       tokenAuthenticated: true,
       directLoopback: false,
     },
@@ -77,17 +77,5 @@ for (const [name, input, expected] of [
 ] as const) {
   assert.equal(shouldRejectUnauthenticatedPtyUpgrade(input), expected, name);
 }
-
-// An access-token argument must never come back and start closing this path
-// again — that credential no longer exists anywhere in the server.
-assert.equal(
-  shouldRejectUnauthenticatedPtyUpgrade({
-    sidecarTokenConfigured: false,
-    accessTokenConfigured: true,
-    tokenAuthenticated: false,
-  }),
-  false,
-  "a stray accessTokenConfigured argument has no effect on the decision",
-);
 
 console.log("pty-upgrade-auth.test.ts: ok");

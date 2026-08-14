@@ -17,10 +17,14 @@ import {
   RESEARCH_DELIVERABLE_MAX_LENGTH,
   RESEARCH_INTENT_MIN_LENGTH,
   RESEARCH_PROJECT_ROOT_MAX_LENGTH,
+  RESEARCH_HARNESS_IDS,
+  RESEARCH_MODEL_MAX_LENGTH,
+  RESEARCH_RUNTIME_DEFAULT_HARNESS,
   RESEARCH_TITLE_MAX_LENGTH,
   researchArtifactKindForMode,
   researchBoundReadings,
   researchContinueLabel,
+  researchDiagnosticTrace,
   researchIntentAddsContext,
   researchPhaseMeta,
   researchPhaseStatuses,
@@ -96,6 +100,98 @@ test("mission parser strips private process-owner provenance from public state",
   }]);
   assert.equal("sessionAuthority" in (parsed?.iterations[0] ?? {}), false);
   assert.equal("sessionOwnerKind" in (parsed?.iterations[0] ?? {}), false);
+});
+
+test("diagnostic trace keeps the clipboard record bounded to non-content state", () => {
+  const mission = validMission();
+  mission.intent = "Private research brief: https://example.test/secret";
+  mission.projectRoot = "/private/workspace";
+  mission.lastError = "Failed reading /private/workspace/source.md";
+  mission.iterations = [{
+    number: 1,
+    status: "failed",
+    flowRunId: "file:C:private-workspace-run-1",
+    sessionId: "private-research-brief",
+    automationRunId: "private research brief",
+    summary: "private source https://example.test/secret",
+    decisionReason: "private brief detail",
+    steps: Array.from({ length: 51 }, () => ({
+      id: "private-step-id",
+      type: "private phase name",
+      status: "failed" as const,
+      detail: "failed at /private/workspace/source.md",
+    })),
+  }];
+  mission.artifacts = [{
+    key: "private-key",
+    kind: "brief",
+    title: "Private artifact",
+    relativePath: "/private/workspace/artifact.md",
+    iteration: 1,
+    state: "rejected",
+    rejectionReason: "private source https://example.test/secret",
+    updatedAt: mission.updatedAt,
+  }];
+  mission.sources = [{
+    id: "source-1",
+    title: "Private source",
+    url: "https://example.test/secret",
+    localPath: "/private/workspace/source.md",
+    sourceType: "web",
+    status: "rejected",
+  }];
+
+  const trace = researchDiagnosticTrace(mission);
+  const json = JSON.stringify(trace);
+
+  assert.equal(trace.outcome.hasError, true);
+  assert.deepEqual(trace.latestIteration?.flowRun, { value: null, redacted: true });
+  assert.deepEqual(trace.latestIteration?.session, { value: null, redacted: true });
+  assert.deepEqual(trace.latestIteration?.automationRun, { value: null, redacted: true });
+  assert.equal(trace.latestIteration?.phases.recorded, 51);
+  assert.equal(trace.latestIteration?.phases.captured, 50);
+  assert.equal(trace.latestIteration?.phases.truncated, true);
+  assert.equal(trace.latestIteration?.phases.statuses.length, 50);
+  assert.deepEqual(trace.latestIteration?.session, { value: null, redacted: true });
+  assert.deepEqual(trace.evidence.artifacts, {
+    recorded: 1,
+    byState: { working: 0, published: 0, rejected: 1 },
+    byKind: { brief: 1, report: 0, paper: 0, findings: 0, "source-ledger": 0, "research-log": 0, presentation: 0 },
+  });
+  for (const privateValue of [
+    "Private research brief",
+    "private research brief",
+    "private-research-brief",
+    "file:C:private-workspace-run-1",
+    "https://example.test/secret",
+    "/private/workspace",
+    "private phase name",
+    "private-step-id",
+    "private-key",
+  ]) assert.doesNotMatch(json, new RegExp(privateValue.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("diagnostic trace retains UUID run references for support correlation", () => {
+  const mission = validMission();
+  mission.iterations = [{
+    number: 1,
+    status: "failed",
+    flowRunId: "0f8fad5b-d9cb-469f-a165-70867728950e",
+    sessionId: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    automationRunId: "550e8400-e29b-41d4-a716-446655440000",
+  }];
+
+  assert.deepEqual(researchDiagnosticTrace(mission).latestIteration, {
+    number: 1,
+    status: "failed",
+    flowRun: { value: "0f8fad5b-d9cb-469f-a165-70867728950e", redacted: false },
+    session: { value: "7c9e6679-7425-40de-944b-e07fc1f90ae7", redacted: false },
+    automationRun: { value: "550e8400-e29b-41d4-a716-446655440000", redacted: false },
+    startedAt: null,
+    finishedAt: null,
+    costUsd: null,
+    phases: { recorded: 0, captured: 0, truncated: false, statuses: [] },
+  });
 });
 
 test("Auto-routing is explainable and ambiguous work never loops", () => {
@@ -1100,3 +1196,65 @@ test("a zero source target reports the count alone, never \"N/0 src\"", () => {
   }];
   assert.equal(researchPhaseMeta(mission, PHASE_IDS)[1], "1 src");
 });
+
+// ─── mission runtime selection (cave-hhwc5) ──────────────────────────────────
+// A mission used to inherit the familiar's Coven binding with no override, so a
+// codex-bound familiar could not run Research at all against a daemon lacking
+// `sessionLaunchPolicy`. The runtime is now chosen per mission and defaults to
+// copilot, the one Cave launches directly.
+{
+  const { COMPATIBILITY_ADAPTERS } = await import("./harness-adapters.ts");
+  // The allowlist is duplicated in research-missions.ts to keep this shared
+  // client/server contract free of adapter-registry imports. Pin the two
+  // together so a new adapter cannot drift out of it unnoticed.
+  assert.deepEqual(
+    [...RESEARCH_HARNESS_IDS].sort(),
+    COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id).sort(),
+    "every compatibility adapter must be selectable as a research runtime",
+  );
+  assert.ok(
+    (RESEARCH_HARNESS_IDS as readonly string[]).includes(RESEARCH_RUNTIME_DEFAULT_HARNESS),
+    "the default runtime must itself be an accepted harness",
+  );
+
+  const base = {
+    familiarId: "sage",
+    intent: "Runtime selection contract probe with enough characters.",
+    mode: "brief" as const,
+    modeSource: "user" as const,
+    deliverable: "One sentence.",
+    bounds: {
+      wallClockMinutes: 10,
+      maxIterations: 2,
+      sourceTarget: 3,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: false,
+    },
+  };
+
+  const omitted = validateCreateResearchMissionInput({ ...base });
+  assert.equal(omitted.ok, true, "omitting the runtime is valid");
+  assert.equal(omitted.value.harness, undefined, "validation does not invent a harness");
+
+  const chosen = validateCreateResearchMissionInput({ ...base, harness: "codex", model: "gpt-5" });
+  assert.equal(chosen.ok, true);
+  assert.equal(chosen.value.harness, "codex");
+  assert.equal(chosen.value.model, "gpt-5");
+
+  // An unknown harness is REFUSED, never silently replaced with the default —
+  // running somewhere the caller did not ask for is the lock-in this removes.
+  const unknown = validateCreateResearchMissionInput({ ...base, harness: "definitely-not-real" });
+  assert.equal(unknown.ok, false);
+  assert.match(unknown.error, /harness must be one of/);
+
+  // A flag-shaped model would be parsed as an option rather than its value.
+  const flagModel = validateCreateResearchMissionInput({ ...base, model: "--sandbox" });
+  assert.equal(flagModel.ok, false);
+  assert.match(flagModel.error, /must not begin with '-'/);
+
+  const longModel = validateCreateResearchMissionInput({
+    ...base,
+    model: "m".repeat(RESEARCH_MODEL_MAX_LENGTH + 1),
+  });
+  assert.equal(longModel.ok, false);
+}

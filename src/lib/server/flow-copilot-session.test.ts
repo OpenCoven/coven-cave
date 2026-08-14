@@ -776,6 +776,13 @@ process.on("SIGTERM", () => {
 });
 setInterval(() => appendFileSync(marker, "parent\\n"), 10);
 `);
+const DIRECT_TERM_FIXTURE = join(TMP, "fake-copilot-direct-term.js");
+writeFileSync(DIRECT_TERM_FIXTURE, `
+const { appendFileSync } = require("node:fs");
+const marker = process.argv[2];
+process.on("SIGTERM", () => process.exit(0));
+setInterval(() => appendFileSync(marker, "direct\\n"), 10);
+`);
 
 async function startTreeFixture(runRoot, marker, runtime = {}, fixture = TREE_FIXTURE) {
   return startConfirmed({
@@ -1159,4 +1166,127 @@ test("app shutdown seals admission, proves trees before persistence, and retains
   await failed.done;
   assert.equal(failedAttempts, 2, "a later explicit cancel receives a fresh attempt");
   assert.equal(isCopilotFlowRunActive(failed.sessionId), false);
+});
+
+// ─── degraded direct-spawn fallback (cave-hhwc5) ─────────────────────────────
+// #4524 routed every launch through Coven's native process supervisor, but no
+// published @opencoven/cli ships it — `coven --print-native-binary-path` is an
+// unrecognized flag as of 0.3.1, the newest release — so every research mission
+// failed at its first iteration. The fallback restores the pre-#4524 transport
+// when, and only when, the supervisor is genuinely absent.
+const { CovenProcessSupervisorUnavailableError } = await import("./coven-process-supervisor.ts");
+
+// The shutdown tests above seal admission through a process-global flag that
+// nothing resets. It is set while those tests RUN, so clearing it at module
+// scope is too early — each test below clears it in its own body.
+const admitStarts = () => { globalThis.__covenCaveCopilotFlowShutdownStarted = false; };
+
+test("an absent native supervisor falls back to spawning Copilot directly", async () => {
+  admitStarts();
+  let spawned = null;
+  const started = await startCopilotFlowRun({
+    spec: SPEC,
+    prompt: "hello",
+    projectRoot: TMP,
+    familiarId: null,
+    spawnCommand: FAKE_LAUNCH,
+  }, {
+    resolveSupervisorCommand: async () => {
+      throw new CovenProcessSupervisorUnavailableError();
+    },
+    spawnImpl: (command, args, options) => {
+      spawned = { command, args };
+      return nodeSpawn(command, args, options);
+    },
+  });
+  started.confirmBookkeeping();
+  await started.done;
+
+  // Copilot itself is spawned, not the supervisor: the fixture path must be in
+  // argv, which it never is on the supervised path (there the prompt and
+  // program travel in the request frame written to the supervisor's stdin).
+  assert.equal(spawned.command, process.execPath);
+  assert.ok(
+    spawned.args.includes(FAKE),
+    "the fallback must spawn the Copilot command directly, not a supervisor",
+  );
+
+  const assistant = readConversation(started.sessionId).turns.find((t) => t.role === "assistant");
+  assert.ok(assistant, "a fallback run still persists its transcript");
+  // The degradation is stated on the run. A mission that silently succeeded
+  // without process-tree ownership would be indistinguishable from a supervised
+  // one, and the difference only shows up when someone cancels.
+  assert.match(assistant.text, /native process supervisor is unavailable/i);
+  assert.match(assistant.text, /may keep running/i);
+});
+
+test("the degraded fallback cancels by terminating the direct Copilot child", async () => {
+  admitStarts();
+  const runRoot = mkdtempSync(join(TMP, "direct-fallback-cancel-"));
+  const marker = join(runRoot, "heartbeat.log");
+  const started = await startCopilotFlowRun({
+    spec: SPEC,
+    prompt: "hello",
+    projectRoot: runRoot,
+    familiarId: null,
+    spawnCommand: { command: process.execPath, fixedArgs: [DIRECT_TERM_FIXTURE, marker] },
+  }, {
+    platform: "win32",
+    resolveSupervisorCommand: async () => {
+      throw new CovenProcessSupervisorUnavailableError();
+    },
+  });
+  started.confirmBookkeeping();
+  await waitUntil(() => existsSync(marker) && statSync(marker).size > 0);
+  assert.equal(await cancelCopilotFlowRun(started.sessionId), "terminated");
+  await started.done;
+  assert.equal(isCopilotFlowRunActive(started.sessionId), false);
+  const stableSize = statSync(marker).size;
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(statSync(marker).size, stableSize, "direct fallback cancellation stops the immediate Copilot child");
+});
+
+test("requireProcessSupervisor refuses the degraded fallback", async () => {
+  admitStarts();
+  await assert.rejects(
+    startCopilotFlowRun({
+      spec: SPEC,
+      prompt: "hello",
+      projectRoot: TMP,
+      familiarId: null,
+      spawnCommand: FAKE_LAUNCH,
+    }, {
+      requireProcessSupervisor: true,
+      resolveSupervisorCommand: async () => {
+        throw new CovenProcessSupervisorUnavailableError();
+      },
+      spawnImpl: () => {
+        throw new Error("must not spawn when supervision is required");
+      },
+    }),
+    /native process supervisor is unavailable/i,
+    "a caller that needs an owned process tree keeps the original hard failure",
+  );
+});
+
+test("a supervisor that exists but fails to resolve is not silently downgraded", async () => {
+  admitStarts();
+  await assert.rejects(
+    startCopilotFlowRun({
+      spec: SPEC,
+      prompt: "hello",
+      projectRoot: TMP,
+      familiarId: null,
+      spawnCommand: FAKE_LAUNCH,
+    }, {
+      resolveSupervisorCommand: async () => {
+        throw new Error("supervisor present but the probe blew up");
+      },
+      spawnImpl: () => {
+        throw new Error("must not spawn on a non-availability failure");
+      },
+    }),
+    /supervisor present but the probe blew up/,
+    "only CovenProcessSupervisorUnavailableError may trigger the fallback",
+  );
 });

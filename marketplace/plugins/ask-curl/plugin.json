@@ -21,6 +21,7 @@
     "shell",
     "network"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/ask-curl",
   "x-coven": {
     "displayName": "Ask cURL",

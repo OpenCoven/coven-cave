@@ -154,7 +154,7 @@ test("home-composer: voice call item gates itself on an in-flight mint and alway
 test("chat-view: direct voice call button works pre-session by creating the conversation first", () => {
   assert.match(
     chatView,
-    /<button[\s\S]*?className="cave-composer-footer-action focus-ring"[\s\S]*?onClick=\{\(\) => void openVoiceCall\(\)\}[\s\S]*?disabled=\{!projectLaunchReady \|\| voiceCallPending \|\| \(busy && !sessionId\)\}[\s\S]*?title="Voice call"[\s\S]*?aria-label="Voice call"[\s\S]*?<Icon name="ph:phone" width="var\(--icon-md\)" aria-hidden \/>[\s\S]*?<\/button>\s*<ComposerActionsMenu/,
+    /<button[\s\S]*?className="cave-composer-footer-action focus-ring"[\s\S]*?onClick=\{\(\) => void openVoiceCall\(\)\}[\s\S]*?disabled=\{!projectLaunchReady \|\| voiceCallPending \|\| \(busy && !sessionId\)\}[\s\S]*?title="Voice call"[\s\S]*?aria-label="Voice call"[\s\S]*?<Icon name="ph:phone" width="var\(--icon-md\)" aria-hidden \/>[\s\S]*?<\/button>\s*<\/div>\s*<ComposerContextMeter/,
   );
   assert.doesNotMatch(chatView, /\{\s*sessionId\s*&&\s*<button[\s\S]{0,280}aria-label="Voice call"/);
   assert.doesNotMatch(chatView, /\{\s*sessionId\s*\?\s*<button[\s\S]{0,280}aria-label="Voice call"/);
@@ -239,10 +239,12 @@ test("chat-view: closing an auto-created call discards exactly the session it wa
   assert.match(startVoiceChat, /method: "DELETE"/);
   // Finding 2: the view is only yanked back to compose when the discarded
   // session is still the active one — if the user already switched away,
-  // the discard happens silently in the background with no view reset.
+  // the discard happens silently in the background with no view reset. The
+  // narrow onSessionRemoved("discarded") signal (cave-rl980 Task 4 review)
+  // fires in that same branch, immediately before onVoiceSessionDiscarded.
   assert.match(
     chatView,
-    /if \(deleted\) \{[\s\S]*?onSessionsChanged\?\.\(\);[\s\S]*?if \(target === sessionId\) onVoiceSessionDiscarded\?\.\(\);/,
+    /if \(deleted\) \{[\s\S]*?onSessionsChanged\?\.\(\);[\s\S]*?if \(target === sessionId\) \{\s*\n\s*onSessionRemoved\?\.\(target, "discarded"\);\s*\n\s*onVoiceSessionDiscarded\?\.\(target\);\s*\n\s*\}/,
   );
   // Finding 4: the call item can't fork a streaming first send by
   // minting a second, unrelated session underneath it (pre-session only —
@@ -256,7 +258,7 @@ test("chat-view: closing an auto-created call discards exactly the session it wa
   // but back to sessionId: null.
   assert.match(
     chatRouter,
-    /onVoiceSessionDiscarded=\{\(\) => \{[\s\S]*?prev\.kind === "chat"[\s\S]*?sessionId: null, projectRoot: prev\.projectRoot, familiarId: prev\.familiarId/,
+    /onVoiceSessionDiscarded=\{\(removedSessionId\) => \{[\s\S]*?prev\.kind === "chat"[\s\S]*?sessionId: null, projectRoot: prev\.projectRoot, familiarId: prev\.familiarId/,
   );
 });
 

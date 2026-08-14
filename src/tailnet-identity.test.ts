@@ -4,9 +4,9 @@
 // Tailscale identity instead of a shared pairing secret. Two halves are tested
 // here:
 //
-//   1. Behavior — verifiedTailnetNode, exercised with concrete inputs so a
-//      refactor that keeps the source text but breaks the stamp is still
-//      caught.
+//   1. Behavior — verifiedTailnetNode / shouldRequireMobileAccessCredential,
+//      exercised with concrete inputs so a refactor that keeps the source text
+//      but breaks the gate is still caught.
 //   2. Source pinning of server.ts, which is the ONLY component that can mint
 //      the stamp (it alone sees the raw socket) and which cannot import from
 //      src/ — esbuild emits server.mjs with --bundle=false — so the invariants
@@ -16,6 +16,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   verifiedTailnetNode,
+  shouldRequireMobileAccessCredential,
   TAILNET_PEER_HEADER,
 } from "./proxy-helpers.ts";
 
@@ -74,6 +75,31 @@ assert.equal(
   verifiedTailnetNode(`${SECRET}:node:with:colons`, SECRET),
   "node:with:colons",
   "only the first colon separates secret from node id",
+);
+
+// ─── shouldRequireMobileAccessCredential ───────────────────────────────────
+// Forwarded addresses are useful only after bearer authentication; a direct
+// loopback process can forge forwarding headers, so identity alone cannot
+// bypass the shared invite token.
+assert.equal(
+  shouldRequireMobileAccessCredential("cave.tailnet.example.ts.net", false, false, true),
+  true,
+  "a tailnet identity still needs a user-bound credential",
+);
+assert.equal(
+  shouldRequireMobileAccessCredential("cave.tailnet.example.ts.net", false, false, false),
+  true,
+  "an unverified tailnet-looking host is still challenged",
+);
+assert.equal(
+  shouldRequireMobileAccessCredential("127.0.0.1:3000", false, true, false),
+  true,
+  "socket-verified loopback is not OS-user identity",
+);
+assert.equal(
+  shouldRequireMobileAccessCredential("127.0.0.1:3000", false, false, false),
+  true,
+  "a loopback Host alone still proves nothing (the header is client-controlled)",
 );
 
 // ─── server.ts source pinning ──────────────────────────────────────────────

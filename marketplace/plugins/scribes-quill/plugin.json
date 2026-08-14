@@ -16,6 +16,7 @@
     "research",
     "workflows"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/scribes-quill",
   "x-coven": {
     "displayName": "Scribe's Quill",

@@ -13,9 +13,25 @@ on:
   pull_request:
     branches: [main]
 
+# A recovery dispatch resolves to the SAME group as the pull_request run it is
+# rescuing — `github.event.pull_request` is null for a dispatch, so the group
+# falls through to `inputs.expected_sha`, which is that exact head. With
+# cancel-in-progress on, the dispatch therefore CANCELS the run it came to
+# replace (cave-f22tp).
+#
+# Observed 2026-08-14 on #4618: head 11aceeb89 collected three cancelled runs
+# and no verdict — a pull_request run killed ~60 minutes in, then two dispatches
+# killed in turn. The cancellations are also self-perpetuating, because
+# ci-recovery's `cancelled_latest_run` wedge test (cave-geaji) reads a
+# cancellation as proof that recovery is needed, so each cooldown fires another
+# dispatch. The required check can never report while that runs.
+#
+# So a dispatch never cancels: with cancel-in-progress false it QUEUES behind
+# the in-flight run for that head and starts only once the group frees. A push
+# still supersedes its predecessor, which is the behaviour this setting is for.
 concurrency:
   group: ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' && github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -31,6 +47,7 @@ jobs:
       rust: ${{ steps.paths.outputs.rust }}
       e2e: ${{ steps.paths.outputs.e2e }}
       ios: ${{ steps.paths.outputs.ios }}
+      docs: ${{ steps.paths.outputs.docs }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -105,6 +122,13 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      # Runs without pnpm install: the test imports only node builtins, so a
+      # documentation-only PR — which skips the frontend step entirely — still
+      # gets the docs index checked. That is the case the ratchet exists for.
+      - name: Validate docs
+        if: needs.paths.outputs.docs == 'true'
+        run: node scripts/docs-index.test.mjs
+
       - name: Install JavaScript dependencies
         if: needs.paths.outputs.frontend == 'true' || needs.paths.outputs.e2e == 'true'
         run: pnpm install --frozen-lockfile
@@ -173,9 +197,10 @@ jobs:
         run: pnpm exec playwright test
 
       - name: Report skipped suites
-        if: needs.paths.outputs.frontend != 'true' || needs.paths.outputs.rust != 'true' || needs.paths.outputs.e2e != 'true' || needs.paths.outputs.ios != 'true'
+        if: needs.paths.outputs.frontend != 'true' || needs.paths.outputs.rust != 'true' || needs.paths.outputs.e2e != 'true' || needs.paths.outputs.ios != 'true' || needs.paths.outputs.docs != 'true'
         run: |
           echo "frontend=${{ needs.paths.outputs.frontend }}"
           echo "rust=${{ needs.paths.outputs.rust }}"
           echo "e2e=${{ needs.paths.outputs.e2e }}"
           echo "ios=${{ needs.paths.outputs.ios }} (${{ needs.ios.result }})"
+          echo "docs=${{ needs.paths.outputs.docs }}"

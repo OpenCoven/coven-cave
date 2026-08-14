@@ -167,12 +167,12 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /<ChatView\s*\n\s*key=\{`chat-compose-\$\{composeInstance\}`\}\s*\n\s*ref=\{viewHandle\}[\s\S]*?activeFamiliarId=\{activeFamiliarId\}/,
+  /<ChatView[\s\S]*?key=\{`chat-compose-\$\{composerDraftKey\}-\$\{composeInstance\}`\}\s*\n\s*ref=\{viewHandle\}[\s\S]*?activeFamiliarId=\{activeFamiliarId\}/,
   "the primary ChatView mount should receive Workspace's active list scope",
 );
 assert.match(
   chatRouter,
-  /<ChatView\s*\n\s*familiar=\{paneFamiliar\}[\s\S]*?activeFamiliarId=\{activeFamiliarId\}/,
+  /key=\{`\$\{composerDraftKey\}:split:\$\{paneId\}`\}[\s\S]*?familiar=\{paneFamiliar\}[\s\S]*?activeFamiliarId=\{activeFamiliarId\}/,
   "split-pane ChatView mounts must receive the same active request scope as the primary pane rather than infer request provenance from their own familiar",
 );
 assert.match(
@@ -504,11 +504,6 @@ assert.match(
   workspaceSidebar,
   /id: "projects",[\s\S]*?label: "Projects",[\s\S]*?icon: "ph:folders-bold",[\s\S]*?controlsId: "chat-sidebar-group-panel"/,
   "ChatSidebar should expose the Projects grouping tab",
-);
-assert.match(
-  workspaceSidebar,
-  /<PopoverLabel>Chat visibility<\/PopoverLabel>/,
-  "Sidebar overflow should retain archive visibility without duplicating grouping",
 );
 assert.match(
   workspaceSidebar,

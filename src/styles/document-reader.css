@@ -5,6 +5,19 @@
     color-mix(in oklch, var(--document-reader-accent) 14%, transparent)
   );
 
+  /* Reader text scale (A−/A+). The component sets this inline from the
+     persisted preference; 1 is the shipped size, so a reader rendered without
+     the control — or before the stored value loads — is unchanged.
+
+     Applied ONLY to reading content (title, lede, headings, prose, tables,
+     code), never to chrome. The contents trigger, TOC links and kicker keep
+     their own sizes: scaling those would move the furniture around while the
+     user is trying to make the *text* bigger, and the rail has a fixed width
+     that oversized links would overflow. */
+  --reader-text-scale: 1;
+  --document-reader-column-width: 62rem;
+  --document-reader-column-gutter: var(--space-8);
+
   display: grid;
   min-height: 0;
   height: 100%;
@@ -15,6 +28,11 @@
 
 .document-reader--rail {
   grid-template-columns: minmax(0, 13rem) minmax(0, 1fr);
+}
+
+.document-reader--compact {
+  --document-reader-column-width: 48rem;
+  --document-reader-column-gutter: var(--space-4);
 }
 
 .document-reader__toc {
@@ -81,14 +99,70 @@
   scroll-behavior: smooth;
 }
 
-.document-reader__compact-nav {
+/* Sticky control row: text size on the left, Contents (when present) on the
+   right. `pointer-events: none` lets the prose scroll under the gap between
+   them; each control re-enables its own hits. */
+.document-reader__toolbar {
   position: sticky;
   top: 0;
   z-index: 2;
   display: flex;
-  justify-content: flex-end;
-  padding: 0 var(--space-4) var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: min(100%, var(--document-reader-column-width));
+  margin: 0 auto;
+  padding: 0 var(--document-reader-column-gutter) var(--space-2);
   pointer-events: none;
+}
+
+.document-reader__compact-nav {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.document-reader__textsize {
+  display: inline-flex;
+  gap: var(--space-1);
+  pointer-events: auto;
+}
+
+/* Deliberately NOT scaled by --reader-text-scale: the control must stay put
+   while the text it resizes grows, or pressing A+ walks the button out from
+   under the pointer. */
+.document-reader__textsize-btn {
+  display: inline-grid;
+  place-items: center;
+  width: var(--space-8);
+  height: var(--space-8);
+  padding: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-family: var(--font-serif);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.document-reader__textsize-btn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.document-reader__textsize-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The two glyphs differ in size, which is the whole affordance — a small A and
+   a large A read as "smaller/larger" without a label in any language. */
+.document-reader__textsize-glyph--small {
+  font-size: var(--text-xs);
+}
+
+.document-reader__textsize-glyph--large {
+  font-size: var(--text-md);
 }
 
 .document-reader__contents-trigger {
@@ -112,14 +186,13 @@
 }
 
 .document-reader__column {
-  width: min(100%, 62rem);
+  width: min(100%, var(--document-reader-column-width));
   margin: 0 auto;
-  padding: 0 var(--space-8);
+  padding: 0 var(--document-reader-column-gutter);
 }
 
 .document-reader--compact .document-reader__column {
-  width: min(100%, 48rem);
-  padding: 0 var(--space-4);
+  width: min(100%, var(--document-reader-column-width));
 }
 
 .document-reader__kicker {
@@ -134,7 +207,7 @@
   margin: 0 0 var(--space-3);
   color: var(--text-primary);
   font-family: var(--font-serif);
-  font-size: var(--text-display);
+  font-size: calc(var(--text-display) * var(--reader-text-scale));
   font-weight: 600;
   line-height: 1.15;
 }
@@ -145,7 +218,7 @@
   border-left: var(--ring-width) solid var(--border-strong);
   color: var(--text-muted);
   font-family: var(--font-serif);
-  font-size: var(--text-lg);
+  font-size: calc(var(--text-lg) * var(--reader-text-scale));
   font-style: italic;
   line-height: 1.5;
 }
@@ -162,7 +235,7 @@
   margin: var(--space-8) 0 var(--space-3);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: var(--text-lg);
+  font-size: calc(var(--text-lg) * var(--reader-text-scale));
   font-weight: 600;
   line-height: 1.3;
   scroll-margin-top: var(--space-5);
@@ -172,7 +245,7 @@
    headings must step down or every section reads as a sibling of the last. */
 h3.document-reader__heading {
   margin-top: var(--space-6);
-  font-size: var(--text-md);
+  font-size: calc(var(--text-md) * var(--reader-text-scale));
 }
 
 h4.document-reader__heading,
@@ -180,7 +253,7 @@ h5.document-reader__heading,
 h6.document-reader__heading {
   margin-top: var(--space-5);
   color: var(--text-secondary);
-  font-size: var(--text-base);
+  font-size: calc(var(--text-base) * var(--reader-text-scale));
 }
 
 .document-reader__section-toggle {
@@ -227,7 +300,7 @@ h6.document-reader__heading {
 .document-reader__column p,
 .document-reader__column li {
   color: var(--text-secondary);
-  font-size: var(--text-md);
+  font-size: calc(var(--text-md) * var(--reader-text-scale));
   line-height: 1.65;
 }
 
@@ -263,7 +336,7 @@ h6.document-reader__heading {
   border-radius: var(--radius-card);
   background: var(--code-surface);
   color: var(--text-primary);
-  font-size: var(--text-sm);
+  font-size: calc(var(--text-sm) * var(--reader-text-scale));
 }
 
 .document-reader__column code {
@@ -274,7 +347,7 @@ h6.document-reader__heading {
   width: 100%;
   margin: 0 0 var(--space-4);
   border-collapse: collapse;
-  font-size: var(--text-base);
+  font-size: calc(var(--text-base) * var(--reader-text-scale));
 }
 
 .document-reader__column th,
@@ -321,8 +394,12 @@ h6.document-reader__heading {
     padding: 0 var(--space-3);
   }
 
+  .document-reader__toolbar {
+    padding-inline: var(--space-3);
+  }
+
   .document-reader__title {
-    font-size: var(--text-xl);
+    font-size: calc(var(--text-xl) * var(--reader-text-scale));
   }
 }
 

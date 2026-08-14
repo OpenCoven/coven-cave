@@ -124,6 +124,7 @@ import { FamiliarInlineCard } from "@/components/familiar-inline-card";
 import { ArtifactComments } from "@/components/artifact-comments";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
 import { ChatArchiveNudge } from "@/components/chat-archive-nudge";
+import type { SessionRemovalReason } from "@/lib/chat-session-removal";
 import {
   isChatArchiveNudgeDismissed,
   markChatArchiveNudgeDismissed,
@@ -310,7 +311,7 @@ import {
 } from "@/lib/thread-self-report";
 import { streamFamiliarText } from "@/lib/familiar-stream";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
-import { EnhanceStrip } from "@/components/composer-enhance";
+import { EnhanceControl, EnhanceStrip } from "@/components/composer-enhance";
 import { AttachmentList, AttachmentThumb, InlineImageAttachments, InlineMediaAttachments, formatAttachmentBytes, isInlineImageAttachment, isInlineMediaAttachment } from "./chat-attachment-cards";
 import { preloadMarkdownPreview } from "@/lib/markdown-preview";
 import {
@@ -424,6 +425,7 @@ type Props = {
   /** Workspace-owned session list; the starting page's "Continue" row reads it
    *  so no extra fetch rides on every new chat. */
   sessions?: SessionRow[];
+  composerDraftKey?: string;
   composeInstance?: number;
   onSessionStarted?: (request: ChatSessionPromotionRequest) => void;
   /** Pre-session voice call: ChatView created a conversation for the call;
@@ -432,11 +434,30 @@ type Props = {
   /** An auto-created call session was discarded (empty, hung up) while the
    *  view was still parked on it — the router returns the view to a fresh
    *  compose state instead of leaving the user composing into a deleted
-   *  session. Not called when the user had already switched away. */
-  onVoiceSessionDiscarded?: () => void;
+   *  session. Not called when the user had already switched away. Passed the
+   *  discarded session's id so the router can re-check it's still the one
+   *  showing before navigating (cave-rl980 Task 4 final review) — the discard
+   *  itself is async, and the user may have switched threads or familiars
+   *  while it was in flight. */
+  onVoiceSessionDiscarded?: (sessionId: string) => void;
   onSessionsChanged?: () => void;
   onSessionsDeleted: (sessionIds: readonly string[]) => void;
-  onBack?: () => void;
+  /** Fires exactly when THIS view's own session is confirmed removed —
+   *  archived, deleted, or a discarded empty voice/pre-session — immediately
+   *  before onBack/onVoiceSessionDiscarded navigates away. Unlike
+   *  onSessionsChanged/onSessionsDeleted (which also fire for unrelated
+   *  refreshes), a consumer can treat this as an unambiguous removal signal
+   *  for the exact session named, with no need to infer it from call order. */
+  onSessionRemoved?: (sessionId: string, reason: SessionRemovalReason) => void;
+  /** Passed the session this back navigation is for — the removal call sites
+   *  below always pass their own (non-null) sessionId; the two "Back to
+   *  sessions" render buttons pass whatever is currently shown. ChatRouter
+   *  only actually navigates when it's still displaying that exact session
+   *  (cave-rl980 Task 4 final review): archiveChat/deleteChat/setChatArchived
+   *  are async, and by the time the request settles the user may have
+   *  already switched to a different thread or familiar, whose view must
+   *  never be clobbered by a now-irrelevant completion. */
+  onBack?: (sessionId: string | null) => void;
   onSlashCommand?: (command: string, args: string) => boolean;
   onOpenOnboarding?: () => void;
   /** Reverse navigation for a chat that's linked to a board task — clicking
@@ -543,9 +564,9 @@ type ComposerResponseSpeed = CommandResponseSpeed;
 // the .cave-composer-input rule (13 lines: 13*24 + 20px padding).
 const COMPOSER_MAX_HEIGHT = 332;
 // Persist the in-progress composer text so a page reload doesn't eat a
-// half-written message. The composer is a single shared input (it isn’t
-// remounted per session), so one key mirrors the in-memory behaviour.
-const COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1";
+// half-written message. Callers can isolate mounted composers while the
+// default retains the original shared slot.
+export const DEFAULT_CHAT_COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1";
 const COMPOSER_DRAFT_WRITE_DELAY_MS = 250;
 // Persisted ↑/↓ prompt-history recall stack for the chat composer.
 const COMPOSER_HISTORY_KEY = "cave:chat-composer-history:v1";
@@ -694,13 +715,47 @@ type ErrorStripTool = { id: string; name: string; input?: string; output?: strin
 type ErrorStripStep = { id: string; label: string; detail?: string; status: "running" | "done" | "notice" | "error" };
 type ErrorStripTurn = { tools?: ErrorStripTool[]; progress?: ErrorStripStep[]; lifecycle?: string };
 
-/** Only display the fixed, server-produced runtime-process diagnostic shape.
- * Progress detail normally can contain project output, so every other value
- * remains withheld in the error strip. */
+/** Only display fixed server output or a strictly validated redacted launch
+ * record. Progress detail normally can contain project output. */
 function safeRuntimeProcessDetail(step: ErrorStripStep): string | null {
-  if (step.id !== "runtime-process" || !step.detail) return null;
-  const match = /^Exit code (\d+); (runtime diagnostic output was withheld to protect local data|the runtime did not emit an error message)\.$/.exec(step.detail);
-  return match ? `Exit code ${match[1]}. ${match[2]}.` : null;
+  if (!step.detail) return null;
+  if (step.id === "runtime-process") {
+    const match = /^Exit code (\d+); (runtime diagnostic output was withheld to protect local data|the runtime did not emit an error message)\.$/.exec(step.detail);
+    return match ? `Exit code ${match[1]}. ${match[2]}.` : null;
+  }
+  if (step.id !== "runtime-launch-diagnostics") return null;
+  try {
+    const value = JSON.parse(step.detail) as {
+      schemaVersion?: unknown; runner?: unknown; privacy?: unknown; failure?: { kind?: unknown; exitCode?: unknown; emittedDiagnostic?: unknown };
+      launcher?: { command?: unknown; availability?: unknown; source?: unknown; pathEntryIndex?: unknown; installKind?: unknown };
+      adapter?: { command?: unknown; availability?: unknown; source?: unknown; pathEntryIndex?: unknown; installKind?: unknown };
+    };
+    const command = (entry: typeof value.launcher): string | null => {
+      if (!entry || !["coven", "codex"].includes(String(entry.command))) return null;
+      if (!["ready", "missing", "unlaunchable", "probe_failed", "unsupported_runtime"].includes(String(entry.availability))) return null;
+      if (!["absolute-command", "PATH", "coven-adapter", "unresolved"].includes(String(entry.source))) return null;
+      if (entry.pathEntryIndex !== undefined && (!Number.isInteger(entry.pathEntryIndex) || Number(entry.pathEntryIndex) < 0 || Number(entry.pathEntryIndex) >= 512)) return null;
+      if (entry.pathEntryIndex !== undefined && entry.source !== "PATH") return null;
+      if (entry.installKind !== undefined && !["managed", "node-package", "system", "user-local", "custom"].includes(String(entry.installKind))) return null;
+      const index = entry.pathEntryIndex === undefined ? "" : `, PATH entry ${entry.pathEntryIndex}`;
+      const install = entry.installKind === undefined ? "" : `, ${entry.installKind}`;
+      return `${entry.command}: ${entry.availability} via ${entry.source}${index}${install}`;
+    };
+    if (
+      value.schemaVersion !== 1 ||
+      value.privacy !== "paths-and-environment-values-redacted" ||
+      !["coven", "codex", "claude"].includes(String(value.runner)) ||
+      !value.failure ||
+      value.failure.kind !== "process-exit" ||
+      (value.failure.exitCode !== null && !Number.isInteger(value.failure.exitCode)) ||
+      typeof value.failure.emittedDiagnostic !== "boolean"
+    ) return null;
+    const exit = value.failure.exitCode === null ? "exit code unavailable" : `exit code ${value.failure.exitCode}`;
+    const entries = [command(value.launcher), command(value.adapter)].filter((entry): entry is string => Boolean(entry));
+    return entries.length ? `${exit}; ${entries.join("; ")}.` : exit;
+  } catch {
+    return null;
+  }
 }
 
 /** Inline error/debug strip between the transcript and the composer. Shows the
@@ -1446,6 +1501,20 @@ function ContextMeterChip({ usage, model }: { usage?: TurnUsage; model?: string 
   );
 }
 
+function ComposerContextMeter({ usage, model }: { usage?: TurnUsage; model?: string }) {
+  const meter = computeContextMeter(usage, model);
+  if (!meter) return null;
+  const title = `Context ${meter.percent}% full — ${meter.usedTokens.toLocaleString()} of ${meter.windowTokens.toLocaleString()} tokens${meter.known ? "" : " (window size estimated)"}`;
+  return (
+    <span className="cave-composer-context-meter" data-level={meter.level} title={title}>
+      <meter className="cave-composer-context-meter__track" min={0} max={100} value={meter.percent}>
+        {meter.percent}%
+      </meter>
+      <span>{`Context ${meter.percent}%`}</span>
+    </span>
+  );
+}
+
 function UsagePlanChip({ usagePlan }: { usagePlan: ChatUsagePlanSnapshot | null }) {
   // Ultra-minimal header: an "unconfigured" plan is the common, uninformative
   // case — suppress the "No plan limits" chip entirely and only surface the
@@ -1845,7 +1914,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -2199,11 +2268,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return parsed?.kind === "ssh" ? parsed.host : null;
   }, [session?.runtime]);
   const composerHostValue = runtimeHost ?? sessionRuntimeHost ?? LOCAL_HOST_ID;
-  const [input, setInput] = useState(() => readComposerDraft(COMPOSER_DRAFT_KEY));
+  const [input, setInput] = useState(() => readComposerDraft(composerDraftKey));
   // Persist the composer draft so a reload restores a half-written message.
   // Cleared (key removed) when the input empties — e.g. after a send. Shared
   // hook — debounce + remove-on-empty semantics live in use-composer-draft.
-  const { clearNow: clearDraft } = useDraftPersistence(COMPOSER_DRAFT_KEY, input, COMPOSER_DRAFT_WRITE_DELAY_MS);
+  const { clearNow: clearDraft } = useDraftPersistence(composerDraftKey, input, COMPOSER_DRAFT_WRITE_DELAY_MS);
   // CHAT-D11-04: Input history navigation (↑↓) — shared hook (use-composer-history);
   // chat deliberately never records slash commands (send() returns before the push).
   const { push: pushHistory, handleArrowKey } = useComposerHistory(COMPOSER_HISTORY_KEY);
@@ -6697,13 +6766,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
       onSessionsChanged?.();
-      onBack?.();
+      onSessionRemoved?.(sessionId, "archived");
+      onBack?.(sessionId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "archive failed");
     } finally {
       setArchivingChat(false);
     }
-  }, [sessionId, archivingChat, onSessionsChanged, onBack]);
+  }, [sessionId, archivingChat, onSessionsChanged, onSessionRemoved, onBack]);
 
   const deleteChat = async () => {
     if (!sessionId || deleting) return;
@@ -6717,7 +6787,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
       onSessionsDeleted([sessionId]);
-      onBack?.();
+      onSessionRemoved?.(sessionId, "deleted");
+      onBack?.(sessionId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "delete failed");
     } finally {
@@ -6822,7 +6893,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       announce(archived ? "Chat archived — it won't appear in the rail." : "Chat restored to the rail.");
       onSessionsChanged?.();
       // Leaving mirrors delete only for archive; unarchive keeps you in place.
-      if (archived) onBack?.();
+      if (archived) {
+        onSessionRemoved?.(sessionId, "archived");
+        onBack?.(sessionId);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
     } finally {
@@ -7202,6 +7276,88 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             />
 
             <div className="cave-composer-panel">
+              <div className="cave-composer-edge-actions">
+                <ComposerActionsMenu
+                  attach={{
+                    onSelect: () => fileInputRef.current?.click(),
+                    disabled: attachments.length >= 10,
+                    hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
+                  }}
+                  skills={{
+                    onPickSkill: (skill) => {
+                      setInput(`/skill ${skill.id} `);
+                      inputRef.current?.focus();
+                    },
+                  }}
+                  context={{
+                    projects,
+                    projectValue: resolvedProjectId,
+                    onProjectChange: setProjectIdDraft,
+                    familiarId: familiar.id ?? null,
+                    createProject,
+                    createProjectOrThrow,
+                    runtime: modelHarness,
+                    modelValue: composerModelValue,
+                    modelOptions: composerModelOptions,
+                    onPickRuntime: handleSelectRuntime,
+                    onPickModel: handleSelectModel,
+                    modelDisabled: busy,
+                    projectRoot: activeProjectRoot,
+                    onOpenUrl,
+                    popoverPlacement: composerPopoverPlacement,
+                  }}
+                  linkedWork={{
+                    linkedContext,
+                    onOpenTask,
+                    sessionId,
+                    onLinkedContextChange: setLinkedContext,
+                    handoff: { turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft },
+                    sessionSettled: !activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error,
+                  }}
+                  improve={{
+                    dictation: dictation.available
+                      ? {
+                          listening: dictation.listening,
+                          toggle: dictation.toggle,
+                          disabled: busy && !dictation.listening,
+                        }
+                      : undefined,
+                    promptSnippets: {
+                      onSelect: () => setPromptSnippetsOpen(true),
+                    },
+                    enhance: {
+                      onEnhance: promptEnhance.enhance,
+                      disabled: busy || !input.trim(),
+                      loading: promptEnhance.state.phase === "loading",
+                    },
+                  }}
+                  response={{
+                    hostValue: composerHostValue,
+                    onHostPick: setRuntimeHost,
+                    sections: composerResponseSections,
+                    onSaveAsTemplate: () => setSaveTemplateSeed(input),
+                    saveAsTemplateDisabled: !input.trim(),
+                    indicator:
+                      composerHostValue !== LOCAL_HOST_ID ||
+                      permissionMode !== DEFAULT_PERMISSION_MODE ||
+                      thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
+                      responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
+                  }}
+                  triggerVariant="tools"
+                />
+                {linkedContext?.task && onOpenTask ? (
+                  <button
+                    type="button"
+                    className="cave-composer-task-tab focus-ring"
+                    onClick={() => onOpenTask(linkedContext.task!.id)}
+                    title={`Open task: ${linkedContext.task.title}`}
+                    aria-label={`Open linked task: ${linkedContext.task.title}`}
+                  >
+                    <Icon name="ph:kanban" width={12} aria-hidden />
+                    <span>Task</span>
+                  </button>
+                ) : null}
+              </div>
               {attachments.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 border-b border-[var(--border-hairline)]/70 px-3 py-2">
                   {attachments.map((attachment) => (
@@ -7354,75 +7510,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     >
                       <Icon name="ph:phone" width="var(--icon-md)" aria-hidden />
                     </button>
-                    <ComposerActionsMenu
-                      attach={{
-                        onSelect: () => fileInputRef.current?.click(),
-                        disabled: attachments.length >= 10,
-                        hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
-                      }}
-                      skills={{
-                        onPickSkill: (skill) => {
-                          setInput(`/skill ${skill.id} `);
-                          inputRef.current?.focus();
-                        },
-                      }}
-                      context={{
-                        projects,
-                        projectValue: resolvedProjectId,
-                        onProjectChange: setProjectIdDraft,
-                        familiarId: familiar.id ?? null,
-                        createProject,
-                        createProjectOrThrow,
-                        runtime: modelHarness,
-                        modelValue: composerModelValue,
-                        modelOptions: composerModelOptions,
-                        onPickRuntime: handleSelectRuntime,
-                        onPickModel: handleSelectModel,
-                        modelDisabled: busy,
-                        projectRoot: activeProjectRoot,
-                        onOpenUrl,
-                        popoverPlacement: composerPopoverPlacement,
-                      }}
-                      linkedWork={{
-                        linkedContext,
-                        onOpenTask,
-                        sessionId,
-                        onLinkedContextChange: setLinkedContext,
-                        handoff: { turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft },
-                        sessionSettled: !activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error,
-                      }}
-                      improve={{
-                        dictation: dictation.available
-                          ? {
-                              listening: dictation.listening,
-                              toggle: dictation.toggle,
-                              disabled: busy && !dictation.listening,
-                            }
-                          : undefined,
-                        promptSnippets: {
-                          onSelect: () => setPromptSnippetsOpen(true),
-                        },
-                        enhance: {
-                          onEnhance: promptEnhance.enhance,
-                          disabled: busy || !input.trim(),
-                          loading: promptEnhance.state.phase === "loading",
-                        },
-                      }}
-                      response={{
-                        hostValue: composerHostValue,
-                        onHostPick: setRuntimeHost,
-                        sections: composerResponseSections,
-                        onSaveAsTemplate: () => setSaveTemplateSeed(input),
-                        saveAsTemplateDisabled: !input.trim(),
-                        indicator:
-                          composerHostValue !== LOCAL_HOST_ID ||
-                          permissionMode !== DEFAULT_PERMISSION_MODE ||
-                          thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
-                          responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
-                      }}
-                    />
                   </div>
+                  <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
                   <div className="cave-composer-submit-row">
+                    <EnhanceControl
+                      state={promptEnhance.state}
+                      onEnhance={promptEnhance.enhance}
+                      onCancel={promptEnhance.cancel}
+                      disabled={busy || !input.trim()}
+                    />
                     {/* The compact send keeps its queue/cancel behavior in one
                         stable action slot. */}
                     {busy ? (
@@ -7742,7 +7838,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <FlowSessionTranscriptFallback
                 transcript={flowTranscriptFallback}
                 onRetry={retryHistory}
-                onBack={onBack}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : historyState === "missing" ? (
               <ChatHistoryNotice
@@ -7751,14 +7847,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   ? "This flow session exists, but CovenCave could not find saved chat history or flow output for it yet."
                   : "This session exists, but CovenCave could not find a saved transcript for it yet."}
                 onRetry={retryHistory}
-                onBack={onBack}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : historyState === "error" ? (
               <ChatHistoryNotice
                 title="Could not load chat history"
                 body="The transcript request failed. You can still continue this session."
                 onRetry={retryHistory}
-                onBack={onBack}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : sessionId === null ? (
               // Brand-new chat (no session yet): the 2b launcher — hero, the
@@ -8039,7 +8135,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   // Only yank the view back to compose when it's still
                   // parked on the session we just discarded — if the user
                   // has already switched away, leave them where they are.
-                  if (target === sessionId) onVoiceSessionDiscarded?.();
+                  if (target === sessionId) {
+                    onSessionRemoved?.(target, "discarded");
+                    onVoiceSessionDiscarded?.(target);
+                  }
                 }
               });
             }
@@ -8207,6 +8306,7 @@ function splitSegmentsForGitHub(
  */
 function splitSegmentsForSpecs(
   segments: MessageBubbleSegment[],
+  onOpenUrl?: (url: string) => void,
 ): MessageBubbleSegment[] {
   return segments.flatMap<MessageBubbleSegment>((segment, segmentIndex) => {
     if (segment.kind !== "text") return [segment];
@@ -8219,7 +8319,7 @@ function splitSegmentsForSpecs(
       return [{
         kind: "block" as const,
         key: `spec-${segmentIndex}-${pieceIndex}-${piece.spec.title}`,
-        node: <ChatSpecCard spec={piece.spec} />,
+        node: <ChatSpecCard spec={piece.spec} onOpenUrl={onOpenUrl} />,
       }];
     });
   });
@@ -8743,7 +8843,7 @@ function TurnRowImpl({
     const split = splitSegmentsForGitHub(
       splitSegmentsForArtifacts(
         splitSegmentsForImages(
-          splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }]),
+          splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }], onOpenUrl),
         ),
         artifactCtx,
       ),

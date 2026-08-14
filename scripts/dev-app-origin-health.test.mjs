@@ -55,6 +55,21 @@ try {
   await close(redirect);
 }
 
+const mobileAccessGate = http.createServer((_, response) => {
+  response.writeHead(401, { "content-type": "text/html; charset=utf-8" });
+  response.end("local access gate");
+});
+const mobileAccessGatePort = await listen(mobileAccessGate);
+try {
+  assert.equal(
+    await loopbackOriginResponds({ port: mobileAccessGatePort, timeoutMs: 500 }),
+    true,
+    "the mobile access gate proves the root document compiled for a native loopback WebView",
+  );
+} finally {
+  await close(mobileAccessGate);
+}
+
 let transientAttempts = 0;
 assert.equal(
   await loopbackOriginResponds({

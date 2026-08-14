@@ -6,7 +6,8 @@ token contract itself lives in code — `src/styles/globals/foundations.css` (th
 annotated token contract) plus per-theme overrides in
 `src/styles/globals/themes.css`; `src/app/globals.css` is only the import
 facade over the `src/styles/globals/*` modules — and on the live reference page
-at `/aesthetic`; per-surface decisions live in `docs/specs/`. This document
+at `/aesthetic`; per-surface decisions live in `docs/superpowers/specs/`
+(`docs/specs/` is the frozen predecessor — see its README). This document
 ties them together and codifies the rules that were previously only implicit.
 Factual claims below (palette counts, token values, cited paths) are pinned by
 `scripts/ui-consistency.test.mjs`, so drift fails CI instead of accumulating.
@@ -424,7 +425,8 @@ placeholder.
 ---
 
 *Related: `/aesthetic` (live tokens) · `src/lib/theme-palettes.ts` (theme
-roster + voice samples) · `docs/specs/` (per-surface `*-design.md` decisions) ·
+roster + voice samples) · `docs/superpowers/specs/` (per-surface `*-design.md`
+decisions; `docs/specs/` holds the frozen predecessors) ·
 `src/styles/globals/foundations.css` (the annotated token contract) ·
 `src/styles/globals/themes.css` (per-theme palettes) ·
 `src/styles/globals/primitives.css` (shared `.ui-*` classes).*

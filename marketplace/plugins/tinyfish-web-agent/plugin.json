@@ -21,6 +21,7 @@
     "shell",
     "network"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/tinyfish-web-agent",
   "x-coven": {
     "displayName": "TinyFish Web Agent",

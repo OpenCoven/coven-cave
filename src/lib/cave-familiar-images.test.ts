@@ -1,8 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 
-// Legacy localStorage payload pre-seeded so the import exercises the one-time
-// migration into IndexedDB.
 const storage = new Map();
 const legacyImage = {
   dataUrl: "data:image/png;base64," + "L".repeat(500),
@@ -12,24 +10,26 @@ const legacyImage = {
 storage.set("cave:familiar-images:v1", JSON.stringify({ legacyfam: legacyImage }));
 globalThis.window = {
   localStorage: {
-    getItem: (k) => (storage.has(k) ? storage.get(k) : null),
-    setItem: (k, v) => storage.set(k, v),
-    removeItem: (k) => storage.delete(k),
+    getItem: (key) => (storage.has(key) ? storage.get(key) : null),
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: (key) => storage.delete(key),
   },
   addEventListener: () => {},
   removeEventListener: () => {},
+  dispatchEvent: () => true,
 };
 
-// Map-backed fake IndexedDB driver with a write-failure toggle (simulates the
-// browser refusing a write — quota, private mode, etc.).
-const idb = { familiarImages: new Map() };
-let denyWrites = false;
+const hostConflict = {
+  dataUrl: "data:image/png;base64," + "H".repeat(500),
+  mime: "image/png",
+  updatedAt: "2026-01-02T00:00:00.000Z",
+};
+const idb = { familiarImages: new Map([["hostwins", hostConflict]]) };
 const fakeDriver = {
   async getAll(store) {
     return Object.fromEntries(idb[store]);
   },
   async put(store, key, value) {
-    if (denyWrites) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
     idb[store].set(key, value);
   },
   async delete(store, key) {
@@ -37,8 +37,47 @@ const fakeDriver = {
   },
 };
 
-// Inject the fake BEFORE the store module loads — its import-time hydration
-// must already go through the driver seam.
+const requests = [];
+let failNextPost = false;
+let failNextDelete = false;
+globalThis.fetch = async (input, init = {}) => {
+  const url = String(input);
+  const method = init.method ?? "GET";
+  requests.push({ url, method, body: init.body });
+
+  if (url === "/api/familiars") {
+    return Response.json({
+      ok: true,
+      familiars: [
+        {
+          id: "hostwins",
+          avatarUrl: "/api/familiars/hostwins/avatar?v=11&format=png",
+        },
+      ],
+    });
+  }
+  if (method === "POST") {
+    if (failNextPost) {
+      failNextPost = false;
+      return Response.json({ ok: false, error: "Could not save avatar." }, { status: 500 });
+    }
+    const id = decodeURIComponent(url.split("/").at(-2));
+    return Response.json({
+      ok: true,
+      avatarUrl: `/api/familiars/${id}/avatar?v=22&format=png`,
+      revision: 22,
+    });
+  }
+  if (method === "DELETE") {
+    if (failNextDelete) {
+      failNextDelete = false;
+      return Response.json({ ok: false, error: "Could not remove avatar." }, { status: 500 });
+    }
+    return Response.json({ ok: true, avatarUrl: null, revision: null, removed: true });
+  }
+  throw new Error(`Unexpected request: ${method} ${url}`);
+};
+
 const { setAvatarStorageForTests } = await import("./avatar-idb.ts");
 setAvatarStorageForTests(fakeDriver);
 
@@ -51,65 +90,79 @@ assert.equal(
   "store should expose the cap so upload UI can downsize before saving",
 );
 
-// Migration: the legacy localStorage image lands in IndexedDB and in the
-// snapshot, and the legacy key is removed (freeing the shared origin quota).
 {
   const got = mod.readFamiliarImagesSnapshot();
-  assert.ok(got.legacyfam, "legacy image is available after hydration");
-  assert.equal(got.legacyfam.dataUrl, legacyImage.dataUrl);
-  assert.ok(idb.familiarImages.has("legacyfam"), "legacy image persisted to IndexedDB");
-  assert.equal(storage.has("cave:familiar-images:v1"), false, "legacy localStorage key removed after migration");
+  assert.equal(
+    got.hostwins.dataUrl,
+    "/api/familiars/hostwins/avatar?v=11&format=png",
+    "a host avatar wins without uploading the stale browser copy",
+  );
+  assert.equal(
+    got.legacyfam.dataUrl,
+    "/api/familiars/legacyfam/avatar?v=22&format=png",
+    "a browser-only avatar migrates to the host and adopts its revision URL",
+  );
+  assert.equal(idb.familiarImages.size, 0, "host-confirmed images are removed from IndexedDB");
+  assert.equal(storage.has("cave:familiar-images:v1"), false, "legacy storage clears after host persistence");
+  assert.equal(
+    requests.filter((request) => request.method === "POST").length,
+    1,
+    "only the browser-only image is uploaded",
+  );
 }
 
-// Set + read
 {
   const dataUrl = "data:image/png;base64," + "A".repeat(1000);
-  const res = await mod.setFamiliarImage("cody", { dataUrl, mime: "image/png" });
-  assert.equal(res.ok, true);
-  const got = mod.readFamiliarImagesSnapshot();
-  assert.ok(got.cody);
-  assert.equal(got.cody.mime, "image/png");
-  assert.equal(got.cody.dataUrl, dataUrl);
-  assert.ok(Number.isFinite(Date.parse(got.cody.updatedAt)));
-  assert.ok(idb.familiarImages.has("cody"), "write reached IndexedDB");
+  const result = await mod.setFamiliarImage("cody", { dataUrl, mime: "image/png" });
+  assert.equal(result.ok, true);
+  assert.equal(
+    mod.readFamiliarImagesSnapshot().cody.dataUrl,
+    "/api/familiars/cody/avatar?v=22&format=png",
+  );
+  assert.equal(idb.familiarImages.has("cody"), false, "new uploads do not return to IndexedDB");
 }
 
-// Refused write (quota/private mode): the store reports the friendly
-// storage-full reason (never the raw browser message), and the snapshot stays
-// unchanged — no phantom avatar that vanishes on reload.
 {
-  denyWrites = true;
-  const dataUrl = "data:image/png;base64," + "B".repeat(1000);
-  const res = await mod.setFamiliarImage("astra", { dataUrl, mime: "image/png" });
-  assert.equal(res.ok, false);
-  assert.match(res.reason, /storage full/i);
-  const got = mod.readFamiliarImagesSnapshot();
-  assert.equal(got.astra, undefined, "a refused write must not land in the in-memory cache");
-  denyWrites = false;
+  const before = mod.readFamiliarImagesSnapshot().cody;
+  failNextPost = true;
+  const result = await mod.setFamiliarImage("cody", {
+    dataUrl: "data:image/png;base64," + "B".repeat(1000),
+    mime: "image/png",
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /could not save avatar/i);
+  assert.deepEqual(
+    mod.readFamiliarImagesSnapshot().cody,
+    before,
+    "a failed host write must preserve the prior avatar",
+  );
 }
 
-// Per-image size cap (2MB pre-encode ≈ 2*1024*1024 bytes ≈ ~2.8MB base64)
+{
+  failNextDelete = true;
+  const failed = await mod.clearFamiliarImage("cody");
+  assert.equal(failed.ok, false);
+  assert.ok(mod.readFamiliarImagesSnapshot().cody, "a failed delete must preserve the prior avatar");
+
+  const removed = await mod.clearFamiliarImage("cody");
+  assert.equal(removed.ok, true);
+  assert.equal(mod.readFamiliarImagesSnapshot().cody, undefined);
+}
+
 {
   const huge = "data:image/png;base64," + "A".repeat(3 * 1024 * 1024);
-  const res = await mod.setFamiliarImage("nova", { dataUrl: huge, mime: "image/png" });
-  assert.equal(res.ok, false);
-  assert.match(res.reason, /too large/i);
+  const result = await mod.setFamiliarImage("nova", { dataUrl: huge, mime: "image/png" });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /too large/i);
 }
 
-// Disallowed mime
 {
-  const dataUrl = "data:image/gif;base64,AAA";
-  const res = await mod.setFamiliarImage("nova", { dataUrl, mime: "image/gif" });
-  assert.equal(res.ok, false);
-  assert.match(res.reason, /unsupported|format/i);
-}
-
-// Clear
-{
-  await mod.clearFamiliarImage("cody");
-  const got = mod.readFamiliarImagesSnapshot();
-  assert.equal(got.cody, undefined);
-  assert.equal(idb.familiarImages.has("cody"), false, "clear reached IndexedDB");
+  const result = await mod.setFamiliarImage("nova", {
+    dataUrl: "data:image/gif;base64,AAA",
+    mime: "image/gif",
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /unsupported|format/i);
 }
 
 console.log("cave-familiar-images.test.ts: ok");

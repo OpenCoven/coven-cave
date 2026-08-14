@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
@@ -33,8 +33,15 @@ if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDAL
   }
 }
 
-// The port contract, inlined because the standalone server.mjs cannot import
-// from src/: `build:server` runs esbuild with `--bundle=false`, so any import here
+// Boot re-arm (cave-os73): a tokenless dev boot outside the packaged bundle
+// re-arms COVEN_CAVE_ACCESS_TOKEN from the pairing secret that Settings ·
+// Phone (or scripts/mobile-tailscale.sh — same state file) provisioned, so
+// paired phones survive dev-server restarts and a still-configured Tailscale
+// Serve route stays token-gated. Mirrors src/lib/server/mobile-access-
+// provision.ts, inlined because the standalone server.mjs cannot import from
+// src/.
+// The port contract, inlined for the same reason as everything else in this
+// block: `build:server` runs esbuild with `--bundle=false`, so any import here
 // must still resolve at runtime from wherever server.mjs is unpacked — and the
 // packaged bundle ships server.mjs without scripts/. scripts/ports.mjs is the
 // source of truth and scripts/port-contract.test.mjs fails if this copy drifts.
@@ -65,10 +72,42 @@ function cavePort(): number {
   );
 }
 
-// The boot re-arm that read a persisted pairing secret back into
-// COVEN_CAVE_ACCESS_TOKEN is gone with the access-token requirement itself
-// (cave-f4emr). Nothing consults that variable any more, so re-arming it would
-// only resurrect a credential no gate reads.
+function persistedMobileAccessSecretFile(): string {
+  // Keyed by the port on purpose (it mirrors scripts/mobile-tailscale.sh), which
+  // is precisely why the port had to stop moving: a per-launch port meant a
+  // per-launch secret directory, so every desktop restart re-paired every phone.
+  const port = String(cavePort());
+  const stateRoot =
+    process.env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim() ||
+    join(
+      process.env.XDG_STATE_HOME?.trim() || join(homedir(), ".local", "state"),
+      "coven-cave",
+    );
+  const stateDir =
+    process.env.COVEN_CAVE_MOBILE_STATE_DIR?.trim() ||
+    join(stateRoot, `mobile-tailscale-${port}`);
+  return join(stateDir, "access-token");
+}
+
+if (
+  process.env.COVEN_CAVE_BUNDLE !== "1" &&
+  process.env.COVEN_CAVE_E2E !== "1" &&
+  !process.env.COVEN_CAVE_ACCESS_TOKEN?.trim()
+) {
+  try {
+    const persisted = readFileSync(persistedMobileAccessSecretFile(), "utf8").trim();
+    if (persisted) process.env.COVEN_CAVE_ACCESS_TOKEN = persisted;
+  } catch {
+    // No provisioned secret — stay tokenless, exactly as before.
+  }
+}
+
+// Read lazily, not snapshotted: Settings · Phone can provision and arm the
+// pairing secret mid-session (cave-os73), and the PTY upgrade gate must honor
+// tokens signed with it without a server restart.
+function accessToken(): string {
+  return process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
+}
 const SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN ?? "";
 
 // Local-peer stamp (cave-vn2r): only this file sees the raw TCP socket, so
@@ -92,6 +131,9 @@ const FORWARDING_HEADERS = [
   "via",
 ] as const;
 
+const ACCESS_COOKIE = "coven_cave_access";
+const LEGACY_ACCESS_COOKIE = "coven_access_token";
+const ACCESS_QUERY_PARAM = "coven_access_token";
 const SIDECAR_QUERY_PARAM = "covenCaveToken";
 
 type PtySession = {
@@ -255,6 +297,23 @@ function scrollbackFrom(session: PtySession, cursor: number): Buffer[] {
   return output;
 }
 
+function getTokensFromCookie(header: string | undefined): string[] {
+  if (!header) return [];
+  const tokens: string[] = [];
+  for (const part of header.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key === ACCESS_COOKIE || key === LEGACY_ACCESS_COOKIE) {
+      const raw = rest.join("=") ?? "";
+      try {
+        tokens.push(decodeURIComponent(raw));
+      } catch {
+        // Ignore malformed percent-encoding.
+      }
+    }
+  }
+  return tokens;
+}
+
 function timingSafeEqualString(a: string, b: string): boolean {
   const aBytes = Buffer.from(a);
   const bBytes = Buffer.from(b);
@@ -267,12 +326,36 @@ function timingSafeEqualString(a: string, b: string): boolean {
   return diff === 0;
 }
 
-// The per-launch sidecar credential is the only PTY token left (cave-f4emr):
-// the mobile access token it used to sit beside — raw secret or signed
-// `v1.<expiresAtMs>.<nonce>.<sig>` invite — no longer exists, so neither the
-// access cookie nor its query parameter is read here any more.
-function isExpectedPtyToken(value: string | undefined | null): boolean {
+function isExpectedAccessToken(value: string | undefined | null): boolean {
+  const secret = accessToken();
+  if (!secret || !value) return false;
+  if (timingSafeEqualString(value, secret)) return true;
+  return isValidSignedAccessToken(value, secret);
+}
+
+function isExpectedSidecarToken(value: string | undefined | null): boolean {
   return Boolean(SIDECAR_TOKEN && value && timingSafeEqualString(value, SIDECAR_TOKEN));
+}
+
+function isExpectedPtyToken(value: string | undefined | null): boolean {
+  return isExpectedAccessToken(value) || isExpectedSidecarToken(value);
+}
+
+// Mirrors src/lib/mobile-access-token.ts (server.mjs is transpiled standalone,
+// so it can't import from src/): `v1.<expiresAtMs>.<nonce>.<sig>` where
+// sig = base64url(HMAC-SHA256(secret, "v1.<expiresAtMs>.<nonce>")). Paired
+// phones and QR-paired browsers hold these SIGNED tokens — not the raw secret
+// — so the PTY upgrade must honour them or every paired terminal 401s.
+function isValidSignedAccessToken(value: string, secret: string): boolean {
+  const parts = value.split(".");
+  if (parts.length !== 4 || parts[0] !== "v1") return false;
+  const expiresAt = Number(parts[1]);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
+  if (!parts[2] || !parts[3]) return false;
+  const expected = createHmac("sha256", secret)
+    .update(`v1.${parts[1]}.${parts[2]}`)
+    .digest("base64url");
+  return timingSafeEqualString(parts[3], expected);
 }
 
 function bearerToken(req: IncomingMessage): string | null {
@@ -579,32 +662,24 @@ function parseUpgradeTarget(rawUrl: string): { pathname: string; query: UpgradeQ
 }
 
 function isPtyAuthRequired(): boolean {
-  return Boolean(SIDECAR_TOKEN);
+  return Boolean(accessToken() || SIDECAR_TOKEN);
 }
 
-/**
- * A configured sidecar token closes the credential-less path.
- *
- * The access token used to be the second credential accepted here; removing it
- * (cave-f4emr) narrows this to the sidecar token alone. Deliberately NOT
- * replaced with a direct-loopback exemption: cave-ruw4z removed exactly that
- * escape hatch because TCP loopback proves the caller is on this machine, never
- * which OS user it is, and server-pty-ws.test.ts pins its absence. Plain
- * development stays credential-less because no sidecar token exists there.
- */
 function shouldRejectUnauthenticatedPtyUpgrade({
   sidecarTokenConfigured = false,
+  accessTokenConfigured = false,
   tokenAuthenticated = false,
 } = {}) {
   if (tokenAuthenticated) return false;
-  return sidecarTokenConfigured;
+  return sidecarTokenConfigured || accessTokenConfigured;
 }
 
 function isAuthorized(req: IncomingMessage, query: Record<string, string | string[] | undefined>): boolean {
   if (!isPtyAuthRequired()) return false;
 
+  const queryToken = firstQueryValue(query[ACCESS_QUERY_PARAM]);
   const sidecarQueryToken = firstQueryValue(query[SIDECAR_QUERY_PARAM]);
-  const candidates = [bearerToken(req), sidecarQueryToken];
+  const candidates = [bearerToken(req), queryToken, sidecarQueryToken, ...getTokensFromCookie(req.headers.cookie)];
   return candidates.some(isExpectedPtyToken);
 }
 
@@ -1078,12 +1153,14 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  // Verify credentials before the host gate: a caller holding the sidecar
-  // token may legitimately arrive with a non-loopback Host and passes the
-  // source gate on the strength of that token. Forwarding headers are not
-  // credentials at this boundary: a local process can forge them, so
-  // allowlisted tailnet identity alone must never authorize spawning or
-  // adopting a shell.
+  // Verify credentials before the host gate: a valid signed access token
+  // (paired iOS terminal / handoff browser over `tailscale serve`, which
+  // forwards the `<host>.ts.net` Host) legitimately arrives with a
+  // non-loopback Host and must pass the source gate on the strength of its
+  // token — mirroring proxy.ts's isAllowedApiHost relaxation on REST.
+  // Forwarding headers are not credentials at this boundary: a local process
+  // can forge them, so allowlisted tailnet identity alone must never authorize
+  // spawning or adopting a shell.
   const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
 
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
@@ -1092,14 +1169,20 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  // A configured sidecar token closes the credential-less path, including for
+  // Any configured PTY credential closes the credential-less path, including
   // direct loopback: another local account or process is not the paired app.
-  // Plain development remains credential-less only because no sidecar token
-  // exists there. Removing the access token (cave-f4emr) narrowed the accepted
-  // credentials to one; it did not reopen the loopback escape hatch that
-  // cave-ruw4z closed.
+  // Plain development remains credential-less only when neither token exists.
+  //
+  // Keep the credential-less case exactly that narrow. #714 removed it and
+  // 401'd every local terminal, reintroducing the v0.0.72 "Terminal connection
+  // failed" regression that server-pty-ws.test.ts still guards. What makes
+  // closing it safe HERE is that both peers now have a credential to present:
+  // the Tauri shell its per-launch sidecar token, and a local browser the
+  // access gate. TCP loopback proves only that the caller is on this machine,
+  // never which OS user it is.
   if (shouldRejectUnauthenticatedPtyUpgrade({
     sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
+    accessTokenConfigured: Boolean(accessToken()),
     tokenAuthenticated,
   })) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");

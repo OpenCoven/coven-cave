@@ -21,6 +21,17 @@ yours. Use a PR.
 
 **Why:** Direct-to-main pushes were bypassing PR review and CI, and a shared-checkout `git add -A` from one of several concurrent sessions swallowed other sessions' uncommitted work into a single unrelated direct push (commit `258af8d`). See issue #585 for the full write-up. Protection was originally enabled with `enforce_admins=true` so the hard stop applied to everyone; that part has since changed at the owner's direction (see the `enforce_admins` bullet below), while the PR requirement it exists to enforce has not.
 
+## Pull-request review standard
+
+When asked to review or assess a pull request, treat the request as **read-only**
+unless the user separately authorizes repairs. Review the exact current
+`headRefOid`: inspect the scoped diff and relevant code paths, check mergeability
+and conflicts, read every review thread (including paginated thread comments),
+and inspect the current check runs. Pending, missing, stale, cancelled, or
+failed checks are incomplete—not green. Report the exact head, evidence, and
+remaining blockers; never edit, push, merge, resolve threads, or change PR state
+as part of a review-only request.
+
 **Current settings** (verified live; `gh api repos/OpenCoven/coven-cave/branches/main/protection`):
 
 - PR required before merging — **0 approvals** (you can self-merge once checks pass; no second human needed for solo work).
@@ -655,6 +666,56 @@ immutable and unique, so it never force-updates, never collides, and
 `branch-cap.yml` ignores it (`ref_type == 'branch'` only). It never merges,
 never opens a PR, never deletes or rewrites a ref, and **skips `main`** —
 pushing that is the direct-to-main move this file forbids.
+
+**One case skips the branch push entirely: a branch the remote has deleted**
+(`cave-fud4p`). The repository sets `delete_branch_on_merge: true`, so a merged
+PR head disappears from origin — and because a squash merge lands a *different*
+commit on `main`, the branch's own tip is then on no remote ref at all. That is
+exactly when a session turns to retiring the worktree, so retention matters
+most precisely when it has just evaporated. Pushing the branch here would
+*succeed* and resurrect it, which undoes a deliberate deletion and pushes back
+against the 40-branch cap — the `cave-nw3hq` resurrection, whose existing fix
+only covers heads that already carry an archive tag. So the hook archives the
+head as its `retention/…` tag instead, and the log entry carries
+`reason: "branch-deleted-upstream"`.
+
+Deleted is distinguished from never-pushed by **three** signals, any one of
+which proves the branch was once on the remote — because each survives
+something the others do not (`cave-xjuup`):
+
+- `refs/remotes/origin/<branch>`, written by a push. Survives the remote
+  dropping the branch, but **not** a `fetch --prune`.
+- `branch.<name>.remote`, written only by `push -u`. Lives in `.git/config`, so
+  a prune cannot touch it — but plenty of branches never get one.
+- **the hook's own log**, which records that *it* pushed the branch. Survives
+  everything short of deleting the file.
+
+Absence of all three still means branch-first, so a branch that never left the
+machine is still retained as a readable branch. Note `git push --delete` is
+**not** equivalent to a server-side deletion — it removes the local tracking ref
+too.
+
+⚠️ **One signal was not enough, and the shortfall was measurable.** GitHub
+Desktop prunes routinely here, so by the time the hook looked the tracking ref
+was gone, the branch read as "never pushed", and the hook re-created a head
+GitHub had deliberately deleted at merge. Measured 2026-08-14: **9 of 36 remote
+branches were resurrected merged heads**, 29 pushes across them, one branch
+re-created three separate times — a quarter of the 40-branch cap consumed by
+branches that should not exist, and hand-deleting them would not have stayed
+bought.
+
+⚠️ **That same surviving tracking ref is what made this path unreachable for a
+day.** The at-risk test was `rev-list HEAD --not --remotes`, and `--remotes`
+trusts every `refs/remotes/*` to still exist on the remote. So the instant a
+squash merge auto-deleted the branch, the stale ref satisfied `--remotes`, the
+head read as *fully retained*, and the unit was skipped before the
+deleted-branch check above was ever consulted — the archive fired only if a
+`fetch --prune` happened to have run first. Verified on 2026-08-14: two
+worktrees retired minutes after their PRs merged, and the hook logged nothing
+for either. The skip test now recounts while ignoring the branch's **own**
+tracking ref, and only then asks the remote whether the branch is really gone —
+so a head still covered by any other ref costs no network call, and a pass with
+nothing genuinely at risk stays offline as before.
 
 Throttled to once a minute (`.claude/worktree-retention-push.stamp`) and capped
 at 3 pushes per pass to bound the latency added to one tool call; pushed

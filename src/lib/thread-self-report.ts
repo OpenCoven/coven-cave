@@ -93,6 +93,14 @@ property of how reflection works, never evidence about the thread. So:
 - If the transcript is too thin to judge, use "adequate" and say so in
   "contextNotes" — an honest "not enough evidence" beats an inflated rating.
 
+Delivery evidence rule:
+- Do NOT infer completion from plans, narration, or intent ("I will push", "about
+  to schedule", "finishing the artifact").
+- A concrete deliverable is verified only when the transcript contains its
+  remote ref, artifact path, receipt, message id, or equivalent checkable proof.
+- If that evidence is absent, describe the work as incomplete or unverified and
+  put the exact remaining proof gap in persistentBlockers.
+
 Evidence rule for generated or delivered files:
 - A prose claim that an image was shown is not delivery evidence.
 - A \`[visible attachments: ...]\` annotation is host-derived proof that Cave
@@ -153,6 +161,101 @@ export type ThreadSelfReport = {
     suggestedResolution?: string;
   }[];
 };
+
+const CONTEXT_PRESSURES: ReadonlySet<string> = new Set(["adequate", "tight", "excess", "critical"]);
+const CAPABILITY_STATES: ReadonlySet<string> = new Set(["available", "degraded", "missing"]);
+const CAPABILITY_IMPORTANCE: ReadonlySet<string> = new Set(["nice-to-have", "important", "blocking"]);
+const BLOCKER_CATEGORIES: ReadonlySet<string> = new Set(["auth", "tooling", "permission", "infra", "context", "skill", "other"]);
+const BLOCKER_IMPACTS: ReadonlySet<string> = new Set(["low", "medium", "high", "blocking"]);
+
+function reportRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function reportText(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function reportRequiredText(value: unknown): value is string {
+  return reportText(value) && Boolean(value.trim());
+}
+
+function reportOptionalText(value: unknown): value is string | undefined {
+  return value === undefined || reportText(value);
+}
+
+function reportScore(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
+}
+
+function reportStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(reportText);
+}
+
+function reportObjectArray(
+  value: unknown,
+  validate: (record: Record<string, unknown>) => boolean,
+): boolean {
+  return Array.isArray(value) && value.every((item) => {
+    const record = reportRecord(item);
+    return record !== null && validate(record);
+  });
+}
+
+/** Runtime guard for append-only JSONL rows read from disk. */
+export function isThreadSelfReport(value: unknown): value is ThreadSelfReport {
+  const report = reportRecord(value);
+  const toolReliability = reportRecord(report?.toolReliability);
+  return Boolean(
+    report &&
+    reportRequiredText(report.id) &&
+    reportRequiredText(report.familiarId) &&
+    reportRequiredText(report.sessionId) &&
+    reportText(report.reportedAt) &&
+    Number.isFinite(Date.parse(report.reportedAt)) &&
+    reportScore(report.overallConfidence) &&
+    reportOptionalText(report.overallConfidenceReason) &&
+    toolReliability &&
+    reportScore(toolReliability.score) &&
+    reportStringArray(toolReliability.failedTools) &&
+    reportStringArray(toolReliability.unreliableTools) &&
+    reportOptionalText(toolReliability.notes) &&
+    reportText(report.contextPressure) &&
+    CONTEXT_PRESSURES.has(report.contextPressure) &&
+    reportOptionalText(report.contextNotes) &&
+    reportStringArray(report.skillsUsed) &&
+    reportObjectArray(report.skillsNeedingClarity, (item) =>
+      reportRequiredText(item.skillId) && reportRequiredText(item.reason)) &&
+    reportObjectArray(report.skillsNeedingAccess, (item) =>
+      reportRequiredText(item.skillId) && reportRequiredText(item.reason)) &&
+    reportObjectArray(report.capabilitiesLacking, (item) =>
+      reportRequiredText(item.name) &&
+      reportText(item.importance) &&
+      CAPABILITY_IMPORTANCE.has(item.importance) &&
+      reportRequiredText(item.detail)) &&
+    reportObjectArray(report.capabilitiesVital, (item) =>
+      reportRequiredText(item.name) &&
+      reportText(item.currentState) &&
+      CAPABILITY_STATES.has(item.currentState) &&
+      reportOptionalText(item.notes)) &&
+    reportScore(report.memoryRecallScore) &&
+    reportOptionalText(report.memoryRecallNotes) &&
+    reportScore(report.fileLocatabilityScore) &&
+    reportOptionalText(report.fileLocatabilityNotes) &&
+    reportObjectArray(report.persistentBlockers, (item) =>
+      reportRequiredText(item.id) &&
+      reportRequiredText(item.title) &&
+      reportText(item.category) &&
+      BLOCKER_CATEGORIES.has(item.category) &&
+      reportOptionalText(item.firstSeenAt) &&
+      reportText(item.impact) &&
+      BLOCKER_IMPACTS.has(item.impact) &&
+      reportRequiredText(item.detail) &&
+      reportOptionalText(item.suggestedResolution)),
+  );
+}
 
 export function deriveThreadScore(report: ThreadSelfReport): number {
   return Math.round(
@@ -248,6 +351,7 @@ export function buildThreadSignalResolutionPrompt(item: ThreadSignalReviewItem):
     "1. Diagnose the root cause.",
     "2. Apply the concrete fix now — update the prompt, memory, skill, config, or workflow at fault. If the fix needs something only I can grant (credentials, permissions, a product decision), stop and tell me exactly what to provide.",
     "3. Verify the fix and summarize what changed, so future threads stop reporting this signal.",
+    "4. Before the final response, classify every requested deliverable as verified with exact evidence, incomplete, or blocked. Do not infer delivery from plans or narration.",
   ].join("\n");
 }
 
@@ -269,6 +373,7 @@ export function buildThreadSignalBatchResolutionPrompt(items: readonly ThreadSig
     "1. Diagnose each root cause, and say so if several share one.",
     "2. Apply the concrete fixes now — update the prompt, memory, skill, config, or workflow at fault. If a fix needs something only I can grant (credentials, permissions, a product decision), stop and tell me exactly what to provide.",
     "3. Verify each fix and summarize what changed, so future threads stop reporting these signals.",
+    "4. Before the final response, classify every requested deliverable as verified with exact evidence, incomplete, or blocked. Do not infer delivery from plans or narration.",
   ].join("\n");
 }
 
@@ -563,7 +668,19 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
   const blockerFreq = new Map<string, number>();
   const blockerData = new Map<string, ThreadSelfReport["persistentBlockers"][number]>();
 
-  const sorted = [...reports].sort(
+  // Defensive at the boundary, not because storage is untrusted — listSelfReports
+  // already drops rows failing isThreadSelfReport — but because this value
+  // arrives over the wire, where a type annotation is erased and cannot hold.
+  // A redaction budget once replaced the whole array with the string
+  // "[redacted]"; spreading that yields characters, whose `reportedAt` parses
+  // to NaN, so the comparator fell through to `b.id.localeCompare` and threw
+  // inside Array.sort — taking the entire Analytics surface down (cave-p9dsb).
+  // Unmeasured is a legitimate result here; a thrown comparator is not.
+  const usable = (Array.isArray(reports) ? reports : []).filter(
+    (report): report is ThreadSelfReport =>
+      Boolean(report) && typeof report === "object" && typeof report.id === "string",
+  );
+  const sorted = [...usable].sort(
     (a, b) =>
       new Date(b.reportedAt).getTime() - new Date(a.reportedAt).getTime() ||
       b.id.localeCompare(a.id),
@@ -615,7 +732,7 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
     }
   }
 
-  const total = reports.length || 1;
+  const total = usable.length || 1;
   const rankedBlockers: RankedBlocker[] = [...blockerFreq.entries()]
     .map(([id, frequency]) => {
       const data = blockerData.get(id)!;
@@ -624,10 +741,10 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
     .sort((a, b) => b.rankScore - a.rankScore);
 
   return {
-    averageConfidence: libAvg(reports.map((r) => r.overallConfidence)),
-    averageToolReliability: libAvg(reports.map((r) => r.toolReliability.score)),
-    averageMemoryRecall: libAvg(reports.map((r) => r.memoryRecallScore)),
-    averageFileLocatability: libAvg(reports.map((r) => r.fileLocatabilityScore)),
+    averageConfidence: libAvg(usable.map((r) => r.overallConfidence)),
+    averageToolReliability: libAvg(usable.map((r) => r.toolReliability.score)),
+    averageMemoryRecall: libAvg(usable.map((r) => r.memoryRecallScore)),
+    averageFileLocatability: libAvg(usable.map((r) => r.fileLocatabilityScore)),
     contextCounts,
     skillsUsedMost: [...skillsUsed.entries()]
       .sort((a, b) => b[1] - a[1])
