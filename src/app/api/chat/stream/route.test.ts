@@ -191,7 +191,7 @@ test("send route tees both harness stream paths through the run buffer", () => {
   assert.ok((finishes?.length ?? 0) >= 3, "every stream exit (error + close paths) finishes the buffer");
 });
 
-test("detach cleanup reconciles pre-abort, reattach, and completion through real buffer hooks", (t) => {
+test("native child detach cleanup reconciles pre-abort, reattach, and completion through real buffer hooks", (t) => {
   resetRunBuffersForTest();
   t.mock.timers.enable({ apis: ["setTimeout"] });
 
@@ -201,27 +201,27 @@ test("detach cleanup reconciles pre-abort, reattach, and completion through real
   const firstTail = subscribeRunStream("run-detach-lifecycle", 0, () => {}, () => {});
   assert.ok(firstTail && !firstTail.done, "the tail attaches before cleanup hooks are installed");
 
-  let kills = 0;
+  let childKills = 0;
   const complete = wireRunDetachCleanup({
     runBuffer: run,
     signal: abort.signal,
     isStopRequested: () => false,
     timeoutMs: 100,
-    onTimeout: () => { kills += 1; },
+    onTimeout: () => { childKills += 1; },
   });
   t.mock.timers.tick(100);
-  assert.equal(kills, 0, "a pre-aborted request never arms a kill while the existing tail is live");
+  assert.equal(childKills, 0, "a pre-aborted native child never arms a kill while the existing tail is live");
 
   firstTail.unsubscribe();
   const reattachedTail = subscribeRunStream("run-detach-lifecycle", 0, () => {}, () => {});
   assert.ok(reattachedTail && !reattachedTail.done, "the replacement tail attaches after a detach");
   t.mock.timers.tick(100);
-  assert.equal(kills, 0, "reattach clears the timer armed by the last detach");
+  assert.equal(childKills, 0, "reattach clears the native child timer armed by the last detach");
 
   reattachedTail!.unsubscribe();
   complete();
   t.mock.timers.tick(100);
-  assert.equal(kills, 0, "completion clears pending cleanup and disables later tail transitions");
+  assert.equal(childKills, 0, "native child completion clears pending cleanup and disables later tail transitions");
   resetRunBuffersForTest();
 });
 
