@@ -16157,7 +16157,7 @@ function readJsonFile(label, filename) {
       throw new CliContractError(`${label} JSON could not be parsed.`);
     }
   } finally {
-    closeSync(handle);
+    if (handle !== void 0) closeSync(handle);
   }
 }
 function readBrief(filename) {
