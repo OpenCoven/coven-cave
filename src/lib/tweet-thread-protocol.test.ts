@@ -4,6 +4,7 @@ import { Value } from "typebox/value";
 
 import {
   ApprovalRecordSchema,
+  EvidenceItemSchema,
   ObjectiveWeightsSchema,
   PublishReceiptSchema,
   TWEET_THREAD_PROTOCOL_VERSION,
@@ -14,6 +15,7 @@ import {
   ThreadRunManifestSchema,
   ThreadScorecardSchema,
   TweetThreadProtocolValidationError,
+  VoiceProfileSchema,
   assertValidThreadCandidate,
   assertValidThreadRunManifest,
   normalizeThreadBrief,
@@ -240,6 +242,53 @@ const invalidBriefError = expectValidationError(
 );
 assert.match(invalidBriefError.issues.join("\n"), /objectiveWeights|0\.\.1|minPosts/i);
 
+const incorrectProtocolVersion = "opencoven.tweet-thread.v2";
+assert.equal(
+  Value.Check(ThreadBriefSchema, { ...validBrief(), protocolVersion: incorrectProtocolVersion }),
+  false,
+  "thread briefs reject incorrect protocol versions",
+);
+assert.equal(
+  Value.Check(VoiceProfileSchema, { ...validVoiceProfile(), protocolVersion: incorrectProtocolVersion }),
+  false,
+  "voice profiles reject incorrect protocol versions",
+);
+assert.equal(
+  Value.Check(EvidenceItemSchema, { ...validEvidence()[0], protocolVersion: incorrectProtocolVersion }),
+  false,
+  "evidence items reject incorrect protocol versions",
+);
+assert.equal(
+  Value.Check(ThreadCandidateSchema, { ...validCandidate(), protocolVersion: incorrectProtocolVersion }),
+  false,
+  "thread candidates reject incorrect protocol versions",
+);
+assert.equal(
+  Value.Check(ThreadScorecardSchema, { ...validScorecard(), protocolVersion: incorrectProtocolVersion }),
+  false,
+  "scorecards reject incorrect protocol versions",
+);
+assert.equal(
+  Value.Check(ApprovalRecordSchema, { ...validApproval(), protocolVersion: incorrectProtocolVersion }),
+  false,
+  "approval records reject incorrect protocol versions",
+);
+assert.equal(
+  Value.Check(PublishReceiptSchema, { ...validPublishReceipt(), protocolVersion: incorrectProtocolVersion }),
+  false,
+  "publish receipts reject incorrect protocol versions",
+);
+assert.equal(
+  Value.Check(ThreadObservationSchema, { ...validObservation(), protocolVersion: incorrectProtocolVersion }),
+  false,
+  "observations reject incorrect protocol versions",
+);
+assert.equal(
+  Value.Check(ThreadRunManifestSchema, { ...validManifest(), protocolVersion: incorrectProtocolVersion }),
+  false,
+  "run manifests reject incorrect protocol versions",
+);
+
 assert.equal(
   Value.Check(ThreadPostSchema, { ...validPosts()[0], postId: "post-0" }),
   false,
@@ -254,6 +303,90 @@ assert.equal(
   Value.Check(ThreadPostSchema, { ...validPosts()[0], claimIds: Array.from({ length: 33 }, (_, index) => `claim-c${index}`) }),
   false,
   "posts cap referenced claims at 32",
+);
+assert.equal(
+  Value.Check(ThreadPostSchema, { ...validPosts()[0], text: "x" }),
+  true,
+  "post text accepts the 1-character minimum",
+);
+assert.equal(
+  Value.Check(ThreadPostSchema, { ...validPosts()[0], text: "" }),
+  false,
+  "post text rejects values below the 1-character minimum",
+);
+assert.equal(
+  Value.Check(ThreadPostSchema, { ...validPosts()[0], text: "x".repeat(25_000) }),
+  true,
+  "post text accepts the 25,000-character maximum",
+);
+assert.equal(
+  Value.Check(ThreadPostSchema, { ...validPosts()[0], text: "x".repeat(25_001) }),
+  false,
+  "post text rejects values above the 25,000-character maximum",
+);
+assert.equal(
+  Value.Check(ThreadPostSchema, {
+    ...validPosts()[0],
+    media: [{ description: "x", altText: "Accessible image" }],
+  }),
+  true,
+  "media descriptions accept the 1-character minimum",
+);
+assert.equal(
+  Value.Check(ThreadPostSchema, {
+    ...validPosts()[0],
+    media: [{ description: "", altText: "Accessible image" }],
+  }),
+  false,
+  "media descriptions reject values below the 1-character minimum",
+);
+assert.equal(
+  Value.Check(ThreadPostSchema, {
+    ...validPosts()[0],
+    media: [{ description: "x".repeat(500), altText: "Accessible image" }],
+  }),
+  true,
+  "media descriptions accept the 500-character maximum",
+);
+assert.equal(
+  Value.Check(ThreadPostSchema, {
+    ...validPosts()[0],
+    media: [{ description: "x".repeat(501), altText: "Accessible image" }],
+  }),
+  false,
+  "media descriptions reject values above the 500-character maximum",
+);
+assert.equal(
+  Value.Check(ThreadPostSchema, {
+    ...validPosts()[0],
+    media: [{ description: "Image", altText: "x" }],
+  }),
+  true,
+  "alt text accepts the 1-character minimum",
+);
+assert.equal(
+  Value.Check(ThreadPostSchema, {
+    ...validPosts()[0],
+    media: [{ description: "Image", altText: "" }],
+  }),
+  false,
+  "alt text rejects values below the 1-character minimum",
+);
+assert.equal(
+  Value.Check(ThreadPostSchema, {
+    ...validPosts()[0],
+    media: [{ description: "Image", altText: "x".repeat(1_000) }],
+  }),
+  true,
+  "alt text accepts the 1,000-character maximum",
+);
+assert.equal(
+  Value.Check(ThreadPostSchema, {
+    ...validPosts()[0],
+    media: [{ description: "Image", altText: "x".repeat(1_001) }],
+  }),
+  false,
+  "alt text rejects values above the 1,000-character maximum",
 );
 
 assert.ok(Value.Check(ThreadCandidateSchema, validCandidate()));
