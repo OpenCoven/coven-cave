@@ -23,10 +23,9 @@
 // already hold the correct secret, every failure looks identical (a generic
 // `pairing_expired`) — but to the legitimate holder of a correct secret this
 // reveals nothing that helps an attacker, so a still-pending or explicitly
-// denied request is reported precisely, an exact same-key replay after a
-// successful exchange gets a typed `pairing_already_exchanged` terminal result
-// (never a second credential, never a re-revealed bearer token), and an exact
-// concurrent duplicate gets a retryable in-flight 409.
+// denied request is reported precisely, an exact same-key replay during the
+// bounded encrypted-recovery window gets the original bearer token, and an
+// exact concurrent duplicate gets a retryable in-flight 409.
 
 import { CLIENT_V1_LOCAL_HEADER, isTrustedLocalPeer } from "@/proxy-helpers";
 
