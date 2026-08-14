@@ -74,23 +74,29 @@ function syntheticTerminalFailureEvent(code: string): StreamEvent {
   return { kind: "error", code, message: "The run failed." };
 }
 
-/** Shared append path for every write into a buffer's ring — the real
- *  producer's `record()` and the synthetic terminal insertion both funnel
- *  through here so oversize handling, eviction, terminal tracking, and live
- *  tail notification only exist once. */
-function appendToRing(buffer: RunBuffer, event: StreamEvent): BufferedStreamEvent {
-  let finalEvent: StreamEvent = event;
-  let json: string;
+/**
+ * Applies the stream buffer's canonical per-event size policy before an event
+ * is serialized or exposed to a client. Initial and resumed client-v1 SSE
+ * paths use this same normalization so neither can expose an event the
+ * canonical ring replaced.
+ */
+export function canonicalizeRunStreamEvent(event: StreamEvent): StreamEvent {
   try {
-    json = JSON.stringify(event);
-    if (Buffer.byteLength(json, "utf8") > RUN_STREAM_EVENT_MAX_BYTES) {
-      finalEvent = OVERSIZED_EVENT;
-      json = JSON.stringify(OVERSIZED_EVENT);
-    }
+    return Buffer.byteLength(JSON.stringify(event), "utf8") > RUN_STREAM_EVENT_MAX_BYTES
+      ? OVERSIZED_EVENT
+      : event;
   } catch {
-    finalEvent = OVERSIZED_EVENT;
-    json = JSON.stringify(OVERSIZED_EVENT);
+    return OVERSIZED_EVENT;
   }
+}
+
+/** Shared append path for every write into a buffer's ring — the real
+ * producer's `record()` and the synthetic terminal insertion both funnel
+ * through here so oversize handling, eviction, terminal tracking, and live
+ * tail notification only exist once. */
+function appendToRing(buffer: RunBuffer, event: StreamEvent): BufferedStreamEvent {
+  const finalEvent = canonicalizeRunStreamEvent(event);
+  const json = JSON.stringify(finalEvent);
   const entry: BufferedStreamEvent = { seq: buffer.nextSeq++, json };
   buffer.events.push(entry);
   buffer.bytes += Buffer.byteLength(entry.json, "utf8");
