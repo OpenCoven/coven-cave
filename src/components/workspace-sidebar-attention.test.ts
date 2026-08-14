@@ -176,6 +176,23 @@ assert.match(
 );
 assert.match(
   css,
+  /\.cnav__thread\.is-active\s*\{[\s\S]*?--cnav-active-background:\s*var\(--bg-raised\);[\s\S]*?isolation:\s*isolate;/,
+  "active rows should establish a shared backdrop without changing their layout box",
+);
+assert.match(
+  css,
+  /\.cnav__thread\.is-active::after\s*\{[\s\S]*?inset-inline:\s*calc\(var\(--rail-pad\) \* -1\);[\s\S]*?background:\s*var\(--cnav-active-background\);/,
+  "the active backdrop should span through both siderail gutters",
+);
+for (const state of ["left-hanging", "awaiting-human", "overdue-human"]) {
+  assert.match(
+    css,
+    new RegExp(`\\.cnav__thread\\.is-active\\[data-attention="${state}"\\][\\s\\S]*?--cnav-active-background:`),
+    `active ${state} rows should carry their semantic fill across the full-width backdrop`,
+  );
+}
+assert.match(
+  css,
   /data-attention="overdue-human"[\s\S]*\.cnav__attention-tick[\s\S]*background:\s*var\(--danger-text\);/,
   "overdue-human should escalate the attention tick to danger",
 );
