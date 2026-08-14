@@ -728,7 +728,7 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
  *  that would still spend a real familiar session. Enforced by the create
  *  validator (server) and the desk composer (client). */
 export const RESEARCH_INTENT_MIN_LENGTH = 8;
-/** Upper bound on a mission brief. Raised 10k → 25k (cave-e8z): real briefs
+/** Upper bound on a mission brief. Raised 10k → 25k (cave-r3vmj): real briefs
  *  carry pasted context — prior findings, source lists, constraints — and hit
  *  the old cap, which surfaced only as a server rejection after the writing was
  *  done. The composer now shows the count as you type, so the ceiling is
