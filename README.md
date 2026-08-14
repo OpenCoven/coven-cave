@@ -249,6 +249,8 @@ Running DevCommand (`cargo run --no-default-features --color always --`)
 <details>
 <summary><strong>Startup looks stuck? Diagnose it here</strong></summary>
 
+<br>
+
 - **First launch is slow by design.** Cargo downloads and compiles Rust crates
   before the window appears. `Compiling ...` lines are progress, not a hang.
 - **No `port ... is free` line + an error** → every port in `3000..3010` is
