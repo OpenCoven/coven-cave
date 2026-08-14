@@ -65,6 +65,13 @@ test("media lifecycle text, cancellation, players, and download use persisted st
   assert.doesNotMatch(tab, /\{ \.\.\.entry, status: "cancelled"/);
   assert.match(modals, /<audio[\s\S]*controls[\s\S]*preload="metadata"/);
   assert.match(modals, /<video[\s\S]*controls[\s\S]*preload="metadata"/);
+  assert.match(modals, /useResearchMediaUrl/);
+  assert.doesNotMatch(modals, /const mediaUrl = `\/api\/research\/generations\/media/);
+  assert.match(modals, /Loading podcast audio…/);
+  assert.match(modals, /Loading video preview…/);
+  assert.match(modals, /Couldn’t load podcast audio/);
+  assert.match(modals, /Couldn’t load video preview/);
+  assert.match(modals, /onClick=\{retryMedia\}/);
   assert.match(modals, /download=1/);
 });
 
