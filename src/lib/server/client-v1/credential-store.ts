@@ -105,10 +105,17 @@ export type CredentialSettlementRecovery =
     recoveryClaimId: string;
     claimId: string;
   }
-  | { kind: "replay"; credential: SafeClientCredential };
+  | {
+    kind: "replay";
+    token: string;
+    credential: SafeClientCredential;
+    recoveryClaimId: string | null;
+    claimId: string;
+  };
 
 const SETTLEMENT_JOURNAL_VERSION = 1;
-const SETTLEMENT_JOURNAL_MAX_ENTRIES = 64;
+export const PAIRING_CREDENTIAL_RECOVERY_TTL_MS = PAIRING_CLAIM_STALE_MS;
+export const PAIRING_CREDENTIAL_SETTLEMENT_MAX_ENTRIES = 64;
 const BASE64URL_RE = /^[A-Za-z0-9_-]+$/;
 
 // A credential that has just been reissued for the same installation should
@@ -550,8 +557,8 @@ async function readSettlementJournalForMutation(): Promise<CredentialSettlementJ
     || record.version !== SETTLEMENT_JOURNAL_VERSION
     || !Array.isArray(record.transactions)
     || !Array.isArray(record.replays)
-    || record.transactions.length > SETTLEMENT_JOURNAL_MAX_ENTRIES
-    || record.replays.length > SETTLEMENT_JOURNAL_MAX_ENTRIES
+    || record.transactions.length > PAIRING_CREDENTIAL_SETTLEMENT_MAX_ENTRIES
+    || record.replays.length > PAIRING_CREDENTIAL_SETTLEMENT_MAX_ENTRIES
   ) {
     throw new CredentialStoreIntegrityError("The pairing credential settlement journal does not match the expected schema.");
   }
@@ -833,6 +840,23 @@ function hasPersistedSettlementCredential(
   );
 }
 
+function hasActiveSettlementCredential(
+  store: StoreFile,
+  entry: CredentialSettlementEntry,
+): boolean {
+  const credential = store.credentials.find((candidate) => candidate.id === entry.credential.id);
+  return Boolean(
+    credential
+    && credential.appName === entry.credential.appName
+    && credential.installationId === entry.credential.installationId
+    && credential.tokenHash === entry.credential.tokenHash
+    && credential.createdAt === entry.credential.createdAt
+    && credential.revokedAt === null
+    && credential.scopes.length === entry.credential.scopes.length
+    && credential.scopes.every((scope, index) => scope === entry.credential.scopes[index]),
+  );
+}
+
 /**
  * Undo only the precise writes this transaction made.  The exact planned
  * revocation timestamp is the compare-and-swap guard: an administrator's
@@ -961,7 +985,7 @@ export async function issueCredentialForPairingSettlement(
     if (journal.transactions.some((entry) => entry.credential.installationId === approvedPairing.installationId.toLowerCase())) {
       throw new Error("A credential replacement for this installation is awaiting settlement.");
     }
-    if (journal.transactions.length >= SETTLEMENT_JOURNAL_MAX_ENTRIES) {
+    if (journal.transactions.length >= PAIRING_CREDENTIAL_SETTLEMENT_MAX_ENTRIES) {
       throw new Error("Pairing credential settlement capacity is temporarily unavailable.");
     }
     const bytes = new Uint8Array(32);
@@ -977,7 +1001,7 @@ export async function issueCredentialForPairingSettlement(
       credential: replacement.credential,
       replaced: replacement.replaced,
       createdAt: now,
-      expiresAt: now + PAIRING_CLAIM_STALE_MS,
+      expiresAt: now + PAIRING_CREDENTIAL_RECOVERY_TTL_MS,
       recoveryClaimId: null,
       recoveryClaimStartedAt: null,
     };
@@ -1012,7 +1036,24 @@ export async function recoverPairingCredentialSettlement(
     await persistSettlementCleanup(store, journal, cleanup);
 
     const replay = journal.replays.find((entry) => isSettlementContextForEntry(entry, context));
-    if (replay) return { kind: "replay", credential: toSafe(replay.credential) };
+    if (replay) {
+      if (!hasActiveSettlementCredential(store, replay)) {
+        journal.replays = journal.replays.filter((entry) => entry !== replay);
+        await writeSettlementJournal(journal);
+        return { kind: "none" };
+      }
+      const token = unsealSettlementToken(replay, context.pairingSecret);
+      if (!token || hashToken(token) !== replay.credential.tokenHash) {
+        throw new CredentialStoreIntegrityError("The pairing credential settlement journal could not be decrypted.");
+      }
+      return {
+        kind: "replay",
+        token,
+        credential: toSafe(replay.credential),
+        recoveryClaimId: replay.recoveryClaimId,
+        claimId: replay.claimId,
+      };
+    }
 
     const transaction = journal.transactions.find((entry) => isSettlementContextForEntry(entry, context));
     if (!transaction) return { kind: "none" };
@@ -1056,40 +1097,49 @@ export async function recoverPairingCredentialSettlement(
 }
 
 /**
- * Promote an issued transaction to a bounded terminal replay receipt.  The
- * plaintext token remains encrypted under the pairing secret; normal replay
- * callers only receive credential metadata, while a crash before this
- * promotion is recoverable through `recoverPairingCredentialSettlement`.
+ * Promote an issued transaction to a bounded terminal replay receipt. The
+ * plaintext token remains encrypted under the pairing secret, and only an
+ * exact request that proves that secret can unseal it. Preserve the winning
+ * recovery claimant and original transaction id so an older claimant cannot
+ * pass the terminal fence after a newer one promotes settlement.
  */
 export async function settlePairingCredentialSettlement(
   context: CredentialSettlementContext,
   recoveryClaimId: string | null,
+  claimId: string,
   now = Date.now(),
 ): Promise<boolean> {
   assertValidNow(now);
   assertSettlementContext(context);
+  if (!isUuid(claimId)) throw new Error("Invalid pairing credential settlement claim.");
   return withCredentialTransaction(async () => {
     const store = await readStoreForMutation();
     const journal = await readSettlementJournalForMutation();
     const cleanup = pruneSettlementJournal(store, journal, now);
     await persistSettlementCleanup(store, journal, cleanup);
 
-    if (journal.replays.some((entry) => isSettlementContextForEntry(entry, context))) return true;
+    const replay = journal.replays.find((entry) => isSettlementContextForEntry(entry, context));
+    if (replay) {
+      // A terminal replay is owned by the exact transaction/recovery claimant
+      // that promoted it. An older claimant may still hold decrypted bytes in
+      // memory, but it must fail this fence before any caller can return them.
+      return replay.claimId === claimId && replay.recoveryClaimId === recoveryClaimId;
+    }
     const transaction = journal.transactions.find((entry) => isSettlementContextForEntry(entry, context));
     if (
       !transaction
       || !hasPersistedSettlementCredential(store, transaction)
       || store.credentials.find((candidate) => candidate.id === transaction.credential.id)?.revokedAt !== null
+      || transaction.claimId !== claimId
       || transaction.recoveryClaimId !== recoveryClaimId
     ) {
       return false;
     }
-    while (journal.replays.length >= SETTLEMENT_JOURNAL_MAX_ENTRIES) {
-      journal.replays.shift();
-    }
+    // A terminal receipt is the only recovery material for a response lost
+    // after settlement. Do not evict a still-live receipt for capacity: its
+    // defined retention policy is expiry, not unrelated pairing traffic.
+    if (journal.replays.length >= PAIRING_CREDENTIAL_SETTLEMENT_MAX_ENTRIES) return false;
     journal.transactions = journal.transactions.filter((entry) => entry !== transaction);
-    transaction.recoveryClaimId = null;
-    transaction.recoveryClaimStartedAt = null;
     journal.replays.push(transaction);
     await writeSettlementJournal(journal);
     return true;
