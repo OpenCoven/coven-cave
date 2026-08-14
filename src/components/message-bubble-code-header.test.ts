@@ -66,7 +66,7 @@ assert.match(
   "A shared post-render hook should wire copy buttons once the injected HTML lands",
 );
 
-const syntaxBlock = /export function SyntaxBlock\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+const syntaxBlock = /export function SyntaxBlock\([\s\S]*?\n\}\n/.exec(source)?.[0] ?? "";
 assert.match(
   syntaxBlock,
   /useWireCopyButtons\(/,
@@ -78,7 +78,7 @@ assert.match(
   "SyntaxBlock must attach the wiring ref to its dangerouslySetInnerHTML container",
 );
 
-const markdownBlock = /export function MarkdownBlock\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+const markdownBlock = /export function MarkdownBlock\([\s\S]*?\n\}\n/.exec(source)?.[0] ?? "";
 assert.match(
   markdownBlock,
   /useWireCopyButtons\(/,
