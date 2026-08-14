@@ -324,7 +324,7 @@ export async function computeCanonicalSessionList(
  * `sessionsListCache.clear()` alone cannot make ANOTHER process's
  * project-permission/group mutation or project-registry mutation visible to
  * THIS process): `[projectPermissionsVisibilityGeneration, projectsVisibilityGeneration]`,
- * read fresh by `getCanonicalSessionList` before every cache lookup
+ * read fresh by `getCanonicalSessionList` before every relevant cache lookup
  * (`readCanonicalSessionListVisibilityGenerations`). A revocation/registry
  * change committed by another process regenerates its store's nonce inside
  * the SAME durable write transaction as the mutation itself (never on a
@@ -371,28 +371,41 @@ export function canonicalSessionListCacheKey(
  * mutation committed by another process is observed here on the very next
  * call, before this process's own cache lookup runs.
  */
-async function readCanonicalSessionListVisibilityGenerations(): Promise<[string, string]> {
+async function readCanonicalSessionListVisibilityGenerations(
+  familiarId: string | null,
+): Promise<[string, string]> {
   const [permissionsGeneration, projectsGeneration] = await Promise.all([
-    projectPermissionsVisibilityGeneration(),
+    familiarId ? projectPermissionsVisibilityGeneration() : Promise.resolve(""),
     projectsVisibilityGeneration(),
   ]);
   return [permissionsGeneration, projectsGeneration];
 }
 
 // Bounds the shared sessions-list cache's growth across generation changes
-// (rather than letting a distinct key accumulate per generation forever):
-// tracked as a single encoded tag across the whole process, so ANY
-// generation change (either store) drops every previously cached view, not
-// just the ones for the specific (includeArchived, familiarId, collapse)
-// tuple currently being read.
-let lastSeenSessionListVisibilityTag: string | null = null;
+// (rather than letting a distinct key accumulate per generation forever).
+// Permission generation is intentionally tracked only when a scoped read
+// actually opened that store: switching between an unscoped operator read
+// (which carries the empty sentinel) and a scoped familiar read must not
+// itself look like a mutation and flush every warm cache entry.
+let lastSeenProjectsVisibilityGeneration: string | null = null;
+let lastSeenPermissionsVisibilityGeneration: string | null = null;
 
 function clearSessionsListCacheOnGenerationChange(visibilityGenerations: readonly [string, string]): void {
-  const tag = JSON.stringify(visibilityGenerations);
-  if (lastSeenSessionListVisibilityTag !== null && lastSeenSessionListVisibilityTag !== tag) {
+  const [permissionsGeneration, projectsGeneration] = visibilityGenerations;
+  const projectChanged =
+    lastSeenProjectsVisibilityGeneration !== null
+    && lastSeenProjectsVisibilityGeneration !== projectsGeneration;
+  const permissionsChanged =
+    permissionsGeneration !== ""
+    && lastSeenPermissionsVisibilityGeneration !== null
+    && lastSeenPermissionsVisibilityGeneration !== permissionsGeneration;
+  if (projectChanged || permissionsChanged) {
     sessionsListCache.clear();
   }
-  lastSeenSessionListVisibilityTag = tag;
+  lastSeenProjectsVisibilityGeneration = projectsGeneration;
+  if (permissionsGeneration !== "") {
+    lastSeenPermissionsVisibilityGeneration = permissionsGeneration;
+  }
 }
 
 /**
@@ -409,10 +422,11 @@ function clearSessionsListCacheOnGenerationChange(visibilityGenerations: readonl
  * title, pin, kill, prune, ...) busts every one of them, since they are all
  * the same cache instance under the hood. Cross-process permission/registry
  * visibility is handled separately (see `canonicalSessionListCacheKey`'s doc
- * comment): every call here first reads both generations fresh
+ * comment): each call reads the project generation fresh, and
+ * familiar-scoped calls also read permission generation
  * (`readCanonicalSessionListVisibilityGenerations`), so a revocation another
- * process just committed selects a brand-new key on this process's very
- * next call — never served the pre-revocation entry for any part of the
+ * process just committed selects a brand-new scoped key on this process's
+ * very next call — never served the pre-revocation scoped view during the
  * cache's normal stale-serve window.
  *
  * Deliberately wraps ONLY the canonical merge, never a client-specific
@@ -427,7 +441,7 @@ export async function getCanonicalSessionList(
   familiarId: string | null,
   collapseFamiliarWorkspace: boolean,
 ): Promise<SessionsListResult> {
-  const visibilityGenerations = await readCanonicalSessionListVisibilityGenerations();
+  const visibilityGenerations = await readCanonicalSessionListVisibilityGenerations(familiarId);
   clearSessionsListCacheOnGenerationChange(visibilityGenerations);
   return sessionsListCache.get(
     canonicalSessionListCacheKey(includeArchived, familiarId, collapseFamiliarWorkspace, visibilityGenerations),

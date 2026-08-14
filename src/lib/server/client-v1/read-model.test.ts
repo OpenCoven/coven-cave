@@ -564,6 +564,31 @@ try {
 
   await resetFixtures();
 
+  // The operator's unscoped list does not read project permissions at all:
+  // permissions only affect a familiar-scoped view. A broken permissions
+  // store must therefore leave the unscoped view usable, while the scoped
+  // legacy route returns its normal controlled JSON failure instead of
+  // leaking the filesystem exception.
+  await startDaemon([]);
+  await writeHubConfig(daemonBaseUrl);
+  const permissionsPath = process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE!;
+  await mkdir(permissionsPath, { recursive: true });
+  const unscopedWithoutPermissions = await getCanonicalSessionList(false, null, false);
+  assert.equal(unscopedWithoutPermissions.payload.ok, true);
+  const legacyRoute = await import("../../../app/api/sessions/list/route.ts");
+  const scopedStorageFailure = await legacyRoute.GET(
+    new Request("http://127.0.0.1/api/sessions/list?familiarId=charm", {
+      headers: { host: "127.0.0.1" },
+    }),
+  );
+  assert.equal(scopedStorageFailure.status, 503);
+  assert.deepEqual(await scopedStorageFailure.json(), {
+    ok: false,
+    error: "sessions are temporarily unavailable",
+    sessions: [],
+  });
+  await resetFixtures();
+
   // ── Test: daemon + local conversations merge exactly once ───────────────
   await saveConversation({
     sessionId: "merge-both",
@@ -1315,6 +1340,16 @@ try {
   // local invalidation call is needed for a revocation/registry change to
   // stop being served stale. ─────────────────────────────────────────────
   {
+    // Initialize a valid permissions store before warming the operator view.
+    // The following raw nonce edits model a different process's completed
+    // write without invoking this process's explicit cache invalidator.
+    await grantProjectToFamiliar({
+      familiarId: "cross-process-visibility-fam",
+      projectId: "cross-process-visibility-project-placeholder",
+      source: "human",
+      access: "read",
+    });
+
     // Warm the (includeArchived: true, familiarId: null, collapse: false)
     // key explicitly so its daemon-request count is a known baseline.
     await getCanonicalSessionList(true, null, false);
@@ -1322,38 +1357,33 @@ try {
     await getCanonicalSessionList(true, null, false);
     assert.equal(cacheDaemonRequests, warmed, "the key is served from cache before any mutation");
 
-    // A project-PERMISSION mutation (grant), with NO call to
-    // invalidateSessionsListCache() — the generation embedded in the next
-    // read's key must differ, forcing a recompute.
-    await grantProjectToFamiliar({
-      familiarId: "cross-process-visibility-fam",
-      projectId: "cross-process-visibility-project-placeholder",
-      source: "human",
-      access: "read",
-    });
+    // A project-PERMISSION mutation does not affect the unscoped operator
+    // view, so that view must remain cacheable without opening or keying on
+    // the permissions store.
+    const permissionFilePath = process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE!;
+    const rotatePermissionsGeneration = async (generation: string) => {
+      const permissions = JSON.parse(await readFile(permissionFilePath, "utf8"));
+      permissions.visibilityGeneration = generation;
+      await writeFile(permissionFilePath, JSON.stringify(permissions));
+    };
+    await rotatePermissionsGeneration("cross-process-permissions-grant");
     await getCanonicalSessionList(true, null, false);
     assert.equal(
       cacheDaemonRequests,
-      warmed + 1,
-      "a project-permission mutation must force the very next getCanonicalSessionList read for the SAME tuple to recompute, with no local invalidation call",
+      warmed,
+      "an unscoped operator read ignores project-permission generation changes",
     );
-    // Immediately re-reading the SAME tuple again now serves from the new
-    // generation's cache entry — the new key itself is still cacheable.
     await getCanonicalSessionList(true, null, false);
-    assert.equal(cacheDaemonRequests, warmed + 1, "the new generation's key is itself served from cache on the very next read");
+    assert.equal(cacheDaemonRequests, warmed, "the unchanged unscoped key remains cacheable");
 
     const afterGrant = cacheDaemonRequests;
-    // Revocation is the other project-permission mutation path; it must
-    // bump the SAME generation and force another recompute.
-    await revokeProjectFromFamiliar({
-      familiarId: "cross-process-visibility-fam",
-      projectId: "cross-process-visibility-project-placeholder",
-    });
+    // Revocation likewise leaves the unscoped view's key untouched.
+    await rotatePermissionsGeneration("cross-process-permissions-revoke");
     await getCanonicalSessionList(true, null, false);
     assert.equal(
       cacheDaemonRequests,
-      afterGrant + 1,
-      "a project-permission REVOCATION must also force the very next read to recompute",
+      afterGrant,
+      "an unscoped operator read also ignores permission revocations",
     );
 
     const afterRevoke = cacheDaemonRequests;
