@@ -231,8 +231,11 @@ export async function claudeOpus5Routability(
   }
   const now = dependencies.now ?? Date.now;
   pruneExpiredCache(now());
-  const cached = cache.get(cacheKey(familiarId, providerEnv));
+  const key = cacheKey(familiarId, providerEnv);
+  const cached = cache.get(key);
   if (cached) {
+    cache.delete(key);
+    cache.set(key, cached);
     return cached.models.some((model) => model.id === CLAUDE_OPUS_5_CAVE_ID)
       ? "available"
       : "unavailable";
@@ -242,7 +245,21 @@ export async function claudeOpus5Routability(
   // absent, spawn refused, or the call timed out. That is not evidence about
   // the model.
   if (!parseClaudeCodeVersion(versionOutput)) return "unknown";
-  return claudeOpus5Available({ versionOutput, env: providerEnv })
+  const models = withClaudeOpus5(seedModels(), {
+    versionOutput,
+    env: providerEnv,
+  });
+  const currentTime = now();
+  pruneExpiredCache(currentTime);
+  cacheModels(
+    key,
+    {
+      expiresAt: currentTime + (dependencies.cacheMs ?? CACHE_MS),
+      models,
+    },
+    positiveLimit(dependencies.maxCacheEntries, MAX_CACHE_ENTRIES),
+  );
+  return models.some((model) => model.id === CLAUDE_OPUS_5_CAVE_ID)
     ? "available"
     : "unavailable";
 }
