@@ -91,7 +91,7 @@ jobs:
         run: xcodebuild -scheme CovenCave -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
 
   frontend-static:
-    name: Frontend lint & types
+    name: Frontend lint, types & test wiring
     needs: paths
     if: needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
     runs-on: ubuntu-latest
