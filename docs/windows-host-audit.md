@@ -5,13 +5,17 @@ Windows Host Audit is an optional, session-bound, read-only adapter for
 to a registered directory; it never grants Windows host, administrator, or
 Hyper-V authority.
 
-The capability is actionable only through the registered
-`windows-hyperv-broker` adapter. An approval is rejected when that adapter is
-absent; filesystem/runtime fingerprints are not authorization forwarding.
+This draft ships source and typed runtime scaffolding only. The capability is
+currently unavailable: no grant can be approved and no audit can be invoked.
+It becomes actionable only in a later release after the packaged helper and
+installer-owned manifest have been independently integrity/signing-verified
+and register `windows-hyperv-broker`. Filesystem/runtime fingerprints are not
+authorization forwarding.
 
-Only a trusted server runtime that has bound an unexpired capability to its
-selected Cave conversation may invoke the audit. There is deliberately no
-browser endpoint that accepts familiar/session IDs and starts a host process.
+When the separately verified package is available, only a trusted server
+runtime that has bound an unexpired capability to its selected Cave
+conversation may invoke the audit. There is deliberately no browser endpoint
+that accepts familiar/session IDs and starts a host process.
 
 The desktop app resolves the helper and Windows PowerShell paths from the
 installer-owned, ACL-protected `coven-host-audit.manifest.json` located beside
