@@ -674,6 +674,17 @@ for (const field of ["summary", "sourceLabel"] as const) {
   );
 }
 
+for (const [label, sourceUrl] of [
+  ["whitespace-only", " \t "],
+  ["malformed", "not-a-url"],
+] as const) {
+  assert.equal(
+    Value.Check(EvidenceItemSchema, { ...validEvidence()[0], sourceUrl }),
+    false,
+    `evidence source URLs reject ${label} values`,
+  );
+}
+
 const invalidCandidateTimestampError = expectValidationError(
   () => assertValidThreadCandidate({
     ...validCandidate(),
@@ -685,6 +696,24 @@ const invalidCandidateTimestampError = expectValidationError(
 );
 assert.match(invalidCandidateTimestampError.issues.join("\n"), /ThreadCandidate\.generatedAt.*calendar-valid/i);
 assert.match(invalidCandidateTimestampError.issues.join("\n"), /ThreadCandidate\.evidence\[0\]\.retrievedAt.*calendar-valid/i);
+
+const futureRetrievedAt = "2026-08-14T12:01:00.000Z";
+const candidateWithFutureEvidence = rehashCandidate({
+  ...validCandidate(),
+  evidence: validEvidence().map((item, index) => index === 0
+    ? { ...item, retrievedAt: futureRetrievedAt }
+    : item),
+});
+const futureEvidenceError = expectValidationError(
+  () => assertValidThreadCandidate(candidateWithFutureEvidence),
+);
+assert.ok(
+  futureEvidenceError.issues.some((issue) =>
+    issue.includes("ThreadCandidate.evidence[0].retrievedAt")
+    && issue.includes("ThreadCandidate.generatedAt")
+  ),
+  "future-retrieved evidence identifies both bound candidate paths",
+);
 
 const missingLedgerReferenceError = expectValidationError(
   () => assertValidThreadCandidate({
@@ -1091,6 +1120,23 @@ const manifestVoiceBindingError = expectValidationError(
 assert.match(
   manifestVoiceBindingError.issues.join("\n"),
   /ThreadRunManifest\.candidates\[0\]\.voiceProfile.*ThreadRunManifest\.voiceProfile/i,
+);
+
+const preGenerationScorecardError = expectValidationError(
+  () => assertValidThreadRunManifest({
+    ...validManifest(),
+    scorecards: [{
+      ...validScorecard(),
+      scoredAt: "2026-08-14T11:59:00.000Z",
+    }],
+  }),
+);
+assert.ok(
+  preGenerationScorecardError.issues.some((issue) =>
+    issue.includes("ThreadRunManifest.scorecards[0].scoredAt")
+    && issue.includes("ThreadRunManifest.candidates[0].generatedAt")
+  ),
+  "pre-generation scorecards identify both bound manifest paths",
 );
 
 const bindingError = expectValidationError(

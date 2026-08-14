@@ -26,6 +26,9 @@ const THREAD_OBSERVATION_METRIC_NAMES = [
 const boundedNonWhitespaceString = (maxLength: number) =>
   Type.String({ minLength: 1, maxLength, pattern: "\\S" });
 
+const boundedUrlString = (maxLength: number, pattern = "\\S") =>
+  Type.String({ format: "url", minLength: 1, maxLength, pattern });
+
 const timestampString = () =>
   Type.String({ format: "date-time", minLength: 24, maxLength: 24, pattern: RFC3339_UTC_MILLIS.source });
 
@@ -45,7 +48,7 @@ const xPostIdSchema = () =>
   Type.String({ minLength: 1, maxLength: 64, pattern: X_POST_ID_RE.source });
 
 const xThreadUrlSchema = () =>
-  Type.String({ format: "url", minLength: 1, maxLength: 2_000, pattern: X_THREAD_URL_RE.source });
+  boundedUrlString(2_000, X_THREAD_URL_RE.source);
 
 const sha256Schema = () =>
   Type.String({ minLength: 64, maxLength: 64, pattern: SHA256_HEX.source });
@@ -86,7 +89,7 @@ export const EvidenceItemSchema = Type.Object({
   claimId: claimIdSchema(),
   summary: boundedNonWhitespaceString(2_000),
   sourceLabel: boundedNonWhitespaceString(200),
-  sourceUrl: Type.Optional(Type.String({ minLength: 1, maxLength: 2_000 })),
+  sourceUrl: Type.Optional(boundedUrlString(2_000)),
   retrievedAt: timestampString(),
 }, { additionalProperties: false });
 export type EvidenceItem = Static<typeof EvidenceItemSchema>;
@@ -418,6 +421,23 @@ function collectTimestampIssues(value: unknown, path: string): string[] {
   return [`${path} must be a calendar-valid UTC-millisecond timestamp.`];
 }
 
+function collectTimestampOrderIssues(
+  value: unknown,
+  bound: unknown,
+  valuePath: string,
+  boundPath: string,
+  order: "at-or-before" | "at-or-after",
+): string[] {
+  if (typeof value !== "string" || typeof bound !== "string") return [];
+  const valueMs = Date.parse(value);
+  const boundMs = Date.parse(bound);
+  if (!Number.isFinite(valueMs) || !Number.isFinite(boundMs)) return [];
+  const valid = order === "at-or-before" ? valueMs <= boundMs : valueMs >= boundMs;
+  if (valid) return [];
+  const relation = order === "at-or-before" ? "less than or equal to" : "greater than or equal to";
+  return [`${valuePath} must be ${relation} ${boundPath}.`];
+}
+
 function collectNonWhitespaceStringIssues(value: unknown, path: string): string[] {
   return typeof value === "string" && value.trim().length === 0
     ? [`${path} must contain non-whitespace text.`]
@@ -516,6 +536,13 @@ function collectThreadCandidateIssues(value: unknown, path = "ThreadCandidate"):
   for (const [index, item] of value.evidence.entries()) {
     if (!isRecord(item)) continue;
     issues.push(...collectTimestampIssues(item.retrievedAt, `${path}.evidence[${index}].retrievedAt`));
+    issues.push(...collectTimestampOrderIssues(
+      item.retrievedAt,
+      value.generatedAt,
+      `${path}.evidence[${index}].retrievedAt`,
+      `${path}.generatedAt`,
+      "at-or-before",
+    ));
     issues.push(...collectNonWhitespaceStringIssues(item.summary, `${path}.evidence[${index}].summary`));
     issues.push(...collectNonWhitespaceStringIssues(item.sourceLabel, `${path}.evidence[${index}].sourceLabel`));
     if (typeof item.evidenceId === "string") {
@@ -736,6 +763,14 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
       issues.push(`ThreadRunManifest.scorecards[${index}] candidate sha "${scorecard.candidateSha256}" does not match any candidate.`);
       continue;
     }
+    const candidateIndex = manifest.candidates.indexOf(candidate);
+    issues.push(...collectTimestampOrderIssues(
+      scorecard.scoredAt,
+      candidate.generatedAt,
+      `ThreadRunManifest.scorecards[${index}].scoredAt`,
+      `ThreadRunManifest.candidates[${candidateIndex}].generatedAt`,
+      "at-or-after",
+    ));
     issues.push(...candidateReferencesFromScorecard(scorecard, candidate, `ThreadRunManifest.scorecards[${index}]`));
   }
 
