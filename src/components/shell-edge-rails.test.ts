@@ -372,7 +372,10 @@ assert.doesNotMatch(
   const settingsShell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
   assert.match(
     settingsShell,
-    /surface-compact-header shrink-0[^"]*"[\s\S]{0,400}?data-tauri-drag-region="deep"/,
+    // The attribute is conditional now — an embedded settings pane is not a
+    // window edge and must not claim one. Pin that a non-embedded header still
+    // resolves to "deep" rather than the literal expression that produces it.
+    /surface-compact-header shrink-0[^"]*"[\s\S]{0,400}?data-tauri-drag-region=\{?[^}\n]*"deep"/,
     "the settings header is a real window drag region (CSS app-region is inert on loopback URLs)",
   );
 }
