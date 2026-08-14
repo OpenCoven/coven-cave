@@ -140,8 +140,13 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /if \(\(hermesDirect \|\| hermesApi\) && body\.permissionMode === "read"\)[\s\S]*?new Response\([\s\S]*?JSON\.stringify\([\s\S]*?error: "Hermes does not support Cave[\s\S]*?status: 501/,
-  "Hermes must reject Read-only mode before either the API or profile-bound CLI transport runs",
+  /if \(\(hermesDirect \|\| hermesApi\) && body\.permissionMode === "read"\)/,
+  "Hermes read-only guard must cover both the API and direct CLI transports",
+);
+assert.match(
+  chatRoute,
+  /error: "Hermes does not support Cave[\s\S]*?status: 501/,
+  "Hermes must return HTTP 501 with a Hermes-specific error before either transport runs",
 );
 
 assert.match(
