@@ -156,6 +156,23 @@ export default defineConfig({
       name: "desktop",
       dependencies: ["preferences-iphone-13"],
       testMatch: /.*\.spec\.ts/,
+      // tests/mobile/** belongs to the pixel-5 and iphone-13 projects below.
+      // Without this, `/.*\.spec\.ts/` also matches them and every mobile spec
+      // runs a THIRD time under Desktop Chrome. That was survivable only while
+      // mobile specs happened to be viewport-agnostic; the first one that
+      // genuinely is not (tests/mobile/workspace-half-split.spec.ts, asserting
+      // the container-width tab fallback) fails all 22 of its cases there and
+      // burns ~4.5 minutes locally. Doubled by `retries: 1` and multiplied on
+      // CI's slower runners, that is what pushed the job past its 60-minute cap
+      // so every PR reported a bare "cancelled" with no failing test (cave-3wmla).
+      //
+      // Anchor on the `tests/mobile/` SEGMENT, not a bare `mobile/`: Playwright
+      // matches testIgnore against the ABSOLUTE path, so a loose pattern also
+      // matches any checkout whose own directory contains "mobile" — a worktree
+      // named `…-ignores-mobile` silently ignored EVERY desktop spec and the
+      // project collected 0 tests. That would still have looked green on CI,
+      // whose runner path has no such segment.
+      testIgnore: /[\\/]tests[\\/]mobile[\\/]/,
       grepInvert: PERSISTED_SCREEN_SCALE_TEST,
       use: { ...devices["Desktop Chrome"] },
     },

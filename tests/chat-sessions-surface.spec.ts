@@ -26,6 +26,7 @@ type Seed = {
   ago: number;
   born: number;
   branch?: string;
+  projectRoot?: string;
   diff?: { additions: number; deletions: number };
 };
 
@@ -35,12 +36,12 @@ const SEEDS: Seed[] = [
   { id: "s-run", title: "Prune the merged worktrees", status: "running", ago: 0, born: 40, branch: "main", diff: { additions: 53, deletions: 6 } },
   { id: "s-done-today", title: "Worktree and branch cleanup", status: "completed", ago: 45, born: 170, branch: "main", diff: { additions: 102, deletions: 0 } },
   { id: "s-fail", title: "Diagnose the failed CI workflow", status: "failed", ago: 1_500, born: 1_560, branch: "fix/ci" },
-  { id: "s-done-old", title: "Optimize the image pipeline", status: "completed", ago: 13_000, born: 13_100, branch: "perf/images" },
+  { id: "s-done-old", title: "Optimize the image pipeline", status: "completed", ago: 13_000, born: 13_100, branch: "perf/images", projectRoot: "/other" },
 ];
 
 const sessions = SEEDS.map((s) => ({
   id: s.id,
-  project_root: "/repo",
+  project_root: s.projectRoot ?? "/repo",
   harness: "copilot",
   model: "github/gpt-5",
   title: s.title,
@@ -64,6 +65,7 @@ async function openSessionsList(page: Page) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "nova");
+    window.localStorage.setItem("cave:chat:project-selected", JSON.stringify("root:/other"));
   });
   await page.route("**/api/familiars**", (r) => r.fulfill({ json: { ok: true, familiars: [FAMILIAR] } }));
   await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions } }));
@@ -93,6 +95,8 @@ test.describe("sessions list", () => {
   });
 
   test("status chips filter the list and count what the search found", async ({ page }) => {
+    // An active chat may have persisted its project for router continuity. The
+    // Sessions view starts from familiar scope instead of reviving that filter.
     await expect(rows(page)).toHaveCount(SEEDS.length);
 
     // Each chip carries its own count, so "what failed?" is legible before you
@@ -115,6 +119,34 @@ test.describe("sessions list", () => {
 
     await chip(page, "All").click();
     await expect(rows(page)).toHaveCount(SEEDS.length);
+  });
+
+  test("clear filters appears for any applied filter and restores familiar scope", async ({ page }) => {
+    const clearFilters = page.getByRole("button", { name: "Clear filters" });
+    await expect(clearFilters).toHaveCount(0);
+
+    await chip(page, "Failed").click();
+    await expect(clearFilters).toBeVisible();
+    await clearFilters.click();
+    await expect(rows(page)).toHaveCount(SEEDS.length);
+    await expect(chip(page, "All")).toHaveAttribute("aria-pressed", "true");
+
+    const search = page.getByPlaceholder("Search sessions…");
+    await search.fill("no matching session");
+    await expect(clearFilters).toHaveCount(1);
+    await clearFilters.click();
+
+    await search.fill("image");
+    await expect(clearFilters).toBeVisible();
+    await clearFilters.click();
+    await expect(search).toHaveValue("");
+    await expect(rows(page)).toHaveCount(SEEDS.length);
+
+    const archived = page.getByRole("button", { name: "Show archived sessions" });
+    await archived.click();
+    await expect(clearFilters).toBeVisible();
+    await clearFilters.click();
+    await expect(page.getByRole("button", { name: "Show archived sessions" })).toHaveAttribute("aria-pressed", "false");
   });
 
   test("running work floats into Active now regardless of when it started", async ({ page }) => {
