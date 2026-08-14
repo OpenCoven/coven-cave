@@ -366,7 +366,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const push = \(e: StreamEvent\) => \{[\s\S]*?if \(closed \|\| req\.signal\.aborted\) return;[\s\S]*?controller\.enqueue\(chatSse\(e, seq\)\);[\s\S]*?catch/,
+  /const push = \(e: StreamEvent\) => \{[\s\S]*?if \(closed \|\| req\.signal\.aborted\) return;[\s\S]*?controller\.enqueue\(chatSse\(recorded\.event, recorded\.seq\)\);[\s\S]*?catch/,
   "Native stream pushes should be ignored after close/abort so late child output cannot enqueue into a closed stream",
 );
 assert.match(
@@ -376,7 +376,17 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const push = \(event: StreamEvent\) => \{[\s\S]*?if \(closed \|\| args\.req\.signal\.aborted\) return;[\s\S]*?controller\.enqueue\(chatSse\(event, seq\)\);[\s\S]*?catch/,
+  /runBuffer = openRunBuffer\(\[body\.runId, body\.sessionId\]\);[\s\S]*?disposeDetachCleanup = wireRunDetachCleanup\(\{[\s\S]*?runBuffer,[\s\S]*?signal: req\.signal,[\s\S]*?isStopRequested: \(\) => runHandle\.stopRequested,[\s\S]*?onTimeout: killCurrentChild,[\s\S]*?\}\);/,
+  "Native child runs should reuse the pre-abort-aware detach lifecycle",
+);
+assert.match(
+  chatRoute,
+  /cleanupStagedImageFiles\(imageFilePaths\);[\s\S]*?disposeDetachCleanup\?\.\(\);[\s\S]*?unregisterChatRun\(runHandle\);[\s\S]*?runBuffer\?\.finish\(\);/,
+  "Native child completion should dispose detach cleanup before unregistering and finishing the replay buffer",
+);
+assert.match(
+  chatRoute,
+  /const push = \(event: StreamEvent\) => \{[\s\S]*?if \(closed \|\| args\.req\.signal\.aborted\) return;[\s\S]*?controller\.enqueue\(chatSse\(recorded\.event, recorded\.seq\)\);[\s\S]*?catch/,
   "OpenClaw stream pushes should be ignored after close/abort so late child close/error output cannot enqueue into a cancelled stream",
 );
 assert.doesNotMatch(
