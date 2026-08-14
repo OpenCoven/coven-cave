@@ -125,6 +125,21 @@ function rankingInput(
   };
 }
 
+function malformedWithLatePostText(text: string) {
+  return {
+    candidate: {
+      posts: Array.from({ length: 34 }, (_, index) => ({
+        postId: `post-${index + 1}`,
+        text: index === 33 ? text : "Shared malformed audit post.",
+        claimIds: [],
+      })),
+      evidence: [],
+    },
+    scorecard: {},
+    validation: {},
+  };
+}
+
 function legacyAuditFindingId(
   finding: { code: string; message: string; postId?: string; claimId?: string },
 ): string {
@@ -475,21 +490,97 @@ for (const invalidKind of ["sha", "schema", "chronology", "finding-reference"] a
 }
 
 {
-  function malformedWithLatePostText(text: string) {
-    return {
-      candidate: {
-        posts: Array.from({ length: 34 }, (_, index) => ({
-          postId: `post-${index + 1}`,
-          text: index === 33 ? text : "Shared malformed audit post.",
-          claimIds: [],
-        })),
-        evidence: [],
+  const valid = rankingInput(candidate("candidate-valid-nested-hostile-sibling"));
+  const nestedCandidateAccesses = { candidate: 0, scorecard: 0, validation: 0 };
+  const throwingCandidate = Object.defineProperty({}, "posts", {
+    enumerable: true,
+    get() {
+      throw new Error("nested candidate property must stay inside its entry");
+    },
+  });
+  const nestedCandidateEnvelope = Object.defineProperties({}, {
+    candidate: {
+      enumerable: true,
+      get() {
+        nestedCandidateAccesses.candidate += 1;
+        return throwingCandidate;
       },
-      scorecard: {},
-      validation: {},
-    };
-  }
+    },
+    scorecard: {
+      enumerable: true,
+      get() {
+        nestedCandidateAccesses.scorecard += 1;
+        return {};
+      },
+    },
+    validation: {
+      enumerable: true,
+      get() {
+        nestedCandidateAccesses.validation += 1;
+        return {};
+      },
+    },
+  });
 
+  const nestedScorecardAccesses = { candidate: 0, scorecard: 0, validation: 0 };
+  const scorecardCandidate = candidate("candidate-nested-revoked-scorecard");
+  const revokedScorecard = Proxy.revocable({}, {});
+  revokedScorecard.revoke();
+  const nestedScorecardEnvelope = Object.defineProperties({}, {
+    candidate: {
+      enumerable: true,
+      get() {
+        nestedScorecardAccesses.candidate += 1;
+        return scorecardCandidate;
+      },
+    },
+    scorecard: {
+      enumerable: true,
+      get() {
+        nestedScorecardAccesses.scorecard += 1;
+        return revokedScorecard.proxy;
+      },
+    },
+    validation: {
+      enumerable: true,
+      get() {
+        nestedScorecardAccesses.validation += 1;
+        return {};
+      },
+    },
+  });
+
+  const result = rankThreadCandidates(
+    [nestedCandidateEnvelope, valid, nestedScorecardEnvelope] as unknown as readonly Parameters<
+      typeof rankThreadCandidates
+    >[0][number][],
+    equalWeights,
+  );
+
+  assert.deepEqual(result.ranked.map((entry) => entry.candidateId), [
+    valid.candidate.candidateId,
+  ]);
+  assert.equal(result.rejected.length, 2);
+  assert.deepEqual(nestedCandidateAccesses, {
+    candidate: 1,
+    scorecard: 1,
+    validation: 1,
+  });
+  assert.deepEqual(nestedScorecardAccesses, {
+    candidate: 1,
+    scorecard: 1,
+    validation: 1,
+  });
+  assert.ok(result.rejected.every((entry) => !entry.eligible));
+  assert.ok(result.rejected.every((entry) =>
+    entry.findings.some((finding) => finding.code === "ranking-entry-processing-failed")
+  ));
+  assert.ok(result.rejected.flatMap((entry) => entry.findings).every((finding) =>
+    Value.Check(DeterministicFindingSchema, finding)
+  ));
+}
+
+{
   const short = malformedWithLatePostText("Late.");
   const long = malformedWithLatePostText(
     "This late malformed post has a distinct weighted length.",
@@ -513,6 +604,102 @@ for (const invalidKind of ["sha", "schema", "chronology", "finding-reference"] a
   assert.notEqual(
     forward.rejected[0]?.validation.measurements[33]?.weightedLength,
     forward.rejected[1]?.validation.measurements[33]?.weightedLength,
+  );
+}
+
+{
+  function accessorEnvelopeWithLatePostText(text: string) {
+    const value = malformedWithLatePostText(text);
+    return Object.defineProperties({}, {
+      candidate: {
+        enumerable: true,
+        get() {
+          return value.candidate;
+        },
+      },
+      scorecard: {
+        enumerable: true,
+        get() {
+          return value.scorecard;
+        },
+      },
+      validation: {
+        enumerable: true,
+        get() {
+          return value.validation;
+        },
+      },
+    });
+  }
+
+  const short = accessorEnvelopeWithLatePostText("Late.");
+  const long = accessorEnvelopeWithLatePostText(
+    "This late malformed post has a distinct weighted length.",
+  );
+  const forward = rankThreadCandidates(
+    [long, short] as unknown as readonly Parameters<
+      typeof rankThreadCandidates
+    >[0][number][],
+    equalWeights,
+  );
+  const reverse = rankThreadCandidates(
+    [short, long] as unknown as readonly Parameters<
+      typeof rankThreadCandidates
+    >[0][number][],
+    equalWeights,
+  );
+
+  assert.deepEqual(forward, reverse);
+  assert.notEqual(
+    forward.rejected[0]?.validation.measurements[33]?.weightedLength,
+    forward.rejected[1]?.validation.measurements[33]?.weightedLength,
+  );
+}
+
+{
+  function equivalentAccessorEnvelope() {
+    const value = malformedWithLatePostText("Byte-equivalent malformed post.");
+    return Object.defineProperties({}, {
+      candidate: {
+        enumerable: true,
+        get() {
+          return value.candidate;
+        },
+      },
+      scorecard: {
+        enumerable: true,
+        get() {
+          return value.scorecard;
+        },
+      },
+      validation: {
+        enumerable: true,
+        get() {
+          return value.validation;
+        },
+      },
+    });
+  }
+
+  const first = equivalentAccessorEnvelope();
+  const second = equivalentAccessorEnvelope();
+  const forward = rankThreadCandidates(
+    [first, second] as unknown as readonly Parameters<
+      typeof rankThreadCandidates
+    >[0][number][],
+    equalWeights,
+  );
+  const reverse = rankThreadCandidates(
+    [second, first] as unknown as readonly Parameters<
+      typeof rankThreadCandidates
+    >[0][number][],
+    equalWeights,
+  );
+
+  assert.equal(JSON.stringify(forward), JSON.stringify(reverse));
+  assert.equal(
+    JSON.stringify(forward.rejected[0]),
+    JSON.stringify(forward.rejected[1]),
   );
 }
 

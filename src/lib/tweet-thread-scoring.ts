@@ -242,6 +242,12 @@ interface NormalizedRankingEnvelope {
   auditHash: string;
 }
 
+interface ProcessedRankingEnvelope {
+  result: RankedThreadCandidate;
+  rejected: boolean;
+  discriminator: string;
+}
+
 function isRecord(value: unknown): value is UnknownRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -465,6 +471,119 @@ function schemaCheck(
   }
 }
 
+function resultAuditDiscriminator(
+  result: RankedThreadCandidate,
+  envelopeAuditHash: string,
+): string {
+  return `${auditEnvelopeHash(result)}\u0000${envelopeAuditHash}`;
+}
+
+function failedRankingEnvelope(
+  normalized: NormalizedRankingEnvelope,
+): ProcessedRankingEnvelope {
+  const findings = [
+    ...normalized.findings,
+    auditFinding(
+      "ranking-entry-processing-failed",
+      "Ranking input batch entry failed during candidate or scorecard processing.",
+    ),
+  ].sort((left, right) =>
+    compareOrdinalStrings(left.findingId, right.findingId)
+  );
+  const validation: ThreadValidationResult = {
+    candidateSha256: null,
+    accepted: false,
+    findings: [...findings],
+    measurements: [],
+  };
+  const result: RankedThreadCandidate = {
+    candidateId: "candidate-invalid",
+    candidateSha256: "candidate-sha-unavailable",
+    scorecardId: "scorecard-invalid",
+    eligible: false,
+    paretoDominated: false,
+    weightedTotal: null,
+    dimensions: null,
+    validation,
+    findings,
+  };
+  return {
+    result,
+    rejected: true,
+    discriminator: resultAuditDiscriminator(result, normalized.auditHash),
+  };
+}
+
+function processRankingEnvelope(
+  normalized: NormalizedRankingEnvelope,
+  weights: ObjectiveWeights,
+  positiveWeightSum: number,
+): ProcessedRankingEnvelope {
+  const { candidateValue, scorecardValue } = normalized;
+  const candidateRecord: UnknownRecord = isRecord(candidateValue) ? candidateValue : {};
+  const scorecardRecord: UnknownRecord = isRecord(scorecardValue) ? scorecardValue : {};
+  const candidateId = auditString(candidateRecord.candidateId, "candidate-invalid");
+  const candidateSha256 = auditString(
+    candidateRecord.candidateSha256,
+    "candidate-sha-unavailable",
+  );
+  const scorecardId = auditString(scorecardRecord.scorecardId, "scorecard-invalid");
+  const candidateSchemaValid = schemaCheck(ThreadCandidateSchema, candidateValue);
+  const scorecardSchemaValid = schemaCheck(ThreadScorecardSchema, scorecardValue);
+  let canonicalSha256: string | null = null;
+  if (candidateSchemaValid) {
+    try {
+      canonicalSha256 = computeThreadCandidateSha256(candidateValue as ThreadCandidate);
+    } catch {
+      canonicalSha256 = null;
+    }
+  }
+  const validation = validateThreadCandidate(candidateValue);
+  const bindingFindings = scorecardReferenceIssues(
+    candidateValue,
+    scorecardValue,
+    validation,
+    canonicalSha256,
+    candidateSchemaValid,
+    scorecardSchemaValid,
+    candidateId,
+    candidateSha256,
+    scorecardId,
+  );
+  const validationHasHardGate = !validation.accepted
+    || validation.findings.some((finding) => finding.severity === "fail");
+  const rejected = normalized.findings.length > 0
+    || bindingFindings.length > 0
+    || validationHasHardGate;
+  const dimensions = scorecardSchemaValid
+    ? dimensionsFromScorecard(scorecardValue as ThreadScorecard)
+    : null;
+  const result: RankedThreadCandidate = {
+    candidateId,
+    candidateSha256,
+    scorecardId,
+    eligible: !rejected,
+    paretoDominated: false,
+    weightedTotal: dimensions
+      ? weightedMean(dimensions, weights, positiveWeightSum)
+      : null,
+    dimensions,
+    validation,
+    findings: [
+      ...validation.findings,
+      ...normalized.findings,
+      ...bindingFindings,
+    ].sort((left, right) =>
+      compareOrdinalStrings(left.findingId, right.findingId)
+    ),
+  };
+  return {
+    result,
+    rejected,
+    discriminator: resultAuditDiscriminator(result, normalized.auditHash),
+  };
+}
+
 export function rankThreadCandidates(
   inputs: readonly ThreadCandidateRankingInput[],
   weights: ObjectiveWeights,
@@ -486,87 +605,37 @@ export function rankThreadCandidates(
   for (const { candidateValue } of normalizedInputs) {
     if (!schemaCheck(ThreadCandidateSchema, candidateValue)) continue;
     const candidate = candidateValue as ThreadCandidate;
-    if (candidateIds.has(candidate.candidateId)) {
-      throw new TypeError(`Ranking input contains duplicate candidate ID "${candidate.candidateId}".`);
+    let candidateId: string;
+    let candidateSha256: string;
+    try {
+      candidateId = candidate.candidateId;
+      candidateSha256 = candidate.candidateSha256;
+    } catch {
+      continue;
     }
-    candidateIds.add(candidate.candidateId);
-    if (candidateShas.has(candidate.candidateSha256)) {
-      throw new TypeError(`Ranking input contains duplicate candidate SHA "${candidate.candidateSha256}".`);
+    if (candidateIds.has(candidateId)) {
+      throw new TypeError(`Ranking input contains duplicate candidate ID "${candidateId}".`);
     }
-    candidateShas.add(candidate.candidateSha256);
+    candidateIds.add(candidateId);
+    if (candidateShas.has(candidateSha256)) {
+      throw new TypeError(`Ranking input contains duplicate candidate SHA "${candidateSha256}".`);
+    }
+    candidateShas.add(candidateSha256);
   }
 
   const passing: RankedThreadCandidate[] = [];
   const rejected: RankedThreadCandidate[] = [];
   const auditDiscriminators = new Map<RankedThreadCandidate, string>();
   for (const normalized of normalizedInputs) {
-    const { candidateValue, scorecardValue } = normalized;
-    const candidateRecord: UnknownRecord = isRecord(candidateValue) ? candidateValue : {};
-    const scorecardRecord: UnknownRecord = isRecord(scorecardValue) ? scorecardValue : {};
-    const candidateId = auditString(candidateRecord.candidateId, "candidate-invalid");
-    const candidateSha256 = auditString(
-      candidateRecord.candidateSha256,
-      "candidate-sha-unavailable",
-    );
-    const scorecardId = auditString(scorecardRecord.scorecardId, "scorecard-invalid");
-    const candidateSchemaValid = schemaCheck(ThreadCandidateSchema, candidateValue);
-    const scorecardSchemaValid = schemaCheck(ThreadScorecardSchema, scorecardValue);
-    let canonicalSha256: string | null = null;
-    if (candidateSchemaValid) {
-      try {
-        canonicalSha256 = computeThreadCandidateSha256(candidateValue as ThreadCandidate);
-      } catch {
-        canonicalSha256 = null;
-      }
+    let processed: ProcessedRankingEnvelope;
+    try {
+      processed = processRankingEnvelope(normalized, weights, positiveWeightSum);
+    } catch {
+      processed = failedRankingEnvelope(normalized);
     }
-    const validation = validateThreadCandidate(candidateValue);
-    const bindingFindings = scorecardReferenceIssues(
-      candidateValue,
-      scorecardValue,
-      validation,
-      canonicalSha256,
-      candidateSchemaValid,
-      scorecardSchemaValid,
-      candidateId,
-      candidateSha256,
-      scorecardId,
-    );
-    const validationHasHardGate = !validation.accepted
-      || validation.findings.some((finding) => finding.severity === "fail");
-    const isRejected = normalized.findings.length > 0
-      || bindingFindings.length > 0
-      || validationHasHardGate;
-    const dimensions = scorecardSchemaValid
-      ? dimensionsFromScorecard(scorecardValue as ThreadScorecard)
-      : null;
-    const result: RankedThreadCandidate = {
-      candidateId,
-      candidateSha256,
-      scorecardId,
-      eligible: !isRejected,
-      paretoDominated: false,
-      weightedTotal: dimensions
-        ? weightedMean(dimensions, weights, positiveWeightSum)
-        : null,
-      dimensions,
-      validation,
-      findings: [
-        ...validation.findings,
-        ...normalized.findings,
-        ...bindingFindings,
-      ].sort((left, right) =>
-        compareOrdinalStrings(left.findingId, right.findingId)
-      ),
-    };
-    const findingIds = result.findings.map((finding) => finding.findingId);
-    auditDiscriminators.set(result, [
-      candidateSchemaValid ? candidateSha256 : "",
-      scorecardSchemaValid ? scorecardId : "",
-      ...findingIds,
-      normalized.auditHash,
-    ].join("\u0000"));
-    if (isRejected) rejected.push(result);
-    else passing.push(result);
+    auditDiscriminators.set(processed.result, processed.discriminator);
+    if (processed.rejected) rejected.push(processed.result);
+    else passing.push(processed.result);
   }
 
   const dominated: RankedThreadCandidate[] = [];
