@@ -14,7 +14,7 @@ selected Cave conversation may invoke the audit. There is deliberately no
 browser endpoint that accepts familiar/session IDs and starts a host process.
 
 The desktop app invokes the separately deployed, install-managed helper at
-`%ProgramW6432%\CompleteTech\Coven Cave\coven-host-audit.exe` with one fixed
+`C:\Program Files\CompleteTech\Coven Cave\coven-host-audit.exe` with one fixed
 operation: `hyperv-inventory --format json`. Before every invocation Windows
 must report an Authenticode `Valid` chain and the expected `CN=CompleteTech`
 publisher subject; any
