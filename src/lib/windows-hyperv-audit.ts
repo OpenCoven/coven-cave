@@ -24,9 +24,11 @@ export type HypervInventory = {
 };
 
 export class WindowsHypervAuditError extends Error {
-  constructor(public readonly code: "unsupported_platform" | "capability_required" | "broker_failed" | "invalid_broker_response", message: string) {
+  readonly code: "unsupported_platform" | "capability_required" | "broker_failed" | "invalid_broker_response";
+  constructor(code: "unsupported_platform" | "capability_required" | "broker_failed" | "invalid_broker_response", message: string) {
     super(message);
     this.name = "WindowsHypervAuditError";
+    this.code = code;
   }
 }
 
