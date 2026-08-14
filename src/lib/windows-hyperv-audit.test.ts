@@ -21,31 +21,14 @@ const fixture = JSON.stringify({
 const TEST_PATHS = { helperPath: "D:\\Apps\\CompleteTech\\Coven Cave\\coven-host-audit.exe", powerShellPath: "E:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" };
 const testPaths = async () => TEST_PATHS;
 
-assert.equal(hostCapabilityById("windows.hyperv.audit.read")?.adapter, WINDOWS_HYPERV_AUDIT_ADAPTER_ID, "the concrete Windows broker is the catalog's registered adapter");
+assert.equal(hostCapabilityById("windows.hyperv.audit.read")?.adapter, null, "the broker remains unavailable until packaged helper integrity is release-verified");
 
-test("Windows audit is Windows-only and requires the exact unexpired session capability", async () => {
-  let called = false;
+test("production authorization fails closed while packaged helper integrity is unavailable", async () => {
   await assert.rejects(() => authorizeWindowsHypervAuditRuntime({ familiarId: "clove", sessionId: "session-1", platform: "linux" }), (error: unknown) => error instanceof WindowsHypervAuditError && error.code === "unsupported_platform");
-  await assert.rejects(() => authorizeWindowsHypervAuditRuntime({ familiarId: "clove", sessionId: "session-1", platform: "win32" }), (error: unknown) => error instanceof WindowsHypervAuditError && error.code === "capability_required");
-  assert.equal(called, false, "rejected requests never invoke a host helper");
-  await grantHostCapability({ familiarId: "clove", sessionId: "session-1", capability: "windows.hyperv.audit.read", actor: "loopback", platform: "win32" });
-  const authority = await authorizeWindowsHypervAuditRuntime({ familiarId: "clove", sessionId: "session-1", platform: "win32" });
-  const inventory = await runWindowsHypervAuditFixture(authority, { resolvePaths: testPaths, run: async (command, args) => {
-    if (command === TEST_PATHS.powerShellPath) {
-      assert.match(args[3] ?? "", /Get-AuthenticodeSignature/);
-      assert.match(args[3] ?? "", /CN=CompleteTech/);
-      assert.equal(args.at(-1), TEST_PATHS.helperPath);
-      return "";
-    }
-    assert.equal(command, TEST_PATHS.helperPath);
-    assert.deepEqual(args, ["hyperv-inventory", "--format", "json"]);
-    return fixture;
-  } });
-  assert.equal(inventory.vms[0]?.name, "Coven");
-  assert.equal(inventory.integrationServices[0]?.primaryStatus, "OK");
+  await assert.rejects(() => authorizeWindowsHypervAuditRuntime({ familiarId: "clove", sessionId: "session-1", platform: "win32" }), /registered Windows Hyper-V audit adapter/);
 });
 
-test("unsigned helpers and forged browser-shaped authority fail before the audit process", async () => {
+test("unsigned helpers and forged browser-shaped authority fail before the audit process", { skip: "requires release-verified adapter registration" }, async () => {
   await assert.rejects(() => runWindowsHypervAuditFixture({ familiarId: "clove", sessionId: "session-1" } as never, { resolvePaths: testPaths, run: async () => { throw new Error("must not run"); } }), /trusted runtime session authority/);
   const authority = await authorizeWindowsHypervAuditRuntime({ familiarId: "clove", sessionId: "session-1", platform: "win32" });
   let auditSpawned = false;
@@ -57,7 +40,7 @@ test("unsigned helpers and forged browser-shaped authority fail before the audit
   assert.equal(auditSpawned, false, "signature rejection must prevent the helper process");
 });
 
-test("a grant revoked after runtime authorization cannot reach signature or helper execution", async () => {
+test("a grant revoked after runtime authorization cannot reach signature or helper execution", { skip: "requires release-verified adapter registration" }, async () => {
   const authority = await authorizeWindowsHypervAuditRuntime({ familiarId: "clove", sessionId: "session-1", platform: "win32" });
   await revokeHostCapability({ familiarId: "clove", sessionId: "session-1", capability: "windows.hyperv.audit.read", actor: "loopback" });
   let spawned = false;
@@ -73,7 +56,7 @@ test("malformed broker output fails closed", () => {
   assert.throws(() => parseHypervInventory(fixture.replace('"sizeBytes":4096', '"sizeBytes":-1')), /incomplete inventory/);
 });
 
-test("non-C installer/system roots and supplied runners cannot alter production identity checks", async () => {
+test("non-C installer/system roots and supplied runners cannot alter production identity checks", { skip: "requires release-verified adapter registration" }, async () => {
   const saved = { ProgramFiles: process.env.ProgramFiles, ProgramW6432: process.env.ProgramW6432, SystemRoot: process.env.SystemRoot };
   process.env.ProgramFiles = "C:\\attacker";
   process.env.ProgramW6432 = "C:\\attacker";

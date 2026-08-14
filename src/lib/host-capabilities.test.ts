@@ -9,8 +9,8 @@ const capabilities = await import("./host-capabilities.ts");
 
 assert.deepEqual(
   capabilities.hostCapabilitiesForPlatform("win32").map((entry) => entry.id),
-  ["windows.hyperv.audit.read"],
-  "the Windows catalog exposes only the explicit read-only Hyper-V audit capability",
+  [],
+  "the Windows catalog exposes no audit capability until its packaged helper is release-verified",
 );
 assert.equal(capabilities.hostCapabilityById("windows.hyperv.audit.write"), null, "write authority is absent from the initial catalog");
 assert.equal(capabilities.hostCapabilityHasAdapter("windows.hyperv.audit.read"), false, "broker source alone cannot make Hyper-V actionable before package verification");
