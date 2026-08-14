@@ -39,8 +39,22 @@ const IMAGE_DEPENDENT_RE = /\b(?:(?:only\s+)?(?:shown|visible|available|provided
 const GENERIC_ALT_TEXT = new Set(["image", "chart", "screenshot", "graphic", "photo", "diagram"]);
 const FINDING_MESSAGE_MAX_LENGTH = 2_000;
 const FINDING_MESSAGE_TRUNCATION_MARKER = "… [truncated]";
+export const THREAD_VALIDATION_MAX_FINDINGS = 256;
+export const THREAD_VALIDATION_MAX_MEASUREMENTS = 50;
+const THREAD_VALIDATION_LIMITS = {
+  posts: 50,
+  bannedPhrases: 128,
+  evidence: 512,
+  requiredClaimIds: 128,
+  postClaimIds: 32,
+  postMedia: 4,
+} as const;
 
 type UnknownRecord = Record<string, unknown>;
+interface FindingAccumulator {
+  readonly values: Map<string, CoreDeterministicFinding>;
+  truncated: boolean;
+}
 
 function isRecord(value: unknown): value is UnknownRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -138,19 +152,34 @@ export function createDeterministicFinding(
 }
 
 function addFinding(
-  findings: Map<string, CoreDeterministicFinding>,
+  findings: FindingAccumulator,
   code: string,
   severity: CoreDeterministicFinding["severity"],
   message: string,
   references: { postId?: string; claimId?: string } = {},
+  identityParts?: readonly string[],
 ): void {
-  const finding = createDeterministicFinding(code, severity, message, references);
-  findings.set(finding.findingId, finding);
+  const finding = createDeterministicFinding(
+    code,
+    severity,
+    message,
+    references,
+    identityParts,
+  );
+  if (findings.values.has(finding.findingId)) {
+    findings.values.set(finding.findingId, finding);
+    return;
+  }
+  if (findings.values.size >= THREAD_VALIDATION_MAX_FINDINGS - 1) {
+    findings.truncated = true;
+    return;
+  }
+  findings.values.set(finding.findingId, finding);
 }
 
 function collectProtocolFindings(
   candidate: unknown,
-  findings: Map<string, CoreDeterministicFinding>,
+  findings: FindingAccumulator,
   issues: readonly string[],
 ): void {
   const record = isRecord(candidate) ? candidate : {};
@@ -160,6 +189,90 @@ function collectProtocolFindings(
       claimId: claimReference(issue),
     });
   }
+}
+
+function collectCollectionLimitFindings(
+  record: UnknownRecord,
+  findings: FindingAccumulator,
+): boolean {
+  const violations: Array<{ path: string; actual: number; maximum: number }> = [];
+  const candidateBrief = isRecord(record.brief) ? record.brief : null;
+  const constraints = candidateBrief && isRecord(candidateBrief.constraints)
+    ? candidateBrief.constraints
+    : null;
+  const posts = Array.isArray(record.posts) ? record.posts : [];
+  const evidence = Array.isArray(record.evidence) ? record.evidence : [];
+  const bannedPhrases = constraints && Array.isArray(constraints.bannedPhrases)
+    ? constraints.bannedPhrases
+    : [];
+  const requiredClaimIds = constraints && Array.isArray(constraints.requiredClaimIds)
+    ? constraints.requiredClaimIds
+    : [];
+
+  for (const [path, actual, maximum] of [
+    ["ThreadCandidate.posts", posts.length, THREAD_VALIDATION_LIMITS.posts],
+    ["ThreadCandidate.evidence", evidence.length, THREAD_VALIDATION_LIMITS.evidence],
+    [
+      "ThreadCandidate.brief.constraints.bannedPhrases",
+      bannedPhrases.length,
+      THREAD_VALIDATION_LIMITS.bannedPhrases,
+    ],
+    [
+      "ThreadCandidate.brief.constraints.requiredClaimIds",
+      requiredClaimIds.length,
+      THREAD_VALIDATION_LIMITS.requiredClaimIds,
+    ],
+  ] as const) {
+    if (actual > maximum) violations.push({ path, actual, maximum });
+  }
+
+  for (const [index, post] of posts.entries()) {
+    if (!isRecord(post)) continue;
+    const claimIds = Array.isArray(post.claimIds) ? post.claimIds : [];
+    const media = Array.isArray(post.media) ? post.media : [];
+    if (claimIds.length > THREAD_VALIDATION_LIMITS.postClaimIds) {
+      violations.push({
+        path: `ThreadCandidate.posts[${index}].claimIds`,
+        actual: claimIds.length,
+        maximum: THREAD_VALIDATION_LIMITS.postClaimIds,
+      });
+    }
+    if (media.length > THREAD_VALIDATION_LIMITS.postMedia) {
+      violations.push({
+        path: `ThreadCandidate.posts[${index}].media`,
+        actual: media.length,
+        maximum: THREAD_VALIDATION_LIMITS.postMedia,
+      });
+    }
+  }
+
+  for (const violation of violations) {
+    addFinding(
+      findings,
+      "collection-limit",
+      "fail",
+      `${violation.path} has ${violation.actual} items; the validation limit is ${violation.maximum}.`,
+      {},
+      ["collection-limit", violation.path, String(violation.actual), String(violation.maximum)],
+    );
+  }
+  return violations.length > 0;
+}
+
+function finalizeFindings(findings: FindingAccumulator): CoreDeterministicFinding[] {
+  if (findings.truncated) {
+    const truncated = createDeterministicFinding(
+      "validation-output-truncated",
+      "fail",
+      `Validation output exceeded ${THREAD_VALIDATION_MAX_FINDINGS} findings or ${THREAD_VALIDATION_MAX_MEASUREMENTS} measurements and was truncated.`,
+      {},
+      ["validation-output-truncated"],
+    );
+    findings.values.set(truncated.findingId, truncated);
+  }
+  return [...findings.values.values()].sort((left, right) =>
+    compareOrdinalStrings(left.findingId, right.findingId)
+  );
 }
 
 function countRepeatedEmojiRuns(text: string): number {
@@ -177,10 +290,25 @@ export function validateThreadCandidateCore(
   protocolIssues: readonly string[] = [],
   brief?: unknown,
 ): CoreThreadValidationResult {
-  const findings = new Map<string, CoreDeterministicFinding>();
+  const findings: FindingAccumulator = {
+    values: new Map<string, CoreDeterministicFinding>(),
+    truncated: false,
+  };
   collectProtocolFindings(candidate, findings, protocolIssues);
 
   const record = isRecord(candidate) ? candidate : {};
+  const collectionLimitFailed = collectCollectionLimitFindings(record, findings);
+  if (collectionLimitFailed) {
+    const orderedFindings = finalizeFindings(findings);
+    return {
+      candidateSha256: typeof record.candidateSha256 === "string"
+        ? record.candidateSha256
+        : null,
+      accepted: false,
+      findings: orderedFindings,
+      measurements: [],
+    };
+  }
   const candidateBrief = isRecord(record.brief) ? record.brief : null;
   if (brief && (!candidateBrief || !isDeepStrictEqual(candidateBrief, brief))) {
     addFinding(
@@ -259,15 +387,19 @@ export function validateThreadCandidateCore(
     const repeatedEmojiRuns = countRepeatedEmojiRuns(text);
     const tokenCount = Math.max(normalizeText(text).split(" ").filter(Boolean).length, 1);
     const linkDensity = urls.length / tokenCount;
-    measurements.push({
-      postId,
-      weightedLength,
-      urlCount: urls.length,
-      hashtagCount: hashtags.length,
-      repeatedHashtagCount,
-      repeatedEmojiRuns,
-      linkDensity,
-    });
+    if (measurements.length < THREAD_VALIDATION_MAX_MEASUREMENTS) {
+      measurements.push({
+        postId,
+        weightedLength,
+        urlCount: urls.length,
+        hashtagCount: hashtags.length,
+        repeatedHashtagCount,
+        repeatedEmojiRuns,
+        linkDensity,
+      });
+    } else {
+      findings.truncated = true;
+    }
 
     if (weightedLength > X_POST_WEIGHTED_LENGTH_LIMIT) {
       addFinding(
@@ -288,7 +420,11 @@ export function validateThreadCandidateCore(
       );
     }
 
-    if (constraints && Array.isArray(constraints.bannedPhrases)) {
+    if (
+      protocolIssues.length === 0
+      && constraints
+      && Array.isArray(constraints.bannedPhrases)
+    ) {
       for (const phrase of constraints.bannedPhrases) {
         if (typeof phrase !== "string") continue;
         if (containsBannedPhrase(text, phrase)) {
@@ -406,9 +542,7 @@ export function validateThreadCandidateCore(
     }
   }
 
-  const orderedFindings = [...findings.values()].sort((left, right) =>
-    compareOrdinalStrings(left.findingId, right.findingId)
-  );
+  const orderedFindings = finalizeFindings(findings);
   return {
     candidateSha256: typeof record.candidateSha256 === "string" ? record.candidateSha256 : null,
     accepted: !orderedFindings.some((finding) => finding.severity === "fail"),

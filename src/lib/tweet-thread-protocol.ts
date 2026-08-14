@@ -1,12 +1,11 @@
 import { createHash } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
-
 import canonicalize from "canonicalize";
 import { Type } from "typebox";
 import type { Static } from "typebox";
 import { Value } from "typebox/value";
 
 import {
+  THREAD_VALIDATION_MAX_FINDINGS,
   compareOrdinalStrings as compareCoreOrdinalStrings,
   containsBannedPhrase as containsCoreBannedPhrase,
   validateThreadCandidateCore,
@@ -224,7 +223,9 @@ export const ThreadValidationRecordSchema = Type.Object({
   candidateSha256: sha256Schema(),
   validatedAt: timestampString(),
   accepted: Type.Boolean(),
-  findings: Type.Array(DeterministicFindingSchemaInternal, { maxItems: 1_024 }),
+  findings: Type.Array(DeterministicFindingSchemaInternal, {
+    maxItems: THREAD_VALIDATION_MAX_FINDINGS,
+  }),
   measurements: Type.Array(ThreadPostMeasurementSchema, { maxItems: 50 }),
 }, { additionalProperties: false });
 export type ThreadValidationRecord = Static<typeof ThreadValidationRecordSchema>;
@@ -434,6 +435,10 @@ type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function canonicalJsonEqual(left: unknown, right: unknown): boolean {
+  return canonicalize(left) === canonicalize(right);
 }
 
 export function compareOrdinalStrings(left: string, right: string): number {
@@ -866,22 +871,25 @@ function collectGateEvidenceIssues(
 }
 
 export function normalizeThreadBrief(input: unknown): ThreadBrief {
-  if (!isRecord(input)) {
+  const source = snapshotProtocolValue(input, "ThreadBrief");
+  if (!isRecord(source)) {
     throw new TweetThreadProtocolValidationError(["ThreadBrief must be an object."]);
   }
-  const normalized: UnknownRecord = { ...input };
-  normalized.protocolVersion = trimIfString(input.protocolVersion);
-  normalized.briefId = trimIfString(input.briefId);
-  normalized.topic = trimIfString(input.topic);
-  normalized.audience = trimIfString(input.audience);
-  if (Object.hasOwn(input, "notes")) normalized.notes = trimIfString(input.notes);
-  if (isRecord(input.objectiveWeights)) {
-    normalized.objectiveWeights = { ...input.objectiveWeights };
+  const normalized: UnknownRecord = { ...source };
+  normalized.protocolVersion = trimIfString(source.protocolVersion);
+  normalized.briefId = trimIfString(source.briefId);
+  normalized.topic = trimIfString(source.topic);
+  normalized.audience = trimIfString(source.audience);
+  if (Object.hasOwn(source, "notes")) normalized.notes = trimIfString(source.notes);
+  if (isRecord(source.objectiveWeights)) {
+    normalized.objectiveWeights = { ...source.objectiveWeights };
   }
-  if (isRecord(input.constraints)) {
-    normalized.constraints = { ...input.constraints };
-    (normalized.constraints as UnknownRecord).requiredClaimIds = dedupeTrimmedList(input.constraints.requiredClaimIds);
-    (normalized.constraints as UnknownRecord).bannedPhrases = dedupeTrimmedList(input.constraints.bannedPhrases);
+  if (isRecord(source.constraints)) {
+    normalized.constraints = { ...source.constraints };
+    (normalized.constraints as UnknownRecord).requiredClaimIds =
+      dedupeTrimmedList(source.constraints.requiredClaimIds);
+    (normalized.constraints as UnknownRecord).bannedPhrases =
+      dedupeTrimmedList(source.constraints.bannedPhrases);
   }
 
   const issues = collectThreadBriefIssues(normalized);
@@ -1004,10 +1012,10 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
 
   const candidateBySha = new Map<string, ThreadCandidate>();
   for (const [index, candidate] of manifest.candidates.entries()) {
-    if (!isDeepStrictEqual(candidate.brief, manifest.brief)) {
+    if (!canonicalJsonEqual(candidate.brief, manifest.brief)) {
       issues.push(`ThreadRunManifest.candidates[${index}].brief must equal ThreadRunManifest.brief.`);
     }
-    if (!isDeepStrictEqual(candidate.voiceProfile, manifest.voiceProfile)) {
+    if (!canonicalJsonEqual(candidate.voiceProfile, manifest.voiceProfile)) {
       issues.push(`ThreadRunManifest.candidates[${index}].voiceProfile must equal ThreadRunManifest.voiceProfile.`);
     }
     if (candidateBySha.has(candidate.candidateSha256)) {
@@ -1038,7 +1046,7 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
     ));
     issues.push(...candidateReferencesFromValidation(validation, candidate, validationPath));
     const recomputed = validateThreadCandidateCore(candidate);
-    if (!isDeepStrictEqual(
+    if (!canonicalJsonEqual(
       {
         accepted: validation.accepted,
         findings: validation.findings,

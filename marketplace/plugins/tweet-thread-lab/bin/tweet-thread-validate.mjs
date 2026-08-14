@@ -15016,6 +15016,16 @@ var IMAGE_DEPENDENT_RE = /\b(?:(?:only\s+)?(?:shown|visible|available|provided)\
 var GENERIC_ALT_TEXT = /* @__PURE__ */ new Set(["image", "chart", "screenshot", "graphic", "photo", "diagram"]);
 var FINDING_MESSAGE_MAX_LENGTH = 2e3;
 var FINDING_MESSAGE_TRUNCATION_MARKER = "… [truncated]";
+var THREAD_VALIDATION_MAX_FINDINGS = 256;
+var THREAD_VALIDATION_MAX_MEASUREMENTS = 50;
+var THREAD_VALIDATION_LIMITS = {
+  posts: 50,
+  bannedPhrases: 128,
+  evidence: 512,
+  requiredClaimIds: 128,
+  postClaimIds: 32,
+  postMedia: 4
+};
 function isRecord(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -15080,9 +15090,23 @@ function createDeterministicFinding(code, severity, message, references = {}, id
   }
   return finding;
 }
-function addFinding(findings, code, severity, message, references = {}) {
-  const finding = createDeterministicFinding(code, severity, message, references);
-  findings.set(finding.findingId, finding);
+function addFinding(findings, code, severity, message, references = {}, identityParts) {
+  const finding = createDeterministicFinding(
+    code,
+    severity,
+    message,
+    references,
+    identityParts
+  );
+  if (findings.values.has(finding.findingId)) {
+    findings.values.set(finding.findingId, finding);
+    return;
+  }
+  if (findings.values.size >= THREAD_VALIDATION_MAX_FINDINGS - 1) {
+    findings.truncated = true;
+    return;
+  }
+  findings.values.set(finding.findingId, finding);
 }
 function collectProtocolFindings(candidate, findings, issues) {
   const record = isRecord(candidate) ? candidate : {};
@@ -15093,6 +15117,76 @@ function collectProtocolFindings(candidate, findings, issues) {
     });
   }
 }
+function collectCollectionLimitFindings(record, findings) {
+  const violations = [];
+  const candidateBrief = isRecord(record.brief) ? record.brief : null;
+  const constraints = candidateBrief && isRecord(candidateBrief.constraints) ? candidateBrief.constraints : null;
+  const posts = Array.isArray(record.posts) ? record.posts : [];
+  const evidence = Array.isArray(record.evidence) ? record.evidence : [];
+  const bannedPhrases = constraints && Array.isArray(constraints.bannedPhrases) ? constraints.bannedPhrases : [];
+  const requiredClaimIds = constraints && Array.isArray(constraints.requiredClaimIds) ? constraints.requiredClaimIds : [];
+  for (const [path, actual, maximum] of [
+    ["ThreadCandidate.posts", posts.length, THREAD_VALIDATION_LIMITS.posts],
+    ["ThreadCandidate.evidence", evidence.length, THREAD_VALIDATION_LIMITS.evidence],
+    [
+      "ThreadCandidate.brief.constraints.bannedPhrases",
+      bannedPhrases.length,
+      THREAD_VALIDATION_LIMITS.bannedPhrases
+    ],
+    [
+      "ThreadCandidate.brief.constraints.requiredClaimIds",
+      requiredClaimIds.length,
+      THREAD_VALIDATION_LIMITS.requiredClaimIds
+    ]
+  ]) {
+    if (actual > maximum) violations.push({ path, actual, maximum });
+  }
+  for (const [index, post] of posts.entries()) {
+    if (!isRecord(post)) continue;
+    const claimIds = Array.isArray(post.claimIds) ? post.claimIds : [];
+    const media = Array.isArray(post.media) ? post.media : [];
+    if (claimIds.length > THREAD_VALIDATION_LIMITS.postClaimIds) {
+      violations.push({
+        path: `ThreadCandidate.posts[${index}].claimIds`,
+        actual: claimIds.length,
+        maximum: THREAD_VALIDATION_LIMITS.postClaimIds
+      });
+    }
+    if (media.length > THREAD_VALIDATION_LIMITS.postMedia) {
+      violations.push({
+        path: `ThreadCandidate.posts[${index}].media`,
+        actual: media.length,
+        maximum: THREAD_VALIDATION_LIMITS.postMedia
+      });
+    }
+  }
+  for (const violation of violations) {
+    addFinding(
+      findings,
+      "collection-limit",
+      "fail",
+      `${violation.path} has ${violation.actual} items; the validation limit is ${violation.maximum}.`,
+      {},
+      ["collection-limit", violation.path, String(violation.actual), String(violation.maximum)]
+    );
+  }
+  return violations.length > 0;
+}
+function finalizeFindings(findings) {
+  if (findings.truncated) {
+    const truncated = createDeterministicFinding(
+      "validation-output-truncated",
+      "fail",
+      `Validation output exceeded ${THREAD_VALIDATION_MAX_FINDINGS} findings or ${THREAD_VALIDATION_MAX_MEASUREMENTS} measurements and was truncated.`,
+      {},
+      ["validation-output-truncated"]
+    );
+    findings.values.set(truncated.findingId, truncated);
+  }
+  return [...findings.values.values()].sort(
+    (left, right) => compareOrdinalStrings(left.findingId, right.findingId)
+  );
+}
 function countRepeatedEmojiRuns(text) {
   return Array.from(text.matchAll(REPEATED_EMOJI_RE)).length;
 }
@@ -15102,9 +15196,22 @@ function hasTextEquivalent(altText) {
   return normalized.length >= 12 && !GENERIC_ALT_TEXT.has(normalized);
 }
 function validateThreadCandidateCore(candidate, protocolIssues = [], brief) {
-  const findings = /* @__PURE__ */ new Map();
+  const findings = {
+    values: /* @__PURE__ */ new Map(),
+    truncated: false
+  };
   collectProtocolFindings(candidate, findings, protocolIssues);
   const record = isRecord(candidate) ? candidate : {};
+  const collectionLimitFailed = collectCollectionLimitFindings(record, findings);
+  if (collectionLimitFailed) {
+    const orderedFindings2 = finalizeFindings(findings);
+    return {
+      candidateSha256: typeof record.candidateSha256 === "string" ? record.candidateSha256 : null,
+      accepted: false,
+      findings: orderedFindings2,
+      measurements: []
+    };
+  }
   const candidateBrief = isRecord(record.brief) ? record.brief : null;
   if (brief && (!candidateBrief || !isDeepStrictEqual(candidateBrief, brief))) {
     addFinding(
@@ -15171,15 +15278,19 @@ function validateThreadCandidateCore(candidate, protocolIssues = [], brief) {
     const repeatedEmojiRuns = countRepeatedEmojiRuns(text);
     const tokenCount = Math.max(normalizeText(text).split(" ").filter(Boolean).length, 1);
     const linkDensity = urls.length / tokenCount;
-    measurements.push({
-      postId,
-      weightedLength,
-      urlCount: urls.length,
-      hashtagCount: hashtags.length,
-      repeatedHashtagCount,
-      repeatedEmojiRuns,
-      linkDensity
-    });
+    if (measurements.length < THREAD_VALIDATION_MAX_MEASUREMENTS) {
+      measurements.push({
+        postId,
+        weightedLength,
+        urlCount: urls.length,
+        hashtagCount: hashtags.length,
+        repeatedHashtagCount,
+        repeatedEmojiRuns,
+        linkDensity
+      });
+    } else {
+      findings.truncated = true;
+    }
     if (weightedLength > X_POST_WEIGHTED_LENGTH_LIMIT) {
       addFinding(
         findings,
@@ -15198,7 +15309,7 @@ function validateThreadCandidateCore(candidate, protocolIssues = [], brief) {
         { postId }
       );
     }
-    if (constraints && Array.isArray(constraints.bannedPhrases)) {
+    if (protocolIssues.length === 0 && constraints && Array.isArray(constraints.bannedPhrases)) {
       for (const phrase of constraints.bannedPhrases) {
         if (typeof phrase !== "string") continue;
         if (containsBannedPhrase(text, phrase)) {
@@ -15305,9 +15416,7 @@ function validateThreadCandidateCore(candidate, protocolIssues = [], brief) {
       }
     }
   }
-  const orderedFindings = [...findings.values()].sort(
-    (left, right) => compareOrdinalStrings(left.findingId, right.findingId)
-  );
+  const orderedFindings = finalizeFindings(findings);
   return {
     candidateSha256: typeof record.candidateSha256 === "string" ? record.candidateSha256 : null,
     accepted: !orderedFindings.some((finding) => finding.severity === "fail"),
@@ -15441,9 +15550,14 @@ function createStrictJsonSnapshot(input) {
     if (prototype !== Object.prototype && prototype !== null) fail();
     ancestors.add(value);
     try {
-      const snapshot = {};
+      const snapshot = /* @__PURE__ */ Object.create(null);
       for (const [key, descriptor] of descriptors) {
-        snapshot[key] = visit(descriptor.value, depth + 1);
+        Object.defineProperty(snapshot, key, {
+          configurable: false,
+          enumerable: true,
+          value: visit(descriptor.value, depth + 1),
+          writable: false
+        });
       }
       return snapshot;
     } finally {
@@ -15611,7 +15725,9 @@ var ThreadValidationRecordSchema = typebox_exports.Object({
   candidateSha256: sha256Schema(),
   validatedAt: timestampString(),
   accepted: typebox_exports.Boolean(),
-  findings: typebox_exports.Array(DeterministicFindingSchemaInternal, { maxItems: 1024 }),
+  findings: typebox_exports.Array(DeterministicFindingSchemaInternal, {
+    maxItems: THREAD_VALIDATION_MAX_FINDINGS
+  }),
   measurements: typebox_exports.Array(ThreadPostMeasurementSchema, { maxItems: 50 })
 }, { additionalProperties: false });
 var DimensionScoreSchemaInternal = (dimension) => typebox_exports.Object({
@@ -15958,22 +16074,23 @@ function collectThreadCandidateIssues(value, path = "ThreadCandidate", includeDe
   return issues;
 }
 function normalizeThreadBrief(input) {
-  if (!isRecord2(input)) {
+  const source = snapshotProtocolValue(input, "ThreadBrief");
+  if (!isRecord2(source)) {
     throw new TweetThreadProtocolValidationError(["ThreadBrief must be an object."]);
   }
-  const normalized = { ...input };
-  normalized.protocolVersion = trimIfString(input.protocolVersion);
-  normalized.briefId = trimIfString(input.briefId);
-  normalized.topic = trimIfString(input.topic);
-  normalized.audience = trimIfString(input.audience);
-  if (Object.hasOwn(input, "notes")) normalized.notes = trimIfString(input.notes);
-  if (isRecord2(input.objectiveWeights)) {
-    normalized.objectiveWeights = { ...input.objectiveWeights };
+  const normalized = { ...source };
+  normalized.protocolVersion = trimIfString(source.protocolVersion);
+  normalized.briefId = trimIfString(source.briefId);
+  normalized.topic = trimIfString(source.topic);
+  normalized.audience = trimIfString(source.audience);
+  if (Object.hasOwn(source, "notes")) normalized.notes = trimIfString(source.notes);
+  if (isRecord2(source.objectiveWeights)) {
+    normalized.objectiveWeights = { ...source.objectiveWeights };
   }
-  if (isRecord2(input.constraints)) {
-    normalized.constraints = { ...input.constraints };
-    normalized.constraints.requiredClaimIds = dedupeTrimmedList(input.constraints.requiredClaimIds);
-    normalized.constraints.bannedPhrases = dedupeTrimmedList(input.constraints.bannedPhrases);
+  if (isRecord2(source.constraints)) {
+    normalized.constraints = { ...source.constraints };
+    normalized.constraints.requiredClaimIds = dedupeTrimmedList(source.constraints.requiredClaimIds);
+    normalized.constraints.bannedPhrases = dedupeTrimmedList(source.constraints.bannedPhrases);
   }
   const issues = collectThreadBriefIssues(normalized);
   if (issues.length > 0) throw new TweetThreadProtocolValidationError(issues);
@@ -15988,17 +16105,26 @@ function inspectThreadCandidateForValidation(input) {
 }
 
 // src/lib/tweet-thread-validation.ts
-import { isDeepStrictEqual as isDeepStrictEqual2 } from "node:util";
 function validateThreadCandidate(candidate, brief) {
   const inspected = inspectThreadCandidateForValidation(candidate);
-  const briefMismatch = brief !== void 0 && (!inspected.snapshot || typeof inspected.snapshot !== "object" || !isDeepStrictEqual2(
-    inspected.snapshot.brief,
-    brief
-  ));
+  let suppliedBriefSnapshot;
+  let suppliedBriefInvalid = false;
+  if (brief !== void 0) {
+    try {
+      suppliedBriefSnapshot = createStrictJsonSnapshot(brief);
+    } catch (error) {
+      if (error instanceof StrictJsonSnapshotError) {
+        suppliedBriefInvalid = true;
+      } else {
+        throw error;
+      }
+    }
+  }
+  const briefMismatch = brief !== void 0 && (suppliedBriefInvalid || !inspected.snapshot || typeof inspected.snapshot !== "object" || canonicalize(inspected.snapshot.brief) !== canonicalize(suppliedBriefSnapshot));
   const result = validateThreadCandidateCore(
     inspected.snapshot,
     inspected.issues,
-    briefMismatch ? brief : void 0
+    briefMismatch ? suppliedBriefSnapshot ?? Object.freeze(/* @__PURE__ */ Object.create(null)) : void 0
   );
   return {
     candidateSha256: result.candidateSha256,

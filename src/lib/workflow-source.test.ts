@@ -522,6 +522,15 @@ await (async () => {
     assert.doesNotMatch(validateStep.summary, /marketplace\/plugins\/tweet-thread-lab/);
     assert.match(validateStep.summary, /strict JSON stdout.*deterministic\/<candidate-id>\.json/i);
     assert.match(validateStep.summary, /exit 1 blocks.*exit 2/i);
+    assert.match(
+      validateStep.summary,
+      /node "<validatorPath>" validate candidates\/<candidate-id>\.json brief\.json/i,
+    );
+    const judgeStep = threadManifest.steps.find((step: { id: string }) => step.id === "judge");
+    assert.ok(judgeStep);
+    assert.match(judgeStep.summary, /scorecard set commitment/i);
+    assert.match(judgeStep.summary, /before identity reveal or stopping unlock/i);
+    assert.match(judgeStep.summary, /retain/i);
     assert.deepEqual(
       threadManifest.steps.map(
         (step: { id: string; kind: string; uses?: string; requires?: string[] }) => ({

@@ -66,7 +66,9 @@ export type TweetThreadBlindingErrorCode =
   | "TOKEN_SET_MISMATCH"
   | "REVEAL_LOCKED"
   | "INVALID_BLINDED_SCORECARD"
-  | "DUPLICATE_ARM_SCORECARD";
+  | "DUPLICATE_ARM_SCORECARD"
+  | "INVALID_SCORECARD_SET_COMMITMENT"
+  | "SCORECARD_SET_COMMITMENT_MISMATCH";
 
 export class TweetThreadBlindingError extends Error {
   readonly code: TweetThreadBlindingErrorCode;
@@ -176,6 +178,7 @@ export interface CreateBlindedTweetThreadTrialResult {
 export interface RevealBlindedTweetThreadTrialInput {
   publicTrial: PublicBlindedTweetThreadTrial;
   envelope: BlindingEnvelope;
+  scorecardSetCommitment: BlindedScorecardSetCommitment;
   observedVoteCount: number;
   currentTime: string;
   secret: string;
@@ -206,6 +209,36 @@ export const BlindedThreadScorecardSchema = Type.Object({
   dimensions: ThreadScorecardDimensionsSchema,
 }, { additionalProperties: false });
 export type BlindedThreadScorecard = Static<typeof BlindedThreadScorecardSchema>;
+
+export const BlindedScorecardSetCommitmentSchema = Type.Object({
+  protocolVersion: Type.Literal(TWEET_THREAD_BLINDING_PROTOCOL_VERSION),
+  trialId: Type.String({ minLength: 7, maxLength: 128, pattern: TRIAL_ID_RE.source }),
+  publicTrialSha256: Type.String({ minLength: 64, maxLength: 64, pattern: SHA256_RE.source }),
+  revealCommitment: Type.String({ minLength: 64, maxLength: 64, pattern: SHA256_RE.source }),
+  scorecardSha256ByArmToken: Type.Record(
+    Type.String({ minLength: 68, maxLength: 68, pattern: ARM_TOKEN_RE.source }),
+    Type.String({ minLength: 64, maxLength: 64, pattern: SHA256_RE.source }),
+    { minProperties: MINIMUM_ARM_COUNT, maxProperties: MAXIMUM_ARM_COUNT },
+  ),
+  setSha256: Type.String({ minLength: 64, maxLength: 64, pattern: SHA256_RE.source }),
+  committedAt: Type.String({
+    format: "date-time",
+    minLength: 24,
+    maxLength: 24,
+    pattern: RFC3339_UTC_MILLIS.source,
+  }),
+  commitmentHmac: Type.String({ minLength: 64, maxLength: 64, pattern: SHA256_RE.source }),
+}, { additionalProperties: false });
+export type BlindedScorecardSetCommitment =
+  Static<typeof BlindedScorecardSetCommitmentSchema>;
+
+export interface CreateBlindedScorecardSetCommitmentInput {
+  publicTrial: PublicBlindedTweetThreadTrial;
+  envelope: BlindingEnvelope;
+  scorecards: readonly BlindedThreadScorecard[];
+  committedAt: string;
+  secret: string;
+}
 
 export interface RevealBlindedThreadScorecardsInput
   extends RevealBlindedTweetThreadTrialInput {
@@ -352,12 +385,17 @@ function createStrictJsonSnapshotter() {
       try {
         const snapshot: unknown[] = new Array(length);
         for (let index = 0; index < length; index += 1) {
-          snapshot[index] = visit(
-            (descriptors[index] as PropertyDescriptor & { value: unknown }).value,
-            code,
-            message,
-            depth + 1,
-          );
+          Object.defineProperty(snapshot, String(index), {
+            configurable: false,
+            enumerable: true,
+            value: visit(
+              (descriptors[index] as PropertyDescriptor & { value: unknown }).value,
+              code,
+              message,
+              depth + 1,
+            ),
+            writable: false,
+          });
         }
         return Object.freeze(snapshot);
       } finally {
@@ -404,7 +442,12 @@ function createStrictJsonSnapshotter() {
       ) {
         fail(code, message);
       }
-      descriptors[key] = descriptor;
+      Object.defineProperty(descriptors, key, {
+        configurable: false,
+        enumerable: true,
+        value: descriptor,
+        writable: false,
+      });
     }
 
     ancestors.add(current);
@@ -480,7 +523,12 @@ function createStrictJsonSnapshotter() {
       ) {
         fail(field.code, field.message);
       }
-      descriptors[field.key] = descriptor;
+      Object.defineProperty(descriptors, field.key, {
+        configurable: false,
+        enumerable: true,
+        value: descriptor,
+        writable: false,
+      });
     }
 
     let prototype: object | null;
@@ -611,6 +659,46 @@ function publicTrialCommitment(publicTrial: PublicBlindedTweetThreadTrial): stri
   );
   return createHash("sha256")
     .update(serializeCommittedJson(snapshot), "utf8")
+    .digest("hex");
+}
+
+function committedScorecardSha256(scorecard: BlindedThreadScorecard): string {
+  const snapshot = strictJsonSnapshot(
+    scorecard,
+    "INVALID_BLINDED_SCORECARD",
+    "A blinded scorecard must be strict plain JSON data.",
+  );
+  if (!Value.Check(BlindedThreadScorecardSchema, snapshot)) {
+    fail(
+      "INVALID_BLINDED_SCORECARD",
+      "A blinded scorecard does not match BlindedThreadScorecardSchema.",
+    );
+  }
+  return createHash("sha256")
+    .update(serializeCommittedJson(snapshot), "utf8")
+    .digest("hex");
+}
+
+function scorecardSetSha256(
+  scorecardSha256ByArmToken: Record<string, string>,
+): string {
+  return createHash("sha256")
+    .update(
+      `tweet-thread-scorecard-set\u0000${serializeCommittedJson(scorecardSha256ByArmToken)}`,
+      "utf8",
+    )
+    .digest("hex");
+}
+
+function scorecardSetCommitmentHmac(
+  secret: string,
+  commitment: Omit<BlindedScorecardSetCommitment, "commitmentHmac">,
+): string {
+  return createHmac("sha256", secret)
+    .update(
+      `tweet-thread-scorecard-set-commitment\u0000${serializeCommittedJson(commitment)}`,
+      "utf8",
+    )
     .digest("hex");
 }
 
@@ -1016,6 +1104,189 @@ function sameStoppingRule(
     && left.closesAt === right.closesAt;
 }
 
+function assertCommittedTrialBindings(
+  publicTrial: PublicBlindedTweetThreadTrial,
+  envelope: BlindingEnvelope,
+  secret: string,
+): string[] {
+  assertValidPublicTrial(publicTrial);
+  assertValidEnvelope(envelope);
+  if (!isNonWhitespaceString(secret)) {
+    fail("INVALID_SECRET", "The reveal secret must be a non-empty string.");
+  }
+  if (publicTrial.trialId !== envelope.trialId) {
+    fail("TRIAL_ID_MISMATCH", "The public trial and envelope trial identifiers differ.");
+  }
+
+  const computedCommitment = publicTrialCommitment(publicTrial);
+  if (!hashesEqual(computedCommitment, envelope.publicTrialSha256)) {
+    fail("TRIAL_COMMITMENT_MISMATCH", "The public trial no longer matches its commitment.");
+  }
+
+  const publicTokens = publicTrial.arms.map((arm) => arm.armToken);
+  const mappingTokens = Object.keys(envelope.mapping);
+  const sortedPublicTokens = [...publicTokens].sort(compareOrdinalStrings);
+  const sortedMappingTokens = [...mappingTokens].sort(compareOrdinalStrings);
+  if (
+    sortedPublicTokens.length !== sortedMappingTokens.length
+    || sortedPublicTokens.some((token, index) => token !== sortedMappingTokens[index])
+  ) {
+    fail("TOKEN_SET_MISMATCH", "Envelope mapping keys must exactly match public arm tokens.");
+  }
+  if (!sameStoppingRule(publicTrial.stoppingRule, envelope.revealThresholds)) {
+    fail(
+      "INVALID_BLINDING_ENVELOPE",
+      "Envelope reveal thresholds differ from the public stopping rule.",
+    );
+  }
+
+  const {
+    revealCommitment: _publicRevealCommitment,
+    ...publicTrialWithoutCommitment
+  } = publicTrial;
+  const computedRevealCommitment = revealCommitment(
+    secret,
+    publicTrialWithoutCommitment,
+    envelope.mapping,
+    envelope.revealThresholds,
+  );
+  if (
+    !hashesEqual(computedRevealCommitment, publicTrial.revealCommitment)
+    || !hashesEqual(computedRevealCommitment, envelope.revealCommitment)
+  ) {
+    fail(
+      "REVEAL_COMMITMENT_MISMATCH",
+      "The reveal inputs no longer match their secret-backed commitment.",
+    );
+  }
+  return publicTokens;
+}
+
+function scorecardShaMapping(
+  scorecards: readonly BlindedThreadScorecard[],
+  publicTrial: PublicBlindedTweetThreadTrial,
+  envelope: BlindingEnvelope,
+  errorCode: "INVALID_SCORECARD_SET_COMMITMENT" | "SCORECARD_SET_COMMITMENT_MISMATCH",
+): Record<string, string> {
+  if (
+    !Array.isArray(scorecards)
+    || scorecards.length !== publicTrial.arms.length
+    || scorecards.length < MINIMUM_ARM_COUNT
+    || scorecards.length > MAXIMUM_ARM_COUNT
+  ) {
+    fail(errorCode, "The blinded scorecard set must contain exactly one scorecard per arm.");
+  }
+  const expectedTokens = new Set(publicTrial.arms.map((arm) => arm.armToken));
+  const seenTokens = new Set<string>();
+  const seenScorecardIds = new Set<string>();
+  const entries: Array<[string, string]> = [];
+  for (const scorecard of scorecards) {
+    if (
+      !Value.Check(BlindedThreadScorecardSchema, scorecard)
+      || scorecard.trialId !== publicTrial.trialId
+      || scorecard.publicTrialSha256 !== envelope.publicTrialSha256
+      || !expectedTokens.has(scorecard.armToken)
+      || seenTokens.has(scorecard.armToken)
+      || seenScorecardIds.has(scorecard.scorecardId)
+    ) {
+      fail(errorCode, "The blinded scorecard set does not exactly match the committed trial arms.");
+    }
+    seenTokens.add(scorecard.armToken);
+    seenScorecardIds.add(scorecard.scorecardId);
+    entries.push([scorecard.armToken, committedScorecardSha256(scorecard)]);
+  }
+  entries.sort(([left], [right]) => compareOrdinalStrings(left, right));
+  const mapping = Object.create(null) as Record<string, string>;
+  for (const [armToken, sha256] of entries) {
+    Object.defineProperty(mapping, armToken, {
+      configurable: false,
+      enumerable: true,
+      value: sha256,
+      writable: false,
+    });
+  }
+  return Object.freeze(mapping);
+}
+
+function verifyScorecardSetCommitment(
+  commitmentInput: unknown,
+  publicTrial: PublicBlindedTweetThreadTrial,
+  envelope: BlindingEnvelope,
+  secret: string,
+  scorecards?: readonly BlindedThreadScorecard[],
+): BlindedScorecardSetCommitment {
+  let commitment: BlindedScorecardSetCommitment;
+  try {
+    commitment = createStrictJsonSnapshot(commitmentInput) as BlindedScorecardSetCommitment;
+  } catch {
+    fail(
+      "SCORECARD_SET_COMMITMENT_MISMATCH",
+      "The blinded scorecard set commitment is missing or malformed.",
+    );
+  }
+  if (
+    !Value.Check(BlindedScorecardSetCommitmentSchema, commitment)
+    || !isStrictRfc3339Timestamp(commitment.committedAt)
+    || commitment.trialId !== publicTrial.trialId
+    || commitment.publicTrialSha256 !== envelope.publicTrialSha256
+    || commitment.revealCommitment !== envelope.revealCommitment
+  ) {
+    fail(
+      "SCORECARD_SET_COMMITMENT_MISMATCH",
+      "The blinded scorecard set commitment is not bound to this trial.",
+    );
+  }
+
+  const expectedTokens = publicTrial.arms
+    .map((arm) => arm.armToken)
+    .sort(compareOrdinalStrings);
+  const committedTokens = Object.keys(commitment.scorecardSha256ByArmToken);
+  if (
+    committedTokens.some((token, index) => token !== expectedTokens[index])
+    || committedTokens.length !== expectedTokens.length
+  ) {
+    fail(
+      "SCORECARD_SET_COMMITMENT_MISMATCH",
+      "The blinded scorecard set commitment arm mapping is not exact and sorted.",
+    );
+  }
+  const computedSetSha256 = scorecardSetSha256(
+    commitment.scorecardSha256ByArmToken,
+  );
+  if (!hashesEqual(computedSetSha256, commitment.setSha256)) {
+    fail(
+      "SCORECARD_SET_COMMITMENT_MISMATCH",
+      "The blinded scorecard set SHA-256 does not match its mapping.",
+    );
+  }
+  const {
+    commitmentHmac: _commitmentHmac,
+    ...unsignedCommitment
+  } = commitment;
+  const computedHmac = scorecardSetCommitmentHmac(secret, unsignedCommitment);
+  if (!hashesEqual(computedHmac, commitment.commitmentHmac)) {
+    fail(
+      "SCORECARD_SET_COMMITMENT_MISMATCH",
+      "The blinded scorecard set commitment HMAC does not verify.",
+    );
+  }
+  if (scorecards !== undefined) {
+    const actualMapping = scorecardShaMapping(
+      scorecards,
+      publicTrial,
+      envelope,
+      "SCORECARD_SET_COMMITMENT_MISMATCH",
+    );
+    if (!isDeepStrictEqual(actualMapping, commitment.scorecardSha256ByArmToken)) {
+      fail(
+        "SCORECARD_SET_COMMITMENT_MISMATCH",
+        "Blinded scorecard canonical content differs from the precommitment.",
+      );
+    }
+  }
+  return commitment;
+}
+
 const CREATE_INPUT_FIELDS = [
   {
     key: "trialId",
@@ -1140,6 +1411,11 @@ const REVEAL_INPUT_FIELDS = [
     key: "envelope",
     code: "INVALID_BLINDING_ENVELOPE",
     message: "The blinding envelope must be plain JSON data.",
+  },
+  {
+    key: "scorecardSetCommitment",
+    code: "SCORECARD_SET_COMMITMENT_MISMATCH",
+    message: "A blinded scorecard set commitment is required before reveal.",
   },
 ] as const satisfies readonly KnownSnapshotField[];
 
@@ -1389,6 +1665,64 @@ export function createBlindedTweetThreadTrial(
   return { publicTrial, envelope };
 }
 
+export function createBlindedScorecardSetCommitment(
+  input: CreateBlindedScorecardSetCommitmentInput,
+): BlindedScorecardSetCommitment {
+  let snapshot: CreateBlindedScorecardSetCommitmentInput;
+  try {
+    snapshot = createStrictJsonSnapshot(input);
+  } catch {
+    fail(
+      "INVALID_SCORECARD_SET_COMMITMENT",
+      "Scorecard set commitment inputs must be strict accessor-free plain JSON.",
+    );
+  }
+  if (
+    !isRecord(snapshot)
+    || !hasExactKeys(
+      snapshot,
+      ["publicTrial", "envelope", "scorecards", "committedAt", "secret"],
+    )
+    || !isStrictRfc3339Timestamp(snapshot.committedAt)
+    || !isNonWhitespaceString(snapshot.secret)
+  ) {
+    fail(
+      "INVALID_SCORECARD_SET_COMMITMENT",
+      "The scorecard set commitment input is malformed.",
+    );
+  }
+  assertCommittedTrialBindings(
+    snapshot.publicTrial,
+    snapshot.envelope,
+    snapshot.secret,
+  );
+  const scorecardSha256ByArmToken = scorecardShaMapping(
+    snapshot.scorecards,
+    snapshot.publicTrial,
+    snapshot.envelope,
+    "INVALID_SCORECARD_SET_COMMITMENT",
+  );
+  const unsignedCommitment: Omit<
+    BlindedScorecardSetCommitment,
+    "commitmentHmac"
+  > = {
+    protocolVersion: TWEET_THREAD_BLINDING_PROTOCOL_VERSION,
+    trialId: snapshot.publicTrial.trialId,
+    publicTrialSha256: snapshot.envelope.publicTrialSha256,
+    revealCommitment: snapshot.envelope.revealCommitment,
+    scorecardSha256ByArmToken,
+    setSha256: scorecardSetSha256(scorecardSha256ByArmToken),
+    committedAt: snapshot.committedAt,
+  };
+  return createStrictJsonSnapshot({
+    ...unsignedCommitment,
+    commitmentHmac: scorecardSetCommitmentHmac(
+      snapshot.secret,
+      unsignedCommitment,
+    ),
+  });
+}
+
 export function revealBlindedTweetThreadTrial(
   input: RevealBlindedTweetThreadTrialInput,
 ): BlindedTweetThreadReveal {
@@ -1449,70 +1783,29 @@ export function revealBlindedTweetThreadTrial(
       ENVELOPE_FIELDS[5],
     ),
   };
-
-  assertValidPublicTrial(publicTrial);
-  assertValidEnvelope(envelope);
+  const scorecardSetCommitment = snapshotter.snapshotCapturedField<
+    BlindedScorecardSetCommitment
+  >(
+    capturedInput,
+    REVEAL_INPUT_FIELDS[5],
+  );
   if (!Number.isSafeInteger(observedVoteCount) || observedVoteCount < 0) {
     fail("INVALID_VOTE_COUNT", "observedVoteCount must be a non-negative safe integer.");
   }
   if (!isStrictRfc3339Timestamp(currentTime)) {
     fail("INVALID_CURRENT_TIME", "currentTime must be a real RFC3339 UTC timestamp with milliseconds.");
   }
-  if (!isNonWhitespaceString(capturedSecret)) {
-    fail("INVALID_SECRET", "The reveal secret must be a non-empty string.");
-  }
-  if (publicTrial.trialId !== envelope.trialId) {
-    fail("TRIAL_ID_MISMATCH", "The public trial and envelope trial identifiers differ.");
-  }
-
-  const computedCommitment = publicTrialCommitment(publicTrial);
-  if (!hashesEqual(computedCommitment, envelope.publicTrialSha256)) {
-    fail("TRIAL_COMMITMENT_MISMATCH", "The public trial no longer matches its commitment.");
-  }
-
-  const publicTokens = publicTrial.arms.map((arm) => arm.armToken);
-  const mappingTokens = Object.keys(envelope.mapping);
-  const sortedPublicTokens = [...publicTokens].sort(compareOrdinalStrings);
-  const sortedMappingTokens = [...mappingTokens].sort(compareOrdinalStrings);
-  if (
-    sortedPublicTokens.length !== sortedMappingTokens.length
-    || sortedPublicTokens.some((token, index) => token !== sortedMappingTokens[index])
-  ) {
-    fail("TOKEN_SET_MISMATCH", "Envelope mapping keys must exactly match public arm tokens.");
-  }
-  if (
-    !sameStoppingRule(
-      publicTrial.stoppingRule,
-      envelope.revealThresholds,
-    )
-  ) {
-    fail("INVALID_BLINDING_ENVELOPE", "Envelope reveal thresholds differ from the public stopping rule.");
-  }
-
-  const {
-    revealCommitment: _publicRevealCommitment,
-    ...publicTrialWithoutCommitment
-  } = publicTrial;
-  const computedRevealCommitment = revealCommitment(
+  const publicTokens = assertCommittedTrialBindings(
+    publicTrial,
+    envelope,
     capturedSecret,
-    publicTrialWithoutCommitment,
-    envelope.mapping,
-    envelope.revealThresholds,
   );
-  const publicCommitmentMatches = hashesEqual(
-    computedRevealCommitment,
-    publicTrial.revealCommitment,
+  verifyScorecardSetCommitment(
+    scorecardSetCommitment,
+    publicTrial,
+    envelope,
+    capturedSecret,
   );
-  const envelopeCommitmentMatches = hashesEqual(
-    computedRevealCommitment,
-    envelope.revealCommitment,
-  );
-  if (!publicCommitmentMatches || !envelopeCommitmentMatches) {
-    fail(
-      "REVEAL_COMMITMENT_MISMATCH",
-      "The reveal inputs no longer match their secret-backed commitment.",
-    );
-  }
 
   const voteThresholdReached =
     observedVoteCount >= envelope.revealThresholds.minimumVotes;
@@ -1548,9 +1841,17 @@ export function revealBlindedThreadScorecards(
     throw error;
   }
 
+  verifyScorecardSetCommitment(
+    snapshot.scorecardSetCommitment,
+    snapshot.publicTrial,
+    snapshot.envelope,
+    snapshot.secret,
+    snapshot.scorecards,
+  );
   const reveal = revealBlindedTweetThreadTrial({
     publicTrial: snapshot.publicTrial,
     envelope: snapshot.envelope,
+    scorecardSetCommitment: snapshot.scorecardSetCommitment,
     observedVoteCount: snapshot.observedVoteCount,
     currentTime: snapshot.currentTime,
     secret: snapshot.secret,

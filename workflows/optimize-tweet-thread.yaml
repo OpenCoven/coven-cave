@@ -49,7 +49,7 @@ steps:
     kind: agent
     name: Blinded review
     uses: reviewer
-    summary: Judge eligible blinded candidates in a separate context when available and write six-dimension scorecards.
+    summary: Judge eligible blinded candidates in a separate context, write six-dimension scorecards, then materialize and retain the candidate-free scorecard set commitment before identity reveal or stopping unlock.
     requires:
       - validate
   - id: revise

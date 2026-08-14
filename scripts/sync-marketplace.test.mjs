@@ -384,6 +384,7 @@ assert.equal(memoryCodexManifest.skills, "./skills/");
 const threadLabSkillRoot = path.join(productionThreadLabRoot, "skills", "tweet-thread-lab");
 const threadLabSkill = readFileSync(path.join(threadLabSkillRoot, "SKILL.md"), "utf8");
 const threadLabProtocol = readFileSync(path.join(threadLabSkillRoot, "references", "protocol.md"), "utf8");
+const threadLabRubric = readFileSync(path.join(threadLabSkillRoot, "references", "rubric.md"), "utf8");
 assert.match(threadLabSkill, /^## When to use$/m);
 assert.match(threadLabSkill, /^## Inputs$/m);
 assert.match(threadLabSkill, /^## Steps$/m);
@@ -396,15 +397,32 @@ assert.match(
 );
 assert.match(threadLabSkill, /materialize the canonical validation record before the manifest or approval/i);
 assert.match(threadLabSkill, /only after the bundled command succeeds may `cave\.output` record/i);
-assert.match(threadLabSkill, /resolve.*validator.*relative to.*loaded `SKILL\.md`/i);
+assert.match(threadLabSkill, /loaded `SKILL\.md`.*installed.*validatorPath/i);
 assert.match(threadLabSkill, /`tooling\.json`/i);
-assert.match(threadLabProtocol, /"validatorPath": "\/absolute\/path\/to\/tweet-thread-validate\.mjs"/i);
-assert.match(threadLabProtocol, /validatorPath.*absolute.*regular file.*resolved.*skillPath/i);
+assert.match(
+  threadLabProtocol,
+  /"validatorPath": "\/absolute\/installed\/.+\/tweet-thread-lab\/bin\/tweet-thread-validate\.mjs"/i,
+);
+assert.match(threadLabProtocol, /loaded.*SKILL\.md/i);
+assert.match(threadLabProtocol, /validatorPath.*absolute installed/i);
+for (const document of [threadLabSkill, threadLabProtocol, threadLabRubric]) {
+  assert.doesNotMatch(document, /\.\.\/\.\.\/bin\/tweet-thread-validate\.mjs/i);
+  assert.doesNotMatch(document, /node \S*tweet-thread-validate\.mjs validate/i);
+}
+assert.doesNotMatch(threadLabProtocol, /node bin\/tweet-thread-validate\.mjs validate/i);
+assert.match(
+  threadLabProtocol,
+  /node "<validatorPath>" validate <candidate\.json> \[brief\.json\]/i,
+);
 assert.match(threadLabProtocol, /blinded scorecard/i);
 assert.match(threadLabProtocol, /publicTrialSha256/i);
 assert.match(threadLabProtocol, /armToken/i);
 assert.match(threadLabProtocol, /reveal.*canonical.*candidateSha256/i);
-assert.match(readFileSync(path.join(threadLabSkillRoot, "references", "rubric.md"), "utf8"), /judge.*must not receive.*candidate/i);
+assert.match(threadLabRubric, /judge.*must not receive.*candidate/i);
+for (const document of [threadLabSkill, threadLabProtocol, threadLabRubric]) {
+  assert.match(document, /scorecard set commitment/i);
+  assert.match(document, /before (?:identity )?reveal|before .*stopping.*unlock/i);
+}
 for (const document of [threadLabSkill, threadLabProtocol]) {
   assert.match(document, /`strategies\.json`/);
   assert.match(document, /`execution-log\.jsonl`/);
@@ -425,6 +443,7 @@ for (const reference of ["protocol.md", "rubric.md"]) {
   assert.ok(existsSync(path.join(threadLabSkillRoot, "references", reference)), `${reference} is bundled`);
 }
 for (const schema of [
+  "blinded-scorecard-set-commitment.schema.json",
   "thread-brief.schema.json",
   "blinded-thread-scorecard.schema.json",
   "thread-candidate.schema.json",

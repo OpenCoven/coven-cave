@@ -55,6 +55,91 @@ assert.equal(
   "RFC 8785 uses the required JSON escape forms",
 );
 
+{
+  const baseline = validCandidateContent();
+  const polluted = Object.create(null) as Record<string, unknown>;
+  for (const [key, value] of Object.entries(baseline)) {
+    Object.defineProperty(polluted, key, {
+      enumerable: true,
+      value,
+      writable: true,
+    });
+  }
+  for (const [key, value] of [
+    ["__proto__", { omittedByAssignment: true }],
+    ["constructor", { name: "captured-constructor" }],
+    ["prototype", { marker: "captured-prototype" }],
+  ] as const) {
+    Object.defineProperty(polluted, key, {
+      enumerable: true,
+      value,
+      writable: true,
+    });
+  }
+
+  const serialized = serializeCanonicalThreadCandidate(
+    polluted as unknown as ReturnType<typeof validCandidateContent>,
+  );
+  assert.match(serialized, /"__proto__":\{"omittedByAssignment":true\}/);
+  assert.match(serialized, /"constructor":\{"name":"captured-constructor"\}/);
+  assert.match(serialized, /"prototype":\{"marker":"captured-prototype"\}/);
+  assert.notEqual(
+    computeThreadCandidateSha256(
+      polluted as unknown as ReturnType<typeof validCandidateContent>,
+    ),
+    computeThreadCandidateSha256(baseline),
+    "own prototype-sensitive keys participate in the canonical candidate hash",
+  );
+  assert.equal(
+    (Object.prototype as Record<string, unknown>).omittedByAssignment,
+    undefined,
+    "capturing an own __proto__ field never mutates Object.prototype",
+  );
+
+  const pollutedCandidate = Object.create(null) as Record<string, unknown>;
+  for (const [key, value] of Object.entries({
+    ...polluted,
+    candidateSha256: computeThreadCandidateSha256(
+      polluted as unknown as ReturnType<typeof validCandidateContent>,
+    ),
+  })) {
+    Object.defineProperty(pollutedCandidate, key, {
+      enumerable: true,
+      value,
+      writable: true,
+    });
+  }
+  const extraOwnField = expectValidationError(() =>
+    assertValidThreadCandidate(pollutedCandidate)
+  );
+  assert.match(extraOwnField.issues.join("\n"), /ThreadCandidateSchema/);
+
+  const inheritedCandidateId = Object.create({ candidateId: baseline.candidateId });
+  for (const [key, value] of Object.entries(baseline)) {
+    if (key !== "candidateId") {
+      Object.defineProperty(inheritedCandidateId, key, {
+        enumerable: true,
+        value,
+      });
+    }
+  }
+  Object.defineProperty(inheritedCandidateId, "candidateSha256", {
+    enumerable: true,
+    value: computeThreadCandidateSha256(baseline),
+  });
+  assert.equal(Object.hasOwn(inheritedCandidateId, "candidateId"), false);
+  assert.throws(
+    () => assertValidThreadCandidate(inheritedCandidateId),
+    TweetThreadProtocolValidationError,
+    "required schema fields may not be inherited",
+  );
+  assert.throws(
+    () => serializeCanonicalThreadCandidate(inheritedCandidateId),
+    TweetThreadProtocolValidationError,
+    "JCS input may not inherit required content",
+  );
+}
+
 function validBrief() {
   return {
     protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
@@ -477,6 +562,17 @@ const normalizedBrief = normalizeThreadBrief({
     bannedPhrases: ["  just vibing  ", "facts over vibes", "just vibing"],
   },
 });
+const inheritedTopicBrief = Object.assign(
+  Object.create({ topic: validBrief().topic }),
+  validBrief(),
+);
+delete inheritedTopicBrief.topic;
+assert.equal(Object.hasOwn(inheritedTopicBrief, "topic"), false);
+assert.throws(
+  () => normalizeThreadBrief(inheritedTopicBrief),
+  TweetThreadProtocolValidationError,
+  "brief normalization never accepts inherited required content",
+);
 assert.deepStrictEqual(normalizedBrief.constraints.requiredClaimIds, ["claim-source-of-truth", "claim-second-proof"]);
 assert.deepStrictEqual(normalizedBrief.constraints.bannedPhrases, ["just vibing", "facts over vibes"]);
 assert.equal(normalizedBrief.topic, "Portable protocol launch");

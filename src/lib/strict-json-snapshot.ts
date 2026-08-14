@@ -148,9 +148,14 @@ export function createStrictJsonSnapshot<T>(input: T): T {
 
     ancestors.add(value);
     try {
-      const snapshot: Record<string, unknown> = {};
+      const snapshot = Object.create(null) as Record<string, unknown>;
       for (const [key, descriptor] of descriptors) {
-        snapshot[key] = visit(descriptor.value, depth + 1);
+        Object.defineProperty(snapshot, key, {
+          configurable: false,
+          enumerable: true,
+          value: visit(descriptor.value, depth + 1),
+          writable: false,
+        });
       }
       return snapshot;
     } finally {

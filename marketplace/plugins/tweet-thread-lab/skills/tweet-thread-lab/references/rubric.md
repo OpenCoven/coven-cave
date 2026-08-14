@@ -2,7 +2,7 @@
 
 Score each dimension separately from `0` to `1`. Give a concise rationale and evidence-linked findings. Do not average away a hard-gate failure.
 
-A blinded judge must not receive candidate IDs, candidate SHA-256 values, strategy names, authorship, model identity, or private arm mappings. It records trial ID, committed public-trial SHA-256, arm token, scorecard ID/time, and the six dimensions. Candidate identity is attached only after the precommitted reveal threshold is met and the commitment is verified.
+A blinded judge must not receive candidate IDs, candidate SHA-256 values, strategy names, authorship, model identity, or private arm mappings. It records trial ID, committed public-trial SHA-256, arm token, scorecard ID/time, and the six dimensions. Before identity reveal or stopping unlock, persist the scorecard set commitment with the exact sorted arm-token-to-canonical-scorecard-SHA mapping, set SHA, timestamp, and secret-backed HMAC; retain it in the run without candidate identity. Candidate identity is attached only after the stopping threshold and every committed scorecard byte verify.
 
 ## Hard gates
 

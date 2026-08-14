@@ -16,9 +16,13 @@ import {
   ThreadScorecardSchema,
   ThreadValidationRecordSchema,
 } from "../src/lib/tweet-thread-protocol.ts";
-import { BlindedThreadScorecardSchema } from "../src/lib/tweet-thread-blinding.ts";
+import {
+  BlindedScorecardSetCommitmentSchema,
+  BlindedThreadScorecardSchema,
+} from "../src/lib/tweet-thread-blinding.ts";
 
 export const PROTOCOL_SCHEMA_FILES = new Map([
+  ["blinded-scorecard-set-commitment.schema.json", BlindedScorecardSetCommitmentSchema],
   ["blinded-thread-scorecard.schema.json", BlindedThreadScorecardSchema],
   ["thread-brief.schema.json", ThreadBriefSchema],
   ["thread-candidate.schema.json", ThreadCandidateSchema],

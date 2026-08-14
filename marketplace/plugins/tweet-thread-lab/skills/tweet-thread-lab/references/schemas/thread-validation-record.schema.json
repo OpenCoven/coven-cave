@@ -69,7 +69,7 @@
         ],
         "type": "object"
       },
-      "maxItems": 1024,
+      "maxItems": 256,
       "type": "array"
     },
     "measurements": {

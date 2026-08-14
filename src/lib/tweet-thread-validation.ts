@@ -1,4 +1,4 @@
-import { isDeepStrictEqual } from "node:util";
+import canonicalize from "canonicalize";
 
 import {
   inspectThreadCandidateForValidation,
@@ -13,6 +13,10 @@ import {
   createDeterministicFinding as createCoreDeterministicFinding,
   validateThreadCandidateCore,
 } from "./tweet-thread-validation-core.ts";
+import {
+  StrictJsonSnapshotError,
+  createStrictJsonSnapshot,
+} from "./strict-json-snapshot.ts";
 
 export type {
   ThreadPostMeasurement,
@@ -40,19 +44,33 @@ export function validateThreadCandidate(
   brief?: ThreadBrief,
 ): ThreadValidationResult {
   const inspected = inspectThreadCandidateForValidation(candidate);
+  let suppliedBriefSnapshot: unknown;
+  let suppliedBriefInvalid = false;
+  if (brief !== undefined) {
+    try {
+      suppliedBriefSnapshot = createStrictJsonSnapshot(brief);
+    } catch (error) {
+      if (error instanceof StrictJsonSnapshotError) {
+        suppliedBriefInvalid = true;
+      } else {
+        throw error;
+      }
+    }
+  }
   const briefMismatch = brief !== undefined
     && (
-      !inspected.snapshot
+      suppliedBriefInvalid
+      || !inspected.snapshot
       || typeof inspected.snapshot !== "object"
-      || !isDeepStrictEqual(
-        (inspected.snapshot as Record<string, unknown>).brief,
-        brief,
-      )
+      || canonicalize((inspected.snapshot as Record<string, unknown>).brief)
+        !== canonicalize(suppliedBriefSnapshot)
     );
   const result = validateThreadCandidateCore(
     inspected.snapshot,
     inspected.issues,
-    briefMismatch ? brief : undefined,
+    briefMismatch
+      ? suppliedBriefSnapshot ?? Object.freeze(Object.create(null))
+      : undefined,
   );
   return {
     candidateSha256: result.candidateSha256,

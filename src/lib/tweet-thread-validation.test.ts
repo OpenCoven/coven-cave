@@ -6,6 +6,7 @@ import { Value } from "typebox/value";
 import {
   DeterministicFindingSchema,
   TWEET_THREAD_PROTOCOL_VERSION,
+  ThreadPostMeasurementSchema,
   computeThreadCandidateSha256,
 } from "./tweet-thread-protocol.ts";
 import type {
@@ -302,6 +303,54 @@ for (const [minPosts, maxPosts] of [[3, 4], [1, 1]] as const) {
   );
 }
 
+{
+  const amplified = candidate() as unknown as Record<string, unknown>;
+  const phrases = Array.from({ length: 1_024 }, (_, index) => `blocked-${index}`);
+  amplified.brief = {
+    ...brief(),
+    constraints: {
+      ...brief().constraints,
+      bannedPhrases: phrases,
+    },
+  };
+  amplified.posts = Array.from({ length: 1_024 }, (_, index) => ({
+    postId: `post-${index + 1}`,
+    text: phrases.join(" "),
+    claimIds: [],
+  }));
+
+  const startedAt = performance.now();
+  const result = validateThreadCandidate(amplified);
+  const elapsedMs = performance.now() - startedAt;
+  assert.ok(elapsedMs < 3_000, `amplified validation took ${elapsedMs.toFixed(1)}ms`);
+  assert.equal(result.accepted, false);
+  assert.ok(codes(result).includes("collection-limit"));
+  assert.ok(result.findings.length <= 256);
+  assert.ok(result.measurements.length <= 50);
+  assert.ok(result.findings.every((finding) => Value.Check(DeterministicFindingSchema, finding)));
+  assert.ok(result.measurements.every((measurement) =>
+    Value.Check(ThreadPostMeasurementSchema, measurement)
+  ));
+}
+
+{
+  const phrases = Array.from({ length: 128 }, (_, index) => `blocked-${index}`);
+  const amplified = candidate((content) => {
+    content.brief = brief({ bannedPhrases: phrases });
+    content.posts = Array.from({ length: 50 }, (_, index) => ({
+      postId: `post-${index + 1}`,
+      text: phrases.join(" "),
+      claimIds: ["claim-required"],
+    }));
+    content.brief.constraints.maxPosts = 50;
+  });
+  const result = validateThreadCandidate(amplified);
+  assert.equal(result.accepted, false);
+  assert.equal(result.findings.length, 256);
+  assert.ok(codes(result).includes("validation-output-truncated"));
+  assert.equal(result.measurements.length, 50);
+}
+
 for (const invalid of [
   (() => {
     const longClaimId = `claim-${"x".repeat(2_100)}`;
@@ -313,8 +362,6 @@ for (const invalid of [
     }];
     return {
       input,
-      code: "claim-missing-evidence",
-      prefix: 'Claim "claim-',
     };
   })(),
   (() => {
@@ -325,8 +372,6 @@ for (const invalid of [
     });
     return {
       input,
-      code: "banned-phrase",
-      prefix: 'post-2 contains banned phrase "forbidden-',
     };
   })(),
 ]) {
@@ -336,11 +381,8 @@ for (const invalid of [
     result.findings.every((finding) => Value.Check(DeterministicFindingSchema, finding)),
     "every validator finding remains schema-valid for oversized malformed input",
   );
-  const boundedFinding = result.findings.find((finding) =>
-    finding.code === invalid.code && finding.message.startsWith(invalid.prefix)
-  );
-  assert.ok(boundedFinding, `preserves the meaningful ${invalid.code} prefix`);
-  assert.ok(boundedFinding.message.endsWith("… [truncated]"));
+  assert.ok(result.findings.some((finding) => finding.code === "protocol-invalid"));
+  assert.ok(result.findings.every((finding) => finding.message.length <= 2_000));
 }
 
 {
@@ -382,6 +424,22 @@ for (const invalid of [
   const result = validateThreadCandidate(input, contradictoryBrief);
   assert.equal(result.accepted, false);
   assert.ok(codes(result).includes("brief-mismatch"));
+}
+
+{
+  let getterReads = 0;
+  const suppliedBrief = structuredClone(candidate().brief);
+  Object.defineProperty(suppliedBrief, "topic", {
+    enumerable: true,
+    get() {
+      getterReads += 1;
+      return "Unsafe inherited topic";
+    },
+  });
+  const result = validateThreadCandidate(candidate(), suppliedBrief);
+  assert.equal(result.accepted, false);
+  assert.ok(codes(result).includes("brief-mismatch"));
+  assert.equal(getterReads, 0, "supplied brief accessors are never invoked");
 }
 
 {
