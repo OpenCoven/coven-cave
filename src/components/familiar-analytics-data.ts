@@ -212,7 +212,10 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     memoryAvailability:
       memoryJson.state === "ready" ? "ready" : "unavailable",
     retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
-    threadReports: selfReportsJson.ok ? selfReportsJson.reports : [],
+    // `ok: true` says the request succeeded, not that the payload has the shape
+    // its type claims — SelfReportsResponse is erased at runtime. Check it here
+    // rather than let a non-array reach the aggregation (cave-p9dsb).
+    threadReports: Array.isArray(selfReportsJson.reports) ? selfReportsJson.reports : [],
     metricSnapshots: metricSnapshotsJson.ok ? metricSnapshotsJson.snapshots : [],
     modelFeedback: feedbackJson.ok ? feedbackJson.rollup : EMPTY_FEEDBACK_ROLLUP,
     errors,
