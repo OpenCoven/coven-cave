@@ -5,6 +5,7 @@ import { GET } from "./route.ts";
 import { wireRunDetachCleanup } from "@/lib/server/chat-detach-cleanup";
 import {
   canonicalizeAndRecordRunStreamEvent,
+  getRunBufferStatus,
   openRunBuffer,
   resetRunBuffersForTest,
   RUN_STREAM_EVENT_MAX_BYTES,
@@ -74,6 +75,39 @@ test("a finished run drains its replay and closes immediately", async () => {
   const text = await drain(res);
   assert.match(text, /all of it/);
   assert.match(text, /"kind":"done"/);
+  resetRunBuffersForTest();
+});
+
+test("a pre-aborted stream request detaches its live tail without body cancellation", async (t) => {
+  resetRunBuffersForTest();
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+
+  const abort = new AbortController();
+  const run = openRunBuffer(["run-pre-aborted-stream"]);
+  let childKills = 0;
+  const complete = wireRunDetachCleanup({
+    runBuffer: run,
+    signal: abort.signal,
+    isStopRequested: () => false,
+    timeoutMs: 100,
+    onTimeout: () => { childKills += 1; },
+  });
+  abort.abort();
+
+  const response = await GET(new Request(
+    "http://127.0.0.1/api/chat/stream?runId=run-pre-aborted-stream",
+    { signal: abort.signal },
+  ));
+  assert.equal(response.status, 200);
+  assert.equal(
+    getRunBufferStatus("run-pre-aborted-stream")?.liveTails,
+    0,
+    "the already-aborted request must not retain a live tail until body cancellation",
+  );
+
+  t.mock.timers.tick(100);
+  assert.equal(childKills, 1, "last-tail detach re-arms native child cleanup");
+  complete();
   resetRunBuffersForTest();
 });
 
