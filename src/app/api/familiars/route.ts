@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { callDaemon } from "@/lib/coven-daemon";
-import { bindingFor, saveConfig } from "@/lib/cave-config";
+import {
+  bindingFor,
+  saveConfigUnlocked,
+  withFamiliarLifecycleGuard,
+} from "@/lib/cave-config";
 import { covenHome } from "@/lib/coven-paths";
 import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
 import { loadVisibleFamiliarRoster } from "@/lib/server/familiar-roster";
@@ -18,6 +22,7 @@ import { scaffoldFamiliarContractFiles } from "@/lib/server/familiar-contract-fi
 import { removedFamiliarIds, takeTombstone } from "@/lib/server/familiar-tombstones";
 import { loadPreferences } from "@/lib/server/preferences-store";
 import { voiceBindingForNewFamiliar } from "@/lib/voice/new-familiar-defaults";
+import { writeFileAtomic } from "@/lib/server/atomic-write";
 
 export const dynamic = "force-dynamic";
 
@@ -227,19 +232,6 @@ export async function POST(req: Request) {
     );
   }
 
-  // Check for a local duplicate before making any config change. Keep the
-  // verified contents for the later registration write, after the binding has
-  // been persisted.
-  const existingToml = await pathExists(familiarsToml)
-    ? await readFile(familiarsToml, "utf8")
-    : null;
-  if (existingToml && familiarsTomlContainsId(existingToml, draft.id)) {
-    return NextResponse.json(
-      { ok: false, error: `A familiar with id "${draft.id}" already exists.` },
-      { status: 409 },
-    );
-  }
-
   // Scaffold the harness adapter manifest if it is missing, or repair the
   // known Windows Hermes shim before the new familiar can launch it. Persist
   // the binding before registering the familiar below: a profile-selected
@@ -250,38 +242,61 @@ export async function POST(req: Request) {
   // are preserved (see the doc comment above).
   const preferences = await loadPreferences();
   const voiceBinding = voiceBindingForNewFamiliar(preferences.voice);
-  await saveConfig({
-    familiars: {
-      [draft.id]: {
-        harness: draft.harness,
-        model: draft.model,
-        ...(draft.hermesProfile ? { hermesProfile: draft.hermesProfile } : {}),
-        ...(draft.runtime ? { runtime: draft.runtime } : {}),
-        voiceProvider: null,
-        voiceModel: null,
-        voiceName: null,
-        ...voiceBinding,
-      },
-    },
+  const created = await withFamiliarLifecycleGuard(async (config) => {
+    const existingToml = await pathExists(familiarsToml)
+      ? await readFile(familiarsToml, "utf8")
+      : null;
+    if (existingToml && familiarsTomlContainsId(existingToml, draft.id)) {
+      return { conflict: true as const };
+    }
+
+    const priorBinding = config.familiars[draft.id]
+      ? { ...config.familiars[draft.id] }
+      : null;
+    const nextToml = existingToml !== null
+      ? `${existingToml}${existingToml.endsWith("\n") ? "\n" : "\n\n"}${buildFamiliarsToml(draft).replace(/^# User familiars for this Coven\.\n+/, "")}`
+      : buildFamiliarsToml(draft);
+    let configSaved = false;
+    let tomlSaved = false;
+    try {
+      await saveConfigUnlocked({
+        familiars: {
+          [draft.id]: {
+            harness: draft.harness,
+            model: draft.model,
+            ...(draft.hermesProfile ? { hermesProfile: draft.hermesProfile } : {}),
+            ...(draft.runtime ? { runtime: draft.runtime } : {}),
+            voiceProvider: null,
+            voiceModel: null,
+            voiceName: null,
+            ...voiceBinding,
+          },
+        },
+      });
+      configSaved = true;
+      await writeFileAtomic(familiarsToml, nextToml);
+      tomlSaved = true;
+      await takeTombstone(draft.id);
+      return { conflict: false as const };
+    } catch (error) {
+      if (tomlSaved) {
+        if (existingToml === null) await rm(familiarsToml, { force: true }).catch(() => {});
+        else await writeFileAtomic(familiarsToml, existingToml).catch(() => {});
+      }
+      if (configSaved) {
+        await saveConfigUnlocked({
+          familiars: { [draft.id]: priorBinding },
+        }).catch(() => {});
+      }
+      throw error;
+    }
   });
-
-  // The duplicate was checked above before any mutation. Register only after
-  // saveConfig succeeds: if binding persistence fails, no unbound familiar is
-  // registered for chat to launch through a Hermes default profile.
-  if (existingToml !== null) {
-    const separator = existingToml.endsWith("\n") ? "\n" : "\n\n";
-    await writeFile(
-      familiarsToml,
-      `${existingToml}${separator}${buildFamiliarsToml(draft).replace(/^# User familiars for this Coven\.\n+/, "")}`,
-      "utf8",
+  if (created.conflict) {
+    return NextResponse.json(
+      { ok: false, error: `A familiar with id "${draft.id}" already exists.` },
+      { status: 409 },
     );
-  } else {
-    await writeFile(familiarsToml, buildFamiliarsToml(draft), "utf8");
   }
-
-  // Re-creating a removed id must clear its tombstone: the roster GET hides
-  // tombstoned ids, so a stale entry would make the new familiar invisible.
-  await takeTombstone(draft.id).catch(() => {});
   // Scaffold the Familiar Contract (SOUL.md / IDENTITY.md / ward.toml /
   // MEMORY.md) so the new familiar is contract-compliant from birth instead of
   // showing up for "rehabilitation" in the Studio Contract tab. Best-effort and

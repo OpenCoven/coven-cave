@@ -61,6 +61,41 @@ const contracts: RouteContract[] = [
   { route: "/chat/stream", methods: ["GET"], kind: "stream" },
   { route: "/chat/stream/status", methods: ["GET"], kind: "json" },
   { route: "/chat/usage", methods: ["GET"], kind: "json" },
+  // The standalone OpenCoven Chat client facade (cave-client-v1 plan).
+  // Non-admin routes are gated on the internal loopback marker proxy.ts
+  // stamps for a verified direct loopback peer (never localOriginGuard's
+  // isLocalOrigin/rejectNonLocalRequest — a different, browser-CSRF-focused
+  // gate this facade deliberately bypasses; see proxy.ts's isClientV1Path
+  // branch). Admin routes take no client-v1 auth of their own and instead
+  // rely entirely on proxy.ts's pre-existing sidecar-token + same-origin/CSRF
+  // gate, exactly like every other first-party Cave admin route.
+  { route: "/client/v1/health", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/pairing/requests", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/client/v1/pairing/requests/[id]", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/pairing/requests/[id]/exchange", methods: ["POST"], kind: "json" },
+  { route: "/client/v1/admin/pairing-requests", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/admin/pairing-requests/[id]/decision", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/client/v1/admin/credentials", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/admin/credentials/[id]", methods: ["DELETE"], kind: "json" },
+  // Canonical read projections (cave-client-v1 plan, Task 5). Every route
+  // below is `chat:read`-scoped: `requireClientPrincipal` checks the internal
+  // loopback marker AND the bearer credential/scope before any query/data
+  // access, exactly like the routes above.
+  { route: "/client/v1/familiars", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/projects", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/commands", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/conversations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/client/v1/conversations/[id]", methods: ["GET", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/client/v1/conversations/search", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/messages/send", methods: ["POST"], kind: "stream", readsJson: true, invalidJson: "guarded" },
+  { route: "/client/v1/runs/[id]/stream", methods: ["GET"], kind: "stream" },
+  { route: "/client/v1/runs/[id]/stop", methods: ["POST"], kind: "json" },
+  { route: "/client/v1/runs/[id]/retry", methods: ["POST"], kind: "stream", readsJson: true, invalidJson: "guarded" },
+  { route: "/client/v1/attachments", methods: ["POST"], kind: "json" },
+  { route: "/client/v1/attachments/[id]", methods: ["GET"], kind: "stream" },
+  { route: "/client/v1/attention/[id]/respond", methods: ["POST"], kind: "stream", readsJson: true, invalidJson: "guarded" },
+  { route: "/client/v1/tasks/handoff", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/client/v1/github/actions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/codex-automations/[id]", methods: ["GET", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/codex-automations/[id]/run", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/codex-automations/[id]/runs", methods: ["GET"], kind: "json" },
@@ -372,6 +407,22 @@ function effectiveRouteSource(file: string, source: string): string {
   if (source.includes('from "./install-service"')) {
     parts.push(readFileSync(path.join(path.dirname(file), "install-service.ts"), "utf8"));
   }
+  // The client-v1 facade's routes build every response through
+  // `clientV1Ok`/`clientV1Error` (cave-client-v1 plan) so the wire envelope
+  // stays identical across every endpoint; neither literally contains
+  // `Response.json` itself, but `responses.ts` does. Inline it so the
+  // json-response and invalid-JSON contract checks below see the real
+  // response construction instead of concluding these routes return nothing.
+  if (source.includes('from "@/lib/server/client-v1/responses')) {
+    parts.push(
+      readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "client-v1", "responses.ts"), "utf8"),
+    );
+  }
+  if (source.includes('from "@/lib/server/chat-send-service"')) {
+    parts.push(
+      readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "chat-send-service.ts"), "utf8"),
+    );
+  }
   return parts.join("\n");
 }
 
@@ -540,7 +591,7 @@ for (const contract of contracts) {
 // OpenClaw bridge) carry the guard.
 {
   const sendSource = readFileSync(
-    path.join(apiRoot, "chat", "send", "route.ts"),
+    path.join(apiRoot, "..", "..", "lib", "server", "chat-send-service.ts"),
     "utf8",
   );
   const sseSource = readFileSync(
@@ -670,35 +721,55 @@ for (const contract of contracts) {
     path.join(apiRoot, "sessions", "list", "route.ts"),
     "utf8",
   );
-  assert.match(
-    sessionsListSource,
-    /import \{ loadProjects, projectForRoot \} from "@\/lib\/cave-projects"/,
-    "/sessions/list: session validation should consult the project registry",
+  // The canonical merge/grant-scoping projection (formerly defined inline in
+  // this route file) was extracted into `computeCanonicalSessionList` in
+  // @/lib/server/client-v1/read-model.ts (cave-client-v1 plan, Task 5, Step 1),
+  // and the cache-key-building this route used to own directly was later
+  // folded into that same module's `getCanonicalSessionList` cached accessor
+  // (Task 5 quality finding) so the new `/api/client/v1` read routes share
+  // the exact same canonical computation AND the exact same cache entry. The
+  // assertions below split accordingly: this route file now only parses
+  // query params and delegates, while the merge/projection/cache invariants
+  // that pin the (now-shared) canonical implementation read read-model.ts's
+  // source instead.
+  const readModelSource = readFileSync(
+    path.join(apiRoot, "..", "..", "lib", "server", "client-v1", "read-model.ts"),
+    "utf8",
   );
   assert.match(
     sessionsListSource,
+    /import \{ getCanonicalSessionList \} from "@\/lib\/server\/client-v1\/read-model"/,
+    "/sessions/list: the route delegates to the shared cached canonical accessor instead of a local reimplementation",
+  );
+  assert.match(
+    readModelSource,
+    /import \{ loadProjects, projectForRoot[\s\S]{0,80}\} from "@\/lib\/cave-projects"/,
+    "read-model: session validation should consult the project registry",
+  );
+  assert.match(
+    readModelSource,
     /function isKnownProjectOrValidDir\(projectRoot: string\): boolean \{[\s\S]*?projectForRoot\(projectRoot, projects\)[\s\S]*?isTrueProjectCwd\(projectRoot\)/,
-    "/sessions/list: registered projects should pass validation before falling back to disk",
+    "read-model: registered projects should pass validation before falling back to disk",
   );
   assert.match(
-    sessionsListSource,
+    readModelSource,
     /import \{ enrichSessionsWithGitContext \} from "@\/lib\/session-git-enrich"/,
-    "/sessions/list: sessions should be enriched from local git context (async lib)",
+    "read-model: sessions should be enriched from local git context (async lib)",
   );
   assert.doesNotMatch(
-    sessionsListSource,
+    readModelSource,
     /execFileSync|execSync|spawnSync/,
-    "/sessions/list: the polled list route must never run sync subprocesses on the event loop (cave-n37w)",
+    "read-model: the polled list projection must never run sync subprocesses on the event loop (cave-n37w)",
   );
   assert.match(
-    sessionsListSource,
+    readModelSource,
     /await enrichSessionsWithGitContext\(/,
-    "/sessions/list: git enrichment should be awaited (async), not run synchronously",
+    "read-model: git enrichment should be awaited (async), not run synchronously",
   );
   assert.match(
-    sessionsListSource,
-    /import \{\s*sessionsListCache,[\s\S]{0,80}\} from "@\/lib\/server\/sessions-list-cache"/,
-    "/sessions/list: repeated callers should share the invalidatable stale-while-revalidate cache (cave-53yx)",
+    readModelSource,
+    /import \{\s*sessionsListCache,?\s*(?:type SessionsListResult\s*)?\} from "@\/lib\/server\/sessions-list-cache"/,
+    "read-model: repeated callers should share the invalidatable stale-while-revalidate cache (cave-53yx), now behind getCanonicalSessionList",
   );
   const sessionsListCacheSource = readFileSync(
     path.join(apiRoot, "..", "..", "lib", "server", "sessions-list-cache.ts"),

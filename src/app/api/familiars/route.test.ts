@@ -155,8 +155,8 @@ assert.match(
 // leaves defaults/roles/addons/marketplace untouched.
 assert.match(
   source,
-  /saveConfig\(\{\s*familiars:/,
-  "POST should upsert the new familiar binding via saveConfig({ familiars })",
+  /withFamiliarLifecycleGuard\([\s\S]*?saveConfigUnlocked\(\{\s*familiars:/,
+  "POST should hold the lifecycle guard and use the already-locked config saver",
 );
 assert.doesNotMatch(
   source,
@@ -165,8 +165,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /const preferences = await loadPreferences\(\);\s*const voiceBinding = voiceBindingForNewFamiliar\(preferences\.voice\);\s*await saveConfig\(\{/,
-  "POST should derive the voice binding from canonical preferences immediately before saveConfig",
+  /const preferences = await loadPreferences\(\);\s*const voiceBinding = voiceBindingForNewFamiliar\(preferences\.voice\);[\s\S]*?await saveConfigUnlocked\(\{/,
+  "POST should derive the voice binding from canonical preferences before the guarded config save",
 );
 assert.match(
   source,
@@ -179,7 +179,7 @@ assert.equal(
   "the voice clear sentinels should exist only in the new-familiar upsert",
 );
 assert.ok(
-  source.indexOf("await saveConfig({") < source.indexOf("await writeFile("),
+  source.indexOf("await saveConfigUnlocked({") < source.indexOf("await writeFileAtomic("),
   "POST persists a familiar binding before registering it in familiars.toml",
 );
 

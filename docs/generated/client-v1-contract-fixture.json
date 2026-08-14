@@ -1,0 +1,241 @@
+{
+  "health": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "service": "coven-cave",
+      "apiVersion": "1.0",
+      "minimumClientVersion": "0.1.0",
+      "instanceId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "pairingRequired": true,
+      "capabilities": [
+        "canonical-conversations",
+        "resumable-sse",
+        "attachments",
+        "attention",
+        "task-handoff",
+        "github-actions"
+      ]
+    }
+  },
+  "error": {
+    "status": 401,
+    "body": {
+      "ok": false,
+      "error": {
+        "code": "unauthorized",
+        "message": "Not authorized.",
+        "retryable": false
+      }
+    }
+  },
+  "credentials": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "credentials": [
+        {
+          "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "appName": "OpenCoven Chat",
+          "installationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "scopes": [
+            "chat:read",
+            "chat:write",
+            "conversations:write",
+            "attachments:write",
+            "tasks:write",
+            "github:write"
+          ],
+          "createdAt": 1723241600000,
+          "lastUsedAt": null,
+          "revokedAt": null
+        }
+      ]
+    }
+  },
+  "familiars": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "familiars": [
+        {
+          "id": "charm",
+          "displayName": "Charm",
+          "role": "Companion",
+          "description": "Keeps the contract honest.",
+          "pronouns": "she/her",
+          "status": "online",
+          "emoji": "✨"
+        }
+      ]
+    }
+  },
+  "projects": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "projects": [
+        {
+          "id": "project-alpha",
+          "name": "Project Alpha",
+          "root": "<fixture-root>/workspace/project-alpha",
+          "access": "write",
+          "repoUrl": "https://github.com/OpenCoven/example"
+        }
+      ]
+    }
+  },
+  "conversations": {
+    "status": 200,
+    "headers": {
+      "etag": "b1ecc00eb0d673d8076400c84f9fce23925a975ea87cfd8c8a0194a1d6f840c9"
+    },
+    "body": {
+      "ok": true,
+      "items": [
+        {
+          "id": "fixture-conversation",
+          "familiarId": "charm",
+          "title": "Lock the client contract",
+          "preview": "The Cave client contract is locked and documented.",
+          "projectId": null,
+          "projectRoot": null,
+          "status": "idle",
+          "pinned": false,
+          "archivedAt": null,
+          "createdAt": "2026-08-11T00:00:00.000Z",
+          "updatedAt": "2026-08-11T00:00:05.000Z",
+          "revision": "a7c115d3efcf64ec1368a5f7533e1e81ad954bc50ce798e332e2b9917bb0c5da",
+          "revisionTime": 1786406405000
+        }
+      ],
+      "nextCursor": null,
+      "degraded": false
+    }
+  },
+  "conversation": {
+    "status": 200,
+    "headers": {
+      "etag": "a7c115d3efcf64ec1368a5f7533e1e81ad954bc50ce798e332e2b9917bb0c5da"
+    },
+    "body": {
+      "ok": true,
+      "conversation": {
+        "id": "fixture-conversation",
+        "familiarId": "charm",
+        "title": "Lock the client contract",
+        "preview": "The Cave client contract is locked and documented.",
+        "projectId": null,
+        "projectRoot": null,
+        "status": "idle",
+        "pinned": false,
+        "archivedAt": null,
+        "createdAt": "2026-08-11T00:00:00.000Z",
+        "updatedAt": "2026-08-11T00:00:05.000Z",
+        "revision": "a7c115d3efcf64ec1368a5f7533e1e81ad954bc50ce798e332e2b9917bb0c5da",
+        "revisionTime": 1786406405000
+      },
+      "messages": [
+        {
+          "id": "turn-1",
+          "role": "user",
+          "text": "Please lock the Cave client contract.",
+          "createdAt": "2026-08-11T00:00:01.000Z",
+          "attachments": [
+            {
+              "id": "attachment-brief",
+              "name": "brief.txt",
+              "mimeType": "text/plain",
+              "sizeBytes": 27
+            }
+          ]
+        },
+        {
+          "id": "turn-2",
+          "role": "assistant",
+          "text": "The Cave client contract is locked and documented.",
+          "createdAt": "2026-08-11T00:00:02.000Z",
+          "attachments": []
+        }
+      ],
+      "nextCursor": null,
+      "degraded": false
+    }
+  },
+  "streamEvents": {
+    "success": [
+      {
+        "id": 1,
+        "data": {
+          "type": "run.started",
+          "runId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          "conversationId": "fixture-conversation"
+        }
+      },
+      {
+        "id": 2,
+        "data": {
+          "type": "message.delta",
+          "text": "Contract "
+        }
+      },
+      {
+        "id": 3,
+        "data": {
+          "type": "message.delta",
+          "text": "locked."
+        }
+      },
+      {
+        "id": 4,
+        "data": {
+          "type": "progress",
+          "id": "progress-1",
+          "label": "Pairing approved",
+          "detail": "Waiting for exchange.",
+          "status": "running"
+        }
+      },
+      {
+        "id": 5,
+        "data": {
+          "type": "tool",
+          "payload": {
+            "id": "tool-1",
+            "name": "shell",
+            "input": {
+              "command": "pnpm test:api"
+            },
+            "output": {
+              "exitCode": 0
+            },
+            "status": "completed",
+            "durationMs": 1200
+          }
+        }
+      },
+      {
+        "id": 6,
+        "data": {
+          "type": "run.completed",
+          "conversationId": "fixture-conversation"
+        }
+      }
+    ],
+    "reconcileRequired": {
+      "id": 7,
+      "data": {
+        "type": "reconcile_required",
+        "conversationId": "fixture-conversation"
+      }
+    },
+    "runFailed": {
+      "id": 8,
+      "data": {
+        "type": "run.failed",
+        "code": "service_unavailable",
+        "message": "The run failed."
+      }
+    }
+  }
+}

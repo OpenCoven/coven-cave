@@ -160,7 +160,7 @@ test("the check log is left alone — the two answer different questions", async
     assert.ok(file.grantAudit.length > 0, "they land in grantAudit instead");
 });
 
-test("a store written before this log existed loads as empty, not broken", async () => {
+test("an empty grant log loads without inventing history", async () => {
     const { writeFile } = await import("node:fs/promises");
     await writeFile(
       process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE,
@@ -170,6 +170,9 @@ test("a store written before this log existed loads as empty, not broken", async
         accessGroups: [],
         grantProposals: [],
         permissionAudit: [],
+        grantAudit: [],
+        repairAudit: [],
+        visibilityGeneration: "grant-audit-fixture",
       }),
       "utf8",
     );

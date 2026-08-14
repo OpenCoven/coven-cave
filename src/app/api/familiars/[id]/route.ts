@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
-import { readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { loadConfig, saveConfig } from "@/lib/cave-config";
+import { saveConfigUnlocked, withFamiliarLifecycleGuard } from "@/lib/cave-config";
+import { covenHome } from "@/lib/coven-paths";
 import {
   displayNameFromTomlBlock,
   removeFamiliarBlockFromToml,
 } from "@/lib/familiar-removal";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
-import { addTombstone } from "@/lib/server/familiar-tombstones";
+import {
+  addTombstone,
+  readTombstones,
+  takeTombstone,
+} from "@/lib/server/familiar-tombstones";
+import { writeFileAtomic } from "@/lib/server/atomic-write";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -27,6 +32,15 @@ export const runtime = "nodejs";
  * - Nothing else is touched: the upstream OpenClaw agent instance, chat and
  *   session history, and the familiar's workspace files (SOUL.md, memory,
  *   avatars) all stay on disk. Re-registering the same id picks them back up.
+ * - The whole TOML+tombstone+config mutation runs inside
+ *   `withFamiliarLifecycleGuard` (cave-client-v1 plan Task 7 followup): a
+ *   client conversation create/PATCH/DELETE that has already resolved (or is
+ *   about to resolve) this familiar's binding holds the SAME dedicated lock
+ *   for its own effect, so this removal either fully completes before that
+ *   effect starts or fully waits behind it — never interleaves. The config
+ *   write below uses `saveConfigUnlocked` (not `saveConfig`) because this
+ *   handler already holds the dedicated lock the ordinary `saveConfig` path
+ *   would try to reacquire.
  */
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
@@ -34,45 +48,58 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
 
-  const familiarsToml = path.join(homedir(), ".coven", "familiars.toml");
-  let toml: string | null = null;
-  try {
-    toml = await readFile(familiarsToml, "utf8");
-  } catch {
-    /* absent — the familiar may still exist as a binding-only entry */
-  }
+  return withFamiliarLifecycleGuard(async (config) => {
+    const familiarsToml = path.join(covenHome(), "familiars.toml");
+    let toml: string | null = null;
+    try {
+      toml = await readFile(familiarsToml, "utf8");
+    } catch {
+      /* absent — the familiar may still exist as a binding-only entry */
+    }
 
-  const surgery = toml === null ? null : removeFamiliarBlockFromToml(toml, id);
-  const config = await loadConfig();
-  const binding = config.familiars[id] ? { ...config.familiars[id] } : null;
+    const surgery = toml === null ? null : removeFamiliarBlockFromToml(toml, id);
+    const binding = config.familiars[id] ? { ...config.familiars[id] } : null;
 
-  if (!surgery?.removed && !binding) {
-    return NextResponse.json(
-      { ok: false, error: `No familiar "${id}" to remove.` },
-      { status: 404 },
-    );
-  }
+    if (!surgery?.removed && !binding) {
+      return NextResponse.json(
+        { ok: false, error: `No familiar "${id}" to remove.` },
+        { status: 404 },
+      );
+    }
 
-  // Snapshot before mutating — never destroy the only copy of the entry.
-  await addTombstone({
-    id,
-    displayName: (surgery?.removed ? displayNameFromTomlBlock(surgery.removed) : null) ?? id,
-    removedAt: new Date().toISOString(),
-    tomlBlock: surgery?.removed ?? null,
-    binding: binding as Record<string, unknown> | null,
-  });
+    const priorTombstone =
+      (await readTombstones()).find((entry) => entry.id === id) ?? null;
+    await addTombstone({
+      id,
+      displayName: (surgery?.removed ? displayNameFromTomlBlock(surgery.removed) : null) ?? id,
+      removedAt: new Date().toISOString(),
+      tomlBlock: surgery?.removed ?? null,
+      binding: binding as Record<string, unknown> | null,
+    });
 
-  if (surgery?.removed && toml !== null) {
-    await writeFile(familiarsToml, surgery.toml, "utf8");
-  }
-  if (binding) {
-    await saveConfig({ familiars: { [id]: null } });
-  }
+    let tomlSaved = false;
+    try {
+      if (surgery?.removed && toml !== null) {
+        await writeFileAtomic(familiarsToml, surgery.toml);
+        tomlSaved = true;
+      }
+      if (binding) {
+        await saveConfigUnlocked({ familiars: { [id]: null } });
+      }
+    } catch (error) {
+      if (tomlSaved && toml !== null) {
+        await writeFileAtomic(familiarsToml, toml).catch(() => {});
+      }
+      if (priorTombstone) await addTombstone(priorTombstone).catch(() => {});
+      else await takeTombstone(id).catch(() => {});
+      throw error;
+    }
 
-  return NextResponse.json({
-    ok: true,
-    id,
-    removedFromToml: Boolean(surgery?.removed),
-    hadBinding: binding !== null,
+    return NextResponse.json({
+      ok: true,
+      id,
+      removedFromToml: Boolean(surgery?.removed),
+      hadBinding: binding !== null,
+    });
   });
 }

@@ -7,6 +7,26 @@ import path from "node:path";
 
 const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
+// The canonical merge/grant-scoping/degraded-fallback projection (formerly
+// `computeSessionsList`, defined right here in this route file) was
+// extracted verbatim into `computeCanonicalSessionList` in
+// @/lib/server/client-v1/read-model.ts (cave-client-v1 plan, Task 5, Step 1),
+// and the cache-key-building + `sessionsListCache.get(...)` wiring this route
+// used to own directly was later folded into that same module's
+// `getCanonicalSessionList` cached accessor (Task 5 quality finding) so the
+// new `/api/client/v1` read routes share the exact same canonical
+// computation AND the exact same cache entry, never a forked
+// reimplementation or a forked cache. This route file now only parses query
+// params and delegates to `getCanonicalSessionList` — so the source-contract
+// assertions below split accordingly: query/delegation assertions still read
+// THIS file's source, while the merge/projection/cache-key assertions that
+// pin the (now-shared) canonical implementation read read-model.ts's source
+// instead.
+const readModelSource = readFileSync(
+  new URL("../../../../lib/server/client-v1/read-model.ts", import.meta.url),
+  "utf8",
+);
+
 assert.match(
   source,
   /collapseFamiliarWorkspace\s*=\s*\n?\s*url\.searchParams\.get\("collapseFamiliarWorkspace"\)\s*===\s*"1"/,
@@ -14,41 +34,62 @@ assert.match(
 );
 
 assert.match(
-  source,
-  /cacheKey\s*=[\s\S]{0,160}collapseFamiliarWorkspace\s*\?\s*"collapse"\s*:\s*"full"/,
-  "the cache key varies by collapse mode so full and collapsed views never alias",
+  readModelSource,
+  /export function canonicalSessionListCacheKey\([\s\S]*?\): string \{[\s\S]{0,1500}JSON\.stringify\(\[\s*includeArchived,\s*familiarId,\s*collapseFamiliarWorkspace,\s*visibilityGenerations\[0\],\s*visibilityGenerations\[1\],\s*\]\)/,
+  "the shared canonical cache key JSON-encodes the full (includeArchived, familiarId, collapse, " +
+    "visibilityGenerations) tuple so full and collapsed views never alias, a real familiar id never aliases " +
+    "the unscoped (null) view, AND a cross-process permission/registry mutation selects a new key " +
+    "(cave-client-v1 Task 5/7 cross-process cache-visibility followup)",
+);
+assert.doesNotMatch(
+  readModelSource,
+  /familiarId\s*\?\?\s*"all"/,
+  'the cache key must not string-template a null familiarId behind an "all" sentinel — a familiar literally ' +
+    'named "all" would otherwise collide with the unscoped view\'s key',
 );
 
 assert.match(
   source,
-  /computeSessionsList\(includeArchived,\s*familiarId,\s*collapseFamiliarWorkspace\)/,
-  "the collapse flag is threaded into computeSessionsList",
+  /getCanonicalSessionList\(includeArchived,\s*familiarId,\s*collapseFamiliarWorkspace\)/,
+  "the collapse flag is threaded into the shared cached getCanonicalSessionList accessor",
 );
 
 assert.match(
   source,
+  /import \{ getCanonicalSessionList \} from "@\/lib\/server\/client-v1\/read-model"/,
+  "the route delegates to the shared cached canonical accessor instead of a local reimplementation",
+);
+
+assert.doesNotMatch(
+  source,
+  /sessionsListCache/,
+  "the route no longer touches the cache singleton directly — caching lives behind getCanonicalSessionList",
+);
+
+assert.match(
+  readModelSource,
   /if \(!collapseFamiliarWorkspace\) return sessions;/,
   "the collapse helper is a no-op (and skips the FS read) when the flag is off",
 );
 
 assert.equal(
-  (source.match(/applyFamiliarWorkspaceCollapse\(/g) || []).length,
+  (readModelSource.match(/applyFamiliarWorkspaceCollapse\(/g) || []).length,
   3,
   "applyFamiliarWorkspaceCollapse is defined once and called in BOTH the happy and degraded paths",
 );
 
 assert.match(
-  source,
+  readModelSource,
   /if \(hasActiveChatRun\(conv\.sessionId\)\) return \{ \.\.\.conv, status: "running", exitCode: 0 \};\s*\n\s*if \(conv\.pending\) return \{ \.\.\.conv, status: "failed", exitCode: 1 \};\s*\n\s*return conv;/,
   "projection-live conversations stay running via the live-run registry while inactive pending stubs fail",
 );
 assert.match(
-  source,
+  readModelSource,
   /import \{ hasActiveChatRun \} from "@\/lib\/server\/chat-stop-registry"/,
   "the liveness probe comes from the in-process chat run registry",
 );
 assert.match(
-  source,
+  readModelSource,
   /mergeSessionRows\(\{[\s\S]*?\}\)\.map\(\(session\) =>\s*\n?\s*hasActiveChatRun\(session\.id\)\s*\n?\s*\? \{ \.\.\.session, status: "running", exit_code: 0, attention: NO_CHAT_ATTENTION \}\s*\n?\s*: session\s*\)/,
   "registry liveness overrides merged daemon status and stale attention",
 );

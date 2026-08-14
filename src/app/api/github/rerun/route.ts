@@ -17,6 +17,61 @@ export const runtime = "nodejs";
 const GH = "https://api.github.com";
 const REPO_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 
+export type GitHubRerunInput = {
+  repo: string;
+  runId: number;
+  failedOnly?: boolean;
+};
+export type GitHubRerunResult =
+  | { ok: true }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      reason: "auth_required" | "upstream" | "network";
+    };
+
+export async function executeGitHubRerun(input: GitHubRerunInput): Promise<GitHubRerunResult> {
+  const token = resolveGitHubToken();
+  if (!token) {
+    return { ok: false, status: 401, error: "auth_required", reason: "auth_required" };
+  }
+
+  try {
+    const path = input.failedOnly !== false ? "rerun-failed-jobs" : "rerun";
+    const res = await fetch(`${GH}/repos/${input.repo}/actions/runs/${input.runId}/${path}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
+      return { ok: false, status: res.status, error: message, reason: "upstream" };
+    }
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 502,
+      error: error instanceof Error ? error.message : "failed to re-run",
+      reason: "network",
+    };
+  }
+}
+
+function toLegacyResponse(result: GitHubRerunResult): Response {
+  if (result.ok) return NextResponse.json(result);
+  return NextResponse.json(
+    { ok: false, error: result.error },
+    { status: result.reason === "auth_required" ? 401 : result.status === 403 ? 403 : 502 },
+  );
+}
+
 export async function POST(req: Request) {
   let body: { repo?: unknown; runId?: unknown; failedOnly?: unknown };
   try {
@@ -36,33 +91,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid runId" }, { status: 400 });
   }
 
-  const token = resolveGitHubToken();
-  if (!token) {
-    return NextResponse.json({ ok: false, error: "auth_required" }, { status: 401 });
-  }
-
-  try {
-    // repo passed REPO_RE and runId is a positive integer — safe to interpolate.
-    const path = failedOnly ? "rerun-failed-jobs" : "rerun";
-    const res = await fetch(`${GH}/repos/${repo}/actions/runs/${runId}/${path}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-      const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
-      return NextResponse.json({ ok: false, error: message }, { status: res.status === 403 ? 403 : 502 });
-    }
-    return NextResponse.json({ ok: true });
-  } catch (e) {
-    return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "failed to re-run" },
-      { status: 502 },
-    );
-  }
+  return toLegacyResponse(await executeGitHubRerun({ repo, runId, failedOnly }));
 }

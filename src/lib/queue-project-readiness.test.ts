@@ -33,6 +33,7 @@ try {
         createdAt: "2026-07-23T00:00:00.000Z",
         updatedAt: "2026-07-23T00:00:00.000Z",
       }],
+      visibilityGeneration: "queue-project-initial",
     }),
   );
 
@@ -54,6 +55,7 @@ try {
         { id: "queue-project", name: "Queue project", root: projectRoot, createdAt: "2026-07-23T00:00:00.000Z", updatedAt: "2026-07-23T00:00:00.000Z" },
         { id: "non-git-project", name: "Not a Git project", root: nonGitRoot, createdAt: "2026-07-23T00:00:00.000Z", updatedAt: "2026-07-23T00:00:00.000Z" },
       ],
+      visibilityGeneration: "queue-project-non-git",
     }),
   );
   await selectQueueProject("non-git-project");
@@ -147,6 +149,7 @@ try {
         { id: "queue-project", name: "Queue project", root: projectRoot, createdAt: "2026-07-23T00:00:00.000Z", updatedAt: "2026-07-23T00:00:00.000Z" },
         { id: "invalid-project", name: "Invalid project", root: path.join(tempDir, "missing"), createdAt: "2026-07-23T00:00:00.000Z", updatedAt: "2026-07-23T00:00:00.000Z" },
       ],
+      visibilityGeneration: "queue-project-invalid",
     }),
   );
   await selectQueueProject("invalid-project");
@@ -171,6 +174,7 @@ try {
         createdAt: "2026-07-23T00:00:00.000Z",
         updatedAt: "2026-07-23T00:00:00.000Z",
       }],
+      visibilityGeneration: "queue-project-nested",
     }),
   );
   await selectQueueProject("nested-project");
@@ -191,6 +195,7 @@ try {
         createdAt: "2026-07-23T00:00:00.000Z",
         updatedAt: "2026-07-23T00:00:00.000Z",
       }],
+      visibilityGeneration: "queue-project-stale",
     }),
   );
   await selectQueueProject("queue-project");
