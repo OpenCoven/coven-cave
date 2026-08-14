@@ -37,6 +37,15 @@
   gap: 10px;
   padding: var(--space-2) 2px;
 }
+.trace-item--focused {
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  outline: 1px solid color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+  outline-offset: -1px;
+}
+.trace-item--focused:focus-visible {
+  outline-width: 2px;
+}
 .trace-item__marker {
   position: relative;
   width: 8px;
