@@ -93,11 +93,18 @@ assert.match(source, /onRosterChanged\?\.\(\)/);
   const tombstoneAt = deleteRoute.indexOf("await addTombstone(");
   assert.ok(tombstoneAt > 0, "delete route snapshots a tombstone");
   assert.ok(
-    tombstoneAt < deleteRoute.indexOf("writeFile(familiarsToml"),
+    tombstoneAt < deleteRoute.indexOf("writeFileAtomic(familiarsToml"),
     "tombstone is written before familiars.toml is mutated",
   );
+  // The route now writes its config mutation through `saveConfigUnlocked`
+  // (cave-client-v1 Task 7 followup), not `saveConfig` — it already holds
+  // the dedicated familiar-lifecycle lock via `withFamiliarLifecycleGuard`,
+  // and `saveConfig` would try to reacquire it. The ordering guarantee this
+  // pin protects (tombstone before the binding is dropped) is unchanged.
+  const saveConfigCallAt = deleteRoute.indexOf("saveConfigUnlocked(");
+  assert.ok(saveConfigCallAt > 0, "delete route drops the binding via saveConfigUnlocked");
   assert.ok(
-    tombstoneAt < deleteRoute.indexOf("saveConfig("),
+    tombstoneAt < saveConfigCallAt,
     "tombstone is written before the binding is dropped",
   );
   assert.match(deleteRoute, /status: 404/, "nothing-to-remove is a 404, not a silent ok");

@@ -113,6 +113,12 @@ export type ConversationFile = {
   model?: string;
   modelIntent?: ConversationModelIntent;
   runtime?: string;
+  /**
+   * Authoritative project identity captured at creation. Presence is
+   * provenance: `null` explicitly means projectless, while absence means a
+   * legacy record whose runtime may need the documented safe migration rule.
+   */
+  projectRoot?: string | null;
   title?: string;
   /** Provenance — defaults to "chat". */
   origin?: SessionOrigin;
@@ -147,6 +153,7 @@ export type ConversationFile = {
    * list uses that to report `failed` instead of a phantom `completed`.
    */
   pendingUserTurnId?: string;
+  attentionEvidence?: ChatAttentionEvidence;
 };
 
 export type ConversationSummary = {
@@ -156,6 +163,7 @@ export type ConversationSummary = {
   harness?: string;
   model?: string;
   runtime?: string;
+  projectRoot?: string | null;
   title?: string;
   origin?: SessionOrigin;
   branch?: string;
@@ -229,7 +237,27 @@ function isLegacyLinearHistory(turns: Pick<ChatTurn, "parentId">[]): boolean {
   return turns.length > 0 && turns.every((turn) => turn.parentId === undefined);
 }
 
-function activeConversationTurns(conv: Pick<ConversationFile, "turns" | "activeLeafId">): ChatTurn[] {
+/**
+ * The canonical, fail-closed active-path projection: the chain from
+ * `conv.activeLeafId` to the root, root-first — or `[]` when the branch/leaf
+ * metadata is invalid (duplicate turn ids), ambiguous (no leaf set and more
+ * than one resolvable candidate), or points at a missing/unresolvable turn.
+ * `[]` is also the honest answer for a genuinely empty conversation
+ * (`conv.turns.length === 0`) — callers that must distinguish "empty" from
+ * "invalid" (never expose every stored branch on invalid metadata) check
+ * `conv.turns.length > 0` themselves; this function's job is only to never
+ * fall back to the raw, unvalidated turn set.
+ *
+ * Exported so every canonical read surface — the sessions-list attention/
+ * terminal-status derivation below AND the client-v1 read model
+ * (`@/lib/server/client-v1/read-model.ts`) — shares this ONE validated
+ * resolution, rather than the client-v1 facade calling the fail-OPEN
+ * `resolveActivePath` (`@/lib/conversation-tree.ts`) directly, which falls
+ * back to a createdAt-linearization of the ENTIRE turn set (every branch)
+ * when a leaf is missing/unresolvable — exactly the "never all turns"
+ * failure mode a standalone client's conversation-detail read must not hit.
+ */
+export function activeConversationTurns(conv: Pick<ConversationFile, "turns" | "activeLeafId">): ChatTurn[] {
   if (conv.turns.length === 0) return [];
   if (hasDuplicateTurnIds(conv.turns)) return [];
   const structuralTurns = conv.turns.filter((turn) => !(turn.role === "system" && turn.parentId == null));
@@ -348,6 +376,12 @@ function deriveConversationSignals(conv: ConversationFile): {
         }
       : {}),
   };
+}
+
+export function deriveConversationAttentionEvidence(
+  conv: Pick<ConversationFile, "sessionId" | "turns" | "activeLeafId">,
+): ChatAttentionEvidence | null {
+  return deriveConversationSignals(conv as ConversationFile).attentionEvidence ?? null;
 }
 
 function normalizeStableIsoTimestamp(value: unknown): string | null {
@@ -532,6 +566,16 @@ export async function withConversationLock<T>(
   }
 }
 
+/**
+ * Low-level unlocked persistence primitive: writes the given snapshot
+ * verbatim. It does NOT itself serialize against concurrent writers — a
+ * caller doing load→mutate→save (read-modify-write) on an EXISTING
+ * conversation must hold `withConversationLock(sessionId, ...)` for the
+ * whole load-through-save span itself, or two concurrent RMWs can each read
+ * the same snapshot and one's update silently overwrites the other's. Direct
+ * unlocked calls are fine for a pure create (no prior read informs the
+ * write) — see `flow-copilot-session.ts` / `voice-chat-create.ts`.
+ */
 export async function saveConversation(conv: ConversationFile): Promise<void> {
   await ensureDir();
   conv.updatedAt = new Date().toISOString();
@@ -546,11 +590,25 @@ export async function saveConversation(conv: ConversationFile): Promise<void> {
   invalidateSessionsListCache();
 }
 
+/**
+ * Append a turn to an existing conversation (voice-origin turns; see
+ * `@/lib/voice/append-voice-turn.ts`). Runs the load→push→save
+ * read-modify-write inside `withConversationLock` so it can never race a
+ * client PATCH/POST/PUT/DELETE against the same conversation file — the
+ * internal `/api/chat/conversation/[id]` route participates in the SAME
+ * per-`sessionId` lock (`conversationLockTails`, module-scoped here). A
+ * conversation missing when this runs — including one a DELETE won the lock
+ * and removed moments before — is a no-op: it never recreates the file, so a
+ * queued append can't resurrect a conversation the user (or an `ifEmpty`
+ * voice discard) just deleted.
+ */
 export async function appendTurn(sessionId: string, turn: ChatTurn): Promise<void> {
-  const conv = await loadConversation(sessionId);
-  if (!conv) return;
-  conv.turns.push(turn);
-  await saveConversation(conv);
+  await withConversationLock(sessionId, async () => {
+    const conv = await loadConversation(sessionId);
+    if (!conv) return;
+    conv.turns.push(turn);
+    await saveConversation(conv);
+  });
 }
 
 export type ConversationStubSeed = {
@@ -763,6 +821,16 @@ export function stripConversationStubTurn(
   return true;
 }
 
+/**
+ * Low-level unlocked persistence primitive: unconditionally removes the
+ * conversation file. Like `saveConversation`, it does not serialize against
+ * concurrent writers — a caller whose delete decision depends on a prior
+ * read (e.g. an `ifEmpty` check) must hold `withConversationLock(sessionId,
+ * ...)` across the whole read-then-delete span, or a concurrent append can
+ * land between the read and the delete (or vice versa) and either resurrect
+ * a "deleted" conversation or silently drop an append into a file that's
+ * about to vanish.
+ */
 export async function deleteConversation(sessionId: string): Promise<boolean> {
   try {
     const file = pathFor(sessionId);
@@ -822,6 +890,7 @@ async function readConversationSummary(
         harness: conv.harness,
         model: conv.model,
         runtime: conv.runtime,
+        ...(Object.hasOwn(conv, "projectRoot") ? { projectRoot: conv.projectRoot } : {}),
         title: conv.title,
         origin: conv.origin,
         ...(conv.branch ? { branch: conv.branch } : {}),
@@ -970,6 +1039,16 @@ export async function listConversations(): Promise<ConversationSummary[]> {
 // substring and return one hit per conversation with a snippet around the
 // first match. Pure-ish + bounded: cheap text pre-filter before JSON.parse,
 // oversized files skipped, corrupt files skipped, result count capped.
+//
+// Optional authorization-before-limit (`opts.filter`, Task 5 spec-review):
+// every candidate is scanned unconditionally regardless of `limit` (the
+// final sort+slice below is the only place `limit` is ever applied), so a
+// caller-supplied visibility predicate evaluated per-candidate BEFORE that
+// slice — see `searchClientConversations`
+// (`@/lib/server/client-v1/read-model.ts`), which passes an ownership+grant
+// check here directly instead of requesting an inflated "overfetch" limit
+// and filtering afterward — guarantees an authorized hit is never crowded
+// out by unauthorized ones, however many, and however recently updated.
 
 export type ConversationSearchHit = {
   sessionId: string;
@@ -979,6 +1058,28 @@ export type ConversationSearchHit = {
   /** Total occurrences across the conversation's turn texts. */
   matchCount: number;
 };
+
+/**
+ * Canonical metadata this function already has in hand for a matching
+ * candidate — from its own per-file scan, never a second load — so a
+ * caller's `filter` can decide visibility without triggering extra IO.
+ */
+export type ConversationSearchCandidate = {
+  sessionId: string;
+  familiarId?: string;
+  title?: string;
+  updatedAt: string;
+};
+
+/**
+ * Authorization/visibility predicate evaluated on a matching candidate
+ * BEFORE it is added to the ranked result set — i.e. before `limit` is ever
+ * applied (searchConversations authorization-before-limit). May return a
+ * `Promise<boolean>` for a caller whose own grant check is itself async.
+ */
+export type ConversationSearchFilter = (
+  candidate: ConversationSearchCandidate,
+) => boolean | Promise<boolean>;
 
 const SEARCH_DEFAULT_LIMIT = 30;
 const SEARCH_MAX_FILE_BYTES = 2 * 1024 * 1024;
@@ -1002,7 +1103,41 @@ const searchCache = new Map<string, ConvCacheEntry>();
 
 export async function searchConversations(
   query: string,
-  opts: { limit?: number; maxFileBytes?: number } = {},
+  opts: {
+    limit?: number;
+    maxFileBytes?: number;
+    /**
+     * Authorization-before-limit hook (see `ConversationSearchFilter`):
+     * applied to every matching candidate BEFORE it is pushed into the
+     * ranked `hits` array that `limit` eventually slices, so an
+     * unauthorized/out-of-scope hit — however recently updated — can never
+     * consume a caller's bounded result slot or crowd out an accessible hit
+     * that would otherwise have made the cut. Absent, behavior is
+     * byte-identical to before this option existed.
+     */
+    filter?: ConversationSearchFilter;
+    /**
+     * Task5 quality finding — inactive branches in search. Default `false`
+     * (byte-identical to before this option existed, for existing internal
+     * callers that intentionally scan every branch, e.g. an operator
+     * grep-style search). When `true`, match text/snippet/count are derived
+     * SOLELY from `activeConversationTurns(conv)` — the same validated
+     * active-path resolution the canonical read model and conversation
+     * detail already use — instead of raw `conv.turns` (every branch,
+     * including abandoned/regenerated ones a user never sees). A standalone
+     * client must never surface a hit (or a snippet) that lives only on a
+     * branch its own UI can't show.
+     *
+     * `activeConversationTurns` already fails CLOSED for a non-empty
+     * conversation whose active path is invalid/ambiguous (duplicate ids, an
+     * unresolvable `activeLeafId`, more than one resolvable leaf with none
+     * marked active, ...) by returning `[]` — which this option relies on
+     * verbatim: an empty active-path turn set can never produce a match, so
+     * such a conversation is silently skipped rather than exposing a
+     * different (wrong) branch's content.
+     */
+    activePathOnly?: boolean;
+  } = {},
 ): Promise<ConversationSearchHit[]> {
   const q = query.trim();
   if (q.length < 2) return [];
@@ -1051,9 +1186,16 @@ export async function searchConversations(
       if (!entry.lower.includes(qLower)) continue;
       const conv = entry.conv;
       if (!conv || !Array.isArray(conv.turns)) continue;
+      // `activePathOnly` restricts matching to the SAME validated active-path
+      // resolution the canonical read model uses. A non-empty conversation
+      // whose active path is invalid/ambiguous resolves to `[]` here (fail
+      // closed), which then falls through the `matchCount === 0` skip below
+      // exactly like a conversation with genuinely no match — never a wrong
+      // (inactive-branch) hit and never a thrown error.
+      const searchableTurns = opts.activePathOnly ? activeConversationTurns(conv) : conv.turns;
       let matchCount = 0;
       let snippet = "";
-      for (const turn of conv.turns) {
+      for (const turn of searchableTurns) {
         const text = typeof turn?.text === "string" ? turn.text : "";
         if (!text) continue;
         const textLower = text.toLowerCase();
@@ -1066,15 +1208,25 @@ export async function searchConversations(
         }
       }
       if (matchCount === 0) continue;
-      hits.push({
+      const candidate: ConversationSearchCandidate = {
         sessionId:
           typeof conv.sessionId === "string" && conv.sessionId
             ? conv.sessionId
             : name.replace(/\.json$/, ""),
+        ...(typeof conv.familiarId === "string" && conv.familiarId ? { familiarId: conv.familiarId } : {}),
         ...(typeof conv.title === "string" && conv.title ? { title: conv.title } : {}),
+        updatedAt: typeof conv.updatedAt === "string" ? conv.updatedAt : "",
+      };
+      // Authorization BEFORE limit: a candidate the caller's predicate
+      // rejects never enters `hits`, so it can never displace an authorized
+      // hit once `hits` is sorted+sliced to `limit` below.
+      if (opts.filter && !(await opts.filter(candidate))) continue;
+      hits.push({
+        sessionId: candidate.sessionId,
+        ...(candidate.title ? { title: candidate.title } : {}),
         snippet,
         matchCount,
-        updatedAt: typeof conv.updatedAt === "string" ? conv.updatedAt : "",
+        updatedAt: candidate.updatedAt,
       });
     } catch {
       /* corrupt or unreadable file — skip */

@@ -45,6 +45,7 @@ writeFileSync(
   E2E_PROJECTS_PATH,
   JSON.stringify({
     version: 1,
+    visibilityGeneration: "e2e-projects-visibility",
     projects: [{
       id: "e2e-project",
       name: "E2E Project",
@@ -68,6 +69,9 @@ writeFileSync(
     accessGroups: [],
     grantProposals: [],
     permissionAudit: [],
+    grantAudit: [],
+    repairAudit: [],
+    visibilityGeneration: "e2e-project-permissions-visibility",
   }),
 );
 // Queue selection is a separate durable preference. Seed it alongside the

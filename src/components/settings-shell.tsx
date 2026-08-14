@@ -43,6 +43,7 @@ import { ProfileSection } from "./settings-profile";
 import { SettingsOverview } from "./settings-overview";
 import { AboutSection } from "./settings-about";
 import { PhoneSection } from "./settings-phone";
+import { SettingsClientAccess } from "./settings-client-access";
 import {
   SECTIONS,
   SETTINGS_INDEX,
@@ -340,6 +341,7 @@ export function SettingsShell() {
             />
           )}
           {section === "mobile"   && <PhoneSection onUseAsHub={(url) => { setSuggestedHubUrl(url); openSection("daemon"); }} />}
+          {section === "clientAccess" && <SettingsClientAccess />}
           {section === "appearance" && <AppearanceSection scrollTarget={scrollTarget} />}
           {section === "about"    && <AboutSection />}
         </main>

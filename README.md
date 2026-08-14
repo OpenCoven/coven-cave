@@ -175,6 +175,53 @@ For deeper design context, start with [`docs/golden-paths.md`](docs/golden-paths
 
 ---
 
+## OpenCoven Chat client API
+
+Coven Cave exposes a loopback-only, versioned `/api/client/v1` facade for the
+standalone **OpenCoven Chat** desktop app. Pairing approvals and credential
+revocation live in **Settings → Client Access**, and the generated public sample
+fixture lives at [`docs/generated/client-v1-contract-fixture.json`](docs/generated/client-v1-contract-fixture.json).
+Update/export mode may additionally copy that fixture to an explicitly named
+absolute file path via `COVEN_CLIENT_V1_CHAT_FIXTURE_PATH`; no sibling-worktree
+path is inferred automatically.
+
+| Method | Path | Authentication | Scope |
+| --- | --- | --- | --- |
+| GET | `/api/client/v1/health` | loopback marker | none |
+| POST | `/api/client/v1/pairing/requests` | loopback marker | none |
+| GET | `/api/client/v1/pairing/requests/[id]` | pairing secret | none |
+| POST | `/api/client/v1/pairing/requests/[id]/exchange` | pairing secret | none |
+| GET | `/api/client/v1/admin/pairing-requests` | Cave local UI | admin |
+| POST | `/api/client/v1/admin/pairing-requests/[id]/decision` | Cave local UI | admin |
+| GET | `/api/client/v1/admin/credentials` | Cave local UI | admin |
+| DELETE | `/api/client/v1/admin/credentials/[id]` | Cave local UI | admin |
+| GET | `/api/client/v1/familiars` | bearer | `chat:read` |
+| GET | `/api/client/v1/projects` | bearer | `chat:read` |
+| GET | `/api/client/v1/commands` | bearer | `chat:read` |
+| GET/POST | `/api/client/v1/conversations` | bearer | `chat:read` / `conversations:write` |
+| GET/PATCH/DELETE | `/api/client/v1/conversations/[id]` | bearer | `chat:read` / `conversations:write` |
+| GET | `/api/client/v1/conversations/search` | bearer | `chat:read` |
+| POST | `/api/client/v1/messages/send` | bearer | `chat:write` |
+| GET | `/api/client/v1/runs/[id]/stream` | bearer | `chat:read` |
+| POST | `/api/client/v1/runs/[id]/stop` | bearer | `chat:write` |
+| POST | `/api/client/v1/runs/[id]/retry` | bearer | `chat:write` |
+| POST | `/api/client/v1/attachments` | bearer | `attachments:write` |
+| GET | `/api/client/v1/attachments/[id]` | bearer | `chat:read` |
+| POST | `/api/client/v1/attention/[id]/respond` | bearer | `chat:write` + `tasks:write` |
+| POST | `/api/client/v1/tasks/handoff` | bearer | `tasks:write` |
+| POST | `/api/client/v1/github/actions` | bearer | `github:write` |
+
+`Idempotency-Key` UUID headers are required on **every** mutation route in this
+facade, including pairing create/exchange, admin pairing decisions, credential
+revocation, conversations create/update/delete, messages send, runs stop/retry,
+attachments upload, attention respond, task handoff, and GitHub actions.
+Pairing poll still uses `X-Coven-Pairing-Secret`; the secret never appears in a
+URL or query string. Pairing exchange reveals the bearer token exactly once; an
+exact same-key replay returns a typed terminal `pairing_already_exchanged`
+result instead of minting or re-revealing a second credential.
+
+---
+
 ## Development
 
 ### Contributor quickstart
@@ -296,7 +343,9 @@ pnpm typecheck          # TypeScript
 pnpm test:app           # app/component tests
 pnpm test:api           # API route tests
 pnpm test:mobile        # mobile/iOS logic tests
+pnpm test:conformance   # cross-environment runtime and security checks
 pnpm test:e2e           # end-to-end
+pnpm test:e2e -- tests/client-v1-pairing.spec.ts  # standalone Chat pairing + revocation
 pnpm check:tests-wired  # ensure new tests are registered
 ```
 

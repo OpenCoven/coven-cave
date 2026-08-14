@@ -189,8 +189,11 @@ const row = (over = {}) => ({
 // every downstream surface (Running popover, badges, archive sweeps) sees the
 // presented status; the probe must stay read-only.
 {
+  // This classify-before-merge logic moved into the shared canonical
+  // projection (`computeCanonicalSessionList`) in
+  // @/lib/server/client-v1/read-model.ts (cave-client-v1 plan, Task 5).
   const route = readFileSync(
-    new URL("../../app/api/sessions/list/route.ts", import.meta.url),
+    new URL("../../lib/server/client-v1/read-model.ts", import.meta.url),
     "utf8",
   );
   assert.match(

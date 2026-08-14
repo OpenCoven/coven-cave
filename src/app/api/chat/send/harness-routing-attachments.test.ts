@@ -16,7 +16,7 @@ import {
 } from "../../../../lib/chat-tool-events.ts";
 
 const chatRoute = await readFile(
-  new URL("./route.ts", import.meta.url),
+  new URL("../../../../lib/server/chat-send-service.ts", import.meta.url),
   "utf8",
 );
 const attachmentDelivery = await readFile(
@@ -160,7 +160,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /import \{[\s\S]*?persistImageAttachments,[\s\S]*?\} from "\.\/chat-send-attachments";/,
+  /import \{[\s\S]*?persistImageAttachments,[\s\S]*?\} from "@\/app\/api\/chat\/send\/chat-send-attachments";/,
   "The durable-copy step lives with the other attachment helpers",
 );
 

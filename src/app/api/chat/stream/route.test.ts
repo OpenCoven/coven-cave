@@ -73,13 +73,23 @@ test("a finished run drains its replay and closes immediately", async () => {
 // The buffer only works if the send route tees events BEFORE its
 // closed/aborted guard (a dropped transport must keep recording) and pairs
 // the detach-cap kill with the buffer's attach/detach hooks.
-const send = readFileSync(new URL("../send/route.ts", import.meta.url), "utf8");
+const sendRoute = readFileSync(new URL("../send/route.ts", import.meta.url), "utf8");
+const sendService = readFileSync(
+  new URL("../../../../lib/server/chat-send-service.ts", import.meta.url),
+  "utf8",
+);
+assert.match(
+  sendRoute,
+  /executeChatSend/,
+  "chat/send route should stay a thin wrapper over the extracted shared send service",
+);
+const send = `${sendRoute}\n${sendService}`;
 
 test("send route tees both harness stream paths through the run buffer", () => {
   const tees = send.match(/const seq = runBuffer\?\.record\(e(?:vent)?\);\s*\n\s*if \(closed \|\| (?:args\.)?req\.signal\.aborted\) return;/g);
   assert.equal(tees?.length, 2, "both push() implementations record before the closed/aborted guard");
   const seqEmits = send.match(/controller\.enqueue\(chatSse\(e(?:vent)?, seq\)\)/g);
-  assert.equal(seqEmits?.length, 2, "both paths emit the seq as the SSE id — live clients always hold a resume cursor");
+  assert.equal(seqEmits?.length, 3, "all three SSE producers emit the seq as the SSE id — live clients always hold a resume cursor");
   const opens = send.match(/openRunBuffer\(\[/g);
   assert.equal(opens?.length, 3, "all three dispatch paths (harness, OpenClaw CLI, OpenClaw Gateway) open a buffer under runId + conversation keys");
   const finishes = send.match(/runBuffer\?\.finish\(\)/g);

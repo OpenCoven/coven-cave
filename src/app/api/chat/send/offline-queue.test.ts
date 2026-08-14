@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const chatRoute = await readFile(
-  new URL("./route.ts", import.meta.url),
+  new URL("../../../../lib/server/chat-send-service.ts", import.meta.url),
   "utf8",
 );
 
@@ -53,7 +53,7 @@ assert.match(
   "Queued offline chat should preserve the /api/chat/send SSE contract",
 );
 
-const postIndex = chatRoute.indexOf("export async function POST");
+const postIndex = chatRoute.indexOf("export async function executeChatSend");
 const accessIndex = chatRoute.indexOf("await authorizeChatProjectLaunch", postIndex);
 const queueIndex = chatRoute.indexOf(
   "const offlineChatResponse = await maybeQueueOfflineChat",
@@ -62,7 +62,7 @@ const queueIndex = chatRoute.indexOf(
 const imageWriteIndex = chatRoute.indexOf("writeImageAttachmentsToRuntime", queueIndex);
 const harnessPromptIndex = chatRoute.indexOf("const harnessPrompt =", queueIndex);
 
-assert.ok(postIndex >= 0, "Chat send POST handler should exist");
+assert.ok(postIndex >= 0, "Chat send service entry point should exist");
 assert.ok(accessIndex >= 0, "Chat send should still run the project launch gate");
 assert.ok(queueIndex > accessIndex, "Offline queueing must run after project launch authorization");
 // Checked separately from the ordering below: `indexOf` returns -1 when the
@@ -80,6 +80,11 @@ assert.ok(
 assert.ok(
   queueIndex < harnessPromptIndex,
   "Offline queueing should run before prompt assembly and harness spawning work",
+);
+assert.match(
+  chatRoute,
+  /maybeQueueOfflineChat[\s\S]*?openRunBuffer\(\[args\.body\.runId, sessionId\]\)[\s\S]*?runBuffer\.record\(event\)[\s\S]*?runBuffer\.finish\(\)/,
+  "offline completion events use the same bounded canonical run sequence",
 );
 
 // ── cave-zs85n Task 5: the queued-offline "done" event reports success after

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+const source = await readFile(new URL("../../../../lib/server/chat-send-service.ts", import.meta.url), "utf8");
 
 test("ordinary first turns authorize the submitted project before launch", () => {
   assert.match(

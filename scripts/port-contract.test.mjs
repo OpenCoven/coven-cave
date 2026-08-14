@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { CAVE_PORTS, CAVE_PORT_ENV, parsePort, resolvePort } from "./ports.mjs";
+import { CAVE_E2E_PORT_ENV, CAVE_PORTS, CAVE_PORT_ENV, parsePort, resolvePort } from "./ports.mjs";
 
 // One port per channel, and every copy of those numbers agrees.
 //
@@ -38,6 +38,16 @@ assert.equal(
   "COVEN_CAVE_PORT wins over PORT, so pinning Cave never depends on an inherited PORT",
 );
 assert.equal(resolvePort("dev", { PORT: "5000" }), 5000, "PORT is honoured when Cave's own is unset");
+assert.equal(
+  resolvePort("e2e", { PORT: "5000", [CAVE_PORT_ENV]: "4000" }),
+  3100,
+  "e2e ignores inherited generic port env so playwright never latches onto a running Cave",
+);
+assert.equal(
+  resolvePort("e2e", { [CAVE_E2E_PORT_ENV]: "4100", PORT: "5000", [CAVE_PORT_ENV]: "4000" }),
+  4100,
+  "e2e honours only its explicit E2E-specific override",
+);
 assert.equal(
   resolvePort("dev", { [CAVE_PORT_ENV]: "not-a-port" }),
   3000,
