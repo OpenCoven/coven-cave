@@ -65,7 +65,7 @@ assert.deepEqual(
   "the direct full-mode routing decision keeps its approval flag before the reviewed JSONL launch contract",
 );
 
-for (const capabilityVersion of ["1.0.70.1", "1.0.64-1", "0.9.9", "2.0.0", "2.0.0-rc.1"]) {
+for (const capabilityVersion of ["1.0.70.1", "1.0.64", "0.9.9", "2.0.0", "2.0.0-rc.1"]) {
   const routing = resolveCopilotChatRouting({
     harness: "copilot",
     isSshRuntime: false,
