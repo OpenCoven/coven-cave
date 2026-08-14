@@ -51,9 +51,11 @@ export type IdempotentMutationRequest = {
    */
   identity: unknown;
   /**
-   * Runs before a completed ledger response is replayed. A mutation whose
-   * response references external durable state can use this to verify or
-   * repair that state; returning a response suppresses the stale replay.
+   * Runs before a completed successful ledger response is replayed. A
+   * mutation whose successful response references external durable state can
+   * use this to verify or repair that state; returning a response suppresses
+   * the stale replay. Cached failures must remain observational only: a
+   * replay must not create state the original failure did not report.
    */
   reconcileReplay?: (ctx: IdempotentMutationExecuteContext) => Promise<Response | void>;
 };
@@ -284,11 +286,13 @@ export async function runIdempotentMutation(
   }
 
   if (claim.kind === "replay") {
-    try {
-      const reconciliation = await request.reconcileReplay?.({ requestHash, effectId });
-      if (reconciliation) return reconciliation;
-    } catch {
-      return completionUnconfirmedResponse();
+    if (claim.response.status >= 200 && claim.response.status < 300) {
+      try {
+        const reconciliation = await request.reconcileReplay?.({ requestHash, effectId });
+        if (reconciliation) return reconciliation;
+      } catch {
+        return completionUnconfirmedResponse();
+      }
     }
     return responseFromLedger(claim.response);
   }

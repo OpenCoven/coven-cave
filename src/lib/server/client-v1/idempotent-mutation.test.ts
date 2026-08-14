@@ -81,6 +81,66 @@ test("replaying the exact same identity returns the persisted response without r
   assert.equal(second.headers.get("ETag"), "rev-2");
 });
 
+test("a cached non-retryable capacity failure remains a 409 after capacity frees without reconciling unreported state", async () => {
+  let capacityFull = true;
+  let executeCalls = 0;
+  let reconciliationCalls = 0;
+  let createdEffects = 0;
+  const request = {
+    ...baseRequest({ route: "attachments-upload" }),
+    reconcileReplay: async () => {
+      reconciliationCalls += 1;
+      createdEffects += 1;
+    },
+  };
+  const execute = async () => {
+    executeCalls += 1;
+    if (capacityFull) {
+      return clientV1Error(409, "conflict", "Attachment capacity is full.", false);
+    }
+    createdEffects += 1;
+    return clientV1Ok({ ok: true, attachments: [{ id: "would-be-created" }] }, { status: 201 });
+  };
+
+  const first = await runIdempotentMutation(request, execute);
+  assert.equal(first.status, 409);
+  capacityFull = false;
+
+  const replay = await runIdempotentMutation(request, execute);
+  assert.equal(replay.status, 409);
+  assert.equal((await replay.json()).error.code, "conflict");
+  assert.equal(executeCalls, 1, "a cached failure must not execute again");
+  assert.equal(reconciliationCalls, 0, "a cached failure must not reconcile external state");
+  assert.equal(createdEffects, 0, "a cached failure must not create an unreported effect");
+});
+
+test("a cached successful response still reconciles durable state before replay", async () => {
+  let executeCalls = 0;
+  let reconciliationCalls = 0;
+  let attachmentExists = false;
+  const request = {
+    ...baseRequest({ route: "attachments-upload" }),
+    reconcileReplay: async () => {
+      reconciliationCalls += 1;
+      attachmentExists = true;
+    },
+  };
+  const execute = async () => {
+    executeCalls += 1;
+    attachmentExists = true;
+    return clientV1Ok({ ok: true, attachments: [{ id: "repaired-on-replay" }] }, { status: 201 });
+  };
+
+  assert.equal((await runIdempotentMutation(request, execute)).status, 201);
+  attachmentExists = false;
+  const replay = await runIdempotentMutation(request, execute);
+
+  assert.equal(replay.status, 201);
+  assert.equal(executeCalls, 1);
+  assert.equal(reconciliationCalls, 1);
+  assert.equal(attachmentExists, true, "successful replay repairs its durable attachment state");
+});
+
 test("the same key with a different identity conflicts with 409 and never runs execute", async () => {
   const key = crypto.randomUUID();
   const credentialId = crypto.randomUUID();
@@ -242,7 +302,13 @@ test("a >= 500 execute response is never persisted — a retry sees a live pendi
 });
 
 test("a retryable 409 execute response stays pending instead of becoming a permanently replayed result", async () => {
-  const request = baseRequest();
+  let reconciliationCalls = 0;
+  const request = {
+    ...baseRequest(),
+    reconcileReplay: async () => {
+      reconciliationCalls += 1;
+    },
+  };
   let calls = 0;
   const launching = await runIdempotentMutation(request, async () => {
     calls += 1;
@@ -258,6 +324,7 @@ test("a retryable 409 execute response stays pending instead of becoming a perma
   assert.equal(retry.status, 409);
   assert.equal((await retry.json()).error.code, "conflict");
   assert.equal(calls, 1, "the retryable result must leave its claim in progress, never replay it");
+  assert.equal(reconciliationCalls, 0, "a retryable failure is never cached or reconciled");
 });
 
 test("execute throwing an unexpected error returns a safe 500 and is never persisted", async () => {

@@ -117,6 +117,7 @@ function capacityRecords(
   return Array.from({ length: count }, (_value, index) => ({
     attachmentId: `${(offset + index).toString(16).padStart(8, "0")}-9b43-4abc-876d-${(offset + index).toString(16).padStart(12, "0")}.txt`,
     credentialId,
+    createdAt: 1,
   }));
 }
 
@@ -140,6 +141,7 @@ type Seed = {
   attachmentId: string;
   credentialId?: string;
   conversationId?: string | null;
+  createdAt?: number;
   name?: string;
   mimeType?: string;
   size?: number;
@@ -170,7 +172,7 @@ async function seed(records: Seed[], files = new Map<string, string>()): Promise
     attachments: records.map((record) => ({
       attachmentId: record.attachmentId,
       credentialId: record.credentialId ?? owner,
-      createdAt: 1,
+      createdAt: record.createdAt ?? Date.now(),
       conversationId: record.conversationId ?? null,
       ...(record.extra === undefined ? {} : { extra: record.extra }),
     })),
@@ -315,18 +317,18 @@ test("uploaded attachments persist deterministic bounded receipts, keep a minima
     },
   ]);
 
-  const ownRead = await readClientAttachment(first[0].id, owner);
+  const ownRead = await readClientAttachment(first[0].id, owner, 20);
   assert.equal(ownRead.name, "pixel.png");
   assert.equal(ownRead.mimeType, "image/png");
   assert.deepEqual(ownRead.data, pngBytes);
 
   await assert.rejects(
-    readClientAttachment(first[0].id, otherOwner),
+    readClientAttachment(first[0].id, otherOwner, 20),
     (error: unknown) => isClientAttachmentError(error, 404),
     "a different credential cannot read an unbound upload",
   );
 
-  await resolveAndBindClientAttachments([first[0].id], owner, "conversation-safe");
+  await resolveAndBindClientAttachments([first[0].id], owner, "conversation-safe", 20);
   const sharedRead = await readClientAttachment(first[0].id, otherOwner);
   assert.equal(sharedRead.mimeType, "image/png", "once bound, the attachment becomes conversation-shared");
 });
@@ -364,6 +366,110 @@ test("unbound uploads expire and reclaim their canonical payloads before the nex
     readClientAttachment(expired.id, owner),
     (error: unknown) => isClientAttachmentError(error, 404),
   );
+});
+
+test("clock-controlled reads reject expired unbound uploads and reclaim their payloads", async () => {
+  const [prepared] = await parseFiles(testFile(textBytes, "read-expiry.txt", "text/plain"));
+  const createdAt = 20_000;
+  const expiresAt = createdAt + CLIENT_UNBOUND_ATTACHMENT_TTL_MS;
+  const [uploaded] = await saveUploadedClientAttachments(
+    [prepared],
+    owner,
+    "31111111-2222-4333-8444-555555555555",
+    createdAt,
+  );
+
+  assert.deepEqual(
+    (await readClientAttachment(uploaded.id, owner, expiresAt - 1)).data,
+    textBytes,
+    "an upload remains readable through the instant before its TTL",
+  );
+  await assert.rejects(
+    readClientAttachment(uploaded.id, owner, expiresAt),
+    (error: unknown) => isClientAttachmentError(error, 404),
+  );
+  assert.deepEqual(JSON.parse(await readFile(indexPath, "utf8")).attachments, []);
+  assert.deepEqual(
+    await readdir(canonicalRoot),
+    [],
+    "expiry removes the canonical payload and immutable name sidecar",
+  );
+});
+
+test("clock-controlled binding cannot promote an expired unbound upload", async () => {
+  const [prepared] = await parseFiles(testFile(textBytes, "bind-expiry.txt", "text/plain"));
+  const createdAt = 30_000;
+  const [uploaded] = await saveUploadedClientAttachments(
+    [prepared],
+    owner,
+    "41111111-2222-4333-8444-555555555555",
+    createdAt,
+  );
+
+  await assert.rejects(
+    resolveAndBindClientAttachments(
+      [uploaded.id],
+      owner,
+      "conversation-safe",
+      createdAt + CLIENT_UNBOUND_ATTACHMENT_TTL_MS,
+    ),
+    (error: unknown) => isClientAttachmentError(error, 404),
+  );
+  assert.deepEqual(JSON.parse(await readFile(indexPath, "utf8")).attachments, []);
+  assert.deepEqual(await readdir(canonicalRoot), []);
+});
+
+test("bound attachments retain their established read and idempotent bind behavior after the staging TTL", async () => {
+  const [prepared] = await parseFiles(testFile(textBytes, "bound-retention.txt", "text/plain"));
+  const createdAt = 40_000;
+  const [uploaded] = await saveUploadedClientAttachments(
+    [prepared],
+    owner,
+    "51111111-2222-4333-8444-555555555555",
+    createdAt,
+  );
+  const afterExpiry = createdAt + (2 * CLIENT_UNBOUND_ATTACHMENT_TTL_MS);
+
+  await resolveAndBindClientAttachments(
+    [uploaded.id],
+    owner,
+    "conversation-safe",
+    createdAt + CLIENT_UNBOUND_ATTACHMENT_TTL_MS - 1,
+  );
+  assert.deepEqual((await readClientAttachment(uploaded.id, otherOwner, afterExpiry)).data, textBytes);
+  assert.equal(
+    (await resolveAndBindClientAttachments(
+      [uploaded.id],
+      owner,
+      "conversation-safe",
+      afterExpiry,
+    ))[0]?.storedId,
+    uploaded.id,
+  );
+});
+
+test("concurrent expired read and bind attempts both reject after one locked reclamation", async () => {
+  const [prepared] = await parseFiles(testFile(textBytes, "expiry-race.txt", "text/plain"));
+  const createdAt = 50_000;
+  const [uploaded] = await saveUploadedClientAttachments(
+    [prepared],
+    owner,
+    "61111111-2222-4333-8444-555555555555",
+    createdAt,
+  );
+  const expiresAt = createdAt + CLIENT_UNBOUND_ATTACHMENT_TTL_MS;
+
+  const results = await Promise.allSettled([
+    readClientAttachment(uploaded.id, owner, expiresAt),
+    resolveAndBindClientAttachments([uploaded.id], owner, "conversation-safe", expiresAt),
+  ]);
+  assert.equal(results.filter((result) => result.status === "rejected").length, 2);
+  for (const result of results) {
+    assert.equal(result.status, "rejected");
+    assert.ok(isClientAttachmentError(result.reason, 404));
+  }
+  assert.deepEqual(JSON.parse(await readFile(indexPath, "utf8")).attachments, []);
+  assert.deepEqual(await readdir(canonicalRoot), []);
 });
 
 test("per-credential quota prevents one credential from consuming another credential's capacity", async () => {
@@ -458,14 +564,14 @@ test("a missing or corrupt unbound payload is repaired from an exact determinist
   assert.deepEqual(await saveUploadedClientAttachments([prepared], owner, effectId, 11), first);
   await writeFile(path.join(canonicalRoot, first[0].id), "corrupt payload");
   assert.deepEqual(await saveUploadedClientAttachments([prepared], owner, effectId, 12), first);
-  assert.deepEqual((await readClientAttachment(first[0].id, owner)).data, textBytes);
+  assert.deepEqual((await readClientAttachment(first[0].id, owner, 12)).data, textBytes);
 });
 
 test("a corrupt bound payload is rejected rather than overwritten by an upload replay", async () => {
   const [prepared] = await parseFiles(testFile(textBytes, "bound-repair.txt", "text/plain"));
   const effectId = "91111111-2222-4333-8444-555555555555";
   const first = await saveUploadedClientAttachments([prepared], owner, effectId, 10);
-  await resolveAndBindClientAttachments([first[0].id], owner, "conversation-safe");
+  await resolveAndBindClientAttachments([first[0].id], owner, "conversation-safe", 11);
   await writeFile(path.join(canonicalRoot, first[0].id), "corrupt payload");
 
   await assert.rejects(

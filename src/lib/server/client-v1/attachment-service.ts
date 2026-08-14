@@ -820,6 +820,12 @@ function isExpiredUnboundAttachment(record: ClientAttachmentRecord, now: number)
     && now - record.createdAt >= CLIENT_UNBOUND_ATTACHMENT_TTL_MS;
 }
 
+function assertValidAttachmentAccessTime(now: number | undefined): void {
+  if (now !== undefined && (!Number.isSafeInteger(now) || now < 0)) {
+    throw new ClientAttachmentError(400, "invalid_request", "Invalid attachment access request.");
+  }
+}
+
 /**
  * Reclaim staging uploads while the attachment-index lock is held. Payloads
  * are deleted before their index records so a failed index write can only
@@ -996,10 +1002,12 @@ export async function saveUploadedClientAttachments(
 export async function readClientAttachment(
   attachmentId: string,
   credentialId: string,
+  now?: number,
 ): Promise<OpenedClientAttachment> {
   if (!isValidChatAttachmentId(attachmentId) || !isUuid(credentialId)) {
     throw new ClientAttachmentError(400, "invalid_request", "Invalid attachment id.");
   }
+  assertValidAttachmentAccessTime(now);
   const storePath = clientAttachmentIndexPath();
   await assertStoreBoundary(storePath);
   await clientAttachmentStorageRoot();
@@ -1008,6 +1016,9 @@ export async function readClientAttachment(
     { storePath, label: "client-v1-attachment-index" },
     async () => {
       const index = await readIndexForMutation(storePath);
+      if (await reclaimExpiredUnboundAttachments(index, now ?? Date.now())) {
+        await writeAttachmentIndex(storePath, index);
+      }
       return index.attachments.find((candidate) => candidate.attachmentId === attachmentId) ?? null;
     },
   );
@@ -1031,9 +1042,11 @@ export async function resolveAndBindClientAttachments(
   ids: readonly string[],
   credentialId: string,
   conversationId: string,
+  now?: number,
 ): Promise<ChatAttachment[]> {
   const attachmentIds = validateResolveInput(ids, credentialId, conversationId);
   if (attachmentIds.length === 0) return [];
+  assertValidAttachmentAccessTime(now);
   const storePath = clientAttachmentIndexPath();
   await assertStoreBoundary(storePath);
   await clientAttachmentStorageRoot();
@@ -1042,6 +1055,9 @@ export async function resolveAndBindClientAttachments(
       { storePath, label: "client-v1-attachment-index" },
       async () => {
         const index = await readIndexForMutation(storePath);
+        if (await reclaimExpiredUnboundAttachments(index, now ?? Date.now())) {
+          await writeAttachmentIndex(storePath, index);
+        }
         const byId = new Map(index.attachments.map((record) => [record.attachmentId, record]));
         const records: ClientAttachmentRecord[] = [];
         for (const id of attachmentIds) {
@@ -1067,11 +1083,7 @@ export async function resolveAndBindClientAttachments(
         const changed = records.some((record) => record.conversationId === null);
         if (changed) {
           for (const record of records) record.conversationId = conversationId;
-          await mkdir(/* turbopackIgnore: true */ path.dirname(storePath), {
-            recursive: true,
-            mode: 0o700,
-          });
-          await writeJsonAtomic(storePath, index);
+          await writeAttachmentIndex(storePath, index);
         }
         return canonical.map(({ record, attachment }) => ({
           name: attachment.name,
