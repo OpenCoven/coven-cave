@@ -10,6 +10,7 @@ process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 process.env.COVEN_HOME = path.join(home, "coven");
 
 const {
+  createConversationStub,
   deleteConversation,
   loadConversation,
   saveConversation,
@@ -17,6 +18,10 @@ const {
 } = await import("@/lib/cave-conversations");
 const { appendVoiceOriginTurn } = await import("@/lib/voice/append-voice-turn");
 const { DELETE, PATCH } = await import("../conversation/[id]/route.ts");
+const {
+  persistGatewayTranscript,
+  settleGatewayInitialStub,
+} = await import("./gateway-transcript-persistence.ts");
 
 after(async () => {
   await rm(home, { recursive: true, force: true });
@@ -51,33 +56,112 @@ function lockBarrier(id: string) {
   return { ready, held, release: () => release() };
 }
 
-// Mirrors the Gateway completion's authoritative load→append→save contract.
-// The source contract below ties this race harness to the production branch.
-async function gatewayCompletion(id: string): Promise<boolean> {
-  return withConversationLock(id, async () => {
-    const conv = await loadConversation(id);
-    if (!conv) return false;
-    conv.turns.push(
-      {
-        id: "gateway-user",
-        role: "user",
-        text: "Gateway prompt",
-        createdAt: "2026-08-11T00:00:01.000Z",
-        parentId: conv.activeLeafId ?? null,
-      },
-      {
-        id: "gateway-assistant",
-        role: "assistant",
-        text: "Gateway reply",
-        createdAt: "2026-08-11T00:00:02.000Z",
-        parentId: "gateway-user",
-      },
-    );
-    conv.activeLeafId = "gateway-assistant";
-    await saveConversation(conv);
-    return true;
+function emptyGatewayConversation(id: string) {
+  const now = "2026-08-11T00:00:00.000Z";
+  return {
+    sessionId: id,
+    familiarId: "wren",
+    harness: "openclaw",
+    runtime: `local:${home}`,
+    createdAt: now,
+    updatedAt: now,
+    turns: [],
+  };
+}
+
+async function gatewayCompletion(
+  id: string,
+  initialStubState: Awaited<ReturnType<typeof settleGatewayInitialStub>> = {
+    kind: "already-existed",
+  },
+): Promise<boolean> {
+  return persistGatewayTranscript({
+    sessionId: id,
+    initialStubState,
+    deps: { loadConversation, saveConversation, withConversationLock },
+    createAfterInitialStubFailure: () => emptyGatewayConversation(id),
+    complete: (conv) => {
+      conv.turns.push(
+        {
+          id: "gateway-user",
+          role: "user",
+          text: "Gateway prompt",
+          createdAt: "2026-08-11T00:00:01.000Z",
+          parentId: conv.activeLeafId ?? null,
+        },
+        {
+          id: "gateway-assistant",
+          role: "assistant",
+          text: "Gateway reply",
+          createdAt: "2026-08-11T00:00:02.000Z",
+          parentId: "gateway-user",
+        },
+      );
+      conv.activeLeafId = "gateway-assistant";
+      return true;
+    },
   });
 }
+
+test("Gateway persists a completed transcript after an initial stub write failure recovers", async () => {
+  const id = "gateway-stub-write-recovery";
+  const initialStubState = await settleGatewayInitialStub(
+    Promise.reject(new Error("transient conversation-store failure")),
+    () => undefined,
+  );
+
+  assert.equal(initialStubState.kind, "failed-before-exists");
+  assert.equal(await gatewayCompletion(id, initialStubState), true);
+  assert.deepEqual(
+    (await loadConversation(id))?.turns.map((turn) => turn.text),
+    ["Gateway prompt", "Gateway reply"],
+  );
+});
+
+test("Gateway normally updates an existing conversation", async () => {
+  const id = "gateway-normal-update";
+  await seed(id);
+
+  assert.equal(await gatewayCompletion(id), true);
+  assert.deepEqual(
+    (await loadConversation(id))?.turns.map((turn) => turn.text),
+    ["seed", "Gateway prompt", "Gateway reply"],
+  );
+});
+
+test("Gateway surfaces a final transcript persistence failure", async () => {
+  const id = "gateway-final-write-failure";
+  const initialStubState = await settleGatewayInitialStub(
+    Promise.reject(new Error("initial write failed")),
+    () => undefined,
+  );
+
+  await assert.rejects(
+    persistGatewayTranscript({
+      sessionId: id,
+      initialStubState,
+      deps: {
+        loadConversation,
+        saveConversation: async () => {
+          throw new Error("final conversation-store failure");
+        },
+        withConversationLock,
+      },
+      createAfterInitialStubFailure: () => emptyGatewayConversation(id),
+      complete: (conv) => {
+        conv.turns.push({
+          id: "gateway-user",
+          role: "user",
+          text: "Gateway prompt",
+          createdAt: "2026-08-11T00:00:01.000Z",
+          parentId: null,
+        });
+      },
+    }),
+    /final conversation-store failure/,
+  );
+  assert.equal(await loadConversation(id), null);
+});
 
 test("Gateway completion serializes with voice append and client PATCH without losing either write", async () => {
   const id = "gateway-patch-voice-race";
@@ -120,7 +204,15 @@ test("Gateway completion serializes with voice append and client PATCH without l
 
 test("client DELETE winning the lock prevents a late Gateway completion from resurrecting the file", async () => {
   const id = "gateway-delete-race";
-  await seed(id);
+  const stubCreated = await createConversationStub({
+    sessionId: id,
+    familiarId: "wren",
+    harness: "openclaw",
+    runtime: `local:${home}`,
+    userTurn: { id: "stub-user", text: "Gateway prompt" },
+  });
+  const initialStubState = await settleGatewayInitialStub(Promise.resolve(stubCreated), () => undefined);
+  assert.equal(initialStubState.kind, "created");
   const barrier = lockBarrier(id);
   await barrier.ready;
 
@@ -141,30 +233,36 @@ test("client DELETE winning the lock prevents a late Gateway completion from res
   );
   await consumed;
   await Promise.resolve();
-  const gateway = gatewayCompletion(id);
+  const gateway = gatewayCompletion(id, initialStubState);
 
   barrier.release();
   await barrier.held;
   assert.equal((await deletion).status, 200);
-  assert.equal(await gateway, false);
+  await assert.rejects(gateway, /conversation deleted before Gateway transcript save/);
   assert.equal(await loadConversation(id), null);
   assert.equal(await deleteConversation(id), false);
 });
 
-test("production OpenClaw Gateway persistence holds the shared lock for the full RMW and fails closed after delete", async () => {
-  const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
-  const start = source.indexOf('if (gatewayDispatch.kind === "accepted")');
-  const end = source.indexOf("const openclawLaunch = openClawLaunchCommand()", start);
+test("production OpenClaw Gateway persistence tracks stub failure separately from deletion", async () => {
+  const routeSource = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+  const helperSource = await readFile(new URL("./gateway-transcript-persistence.ts", import.meta.url), "utf8");
+  const start = routeSource.indexOf('if (gatewayDispatch.kind === "accepted")');
+  const end = routeSource.indexOf("const openclawLaunch = openClawLaunchCommand()", start);
   assert.ok(start >= 0 && end > start);
-  const branch = source.slice(start, end);
-  assert.match(branch, /withConversationLock\(conversationId,\s*async \(\) => \{/);
+  const branch = routeSource.slice(start, end);
+  assert.match(branch, /const initialStubState = settleGatewayInitialStub\(\s*createConversationStub\(/);
   assert.match(
     branch,
-    /withConversationLock\(conversationId,[\s\S]*?loadConversation\(conversationId\)[\s\S]*?if \(!existing\) throw[\s\S]*?saveConversation\(conv\)/,
+    /persistGatewayTranscript\(\{[\s\S]*?initialStubState: await initialStubState,[\s\S]*?deps: \{ loadConversation, saveConversation, withConversationLock \}/,
+  );
+  assert.match(
+    helperSource,
+    /withConversationLock\(args\.sessionId,[\s\S]*?loadConversation\(args\.sessionId\)[\s\S]*?initialStubState\.kind !== "failed-before-exists"[\s\S]*?saveConversation\(conversation\)/,
   );
   assert.doesNotMatch(
     branch,
-    /const existing = await loadConversation\(conversationId\);[\s\S]*?const conv = existing \?\?/,
-    "a deleted Gateway conversation must never be recreated from a fallback snapshot",
+    /\.catch\(\(\) => false\)/,
+    "Gateway stub failures must retain their failure state instead of becoming a false no-op",
   );
+  assert.match(branch, /console\.warn\("\[chat\] Failed to persist Gateway transcript", error\)/);
 });
