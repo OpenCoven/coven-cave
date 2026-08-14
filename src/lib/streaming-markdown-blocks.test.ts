@@ -644,6 +644,63 @@ test("nested and continuation tails stop at blank-line list boundaries", () => {
   }
 });
 
+test("first nested list items commit once a terminating blank appears", () => {
+  for (const [source, ordered, committedSource] of [
+    ["- parent\n  - child\n\nAfter", false, "- parent\n  - child\n"],
+    ["1. parent\n   1. child\n\nAfter", true, "1. parent\n   1. child\n"],
+    ["- parent\n  1. child\n\nAfter", false, "- parent\n  1. child\n"],
+    ["1. parent\n   - child\n\nAfter", true, "1. parent\n   - child\n"],
+  ] as const) {
+    const boundary = source.slice(0, source.indexOf("After"));
+    const partition = partitionStreamingMarkdown(source, { turnId: "t", settled: false });
+
+    assert.deepEqual(partition.committedBlocks, [{
+      id: "t:0-list",
+      kind: "list",
+      ordered,
+      committedItems: [{ id: "t:0-item-0", source: committedSource }],
+      source: boundary,
+    }]);
+    assert.deepEqual(partition.activeBlock, {
+      id: `t:${boundary.length}-${source.length}`,
+      kind: "markdown",
+      source: "After",
+      renderMode: "markdown",
+    });
+    assert.equal(partition.committedText, boundary);
+  }
+});
+
+test("first nested list boundary keeps committed ids stable across snapshots", () => {
+  const beforeSource = "- parent\n  - child";
+  const boundarySource = `${beforeSource}\n\n`;
+  const afterSource = `${boundarySource}After`;
+
+  const before = partitionStreamingMarkdown(beforeSource, { turnId: "t", settled: false });
+  assert.deepEqual(before.committedBlocks, []);
+  assert.deepEqual(before.activeBlock, {
+    id: `t:0-${beforeSource.length}`,
+    kind: "markdown",
+    source: beforeSource,
+    renderMode: "plain",
+  });
+
+  const boundary = partitionStreamingMarkdown(boundarySource, { turnId: "t", settled: false });
+  const after = partitionStreamingMarkdown(afterSource, { turnId: "t", settled: false });
+
+  assert.deepEqual(flattenPairs(boundary.committedBlocks), [
+    ["t:0-list", boundarySource],
+    ["t:0-item-0", beforeSource + "\n"],
+  ]);
+  assert.deepEqual(flattenPairs(after.committedBlocks), flattenPairs(boundary.committedBlocks));
+  assert.deepEqual(after.activeBlock, {
+    id: `t:${boundarySource.length}-${afterSource.length}`,
+    kind: "markdown",
+    source: "After",
+    renderMode: "markdown",
+  });
+});
+
 test("continuation lines extend the live active list item without rewriting identities", () => {
   for (const [source, activeSource] of [
     ["- one\n- two\ncontinuation", "- two\ncontinuation"],

@@ -393,18 +393,16 @@ function parseList(source: string, lines: Line[], startIndex: number): ParseResu
     const nextMarker = parseListMarker(lines[index]);
     if (nextMarker && nextMarker.ordered === marker.ordered) {
       if (nextMarker.markerIndent >= marker.contentIndent) {
-        if (committedItems.length > 0) {
-          const completed = completeListWithTailAtBlankLine(
-            source,
-            lines,
-            index + 1,
-            lines[startIndex].start,
-            marker.ordered,
-            committedItems,
-            itemStart,
-          );
-          if (completed) return completed;
-        }
+        const completed = completeListWithTailAtBlankLine(
+          source,
+          lines,
+          index + 1,
+          lines[startIndex].start,
+          marker.ordered,
+          committedItems,
+          itemStart,
+        );
+        if (completed) return completed;
         return makeAmbiguousListTailOrMarkdown(
           source,
           lines[startIndex].start,
@@ -432,6 +430,16 @@ function parseList(source: string, lines: Line[], startIndex: number): ParseResu
       )
     ) {
       if (committedItems.length === 0) {
+        const completed = completeListWithTailAtBlankLine(
+          source,
+          lines,
+          index + 1,
+          lines[startIndex].start,
+          marker.ordered,
+          committedItems,
+          itemStart,
+        );
+        if (completed) return completed;
         return makeAmbiguousListTailOrMarkdown(
           source,
           lines[startIndex].start,
