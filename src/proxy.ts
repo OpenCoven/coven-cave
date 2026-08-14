@@ -29,6 +29,7 @@ import {
   requiresPasskeyPresence,
   isClientV1Path,
   isClientV1AdminPath,
+  shouldBypassMobileAccessGateForClientV1,
   hasEncodedClientV1PathOctet,
 } from "./proxy-helpers";
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
@@ -286,6 +287,22 @@ export async function proxy(req: NextRequest) {
     process.env.COVEN_CAVE_TAILNET_PEER_SECRET,
   );
   const tailnetPeerVerified = tailnetNodeId !== null;
+  // A direct loopback non-admin client-v1 caller is authenticated at the
+  // route boundary with its bearer credential and the proxy-stamped marker.
+  // This must precede the mobile invite gate: an armed invite must protect
+  // remote/admin traffic without blocking the local native facade.
+  if (
+    shouldBypassMobileAccessGateForClientV1(
+      req.nextUrl.pathname,
+      req.headers.get("host"),
+      trustedLocalPeer,
+    )
+  ) {
+    if (!hasSafeContentType(req)) {
+      return jsonError(415, "unsupported content-type");
+    }
+    return nextWithClientV1Marker(req);
+  }
   const mobileRes = await mobileAccessGate(
     req,
     trustedLocalPeer,

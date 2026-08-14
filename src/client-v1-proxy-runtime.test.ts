@@ -114,6 +114,46 @@ test("client-v1 non-admin: a caller-forged marker is stripped and a proven direc
   assert.notEqual(forwardedMarker, "attacker-forged-value", "the caller-forged marker must never survive");
 });
 
+test("client-v1 non-admin: an armed mobile access gate does not block a proven direct loopback peer", async () => {
+  setEnv({
+    COVEN_CAVE_LOCAL_PEER_SECRET: "boot-secret-mobile-loopback",
+    COVEN_CAVE_ACCESS_TOKEN: "armed-mobile-access-token",
+  });
+  const res = await proxy(makeRequest("/api/client/v1/conversations", {
+    headers: { [LOCAL_PEER_HEADER]: "boot-secret-mobile-loopback" },
+  }));
+  assert.ok(isPassedThrough(res), `expected direct loopback client-v1 through, got ${res.status}`);
+  assert.equal(
+    forwardedHeader(res, CLIENT_V1_LOCAL_HEADER),
+    "boot-secret-mobile-loopback",
+    "only the proxy's direct-loopback marker reaches the route",
+  );
+});
+
+test("client-v1 non-admin: an armed mobile access gate still blocks a non-loopback peer", async () => {
+  setEnv({
+    COVEN_CAVE_LOCAL_PEER_SECRET: "boot-secret-mobile-remote",
+    COVEN_CAVE_ACCESS_TOKEN: "armed-mobile-access-token",
+  });
+  const res = await proxy(makeRequest("/api/client/v1/conversations", {
+    headers: { host: "cave.tailnet.example.ts.net" },
+  }));
+  assert.equal(res.status, 401);
+  assert.equal((await res.json()).error, "unauthorized");
+});
+
+test("client-v1 admin: an armed mobile access gate still blocks a direct loopback peer", async () => {
+  setEnv({
+    COVEN_CAVE_LOCAL_PEER_SECRET: "boot-secret-mobile-admin",
+    COVEN_CAVE_ACCESS_TOKEN: "armed-mobile-access-token",
+  });
+  const res = await proxy(makeRequest("/api/client/v1/admin/credentials", {
+    headers: { [LOCAL_PEER_HEADER]: "boot-secret-mobile-admin" },
+  }));
+  assert.equal(res.status, 401);
+  assert.equal((await res.json()).error, "unauthorized");
+});
+
 // ─── 2. absent direct-local proof is 403; a forged marker has no authority ─
 
 test("client-v1 non-admin: absent direct-local proof is 403, and a forged marker (even one guessing the real secret) grants no authority", async () => {
