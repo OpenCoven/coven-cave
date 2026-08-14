@@ -1077,7 +1077,9 @@ assert.match(
   "source-version requires an annotated GitHub-verified tag contained in main",
 );
 const tagVerificationIndex = sourceVersionJob.indexOf("- name: Require a verified signed tag on main");
+assert.notEqual(tagVerificationIndex, -1, "tag verification step must exist");
 const dependencyInstallIndex = sourceVersionJob.indexOf("- name: Install release checker runtime dependency");
+assert.notEqual(dependencyInstallIndex, -1, "release checker dependency install step must exist");
 assert.ok(
   tagVerificationIndex < dependencyInstallIndex,
   "source-version verifies tag provenance before installing tag-controlled dependencies",
