@@ -105,6 +105,22 @@ function legacyPermissionsJson(): string {
   });
 }
 
+function legacyV1PermissionsJson(): string {
+  return JSON.stringify({
+    version: 1,
+    projectGrants: [
+      {
+        familiarId: "supreme",
+        projectId: "legacy-project",
+        source: "human",
+        grantedAt: "2025-01-01T00:00:00.000Z",
+      },
+    ],
+    grantProposals: [],
+    permissionAudit: [],
+  });
+}
+
 /** The read/normalize/report script shared by both scenarios below. */
 function readerScript(): string {
   return `
@@ -166,12 +182,52 @@ try {
     assert.notEqual(persistedPermissions.visibilityGeneration, "unversioned");
   }
 
+  // ─── v1 cold restart and concurrent migration ───────────────────────────
+  {
+    const { coven, cave } = await freshCovenHome("v1-restart-and-concurrency");
+    await mkdir(cave, { recursive: true });
+    await writeFile(path.join(cave, "project-permissions.json"), legacyV1PermissionsJson(), "utf8");
+
+    // Neither fresh reader owns a process-local recovery marker. They start
+    // together so the authorization lock must elect exactly one migrator; the
+    // other observes the same durable v2 generation after the atomic replace.
+    const [firstStdout, secondStdout] = await Promise.all([
+      runChild(readerScript(), childEnvFor(coven)),
+      runChild(readerScript(), childEnvFor(coven)),
+    ]);
+    const first = JSON.parse(firstStdout);
+    const second = JSON.parse(secondStdout);
+    assert.deepEqual(first.grantProjectIds, ["legacy-project"]);
+    assert.deepEqual(second.grantProjectIds, ["legacy-project"]);
+    assert.equal(
+      first.permissionGeneration,
+      second.permissionGeneration,
+      "concurrent v1 migrators converge on the single generation durably written by the lock winner",
+    );
+
+    const persistedPermissions = JSON.parse(await readFile(path.join(cave, "project-permissions.json"), "utf8"));
+    assert.equal(persistedPermissions.version, 2, "a v1 store is persisted as v2 after a restart");
+    assert.equal(persistedPermissions.projectGrants[0]?.access, "write");
+    assert.equal(
+      persistedPermissions.visibilityGeneration,
+      first.permissionGeneration,
+      "the persisted v1 migration generation is the one all concurrent readers observe",
+    );
+
+    const restartResult = JSON.parse(await runChild(readerScript(), childEnvFor(coven)));
+    assert.equal(
+      restartResult.permissionGeneration,
+      first.permissionGeneration,
+      "a later restart without recovery state does not migrate or rotate the v1 generation again",
+    );
+  }
+
   // ─── cross-process: another process performed the migration move; this
   //     process never ran it and has no recovery marker for it ────────────
   {
     const { coven, cave } = await freshCovenHome("cross-process");
     await writeFile(path.join(coven, "cave-projects.json"), legacyProjectsJson(), "utf8");
-    await writeFile(path.join(coven, "cave-project-permissions.json"), legacyPermissionsJson(), "utf8");
+    await writeFile(path.join(coven, "cave-project-permissions.json"), legacyV1PermissionsJson(), "utf8");
 
     const moverScript = `
       const { migrateCaveHomeOnce } = await import(${JSON.stringify(migrationModuleUrl)});

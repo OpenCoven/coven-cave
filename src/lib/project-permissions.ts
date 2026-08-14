@@ -195,6 +195,35 @@ type ProjectPermissionsFile = {
   visibilityGeneration: string;
 };
 
+type LegacyV1ProjectGrant = Omit<ProjectGrant, "access">;
+
+type LegacyV1GrantProposal = Omit<
+  GrantProposal,
+  "access" | "status" | "acceptedAt" | "finalizesAt"
+> & {
+  status: "pending" | "accepted" | "rejected";
+};
+
+type LegacyV1PermissionAuditEntry = Omit<PermissionAuditEntry, "reason" | "requiredAccess"> & {
+  reason: "grant" | "supreme" | "missing-grant";
+};
+
+type LegacyV1ProjectPermissionsFile = {
+  version: 1;
+  projectGrants: LegacyV1ProjectGrant[];
+  grantProposals: LegacyV1GrantProposal[];
+  permissionAudit: LegacyV1PermissionAuditEntry[];
+};
+
+type LegacyV2ProjectPermissionsFile = Omit<
+  ProjectPermissionsFile,
+  "visibilityGeneration" | "grantAudit" | "repairAudit"
+> & Partial<Pick<ProjectPermissionsFile, "grantAudit" | "repairAudit">>;
+
+type LegacyPermissionsFile =
+  | LegacyV2ProjectPermissionsFile
+  | LegacyV1ProjectPermissionsFile;
+
 const MISSING_VISIBILITY_GENERATION = "missing";
 
 type HumanPermissionConfigFile = {
@@ -424,6 +453,24 @@ function isAccess(value: unknown): value is ProjectAccessLevel {
   return value === "read" || value === "write";
 }
 
+function isProjectPermissionSurface(value: unknown): value is ProjectPermissionSurface {
+  return [
+    "chat",
+    "session-launch",
+    "shell",
+    "file-browse",
+    "file-read",
+    "file-write",
+    "project-api",
+    "mobile",
+    "project-picker",
+  ].includes(String(value));
+}
+
+function isPermissionAuditReason(value: unknown): value is PermissionAuditReason {
+  return ["grant", "group", "supreme", "missing-grant", "insufficient-access"].includes(String(value));
+}
+
 function isStrictGrant(value: unknown): value is ProjectGrant {
   if (!isRecord(value)) return false;
   return (
@@ -470,7 +517,7 @@ function isStrictAccessGroup(value: unknown): value is FamiliarAccessGroup {
 
 function isStrictProposal(value: unknown): value is GrantProposal {
   if (!isRecord(value)) return false;
-  return (
+  const common = (
     hasOnlyKeys(value, [
       "id",
       "proposedBy",
@@ -488,10 +535,21 @@ function isStrictProposal(value: unknown): value is GrantProposal {
     typeof value.projectId === "string" &&
     (value.access === undefined || isAccess(value.access)) &&
     ["pending", "accepting", "accepted", "rejected"].includes(String(value.status)) &&
-    typeof value.createdAt === "string" &&
-    (value.acceptedAt === undefined || typeof value.acceptedAt === "string") &&
-    (value.finalizesAt === undefined || typeof value.finalizesAt === "string")
+    typeof value.createdAt === "string"
   );
+  if (!common) return false;
+
+  const hasNoAcceptanceWindow = value.acceptedAt === undefined && value.finalizesAt === undefined;
+  const acceptedAt = typeof value.acceptedAt === "string" ? Date.parse(value.acceptedAt) : NaN;
+  const finalizesAt = typeof value.finalizesAt === "string" ? Date.parse(value.finalizesAt) : NaN;
+  const hasAcceptanceWindow =
+    Number.isFinite(acceptedAt) &&
+    Number.isFinite(finalizesAt) &&
+    finalizesAt - acceptedAt === GRANT_ACCEPT_UNDO_WINDOW_MS;
+
+  if (value.status === "accepting") return hasAcceptanceWindow;
+  if (value.status === "accepted") return hasNoAcceptanceWindow || hasAcceptanceWindow;
+  return hasNoAcceptanceWindow;
 }
 
 function isStrictPermissionAudit(value: unknown): value is PermissionAuditEntry {
@@ -511,9 +569,9 @@ function isStrictPermissionAudit(value: unknown): value is PermissionAuditEntry 
     typeof value.at === "string" &&
     typeof value.familiarId === "string" &&
     typeof value.projectId === "string" &&
-    typeof value.surface === "string" &&
+    isProjectPermissionSurface(value.surface) &&
     (value.decision === "allow" || value.decision === "deny") &&
-    typeof value.reason === "string" &&
+    isPermissionAuditReason(value.reason) &&
     (value.requiredAccess === undefined || isAccess(value.requiredAccess))
   );
 }
@@ -644,17 +702,19 @@ function normalizeRecoveredPermissions(raw: string): ProjectPermissionsFile {
     // existed — the fixed sentinel (never a freshly random value) keeps an
     // unmutated legacy file producing the SAME cache key on every read; see
     // this field's doc comment on `ProjectPermissionsFile`.
-    visibilityGeneration: randomUUID(),
+    visibilityGeneration: MISSING_VISIBILITY_GENERATION,
   };
   return file;
 }
 
 /**
  * True when `record` is the genuine durable legacy (pre-`visibilityGeneration`)
- * project-permissions shape: version 2, ONLY the current schema's OTHER
- * top-level keys (no `visibilityGeneration` key present at all — not merely
- * one holding an invalid value), and every section independently passes the
- * exact same strict per-entry validation the current schema requires.
+ * project-permissions shape: version 2, ONLY known historical top-level keys
+ * (no `visibilityGeneration` key present at all — not merely one holding an
+ * invalid value), and every present section independently passes the exact
+ * same strict per-entry validation the current schema requires. `grantAudit`
+ * and `repairAudit` arrived in later v2 revisions, so their absence is
+ * normalized to an empty log rather than rejecting otherwise valid v2 data.
  *
  * This is a pure content check, exactly mirroring `isLegacyProjectsRecord`
  * (@/lib/cave-projects.ts) — see that function's doc comment for the full
@@ -667,15 +727,15 @@ function normalizeRecoveredPermissions(raw: string): ProjectPermissionsFile {
  * Anything else — extra/missing top-level keys, the wrong `version`, or a
  * single grant/group/proposal/audit entry that fails strict validation — is
  * NOT legacy here; it falls through to {@link parseStrictPermissions}, which
- * fails closed. A pre-version-2 (binary-grant) file, or any file with even
- * one malformed entry, is likewise never mistaken for this specific, fully
- * validated shape — that lenient, best-effort reconstruction remains
- * `normalizeRecoveredPermissions`'s job, gated by the explicit recover-legacy
- * marker/flow, never this automatic content check.
+ * fails closed. The distinct strict v1 classifier below converts only the
+ * exact historical binary-grant schema; a malformed v1-shaped file is never
+ * mistaken for either durable legacy format. Best-effort reconstruction stays
+ * `normalizeRecoveredPermissions`'s job, gated by explicit recover-legacy
+ * authority, never this automatic content check.
  */
-function isLegacyPermissionsRecord(
+function isLegacyV2PermissionsRecord(
   record: Record<string, unknown>,
-): record is Omit<ProjectPermissionsFile, "visibilityGeneration"> {
+): record is LegacyV2ProjectPermissionsFile {
   return (
     hasOnlyKeys(record, [
       "version",
@@ -691,33 +751,110 @@ function isLegacyPermissionsRecord(
     Array.isArray(record.accessGroups) && record.accessGroups.every(isStrictAccessGroup) &&
     Array.isArray(record.grantProposals) && record.grantProposals.every(isStrictProposal) &&
     Array.isArray(record.permissionAudit) && record.permissionAudit.every(isStrictPermissionAudit) &&
-    Array.isArray(record.grantAudit) && record.grantAudit.every(isStrictGrantAudit) &&
-    Array.isArray(record.repairAudit) && record.repairAudit.every(isStrictRepairAudit)
+    (record.grantAudit === undefined ||
+      Array.isArray(record.grantAudit) && record.grantAudit.every(isStrictGrantAudit)) &&
+    (record.repairAudit === undefined ||
+      Array.isArray(record.repairAudit) && record.repairAudit.every(isStrictRepairAudit))
+  );
+}
+
+function isStrictLegacyV1Grant(value: unknown): value is LegacyV1ProjectGrant {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["familiarId", "projectId", "source", "grantedAt"]) &&
+    typeof value.familiarId === "string" &&
+    typeof value.projectId === "string" &&
+    (value.source === "bootstrap" || value.source === "human") &&
+    typeof value.grantedAt === "string";
+}
+
+function isStrictLegacyV1Proposal(value: unknown): value is LegacyV1GrantProposal {
+  return isRecord(value) &&
+    hasOnlyKeys(value, [
+      "id",
+      "proposedBy",
+      "targetFamiliarId",
+      "projectId",
+      "status",
+      "createdAt",
+    ]) &&
+    typeof value.id === "string" &&
+    typeof value.proposedBy === "string" &&
+    typeof value.targetFamiliarId === "string" &&
+    typeof value.projectId === "string" &&
+    ["pending", "accepted", "rejected"].includes(String(value.status)) &&
+    typeof value.createdAt === "string";
+}
+
+function isStrictLegacyV1PermissionAudit(value: unknown): value is LegacyV1PermissionAuditEntry {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["id", "at", "familiarId", "projectId", "surface", "decision", "reason"]) &&
+    typeof value.id === "string" &&
+    typeof value.at === "string" &&
+    typeof value.familiarId === "string" &&
+    typeof value.projectId === "string" &&
+    isProjectPermissionSurface(value.surface) &&
+    (value.decision === "allow" || value.decision === "deny") &&
+    ["grant", "supreme", "missing-grant"].includes(String(value.reason));
+}
+
+function isLegacyV1PermissionsRecord(
+  record: Record<string, unknown>,
+): record is LegacyV1ProjectPermissionsFile {
+  return (
+    hasOnlyKeys(record, ["version", "projectGrants", "grantProposals", "permissionAudit"]) &&
+    record.version === 1 &&
+    Array.isArray(record.projectGrants) && record.projectGrants.every(isStrictLegacyV1Grant) &&
+    Array.isArray(record.grantProposals) && record.grantProposals.every(isStrictLegacyV1Proposal) &&
+    Array.isArray(record.permissionAudit) && record.permissionAudit.every(isStrictLegacyV1PermissionAudit)
   );
 }
 
 /**
- * Content-only detection, never throwing: malformed JSON or a non-object top
- * level simply means "not legacy" here — the strict parse path is what
- * reports those failures to the caller.
+ * Content-only detection, never throwing: malformed JSON or a non-object
+ * top level simply means "not legacy" here — the strict parse path is what
+ * reports those failures to the caller. Both durable schemas that predate the
+ * current shape are recognized only when every key and nested value matches
+ * the historical schema exactly; an arbitrary v1-shaped object never grants
+ * migration authority.
  */
-function isLegacyPermissionsSchema(raw: string): boolean {
+function parseLegacyPermissionsFile(raw: string): LegacyPermissionsFile | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return false;
+    return null;
   }
-  return isRecord(parsed) && isLegacyPermissionsRecord(parsed);
+  if (!isRecord(parsed)) return null;
+  if (isLegacyV2PermissionsRecord(parsed) || isLegacyV1PermissionsRecord(parsed)) return parsed;
+  return null;
 }
 
-/** Assumes {@link isLegacyPermissionsSchema} already returned true for `raw`. */
-function normalizeLegacyPermissionsFile(raw: string): ProjectPermissionsFile {
-  const record = JSON.parse(raw) as Omit<ProjectPermissionsFile, "visibilityGeneration">;
+/** Converts a previously validated historical record without broadening authority. */
+function normalizeLegacyPermissionsFile(record: LegacyPermissionsFile): ProjectPermissionsFile {
+  if (record.version === 1) {
+    return {
+      version: 2,
+      projectGrants: record.projectGrants.map((grant) => ({ ...grant, access: "write" })),
+      accessGroups: [],
+      grantProposals: record.grantProposals.map((proposal) => ({ ...proposal, access: "write" })),
+      permissionAudit: record.permissionAudit,
+      grantAudit: [],
+      repairAudit: [],
+      visibilityGeneration: MISSING_VISIBILITY_GENERATION,
+    };
+  }
   return {
-    ...record,
-    // A fresh cryptographic generation — this file has never had one.
-    visibilityGeneration: randomUUID(),
+    version: 2,
+    projectGrants: record.projectGrants,
+    accessGroups: record.accessGroups,
+    grantProposals: record.grantProposals,
+    permissionAudit: record.permissionAudit,
+    grantAudit: record.grantAudit ?? [],
+    repairAudit: record.repairAudit ?? [],
+    // `saveProjectPermissions` generates this exactly once as part of the
+    // successful atomic replacement. It must not be generated before a write
+    // that could fail, nor on a subsequent ordinary read.
+    visibilityGeneration: MISSING_VISIBILITY_GENERATION,
   };
 }
 
@@ -740,16 +877,32 @@ async function loadProjectPermissionsUnlocked(
   // through it before reaching this function), so racing readers normalize
   // exactly once — there is no lock-free fast path into this function that
   // could race a normalizing write.
-  const isLegacy = isLegacyPermissionsSchema(raw);
-  const file = isLegacy
-    ? normalizeLegacyPermissionsFile(raw)
+  const legacy = parseLegacyPermissionsFile(raw);
+  const file = legacy
+    ? normalizeLegacyPermissionsFile(legacy)
     : options.normalizeRecovered
       ? normalizeRecoveredPermissions(raw)
       : parseStrictPermissions(raw);
   const materialized = materializeDueGrantProposalsDetailed(file, new Date());
-  if (isLegacy || options.normalizeRecovered || materialized.changed) {
-    await saveProjectPermissions(file, isLegacy || options.normalizeRecovered || materialized.visibilityChanged);
-    if (isLegacy || options.normalizeRecovered) {
+  const needsMigrationWrite = Boolean(legacy || options.normalizeRecovered);
+  if (needsMigrationWrite || materialized.changed) {
+    try {
+      await saveProjectPermissions(
+        file,
+        needsMigrationWrite || materialized.visibilityChanged,
+      );
+    } catch (error) {
+      if (needsMigrationWrite) {
+        throw new ProjectPermissionsIntegrityError(
+          legacy
+            ? "Unable to migrate legacy project permissions."
+            : "Unable to normalize recovered project permissions.",
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+    if (options.normalizeRecovered) {
       markCaveHomeStoreRecoveryNormalized("cave-project-permissions.json");
     }
   }
@@ -757,11 +910,9 @@ async function loadProjectPermissionsUnlocked(
 }
 
 async function loadProjectPermissionsAlreadyAuthorized(): Promise<ProjectPermissionsFile> {
-  const wasMissing = (await readPermissionsRaw()) === null;
   return withProjectPermissionsStore(() =>
     withWriteMutex(() => loadProjectPermissionsUnlocked({
-      normalizeRecovered:
-        wasMissing || caveHomeStoreNeedsRecoveryNormalization("cave-project-permissions.json"),
+      normalizeRecovered: caveHomeStoreNeedsRecoveryNormalization("cave-project-permissions.json"),
     })),
   );
 }
@@ -769,12 +920,10 @@ async function loadProjectPermissionsAlreadyAuthorized(): Promise<ProjectPermiss
 async function withProjectPermissionsWriteAlreadyAuthorized<T>(
   operation: (file: ProjectPermissionsFile) => Promise<T>,
 ): Promise<T> {
-  const wasMissing = (await readPermissionsRaw()) === null;
   return withProjectPermissionsStore(() =>
     withWriteMutex(async () =>
       operation(await loadProjectPermissionsUnlocked({
-        normalizeRecovered:
-          wasMissing || caveHomeStoreNeedsRecoveryNormalization("cave-project-permissions.json"),
+        normalizeRecovered: caveHomeStoreNeedsRecoveryNormalization("cave-project-permissions.json"),
       }))),
   );
 }
@@ -922,7 +1071,7 @@ function materializeDueGrantProposalsDetailed(
 
 async function saveProjectPermissions(
   file: ProjectPermissionsFile,
-  visibilityChanged: boolean,
+  visibilityChanged = false,
 ): Promise<void> {
   const filePath = permissionsFilePath();
   await mkdir(path.dirname(filePath), { recursive: true });

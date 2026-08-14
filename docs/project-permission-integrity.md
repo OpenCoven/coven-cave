@@ -22,8 +22,18 @@ so the operation is reviewable and safe to retry after interruption.
 
 ## Upgrade behavior
 
-No startup migration runs automatically. On upgrade, existing permission data
-is inspected without mutation. If stale records are present, an authorized
-person can review the count in Projects and choose **Repair stale permissions**.
-If no action is taken, server-side chat launch remains fail-closed: a session
-still cannot start without an authorized, registered project root.
+Ordinary permission-store loads recognize only exact historical v1 and
+pre-generation v2 schemas. They atomically rewrite either valid shape to the
+current v2 format, preserving v1 binary grants and proposals as `write`
+authority and assigning one durable visibility generation. This works after a
+restart or a cave-home move by another process; concurrent readers serialize
+through the authorization lock and observe the same persisted generation.
+
+Malformed historical shapes are never repaired automatically and fail closed
+without changing their bytes. Best-effort normalization is reserved for an
+explicit **recover legacy** resolution, which is the only recovery authority
+that permits it. Separately, stale records remain inspectable without mutation:
+an authorized person can review them in Projects and choose **Repair stale
+permissions**. If no action is taken, server-side chat launch remains
+fail-closed: a session still cannot start without an authorized, registered
+project root.
