@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 const boardView = await readFile(new URL("./board-view.tsx", import.meta.url), "utf8");
 const boardInspector = await readFile(new URL("./board-inspector.tsx", import.meta.url), "utf8");
 const route = await readFile(new URL("../app/api/board/[id]/chat/route.ts", import.meta.url), "utf8");
-const chatSendRoute = await readFile(new URL("../lib/server/chat-send-service.ts", import.meta.url), "utf8");
+const chatSendRoute = await readFile(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
 const taskWorkCockpit = await readFile(new URL("./task-work-cockpit.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
