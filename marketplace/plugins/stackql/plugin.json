@@ -39,6 +39,7 @@
       "rolePatch": false
     }
   },
+  "skills": "./skills/",
   "mcpServers": {
     "stackql": {
       "command": "npx",

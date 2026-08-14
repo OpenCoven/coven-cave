@@ -36,6 +36,7 @@
       "rolePatch": false
     }
   },
+  "skills": "./skills/",
   "mcpServers": {
     "linear": {
       "url": "https://mcp.linear.app/mcp",

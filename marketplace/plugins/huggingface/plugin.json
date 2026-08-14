@@ -37,6 +37,7 @@
       "rolePatch": false
     }
   },
+  "skills": "./skills/",
   "mcpServers": {
     "huggingface": {
       "url": "https://huggingface.co/mcp",

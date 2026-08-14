@@ -25,7 +25,7 @@ description: Use when generating, optimizing, comparing, validating, or preparin
 3. Generate three candidates by default using declared strategies: `evidence-led`, `narrative-arc`, and `contrarian-comparison`.
 4. Materialize every candidate with only the fields accepted by `thread-candidate.schema.json`: protocol version, candidate ID and SHA-256, brief, voice profile, evidence, posts, and generation timestamp.
 5. Bind each materialized candidate ID and SHA-256 to its declared strategy in `strategies.json`. Keep harness, model, and context identifiers out of candidates and under private namespaced strategy extensions when needed.
-6. Run deterministic validation and scoring. Append failures, partial materialization, missing paths, uncertainty, and stopping decisions to `execution-log.jsonl`.
+6. Execute the checked-in deterministic schema, weighted-length, hash, and hard-gate modules before writing their results. When this skill runs inside `optimize-tweet-thread`, `cave.output` records those already-run results and does not execute code. Append failures, partial materialization, missing paths, uncertainty, and stopping decisions to `execution-log.jsonl`.
 7. Blind candidate identity before judging. Use a separate judge context or harness when available; never knowingly identify a candidate to its judge.
 8. Materialize one judge scorecard per judged candidate across all six rubric dimensions.
 9. Rank eligible candidates by Pareto status, weighted score, and the protocol tie order.

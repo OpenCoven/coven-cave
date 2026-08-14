@@ -368,8 +368,18 @@ const threadLabCodexManifest = JSON.parse(
 );
 assert.equal(threadLabManifest.name, "tweet-thread-lab");
 assert.deepEqual(threadLabManifest.capabilities, ["read_files", "write_files", "network"]);
+assert.equal(threadLabManifest.skills, "./skills/");
 assert.equal(threadLabCodexManifest.name, "tweet-thread-lab");
 assert.equal(threadLabCodexManifest.skills, "./skills/");
+
+const productionMemoryRoot = path.join(ROOT, "marketplace", "plugins", "coven-memory");
+const memoryManifest = JSON.parse(readFileSync(path.join(productionMemoryRoot, "plugin.json"), "utf8"));
+const memoryCodexManifest = JSON.parse(
+  readFileSync(path.join(productionMemoryRoot, ".codex-plugin", "plugin.json"), "utf8"),
+);
+assert.equal(memoryManifest.name, "coven-memory");
+assert.equal(memoryManifest.skills, "./skills/");
+assert.equal(memoryCodexManifest.skills, "./skills/");
 
 const threadLabSkillRoot = path.join(productionThreadLabRoot, "skills", "tweet-thread-lab");
 const threadLabSkill = readFileSync(path.join(threadLabSkillRoot, "SKILL.md"), "utf8");
@@ -380,6 +390,11 @@ assert.match(threadLabSkill, /^## Steps$/m);
 assert.match(threadLabSkill, /^## Hard gates$/m);
 assert.match(threadLabSkill, /^## Artifacts$/m);
 assert.match(threadLabSkill, /^## Verification$/m);
+assert.match(
+  threadLabSkill,
+  /execute the checked-in deterministic schema, weighted-length, hash, and hard-gate modules before writing their results/i,
+);
+assert.match(threadLabSkill, /`cave\.output` records those already-run results and does not execute code/i);
 for (const document of [threadLabSkill, threadLabProtocol]) {
   assert.match(document, /`strategies\.json`/);
   assert.match(document, /`execution-log\.jsonl`/);

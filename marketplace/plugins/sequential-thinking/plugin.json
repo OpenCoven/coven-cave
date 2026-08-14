@@ -35,6 +35,7 @@
       "rolePatch": false
     }
   },
+  "skills": "./skills/",
   "mcpServers": {
     "sequential-thinking": {
       "command": "npx",

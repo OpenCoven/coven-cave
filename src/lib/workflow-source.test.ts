@@ -504,6 +504,14 @@ await (async () => {
       cost_ceiling_usd: 6,
     });
     assert.deepEqual(threadManifest.permissions, ["file.read", "file.write"]);
+    const evidenceStep = threadManifest.steps.find((step: { id: string }) => step.id === "evidence");
+    assert.ok(evidenceStep);
+    assert.match(evidenceStep.summary, /supplied or local evidence/i);
+    assert.match(evidenceStep.summary, /without network retrieval/i);
+    const validateStep = threadManifest.steps.find((step: { id: string }) => step.id === "validate");
+    assert.ok(validateStep);
+    assert.match(validateStep.summary, /already-run deterministic schema, weighted-length, hash, and hard-gate results/i);
+    assert.match(validateStep.summary, /cave\.output does not execute code/i);
     assert.deepEqual(
       threadManifest.steps.map(
         (step: { id: string; kind: string; uses?: string; requires?: string[] }) => ({

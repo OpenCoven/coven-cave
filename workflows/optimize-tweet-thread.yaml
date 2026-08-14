@@ -27,7 +27,7 @@ steps:
     kind: agent
     name: Evidence packet
     uses: research
-    summary: Build or verify the cited evidence packet, preserving missing support and uncertainty.
+    summary: Verify supplied or local evidence, record missing support and uncertainty, and note gaps without network retrieval.
     requires:
       - input
   - id: candidates
@@ -41,7 +41,7 @@ steps:
     kind: tool
     name: Deterministic validation
     uses: cave.output
-    summary: Run repository tweet-thread schema, X-length, accessibility, provenance, hash, and hard-gate checks.
+    summary: Record already-run deterministic schema, weighted-length, hash, and hard-gate results; cave.output does not execute code.
     requires:
       - candidates
   - id: judge

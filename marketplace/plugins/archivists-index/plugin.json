@@ -34,6 +34,7 @@
       "rolePatch": false
     }
   },
+  "skills": "./skills/",
   "kind": "craft",
   "craft": {
     "schemaVersion": "opencoven.craft.v1",
