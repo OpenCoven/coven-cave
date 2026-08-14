@@ -8,6 +8,11 @@ export type ResearchMediaUrlState = {
   url: string | null;
   status: "idle" | "loading" | "ready" | "error";
   retry: () => void;
+  reportPlaybackFailure: () => void;
+};
+
+type ResearchMediaUrlStateInternal = Omit<ResearchMediaUrlState, "retry" | "reportPlaybackFailure"> & {
+  scope: string;
 };
 
 function mediaTicketUrl(familiarId: string, generationId: string) {
@@ -22,20 +27,27 @@ function mediaTicketUrl(familiarId: string, generationId: string) {
  * generation-scoped capability instead of the sidecar credential.
  */
 export function useResearchMediaUrl(familiarId: string, generationId: string, enabled: boolean): ResearchMediaUrlState {
+  const scope = `${familiarId}\u0000${generationId}`;
   const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<Omit<ResearchMediaUrlState, "retry">>({
+  const [state, setState] = useState<ResearchMediaUrlStateInternal>({
+    scope,
     url: null,
     status: enabled ? "loading" : "idle",
   });
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
+  const reportPlaybackFailure = useCallback(() => {
+    setState((current) => (
+      current.scope === scope ? { ...current, url: null, status: "error" } : current
+    ));
+  }, [scope]);
 
   useEffect(() => {
     if (!enabled) {
-      setState({ url: null, status: "idle" });
+      setState({ scope, url: null, status: "idle" });
       return;
     }
     let active = true;
-    setState({ url: null, status: "loading" });
+    setState({ scope, url: null, status: "loading" });
     void (async () => {
       try {
         const response = await fetch(mediaTicketUrl(familiarId, generationId));
@@ -47,15 +59,18 @@ export function useResearchMediaUrl(familiarId: string, generationId: string, en
         if (url.origin !== window.location.origin || url.pathname !== RESEARCH_MEDIA_PATH) {
           throw new Error("media ticket returned an invalid URL");
         }
-        if (active) setState({ url: `${url.pathname}${url.search}`, status: "ready" });
+        if (active) setState({ scope, url: `${url.pathname}${url.search}`, status: "ready" });
       } catch {
-        if (active) setState({ url: null, status: "error" });
+        if (active) setState({ scope, url: null, status: "error" });
       }
     })();
     return () => {
       active = false;
     };
-  }, [attempt, enabled, familiarId, generationId]);
+  }, [attempt, enabled, familiarId, generationId, scope]);
 
-  return { ...state, retry };
+  const current = state.scope === scope
+    ? state
+    : { url: null, status: enabled ? "loading" : "idle" };
+  return { ...current, retry, reportPlaybackFailure };
 }

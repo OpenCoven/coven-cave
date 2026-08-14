@@ -72,6 +72,7 @@ test("media lifecycle text, cancellation, players, and download use persisted st
   assert.match(modals, /Couldn’t load podcast audio/);
   assert.match(modals, /Couldn’t load video preview/);
   assert.match(modals, /onClick=\{retryMedia\}/);
+  assert.match(modals, /onError=\{reportPlaybackFailure\}/);
   assert.match(modals, /download=1/);
 });
 

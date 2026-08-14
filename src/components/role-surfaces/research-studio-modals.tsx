@@ -1156,7 +1156,12 @@ export function GenerationViewerModal({
     (content?.kind === "podcast" && content.audio) ||
       ((content?.kind === "short-video" || content?.kind === "long-video") && content.video),
   );
-  const { url: mediaUrl, status: mediaStatus, retry: retryMedia } = useResearchMediaUrl(
+  const {
+    url: mediaUrl,
+    status: mediaStatus,
+    retry: retryMedia,
+    reportPlaybackFailure,
+  } = useResearchMediaUrl(
     generation.familiarId,
     generation.id,
     hasMedia,
@@ -1255,6 +1260,7 @@ export function GenerationViewerModal({
                 controls
                 preload="metadata"
                 src={mediaUrl}
+                onError={reportPlaybackFailure}
               >
                 Your browser cannot play this audio file.
               </audio>
@@ -1292,6 +1298,7 @@ export function GenerationViewerModal({
                 controls
                 preload="metadata"
                 src={mediaUrl}
+                onError={reportPlaybackFailure}
               >
                 Your browser cannot play this video file.
               </video>
