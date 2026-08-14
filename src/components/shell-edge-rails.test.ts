@@ -370,9 +370,13 @@ assert.doesNotMatch(
     "settings header glass respects reduced transparency",
   );
   const settingsShell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
-  assert.match(
+  // cave-x6rw made this conditional: an EMBEDDED settings pane is not the
+// window's title bar, so it must not claim a drag region, while the standalone
+// /settings route still gets "deep". The contract is unchanged for the case it
+// protects; the pin just has to see the conditional form (cave-ktvy0).
+assert.match(
     settingsShell,
-    /surface-compact-header shrink-0[^"]*"[\s\S]{0,400}?data-tauri-drag-region="deep"/,
+    /surface-compact-header shrink-0[^"]*"[\s\S]{0,400}?data-tauri-drag-region=(?:"deep"|\{embedded \? undefined : "deep"\})/,
     "the settings header is a real window drag region (CSS app-region is inert on loopback URLs)",
   );
 }
