@@ -56,8 +56,8 @@ assert.match(route, /CHAT_API_CONNECT_TIMEOUT_MS\s*=\s*20_000/, "Salem upstream 
 assert.match(route, /CHAT_API_TIMEOUT_MS\s*=\s*45_000/, "Salem upstream chat API stream timeout must allow full hosted replies");
 assert.doesNotMatch(route, /const connectTimeoutMs = 2_500/, "Salem must not abort the upstream chat API before it can stream");
 assert.match(route, /type SalemSearchContext/, "Salem API should accept structured local search context");
-assert.match(route, /formatSearchContextForPrompt\(context\)/, "Salem API should format top-bar search context into the hosted prompt");
-assert.match(route, /askChatApiContext\(messageForApi\)/, "Cave Salem should ask the hosted chat-api for retrieved docs context, not hosted synthesis");
+assert.match(route, /formatSearchContextForPrompt\(context\)/, "Salem API should format top-bar search context for local familiar synthesis");
+assert.match(route, /askChatApiContext\(message\)/, "Cave Salem should ask the hosted chat-api for docs context with only the user question");
 assert.match(route, /askLocalFamiliar\([\s\S]*?familiarId[\s\S]*?model/, "Cave Salem must synthesize through the local familiar so the user's connected model pays for the run");
 assert.match(route, /typeof json\.context === "string"/, "Cave Salem context mode must key off retrieved context, not upstream prompt authority");
 assert.match(route, /LOCAL_SALEM_SYSTEM_PROMPT/, "local Salem synthesis must use a fixed local system prompt");
@@ -65,16 +65,17 @@ assert.match(route, /<retrieved_context>/, "hosted retrieval context must be quo
 assert.doesNotMatch(route, /const systemPrompt = typeof context\.systemPrompt/, "hosted systemPrompt must not be trusted as local prompt authority");
 assert.match(route, /modelOverride:\s*args\.model/, "local Salem synthesis must forward the exact selected model as a next-message override");
 assert.match(route, /modelOverrideScope:\s*"next-message"/, "Salem must not persist the one-off model override as a session default");
-assert.match(route, /askChatApiAnswer\(messageForApi\)/, "Salem must keep a hosted-answer fallback when the backend does not serve context mode, so it never regresses to weak local retrieval");
+assert.match(route, /askChatApiAnswer\(message\)/, "Salem must keep a hosted-answer fallback without forwarding local Cave context");
 assert.match(route, /localContextUsed/, "Salem API response should disclose whether local context was included");
 // Ask Salem section: prior turns ride the synthesis prompt as quoted data only.
 assert.match(route, /sanitizeHistory\(body\.history\)/, "Salem API must sanitize client-sent history through one capped choke point");
 assert.match(route, /HISTORY_TURN_CAP\s*=\s*8/, "history must cap turn count server-side regardless of client input");
 assert.match(route, /HISTORY_TURN_CHAR_CAP\s*=\s*600/, "history must cap per-turn length server-side");
 assert.match(route, /<prior_conversation>/, "history must be quoted as untrusted data, mirroring retrieved context");
-assert.match(route, /buildLocalSalemPrompt\(messageForApi, apiContext, history\)/, "history feeds local synthesis only");
-assert.match(route, /askChatApiContext\(messageForApi\)[\s\S]*sanitizeHistory|sanitizeHistory[\s\S]*askChatApiContext\(messageForApi\)/, "retrieval stays keyed on the question + local context");
-assert.doesNotMatch(route, /messageForApi\s*=[^;]*history/, "history must never pollute the retrieval query");
+assert.match(route, /buildLocalSalemPrompt\(messageForLocal, apiContext, history\)/, "history and local Cave context feed local synthesis only");
+assert.match(route, /(?:askChatApiContext\(message\)[\s\S]*sanitizeHistory|sanitizeHistory[\s\S]*askChatApiContext\(message\))/, "retrieval stays keyed on the question and excludes history/local context");
+assert.doesNotMatch(route, /askChatApi(?:Context|Answer)\(messageForLocal\)|askChatApi(?:Context|Answer)\(messageForApi\)/, "local Cave context must never be forwarded to the hosted Salem API");
+assert.doesNotMatch(route, /messageForLocal\s*=[^;]*history/, "history must never pollute the retrieval query");
 assert.match(route, /familiar|familiar/, "must know about familiars");
 assert.match(route, /role|Role/, "must know about roles");
 assert.match(route, /plugin|Plugin/, "must know about plugins");
@@ -95,14 +96,31 @@ const workspace = await readFile(path.join(root, "src/components/workspace.tsx")
 // The right companion rail was removed; Salem was re-homed into the
 // drag-to-split pane. Its launcher event now opens Salem in the split.
 assert.match(workspace, /cave:salem-open/, "workspace must listen for Salem launcher events");
-assert.match(workspace, /addSplitTarget\(\{ kind: "salem" \}\)/, "Salem launcher must open Salem in the drag-to-split pane");
-assert.match(workspace, /import \{[\s\S]*SalemChatPanel[\s\S]*\} from "@\/components\/lazy-surfaces"/, "workspace should lazy-load only the Salem sidepanel surface");
+assert.match(
+  workspace,
+  /const request = normalizeWorkspacePaneRequest\(nextPaneInstanceId\(\), "salem"\);[\s\S]*if \(request\) addSplitTarget\(request\);/,
+  "Salem launcher must open a normalized Salem page in the drag-to-split pane",
+);
+assert.match(
+  workspace,
+  /import \{[\s\S]*AskSalemView[\s\S]*\} from "@\/components\/lazy-surfaces"/,
+  "workspace should lazy-load the Ask Salem page",
+);
 assert.doesNotMatch(workspace, /SalemWidget|salemRetreating/, "workspace must not render or compute floating Salem state");
-assert.match(workspace, /<SalemChatPanel\s+familiarId=\{/, "workspace must render Salem in the split with the local familiar id");
-assert.match(workspace, /<SalemChatPanel[\s\S]*?model=\{/, "workspace must render Salem in the split with the local familiar's model");
+assert.match(
+  workspace,
+  /mode === "salem" \? \(\s*<AskSalemView familiars=\{familiars\} activeFamiliarId=\{activeId\} \/>/,
+  "workspace renders Ask Salem with the familiar roster and active familiar",
+);
 
 // 7. CSS classes present
-const css = await readFile(path.join(root, "src/app/globals.css"), "utf8");
+const css = (
+  await Promise.all([
+    "src/app/globals.css",
+    "src/styles/globals/foundations.css",
+    "src/styles/globals/surface-compact-calendar.css",
+  ].map((file) => readFile(path.join(root, file), "utf8")))
+).join("\n");
 assert.doesNotMatch(css, /\.salem-perch|--salem-proximity/, "floating Salem perch CSS should stay removed");
 assert.match(css, /\.salem-panel/, "must have .salem-panel CSS");
 assert.match(css, /\.salem-panel--rail/, "must support Salem inside the right rail");

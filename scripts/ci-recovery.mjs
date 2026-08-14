@@ -227,6 +227,22 @@ async function decideRecovery(context, runs, now) {
   // Observed on #4514: head 02f74118ff carried exactly one run, cancelled, and
   // `pnpm ci:recovery` reported it as covered and declined to help (cave-geaji).
   if (latest.status === "completed" && latest.conclusion === CANCELLED) {
+    // …unless recovery has already been tried on this exact head and the head
+    // is STILL sitting on a cancellation. Dispatching again would repeat
+    // whatever did not work the first time, and the cooldown does not stop it:
+    // it only bounds the rate, so a head that keeps ending up cancelled draws
+    // one dispatch per cooldown forever.
+    //
+    // That is not hypothetical. On #4618 head 11aceeb89 collected three
+    // cancelled runs and no verdict — the dispatches shared ci.yml's
+    // concurrency group and cancelled the very runs they were rescuing, and
+    // each cancellation then read as this wedge and justified the next
+    // dispatch (cave-f22tp). ci.yml no longer lets a dispatch cancel, which
+    // removes the cause; this removes the loop even if something else cancels.
+    const alreadyRecovered = runs.some((run) => run.event === "workflow_dispatch");
+    if (alreadyRecovered) {
+      return { recover: false, reason: "recovery_already_attempted" };
+    }
     return { recover: true, reason: "cancelled_latest_run" };
   }
 

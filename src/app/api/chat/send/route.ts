@@ -289,6 +289,7 @@ import {
   modelIntentForSend,
   isModelOverrideScope,
   isValidModelOverrideIntent,
+  needsClaudeOpus5Routability,
   offlineQueuedModelIntent,
   persistedTurnControls,
   persistSendModelIntent,
@@ -296,6 +297,7 @@ import {
   savedModelSelectionRejection,
   turnRetryModel,
 } from "./chat-send-models";
+import { claudeOpus5Routability } from "@/lib/server/claude-models";
 import {
   appliedModelControls,
   modelControlCapabilities,
@@ -2038,14 +2040,14 @@ export async function POST(req: Request) {
       ? await resolveInstalledClaudeCompatibility()
       : null;
   await ensureAdapterManifestScaffold(binding.harness);
-// The Responses API does not expose a documented, enforceable equivalent of
-  // Cave's read-only sandbox. Do not downgrade that security promise to a
-  // prompt merely because a familiar opted into the structured transport.
-  if (hermesDirect && hermesApi && body.permissionMode === "read") {
+  // Neither the Responses API nor the direct CLI exposes a documented,
+  // enforceable equivalent of Cave's read-only sandbox. Reject both transports
+  // rather than silently launching Hermes with full local access.
+  if ((hermesDirect || hermesApi) && body.permissionMode === "read") {
     return new Response(
       JSON.stringify({
         ok: false,
-        error: "Hermes API does not support Cave's Read-only mode yet. Switch Access to Full access to run it.",
+        error: "Hermes does not support Cave's Read-only mode yet. Switch Access to Full access to run it.",
       }),
       { status: 501, headers: { "content-type": "application/json" } },
     );
@@ -2414,6 +2416,27 @@ export async function POST(req: Request) {
       modelApplicationState: "rejected",
       modelApplicationReason: "Model forwarding is unavailable for this runtime binding.",
     }, { status: 400 });
+  }
+  // Opus 5 is the one selection whose launch value is an alias: it is forwarded
+  // as `anthropic/opus` and the echo is mapped back to the Cave id. That is
+  // only truthful while the probe that gated the picker still holds, and a
+  // selection persisted to a conversation or familiar default outlives it. Ask
+  // again here rather than reporting a model this install can no longer route.
+  // `unknown` proceeds unchanged — a probe that could not run is not evidence
+  // about the model, the same reasoning the forwarding probe applies above.
+  if (needsClaudeOpus5Routability({ harness: binding.harness, desiredModel })) {
+    const routability = await claudeOpus5Routability(body.familiarId);
+    if (routability === "unavailable") {
+      return NextResponse.json({
+        ok: false,
+        code: "unroutable_opus5_selection",
+        error: "This Claude Code install can no longer route Claude Opus 5, so the turn was not run.",
+        desiredModel,
+        modelApplicationState: "rejected",
+        modelApplicationReason:
+          "Claude Opus 5 is selected, but this install no longer resolves the Opus alias to it. Pick another model or restore the Claude Code version and provider configuration that offered it.",
+      }, { status: 400 });
+    }
   }
   const grokForwardModel = grokShouldUseCliDefault({
     modelSource: modelState.source,

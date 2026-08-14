@@ -21,6 +21,11 @@ assert.match(
   "merge passes GitHub's own error message through verbatim",
 );
 assert.doesNotMatch(source, /:\s*token\b/, "merge route must not return token material");
+assert.match(
+  source,
+  /headRepo\.toLowerCase\(\) !== repo\.toLowerCase\(\)/,
+  "branch cleanup must not delete a same-named base branch for a fork PR",
+);
 
 console.log("github-merge-route.test.ts OK");
 assert.match(source, /new Set\(\["squash", "merge", "rebase"\]\)/, "merge methods are allow-listed");

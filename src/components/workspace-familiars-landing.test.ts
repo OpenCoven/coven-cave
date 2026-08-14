@@ -73,7 +73,7 @@ for (const component of [
   "OnboardingOverlay",
   "OpenCovenSubmissionPage",
   "RailInspector",
-  "SalemChatPanel",
+  "AskSalemView",
   "ShortcutsSheet",
 ]) {
   assert.match(
@@ -238,7 +238,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const addSplitTarget = useCallback\(\(target: SplitTarget, side: "left" \| "right" = "right"\) => \{[\s\S]*if \(chatProjectBlockedRef\.current && splitTargetRendersMode\(target, "chat"\)\) \{[\s\S]*setMode\("home"\);[\s\S]*return;[\s\S]*\}[\s\S]*setSplitSide\(side\);/,
+  /const addSplitTarget = useCallback\(\(target: WorkspacePaneRequest, side: "left" \| "right" = "right"\) => \{[\s\S]*if \(chatProjectBlockedRef\.current && splitTargetRendersMode\(target, "chat"\)\) \{[\s\S]*setMode\("home"\);[\s\S]*return;[\s\S]*\}[\s\S]*setSplitSide\(side\);/,
   "Workspace blocks chat-rendering split targets under the first-project gate and reroutes the primary pane to Home",
 );
 assert.match(

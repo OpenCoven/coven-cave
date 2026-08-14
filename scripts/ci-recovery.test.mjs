@@ -644,6 +644,42 @@ test("a cancelled run that is the NEWEST for a static head is recovered", async 
   assert.equal(result.recoveries[0].reason, "cancelled_latest_run");
 });
 
+test("a head still cancelled after a recovery dispatch is not recovered again", async () => {
+  // The loop cave-f22tp fixes. Recovery already ran on this head and the head
+  // is STILL sitting on a cancellation, so dispatching repeats whatever did not
+  // work. The cooldown does not save us: it bounds the rate, not the repetition,
+  // so a head that keeps ending up cancelled draws one dispatch per cooldown
+  // forever.
+  //
+  // Live case: #4618 head 11aceeb89 collected three cancelled runs and no
+  // verdict — each dispatch cancelled the run it was rescuing (shared
+  // concurrency group), and each cancellation then read as the wedge above.
+  const pr = pull();
+  const dispatched = workflowRun({
+    id: 9401,
+    status: "completed",
+    conclusion: "cancelled",
+    headSha: pr.head.sha,
+    event: "workflow_dispatch",
+    createdAt: new Date(NOW - 3 * 60 * 60 * 1000).toISOString(),
+  });
+  const cancelled = workflowRun({
+    id: 9402,
+    status: "completed",
+    conclusion: "cancelled",
+    headSha: pr.head.sha,
+  });
+  const fixture = githubFixture({
+    pulls: [pr],
+    runsBySha: { [pr.head.sha]: [cancelled, dispatched] },
+  });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, false));
+
+  assert.equal(result.recoveries.length, 0, "a second recovery on the same head must not fire");
+  assert.equal(result.skipped[0].reason, "recovery_already_attempted");
+});
+
 test("a cancelled run underneath a NEWER run is left alone", async () => {
   // The case the original reasoning describes and gets right: something newer
   // is already running for this head, so the cancellation was a supersession
