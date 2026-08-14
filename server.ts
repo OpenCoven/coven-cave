@@ -262,30 +262,33 @@ function scrollbackFrom(session: PtySession, cursor: number): Buffer[] {
   return output;
 }
 
-function getTokensFromCookie(header: string | undefined): string[] {
-  if (!header) return [];
-  const tokens: string[] = [];
+function parseCookies(header: string | undefined): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!header) return map;
   for (const part of header.split(";")) {
     const [key, ...rest] = part.trim().split("=");
-    if (key === ACCESS_COOKIE || key === LEGACY_ACCESS_COOKIE) {
-      tokens.push(decodeURIComponent(rest.join("=") ?? ""));
+    if (!key) continue;
+    try {
+      map.set(key, decodeURIComponent(rest.join("=")));
+    } catch {
+      // Leave malformed percent-encoded values out of the map.
     }
+  }
+  return map;
+}
+
+function getTokensFromCookie(header: string | undefined): string[] {
+  const cookies = parseCookies(header);
+  const tokens: string[] = [];
+  for (const name of [ACCESS_COOKIE, LEGACY_ACCESS_COOKIE]) {
+    const value = cookies.get(name);
+    if (value !== undefined) tokens.push(value);
   }
   return tokens;
 }
 
 function getCookie(header: string | undefined, name: string): string | null {
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const [key, ...rest] = part.trim().split("=");
-    if (key !== name) continue;
-    try {
-      return decodeURIComponent(rest.join("="));
-    } catch {
-      return null;
-    }
-  }
-  return null;
+  return parseCookies(header).get(name) ?? null;
 }
 
 function timingSafeEqualString(a: string, b: string): boolean {
@@ -1129,7 +1132,7 @@ server.on("upgrade", (req, socket, head) => {
   try {
     ({ pathname, query } = parseUpgradeTarget(req.url ?? "/"));
   } catch {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -1158,7 +1161,7 @@ server.on("upgrade", (req, socket, head) => {
     tailnetAuthenticated || (isPtyAuthRequired() ? isAuthorized(req, query) : false);
 
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
-    socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+    socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -1176,7 +1179,7 @@ server.on("upgrade", (req, socket, head) => {
   // exempt, mirroring proxy.ts's local-peer exemption on REST (cave-vn2r);
   // Tailscale-forwarded upgrades carry forwarding headers and stay gated.
   if (isPtyAuthRequired() && !tokenAuthenticated && !isDirectLoopbackRequest(req)) {
-    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+    socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -1189,21 +1192,21 @@ server.on("upgrade", (req, socket, head) => {
     !isDirectLoopbackRequest(req) &&
     !hasValidPasskeyPresence(req, tailnetNodeId)
   ) {
-    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+    socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
 
   const threadId = String(query.threadId ?? "");
   if (!threadId) {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
 
   const replayCursor = parsePtyReplayCursor(query.ptyReplayCursor);
   if (replayCursor === null) {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -1212,7 +1215,7 @@ server.on("upgrade", (req, socket, head) => {
   try {
     cwd = validateCwd(query.projectRoot ? String(query.projectRoot) : undefined);
   } catch {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }

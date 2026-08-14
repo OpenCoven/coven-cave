@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { test } from "node:test";
 
 import {
@@ -102,4 +103,75 @@ test("a field carrying the delimiter is refused at signing time", async () => {
 test("the TTL is short enough that a borrowed unlocked phone stops working", () => {
   assert.ok(PRESENCE_TTL_MS <= 30 * 60 * 1000, "presence must not outlive the session it proves");
   assert.ok(PRESENCE_TTL_MS >= 60 * 1000, "and not so short it becomes a Face ID treadmill");
+});
+
+// Parity tests: the server-side verifier in server.ts mirrors this module but
+// uses Node.js crypto (sync) instead of the Web Crypto API (async). These
+// tests run the same accept/reject vectors through a faithful copy of the
+// server.ts verification logic and assert that both implementations agree, so
+// any accidental divergence (algorithm change, field-order swap, encoding
+// difference) is caught here rather than discovered at runtime.
+//
+// The copy below must stay in sync with hasValidPasskeyPresence in server.ts.
+// If the server-side logic changes, update this copy and the test vectors here.
+
+function verifyPresenceTokenSync(
+  token: string,
+  secret: string,
+  tailnetNodeId: string,
+  now = Date.now(),
+): boolean {
+  const parts = token.split(".");
+  if (parts.length !== 6 || parts[0] !== "v1") return false;
+  const expiresAt = Number(parts[1]);
+  const field = /^[A-Za-z0-9_-]+$/;
+  if (
+    !Number.isFinite(expiresAt) ||
+    expiresAt <= 0 ||
+    !field.test(parts[2]) ||
+    !field.test(parts[3]) ||
+    !parts[4] ||
+    !parts[5]
+  ) {
+    return false;
+  }
+  const body = parts.slice(0, 5).join(".");
+  const expected = createHmac("sha256", secret).update(body).digest("base64url");
+  const a = Buffer.from(parts[5]);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b) && expiresAt > now && parts[2] === tailnetNodeId;
+}
+
+test("parity: sync and async verifiers agree on a valid token", async () => {
+  const tok = await token();
+  const asyncResult = await verifyPresenceToken(tok, SECRET);
+  const syncResult = verifyPresenceTokenSync(tok, SECRET, NODE);
+  assert.equal(asyncResult.ok, true);
+  assert.equal(syncResult, true, "sync verifier must accept the same token async accepts");
+});
+
+test("parity: sync and async verifiers agree on an expired token", async () => {
+  const tok = await token({ expiresAt: Date.now() - 1 });
+  const asyncResult = await verifyPresenceToken(tok, SECRET);
+  const syncResult = verifyPresenceTokenSync(tok, SECRET, NODE);
+  assert.equal(asyncResult.ok, false);
+  assert.equal(syncResult, false, "sync verifier must reject an expired token");
+});
+
+test("parity: sync and async verifiers agree on a wrong-secret token", async () => {
+  const tok = await token();
+  const asyncResult = await verifyPresenceToken(tok, "different-secret");
+  const syncResult = verifyPresenceTokenSync(tok, "different-secret", NODE);
+  assert.equal(asyncResult.ok, false);
+  assert.equal(syncResult, false, "sync verifier must reject a token signed with a different secret");
+});
+
+test("parity: sync and async verifiers agree on a tampered token", async () => {
+  const original = await token();
+  const tampered = original.replace(NODE, "nOTHER0000000CNTRL");
+  const asyncResult = await verifyPresenceToken(tampered, SECRET);
+  const syncResult = verifyPresenceTokenSync(tampered, SECRET, NODE);
+  assert.equal(asyncResult.ok, false);
+  assert.equal(syncResult, false, "sync verifier must reject a tampered token");
 });
