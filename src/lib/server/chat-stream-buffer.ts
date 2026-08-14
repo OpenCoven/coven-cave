@@ -272,7 +272,13 @@ export function openRunBuffer(
       }
     },
     setHooks: (hooks) => {
-      if (!buffer.done) buffer.hooks = hooks;
+      if (buffer.done) return;
+      buffer.hooks = hooks;
+      // A producer may open its canonical buffer before it has a stop handle
+      // (notably while Gateway dispatch is awaiting acceptance). Reconcile a
+      // tail that attached in that interval so its detach still re-arms the
+      // producer's backpressure/cleanup policy once hooks become available.
+      if (hooks && buffer.liveTails > 0) hooks.attach();
     },
     finish: () => {
       // Every closure path (normal completion, abort, upstream error) lands

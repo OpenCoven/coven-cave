@@ -220,29 +220,29 @@ const dispatch = await dispatchOpenClawGatewayTurn({
         if (method === "chat.send") {
           assert.equal(params.idempotencyKey, "cave-request-123", "Gateway receives Cave's stable request id");
           requestOptions?.onSent?.();
-          queueMicrotask(() => {
-            options.onEvent?.({
-              type: "event",
-              event: "chat",
-              payload: { ...delta, runId: "foreign-run", seq: 0 },
-            });
-            options.onEvent?.({
-              type: "event",
-              event: "chat",
-              payload: { ...delta, seq: 0 },
-            });
-            options.onEvent?.({
-              type: "event",
-              event: "chat",
-              payload: {
-                runId: expected.runId,
-                sessionKey: expected.sessionKey,
-                agentId: expected.agentId,
-                seq: 1,
-                state: "final",
-                message: { text: "Hello" },
-              },
-            });
+          // The Gateway client may synchronously invoke callbacks before
+          // `chat.send` resolves with the accepted run id.
+          options.onEvent?.({
+            type: "event",
+            event: "chat",
+            payload: { ...delta, runId: "foreign-run", seq: 0 },
+          });
+          options.onEvent?.({
+            type: "event",
+            event: "chat",
+            payload: { ...delta, seq: 0 },
+          });
+          options.onEvent?.({
+            type: "event",
+            event: "chat",
+            payload: {
+              runId: expected.runId,
+              sessionKey: expected.sessionKey,
+              agentId: expected.agentId,
+              seq: 1,
+              state: "final",
+              message: { text: "Hello" },
+            },
           });
           return { runId: expected.runId };
         }

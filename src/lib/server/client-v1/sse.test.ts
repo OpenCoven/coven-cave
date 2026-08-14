@@ -10,6 +10,7 @@ import {
   translateStreamEvent,
 } from "./sse.ts";
 import {
+  canonicalizeAndRecordRunStreamEvent,
   getRunBufferStatus,
   openRunBuffer,
   resetRunBuffersForTest,
@@ -163,6 +164,42 @@ test("resume replays only seq greater than cursor through the shared translator"
   );
   assert.ok(duplicate);
   assert.equal(await duplicate.text(), "");
+});
+
+test("client-v1 translates synchronous pre-accept Gateway events from their canonical replay entries", async () => {
+  resetRunBuffersForTest();
+  const key = "client-v1-gateway-sync-early";
+  const run = openRunBuffer([key]);
+  const live: Array<{ seq: number | undefined }> = [];
+  const dispatch = () => {
+    const recorded = canonicalizeAndRecordRunStreamEvent(run, {
+      kind: "assistant_chunk",
+      text: "early Gateway text",
+    });
+    assert.ok(recorded);
+    live.push(recorded);
+    return { kind: "accepted" as const };
+  };
+
+  assert.equal(dispatch().kind, "accepted");
+  assert.ok(canonicalizeAndRecordRunStreamEvent(run, { kind: "done", isError: false }));
+  run.finish();
+  const response = createResumedRunStream(
+    key,
+    0,
+    context,
+    new AbortController().signal,
+  );
+  assert.ok(response);
+  const text = await response.text();
+  assert.deepEqual(sseFrames(text), [{
+    id: live[0]!.seq,
+    payload: { type: "message.delta", text: "early Gateway text" },
+  }, {
+    id: 2,
+    payload: { type: "run.completed", conversationId: context.conversationId },
+  }]);
+  resetRunBuffersForTest();
 });
 
 function assistantChunkAtSerializedSize(byteLength: number) {

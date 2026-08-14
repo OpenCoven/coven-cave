@@ -191,6 +191,7 @@ import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
   dispatchOpenClawGatewayTurn,
   openClawGatewayPairedDeviceAuthStatus,
+  type OpenClawGatewayDispatch,
 } from "@/lib/openclaw-gateway";
 import {
   OpenClawAgentResolutionError,
@@ -732,6 +733,11 @@ function openClawChatResponse(args: {
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
       let closed = false;
+      // Reserve the Cave-owned identity and open its canonical event history
+      // before resolving or dispatching anything. Gateway `chat.send` may
+      // synchronously drain callbacks before its accepted response returns.
+      const conversationId = args.body.sessionId ?? crypto.randomUUID();
+      const runBuffer = openRunBuffer([args.body.runId, conversationId]);
       // A user "stop" aborts the request while the OpenClaw child is still
       // running; its late `close`/`error` handlers keep calling push after the
       // client stream has been cancelled. Guard every enqueue so those tail
@@ -752,7 +758,6 @@ function openClawChatResponse(args: {
           if (!args.req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
         }
       };
-      let runBuffer: RunBufferHandle | null = null;
       const pushProgress = (
         id: string,
         label: string,
@@ -779,14 +784,11 @@ function openClawChatResponse(args: {
           /* already */
         }
       };
-
       push({ kind: "user", text: args.promptText });
-
       const startedAt = Date.now();
       // New chats mint their identity here; continuing chats reuse the one
       // the client got back on the first turn. The gateway session is keyed
       // off this id, so it survives OpenClaw's internal session-id rotation.
-      const conversationId = args.body.sessionId ?? crypto.randomUUID();
       const ownsFirstExchangeTitle = args.ownsFirstExchangeTitle;
       pushProgress("openclaw-resolve", "Resolving OpenClaw agent", "running");
       let agentBinding;
@@ -801,10 +803,25 @@ function openClawChatResponse(args: {
             durationMs: Date.now() - startedAt,
             isError: true,
           });
+          runBuffer.finish();
           close();
           return;
         }
-        throw error;
+        console.warn("[chat] OpenClaw agent resolution failed", error);
+        pushProgress("openclaw-resolve", "OpenClaw agent resolution failed", "error");
+        push({
+          kind: "error",
+          code: "openclaw_agent_resolution_failed",
+          message: "Cave could not resolve the OpenClaw agent.",
+        });
+        push({
+          kind: "done",
+          durationMs: Date.now() - startedAt,
+          isError: true,
+        });
+        runBuffer.finish();
+        close();
+        return;
       }
       const agentId = agentBinding.openclawAgentId;
       pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", `${agentId} (${agentBinding.source})`);
@@ -824,10 +841,25 @@ function openClawChatResponse(args: {
             durationMs: Date.now() - startedAt,
             isError: true,
           });
+          runBuffer.finish();
           close();
           return;
         }
-        throw error;
+        console.warn("[chat] OpenClaw runtime resolution failed", error);
+        pushProgress("openclaw-start", "OpenClaw bridge not started", "error");
+        push({
+          kind: "error",
+          code: "openclaw_runtime_resolution_failed",
+          message: "Cave could not prepare the OpenClaw runtime.",
+        });
+        push({
+          kind: "done",
+          durationMs: Date.now() - startedAt,
+          isError: true,
+        });
+        runBuffer.finish();
+        close();
+        return;
       }
       const responseMetadata: ChatResponseMetadata = {
         familiarId: args.body.familiarId,
@@ -864,9 +896,11 @@ function openClawChatResponse(args: {
           push({ kind: "tool_use", ...tool });
         }
       };
-      const gatewayAuth = openClawGatewayPairedDeviceAuthStatus();
-      const gatewayDispatch = gatewayAuth.available
-        ? await dispatchOpenClawGatewayTurn({
+      let gatewayDispatch: OpenClawGatewayDispatch;
+      try {
+        const gatewayAuth = openClawGatewayPairedDeviceAuthStatus();
+        gatewayDispatch = gatewayAuth.available
+          ? await dispatchOpenClawGatewayTurn({
         sessionKey: openClawSessionKey(conversationId),
         agentId,
         message: args.harnessPrompt,
@@ -993,13 +1027,32 @@ function openClawChatResponse(args: {
             settleOpenGatewayTools("[tool did not settle before the Gateway turn ended]");
             pushProgress("openclaw-gateway", "OpenClaw Gateway", "error", event.message);
           }
-        },
-      })
-        : { kind: "unavailable" as const, reason: gatewayAuth.reason ?? "Gateway paired-device authentication is unavailable" };
+          },
+        })
+          : { kind: "unavailable" as const, reason: gatewayAuth.reason ?? "Gateway paired-device authentication is unavailable" };
+      } catch (error) {
+        console.warn("[chat] OpenClaw Gateway dispatch failed", error);
+        pushProgress("openclaw-gateway", "OpenClaw Gateway dispatch failed", "error");
+        push({
+          kind: "error",
+          code: "openclaw_gateway_dispatch_failed",
+          message: "Cave could not start the OpenClaw Gateway turn.",
+        });
+        push({
+          kind: "done",
+          durationMs: Date.now() - startedAt,
+          isError: true,
+          responseMetadata,
+        });
+        runBuffer.finish();
+        close();
+        return;
+      }
       if (gatewayDispatch.kind === "indeterminate") {
         pushProgress("openclaw-gateway", "OpenClaw Gateway dispatch is indeterminate", "error", gatewayDispatch.reason);
         push({ kind: "error", code: "openclaw_gateway_indeterminate", message: gatewayDispatch.reason });
         push({ kind: "done", durationMs: Date.now() - startedAt, isError: true, responseMetadata });
+        runBuffer.finish();
         close();
         return;
       }
@@ -1050,7 +1103,7 @@ function openClawChatResponse(args: {
             stopDetachedGateway();
           }, CHAT_DETACH_MAX_MS);
         };
-        runBuffer = openRunBuffer([args.body.runId, conversationId], {
+        runBuffer.setHooks({
           attach: () => {
             if (detachKillTimer != null) {
               clearTimeout(detachKillTimer);
@@ -1201,7 +1254,7 @@ function openClawChatResponse(args: {
           responseMetadata,
         });
         gatewayDispatch.close();
-        runBuffer?.finish();
+        runBuffer.finish();
         await sleep(20);
         close();
         return;
@@ -1233,6 +1286,7 @@ function openClawChatResponse(args: {
           durationMs: Date.now() - startedAt,
           isError: true,
         });
+        runBuffer.finish();
         close();
         return;
       }
@@ -1272,7 +1326,7 @@ function openClawChatResponse(args: {
       // Re-attach (GET /api/chat/stream) cancels the pending kill; the last
       // tail dropping re-arms it — but only once the ORIGINAL request is
       // gone, so a resume tail closing can't kill a still-attached turn.
-      runBuffer = openRunBuffer([args.body.runId, conversationId], {
+      runBuffer.setHooks({
         attach: () => {
           if (detachKillTimer != null) {
             clearTimeout(detachKillTimer);
@@ -1336,7 +1390,7 @@ function openClawChatResponse(args: {
         if (detachKillTimer != null) clearTimeout(detachKillTimer);
         markChatRunProjectionSettled(runHandle);
         unregisterChatRun(runHandle);
-        runBuffer?.finish();
+        runBuffer.finish();
         close();
       };
       const attachChild = (launchedChild: ReturnType<typeof spawn>) => {
@@ -1567,7 +1621,7 @@ function openClawChatResponse(args: {
           sessionId: sessionId ?? undefined,
           responseMetadata,
         });
-        runBuffer?.finish();
+        runBuffer.finish();
         await sleep(20);
         close();
       }
