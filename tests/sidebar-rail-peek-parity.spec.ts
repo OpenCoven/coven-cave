@@ -61,6 +61,14 @@ async function railThenPeek(page: Page) {
   // Hover-peek: the aside swaps --rail for --peek without changing collapse state.
   await page.locator(RAIL).hover();
   await expect(page.locator(PEEK)).toBeVisible();
+  // The overlay slides in from translateX(-8px) over 0.13s. Measuring before it
+  // lands reads the slide as a layout shift and fails by a few random pixels —
+  // wait for the animation itself rather than for a wall-clock guess.
+  await page
+    .locator(PEEK)
+    .evaluate((el) =>
+      Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished.catch(() => undefined))),
+    );
   const peek = await probe(page, PEEK);
   return { rail, peek };
 }
