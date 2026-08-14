@@ -148,7 +148,7 @@ if (process.platform !== "win32") {
     const isolatedCovenBin = await import(`./coven-bin.ts?vault-free=${Date.now()}`);
     assert.equal(
       isolatedCovenBin.covenBin(),
-      path.join(fakeBin, "coven"),
+      await realpath(path.join(fakeBin, "coven")),
       "the isolated default binary discovery exercises the fake NVM toolchain",
     );
     assert.equal(
@@ -628,7 +628,7 @@ await writeFile(
 
 assert.deepEqual(
   covenLaunchCommandForBinary(npmShim, "win32"),
-  { command: process.execPath, fixedArgs: [npmShimScript] },
+  { command: process.execPath, fixedArgs: [await realpath(npmShimScript)] },
   "Windows npm .cmd shims launch through node plus the shim target script",
 );
 
@@ -648,7 +648,7 @@ await writeFile(
 );
 assert.deepEqual(
   covenLaunchCommandForBinary(nativeShim, "win32"),
-  { command: nativeShimTarget, fixedArgs: [] },
+  { command: await realpath(nativeShimTarget), fixedArgs: [] },
   "Windows npm shims that target native executables bypass cmd.exe and preserve argv",
 );
 
@@ -670,7 +670,7 @@ await writeFile(
 
 assert.deepEqual(
   covenLaunchCommandForBinary(covenCodeShim, "win32"),
-  { command: process.execPath, fixedArgs: [covenCodeShimScript] },
+  { command: process.execPath, fixedArgs: [await realpath(covenCodeShimScript)] },
   "Windows npm .cmd shims can target extensionless package bin scripts like coven-code",
 );
 
@@ -681,7 +681,7 @@ await writeFile(
 );
 assert.deepEqual(
   covenLaunchCommandForBinary(covenCodeBat, "win32"),
-  { command: process.execPath, fixedArgs: [covenCodeShimScript] },
+  { command: process.execPath, fixedArgs: [await realpath(covenCodeShimScript)] },
   "Windows .bat shims and the %~dp0 batch form resolve the same extensionless target",
 );
 

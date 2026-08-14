@@ -12,8 +12,8 @@ assert.match(src, /function splitTextForArtifacts/, "has the text→segments spl
 assert.match(src, /<ChatArtifactViewer\b/, "renders the viewer as a block segment");
 assert.match(
   src,
-  /splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\]\)/,
-  "splits remaining prose after image decks, without crossing an inline carousel",
+  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\], onOpenUrl\),\s*\),\s*artifactCtx,\s*\),\s*onOpenUrl,/,
+  "splits specs, image decks, artifacts, and GitHub cards without crossing an inline block",
 );
 assert.match(
   src,
