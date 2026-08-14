@@ -61,6 +61,7 @@ const duplicateWorktreeInventory = path.join(fixtureRoot, "duplicate-worktree-in
 const metadataAlias = path.join(fixtureRoot, "old-alias");
 const orphanedMissingPath = path.join(fixtureRoot, "missing-orphan");
 const orphanedClosedPath = path.join(fixtureRoot, "missing-closed");
+const orphanedContestedPath = path.join(fixtureRoot, "missing-contested");
 const orphanedPresentPath = path.join(repo, ".worktrees", "orphaned-present");
 const orphanedDanglingPath = path.join(repo, ".worktrees", "orphaned-dangling");
 
@@ -2458,7 +2459,7 @@ printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata"
 elif [ "\${LIFECYCLE_ORPHANED_METADATA_AMBIGUOUS:-0}" = "1" ]; then
 printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-orphan-malformed-sibling","status":"open","title":"Malformed sibling orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-malformed","path":"${path.join(fixtureRoot, "missing-orphan-malformed")}","owner":"Kitty","purpose":"Malformed sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-malformed-sibling","path":"relative/orphaned","owner":"Kitty","purpose":"Malformed sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}},{"id":"cave-orphan-duplicate-branch","status":"open","title":"Duplicate branch orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-duplicate-branch","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Duplicate branch fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-duplicate-branch","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Duplicate branch fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}},{"id":"cave-orphan-duplicate-path","status":"open","title":"Duplicate path orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-duplicate-path","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Duplicate path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-duplicate-path-sibling","path":"${orphanedMissingPath}/","owner":"Kitty","purpose":"Duplicate path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_ORPHANED_METADATA:-0}" = "1" ]; then
-printf '%s\n' '[{"id":"cave-orphan","status":"open","title":"Orphaned metadata fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/orphaned","path":"${orphanedMissingPath}/","owner":"Kitty","purpose":"Orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z","futureField":{"preserve":true}}}}},{"id":"cave-present-path","status":"open","title":"Present path fixture","metadata":{"coven":{"worktree":{"branch":"feat/present-path","path":"${orphanedPresentPath}","owner":"Kitty","purpose":"Present path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-dangling-path","status":"open","title":"Dangling path fixture","metadata":{"coven":{"worktree":{"branch":"feat/dangling-path","path":"${orphanedDanglingPath}","owner":"Kitty","purpose":"Dangling path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-closed-orphan","status":"closed","title":"Closed orphaned metadata fixture","metadata":{"coven":{"worktree":{"branch":"feat/closed-orphan","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Closed orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
+printf '%s\n' '[{"id":"cave-orphan","status":"open","title":"Orphaned metadata fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/orphaned","path":"${orphanedMissingPath}/","owner":"Kitty","purpose":"Orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z","futureField":{"preserve":true}}}}},{"id":"cave-present-path","status":"open","title":"Present path fixture","metadata":{"coven":{"worktree":{"branch":"feat/present-path","path":"${orphanedPresentPath}","owner":"Kitty","purpose":"Present path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-dangling-path","status":"open","title":"Dangling path fixture","metadata":{"coven":{"worktree":{"branch":"feat/dangling-path","path":"${orphanedDanglingPath}","owner":"Kitty","purpose":"Dangling path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-closed-orphan","status":"closed","title":"Closed orphaned metadata fixture","metadata":{"coven":{"worktree":{"branch":"feat/closed-orphan","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Closed orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-orphan-contested","status":"open","title":"Contested-by-closed orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-contested","path":"${orphanedContestedPath}","owner":"Kitty","purpose":"Contested-by-closed fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-closed-contender","status":"closed","title":"Closed contender fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-contested","path":"${orphanedContestedPath}","owner":"Kitty","purpose":"Closed contender fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_MALFORMED_WORKTREES:-0}" = "1" ]; then
 printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Malformed array","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":{}}}}]'
 elif [ "\${LIFECYCLE_DUPLICATE_WORKTREE_BRANCH:-0}" = "1" ]; then
@@ -2775,8 +2776,8 @@ exit 0
   const orphanedMetadataReport = JSON.parse(
     patrol(["--json"], { LIFECYCLE_ORPHANED_METADATA: "1" }),
   );
-  assert.equal(orphanedMetadataReport.orphanedMetadata.length, 3);
-  assert.equal(orphanedMetadataReport.orphanedMetadataCount, 3);
+  assert.equal(orphanedMetadataReport.orphanedMetadata.length, 4);
+  assert.equal(orphanedMetadataReport.orphanedMetadataCount, 4);
   assert.deepEqual(orphanedMetadataReport.orphanedMetadataErrors, []);
   assert.equal(orphanedMetadataReport.orphanedMetadataErrorCount, 0);
   const orphanedByBead = new Map(
@@ -2805,6 +2806,15 @@ exit 0
     /exists on disk/i,
   );
   assert.equal(orphanedByBead.has("cave-closed-orphan"), false);
+  // A closed bead must not vote in the ownership tally. cave-closed-contender
+  // claims the same branch AND the same path as the open cave-orphan-contested;
+  // while closed records were counted, that pushed both tallies to 2, stamped
+  // "appears in 2 structured metadata records" on the open record, and set
+  // repairable false. Nothing could ever clear it, because the contender is
+  // closed and the repair loop skips closed beads (cave-yyjfs).
+  assert.equal(orphanedByBead.has("cave-closed-contender"), false);
+  assert.equal(orphanedByBead.get("cave-orphan-contested").repairable, true);
+  assert.deepEqual(orphanedByBead.get("cave-orphan-contested").reasons, []);
   const ambiguousOrphanedMetadataReport = JSON.parse(
     patrol(["--json"], { LIFECYCLE_ORPHANED_METADATA_AMBIGUOUS: "1" }),
   );

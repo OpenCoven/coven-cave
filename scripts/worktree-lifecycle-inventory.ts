@@ -2654,7 +2654,28 @@ function collectOrphanedMetadata(
       return normalized === null ? [] : [normalized];
     }),
   );
-  const structuredRecords = tasks.flatMap((task) => task.structured);
+  // Count ownership over the same population the repair loop below serves:
+  // non-closed beads. A closed bead's record is skipped there
+  // (`if (task.status === "closed") continue;`), so it can never be repaired —
+  // and letting it vote here charged an open bead for an ambiguity that could
+  // never be resolved. Two records naming one branch made the count 2, which
+  // appends "appears in 2 structured metadata records" and sets `repairable`
+  // false; the open record then stayed broken forever because clearing the
+  // other contributor was impossible by construction.
+  //
+  // Measured 2026-08-14: 161 closed beads in this checkout hold a worktree
+  // record whose path is gone, against 3 non-closed. Every correctly-completed
+  // unit adds one — closing the bead is the last step of a clean retirement —
+  // so the pool of unreachable voters only grows (cave-yyjfs).
+  //
+  // Duplicates between two non-closed beads are still counted, which is the
+  // genuine ambiguity the reason exists for. Note the sibling tally at the
+  // `validMetadata` filter further down deliberately stays repository-wide:
+  // it gates budget exceptions and is fail-closed on purpose, where narrowing
+  // the population would *loosen* a budget rather than unblock a repair.
+  const structuredRecords = tasks
+    .filter((task) => task.status !== "closed")
+    .flatMap((task) => task.structured);
   const branchOwnershipCounts = new Map<string, number>();
   const pathOwnershipCounts = new Map<string, number>();
   for (const record of structuredRecords) {
