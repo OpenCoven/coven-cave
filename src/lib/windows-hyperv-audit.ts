@@ -156,6 +156,12 @@ export async function authorizeWindowsHypervAuditRuntime(input: { familiarId: st
 
 export async function runWindowsHypervAudit(authority: WindowsHypervAuditRuntimeAuthority, dependencies: WindowsHypervAuditTestDependencies = {}): Promise<HypervInventory> {
   if (!runtimeAuthorities.has(authority)) throw new WindowsHypervAuditError("capability_required", "Windows Host Audit requires trusted runtime session authority.");
+  // Recheck immediately before crossing the privilege boundary: a grant can
+  // expire or be revoked after the runtime created its opaque authority.
+  const grants = await activeHostCapabilities({ familiarId: authority.familiarId, sessionId: authority.sessionId, platform: "win32" });
+  if (!grants.includes(WINDOWS_HYPERV_AUDIT_CAPABILITY)) {
+    throw new WindowsHypervAuditError("capability_required", "The Hyper-V audit approval expired or was revoked before the helper started.");
+  }
   const helperPath = installManagedHelperPath();
   try {
     const run = dependencies.run ?? systemRunner;

@@ -6,7 +6,7 @@ import { test } from "node:test";
 
 const root = await mkdtemp(path.join(tmpdir(), "cave-hyperv-audit-"));
 process.env.CAVE_HOST_CAPABILITY_GRANTS_PATH_OVERRIDE = path.join(root, "grants.json");
-const { grantHostCapability } = await import("./host-capabilities.ts");
+const { grantHostCapability, revokeHostCapability } = await import("./host-capabilities.ts");
 const { authorizeWindowsHypervAuditRuntime, parseHypervInventory, runWindowsHypervAudit, WindowsHypervAuditError } = await import("./windows-hyperv-audit.ts");
 
 const fixture = JSON.stringify({
@@ -49,6 +49,14 @@ test("unsigned helpers and forged browser-shaped authority fail before the audit
     return fixture;
   } }), (error: unknown) => error instanceof WindowsHypervAuditError && error.code === "signature_rejected");
   assert.equal(auditSpawned, false, "signature rejection must prevent the helper process");
+});
+
+test("a grant revoked after runtime authorization cannot reach signature or helper execution", async () => {
+  const authority = await authorizeWindowsHypervAuditRuntime({ familiarId: "clove", sessionId: "session-1", platform: "win32" });
+  await revokeHostCapability({ familiarId: "clove", sessionId: "session-1", capability: "windows.hyperv.audit.read", actor: "loopback" });
+  let spawned = false;
+  await assert.rejects(() => runWindowsHypervAudit(authority, { run: async () => { spawned = true; return fixture; } }), (error: unknown) => error instanceof WindowsHypervAuditError && error.code === "capability_required");
+  assert.equal(spawned, false);
 });
 
 test("malformed broker output fails closed", () => {
