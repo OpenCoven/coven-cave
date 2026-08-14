@@ -1685,6 +1685,8 @@ export const SUITES = {
     // resolves the pairing-store + credential-store modules (transitively
     // "@/proxy-helpers", "@/lib/coven-paths", "@/lib/server/atomic-write").
     "src/lib/server/client-v1/pairing-exchange.test.ts",
+    // Subprocess crash recovery for the encrypted credential settlement journal.
+    "src/lib/server/client-v1/credential-settlement.test.ts",
     // no "@/" aliases of its own — a self-contained node:sqlite-backed
     // mutex; imports only node builtins and its own sibling module.
     "src/lib/server/client-v1/credential-transaction-lock.test.ts",
