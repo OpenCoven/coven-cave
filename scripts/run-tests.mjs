@@ -1721,6 +1721,11 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  // Imports "@/lib/..." at module scope, so it cannot resolve without the
+  // alias register. It was wired into SUITES without this entry, so the runner
+  // launched it bare and it died at import with ERR_MODULE_NOT_FOUND — hiding
+  // every test after it (cave-ktvy0).
+  "src/lib/server/beads-delivery-source.test.ts",
   // onboarding diagnostics and core tools resolve shared server/API aliases.
   "src/lib/server/onboarding-diagnostics.test.ts",
   "src/lib/server/onboarding-core-tools.test.ts",
