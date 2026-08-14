@@ -88,6 +88,7 @@ export const SUITES = {
     "src/lib/familiar-types.test.ts",
     "src/lib/research-missions.test.ts",
     "src/lib/research-prompt-brief.test.ts",
+    "src/lib/research-refine-direction.test.ts",
     "src/lib/research-autoloop.test.ts",
     "src/lib/research-mission-client.test.ts",
     "src/lib/roving-list.test.ts",
@@ -1713,6 +1714,7 @@ const ALIAS_LOADER = new Set([
   // the prompt-brief + quick-saves tests type their fixtures against
   // "@/lib/research-missions" and "@/lib/link-organizer"
   "src/lib/research-prompt-brief.test.ts",
+  "src/lib/research-refine-direction.test.ts",
   "src/components/role-surfaces/research-quick-saves.test.ts",
   "src/components/role-surfaces/research-library-view.test.ts",
   "src/components/role-surfaces/research-studio-providers.test.ts",

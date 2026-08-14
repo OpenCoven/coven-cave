@@ -61,6 +61,28 @@ test("checkpoint tiles derive from real data and are omitted when missing", () =
   assert.doesNotMatch(detail, /pricing pages for two hosted harnesses/);
 });
 
+test("checkpoint direction can be drafted agentically without auto-continuing", () => {
+  assert.match(detail, /generateResearchRefineDirection/);
+  assert.match(detail, /Draft with familiar/);
+  assert.match(detail, /Redraft with familiar/);
+  assert.match(detail, /Reading the checkpoint and choosing the highest-value next pass…/);
+  assert.match(detail, /directionRef\.current === baseDraft/);
+  assert.match(detail, /Direction ready — your edits were kept\./);
+  assert.match(detail, /Apply direction/);
+  assert.match(detail, /Keep mine/);
+  assert.match(detail, /maxLength=\{RESEARCH_DIRECTION_MAX_LENGTH\}/);
+  assert.match(
+    detail,
+    /onClick=\{\(\) => void runAction\(\{ action: "refine", direction \}\)\}/,
+  );
+  assert.doesNotMatch(
+    detail,
+    /generateResearchRefineDirection\([\s\S]{0,800}?runAction\(\{ action: "refine"/,
+  );
+  assert.match(css, /\.research-desk-refine__actions \{/);
+  assert.match(css, /\.research-desk-refine__suggestion \{/);
+});
+
 test("running and completed blocks stay honest about their data", () => {
   // Live activity lists real step reports; absence is said, not faked.
   assert.match(detail, /iteration\?\.steps\?\.length \? \(/);
@@ -375,7 +397,7 @@ test("an action settling after a mission switch is discarded", () => {
   // so the fresh mission never inherits a disabled action bar.
   assert.match(
     detail,
-    /missionIdRef\.current = missionId;\s*setBusy\(false\);\s*setRetryRoot\(null\);\s*setActionError\(null\);\s*setDirection\(""\);\s*\}, \[missionId\]\)/,
+    /missionIdRef\.current = missionId;[\s\S]*?setBusy\(false\);\s*setDirectionDrafting\(false\);\s*setDirectionSuggestion\(null\);\s*setRetryRoot\(null\);\s*setActionError\(null\);\s*setDirection\(""\);\s*\}, \[missionId\]\)/,
   );
 });
 
