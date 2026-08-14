@@ -117,6 +117,14 @@ export type PairingExchangeTerminalReplay = {
   credential: PairingExchangeCredentialSnapshot;
 };
 
+export type PairingFinalizeClaimResult =
+  | { kind: "finalized"; replay: PairingExchangeTerminalReplay | null }
+  | { kind: "expired" | "stale" | "missing" | "conflict" };
+
+export type PairingRollbackClaimResult =
+  | { kind: "released" }
+  | { kind: "expired" | "stale" | "missing" | "conflict" };
+
 /**
  * The result of a successful `claimApprovedPairing`: the approved pairing
  * data (safe to pass straight to `issueCredential`) plus an opaque claim id
@@ -152,6 +160,8 @@ type PairingTombstone = {
   createReplay: PairingCreateReplay | null;
   decisionReplay: PairingDecisionReplay | null;
   exchangeReplay: PairingExchangeTerminalReplay | null;
+  terminalClaimId: string | null;
+  terminalReason: "expired" | "stale" | "finalized" | "evicted";
 };
 
 const tombstones = new Map<string, PairingTombstone>();
@@ -261,7 +271,11 @@ function pruneTombstones(now: number): void {
 function tombstone(
   record: PairingRecord,
   now: number,
-  extras: { exchangeReplay?: PairingExchangeTerminalReplay | null } = {},
+  extras: {
+    exchangeReplay?: PairingExchangeTerminalReplay | null;
+    terminalClaimId?: string | null;
+    terminalReason?: PairingTombstone["terminalReason"];
+  } = {},
 ): void {
   pruneTombstones(now);
   if (!tombstones.has(record.id)) {
@@ -277,6 +291,8 @@ function tombstone(
     createReplay: cloneCreateReplay(record.createReplay),
     decisionReplay: cloneDecisionReplay(record.decisionReplay),
     exchangeReplay: cloneExchangeReplay(extras.exchangeReplay ?? null),
+    terminalClaimId: extras.terminalClaimId ?? null,
+    terminalReason: extras.terminalReason ?? "expired",
   });
 }
 
@@ -293,7 +309,10 @@ function tombstone(
 function pruneExpired(now: number): void {
   for (const [id, record] of requests) {
     if (record.expiresAt <= now && (record.claimId === null || isStaleClaim(record, now))) {
-      tombstone(record, now);
+      tombstone(record, now, {
+        terminalClaimId: record.claimId,
+        terminalReason: record.claimId === null ? "expired" : "stale",
+      });
       requests.delete(id);
     }
   }
@@ -324,7 +343,7 @@ function makeCapacityForCreate(now: number): void {
     const oldest = [...requests.entries()].find(([, record]) => record.claimId === null);
     if (!oldest) throw new PairingCapacityError();
     const [id, record] = oldest;
-    tombstone(record, now);
+    tombstone(record, now, { terminalReason: "evicted" });
     requests.delete(id);
   }
 }
@@ -680,41 +699,68 @@ export function claimApprovedPairingWithIdempotency(
   };
 }
 
+function terminalSettlementResult(
+  id: string,
+  claimId: string,
+): { kind: "expired" | "stale" | "missing" | "conflict" } {
+  const marker = tombstones.get(id);
+  if (!marker) return { kind: "missing" };
+  if (marker.terminalClaimId !== claimId) return { kind: "conflict" };
+  if (marker.terminalReason === "expired") return { kind: "expired" };
+  if (marker.terminalReason === "stale") return { kind: "stale" };
+  return { kind: "conflict" };
+}
+
+function hasClaimReplayReceipt(
+  record: PairingRecord,
+  replay: PairingExchangeTerminalReplay | null | undefined,
+): boolean {
+  if (record.claimReplayKey === null && record.claimReplayRequestHash === null) return true;
+  return (
+    replay !== null
+    && replay !== undefined
+    && record.claimReplayKey !== null
+    && record.claimReplayRequestHash !== null
+    && replay.idempotencyKey === record.claimReplayKey
+    && replay.requestHash === record.claimReplayRequestHash
+  );
+}
+
 /**
- * Finish a successful exchange: verifies `claimId` still matches the exact
- * claim this record is currently held by, then deletes + tombstones it — the
- * same terminal state `consumeApprovedPairing` always left a record in, just
- * reached only AFTER the caller's credential issuance has already succeeded.
- * A stale/foreign claim id (wrong claimant, already finalized/rolled back, or
- * the record is simply gone — e.g. pruned or capacity-evicted while claimed)
- * is a safe no-op: returns `false` without touching anything, since there is
- * nothing left here that this claim still owns.
+ * Finish a successful exchange: verifies the exact claim still owns the
+ * record and, for an idempotent exchange, durably writes its replay receipt
+ * into the terminal tombstone. A caller may report successful issuance only
+ * after receiving the `finalized` result with that receipt.
  */
 export function finalizeApprovedPairingClaim(
   id: string,
   claimId: string,
   now = Date.now(),
   options: { exchangeReplay?: PairingExchangeTerminalReplay | null } = {},
-): boolean {
+): PairingFinalizeClaimResult {
   const record = requests.get(id);
-  if (!record || record.claimId !== claimId) return false;
+  if (!record) return terminalSettlementResult(id, claimId);
+  if (record.claimId !== claimId) return { kind: "conflict" };
+  if (!hasClaimReplayReceipt(record, options.exchangeReplay)) return { kind: "conflict" };
   record.consumedAt = now;
   requests.delete(id);
-  // Tombstoned the same way an expired record is, so a replay of this exact
-  // exchange (or a poll after it) is reported as the same stable
-  // "pairing_expired" a genuine TTL expiry gets — never the DECOY_HASH-style
-  // generic response reserved for an unknown id or a wrong secret.
-  tombstone(record, now, { exchangeReplay: options.exchangeReplay ?? null });
-  return true;
+  tombstone(record, now, {
+    exchangeReplay: options.exchangeReplay ?? null,
+    terminalClaimId: claimId,
+    terminalReason: "finalized",
+  });
+  const replay = cloneExchangeReplay(tombstones.get(id)?.exchangeReplay ?? null);
+  if (record.claimReplayKey !== null && replay === null) return { kind: "conflict" };
+  return { kind: "finalized", replay };
 }
 
 /**
  * Undo a claim after a failed exchange (credential issuance threw), WITHOUT
  * ever risking a second active credential for the same approved pairing.
  *
- * A stale/foreign claim id — the record was already finalized, already
- * rolled back, or evicted/pruned out from under this claim entirely — is a
- * safe no-op: returns `false`, and nothing is touched.
+ * A stale/foreign claim id, an expired claim, and a missing record each get a
+ * distinct typed terminal result. Only `released` means a retry can safely
+ * issue a credential.
  *
  * Otherwise: if the record is still within its ORIGINAL TTL (`isLive` uses
  * `expiresAt`, which a claim never extends or resets), the claim is released
@@ -729,20 +775,24 @@ export function rollbackApprovedPairingClaim(
   id: string,
   claimId: string,
   now = Date.now(),
-): boolean {
+): PairingRollbackClaimResult {
   const record = requests.get(id);
-  if (!record || record.claimId !== claimId) return false;
+  if (!record) return terminalSettlementResult(id, claimId);
+  if (record.claimId !== claimId) return { kind: "conflict" };
   if (isLive(record, now)) {
     record.claimId = null;
     record.claimStartedAt = null;
     record.claimReplayKey = null;
     record.claimReplayRequestHash = null;
-    return true;
+    return { kind: "released" };
   }
   record.consumedAt = now;
   requests.delete(id);
-  tombstone(record, now);
-  return true;
+  tombstone(record, now, {
+    terminalClaimId: claimId,
+    terminalReason: "expired",
+  });
+  return { kind: "expired" };
 }
 
 /**
