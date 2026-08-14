@@ -380,6 +380,7 @@ export const SUITES = {
     "src/lib/server/process-intent-lock.test.ts",
     "src/lib/server/research-generations.test.ts",
     "src/lib/server/research-media-store.test.ts",
+    "src/lib/research-media-ticket.test.ts",
     "src/lib/server/chat-attachment-store.test.ts",
     "src/lib/server/research-podcast-pipeline.test.ts",
     "src/lib/server/research-video-renderer.test.ts",
