@@ -2241,13 +2241,7 @@ export function exactRemoteRef(
       error: `${label} probe failed for ${ref}: ${index.error}`,
     };
   }
-  if (index.refs === null) {
-    return {
-      remoteRef: null,
-      error: `${label} probe failed for ${ref}: command unavailable`,
-    };
-  }
-  const oid = index.refs.get(ref);
+  const oid = index.refs!.get(ref);
   if (oid === undefined) {
     // What exit status 2 meant before: the remote simply has no such head.
     return {
