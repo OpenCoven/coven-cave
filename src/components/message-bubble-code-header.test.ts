@@ -78,7 +78,15 @@ assert.match(
   "SyntaxBlock must attach the wiring ref to its dangerouslySetInnerHTML container",
 );
 
-const markdownBlock = /export function MarkdownBlock\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+// Consume the parameter list through its `) {` BEFORE looking for the closing
+// brace. A multi-line destructured parameter list closes with `\n}` before the
+// body even starts, so the old lazy form captured only the parameter names and
+// the pin below could never see the hook call. Anchoring on the body opener
+// keeps the slice to this function — stopping at the next top-level `export`
+// instead would swallow later components that call the same hook, which makes
+// the pin pass even when MarkdownBlock drops it (cave-ktvy0).
+const markdownBlock =
+  /export function MarkdownBlock\([\s\S]*?\)\s*\{[\s\S]*?\n\}/.exec(source)?.[0] ?? "";
 assert.match(
   markdownBlock,
   /useWireCopyButtons\(/,
