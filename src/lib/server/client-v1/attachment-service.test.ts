@@ -19,7 +19,9 @@ const {
   CLIENT_ATTACHMENT_MAX_FILE_BYTES,
   CLIENT_ATTACHMENT_MAX_FILES,
   CLIENT_ATTACHMENT_MAX_RECORDS,
+  CLIENT_ATTACHMENT_MAX_RECORDS_PER_CREDENTIAL,
   CLIENT_ATTACHMENT_MAX_REQUEST_BYTES,
+  CLIENT_UNBOUND_ATTACHMENT_TTL_MS,
   ClientAttachmentError,
   clientAttachmentIndexPath,
   isRetryableClientAttachmentError,
@@ -104,14 +106,33 @@ beforeEach(async () => {
   }
 });
 
-function capacityRecords(count: number): Seed[] {
+const owner = "4e7f2ed1-5d41-4eed-8123-bf4c93f71df4";
+const otherOwner = "5e7f2ed1-5d41-4eed-8123-bf4c93f71df5";
+
+function capacityRecords(
+  count: number,
+  offset = 0,
+  credentialId = owner,
+): Seed[] {
   return Array.from({ length: count }, (_value, index) => ({
-    attachmentId: `${index.toString(16).padStart(8, "0")}-9b43-4abc-876d-${index.toString(16).padStart(12, "0")}.txt`,
+    attachmentId: `${(offset + index).toString(16).padStart(8, "0")}-9b43-4abc-876d-${(offset + index).toString(16).padStart(12, "0")}.txt`,
+    credentialId,
   }));
 }
 
-const owner = "4e7f2ed1-5d41-4eed-8123-bf4c93f71df4";
-const otherOwner = "5e7f2ed1-5d41-4eed-8123-bf4c93f71df5";
+const capacityOwners = [
+  owner,
+  otherOwner,
+  "6e7f2ed1-5d41-4eed-8123-bf4c93f71df5",
+  "7e7f2ed1-5d41-4eed-8123-bf4c93f71df5",
+  "8e7f2ed1-5d41-4eed-8123-bf4c93f71df5",
+  "9e7f2ed1-5d41-4eed-8123-bf4c93f71df5",
+  "ae7f2ed1-5d41-4eed-8123-bf4c93f71df5",
+  "be7f2ed1-5d41-4eed-8123-bf4c93f71df5",
+  "ce7f2ed1-5d41-4eed-8123-bf4c93f71df5",
+  "de7f2ed1-5d41-4eed-8123-bf4c93f71df5",
+] as const;
+const freshOwner = "ee7f2ed1-5d41-4eed-8123-bf4c93f71df5";
 const firstId = "9f4145de-9b43-4abc-876d-81ef63de60e0.png";
 const secondId = "8f4145de-9b43-4abc-876d-81ef63de60e1.jpg";
 
@@ -310,57 +331,101 @@ test("uploaded attachments persist deterministic bounded receipts, keep a minima
   assert.equal(sharedRead.mimeType, "image/png", "once bound, the attachment becomes conversation-shared");
 });
 
-test("the index capacity accepts 9,999 -> 10,000 records and rejects 10,000 -> 10,001 before writing files", async () => {
-  const [prepared] = await parseFiles(testFile(textBytes, "capacity.txt", "text/plain"));
-  await seed(capacityRecords(CLIENT_ATTACHMENT_MAX_RECORDS - 1));
-
-  await saveUploadedClientAttachments(
-    [prepared],
+test("unbound uploads expire and reclaim their canonical payloads before the next capacity check", async () => {
+  const [expiredUpload] = await parseFiles(testFile(textBytes, "expired.txt", "text/plain"));
+  const [freshUpload] = await parseFiles(testFile(textBytes, "fresh.txt", "text/plain"));
+  const createdAt = 1_000;
+  const [expired] = await saveUploadedClientAttachments(
+    [expiredUpload],
     owner,
     "11111111-2222-4333-8444-555555555555",
-    10,
+    createdAt,
   );
-  assert.equal(
-    JSON.parse(await readFile(indexPath, "utf8")).attachments.length,
-    CLIENT_ATTACHMENT_MAX_RECORDS,
-  );
-  assert.equal((await readdir(canonicalRoot)).length, 2, "the boundary success stores one file and metadata sidecar");
+  const expiredRecord = JSON.parse(await readFile(indexPath, "utf8")).attachments[0] as Seed;
+  await seed([
+    expiredRecord,
+    ...capacityRecords(CLIENT_ATTACHMENT_MAX_RECORDS - 1, 1),
+  ]);
 
-  await rm(indexPath, { force: true });
-  for (const entry of await readdir(canonicalRoot)) await rm(path.join(canonicalRoot, entry), { force: true });
-  await seed(capacityRecords(CLIENT_ATTACHMENT_MAX_RECORDS));
-  await assert.rejects(
-    saveUploadedClientAttachments(
-      [prepared],
-      owner,
-      "21111111-2222-4333-8444-555555555555",
-      11,
-    ),
-    (error: unknown) => isClientAttachmentError(error, 409),
+  const [fresh] = await saveUploadedClientAttachments(
+    [freshUpload],
+    owner,
+    "21111111-2222-4333-8444-555555555555",
+    createdAt + CLIENT_UNBOUND_ATTACHMENT_TTL_MS,
   );
-  assert.equal((await readdir(canonicalRoot)).length, 0, "rejection occurs before canonical persistence");
-  assert.equal(
-    JSON.parse(await readFile(indexPath, "utf8")).attachments.length,
-    CLIENT_ATTACHMENT_MAX_RECORDS,
-    "rejection leaves the index byte-for-byte capacity-safe",
+  const persisted = JSON.parse(await readFile(indexPath, "utf8"));
+  assert.deepEqual(persisted.attachments.map((record: { attachmentId: string }) => record.attachmentId), [fresh.id]);
+  assert.deepEqual(
+    (await readdir(canonicalRoot)).sort(),
+    [`${fresh.id}.meta.json`, fresh.id].sort(),
+    "reclaim removes both the expired payload and its name sidecar",
+  );
+  await assert.rejects(
+    readClientAttachment(expired.id, owner),
+    (error: unknown) => isClientAttachmentError(error, 404),
   );
 });
 
-test("concurrent uploads near capacity serialize to one receipt and preserve the 10,000-record bound", async () => {
-  const [prepared] = await parseFiles(testFile(textBytes, "concurrent.txt", "text/plain"));
-  await seed(capacityRecords(CLIENT_ATTACHMENT_MAX_RECORDS - 1));
+test("per-credential quota prevents one credential from consuming another credential's capacity", async () => {
+  const [prepared] = await parseFiles(testFile(textBytes, "quota.txt", "text/plain"));
+  await seed(capacityRecords(CLIENT_ATTACHMENT_MAX_RECORDS_PER_CREDENTIAL));
 
-  const results = await Promise.allSettled([
+  await assert.rejects(
     saveUploadedClientAttachments(
       [prepared],
       owner,
       "31111111-2222-4333-8444-555555555555",
       10,
     ),
+    (error: unknown) => isClientAttachmentError(error, 409),
+  );
+  await saveUploadedClientAttachments(
+    [prepared],
+    otherOwner,
+    "41111111-2222-4333-8444-555555555555",
+    10,
+  );
+  assert.equal(JSON.parse(await readFile(indexPath, "utf8")).attachments.length, CLIENT_ATTACHMENT_MAX_RECORDS_PER_CREDENTIAL + 1);
+});
+
+test("the global hard limit rejects a new credential before canonical persistence", async () => {
+  await seed(capacityOwners.flatMap((credential, index) =>
+    capacityRecords(CLIENT_ATTACHMENT_MAX_RECORDS_PER_CREDENTIAL, index * CLIENT_ATTACHMENT_MAX_RECORDS_PER_CREDENTIAL, credential),
+  ));
+  const [prepared] = await parseFiles(testFile(textBytes, "global-capacity.txt", "text/plain"));
+
+  await assert.rejects(
     saveUploadedClientAttachments(
       [prepared],
-      owner,
-      "41111111-2222-4333-8444-555555555555",
+      freshOwner,
+      "51111111-2222-4333-8444-555555555555",
+      10,
+    ),
+    (error: unknown) => isClientAttachmentError(error, 409),
+  );
+  assert.equal((await readdir(canonicalRoot)).length, 0, "rejection occurs before canonical persistence");
+  assert.equal(JSON.parse(await readFile(indexPath, "utf8")).attachments.length, CLIENT_ATTACHMENT_MAX_RECORDS);
+});
+
+test("concurrent uploads near capacity serialize to one receipt and preserve the 10,000-record bound", async () => {
+  const [prepared] = await parseFiles(testFile(textBytes, "concurrent.txt", "text/plain"));
+  await seed([
+    ...capacityOwners.slice(0, 9).flatMap((credential, index) =>
+      capacityRecords(CLIENT_ATTACHMENT_MAX_RECORDS_PER_CREDENTIAL, index * CLIENT_ATTACHMENT_MAX_RECORDS_PER_CREDENTIAL, credential)),
+    ...capacityRecords(CLIENT_ATTACHMENT_MAX_RECORDS_PER_CREDENTIAL - 1, 9_000, capacityOwners[9]),
+  ]);
+
+  const results = await Promise.allSettled([
+    saveUploadedClientAttachments(
+      [prepared],
+      freshOwner,
+      "61111111-2222-4333-8444-555555555555",
+      10,
+    ),
+    saveUploadedClientAttachments(
+      [prepared],
+      freshOwner,
+      "71111111-2222-4333-8444-555555555555",
       10,
     ),
   ]);
@@ -382,6 +447,32 @@ test("an existing deterministic attachment replays at full capacity without cons
 
   assert.deepEqual(await saveUploadedClientAttachments([prepared], owner, effectId, 11), first);
   assert.equal(JSON.parse(await readFile(indexPath, "utf8")).attachments.length, CLIENT_ATTACHMENT_MAX_RECORDS);
+});
+
+test("a missing or corrupt unbound payload is repaired from an exact deterministic replay", async () => {
+  const [prepared] = await parseFiles(testFile(textBytes, "repair.txt", "text/plain"));
+  const effectId = "81111111-2222-4333-8444-555555555555";
+  const first = await saveUploadedClientAttachments([prepared], owner, effectId, 10);
+  await rm(path.join(canonicalRoot, first[0].id));
+
+  assert.deepEqual(await saveUploadedClientAttachments([prepared], owner, effectId, 11), first);
+  await writeFile(path.join(canonicalRoot, first[0].id), "corrupt payload");
+  assert.deepEqual(await saveUploadedClientAttachments([prepared], owner, effectId, 12), first);
+  assert.deepEqual((await readClientAttachment(first[0].id, owner)).data, textBytes);
+});
+
+test("a corrupt bound payload is rejected rather than overwritten by an upload replay", async () => {
+  const [prepared] = await parseFiles(testFile(textBytes, "bound-repair.txt", "text/plain"));
+  const effectId = "91111111-2222-4333-8444-555555555555";
+  const first = await saveUploadedClientAttachments([prepared], owner, effectId, 10);
+  await resolveAndBindClientAttachments([first[0].id], owner, "conversation-safe");
+  await writeFile(path.join(canonicalRoot, first[0].id), "corrupt payload");
+
+  await assert.rejects(
+    saveUploadedClientAttachments([prepared], owner, effectId, 11),
+    (error: unknown) => isClientAttachmentError(error, 409),
+  );
+  assert.equal(await readFile(path.join(canonicalRoot, first[0].id), "utf8"), "corrupt payload");
 });
 
 test("an index commit failure removes canonical files created by the failed upload", async () => {

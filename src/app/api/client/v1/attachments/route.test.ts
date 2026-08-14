@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, utimes } from "node:fs/promises";
 import path from "node:path";
 import { after, beforeEach, test } from "node:test";
 
@@ -21,7 +21,14 @@ process.env.COVEN_CAVE_LOCAL_PEER_SECRET = "client-v1-attachments-secret";
 await mkdir(attachmentRoot, { recursive: true });
 
 const { POST } = await import("./route.ts");
-const { CLIENT_ATTACHMENT_MAX_REQUEST_BYTES } = await import("@/lib/server/client-v1/attachment-service.ts");
+const {
+  CLIENT_ATTACHMENT_MAX_REQUEST_BYTES,
+  resolveAndBindClientAttachments,
+} = await import("@/lib/server/client-v1/attachment-service.ts");
+const {
+  CHAT_ATTACHMENT_MAX_AGE_MS,
+  sweepChatImageAttachments,
+} = await import("@/lib/server/chat-attachment-store.ts");
 const { issueCredential } = await import("@/lib/server/client-v1/credential-store.ts");
 const { resetRateLimitsForTest } = await import("@/lib/server/client-v1/rate-limit.ts");
 
@@ -198,6 +205,53 @@ test("upload persists deterministic bounded receipts and exact multipart replays
   ]), { bearer, idempotencyKey }));
   assert.equal(conflict.status, 409);
   assert.equal((await conflict.json()).error.code, "conflict");
+});
+
+test("a same-key ledger replay repairs payloads swept from the canonical store before returning 201", async () => {
+  const bearer = await token();
+  const idempotencyKey = "af4145de-9b43-4abc-876d-81ef63de60e0";
+  const files = [
+    { name: "pixel.png", type: "image/png", bytes: pngBytes },
+    { name: "notes.txt", type: "text/plain", bytes: textBytes },
+  ];
+  const first = await POST(request(uploadForm(files), { bearer, idempotencyKey }));
+  assert.equal(first.status, 201);
+  const firstBody = await first.json();
+
+  const staleAt = new Date(Date.now() - CHAT_ATTACHMENT_MAX_AGE_MS - 1);
+  await Promise.all(firstBody.attachments.map(async ({ id }: { id: string }) => {
+    await utimes(path.join(attachmentRoot, id), staleAt, staleAt);
+  }));
+  assert.equal(await sweepChatImageAttachments(), 2);
+  assert.equal((await readdir(attachmentRoot)).length, 0, "the payload sweep leaves the ledger receipt intact");
+
+  const replay = await POST(request(uploadForm(files), { bearer, idempotencyKey }));
+  assert.equal(replay.status, 201);
+  assert.deepEqual(await replay.json(), firstBody);
+  assert.equal((await readdir(attachmentRoot)).length, 4, "the replay restores payloads and name sidecars");
+});
+
+test("a same-key ledger replay never returns 201 for a missing bound payload", async () => {
+  const issued = await issueCredential({
+    appName: "OpenCoven Chat",
+    installationId: crypto.randomUUID(),
+    scopes: ["attachments:write", "chat:read"],
+  });
+  const idempotencyKey = "bf4145de-9b43-4abc-876d-81ef63de60e0";
+  const files = [{ name: "notes.txt", type: "text/plain", bytes: textBytes }];
+  const first = await POST(request(uploadForm(files), { bearer: issued.token, idempotencyKey }));
+  assert.equal(first.status, 201);
+  const { attachments } = await first.json();
+  await resolveAndBindClientAttachments(
+    [attachments[0].id],
+    issued.credential.id,
+    "conversation-safe",
+  );
+  await rm(path.join(attachmentRoot, attachments[0].id));
+
+  const replay = await POST(request(uploadForm(files), { bearer: issued.token, idempotencyKey }));
+  assert.equal(replay.status, 409, await replay.clone().text());
+  assert.equal((await replay.json()).error.code, "conflict");
 });
 
 test("upload rejects a multipart body whose raw request bytes exceed 25 MiB even when file bytes stay under the cap", async () => {
