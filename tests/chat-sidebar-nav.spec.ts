@@ -14,6 +14,24 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 const NOW = Date.now();
 const iso = (daysAgo: number) => new Date(NOW - daysAgo * 86_400_000).toISOString();
 const NO_ATTENTION = { state: "none", since: null, reason: null } as const;
+const PROJECTS = [
+  {
+    id: "project-alpha",
+    name: "alpha",
+    root: "/repo/alpha",
+    repoUrl: "https://github.com/OpenCoven/alpha",
+    createdAt: iso(60),
+    updatedAt: iso(0),
+  },
+  {
+    id: "project-beta",
+    name: "beta",
+    root: "/repo/beta",
+    repoUrl: "https://github.com/Acme/beta",
+    createdAt: iso(60),
+    updatedAt: iso(4),
+  },
+];
 const SESSIONS = [
   { id: "s1", title: "Refactor auth flow", status: "running", origin: "chat", project_root: "/repo/alpha", updated_at: iso(0), attention: NO_ATTENTION },
   { id: "s2", title: "Fix eslint config", status: "completed", origin: "board", project_root: "/repo/alpha", updated_at: iso(1), attention: NO_ATTENTION },
@@ -170,7 +188,10 @@ async function gotoChat(page: Page) {
   await page.route("**/api/sessions/list**", (route) =>
     route.fulfill({ json: { ok: true, sessions: SESSIONS } }),
   );
-  await page.goto("/?mode=chat");
+  await page.route("**/api/projects**", (route) =>
+    route.fulfill({ json: { ok: true, projects: PROJECTS } }),
+  );
+  await page.goto("/?mode=chat", { waitUntil: "domcontentloaded" });
   // Deep-link to Chat, with a sidebar click fallback if the shell restores Home
   // before the mode param is applied.
   await ensureChatSurface(page);
@@ -226,8 +247,26 @@ test.describe("chat sidebar (session navigator)", () => {
     const groupingTabs = sidebar.getByRole("tablist", { name: "Group chats" });
     await expect(groupingTabs.getByRole("tab", { name: "Recent" })).toHaveAttribute("aria-selected", "true");
     await groupingTabs.getByRole("tab", { name: "Projects" }).click();
-    await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toBeVisible();
-    await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) beta threads/ })).toBeVisible();
+    await expect(sidebar.locator("section.cnav__organization")).toHaveCount(2);
+    await expect
+      .poll(() =>
+        sidebar.locator("section.cnav__organization").evaluateAll((sections) =>
+          sections.map((section) => section.getAttribute("aria-label")),
+        ),
+      )
+      .toEqual(["OpenCoven", "Acme"]);
+    const openCoven = sidebar.locator('section.cnav__organization[aria-label="OpenCoven"]');
+    const acme = sidebar.locator('section.cnav__organization[aria-label="Acme"]');
+    await expect(openCoven.getByRole("button", { name: "Collapse alpha threads" })).toBeVisible();
+    await expect(acme.getByRole("button", { name: "Collapse beta threads" })).toBeVisible();
+
+    const acmeDisclosure = acme.getByRole("button", { name: "Collapse Acme projects" });
+    await acmeDisclosure.click();
+    const expandAcme = acme.getByRole("button", { name: "Expand Acme projects" });
+    await expect(expandAcme).toHaveAttribute("aria-expanded", "false");
+    await expect(acme.getByRole("button", { name: /(Collapse|Expand) beta threads/ })).toHaveCount(0);
+    await expandAcme.click();
+    await expect(acme.getByRole("button", { name: "Collapse beta threads" })).toBeVisible();
 
     // The organize choice persists across a reload.
     await page.reload();
@@ -236,6 +275,42 @@ test.describe("chat sidebar (session navigator)", () => {
     await expect(page.getByRole("button", { name: "Collapse Chat sidebar" })).toHaveAttribute("aria-expanded", "true");
     await expect(reloadedSidebar.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toBeVisible();
     await expect(reloadedSidebar.getByText("Today", { exact: true })).toHaveCount(0);
+  });
+
+  test("search reveals descendants inside a collapsed organization without changing collapse state", async ({ page }) => {
+    await gotoChat(page);
+    const sidebar = page.locator('aside[aria-label="Sidebar"] .chat-sidebar');
+    await sidebar
+      .getByRole("tablist", { name: "Group chats" })
+      .getByRole("tab", { name: "Projects" })
+      .click();
+
+    const openCoven = sidebar.locator('section.cnav__organization[aria-label="OpenCoven"]');
+    const collapseOrganization = openCoven.getByRole("button", { name: "Collapse OpenCoven projects" });
+    await collapseOrganization.click();
+    await expect(openCoven.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toHaveCount(0);
+
+    const search = sidebar.getByRole("searchbox", { name: "Search projects and threads" });
+    await search.fill("Refactor auth flow");
+
+    const searchOrganizationDisclosure = openCoven.getByRole("button", {
+      name: "OpenCoven projects shown for search",
+    });
+    await expect(searchOrganizationDisclosure).toBeDisabled();
+    await expect(searchOrganizationDisclosure).toHaveAttribute("aria-expanded", "true");
+    const searchProjectDisclosure = openCoven.getByRole("button", {
+      name: "alpha threads shown for search",
+    });
+    await expect(searchProjectDisclosure).toBeDisabled();
+    await expect(searchProjectDisclosure).toHaveAttribute("aria-expanded", "true");
+    await expect(openCoven.getByText("Refactor auth flow", { exact: true })).toBeVisible();
+
+    await search.clear();
+    await expect(openCoven.getByRole("button", { name: "Expand OpenCoven projects" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    await expect(openCoven.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toHaveCount(0);
   });
 
   test("search filters threads to matches, with an empty state", async ({ page }) => {
