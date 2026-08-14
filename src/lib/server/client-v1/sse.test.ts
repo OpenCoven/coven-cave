@@ -13,6 +13,7 @@ import {
   getRunBufferStatus,
   openRunBuffer,
   resetRunBuffersForTest,
+  RUN_STREAM_EVENT_MAX_BYTES,
   subscribeRunStream,
 } from "@/lib/server/chat-stream-buffer";
 
@@ -162,6 +163,79 @@ test("resume replays only seq greater than cursor through the shared translator"
   );
   assert.ok(duplicate);
   assert.equal(await duplicate.text(), "");
+});
+
+function assistantChunkAtSerializedSize(byteLength: number) {
+  const empty = JSON.stringify({ kind: "assistant_chunk", text: "" });
+  const text = "x".repeat(byteLength - Buffer.byteLength(empty, "utf8"));
+  const event = { kind: "assistant_chunk", text } as const;
+  assert.equal(Buffer.byteLength(JSON.stringify(event), "utf8"), byteLength);
+  return event;
+}
+
+function ssePayloads(text: string): unknown[] {
+  return [...text.matchAll(/^data: (.+)$/gm)].map((match) => JSON.parse(match[1]));
+}
+
+test("initial and resumed streams share the 128 KiB canonical event boundary", async () => {
+  resetRunBuffersForTest();
+  const key = "run-event-size-boundary";
+  const event = assistantChunkAtSerializedSize(RUN_STREAM_EVENT_MAX_BYTES);
+  const run = openRunBuffer([key]);
+  run.record(event);
+  run.record({ kind: "done", isError: false });
+  run.finish();
+
+  const upstream = new Response(
+    `id: 1\ndata: ${JSON.stringify(event)}\n\n`
+      + `id: 2\ndata: ${JSON.stringify({ kind: "done", isError: false })}\n\n`,
+    { headers: { "content-type": "text/event-stream" } },
+  );
+  const initial = await translateInitialChatResponse(upstream, context, key).text();
+  const resumed = createResumedRunStream(key, 0, context, new AbortController().signal);
+  assert.ok(resumed);
+  const replay = await resumed.text();
+
+  assert.deepEqual(
+    ssePayloads(initial)[0],
+    ssePayloads(replay)[0],
+    "the initial emission is the same canonical at-limit event stored for resume",
+  );
+  assert.equal((ssePayloads(initial)[0] as { type: string }).type, "message.delta");
+  resetRunBuffersForTest();
+});
+
+test("initial translation emits the canonical oversized replacement recorded for resume history", async () => {
+  resetRunBuffersForTest();
+  const key = "run-event-size-replacement";
+  const oversizedReplace = {
+    kind: "assistant_replace",
+    text: `hello${assistantChunkAtSerializedSize(RUN_STREAM_EVENT_MAX_BYTES).text}`,
+  } as const;
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(oversizedReplace), "utf8") > RUN_STREAM_EVENT_MAX_BYTES,
+  );
+  const run = openRunBuffer([key]);
+  run.record({ kind: "assistant_chunk", text: "hello" });
+  run.record(oversizedReplace);
+  run.finish();
+
+  const upstream = new Response(
+    `id: 1\ndata: ${JSON.stringify({ kind: "assistant_chunk", text: "hello" })}\n\n`
+      + `id: 2\ndata: ${JSON.stringify(oversizedReplace)}\n\n`,
+    { headers: { "content-type": "text/event-stream" } },
+  );
+  const initial = await translateInitialChatResponse(upstream, context, key).text();
+  const resumed = createResumedRunStream(key, 0, context, new AbortController().signal);
+  assert.ok(resumed);
+  const replay = await resumed.text();
+
+  assert.deepEqual(ssePayloads(initial), ssePayloads(replay));
+  assert.deepEqual(ssePayloads(initial), [
+    { type: "message.delta", text: "hello" },
+    { type: "run.failed", code: "stream_event_too_large", message: "The run failed." },
+  ]);
+  resetRunBuffersForTest();
 });
 
 test("an evicted cursor emits reconcile_required before retained events", async () => {
