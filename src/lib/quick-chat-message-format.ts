@@ -4,6 +4,7 @@ import {
   stripIncompleteGitHubMarker,
   type GitHubTextPiece,
 } from "./github-blocks.ts";
+import { extractChatResultMarkers } from "./chat-result-markers.ts";
 import { extractNextPaths } from "./next-paths.ts";
 import type { NextPath } from "./next-paths.ts";
 import {
@@ -15,6 +16,7 @@ export type QuickChatAssistantMessage = {
   copyText: string;
   pieces: GitHubTextPiece[];
   skillUpdates: SkillStageUpdate[];
+  authoredResults: ReturnType<typeof extractChatResultMarkers>["results"];
   suggestions: NextPath[];
 };
 
@@ -23,7 +25,10 @@ export function formatQuickChatAssistantMessage(
   streaming: boolean,
 ): QuickChatAssistantMessage {
   const skillSplit = extractSkillMarkers(text);
-  const nextPaths = extractNextPaths(skillSplit.visible);
+  const resultSplit = extractChatResultMarkers(skillSplit.visible, {
+    pending: streaming,
+  });
+  const nextPaths = extractNextPaths(resultSplit.visible);
   const markerSafeText = stripIncompleteGitHubMarker(nextPaths.visible);
   const copyText = stripGitHubMarkers(markerSafeText).trimEnd();
   const slicedPieces = sliceGitHubBlocks(markerSafeText, {
@@ -44,6 +49,7 @@ export function formatQuickChatAssistantMessage(
     copyText,
     pieces,
     skillUpdates: skillSplit.updates,
+    authoredResults: resultSplit.results,
     suggestions: streaming ? [] : nextPaths.suggestions,
   };
 }

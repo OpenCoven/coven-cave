@@ -347,3 +347,23 @@ test("inline code examples cannot activate protocol controls", () => {
   assert.deepEqual(formatted.skillUpdates, []);
   assert.deepEqual(formatted.suggestions, []);
 });
+
+test("quick-chat strips result markers and exposes familiar-authored results", () => {
+  const formatted = formatQuickChatAssistantMessage(
+    [
+      "Checks complete.",
+      '<coven:result id="tests" state="passed" label="Focused tests passed" />',
+    ].join("\n"),
+    false,
+  );
+
+  assert.equal(formatted.copyText, "Checks complete.");
+  assert.deepEqual(formatted.pieces, [{ kind: "text", text: "Checks complete." }]);
+  assert.deepEqual(formatted.authoredResults, [
+    { id: "tests", state: "passed", label: "Focused tests passed", source: "familiar" },
+  ]);
+  assert.doesNotMatch(formatted.copyText, /coven:result/);
+  assert.ok(
+    formatted.pieces.every((piece) => piece.kind !== "text" || !piece.text.includes("coven:result")),
+  );
+});
