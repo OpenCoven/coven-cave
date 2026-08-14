@@ -42,6 +42,10 @@ type RunBuffer = {
    *  — real or synthesized. Once set it is never replaced: it is what makes
    *  `ensureTerminalFailure` idempotent across concurrent callers. */
   terminalEntry: BufferedStreamEvent | null;
+  /** Whether the assistant state immediately before the retained ring can be
+   * reconstructed without events that have already been evicted. A retained
+   * `assistant_replace` later acts as a fresh checkpoint. */
+  assistantStateKnownBeforeOldest: boolean;
 };
 
 // Mirrors the PTY scrollback discipline (server.ts SCROLLBACK_LIMIT_BYTES):
@@ -104,11 +108,45 @@ function appendCanonicalToRing(buffer: RunBuffer, event: StreamEvent): BufferedS
     && buffer.events.length > 1
   ) {
     const dropped = buffer.events.shift();
-    if (dropped) buffer.bytes -= Buffer.byteLength(dropped.json, "utf8");
+    if (dropped) {
+      buffer.bytes -= Buffer.byteLength(dropped.json, "utf8");
+      if (changesAssistantState(dropped.json)) {
+        buffer.assistantStateKnownBeforeOldest = false;
+      }
+    }
   }
   if (!buffer.terminalEntry && isTerminalStreamEvent(event)) buffer.terminalEntry = entry;
   for (const listener of buffer.tailListeners) listener(entry);
   return entry;
+}
+
+/** A dropped text mutation prevents replaying later suffixes from deriving
+ * the prior assistant text. Replacements in retained history can establish a
+ * new checkpoint, but an evicted one cannot be retained as unbounded state. */
+function changesAssistantState(json: string): boolean {
+  try {
+    const event = JSON.parse(json) as { kind?: unknown; text?: unknown };
+    if (event.kind === "assistant_replace") return true;
+    return event.kind === "assistant_chunk"
+      && (typeof event.text !== "string" || event.text.length > 0);
+  } catch {
+    return true;
+  }
+}
+
+function hasCompleteTranslatorSeed(buffer: RunBuffer, seed: BufferedStreamEvent[]): boolean {
+  let complete = buffer.assistantStateKnownBeforeOldest;
+  for (const entry of seed) {
+    try {
+      const event = JSON.parse(entry.json) as { kind?: unknown; text?: unknown };
+      if (event.kind === "assistant_replace" && typeof event.text === "string") {
+        complete = true;
+      }
+    } catch {
+      return false;
+    }
+  }
+  return complete;
 }
 
 /** Canonicalizes an event before appending it to the bounded ring. */
@@ -248,6 +286,7 @@ export function openRunBuffer(
     finishListeners: new Set(),
     reapTimer: null,
     terminalEntry: null,
+    assistantStateKnownBeforeOldest: true,
   };
   for (const key of keys) {
     if (!key) continue;
@@ -295,6 +334,9 @@ export function openRunBuffer(
 export type RunStreamSubscription = {
   /** Retained events through the cursor, used only to reconstruct state. */
   seed: BufferedStreamEvent[];
+  /** The retained seed derives assistant state from run start or a retained
+   * authoritative replacement checkpoint. */
+  translatorSeedComplete: boolean;
   /** Events with seq > cursor that are still retained, oldest first. */
   replay: BufferedStreamEvent[];
   /** Non-null when the cursor pre-dates the retained ring: events up to and
@@ -332,10 +374,12 @@ export function subscribeRunStream(
   const seed = gapBeforeSeq === null
     ? buffer.events.filter((entry) => entry.seq <= cursor)
     : [];
+  const translatorSeedComplete = hasCompleteTranslatorSeed(buffer, seed);
 
   if (cursorAhead) {
     return {
       seed: [],
+      translatorSeedComplete: false,
       replay: [],
       gapBeforeSeq: null,
       cursorAhead: true,
@@ -348,6 +392,7 @@ export function subscribeRunStream(
   if (buffer.done) {
     return {
       seed,
+      translatorSeedComplete,
       replay,
       gapBeforeSeq,
       cursorAhead: false,
@@ -365,6 +410,7 @@ export function subscribeRunStream(
   let unsubscribed = false;
   return {
     seed,
+    translatorSeedComplete,
     replay,
     gapBeforeSeq,
     cursorAhead: false,
