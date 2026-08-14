@@ -146,7 +146,7 @@ async function mintDatabricksToken(workspaceHost: string): Promise<string | null
     const { stdout } = await execFileAsync(
       "databricks",
       ["auth", "token", "--host", workspaceHost],
-      { timeout: 15_000, maxBuffer: 256 * 1024, env: process.env },
+      { windowsHide: true, timeout: 15_000, maxBuffer: 256 * 1024, env: process.env },
     );
     const text = stdout.trim();
     if (!text) return null;

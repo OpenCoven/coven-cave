@@ -27,6 +27,7 @@ const aboutSource = readFileSync(
   new URL("./settings-about.tsx", import.meta.url),
   "utf8",
 );
+const workspacePathField = shellSource.match(/function WorkspacePathField\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
 const aboutCss = readFileSync(
   new URL("../styles/settings-about.css", import.meta.url),
   "utf8",
@@ -39,16 +40,39 @@ const phoneCss = readFileSync(
   new URL("../styles/settings-phone.css", import.meta.url),
   "utf8",
 );
+const generalSection = shellSource.match(/function GeneralSection\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+const voiceSection = shellSource.match(/function VoiceSection\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+assert.doesNotMatch(
+  generalSection,
+  /<VoiceEngineSettings \/>/,
+  "General no longer renders local speech management",
+);
+assert.match(
+  voiceSection,
+  /className="settings-voice"[\s\S]*<SettingsPage[\s\S]*section="voice"[\s\S]*<VoiceProviderSettings localSpeechSettings=\{<VoiceEngineSettings \/>\} \/>/,
+  "Voice uses the standard Settings page and composes local engines at the provider-owned position",
+);
+assert.doesNotMatch(
+  voiceSection,
+  /variant="control-sheet"/,
+  "Voice retains the default overview treatment",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-voice\s*\{[\s\S]{0,160}container-name:\s*settings-general;[\s\S]{0,100}container-type:\s*inline-size/,
+  "Voice participates in the existing narrow Settings row and ruled-header container queries",
+);
 
 assert.match(
   source,
-  /const \[section, setSection\] = useState<Section>\("general"\)/,
+  /useSurfaceHistory<Section>\(\{\s*id:\s*"settings:section",\s*initial:\s*"general"\s*\}\)/,
   "SettingsShell should render the same initial section on server and client",
 );
 
 assert.doesNotMatch(
   source,
-  /useState<Section>\(initialSection\)/,
+  /useState<Section>\(initialSection\)|initial:\s*initialSection/,
   "SettingsShell must not read window.location.hash during the first client render",
 );
 
@@ -343,6 +367,75 @@ assert.match(source, /announce\("Daemon connection saved\."\)/, "saving the daem
 assert.match(source, /announce\(ok \? "Theme synced to phone\." : "Couldn't reach the daemon to sync\.", ok \? "polite" : "assertive"\)/, "resync announces its result");
 assert.match(source, /announce\(`Imported theme/, "importing a theme announces");
 assert.match(source, /aria-label="Workspace path"/, "the workspace path field is labelled");
+assert.ok(workspacePathField.length > 0, "WorkspacePathField source should remain discoverable");
+assert.match(workspacePathField, /const ctl = new AbortController\(\)/, "the workspace path field should own its AbortController");
+assert.match(
+  workspacePathField,
+  /fetch\("\/api\/config\/workspace-path", \{ cache: "no-store", signal: ctl\.signal \}\)/,
+  "the workspace path field should read the narrow workspace-path route",
+);
+assert.doesNotMatch(
+  workspacePathField,
+  /\/api\/daemon\/status/,
+  "the workspace path field should not mount a full daemon-status read just to render workspacePath",
+);
+assert.match(
+  workspacePathField,
+  /if \(ctl\.signal\.aborted\) return;/,
+  "the workspace path field should stay silent after unmount while applying workspacePath",
+);
+assert.match(workspacePathField, /return \(\) => ctl\.abort\(\)/, "the workspace path field should abort on unmount");
+
+// Browse used to mean "hand the path to the OS file manager": a no-op on the
+// web build, and never a way to CHANGE the root. It now opens the in-app
+// folder browser (no native dialog) and persists the pick; revealing the
+// folder natively survives as its own desktop-only control.
+assert.match(
+  workspacePathField,
+  /<DirectoryPickerModal\s+open=\{pickerOpen\}/,
+  "Browse opens the shared in-app folder browser",
+);
+assert.match(
+  workspacePathField,
+  /setFieldError\(""\);\s*setPickerOpen\(true\);/,
+  "the Browse button clears a stale failure before reopening the picker",
+);
+assert.doesNotMatch(
+  workspacePathField,
+  /openError/,
+  "the shared alert slot is not named for only one of the two failures it carries",
+);
+assert.match(
+  workspacePathField,
+  /method: "POST",[\s\S]*body: JSON\.stringify\(\{ dir \}\)/,
+  "choosing a folder persists it through the workspace-path route",
+);
+assert.match(workspacePathField, /announce\("Workspace path saved\."\)/, "a saved path announces");
+assert.match(
+  workspacePathField,
+  /disabled=\{Boolean\(envPin\) \|\| saving\}/,
+  "an env-pinned workspace root cannot be changed from Settings",
+);
+assert.match(
+  workspacePathField,
+  /Pinned by the \{envPin\} environment variable\./,
+  "an env pin explains itself instead of silently ignoring the pick",
+);
+assert.match(
+  workspacePathField,
+  /aria-label="Open workspace folder in file manager"/,
+  "revealing the folder natively survives as its own control",
+);
+assert.match(
+  shellSource,
+  /import \{ DirectoryPickerModal \} from "@\/components\/directory-picker-modal"/,
+  "the settings shell reuses the shared picker rather than a second browser",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-workspace-actions\s*\{[\s\S]*?display:\s*flex/,
+  "the workspace row lays its actions out in a row",
+);
 assert.match(source, /aria-label="Server hub URL"/, "the hub URL input is labelled");
 assert.match(source, /aria-label="Executor addresses, one per line"/, "the executor textarea is labelled");
 assert.match(source, /focusTarget\.focus\(\{ preventScroll: true \}\)/, "a search/deep-link jump moves focus to the target group");
@@ -612,5 +705,21 @@ for (const selector of [
     `${selector} preserves the coarse-pointer touch floor`,
   );
 }
+
+assert.match(
+  source,
+  /export function SettingsShell\(\{ embedded = false \}: \{ embedded\?: boolean \}\)/,
+  "SettingsShell accepts an embedded pane mode",
+);
+assert.match(
+  source,
+  /settings-shell--embedded/,
+  "embedded Settings has an explicit styling hook",
+);
+assert.match(
+  source,
+  /data-tauri-drag-region=\{embedded \? undefined : "deep"\}/,
+  "embedded Settings never claims the native titlebar drag region",
+);
 
 console.log("settings-shell-polish.test.ts OK");

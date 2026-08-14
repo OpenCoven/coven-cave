@@ -108,20 +108,42 @@ export function createElevenLabsMouth(opts: {
   let cancelled = false;
   let currentAudio: HTMLAudioElement | null = null;
   let currentUrl: string | null = null;
+  let currentAbort: AbortController | null = null;
+  /** Settles the promise `speak()` is parked on, so a stop mid-playback lets
+   *  the speech loop's queue keep draining instead of wedging on an `onended`
+   *  that a pause never fires. */
+  let settlePlayback: (() => void) | null = null;
+  /** Bumped by every stop so a synthesis already in flight can tell that its
+   *  utterance has been abandoned. */
+  let generation = 0;
 
   const releaseCurrent = () => {
     if (currentUrl) URL.revokeObjectURL(currentUrl);
     currentUrl = null;
     currentAudio = null;
+    currentAbort = null;
+    settlePlayback = null;
+  };
+
+  const stopCurrent = () => {
+    generation += 1;
+    currentAbort?.abort();
+    currentAudio?.pause();
+    const settle = settlePlayback;
+    releaseCurrent();
+    settle?.();
   };
 
   return {
     async speak(text: string) {
       if (cancelled) return;
+      const gen = generation;
       const clamped =
         text.length > ELEVENLABS_TTS_MAX_CHARS
           ? `${text.slice(0, ELEVENLABS_TTS_MAX_CHARS - 1)}…`
           : text;
+      const controller = new AbortController();
+      currentAbort = controller;
       let res: Response;
       try {
         res = await fetchImpl("/api/voice/elevenlabs/tts", {
@@ -132,13 +154,18 @@ export function createElevenLabsMouth(opts: {
             voiceId: opts.voiceId,
             modelId: opts.modelId,
           }),
+          signal: controller.signal,
         });
       } catch {
+        // An abandoned utterance is not a call failure — a barge-in aborted
+        // its own request on purpose.
+        if (cancelled || gen !== generation || controller.signal.aborted) return;
         throw new VoiceConnectError(
           "elevenlabs_tts_failed",
           "Couldn't reach the ElevenLabs speech proxy — check your connection.",
         );
       }
+      if (cancelled || gen !== generation) return;
       if (!res.ok) {
         let code = "elevenlabs_tts_failed";
         let hint: string | undefined;
@@ -150,16 +177,20 @@ export function createElevenLabsMouth(opts: {
         throw new VoiceConnectError(code, hint);
       }
       const blob = await res.blob();
-      if (cancelled) return;
+      if (cancelled || gen !== generation) return;
       const url = URL.createObjectURL(blob);
       currentUrl = url;
       await new Promise<void>((resolve) => {
         const audio = new Audio();
         currentAudio = audio;
+        let settled = false;
         const done = () => {
+          if (settled) return;
+          settled = true;
           releaseCurrent();
           resolve();
         };
+        settlePlayback = done;
         audio.onended = done;
         audio.onerror = done;
         audio.src = url;
@@ -168,8 +199,11 @@ export function createElevenLabsMouth(opts: {
     },
     cancel() {
       cancelled = true;
-      currentAudio?.pause();
-      releaseCurrent();
+      stopCurrent();
+    },
+    // Barge-in: stop this utterance but stay usable, unlike cancel().
+    interrupt() {
+      stopCurrent();
     },
   };
 }

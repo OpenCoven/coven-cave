@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 
 // repo/src/ — this file lives in repo/scripts/.
 const SRC_BASE = new URL("../src/", import.meta.url);
+const ROOT_PACKAGE_JSON = new URL("../package.json", import.meta.url).href;
 const TRANSFORM_ROOTS = [
   SRC_BASE,
   new URL("../scripts/", import.meta.url),
@@ -26,6 +27,13 @@ const TRANSFORM_ROOTS = [
 const SUFFIXES = ["", ".ts", ".tsx", ".js", ".mjs", "/index.ts", "/index.tsx"];
 
 export async function resolve(specifier, context, nextResolve) {
+  // Next 16 ships the server entry as server.js. Framework source continues to
+  // import the public `next/server` API, but Node 24's ESM resolver no longer
+  // performs that extension fallback when a route-level test imports the real
+  // route graph through this loader.
+  if (specifier === "next/server") {
+    return nextResolve("next/server.js", context);
+  }
   if (specifier.startsWith("@/")) {
     const target = new URL(specifier.slice(2), SRC_BASE); // @/lib/x → repo/src/lib/x
     for (const suffix of SUFFIXES) {
@@ -75,7 +83,10 @@ function isRepoOwnedTransformUrl(url) {
 }
 
 export async function load(url, context, nextLoad) {
-  if (isRepoOwnedTransformUrl(url) && url.endsWith(".json")) {
+  if (
+    (isRepoOwnedTransformUrl(url) || url === ROOT_PACKAGE_JSON) &&
+    url.endsWith(".json")
+  ) {
     const parsed = JSON.parse(await readFile(new URL(url), "utf8"));
     return {
       format: "module",

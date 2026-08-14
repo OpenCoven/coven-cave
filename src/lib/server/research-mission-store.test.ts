@@ -14,28 +14,40 @@ import path from "node:path";
 import type { ResearchMission } from "../research-missions.ts";
 import {
   MAX_RESEARCH_FILE_BYTES,
+  RESEARCH_SESSION_OWNER_WRITE_GRANT_DIAGNOSTIC,
   ResearchFileIntegrityError,
+  assertResearchSessionOwnerOutsideWriteRoots,
+  clearResearchMissionSessionOwner,
   createResearchMissionWorkspace,
   isResearchFileIntegrityError,
   listResearchMissions,
   loadResearchMission,
+  loadResearchMissionSessionOwner,
   missionArtifactPath,
   readValidatedMissionFile,
+  recordResearchMissionSessionOwner,
+  researchMissionSessionOwnersRoot,
   researchMissionWorkspacePath,
   saveResearchMission,
 } from "./research-mission-store.ts";
 
 const originalRoot = process.env.COVEN_RESEARCH_MISSIONS_DIR;
+const originalOwnersRoot = process.env.COVEN_RESEARCH_SESSION_OWNERS_DIR;
 let root = "";
+let ownerRoot = "";
 
 before(async () => {
   root = await mkdtemp(path.join(os.tmpdir(), "research-store-"));
-  process.env.COVEN_RESEARCH_MISSIONS_DIR = root;
+  process.env.COVEN_RESEARCH_MISSIONS_DIR = path.join(root, "missions");
+  ownerRoot = path.join(root, "private", "session-owners");
+  process.env.COVEN_RESEARCH_SESSION_OWNERS_DIR = ownerRoot;
 });
 
 after(async () => {
   if (originalRoot === undefined) delete process.env.COVEN_RESEARCH_MISSIONS_DIR;
   else process.env.COVEN_RESEARCH_MISSIONS_DIR = originalRoot;
+  if (originalOwnersRoot === undefined) delete process.env.COVEN_RESEARCH_SESSION_OWNERS_DIR;
+  else process.env.COVEN_RESEARCH_SESSION_OWNERS_DIR = originalOwnersRoot;
   await rm(root, { recursive: true, force: true });
 });
 
@@ -96,6 +108,132 @@ test("concurrent saves leave one complete JSON record", async () => {
   ]);
   const loaded = await loadResearchMission(created.id);
   assert.ok(loaded?.title === "first" || loaded?.title === "second");
+});
+
+test("private session owners are atomic, exact, and outside writable mission workspaces", async () => {
+  const directOwner = {
+    missionId: "owned-direct",
+    iteration: 1,
+    sessionId: "direct-session",
+    ownerKind: "direct-copilot" as const,
+    recordedAt: "2026-08-10T20:00:00.000Z",
+  };
+  await createResearchMissionWorkspace(mission(directOwner.missionId));
+  await recordResearchMissionSessionOwner(directOwner);
+  assert.deepEqual(await loadResearchMissionSessionOwner(directOwner.missionId), directOwner);
+  assert.equal(
+    researchMissionSessionOwnersRoot().startsWith(
+      `${researchMissionWorkspacePath(directOwner.missionId)}${path.sep}`,
+    ),
+    false,
+  );
+
+  await assert.rejects(
+    () => recordResearchMissionSessionOwner({ ...directOwner, sessionId: "replacement-session" }),
+    /different active session owner/i,
+  );
+  await clearResearchMissionSessionOwner(directOwner);
+  assert.equal(await loadResearchMissionSessionOwner(directOwner.missionId), null);
+
+  const daemonOwner = {
+    missionId: "owned-daemon",
+    iteration: 2,
+    sessionId: "daemon-session",
+    ownerKind: "owner-local-daemon" as const,
+    authority: { kind: "owner-local-daemon" as const, socketPath: "/tmp/coven-owner.sock" },
+    recordedAt: "2026-08-10T20:01:00.000Z",
+  };
+  await recordResearchMissionSessionOwner(daemonOwner);
+  assert.deepEqual(await loadResearchMissionSessionOwner(daemonOwner.missionId), daemonOwner);
+  await assert.rejects(
+    () => clearResearchMissionSessionOwner({ ...daemonOwner, sessionId: "wrong-session" }),
+    /changed before it could be cleared/i,
+  );
+  await clearResearchMissionSessionOwner(daemonOwner);
+});
+
+test("private session-owner parsing fails closed on malformed or remote provenance", async () => {
+  await assert.rejects(
+    () => recordResearchMissionSessionOwner({
+      missionId: "remote-owner",
+      iteration: 1,
+      sessionId: "session-1",
+      ownerKind: "owner-local-daemon",
+      authority: { kind: "owner-local-daemon", socketPath: "\\\\remote-host\\pipe\\coven" },
+      recordedAt: "2026-08-10T20:00:00.000Z",
+    }),
+    /invalid Research session owner/i,
+  );
+  await mkdir(researchMissionSessionOwnersRoot(), { recursive: true });
+  const malformedOwner = path.join(researchMissionSessionOwnersRoot(), "remote-owner.json");
+  await writeFile(malformedOwner, "{not-json", "utf8");
+  await assert.rejects(
+    () => loadResearchMissionSessionOwner("remote-owner"),
+    /ownership ledger is malformed/i,
+  );
+  await rm(malformedOwner, { force: true });
+});
+
+test("private session-owner root rejects relative and mission-writable overrides", () => {
+  try {
+    process.env.COVEN_RESEARCH_SESSION_OWNERS_DIR = "relative/session-owners";
+    assert.throws(() => researchMissionSessionOwnersRoot(), /must be absolute/i);
+    process.env.COVEN_RESEARCH_SESSION_OWNERS_DIR = path.join(
+      process.env.COVEN_RESEARCH_MISSIONS_DIR!,
+      "agent-writable-owners",
+    );
+    assert.throws(() => researchMissionSessionOwnersRoot(), /outside mission workspaces/i);
+  } finally {
+    process.env.COVEN_RESEARCH_SESSION_OWNERS_DIR = ownerRoot;
+  }
+});
+
+test("Research write grants cannot contain or enter the private owner root", async () => {
+  const broadRoot = path.dirname(path.dirname(ownerRoot));
+  const nestedRoot = path.join(ownerRoot, "nested-project");
+  await mkdir(nestedRoot, { recursive: true });
+  await assert.rejects(
+    () => assertResearchSessionOwnerOutsideWriteRoots([broadRoot]),
+    (error: unknown) => (
+      error instanceof Error && error.message === RESEARCH_SESSION_OWNER_WRITE_GRANT_DIAGNOSTIC
+    ),
+  );
+  await assert.rejects(
+    () => assertResearchSessionOwnerOutsideWriteRoots([nestedRoot]),
+    (error: unknown) => (
+      error instanceof Error && error.message === RESEARCH_SESSION_OWNER_WRITE_GRANT_DIAGNOSTIC
+    ),
+  );
+
+  const safeRoot = path.join(root, "safe-project");
+  await mkdir(safeRoot, { recursive: true });
+  await assert.doesNotReject(
+    () => assertResearchSessionOwnerOutsideWriteRoots([safeRoot]),
+  );
+});
+
+test("private owner loads reject a symlinked root into mission-writable storage", async () => {
+  const writableTarget = path.join(
+    process.env.COVEN_RESEARCH_MISSIONS_DIR!,
+    "agent-owner-root",
+  );
+  const linkedRoot = path.join(root, "linked-owner-root");
+  await mkdir(writableTarget, { recursive: true });
+  await symlink(
+    writableTarget,
+    linkedRoot,
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  try {
+    process.env.COVEN_RESEARCH_SESSION_OWNERS_DIR = linkedRoot;
+    await assert.rejects(
+      () => loadResearchMissionSessionOwner("linked-owner"),
+      /must be a real directory|resolves inside mission workspaces/i,
+    );
+  } finally {
+    process.env.COVEN_RESEARCH_SESSION_OWNERS_DIR = ownerRoot;
+    await rm(linkedRoot, { force: true });
+  }
 });
 
 test("validated reads reject symlinks and oversized files", async () => {

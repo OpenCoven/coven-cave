@@ -1071,11 +1071,14 @@
 
   .shell-detail {
     padding-bottom: 0;
-    /* The side panes are overlay drawers at this width — nothing sits beside
-       the content pane for a rounded edge to meet, so it goes full-bleed. */
-    border-start-start-radius: 0;
-    border-end-start-radius: 0;
-    margin-inline-start: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .shell-detail-panel {
+    padding: 0;
+    background: var(--bg-base);
   }
 
   /* Drawer panels: fixed-position overlays that slide in from the side.
@@ -1320,11 +1323,20 @@
 }
 
 /* Backdrop sibling rendered by <MobileDrawer/> via portal whenever a
-   drawer is open. Covers the detail pane and dismisses on tap. */
+   drawer is open. Covers the detail pane and dismisses on tap. A real
+   <button> (not a role="presentation" div) so Escape-independent dismissal
+   is reachable from the keyboard too — the resets below strip the native
+   button chrome (border/padding/font/cursor) so it still reads as a plain
+   full-viewport scrim. */
 .mobile-drawer-backdrop {
   position: fixed;
   inset: 0;
   z-index: 199;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  cursor: default;
   background: var(--backdrop-scrim);
   touch-action: none;
   animation: mobile-drawer-fade-in var(--duration-base) var(--ease-decelerate);

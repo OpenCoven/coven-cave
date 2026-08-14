@@ -5,22 +5,40 @@ export type BlockerImpact = "low" | "medium" | "high" | "blocking";
 export type CapabilityImportance = "nice-to-have" | "important" | "blocking";
 
 /** One settled turn of a thread, condensed for the reflection prompt. */
-export type ReflectTranscriptTurn = { role: "user" | "assistant" | "system"; text: string };
+export type ReflectTranscriptTurn = {
+  role: "user" | "assistant" | "system";
+  text: string;
+  attachments?: readonly { name?: string; type?: string; mimeType?: string }[];
+};
 
-const REFLECT_MAX_TURNS = 24;
-const REFLECT_MAX_CHARS_PER_TURN = 600;
+const REFLECT_MAX_TURNS = 36;
+const REFLECT_MAX_CHARS_PER_TURN = 900;
 
 /** Render a compact, size-bounded transcript for embedding in the reflect prompt. */
 export function buildReflectTranscript(turns: readonly ReflectTranscriptTurn[]): string {
   const lines = turns
-    .filter((t) => (t.role === "user" || t.role === "assistant") && t.text.trim())
+    .filter((t) => (
+      (t.role === "user" || t.role === "assistant")
+      && (t.text.trim() || t.attachments?.length)
+    ))
     .slice(-REFLECT_MAX_TURNS)
     .map((t) => {
       const body = t.text.trim().replace(/\s+/g, " ");
       const clipped = body.length > REFLECT_MAX_CHARS_PER_TURN
         ? `${body.slice(0, REFLECT_MAX_CHARS_PER_TURN)}…`
         : body;
-      return `${t.role}: ${clipped}`;
+      const visibleAttachments = (t.attachments ?? []).slice(0, 6).map((attachment) => {
+        const name = (attachment.name?.trim() || "attachment")
+          .replace(/[\u0000-\u001f\u007f]+/g, " ")
+          .replace(/\s+/g, " ")
+          .slice(0, 120);
+        const mimeType = (attachment.mimeType ?? attachment.type)?.trim().slice(0, 80);
+        return mimeType ? `${name} (${mimeType})` : name;
+      });
+      const evidence = visibleAttachments.length
+        ? `[visible attachments: ${visibleAttachments.join(", ")}]`
+        : "";
+      return `${t.role}: ${[clipped, evidence].filter(Boolean).join(" ")}`;
     });
   return lines.join("\n");
 }
@@ -35,7 +53,7 @@ export function buildReflectTranscript(turns: readonly ReflectTranscriptTurn[]):
 export function buildThreadReflectPrompt(opts: { sessionId: string; transcript?: string }): string {
   const context = opts.transcript?.trim()
     ? `Here is the thread you just completed (session: ${opts.sessionId}), oldest to newest:\n\n${opts.transcript}\n\n`
-    : `Reflect on the thread just completed (session: ${opts.sessionId}).\n\n`;
+    : `No transcript was captured for the thread just completed (session: ${opts.sessionId}). Judge only what you can actually establish; do not treat the missing transcript as a finding about the thread.\n\n`;
   return `${context}Reflect honestly on how that thread went for you as the familiar.
 Return ONLY a valid JSON object matching this exact shape - no prose, no markdown fences:
 
@@ -61,6 +79,34 @@ Return ONLY a valid JSON object matching this exact shape - no prose, no markdow
   "fileLocatabilityNotes": "<optional>",
   "persistentBlockers": [{ "id": "<slug>", "title": "<title>", "category": "<auth|tooling|permission|infra|context|skill|other>", "impact": "<low|medium|high|blocking>", "detail": "<detail>", "suggestedResolution": "<optional>" }]
 }
+
+Scope rule for "contextPressure": rate the THREAD ABOVE, not this reflection run.
+This is a separate, deliberately minimal run whose transcript is condensed and
+may be clipped or missing entirely. That is normal and expected — it is a
+property of how reflection works, never evidence about the thread. So:
+- Do NOT rate pressure on how much of the transcript you can see here.
+- Do NOT cite this prompt's own size, injected reference material, or a
+  truncated/absent transcript as a cause of pressure.
+- Rate "critical" or "excess" only for pressure the thread itself actually hit:
+  the thread compacted, state had to be re-derived, work was dropped, or the
+  thread was given far more material than its task required.
+- If the transcript is too thin to judge, use "adequate" and say so in
+  "contextNotes" — an honest "not enough evidence" beats an inflated rating.
+
+Delivery evidence rule:
+- Do NOT infer completion from plans, narration, or intent ("I will push", "about
+  to schedule", "finishing the artifact").
+- A concrete deliverable is verified only when the transcript contains its
+  remote ref, artifact path, receipt, message id, or equivalent checkable proof.
+- If that evidence is absent, describe the work as incomplete or unverified and
+  put the exact remaining proof gap in persistentBlockers.
+
+Evidence rule for generated or delivered files:
+- A prose claim that an image was shown is not delivery evidence.
+- A \`[visible attachments: ...]\` annotation is host-derived proof that Cave
+  rendered and persisted the attachment on that turn.
+- If a reply claimed delivery without that annotation or a renderable image
+  marker in the transcript, report the proof gap honestly.
 
 Be honest. Underconfidence is more useful than overconfidence. Only report what you actually experienced.`;
 }
@@ -115,6 +161,101 @@ export type ThreadSelfReport = {
     suggestedResolution?: string;
   }[];
 };
+
+const CONTEXT_PRESSURES: ReadonlySet<string> = new Set(["adequate", "tight", "excess", "critical"]);
+const CAPABILITY_STATES: ReadonlySet<string> = new Set(["available", "degraded", "missing"]);
+const CAPABILITY_IMPORTANCE: ReadonlySet<string> = new Set(["nice-to-have", "important", "blocking"]);
+const BLOCKER_CATEGORIES: ReadonlySet<string> = new Set(["auth", "tooling", "permission", "infra", "context", "skill", "other"]);
+const BLOCKER_IMPACTS: ReadonlySet<string> = new Set(["low", "medium", "high", "blocking"]);
+
+function reportRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function reportText(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function reportRequiredText(value: unknown): value is string {
+  return reportText(value) && Boolean(value.trim());
+}
+
+function reportOptionalText(value: unknown): value is string | undefined {
+  return value === undefined || reportText(value);
+}
+
+function reportScore(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
+}
+
+function reportStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(reportText);
+}
+
+function reportObjectArray(
+  value: unknown,
+  validate: (record: Record<string, unknown>) => boolean,
+): boolean {
+  return Array.isArray(value) && value.every((item) => {
+    const record = reportRecord(item);
+    return record !== null && validate(record);
+  });
+}
+
+/** Runtime guard for append-only JSONL rows read from disk. */
+export function isThreadSelfReport(value: unknown): value is ThreadSelfReport {
+  const report = reportRecord(value);
+  const toolReliability = reportRecord(report?.toolReliability);
+  return Boolean(
+    report &&
+    reportRequiredText(report.id) &&
+    reportRequiredText(report.familiarId) &&
+    reportRequiredText(report.sessionId) &&
+    reportText(report.reportedAt) &&
+    Number.isFinite(Date.parse(report.reportedAt)) &&
+    reportScore(report.overallConfidence) &&
+    reportOptionalText(report.overallConfidenceReason) &&
+    toolReliability &&
+    reportScore(toolReliability.score) &&
+    reportStringArray(toolReliability.failedTools) &&
+    reportStringArray(toolReliability.unreliableTools) &&
+    reportOptionalText(toolReliability.notes) &&
+    reportText(report.contextPressure) &&
+    CONTEXT_PRESSURES.has(report.contextPressure) &&
+    reportOptionalText(report.contextNotes) &&
+    reportStringArray(report.skillsUsed) &&
+    reportObjectArray(report.skillsNeedingClarity, (item) =>
+      reportRequiredText(item.skillId) && reportRequiredText(item.reason)) &&
+    reportObjectArray(report.skillsNeedingAccess, (item) =>
+      reportRequiredText(item.skillId) && reportRequiredText(item.reason)) &&
+    reportObjectArray(report.capabilitiesLacking, (item) =>
+      reportRequiredText(item.name) &&
+      reportText(item.importance) &&
+      CAPABILITY_IMPORTANCE.has(item.importance) &&
+      reportRequiredText(item.detail)) &&
+    reportObjectArray(report.capabilitiesVital, (item) =>
+      reportRequiredText(item.name) &&
+      reportText(item.currentState) &&
+      CAPABILITY_STATES.has(item.currentState) &&
+      reportOptionalText(item.notes)) &&
+    reportScore(report.memoryRecallScore) &&
+    reportOptionalText(report.memoryRecallNotes) &&
+    reportScore(report.fileLocatabilityScore) &&
+    reportOptionalText(report.fileLocatabilityNotes) &&
+    reportObjectArray(report.persistentBlockers, (item) =>
+      reportRequiredText(item.id) &&
+      reportRequiredText(item.title) &&
+      reportText(item.category) &&
+      BLOCKER_CATEGORIES.has(item.category) &&
+      reportOptionalText(item.firstSeenAt) &&
+      reportText(item.impact) &&
+      BLOCKER_IMPACTS.has(item.impact) &&
+      reportRequiredText(item.detail) &&
+      reportOptionalText(item.suggestedResolution)),
+  );
+}
 
 export function deriveThreadScore(report: ThreadSelfReport): number {
   return Math.round(
@@ -210,10 +351,303 @@ export function buildThreadSignalResolutionPrompt(item: ThreadSignalReviewItem):
     "1. Diagnose the root cause.",
     "2. Apply the concrete fix now — update the prompt, memory, skill, config, or workflow at fault. If the fix needs something only I can grant (credentials, permissions, a product decision), stop and tell me exactly what to provide.",
     "3. Verify the fix and summarize what changed, so future threads stop reporting this signal.",
+    "4. Before the final response, classify every requested deliverable as verified with exact evidence, incomplete, or blocked. Do not infer delivery from plans or narration.",
+  ].join("\n");
+}
+
+/**
+ * Seed prompt that launches ONE working thread to resolve several review-queue
+ * items at once — the card's "Fix N critical in one thread" action. A single
+ * primed thread beats N threads racing each other over the same prompt/skill
+ * files, which is what one-tap-per-signal produced when every critical signal
+ * shared a root cause.
+ */
+export function buildThreadSignalBatchResolutionPrompt(items: readonly ThreadSignalReviewItem[]): string {
+  if (items.length === 1) return buildThreadSignalResolutionPrompt(items[0]);
+  return [
+    `Resolve these ${items.length} signals surfaced by your thread self-reports:`,
+    "",
+    ...items.map((item, index) => `${index + 1}. **${item.title}** (${REVIEW_KIND_LABEL[item.kind]}) — ${item.detail}`),
+    "",
+    "This thread exists to fix the signals, not just discuss them:",
+    "1. Diagnose each root cause, and say so if several share one.",
+    "2. Apply the concrete fixes now — update the prompt, memory, skill, config, or workflow at fault. If a fix needs something only I can grant (credentials, permissions, a product decision), stop and tell me exactly what to provide.",
+    "3. Verify each fix and summarize what changed, so future threads stop reporting these signals.",
+    "4. Before the final response, classify every requested deliverable as verified with exact evidence, incomplete, or blocked. Do not infer delivery from plans or narration.",
   ].join("\n");
 }
 
 export const THREAD_SIGNALS_EMPTY_STATE = "No thread reports yet. Use 'Reflect on this thread' to generate the first one.";
+
+// ── In-chat Thread Signal card ────────────────────────────────────────────
+// The chat card reports on ONE settled thread, so it cannot use the aggregate
+// helpers above: `aggregateThreadSignals([report])` scores every blocker
+// `crit` (frequency / total is always 1 > 0.5) and averages a single sample.
+// These builders read the report directly and grade it on its own terms.
+
+export type SignalTone = "ok" | "neutral" | "warn" | "crit";
+
+/**
+ * Tone for one contributing metric. Only the extremes earn a color — a middling
+ * memory-recall score inside an otherwise healthy thread is information, not an
+ * alarm, and coloring it would spend the card's attention budget on noise.
+ * The 40/60 thresholds are the ones {@link buildThreadSignalReviewQueue}
+ * already uses to promote a low score into the review queue.
+ */
+export function metricTone(score: number): SignalTone {
+  if (score < 40) return "crit";
+  if (score < 60) return "warn";
+  if (score >= 90) return "ok";
+  return "neutral";
+}
+
+/**
+ * Tone for the composite. Graded harder than its inputs on purpose: it is the
+ * headline number in the card header, so a 60 thread reads as a warning even
+ * though a 60 on any single input does not.
+ */
+export function compositeTone(score: number): SignalTone {
+  if (score < 40) return "crit";
+  if (score < 70) return "warn";
+  return "ok";
+}
+
+export type ThreadSignalScoreTile = {
+  id: "score" | "confidence" | "tools" | "memory" | "files" | "context";
+  label: string;
+  /** Display value — a number for scored metrics, a word for context pressure. */
+  value: string;
+  tone: SignalTone;
+  /** 0-100 fill for the rationale bar. */
+  percent: number;
+  /** Contribution to the composite, or why it is not part of it. */
+  weight: string;
+  /** Why the value is what it is, taken from the report's own notes. */
+  rationale: string;
+  /** Only the composite carries the formula line. */
+  formula?: string;
+};
+
+const SCORE_FORMULA = "conf x .35 + tools x .25 + memory x .20 + files x .20";
+
+function toolRationale(report: ThreadSelfReport): string {
+  const tools = report.toolReliability;
+  if (tools.notes?.trim()) return tools.notes.trim();
+  const parts: string[] = [];
+  if (tools.failedTools.length > 0) parts.push(`Failed: ${tools.failedTools.join(", ")}.`);
+  if (tools.unreliableTools.length > 0) parts.push(`Unreliable: ${tools.unreliableTools.join(", ")}.`);
+  if (parts.length > 0) return parts.join(" ");
+  return "No failed or unreliable tools reported this thread.";
+}
+
+/**
+ * The six tiles across the card's score grid. Every rationale is quoted from the
+ * report rather than generated, so tapping a tile shows what the familiar
+ * actually said; the composite's rationale names its own strongest and weakest
+ * input, which is the one thing no single field records.
+ */
+export function buildThreadSignalScoreTiles(report: ThreadSelfReport): ThreadSignalScoreTile[] {
+  const composite = deriveThreadScore(report);
+  const context = contextPressureLabel(report.contextPressure);
+  const scored: { label: string; score: number }[] = [
+    { label: "Confidence", score: report.overallConfidence },
+    { label: "Tools", score: report.toolReliability.score },
+    { label: "Memory", score: report.memoryRecallScore },
+    { label: "Files", score: report.fileLocatabilityScore },
+  ];
+  const ranked = [...scored].sort((a, b) => a.score - b.score);
+  const weakest = ranked[0];
+  const strongest = ranked[ranked.length - 1];
+
+  return [
+    {
+      id: "score",
+      label: "Score",
+      value: String(composite),
+      tone: compositeTone(composite),
+      percent: composite,
+      weight: "weighted blend",
+      rationale: `Composite thread score. Strongest input ${strongest.label.toLowerCase()} at ${Math.round(strongest.score)}, weakest ${weakest.label.toLowerCase()} at ${Math.round(weakest.score)}.`,
+      formula: SCORE_FORMULA,
+    },
+    {
+      id: "confidence",
+      label: "Confidence",
+      value: String(Math.round(report.overallConfidence)),
+      tone: metricTone(report.overallConfidence),
+      percent: report.overallConfidence,
+      weight: "x .35",
+      rationale: report.overallConfidenceReason?.trim() || "No confidence reason reported.",
+    },
+    {
+      id: "tools",
+      label: "Tools",
+      value: String(Math.round(report.toolReliability.score)),
+      tone: metricTone(report.toolReliability.score),
+      percent: report.toolReliability.score,
+      weight: "x .25",
+      rationale: toolRationale(report),
+    },
+    {
+      id: "memory",
+      label: "Memory",
+      value: String(Math.round(report.memoryRecallScore)),
+      tone: metricTone(report.memoryRecallScore),
+      percent: report.memoryRecallScore,
+      weight: "x .20",
+      rationale: report.memoryRecallNotes?.trim() || "No memory-recall notes reported.",
+    },
+    {
+      id: "files",
+      label: "Files",
+      value: String(Math.round(report.fileLocatabilityScore)),
+      tone: metricTone(report.fileLocatabilityScore),
+      percent: report.fileLocatabilityScore,
+      weight: "x .20",
+      rationale: report.fileLocatabilityNotes?.trim() || "No file-locatability notes reported.",
+    },
+    {
+      id: "context",
+      label: "Context",
+      value: context.label,
+      tone: context.severity === "ok" ? "ok" : context.severity === "warn" ? "warn" : "crit",
+      percent: 100,
+      weight: "not scored",
+      rationale: report.contextNotes?.trim() || `Context pressure reported as ${context.label.toLowerCase()}.`,
+    },
+  ];
+}
+
+/** Short kind label for the card's queue rows; {@link REVIEW_KIND_LABEL} reads as a phrase mid-sentence. */
+export const REVIEW_KIND_SHORT_LABEL: Record<ThreadSignalReviewItem["kind"], string> = {
+  blocker: "Blocker",
+  "skill-access": "Skill access",
+  "skill-clarity": "Skill clarity",
+  capability: "Capability",
+  "context-pressure": "Context",
+  "low-score": "Low score",
+};
+
+export type ThreadSignalRow = ThreadSignalReviewItem & {
+  kindLabel: string;
+  /** Provenance line above the detail — category, impact, or state. */
+  meta: string;
+  /** What the report suggested doing about it; empty when it suggested nothing. */
+  resolution: string;
+};
+
+const MAX_SIGNAL_ROWS = 6;
+
+/**
+ * The card's ranked signal queue for a single report. Ordering matches the
+ * analytics review queue — severity tier first, then rank, then title — so the
+ * same signal sits in the same place on both surfaces.
+ */
+export function buildThreadSignalRows(report: ThreadSelfReport): ThreadSignalRow[] {
+  const rows: (ThreadSignalRow & { rank: number })[] = [];
+  const push = (row: Omit<ThreadSignalRow, "kindLabel"> & { rank: number }) => {
+    rows.push({ ...row, kindLabel: REVIEW_KIND_SHORT_LABEL[row.kind] });
+  };
+
+  for (const blocker of report.persistentBlockers) {
+    const critical = blocker.impact === "blocking" || blocker.impact === "high";
+    push({
+      kind: "blocker",
+      severity: critical ? "critical" : "warning",
+      sourceId: blocker.id,
+      title: blocker.title,
+      meta: `${blocker.category} · ${blocker.impact} impact`,
+      detail: blocker.detail,
+      resolution: blocker.suggestedResolution?.trim() ?? "",
+      rank: critical ? 100 : 70,
+    });
+  }
+
+  for (const capability of report.capabilitiesLacking) {
+    if (capability.importance === "nice-to-have") continue;
+    const critical = capability.importance === "blocking";
+    push({
+      kind: "capability",
+      severity: critical ? "critical" : "warning",
+      sourceId: capability.name,
+      title: capability.name,
+      meta: `${capability.importance} · missing`,
+      detail: capability.detail,
+      resolution: "",
+      rank: critical ? 90 : 60,
+    });
+  }
+
+  for (const skill of report.skillsNeedingAccess) {
+    push({
+      kind: "skill-access",
+      severity: "critical",
+      sourceId: skill.skillId,
+      title: skill.skillId,
+      meta: "access gap",
+      detail: skill.reason,
+      resolution: "",
+      rank: 85,
+    });
+  }
+
+  if (report.contextPressure !== "adequate") {
+    const context = contextPressureLabel(report.contextPressure);
+    push({
+      kind: "context-pressure",
+      severity: report.contextPressure === "critical" ? "critical" : "warning",
+      sourceId: "context-pressure",
+      title: `Context ${context.label.toLowerCase()}`,
+      meta: "this thread",
+      detail: report.contextNotes?.trim() || `Context pressure reported as ${context.label.toLowerCase()}.`,
+      resolution: "",
+      rank: report.contextPressure === "critical" ? 75 : 55,
+    });
+  }
+
+  const lowScores: [string, string, number, string][] = [
+    ["confidence", "Confidence", report.overallConfidence, report.overallConfidenceReason?.trim() ?? ""],
+    ["tool-reliability", "Tool reliability", report.toolReliability.score, toolRationale(report)],
+    ["memory-recall", "Memory recall", report.memoryRecallScore, report.memoryRecallNotes?.trim() ?? ""],
+    ["file-locatability", "File locatability", report.fileLocatabilityScore, report.fileLocatabilityNotes?.trim() ?? ""],
+  ];
+  for (const [sourceId, label, score, note] of lowScores) {
+    if (score <= 0 || score >= 60) continue;
+    push({
+      kind: "low-score",
+      severity: score < 40 ? "critical" : "warning",
+      sourceId,
+      title: `${label} ${Math.round(score)}/100`,
+      meta: "this thread",
+      detail: note || `Scored ${Math.round(score)}/100 this thread.`,
+      resolution: "",
+      rank: score < 40 ? 72 : 42,
+    });
+  }
+
+  for (const skill of report.skillsNeedingClarity) {
+    push({
+      kind: "skill-clarity",
+      severity: "warning",
+      sourceId: skill.skillId,
+      title: skill.skillId,
+      meta: "doc gap",
+      detail: skill.reason,
+      resolution: "",
+      rank: 45,
+    });
+  }
+
+  return rows
+    .sort(
+      (a, b) =>
+        REVIEW_SEVERITY_ORDER[a.severity] - REVIEW_SEVERITY_ORDER[b.severity] ||
+        b.rank - a.rank ||
+        a.title.localeCompare(b.title),
+    )
+    .slice(0, MAX_SIGNAL_ROWS)
+    .map(({ rank: _rank, ...row }) => row);
+}
 
 function libAvg(values: number[]): number {
   if (values.length === 0) return 0;
@@ -234,7 +668,19 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
   const blockerFreq = new Map<string, number>();
   const blockerData = new Map<string, ThreadSelfReport["persistentBlockers"][number]>();
 
-  const sorted = [...reports].sort(
+  // Defensive at the boundary, not because storage is untrusted — listSelfReports
+  // already drops rows failing isThreadSelfReport — but because this value
+  // arrives over the wire, where a type annotation is erased and cannot hold.
+  // A redaction budget once replaced the whole array with the string
+  // "[redacted]"; spreading that yields characters, whose `reportedAt` parses
+  // to NaN, so the comparator fell through to `b.id.localeCompare` and threw
+  // inside Array.sort — taking the entire Analytics surface down (cave-p9dsb).
+  // Unmeasured is a legitimate result here; a thrown comparator is not.
+  const usable = (Array.isArray(reports) ? reports : []).filter(
+    (report): report is ThreadSelfReport =>
+      Boolean(report) && typeof report === "object" && typeof report.id === "string",
+  );
+  const sorted = [...usable].sort(
     (a, b) =>
       new Date(b.reportedAt).getTime() - new Date(a.reportedAt).getTime() ||
       b.id.localeCompare(a.id),
@@ -286,7 +732,7 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
     }
   }
 
-  const total = reports.length || 1;
+  const total = usable.length || 1;
   const rankedBlockers: RankedBlocker[] = [...blockerFreq.entries()]
     .map(([id, frequency]) => {
       const data = blockerData.get(id)!;
@@ -295,10 +741,10 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
     .sort((a, b) => b.rankScore - a.rankScore);
 
   return {
-    averageConfidence: libAvg(reports.map((r) => r.overallConfidence)),
-    averageToolReliability: libAvg(reports.map((r) => r.toolReliability.score)),
-    averageMemoryRecall: libAvg(reports.map((r) => r.memoryRecallScore)),
-    averageFileLocatability: libAvg(reports.map((r) => r.fileLocatabilityScore)),
+    averageConfidence: libAvg(usable.map((r) => r.overallConfidence)),
+    averageToolReliability: libAvg(usable.map((r) => r.toolReliability.score)),
+    averageMemoryRecall: libAvg(usable.map((r) => r.memoryRecallScore)),
+    averageFileLocatability: libAvg(usable.map((r) => r.fileLocatabilityScore)),
     contextCounts,
     skillsUsedMost: [...skillsUsed.entries()]
       .sort((a, b) => b[1] - a[1])

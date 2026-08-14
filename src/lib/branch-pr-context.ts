@@ -79,7 +79,7 @@ function repoSlug(root: string): Promise<string> {
     execFile(
       "git",
       ["-C", root, "remote", "get-url", "origin"],
-      { timeout: 10_000, env: GH_ENV() },
+      { windowsHide: true, timeout: 10_000, env: GH_ENV() },
       (err, stdout) => {
         if (err) return reject(err);
         const m = /github\.com[:/]([^/\s]+\/[^/\s]+?)(?:\.git)?\s*$/.exec(stdout.trim());
@@ -108,7 +108,7 @@ const defaultRunner: BranchPrRunner = async (root, branch) => {
         "-f",
         "per_page=1",
       ],
-      { cwd: root, timeout: 10_000, env: GH_ENV() },
+      { windowsHide: true, cwd: root, timeout: 10_000, env: GH_ENV() },
       (err, stdout) => (err ? reject(err) : resolve(stdout)),
     );
   });
@@ -127,7 +127,7 @@ const defaultUrlRunner: UrlPrRunner = (url) => {
     execFile(
       "gh",
       ["api", "-X", "GET", `repos/${slug}/pulls/${number}`],
-      { timeout: 10_000, env: GH_ENV() },
+      { windowsHide: true, timeout: 10_000, env: GH_ENV() },
       (err, stdout) => (err ? reject(err) : resolve(stdout)),
     );
   });

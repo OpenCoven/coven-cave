@@ -25,5 +25,15 @@ assert.match(
   /ref=\{triggerRef\}[\s\S]*aria-haspopup="menu"[\s\S]*aria-expanded=\{open\}/,
   "plain trigger should preserve popover anchoring and menu accessibility",
 );
+assert.match(
+  source,
+  /"aria-describedby"\?: string/,
+  "StandardSelect accepts help and error description ids",
+);
+assert.match(
+  source,
+  /aria-describedby=\{ariaDescribedBy\}/,
+  "StandardSelect forwards aria-describedby to its actual button trigger",
+);
 
 console.log("select.test.ts OK");

@@ -15,23 +15,57 @@ const css = readFileSync(
 );
 const source = `${tab}\n${modals}`;
 
-test("media kinds render disabled from RESEARCH_GENERATION_MEDIA_KINDS — one source of truth", () => {
-  // Cards are mapped from the lib constant, not hand-copied.
-  assert.match(tab, /RESEARCH_GENERATION_MEDIA_KINDS\.map/);
-  // Non-interactive, told to AT, hint visible on the card itself.
-  assert.match(tab, /aria-disabled="true"/);
-  assert.match(tab, /\{media\.hint\}/);
-  assert.match(tab, /\{media\.label\}/);
-  // The honest hint text lives in the lib only — no duplicated copies here.
-  for (const media of RESEARCH_GENERATION_MEDIA_KINDS) {
-    assert.doesNotMatch(source, new RegExp(media.hint.slice(0, 20)));
-  }
-  // Media cards are never buttons and never reach the create path.
-  assert.doesNotMatch(source, /kind:\s*"(podcast|short-video|long-video)"/);
+test("media cards use one source of truth and gate on live readiness", () => {
+  assert.match(tab, /RESEARCH_GENERATION_CREATABLE_KINDS\.map/);
+  assert.match(tab, /getResearchGenerationReadiness/);
+  assert.match(tab, /disabled=\{sources\.length === 0 \|\| !mediaReady\}/);
+  assert.match(tab, /readiness\?\.podcast\.hint/);
+  assert.doesNotMatch(tab, /aria-disabled="true"/);
   // Presentation map covers exactly the lib's media kinds.
   for (const media of RESEARCH_GENERATION_MEDIA_KINDS) {
     assert.match(modals, new RegExp(`["']?${media.kind}["']?:\\s*\\{ glyph:`));
   }
+});
+
+test("media configuration is controlled, readiness-backed, and kind-specific", () => {
+  assert.match(tab, /useState<ResearchMediaProvider>\("local"\)/);
+  assert.match(tab, /useState<ResearchMediaLength>\("standard"\)/);
+  assert.match(tab, /readiness\.providers\.local\.voices/);
+  assert.match(tab, /readiness\.providers\.elevenlabs\.defaultVoiceId/);
+  assert.match(tab, /renderConfig:\s*\{[\s\S]*provider: mediaProvider,[\s\S]*voice: mediaVoice,[\s\S]*length: mediaLength/);
+  assert.match(modals, /htmlFor="research-studio-config-provider"/);
+  assert.match(modals, /id="research-studio-config-provider"/);
+  assert.match(modals, /readiness\.providers\.local\.ready/);
+  assert.match(modals, /readiness\.providers\.elevenlabs\.ready/);
+  assert.match(modals, /htmlFor="research-studio-config-local-voice"/);
+  assert.match(modals, /readiness\?\.providers\.local\.voices\.map/);
+  assert.match(modals, /htmlFor="research-studio-config-elevenlabs-voice"/);
+  assert.match(modals, /readiness\?\.providers\.elevenlabs\.defaultVoiceId/);
+  assert.match(modals, /htmlFor="research-studio-config-length"/);
+  assert.match(modals, /kind !== "short-video"/);
+  assert.match(modals, /aria-describedby="research-studio-config-provider-help"/);
+  assert.match(modals, /aria-describedby="research-studio-config-voice-help"/);
+  assert.match(modals, /aria-describedby="research-studio-config-length-help"/);
+});
+
+test("media drafts reopen review and retry creates a replacement draft", () => {
+  assert.match(tab, /generation\.status === "draft"/);
+  assert.match(tab, />\s*Review draft\s*</);
+  assert.match(tab, /\.\.\.\(generation\.renderConfig \? \{ renderConfig: generation\.renderConfig \} : \{\}\)/);
+  assert.match(tab, /setReviewGeneration\(result\.generation\)/);
+  assert.match(tab, /announce\(`\$\{studioMetaForKind\(generation\.kind\)\.label\} draft ready for review`\)/);
+  assert.doesNotMatch(tab, /retry queued/);
+});
+
+test("media lifecycle text, cancellation, players, and download use persisted state", () => {
+  assert.match(modals, /if \(generation\.status === "queued"\) return "Waiting to render"/);
+  assert.match(modals, /Chapter \$\{generation\.progress\.current\} of \$\{generation\.progress\.total\}/);
+  assert.match(modals, /Scripting|Synthesizing|Encoding/);
+  assert.match(tab, /result\.generation/);
+  assert.doesNotMatch(tab, /\{ \.\.\.entry, status: "cancelled"/);
+  assert.match(modals, /<audio[\s\S]*controls[\s\S]*preload="metadata"/);
+  assert.match(modals, /<video[\s\S]*controls[\s\S]*preload="metadata"/);
+  assert.match(modals, /download=1/);
 });
 
 test("create failures surface the server's message inline (409 no-artifact included)", () => {
@@ -57,11 +91,16 @@ test("markdown editor never fakes persistence", () => {
   assert.doesNotMatch(source, /document\.execCommand|contentEditable=/);
 });
 
-test("statuses are terminal — load on mount + after mutations, no polling", () => {
-  assert.equal(RESEARCH_GENERATION_STATUSES.length, 3);
+test("Studio polls only while an async media row is active", () => {
+  assert.equal(RESEARCH_GENERATION_STATUSES.length, 6);
   assert.match(tab, /listResearchGenerations/);
-  assert.doesNotMatch(source, /setInterval/);
-  assert.doesNotMatch(source, /usePausablePoll/);
+  assert.match(source, /usePausablePoll/);
+  assert.match(source, /1_500/);
+  assert.match(tab, /listInFlightRef\.current/);
+  assert.match(tab, /void loadGenerations\(false\)/);
+  assert.doesNotMatch(tab, /setReloadTick/);
+  assert.match(source, /queued[\s\S]*rendering|rendering[\s\S]*queued/);
+  assert.match(source, /cancelResearchGeneration/);
   // And no fake progress affordances for synchronous drafting (prose may
   // mention the rejected design; markup must not render one).
   assert.doesNotMatch(source, /<progress|role="progressbar"|__progress/);
@@ -120,10 +159,10 @@ test("stacked viewer+editor keep exactly one live focus trap (active gating)", (
 
 test("filter chips cover only kinds that can exist, with real counts", () => {
   // Chips map from the creatable union; counts come from the loaded list.
-  assert.match(tab, /RESEARCH_GENERATION_KINDS\.map\(\(kind\) => \(\s*<button/);
+  assert.match(tab, /RESEARCH_GENERATION_CREATABLE_KINDS\.map\(\(kind\) => \(\s*<button/);
   assert.match(tab, /generations\.filter\(\(generation\) => generation\.kind === kind\)\.length/);
-  // No Podcast/Video filters — no such records can exist.
-  assert.doesNotMatch(tab, /All.*Podcast|"Video"/);
+  // Media filters exist once records can exist.
+  assert.match(tab, /RESEARCH_GENERATION_CREATABLE_KINDS/);
   assert.equal(RESEARCH_GENERATION_KINDS.length, 5);
   // Empty kinds can't be selected into a dead-end view.
   assert.match(tab, /disabled=\{\(counts\.get\(kind\) \?\? 0\) === 0\}/);
@@ -187,7 +226,7 @@ test("familiar switches can't leak another familiar's generations (loadSeq guard
   assert.match(tab, /const loadSeq = useRef\(0\)/);
   assert.match(tab, /const seq = \+\+loadSeq\.current/);
   const staleGuards = tab.match(/seq !== loadSeq\.current/g) ?? [];
-  assert.ok(staleGuards.length >= 2, "then AND catch paths must check the epoch");
+  assert.ok(staleGuards.length >= 2, "success AND catch paths must check the epoch");
   // On a familiar switch the previous rows drop immediately (loading/empty,
   // never another familiar's generations) and the kind filter resets to All
   // so a kind the new familiar lacks can't strand an empty view.

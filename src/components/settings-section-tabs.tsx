@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
+import { useSurfaceHistory } from "@/lib/use-surface-history";
 import { settingsGroupId } from "@/components/ui/settings-group";
 import { tabForScrollTarget } from "@/lib/settings-section-tab-map";
 
@@ -37,7 +38,12 @@ export function SettingsTabbed<T extends string>({
   scrollTarget,
   children,
 }: Props<T>) {
-  const [tab, setTab] = useState<T>(tabs[0].id);
+  // One level per section, so two tabbed sections never share a journal entry.
+  const { value: tab, select: selectTab, show: showTab } = useSurfaceHistory<T>({
+    id: `settings:tab:${ariaLabel}`,
+    initial: tabs[0].id,
+  });
+  const setTab = showTab;
   // Track whether the user has manually picked a tab, so a stale scrollTarget
   // doesn't yank them away — only an *active* search target switches tabs.
   const lastTarget = useRef<string | null>(null);
@@ -56,7 +62,7 @@ export function SettingsTabbed<T extends string>({
         <Tabs
           items={tabs}
           value={tab}
-          onChange={setTab}
+          onChange={selectTab}
           ariaLabel={ariaLabel}
           variant="segment"
           size="sm"

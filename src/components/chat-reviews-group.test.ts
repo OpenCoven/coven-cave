@@ -41,41 +41,55 @@ test("both new-session surfaces mount the group, and neither renders it empty", 
       /startFromGroup\("reviews", reviewRows\.length, reviews\.rows\.length\)/,
       `${name} counts the capped rows against every waiting review`,
     );
-    assert.match(source, /\{reviewRows\.length > 0 \?/, `${name} renders no Reviews chrome when nothing waits`);
     assert.match(
       source,
-      /aria-label=\{reviewRequestLabel\(row\)\}/,
-      `${name} gives each row a full-context accessible name`,
+      /if \(reviewRows\.length > 0\) \{/,
+      `${name} contributes no Reviews band when nothing waits`,
+    );
+    assert.match(
+      source,
+      /ariaLabel: reviewRequestLabel\(row\)/,
+      `${name} gives each tile a full-context accessible name`,
     );
   }
 });
 
-test("rows reuse each surface's existing row grammar — no third vocabulary", () => {
-  assert.match(
-    emptyState,
-    /className="cave-chat-empty-recent"[\s\S]{0,300}?aria-label=\{reviewRequestLabel\(row\)\}/,
-    "the zero-turn page reuses its thread-row class",
-  );
-  assert.match(
-    dashboard,
-    /className="home-dash__recent-row"[\s\S]{0,300}?aria-label=\{reviewRequestLabel\(row\)\}/,
-    "the dashboard reuses its recent-row class",
-  );
+test("rows reuse the shared band grammar — no third vocabulary", () => {
+  for (const [name, source] of [["zero-turn page", emptyState], ["new-chat dashboard", dashboard]]) {
+    assert.match(
+      source,
+      /meta: reviewsGroup,[\s\S]{0,400}?ariaLabel: reviewRequestLabel\(row\)/,
+      `${name} builds its Reviews tiles from the shared band model`,
+    );
+    assert.match(
+      source,
+      /from "@\/components\/chat-start-from-bands"/,
+      `${name} renders through the shared launcher`,
+    );
+  }
 });
 
-test("Reviews sheds with Queue, before the recent threads", () => {
+test("Reviews sheds first — before Queue, and long before the Chats band", () => {
   // Both are extra-source groups (each costs a request); the page's own data
-  // — board cards and threads — survives a tier longer.
+  // — board cards and threads — survives longer. Reviews is the quietest, so
+  // it is the first band a short pane gives up.
   const css = readFileSync(new URL("../styles/home-dashboard.css", import.meta.url), "utf8");
   assert.match(
     css,
-    /@container \(max-height: 760px\) \{\s*\n\s*\.home-dash__section--queue,\s*\n\s*\.home-dash__section--reviews \{/,
-    "Queue and Reviews share the earlier shed tier",
+    /@container \(max-height: 760px\) \{\s*\n\s*\.cave-sf__band\[data-kind="reviews"\] \{/,
+    "Reviews owns the earliest shed tier",
   );
-  assert.match(
-    dashboard,
-    /className="home-dash__section home-dash__section--reviews"/,
-    "the Reviews section opts into that tier",
+  const tier = (kind) =>
+    Number(
+      css.match(
+        new RegExp(
+          `@container \\(max-height: (\\d+)px\\) \\{\\s*\\n\\s*\\.cave-sf__band\\[data-kind="${kind}"\\]`,
+        ),
+      )[1],
+    );
+  assert.ok(
+    tier("reviews") > tier("queue") && tier("queue") > tier("chats"),
+    "shed order is reviews, then queue, then chats",
   );
 });
 
@@ -87,7 +101,7 @@ test("starting a review opens the work in place", () => {
   );
   assert.match(
     emptyState,
-    /onClick=\{\(\) => onPrompt\?\.\(`Review \$\{row\.url\}`\)\}/,
+    /onPick: \(\) => onPrompt\?\.\(`Review \$\{row\.url\}`\)/,
     "the zero-turn page fills its own composer",
   );
 });

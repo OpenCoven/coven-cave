@@ -1079,7 +1079,7 @@ If the port is already occupied, inspect the listener first:
 lsof -nP -iTCP:3000 -sTCP:LISTEN
 ```
 
-Use the existing server only if its `cwd` is `/Users/buns/Documents/GitHub/OpenCoven/coven-cave`.
+Use the existing server only if its `cwd` is `/Users/<someone>/Documents/GitHub/OpenCoven/coven-cave`.
 
 - [ ] **Step 4: Render-check Home, Chat, Code, and Quick Chat**
 

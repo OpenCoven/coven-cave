@@ -19,6 +19,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useAnnouncer } from "@/components/ui/live-region";
+import {
+  DocumentReader,
+  type DocumentReaderApi,
+} from "@/components/document-reader";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { copyText } from "@/lib/clipboard";
 import { relativeTime } from "@/lib/relative-time";
@@ -101,12 +105,9 @@ const CONFIDENCE_RE = /^(high|medium|low)$/i;
 export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl, onPublish }: ResearchReaderProps) {
   const { announce } = useAnnouncer();
   const readerRef = useRef<HTMLDivElement | null>(null);
-  const docRef = useRef<HTMLDivElement | null>(null);
+  const documentReaderApiRef = useRef<DocumentReaderApi | null>(null);
   const pbarRef = useRef<HTMLDivElement | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
-  const stripRef = useRef<HTMLDivElement | null>(null);
-  const trackRef = useRef<HTMLDivElement | null>(null);
-  const thumbRef = useRef<HTMLButtonElement | null>(null);
 
   const doc = useMemo(
     () => parseFindingsDoc(markdown ?? "", mission.sources),
@@ -118,22 +119,10 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
   const [railOn, setRailOn] = useState(true);
   const [railWidth, setRailWidth] = useState(300);
   const [copied, setCopied] = useState(false);
-  const [openSections, setOpenSections] = useState<Set<string>>(
-    () => new Set(doc.sections.map((section) => section.id)),
-  );
   const [openCards, setOpenCards] = useState<Set<string>>(() => new Set());
   const [hoverKey, setHoverKey] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<string | null>(doc.sections[0]?.id ?? null);
   const [focusTable, setFocusTable] = useState<Extract<FindingsBlock, { kind: "table" }> | null>(null);
   const [tip, setTip] = useState<{ id: string; title: string; meta: string; label: string; tone: "ok" | "warn" | "muted"; left: number; top: number } | null>(null);
-
-  // A remount opens fresh, but if the markdown/sources change in place (same
-  // reader instance), re-open every section and reset the active anchor so the
-  // contents rail and collapse state track the new document.
-  useEffect(() => {
-    setOpenSections(new Set(doc.sections.map((section) => section.id)));
-    setActiveSection(doc.sections[0]?.id ?? null);
-  }, [doc.sections]);
 
   const closeFocusOrReader = () => {
     if (focusTable) setFocusTable(null);
@@ -201,8 +190,6 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
     return { fullCards: cards, miniSources: mini, usedCount: used };
   }, [mission.sources, doc]);
 
-  const hasBody = doc.title !== null || doc.lede !== null || doc.sections.length > 0;
-
   // ── header meta ──────────────────────────────────────────────────────────
   const passes = mission.iterations.length;
   const rel = relativeTime(artifact.updatedAt);
@@ -247,13 +234,6 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
     announce(ok ? "Citation copied." : "Citation could not be copied.");
   };
 
-  const toggleSection = (id: string) =>
-    setOpenSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
   const toggleCard = (id: string) =>
     setOpenCards((prev) => {
       const next = new Set(prev);
@@ -263,13 +243,7 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
     });
 
   const scrollToSection = (id: string) => {
-    const target = document.getElementById(id);
-    const scroller = docRef.current;
-    if (!target || !scroller) return;
-    const top = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 12;
-    const behavior = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
-    scroller.scrollTo({ top, behavior });
-    setActiveSection(id);
+    documentReaderApiRef.current?.scrollToSection(id);
   };
 
   // Chip click opens the matching evidence card (and reveals the rail).
@@ -297,23 +271,6 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
   const clearHover = () => {
     setHoverKey(null);
     setTip(null);
-  };
-
-  // ── document scroll: progress bar + scroll-spy ───────────────────────────
-  const onDocScroll = () => {
-    const scroller = docRef.current;
-    if (!scroller) return;
-    if (pbarRef.current) {
-      const max = scroller.scrollHeight - scroller.clientHeight;
-      pbarRef.current.style.width = `${max > 0 ? Math.min(100, (scroller.scrollTop / max) * 100) : 0}%`;
-    }
-    const sTop = scroller.getBoundingClientRect().top;
-    let current: string | null = null;
-    for (const section of doc.sections) {
-      const el = document.getElementById(section.id);
-      if (el && el.getBoundingClientRect().top - sTop <= 60) current = section.id;
-    }
-    if (current) setActiveSection(current);
   };
 
   // ── rail resize (pointer drag on the handle) ─────────────────────────────
@@ -345,72 +302,6 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
     return () => {
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", up);
-    };
-  }, []);
-
-  // ── "more sources" strip: reflect + drag the scroll thumb ────────────────
-  const updateThumb = () => {
-    const strip = stripRef.current;
-    const track = trackRef.current;
-    const thumb = thumbRef.current;
-    if (!strip || !track || !thumb) return;
-    const max = strip.scrollWidth - strip.clientWidth;
-    if (max <= 1) {
-      track.hidden = true;
-      return;
-    }
-    track.hidden = false;
-    const tw = track.clientWidth;
-    const thw = Math.max(28, tw * (strip.clientWidth / strip.scrollWidth));
-    thumb.style.width = `${thw}px`;
-    thumb.style.left = `${(strip.scrollLeft / max) * (tw - thw)}px`;
-  };
-  useEffect(() => {
-    updateThumb();
-    window.addEventListener("resize", updateThumb);
-    return () => window.removeEventListener("resize", updateThumb);
-  }, [miniSources.length, railOn, railWidth]);
-
-  const thumbDrag = useRef<{ x: number; left: number } | null>(null);
-  const stripDrag = useRef<{ x: number; sl: number } | null>(null);
-  const onThumbDown = (event: React.PointerEvent) => {
-    thumbDrag.current = { x: event.clientX, left: parseFloat(thumbRef.current?.style.left || "0") || 0 };
-    thumbRef.current?.setPointerCapture(event.pointerId);
-    event.preventDefault();
-    event.stopPropagation();
-  };
-  const onStripDown = (event: React.PointerEvent) => {
-    if ((event.target as HTMLElement).closest(".rr-srcthumb")) return;
-    stripDrag.current = { x: event.clientX, sl: stripRef.current?.scrollLeft ?? 0 };
-  };
-  useEffect(() => {
-    const move = (event: PointerEvent) => {
-      const strip = stripRef.current;
-      const track = trackRef.current;
-      const thumb = thumbRef.current;
-      if (thumbDrag.current && strip && track && thumb) {
-        const tw = track.clientWidth;
-        const thw = thumb.offsetWidth;
-        const nl = Math.max(0, Math.min(tw - thw, thumbDrag.current.left + (event.clientX - thumbDrag.current.x)));
-        strip.scrollLeft = tw - thw > 0 ? (nl / (tw - thw)) * (strip.scrollWidth - strip.clientWidth) : 0;
-      } else if (stripDrag.current && strip) {
-        const dx = event.clientX - stripDrag.current.x;
-        if (Math.abs(dx) > 3) strip.classList.add("is-dragging");
-        strip.scrollLeft = stripDrag.current.sl - dx;
-      }
-    };
-    const up = () => {
-      thumbDrag.current = null;
-      if (stripDrag.current) {
-        stripDrag.current = null;
-        stripRef.current?.classList.remove("is-dragging");
-      }
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    return () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
     };
   }, []);
 
@@ -563,8 +454,6 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
     );
   };
 
-  const tocSections = doc.sections.filter((section) => section.heading);
-
   return createPortal(
     <>
       <div className="research-reader-overlay" role="presentation" onClick={onClose}>
@@ -651,71 +540,30 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
           </div>
 
           <div className="research-reader__grid">
-            <nav className="rr-col rr-toc" aria-label="Contents">
-              <div className="rr-toc__label">Contents</div>
-              <div className="rr-toc__links">
-                {tocSections.map((section) => (
-                  <button
-                    key={section.id}
-                    type="button"
-                    className="rr-toclink focus-ring"
-                    data-active={activeSection === section.id}
-                    onClick={() => scrollToSection(section.id)}
-                  >
-                    {section.heading}
-                  </button>
-                ))}
-              </div>
-              <div className="rr-toc__meta">
+            <DocumentReader
+              document={doc}
+              navigation={expanded && tocOn ? "rail" : "none"}
+              kicker={titleCase(artifact.kind)}
+              apiRef={documentReaderApiRef}
+              onScrollProgress={(progress) => {
+                if (pbarRef.current) {
+                  pbarRef.current.style.width = `${progress * 100}%`;
+                }
+              }}
+              tocMeta={
+                <>
                 <span>{mission.sources.length} sources · {usedCount} used</span>
                 <span>{passes} pass{passes === 1 ? "" : "es"} · {mission.mode}</span>
-              </div>
-            </nav>
-
-            <div className="rr-col rr-doc" ref={docRef} onScroll={onDocScroll}>
-              <div className="rr-doc__column">
-                {hasBody ? (
-                  <>
-                    <div className="rr-doc__kicker">{titleCase(artifact.kind)}</div>
-                    {doc.title ? <h1>{doc.title}</h1> : null}
-                    {doc.lede ? <p className="rr-lede">{renderSpans(doc.lede, "lede")}</p> : null}
-                    {doc.sections.map((section) => {
-                      if (!section.heading) {
-                        return (
-                          <div key={section.id}>
-                            {section.blocks.map((block, i) => renderBlock(block, `${section.id}-b-${i}`))}
-                          </div>
-                        );
-                      }
-                      const open = openSections.has(section.id);
-                      return (
-                        <div key={section.id}>
-                          <h2 id={section.id}>
-                            <button
-                              type="button"
-                              className="rr-h2-btn"
-                              data-open={open}
-                              aria-expanded={open}
-                              onClick={() => toggleSection(section.id)}
-                            >
-                              {section.heading}
-                              <CaretDown />
-                            </button>
-                          </h2>
-                          {open ? (
-                            <div className="rr-doc__section-body">
-                              {section.blocks.map((block, i) => renderBlock(block, `${section.id}-b-${i}`))}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </>
-                ) : (
-                  <div className="rr-empty">This {artifact.title.toLowerCase()} deliverable has not been written yet.</div>
-                )}
-              </div>
-            </div>
+                </>
+              }
+              empty={
+                <div className="rr-empty">
+                  This {artifact.title.toLowerCase()} deliverable has not been written yet.
+                </div>
+              }
+              renderLede={(lede) => renderSpans(lede, "lede")}
+              renderBlock={renderBlock}
+            />
 
             <div className="rr-railhandle" onPointerDown={onHandleDown} aria-hidden>
               <div className="rr-railgrip" />
@@ -733,7 +581,7 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
                 {miniSources.length ? (
                   <div className="rr-more">
                     <div className="rr-more__label">More sources · {miniSources.length}</div>
-                    <div className="rr-srcscroll" ref={stripRef} onScroll={updateThumb} onPointerDown={onStripDown}>
+                    <div className="rr-srcscroll">
                       {miniSources.map((source) => {
                         const view = statusView(source.status);
                         const toneClass = view.refTone === "warn" ? " rr-sref--warn" : view.refTone === "muted" ? " rr-sref--muted" : "";
@@ -752,9 +600,6 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
                           </button>
                         );
                       })}
-                    </div>
-                    <div className="rr-srctrack" ref={trackRef}>
-                      <button className="rr-srcthumb" ref={thumbRef} type="button" aria-label="Scroll sources" onPointerDown={onThumbDown} />
                     </div>
                   </div>
                 ) : null}

@@ -16,7 +16,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 50;
+  /* Above app drawers and mobile navigation; below portaled popovers (400). */
+  z-index: 350;
   padding: var(--space-4);
   animation: ui-modal-fade-in var(--duration-fast) var(--ease-decelerate);
 }
@@ -52,6 +53,13 @@
 }
 
 .ui-modal--wide { max-width: 720px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-modal-backdrop,
+  .ui-modal {
+    animation: none;
+  }
+}
 
 .ui-modal-header {
   display: flex;

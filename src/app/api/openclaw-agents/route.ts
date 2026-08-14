@@ -27,7 +27,10 @@ export async function GET() {
       .map(async (agent) => {
         const id = agent.id;
         const workspacePath = agent.workspace?.trim() || path.join(workspaceRoot, id);
-        const exists = await stat(workspacePath).then((s) => s.isDirectory()).catch(() => false);
+        // Workspaces live under the user's `~/.openclaw`, resolved at runtime.
+        const exists = await stat(/* turbopackIgnore: true */ workspacePath)
+          .then((s) => s.isDirectory())
+          .catch(() => false);
         const identity = exists ? await readIdentity(workspacePath) : null;
         const summary = summarizeOpenClawAgent(id, identity, exists ? workspacePath : null);
         return {

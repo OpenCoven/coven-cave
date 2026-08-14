@@ -5,13 +5,16 @@ import { readFileSync } from "node:fs";
 const listRoute = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 const itemRoute = readFileSync(new URL("./[id]/route.ts", import.meta.url), "utf8");
 const seedRoute = readFileSync(new URL("./seed/route.ts", import.meta.url), "utf8");
+const securitySource = readFileSync(new URL("../../../lib/server/api-security.ts", import.meta.url), "utf8");
 const guidanceModuleUrl = new URL("../../../lib/project-root-guidance.ts", import.meta.url);
+const localRequestModuleUrl = new URL("../../../lib/project-errors.ts", import.meta.url);
 const guidanceSource = readFileSync(guidanceModuleUrl, "utf8");
 const {
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
   PROJECT_ROOT_WORKSPACE_HELP,
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR,
 } = await import(guidanceModuleUrl.href);
+const { LOCAL_REQUEST_REQUIRED_CODE } = await import(localRequestModuleUrl.href);
 
 assert.match(listRoute, /seedDefaultProjectsIfEmpty/, "GET /api/projects should seed defaults before listing");
 assert.doesNotMatch(
@@ -43,7 +46,22 @@ assert.doesNotMatch(
   "the familiar-scoped route must not discard effective access metadata",
 );
 assert.match(listRoute, /export async function POST\(req: Request\)/, "projects route should expose POST");
+assert.equal(LOCAL_REQUEST_REQUIRED_CODE, "local_request_required", "local-only project mutations should expose a stable error code");
+assert.match(
+  securitySource,
+  /code:\s*LOCAL_REQUEST_REQUIRED_CODE[\s\S]*error:\s*"forbidden"/,
+  "local-only rejection should preserve the legacy error and add the stable code",
+);
 assert.match(listRoute, /name and root are required/, "POST /api/projects should validate required fields");
+// cave-8e7q: the display name is presentation text, never a connection
+// identifier — identity is id + root. Trimming the ends is the ONLY normalizing
+// allowed, so interior spaces in a name like `My Project Two` reach the store
+// intact. A slugify/tokenize step added here is what originally mangled it.
+assert.match(
+  listRoute,
+  /const\s+name\s*=\s*String\(body\.name\s*\?\?\s*""\)\.trim\(\);/,
+  "POST /api/projects should store the display name with only its ends trimmed",
+);
 assert.match(listRoute, /isAllowedNewProjectRoot\(root\)/, "POST /api/projects should validate roots before persisting them");
 assert.equal(
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
@@ -142,6 +160,30 @@ assert.match(
 );
 assert.match(itemRoute, /not found/, "project item route should return not-found errors");
 assert.match(itemRoute, /rejectNonLocalRequest/, "project item route must enforce loopback before mutating project roots");
+// cave-eonxy: cascade must run even when the registry row is already gone, so
+// residue grants stay reachable. 404 only when BOTH the row and residue are absent.
+assert.match(
+  itemRoute,
+  /revokeAllGrantsForProject\(id\)/,
+  "DELETE /api/projects/[id] must cascade grants",
+);
+assert.match(
+  itemRoute,
+  /!deleted\s*&&\s*cleaned\.grants\s*===\s*0\s*&&\s*cleaned\.groupGrants\s*===\s*0\s*&&\s*cleaned\.proposals\s*===\s*0/,
+  "DELETE /api/projects/[id] 404s only when the registry row and grant residue are both gone",
+);
+{
+  const deleteStart = itemRoute.indexOf("export async function DELETE");
+  assert.ok(deleteStart >= 0, "DELETE handler must exist");
+  const deleteFn = itemRoute.slice(deleteStart);
+  const revokeAt = deleteFn.indexOf("revokeAllGrantsForProject");
+  const notFoundAt = deleteFn.indexOf('error: "not found"');
+  assert.ok(revokeAt >= 0 && notFoundAt >= 0, "DELETE should contain cascade and not-found branches");
+  assert.ok(
+    revokeAt < notFoundAt,
+    "DELETE must cascade before deciding 404 so orphaned grants stay cleanable (cave-eonxy)",
+  );
+}
 
 assert.match(seedRoute, /seedDefaultProjectsIfEmpty/, "seed route should invoke default seeding");
 assert.match(seedRoute, /export async function POST\(\)/, "seed route should expose POST only");

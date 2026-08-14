@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
+  attachmentMediaKind,
   buildPromptWithAttachments,
   normalizeChatAttachments,
   stripPreviewOnlyAttachmentFields,
@@ -74,6 +75,55 @@ assert.match(
 );
 assert.doesNotMatch(mediaPrompt, /\(content unavailable\)/);
 
+// Audio gets its own metadata-only wording, distinct from video's.
+{
+  const audioPrompt = buildPromptWithAttachments("Listen.", normalizeChatAttachments([
+    { name: "memo.mp3", type: "audio/mpeg", mimeType: "audio/mpeg", size: 4096 },
+  ]));
+  assert.match(
+    audioPrompt,
+    /1\. memo\.mp3 \(audio\/mpeg, 4\.0 KB\)\n\(audio attached as metadata only — sound is not decoded yet\)/,
+  );
+}
+
+// ── Playable media data URLs ─────────────────────────────────────────────────
+// Allowlisted audio/video ride the same dataUrl channel as images, with the
+// larger media cap; anything off the allowlist is stripped as before.
+{
+  const clip = `data:video/mp4;base64,${"QUJD".repeat(64)}`;
+  const [video] = normalizeChatAttachments([
+    { name: "demo.mp4", type: "video/mp4", size: 192, dataUrl: clip },
+  ]);
+  assert.equal(video.dataUrl, clip, "an allowlisted video payload survives normalization");
+  assert.equal(video.mimeType, "video/mp4");
+  assert.equal(attachmentMediaKind(video), "video");
+
+  const [audio] = normalizeChatAttachments([
+    { name: "memo.mp3", type: "audio/mpeg", size: 192, dataUrl: `data:audio/mpeg;base64,${"QUJD".repeat(64)}` },
+  ]);
+  assert.ok(audio.dataUrl, "an allowlisted audio payload survives normalization");
+  assert.equal(attachmentMediaKind(audio), "audio");
+
+  const [mkv] = normalizeChatAttachments([
+    { name: "demo.mkv", type: "video/x-matroska", size: 192, dataUrl: `data:video/x-matroska;base64,${"QUJD".repeat(64)}` },
+  ]);
+  assert.equal(mkv.dataUrl, undefined, "media off the allowlist is stripped");
+  assert.equal(attachmentMediaKind(mkv), null);
+
+  // Media past the 50MB cap is refused by size.
+  const bigBody = "QUJD".repeat(Math.floor((51 * 1024 * 1024) / 3));
+  const [oversize] = normalizeChatAttachments([
+    { name: "big.mp4", type: "video/mp4", dataUrl: `data:video/mp4;base64,${bigBody}` },
+  ]);
+  assert.equal(oversize.dataUrl, undefined, "media past the cap is dropped");
+
+  // The send-body strip keeps validated media payloads alongside images.
+  const kept = stripPreviewOnlyAttachmentFieldsKeepingImages([
+    { name: "demo.mp4", type: "video/mp4", mimeType: "video/mp4", size: 192, dataUrl: clip },
+  ]);
+  assert.equal(kept[0].dataUrl, clip, "media payloads survive the keeping-images strip");
+}
+
 const attachmentOnly = buildPromptWithAttachments("", [attachments[0]]);
 assert.match(attachmentOnly, /^Review the attached file\./);
 
@@ -142,3 +192,166 @@ assert.deepEqual(
     },
   ],
 );
+
+// ── Multi-megabyte image data URLs ───────────────────────────────────────────
+//
+// `cleanImageDataUrl` used to match one anchored pattern against the WHOLE data
+// URL, which put a backtracking regex engine across several million characters
+// of base64 inside a single `String.prototype.match`. That threw
+// `RangeError: Maximum call stack size exceeded at String.match` on a ~6 MB
+// payload — and thrown from a streaming route handler it took the whole
+// response down rather than rejecting one attachment.
+//
+// `POST /api/chat/send` runs pasted images through `normalizeChatAttachments`
+// on exactly these strings: `fileToAttachment` inlines any image up to
+// MAX_ATTACHMENT_IMAGE_BYTES with no downscale. The sizes below are the sizes
+// that path actually produces.
+//
+// The cap is not the fix and must not become one: a 5 MB photo is a legitimate
+// attachment and has to keep working.
+
+/** A data URL whose decoded payload is about `mb` megabytes. */
+function bigImageDataUrl(mb, { mime = "image/png", corrupt = false } = {}) {
+  const body = "QUJD".repeat(Math.floor((mb * 1024 * 1024) / 3));
+  return `data:${mime};base64,${corrupt ? `${body}%` : body}`;
+}
+
+for (const mb of [1, 3, 4.9]) {
+  const url = bigImageDataUrl(mb);
+  const [image] = normalizeChatAttachments([
+    { name: "photo.png", type: "image/png", size: mb * 1024 * 1024, dataUrl: url },
+  ]);
+  assert.equal(
+    image.dataUrl,
+    url,
+    `${mb}MB image must survive normalization (${url.length} chars)`,
+  );
+  assert.equal(image.mimeType, "image/png");
+}
+
+// The same sizes, but malformed — this is the shape that made the old pattern
+// backtrack, one frame per character, all the way back to the start.
+for (const mb of [1, 3, 4.9]) {
+  const url = bigImageDataUrl(mb, { corrupt: true });
+  assert.doesNotThrow(
+    () => normalizeChatAttachments([{ name: "bad.png", type: "image/png", dataUrl: url }]),
+    `a malformed ${mb}MB payload must be rejected, never thrown on`,
+  );
+  const [rejected] = normalizeChatAttachments([
+    { name: "bad.png", type: "image/png", dataUrl: url },
+  ]);
+  assert.equal(rejected.dataUrl, undefined, "a non-base64 body is dropped, not carried");
+}
+
+// Over the cap is still refused, by size and not by accident.
+{
+  const [oversized] = normalizeChatAttachments([
+    { name: "huge.png", type: "image/png", dataUrl: bigImageDataUrl(6) },
+  ]);
+  assert.equal(oversized.dataUrl, undefined, "an image past the 5MB cap is dropped");
+}
+
+// And the whole prompt builder — the call every send path makes — must get
+// through a payload of that size without throwing.
+{
+  const url = bigImageDataUrl(4.9);
+  const built = buildPromptWithAttachments(
+    "Look at this.",
+    normalizeChatAttachments([{ name: "photo.png", type: "image/png", dataUrl: url }]),
+    { imagesSupported: true, imageFilePaths: new Map([[0, "/tmp/photo.png"]]) },
+  );
+  assert.match(built, /\/tmp\/photo\.png/, "the image reaches the harness as a path");
+}
+
+// ── The header parse ─────────────────────────────────────────────────────────
+// Exactly the acceptance set the old pattern had, kept honest case by case.
+
+const HEADER_CASES = [
+  ["data:image/png;base64,aGVsbG8=", "image/png"],
+  ["data:image/svg+xml;base64,aGVsbG8=", "image/svg+xml"],
+  ["data:IMAGE/PNG;BASE64,aGVsbG8=", "image/png"],
+  ["data:image/png;base64,aGVsbG8", "image/png"],
+  ["data:image/png;base64,aGVsbG9v", "image/png"],
+];
+for (const [url, mime] of HEADER_CASES) {
+  const [ok] = normalizeChatAttachments([{ name: "a.png", type: "image/png", dataUrl: url }]);
+  assert.equal(ok.dataUrl, url, `${url} must be accepted`);
+  assert.equal(ok.mimeType, mime, `${url} must report ${mime}`);
+}
+
+const REJECT_CASES = [
+  "data:application/pdf;base64,aGVsbG8=",
+  "data:image/png;base64",
+  "data:image/png,aGVsbG8=",
+  "data:image/png;base64,",
+  "data:image/png;base64,===",
+  "data:image/png;base64,aGVsbG8===",
+  "data:image/png;base64,aGVsb G8=",
+  "https://example.com/a.png",
+  `data:image/${"x".repeat(61)};base64,aGVsbG8=`,
+];
+for (const url of REJECT_CASES) {
+  const [bad] = normalizeChatAttachments([{ name: "a.png", type: "image/png", dataUrl: url }]);
+  assert.equal(bad.dataUrl, undefined, `${url} must be rejected`);
+}
+
+console.log("chat-attachments: large image data URLs ok");
+
+// ── The new parse accepts exactly what the old pattern accepted ──────────────
+// Removing a regex is only safe if nothing that used to be a valid attachment
+// stops being one. This is that proof, over the shapes that actually differ.
+
+const OLD_PATTERN = /^data:(image\/[a-z0-9.+-]{1,60});base64,([A-Za-z0-9+/]+={0,2})$/i;
+const ALPHABET = ["A", "z", "0", "9", "+", "/", "=", "%", " ", ",", ";", "-"];
+let compared = 0;
+for (const mime of ["image/png", "image/svg+xml", "IMAGE/JPEG", "application/pdf", "image/"]) {
+  for (let n = 0; n < 3000; n++) {
+    let body = "";
+    const length = n % 7;
+    for (let i = 0; i < length; i++) {
+      body += ALPHABET[(n * 7 + i * 13) % ALPHABET.length];
+    }
+    const url = `data:${mime};base64,${body}`;
+    const old = OLD_PATTERN.exec(url);
+    const [now] = normalizeChatAttachments([{ name: "a", type: "image/png", dataUrl: url }]);
+    // The old pattern had no size floor of its own; `cleanImageDataUrl` rejects
+    // a payload that decodes to zero bytes, then and now. Compare on that basis.
+    const oldAccepts = Boolean(old) && Math.floor((old[2].length * 3) / 4)
+      - (old[2].endsWith("==") ? 2 : old[2].endsWith("=") ? 1 : 0) > 0;
+    assert.equal(
+      Boolean(now.dataUrl),
+      oldAccepts,
+      `acceptance changed for ${JSON.stringify(url)}`,
+    );
+    if (oldAccepts) assert.equal(now.mimeType, old[1].toLowerCase());
+    compared++;
+  }
+}
+assert.ok(compared > 10_000, `compared ${compared} shapes`);
+
+// ── The body must never meet a backtracking pattern ─────────────────────────
+// The behaviour above cannot catch a regression here: reintroducing the old
+// pattern would still accept the same strings, and only fall over on a payload
+// large enough to exhaust the stack in a server's call depth. So this is pinned
+// as a source contract, the way other invariants in this repo are.
+{
+  const source = await import("node:fs").then((fs) =>
+    fs.readFileSync(new URL("./chat-attachments.ts", import.meta.url), "utf8"),
+  );
+  const body = source.slice(source.indexOf("export function cleanImageDataUrl"));
+  const fn = body.slice(0, body.indexOf("\n}") + 2);
+  assert.doesNotMatch(
+    fn,
+    /\.match\(|\.test\(|\.exec\([^)]*body/,
+    "cleanImageDataUrl must not run a pattern over the payload — see the note on IMAGE_DATA_URL_HEADER_RE",
+  );
+  assert.match(fn, /indexOf\(","\)/, "the header/body split is an indexOf, not a pattern");
+  assert.match(fn, /isBase64Body\(body\)/, "the payload is checked by a bounded scan");
+  assert.doesNotMatch(
+    source,
+    /\[A-Za-z0-9\+\/\]\+=\{0,2\}\)\$\/i;/,
+    "the old whole-string pattern must not come back as the live one",
+  );
+}
+
+console.log("chat-attachments: acceptance unchanged across " + compared + " shapes");

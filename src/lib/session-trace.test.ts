@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   formatTracePayload,
   mergeTraceEvents,
+  findNearestTraceEvent,
   summarizeTracePayload,
   traceEventTone,
   type SessionTraceEvent,
@@ -96,5 +97,31 @@ describe("mergeTraceEvents", () => {
   it("sorts even when pages arrive out of order", () => {
     const merged = mergeTraceEvents([event(5)], [event(2)]);
     assert.deepEqual(merged.map((item) => item.seq), [2, 5]);
+  });
+});
+
+describe("findNearestTraceEvent", () => {
+  it("returns an exact seq match", () => {
+    const selected = findNearestTraceEvent([event(1), event(4), event(7)], 4);
+    assert.equal(selected?.seq, 4);
+  });
+
+  it("returns the nearest prior event when there is no exact match", () => {
+    const selected = findNearestTraceEvent([event(1), event(4), event(7)], 6);
+    assert.equal(selected?.seq, 4);
+  });
+
+  it("returns null when there is no prior candidate", () => {
+    const selected = findNearestTraceEvent([event(5), event(9)], 3);
+    assert.equal(selected, null);
+  });
+
+  it("returns null for empty input", () => {
+    assert.equal(findNearestTraceEvent([], 12), null);
+  });
+
+  it("works with unsorted input", () => {
+    const selected = findNearestTraceEvent([event(9), event(2), event(6), event(4)], 5);
+    assert.equal(selected?.seq, 4);
   });
 });

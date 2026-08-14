@@ -12,7 +12,7 @@ import {
 } from "./opencoven-tools-resolve.ts";
 import type { OpenCovenToolProbe } from "./opencoven-tool-verification.ts";
 
-const LATEST = "0.1.1";
+const LATEST = "0.2.5";
 const GOOD_PATH = "/home/user/.local/bin/coven";
 const GOOD_PKG = "/home/user/.local/lib/node_modules/@opencoven/cli";
 
@@ -88,7 +88,7 @@ test("removes an orphaned same-package stale launcher, then verifies the fresh c
   assert.ok(resolution.verification?.ok, "final verification succeeds after removal");
   assert.equal(resolution.verification?.current, LATEST);
   assert.match(resolution.log[0]!, /Removed stale coven launcher .* \(0\.0\.54\)/);
-  assert.match(resolution.log[1]!, /now resolves at .*\.local\/bin\/coven \(0\.1\.1\)/);
+  assert.match(resolution.log[1]!, /now resolves at .*\.local\/bin\/coven \(0\.2\.5\)/);
 });
 
 test("clears multiple stacked stale launchers in one pass", async () => {

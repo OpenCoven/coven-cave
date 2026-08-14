@@ -91,7 +91,14 @@ test("every remounting surface opts into the registry while searches remain tran
   assert.match(sources.github, /const \[query, setQuery\] = useState\(""\)/, "GitHub search stays transient");
   assert.match(sources.memory, /const \[query, setQuery\] = useState\(""\)/, "Memory search stays transient");
   assert.match(sources.marketplace, /const \[query, setQuery\] = useState\(""\)/, "Marketplace search stays transient");
-  assert.match(sources.github, /\(\) => deepLinkItem \?\? sorted\.find/, "an explicit GitHub deep link wins over restored selection");
+  // Pins the precedence, not the formatting: deepLinkItem has to be the FIRST
+  // branch of the selection chain, ahead of the restored target and the
+  // fall-back to the first visible row.
+  assert.match(
+    sources.github,
+    /const selectedItem = useMemo\(\s*\(\) =>\s*deepLinkItem\s*\?\?\s*sorted\.find\(sameSelectedTarget\)/,
+    "an explicit GitHub deep link wins over restored selection",
+  );
   assert.match(sources.board, /const activeTab = deepLinkTab \?\? storedActiveTab/, "an explicit Board deep link wins without replacing the saved tab");
   assert.match(sources.browser, /if \(transientNavigationUrlRef\.current\) return;/, "a queued Browser URL wins when preferences hydrate after its navigation request");
   assert.match(sources.browser, /if \(restored\.restoredTabExists && storedAddress\)/, "Browser only restores an address when its saved tab still exists");

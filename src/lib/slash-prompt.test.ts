@@ -81,7 +81,11 @@ assert.match(slashCmds, /name: "\/prompts"/, "/prompts is registered");
 // by BOTH composers; the insert-not-send contract stays pinned per composer.
 const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
 const menusHook = await readFile(new URL("./use-inline-slash-menus.ts", import.meta.url), "utf8");
-assert.match(menusHook, /promptSlashOptions\(text, prompts\)/, "the shared hook computes the inline /prompt options");
+assert.match(
+  menusHook,
+  /promptSlashOptions\(activeInvocation\?\.input \?\? "", prompts\)/,
+  "the shared hook computes /prompt options from the invocation at the caret",
+);
 assert.match(menusHook, /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| promptMenuActive \|\| slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0;/, "menuOpen includes the prompt picker");
 assert.match(chatView, /command === "\/prompt" \|\| command === "\/prompts"/, "chat-view dispatches /prompt and /prompts");
 assert.match(chatView, /role="listbox" aria-label="Prompts"/, "chat-view renders a Prompts listbox");

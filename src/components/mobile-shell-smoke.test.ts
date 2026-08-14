@@ -28,9 +28,9 @@ const globals = (
       "../styles/globals/shell-responsive.css",
       "../styles/globals/calendar-agenda.css",
       "../styles/globals/surface-compact-calendar.css",
-      "../styles/globals/surface-reporting.css",
+      "../styles/globals/shell-cards-and-controls.css",
       "../styles/globals/surface-chat-overlays.css",
-      "../styles/globals/surface-marketplace.css",
+      "../styles/globals/shared-pickers-and-toasts.css",
       "../styles/globals/surface-role-workspaces.css",
     ].map((path) => readFile(new URL(path, import.meta.url), "utf8")),
   )

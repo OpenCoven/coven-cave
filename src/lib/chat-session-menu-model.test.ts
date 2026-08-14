@@ -14,6 +14,7 @@ const baseCtx = {
   projectRoot: "/Users/dev/coven-cave" as string | null,
   hasTurns: true,
   showThinking: false,
+  instrumentsVisible: true,
   reflectAvailable: true,
   reflecting: false,
 };
@@ -25,8 +26,8 @@ const baseCtx = {
   const ids = sections.flat().map((i) => i.id);
   assert.deepEqual(
     ids,
-    ["continue-on-phone", "project", "thinking", "reflect", "debug"],
-    "full context yields the slim five-item menu in two sections",
+    ["continue-on-phone", "project", "thinking", "instruments", "reflect", "debug"],
+    "full context yields the slim six-item menu in two sections",
   );
   assert.equal(sections.length, 2, "primary and tools sections");
 }
@@ -54,6 +55,33 @@ const baseCtx = {
   const ids = sections.flat().map((i) => i.id);
   assert.deepEqual(ids, ["debug"], "minimal context degrades to debug only");
   assert.equal(sections.length, 1, "empty primary section is dropped (no dangling separator)");
+}
+
+// ---- thread-instruments toggle (cave-xb6g5) -------------------------------
+
+{
+  const on = sessionMenuSections(baseCtx).flat().find((i) => i.id === "instruments")!;
+  assert.equal(on.checked, true, "a visible instruments state renders the checkmark");
+  assert.match(on.label, /^Hide /, "the label is the ACTION, not the state");
+
+  const off = sessionMenuSections({ ...baseCtx, instrumentsVisible: false })
+    .flat()
+    .find((i) => i.id === "instruments")!;
+  assert.equal(off.checked, false);
+  assert.match(off.label, /^Show /);
+  assert.equal(on.icon, off.icon, "both states share one curated glyph");
+}
+
+{
+  // Gated on hasTurns for the same reason Show-thinking is: offering to hide
+  // furniture that is not on screen reads as a broken setting.
+  const ids = sessionMenuSections({ ...baseCtx, hasTurns: false })
+    .flat()
+    .map((i) => i.id);
+  assert.ok(
+    !ids.includes("instruments"),
+    "an empty transcript has nothing to navigate, so the toggle stays away",
+  );
 }
 
 {

@@ -1,20 +1,32 @@
 import { NextResponse } from "next/server";
 
 import {
+  isResearchGenerationMediaKind,
   isValidResearchGenerationFamiliarId,
   validateCreateResearchGenerationInput,
 } from "@/lib/research-generations";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   createResearchGenerationFromMission,
+  createResearchMediaGenerationFromMission,
   listResearchGenerations,
-  removeResearchGeneration,
+  removeResearchGenerationIfInactive,
 } from "@/lib/server/research-generations";
+import { startResearchMediaJobs } from "@/lib/server/research-media-jobs";
+import { removeResearchGenerationMedia } from "@/lib/server/research-media-store";
+import {
+  getResearchMediaReadiness,
+  validateResearchMediaSelection,
+} from "@/lib/server/research-media-readiness";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const MAX_BODY_BYTES = 64 * 1024;
+
+void startResearchMediaJobs().catch((error) => {
+  console.warn("[research-generations] media jobs failed to start:", error);
+});
 
 export async function GET(req: Request) {
   const forbidden = rejectNonLocalRequest(req);
@@ -42,14 +54,36 @@ export async function POST(req: Request) {
   const parsed = await readJsonBody<unknown>(req, MAX_BODY_BYTES);
   if (!parsed.ok) return parsed.response;
 
-  const validated = validateCreateResearchGenerationInput(parsed.body);
+  const validated = validateCreateResearchGenerationInput(parsed.body, { allowMedia: true });
   if (!validated.ok) {
     return NextResponse.json({ ok: false, error: validated.error }, { status: 400 });
   }
 
   let result;
   try {
-    result = await createResearchGenerationFromMission(validated.value);
+    if (isResearchGenerationMediaKind(validated.value.kind)) {
+      const readiness = await getResearchMediaReadiness();
+      if (!validated.value.renderConfig) {
+        return NextResponse.json(
+          { ok: false, error: "media render config required" },
+          { status: 400 },
+        );
+      }
+      const selection = validateResearchMediaSelection(
+        validated.value.kind,
+        validated.value.renderConfig,
+        readiness,
+      );
+      if (!selection.ok) {
+        return NextResponse.json(
+          { ok: false, error: selection.error },
+          { status: 409 },
+        );
+      }
+    }
+    result = isResearchGenerationMediaKind(validated.value.kind)
+      ? await createResearchMediaGenerationFromMission(validated.value)
+      : await createResearchGenerationFromMission(validated.value);
   } catch {
     return NextResponse.json(
       { ok: false, error: "failed to write the research-generations store" },
@@ -65,6 +99,8 @@ export async function POST(req: Request) {
     const status =
       result.code === "mission-not-found" ? 404
         : result.code === "no-artifact" ? 409
+        : result.code === "media-not-ready" ? 409
+        : result.code === "capacity" ? 409
         : result.code === "artifact-unreadable" ? 422
         : 500;
     return NextResponse.json({ ok: false, error: result.error }, { status });
@@ -86,17 +122,31 @@ export async function DELETE(req: Request) {
   if (!isValidResearchGenerationFamiliarId(familiarId)) {
     return NextResponse.json({ ok: false, error: "familiarId required" }, { status: 400 });
   }
-  let removed: boolean;
+  let removed: Awaited<ReturnType<typeof removeResearchGenerationIfInactive>>;
   try {
-    removed = await removeResearchGeneration(familiarId, id);
+    removed = await removeResearchGenerationIfInactive(familiarId, id);
+    if (!removed.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            removed.code === "active"
+              ? "Cancel the render before deleting this generation."
+              : "generation not found",
+        },
+        { status: removed.code === "active" ? 409 : 404 },
+      );
+    }
   } catch {
     return NextResponse.json(
       { ok: false, error: "failed to write the research-generations store" },
       { status: 500 },
     );
   }
-  if (!removed) {
-    return NextResponse.json({ ok: false, error: "generation not found" }, { status: 404 });
+  try {
+    await removeResearchGenerationMedia(familiarId, id);
+  } catch (error) {
+    console.warn("[research-generations] failed to remove media files:", error);
   }
   return NextResponse.json({ ok: true });
 }

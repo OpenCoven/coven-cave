@@ -1,0 +1,22 @@
+# Beads interactions are an append-only audit log. Merge by RECORD ID, not by
+# concatenation.
+#
+# This line was `merge=union`, added in #4184 to "preserve concurrent entries".
+# Union does preserve them — by concatenating both sides of a conflicting hunk.
+# When two branches carry the same appended block (routine, since bd re-exports
+# the whole file), union keeps BOTH copies. That is how main came to hold one
+# 6-record block twice, and 20 duplicate records in total (cave-1poit).
+#
+# The driver below performs a real union, keyed by record id with the first
+# occurrence winning, so a duplicate id cannot survive a merge. Register it
+# with `scripts/install-git-hooks.sh` — merge drivers live in git config, which
+# is per-clone and cannot be committed.
+#
+# If it is NOT registered, git falls back to the default text merge: a
+# divergent append conflicts loudly instead of silently duplicating. That is
+# the correct direction to fail, and `pnpm check:beads-jsonl` catches
+# duplicates in CI either way.
+#
+# issues.jsonl is deliberately NOT routed here: its records are mutable, so
+# first-occurrence-wins could keep a stale issue state. A conflict is right.
+.beads/interactions.jsonl merge=beads-jsonl

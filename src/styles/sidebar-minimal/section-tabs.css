@@ -1,0 +1,111 @@
+/* ── Global section switcher (Home | Chat) ───────────────────────────────────
+ * Two rooms at the top of the left siderail (cave-24d2r). A segmented control
+ * rather than two more nav rows: the choice is a scope for everything below it,
+ * so it must not read as a peer destination.
+ *
+ * Hosted by both siderails (SidebarMinimal and the Chat-time WorkspaceSidebar)
+ * so the switcher never moves between rooms.
+ */
+
+.nav-sections {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  /* The rail's one inset — these tabs sit directly above the shared header, so
+     an inset of their own reads as a misalignment rather than a choice. */
+  margin: 0 var(--rail-pad) var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 55%, transparent);
+}
+
+.nav-sections__tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: 26px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.nav-sections__tab:hover {
+  background: color-mix(in oklch, var(--bg-hover) 60%, transparent);
+  color: var(--text-primary);
+}
+
+/* Active section: the presence accent carries it — a solid text tone over a
+   soft fill of the SAME hue (no second color), per the state-tint recipe. */
+.nav-sections__tab.is-active {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 34%, transparent);
+  padding: 0 calc(var(--space-2) - 1px);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.nav-sections__icon {
+  flex-shrink: 0;
+  color: var(--accent-presence);
+  opacity: 0.75;
+}
+
+.nav-sections__tab.is-active .nav-sections__icon {
+  opacity: 1;
+}
+
+.nav-sections__label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Collapsed 56px rail: labels drop, the control stacks so both rooms stay
+   reachable as icons (same treatment as the destination rows), and each tab
+   takes the rail's shared --rail-control width so the strip sits on the same
+   column as every control below it.
+
+   This strip is the ONE control whose rail form is a different SHAPE than its
+   panel form — two stacked tabs cannot be as tall as one row of two — so it is
+   also the one place where hover-peek still shifts the content below it, by
+   about 25px (under one row's pitch, so the control under the cursor does not
+   change). Every other control in both states is pinned to the same box; see
+   the geometry note on .shell-nav in styles/globals/shell-navigation.css. */
+.shell-nav--rail .nav-sections {
+  grid-auto-flow: row;
+  grid-auto-columns: var(--rail-control);
+  /* Tighter than the panel's --space-1 so the strip plus its border still fits
+     the rail's content box once the tabs are a full --rail-control wide. */
+  padding: 2px;
+  margin-inline: auto;
+}
+
+.shell-nav--rail .nav-sections__label {
+  display: none;
+}
+
+.shell-nav--rail .nav-sections__tab {
+  padding: 0;
+}
+
+.shell-nav--rail .nav-sections__tab.is-active {
+  padding: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-sections__tab {
+    transition: none;
+  }
+}

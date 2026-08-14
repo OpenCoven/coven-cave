@@ -1,9 +1,11 @@
+import { execFile } from "node:child_process";
 import { createHmac, randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 
 import next from "next";
@@ -11,6 +13,7 @@ import { WebSocket, WebSocketServer, type RawData } from "ws";
 
 const require = createRequire(import.meta.url);
 const pty: typeof import("node-pty") = require("node-pty");
+const execFileAsync = promisify(execFile);
 
 // Packaged desktop builds (the Tauri sidecar) run this server from inside the
 // .app bundle, where next.config.ts is not shipped. The standalone build
@@ -37,8 +40,43 @@ if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDAL
 // Serve route stays token-gated. Mirrors src/lib/server/mobile-access-
 // provision.ts, inlined because the standalone server.mjs cannot import from
 // src/.
+// The port contract, inlined for the same reason as everything else in this
+// block: `build:server` runs esbuild with `--bundle=false`, so any import here
+// must still resolve at runtime from wherever server.mjs is unpacked — and the
+// packaged bundle ships server.mjs without scripts/. scripts/ports.mjs is the
+// source of truth and scripts/port-contract.test.mjs fails if this copy drifts.
+const CAVE_DEV_PORT = 3000;
+const CAVE_PRODUCTION_PORT = 3020;
+
+function parseCavePort(raw: string | undefined): number | null {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535 ? parsed : null;
+}
+
+/**
+ * COVEN_CAVE_PORT wins over PORT so Cave can be pinned without disturbing a
+ * PORT that some parent set for its own reasons — pnpm exports its config to
+ * children as env vars, and inheriting one by accident is how the port stopped
+ * being dependable before. The packaged bundle takes the production port; a
+ * `pnpm dev` server takes the dev port, so the two can run side by side.
+ */
+function cavePort(): number {
+  const channelDefault =
+    process.env.COVEN_CAVE_BUNDLE === "1" ? CAVE_PRODUCTION_PORT : CAVE_DEV_PORT;
+  return (
+    parseCavePort(process.env.COVEN_CAVE_PORT) ??
+    parseCavePort(process.env.PORT) ??
+    channelDefault
+  );
+}
+
 function persistedMobileAccessSecretFile(): string {
-  const port = (process.env.PORT || "3000").trim() || "3000";
+  // Keyed by the port on purpose (it mirrors scripts/mobile-tailscale.sh), which
+  // is precisely why the port had to stop moving: a per-launch port meant a
+  // per-launch secret directory, so every desktop restart re-paired every phone.
+  const port = String(cavePort());
   const stateRoot =
     process.env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim() ||
     join(
@@ -106,16 +144,101 @@ type PtySession = {
    *  client repaints the screen instead of staring at a blank pane. */
   scrollback: Buffer[];
   scrollbackBytes: number;
+  /** Absolute byte cursor at the front of the retained scrollback ring. */
+  scrollbackStart: number;
+  /** Absolute cursor immediately after the newest PTY byte. */
+  streamEnd: number;
+  /** Coalesced output waiting for one bounded WebSocket frame. */
+  pendingOutput: Buffer[];
+  pendingOutputBytes: number;
+  flushTimer: NodeJS.Timeout | null;
   /** Pending kill while detached — cleared when a client reattaches. */
   detachTimer: NodeJS.Timeout | null;
 };
 
 const sessions = new Map<string, PtySession>();
+const PACKAGED_CHILD_SHUTDOWN_BUDGET_MS = 1_200;
+
+function terminatePtySessions(): void {
+  for (const session of sessions.values()) {
+    try {
+      session.pty.kill();
+    } catch {
+      // The PTY may already have exited.
+    }
+  }
+  sessions.clear();
+}
+
+// Packaged Unix sidecars receive stdin as a private pipe whose write end is
+// owned only by the Tauri GUI. EOF therefore identifies the exact parent
+// lifetime without polling a reusable PID. The sidecar is also launched as
+// its own process-group leader, so one signal removes the root and ordinary
+// descendants; node-pty sessions are asked to stop explicitly because a PTY
+// may create a separate session/process group.
+async function terminatePackagedUnixSidecarTree(): Promise<void> {
+  // PTYs may own sessions/groups outside the server group. Stop them before
+  // awaiting any JavaScript cleanup, and repeat in finally so an exception or
+  // hung persistence path can never skip this OS boundary.
+  terminatePtySessions();
+  try {
+    const terminateDirectRuns = globalThis.__covenCaveTerminateCopilotFlowRuns;
+    if (terminateDirectRuns) {
+      await Promise.race([
+        terminateDirectRuns(),
+        new Promise<never>((_resolve, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error("direct Copilot shutdown exceeded its native parent lease")),
+            PACKAGED_CHILD_SHUTDOWN_BUDGET_MS,
+          );
+          timer.unref?.();
+        }),
+      ]);
+    }
+  } catch (error) {
+    // Direct runs are each owned by a native supervisor whose stdin closes when
+    // this server dies. Report the failed graceful proof, then let that exact
+    // EOF/Job boundary finish cleanup instead of waiting past Tauri's lease.
+    console.error("[cave] direct Copilot process-tree shutdown could not be proved", error);
+  } finally {
+    terminatePtySessions();
+    try {
+      process.kill(-process.pid, "SIGKILL");
+    } catch {
+      process.exit(1);
+    }
+  }
+}
+
+if (
+  process.platform !== "win32" &&
+  process.env.COVEN_CAVE_PARENT_WATCHDOG === "stdin-eof"
+) {
+  let parentShutdownStarted = false;
+  const onParentShutdown = () => {
+    if (parentShutdownStarted) return;
+    parentShutdownStarted = true;
+    void terminatePackagedUnixSidecarTree();
+  };
+  process.stdin.once("end", onParentShutdown);
+  process.stdin.once("error", onParentShutdown);
+  process.stdin.resume();
+}
 
 // Recent-output ring replayed to a (re)attaching client so it repaints the
 // screen instead of staring at a blank pane. Matches the Rust desktop PTY's
 // 256KB ring (src-tauri/src/pty.rs).
 const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
+// PTYs often emit a write-sized chunk for every line. Coalesce a short burst
+// before framing it, but cap the userland queue and every individual frame.
+const PTY_FRAME_COALESCE_MS = 8;
+const PTY_FRAME_MAX_BYTES = 16 * 1024;
+// `ws` otherwise retains arbitrary output for a client whose TCP receive
+// window stopped advancing. This is deliberately larger than one legacy
+// scrollback replay, so a healthy reattach is never evicted for the replay.
+const PTY_WS_BUFFERED_AMOUNT_LIMIT = 512 * 1024;
+const PTY_SLOW_CONSUMER_CLOSE_CODE = 1013;
+const PTY_SLOW_CONSUMER_CLOSE_REASON = "slow terminal consumer; reconnect";
 // How long a shell survives after its socket drops before being reaped. A
 // terminal pane remounts whenever the Comux layout restructures (split,
 // drag-reorganize, tab switch) or the page reloads; killing the shell the
@@ -131,15 +254,47 @@ const DETACH_GRACE_MS = (() => {
 })();
 
 function appendScrollback(session: PtySession, data: Buffer): void {
+  const nextEnd = session.streamEnd + data.length;
+  // Retain the tail even if one node-pty callback is larger than the entire
+  // ring. The old `length > 1` loop kept that one large callback forever.
+  if (data.length >= SCROLLBACK_LIMIT_BYTES) {
+    // `subarray` alone would retain the oversized callback's entire backing
+    // allocation. Copy the bounded tail so retained memory matches the ring.
+    session.scrollback = [Buffer.from(data.subarray(data.length - SCROLLBACK_LIMIT_BYTES))];
+    session.scrollbackBytes = SCROLLBACK_LIMIT_BYTES;
+    session.scrollbackStart = nextEnd - SCROLLBACK_LIMIT_BYTES;
+    session.streamEnd = nextEnd;
+    return;
+  }
+
   session.scrollback.push(data);
   session.scrollbackBytes += data.length;
+  session.streamEnd = nextEnd;
   while (
     session.scrollbackBytes > SCROLLBACK_LIMIT_BYTES &&
     session.scrollback.length > 1
   ) {
     const dropped = session.scrollback.shift();
-    if (dropped) session.scrollbackBytes -= dropped.length;
+    if (dropped) {
+      session.scrollbackBytes -= dropped.length;
+      session.scrollbackStart += dropped.length;
+    }
   }
+}
+
+/** Return retained output beginning at an absolute stream cursor. */
+function scrollbackFrom(session: PtySession, cursor: number): Buffer[] {
+  const output: Buffer[] = [];
+  let remaining = cursor - session.scrollbackStart;
+  for (const chunk of session.scrollback) {
+    if (remaining >= chunk.length) {
+      remaining -= chunk.length;
+      continue;
+    }
+    output.push(remaining > 0 ? chunk.subarray(remaining) : chunk);
+    remaining = 0;
+  }
+  return output;
 }
 
 function getTokensFromCookie(header: string | undefined): string[] {
@@ -148,7 +303,12 @@ function getTokensFromCookie(header: string | undefined): string[] {
   for (const part of header.split(";")) {
     const [key, ...rest] = part.trim().split("=");
     if (key === ACCESS_COOKIE || key === LEGACY_ACCESS_COOKIE) {
-      tokens.push(decodeURIComponent(rest.join("=") ?? ""));
+      const raw = rest.join("=") ?? "";
+      try {
+        tokens.push(decodeURIComponent(raw));
+      } catch {
+        // Ignore malformed percent-encoding.
+      }
     }
   }
   return tokens;
@@ -214,6 +374,143 @@ function isLoopbackAddress(value: string | undefined): boolean {
   if (value === "::1" || value === "127.0.0.1") return true;
   if (value.startsWith("::ffff:")) return value.slice("::ffff:".length) === "127.0.0.1";
   return false;
+}
+
+/**
+ * True for a Tailscale CGNAT address: 100.64.0.0/10 (v4) or the fd7a:115c:a1e0::/48
+ * ULA range (v6). Mirrors isTailscaleIpHost in src/proxy-helpers.ts.
+ */
+function isTailscaleAddress(value: string): boolean {
+  const address = value.startsWith("::ffff:") ? value.slice("::ffff:".length) : value;
+  if (address.includes(".")) {
+    const parts = address.split(".").map((part) => Number(part));
+    return (
+      parts.length === 4 &&
+      parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) &&
+      parts[0] === 100 &&
+      parts[1] >= 64 &&
+      parts[1] <= 127
+    );
+  }
+  return address.toLowerCase().startsWith("fd7a:115c:a1e0:");
+}
+
+/**
+ * Normalizes an x-forwarded-for hop into a bare address: strips IPv6 brackets
+ * and any `:port` suffix, and unwraps IPv4-mapped IPv6.
+ */
+function normalizeForwardedAddress(value: string): string {
+  let address = value.trim();
+  if (address.startsWith("[")) {
+    const close = address.indexOf("]");
+    if (close > 0) return address.slice(1, close).toLowerCase();
+  }
+  // A bare IPv6 literal contains multiple colons and carries no port here; only
+  // strip a trailing :port from IPv4 (or bracket-less host:port) forms.
+  if ((address.match(/:/g) ?? []).length === 1) address = address.split(":")[0];
+  if (address.startsWith("::ffff:")) address = address.slice("::ffff:".length);
+  return address.toLowerCase();
+}
+
+// Tailnet identity gate (cave-zm6pn). Remote (phone) access is authorized by
+// per-device Tailscale identity rather than a shared bearer secret. Only stable
+// node IDs named in COVEN_CAVE_TAILNET_ALLOWED_NODES are admitted; an empty
+// allowlist disables the feature entirely (fail closed — no allowlist, no
+// tailnet access).
+//
+// Why x-forwarded-for is trustworthy HERE specifically: the TCP peer must
+// already be loopback, because `tailscale serve` terminates TLS and forwards to
+// 127.0.0.1. A local process able to forge this header could instead connect
+// directly to loopback, which grants strictly MORE authority (full local-peer
+// trust via isDirectLoopbackRequest). So reading it adds no new exposure while
+// upgrading remote auth from a shared secret to WireGuard-backed device
+// identity.
+const TAILNET_PEER_HEADER = "x-coven-cave-tailnet-peer";
+const TAILNET_PEER_SECRET = randomUUID();
+process.env.COVEN_CAVE_TAILNET_PEER_SECRET = TAILNET_PEER_SECRET;
+const TAILNET_STATUS_REFRESH_MS = 30_000;
+
+// Passkey presence (cave-brksh). A verified WebAuthn assertion proves a human
+// authenticated on the device just now; this per-boot secret is what carries
+// that fact from the assert route to the proxy on subsequent requests. Minted
+// here for the same reason as the two secrets above — the value never leaves
+// the process, and a restart invalidating every outstanding presence token is
+// the desired behavior rather than a limitation.
+process.env.COVEN_CAVE_PASSKEY_SESSION_SECRET = randomUUID();
+
+function allowedTailnetNodeIds(): Set<string> {
+  const raw = process.env.COVEN_CAVE_TAILNET_ALLOWED_NODES ?? "";
+  return new Set(
+    raw
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+  );
+}
+
+/**
+ * address -> stable node ID, for allowlisted peers only. Refreshed off a
+ * `tailscale status --json` poll rather than resolved per request: the request
+ * handler below is synchronous and a per-request subprocess would add tens of
+ * milliseconds to every request. A stale entry can only ever name a node that
+ * was allowlisted anyway, and the refresh interval bounds how long a revoked
+ * device keeps working.
+ */
+let tailnetPeerAddresses = new Map<string, string>();
+let tailnetRefreshInFlight = false;
+
+async function refreshTailnetPeers(): Promise<void> {
+  const allowed = allowedTailnetNodeIds();
+  if (allowed.size === 0) {
+    tailnetPeerAddresses = new Map();
+    return;
+  }
+  if (tailnetRefreshInFlight) return;
+  tailnetRefreshInFlight = true;
+  try {
+    const { stdout } = await execFileAsync(
+      process.env.COVEN_CAVE_TAILSCALE_BIN ?? "tailscale",
+      ["status", "--json"],
+      { timeout: 10_000, maxBuffer: 16 * 1024 * 1024, windowsHide: true },
+    );
+    const status = JSON.parse(stdout) as {
+      Peer?: Record<string, { ID?: string; TailscaleIPs?: string[] }>;
+    };
+    const next = new Map<string, string>();
+    for (const peer of Object.values(status.Peer ?? {})) {
+      const nodeId = peer.ID;
+      if (!nodeId || !allowed.has(nodeId)) continue;
+      for (const ip of peer.TailscaleIPs ?? []) {
+        next.set(normalizeForwardedAddress(ip), nodeId);
+      }
+    }
+    tailnetPeerAddresses = next;
+  } catch (err) {
+    // Fail closed: an unreadable tailnet status must never leave a previously
+    // built allowlist standing, or a revoked device would keep its access for
+    // as long as `tailscale` stayed broken.
+    tailnetPeerAddresses = new Map();
+    console.warn("[cave] tailnet peer refresh failed:", (err as Error)?.message ?? err);
+  } finally {
+    tailnetRefreshInFlight = false;
+  }
+}
+
+/**
+ * The allowlisted stable node ID behind a Tailscale-Serve-forwarded request, or
+ * null. Requires a loopback TCP peer (Serve always forwards over loopback) and
+ * a forwarded-for hop that is both a Tailscale CGNAT address and currently
+ * mapped to an allowlisted node.
+ */
+function resolveTailnetPeer(req: IncomingMessage): string | null {
+  if (tailnetPeerAddresses.size === 0) return null;
+  if (!isLoopbackAddress(req.socket.remoteAddress)) return null;
+  const forwarded = req.headers["x-forwarded-for"];
+  const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(",")[0];
+  if (!first) return null;
+  const address = normalizeForwardedAddress(first);
+  if (!isTailscaleAddress(address)) return null;
+  return tailnetPeerAddresses.get(address) ?? null;
 }
 
 /**
@@ -289,6 +586,18 @@ function firstQueryValue(value: string | string[] | undefined): string | undefin
   return Array.isArray(value) ? value[0] : value;
 }
 
+/** `-1` is a capability probe: cursor-aware clients use it on their first
+ * attach, then send the last delivered absolute byte cursor on reconnect.
+ * Absence remains the legacy full-replay protocol. */
+function parsePtyReplayCursor(value: string | string[] | undefined): number | undefined | null {
+  const raw = firstQueryValue(value);
+  if (raw === undefined) return undefined;
+  if (raw === "-1") return -1;
+  if (!/^(?:0|[1-9]\d*)$/.test(raw)) return null;
+  const cursor = Number(raw);
+  return Number.isSafeInteger(cursor) ? cursor : null;
+}
+
 type UpgradeQuery = Record<string, string | string[] | undefined>;
 
 const UPGRADE_URL_BASE = "http://localhost";
@@ -354,6 +663,15 @@ function parseUpgradeTarget(rawUrl: string): { pathname: string; query: UpgradeQ
 
 function isPtyAuthRequired(): boolean {
   return Boolean(accessToken() || SIDECAR_TOKEN);
+}
+
+function shouldRejectUnauthenticatedPtyUpgrade({
+  sidecarTokenConfigured = false,
+  accessTokenConfigured = false,
+  tokenAuthenticated = false,
+} = {}) {
+  if (tokenAuthenticated) return false;
+  return sidecarTokenConfigured || accessTokenConfigured;
 }
 
 function isAuthorized(req: IncomingMessage, query: Record<string, string | string[] | undefined>): boolean {
@@ -445,13 +763,166 @@ function sanitizedEnv(): Record<string, string> {
   return env;
 }
 
-function sendPtyData(ws: WebSocket, data: string): void {
-  if (ws.readyState !== WebSocket.OPEN) return;
-  const encoded = Buffer.from(data, "utf8");
-  const frame = Buffer.allocUnsafe(1 + encoded.length);
+function sendPtyData(ws: WebSocket, data: Buffer): boolean {
+  if (ws.readyState !== WebSocket.OPEN) return false;
+  const frame = Buffer.allocUnsafe(1 + data.length);
   frame[0] = 0x01;
-  encoded.copy(frame, 1);
-  ws.send(frame);
+  data.copy(frame, 1);
+  try {
+    ws.send(frame);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Cursor control frames are opt-in (`ptyReplayCursor` query parameter), so
+ * legacy clients continue to receive the original 0x01 + terminal bytes wire
+ * format unchanged. The cursor is a safe integer stored as Float64 LE; that
+ * covers many petabytes while working in every supported WebView. */
+function sendPtyReplayCursor(ws: WebSocket, cursor: number, reset: boolean): boolean {
+  if (ws.readyState !== WebSocket.OPEN) return false;
+  const frame = Buffer.allocUnsafe(10);
+  frame[0] = 0x06;
+  frame.writeDoubleLE(cursor, 1);
+  frame[9] = reset ? 1 : 0;
+  try {
+    ws.send(frame);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function clearPendingPtyOutput(session: PtySession): void {
+  if (session.flushTimer) {
+    clearTimeout(session.flushTimer);
+    session.flushTimer = null;
+  }
+  session.pendingOutput = [];
+  session.pendingOutputBytes = 0;
+}
+
+function armPtyDetach(threadId: string, session: PtySession): void {
+  if (session.detachTimer) clearTimeout(session.detachTimer);
+  session.detachTimer = setTimeout(() => {
+    const current = sessions.get(threadId);
+    if (current !== session || current.ws) return;
+    sessions.delete(threadId);
+    try {
+      session.pty.kill();
+    } catch {
+      // Already gone.
+    }
+  }, DETACH_GRACE_MS);
+}
+
+function detachPtyConsumer(threadId: string, session: PtySession, ws: WebSocket): void {
+  if (session.ws !== ws) return;
+  session.ws = null;
+  clearPendingPtyOutput(session);
+  armPtyDetach(threadId, session);
+}
+
+function evictSlowPtyConsumer(threadId: string, session: PtySession, ws: WebSocket): void {
+  if (session.ws !== ws) return;
+  // Closing only the transport is intentional: output remains in the bounded
+  // ring and the live PTY gets the normal reconnect grace window.
+  detachPtyConsumer(threadId, session, ws);
+  try {
+    ws.close(PTY_SLOW_CONSUMER_CLOSE_CODE, PTY_SLOW_CONSUMER_CLOSE_REASON);
+  } catch {
+    // The close handler is only cleanup; the session is already detached.
+  }
+}
+
+function flushPtyOutput(threadId: string, session: PtySession): void {
+  session.flushTimer = null;
+  const ws = session.ws;
+  if (!ws || session.pendingOutputBytes === 0) return;
+
+  const chunks = session.pendingOutput;
+  clearPendingPtyOutput(session);
+  const payload = Buffer.concat(chunks);
+  if (ws.readyState !== WebSocket.OPEN || session.ws !== ws) return;
+  if (ws.bufferedAmount + payload.length + 1 > PTY_WS_BUFFERED_AMOUNT_LIMIT) {
+    evictSlowPtyConsumer(threadId, session, ws);
+    return;
+  }
+  if (!sendPtyData(ws, payload)) {
+    detachPtyConsumer(threadId, session, ws);
+  }
+}
+
+function queuePtyOutput(threadId: string, session: PtySession, data: Buffer): void {
+  if (!session.ws || data.length === 0) return;
+  let offset = 0;
+  while (offset < data.length && session.ws) {
+    const room = PTY_FRAME_MAX_BYTES - session.pendingOutputBytes;
+    const take = Math.min(room, data.length - offset);
+    const chunk = data.subarray(offset, offset + take);
+    // Full frames flush synchronously. A short final slice survives until the
+    // coalescing timer, so give it a bounded backing allocation instead of
+    // pinning an arbitrarily large node-pty callback through a Buffer view.
+    if (session.pendingOutputBytes + take === PTY_FRAME_MAX_BYTES) {
+      session.pendingOutput.push(chunk);
+    } else {
+      const boundedChunk = Buffer.allocUnsafeSlow(chunk.length);
+      chunk.copy(boundedChunk);
+      session.pendingOutput.push(boundedChunk);
+    }
+    session.pendingOutputBytes += take;
+    offset += take;
+    if (session.pendingOutputBytes === PTY_FRAME_MAX_BYTES) {
+      flushPtyOutput(threadId, session);
+    }
+  }
+  if (session.ws && session.pendingOutputBytes > 0 && !session.flushTimer) {
+    session.flushTimer = setTimeout(
+      () => flushPtyOutput(threadId, session),
+      PTY_FRAME_COALESCE_MS,
+    );
+  }
+}
+
+/** Queue either the missed suffix (cursor clients) or the bounded complete
+ * ring (legacy clients). Sending the cursor control frame first means every
+ * following 0x01 payload advances the client cursor byte-for-byte. */
+function replayPtyOutput(
+  threadId: string,
+  session: PtySession,
+  replayCursor: number | undefined,
+): void {
+  if (!session.ws || session.scrollbackBytes === 0) {
+    if (session.ws && replayCursor !== undefined) {
+      sendPtyReplayCursor(
+        session.ws,
+        session.streamEnd,
+        replayCursor !== -1 && replayCursor !== session.streamEnd,
+      );
+    }
+    return;
+  }
+
+  if (replayCursor === undefined) {
+    for (const chunk of session.scrollback) queuePtyOutput(threadId, session, chunk);
+    return;
+  }
+
+  const validCursor =
+    replayCursor >= session.scrollbackStart && replayCursor <= session.streamEnd;
+  const start = validCursor && replayCursor !== -1 ? replayCursor : session.scrollbackStart;
+  const reset = replayCursor !== -1 && !validCursor;
+  const ws = session.ws;
+  if (
+    !ws ||
+    ws.bufferedAmount + 10 > PTY_WS_BUFFERED_AMOUNT_LIMIT ||
+    !sendPtyReplayCursor(ws, start, reset)
+  ) {
+    if (ws) evictSlowPtyConsumer(threadId, session, ws);
+    return;
+  }
+  for (const chunk of scrollbackFrom(session, start)) queuePtyOutput(threadId, session, chunk);
 }
 
 function sendPtyExit(ws: WebSocket, exitCode: number): void {
@@ -462,7 +933,14 @@ function sendPtyExit(ws: WebSocket, exitCode: number): void {
   ws.send(frame);
 }
 
-function spawnPty(threadId: string, ws: WebSocket, cols: number, rows: number, cwd?: string): void {
+function spawnPty(
+  threadId: string,
+  ws: WebSocket,
+  cols: number,
+  rows: number,
+  cwd: string | undefined,
+  replayCursor: number | undefined,
+): void {
   const shell = pty.spawn(defaultShell(), defaultShellArgs(), {
     name: "xterm-256color",
     cols: cols > 0 ? cols : 120,
@@ -481,9 +959,14 @@ function spawnPty(threadId: string, ws: WebSocket, cols: number, rows: number, c
 
   const session: PtySession = {
     pty: shell,
-    ws,
+    ws: null,
     scrollback: [],
     scrollbackBytes: 0,
+    scrollbackStart: 0,
+    streamEnd: 0,
+    pendingOutput: [],
+    pendingOutputBytes: 0,
+    flushTimer: null,
     detachTimer: null,
   };
   sessions.set(threadId, session);
@@ -493,13 +976,17 @@ function spawnPty(threadId: string, ws: WebSocket, cols: number, rows: number, c
     // (split/reorg remount, reload, sleep/wake) sees what happened while it
     // was away. Route live output to the CURRENTLY-attached socket, not the
     // spawn-time one — adoptSession swaps session.ws on reattach.
-    appendScrollback(session, Buffer.from(data, "utf8"));
-    if (session.ws) sendPtyData(session.ws, data);
+    const bytes = Buffer.from(data, "utf8");
+    appendScrollback(session, bytes);
+    queuePtyOutput(threadId, session, bytes);
   });
   shell.onExit(({ exitCode }: { exitCode?: number | null }) => {
     const current = sessions.get(threadId);
+    // Ensure all bytes observed before onExit stay ahead of the exit frame.
+    if (session.ws) flushPtyOutput(threadId, session);
     if (current?.pty === shell) {
       if (current.detachTimer) clearTimeout(current.detachTimer);
+      clearPendingPtyOutput(current);
       sessions.delete(threadId);
     }
     if (session.ws) {
@@ -507,6 +994,8 @@ function spawnPty(threadId: string, ws: WebSocket, cols: number, rows: number, c
       session.ws.close(1000, "pty exit");
     }
   });
+
+  adoptSession(threadId, session, ws, cols, rows, replayCursor);
 }
 
 function rawDataToBuffer(data: RawData): Buffer {
@@ -535,6 +1024,7 @@ function onWsMessage(threadId: string, data: RawData): void {
     // just drops the socket, which the close handler treats as a transient
     // detach — leaking the shell (and its foreground job) for DETACH_GRACE_MS.
     if (session.detachTimer) clearTimeout(session.detachTimer);
+    clearPendingPtyOutput(session);
     sessions.delete(threadId);
     try {
       session.pty.kill();
@@ -548,16 +1038,19 @@ function onWsMessage(threadId: string, data: RawData): void {
  *  socket (if any) is told it was replaced, the pending detach-kill is
  *  cancelled, and the scrollback ring is replayed so the client repaints. */
 function adoptSession(
+  threadId: string,
   session: PtySession,
   ws: WebSocket,
   cols: number,
   rows: number,
+  replayCursor: number | undefined,
 ): void {
   if (session.detachTimer) {
     clearTimeout(session.detachTimer);
     session.detachTimer = null;
   }
   const previous = session.ws;
+  clearPendingPtyOutput(session);
   session.ws = ws;
   if (previous && previous !== ws) {
     try {
@@ -573,9 +1066,7 @@ function adoptSession(
       // Exited between adopt and resize; onExit handles the rest.
     }
   }
-  if (session.scrollbackBytes > 0) {
-    sendPtyData(ws, Buffer.concat(session.scrollback).toString("utf8"));
-  }
+  replayPtyOutput(threadId, session, replayCursor);
 }
 
 function handlePtyConnection(
@@ -584,6 +1075,7 @@ function handlePtyConnection(
   cols: number,
   rows: number,
   cwd?: string,
+  replayCursor?: number,
 ): void {
   // Same threadId while the shell is alive (tab switch, page reload, network
   // blip, second window) → adopt the running PTY instead of killing it.
@@ -591,9 +1083,9 @@ function handlePtyConnection(
   // every reconnect.
   const existing = sessions.get(threadId);
   if (existing) {
-    adoptSession(existing, ws, cols, rows);
+    adoptSession(threadId, existing, ws, cols, rows, replayCursor);
   } else {
-    spawnPty(threadId, ws, cols, rows, cwd);
+    spawnPty(threadId, ws, cols, rows, cwd, replayCursor);
   }
 
   ws.on("message", (data: RawData) => onWsMessage(threadId, data));
@@ -605,24 +1097,20 @@ function handlePtyConnection(
     // Detach, don't kill: give the client a grace window to come back
     // (layout restructure remount, reload, sleep/wake). The ring keeps
     // collecting output; the timer reaps only truly-abandoned shells.
-    session.ws = null;
-    if (session.detachTimer) clearTimeout(session.detachTimer);
-    session.detachTimer = setTimeout(() => {
-      const current = sessions.get(threadId);
-      if (current !== session || current.ws) return;
-      sessions.delete(threadId);
-      try {
-        session.pty.kill();
-      } catch {
-        // Already gone.
-      }
-    }, DETACH_GRACE_MS);
+    detachPtyConsumer(threadId, session, ws);
   });
 }
 
+function loopbackHostname(raw = process.env.HOSTNAME) {
+  if (raw === "127.0.0.1" || raw === "localhost" || raw === "::1") {
+    return raw;
+  }
+  return "127.0.0.1";
+}
+
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME ?? "127.0.0.1";
-const port = Number.parseInt(process.env.PORT ?? "3000", 10);
+const hostname = loopbackHostname();
+const port = cavePort();
 
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
@@ -632,11 +1120,16 @@ await app.prepare();
 const nextUpgradeHandler = app.getUpgradeHandler();
 
 const server = createServer((req, res) => {
-  // The local-peer stamp is trustworthy only because any client-supplied copy
-  // dies here, before Next (and proxy.ts) ever see the request.
+  // Both stamps are trustworthy only because any client-supplied copy dies
+  // here, before Next (and proxy.ts) ever see the request.
   delete req.headers[LOCAL_PEER_HEADER];
+  delete req.headers[TAILNET_PEER_HEADER];
   if (isDirectLoopbackRequest(req)) {
     req.headers[LOCAL_PEER_HEADER] = LOCAL_PEER_SECRET;
+  }
+  const tailnetNodeId = resolveTailnetPeer(req);
+  if (tailnetNodeId) {
+    req.headers[TAILNET_PEER_HEADER] = `${TAILNET_PEER_SECRET}:${tailnetNodeId}`;
   }
   void handle(req, res);
 });
@@ -665,6 +1158,9 @@ server.on("upgrade", (req, socket, head) => {
   // forwards the `<host>.ts.net` Host) legitimately arrives with a
   // non-loopback Host and must pass the source gate on the strength of its
   // token — mirroring proxy.ts's isAllowedApiHost relaxation on REST.
+  // Forwarding headers are not credentials at this boundary: a local process
+  // can forge them, so allowlisted tailnet identity alone must never authorize
+  // spawning or adopting a shell.
   const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
 
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
@@ -673,19 +1169,22 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  // Enforce token auth whenever the server has a remote/mobile credential.
-  // With no token set — the local desktop app and dev server — the loopback
-  // host+origin gate above is the protection, and credential-less connections
-  // are the local app itself. #714 dropped this and 401'd every local terminal
-  // (reintroducing the v0.0.72 "Terminal connection failed" regression that
-  // server-pty-ws.test.ts warns about). Native mobile mode configures only
-  // COVEN_CAVE_AUTH_TOKEN; require that sidecar token here too so
-  // Tailscale-forwarded PTY upgrades cannot become credential-less shells.
-  // A direct loopback peer (verified off the socket, never forwarded — see
-  // isDirectLoopbackRequest) is the local app or a local browser and is
-  // exempt, mirroring proxy.ts's local-peer exemption on REST (cave-vn2r);
-  // Tailscale-forwarded upgrades carry forwarding headers and stay gated.
-  if (isPtyAuthRequired() && !tokenAuthenticated && !isDirectLoopbackRequest(req)) {
+  // Any configured PTY credential closes the credential-less path, including
+  // direct loopback: another local account or process is not the paired app.
+  // Plain development remains credential-less only when neither token exists.
+  //
+  // Keep the credential-less case exactly that narrow. #714 removed it and
+  // 401'd every local terminal, reintroducing the v0.0.72 "Terminal connection
+  // failed" regression that server-pty-ws.test.ts still guards. What makes
+  // closing it safe HERE is that both peers now have a credential to present:
+  // the Tauri shell its per-launch sidecar token, and a local browser the
+  // access gate. TCP loopback proves only that the caller is on this machine,
+  // never which OS user it is.
+  if (shouldRejectUnauthenticatedPtyUpgrade({
+    sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
+    accessTokenConfigured: Boolean(accessToken()),
+    tokenAuthenticated,
+  })) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
@@ -693,6 +1192,13 @@ server.on("upgrade", (req, socket, head) => {
 
   const threadId = String(query.threadId ?? "");
   if (!threadId) {
+    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+
+  const replayCursor = parsePtyReplayCursor(query.ptyReplayCursor);
+  if (replayCursor === null) {
     socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
     socket.destroy();
     return;
@@ -711,7 +1217,7 @@ server.on("upgrade", (req, socket, head) => {
   const rows = Number.parseInt(String(query.rows ?? "40"), 10);
 
   wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-    handlePtyConnection(ws, threadId, cols, rows, cwd);
+    handlePtyConnection(ws, threadId, cols, rows, cwd, replayCursor);
   });
 });
 
@@ -727,6 +1233,13 @@ server.headersTimeout = 80_000;
 server.listen(port, hostname, () => {
   console.log(`> Ready on http://${hostname}:${port}`);
 });
+
+// Prime the tailnet allowlist immediately, then keep it fresh. unref() so the
+// poll never holds the process open on its own.
+if (allowedTailnetNodeIds().size > 0) {
+  void refreshTailnetPeers();
+  setInterval(() => void refreshTailnetPeers(), TAILNET_STATUS_REFRESH_MS).unref();
+}
 
 server.once("error", (err: NodeJS.ErrnoException) => {
   console.error(err);

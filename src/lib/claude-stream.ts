@@ -122,14 +122,24 @@ export function hasUnsupportedClaudeToolFrame(
   if (!envelope) return true;
   const isAssistant = envelope.type === profile.eventTypes.assistant;
   const isUser = envelope.type === profile.eventTypes.user;
-  // System/result envelopes have their own route handling. In particular,
-  // Claude must not inherit Coven's `output` envelope handling: that path is
-  // for the Windows Codex bridge and would render an unknown Claude payload
-  // as assistant text before the profile boundary can redact it.
-  // Everything else is an unrecognised protocol frame, even when it has no
+  // System/result envelopes have their own route handling, and
+  // `rate_limit_event` is an out-of-band usage notice Claude Code interleaves
+  // with the message stream once utilization crosses its warning threshold:
+  // its payload is a `rate_limit_info` record with no `message`, so it cannot
+  // hide a tool block. Treating it as unknown latched tool decoding off
+  // mid-turn, which left the already-open tool bubble unsettled because the
+  // notice can arrive between a `tool_use` and its `tool_result`.
+  // In particular, Claude must not inherit Coven's `output` envelope handling:
+  // that path is for the Windows Codex bridge and would render an unknown
+  // Claude payload as assistant text before the profile boundary can redact
+  // it. Everything else is an unrecognised protocol frame, even when it has no
   // `message` field: silently dropping one would hide a newly introduced tool
   // event.
   if (!isAssistant && !isUser) {
+    // The allowlist entry is a claim about shape, not just a name: a usage
+    // notice that ever grows a `message` payload is an unknown frame again and
+    // must surface the diagnostic rather than be dropped.
+    if (envelope.type === "rate_limit_event") return hasOwn(envelope, "message");
     return !["system", "result"].includes(String(envelope.type));
   }
   if (!Array.isArray(content)) return true;

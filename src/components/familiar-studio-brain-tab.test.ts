@@ -8,6 +8,23 @@ const source = readFileSync(
 );
 const css = readFileSync(new URL("../styles/globals/shell-responsive.css", import.meta.url), "utf8");
 
+assert.match(
+  source,
+  /import \{ VOICE_PROVIDER_CATALOG \} from "@\/lib\/voice\/provider-catalog"/,
+  "Familiar Studio imports the shared provider catalog",
+);
+assert.match(
+  source,
+  /VOICE_PROVIDER_CATALOG\.map\(\(provider\) => \(\{[\s\S]{0,180}value: provider\.id,[\s\S]{0,120}label: provider\.label,[\s\S]{0,120}disabled: !provider\.available/,
+  "provider order, labels, and availability are derived from the shared catalog",
+);
+assert.match(source, /options=\{voiceProviderOptions\}/, "the shared mapping feeds the Voice provider select");
+assert.doesNotMatch(
+  source,
+  /\{ value: "elevenlabs", label: "ElevenLabs \(true voice\)" \}|\{ value: "openai", label: "OpenAI Realtime" \}|\{ value: "gemini", label: "Gemini Live/,
+  "Familiar Studio keeps no local cloud-provider label or disabled-Gemini option literals",
+);
+
 assert.match(source, /export function FamiliarStudioBrainTab/);
 assert.match(source, /harness/);
 assert.match(source, /model/);
@@ -15,8 +32,18 @@ assert.match(source, /familiar-studio-brain__label">Runtime<\/span>/, "Brain tab
 assert.doesNotMatch(source, /familiar-studio-brain__label">Harness<\/span>/, "Brain tab should not show Harness as the product label");
 assert.match(
   source,
-  /catalogForRuntime/,
-  "Brain tab model menu should source options from the runtime → provider catalog",
+  /useRuntimeModelInventory\(harnessId, familiar\.id\)[\s\S]{0,180}runtimeModelInventory\.allowCustom/,
+  "Brain tab model options and custom-id capability share the familiar-scoped inventory contract",
+);
+assert.match(
+  source,
+  /const harnessId = canonicalHarnessId\(draftHarness \|\| defaultHarnessId\);/,
+  "Brain tab should canonicalize legacy harness aliases before model and availability lookup",
+);
+assert.match(
+  source,
+  /harnesses\.find\([\s\S]{0,100}canonicalHarnessId\(item\.id\) === harnessId/,
+  "Brain tab should match canonical harness reports after alias normalization",
 );
 assert.match(
   source,
@@ -30,7 +57,7 @@ assert.match(
 );
 assert.match(
   source,
-  /modelOptions\.length > 0[\s\S]{0,160}<StandardSelect/,
+  /modelOptions\.length > 0 \|\| !allowCustomModel[\s\S]{0,160}<StandardSelect/,
   "A runtime with catalog models, including Hermes, must render the dropdown instead of only free text",
 );
 assert.match(
@@ -38,9 +65,9 @@ assert.match(
   /allowCustomModel/,
   "Brain tab should keep a free-text fallback for ids not in the curated catalog",
 );
-// ── Model select: Inherit default must be representable (2026-07-12) ─────────
+// ── Model select: Runtime default must be representable (2026-07-12) ────────
 // The select's value used to be `draftModelIsListed ? draftModel : "__custom__"`,
-// so "" (Inherit default) always rendered as Custom... with an empty text box.
+// so "" (Runtime default) always rendered as Custom... with an empty text box.
 // Custom mode is now explicit state; "" only means inherit.
 assert.match(
   source,
@@ -54,13 +81,13 @@ assert.match(
 );
 assert.match(
   source,
-  /value=\{modelIsCustom \? "__custom__" : draftModel\}/,
-  "Inherit default (empty draft) must render as the empty option, not Custom...",
+  /value=\{modelIsCustom && allowCustomModel \? "__custom__" : draftModel\}/,
+  "Runtime default (empty draft) must render as the empty option, not Custom...",
 );
 assert.match(
   source,
   /if \(!trimmed\) setModelCustomMode\(false\)/,
-  "Blurring an empty custom field falls back to Inherit default",
+  "Blurring an empty custom field falls back to Runtime default",
 );
 assert.match(
   source,
@@ -80,6 +107,26 @@ assert.match(
   source,
   /label: `Inherit workspace default: \$\{defaultHarnessLabel\}`/,
   "Default runtime copy should clarify that this familiar inherits the workspace default",
+);
+assert.match(
+  source,
+  /modelForRuntimeSwitch\(next\)/,
+  "switching runtime derives the durable default sentinel",
+);
+assert.match(
+  source,
+  /setDraftModel\(nextModel\)[\s\S]{0,180}save\(\{ harness: next \|\| null, model: nextModel \}\)/,
+  "switching runtime clears the old provider model through the durable default sentinel",
+);
+assert.match(
+  source,
+  /createModelSelectionMutationQueue\(\)/,
+  "runtime and model writes use the shared serialized mutation queue",
+);
+assert.match(
+  source,
+  /modelMutationQueueRef\.current\.enqueue\(\(\) => save\(\{ harness: next \|\| null, model: nextModel \}\)\)/,
+  "a runtime switch cannot be overtaken by an older model write",
 );
 assert.match(
   source,
@@ -115,6 +162,19 @@ assert.match(
   source,
   /familiar-studio-brain__sidecar/,
   "Brain tab should move voice and capabilities into a sidecar column",
+);
+assert.match(
+  source,
+  /import \{ FamiliarXSection \} from "@\/components\/familiar-x-section"/,
+  "Brain tab should load the familiar-scoped X controls",
+);
+assert.match(
+  source,
+  // Still beside Asana, but now behind the cave-lsj8u capability gate: the X
+  // routes never landed, so the section stays hidden until they do. Ordering is
+  // what this pins; the gate itself is pinned in x-surface-gating.test.ts.
+  /<FamiliarAsanaSection familiar=\{familiar\} \/>[\s\S]{0,700}?<FamiliarXSection familiar=\{familiar\} \/>/,
+  "X account and grants should render beside the existing Asana integration",
 );
 assert.match(
   source,
@@ -484,7 +544,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const selectedHarnessAvailability = harnesses\.find\(\(item\) => item\.id === harnessId\)\?\.availability;[\s\S]*?selectedHarnessAvailability\.state !== "ready"[\s\S]*?selectedHarnessAvailability\.message/,
+  /const selectedHarnessAvailability = harnesses\.find\([\s\S]{0,120}canonicalHarnessId\(item\.id\) === harnessId,[\s\S]{0,40}\)\?\.availability;[\s\S]*?selectedHarnessAvailability\.state !== "ready"[\s\S]*?selectedHarnessAvailability\.message/,
   "the selected runtime shows truthful launch remediation rather than only an install bit",
 );
 assert.match(

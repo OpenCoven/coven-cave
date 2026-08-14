@@ -83,28 +83,36 @@ pub(super) fn required_free_space(manifest: &SidecarArchiveManifest) -> Result<u
         .ok_or_else(|| "sidecar free-space requirement overflow".to_string())
 }
 
-pub(super) fn remove_cache_path(path: &Path) -> Result<(), String> {
+fn remove_cache_path_raw(path: &Path) -> Result<(), (bool, io::Error)> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => {
-            return Err(format!(
-                "could not inspect sidecar cache path {}: {error}",
-                path.display()
-            ));
-        }
+        Err(error) => return Err((true, error)),
     };
     let removal = if metadata.is_dir() && !metadata.file_type().is_symlink() {
         fs::remove_dir_all(path)
     } else {
         fs::remove_file(path)
     };
-    removal.map_err(|error| {
+    removal.map_err(|error| (false, error))
+}
+
+pub(super) fn remove_cache_path(path: &Path) -> Result<(), String> {
+    remove_cache_path_raw(path).map_err(|(inspection_failed, error)| {
+        let operation = if inspection_failed {
+            "inspect"
+        } else {
+            "remove"
+        };
         format!(
-            "could not remove sidecar cache path {}: {error}",
+            "could not {operation} sidecar cache path {}: {error}",
             path.display()
         )
     })
+}
+
+pub(super) fn remove_cache_path_io(path: &Path) -> io::Result<()> {
+    remove_cache_path_raw(path).map_err(|(_, error)| error)
 }
 
 pub(super) fn cleanup_staging_before_extraction(

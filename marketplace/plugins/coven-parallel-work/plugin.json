@@ -19,6 +19,7 @@
     "read_files",
     "shell"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/coven-parallel-work",
   "x-coven": {
     "displayName": "Coven Parallel Work Protocol",

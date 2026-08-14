@@ -62,12 +62,14 @@ test("the documented alias landings hold", () => {
   assert.equal(MODE_ALIASES.roles, "marketplace", "Roles is a Marketplace hub section");
   assert.equal(MODE_ALIASES.capabilities, "marketplace", "Capabilities is a Marketplace hub section");
   assert.equal(MODE_ALIASES.code, "surface:code", "Code is the Coding familiar's room (cave-cc5r)");
+  assert.equal(MODE_ALIASES.github, "surface:code", "GitHub is an Activity intent inside Coding Desk");
 });
 
-test("github is a canonical standalone surface again (cave-cc5r)", () => {
-  assert.ok((CANONICAL_WORKSPACE_MODES as readonly string[]).includes("github"));
-  assert.ok(!isAliasWorkspaceMode("github"), "github must not be remapped through MODE_ALIASES");
-  assert.equal(resolveWorkspaceModeAlias("github"), "github");
+test("github remains valid only as a Coding Desk compatibility alias", () => {
+  assert.ok(!(CANONICAL_WORKSPACE_MODES as readonly string[]).includes("github"));
+  assert.ok(isAliasWorkspaceMode("github"));
+  assert.equal(MODE_ALIASES.github, "surface:code");
+  assert.equal(resolveWorkspaceModeAlias("github"), "surface:code");
 });
 
 test("salem is a canonical standalone surface, not an alias", () => {

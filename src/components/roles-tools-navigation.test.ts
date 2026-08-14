@@ -60,7 +60,7 @@ assert.doesNotMatch(
 // ── Navigation: one Tools entry for the merged hub ───────────────────────────
 assert.match(
   navigation,
-  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Manage what you own and preview the curated Skills shelf", quiet: true \},/,
+  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Manage what you own and preview the curated Skills shelf", group: "explore", quiet: true \},/,
   "The navigation registry should describe the owned inventory and curated Skills shelf truthfully",
 );
 assert.doesNotMatch(
@@ -263,7 +263,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /e\.key === "\/"[\s\S]{0,200}setShortcutsOpen/,
+  /e\.key === "\/"[\s\S]{0,200}(openShortcuts|closeShortcuts)/,
   "⌘/ (Ctrl+/ off-Mac) should toggle the shortcuts sheet from anywhere",
 );
 
@@ -275,7 +275,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /case "\/shortcuts":[\s\S]{0,80}setShortcutsOpen\(true\)/,
+  /case "\/shortcuts":[\s\S]{0,80}openShortcuts\(\)/,
   "/shortcuts slash command should open the sheet via handleSlashIntent",
 );
 

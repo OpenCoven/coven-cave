@@ -5,12 +5,14 @@ import SwiftUI
 struct ProjectsPanel: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
-    @State private var path: [ProjectInfo]
+    @State private var path: [ProjectInfo] = []
+    @State private var didApplyInitialProject = false
+    private let initialProject: ProjectInfo?
     let dismiss: () -> Void
 
     init(initialProject: ProjectInfo? = nil, dismiss: @escaping () -> Void) {
+        self.initialProject = initialProject
         self.dismiss = dismiss
-        _path = State(initialValue: initialProject.map { [$0] } ?? [])
     }
 
     var body: some View {
@@ -19,6 +21,26 @@ struct ProjectsPanel: View {
                 counts[projectId, default: 0] += 1
             }
         }
+        let threadsByProjectRoot = Dictionary(
+            grouping: app.threads.filter {
+                guard let root = $0.projectRoot else { return false }
+                return !$0.archived && !root.isEmpty
+            },
+            by: { $0.projectRoot ?? "" }
+        )
+        let boundSessionIds = Set(
+            app.threads.flatMap { $0.sessionIds.values }.filter { !$0.isEmpty }
+        )
+        let serverSessionsByProjectRoot = Dictionary(
+            grouping: app.serverSessions.filter {
+                guard let root = $0.projectRoot else { return false }
+                return $0.archivedAt == nil
+                    && !$0.isGeneratedRun
+                    && !root.isEmpty
+                    && !boundSessionIds.contains($0.id)
+            },
+            by: { $0.projectRoot ?? "" }
+        )
         NavigationStack(path: $path) {
             List(app.projects) { project in
                 NavigationLink(value: project) {
@@ -29,14 +51,19 @@ struct ProjectsPanel: View {
                             .background(chrome.bgRaised, in: RoundedRectangle(cornerRadius: 10))
                         VStack(alignment: .leading, spacing: 3) {
                             Text(project.name).font(.headline)
-                            if let summary = summary(for: project, taskCounts: taskCounts) {
+                            if let summary = summary(
+                                for: project,
+                                taskCounts: taskCounts,
+                                threadsByProjectRoot: threadsByProjectRoot,
+                                serverSessionsByProjectRoot: serverSessionsByProjectRoot
+                            ) {
                                 Text(summary).font(.subheadline).foregroundStyle(.secondary)
                             }
                         }
                         Spacer()
                         if let updated = caveParseISO(project.updatedAt) {
                             Text(updated, format: .relative(presentation: .numeric))
-                                .font(.caption).foregroundStyle(.tertiary)
+                                .font(.caption).foregroundStyle(chrome.textSecondary)
                         }
                     }
                     .padding(.vertical, 5)
@@ -78,17 +105,40 @@ struct ProjectsPanel: View {
                 }
             }
             .task {
+                if !didApplyInitialProject {
+                    didApplyInitialProject = true
+                    if let initialProject {
+                        await Task.yield()
+                        path.append(initialProject)
+                    }
+                }
                 if !app.projectsLoaded { await app.loadProjects() }
                 if !app.tasksLoaded { await app.loadTasks() }
+                if !app.sessionsLoaded { await app.loadSessions() }
             }
         }
         .themedSheetBackground()
     }
 
-    private func summary(for project: ProjectInfo, taskCounts: [String: Int]) -> String? {
+    private func summary(
+        for project: ProjectInfo,
+        taskCounts: [String: Int],
+        threadsByProjectRoot: [String: [ChatThread]],
+        serverSessionsByProjectRoot: [String: [SessionRow]]
+    ) -> String? {
+        let threads = threadsByProjectRoot[project.root, default: []]
+        let serverSessions = serverSessionsByProjectRoot[project.root, default: []]
+        let chats = threads.count + serverSessions.count
+        let familiars = Set(
+            threads.flatMap(\.familiarIds) + serverSessions.compactMap(\.familiarId)
+        ).count
         let tasks = taskCounts[project.id, default: 0]
-        guard tasks > 0 else { return nil }
-        return tasks == 1 ? "1 task" : "\(tasks) tasks"
+        let parts = [
+            chats > 0 ? "\(chats) chat\(chats == 1 ? "" : "s")" : nil,
+            familiars > 0 ? "\(familiars) familiar\(familiars == 1 ? "" : "s")" : nil,
+            tasks > 0 ? "\(tasks) task\(tasks == 1 ? "" : "s")" : nil,
+        ].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 

@@ -1,5 +1,9 @@
 import { FONT_OPTIONS } from "./font-catalog.ts";
 import { THEME_IDS } from "./theme-palettes.ts";
+import {
+  isSelectableVoiceProviderId,
+  type SelectableVoiceProviderId,
+} from "./voice/provider-catalog.ts";
 
 /**
  * Port-independent, non-secret UI preferences owned by the Cave sidecar.
@@ -10,6 +14,7 @@ import { THEME_IDS } from "./theme-palettes.ts";
  */
 
 export const CAVE_PREFERENCES_VERSION = 1 as const;
+export const VOICE_PREFERENCE_ID_MAX_LENGTH = 128;
 
 export type CaveMode = "light" | "dark";
 export type CaveModePreference = CaveMode | "system";
@@ -56,6 +61,12 @@ export type CaveDateTimePreferences = {
   clock: "12h" | "24h";
   date: "mmdd" | "ddmm" | "off";
   density: "compact" | "verbose";
+};
+
+export type CaveVoicePreferences = {
+  defaultProvider: "" | SelectableVoiceProviderId;
+  defaultModel: string;
+  defaultVoice: string;
 };
 
 export type CaveBackdropAccentSeed = { L: number; a: number; b: number };
@@ -125,6 +136,31 @@ export type CavePreferences = {
      */
     orgScope: string[];
   };
+  voice: CaveVoicePreferences;
+  /**
+   * Unattended daemon lifecycle. Every flag here defaults to FALSE and is
+   * normalized with `=== true`, not `!== false`: these actions restart
+   * processes and install binaries on the user's machine, so anything that is
+   * not an explicit `true` must read as off. A corrupt or partial preferences
+   * file therefore fails closed.
+   */
+  daemon: CaveDaemonAutomationPreferences;
+};
+
+export type CaveDaemonAutomationPreferences = {
+  /** Relaunch a local daemon that has gone offline mid-session. */
+  autoRestart: boolean;
+  /**
+   * Install Coven CLI updates without waiting for a banner click.
+   *
+   * There is no separate daemon flag because there is no separate daemon
+   * artifact: /api/onboarding/install's allowlist has one Coven entry,
+   * `coven-cli` -> `@opencoven/cli`, and the daemon is that same binary run as
+   * a daemon. daemon-update-lifecycle.ts exists precisely to update the CLI
+   * while its local daemon holds the executable open. Two switches would have
+   * been one action wearing two labels.
+   */
+  autoUpgradeCli: boolean;
 };
 
 export type CavePreferencesPatch = {
@@ -143,6 +179,8 @@ export type CavePreferencesPatch = {
   general?: Partial<CavePreferences["general"]>;
   phone?: Partial<CavePreferences["phone"]>;
   github?: Partial<CavePreferences["github"]>;
+  voice?: Partial<CaveVoicePreferences>;
+  daemon?: Partial<CavePreferences["daemon"]>;
 };
 
 const DEFAULT_THEME: CaveThemePreferences = {
@@ -176,6 +214,36 @@ export function normalizeOrgScope(value: unknown): string[] {
     if (login) seen.add(login);
   }
   return [...seen];
+}
+
+/**
+ * Every daemon-automation key, in one place. The defaults, the normalizer and
+ * the patch validator all derive from this list, so adding a key here really
+ * is the only edit needed to carry it through them — the type is the one thing
+ * that still has to be written by hand, and `satisfies` below fails the build
+ * if the two disagree.
+ */
+export const DAEMON_AUTOMATION_KEYS = [
+  "autoRestart",
+  "autoUpgradeCli",
+] as const satisfies readonly (keyof CaveDaemonAutomationPreferences)[];
+
+/** Opt-in, every one of them. See the note on CavePreferences["daemon"]. */
+export const DEFAULT_DAEMON_AUTOMATION: CaveDaemonAutomationPreferences =
+  Object.freeze(
+    Object.fromEntries(DAEMON_AUTOMATION_KEYS.map((key) => [key, false])),
+  ) as CaveDaemonAutomationPreferences;
+
+/**
+ * `=== true` on purpose. The rest of this schema uses `!== false` for
+ * default-on booleans; these are default-OFF and they restart processes and
+ * install binaries, so a missing, malformed or truthy-but-not-true value has
+ * to normalize to off rather than on.
+ */
+function normalizeDaemonAutomation(source: Record<string, unknown>): CaveDaemonAutomationPreferences {
+  return Object.fromEntries(
+    DAEMON_AUTOMATION_KEYS.map((key) => [key, source[key] === true]),
+  ) as CaveDaemonAutomationPreferences;
 }
 
 function normalizeStopPhrase(value: unknown): string {
@@ -217,6 +285,8 @@ export function createDefaultPreferences(initialized = false): CavePreferences {
     general: { stopPhrase: DEFAULT_STOP_PHRASE, celebrations: true },
     phone: { mobileMode: true },
     github: { orgScope: [] },
+    voice: { defaultProvider: "", defaultModel: "", defaultVoice: "" },
+    daemon: DEFAULT_DAEMON_AUTOMATION,
   };
 }
 
@@ -368,6 +438,22 @@ function normalizeFamiliarBackdrops(value: unknown): Record<string, boolean> {
   return out;
 }
 
+function normalizeVoicePreferences(input: unknown): CaveVoicePreferences {
+  const voice = record(input);
+  if (!isSelectableVoiceProviderId(voice.defaultProvider)) {
+    return { defaultProvider: "", defaultModel: "", defaultVoice: "" };
+  }
+  return {
+    defaultProvider: voice.defaultProvider,
+    defaultModel: typeof voice.defaultModel === "string"
+      ? voice.defaultModel.trim().slice(0, VOICE_PREFERENCE_ID_MAX_LENGTH)
+      : "",
+    defaultVoice: typeof voice.defaultVoice === "string"
+      ? voice.defaultVoice.trim().slice(0, VOICE_PREFERENCE_ID_MAX_LENGTH)
+      : "",
+  };
+}
+
 export function normalizeCavePreferences(input: unknown): CavePreferences {
   const source = record(input);
   const appearance = record(source.appearance);
@@ -380,6 +466,8 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
   const general = record(source.general);
   const phone = record(source.phone);
   const github = record(source.github);
+  const voice = record(source.voice);
+  const daemon = record(source.daemon);
 
   const modePreference = oneOf(theme.modePreference, MODE_PREFERENCES, "dark");
   const resolvedMode = oneOf(
@@ -461,6 +549,8 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
     },
     phone: { mobileMode: phone.mobileMode !== false },
     github: { orgScope: normalizeOrgScope(github.orgScope) },
+    voice: normalizeVoicePreferences(voice),
+    daemon: normalizeDaemonAutomation(daemon),
   };
 }
 
@@ -492,6 +582,15 @@ function strictChoice<T extends readonly (string | number)[]>(
 function strictBoolean(value: unknown, path: string): boolean {
   if (typeof value !== "boolean") fail(path, "must be a boolean");
   return value;
+}
+
+function strictVoicePreferenceId(value: unknown, path: string): string {
+  if (typeof value !== "string") fail(path, "must be a string");
+  const normalized = value.trim();
+  if (normalized.length > VOICE_PREFERENCE_ID_MAX_LENGTH) {
+    fail(path, `must be at most ${VOICE_PREFERENCE_ID_MAX_LENGTH} characters after trimming`);
+  }
+  return normalized;
 }
 
 function strictTokens(value: unknown, path: string): Record<string, string> {
@@ -554,7 +653,11 @@ function strictAccentSeed(value: unknown, path: string): CaveBackdropAccentSeed 
 
 export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
   const input = strictRecord(value, "preferences patch");
-  assertAllowedKeys(input, ["appearance", "general", "phone", "github"], "preferences patch");
+  assertAllowedKeys(
+    input,
+    ["appearance", "general", "phone", "github", "voice", "daemon"],
+    "preferences patch",
+  );
   const patch: CavePreferencesPatch = {};
 
   if (Object.hasOwn(input, "appearance")) {
@@ -724,6 +827,35 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
     }
     patch.github = githubPatch;
   }
+  if (Object.hasOwn(input, "voice")) {
+    const voice = strictRecord(input.voice, "voice");
+    assertAllowedKeys(voice, ["defaultProvider", "defaultModel", "defaultVoice"], "voice");
+    const voicePatch: NonNullable<CavePreferencesPatch["voice"]> = {};
+    if (Object.hasOwn(voice, "defaultProvider")) {
+      if (voice.defaultProvider !== "" && !isSelectableVoiceProviderId(voice.defaultProvider)) {
+        fail("voice.defaultProvider", "must be empty or a selectable voice provider");
+      }
+      voicePatch.defaultProvider = voice.defaultProvider as "" | SelectableVoiceProviderId;
+    }
+    if (Object.hasOwn(voice, "defaultModel")) {
+      voicePatch.defaultModel = strictVoicePreferenceId(voice.defaultModel, "voice.defaultModel");
+    }
+    if (Object.hasOwn(voice, "defaultVoice")) {
+      voicePatch.defaultVoice = strictVoicePreferenceId(voice.defaultVoice, "voice.defaultVoice");
+    }
+    patch.voice = voicePatch;
+  }
+  if (Object.hasOwn(input, "daemon")) {
+    const daemon = strictRecord(input.daemon, "daemon");
+    assertAllowedKeys(daemon, DAEMON_AUTOMATION_KEYS, "daemon");
+    const daemonPatch: NonNullable<CavePreferencesPatch["daemon"]> = {};
+    for (const key of DAEMON_AUTOMATION_KEYS) {
+      if (Object.hasOwn(daemon, key)) {
+        daemonPatch[key] = strictBoolean(daemon[key], `daemon.${key}`);
+      }
+    }
+    patch.daemon = daemonPatch;
+  }
 
   return patch;
 }
@@ -781,6 +913,17 @@ export function applyPreferencesPatch(
     },
   );
 
+  const voicePatch = patch.voice;
+  const nextVoicePatch = voicePatch ?? {};
+  const providerChanged = Object.hasOwn(nextVoicePatch, "defaultProvider") &&
+    nextVoicePatch.defaultProvider !== current.voice.defaultProvider;
+  const nextVoice = normalizeVoicePreferences({
+    ...current.voice,
+    ...nextVoicePatch,
+    ...(providerChanged && !Object.hasOwn(nextVoicePatch, "defaultModel") ? { defaultModel: "" } : {}),
+    ...(providerChanged && !Object.hasOwn(nextVoicePatch, "defaultVoice") ? { defaultVoice: "" } : {}),
+  });
+
   const next: CavePreferences = {
     ...current,
     appearance: {
@@ -802,6 +945,8 @@ export function applyPreferencesPatch(
     general: { ...current.general, ...(patch.general ?? {}) },
     phone: { ...current.phone, ...(patch.phone ?? {}) },
     github: { ...current.github, ...(patch.github ?? {}) },
+    voice: nextVoice,
+    daemon: { ...current.daemon, ...(patch.daemon ?? {}) },
   };
 
   const semanticCurrent = { ...current, initialized: true, revision: 0, updatedAt: "" };

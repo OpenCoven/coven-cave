@@ -34,8 +34,14 @@ final class VoiceMediaSession: VoiceMediaSessionManaging {
             throw VoiceCallMediaError.speechRecognitionDenied
         }
 
+        // Xcode 26 renamed this option; release CI still compiles with Xcode 16.
+#if compiler(>=6.2)
+        let bluetoothOption: AVAudioSession.CategoryOptions = .allowBluetoothHFP
+#else
+        let bluetoothOption: AVAudioSession.CategoryOptions = .allowBluetooth
+#endif
         try session.setCategory(.playAndRecord, mode: .voiceChat,
-                                options: [.allowBluetoothHFP, .defaultToSpeaker])
+                                options: [bluetoothOption, .defaultToSpeaker])
         try session.setActive(true)
         observeAudioChanges()
     }

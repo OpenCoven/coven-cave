@@ -1,15 +1,14 @@
 /**
  * citations — shared parsing + shaping for the Citation UI (chat + research).
  *
- * A "citation" is a numbered source: an inline marker (`[^1]`) that points at a
- * source card (title · domain · snippet · link). This module is JSX-free so the
- * rules are unit-testable under plain `node --experimental-strip-types`.
+ * A "citation" is a source reference: chat renders it as an inline provider
+ * chip with a preview card, while research surfaces can render a numbered
+ * source list. This module is JSX-free so shaping stays unit-testable.
  *
  * Two producers feed the same `Citation` shape:
  *  - Chat/markdown bodies that carry standard footnote citations
  *    (`[^1]` refs + `[^1]: <url> "Title"` definitions). `parseCitations` pulls
- *    the definitions out so a Sources footer can render them richly while the
- *    body keeps its inline markers.
+ *    the definitions out so chat can replace numeric refs with provider chips.
  *  - Research missions, whose `ResearchSourceRef` rows map straight across.
  */
 
@@ -24,6 +23,39 @@ export type Citation = {
   domain?: string;
   /** A short excerpt / claim / note shown in the source card. */
   snippet?: string;
+  /**
+   * A reference to a file in this worktree rather than a page on the web.
+   * A familiar citing its own reading writes `[^1]: src/lib/foo.ts#L12-L18`,
+   * which has no URL to open and no domain to name — the source card shows the
+   * path, the line range, and the quoted lines instead.
+   */
+  file?: CitationFileRef;
+};
+
+export type CitationFileRef = {
+  /** Repo-relative path, as written. */
+  path: string;
+  /** 1-based inclusive line range, when the reference named one. */
+  lineStart?: number;
+  lineEnd?: number;
+};
+
+export type CitationSourceKind =
+  | "repo"
+  | "github"
+  | "arxiv"
+  | "doi"
+  | "wikipedia"
+  | "video"
+  | "document"
+  | "web"
+  | "reference";
+
+export type CitationSourcePresentation = {
+  kind: CitationSourceKind;
+  provider: string;
+  context: string;
+  summary: string;
 };
 
 /** The bare host of a URL, dropping a leading `www.`. Null for non-URLs. */
@@ -35,6 +67,159 @@ export function domainFromUrl(url: string | undefined | null): string | undefine
   } catch {
     return undefined;
   }
+}
+
+function parsedUrl(url: string | undefined): URL | undefined {
+  if (!url) return undefined;
+  try {
+    return new URL(url);
+  } catch {
+    return undefined;
+  }
+}
+
+function decodeUrlPart(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function sourceSummary(citation: Citation, fallback: string): string {
+  return citation.snippet?.trim() || `Preview text wasn't provided. ${fallback}`;
+}
+
+function githubPresentation(citation: Citation, url: URL): CitationSourcePresentation {
+  const parts = url.pathname.split("/").filter(Boolean);
+  const repository = parts.length >= 2 ? `${parts[0]}/${parts[1]}` : "GitHub";
+  const resource = parts[2];
+  const value = parts[3];
+  let detail = "Repository";
+  let fallback = "Open the repository to review the cited context.";
+
+  if (resource === "pull" && value) {
+    detail = `Pull request #${value}`;
+    fallback = "Open the pull request to inspect its discussion and changes.";
+  } else if (resource === "issues" && value) {
+    detail = `Issue #${value}`;
+    fallback = "Open the issue to inspect its discussion and status.";
+  } else if (resource === "commit" && value) {
+    detail = `Commit ${value.slice(0, 7)}`;
+    fallback = "Open the commit to inspect its patch and surrounding history.";
+  } else if (resource === "discussions" && value) {
+    detail = `Discussion #${value}`;
+    fallback = "Open the discussion to inspect the full thread.";
+  } else if (resource === "actions" && parts[3] === "runs" && parts[4]) {
+    detail = `Workflow run ${parts[4]}`;
+    fallback = "Open the workflow run to inspect its jobs and logs.";
+  } else if (resource === "releases" && value === "tag" && parts[4]) {
+    detail = `Release ${decodeUrlPart(parts[4])}`;
+    fallback = "Open the release to inspect its notes and assets.";
+  }
+
+  return {
+    kind: "github",
+    provider: "GitHub",
+    context: `${repository} · ${detail}`,
+    summary: sourceSummary(citation, fallback),
+  };
+}
+
+const DOCUMENT_EXTENSIONS = new Set(["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx"]);
+
+export function lineRangeLabel(file: CitationFileRef): string | undefined {
+  if (file.lineStart === undefined) return undefined;
+  return file.lineEnd !== undefined && file.lineEnd !== file.lineStart
+    ? `L${file.lineStart}–${file.lineEnd}`
+    : `L${file.lineStart}`;
+}
+
+export function citationSourcePresentation(citation: Citation): CitationSourcePresentation {
+  if (citation.file) {
+    const range = lineRangeLabel(citation.file);
+    return {
+      kind: "repo",
+      provider: "This worktree",
+      context: range ? `${citation.file.path} · ${range}` : citation.file.path,
+      summary:
+        citation.snippet?.trim() ||
+        "Cited from a file in this worktree — open it in Code to read the surrounding change.",
+    };
+  }
+  const url = parsedUrl(citation.url);
+  if (!url) {
+    return {
+      kind: "reference",
+      provider: citation.domain?.trim() || "Reference",
+      context: "Provided in this chat",
+      summary: citation.snippet?.trim() || "No preview text or external link was provided for this reference.",
+    };
+  }
+
+  const host = url.hostname.replace(/^www\./, "").toLowerCase();
+  if (host === "github.com") return githubPresentation(citation, url);
+
+  if (host === "arxiv.org" || host === "export.arxiv.org") {
+    const identifier = url.pathname.replace(/^\/(?:abs|pdf)\//, "").replace(/\.pdf$/i, "") || "Unspecified";
+    return {
+      kind: "arxiv",
+      provider: "arXiv",
+      context: `Research paper · ${identifier}`,
+      summary: sourceSummary(citation, "Open the paper to read its abstract and full text."),
+    };
+  }
+
+  if (host === "doi.org" || host === "dx.doi.org") {
+    const identifier = decodeUrlPart(url.pathname.replace(/^\/+/, "")) || "Unspecified";
+    return {
+      kind: "doi",
+      provider: "DOI",
+      context: `Publication · ${identifier}`,
+      summary: sourceSummary(citation, "Open the publication record to review the cited work."),
+    };
+  }
+
+  if (host.endsWith(".wikipedia.org") || host === "wikipedia.org") {
+    const article = decodeUrlPart(url.pathname.replace(/^\/wiki\//, "")).replaceAll("_", " ");
+    return {
+      kind: "wikipedia",
+      provider: "Wikipedia",
+      context: article && article !== url.pathname ? `Encyclopedia article · ${article}` : "Encyclopedia article",
+      summary: sourceSummary(citation, "Open the article to review its references and full context."),
+    };
+  }
+
+  if (host === "youtube.com" || host === "m.youtube.com" || host === "youtu.be" || host === "vimeo.com") {
+    const provider = host === "vimeo.com" ? "Vimeo" : "YouTube";
+    return {
+      kind: "video",
+      provider,
+      context: "Video",
+      summary: sourceSummary(citation, "Open the video to review the cited segment and description."),
+    };
+  }
+
+  const extension = url.pathname.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+  if (extension && DOCUMENT_EXTENSIONS.has(extension)) {
+    return {
+      kind: "document",
+      provider: extension === "pdf" ? "PDF" : extension.toUpperCase(),
+      context: `Document · ${citation.domain || host}`,
+      summary: sourceSummary(citation, "Open the document to review the cited material."),
+    };
+  }
+
+  return {
+    kind: "web",
+    provider: citation.domain || host || "Web",
+    context: "Web page",
+    summary: sourceSummary(citation, "Open the page to review the full context."),
+  };
+}
+
+export function citationInlineLabel(citation: Citation): string {
+  return citationSourcePresentation(citation).provider;
 }
 
 /** Minimal shape of a research source row (see ResearchSourceRef). */
@@ -71,18 +256,80 @@ export function sourcesToCitations(sources: readonly SourceLike[]): Citation[] {
 const DEF_RE = /^\[\^([^\]]+)\]:[ \t]+(.+?)[ \t]*$/gm;
 // An inline reference: `[^label]` NOT immediately followed by `:` (that's a def).
 const REF_RE = /\[\^([^\]]+)\](?!:)/g;
-const MD_LINK_RE = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/;
-const ANGLE_URL_RE = /^<(https?:\/\/[^\s>]+)>$/;
-const BARE_URL_RE = /^(https?:\/\/\S+)(?:[ \t]+"([^"]+)")?$/;
+// After definition lines are removed, a remaining `[^label]` is a reference
+// even when a colon follows it in prose ("the levers[^1]: are…") — REF_RE's
+// lookahead would skip exactly that shape and leak it as literal text.
+const REF_AFTER_DEFS_RE = /\[\^([^\]]+)\]/g;
+const MD_LINK_RE = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)(?:[ \t]+—[ \t]+(.+))?$/;
+const ANGLE_URL_RE = /^<(https?:\/\/[^\s>]+)>(?:[ \t]+—[ \t]+(.+))?$/;
+const BARE_URL_RE = /^(https?:\/\/\S+)(?:[ \t]+"([^"]+)")?(?:[ \t]+—[ \t]+(.+))?$/;
+// A worktree file reference: a repo-relative path with an extension, optionally
+// carrying a line range in either the GitHub (`#L12-L18`) or editor (`:12-18`)
+// form. Anchored and extension-gated so ordinary prose starting with a word
+// cannot be mistaken for a path.
+const FILE_REF_RE =
+  /^((?:[\w.@~-]+\/)+[\w.@-]+\.[a-z0-9]{1,12})(?:#L(\d+)(?:[-–]L?(\d+))?|:(\d+)(?:[-–](\d+))?)?(?:[ \t]+"([^"]+)")?(?:[ \t]+—[ \t]+(.+))?$/i;
 
-function parseDefinitionContent(raw: string): { title: string; url?: string; snippet?: string } {
+/**
+ * Parse a worktree file reference, or null when the text is not one. Named
+ * apart from `parseFileRef` in lib/file-ref (which linkifies inline prose) —
+ * this one reads a citation *definition* and carries a range, not a caret.
+ *
+ * An inverted range (`:99-42`) is normalised rather than trusted: the card
+ * numbers its peek lines from `lineStart`, so a backwards range would print
+ * line numbers that count away from the quoted text.
+ */
+export function parseCitationFileRef(
+  raw: string,
+): (CitationFileRef & { title?: string; snippet?: string }) | null {
+  const m = raw.trim().match(FILE_REF_RE);
+  if (!m) return null;
+  const rawStart = m[2] ?? m[4];
+  const rawEnd = m[3] ?? m[5];
+  let lineStart = rawStart ? Number(rawStart) : undefined;
+  let lineEnd = rawEnd ? Number(rawEnd) : undefined;
+  if (lineStart !== undefined && lineEnd !== undefined && lineEnd < lineStart) {
+    [lineStart, lineEnd] = [lineEnd, lineStart];
+  }
+  return {
+    path: m[1],
+    lineStart,
+    lineEnd,
+    title: m[6]?.trim() || undefined,
+    snippet: m[7]?.trim() || undefined,
+  };
+}
+
+function parseDefinitionContent(raw: string): {
+  title: string;
+  url?: string;
+  snippet?: string;
+  file?: CitationFileRef;
+} {
   const content = raw.trim();
+  const fileRef = parseCitationFileRef(content);
+  if (fileRef) {
+    const { title, snippet, ...file } = fileRef;
+    return { title: title || file.path.split("/").pop() || file.path, snippet, file };
+  }
   const md = content.match(MD_LINK_RE);
-  if (md) return { title: md[1].trim(), url: md[2] };
+  if (md) return { title: md[1].trim(), url: md[2], snippet: md[3]?.trim() || undefined };
   const angle = content.match(ANGLE_URL_RE);
-  if (angle) return { title: domainFromUrl(angle[1]) ?? angle[1], url: angle[1] };
+  if (angle) {
+    return {
+      title: domainFromUrl(angle[1]) ?? angle[1],
+      url: angle[1],
+      snippet: angle[2]?.trim() || undefined,
+    };
+  }
   const bare = content.match(BARE_URL_RE);
-  if (bare) return { title: bare[2]?.trim() || domainFromUrl(bare[1]) || bare[1], url: bare[1] };
+  if (bare) {
+    return {
+      title: bare[2]?.trim() || domainFromUrl(bare[1]) || bare[1],
+      url: bare[1],
+      snippet: bare[3]?.trim() || undefined,
+    };
+  }
   // Plain prose: a leading `"Title"` becomes the title, the rest the snippet.
   const quoted = content.match(/^"([^"]+)"[ \t]*(.*)$/);
   if (quoted) return { title: quoted[1].trim(), snippet: quoted[2].trim() || undefined };
@@ -98,6 +345,57 @@ export type ParsedCitations = {
   order: Map<string, number>;
 };
 
+/** A numeric footnote label (`[^1]`). Only these are safe to strip when
+ * orphaned — an alphabetic `[^a-z]` in prose is more likely a regex class. */
+const NUMERIC_LABEL_RE = /^\d{1,4}$/;
+
+/**
+ * Apply `fn` to the stretches of `text` outside fenced code blocks and inline
+ * code spans, leaving code verbatim. Line-based fences (```), backtick-run
+ * aware inline spans.
+ */
+function replaceOutsideCode(text: string, fn: (segment: string) => string): string {
+  const lines = text.split("\n");
+  let inFence = false;
+  const out = lines.map((line) => {
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      return line;
+    }
+    if (inFence) return line;
+    // Split into inline-code spans (kept) and prose (transformed).
+    return line
+      .split(/(`+[^`]*`+)/g)
+      .map((part) => (part.startsWith("`") ? part : fn(part)))
+      .join("");
+  });
+  return out.join("\n");
+}
+
+export function renderCitationReferences(
+  text: string,
+  parsed: Pick<ParsedCitations, "citations" | "order">,
+): string {
+  const byNumber = new Map(parsed.citations.map((citation) => [citation.n, citation]));
+  const withoutDefinitions = text.replace(DEF_RE, "");
+  const body = withoutDefinitions === text
+    ? text
+    : withoutDefinitions.replace(/\n{3,}/g, "\n\n").trimEnd();
+  if (!body.includes("[^")) return body;
+  return replaceOutsideCode(body, (segment) =>
+    segment.replace(REF_AFTER_DEFS_RE, (whole, label: string) => {
+      const n = parsed.order.get(label);
+      const citation = n ? byNumber.get(n) : undefined;
+      if (citation) return `[${citationInlineLabel(citation)}](#cite-${n})`;
+      // Orphan ref — the model cited a footnote it never defined. Leaking the
+      // literal `[^1]` into prose reads as a typo, so numeric orphans are
+      // dropped. Non-numeric labels stay: they may be regex classes or other
+      // legitimate bracket text.
+      return NUMERIC_LABEL_RE.test(label) ? "" : whole;
+    }),
+  );
+}
+
 /**
  * Pull standard markdown footnote citations out of a body. Only definitions
  * that are actually referenced inline are kept, numbered in the order they are
@@ -106,7 +404,7 @@ export type ParsedCitations = {
  * markers stay so the renderer can turn them into superscript anchors.
  */
 export function parseCitations(text: string): ParsedCitations {
-  const defs = new Map<string, { title: string; url?: string; snippet?: string }>();
+  const defs = new Map<string, ReturnType<typeof parseDefinitionContent>>();
   let m: RegExpExecArray | null;
   DEF_RE.lastIndex = 0;
   while ((m = DEF_RE.exec(text)) !== null) {
@@ -134,6 +432,7 @@ export function parseCitations(text: string): ParsedCitations {
         url: def.url,
         domain: domainFromUrl(def.url),
         snippet: def.snippet,
+        file: def.file,
       };
     });
 
@@ -144,17 +443,17 @@ export function parseCitations(text: string): ParsedCitations {
 
 /**
  * Prepare a cited body for markdown rendering: strip the footnote definitions
- * and rewrite each inline `[^label]` reference to a plain markdown link
- * `[N](#cite-N)` pointing at its Sources-list anchor. Standard markdown that
- * survives the sanitizing renderer — no raw HTML, no pipeline changes. Bodies
- * without citations pass through untouched (identical to before).
+ * and rewrite each inline `[^label]` reference to a provider-labelled anchor.
+ * The fragment is an enhancement hook; chat turns it into an interactive source
+ * chip after sanitization, while no-JavaScript output stays understandable.
  */
 export function renderCitedBody(text: string): { body: string; citations: Citation[] } {
-  const { body, citations, order } = parseCitations(text);
-  if (citations.length === 0) return { body: text, citations: [] };
-  const rewritten = body.replace(REF_RE, (whole, label: string) => {
-    const n = order.get(label);
-    return n ? `[${n}](#cite-${n})` : whole;
-  });
-  return { body: rewritten, citations };
+  const parsed = parseCitations(text);
+  // Run the reference pass even with zero citations: it strips orphan numeric
+  // refs (`[^1]` with no matching definition) that would otherwise leak into
+  // the rendered prose as literal text.
+  return {
+    body: renderCitationReferences(parsed.body, parsed),
+    citations: parsed.citations,
+  };
 }

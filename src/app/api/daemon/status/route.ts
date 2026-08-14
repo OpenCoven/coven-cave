@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   loadDaemonStatusSnapshot,
-  loadState,
-  recordLocalSubdaemonWakeRequest,
-  recordTravelHubReachability,
+  isCaveConfigCompatibilityError,
 } from "@/lib/cave-config";
 import {
   callDaemonTarget,
@@ -15,21 +13,21 @@ import {
 import { covenWorkspaceRoot } from "@/lib/coven-paths";
 import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version";
 import { classifyDaemonFailureAvailability } from "@/lib/daemon-status-classification";
-import { startLocalDaemon } from "@/lib/daemon-start";
 import { executorStatusesForConfig } from "@/lib/executor-status";
+import { daemonHealthRequest, daemonHealthResponseSucceeded } from "@/lib/server/daemon-health-request";
+import { assessDaemonStartupCompatibility, type DaemonStartupHealth } from "@/lib/daemon-startup-contract";
 import { classifyHubFailure } from "@/lib/server/daemon-probe";
+import { reconcileDaemonTravelState } from "@/lib/server/daemon-travel-reconcile";
+import {
+  daemonDiagnosticContextFromRequest,
+  DAEMON_DIAGNOSTIC_CORRELATION_HEADER,
+} from "@/lib/server/daemon-diagnostics";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
-import { syncOfflineTravelQueue, type TravelOfflineReplayResult } from "@/lib/travel-offline-replay";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-type Health = {
-  ok: boolean;
-  apiVersion?: string;
-  covenVersion?: string;
-  daemon?: { pid: number; startedAt: string; socket: string };
-};
+type Health = DaemonStartupHealth;
 
 function targetSummary(target: DaemonTarget) {
   if (target.mode === "local") {
@@ -60,6 +58,7 @@ function failureAvailability(target: DaemonTarget, res: DaemonResponse<unknown>)
 }
 
 function isCaveHomeStatusFailure(error: unknown): boolean {
+  if (isCaveConfigCompatibilityError(error)) return true;
   const code = typeof error === "object" && error !== null && "code" in error
     ? String((error as NodeJS.ErrnoException).code ?? "")
     : "";
@@ -67,15 +66,32 @@ function isCaveHomeStatusFailure(error: unknown): boolean {
   return error instanceof Error && error.message.startsWith("Cave home reconciliation failed");
 }
 
-function caveHomeStatusUnavailable() {
-  return NextResponse.json({
+function caveHomeStatusUnavailable(error?: unknown) {
+  if (isCaveConfigCompatibilityError(error)) {
+    return {
+      running: false,
+      availability: "incompatible",
+      reason: error.message,
+    };
+  }
+  return {
     running: false,
     availability: "status-unavailable",
     reason: "Cave home is temporarily busy; status will retry automatically",
-  });
+  };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const diagnostics = daemonDiagnosticContextFromRequest(request);
+  const respond = (body: Record<string, unknown>) =>
+    NextResponse.json(
+      { ...body, correlationId: diagnostics.correlationId },
+      {
+        headers: {
+          [DAEMON_DIAGNOSTIC_CORRELATION_HEADER]: diagnostics.correlationId,
+        },
+      },
+    );
   let snapshot: Awaited<ReturnType<typeof loadDaemonStatusSnapshot>>;
   try {
     snapshot = await loadDaemonStatusSnapshot();
@@ -85,14 +101,13 @@ export async function GET() {
       ? String((error as NodeJS.ErrnoException).code ?? "")
       : "reconciliation";
     console.warn("[daemon-status] Cave home status snapshot unavailable", { code });
-    return caveHomeStatusUnavailable();
+    return respond(caveHomeStatusUnavailable(error));
   }
   const { config } = snapshot;
   const target = daemonTargetForConfig(config);
   const checkedAt = new Date().toISOString();
   const executorStatuses = await executorStatusesForConfig(config);
-  let travelState = snapshot.state.travel;
-  let hubReachable: boolean | null = target.mode === "local" ? true : null;
+  const travelState = snapshot.state.travel;
   if (target.mode === "unconfigured-hub") {
     const root = covenWorkspaceRoot();
     const travelStatus = deriveTravelClientStatus({
@@ -100,7 +115,7 @@ export async function GET() {
       travel: travelState,
       hubReachable: false,
     });
-    return NextResponse.json({
+    return respond({
       running: false,
       availability: "misconfigured",
       reason: target.error,
@@ -117,38 +132,32 @@ export async function GET() {
   // and failure classification. Reloading config inside callDaemon() created
   // a race where a connection-mode change could query one target while the
   // response claimed (and classified) another.
-  const res = await callDaemonTarget<Health>(target, { path: "/api/v1/health", timeoutMs: 1500 });
-  let travelReplay: TravelOfflineReplayResult | null = null;
-  if (target.mode === "hub") {
-    hubReachable = hubAnswered(res);
-    travelState = await recordTravelHubReachability(hubReachable);
-    if (res.ok && !travelState.manualOffline) {
-      travelReplay = await syncOfflineTravelQueue(config);
-      if (travelReplay.attempted > 0) {
-        travelState = (await loadState()).travel;
-      }
-    }
-  }
-  let travelStatus = deriveTravelClientStatus({
-    multiHost: config.multiHost,
-    travel: travelState,
-    hubReachable,
+  const res = await callDaemonTarget<Health>(target, {
+    ...daemonHealthRequest(),
+    diagnostics,
+    diagnosticOperation: "daemon-status-health",
   });
-  if (target.mode === "hub" && travelStatus.wakeLocalSubdaemon) {
-    await startLocalDaemon();
-    travelState = await recordLocalSubdaemonWakeRequest();
-    travelStatus = deriveTravelClientStatus({
-      multiHost: config.multiHost,
-      travel: travelState,
-      hubReachable,
-    });
-  }
+  const health = daemonHealthResponseSucceeded(res) ? res.data : null;
+  const daemonHealthy = health !== null;
+  const installedVersion = daemonHealthy && target.mode === "local"
+    ? await installedCovenVersion()
+    : null;
+  const compatibility = daemonHealthy && target.mode === "local"
+    ? assessDaemonStartupCompatibility(health, installedVersion)
+    : null;
+  const { travelStatus, travelReplay } = await reconcileDaemonTravelState({
+    config,
+    travelState,
+    target,
+    hubAnswered: target.mode === "local" ? true : hubAnswered(res),
+    daemonHealthy,
+  });
   const root = covenWorkspaceRoot();
-  if (!res.ok || !res.data) {
-    return NextResponse.json({
+  if (!daemonHealthy || (compatibility && !compatibility.ok)) {
+    return respond({
       running: false,
-      availability: failureAvailability(target, res),
-      reason: failureReason(target, res),
+      availability: compatibility && !compatibility.ok ? "incompatible" : failureAvailability(target, res),
+      reason: compatibility && !compatibility.ok ? compatibility.diagnostic : failureReason(target, res),
       checkedAt,
       target: targetSummary(target),
       executors: executorStatuses,
@@ -158,20 +167,21 @@ export async function GET() {
       projectRoot: root,
     });
   }
-  const installedVersion =
-    !res.data.covenVersion || res.data.covenVersion === "0.0.0"
+  const daemonVersion = typeof health.covenVersion === "string" ? health.covenVersion : undefined;
+  const fallbackInstalledVersion =
+    !daemonVersion || daemonVersion === "0.0.0"
       ? await installedCovenVersion()
-      : null;
-  return NextResponse.json({
+      : installedVersion;
+  return respond({
     running: true,
     availability: "online",
     checkedAt,
-    apiVersion: res.data.apiVersion,
+    apiVersion: health.apiVersion,
     covenVersion: displayCovenVersion({
-      daemonVersion: res.data.covenVersion,
-      installedVersion,
+      daemonVersion,
+      installedVersion: fallbackInstalledVersion,
     }),
-    daemon: res.data.daemon,
+    daemon: health.daemon,
     target: targetSummary(target),
     executors: executorStatuses,
     travel: travelStatus,

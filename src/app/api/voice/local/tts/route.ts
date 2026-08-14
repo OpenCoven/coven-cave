@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server.js";
 import {
-  speechModelById,
+  resolveLocalTtsVoice,
   speechModelReadiness,
   withSpeechModelUse,
   type SpeechModelReadiness,
@@ -35,7 +35,9 @@ type LocalTtsRouteDependencies = {
 async function defaultReadiness(
   voiceName: string,
 ): Promise<SpeechModelReadiness | null> {
-  const model = speechModelById(voiceName);
+  // Derived Kokoro speaker names resolve to their base entry: readiness is
+  // the readiness of the one shared bundle (cave-xopgb).
+  const model = resolveLocalTtsVoice(voiceName)?.model ?? null;
   if (!model) return null;
   // Integrity is part of readiness. Recompute the registered asset digests
   // before every synthesis instead of treating matching metadata as proof.
@@ -105,8 +107,8 @@ export async function handleLocalTtsPost(
   // Engine-shaped names are not sufficient: only the reviewed registry may
   // reach a local runner. This keeps stale or crafted ids from becoming an
   // implicit model allow-list when more local engines are added later.
-  const registeredVoice = speechModelById(voiceName);
-  if (!registeredVoice || registeredVoice.kind !== "tts") {
+  const registeredVoice = resolveLocalTtsVoice(voiceName);
+  if (!registeredVoice || registeredVoice.model.kind !== "tts") {
     return NextResponse.json(
       { ok: false, error: "invalid_voice_name" },
       { status: 400 },
@@ -114,7 +116,9 @@ export async function handleLocalTtsPost(
   }
 
   try {
-    return await withSpeechModelUse(voiceName, async () => {
+    // Lease on the BASE model id: removing the shared bundle must block a
+    // derived speaker's synthesis exactly like the base voice's.
+    return await withSpeechModelUse(registeredVoice.model.id, async () => {
       // This must remain inside the removal lease: readiness hashes both the
       // ONNX and its Piper config immediately before the runner opens them.
       const readiness = await (dependencies.readiness ?? defaultReadiness)(voiceName);

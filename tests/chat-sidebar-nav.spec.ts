@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // Verifies Chat mode's WorkspaceSidebar in the Shell nav. It replaces the
 // normal SidebarMinimal while Chat is active and defaults to a time-bucketed
@@ -10,14 +10,39 @@ import { expect, test, type Page } from "@playwright/test";
 // /api/familiars + /api/sessions/list are mocked.
 
 // Timestamps are relative to the test run so bucket labels are deterministic:
-// s1 → Today, s2 → Yesterday, s3 → Previous 7 days, s4 → Older.
+// s1 → Today, s2 → Yesterday, s3/s5 → Previous 7 days, s4 → Older.
 const NOW = Date.now();
 const iso = (daysAgo: number) => new Date(NOW - daysAgo * 86_400_000).toISOString();
+const NO_ATTENTION = { state: "none", since: null, reason: null } as const;
 const SESSIONS = [
-  { id: "s1", title: "Refactor auth flow", status: "running", origin: "chat", project_root: "/repo/alpha", updated_at: iso(0) },
-  { id: "s2", title: "Fix eslint config", status: "completed", origin: "board", project_root: "/repo/alpha", updated_at: iso(1) },
-  { id: "s3", title: "Write API docs", status: "completed", origin: "chat", project_root: "/repo/beta", updated_at: iso(4) },
-  { id: "s4", title: "Wire deploy pipeline", status: "running", origin: "board", project_root: "/repo/beta", updated_at: iso(40) },
+  { id: "s1", title: "Refactor auth flow", status: "running", origin: "chat", project_root: "/repo/alpha", updated_at: iso(0), attention: NO_ATTENTION },
+  { id: "s2", title: "Fix eslint config", status: "completed", origin: "board", project_root: "/repo/alpha", updated_at: iso(1), attention: NO_ATTENTION },
+  { id: "s3", title: "Write API docs", status: "completed", origin: "chat", project_root: "/repo/beta", updated_at: iso(4), attention: NO_ATTENTION },
+  { id: "s4", title: "Wire deploy pipeline", status: "running", origin: "board", project_root: "/repo/beta", updated_at: iso(40), attention: NO_ATTENTION },
+  {
+    id: "s5",
+    title: "Approve release checklist",
+    status: "completed",
+    origin: "chat",
+    project_root: "/repo/alpha",
+    updated_at: iso(2),
+    attention: { state: "awaiting-human", since: iso(2), reason: "approval" },
+  },
+  {
+    id: "s6",
+    title: "Review active pull request",
+    status: "failed",
+    origin: "chat",
+    project_root: "/repo/alpha",
+    updated_at: iso(0),
+    attention: { state: "awaiting-human", since: iso(0), reason: "review" },
+    pullRequest: {
+      repo: "OpenCoven/coven-cave",
+      number: 42,
+      url: "https://github.com/OpenCoven/coven-cave/pull/42",
+      state: "open",
+    },
+  },
 ].map((s) => ({
   ...s,
   harness: "codex",
@@ -27,21 +52,104 @@ const SESSIONS = [
   created_at: s.updated_at,
 }));
 
+async function renderedBox(locator: Locator) {
+  return locator.evaluate((element) => {
+    const style = window.getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return {
+      display: style.display,
+      visibility: style.visibility,
+      width: rect.width,
+      height: rect.height,
+    };
+  });
+}
+
+async function narrowChatSidebar(page: Page) {
+  const sidebar = page.locator('aside[aria-label="Sidebar"] .chat-sidebar');
+  const cnav = sidebar.locator(".cnav");
+  await cnav.evaluate((element) => {
+    const nav = element as HTMLElement;
+    const host = nav.closest<HTMLElement>(".chat-sidebar");
+    if (host) {
+      Object.assign(host.style, {
+        width: "200px",
+        minWidth: "200px",
+        maxWidth: "200px",
+      });
+    }
+    Object.assign(nav.style, {
+      width: "200px",
+      minWidth: "200px",
+      maxWidth: "200px",
+    });
+  });
+  await expect.poll(async () => (await cnav.boundingBox())?.width ?? Number.POSITIVE_INFINITY).toBeLessThan(212);
+}
+
+async function activeCueBoxes(row: Locator) {
+  return row.evaluate((element) => {
+    const rowRect = element.getBoundingClientRect();
+    const boxFor = (selector: string) => {
+      const rect = element.querySelector(selector)?.getBoundingClientRect();
+      if (!rect) throw new Error(`Missing ${selector}`);
+      return { left: rect.left, right: rect.right };
+    };
+    const selection = window.getComputedStyle(element, "::before");
+    const selectionLeft = rowRect.left + Number.parseFloat(selection.left);
+    return {
+      selection: {
+        left: selectionLeft,
+        right: selectionLeft + Number.parseFloat(selection.width),
+      },
+      attention: boxFor(".cnav__attention-tick"),
+      runtime: boxFor(".cnav__tick"),
+      pullRequest: boxFor(".cnav__pr-badge"),
+    };
+  });
+}
+
+function expectHorizontalSeparation(
+  boxes: Awaited<ReturnType<typeof activeCueBoxes>>,
+  viewport: "normal" | "narrow",
+) {
+  const ordered = [boxes.selection, boxes.attention, boxes.runtime, boxes.pullRequest];
+  for (let index = 1; index < ordered.length; index += 1) {
+    expect(
+      ordered[index - 1].right,
+      `${viewport} cue ${index - 1} must end before cue ${index} begins`,
+    ).toBeLessThanOrEqual(ordered[index].left);
+  }
+}
+
 async function ensureChatSurface(page: Page) {
   await page.waitForSelector(".shell-frame", { timeout: 30_000 });
   const surface = page.locator(".chat-surface");
   try {
     await surface.waitFor({ state: "visible", timeout: 10_000 });
   } catch {
-    const chatDestination = page
-      .locator('aside[aria-label="Sidebar"]')
-      .getByRole("button", { name: /^Chat\b/ })
-      .first();
+    const nav = page.locator('aside[aria-label="Sidebar"]');
+    const chatDestination = nav.getByRole("button", { name: /^Chat\b/ }).first();
     if (!(await chatDestination.isVisible().catch(() => false))) {
       const openNav = page.getByRole("button", { name: "Open navigation (⌘B)" });
       if (await openNav.isVisible().catch(() => false)) await openNav.click();
     }
-    await chatDestination.click();
+    // The Chat row lives in the rail's second section (cave-24d2r); when the
+    // Home section is open, that section's tab is the way in. Its LABEL is
+    // "Chat" while its id stays "code" (NAV_SECTIONS) — the label was flipped
+    // from "Code" by 68342e3 (fix/cave-vqh94-home-chat-tabs), which left this
+    // helper waiting 60s for a tab name that no longer exists. Scoped to the
+    // "Workspace sections" tablist so it collides with neither the mobile
+    // bottom tab of the same name nor the nav row inside the section.
+    if (await chatDestination.isVisible().catch(() => false)) {
+      await chatDestination.click();
+    } else {
+      await nav
+        .getByRole("tablist", { name: "Workspace sections" })
+        .getByRole("tab", { name: "Chat", exact: true })
+        .first()
+        .click();
+    }
     await surface.waitFor({ state: "visible", timeout: 30_000 });
   }
   await page.waitForSelector('aside[aria-label="Sidebar"] .chat-sidebar', { timeout: 30_000 });
@@ -97,7 +205,7 @@ test.describe("chat sidebar (session navigator)", () => {
     await expect.poll(() => page.evaluate(() => window.localStorage.getItem("cave:shell:nav-open"))).toBe("1");
   });
 
-  test("defaults to the Recent view; Organize menu switches to project folders", async ({ page }) => {
+  test("defaults to the Recent view; grouping tabs switch to project folders", async ({ page }) => {
     await gotoChat(page);
     const sidebar = page.locator('aside[aria-label="Sidebar"] .chat-sidebar');
 
@@ -112,13 +220,12 @@ test.describe("chat sidebar (session navigator)", () => {
       await expect(sidebar.getByText(s.title, { exact: false }).first()).toBeVisible();
     }
     // Bare row times — no "ago" suffix anywhere in the sidebar.
-    await expect(sidebar.getByText(/\bago\b/)).toHaveCount(0);
+    await expect(sidebar.locator(".cnav__time").filter({ hasText: /\bago\b/ })).toHaveCount(0);
 
-    // Organize sidebar → By project restores the folder grouping.
-    await sidebar.getByRole("button", { name: "Sidebar options" }).click();
-    const menu = page.getByRole("dialog", { name: "Sidebar options" });
-    await expect(menu.getByRole("menuitemradio", { name: "Recent chats" })).toHaveAttribute("aria-checked", "true");
-    await menu.getByRole("menuitemradio", { name: "By project" }).click();
+    // The sidebar-owned grouping tabs replace the old Organize menu choice.
+    const groupingTabs = sidebar.getByRole("tablist", { name: "Group chats" });
+    await expect(groupingTabs.getByRole("tab", { name: "Recent" })).toHaveAttribute("aria-selected", "true");
+    await groupingTabs.getByRole("tab", { name: "Projects" }).click();
     await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toBeVisible();
     await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) beta threads/ })).toBeVisible();
 
@@ -143,6 +250,73 @@ test.describe("chat sidebar (session navigator)", () => {
 
     await search.fill("no-such-session-xyz");
     await expect(sidebar.getByText("No threads match your search")).toBeVisible();
+  });
+
+  test("narrow chat nav keeps the attention label rendered after the project tile collapses", async ({ page }) => {
+    await gotoChat(page);
+    const sidebar = page.locator('aside[aria-label="Sidebar"] .chat-sidebar');
+    const attentionRow = sidebar.locator(".cnav__thread", { hasText: "Approve release checklist" }).first();
+    const attentionButton = attentionRow.locator("button.cnav__thread-main");
+    const projectTile = attentionRow.locator(".cnav__thread-proj");
+    const attentionCue = attentionRow.locator(".cnav__attention");
+    const attentionLabel = attentionCue.locator("span:not(.cnav__attention-dot)").first();
+
+    await expect(sidebar.getByRole("heading", { name: "Awaiting you" })).toHaveCount(0);
+    await expect(sidebar.locator('section[aria-label="Awaiting you"]')).toBeVisible();
+    await expect(attentionRow.getByText("Approve release checklist", { exact: true })).toBeVisible();
+    await expect(projectTile).toBeVisible();
+    await expect(attentionCue).toBeVisible();
+    await expect(attentionLabel).toHaveText("Awaiting you");
+    const timestamp = (await attentionRow.locator(".cnav__time").textContent())?.trim();
+    expect(timestamp).toBeTruthy();
+    await expect(attentionButton).toHaveAccessibleName(
+      new RegExp(`^Project alpha\\s+Approve release checklist\\s+${timestamp}\\s+Awaiting you$`),
+    );
+
+    await narrowChatSidebar(page);
+
+    const projectState = await renderedBox(projectTile);
+    expect(projectState.display).toBe("none");
+    expect(projectState.visibility).not.toBe("hidden");
+    expect(projectState.width).toBe(0);
+    expect(projectState.height).toBe(0);
+
+    const cueState = await renderedBox(attentionCue);
+    expect(cueState.display).not.toBe("none");
+    expect(cueState.visibility).not.toBe("hidden");
+    expect(cueState.width).toBeGreaterThan(0);
+    expect(cueState.height).toBeGreaterThan(0);
+
+    const labelState = await renderedBox(attentionLabel);
+    expect(labelState.display).not.toBe("none");
+    expect(labelState.visibility).not.toBe("hidden");
+    expect(labelState.width).toBeGreaterThan(0);
+    expect(labelState.height).toBeGreaterThan(0);
+    await expect(attentionButton).toHaveAccessibleName(
+      new RegExp(`^Project alpha\\s+Approve release checklist\\s+${timestamp}\\s+Awaiting you$`),
+    );
+  });
+
+  test("active PR attention row keeps selection, attention, runtime, and PR cues in separate gutters", async ({ page }) => {
+    await gotoChat(page);
+    const sidebar = page.locator('aside[aria-label="Sidebar"] .chat-sidebar');
+    const row = sidebar.locator(".cnav__thread", { hasText: "Review active pull request" }).first();
+    const rowButton = row.locator("button.cnav__thread-main");
+
+    await rowButton.click();
+    await expect(rowButton).toHaveAttribute("aria-current", "page");
+    await expect(row.locator(".cnav__attention-tick")).toBeVisible();
+    await expect(row.locator(".cnav__tick")).toBeVisible();
+    await expect(row.locator(".cnav__pr-badge")).toBeVisible();
+
+    const normalBoxes = await activeCueBoxes(row);
+    expectHorizontalSeparation(normalBoxes, "normal");
+
+    await narrowChatSidebar(page);
+
+    await expect(rowButton).toHaveAttribute("aria-current", "page");
+    const narrowBoxes = await activeCueBoxes(row);
+    expectHorizontalSeparation(narrowBoxes, "narrow");
   });
 });
 

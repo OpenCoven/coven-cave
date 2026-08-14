@@ -72,8 +72,13 @@ import { readFile } from "node:fs/promises";
   );
   assert.match(
     source,
-    /handleUseHarnessFix[\s\S]{0,600}method: "PATCH"[\s\S]{0,300}familiars: \{ \[familiar\.id\]: \{ harness: runtime/,
+    /handleUseHarnessFix[\s\S]{0,600}method: "PATCH"[\s\S]{0,300}familiars: \{[\s\S]*?\[familiar\.id\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel/,
     "the fix handler should rebind the familiar via /api/config PATCH",
+  );
+  assert.match(
+    source,
+    /async function handleUseHarnessFix\(runtime: string\) \{[\s\S]*?if \(sessionId\) \{[\s\S]*?conversation is pinned to its original runtime[\s\S]*?announce\(message, "assertive"\)[\s\S]*?return;/,
+    "the fix handler must not claim to switch an existing conversation whose persisted harness pins the retry",
   );
   assert.match(
     source,
@@ -84,11 +89,25 @@ import { readFile } from "node:fs/promises";
 
 // ── Group chat: error replies ────────────────────────────────────────────────
 {
+  // The coven redesign moved the failure CARD (and its harness recovery
+  // buttons) into CovenAgentSection; group-chat-view still owns the handler
+  // those buttons call, so the two halves are asserted against their files.
   const source = await readFile(new URL("./group-chat-view.tsx", import.meta.url), "utf8");
+  const section = await readFile(new URL("./coven-agent-section.tsx", import.meta.url), "utf8");
+  assert.match(
+    section,
+    /parseHarnessFailure\(reply\.error\)/,
+    "group chat should parse each error reply's text",
+  );
+  assert.match(
+    section,
+    /<HarnessFixActions[\s\S]{0,160}onUseHarness=\{onUseHarness\}/,
+    "the failure card should offer the harness recovery actions",
+  );
   assert.match(
     source,
-    /parseHarnessFailure\(r\.error\)/,
-    "group chat should parse each error reply's text",
+    /onUseHarness=\{\(runtime\) =>[\s\S]{0,120}useHarnessForReply\(agent\.reply, runtime\)/,
+    "group chat should wire each failure card to the per-reply harness-fix handler",
   );
   assert.match(
     source,
@@ -97,13 +116,18 @@ import { readFile } from "node:fs/promises";
   );
   assert.match(
     source,
-    /familiars: \{ \[reply\.familiarId\]: \{ harness: runtime/,
+    /familiars: \{[\s\S]*?\[reply\.familiarId\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: modelForRuntimeSwitch\(runtime\)/,
     "the group-chat fix should rebind the failing reply's familiar",
   );
   assert.match(
     source,
     /await retryReply\(reply\)/,
     "after rebinding, the group-chat fix should re-run just that reply",
+  );
+  assert.match(
+    source,
+    /const useHarnessForReply = useCallback\([\s\S]*?if \(reply\.sessionId \|\| activeGroupRef\.current\?\.sessions\[reply\.familiarId\]\) \{[\s\S]*?reply is pinned to its original runtime[\s\S]*?return;/,
+    "group-chat recovery must not rebind a familiar when the failed reply already has a pinned session",
   );
 }
 

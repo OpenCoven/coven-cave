@@ -216,18 +216,50 @@ const chatSendSource = read("../app/api/chat/send/route.ts");
 assert.match(chatSendSource, /env: harnessSpawnEnv\(body\.familiarId\)/, "familiar chat spawn injects only granted keys");
 assert.doesNotMatch(chatSendSource, /covenSpawnEnv/, "chat/send no longer forwards the unscoped spawn env");
 
+// The one-shot spawn moved into a shared runner when the reader's Rewrite
+// control needed it too (cave-xailn). Asserted end to end: the runner scopes
+// the env by familiar, and every caller hands it a familiar id — a runner that
+// scopes correctly is worthless if a caller passes nothing.
+const oneShotSource = read("./server/coven-oneshot.ts");
+assert.match(
+  oneShotSource,
+  /env: covenWrapperSpawnEnv\(harnessSpawnEnv\(familiarId\)\)/,
+  "one-shot Coven wrapper spawn stays familiar-scoped and opts into hidden native launch",
+);
+assert.doesNotMatch(oneShotSource, /covenSpawnEnv/);
+
 const enrichSource = read("../app/api/board/enrich-steps/route.ts");
-assert.match(enrichSource, /env: harnessSpawnEnv\(familiarId\)/, "enrich-steps harness spawn is familiar-scoped");
+assert.match(
+  enrichSource,
+  /runCovenOneShot\(args, req\.signal, workspace, familiarId\)/,
+  "enrich-steps runs through the shared runner with its familiar id",
+);
 assert.doesNotMatch(enrichSource, /covenSpawnEnv/);
 
+const rewriteSource = read("../app/api/chat/rewrite/route.ts");
+assert.match(
+  rewriteSource,
+  /runCovenOneShot\(args, req\.signal, workspace, familiarId\)/,
+  "reader rewrite runs through the shared runner with its familiar id",
+);
+assert.doesNotMatch(rewriteSource, /covenSpawnEnv/);
+
 const automationSource = read("./server/automation-runner.ts");
-assert.match(automationSource, /env: harnessSpawnEnv\(\)/, "automation runs no longer inherit the full process env");
+assert.match(
+  automationSource,
+  /env: codexManagedPackageSpawnEnv\(\s*dependencies\.env \?\? harnessSpawnEnv\(\),\s*invocation\.managedPackage/,
+  "automation runs keep the scoped harness env while adding only the validated Codex package contract",
+);
 
 const assistSource = read("./server/assist-runner.ts");
 assert.match(assistSource, /env: harnessSpawnEnv\(\)/, "assist runs no longer inherit the full process env");
 
 const daemonStartSource = read("./daemon-start.ts");
-assert.match(daemonStartSource, /env: harnessSpawnEnv\(\)/, "the daemon is started without scoped vault secrets");
+assert.match(
+  daemonStartSource,
+  /spawnEnvironment = harnessSpawnEnv[\s\S]*?const spawnEnv = spawnEnvironment\(\);[\s\S]*?env: covenWrapperSpawnEnv\(\{\s*\.\.\.spawnEnv,[\s\S]*?COVEN_CAVE_CORRELATION_ID/,
+  "the daemon keeps its scoped environment seam, adds only diagnostics, and opts the Coven wrapper into hidden launch",
+);
 assert.doesNotMatch(daemonStartSource, /covenSpawnEnv/);
 
 const vaultRouteSource = read("../app/api/vault/route.ts");

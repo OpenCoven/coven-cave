@@ -26,10 +26,13 @@ assert.match(threads, /app\.markFamiliarViewed\(\[familiar\.id\]\)/, "opening a 
 
 // The Chats row shows an accent unread dot.
 const home = await read("Views/ChatsHomeView.swift");
+// The rail avatar is now the only place this renders: FamiliarRow carried a
+// second copy on one line, and it went with the reorder sheet (cave-ios-reorder).
+// \s* between the calls so the rail's multi-line chain matches too.
 assert.match(
   home,
-  /if app\.hasUnread\(familiar\.id\) \{\s*Circle\(\)\.fill\(chrome\.accent\)/,
-  "FamiliarRow should show an accent unread dot",
+  /if app\.hasUnread\(familiar\.id\) \{\s*Circle\(\)\s*\.fill\(chrome\.accent\)/,
+  "the familiar rail avatar should show an accent unread dot",
 );
 assert.match(home, /if app\.hasUnread\(familiar\.id\) \{ parts\.append\("unread"\) \}/, "VoiceOver should announce unread");
 

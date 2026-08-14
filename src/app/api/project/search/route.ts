@@ -50,7 +50,7 @@ function runRipgrep(cwd: string, args: string[]): Promise<RgResult> {
     execFile(
       "rg",
       args,
-      { cwd, timeout: RG_TIMEOUT_MS, maxBuffer: MAX_RG_BUFFER },
+      { windowsHide: true, cwd, timeout: RG_TIMEOUT_MS, maxBuffer: MAX_RG_BUFFER },
       (err, stdout) => {
         if (!err) return resolve({ stdout, code: 0 });
         const code = (err as { code?: number }).code;
@@ -101,7 +101,7 @@ async function resolveSearchRoot(root: string): Promise<RootResolution> {
   // index. Reuse the daemon-session list already fetched above.
   try {
     const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
-      execFile("git", ["rev-parse", "--is-inside-work-tree"], { cwd: real, timeout: 10_000 }, (err, stdout) => {
+      execFile("git", ["rev-parse", "--is-inside-work-tree"], { windowsHide: true, cwd: real, timeout: 10_000 }, (err, stdout) => {
         if (err) reject(err);
         else resolve({ stdout });
       });

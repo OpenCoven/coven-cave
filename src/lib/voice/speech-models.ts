@@ -275,6 +275,107 @@ export function speechModelById(modelId: string): SpeechModelRegistryEntry | nul
   return SPEECH_MODEL_REGISTRY.find((model) => model.id === modelId) ?? null;
 }
 
+/**
+ * Named Kokoro v0.19 speakers (cave-xopgb). The speaker-id order is fixed by
+ * sherpa-onnx's voices.bin generation script
+ * (scripts/kokoro/v0.19/generate_voices_bin.py in k2-fsa/sherpa-onnx):
+ * concatenation order IS the sid. Speaker 0 ("af", the reviewed Bella+Sarah
+ * default blend) is the base registry entry's own voice, so it is not listed
+ * here. Name prefixes upstream: a=American, b=British; f/m=female/male. All
+ * speakers ship inside the one downloaded voices.bin — a derived voice never
+ * triggers its own download.
+ */
+export const KOKORO_NAMED_SPEAKERS = [
+  { suffix: "bella", label: "Bella (US female)", speakerId: 1 },
+  { suffix: "nicole", label: "Nicole (US female)", speakerId: 2 },
+  { suffix: "sarah", label: "Sarah (US female)", speakerId: 3 },
+  { suffix: "sky", label: "Sky (US female)", speakerId: 4 },
+  { suffix: "adam", label: "Adam (US male)", speakerId: 5 },
+  { suffix: "michael", label: "Michael (US male)", speakerId: 6 },
+  { suffix: "emma", label: "Emma (UK female)", speakerId: 7 },
+  { suffix: "isabella", label: "Isabella (UK female)", speakerId: 8 },
+  { suffix: "george", label: "George (UK male)", speakerId: 9 },
+  { suffix: "lewis", label: "Lewis (UK male)", speakerId: 10 },
+] as const;
+
+export type ResolvedLocalTtsVoice = {
+  model: SpeechModelRegistryEntry;
+  /** null for non-Kokoro engines; the sherpa-onnx --sid otherwise. */
+  kokoroSpeakerId: number | null;
+  displayName: string;
+};
+
+/**
+ * Resolve a selectable voiceName to its registry model: either a model id
+ * directly, or a derived Kokoro speaker id (`<base-id>-<speaker>`) that
+ * shares the base entry's downloaded bundle with a different --sid.
+ */
+export function resolveLocalTtsVoice(voiceName: string): ResolvedLocalTtsVoice | null {
+  const direct = speechModelById(voiceName);
+  if (direct) {
+    return {
+      model: direct,
+      kokoroSpeakerId: direct.engine === "kokoro" ? direct.kokoroSpeakerId ?? 0 : null,
+      displayName: direct.name,
+    };
+  }
+  for (const base of SPEECH_MODEL_REGISTRY) {
+    if (base.engine !== "kokoro" || base.kind !== "tts") continue;
+    if (!voiceName.startsWith(`${base.id}-`)) continue;
+    const suffix = voiceName.slice(base.id.length + 1);
+    const speaker = KOKORO_NAMED_SPEAKERS.find((named) => named.suffix === suffix);
+    if (!speaker) return null;
+    return {
+      model: base,
+      kokoroSpeakerId: speaker.speakerId,
+      displayName: `Kokoro ${speaker.label}`,
+    };
+  }
+  return null;
+}
+
+export type SelectableLocalTtsVoice = {
+  id: string;
+  name: string;
+  engine: "piper" | "kokoro";
+  ready: boolean;
+  verified: boolean;
+};
+
+/**
+ * The selection catalog: every voiceName a familiar can pick. Derived Kokoro
+ * speakers inherit the base entry's readiness — they are selectable exactly
+ * when the one shared bundle is downloaded and verified. Management surfaces
+ * keep using the plain model list; this catalog is for pickers.
+ */
+export function selectableLocalTtsVoices(
+  tts: readonly SpeechModelReadiness[],
+): SelectableLocalTtsVoice[] {
+  const voices: SelectableLocalTtsVoice[] = [];
+  for (const model of tts) {
+    if (model.engine === "whisper") continue;
+    voices.push({
+      id: model.id,
+      name: model.name,
+      engine: model.engine,
+      ready: model.ready,
+      verified: model.verified,
+    });
+    if (model.engine === "kokoro" && model.kokoroSpeakerId !== undefined) {
+      for (const speaker of KOKORO_NAMED_SPEAKERS) {
+        voices.push({
+          id: `${model.id}-${speaker.suffix}`,
+          name: `Kokoro ${speaker.label}`,
+          engine: model.engine,
+          ready: model.ready,
+          verified: model.verified,
+        });
+      }
+    }
+  }
+  return voices;
+}
+
 export function speechModelPath(model: SpeechModelRegistryEntry, root = speechModelsRoot()): string {
   return speechModelAssetPath(model, model.fileName, root);
 }

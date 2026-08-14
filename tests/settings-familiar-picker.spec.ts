@@ -33,15 +33,22 @@ async function gotoChatFamiliarSettings(page: Page) {
   try {
     await surface.waitFor({ state: "visible", timeout: 10_000 });
   } catch {
-    const chatDestination = page
-      .locator('aside[aria-label="Sidebar"]')
-      .getByRole("button", { name: /^Chat\b/ })
-      .first();
+    const nav = page.locator('aside[aria-label="Sidebar"]');
+    const chatDestination = nav.getByRole("button", { name: /^Chat\b/ }).first();
     if (!(await chatDestination.isVisible().catch(() => false))) {
       const openNav = page.getByRole("button", { name: "Open navigation (⌘B)" });
       if (await openNav.isVisible().catch(() => false)) await openNav.click();
     }
-    await chatDestination.click();
+    // The Chat row lives in the rail's second section (cave-24d2r); when the
+    // Home section is open, that section's tab is the way in. Its LABEL is
+    // "Chat" while its id stays "code" (NAV_SECTIONS) — flipped from "Code" by
+    // fix/cave-vqh94-home-chat-tabs. Same copy of this helper as the one in
+    // chat-sidebar-nav.spec.ts; both were waiting for a name that is gone.
+    if (await chatDestination.isVisible().catch(() => false)) {
+      await chatDestination.click();
+    } else {
+      await nav.getByRole("tab", { name: "Chat", exact: true }).first().click();
+    }
     await surface.waitFor({ state: "visible", timeout: 30_000 });
   }
   const chatSections = page.getByRole("tablist", { name: "Chat sections" });
@@ -103,11 +110,11 @@ test("the migrated Familiar Settings surface keeps its nested controls", async (
   const settings = page.getByRole("region", { name: "Settings for Familiar 01" });
   await expect(settings.getByRole("tab", { name: "Chat", exact: true })).toBeVisible();
   await expect(settings.getByRole("tab", { name: "Brain", exact: true })).toBeVisible();
-  await expect(settings.getByRole("tab", { name: "Projects", exact: true })).toBeVisible();
+  await expect(settings.getByRole("tab", { name: "Memory", exact: true })).toBeVisible();
   await expect(settings.getByRole("tab", { name: "Vault", exact: true })).toBeVisible();
 
-  await settings.getByRole("tab", { name: "Projects", exact: true }).click();
-  await expect(settings.getByRole("tab", { name: "Projects", exact: true })).toHaveAttribute(
+  await settings.getByRole("tab", { name: "Vault", exact: true }).click();
+  await expect(settings.getByRole("tab", { name: "Vault", exact: true })).toHaveAttribute(
     "aria-selected",
     "true",
   );

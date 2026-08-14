@@ -22,6 +22,7 @@
     "read_files",
     "write_files"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/wcag-a11y-audit",
   "x-coven": {
     "displayName": "WCAG 2.2 AA Accessibility Audit",

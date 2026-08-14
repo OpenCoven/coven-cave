@@ -76,16 +76,16 @@ assert.match(
 );
 assert.match(
   chatView,
-  /private func selectModel\([\s\S]{0,360}thread\.pendingModelOverride = model[\s\S]{0,240}guard sessionId != nil else/,
-  "switchModel should synchronously retain model intent before any session write",
+  /private func selectModel\([\s\S]{0,420}let stagedModel = model \?\? ""[\s\S]{0,240}thread\.pendingModelOverride = stagedModel[\s\S]{0,240}guard sessionId != nil \|\| model == nil else/,
+  "switchModel should synchronously retain a model selection or runtime-default clear before any session write",
 );
 assert.match(
   chatView,
-  /client\.setChatModel\(\s*familiarId:[\s\S]{0,160}scope: "session"\)/,
-  "switchModel should PATCH an existing session through setChatModel",
+  /client\.setChatModel\(\s*familiarId:[\s\S]{0,220}scope: sessionId == nil \? "familiar-default" : "session"\)/,
+  "switchModel should PATCH an existing session, or clear the familiar default before the first session",
 );
 
-for (const command of ["/journal", "/automations", "/remind", "/attach", "/tui", "/toggle-agent"]) {
+for (const command of ["/auto", "/journal", "/automations", "/remind", "/attach", "/tui", "/toggle-agent"]) {
   const escaped = command.replace("/", "\\/");
   assert.match(
     iosSlash,

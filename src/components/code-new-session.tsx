@@ -25,11 +25,18 @@ export function CodeNewSession({
   open,
   onClose,
   onCreated,
+  initialPrompt,
 }: {
   open: boolean;
   onClose: () => void;
   /** Fired as soon as the bridge announces the new session id. */
   onCreated: (sessionId: string) => void;
+  /**
+   * Seeds the kickoff prompt when the flow is opened from somewhere that
+   * already knows what the session is for — the Code picker's
+   * "start a new session about <query>" path (cave-0rcku).
+   */
+  initialPrompt?: string;
 }) {
   const [projects, setProjects] = useState<CaveProject[]>([]);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
@@ -40,6 +47,16 @@ export function CodeNewSession({
   const [prompt, setPrompt] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const busy = phase.kind === "provisioning" || phase.kind === "starting";
+
+  // Seed once per opening, not on every `initialPrompt` change: the caller
+  // holds the seed in state for as long as the modal is mounted, and re-running
+  // this would overwrite whatever the user has since typed.
+  useEffect(() => {
+    if (!open) return;
+    const seed = initialPrompt?.trim();
+    if (seed) setPrompt(seed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;

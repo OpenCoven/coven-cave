@@ -14,7 +14,25 @@ const {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
   isProjectlessGenerationOrigin,
+  projectlessGenerationLaunch,
 } = await import(moduleUrl.href);
+
+function launch(overrides = {}) {
+  const input = {
+    origin: "canvas",
+    hasRequestedProjectRoot: false,
+    sshRuntime: false,
+    sshHome: "/home/val",
+    familiarWorkspace: "/home/val/.coven/workspaces/familiars/milo",
+    ...overrides,
+  };
+  // Most cases have no symlink in play, so default the resolved form to the raw
+  // one. A case that cares about symlinks passes resumeCwdResolved explicitly.
+  if (input.resumeCwd !== undefined && !("resumeCwdResolved" in overrides)) {
+    input.resumeCwdResolved = input.resumeCwd;
+  }
+  return projectlessGenerationLaunch(input);
+}
 
 function harness(overrides = {}) {
   const calls = {
@@ -179,4 +197,111 @@ test("a registered worktree authorizes through its parent project id", async () 
     projectId: "parent-project",
   });
   assert.deepEqual(calls.access, [["milo", "parent-project", "chat"]]);
+});
+
+// ── cave-o3nq7: the projectless exemption covers the familiar's own workspace
+// and nothing else. A resume root reaches the branch from the conversation
+// runtime OR from the daemon's global session list, and that list is not
+// scoped to the requesting familiar — adopting one unchecked launched a
+// familiar in another session's project with no grant for it.
+
+test("a hidden generation with no resume root runs auth-free in its own workspace", () => {
+  assert.deepEqual(launch(), {
+    kind: "workspace",
+    root: "/home/val/.coven/workspaces/familiars/milo",
+  });
+});
+
+test("an ssh hidden generation keeps its remote home runtime", () => {
+  assert.deepEqual(launch({ sshRuntime: true }), { kind: "workspace", root: "/home/val" });
+});
+
+test("a hidden generation with no workspace at all is refused, not launched", () => {
+  assert.deepEqual(launch({ familiarWorkspace: undefined }), { kind: "unavailable" });
+});
+
+test("a resume root inside the familiar's own workspace stays auth-free", () => {
+  // Multi-turn canvas: turn 1 ran auth-free in the workspace and persisted it
+  // as the conversation runtime, so turn 2 must not start demanding a grant
+  // for a directory that is not a registered project.
+  for (const resume of [
+    "/home/val/.coven/workspaces/familiars/milo",
+    "/home/val/.coven/workspaces/familiars/milo/scratch",
+  ]) {
+    assert.deepEqual(
+      launch({ resumeCwd: resume }),
+      { kind: "workspace", root: resume },
+      `${resume} is the familiar's own workspace`,
+    );
+  }
+});
+
+test("a daemon-derived resume root outside the workspace is gated", () => {
+  for (const resume of [
+    "/home/val/code/someone-elses-project",
+    "/home/val/.coven/workspaces/familiars/milo/../nyx",
+    "/home/val/.coven/workspaces/familiars/nyx",
+  ]) {
+    assert.deepEqual(
+      launch({ resumeCwd: resume }),
+      { kind: "gated" },
+      `${resume} must pass the launch gate`,
+    );
+  }
+});
+
+test("a resume root is gated when the familiar has no workspace to compare against", () => {
+  assert.deepEqual(
+    launch({ resumeCwd: "/home/val/code/project", familiarWorkspace: undefined }),
+    { kind: "gated" },
+  );
+});
+
+test("every non-hidden origin is gated regardless of resume root", () => {
+  for (const origin of [undefined, "chat", "mention", "board", "call", "cron", "heartbeat"]) {
+    assert.deepEqual(
+      launch({ origin, resumeCwd: undefined }),
+      { kind: "gated" },
+      `${origin ?? "missing"} origin is project-gated`,
+    );
+  }
+});
+
+test("a request that names its own project root is always gated", () => {
+  assert.deepEqual(launch({ hasRequestedProjectRoot: true }), { kind: "gated" });
+});
+
+// ── cave-o3nq7 review (#4582): the containment test runs on the SYMLINK-RESOLVED
+// resume root. The spawn realpaths the root and enforces only "inside $HOME", so
+// a lexical check on the raw string would let a symlink planted in the familiar's
+// own workspace — a directory the familiar can write to — resolve into another
+// project with the launch gate skipped.
+
+test("a workspace path that resolves outside the workspace is gated", () => {
+  assert.deepEqual(
+    launch({
+      resumeCwd: "/home/val/.coven/workspaces/familiars/milo/link",
+      resumeCwdResolved: "/home/val/code/someone-elses-project",
+    }),
+    { kind: "gated" },
+    "a symlink out of the workspace must not inherit the exemption",
+  );
+});
+
+test("an exempt resume root launches at its resolved path, not the raw one", () => {
+  assert.deepEqual(
+    launch({
+      resumeCwd: "/home/val/.coven/workspaces/familiars/milo/link",
+      resumeCwdResolved: "/home/val/.coven/workspaces/familiars/milo/real",
+    }),
+    { kind: "workspace", root: "/home/val/.coven/workspaces/familiars/milo/real" },
+    "the decision and the launched root must be the same path",
+  );
+});
+
+test("an unresolvable resume root is gated, never dropped back to the workspace", () => {
+  assert.deepEqual(
+    launch({ resumeCwd: "/home/val/code/gone", resumeCwdResolved: undefined }),
+    { kind: "gated" },
+  );
 });

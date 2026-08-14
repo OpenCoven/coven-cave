@@ -10,12 +10,10 @@ import {
   type DragEvent,
 } from "react";
 
-import { AccessGroupsSection } from "@/components/access-groups-section";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { FamiliarStudioBrainTab } from "@/components/familiar-studio-brain-tab";
 import { FamiliarStudioIdentityTab } from "@/components/familiar-studio-identity-tab";
 import { FamiliarStudioMemoryTab } from "@/components/familiar-studio-memory-tab";
-import { FamiliarStudioProjectsTab } from "@/components/familiar-studio-projects-tab";
 import { SettingsFamiliarPicker } from "@/components/settings-familiar-picker";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -59,11 +57,13 @@ type FamiliarMemoryCountState =
   | { state: "ready"; count: number }
   | { state: "unavailable" };
 
+// Projects is deliberately absent: Chat → Projects owns the grant matrix,
+// access groups, and access history in one place. The stat chip below still
+// reports the familiar's project count — that is a read, not a second editor.
 const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
   { id: "identity", label: "Identity", icon: "ph:user" },
   { id: "brain", label: "Brain", icon: "ph:brain" },
   { id: "memory", label: "Memory", icon: "ph:archive" },
-  { id: "projects", label: "Projects", icon: "ph:folder" },
   { id: "vault", label: "Vault", icon: "ph:vault" },
 ];
 
@@ -101,7 +101,12 @@ export function FamiliarStudioInlinePanel({
     enabled: Boolean(familiar),
   });
   const memoryCount = useFamiliarMemoryCount(familiar?.id ?? null);
-  const displayedTab = activeTab === "contract" ? "identity" : activeTab;
+  // "contract" and "projects" are both absent from TABS — contract folds into
+  // Identity, and project access moved wholesale to Chat → Projects. Either
+  // stored value must still resolve to a real tab or the tablist would carry a
+  // value matching no item.
+  const displayedTab =
+    activeTab === "contract" || activeTab === "projects" ? "identity" : activeTab;
 
   // Auto-select a familiar so the detail pane is never empty on entry, and
   // recover if the current selection vanishes after archive/removal. Prefer
@@ -231,12 +236,6 @@ export function FamiliarStudioInlinePanel({
                   allFamiliars={familiars}
                   localDaemonReady={localDaemonReady}
                 />
-              ) : null}
-              {activeTab === "projects" ? (
-                <div className="familiar-studio-control__projects">
-                  <FamiliarStudioProjectsTab familiar={familiar} />
-                  <AccessGroupsSection familiars={resolved} />
-                </div>
               ) : null}
               {activeTab === "vault" ? (
                 <VaultPanel familiarId={familiar.id} />

@@ -24,6 +24,7 @@ import {
   type BrowserNavigationRequest,
   type ExpectedBrowserNavigation,
 } from "@/lib/browser-navigation-queue";
+import { registerSurfaceHistoryDelegate } from "@/lib/surface-history";
 import { TabFavicon } from "./browser-tab-favicon";
 import {
   HOME_URL,
@@ -676,6 +677,33 @@ export function BrowserPane({ label = "default", active = true, handleRef, navig
     setTabs((t) => t.map((tab) => tab.id === activeTabId ? { ...tab, url: next } : tab));
     commitAddress(next);
   };
+
+  // The shell's Back reaches the embedded pages before anything else. Inside
+  // this surface "back" means the page you were just on — those pages are their
+  // own axis, the way an iframe's history is — and the press falls through to
+  // the workspace journal only once the pane sits at the root of its stack.
+  const paneNavRef = useRef({ canBack, canForward, goBack, goForward });
+  paneNavRef.current = { canBack, canForward, goBack, goForward };
+  useEffect(
+    () =>
+      registerSurfaceHistoryDelegate({
+        id: "browser:page",
+        canMove: (direction) =>
+          direction === -1 ? paneNavRef.current.canBack : paneNavRef.current.canForward,
+        move: (direction) => {
+          const nav = paneNavRef.current;
+          if (direction === -1) {
+            if (!nav.canBack) return false;
+            nav.goBack();
+            return true;
+          }
+          if (!nav.canForward) return false;
+          nav.goForward();
+          return true;
+        },
+      }),
+    [],
+  );
 
   // Cmd+K / Ctrl+K → open quick-open palette.
   // Uses capture phase + paneRef containment check so the global workspace

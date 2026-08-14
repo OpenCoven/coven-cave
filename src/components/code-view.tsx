@@ -5,14 +5,16 @@
  * multi-session coding tab. Reverses the earlier Code-mode retirement on the
  * owner's request; default-on since phase 2 (cave-m6ys).
  *
- * Phase 3+ (this shape): top-level Sessions/GitHub tabs, the session rail
+ * Phase 3+ (this shape): top-level Sessions/Activity/PRs/Issues/Reviews tabs, the session rail
  * (grouped by project, git-attribution badges, + New session) and the
- * per-session workbench (Diff | Files | Terminal | PR) with the follow-up
- * composer (code-composer.tsx). New sessions start via code-new-session.tsx —
- * project + familiar + optional fresh worktree. The inspector and mobile
- * layout land in follow-up PRs. GitHub mounts whole under the GitHub tab
- * (the standalone GitHub surface and its sidebar row were absorbed; the
- * "github" workspace mode is now a tab alias landing here).
+ * per-session Coding Desk — a persistent terminal center beside a resizable
+ * context dock (Changes | Files | Pull request | Inspector | GitHub | Browser)
+ * with the follow-up composer (code-composer.tsx) under both. New sessions
+ * start via code-new-session.tsx — project + familiar + optional fresh
+ * worktree. CodeView hosts the whole GitHubView under the
+ * Activity/PRs/Issues/Reviews tabs; the dock's GitHub tab mounts a second,
+ * session-scoped copy so triage never has to displace a running shell.
+ * Workspace routing lives outside this component.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -20,6 +22,8 @@ import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import {
   CODE_GITHUB_TABS,
+  CODE_ROOM_RAIL_WIDTH_PX,
+  codeRoomFitsRail,
   codeSessionWorkRoot,
   groupCodeRailSessions,
   isCodeGithubTab,
@@ -31,13 +35,18 @@ import type { Filter as GitHubFilter } from "@/components/github-view-data";
 import { CodeSessionRail } from "@/components/code-session-rail";
 import { CodeWorkbench } from "@/components/code-workbench";
 import { CodeNewSession } from "@/components/code-new-session";
+import { CodeSourceContext } from "@/components/code-source-context";
 import { GithubOrganizationSettings } from "@/components/settings-github";
+import { SurfaceRail } from "@/components/ui/surface-rail";
 import type { GitHubItemTarget } from "@/lib/github-item-url";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
+import { codeTopTabForGitHubTarget, type PendingCodeNavigation } from "@/lib/pending-code-navigation";
 import type { SessionRow } from "@/lib/types";
+import { useIsMobile } from "@/lib/use-viewport";
+import { useMeasuredWidth } from "@/lib/use-measured-width";
 
 // GitHubView keeps its own chunk: CodeView opens far more often than its
-// GitHub tab, and github-view is a 3k-line surface (same split posture as
+// GitHub tabs, and github-view is a 3k-line surface (same split posture as
 // lazy-surfaces.tsx, done locally to avoid a lazy-surfaces ↔ code-view cycle).
 const LazyGitHubView = dynamic(
   () => import("@/components/github-view").then((m) => m.GitHubView),
@@ -46,6 +55,7 @@ const LazyGitHubView = dynamic(
 
 // The GitHub content tabs and the GitHubView filter each one drives.
 const GITHUB_TAB_FILTER: Record<CodeGithubTab, GitHubFilter> = {
+  activity: "all",
   prs: "pr",
   issues: "issue",
   reviews: "review_request",
@@ -54,19 +64,24 @@ const GITHUB_TAB_META: Record<
   CodeGithubTab,
   { label: string; icon: Parameters<typeof Icon>[0]["name"] }
 > = {
+  activity: { label: "Activity", icon: "ph:bell" },
   prs: { label: "PRs", icon: "ph:git-pull-request" },
   issues: { label: "Issues", icon: "ph:circle-dashed" },
   reviews: { label: "Reviews", icon: "ph:check-circle" },
 };
 
+function topTabForNavigation(request: PendingCodeNavigation): CodeTopTab {
+  return request.kind === "github-item"
+    ? codeTopTabForGitHubTarget(request.target)
+    : request.topTab;
+}
+
 export type CodeViewProps = {
   sessions: SessionRow[];
-  /** Landing tab override — the "github" mode alias mounts CodeView on its
-   *  GitHub tab (deep-link continuity for the absorbed standalone surface). */
-  initialTopTab?: CodeTopTab;
   onJumpToSession: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard: (cardId: string) => void;
-  githubTarget?: GitHubItemTarget | null;
+  navigationRequest?: PendingCodeNavigation | null;
+  onNavigationHandled?: (nonce: number) => void;
   /** A file/diff open raised anywhere in the app (cave-ohcj): the workspace
    *  routes cave:open-project-file / cave:open-file-diff /
    *  cave:browse-project-files here instead of Chat's code rail. */
@@ -77,15 +92,15 @@ export type CodeViewProps = {
 
 export function CodeView({
   sessions,
-  initialTopTab,
   onJumpToSession,
   onFocusCard,
-  githubTarget,
+  navigationRequest,
+  onNavigationHandled,
   pendingOpen,
   onPendingOpenHandled,
   onTasksRefresh,
 }: CodeViewProps) {
-  // `?mode=code&session=<id>&ctab=<sessions|github>&wtab=<diff|files|terminal|pr>`
+  // `?mode=code&session=<id>&ctab=<sessions|activity|prs|issues|reviews>&wtab=<diff|files|terminal|pr>`
   // deep link — parsed once (initializer stays PURE: React StrictMode runs it
   // twice, so stripping here would feed the second run an already-stripped
   // URL and lose the target), then stripped in a mount effect (the
@@ -105,8 +120,34 @@ export function CodeView({
     window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
   }, []);
   const [topTab, setTopTab] = useState<CodeTopTab>(
-    githubTarget ? "prs" : deepLink?.topTab ?? initialTopTab ?? "sessions",
+    pendingOpen
+      ? "sessions"
+      : navigationRequest
+        ? topTabForNavigation(navigationRequest)
+        : deepLink?.topTab ?? "sessions",
   );
+  const [initialGithubTarget, setInitialGithubTarget] = useState<GitHubItemTarget | null>(
+    pendingOpen
+      ? null
+      : navigationRequest?.kind === "github-item"
+        ? navigationRequest.target
+        : null,
+  );
+  const [githubNavigationKey, setGithubNavigationKey] = useState(
+    navigationRequest?.nonce ?? 0,
+  );
+  const handledNavigationNonceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!navigationRequest) return;
+    if (handledNavigationNonceRef.current === navigationRequest.nonce) return;
+    setTopTab(topTabForNavigation(navigationRequest));
+    setInitialGithubTarget(
+      navigationRequest.kind === "github-item" ? navigationRequest.target : null,
+    );
+    setGithubNavigationKey(navigationRequest.nonce);
+    handledNavigationNonceRef.current = navigationRequest.nonce;
+    onNavigationHandled?.(navigationRequest.nonce);
+  }, [navigationRequest, onNavigationHandled]);
   const githubTab: CodeGithubTab | null = isCodeGithubTab(topTab) ? topTab : null;
   // Selection is tri-state for the mobile drill-in: `undefined` = nothing
   // chosen yet (auto-pick allowed), `null` = the user explicitly went Back to
@@ -115,15 +156,34 @@ export function CodeView({
     deepLink?.sessionId ?? undefined,
   );
   const [newSessionOpen, setNewSessionOpen] = useState(false);
+  // The workbench picker offers "start a new session about <query>" when the
+  // filter matches nothing. There is no title field to set — a session's title
+  // is the daemon's, derived from the conversation — so the typed text seeds
+  // the kickoff prompt instead of being silently dropped.
+  const [newSessionSeed, setNewSessionSeed] = useState("");
   // A session created HERE isn't in the polled list yet; hold its selection
   // until /api/sessions/list catches up instead of auto-picking the newest.
   const pendingNewIdRef = useRef<string | null>(null);
   // On a phone the rail IS the landing screen — auto-picking the newest
   // session would skip the list and drop the user straight into a workbench
-  // with no context. Captured once at mount (Tailwind md breakpoint).
-  const narrowMountRef = useRef(
-    typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
-  );
+  // with no context. Decided once, from the Room's own measured width: this
+  // surface renders inside the role-surface host and can sit in a split, so a
+  // viewport query answers a question nobody asked (cave-k3a9u).
+  const roomRef = useRef<HTMLDivElement | null>(null);
+  const roomWidth = useMeasuredWidth(roomRef);
+  const isMobile = useIsMobile();
+  const fitsRail = codeRoomFitsRail(roomWidth, isMobile);
+  const narrowLandingRef = useRef<boolean | null>(null);
+  const [narrowLanding, setNarrowLanding] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (narrowLandingRef.current !== null) return;
+    // Hold for the first real measurement when one is coming. Without
+    // ResizeObserver none ever arrives, so take the viewport fallback rather
+    // than never deciding — that would strand auto-pick permanently.
+    if (roomWidth === null && typeof ResizeObserver !== "undefined") return;
+    narrowLandingRef.current = !codeRoomFitsRail(roomWidth, isMobile);
+    setNarrowLanding(narrowLandingRef.current);
+  }, [roomWidth, isMobile]);
 
   const groups = useMemo(() => groupCodeRailSessions(sessions), [sessions]);
 
@@ -149,12 +209,34 @@ export function CodeView({
         : undefined;
     const target = byId ?? byRoot;
     setTopTab("sessions");
+    setInitialGithubTarget(null);
     if (target) setSelectedId(target.id);
     // Root browse with no matching session: there is no workbench to focus —
     // land on the surface and leave the rail/selection as-is.
     setWorkbenchTarget(root && !target ? null : { open: pendingOpen, sessionId: target?.id ?? null });
+    // A new arrival re-shows the source card even if the reader dismissed the
+    // last one — dismissing is "I've read this", not "never show me these".
+    setOriginDismissed(false);
     onPendingOpenHandled?.();
   }, [groups, onPendingOpenHandled, pendingOpen]);
+
+  // Only opens raised from a conversation carry an origin; a file picked from
+  // the tree shows nothing, because there is no conversation to point back to.
+  const [originDismissed, setOriginDismissed] = useState(false);
+  const activeOrigin =
+    !originDismissed &&
+    workbenchTarget &&
+    (workbenchTarget.sessionId ?? selectedId) === selectedId &&
+    workbenchTarget.open.origin
+      ? workbenchTarget.open.origin
+      : null;
+  const originSessionId = workbenchTarget?.open.sessionId ?? null;
+  const selectSession = (sessionId: string) => {
+    // A manual switch is a context change — drop any pending file focus so it
+    // cannot replay into the newly picked workbench.
+    setWorkbenchTarget(null);
+    setSelectedId(sessionId);
+  };
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
@@ -174,14 +256,14 @@ export function CodeView({
       return;
     }
     if (selectedId === null) return;
-    if (narrowMountRef.current) return;
+    if (narrowLanding !== false) return;
     if (selectedId && pendingNewIdRef.current === selectedId) return;
     const first = groups[0]?.sessions[0];
     if (first) setSelectedId(first.id);
-  }, [groups, selected, selectedId]);
+  }, [groups, selected, selectedId, narrowLanding]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div ref={roomRef} className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-1 border-b border-[var(--border-hairline)] px-3 py-1.5">
         <div
           role="tablist"
@@ -227,50 +309,113 @@ export function CodeView({
       {githubTab ? (
         <div className="min-h-0 flex-1">
           <LazyGitHubView
+            key={githubNavigationKey}
             onJumpToSession={onJumpToSession}
             onFocusCard={onFocusCard}
-            initialTarget={githubTarget}
+            initialTarget={initialGithubTarget}
+            onInitialTargetHandled={() => setInitialGithubTarget(null)}
             initialFilter={GITHUB_TAB_FILTER[githubTab]}
             onTasksRefresh={onTasksRefresh}
           />
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          {/* Mobile drill-in: below md the rail is the landing screen and the
-              workbench replaces it once a session is picked (Back returns). */}
+          {/* Narrow drill-in: when the Room itself is too narrow to hold the
+              rail beside the workbench, the rail is the landing screen and the
+              workbench replaces it once a session is picked (Back returns).
+              Driven by the Room's measured width, not the viewport — this
+              surface can sit in a split beside another page (cave-k3a9u). */}
+          {fitsRail ? (
+            <SurfaceRail
+              storageKey="cave:code:sessions-rail"
+              title="Sessions"
+              ariaLabel="Coding sessions"
+              defaultWidth={CODE_ROOM_RAIL_WIDTH_PX}
+              actions={
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewSessionSeed("");
+                    setNewSessionOpen(true);
+                  }}
+                  title="New session"
+                  aria-label="New session"
+                  className="focus-ring text-[var(--accent-presence)]"
+                >
+                  <Icon name="ph:plus-bold" width={14} aria-hidden />
+                </button>
+              }
+            >
+              {(open, setOpen) => (
+                <CodeSessionRail
+                  sessions={sessions}
+                  selectedId={selectedId ?? null}
+                  onSelect={selectSession}
+                  open={open}
+                  onExpand={() => setOpen(true)}
+                />
+              )}
+            </SurfaceRail>
+          ) : (
+            <div
+              className={`${selected ? "hidden" : "block w-full"} shrink-0 border-[var(--border-hairline)]`}
+            >
+              <CodeSessionRail
+                sessions={sessions}
+                selectedId={selectedId ?? null}
+                onSelect={selectSession}
+                onNewSession={() => {
+                  setNewSessionSeed("");
+                  setNewSessionOpen(true);
+                }}
+              />
+            </div>
+          )}
           <div
-            className={`${selected ? "hidden md:block" : "block"} w-full shrink-0 border-[var(--border-hairline)] md:w-64 md:border-r`}
+            className={`${selected || fitsRail ? "flex" : "hidden"} min-w-0 flex-1 flex-col`}
           >
-            <CodeSessionRail
-              sessions={sessions}
-              selectedId={selectedId ?? null}
-              onSelect={(id) => {
-                // A manual switch is a context change — drop any pending file
-                // focus so it can't replay into the newly picked workbench.
-                setWorkbenchTarget(null);
-                setSelectedId(id);
-              }}
-              onNewSession={() => setNewSessionOpen(true)}
-            />
-          </div>
-          <div className={`${selected ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col`}>
             {selected ? (
               <>
-                <div className="shrink-0 border-b border-[var(--border-hairline)] px-2 py-1 md:hidden">
-                  <button
-                    type="button"
-                    aria-label="Back to sessions"
-                    onClick={() => setSelectedId(null)}
-                    className="focus-ring inline-flex items-center gap-1 rounded px-1.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                  >
-                    <Icon name="ph:caret-left" width={12} height={12} />
-                    Sessions
-                  </button>
-                </div>
+                {fitsRail ? null : (
+                  <div className="shrink-0 border-b border-[var(--border-hairline)] px-2 py-1">
+                    <button
+                      type="button"
+                      aria-label="Back to sessions"
+                      onClick={() => setSelectedId(null)}
+                      className="focus-ring inline-flex items-center gap-1 rounded px-1.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                    >
+                      <Icon name="ph:caret-left" width={12} height={12} />
+                      Sessions
+                    </button>
+                  </div>
+                )}
+                {activeOrigin ? (
+                  <CodeSourceContext
+                    origin={activeOrigin}
+                    path={workbenchTarget?.open.path}
+                    // Back lands on the chat session the block came from, not
+                    // the workbench's own session — they differ whenever the
+                    // reader handed off from one conversation into another
+                    // session's worktree.
+                    onBack={originSessionId ? () => onJumpToSession(originSessionId) : undefined}
+                    onDismiss={() => setOriginDismissed(true)}
+                  />
+                ) : null}
                 <div className="min-h-0 flex-1">
                   <CodeWorkbench
                     key={selected.id}
                     row={selected}
+                    // The workbench header carries its own session picker
+                    // (cave-0rcku), so it needs the same list the rail shows.
+                    sessions={sessions}
+                    onSelectSession={(id) => {
+                      setWorkbenchTarget(null);
+                      setSelectedId(id);
+                    }}
+                    onNewSession={(seed) => {
+                      setNewSessionSeed(seed);
+                      setNewSessionOpen(true);
+                    }}
                     initialTab={deepLink?.sessionId === selected.id ? deepLink?.workbenchTab : undefined}
                     openTarget={
                       workbenchTarget && (workbenchTarget.sessionId ?? selected.id) === selected.id
@@ -292,6 +437,7 @@ export function CodeView({
       )}
       <CodeNewSession
         open={newSessionOpen}
+        initialPrompt={newSessionSeed}
         onClose={() => setNewSessionOpen(false)}
         onCreated={(sessionId) => {
           pendingNewIdRef.current = sessionId;

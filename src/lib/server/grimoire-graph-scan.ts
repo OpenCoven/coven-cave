@@ -29,8 +29,40 @@ export type GrimoireGraphMeta = {
   journal: { scanned: number; total: number };
 };
 
-/** Content is scanned for the most recent N markdown memory files. */
-export const MEMORY_SCAN_CAP = 400;
+/**
+ * Content is scanned for the most recent N markdown memory files.
+ *
+ * ⚠️ The binding constraint is NOT the I/O this file's cost model describes —
+ * it is the RENDERER. `tickForceSim` (lib/grimoire-force.ts) computes repulsion
+ * as symmetric O(n²), and the graph view ticks it ~148 times to settle. Read
+ * cost is near-irrelevant by comparison; the ~25s figure quoted above was for
+ * UNBOUNDED reads, a cost CONTENT_BYTE_CAP already removed.
+ *
+ * Measured 2026-08-08 on a 3393-file corpus (scan total = read + frontmatter
+ * parse + buildDocGraph; tick cost at the node count each cap produces):
+ *
+ *   cap    scan     nodes   ms/tick   settle (148 ticks)
+ *    400   340ms      464      1.3      0.19s
+ *   1000   619ms     1160      3.1      0.46s
+ *   1200      —      1392      4.4      0.65s   ← here
+ *   2000   984ms     2320     12.8      1.89s
+ *   3393  1387ms     3812     36.6      5.42s
+ *
+ * 1200 keeps the sim at ~27% of a 60fps frame BEFORE canvas drawing, on a fast
+ * machine. 2000 spends 77% of the budget on simulation alone and takes nearly
+ * two seconds to settle — every reheat, not just first paint. So raising this
+ * further is a RENDERER change first: make repulsion Barnes-Hut, or bound the
+ * node count independently of the scan. Do not raise it on I/O evidence alone.
+ *
+ * Note what this cap can and cannot fix. It is applied coven-wide BEFORE the
+ * client's familiar scoping, so a scoped view shows that familiar's slice of
+ * the coven's most-recent N — never all of their files. Going 400 → 1200 took a
+ * familiar owning 260 of ~2065 files from ~35 nodes to ~150, but closing the
+ * gap entirely needs scoping to happen before truncation (cave-ed4s3). Until
+ * then the graph view states the shortfall outright rather than implying the
+ * scoped count is the familiar's whole corpus.
+ */
+export const MEMORY_SCAN_CAP = 1200;
 /** …and the most recent N journal days. */
 export const JOURNAL_SCAN_CAP = 200;
 /** Per-file byte cap — links/tags overwhelmingly live near the top. */

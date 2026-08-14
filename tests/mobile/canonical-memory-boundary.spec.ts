@@ -41,6 +41,10 @@ function syntheticDefault(pathname: string): unknown {
   return { ok: true };
 }
 
+function isRouteFamily(pathname: string, base: string): boolean {
+  return pathname === base || pathname.startsWith(`${base}/`);
+}
+
 async function routeSyntheticMobile(
   route: Route,
   state: BoundaryState,
@@ -60,7 +64,10 @@ async function routeSyntheticMobile(
     await route.fallback();
     return;
   }
-  if (pathname.startsWith("/api/coven-memory")) {
+  if (
+    isRouteFamily(pathname, "/api/coven-memory") ||
+    isRouteFamily(pathname, "/api/mobile/coven-memory")
+  ) {
     state.outboundCanonicalMarkers.push(
       request.headers()["x-coven-cave-mobile-access"],
     );
@@ -125,7 +132,12 @@ async function openMobileMemory(page: Page, state: BoundaryState) {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
   page.on("response", async (response) => {
-    if (new URL(response.url()).pathname.startsWith("/api/coven-memory")) {
+    if (
+      isRouteFamily(
+        new URL(response.url()).pathname,
+        "/api/coven-memory",
+      )
+    ) {
       state.canonicalStatuses.push(response.status());
       const body = await response.json().catch(() => null);
       if (
@@ -206,4 +218,38 @@ test("paired mobile is denied canonical reads while synthetic file memory remain
     dialog.getByRole("button", { name: "Edit memory file" }),
   ).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Copy path" })).toBeVisible();
+});
+
+test("mobile canonical route trusts only the proxy-authenticated marker", async ({
+  request,
+}) => {
+  const untrustedLocalPeer = {
+    "x-coven-cave-local-peer": "mobile-untrusted",
+  };
+  const spoofed = await request.get("/api/mobile/coven-memory/overview", {
+    headers: {
+      "x-coven-cave-mobile-access": "1",
+    },
+  });
+  expect(spoofed.status()).toBe(401);
+  expect(await spoofed.json()).toEqual({
+    ok: false,
+    code: "mobile_access_required",
+  });
+
+  const authenticated = await request.get(
+    "/api/mobile/coven-memory/overview",
+    {
+      headers: {
+        ...untrustedLocalPeer,
+        authorization: "Bearer test-fixture",
+        "x-coven-cave-mobile-access": "forged",
+      },
+    },
+  );
+  expect(authenticated.status()).toBe(503);
+  expect(await authenticated.json()).toEqual({
+    ok: false,
+    code: "canonical_memory_unavailable",
+  });
 });

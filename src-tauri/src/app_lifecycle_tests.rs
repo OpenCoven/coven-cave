@@ -3,6 +3,89 @@ use super::*;
 #[cfg(target_os = "windows")]
 use std::process::Command;
 
+// The dev launcher cannot read a signal death out of `tauri dev`, which
+// returns 0 for one. It reads this marker instead, so an unwritten or empty
+// marker has to mean "startup never finished" and nothing else. cave-g8n5v.
+#[test]
+fn dev_startup_marker_is_skipped_when_no_launcher_is_watching() {
+    assert_eq!(dev_startup_marker_path(None), None, "unset means nobody asked");
+    assert_eq!(
+        dev_startup_marker_path(Some(String::new())),
+        None,
+        "an empty variable is not a path to write"
+    );
+    assert_eq!(
+        dev_startup_marker_path(Some("   ".to_string())),
+        None,
+        "a blank variable is not a path to write"
+    );
+    assert_eq!(
+        dev_startup_marker_path(Some("/tmp/cave-marker".to_string())),
+        Some(std::path::PathBuf::from("/tmp/cave-marker")),
+        "a named path is the launcher watching"
+    );
+}
+
+#[test]
+fn dev_startup_marker_only_fills_in_the_launchers_own_placeholder() {
+    let dir = std::env::temp_dir().join(format!(
+        "cave-startup-marker-guard-{}-{}",
+        std::process::id(),
+        sidecar_auth_token()
+    ));
+    std::fs::create_dir_all(&dir).expect("marker test dir");
+
+    let placeholder = dir.join("mktemp-placeholder");
+    std::fs::write(&placeholder, "").expect("empty placeholder");
+    assert!(
+        marker_is_the_launchers_placeholder(&placeholder),
+        "the empty file mktemp created is exactly what the launcher hands over"
+    );
+
+    // A stale COVEN_CAVE_DEV_STARTUP_MARKER in someone's shell profile must
+    // not turn every launch into a truncation of whatever it names.
+    let real_file = dir.join("someones-real-file");
+    std::fs::write(&real_file, "please do not clobber me\n").expect("real file");
+    assert!(
+        !marker_is_the_launchers_placeholder(&real_file),
+        "a file with content is not a marker placeholder"
+    );
+
+    assert!(
+        !marker_is_the_launchers_placeholder(&dir),
+        "a directory is not a marker placeholder"
+    );
+    assert!(
+        !marker_is_the_launchers_placeholder(&dir.join("nothing-here")),
+        "the app must never create the marker, only fill one in"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn dev_startup_marker_is_non_empty_so_the_launcher_can_test_it() {
+    let dir = std::env::temp_dir().join(format!(
+        "cave-startup-marker-test-{}-{}",
+        std::process::id(),
+        sidecar_auth_token()
+    ));
+    std::fs::create_dir_all(&dir).expect("marker test dir");
+    let path = dir.join("startup-marker");
+
+    write_dev_startup_marker(&path).expect("marker written");
+
+    let written = std::fs::read_to_string(&path).expect("marker readable");
+    // `[ -s "$DEV_STARTUP_MARKER" ]` in scripts/dev-app.sh is the consumer:
+    // an empty file is indistinguishable from the crash this detects.
+    assert!(
+        !written.is_empty(),
+        "an empty marker reads exactly like a GUI that never finished startup"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn sidecar_auth_token_is_256_bit_hex() {
     let token = sidecar_auth_token();
@@ -206,42 +289,242 @@ fn notch_url_carries_the_presentation_state_to_the_page() {
 }
 
 #[test]
+fn sidecar_output_tail_retains_only_the_newest_256_kibibytes() {
+    let mut output = SidecarOutputTail::default();
+    output.push(&vec![b'a'; SIDECAR_OUTPUT_TAIL_BYTES]);
+    output.push(b"newest");
+
+    let captured = output.snapshot();
+    assert_eq!(captured.len(), SIDECAR_OUTPUT_TAIL_BYTES);
+    assert!(captured.ends_with(b"newest"));
+
+    output.push(&vec![b'b'; SIDECAR_OUTPUT_TAIL_BYTES + 32]);
+    assert_eq!(output.snapshot(), vec![b'b'; SIDECAR_OUTPUT_TAIL_BYTES]);
+}
+
+#[test]
+fn stdout_and_stderr_feed_one_shared_bounded_sidecar_tail() {
+    let output = Arc::new(Mutex::new(SidecarOutputTail::default()));
+    let stdout = capture_sidecar_output(
+        std::io::Cursor::new(b"stdout line\n".to_vec()),
+        Arc::clone(&output),
+    );
+    let stderr = capture_sidecar_output(
+        std::io::Cursor::new(b"stderr line\n".to_vec()),
+        Arc::clone(&output),
+    );
+
+    stdout.join().expect("join stdout capture");
+    stderr.join().expect("join stderr capture");
+    let text = output.lock().expect("output tail").text();
+    assert!(text.contains("stdout line"));
+    assert!(text.contains("stderr line"));
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn packaged_sidecar_start_timeout_allows_slow_cold_start() {
+    assert_eq!(sidecar_start_timeout(), Duration::from_secs(60));
+}
+
+#[test]
 fn sidecar_port_wait_is_cancellable_and_detects_readiness() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind readiness fixture");
     let port = listener.local_addr().expect("fixture address").port();
-    let log_dir = std::env::temp_dir().join(format!(
-        "covencave-sidecar-ready-test-{}-{}",
-        std::process::id(),
-        port
-    ));
-    std::fs::create_dir_all(&log_dir).expect("create log fixture dir");
-    let log_path = log_dir.join("sidecar.log");
+    let output = Arc::new(Mutex::new(SidecarOutputTail::default()));
 
     // A listening port without the sidecar's own ready log line must NOT
     // be trusted — that's the port-squatting scenario this guards against.
-    std::fs::write(&log_path, "starting up\n").expect("write log fixture");
+    output.lock().expect("output tail").push(b"starting up\n");
     assert!(matches!(
-        wait_for_sidecar_ready(port, &log_path, Duration::from_millis(600), || false),
+        wait_for_sidecar_ready(
+            port,
+            "test-token",
+            &output,
+            Duration::from_millis(600),
+            || false,
+            || false
+        ),
         PortWaitResult::TimedOut
     ));
 
-    std::fs::write(
-        &log_path,
-        format!("starting up\n> Ready on http://127.0.0.1:{}\n", port),
-    )
-    .expect("write ready log fixture");
     assert!(matches!(
-        wait_for_sidecar_ready(port, &log_path, Duration::from_secs(1), || false),
+        wait_for_sidecar_ready(
+            port,
+            "test-token",
+            &output,
+            Duration::from_secs(1),
+            || false,
+            || true
+        ),
+        PortWaitResult::Exited
+    ));
+
+    output
+        .lock()
+        .expect("output tail")
+        .push(format!("> Ready on http://127.0.0.1:{}\n", port).as_bytes());
+    let responder = std::thread::spawn(move || {
+        use std::io::{Read, Write};
+        let (mut stream, _) = listener.accept().expect("accept readiness request");
+        let mut request = Vec::new();
+        let mut chunk = [0_u8; 256];
+        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+            let read = stream.read(&mut chunk).expect("read readiness request");
+            assert!(read > 0, "readiness request ended before its headers");
+            request.extend_from_slice(&chunk[..read]);
+        }
+        let request = String::from_utf8_lossy(&request);
+        assert!(request.contains("GET /api/app/native-readiness HTTP/1.1"));
+        assert!(request.contains("x-coven-cave-token: test-token"));
+        let body = format!(
+            r#"{{"service":"CovenCave","version":"{}","protocol":{{"name":"coven-cave-native-readiness","version":1}},"runtime":{{"bundle":true,"api":"ready"}}}}"#,
+            env!("CARGO_PKG_VERSION")
+        );
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .expect("write readiness response");
+    });
+    assert!(matches!(
+        wait_for_sidecar_ready(
+            port,
+            "test-token",
+            &output,
+            Duration::from_secs(1),
+            || false,
+            || false
+        ),
         PortWaitResult::Ready
     ));
-    drop(listener);
+    responder.join().expect("readiness responder");
 
     assert!(matches!(
-        wait_for_sidecar_ready(port, &log_path, Duration::from_secs(1), || true),
+        wait_for_sidecar_ready(
+            port,
+            "test-token",
+            &output,
+            Duration::from_secs(1),
+            || true,
+            || false
+        ),
         PortWaitResult::Cancelled
     ));
+}
 
-    let _ = std::fs::remove_dir_all(&log_dir);
+#[test]
+fn native_readiness_rejects_wrong_identity_protocol_version_and_dependencies() {
+    fn response(body: &str) -> Vec<u8> {
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .into_bytes()
+    }
+
+    let wrong_service = response(&format!(
+        r#"{{"service":"NotCoven","version":"{}","protocol":{{"name":"coven-cave-native-readiness","version":1}},"runtime":{{"bundle":true,"api":"ready"}}}}"#,
+        env!("CARGO_PKG_VERSION")
+    ));
+    assert!(validate_readiness_response(&wrong_service)
+        .expect_err("wrong service must fail")
+        .contains("unexpected service"));
+
+    let wrong_protocol = response(&format!(
+        r#"{{"service":"CovenCave","version":"{}","protocol":{{"name":"coven-cave-native-readiness","version":2}},"runtime":{{"bundle":true,"api":"ready"}}}}"#,
+        env!("CARGO_PKG_VERSION")
+    ));
+    assert!(validate_readiness_response(&wrong_protocol)
+        .expect_err("wrong protocol must fail")
+        .contains("unsupported native readiness protocol"));
+
+    let incompatible = response(
+        r#"{"service":"CovenCave","version":"999.0.0","protocol":{"name":"coven-cave-native-readiness","version":1},"runtime":{"bundle":true,"api":"ready"}}"#,
+    );
+    assert!(validate_readiness_response(&incompatible)
+        .expect_err("wrong app version must fail")
+        .contains("incompatible"));
+
+    let partial = response(&format!(
+        r#"{{"service":"CovenCave","version":"{}","protocol":{{"name":"coven-cave-native-readiness","version":1}},"runtime":{{"bundle":true,"api":"starting"}}}}"#,
+        env!("CARGO_PKG_VERSION")
+    ));
+    assert!(validate_readiness_response(&partial)
+        .expect_err("partial runtime must fail")
+        .contains("dependencies are not ready"));
+}
+
+#[test]
+fn native_readiness_failures_retain_stable_reliability_classes() {
+    let response = |body: &str| {
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .into_bytes()
+    };
+
+    let unauthorized = b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n";
+    assert_eq!(
+        validate_readiness_response_classified(unauthorized)
+            .expect_err("unauthorized readiness must fail")
+            .failure_class,
+        ReliabilityFailureClass::Authentication
+    );
+
+    let incompatible = response(
+        r#"{"service":"CovenCave","version":"999.0.0","protocol":{"name":"coven-cave-native-readiness","version":1},"runtime":{"bundle":true,"api":"ready"}}"#,
+    );
+    assert_eq!(
+        validate_readiness_response_classified(&incompatible)
+            .expect_err("incompatible readiness must fail")
+            .failure_class,
+        ReliabilityFailureClass::Compatibility
+    );
+
+    assert_eq!(
+        validate_readiness_response_classified(b"not-http")
+            .expect_err("malformed transport response must fail")
+            .failure_class,
+        ReliabilityFailureClass::Transport
+    );
+}
+
+#[test]
+fn native_readiness_accepts_chunked_http_and_rejects_malformed_chunks() {
+    let body = format!(
+        r#"{{"service":"CovenCave","version":"{}","protocol":{{"name":"coven-cave-native-readiness","version":1}},"runtime":{{"bundle":true,"api":"ready"}}}}"#,
+        env!("CARGO_PKG_VERSION")
+    );
+    let midpoint = body.len() / 2;
+    let chunked = format!(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+        midpoint,
+        &body[..midpoint],
+        body.len() - midpoint,
+        &body[midpoint..]
+    );
+    validate_readiness_response(chunked.as_bytes()).expect("valid chunked readiness");
+
+    let malformed =
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n20\r\n{}\r\n0\r\n\r\n";
+    assert!(validate_readiness_response(malformed)
+        .expect_err("truncated chunks must fail")
+        .contains("truncated chunk"));
+
+    let truncated_terminator = format!(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n",
+        body.len(),
+        body
+    );
+    assert!(validate_readiness_response(truncated_terminator.as_bytes())
+        .expect_err("truncated terminal chunks must fail")
+        .contains("malformed chunk terminator"));
 }
 
 #[cfg(target_os = "windows")]
@@ -407,6 +690,169 @@ fn sidecar_cleanup_is_idempotent_when_no_child_is_running() {
 
     state.stop().expect("first empty cleanup");
     state.stop().expect("second empty cleanup");
+}
+
+#[cfg(unix)]
+const UNIX_PARENT_DEATH_HELPER_ROLE: &str = "COVEN_CAVE_TEST_PARENT_DEATH_ROLE";
+
+#[cfg(unix)]
+#[test]
+fn unix_parent_death_parent_helper() {
+    use std::io::{BufRead, BufReader, Write};
+
+    if std::env::var(UNIX_PARENT_DEATH_HELPER_ROLE).as_deref() != Ok("parent") {
+        return;
+    }
+
+    let mut command = Command::new("sh");
+    command
+        .args([
+            "-c",
+            "sleep 30 & descendant=$!; echo CHILD_READY $descendant; cat >/dev/null; kill -KILL 0",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    configure_unix_sidecar_parent_watchdog(&mut command);
+    let mut child = command.spawn().expect("spawn watched sidecar fixture");
+    let mut readiness = String::new();
+    BufReader::new(child.stdout.take().expect("child stdout"))
+        .read_line(&mut readiness)
+        .expect("read child readiness");
+    println!("PARENT_READY {} {}", child.id(), readiness.trim());
+    std::io::stdout().flush().expect("flush parent readiness");
+
+    // Skip every Rust destructor to model a crash/force-quit. Kernel fd close
+    // is the only notification the child receives.
+    unsafe { libc::_exit(0) }
+}
+
+#[cfg(unix)]
+#[test]
+fn repeated_abrupt_parent_exit_reaps_the_exact_sidecar_process_group() {
+    use std::io::{BufRead, BufReader};
+
+    for cycle in 1..=3 {
+        let mut parent = Command::new(std::env::current_exe().expect("current test executable"))
+            .args([
+                "--exact",
+                "app_lifecycle_tests::unix_parent_death_parent_helper",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(UNIX_PARENT_DEATH_HELPER_ROLE, "parent")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn abrupt parent fixture");
+        let mut reader = BufReader::new(parent.stdout.take().expect("parent stdout"));
+        let mut readiness = String::new();
+        loop {
+            readiness.clear();
+            let read = reader
+                .read_line(&mut readiness)
+                .expect("read parent readiness");
+            assert_ne!(read, 0, "cycle {cycle}: parent exited before readiness");
+            if readiness.contains("PARENT_READY") {
+                break;
+            }
+        }
+        let readiness = readiness
+            .split_once("PARENT_READY")
+            .map(|(_, fields)| format!("PARENT_READY{fields}"))
+            .expect("readiness marker");
+        let fields = readiness.split_whitespace().collect::<Vec<_>>();
+        assert_eq!(fields.first(), Some(&"PARENT_READY"), "{readiness}");
+        assert_eq!(fields.get(2), Some(&"CHILD_READY"), "{readiness}");
+        let child_pid: i32 = fields[1].parse().expect("numeric child pid");
+        let descendant_pid: i32 = fields[3].parse().expect("numeric descendant pid");
+        assert!(parent.wait().expect("wait for abrupt parent").success());
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let child_gone = unsafe { libc::kill(child_pid, 0) } != 0;
+            let descendant_gone = unsafe { libc::kill(descendant_pid, 0) } != 0;
+            if child_gone && descendant_gone {
+                break;
+            }
+            if Instant::now() >= deadline {
+                unsafe {
+                    libc::kill(-child_pid, libc::SIGKILL);
+                }
+                panic!(
+                    "crash/relaunch cycle {cycle}: parent EOF did not promptly reap sidecar {child_pid} and descendant {descendant_pid}"
+                );
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn normal_cleanup_closes_the_parent_lease_and_reaps_the_sidecar_group() {
+    use std::io::{BufRead, BufReader};
+
+    let mut command = Command::new("sh");
+    command
+        .args([
+            "-c",
+            "sleep 30 & descendant=$!; echo CHILD_READY $descendant; cat >/dev/null; kill -KILL 0",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    configure_unix_sidecar_parent_watchdog(&mut command);
+    let mut child = command.spawn().expect("spawn watched sidecar fixture");
+    let mut readiness = String::new();
+    BufReader::new(child.stdout.take().expect("child stdout"))
+        .read_line(&mut readiness)
+        .expect("read child readiness");
+    let fields = readiness.split_whitespace().collect::<Vec<_>>();
+    assert_eq!(fields.first(), Some(&"CHILD_READY"), "{readiness}");
+    let descendant_pid: i32 = fields[1].parse().expect("numeric descendant pid");
+
+    stop_sidecar_child(SidecarProcess::new(child)).expect("stop watched sidecar group");
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while unsafe { libc::kill(descendant_pid, 0) } == 0 {
+        if Instant::now() >= deadline {
+            unsafe {
+                libc::kill(descendant_pid, libc::SIGKILL);
+            }
+            panic!("normal cleanup left descendant {descendant_pid} alive");
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn startup_failure_stops_and_reaps_owned_sidecar() {
+    let child = Command::new("sleep")
+        .arg("30")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn startup failure fixture");
+    let child_pid = child.id();
+    let slot = Arc::new(Mutex::new(Some(SidecarProcess::new(child))));
+    let state = SidecarState(Arc::clone(&slot));
+
+    let message = state.stop_after_startup_error("startup timed out".to_string());
+
+    assert_eq!(message, "startup timed out");
+    assert!(slot.lock().expect("sidecar slot").is_none());
+    let probe = Command::new("kill")
+        .arg("-0")
+        .arg(child_pid.to_string())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect("probe reaped startup failure fixture");
+    assert!(
+        !probe.success(),
+        "startup failure fixture should no longer exist"
+    );
 }
 
 #[cfg(not(target_os = "windows"))]

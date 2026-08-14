@@ -4,7 +4,9 @@ import {
   normalizeFamiliarRuntime,
   type FamiliarRuntime,
 } from "./familiar-runtime.ts";
-import { defaultModelForRuntime } from "./runtime-models.ts";
+import { normalizeHermesProfileBinding, type HermesProfileBinding } from "./hermes-profiles.ts";
+import { modelForRuntimeSwitch } from "./runtime-models.ts";
+ 
 
 export type OnboardingFamiliarDraft = {
   id: string;
@@ -15,6 +17,7 @@ export type OnboardingFamiliarDraft = {
   harness: string;
   model: string;
   openclawAgentId?: string;
+  hermesProfile?: HermesProfileBinding;
   /** Optional runtime override. Persisted to cave-config.json (the binding
    *  source chat reads), never to familiars.toml. */
   runtime?: FamiliarRuntime;
@@ -29,6 +32,7 @@ export type OnboardingFamiliarInput = {
   harness?: string | null;
   model?: string | null;
   openclawAgentId?: string | null;
+  hermesProfile?: { id?: string | null; homePath?: string | null } | null;
   runtime?: {
     kind?: string | null;
     host?: string | null;
@@ -89,11 +93,18 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
   if (!description) throw new Error("Familiar description is required.");
 
   const openclawAgentId = slugifyFamiliarId(cleanText(input.openclawAgentId));
+  const hermesProfile = normalizeHermesProfileBinding(input.hermesProfile);
+  if (input.hermesProfile && !hermesProfile) {
+    throw new Error("Choose a valid Hermes profile before summoning this familiar.");
+  }
   const harness = cleanText(input.harness) || (openclawAgentId ? "openclaw" : "codex");
   if (!isTrustedOnboardingHarness(harness)) {
     throw new Error(`Unsupported harness: ${harness}.`);
   }
-  const model = cleanText(input.model) || defaultModelForRuntime(harness);
+  if (hermesProfile && harness !== "hermes") {
+    throw new Error("A Hermes profile can only be bound to the Hermes runtime.");
+  }
+  const model = modelForRuntimeSwitch(harness, cleanText(input.model));
 
   // A runtime request is all-or-nothing: a partial/invalid SSH config must
   // fail loudly here instead of silently degrading to a local familiar the
@@ -126,6 +137,7 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
     harness,
     model,
     openclawAgentId: openclawAgentId || undefined,
+    ...(hermesProfile ? { hermesProfile } : {}),
     runtime,
   };
 }
@@ -146,7 +158,7 @@ export function buildFamiliarsToml(draft: OnboardingFamiliarDraft | null): strin
   ];
 
   lines.push(`harness = ${tomlString(draft.harness)}`);
-  lines.push(`model = ${tomlString(draft.model)}`);
+  if (draft.model) lines.push(`model = ${tomlString(draft.model)}`);
   if (draft.openclawAgentId) lines.push(`openclaw_agent = ${tomlString(draft.openclawAgentId)}`);
 
   return `${lines.join("\n")}\n`;

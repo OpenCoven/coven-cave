@@ -468,6 +468,8 @@ export type CopilotStreamLaunch = {
    * (cave-n1yc). The spawn cwd is already trusted and must not be included.
    */
   addDirs: string[];
+  /** Trusted, app-bundled skill-only plugins loaded for this process. */
+  pluginDirs?: string[];
 };
 
 /** A native resume id must be data, never a CLI option or control sequence. */
@@ -503,6 +505,9 @@ export function buildCopilotStreamArgs(launch: CopilotStreamLaunch): string[] {
   // boundary regardless of sandbox mode.
   for (const dir of launch.addDirs) {
     if (dir) args.push(spec.addDirFlag, dir);
+  }
+  for (const dir of launch.pluginDirs ?? []) {
+    if (dir) args.push("--plugin-dir", dir);
   }
   // Sandbox mapping from the manifest. A direct `-p` process has no stdin to
   // answer approval prompts, so full chats retain their existing manifest

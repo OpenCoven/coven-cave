@@ -68,7 +68,9 @@ describe("Profile card wiring (cave-ujbr)", () => {
   });
 
   it("cross-links analytics → profile and settings → the human profile card", () => {
-    const analytics = read("./familiar-analytics-content.tsx");
+    // The analytics workbench carries the crossing link in its familiar dock
+    // (the surface's breadcrumb column), not the stage composition.
+    const analytics = read("./familiar-analytics-dock.tsx");
     assert.match(analytics, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(model\.familiarId\)\}\/profile`\}/);
     const settings = read("./settings-profile.tsx");
     assert.match(settings, /href="\/profile"/);

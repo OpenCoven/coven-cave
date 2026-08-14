@@ -16,6 +16,9 @@ import {
   speechModelReadiness,
   startSpeechModelDownload,
   withSpeechModelUse,
+  KOKORO_NAMED_SPEAKERS,
+  resolveLocalTtsVoice,
+  selectableLocalTtsVoices,
   SPEECH_MODEL_REGISTRY,
 } from "./speech-models.ts";
 
@@ -542,4 +545,59 @@ test("removal waits for an active verified model use", async () => {
   assert.equal(await removal, "removed");
   await assert.rejects(stat(modelDir), { code: "ENOENT" });
   await rm(root, { recursive: true, force: true });
+});
+
+// ── Named Kokoro speakers (cave-xopgb) ──────────────────────────────────────
+
+test("Kokoro named speakers pin the sherpa-onnx voices.bin generation order", () => {
+  // The sid order is the concatenation order in k2-fsa/sherpa-onnx
+  // scripts/kokoro/v0.19/generate_voices_bin.py (id2speaker). Speaker 0
+  // ("af", the reviewed default blend) is the base registry entry itself.
+  assert.deepEqual(
+    KOKORO_NAMED_SPEAKERS.map((speaker) => [speaker.speakerId, speaker.suffix]),
+    [
+      [1, "bella"], [2, "nicole"], [3, "sarah"], [4, "sky"], [5, "adam"],
+      [6, "michael"], [7, "emma"], [8, "isabella"], [9, "george"], [10, "lewis"],
+    ],
+    "a reordered roster would route synthesis to the wrong embedded speaker",
+  );
+});
+
+test("resolveLocalTtsVoice resolves base ids, derived speakers, and rejects unknowns", () => {
+  const base = resolveLocalTtsVoice("kokoro-en-v0-19");
+  assert.equal(base?.model.id, "kokoro-en-v0-19");
+  assert.equal(base?.kokoroSpeakerId, 0, "the base entry keeps the reviewed default blend");
+
+  const bella = resolveLocalTtsVoice("kokoro-en-v0-19-bella");
+  assert.equal(bella?.model.id, "kokoro-en-v0-19", "derived speakers share the base bundle");
+  assert.equal(bella?.kokoroSpeakerId, 1);
+  assert.equal(bella?.displayName, "Kokoro Bella (US female)");
+
+  assert.equal(resolveLocalTtsVoice("kokoro-en-v0-19-nonexistent"), null, "unknown speakers fail closed");
+  assert.equal(resolveLocalTtsVoice("not-a-voice"), null);
+
+  const piper = SPEECH_MODEL_REGISTRY.find((model) => model.engine === "piper" && model.kind === "tts");
+  assert.ok(piper);
+  assert.equal(resolveLocalTtsVoice(piper.id)?.kokoroSpeakerId, null, "non-Kokoro voices carry no sid");
+});
+
+test("selectableLocalTtsVoices expands one downloaded Kokoro bundle into named voices", () => {
+  const kokoroBase = SPEECH_MODEL_REGISTRY.find((model) => model.engine === "kokoro");
+  assert.ok(kokoroBase);
+  const readiness = (overrides: Record<string, unknown>) => ({
+    ...kokoroBase,
+    ready: true,
+    verified: true,
+    diskSizeBytes: 0,
+    path: "/x/model.onnx",
+    ...overrides,
+  });
+  const voices = selectableLocalTtsVoices([readiness({})]);
+  assert.equal(voices.length, 1 + KOKORO_NAMED_SPEAKERS.length, "base voice plus every named speaker");
+  assert.ok(voices.every((voice) => voice.ready && voice.verified), "derived readiness IS the bundle's readiness");
+  assert.ok(voices.every((voice) => voice.engine === "kokoro"));
+  assert.equal(new Set(voices.map((voice) => voice.id)).size, voices.length, "voice ids stay unique");
+
+  const notReady = selectableLocalTtsVoices([readiness({ ready: false, verified: false })]);
+  assert.ok(notReady.every((voice) => !voice.ready), "an undownloaded bundle offers no ready speakers");
 });

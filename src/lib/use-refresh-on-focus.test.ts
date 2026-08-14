@@ -1,13 +1,42 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { shouldRefresh, safeUnlisten } from "./use-refresh-on-focus.ts";
+import { runRefreshSafely, shouldRefresh, safeUnlisten } from "./use-refresh-on-focus.ts";
 
 // ── shouldRefresh: throttle gate ──
 assert.equal(shouldRefresh(0, 1500, 1500), true, "fires once the interval has elapsed");
 assert.equal(shouldRefresh(0, 1499, 1500), false, "suppressed inside the interval");
 assert.equal(shouldRefresh(1000, 3000, 1500), true, "fires when enough time has passed since last");
 assert.equal(shouldRefresh(1000, 1200, 1500), false, "suppressed for a rapid re-focus flurry");
+
+// Background refreshes are best-effort. A transient server outage must not
+// turn their rejected promise into a Next runtime-error overlay.
+const src = readFileSync(new URL("./use-refresh-on-focus.ts", import.meta.url), "utf8");
+assert.match(
+  src,
+  /export function runRefreshSafely\(refresh: \(\) => void \| Promise<void>\): void/,
+  "exports one shared guard for sync and async background refresh failures",
+);
+assert.match(
+  src,
+  /runRefreshSafely\(refreshRef\.current\)/,
+  "focus-triggered refreshes use the rejection guard",
+);
+assert.doesNotMatch(src, /void refreshRef\.current\(\)/, "no focus refresh promise is discarded unhandled");
+
+{
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    runRefreshSafely(async () => { throw new TypeError("Failed to fetch"); });
+    assert.doesNotThrow(() => runRefreshSafely(() => { throw new TypeError("sync poll failure"); }));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(unhandled, [], "does not emit rejected async background refreshes");
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+}
 
 // ── safeUnlisten: never throws into React cleanup ──
 let called = 0;
@@ -35,7 +64,6 @@ assert.doesNotThrow(
 }
 
 // ── source wiring: all three foreground signals + Tauri focus ──
-const src = readFileSync(new URL("./use-refresh-on-focus.ts", import.meta.url), "utf8");
 assert.match(src, /window\.addEventListener\("focus", run\)/, "wires window focus");
 assert.match(src, /document\.addEventListener\("visibilitychange", onVisible\)/, "wires visibilitychange");
 assert.match(

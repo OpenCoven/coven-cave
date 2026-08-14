@@ -4,6 +4,11 @@
 // authoring in one surface. Crafts remains an explicitly flag-gated section.
 // Legacy roles/capabilities deep links land on Yours.
 
+// The surface sheet rides with this mode-gated component instead of the root
+// globals.css so the home first-load stays inside the CSS bundle budget
+// (#3264 pattern; cave-ii7xi). MarketplaceView is only reached through
+// lazy-surfaces.tsx's next/dynamic wrapper, so the CSS lands in that chunk.
+import "@/styles/globals/surface-marketplace.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { SearchInput } from "@/components/ui/search-input";
@@ -28,7 +33,6 @@ import { MarketplaceConfigure } from "@/components/marketplace/marketplace-confi
 import { SkillBuilder } from "@/components/marketplace/skill-builder";
 import { SkillsComingSoon } from "@/components/marketplace/skills-coming-soon";
 import { type SkillBrowserEntry } from "@/lib/skill-directory";
-import { type FamiliarForSkill } from "@/components/skill-detail-drawer";
 import { SkillExploreCard } from "@/components/marketplace/skill-explore-card";
 import { SkillExploreDrawer } from "@/components/marketplace/skill-explore-drawer";
 import {
@@ -53,6 +57,7 @@ import {
 } from "@/components/marketplace/marketplace-view-model";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { useSurfaceHistory, useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { caveCrafts } from "@/lib/feature-flags";
 
@@ -70,8 +75,10 @@ export type { MarketplaceSection } from "@/components/marketplace/marketplace-vi
 type Props = {
   /** Which section to land on — deep links from the roles/capabilities modes. */
   initialSection?: MarketplaceSection;
-  /** Familiars offered by the skill detail drawer's "try it" affordances. */
-  familiars?: FamiliarForSkill[];
+  /** The familiar the user is working as. Threaded to the Skill Builder's
+   *  Enhance, which runs an LLM call through it — that is the user's choice to
+   *  make, not the roster's sort order. */
+  activeFamiliarId?: string | null;
   /** Opens a chat with the familiar that owns a role. Unused while the Roles
    *  section is hidden; kept so re-enabling Roles is a UI-only change. */
   onOpenChat?: (familiarId: string) => void;
@@ -79,7 +86,7 @@ type Props = {
 
 export function MarketplaceViewSurface({
   initialSection = "browse",
-  familiars = [],
+  activeFamiliarId = null,
 }: Props = {}) {
   const craftsEnabled = caveCrafts();
   // Roles and Capabilities are hidden: their deep links land on Browse.
@@ -116,7 +123,12 @@ export function MarketplaceViewSurface({
   useEffect(() => {
     if (status === "installed") setStatus("all");
   }, [status, setStatus]);
-  const [selected, setSelected] = useState<string | null>(null);
+  // Opening a catalog entry is a drill-down, so Back returns to the list.
+  const {
+    value: selected,
+    select: selectEntry,
+    show: setSelected,
+  } = useSurfaceHistory<string | null>({ id: "marketplace:item", initial: null });
   const [creatingCraft, setCreatingCraft] = useState(false);
   // Editing an existing draft reopens the create drawer pre-seeded (F5).
   const [craftSeed, setCraftSeed] = useState<CraftDrawerSeed | null>(null);
@@ -276,6 +288,14 @@ export function MarketplaceViewSurface({
     setStoredSection(next === "roles" || next === "capabilities" ? "browse" : next);
     setQuery("");
   }, [setStoredSection]);
+
+  // Sections are destinations — the `roles` and `capabilities` aliases land
+  // straight on one, so Back has to have somewhere to return to.
+  const selectSectionTracked = useTrackedSurfaceValue<MarketplaceSection>({
+    id: "marketplace:section",
+    value: section,
+    onRestore: selectSection,
+  });
 
   const viewOwnedSkills = useCallback(() => {
     setDeepLinkSection(null);
@@ -600,7 +620,7 @@ export function MarketplaceViewSurface({
         <Tabs
           items={sectionTabs}
           value={section}
-          onChange={selectSection}
+          onChange={selectSectionTracked}
           ariaLabel="Marketplace sections"
           idPrefix="marketplace"
           variant="segment"
@@ -782,7 +802,7 @@ export function MarketplaceViewSurface({
                           key={plugin.id}
                           plugin={plugin}
                           busy={busyIds.has(plugin.id)}
-                          onOpen={setSelected}
+                          onOpen={selectEntry}
                           onAdd={add}
                           onRemove={remove}
                           onConfigure={setConfiguringId}
@@ -905,7 +925,7 @@ export function MarketplaceViewSurface({
                         key={plugin.id}
                         plugin={plugin}
                         busy={busyIds.has(plugin.id)}
-                        onOpen={setSelected}
+                        onOpen={selectEntry}
                         onAdd={add}
                         onRemove={remove}
                         onConfigure={setConfiguringId}
@@ -928,7 +948,7 @@ export function MarketplaceViewSurface({
                         key={plugin.id}
                         plugin={plugin}
                         busy={busyIds.has(plugin.id)}
-                        onOpen={setSelected}
+                        onOpen={selectEntry}
                         onAdd={add}
                         onRemove={remove}
                         onConfigure={setConfiguringId}
@@ -949,7 +969,7 @@ export function MarketplaceViewSurface({
           className="flex min-h-0 flex-1 flex-col"
         >
           <SkillBuilder
-            familiars={familiars}
+            activeFamiliarId={activeFamiliarId}
             onSaved={() => {
               invalidateSurfaceResources("marketplace:skills");
               void loadSkills(true);

@@ -48,6 +48,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useMemoryFile } from "@/lib/use-memory-file";
 import { resolveOutgoingLinks, type WikiDocIndex, type WikiDocRef } from "@/lib/wiki-link-resolve";
 import { buildDocGraph, type DocGraph, type GraphEdgeType } from "@/lib/grimoire-graph";
+import { buildMemoryOwnerIndex, scopeDocGraph } from "@/lib/grimoire-graph-scope";
 import type { GrimoireGraphMeta } from "@/lib/server/grimoire-graph-scan";
 import { knowledgeEntryFlags } from "@/lib/knowledge-flags";
 import {
@@ -1235,6 +1236,22 @@ export function GrimoireView({
   // knowledge graph until then — the graph is never blank while docs exist.
   const graph = scan?.graph ?? localGraph;
 
+  // Ownership lives on the memory inventory, not on the graph (nodes carry only
+  // paths), so the lookup is built from the UNSCOPED list — filtering it first
+  // would leave every dropped file unattributable.
+  const memoryOwnerByNodeId = useMemo(() => buildMemoryOwnerIndex(memory ?? []), [memory]);
+
+  // The Relations graph follows the same multiselect as the Memory rail: an
+  // empty selection is "All", otherwise memory nodes narrow to the selected
+  // familiars while stitches and journal days stay coven-wide. Backlinks and
+  // [[wiki-link]] resolution deliberately keep reading the unscoped `graph` — a
+  // document's own connections are an integrity signal, not a corpus browse,
+  // and must not change shape because a UI filter is on.
+  const scopedGraph = useMemo(
+    () => scopeDocGraph(graph, memoryScope, memoryOwnerByNodeId),
+    [graph, memoryScope, memoryOwnerByNodeId],
+  );
+
   // Incoming connections for the active doc (Obsidian's linked/unlinked
   // mentions), straight off the graph — selectionKey matches docRefKey.
   const backlinks = useMemo<GrimoireBacklink[]>(() => {
@@ -1361,7 +1378,8 @@ export function GrimoireView({
         knowledge={knowledge ?? []}
         memory={scopedMemory}
         journal={journal ?? []}
-        graph={graph}
+        graph={scopedGraph}
+        scopeLabel={memoryScopeLabel}
         journalTitle={(date) => journalDayLabel(date, dateTimePrefs)}
         onOpen={openDoc}
         onNewStitch={openStitchNew}
@@ -1863,8 +1881,10 @@ export function GrimoireView({
             </div>
             <div className="min-h-0 flex-1">
               <GrimoireGraphView
-                graph={graph}
+                graph={scopedGraph}
                 meta={scan?.meta ?? null}
+                scopeLabel={memoryScopeLabel}
+                scopedMemoryTotal={memoryScoped ? scopedMemory.length : null}
                 scanning={scanning}
                 scanError={scan ? null : scanError}
                 onOpen={(ref) => {

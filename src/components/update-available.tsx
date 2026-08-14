@@ -34,6 +34,7 @@ import {
   nativeUpdateCoordinator,
 } from "@/lib/native-update-coordinator";
 import { updateCovenCli } from "@/lib/app-update-daemon";
+import { readDaemonAutomation } from "@/lib/daemon-automation-pref";
 
 const BANNER_ID = "update-available";
 const DAEMON_ALIGNMENT_BANNER_ID = "daemon-release-alignment";
@@ -124,7 +125,13 @@ export function DaemonReleaseAlignmentTrigger() {
       if (!active || running) return;
       attempted.current = true;
       running = true;
-      void updateCovenCli().then(() => {
+      // `updateCovenCli` already refuses to install without explicit consent —
+      // it returns "confirmation-required" when confirmInstall is falsy, which
+      // is why this background check has always been a no-op that defers to
+      // Settings -> About. The opt-in preference is that consent (cave-bqywj):
+      // read at call time, default off, so nothing installs unattended unless
+      // the user asked for it.
+      void updateCovenCli({ confirmInstall: readDaemonAutomation().autoUpgradeCli }).then(() => {
         running = false;
         if (!active) return;
         // Ordinary CLI availability and update actions live in Settings →

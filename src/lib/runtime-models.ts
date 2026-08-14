@@ -20,13 +20,63 @@ import {
   CLAUDE_OPUS_5_NATIVE_MODEL,
 } from "./claude-models.ts";
 import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
+import { canonicalHarnessId } from "./harness-adapters.ts";
 
 export type RuntimeModelOption = { id: string; label: string };
+
+export type RuntimeModelInventoryProvenance =
+  | "live"
+  | "cached"
+  | "fallback"
+  | "runtime-managed"
+  | "unavailable";
+
+export type RuntimeModelInventoryFreshness =
+  | "fresh"
+  | "cached"
+  | "seed"
+  | "runtime-managed"
+  | "unavailable";
+
+export type RuntimeModelInventoryRefreshState = "ready" | "degraded";
+export type RuntimeModelInventoryAvailability = "available" | "degraded" | "unavailable";
+
+/** Non-secret identity for the inventory request. Credential values and
+ * provider URLs deliberately never cross this boundary. */
+export type RuntimeModelInventoryScope = {
+  familiarId: string | null;
+  runtime: string;
+  provider: RuntimeProvider;
+  credentialScope: "familiar" | "global" | "runtime-managed" | "unavailable";
+  providerConfiguration: "familiar" | "global" | "runtime-managed" | "unavailable";
+};
+
+export type RuntimeModelInventory = {
+  runtime: string;
+  models: RuntimeModelOption[];
+  provenance: RuntimeModelInventoryProvenance;
+  freshness: RuntimeModelInventoryFreshness;
+  refreshState: RuntimeModelInventoryRefreshState;
+  availability: RuntimeModelInventoryAvailability;
+  defaultOwner: "cave" | "runtime";
+  allowCustom: boolean;
+  scope: RuntimeModelInventoryScope;
+};
 
 type RuntimeModelTransformMetadata = {
   id: string;
   modelIdTransform?: unknown;
 };
+
+const MODEL_PROVIDER_RE = /^[A-Za-z0-9][A-Za-z0-9._:@+-]*$/;
+const MODEL_PATH_SEGMENT_RE = /^~?[A-Za-z0-9][A-Za-z0-9._:@+-]*$/;
+
+export function isSafeRuntimeModelId(value: string): boolean {
+  if (!value || value.includes("..")) return false;
+  const [provider, ...modelPath] = value.split("/");
+  if (!MODEL_PROVIDER_RE.test(provider ?? "")) return false;
+  return modelPath.every((segment) => MODEL_PATH_SEGMENT_RE.test(segment));
+}
 
 /**
  * Apply the adapter registry's model-id transform using the same semantics as
@@ -39,7 +89,8 @@ export function transformModelIdForRuntime(
   modelId: string,
   runtimes: readonly RuntimeModelTransformMetadata[] = REGISTRY_RUNTIMES,
 ): string {
-  const transform = runtimes.find((runtime) => runtime.id === runtimeId)?.modelIdTransform;
+  const canonicalRuntime = canonicalHarnessId(runtimeId);
+  const transform = runtimes.find((runtime) => runtime.id === canonicalRuntime)?.modelIdTransform;
   if (transform === "preserve") return modelId;
 
   const slash = modelId.indexOf("/");
@@ -54,9 +105,7 @@ export function transformModelIdForRuntime(
 export function runtimeModelIdForLaunch(runtimeId: string, modelId: string | null): string | null {
   if (!modelId) return null;
   const transformed = transformModelIdForRuntime(runtimeId, modelId);
-  return !transformed.includes("..") && /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/.test(transformed)
-    ? transformed
-    : null;
+  return isSafeRuntimeModelId(transformed) ? transformed : null;
 }
 
 export type RuntimeModelCatalog = {
@@ -69,6 +118,12 @@ export type RuntimeModelCatalog = {
   defaultModel?: string;
   /** User may type any model id not present in `models`. */
   allowCustom: boolean;
+  /**
+   * Who chooses the model when Cave has no explicit familiar/session/turn
+   * selection. A runtime-owned default is represented by omitting the model
+   * launch argument; catalog entries remain choices, never implicit defaults.
+   */
+  defaultOwner: "cave" | "runtime";
 };
 
 // Models exposed by the authenticated Codex account. Hermes accepts the full
@@ -98,6 +153,7 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
       { id: "openai/gpt-5.3-codex-spark", label: "GPT-5.3 Codex Spark" },
     ],
     allowCustom: true,
+    defaultOwner: "cave",
   },
   claude: {
     runtime: "claude",
@@ -111,6 +167,7 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
       { id: "anthropic/claude-haiku-4-5", label: "Claude Haiku 4.5" },
     ],
     allowCustom: true,
+    defaultOwner: "cave",
   },
   // Copilot serves multiple providers' models through one GitHub subscription;
   // ids are namespaced under `github/`; its registry transform removes that
@@ -132,12 +189,14 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
       { id: "github/gemini-3.1-pro", label: "Gemini 3.1 Pro" },
     ],
     allowCustom: true,
+    defaultOwner: "cave",
   },
   hermes: {
     runtime: "hermes",
     provider: "openai",
     models: HERMES_AUTHENTICATED_MODELS,
     allowCustom: true,
+    defaultOwner: "runtime",
   },
   // Grok's authenticated catalog is discovered live by `/api/harnesses` for
   // Familiar Studio; this fallback keeps non-web surfaces on a valid known
@@ -148,6 +207,7 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
     models: [],
     defaultModel: "grok-4.5",
     allowCustom: true,
+    defaultOwner: "runtime",
   },
   // OpenCode authenticates a user-selected set of providers. Its menu is
   // loaded from `opencode models` at runtime instead of freezing a catalog.
@@ -157,6 +217,7 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
     models: [],
     defaultModel: "",
     allowCustom: true,
+    defaultOwner: "runtime",
   },
   // No clean provider → defer to the runtime's own CLI: free-text only, no menu.
   openclaw: {
@@ -164,18 +225,102 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
     provider: null,
     models: [],
     allowCustom: true,
+    defaultOwner: "runtime",
   },
 };
 
 const GLOBAL_DEFAULT_MODEL = "openai/gpt-5.6-sol";
 
+const DYNAMIC_INVENTORY_RUNTIMES = new Set([
+  "claude",
+  "copilot",
+  "grok",
+  "hermes",
+  "opencode",
+]);
+const INVENTORY_FAMILIAR_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+
+export function runtimeModelInventoryScope(
+  runtime: string,
+  familiarId?: string | null,
+): RuntimeModelInventoryScope {
+  const canonicalRuntime = canonicalHarnessId(runtime);
+  const candidateFamiliarId = typeof familiarId === "string" ? familiarId.trim() : "";
+  const normalizedFamiliarId = INVENTORY_FAMILIAR_ID.test(candidateFamiliarId)
+    ? candidateFamiliarId
+    : null;
+  const catalog = catalogForRuntime(canonicalRuntime);
+  const knownRuntime = catalog !== null;
+  const credentialScope = !knownRuntime
+    ? "unavailable"
+    : DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime)
+      ? normalizedFamiliarId ? "familiar" : "global"
+      : catalog?.provider
+        ? "global"
+        : "runtime-managed";
+  const providerConfiguration = !knownRuntime
+    ? "unavailable"
+    : DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime)
+      ? normalizedFamiliarId ? "familiar" : "global"
+      : catalog?.provider
+        ? "global"
+        : "runtime-managed";
+  return {
+    familiarId: normalizedFamiliarId,
+    runtime: canonicalRuntime,
+    provider: catalog?.provider ?? null,
+    credentialScope,
+    providerConfiguration,
+  };
+}
+
+export function runtimeModelInventoryFreshness(
+  provenance: RuntimeModelInventoryProvenance,
+): RuntimeModelInventoryFreshness {
+  switch (provenance) {
+    case "live": return "fresh";
+    case "cached": return "cached";
+    case "fallback": return "seed";
+    case "runtime-managed": return "runtime-managed";
+    case "unavailable": return "unavailable";
+  }
+}
+
+export function runtimeModelInventoryAvailability(
+  provenance: RuntimeModelInventoryProvenance,
+): RuntimeModelInventoryAvailability {
+  switch (provenance) {
+    case "live":
+    case "cached":
+      return "available";
+    case "fallback":
+    case "runtime-managed":
+      return "degraded";
+    case "unavailable":
+      return "unavailable";
+  }
+}
+
+export function runtimeModelInventoryRefreshState(
+  provenance: RuntimeModelInventoryProvenance,
+): RuntimeModelInventoryRefreshState {
+  return provenance === "live" || provenance === "cached" ? "ready" : "degraded";
+}
+
 export function catalogForRuntime(runtime: string): RuntimeModelCatalog | null {
-  const curated = RUNTIME_MODEL_CATALOG[runtime];
+  const canonicalRuntime = canonicalHarnessId(runtime);
+  const curated = RUNTIME_MODEL_CATALOG[canonicalRuntime];
   if (curated) return curated;
   // Registry-synced runtimes without a curated list get the runtime-managed
   // treatment: no menu, free-text only (same branch as openclaw above).
-  if (REGISTRY_RUNTIMES.some((entry) => entry.id === runtime)) {
-    return { runtime, provider: null, models: [], allowCustom: true };
+  if (REGISTRY_RUNTIMES.some((entry) => entry.id === canonicalRuntime)) {
+    return {
+      runtime: canonicalRuntime,
+      provider: null,
+      models: [],
+      allowCustom: true,
+      defaultOwner: "runtime",
+    };
   }
   return null;
 }
@@ -183,6 +328,37 @@ export function catalogForRuntime(runtime: string): RuntimeModelCatalog | null {
 export function defaultModelForRuntime(runtime: string): string {
   const catalog = catalogForRuntime(runtime);
   return catalog?.models[0]?.id ?? catalog?.defaultModel ?? GLOBAL_DEFAULT_MODEL;
+}
+
+/** Whether an unselected launch must defer to the runtime/provider config. */
+export function runtimeOwnsModelDefault(runtime: string): boolean {
+  const canonical = canonicalHarnessId(runtime);
+  return catalogForRuntime(canonical)?.defaultOwner === "runtime";
+}
+
+/** Enforce the selected runtime's custom-id policy at every write/launch
+ * boundary, not only in picker rendering. Known catalogs that allow custom
+ * ids accept safe ids; runtimes without a catalog fail closed. */
+export function isModelAllowedByRuntime(runtime: string, modelId: string): boolean {
+  const catalog = catalogForRuntime(runtime);
+  if (!catalog || !modelId) return false;
+  return catalog.allowCustom || catalog.models.some((model) => model.id === modelId);
+}
+
+/**
+ * Resolve the model value persisted during a runtime switch. Explicit user
+ * selections win; otherwise the explicit empty value records runtime-default
+ * intent so config merge paths do not reconstruct a stale previous model.
+ */
+export function modelForRuntimeSwitch(
+  _runtime: string,
+  selectedModel?: string | null,
+): string {
+  const explicitModel = selectedModel?.trim() ?? "";
+  if (explicitModel) return explicitModel;
+  // A runtime switch without a user model pick is a default-intent change.
+  // Catalog entries are conservative seeds, never an implicit launch override.
+  return "";
 }
 
 export function isModelInCatalog(runtime: string, modelId: string): boolean {
@@ -193,10 +369,8 @@ export function isModelInCatalog(runtime: string, modelId: string): boolean {
 
 /** Translate a stable Cave model id only at the native runtime boundary. */
 export function modelForRuntimeLaunch(runtime: string, modelId: string): string {
-  if (
-    (runtime === "claude" || runtime === "claude-code") &&
-    modelId === CLAUDE_OPUS_5_CAVE_ID
-  ) {
+  const canonicalRuntime = canonicalHarnessId(runtime);
+  if (canonicalRuntime === "claude" && modelId === CLAUDE_OPUS_5_CAVE_ID) {
     return CLAUDE_OPUS_5_NATIVE_MODEL;
   }
   return modelId;

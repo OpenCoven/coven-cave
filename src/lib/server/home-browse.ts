@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 
 // Non-dot build-artifact / noise directories the folder browser hides. Dot
@@ -200,6 +201,231 @@ export function createSubdirInBrowsableDir(
   const root = path.isAbsolute(raw) ? trustedVolumeRoot(raw) : homeRoot();
   if (root === null) return { ok: false, reason: "invalid-parent" };
   return createSubdirWithinRoot(root, raw, requestedName);
+}
+
+// ── Sidebar places (Explorer's "Quick access" / "This PC", rebuilt in-app) ───
+
+/**
+ * A jump-off location in the picker's sidebar. The web build has no native
+ * dialog, so reaching Downloads or a second drive used to mean walking down
+ * from $HOME one folder at a time; these are the shortcuts that removes.
+ */
+export type PlaceKind = "home" | "known" | "drive";
+
+export type Place = {
+  /** Stable identity the client maps to an icon ("downloads", "drive:C:\"). */
+  id: string;
+  name: string;
+  path: string;
+  kind: PlaceKind;
+};
+
+export type PlaceGroup = {
+  id: "quick" | "this-pc";
+  label: string;
+  places: Place[];
+};
+
+/**
+ * How long a probe that shells out (the known-folder registry read, the volume
+ * label read) stays good for. The picker re-reads places every time it opens
+ * and neither source changes often, so this keeps a burst of opens to one
+ * subprocess without pinning stale drives for a whole session.
+ */
+const PLACE_PROBE_TTL_MS = 60_000;
+
+type Probe<T> = { at: number; value: T };
+
+let userShellFoldersProbe: Probe<Map<string, string>> | null = null;
+let driveLabelProbe: Probe<Map<string, string>> | null = null;
+
+/** Expand the `%VAR%` references a REG_EXPAND_SZ value carries. */
+function expandWindowsEnv(value: string): string {
+  return value.replace(/%([^%]+)%/g, (whole, name: string) => process.env[name] ?? whole);
+}
+
+/**
+ * `HKCU\…\Explorer\User Shell Folders` as value-name → path.
+ *
+ * This is where a known folder *actually* lives. OneDrive redirects Desktop,
+ * Documents, and Pictures out of `%USERPROFILE%` on most consumer installs, so
+ * guessing `~/Documents` would point the sidebar at a folder the user never
+ * sees in Explorer. Failure is non-fatal — callers fall back to the
+ * $HOME-relative guess.
+ */
+function readUserShellFolders(): Map<string, string> {
+  const now = Date.now();
+  if (userShellFoldersProbe && now - userShellFoldersProbe.at < PLACE_PROBE_TTL_MS) {
+    return userShellFoldersProbe.value;
+  }
+  const values = new Map<string, string>();
+  try {
+    const probe = spawnSync(
+      "reg.exe",
+      [
+        "query",
+        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders",
+      ],
+      { encoding: "utf8", timeout: 4_000, windowsHide: true },
+    );
+    for (const line of (probe.stdout ?? "").split(/\r?\n/)) {
+      // "    Personal    REG_EXPAND_SZ    %USERPROFILE%\Documents"
+      const match = /^\s+(\S.*?)\s{2,}REG_(?:EXPAND_)?SZ\s{2,}(.+?)\s*$/.exec(line);
+      if (match) values.set(match[1], expandWindowsEnv(match[2]));
+    }
+  } catch {
+    /* reg.exe missing or blocked — the $HOME-relative fallback still works */
+  }
+  userShellFoldersProbe = { at: now, value: values };
+  return values;
+}
+
+/**
+ * Explorer's Quick-access folders in the order its sidebar lists them.
+ * `registryValue` is the win32 source of truth; `dirName` is the
+ * $HOME-relative fallback used on every other platform (and whenever the
+ * registry read comes up empty).
+ */
+const KNOWN_FOLDERS: Array<{
+  id: string;
+  name: string;
+  registryValue: string;
+  dirName: string;
+}> = [
+  { id: "desktop", name: "Desktop", registryValue: "Desktop", dirName: "Desktop" },
+  {
+    id: "downloads",
+    name: "Downloads",
+    registryValue: "{374DE290-123F-4565-9164-39C4925E467B}",
+    dirName: "Downloads",
+  },
+  { id: "documents", name: "Documents", registryValue: "Personal", dirName: "Documents" },
+  { id: "pictures", name: "Pictures", registryValue: "My Pictures", dirName: "Pictures" },
+  { id: "music", name: "Music", registryValue: "My Music", dirName: "Music" },
+  { id: "videos", name: "Videos", registryValue: "My Video", dirName: "Videos" },
+];
+
+function isDirectory(value: string): boolean {
+  try {
+    return fs.statSync(value).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The known folders that actually exist on this machine, redirection-aware on
+ * win32. Missing folders are dropped rather than rendered as dead rows.
+ */
+export function listKnownFolders(): Place[] {
+  const registry = process.platform === "win32" ? readUserShellFolders() : new Map<string, string>();
+  const places: Place[] = [];
+  const seen = new Set<string>();
+  for (const folder of KNOWN_FOLDERS) {
+    // Desktop/Documents/... under the user's home, redirection-aware on win32.
+    // Runtime paths only — the ignores keep NFT from globbing the checkout.
+    const candidate = registry.get(folder.registryValue)
+      ?? path.join(/* turbopackIgnore: true */ homeRoot(), folder.dirName);
+    const resolved = path.resolve(/* turbopackIgnore: true */ candidate);
+    if (seen.has(resolved) || !isDirectory(resolved)) continue;
+    seen.add(resolved);
+    places.push({ id: folder.id, name: folder.name, path: resolved, kind: "known" });
+  }
+  return places;
+}
+
+/** Win32_LogicalDisk.DriveType → the name Explorer shows for an unlabeled volume. */
+const DRIVE_TYPE_LABELS: Record<number, string> = {
+  2: "Removable Disk",
+  3: "Local Disk",
+  4: "Network Drive",
+  5: "CD Drive",
+  6: "RAM Disk",
+};
+
+/**
+ * Volume label per drive root (`C:\` → "Local Disk", `D:\` → "Games"), so the
+ * sidebar reads like Explorer's instead of listing bare letters. Node exposes
+ * no volume-label API, hence the one cached CIM query; when it fails the map
+ * is simply empty and rows fall back to the bare root.
+ */
+function readDriveLabels(): Map<string, string> {
+  const now = Date.now();
+  if (driveLabelProbe && now - driveLabelProbe.at < PLACE_PROBE_TTL_MS) return driveLabelProbe.value;
+  const labels = new Map<string, string>();
+  try {
+    const probe = spawnSync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        // -InputObject @(...) keeps a single-drive machine an array instead of
+        // collapsing to a bare object the way a piped ConvertTo-Json would.
+        "ConvertTo-Json -Compress -InputObject @(Get-CimInstance -ClassName Win32_LogicalDisk | Select-Object DeviceID,VolumeName,DriveType)",
+      ],
+      { encoding: "utf8", timeout: 8_000, windowsHide: true },
+    );
+    const parsed: unknown = JSON.parse(probe.stdout?.trim() || "[]");
+    for (const row of Array.isArray(parsed) ? parsed : [parsed]) {
+      if (!row || typeof row !== "object") continue;
+      const { DeviceID, VolumeName, DriveType } = row as {
+        DeviceID?: unknown;
+        VolumeName?: unknown;
+        DriveType?: unknown;
+      };
+      if (typeof DeviceID !== "string") continue;
+      const label =
+        (typeof VolumeName === "string" && VolumeName.trim()) ||
+        (typeof DriveType === "number" ? DRIVE_TYPE_LABELS[DriveType] : undefined) ||
+        "Disk";
+      labels.set(`${DeviceID}\\`.toUpperCase(), label);
+    }
+  } catch {
+    /* PowerShell or CIM unavailable — unlabeled rows are still navigable */
+  }
+  driveLabelProbe = { at: now, value: labels };
+  return labels;
+}
+
+/** Volume roots as sidebar places: "Local Disk (C:)" on win32, "/" elsewhere. */
+export function listDrivePlaces(): Place[] {
+  const roots = listSystemRoots();
+  if (process.platform !== "win32") {
+    return roots.map((root) => ({ id: `drive:${root}`, name: root, path: root, kind: "drive" }));
+  }
+  const labels = readDriveLabels();
+  return roots.map((root) => {
+    const label = labels.get(root.toUpperCase());
+    return {
+      id: `drive:${root}`,
+      // "C:\" → "C:", matching the "Local Disk (C:)" shape Explorer uses.
+      name: label ? `${label} (${root.slice(0, 2)})` : root,
+      path: root,
+      kind: "drive",
+    };
+  });
+}
+
+/**
+ * The picker's sidebar: Quick access ($HOME plus the known folders that exist)
+ * and This PC (every volume root). Every path here is server-derived, and the
+ * client still navigates to it through resolveBrowsableDir's trusted walk — so
+ * the sidebar is an accelerator, not a new trust boundary.
+ */
+export function listPlaceGroups(): PlaceGroup[] {
+  const home = homeRoot();
+  return [
+    {
+      id: "quick",
+      label: "Quick access",
+      places: [
+        { id: "home", name: "Home", path: home, kind: "home" },
+        ...listKnownFolders().filter((place) => place.path !== home),
+      ],
+    },
+    { id: "this-pc", label: "This PC", places: listDrivePlaces() },
+  ];
 }
 
 /** Immediate subdirectories of `dir` (one level), sorted and noise-skipped. */

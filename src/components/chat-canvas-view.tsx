@@ -30,8 +30,7 @@ import {
 // /api/canvas). Until this tab, saved artifacts had no surface after the
 // standalone Canvas page retired — save was a one-way door. This closes the
 // loop: browse saved sketches (toolbar search + kind filter), click one for a
-// non-interactive preview modal, open it in the full-surface Canvas editor,
-// or delete it.
+// live preview modal, open it in the full-surface Canvas editor, or delete it.
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -50,6 +49,11 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
   // In-place expand: the preview dialog grows to fill the viewport. Reset per
   // sketch so the next preview always opens at the normal size.
   const [previewExpanded, setPreviewExpanded] = useState(false);
+  // Hand the sketch its own input back. Off by default so the modal stays a
+  // safe glance at the render; on, clicks and keys reach the sandbox, which is
+  // the only way a generated game or form is testable without the editor.
+  // Reset per sketch, same as expand.
+  const [previewPlaying, setPreviewPlaying] = useState(false);
   const [editorId, setEditorId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activeComposerId, setActiveComposerId] = useState<string | null>(null);
@@ -172,6 +176,7 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
 
   useEffect(() => {
     setPreviewExpanded(false);
+    setPreviewPlaying(false);
   }, [previewId]);
 
   useFocusTrap(preview !== null, previewDialogRef, {
@@ -368,8 +373,8 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
           </p>
         ) : null}
       </div>
-      {/* Preview modal: the sketch rendered live but non-interactive. Running
-          it for real (and refining/commenting) happens in the editor. */}
+      {/* Preview modal: the sketch is live and interactive. Refining,
+          inspecting, and commenting remain editor actions. */}
       {preview ? (
         <div
           className="chat-canvas-preview-backdrop"
@@ -396,6 +401,16 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
               <button
                 type="button"
                 className="chat-canvas-preview__expand focus-ring"
+                title={previewPlaying ? "Stop interacting with the sketch" : "Interact with the sketch"}
+                aria-label={previewPlaying ? "Stop interacting with the sketch" : "Interact with the sketch"}
+                aria-pressed={previewPlaying}
+                onClick={() => setPreviewPlaying((current) => !current)}
+              >
+                <Icon name={previewPlaying ? "ph:pause" : "ph:play"} width={15} aria-hidden />
+              </button>
+              <button
+                type="button"
+                className="chat-canvas-preview__expand focus-ring"
                 title={previewExpanded ? "Restore preview" : "Expand preview"}
                 aria-label={previewExpanded ? "Restore preview" : "Expand preview"}
                 aria-pressed={previewExpanded}
@@ -417,12 +432,13 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
                 className="chat-canvas-preview__frame"
                 title={`Preview of ${preview.title}`}
                 sandbox="allow-scripts"
+                data-playing={previewPlaying || undefined}
                 srcDoc={preview.kind === "react" ? buildReactSrcDoc(preview.code) : buildPreviewSrcDoc(preview.code)}
-                tabIndex={-1}
+                tabIndex={0}
               />
             </div>
             <p className="chat-canvas-preview__hint">
-              Sketch preview — open it in the editor to run it live.
+              Live preview — open it in the editor to inspect, comment, or refine.
             </p>
             <footer className="chat-canvas-preview__foot">
               <Button

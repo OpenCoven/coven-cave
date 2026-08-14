@@ -27,6 +27,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { MarkdownBlock } from "@/components/message-bubble";
+import { FamiliarSection } from "@/components/github-card/familiar-section";
+import { GateSection } from "@/components/github-card/gate-section";
+import { MergeSection } from "@/components/github-card/merge-section";
+import { MetaSection } from "@/components/github-card/meta-section";
+import { METHOD_LABEL, seg, segTight, type Method } from "@/components/github-card/shared";
 import {
   buildCommandTree,
   parseCommand,
@@ -49,6 +54,8 @@ export type GhComposerItem = {
   author: string | null;
   assignees: string[];
   labels: { name: string; color: string }[];
+  /** Per-content counts the item response carries for free (cave-6p628). */
+  reactionCounts?: Record<string, number>;
   pull: {
     headRef: string | null;
     baseRef: string | null;
@@ -75,7 +82,6 @@ export type GhComposerThread = {
 type Phase = "rest" | "open" | "sending" | "error" | "merged";
 type Section = "" | "gate" | "merge" | "meta" | "fam";
 type Mode = "comment" | "approve" | "request" | "merge";
-type Method = "squash" | "merge" | "rebase";
 
 type Reaction = { content: string; count: number; mine: number | null };
 
@@ -97,8 +103,6 @@ const VERB: Record<Mode, string> = {
   request: "Request changes",
   merge: "Merge",
 };
-
-const METHOD_LABEL: Record<Method, string> = { squash: "squash", merge: "merge commit", rebase: "rebase" };
 
 /** Markdown toolbar: three clusters — emphasis · blocks · refs. */
 type Tool = {
@@ -177,7 +181,16 @@ export function GitHubCardComposer({
   const [merged, setMerged] = useState<{ sha: string | null; branchDeleted: boolean } | null>(null);
   const [restored, setRestored] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const [reactions, setReactions] = useState<Reaction[]>([]);
+  // Seeded from the counts the item response already carries — zero extra
+  // requests at rest. `mine` stays null until the full list is hydrated
+  // lazily on first interaction with the chip row, because only the
+  // reactions endpoint knows the viewer's own reaction ids (cave-6p628).
+  const [reactions, setReactions] = useState<Reaction[]>(() =>
+    Object.keys(REACTION_EMOJI)
+      .filter((content) => (item.reactionCounts?.[content] ?? 0) > 0)
+      .map((content) => ({ content, count: item.reactionCounts?.[content] ?? 0, mine: null })),
+  );
+  const reactionsHydratedRef = useRef(false);
   const [palette, setPalette] = useState<{ name: string; color: string }[]>([]);
   const [scopes, setScopes] = useState<GhDraftScopes>({ files: true, threads: true, checks: false });
   const [drafting, setDrafting] = useState(false);
@@ -293,26 +306,9 @@ export function GitHubCardComposer({
     if (pick === "") setLabels(item.labels.map((l) => l.name));
   }, [item.labels, pick]);
 
-  // ── reactions + label palette, fetched once the composer is reachable ─────
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(
-          `/api/github/reactions?repo=${encodeURIComponent(repo)}&number=${number}`,
-          { cache: "no-store" },
-        );
-        const data = (await res.json().catch(() => null)) as { ok?: boolean; reactions?: Reaction[] } | null;
-        if (!cancelled && res.ok && data?.ok && Array.isArray(data.reactions)) setReactions(data.reactions);
-      } catch {
-        /* reactions are decoration — a failure leaves the row empty */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [repo, number]);
+  // ── reactions: no mount fetch — counts ride in on the item response, and
+  // the full list (which carries the viewer's own reaction ids) hydrates
+  // lazily on first pointer/keyboard contact with a chip (cave-6p628). ──────
 
   // The label palette is only needed once the user opens the picker.
   useEffect(() => {
@@ -470,20 +466,51 @@ export function GitHubCardComposer({
     onRefreshThreads?.();
   };
 
-  const rereadReactions = async () => {
+  const rereadReactions = async (): Promise<Reaction[] | null> => {
     try {
       const r = await fetch(`/api/github/reactions?repo=${encodeURIComponent(repo)}&number=${number}`, {
         cache: "no-store",
       });
       const data = (await r.json().catch(() => null)) as { ok?: boolean; reactions?: Reaction[] } | null;
-      if (data?.ok && Array.isArray(data.reactions)) setReactions(data.reactions);
+      if (data?.ok && Array.isArray(data.reactions)) {
+        reactionsHydratedRef.current = true;
+        setReactions(data.reactions);
+        return data.reactions;
+      }
+      return null;
     } catch {
-      /* leave the optimistic state; the next mount corrects it */
+      /* leave the seeded/optimistic state; a later interaction retries */
+      return null;
     }
   };
 
+  // First pointer/keyboard contact with a chip fetches the full list so the
+  // viewer's own reactions highlight and become removable. One-shot: after
+  // hydration (or any toggle) the state is authoritative.
+  const hydrateReactionsOnce = () => {
+    if (reactionsHydratedRef.current) return;
+    reactionsHydratedRef.current = true;
+    void rereadReactions().then((list) => {
+      if (list === null) reactionsHydratedRef.current = false;
+    });
+  };
+
   const toggleReaction = async (content: string) => {
-    const existing = reactions.find((r) => r.content === content);
+    // A tap that beats hover hydration (touch, keyboard) must not guess:
+    // without the viewer's reaction ids a second 👍 on an already-reacted
+    // item would double-add. Hydrate first, then decide add vs remove.
+    let current = reactions;
+    if (!reactionsHydratedRef.current) {
+      reactionsHydratedRef.current = true;
+      const hydrated = await rereadReactions();
+      if (hydrated === null) {
+        reactionsHydratedRef.current = false;
+        announce("That reaction did not stick.");
+        return;
+      }
+      current = hydrated;
+    }
+    const existing = current.find((r) => r.content === content);
     const removing = existing?.mine != null;
     // Optimistic: the chip is a toggle and a round-trip would make it feel dead.
     setReactions((prev) =>
@@ -746,6 +773,16 @@ export function GitHubCardComposer({
     unresolved.length === 0
       ? "all threads resolved"
       : `${unresolved.length} unresolved thread${unresolved.length === 1 ? "" : "s"}`;
+  // Name the file only when there is exactly one thread to name. The old form
+  // read `1 unresolved in <first path>` for ANY count, so three open threads
+  // reported one — understating the gate the user is about to merge past.
+  const firstPath = unresolved[0]?.path;
+  const threadNote =
+    !firstPath
+      ? threadLabel
+      : unresolved.length === 1
+        ? `1 unresolved in ${firstPath}`
+        : `${threadLabel}, first in ${firstPath}`;
 
   const baseRef = item.pull?.baseRef ?? "the base branch";
   const commits = item.pull?.commits ?? null;
@@ -759,12 +796,26 @@ export function GitHubCardComposer({
         : commits
           ? `${commits} commits replayed`
           : "commits replayed";
+  const commitTitle =
+    method === "merge"
+      ? `Merge pull request #${number}${item.pull?.headRef ? ` from ${item.pull.headRef}` : ""}`
+      : `${item.title} (#${number})`;
+
+  const peopleSummary = people.length ? people.join(", ") : "unassigned";
+  const labelSummary = labels.length ? labels.join(" · ") : "no labels";
+  const labelPalette = palette.length ? palette : item.labels;
+  const labelColor = (name: string) =>
+    (palette.find((p) => p.name === name) ?? item.labels.find((l) => l.name === name))?.color;
+
+  const scopeChoices: [keyof GhDraftScopes, string][] = [
+    ["files", item.isPull ? "changed files" : "description"],
+    ["threads", `${unresolved.length} open thread${unresolved.length === 1 ? "" : "s"}`],
+    ["checks", "failing checks"],
+  ];
+  const famSummary = drafting ? "drafting…" : famDraft ? "draft ready · review before sending" : "reads what you allow";
 
   const draftStateLabel = restored ? "draft restored" : body.length ? "draft saved" : "no draft";
   const draftStateCls = restored ? " ghc-draftstate--restored" : body.length ? " ghc-draftstate--saved" : "";
-
-  const seg = (on: boolean) => `ghc-seg__item focus-ring${on ? " ghc-seg__item--on" : ""}`;
-  const segTight = (on: boolean) => `ghc-seg__item ghc-seg__item--tight focus-ring${on ? " ghc-seg__item--on" : ""}`;
 
   // ── phases that replace the sheet entirely ────────────────────────────────
 
@@ -890,6 +941,8 @@ export function GitHubCardComposer({
                 type="button"
                 className={`ghc-reaction focus-ring${r.mine ? " ghc-reaction--mine" : ""}`}
                 onClick={() => void toggleReaction(r.content)}
+                onPointerEnter={hydrateReactionsOnce}
+                onFocus={hydrateReactionsOnce}
                 aria-pressed={Boolean(r.mine)}
                 aria-label={`${r.content} reaction, ${r.count}`}
               >
@@ -1064,420 +1117,92 @@ export function GitHubCardComposer({
 
         {/* ── Gate ── */}
         {mergeable ? (
-          <>
-            <button
-              type="button"
-              className="ghc-sec focus-ring"
-              aria-expanded={sec === "gate"}
-              aria-label="Gate — checks, reviews and threads"
-              onClick={() => toggleSec("gate")}
-            >
-              <span aria-hidden className={`ghc-sec__caret${sec === "gate" ? " ghc-sec__caret--open" : ""}`}>
-                <Icon name="ph:caret-right" width={11} />
-              </span>
-              <span aria-hidden className={`ghc-sec__icon ${gateOk ? "ghc-sec__ok" : "ghc-sec__warn"}`}>
-                <Icon name={gateOk ? "ph:check-circle" : "ph:warning-circle"} width={13} />
-              </span>
-              <span className="ghc-sec__title">Gate</span>
-              <span className="ghc-sec__summary">
-                <span className="ghc-sec__mono">{checksLabel}</span>
-                {reviewLabel ? <span>{reviewLabel}</span> : null}
-                <span className={unresolved.length ? "ghc-sec__warn" : "ghc-sec__ok"}>{threadLabel}</span>
-              </span>
-            </button>
-            {sec === "gate" ? (
-              <div className="ghc-body">
-                <div className="ghc-gate-row">
-                  <span aria-hidden className={`ghc-gate-row__icon ${checks?.counts.failed ? "ghc-sec__warn" : "ghc-sec__ok"}`}>
-                    <Icon name={checks?.counts.failed ? "ph:x-circle-fill" : "ph:check-circle"} width={12} />
-                  </span>
-                  Checks
-                  <span className="ghc-gate-row__tail">
-                    <span className="ghc-gate-row__note">{checksLabel}</span>
-                    {checks && checks.counts.total > 0 ? (
-                      <button
-                        type="button"
-                        className="ghc-mini focus-ring"
-                        onClick={() => void rerunChecks(true)}
-                        disabled={busy === "checks"}
-                      >
-                        {busy === "checks" ? "…" : "Re-run"}
-                      </button>
-                    ) : null}
-                  </span>
-                </div>
-                {reviewLabel ? (
-                  <div className="ghc-gate-row">
-                    <span aria-hidden className={`ghc-gate-row__icon ${reviews?.changesRequested ? "ghc-sec__warn" : "ghc-sec__ok"}`}>
-                      <Icon name={reviews?.changesRequested ? "ph:warning-circle" : "ph:check-circle"} width={12} />
-                    </span>
-                    Reviews
-                    <span className="ghc-gate-row__tail">
-                      <span className="ghc-gate-row__note">{reviewLabel}</span>
-                    </span>
-                  </div>
-                ) : null}
-                <div className="ghc-gate-row">
-                  <span aria-hidden className={`ghc-gate-row__icon ${unresolved.length ? "ghc-sec__warn" : "ghc-sec__ok"}`}>
-                    <Icon name={unresolved.length ? "ph:warning-circle" : "ph:check-circle"} width={12} />
-                  </span>
-                  Threads
-                  <span className="ghc-gate-row__tail">
-                    <span className="ghc-gate-row__note">
-                      {unresolved[0]?.path ? `1 unresolved in ${unresolved[0].path}` : threadLabel}
-                    </span>
-                    {unresolved[0] ? (
-                      <button
-                        type="button"
-                        className="ghc-mini focus-ring"
-                        onClick={() => void resolveThread(unresolved[0].id)}
-                        disabled={busy === unresolved[0].id}
-                      >
-                        {busy === unresolved[0].id ? "…" : "Resolve"}
-                      </button>
-                    ) : null}
-                  </span>
-                </div>
-              </div>
-            ) : null}
-          </>
+          <GateSection
+            expanded={sec === "gate"}
+            onToggle={() => toggleSec("gate")}
+            gateOk={gateOk}
+            checksLabel={checksLabel}
+            reviewLabel={reviewLabel}
+            threadLabel={threadLabel}
+            threadNote={threadNote}
+            unresolvedCount={unresolved.length}
+            failedChecks={checks?.counts.failed ?? 0}
+            changesRequested={reviews?.changesRequested ?? 0}
+            canRerunChecks={Boolean(checks && checks.counts.total > 0)}
+            checksBusy={busy === "checks"}
+            threadBusy={Boolean(unresolved[0]) && busy === unresolved[0]?.id}
+            onRerunFailedChecks={() => void rerunChecks(true)}
+            onResolveFirstThread={() => void resolveThread(unresolved[0].id)}
+          />
         ) : null}
 
         {/* ── Merge ── */}
         {mergeable ? (
-          <>
-            <button
-              type="button"
-              className="ghc-sec focus-ring"
-              aria-expanded={sec === "merge"}
-              aria-label="Merge — method, commit and branch"
-              onClick={() => toggleSec("merge")}
-            >
-              <span aria-hidden className={`ghc-sec__caret${sec === "merge" ? " ghc-sec__caret--open" : ""}`}>
-                <Icon name="ph:caret-right" width={11} />
-              </span>
-              <span aria-hidden className="ghc-sec__icon">
-                <Icon name="ph:git-merge" width={13} />
-              </span>
-              <span className="ghc-sec__title">Merge</span>
-              <span className="ghc-sec__summary">
-                <span>
-                  {METHOD_LABEL[method]} → {baseRef}
-                </span>
-                <span>{commitSummary}</span>
-                <span>{delBranch ? "delete branch" : "keep branch"}</span>
-              </span>
-            </button>
-            {sec === "merge" ? (
-              <div className="ghc-body ghc-body--roomy">
-                <div className="ghc-row">
-                  <div className="ghc-seg ghc-seg--sunken">
-                    {(["squash", "merge", "rebase"] as Method[]).map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        className={segTight(method === m)}
-                        onClick={() => setMethod(m)}
-                        aria-pressed={method === m}
-                      >
-                        {m === "squash" ? "Squash" : m === "merge" ? "Merge commit" : "Rebase"}
-                      </button>
-                    ))}
-                  </div>
-                  {item.pull?.headRef ? (
-                    <button
-                      type="button"
-                      className="ghc-switch focus-ring"
-                      aria-pressed={delBranch}
-                      aria-label={`Delete ${item.pull.headRef} after merging`}
-                      onClick={() => setDelBranch((v) => !v)}
-                    >
-                      <span aria-hidden className={`ghc-switch__track${delBranch ? " ghc-switch__track--on" : ""}`}>
-                        <span className="ghc-switch__knob" />
-                      </span>
-                      delete <span className="ghc-switch__branch">{item.pull.headRef}</span>
-                    </button>
-                  ) : null}
-                </div>
-                <div className="ghc-commit">
-                  <div className="ghc-commit__head">
-                    <span className="ghc-commit__eyebrow">COMMIT</span>
-                    <span className="ghc-commit__method">{METHOD_LABEL[method]}</span>
-                  </div>
-                  <div className="ghc-commit__title">
-                    {method === "merge"
-                      ? `Merge pull request #${number}${item.pull?.headRef ? ` from ${item.pull.headRef}` : ""}`
-                      : `${item.title} (#${number})`}
-                  </div>
-                </div>
-                <div className={`ghc-arm${nudge === "arm" ? " ghc-arm--nudged" : ""}`}>
-                  <span className="ghc-arm__label">type</span>
-                  <span className="ghc-arm__word">merge</span>
-                  <span className="ghc-arm__label">to arm</span>
-                  <input
-                    ref={armRef}
-                    className="ghc-arm__input focus-ring"
-                    value={arm}
-                    onChange={(e) => {
-                      setArm(e.target.value);
-                      setNudge("");
-                    }}
-                    placeholder="…"
-                    aria-label="Type merge to arm the merge button"
-                  />
-                  {armed ? (
-                    <span aria-hidden className="ghc-arm__ok">
-                      <Icon name="ph:check" width={12} />
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-          </>
+          <MergeSection
+            expanded={sec === "merge"}
+            onToggle={() => toggleSec("merge")}
+            method={method}
+            onSelectMethod={(m) => setMethod(m)}
+            baseRef={baseRef}
+            commitSummary={commitSummary}
+            headRef={item.pull?.headRef ?? null}
+            deleteBranch={delBranch}
+            onToggleDeleteBranch={() => setDelBranch((v) => !v)}
+            commitTitle={commitTitle}
+            arm={arm}
+            onArmChange={(value) => {
+              setArm(value);
+              setNudge("");
+            }}
+            armed={armed}
+            nudged={nudge === "arm"}
+            armRef={armRef}
+          />
         ) : null}
 
         {/* ── Assignees & labels ── */}
-        <button
-          type="button"
-          className="ghc-sec focus-ring"
-          aria-expanded={sec === "meta"}
-          aria-label="Assignees and labels"
-          onClick={() => toggleSec("meta")}
-        >
-          <span aria-hidden className={`ghc-sec__caret${sec === "meta" ? " ghc-sec__caret--open" : ""}`}>
-            <Icon name="ph:caret-right" width={11} />
-          </span>
-          <span aria-hidden className="ghc-sec__icon">
-            <Icon name="ph:tag" width={13} />
-          </span>
-          <span className="ghc-sec__title">Assignees &amp; labels</span>
-          <span className="ghc-sec__summary">
-            <span>{people.length ? people.join(", ") : "unassigned"}</span>
-            <span>{labels.length ? labels.join(" · ") : "no labels"}</span>
-          </span>
-        </button>
-        {sec === "meta" ? (
-          <div className="ghc-body ghc-body--roomy">
-            <div className="ghc-field">
-              <span className="ghc-field__label">assignees</span>
-              <div className="ghc-field__body">
-                {people.map((p) => (
-                  <span key={p} className="ghc-chip">
-                    <span aria-hidden className="ghc-avatar">
-                      {p.slice(0, 1).toUpperCase()}
-                    </span>
-                    {p}
-                    <button
-                      type="button"
-                      className="ghc-chip__x focus-ring"
-                      onClick={() => togglePerson(p)}
-                      aria-label={`Unassign ${p}`}
-                    >
-                      <Icon name="ph:x" width={8} aria-hidden />
-                    </button>
-                  </span>
-                ))}
-                <button
-                  type="button"
-                  className="ghc-add focus-ring"
-                  aria-expanded={pick === "people"}
-                  onClick={() => setPick((v) => (v === "people" ? "" : "people"))}
-                >
-                  <Icon name="ph:plus" width={9} aria-hidden />
-                  add
-                </button>
-                {pick === "people" ? (
-                  <div className="ghc-picker">
-                    <div className="ghc-pal__label">PEOPLE</div>
-                    <div className="ghc-pal__rows">
-                      {mentionRoster.map((p) => (
-                        <button
-                          key={p.login}
-                          type="button"
-                          className={`ghc-pal__row ghc-pal__row--person focus-ring${people.includes(p.login) ? " ghc-pal__row--active" : ""}`}
-                          onClick={() => togglePerson(p.login)}
-                        >
-                          <span aria-hidden className="ghc-avatar">
-                            {p.login.slice(0, 1).toUpperCase()}
-                          </span>
-                          <span className="ghc-pal__name">{p.login}</span>
-                          <span className="ghc-pal__role">{p.role}</span>
-                          <span className="ghc-pal__state">{people.includes(p.login) ? "assigned" : ""}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-            <div className="ghc-field">
-              <span className="ghc-field__label">labels</span>
-              <div className="ghc-field__body">
-                {labels.map((name) => {
-                  const hex = (palette.find((p) => p.name === name) ?? item.labels.find((l) => l.name === name))?.color;
-                  return (
-                    <span key={name} className="ghc-chip ghc-chip--label">
-                      <span
-                        aria-hidden
-                        className="ghc-chip__dot"
-                        style={hex ? { background: `#${hex}` } : undefined}
-                      />
-                      {name}
-                      <button
-                        type="button"
-                        className="ghc-chip__x focus-ring"
-                        onClick={() => toggleLabel(name)}
-                        aria-label={`Remove label ${name}`}
-                      >
-                        <Icon name="ph:x" width={8} aria-hidden />
-                      </button>
-                    </span>
-                  );
-                })}
-                <button
-                  type="button"
-                  className="ghc-add ghc-add--label focus-ring"
-                  aria-expanded={pick === "labels"}
-                  onClick={() => setPick((v) => (v === "labels" ? "" : "labels"))}
-                >
-                  <Icon name="ph:plus" width={9} aria-hidden />
-                  add
-                </button>
-                {pick === "labels" ? (
-                  <div className="ghc-picker">
-                    <div className="ghc-pal__label">REPO LABELS</div>
-                    <div className="ghc-pal__rows">
-                      {(palette.length ? palette : item.labels).map((l) => (
-                        <button
-                          key={l.name}
-                          type="button"
-                          className={`ghc-pal__row ghc-pal__row--person focus-ring${labels.includes(l.name) ? " ghc-pal__row--active" : ""}`}
-                          onClick={() => toggleLabel(l.name)}
-                        >
-                          <span
-                            aria-hidden
-                            className="ghc-chip__dot"
-                            style={l.color ? { background: `#${l.color}` } : undefined}
-                          />
-                          <span className="ghc-pal__name">{l.name}</span>
-                          <span className="ghc-pal__state">{labels.includes(l.name) ? "applied" : ""}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        ) : null}
+        <MetaSection
+          expanded={sec === "meta"}
+          onToggle={() => toggleSec("meta")}
+          people={people}
+          labels={labels}
+          peopleSummary={peopleSummary}
+          labelSummary={labelSummary}
+          pick={pick}
+          onTogglePick={(which) => setPick((v) => (v === which ? "" : which))}
+          roster={mentionRoster}
+          labelPalette={labelPalette}
+          labelColor={labelColor}
+          onTogglePerson={togglePerson}
+          onToggleLabel={toggleLabel}
+        />
 
         {/* ── Draft with <familiar> ── */}
         {familiar ? (
-          <>
-            <button
-              type="button"
-              className="ghc-sec focus-ring"
-              aria-expanded={sec === "fam"}
-              aria-label={`Draft with the ${familiar.name} familiar`}
-              onClick={() => toggleSec("fam")}
-            >
-              <span aria-hidden className={`ghc-sec__caret${sec === "fam" ? " ghc-sec__caret--open" : ""}`}>
-                <Icon name="ph:caret-right" width={11} />
-              </span>
-              <span aria-hidden className="ghc-sec__icon ghc-sec__accent">
-                <Icon name="ph:brain" width={13} />
-              </span>
-              <span className="ghc-sec__title">
-                Draft with <span className="ghc-sec__accent">{familiar.name}</span>
-              </span>
-              <span className="ghc-sec__summary">
-                <span className={famDraft ? "ghc-sec__accent" : undefined}>
-                  {drafting ? "drafting…" : famDraft ? "draft ready · review before sending" : "reads what you allow"}
-                </span>
-              </span>
-            </button>
-            {sec === "fam" ? (
-              <div className="ghc-body ghc-body--roomy ghc-body--familiar">
-                {famDraft == null ? (
-                  <div className="ghc-scopes">
-                    <span className="ghc-field__label">scope</span>
-                    {(
-                      [
-                        ["files", item.isPull ? "changed files" : "description"],
-                        ["threads", `${unresolved.length} open thread${unresolved.length === 1 ? "" : "s"}`],
-                        ["checks", "failing checks"],
-                      ] as [keyof GhDraftScopes, string][]
-                    ).map(([key, label]) => (
-                      <button
-                        key={key}
-                        type="button"
-                        className={`ghc-scope focus-ring${scopes[key] ? " ghc-scope--on" : ""}`}
-                        aria-pressed={scopes[key]}
-                        onClick={() => setScopes((s) => ({ ...s, [key]: !s[key] }))}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      className="ghc-draft-cta focus-ring"
-                      onClick={() => void draftWithFamiliar()}
-                      disabled={drafting}
-                    >
-                      <Icon name="ph:sparkle" width={12} aria-hidden />
-                      {drafting ? "Drafting…" : "Draft the review"}
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <div className="ghc-draft-box">{famDraft || "…"}</div>
-                    <div className="ghc-draft-foot">
-                      <span className="ghc-draft-note">never auto-sent</span>
-                      <button
-                        type="button"
-                        className="ghc-draft-use focus-ring"
-                        onClick={() => {
-                          commitText(famDraft);
-                          setTab("write");
-                          setSec("");
-                          requestAnimationFrame(focusInput);
-                        }}
-                        disabled={drafting || !famDraft}
-                      >
-                        Use as my reply
-                      </button>
-                      <button
-                        type="button"
-                        className="ghc-draft-alt focus-ring"
-                        onClick={() => void draftWithFamiliar()}
-                        disabled={drafting}
-                      >
-                        <Icon name="ph:arrows-clockwise" width={10} aria-hidden />
-                        Re-roll
-                      </button>
-                      <button
-                        type="button"
-                        className="ghc-draft-drop focus-ring"
-                        aria-label="Discard the draft"
-                        onClick={() => {
-                          draftAbort.current?.abort();
-                          setFamDraft(null);
-                          setDrafting(false);
-                        }}
-                      >
-                        <Icon name="ph:x" width={10} aria-hidden />
-                      </button>
-                    </div>
-                  </>
-                )}
-                {famError ? (
-                  <span className="ghc-nudge" role="alert">
-                    {famError}
-                  </span>
-                ) : null}
-              </div>
-            ) : null}
-          </>
+          <FamiliarSection
+            expanded={sec === "fam"}
+            onToggle={() => toggleSec("fam")}
+            familiarName={familiar.name}
+            summary={famSummary}
+            drafting={drafting}
+            draft={famDraft}
+            error={famError}
+            scopes={scopes}
+            scopeChoices={scopeChoices}
+            onToggleScope={(key) => setScopes((s) => ({ ...s, [key]: !s[key] }))}
+            onDraft={() => void draftWithFamiliar()}
+            onUseDraft={() => {
+              commitText(famDraft ?? "");
+              setTab("write");
+              setSec("");
+              requestAnimationFrame(focusInput);
+            }}
+            onDiscardDraft={() => {
+              draftAbort.current?.abort();
+              setFamDraft(null);
+              setDrafting(false);
+            }}
+          />
         ) : null}
 
         {/* ── footer ── */}

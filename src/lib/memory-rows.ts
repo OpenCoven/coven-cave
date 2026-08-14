@@ -1,4 +1,5 @@
 import type { CanonicalMemorySummary } from "./canonical-memory.ts";
+import { canonicalMemoryMatches, fileMemoryMatches } from "./memory-search-policy.ts";
 import {
   classifyProtection,
   detectStale,
@@ -138,45 +139,13 @@ function baseName(path: string): string {
   return segments[segments.length - 1] ?? path;
 }
 
-function canonicalMatches(entry: CanonicalMemorySummary, query: string): boolean {
-  if (!query) return true;
-  return [
-    entry.title,
-    entry.excerpt,
-    entry.familiarId,
-    entry.source.kind,
-    entry.source.label,
-    entry.privacy.classification ?? "",
-    entry.verification.state,
-  ]
-    .join(" ")
-    .toLowerCase()
-    .includes(query);
-}
-
-function fileMatches(entry: RawFileEntry, query: string): boolean {
-  if (!query) return true;
-  return [
-    entry.title ?? "",
-    entry.relPath,
-    entry.fullPath,
-    entry.sourceKind,
-    entry.sourceKindLabel,
-    entry.rootLabel,
-    entry.familiarId ?? "",
-    entry.excerpt ?? "",
-  ]
-    .join(" ")
-    .toLowerCase()
-    .includes(query);
-}
 
 export function buildMemoryRows(args: BuildArgs): MemoryRow[] {
   const query = args.query.trim().toLowerCase();
 
   const canonicalRows: CanonicalMemoryRow[] = args.canonical
     .filter((entry) => entry.familiarId === args.familiarFilter)
-    .filter((entry) => canonicalMatches(entry, query))
+    .filter((entry) => canonicalMemoryMatches(entry, query))
     .map((entry) => ({
       kind: "canonical",
       rowId: `coven:${entry.id}`,
@@ -198,7 +167,7 @@ export function buildMemoryRows(args: BuildArgs): MemoryRow[] {
         args.sourceFilter === "all" || entry.sourceKind === args.sourceFilter,
     )
     .filter((entry) => entry.familiarId === args.familiarFilter)
-    .filter((entry) => fileMatches(entry, query))
+    .filter((entry) => fileMemoryMatches(entry, query))
     .map((entry) => {
       const managed = normalizeFileEntry(entry);
       return {

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 
 // Research Desk five-tab surface (cave-dl74) — Prompt / Desk / Library /
 // Studio / Resources inside the researcher role room (surface:researcher-desk).
@@ -264,10 +264,45 @@ const DIAGRAM_GENERATION = {
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
-type BootHandles = { createdGenerationBodies: unknown[] };
+type BootHandles = {
+  createdGenerationBodies: unknown[];
+  directionDraftBodies: Array<Record<string, unknown>>;
+};
+
+function fulfillDirectionDraft(route: Route) {
+  return route.fulfill({
+    status: 200,
+    contentType: "text/event-stream",
+    body: [
+      `data: ${JSON.stringify({
+        kind: "assistant_chunk",
+        text: "<direction>Verify the conflicting throughput claims against reproducible primary benchmarks, normalize cost per million vectors, and update the decision memo with one defensible ranking.</direction>",
+      })}`,
+      "",
+      `data: ${JSON.stringify({ kind: "done", sessionId: "research-direction-1" })}`,
+      "",
+      "",
+    ].join("\n"),
+  });
+}
+
+function fulfillJournalSend(route: Route) {
+  return route.fulfill({
+    status: 200,
+    contentType: "text/event-stream",
+    body: [
+      `data: ${JSON.stringify({ kind: "done", sessionId: "research-journal-1" })}`,
+      "",
+      "",
+    ].join("\n"),
+  });
+}
 
 async function mockResearchApis(page: Page): Promise<BootHandles> {
-  const handles: BootHandles = { createdGenerationBodies: [] };
+  const handles: BootHandles = {
+    createdGenerationBodies: [],
+    directionDraftBodies: [],
+  };
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "rida");
@@ -290,10 +325,72 @@ async function mockResearchApis(page: Page): Promise<BootHandles> {
   await page.route(/\/api\/research\/missions\?/, (route) =>
     route.fulfill({ json: { ok: true, missions: MISSIONS } }),
   );
+  await page.route("**/api/chat/send", (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    if (body.origin === "enhance") {
+      handles.directionDraftBodies.push(body);
+      return fulfillDirectionDraft(route);
+    }
+    if (body.origin === "journal") return fulfillJournalSend(route);
+    throw new Error(`unexpected Research Desk chat send origin: ${String(body.origin)}`);
+  });
+  await page.route(/\/api\/research\/missions\/[^/]+\/files\/[^/]+$/, (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        file: {
+          key: "draft-1",
+          kind: "findings",
+          title: "Working synthesis",
+          fileName: "draft.md",
+          relativePath: "artifacts/draft.md",
+          content: "# Working synthesis\n\nResearch findings with cited evidence.",
+          workspacePath: "/tmp/research-mission-1",
+          updatedAt: iso(5),
+        },
+      },
+    }),
+  );
   await page.route("**/api/research/links", (route) =>
     route.fulfill({ json: { ok: true, links: LINKS } }),
   );
   await page.route(/\/api\/research\/generations/, async (route) => {
+    if (route.request().url().includes("/readiness")) {
+      await route.fulfill({
+        json: {
+          ok: true,
+          providers: {
+            local: {
+              ready: false,
+              voices: [],
+              hint: "Download a local voice in Settings → Voice.",
+            },
+            elevenlabs: {
+              ready: false,
+              defaultVoiceId: "eleven-default",
+              hint: "Set ELEVENLABS_API_KEY in Vault settings.",
+            },
+          },
+          ffmpeg: {
+            ready: false,
+            hint: "Install ffmpeg and ffprobe.",
+          },
+          podcast: {
+            ready: false,
+            hint: "Download a local voice or configure ElevenLabs.",
+          },
+          shortVideo: {
+            ready: false,
+            hint: "Install ffmpeg and download a local voice.",
+          },
+          longVideo: {
+            ready: false,
+            hint: "Install ffmpeg and download a local voice.",
+          },
+        },
+      });
+      return;
+    }
     if (route.request().method() === "POST") {
       handles.createdGenerationBodies.push(route.request().postDataJSON());
       await route.fulfill({ json: { ok: true, generation: DIAGRAM_GENERATION } });
@@ -341,7 +438,7 @@ test.describe("research desk tabs", () => {
   test.describe.configure({ timeout: 180_000 });
 
   test("tab strip has five tabs and the Desk shows runs rail, stepper, and checkpoint actions", async ({ page }) => {
-    await openResearchDesk(page);
+    const handles = await openResearchDesk(page);
     const desk = page.locator(".research-desk");
 
     // Five tabs with real tablist semantics; missions exist, so the surface
@@ -382,6 +479,21 @@ test.describe("research desk tabs", () => {
     await expect(actions.getByRole("button", { name: "Cancel run" })).toBeVisible();
     await expect(actions.getByRole("button", { name: "Archive" })).toBeVisible();
     await expect(desk.getByText("Refine direction before continuing")).toBeVisible();
+    const direction = desk.getByLabel("Refined research direction");
+    await desk.getByRole("button", { name: "Draft with familiar" }).click();
+    await expect(direction).toHaveValue(
+      "Verify the conflicting throughput claims against reproducible primary benchmarks, normalize cost per million vectors, and update the decision memo with one defensible ranking.",
+    );
+    await expect(desk.getByRole("button", { name: "Refine and continue" })).toBeEnabled();
+    await expect.poll(() => handles.directionDraftBodies.length).toBe(1);
+    expect(String(handles.directionDraftBodies[0].prompt)).toContain(
+      "Produce one execution-ready refined direction",
+    );
+    expect(String(handles.directionDraftBodies[0].prompt)).toContain(
+      "[conflicting] Vendor benchmarks blog",
+    );
+    expect(handles.directionDraftBodies[0].permissionMode).toBe("read");
+    expect(handles.directionDraftBodies[0].reasoningEffort).toBe("medium");
 
     // The rail is one Artifacts|Sources toggle over a single pane. A run at a
     // checkpoint opens on Sources, where the conflicting source can be triaged.
@@ -404,6 +516,98 @@ test.describe("research desk tabs", () => {
       "The research session crashed before publishing.",
     );
     await expect(desk.locator(".research-mission-actions").getByRole("button", { name: /^Retry/ })).toBeVisible();
+
+    await desk.getByRole("button", { name: "View diagnostics" }).click();
+    const diagnostics = page.getByRole("dialog", { name: /Research.*Diagnostics/ });
+    await expect(diagnostics).toContainText("The research session crashed before publishing.");
+    await expect(diagnostics).toContainText("sess-fail-1");
+    await expect(diagnostics).toContainText("No flow run recorded");
+    await diagnostics.getByText("Close", { exact: true }).click();
+    await expect(diagnostics).toBeHidden();
+  });
+
+  test("Desk toolbar scopes runs and preserves focus mode", async ({ page }) => {
+    await openResearchDesk(page);
+    const desk = page.locator(".research-desk");
+    const toolbar = desk.locator(".research-desk-toolbar");
+    const rail = desk.getByRole("navigation", { name: "Research missions" });
+    const filter = toolbar.getByRole("searchbox", {
+      name: "Filter research runs",
+    });
+
+    await expect(filter).toHaveAttribute("placeholder", "Filter runs…");
+    await page.keyboard.press("/");
+    await expect(filter).toBeFocused();
+    await expect(filter).toHaveValue("/");
+    await filter.press("Escape");
+    await expect(filter).toHaveValue("");
+
+    const railTabs = desk.getByRole("tablist", { name: "Rail contents" });
+    await railTabs.getByRole("tab", { name: /^Artifacts/ }).click();
+    await desk.getByRole("button", { name: "View Working synthesis" }).click();
+    const reader = page.getByRole("dialog", {
+      name: "Working synthesis — research reader",
+    });
+    await expect(reader).toBeVisible({ timeout: 15_000 });
+    await reader.getByRole("button", { name: "Close" }).focus();
+    await page.keyboard.press("/");
+    await expect(filter).not.toBeFocused();
+    await expect
+      .poll(() => reader.evaluate((node) => node.contains(document.activeElement)))
+      .toBe(true);
+    await reader.getByRole("button", { name: "Close" }).click();
+
+    const scopes = toolbar.getByRole("group", {
+      name: "Filter runs by status",
+    });
+    await expect(
+      scopes.getByRole("button", { name: "Active, 2 runs", exact: true }),
+    ).toBeVisible();
+    await scopes.getByRole("button", { name: "Needs review" }).click();
+    await expect(
+      scopes.getByRole("button", { name: "Needs review" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(rail.getByText("Needs review")).toBeVisible();
+    await expect(
+      rail.getByRole("button", { name: /Agent memory survey/ }),
+    ).toHaveCount(0);
+
+    await filter.fill("no matching research run");
+    await expect(
+      scopes.getByRole("button", { name: "Active, 0 runs", exact: true }),
+    ).toBeVisible();
+    await rail.getByRole("button", { name: "Clear filters" }).click();
+    await expect(filter).toHaveValue("");
+    await expect(
+      scopes.getByRole("button", { name: "All" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      rail.getByRole("button", { name: /Agent memory survey/ }),
+    ).toBeVisible();
+
+    await toolbar.getByRole("button", { name: "Focus run" }).click();
+    await expect(rail).toBeHidden();
+    await expect(desk.getByLabel("Run evidence and links")).toHaveCount(0);
+    await expect(
+      toolbar.getByRole("button", { name: "Show workspace" }),
+    ).toBeVisible();
+    const focusedMain = await desk.locator(".research-desk__main").boundingBox();
+    expect(focusedMain?.width ?? 0).toBeGreaterThan(900);
+
+    await page.reload();
+    await enterResearchDesk(page);
+    await expect(
+      desk.getByRole("button", { name: "Show workspace" }),
+    ).toBeVisible();
+    await desk.getByRole("button", { name: "Show workspace" }).click();
+    await expect(rail).toBeVisible();
+    await expect(desk.getByLabel("Run evidence and links")).toBeVisible();
+
+    await desk.getByRole("button", { name: "New research" }).click();
+    await expect(deskTab(page, /^Prompt/)).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   });
 
   test("Library shows the live ticker and artifact cards; the chosen tab survives a reload", async ({ page }) => {
@@ -443,7 +647,7 @@ test.describe("research desk tabs", () => {
     await expect(page.locator(".research-library")).toBeVisible();
   });
 
-  test("Studio renders 5 creatable + 3 disabled media cards and drafts a diagram from the completed run", async ({ page }) => {
+  test("Studio renders 5 extractive + 3 readiness-gated media cards and drafts a diagram from the completed run", async ({ page }) => {
     const handles = await openResearchDesk(page);
     await deskTab(page, /^Studio/).click();
 
@@ -451,16 +655,16 @@ test.describe("research desk tabs", () => {
     await expect(studio).toBeVisible();
 
     // Five real generation kinds render as enabled buttons (sources exist)…
-    const creatable = studio.locator("button.research-studio-card");
+    const creatable = studio.locator("button.research-studio-card:not([disabled])");
     await expect(creatable).toHaveCount(5);
     for (const label of ["Diagram", "Blog / article", "Slides", "Infographic", "Social thread"]) {
       await expect(creatable.filter({ hasText: label }).first()).toBeEnabled();
     }
-    // …and the three media kinds are honest non-buttons with aria-disabled.
-    const media = studio.locator(".research-studio-card--media[aria-disabled='true']");
+    // …and the three media kinds are honest disabled buttons with actionable hints.
+    const media = studio.locator("button.research-studio-card--media:disabled");
     await expect(media).toHaveCount(3);
     for (const label of ["Podcast", "Short video", "Long video"]) {
-      await expect(media.filter({ hasText: label })).toContainText("not available yet");
+      await expect(media.filter({ hasText: label })).toBeDisabled();
     }
 
     // Create a diagram from the completed mission — the source is a labelled
@@ -651,9 +855,28 @@ test.describe("research desk tabs", () => {
     await intake.locator(".research-mode-card", { hasText: "Deep loop" }).click();
     await expect(intake.getByText("You chose Deep loop — this run will use it.")).toBeVisible();
 
-    // Quick saves panel lists the shared saved-links store.
+    // Quick saves is a drawer docked to the bottom edge: collapsed by default
+    // so the intake is not competing with a permanent list, and it says how
+    // many saves it holds before you open it.
+    const savesToggle = intake.getByRole("button", { name: /^Quick saves/ });
+    await expect(savesToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(intake.getByRole("region", { name: "Quick saves" })).toHaveCount(0);
+
+    await savesToggle.click();
+    await expect(savesToggle).toHaveAttribute("aria-expanded", "true");
+
+    // Opened, it lists the shared saved-links store, grouped rather than flat.
     const saves = intake.getByRole("region", { name: "Quick saves" });
     await expect(saves.getByRole("button", { name: /acme\/vector-bench/ })).toBeVisible();
     await expect(saves.getByRole("button", { name: /Qdrant guide/ })).toBeVisible();
+
+    // The draft typed above ("vector databases") promotes its matches into a
+    // suggested group, each explaining itself.
+    await expect(saves.getByText("✦ Suggested for this prompt")).toBeVisible();
+    await expect(saves.getByText(/matches “vector”/).first()).toBeVisible();
+
+    // Attaching one reports back on the collapsed bar.
+    await saves.getByRole("button", { name: /Qdrant guide/ }).click();
+    await expect(intake.getByText("1 attached to this run")).toBeVisible();
   });
 });

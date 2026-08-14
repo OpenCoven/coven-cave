@@ -21,6 +21,7 @@
     "write_files",
     "shell"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/opencoven-role-creation-process",
   "x-coven": {
     "displayName": "OpenCoven Role Creation Process",

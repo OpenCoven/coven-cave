@@ -67,8 +67,10 @@ const ROUTE_INVENTORY = {
   },
   "/proposals": {
     kind: "destination",
+    // The Weaves header carries the one primary action into the queue; both
+    // threads surfaces share that header component.
     entry: {
-      file: "weaves/page.tsx",
+      file: "../components/threads-chrome.tsx",
       pattern: /href="\/proposals"/,
     },
   },

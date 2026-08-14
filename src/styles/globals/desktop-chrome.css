@@ -59,6 +59,15 @@ button:active > .edge-rail-chip {
   overflow: visible;
 }
 
+/* Native title-bar glass applies backdrop-filter below, which makes this band
+   an auto-level stacking context: the bell's local z-50 cannot escape it and
+   later shell content can paint over the dropdown. Lift the band only while
+   the dropdown exists. 140 clears in-content layers (up to 130) while staying
+   below drawers (150+), portaled popovers (400), and modal/drag layers. */
+.shell-top:has(.notification-bell__popover) {
+  z-index: 140;
+}
+
 .shell-titlebar-drag-lane {
   display: none;
 }
@@ -843,9 +852,18 @@ button:active > .edge-rail-chip {
 
 /* One compact standard across the top chrome (var(--icon-sm), 14px): action
    and status glyphs, the search glyph, and the sidepanel toggle all share this
-   size, rather than scaling with their own label. */
+   size, rather than scaling with their own label.
+
+   The notification bell is in this list because it sits in the same status
+   cluster as .menu-bar__status and must match it. It was previously omitted,
+   and its own <Icon> passed no size at the time, so the glyph fell through to
+   the 1em default and rendered at the inherited font-size instead of the 14px
+   standard — the one control in the bar sized by accident rather than by this
+   rule. The component now passes an explicit size too; this rule is what
+   narrows it to the compact standard on desktop. */
 .menu-bar__task > svg,
-.menu-bar__status > svg {
+.menu-bar__status > svg,
+.menu-bar__group--status .notification-bell__trigger > svg {
   flex-shrink: 0;
   width: var(--icon-sm);
   height: var(--icon-sm);

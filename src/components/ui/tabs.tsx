@@ -32,6 +32,8 @@ export type TabItem<T extends string = string> = {
   count?: number;
   /** Optional accessible title (tooltip). */
   title?: string;
+  /** Override the controlled panel id when multiple tabs update one shared panel. */
+  controlsId?: string;
   /** Disable selection of this tab. */
   disabled?: boolean;
   /** Override the underline/indicator colour for this tab (e.g. a surface accent). */
@@ -121,7 +123,7 @@ export function Tabs<T extends string>({
       {items.map((t) => {
         const isActive = t.id === value;
         const tabId = idPrefix ? `${idPrefix}-tab-${t.id}` : undefined;
-        const panelId = idPrefix ? `${idPrefix}-panel-${t.id}` : undefined;
+        const panelId = t.controlsId ?? (idPrefix ? `${idPrefix}-panel-${t.id}` : undefined);
 
         const className = segment
           ? segmentTabClass(isActive, fill, sm)

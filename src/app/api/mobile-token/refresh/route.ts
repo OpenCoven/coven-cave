@@ -5,6 +5,10 @@ import { ACCESS_TOKEN_COOKIE, ACCESS_TOKEN_QUERY_PARAM } from "@/proxy-helpers";
 
 export const dynamic = "force-dynamic";
 
+const PRIVATE_NO_STORE_HEADERS = {
+  "Cache-Control": "private, no-store",
+};
+
 /** The credential the caller actually presented — same sources, same order,
  *  as the proxy's mobileAccessGate (Bearer header, cookie, query param). */
 function suppliedCredential(req: NextRequest): string | null {
@@ -33,15 +37,24 @@ export async function POST(req: NextRequest) {
     secret: process.env.COVEN_CAVE_ACCESS_TOKEN?.trim() || null,
   });
   if (!result.ok) {
-    return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
+    return NextResponse.json(
+      { ok: false, error: result.error },
+      {
+        status: result.status,
+        headers: PRIVATE_NO_STORE_HEADERS,
+      },
+    );
   }
   // Paired-signal beat (cave-i74f): a successful refresh IS the proof a paired
   // device is alive — record it so the desktop's Settings card can say so.
   await recordMobileSeen();
-  return NextResponse.json({
-    ok: true,
-    token: result.token,
-    expiresAt: result.expiresAt,
-    expiresAtIso: new Date(result.expiresAt).toISOString(),
-  });
+  return NextResponse.json(
+    {
+      ok: true,
+      token: result.token,
+      expiresAt: result.expiresAt,
+      expiresAtIso: new Date(result.expiresAt).toISOString(),
+    },
+    { headers: PRIVATE_NO_STORE_HEADERS },
+  );
 }

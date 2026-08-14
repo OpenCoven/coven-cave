@@ -178,10 +178,12 @@ the desk's existing `@container` breakpoints (900/760/560).
 New store + API, modeled on research links/missions patterns:
 
 - `src/lib/research-generations.ts` — types + pure helpers + client fetchers.
-  `ResearchGeneration = { id, familiarId, kind, sourceMissionId, sourceTitle,
-  directions?, status: "ready" | "failed" | "cancelled", createdAt, updatedAt,
-  content, error? }` with kinds `diagram | blog | slides | infographic |
-  thread`. Content is **extractive**: drafted server-side from the source
+  `ResearchGeneration` v2 covers extractive kinds `diagram | blog | slides |
+  infographic | thread` and media kinds `podcast | short-video | long-video`.
+  Extractive rows are terminal; media rows use explicit `draft | queued |
+  rendering | ready | failed | cancelled` state, frozen render configuration,
+  and persisted stage/chapter progress. Content is **extractive**: drafted
+  server-side from the source
   mission's published/working artifact markdown —
   - blog → the artifact markdown itself as an editable draft copy
   - slides → outline from headings + bullets
@@ -190,23 +192,28 @@ New store + API, modeled on research links/missions patterns:
     section headings (structural, not invented)
   - infographic → numbers extracted from the artifact with their line context
   If the mission has no artifact yet, creation fails with a clear error.
-- Podcast / short video / long video cards render per the design but disabled
-  with an honest "needs a media pipeline — not available yet" hint; file a
-  follow-up bead. Do NOT create queued records that can never complete.
+- Podcast / short video / long video cards follow the async media contract:
+  each card is enabled only when its selected local or ElevenLabs voice and,
+  for video, ffmpeg/ffprobe prerequisites are ready. Media creation freezes
+  provider, voice, and a bounded length preset on a reviewable script,
+  storyboard, or chapter draft, then queues a persistent single-flight render
+  only after explicit approval. Kept drafts reopen, retries return to review,
+  and long video reports real chapter progress. Do NOT create queued records
+  that cannot complete.
 - `src/lib/server/research-generations.ts` — JSON store under
-  `~/.coven/research-generations/<familiarId>.json` (follow `research-links.ts`
+  `~/.coven/cave/research-generations/<familiarId>.json` (follow `research-links.ts`
   patterns incl. path safety), drafting functions reading mission artifacts via
   `research-mission-store`.
 - Routes: `/api/research/generations` GET (list by familiarId), POST (create =
   draft synchronously), DELETE (remove). Add to `api-contracts.test.ts`
   (alphabetical: `generations` sorts before `links` — verify ordering rule in
   that file). localOriginGuard like siblings.
-- Viewer modal per design: slides deck w/ thumb strip, diagram preview
-  (render mermaid source as the design's simple boxes is NOT required — show
-  the mermaid code block + copy, plus the design's pending state), blog →
-  inline editable draft + "Open in Markdown editor" modal (rich/source toggle;
-  saving writes the draft back to the generation record), points list w/ copy
-  per row for threads. Copy buttons flash ✓ like the design.
+- Viewer modal per design: slides deck w/ thumb strip, diagram preview through
+  the shared Mermaid renderer plus inspectable source, blog → Markdown editor
+  modal with rich/source modes, and points list with per-row copy for threads.
+  Until generation update persistence lands, the editor honestly offers
+  `Copy updated draft` rather than claiming it saved. Copy buttons flash ✓ like
+  the design.
 
 ## Testing / gates
 

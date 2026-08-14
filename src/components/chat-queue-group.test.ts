@@ -56,45 +56,50 @@ test("both new-session surfaces mount the group, and neither renders it empty", 
     );
     assert.match(
       source,
-      /\{queueRows\.length > 0 \?/,
-      `${name} renders no Queue chrome when nothing is parked`,
+      /if \(queueRows\.length > 0\) \{/,
+      `${name} contributes no Queue band when nothing is parked`,
     );
     assert.match(
       source,
-      /aria-label=\{queueFollowUpLabel\(row\)\}/,
-      `${name} gives each row a full-context accessible name`,
+      /ariaLabel: queueFollowUpLabel\(row\)/,
+      `${name} gives each tile a full-context accessible name`,
     );
   }
 });
 
-test("rows reuse each surface's existing row grammar — no second vocabulary", () => {
-  assert.match(
-    emptyState,
-    /className="cave-chat-empty-recent"[\s\S]{0,300}?aria-label=\{queueFollowUpLabel\(row\)\}/,
-    "the zero-turn page reuses its thread-row class",
-  );
-  assert.match(
-    dashboard,
-    /className="home-dash__recent-row"[\s\S]{0,300}?aria-label=\{queueFollowUpLabel\(row\)\}/,
-    "the dashboard reuses its recent-row class",
-  );
+test("rows reuse the shared band grammar — no second vocabulary", () => {
+  // Chat.dc.html 2b: both surfaces feed ChatStartFromBands the same tile
+  // shape, so neither can grow a row vocabulary the other does not have.
+  for (const [name, source] of [["zero-turn page", emptyState], ["new-chat dashboard", dashboard]]) {
+    assert.match(
+      source,
+      /meta: queueGroup,[\s\S]{0,400}?ariaLabel: queueFollowUpLabel\(row\)/,
+      `${name} builds its Queue tiles from the shared band model`,
+    );
+    assert.match(
+      source,
+      /from "@\/components\/chat-start-from-bands"/,
+      `${name} renders through the shared launcher`,
+    );
+  }
 });
 
-test("the dashboard sheds Queue before its recent threads", () => {
+test("the dashboard sheds the Queue band before the Chats band", () => {
   // The mock encodes group priority as width — chats widest, queue smallest —
   // so on a short pane the Queue goes first and Chats survive one tier longer.
   const css = readFileSync(new URL("../styles/home-dashboard.css", import.meta.url), "utf8");
-  const queueTier = css.match(/@container \(max-height: (\d+)px\) \{\s*\n\s*\.home-dash__section--queue/);
-  const recentTier = css.match(/@container \(max-height: (\d+)px\) \{\s*\n\s*\.home-dash__section--recent/);
-  assert.ok(queueTier && recentTier, "both groups declare a shed tier");
+  const tierFor = (kind) =>
+    css.match(
+      new RegExp(
+        `@container \\(max-height: (\\d+)px\\) \\{\\s*\\n\\s*\\.cave-sf__band\\[data-kind="${kind}"\\]`,
+      ),
+    );
+  const queueTier = tierFor("queue");
+  const chatsTier = tierFor("chats");
+  assert.ok(queueTier && chatsTier, "both bands declare a shed tier");
   assert.ok(
-    Number(queueTier[1]) > Number(recentTier[1]),
-    "Queue hides at a taller pane than the recent threads — it sheds first",
-  );
-  assert.match(
-    dashboard,
-    /className="home-dash__section home-dash__section--queue"/,
-    "the Queue section opts into its own shed tier",
+    Number(queueTier[1]) > Number(chatsTier[1]),
+    "Queue hides at a taller pane than the Chats band — it sheds first",
   );
 });
 
@@ -109,7 +114,7 @@ test("starting a follow-up opens the work in place", () => {
   );
   assert.match(
     emptyState,
-    /onClick=\{\(\) => onPrompt\?\.\(`Pick up \$\{row\.id\}: \$\{row\.title\}`\)\}/,
+    /onPick: \(\) => onPrompt\?\.\(`Pick up \$\{row\.id\}: \$\{row\.title\}`\)/,
     "the zero-turn page fills its own composer",
   );
 });

@@ -54,6 +54,10 @@ export function createLocalTtsMouth(options: {
   let currentAudio: HTMLAudioElement | null = null;
   let currentUrl: string | null = null;
   let settlePlayback: (() => void) | null = null;
+  /** Bumped by every stop. A long utterance is spoken as several chunks, so
+   *  an interrupt has to stop the chunks still queued inside `speak()` too —
+   *  not just the one already playing. */
+  let generation = 0;
 
   const releaseCurrent = () => {
     currentAbort = null;
@@ -141,19 +145,29 @@ export function createLocalTtsMouth(options: {
     }
   };
 
+  const stopCurrent = () => {
+    generation += 1;
+    currentAbort?.abort();
+    currentAudio?.pause();
+    settlePlayback?.();
+    releaseCurrent();
+  };
+
   return {
     async speak(text: string) {
+      const gen = generation;
       for (const chunk of splitLocalTtsText(text)) {
-        if (cancelled) return;
+        if (cancelled || gen !== generation) return;
         await speakChunk(chunk);
       }
     },
     cancel() {
       cancelled = true;
-      currentAbort?.abort();
-      currentAudio?.pause();
-      settlePlayback?.();
-      releaseCurrent();
+      stopCurrent();
+    },
+    // Barge-in: stop this utterance but stay usable, unlike cancel().
+    interrupt() {
+      stopCurrent();
     },
   };
 }
