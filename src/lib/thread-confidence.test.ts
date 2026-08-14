@@ -114,3 +114,38 @@ describe("empty-state copy", () => {
     assert.match(THREAD_CONFIDENCE_EMPTY_STATE, /Enable response self-reporting/);
   });
 });
+
+// ── The Analytics crash: a wire payload that is not an array (cave-p9dsb) ────
+// The self-reports route redacted the whole collection, and redactSecretsDeep
+// returns the scalar string "[redacted]" once its traversal budget is spent —
+// so `reports` arrived as a string. Spreading it yielded characters, whose
+// reportedAt parses to NaN, so the comparator fell through to
+// `b.id.localeCompare(a.id)` and threw inside Array.sort, taking the whole
+// Familiar Analytics surface down through its error boundary.
+describe("deriveThreadConfidence with a malformed payload", () => {
+  it("treats a redacted (non-array) payload as unmeasured instead of throwing", () => {
+    const redacted = "[redacted]" as unknown as ThreadSelfReport[];
+    const confidence = deriveThreadConfidence(redacted);
+    assert.equal(confidence.hasData, false);
+    assert.equal(confidence.score, 0);
+    assert.equal(confidence.reportCount, 0);
+  });
+
+  it("skips rows missing an id rather than crashing the sort", () => {
+    const rows = [
+      report({ id: "r-2", overallConfidence: 90 }),
+      { reportedAt: "2026-06-25T13:00:00.000Z" } as unknown as ThreadSelfReport,
+      report({ id: "r-1", overallConfidence: 70 }),
+    ];
+    const confidence = deriveThreadConfidence(rows);
+    assert.equal(confidence.hasData, true);
+    // Only the two well-formed rows count toward the aggregate.
+    assert.equal(confidence.reportCount, 2);
+  });
+
+  it("still reports normally for a well-formed array", () => {
+    const confidence = deriveThreadConfidence([report({ id: "r-1" }), report({ id: "r-2" })]);
+    assert.equal(confidence.hasData, true);
+    assert.equal(confidence.reportCount, 2);
+  });
+});

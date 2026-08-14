@@ -20,6 +20,7 @@
     "read_files",
     "write_files"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/sop-creator",
   "x-coven": {
     "displayName": "SOP & Runbook Creator",

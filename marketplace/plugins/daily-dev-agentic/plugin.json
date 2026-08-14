@@ -21,6 +21,7 @@
     "write_files",
     "network"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/daily-dev-agentic",
   "x-coven": {
     "displayName": "daily.dev Agentic Learning",

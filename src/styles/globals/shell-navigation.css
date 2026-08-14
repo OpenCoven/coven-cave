@@ -111,11 +111,31 @@
   background: var(--ring-focus);
 }
 
-/* --rail-pad is the rail's ONE content inset. Both sections read it; neither
+/* The rail's THREE geometry constants. Both sections read them; neither
    declares its own, so the header cannot sit at a different inset per
-   section (it used to: 6px in Home, 10px in Chat). */
+   section (it used to: 6px in Home, 10px in Chat).
+
+   They also make the collapsed 56px rail and the expanded panel share ONE icon
+   column, which is what issue 4351 is about: hovering the rail peeks the panel
+   open, and every control used to slide 8px right because the rail centres its
+   squares while the panel left-aligns its rows. The three values are not free —
+   they solve for the same icon centre in both states:
+
+     rail  icon centre = --space-2 + (56 - 2*--space-2 - --rail-control)/2
+                         + --rail-control/2          = 8 + 4 + 16 = 28px
+     panel icon centre = --space-2 + --rail-pad + --rail-lead + --icon-md/2
+                                                     = 8 + 4 + 8 + 8  = 28px
+
+   so --rail-pad === (56 - 2*--space-2 - --rail-control)/2. Change one and the
+   column splits again; sidebar-rail-header.test.ts pins the constants and
+   tests/sidebar-rail-peek-parity.spec.ts measures the rendered result.
+   Design note: docs/superpowers/specs/2026-08-14-siderail-rail-peek-parity-design.md */
 .shell-nav {
-  --rail-pad: 10px;
+  --rail-pad: 4px;
+  /* Leading padding inside an expanded control, before its icon. */
+  --rail-lead: 8px;
+  /* The collapsed rail's square control box — one size for every control. */
+  --rail-control: 32px;
   padding: var(--space-3) var(--space-2);
   display: flex;
   flex-direction: column;
@@ -161,8 +181,12 @@
   }
 
   .shell-nav-panel > .shell-nav--peek {
+    /* No LEFT border/radius: the overlay is pinned to the window edge the rail
+       occupies, so a left hairline would both float in space and push every
+       control 1px right of its collapsed position (issue 4351). */
     border: 1px solid var(--border-hairline);
-    border-radius: var(--radius-panel);
+    border-left: 0;
+    border-radius: 0 var(--radius-panel) var(--radius-panel) 0;
     box-shadow: 0 14px 36px -24px var(--shadow-color);
     overflow-x: hidden;
   }
@@ -688,20 +712,34 @@
   background: var(--danger-text);
 }
 .cnav__thread.is-active {
+  --cnav-active-background: var(--bg-raised);
+  isolation: isolate;
   border-radius: var(--radius-card);
   background: var(--bg-raised);
   color: var(--text-primary);
 }
 .cnav__thread.is-active[data-attention="left-hanging"] {
+  --cnav-active-background: color-mix(in oklch, var(--color-warning) 7%, var(--bg-raised));
   background: color-mix(in oklch, var(--color-warning) 7%, var(--bg-raised));
 }
 .cnav__thread.is-active[data-attention="awaiting-human"] {
+  --cnav-active-background: color-mix(in oklch, var(--color-warning) 14%, var(--bg-raised));
   border-color: color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
   background: color-mix(in oklch, var(--color-warning) 14%, var(--bg-raised));
 }
 .cnav__thread.is-active[data-attention="overdue-human"] {
+  --cnav-active-background: var(--danger-bg);
   border-color: var(--danger-border);
   background: var(--danger-bg);
+}
+.cnav__thread.is-active::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset-block: 0;
+  inset-inline: calc(var(--rail-pad) * -1);
+  background: var(--cnav-active-background);
+  pointer-events: none;
 }
 .cnav__thread.is-active::before {
   content: "";

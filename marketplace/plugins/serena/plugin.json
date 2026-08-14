@@ -21,6 +21,7 @@
     "shell",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/serena",
   "x-coven": {
     "displayName": "Serena",

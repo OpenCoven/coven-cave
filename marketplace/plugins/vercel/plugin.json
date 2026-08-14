@@ -19,6 +19,7 @@
     "network",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/vercel",
   "x-coven": {
     "displayName": "Vercel",

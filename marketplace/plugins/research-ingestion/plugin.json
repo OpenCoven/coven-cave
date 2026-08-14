@@ -21,6 +21,7 @@
     "shell",
     "network"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/research-ingestion",
   "x-coven": {
     "displayName": "Research Ingestion",

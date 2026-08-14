@@ -14,22 +14,26 @@
  * `afsCommit: false` disables commit while showing why.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
+import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
 import {
   buildChangeTree,
   changeTotal,
   commitAvailability,
-  commitPreview,
   defaultCommitBranch,
   groupTimelineByTurn,
+  mergeTimelinePages,
   mountAvailability,
   type AfsCapabilities,
   type AfsChange,
+  type AfsCommitPreview,
   type AfsDiff,
+  type AfsFileDiff,
   type AfsSession,
   type AfsTimeline,
+  type AfsTimelineEntry,
   type AfsTreeNode,
 } from "@/lib/afs";
 
@@ -174,9 +178,12 @@ function MountBadge({ capabilities }: { capabilities: AfsCapabilities }) {
 
 function ChangesPane({ sessionId }: { sessionId: string }) {
   const [state, setState] = useState<Phase<AfsDiff>>({ phase: "loading" });
+  const [selected, setSelected] = useState<AfsChange | null>(null);
+  const [fileDiff, setFileDiff] = useState<Phase<AfsFileDiff> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    setSelected(null);
     setState({ phase: "loading" });
     getJson<AfsDiff>(`/api/afs/${encodeURIComponent(sessionId)}/diff`, "Could not read the change set.")
       .then((data) => {
@@ -190,6 +197,28 @@ function ChangesPane({ sessionId }: { sessionId: string }) {
     };
   }, [sessionId]);
 
+  useEffect(() => {
+    if (!selected) {
+      setFileDiff(null);
+      return;
+    }
+    let cancelled = false;
+    setFileDiff({ phase: "loading" });
+    getJson<AfsFileDiff>(
+      `/api/afs/${encodeURIComponent(sessionId)}/diff?path=${encodeURIComponent(selected.path)}`,
+      "Could not read the file patch.",
+    )
+      .then((data) => {
+        if (!cancelled) setFileDiff({ phase: "ready", data });
+      })
+      .catch((error: Error) => {
+        if (!cancelled) setFileDiff({ phase: "error", message: error.message });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, sessionId]);
+
   if (state.phase === "loading") {
     return <p className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">Loading changes…</p>;
   }
@@ -201,26 +230,48 @@ function ChangesPane({ sessionId }: { sessionId: string }) {
   const tree = buildChangeTree(diff.changes);
 
   return (
-    <div className="min-h-0 overflow-auto">
-      <p className="mb-1 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
-        {diff.counts.added} added · {diff.counts.modified} modified · {diff.counts.deleted} deleted ·{" "}
-        {diff.counts.bytes} bytes
-      </p>
-      {/* Truncation is an explicit affordance, never a silently short diff. */}
-      {diff.truncated ? (
-        <p className="mb-1 text-[length:var(--text-xs)] text-[var(--text-warning)]">
-          Diff truncated — this list is incomplete.
-        </p>
-      ) : null}
-      {tree.length === 0 ? (
-        <p className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">No changes against the base.</p>
-      ) : (
-        <ul className="list-none">
-          {tree.map((node) => (
-            <TreeRow key={node.path} node={node} />
-          ))}
-        </ul>
-      )}
+    <div className="@container/afs-review min-h-0 flex-1">
+      <div className="grid min-h-0 gap-2 @min-[720px]/afs-review:grid-cols-[minmax(220px,0.8fr)_minmax(0,1.2fr)]">
+        <div
+          className={`min-h-0 overflow-auto rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] p-2 ${
+            selected ? "hidden @min-[720px]/afs-review:block" : "block"
+          }`}
+        >
+          <p className="mb-1 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
+            {diff.counts.added} added · {diff.counts.modified} modified · {diff.counts.deleted} deleted ·{" "}
+            {diff.counts.bytes} bytes
+          </p>
+          {diff.truncated ? (
+            <p className="mb-1 text-[length:var(--text-xs)] text-[var(--text-warning)]">
+              Diff truncated — this list is incomplete.
+            </p>
+          ) : null}
+          {tree.length === 0 ? (
+            <p className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">
+              No changes against the base.
+            </p>
+          ) : (
+            <ul className="list-none">
+              {tree.map((node) => (
+                <TreeRow
+                  key={node.path}
+                  node={node}
+                  selectedPath={selected?.path ?? null}
+                  onSelect={setSelected}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div
+          className={`min-h-0 overflow-auto rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] p-2 ${
+            selected ? "block" : "hidden @min-[720px]/afs-review:block"
+          }`}
+        >
+          <PatchPanel selected={selected} fileDiff={fileDiff} onBack={() => setSelected(null)} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -236,38 +287,60 @@ const CHANGE_BADGE: Record<AfsChange["change"], string> = {
  * `paddingLeft`, so indentation stays on the spacing scale and this component
  * contributes no inline style for the design-token drift ratchet to count.
  */
-function TreeRow({ node }: { node: AfsTreeNode }) {
+function TreeRow({
+  node,
+  selectedPath,
+  onSelect,
+}: {
+  node: AfsTreeNode;
+  selectedPath: string | null;
+  onSelect: (change: AfsChange) => void;
+}) {
+  const selectableChange = node.children.length === 0 ? node.change : null;
+  const content = (
+    <>
+      {node.change ? (
+        <span aria-label={node.change.change} className="w-3 shrink-0 text-[var(--text-secondary)]">
+          {CHANGE_BADGE[node.change.change]}
+        </span>
+      ) : (
+        <span aria-hidden className="w-3 shrink-0" />
+      )}
+      <span className="min-w-0 grow truncate text-left text-[var(--text-primary)]">{node.name}</span>
+      {node.change ? (
+        <span className="shrink-0 text-[var(--text-secondary)]">{node.change.bytes}B</span>
+      ) : null}
+      {node.change?.attribution === "unknown" ? (
+        <span
+          className="shrink-0 text-[var(--text-warning)]"
+          title="No provenance record explains this change"
+        >
+          unattributed
+        </span>
+      ) : null}
+    </>
+  );
+
   return (
     <li>
-      <div className="flex items-center gap-2 text-[length:var(--text-xs)]">
-        {node.change ? (
-          <span
-            aria-label={node.change.change}
-            className="w-3 shrink-0 text-[var(--text-secondary)]"
-          >
-            {CHANGE_BADGE[node.change.change]}
-          </span>
-        ) : (
-          <span aria-hidden className="w-3 shrink-0" />
-        )}
-        <span className="truncate text-[var(--text-primary)]">{node.name}</span>
-        {node.change ? (
-          <span className="shrink-0 text-[var(--text-secondary)]">{node.change.bytes}B</span>
-        ) : null}
-        {/* An unexplained change is marked, never hidden (DESIGN.md §4.4). */}
-        {node.change?.attribution === "unknown" ? (
-          <span
-            className="shrink-0 text-[var(--text-warning)]"
-            title="No provenance record explains this change"
-          >
-            unattributed
-          </span>
-        ) : null}
-      </div>
+      {selectableChange ? (
+        <button
+          type="button"
+          aria-pressed={selectedPath === selectableChange.path}
+          className={`focus-ring flex w-full items-center gap-2 rounded-[var(--radius-control)] px-1 py-0.5 text-[length:var(--text-xs)] transition-colors ${
+            selectedPath === selectableChange.path ? "bg-[var(--bg-elevated)]" : "hover:bg-[var(--bg-hover)]"
+          }`}
+          onClick={() => onSelect(selectableChange)}
+        >
+          {content}
+        </button>
+      ) : (
+        <div className="flex items-center gap-2 px-1 py-0.5 text-[length:var(--text-xs)]">{content}</div>
+      )}
       {node.children.length > 0 ? (
         <ul className="list-none pl-3">
           {node.children.map((child) => (
-            <TreeRow key={child.path} node={child} />
+            <TreeRow key={child.path} node={child} selectedPath={selectedPath} onSelect={onSelect} />
           ))}
         </ul>
       ) : null}
@@ -275,8 +348,78 @@ function TreeRow({ node }: { node: AfsTreeNode }) {
   );
 }
 
+function PatchPanel({
+  selected,
+  fileDiff,
+  onBack,
+}: {
+  selected: AfsChange | null;
+  fileDiff: Phase<AfsFileDiff> | null;
+  onBack: () => void;
+}) {
+  if (!selected) {
+    return (
+      <p className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">
+        Select a changed file to review the daemon patch.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex min-h-0 flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="ghost" className="@min-[720px]/afs-review:hidden" onClick={onBack}>
+          Back to changes
+        </Button>
+        <span className="min-w-0 truncate font-mono text-[length:var(--text-xs)] text-[var(--text-primary)]">
+          {selected.path}
+        </span>
+      </div>
+      {selected.attribution === "unknown" ? (
+        <p className="text-[length:var(--text-xs)] text-[var(--text-warning)]">
+          This selected change has no recorded provenance.
+        </p>
+      ) : null}
+      {!fileDiff || fileDiff.phase === "loading" ? (
+        <p className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">Loading patch…</p>
+      ) : null}
+      {fileDiff?.phase === "error" ? (
+        <p role="alert" className="text-[length:var(--text-xs)] text-[var(--text-danger)]">
+          {fileDiff.message}
+        </p>
+      ) : null}
+      {fileDiff?.phase === "ready" ? (
+        <>
+          {fileDiff.data.truncated ? (
+            <p className="text-[length:var(--text-xs)] text-[var(--text-warning)]">
+              Patch truncated — the daemon response is incomplete.
+            </p>
+          ) : null}
+          {fileDiff.data.binary ? (
+            <p className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">Binary file.</p>
+          ) : null}
+          {fileDiff.data.patch.length === 0 ? (
+            <p className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">
+              {fileDiff.data.binary
+                ? "The daemon returned no text patch for this binary file."
+                : "The daemon returned an empty text patch."}
+            </p>
+          ) : (
+            <pre className="min-h-0 overflow-x-auto whitespace-pre rounded-[var(--radius-control)] bg-[var(--code-surface)] p-2 font-mono text-[length:var(--text-2xs)] text-[var(--text-primary)]">
+              {fileDiff.data.patch}
+            </pre>
+          )}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function TimelinePane({ sessionId }: { sessionId: string }) {
   const [state, setState] = useState<Phase<AfsTimeline>>({ phase: "loading" });
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState<string | null>(null);
+  const [trace, setTrace] = useState<{ target: TraceTarget; focusSeq: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -298,6 +441,27 @@ function TimelinePane({ sessionId }: { sessionId: string }) {
     [state],
   );
 
+  const loadMore = useCallback(async () => {
+    if (state.phase !== "ready" || !state.data.hasMore || state.data.nextCursor == null) return;
+    setLoadingMore(true);
+    setMoreError(null);
+    try {
+      const page = await getJson<AfsTimeline>(
+        `/api/afs/${encodeURIComponent(sessionId)}/timeline?since=${state.data.nextCursor}`,
+        "Could not load more operations.",
+      );
+      setState((current) =>
+        current.phase === "ready"
+          ? { phase: "ready", data: mergeTimelinePages(current.data, page) }
+          : current,
+      );
+    } catch (error) {
+      setMoreError((error as Error).message);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [sessionId, state]);
+
   if (state.phase === "loading") {
     return <p className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">Loading timeline…</p>;
   }
@@ -317,24 +481,97 @@ function TimelinePane({ sessionId }: { sessionId: string }) {
           </p>
           <ul className="list-none">
             {group.entries.map((entry) => (
-              <li key={entry.seq} className="flex items-center gap-2 text-[length:var(--text-xs)]">
-                <span className="w-10 shrink-0 text-[var(--text-secondary)]">{entry.op}</span>
-                <span className="truncate text-[var(--text-primary)]">{entry.path}</span>
-                {entry.toolCallId == null ? (
-                  <span className="shrink-0 text-[var(--text-warning)]" title="No tool call is linked to this operation">
-                    unlinked
-                  </span>
-                ) : null}
-              </li>
+              <TimelineRow
+                key={entry.seq}
+                entry={entry}
+                onTrace={() => {
+                  if (entry.sessionId && typeof entry.turn === "number") {
+                    setTrace({
+                      target: { id: entry.sessionId, title: `Session ${entry.sessionId}` },
+                      focusSeq: entry.turn,
+                    });
+                  }
+                }}
+              />
             ))}
           </ul>
         </div>
       ))}
       {state.data.hasMore ? (
-        <p className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">
-          More entries available — this view is paginated.
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={loadingMore || state.data.nextCursor == null}
+          onClick={loadMore}
+        >
+          {loadingMore ? "Loading…" : "Load more operations"}
+        </Button>
+      ) : null}
+      {moreError ? (
+        <p role="alert" className="text-[length:var(--text-xs)] text-[var(--text-danger)]">
+          {moreError}
         </p>
       ) : null}
+      {trace ? (
+        <SessionTraceOverlay target={trace.target} focusSeq={trace.focusSeq} onClose={() => setTrace(null)} />
+      ) : null}
+    </div>
+  );
+}
+
+function TimelineRow({ entry, onTrace }: { entry: AfsTimelineEntry; onTrace: () => void }) {
+  const canTrace = Boolean(entry.sessionId) && typeof entry.turn === "number";
+  return (
+    <li className="border-b border-[var(--border-hairline)] py-1 text-[length:var(--text-xs)] last:border-b-0">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="w-10 shrink-0 text-[var(--text-secondary)]">{entry.op}</span>
+        <span className="min-w-0 grow truncate text-[var(--text-primary)]">{entry.path}</span>
+        {canTrace ? (
+          <Button size="sm" variant="ghost" onClick={onTrace}>
+            Open event
+          </Button>
+        ) : null}
+      </div>
+      {entry.toolCallId == null ? (
+        <p className="pl-12 text-[var(--text-warning)]">unlinked</p>
+      ) : entry.toolCall ? (
+        <details className="mt-1 pl-12 text-[var(--text-secondary)]">
+          <summary className="focus-ring cursor-pointer rounded-[var(--radius-control)]">
+            Tool: {entry.toolCall.name}
+          </summary>
+          <div className="mt-1 grid gap-1">
+            <ToolField label="Parameters" value={entry.toolCall.parameters} />
+            <ToolField label="Result" value={entry.toolCall.result} />
+            <ToolField label="Error" value={entry.toolCall.error} />
+            <p>
+              {entry.toolCall.durationMs} ms · {entry.toolCall.startedAt}–{entry.toolCall.completedAt}
+            </p>
+          </div>
+        </details>
+      ) : (
+        <p className="pl-12 text-[var(--text-warning)]">Linked tool details unavailable</p>
+      )}
+    </li>
+  );
+}
+
+function ToolField({ label, value }: { label: string; value: unknown }) {
+  let rendered: string;
+  if (typeof value === "string") rendered = value;
+  else if (value == null) rendered = "None";
+  else {
+    try {
+      rendered = JSON.stringify(value, null, 2);
+    } catch {
+      rendered = String(value);
+    }
+  }
+  return (
+    <div>
+      <p>{label}</p>
+      <pre className="overflow-x-auto whitespace-pre-wrap rounded-[var(--radius-control)] bg-[var(--code-surface)] p-1 font-mono text-[length:var(--text-2xs)] text-[var(--text-primary)]">
+        {rendered}
+      </pre>
     </div>
   );
 }
@@ -349,14 +586,41 @@ function CommitPane({
   onCommitted: () => void;
 }) {
   const [branch, setBranch] = useState(defaultCommitBranch(session));
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"preview" | "commit" | null>(null);
+  const [preview, setPreview] = useState<Phase<AfsCommitPreview> | null>(null);
   const [result, setResult] = useState<{ kind: "ok" | "error"; message: string } | null>(null);
+  const previewRequestRef = useRef(0);
 
   const availability = commitAvailability(capabilities, session);
-  const preview = commitPreview(session, { counts: session.changes }, branch);
+  const canCommit = availability.enabled && preview?.phase === "ready" && preview.data.wouldCommit;
 
-  const run = useCallback(async () => {
-    setBusy(true);
+  const previewCommit = useCallback(async () => {
+    const requestId = ++previewRequestRef.current;
+    setBusy("preview");
+    setPreview({ phase: "loading" });
+    setResult(null);
+    try {
+      const res = await fetch(`/api/afs/${encodeURIComponent(session.id)}/commit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ branch, dryRun: true }),
+      });
+      const payload: unknown = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(errorMessage(payload, "Commit preview failed."));
+      if (previewRequestRef.current === requestId) {
+        setPreview({ phase: "ready", data: payload as AfsCommitPreview });
+      }
+    } catch (error) {
+      if (previewRequestRef.current === requestId) {
+        setPreview({ phase: "error", message: (error as Error).message });
+      }
+    } finally {
+      if (previewRequestRef.current === requestId) setBusy(null);
+    }
+  }, [branch, session.id]);
+
+  const runCommit = useCallback(async () => {
+    setBusy("commit");
     setResult(null);
     try {
       const res = await fetch(`/api/afs/${encodeURIComponent(session.id)}/commit`, {
@@ -366,13 +630,16 @@ function CommitPane({
       });
       const payload: unknown = await res.json().catch(() => null);
       if (!res.ok) throw new Error(errorMessage(payload, "Commit failed."));
-      const commit = (payload as { commit?: string }).commit ?? "";
-      setResult({ kind: "ok", message: `Materialized ${branch} at ${commit.slice(0, 7)}.` });
+      const commit = payload as { branch?: string; commit?: string };
+      setResult({
+        kind: "ok",
+        message: `Materialized ${commit.branch ?? branch} at ${(commit.commit ?? "").slice(0, 7)}.`,
+      });
       onCommitted();
     } catch (error) {
       setResult({ kind: "error", message: (error as Error).message });
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }, [branch, onCommitted, session.id]);
 
@@ -383,31 +650,66 @@ function CommitPane({
         <input
           className="focus-ring rounded border border-[var(--border-subtle)] bg-[var(--surface-sunken)] px-2 py-1 text-[var(--text-primary)]"
           value={branch}
-          onChange={(event) => setBranch(event.target.value)}
+          onChange={(event) => {
+            previewRequestRef.current += 1;
+            setBranch(event.target.value);
+            setPreview(null);
+            setBusy(null);
+          }}
+          disabled={busy === "commit"}
           spellCheck={false}
         />
       </label>
-
-      <p className="text-[var(--text-secondary)]">
-        {changeTotal(preview.counts)} files · {preview.counts.bytes} bytes would be applied.
-      </p>
-      {/* The preview is derived from the change set, not a daemon dry run
-          (bead coven-y7a). Saying so is the honest affordance. */}
-      <p className="text-[var(--text-secondary)]">{preview.caveat}</p>
 
       {availability.enabled ? null : (
         <p className="text-[var(--text-warning)]">{availability.reason}</p>
       )}
 
-      <div>
-        <Button size="sm" disabled={!availability.enabled || busy} onClick={run}>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={!availability.enabled || busy !== null}
+          onClick={previewCommit}
+        >
+          {busy === "preview" ? "Previewing…" : "Preview commit"}
+        </Button>
+        <Button size="sm" disabled={!canCommit || busy !== null} onClick={runCommit}>
           <Icon name="ph:git-branch-bold" width={12} height={12} aria-hidden />
-          {busy ? "Committing…" : "Commit"}
+          {busy === "commit" ? "Committing…" : "Commit"}
         </Button>
       </div>
 
+      {availability.enabled && preview === null ? (
+        <p className="text-[var(--text-secondary)]">Preview this branch before committing.</p>
+      ) : null}
+      {preview?.phase === "loading" ? (
+        <p className="text-[var(--text-secondary)]">Validating the commit with the daemon…</p>
+      ) : null}
+      {preview?.phase === "error" ? (
+        <p role="alert" className="text-[var(--text-danger)]">
+          {preview.message}
+        </p>
+      ) : null}
+      {preview?.phase === "ready" ? (
+        <div className="rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] p-2 text-[var(--text-secondary)]">
+          <p className="text-[var(--text-primary)]">{preview.data.branch}</p>
+          <p>
+            {preview.data.files} materialized files · {changeTotal(preview.data.counts)} changed (
+            {preview.data.counts.added} added · {preview.data.counts.modified} modified ·{" "}
+            {preview.data.counts.deleted} deleted) · {preview.data.counts.bytes} bytes
+          </p>
+          <p className="break-all">Worktree: {preview.data.worktreePath}</p>
+          <p>Provenance high-water: {preview.data.provenanceHighWater}</p>
+          <p>No branch was created.</p>
+        </div>
+      ) : null}
+
       {result ? (
-        <p className={result.kind === "ok" ? "text-[var(--text-success)]" : "text-[var(--text-danger)]"}>
+        <p
+          role={result.kind === "error" ? "alert" : "status"}
+          className={result.kind === "ok" ? "text-[var(--text-success)]" : "text-[var(--text-danger)]"}
+        >
           {result.message}
         </p>
       ) : null}

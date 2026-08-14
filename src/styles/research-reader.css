@@ -38,6 +38,14 @@
 
 .research-reader svg { display: block; }
 
+.research-reader .document-reader {
+  --document-reader-column-width: 880px;
+  --document-reader-column-gutter: var(--space-12);
+}
+.research-reader:not([data-expanded="true"]) .document-reader {
+  --document-reader-column-width: 760px;
+}
+
 /* ── layout grid: document [+ handle + rail]; TOC appears when expanded ── */
 .research-reader__grid {
   display: grid;
@@ -122,8 +130,10 @@
 
 /* ── document typography ── */
 .rr-doc { padding: 34px 0; }
-.rr-doc__column { max-width: 880px; margin: 0 auto; padding: 0 48px; }
-.research-reader:not([data-expanded="true"]) .rr-doc__column { max-width: 760px; }
+.rr-doc__column {
+  margin: 0 auto;
+  padding: 0 var(--document-reader-column-gutter);
+}
 .rr-doc__kicker { font: 600 10px var(--font-mono); letter-spacing: 0.09em; text-transform: uppercase; color: var(--research-accent); margin-bottom: 10px; }
 
 .rr-doc h1 {
@@ -397,6 +407,13 @@
 
 /* ── empty state ── */
 .rr-empty { padding: 60px 48px; text-align: center; color: var(--text-muted); font-size: var(--text-md); }
+
+@container (max-width: 30rem) {
+  .research-reader .document-reader__toolbar,
+  .research-reader .rr-doc__column {
+    padding-inline: var(--space-3);
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .research-reader,

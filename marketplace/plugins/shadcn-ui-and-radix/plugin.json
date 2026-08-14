@@ -22,6 +22,7 @@
     "read_files",
     "write_files"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/shadcn-ui-and-radix",
   "x-coven": {
     "displayName": "shadcn/ui + Radix + Tailwind",

@@ -20,6 +20,7 @@
     "shell",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/git",
   "x-coven": {
     "displayName": "Git",

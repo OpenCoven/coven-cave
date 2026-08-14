@@ -21,7 +21,7 @@
 // Advisory only: this never blocks a tool call and always exits 0.
 
 import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,6 +29,10 @@ const THROTTLE_MS = 60_000;
 // Bounds worst-case latency added to one tool call. Pushed worktrees drop out
 // of the at-risk set, so successive passes reach the rest.
 const MAX_PUSHES_PER_PASS = 3;
+
+// Ceiling on the log scan below, so an unbounded log can never stall a tool
+// call. At roughly 360 bytes a line this still covers a six-figure entry count.
+const MAX_LOG_SCAN_BYTES = 32 * 1024 * 1024;
 const PUSH_TIMEOUT_MS = 20_000;
 
 function projectRoot() {
@@ -82,6 +86,35 @@ export function unpushedCount(worktreePath) {
     return Number.isFinite(n) ? n : 0;
   } catch {
     return 0; // unborn HEAD, or unreadable mid-creation — leave it alone
+  }
+}
+
+/**
+ * The same count, but ignoring ONE remote-tracking ref.
+ *
+ * `--remotes` believes every `refs/remotes/*` still exists on the remote, and a
+ * remote-tracking ref survives the remote deleting its branch until something
+ * prunes. So after a squash merge under `delete_branch_on_merge` the stale
+ * `refs/remotes/origin/<branch>` still satisfies `--not --remotes`, the head
+ * reads as fully retained, and the unit is skipped — which is why the
+ * deleted-branch archive path below could never fire for the case it was
+ * written for (cave-fud4p, round two).
+ *
+ * Enumerating the refs explicitly is what lets one be left out; `--not` has no
+ * "except" form. With no refs left, `rev-list HEAD --not` counts everything
+ * reachable from HEAD, which is the correct answer for a head nothing retains.
+ */
+export function unpushedCountIgnoring(worktreePath, ignoredRef) {
+  try {
+    const refs = git(["for-each-ref", "--format=%(refname)", "refs/remotes/"], worktreePath)
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((ref) => ref !== ignoredRef);
+    const n = Number(git(["rev-list", "--count", "HEAD", "--not", ...refs], worktreePath).trim());
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0; // same posture as unpushedCount: unreadable means leave it alone
   }
 }
 
@@ -174,6 +207,63 @@ export function hadRemoteTracking(worktreePath, branch) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Did a push ever configure an upstream for this branch?
+ *
+ * `branch.<name>.remote` lives in `.git/config`, not in the ref store, so
+ * unlike the remote-tracking ref it SURVIVES `fetch --prune`. Only `push -u`
+ * (or an explicit `--set-upstream`) writes it, so it is a partial signal —
+ * present for some branches and not others — which is exactly why it is one of
+ * several rather than the answer.
+ */
+export function hasUpstreamConfig(worktreePath, branch) {
+  if (!branch) return false;
+  try {
+    return git(["config", "--get", `branch.${branch}.remote`], worktreePath).trim().length > 0;
+  } catch {
+    return false; // `config --get` exits 1 when unset
+  }
+}
+
+/**
+ * Branch names this hook has previously pushed, read back from its own log.
+ *
+ * The durable half of the fix. Every other "was this on the remote?" signal
+ * lives in the ref store or the config and can be pruned, rewritten, or never
+ * written; the log is this hook's own append-only record that it PUT the branch
+ * there, and it survives everything short of deleting the file.
+ *
+ * Absence proves nothing (the log is gitignored, rotatable, and empty on a
+ * fresh checkout), so this only ever ADDS proof — it can turn a branch push
+ * into an archive, never the reverse.
+ *
+ * Returns an empty set rather than null on failure: an unreadable log means no
+ * evidence, which lands on the pre-existing behaviour.
+ */
+export function previouslyPushedBranches(root) {
+  const logPath = path.join(root, ".claude", "worktree-retention-push.log");
+  const pushed = new Set();
+  try {
+    // Bounded so a pathological log can never stall a tool call. At ~360 bytes
+    // a line this still covers a six-figure entry count.
+    if (statSync(logPath).size > MAX_LOG_SCAN_BYTES) return pushed;
+    for (const line of readFileSync(logPath, "utf8").split("\n")) {
+      if (!line || !line.includes('"pushed-branch"')) continue;
+      try {
+        const entry = JSON.parse(line);
+        if (entry?.verdict === "pushed-branch" && typeof entry.branch === "string") {
+          pushed.add(entry.branch);
+        }
+      } catch {
+        // a truncated final line is normal for an append-only log
+      }
+    }
+  } catch {
+    // no log yet, or unreadable — no evidence either way
+  }
+  return pushed;
 }
 
 function branchOf(worktreePath) {
@@ -272,12 +362,35 @@ function main() {
   // Same lazy-once-per-pass shape as tagRetained: a pass where nothing is at
   // risk never reaches the network.
   let branchNames;
+  // Read once per pass, like the two lookups above, and only when something is
+  // actually at risk.
+  let pushedBefore;
   const deletedUpstream = (worktreePath, branch) => {
     if (!branch) return false;
     if (branchNames === undefined) branchNames = remoteBranchNames(root);
     if (!branchNames) return false; // remote unreachable — no proof, stay branch-first
     if (branchNames.has(branch)) return false;
-    return hadRemoteTracking(worktreePath, branch);
+    // Absent from the remote. Deleted, or never pushed? Three signals, ANY of
+    // which proves it was once there — and each survives something the others
+    // do not (cave-xjuup):
+    //
+    //   - the remote-tracking ref, which a `fetch --prune` erases;
+    //   - `branch.<name>.remote`, which only `push -u` writes;
+    //   - this hook's own log, which records that IT pushed the branch.
+    //
+    // One signal was not enough. GitHub Desktop prunes routinely here, so the
+    // tracking ref was gone by the time the hook looked, the branch read as
+    // "never pushed", and the hook re-created a head GitHub had deliberately
+    // deleted at merge: 9 of 36 remote branches were resurrected merged heads,
+    // 29 pushes across them, one branch re-created three separate times.
+    //
+    // Each signal only ever ADDS proof, so this can turn a branch push into an
+    // archive and never the reverse. No signal at all still means branch-first
+    // — a never-pushed branch is still retained as a readable branch.
+    if (hadRemoteTracking(worktreePath, branch)) return true;
+    if (hasUpstreamConfig(worktreePath, branch)) return true;
+    if (pushedBefore === undefined) pushedBefore = previouslyPushedBranches(root);
+    return pushedBefore.has(branch);
   };
 
   let pushes = 0;
@@ -285,12 +398,24 @@ function main() {
   for (const wt of worktrees) {
     if (pushes >= MAX_PUSHES_PER_PASS) break;
     if (wt.bare) continue;
-    const unpushed = unpushedCount(wt.path);
-    if (unpushed === 0) continue;
+    let unpushed = unpushedCount(wt.path);
     const branch = branchOf(wt.path);
     // `main` is protected and never the thing at risk; pushing it is exactly
     // the direct-to-main move the repository forbids.
     if (branch === "main") continue;
+
+    // A head can read as retained purely because of its OWN stale tracking ref
+    // — the exact state a squash merge plus `delete_branch_on_merge` leaves
+    // behind, and the moment a session turns to retiring the worktree. Recheck
+    // before believing "0", cheapest signal first: recount locally without that
+    // one ref, and only ask the remote when the answer actually depends on it.
+    // A head still covered by any other ref needs no network call at all, so a
+    // pass with nothing genuinely at risk stays offline as before.
+    if (unpushed === 0 && branch) {
+      const withoutOwnRef = unpushedCountIgnoring(wt.path, `refs/remotes/origin/${branch}`);
+      if (withoutOwnRef > 0 && deletedUpstream(wt.path, branch)) unpushed = withoutOwnRef;
+    }
+    if (unpushed === 0) continue;
 
     // Already archived: the remote advertises a tag at exactly this HEAD, which
     // is the guard's own definition of retained. Re-creating the branch here is

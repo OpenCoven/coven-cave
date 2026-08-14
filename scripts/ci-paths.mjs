@@ -11,6 +11,11 @@ const E2E_PATH =
   /^(?:src\/(?:app|components|lib|styles)\/|tests\/|server\.(?:mjs|ts)$|playwright\.config|package\.json$|pnpm-lock\.yaml$)/;
 const IOS_PATH =
   /^(?:apps\/ios\/|scripts\/(?:ios-xcodegen\.sh|build-ios-(?:markdown|terminal)\.mjs|ci-paths(?:\.test)?\.mjs)$|package\.json$|pnpm-lock\.yaml$|\.github\/workflows\/ci\.yml$)/;
+// docs/ is deliberately absent from FRONTEND_PATH — a documentation change
+// should not pay for lint, typecheck, and build. But that also meant the docs
+// index ratchet, which only fires when a doc is added or renamed, never ran on
+// the change it guards. This class gates one cheap builtins-only check instead.
+const DOCS_PATH = /^docs\//;
 
 export function classifyCiPaths(paths) {
   const normalized = paths
@@ -21,6 +26,7 @@ export function classifyCiPaths(paths) {
     rust: normalized.some((file) => RUST_PATH.test(file)),
     e2e: normalized.some((file) => E2E_PATH.test(file) || ROOT_RUNTIME_PATH.test(file)),
     ios: normalized.some((file) => IOS_PATH.test(file)),
+    docs: normalized.some((file) => DOCS_PATH.test(file)),
   };
 }
 
@@ -50,7 +56,7 @@ function main() {
   const paths = changedPaths(base, head);
   const result = paths
     ? classifyCiPaths(paths)
-    : { frontend: true, rust: true, e2e: true, ios: true };
+    : { frontend: true, rust: true, e2e: true, ios: true, docs: true };
   for (const [name, enabled] of Object.entries(result)) {
     process.stdout.write(`${name}=${enabled}\n`);
   }

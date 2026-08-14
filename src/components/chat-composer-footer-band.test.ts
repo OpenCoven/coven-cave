@@ -27,7 +27,13 @@ const css = [
   .map((sheet) => read(sheet))
   .join("\n");
 
-// ── The control row: voice · grouped menu (attach folded inside) · send ─────
+// ── Composer controls: edge Tools · voice · live context · enhance · send ───
+const edgeActionsMatch = source.match(
+  /<div className="cave-composer-edge-actions">[\s\S]*?<\/div>\s*\{attachments\.length > 0/,
+);
+assert.ok(edgeActionsMatch, "expected the composer edge-actions row in ChatView");
+const edgeActions = edgeActionsMatch[0];
+
 const controlRowMatch = source.match(
   /<div className="cave-composer-control-row">[\s\S]*?<div className="cave-composer-submit-row">[\s\S]*?<\/div>\s*<\/div>/,
 );
@@ -36,14 +42,19 @@ assert.ok(controlRowMatch, "expected the composer control row in ChatView");
 const controlRow = controlRowMatch[0];
 
 assert.match(
-  controlRow,
-  /aria-label="Voice call"[\s\S]*?<ComposerActionsMenu[\s\S]*?<div className="cave-composer-submit-row">[\s\S]*?aria-label="(?:Send message|Cancel response)"/,
-  "the control row should keep direct Voice call, grouped ComposerActionsMenu, and then the submit control in order",
+  edgeActions,
+  /<ComposerActionsMenu[\s\S]*?triggerVariant="tools"/,
+  "the composer edge should mount the grouped actions cascade as the Tools control",
 );
 assert.match(
   controlRow,
+  /aria-label="Voice call"[\s\S]*?<ComposerContextMeter[\s\S]*?<div className="cave-composer-submit-row">[\s\S]*?<EnhanceControl[\s\S]*?aria-label="(?:Send message|Cancel response)"/,
+  "the control row should keep direct Voice, truthful context, Enhance, and then submit controls in order",
+);
+assert.match(
+  edgeActions,
   /<ComposerActionsMenu\s*\n\s*attach=\{\{\s*\n\s*onSelect: \(\) => fileInputRef\.current\?\.click\(\)/,
-  "attachment moved into the actions menu ('Add files or photos') — no standalone attach button",
+  "attachment moved into the Tools menu ('Add files or photos') — no standalone attach button",
 );
 assert.doesNotMatch(
   controlRow,

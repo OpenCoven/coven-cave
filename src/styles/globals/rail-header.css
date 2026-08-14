@@ -34,16 +34,22 @@
 }
 
 /* The scope trigger and the New-chat button are deliberately the same box:
-   full width, 34px, control radius. They stack, so any mismatch reads as a
-   misalignment rather than a style choice. */
+   full width, --rail-control tall, control radius, --rail-lead before the
+   glyph. They stack, so any mismatch reads as a misalignment rather than a
+   style choice — and --rail-lead is what keeps their glyphs on the same icon
+   column as the nav rows below AND as their own collapsed-rail forms (issue 4351). */
 .rail-header__scope .familiar-switcher__trigger--labeled {
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;
   max-width: none;
-  min-height: 34px;
+  min-height: var(--rail-control);
   gap: 10px;
-  padding: 0 var(--space-2);
+  /* Border-compensated: this control is the only 2px-bordered box on the
+     column, and its edge plus the odd width of the scope glyph would otherwise
+     carry the avatar off the icon column that the (border-less) nav rows below
+     establish. Measured against the rendered box, not derived from the border. */
+  padding: 0 calc(var(--rail-lead) - 1px);
   justify-content: flex-start;
   border-radius: var(--radius-control);
   border: 2px solid var(--accent-presence);
@@ -76,8 +82,9 @@
   width: 100%;
   min-width: 0;
   gap: 10px;
-  min-height: 34px;
-  padding: 0 var(--space-2);
+  min-height: var(--rail-control);
+  /* Border-compensated, same reason as the scope trigger above (1px here). */
+  padding: 0 calc(var(--rail-lead) - 1px);
   border-radius: var(--radius-control);
   border: 1px solid color-mix(in oklch, var(--accent-presence) 24%, var(--border-hairline));
   background: color-mix(in oklch, var(--accent-presence) 9%, transparent);
@@ -124,9 +131,14 @@
 }
 
 /* ── Collapsed 56px icon rail ─────────────────────────────────────────────── */
-/* The header survives the collapse as two centered controls: the scope trigger
-   keeps its 28px avatar (label and caret drop) and New chat becomes the rail's
-   one FILLED square, so the primary action still stands out. */
+/* The header survives the collapse as two centered --rail-control squares: the
+   scope trigger keeps its avatar (label and caret drop) and New chat keeps its
+   glyph. Collapsing changes the WIDTH of a control and nothing else — same box
+   height, same skin, same glyph size, same icon column — so hovering the rail
+   open reveals labels instead of relocating buttons (issue 4351).
+   New chat used to invert to a solid --accent-presence fill here, which made
+   the one control that changed the most on peek also the loudest thing in the
+   rail; it now keeps the quiet-primary tint it wears in the panel. */
 
 .shell-nav--rail .rail-header {
   padding-left: 0;
@@ -147,46 +159,21 @@
 }
 
 .shell-nav--rail .rail-header__scope .familiar-switcher__trigger,
-.shell-nav--rail .rail-header__scope .familiar-switcher__trigger--labeled {
-  flex: 0 0 auto;
-  width: 28px;
-  min-width: 28px;
-  min-height: 28px;
-  padding: 0;
-  justify-content: center;
-  border-width: 1px;
-}
-
+.shell-nav--rail .rail-header__scope .familiar-switcher__trigger--labeled,
 .shell-nav--rail .rail-header__new {
+  flex: 0 0 auto;
   justify-content: center;
-  flex: none;
   gap: 0;
-  width: 36px;
-  height: 36px;
-  min-height: 0;
+  width: var(--rail-control);
+  min-width: var(--rail-control);
+  height: var(--rail-control);
+  min-height: var(--rail-control);
   padding: 0;
-  margin: 0 auto;
-  border: 1px solid var(--accent-presence);
-  border-radius: var(--radius-control);
-  background: var(--accent-presence);
-  color: var(--accent-presence-foreground);
-  font-weight: 500;
+  margin-inline: auto;
 }
 
-.shell-nav--rail .rail-header__new:hover {
-  background: var(--accent-presence-hover);
-  border-color: var(--accent-presence-hover);
-  color: var(--accent-presence-foreground);
-}
-
-.shell-nav--rail .rail-header__new-icon,
-.shell-nav--rail .rail-header__new:hover .rail-header__new-icon {
-  width: var(--icon-lg);
-  height: var(--icon-lg);
-  color: var(--accent-presence-foreground);
-}
-
-/* Touch targets on the mobile drawer, same as every other rail control. */
+/* Touch targets on the mobile drawer, same as every other rail control. There
+   is no icon rail below 1024px, so this never fights the square above. */
 @media (max-width: 1023px) {
   .rail-header__new,
   .rail-header__scope .familiar-switcher__trigger--labeled {

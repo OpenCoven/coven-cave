@@ -18,7 +18,9 @@ assert.match(chatView, /selectedFiles: \[\.\.\.mentionedFiles, \.\.\.attachments
 assert.match(chatView, /recentThreadTitle: session\?\.title \?\? null/, "enhance request carries the thread title as context");
 assert.match(chatView, /familiarId: familiar\.id/, "enhance streams through the thread's familiar");
 assert.match(chatView, /disabled: busy/, "enhance is blocked while a send is in flight");
-assert.doesNotMatch(chatView, /onEnhance[\s\S]{0,600}?send\(/, "enhancing must not send automatically");
+const directEnhanceBlock = chatView.match(/<EnhanceControl[\s\S]*?\/>/)?.[0] ?? "";
+assert.match(directEnhanceBlock, /onEnhance=\{promptEnhance\.enhance\}/, "the direct Enhance control uses the shared hook");
+assert.doesNotMatch(directEnhanceBlock, /send\(/, "enhancing must not send automatically");
 assert.doesNotMatch(chatView, /ComposerPlusMenu/, "ChatView no longer reaches enhance through the legacy ComposerPlusMenu");
 assert.match(
   chatView,
