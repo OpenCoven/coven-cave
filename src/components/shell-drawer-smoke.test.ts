@@ -129,4 +129,44 @@ assert.match(
   "MobileDrawer disables body overscroll while open",
 );
 
+// The backdrop must be a real, keyboard-reachable <button> (cave-rl980 Task 5
+// spec finding), not a role="presentation" <div> that only a pointer can
+// dismiss. Match the exact prop order/shape the spec calls for.
+assert.match(
+  mobileDrawer,
+  /<button\s*\n\s*type="button"\s*\n\s*className="mobile-drawer-backdrop"\s*\n\s*data-drawer-slot=\{open\}\s*\n\s*aria-label="Close drawer"\s*\n\s*onClick=\{onClose\}\s*\n\s*\/>/,
+  "the backdrop renders as <button type=\"button\" className=\"mobile-drawer-backdrop\" data-drawer-slot={open} aria-label=\"Close drawer\" onClick={onClose} />",
+);
+assert.doesNotMatch(
+  mobileDrawer,
+  /<div\s*\n\s*className="mobile-drawer-backdrop"/,
+  "the backdrop is no longer a div (a div backdrop is pointer-only and unreachable from the keyboard)",
+);
+assert.doesNotMatch(
+  mobileDrawer,
+  /role="presentation"/,
+  "role=\"presentation\" was the div-only escape hatch; the button backdrop needs no such override",
+);
+
+// Background-inert cleanup ordering (cave-rl980 Task 5 spec finding): React
+// runs a component's passive-effect cleanups in top-down declaration order
+// (verified against the actual React runtime in
+// mobile-drawer-inert-focus-order.test.tsx, which exercises this exact
+// ordering through react-test-renderer + the real useFocusTrap hook — this
+// file only pins the SOURCE shape so the two can't silently drift apart).
+// The inert-toggling effect's cleanup (which clears `shell.inert`) must run
+// BEFORE useFocusTrap's own cleanup (which calls `.focus()` to return focus
+// to the shell toggle) — focusing an element inside an inert subtree is a
+// silent no-op, so the inert effect must be declared first.
+const inertEffectIndex = mobileDrawer.indexOf("shell.inert = true;");
+const focusTrapCallIndex = mobileDrawer.indexOf("useFocusTrap(open ===");
+assert.ok(
+  inertEffectIndex !== -1 && focusTrapCallIndex !== -1,
+  "both the inert effect and the useFocusTrap(...) call are present",
+);
+assert.ok(
+  inertEffectIndex < focusTrapCallIndex,
+  "the inert-toggling effect is declared BEFORE useFocusTrap(...) so its cleanup (clearing shell.inert) runs before useFocusTrap's cleanup (which restores focus) — see mobile-drawer.tsx's comment above the inert effect",
+);
+
 console.log("shell-drawer-smoke.test.ts OK");

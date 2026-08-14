@@ -61,6 +61,28 @@ test("checkpoint tiles derive from real data and are omitted when missing", () =
   assert.doesNotMatch(detail, /pricing pages for two hosted harnesses/);
 });
 
+test("checkpoint direction can be drafted agentically without auto-continuing", () => {
+  assert.match(detail, /generateResearchRefineDirection/);
+  assert.match(detail, /Draft with familiar/);
+  assert.match(detail, /Redraft with familiar/);
+  assert.match(detail, /Reading the checkpoint and choosing the highest-value next pass…/);
+  assert.match(detail, /directionRef\.current === baseDraft/);
+  assert.match(detail, /Direction ready — your edits were kept\./);
+  assert.match(detail, /Apply direction/);
+  assert.match(detail, /Keep mine/);
+  assert.match(detail, /maxLength=\{RESEARCH_DIRECTION_MAX_LENGTH\}/);
+  assert.match(
+    detail,
+    /onClick=\{\(\) => void runAction\(\{ action: "refine", direction \}\)\}/,
+  );
+  assert.doesNotMatch(
+    detail,
+    /generateResearchRefineDirection\([\s\S]{0,800}?runAction\(\{ action: "refine"/,
+  );
+  assert.match(css, /\.research-desk-refine__actions \{/);
+  assert.match(css, /\.research-desk-refine__suggestion \{/);
+});
+
 test("running and completed blocks stay honest about their data", () => {
   // Live activity lists real step reports; absence is said, not faked.
   assert.match(detail, /iteration\?\.steps\?\.length \? \(/);
@@ -78,13 +100,28 @@ test("running and completed blocks stay honest about their data", () => {
 test("run failures disclose persisted diagnostics without fabricating a cause", () => {
   assert.match(detail, /View diagnostics/);
   assert.match(detail, /<Modal[\s\S]*?breadcrumb=\{\["Research", "Diagnostics"\]\}/);
+  assert.match(detail, /researchDiagnosticTrace\(mission\)/);
+  assert.match(detail, /Copy trace JSON/);
+  assert.match(detail, /copyDiagnosticTrace/);
+  // Bind the transient copy confirmation to its mission at render time: an
+  // effect-only reset would paint the next mission as copied for one frame.
+  assert.match(detail, /const diagnosticsCopied = diagnosticsCopiedFor === missionId/);
+  assert.match(detail, /setDiagnosticsCopiedFor\(startedFor\)/);
+  assert.match(detail, /setActionError\(null\);\n    const copied = await copyText\(traceJson\)/);
+  assert.match(detail, /\{actionError \? <p className="research-mission-error" role="alert">\{actionError\}<\/p> : null\}/);
+  assert.match(detail, /actionError && !diagnosticsOpen/);
+  assert.match(detail, /Daemon trace: not recorded/);
   assert.match(detail, /\["Error", mission\.lastError \?\? "No current error"\]/);
   assert.match(detail, /\["Flow run", iteration\?\.flowRunId \?\? "No flow run recorded"\]/);
   assert.match(detail, /\["Session", sessionId \?\? "No session recorded"\]/);
   assert.match(detail, /primaryArtifact\.relativePath/);
   assert.match(detail, /\["Sources", `\$\{mission\.sources\.length\} recorded/);
   assert.match(css, /\.research-mission-diagnostics/);
+  assert.match(css, /\.research-mission-diagnostics__timeline/);
+  assert.match(css, /\.research-mission-diagnostics__finding/);
   assert.match(css, /var\(--bg-sunken\)/);
+  assert.match(css, /research-mission-diagnostics__phase[^\n]*var\(--radius-pill\)/);
+  assert.doesNotMatch(css, /--radius-full/);
 });
 
 // ── Evidence triage: exact ledger source-update mechanism ──────────────────
@@ -360,7 +397,7 @@ test("an action settling after a mission switch is discarded", () => {
   // so the fresh mission never inherits a disabled action bar.
   assert.match(
     detail,
-    /missionIdRef\.current = missionId;\s*setBusy\(false\);\s*setRetryRoot\(null\);\s*setActionError\(null\);\s*setDirection\(""\);\s*\}, \[missionId\]\)/,
+    /missionIdRef\.current = missionId;[\s\S]*?setBusy\(false\);\s*setDirectionDrafting\(false\);\s*setDirectionSuggestion\(null\);\s*setRetryRoot\(null\);\s*setActionError\(null\);\s*setDirection\(""\);\s*\}, \[missionId\]\)/,
   );
 });
 

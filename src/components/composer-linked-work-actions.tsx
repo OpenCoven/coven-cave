@@ -90,7 +90,7 @@ function useLinkedWorkController({
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          lifecycle: "completed",
+          status: "done",
           lifecycleReason: sessionId
             ? `Marked done from chat (session ${sessionId})`
             : "Marked done from chat",

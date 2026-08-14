@@ -16,8 +16,18 @@ assert.match(source, /detail is withheld to protect project data/, "step detail 
 assert.match(
   source,
   /function safeRuntimeProcessDetail[\s\S]*?runtime diagnostic output was withheld to protect local data/,
-  "only the fixed runtime-process exit-code diagnostic may be disclosed",
+  "the fixed runtime-process exit-code diagnostic remains safe to disclose",
 );
+assert.match(
+  source,
+  /step\.id !== "runtime-launch-diagnostics"[\s\S]*?JSON\.parse\(step\.detail\)/,
+  "the launch record is parsed and validated before it can be disclosed",
+);
+assert.match(source, /value\.privacy !== "paths-and-environment-values-redacted"/, "the fixed privacy contract is required");
+assert.match(source, /value\.failure\.kind !== "process-exit"/, "incomplete failure records fail closed");
+assert.match(source, /typeof value\.failure\.emittedDiagnostic !== "boolean"/, "failure evidence has a strict boolean contract");
+assert.match(source, /Number\(entry\.pathEntryIndex\) >= 512/, "PATH indexes are bounded to the server resolution cap");
+assert.match(source, /"coven-adapter"/, "the actual Coven adapter preflight provenance is rendered safely");
 assert.match(
   source,
   /safeRuntimeProcessDetail\(p\) \?\? "A runtime step failed\. Its detail is withheld to protect project data\."/,

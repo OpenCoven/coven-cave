@@ -28,8 +28,8 @@ assert.match(
 );
 assert.match(
   source,
-  /fetch\(`\/api\/board\/\$\{encodeURIComponent\(t\.id\)\}`,[\s\S]*?method: "PATCH"[\s\S]*?lifecycle: "completed"[\s\S]*?lifecycleReason: sessionId[\s\S]*?Marked done from chat \(session \$\{sessionId\}\)/,
-  "mark-done keeps the exact board PATCH lifecycle mutation path",
+  /fetch\(`\/api\/board\/\$\{encodeURIComponent\(t\.id\)\}`,[\s\S]*?method: "PATCH"[\s\S]*?status: "done"[\s\S]*?lifecycleReason: sessionId[\s\S]*?Marked done from chat \(session \$\{sessionId\}\)/,
+  "mark-done uses the status mutation path so the server derives lifecycle",
 );
 assert.match(
   source,

@@ -38,6 +38,11 @@ struct ConnectionView: View {
         case found(port: Int?)
         /// Desktop answered but is token-gated — it IS the desktop; pair it.
         case pairingRequired
+        /// Something answered, but the stored credential cannot safely be sent
+        /// to it. Distinct from `failed`: the address is reachable, so saying
+        /// "couldn't reach" would be untrue and would send the user hunting a
+        /// network problem that does not exist.
+        case credentialBlocked(String)
         case failed(ProbeFailure?)
     }
 
@@ -363,6 +368,13 @@ struct ConnectionView: View {
             )
             .font(.caption.weight(.medium))
             .foregroundStyle(chrome.accent)
+        case .credentialBlocked(let message):
+            Label(
+                message,
+                systemImage: "lock.trianglebadge.exclamationmark"
+            )
+            .font(.caption)
+            .foregroundStyle(.orange)
         case .failed(let failure):
             Label(
                 failure.map(\.previewLine) ?? "Couldn’t reach that address yet.",
@@ -392,6 +404,8 @@ struct ConnectionView: View {
             liveCheck = .found(port: url.port)
         case .unauthorized:
             liveCheck = .pairingRequired
+        case .credentialFailure(let message):
+            liveCheck = .credentialBlocked(message)
         case .unreachable(let failure):
             liveCheck = .failed(failure)
         }

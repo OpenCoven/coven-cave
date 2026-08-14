@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
+  attachmentMediaKind,
   buildPromptWithAttachments,
   normalizeChatAttachments,
   stripPreviewOnlyAttachmentFields,
@@ -73,6 +74,55 @@ assert.match(
   /2\. bundle\.zip \(application\/zip, 2\.0 KB\)\n\(file attached as metadata only — text content was not available\)/,
 );
 assert.doesNotMatch(mediaPrompt, /\(content unavailable\)/);
+
+// Audio gets its own metadata-only wording, distinct from video's.
+{
+  const audioPrompt = buildPromptWithAttachments("Listen.", normalizeChatAttachments([
+    { name: "memo.mp3", type: "audio/mpeg", mimeType: "audio/mpeg", size: 4096 },
+  ]));
+  assert.match(
+    audioPrompt,
+    /1\. memo\.mp3 \(audio\/mpeg, 4\.0 KB\)\n\(audio attached as metadata only — sound is not decoded yet\)/,
+  );
+}
+
+// ── Playable media data URLs ─────────────────────────────────────────────────
+// Allowlisted audio/video ride the same dataUrl channel as images, with the
+// larger media cap; anything off the allowlist is stripped as before.
+{
+  const clip = `data:video/mp4;base64,${"QUJD".repeat(64)}`;
+  const [video] = normalizeChatAttachments([
+    { name: "demo.mp4", type: "video/mp4", size: 192, dataUrl: clip },
+  ]);
+  assert.equal(video.dataUrl, clip, "an allowlisted video payload survives normalization");
+  assert.equal(video.mimeType, "video/mp4");
+  assert.equal(attachmentMediaKind(video), "video");
+
+  const [audio] = normalizeChatAttachments([
+    { name: "memo.mp3", type: "audio/mpeg", size: 192, dataUrl: `data:audio/mpeg;base64,${"QUJD".repeat(64)}` },
+  ]);
+  assert.ok(audio.dataUrl, "an allowlisted audio payload survives normalization");
+  assert.equal(attachmentMediaKind(audio), "audio");
+
+  const [mkv] = normalizeChatAttachments([
+    { name: "demo.mkv", type: "video/x-matroska", size: 192, dataUrl: `data:video/x-matroska;base64,${"QUJD".repeat(64)}` },
+  ]);
+  assert.equal(mkv.dataUrl, undefined, "media off the allowlist is stripped");
+  assert.equal(attachmentMediaKind(mkv), null);
+
+  // Media past the 50MB cap is refused by size.
+  const bigBody = "QUJD".repeat(Math.floor((51 * 1024 * 1024) / 3));
+  const [oversize] = normalizeChatAttachments([
+    { name: "big.mp4", type: "video/mp4", dataUrl: `data:video/mp4;base64,${bigBody}` },
+  ]);
+  assert.equal(oversize.dataUrl, undefined, "media past the cap is dropped");
+
+  // The send-body strip keeps validated media payloads alongside images.
+  const kept = stripPreviewOnlyAttachmentFieldsKeepingImages([
+    { name: "demo.mp4", type: "video/mp4", mimeType: "video/mp4", size: 192, dataUrl: clip },
+  ]);
+  assert.equal(kept[0].dataUrl, clip, "media payloads survive the keeping-images strip");
+}
 
 const attachmentOnly = buildPromptWithAttachments("", [attachments[0]]);
 assert.match(attachmentOnly, /^Review the attached file\./);

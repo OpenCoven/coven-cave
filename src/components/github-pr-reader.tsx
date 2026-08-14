@@ -3,7 +3,7 @@
 /**
  * GitHubPrReader — the full-width pull-request reader (cave-l82dm).
  *
- * Frame: `Coven Pr.dc.html`. The Coding Room's review rail links here as
+ * Frame: `Coven Pr.dc.html`. The Coding Desk's review rail links here as
  * "Full PR view", which is the whole reason it exists: the rail is a sidebar,
  * and a conversation, a commit list and a unified diff are not sidebar shapes.
  *

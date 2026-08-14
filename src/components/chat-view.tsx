@@ -40,6 +40,7 @@ import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { ChatSessionContextRow } from "@/components/chat-session-context-row";
 import { ChatThreadMinimap, ChatThreadSpine } from "@/components/chat-thread-instruments";
+import { ChatRunRail } from "@/components/chat-run-rail";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
@@ -102,6 +103,11 @@ import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
+import {
+  CHAT_VIEW_HANDOFF_SCOPE,
+  claimInitialPromptHandoff,
+  initialPromptHandoffClaimed,
+} from "@/lib/initial-prompt-handoff";
 import { useCopy } from "@/lib/use-copy";
 import { parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure } from "@/lib/harness-failure";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
@@ -118,6 +124,7 @@ import { FamiliarInlineCard } from "@/components/familiar-inline-card";
 import { ArtifactComments } from "@/components/artifact-comments";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
 import { ChatArchiveNudge } from "@/components/chat-archive-nudge";
+import type { SessionRemovalReason } from "@/lib/chat-session-removal";
 import {
   isChatArchiveNudgeDismissed,
   markChatArchiveNudgeDismissed,
@@ -284,8 +291,11 @@ import { useComposerHistory } from "@/lib/use-composer-history";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversation-tree";
-import { appendCollapsingNewlines } from "@/lib/stream-text";
 import { createChunkCoalescer } from "@/lib/chunk-coalescer";
+import {
+  createCanonicalResponseBuffer,
+  type CanonicalResponseBuffer,
+} from "@/lib/canonical-response-buffer";
 import { consumeChatSse } from "@/lib/chat-sse";
 import {
   EMPTY_CHAT_STREAM_CLIENT_HEALTH,
@@ -301,8 +311,8 @@ import {
 } from "@/lib/thread-self-report";
 import { streamFamiliarText } from "@/lib/familiar-stream";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
-import { EnhanceStrip } from "@/components/composer-enhance";
-import { AttachmentList, AttachmentThumb, InlineImageAttachments, formatAttachmentBytes, isInlineImageAttachment } from "./chat-attachment-cards";
+import { EnhanceControl, EnhanceStrip } from "@/components/composer-enhance";
+import { AttachmentList, AttachmentThumb, InlineImageAttachments, InlineMediaAttachments, formatAttachmentBytes, isInlineImageAttachment, isInlineMediaAttachment } from "./chat-attachment-cards";
 import { preloadMarkdownPreview } from "@/lib/markdown-preview";
 import {
   type CreationRefreshState,
@@ -369,6 +379,13 @@ type Props = {
    * Allow that one first prompt to send into the reserved, otherwise-empty
    * conversation instead of treating it as a resumed thread. */
   autoSendInitialPrompt?: boolean;
+  /** Stable id for THIS handoff, for callers that can remount the view while
+   * `initialPrompt` is still set. The auto-send guard is otherwise an instance
+   * ref, so a remount re-arms it and sends the prompt twice — which is what the
+   * Task Work cockpit did every time its pane-set-keyed Group remounted to show
+   * the code rail (cave-6une3). Supplying this moves the latch out of the
+   * instance and into `initial-prompt-handoff`, keyed by this id. */
+  initialPromptHandoffId?: string | null;
   /** The Board reserved this Cave conversation id before any native harness
    * session exists, so the first send must not pass it as a resume token. */
   startNewConversation?: boolean;
@@ -408,6 +425,7 @@ type Props = {
   /** Workspace-owned session list; the starting page's "Continue" row reads it
    *  so no extra fetch rides on every new chat. */
   sessions?: SessionRow[];
+  composerDraftKey?: string;
   composeInstance?: number;
   onSessionStarted?: (request: ChatSessionPromotionRequest) => void;
   /** Pre-session voice call: ChatView created a conversation for the call;
@@ -416,11 +434,30 @@ type Props = {
   /** An auto-created call session was discarded (empty, hung up) while the
    *  view was still parked on it — the router returns the view to a fresh
    *  compose state instead of leaving the user composing into a deleted
-   *  session. Not called when the user had already switched away. */
-  onVoiceSessionDiscarded?: () => void;
+   *  session. Not called when the user had already switched away. Passed the
+   *  discarded session's id so the router can re-check it's still the one
+   *  showing before navigating (cave-rl980 Task 4 final review) — the discard
+   *  itself is async, and the user may have switched threads or familiars
+   *  while it was in flight. */
+  onVoiceSessionDiscarded?: (sessionId: string) => void;
   onSessionsChanged?: () => void;
   onSessionsDeleted: (sessionIds: readonly string[]) => void;
-  onBack?: () => void;
+  /** Fires exactly when THIS view's own session is confirmed removed —
+   *  archived, deleted, or a discarded empty voice/pre-session — immediately
+   *  before onBack/onVoiceSessionDiscarded navigates away. Unlike
+   *  onSessionsChanged/onSessionsDeleted (which also fire for unrelated
+   *  refreshes), a consumer can treat this as an unambiguous removal signal
+   *  for the exact session named, with no need to infer it from call order. */
+  onSessionRemoved?: (sessionId: string, reason: SessionRemovalReason) => void;
+  /** Passed the session this back navigation is for — the removal call sites
+   *  below always pass their own (non-null) sessionId; the two "Back to
+   *  sessions" render buttons pass whatever is currently shown. ChatRouter
+   *  only actually navigates when it's still displaying that exact session
+   *  (cave-rl980 Task 4 final review): archiveChat/deleteChat/setChatArchived
+   *  are async, and by the time the request settles the user may have
+   *  already switched to a different thread or familiar, whose view must
+   *  never be clobbered by a now-irrelevant completion. */
+  onBack?: (sessionId: string | null) => void;
   onSlashCommand?: (command: string, args: string) => boolean;
   onOpenOnboarding?: () => void;
   /** Reverse navigation for a chat that's linked to a board task — clicking
@@ -506,6 +543,7 @@ type LiveStreamGeneration = {
   sessionAliases: Set<string>;
   controller: AbortController;
   runId: string;
+  responseText: CanonicalResponseBuffer;
   clearWatermark: string;
   streamHealth: () => ChatStreamClientHealth;
   markAttentionCleared: (sessionId: string) => void;
@@ -526,9 +564,9 @@ type ComposerResponseSpeed = CommandResponseSpeed;
 // the .cave-composer-input rule (13 lines: 13*24 + 20px padding).
 const COMPOSER_MAX_HEIGHT = 332;
 // Persist the in-progress composer text so a page reload doesn't eat a
-// half-written message. The composer is a single shared input (it isn’t
-// remounted per session), so one key mirrors the in-memory behaviour.
-const COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1";
+// half-written message. Callers can isolate mounted composers while the
+// default retains the original shared slot.
+export const DEFAULT_CHAT_COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1";
 const COMPOSER_DRAFT_WRITE_DELAY_MS = 250;
 // Persisted ↑/↓ prompt-history recall stack for the chat composer.
 const COMPOSER_HISTORY_KEY = "cave:chat-composer-history:v1";
@@ -549,6 +587,7 @@ const CHUNK_FLUSH_MS = 40;
 const CHAT_ATTACHMENT_ACCEPT = [
   "image/*",
   "video/*",
+  "audio/*",
   "application/pdf",
   "application/json",
   "text/*",
@@ -676,13 +715,47 @@ type ErrorStripTool = { id: string; name: string; input?: string; output?: strin
 type ErrorStripStep = { id: string; label: string; detail?: string; status: "running" | "done" | "notice" | "error" };
 type ErrorStripTurn = { tools?: ErrorStripTool[]; progress?: ErrorStripStep[]; lifecycle?: string };
 
-/** Only display the fixed, server-produced runtime-process diagnostic shape.
- * Progress detail normally can contain project output, so every other value
- * remains withheld in the error strip. */
+/** Only display fixed server output or a strictly validated redacted launch
+ * record. Progress detail normally can contain project output. */
 function safeRuntimeProcessDetail(step: ErrorStripStep): string | null {
-  if (step.id !== "runtime-process" || !step.detail) return null;
-  const match = /^Exit code (\d+); (runtime diagnostic output was withheld to protect local data|the runtime did not emit an error message)\.$/.exec(step.detail);
-  return match ? `Exit code ${match[1]}. ${match[2]}.` : null;
+  if (!step.detail) return null;
+  if (step.id === "runtime-process") {
+    const match = /^Exit code (\d+); (runtime diagnostic output was withheld to protect local data|the runtime did not emit an error message)\.$/.exec(step.detail);
+    return match ? `Exit code ${match[1]}. ${match[2]}.` : null;
+  }
+  if (step.id !== "runtime-launch-diagnostics") return null;
+  try {
+    const value = JSON.parse(step.detail) as {
+      schemaVersion?: unknown; runner?: unknown; privacy?: unknown; failure?: { kind?: unknown; exitCode?: unknown; emittedDiagnostic?: unknown };
+      launcher?: { command?: unknown; availability?: unknown; source?: unknown; pathEntryIndex?: unknown; installKind?: unknown };
+      adapter?: { command?: unknown; availability?: unknown; source?: unknown; pathEntryIndex?: unknown; installKind?: unknown };
+    };
+    const command = (entry: typeof value.launcher): string | null => {
+      if (!entry || !["coven", "codex"].includes(String(entry.command))) return null;
+      if (!["ready", "missing", "unlaunchable", "probe_failed", "unsupported_runtime"].includes(String(entry.availability))) return null;
+      if (!["absolute-command", "PATH", "coven-adapter", "unresolved"].includes(String(entry.source))) return null;
+      if (entry.pathEntryIndex !== undefined && (!Number.isInteger(entry.pathEntryIndex) || Number(entry.pathEntryIndex) < 0 || Number(entry.pathEntryIndex) >= 512)) return null;
+      if (entry.pathEntryIndex !== undefined && entry.source !== "PATH") return null;
+      if (entry.installKind !== undefined && !["managed", "node-package", "system", "user-local", "custom"].includes(String(entry.installKind))) return null;
+      const index = entry.pathEntryIndex === undefined ? "" : `, PATH entry ${entry.pathEntryIndex}`;
+      const install = entry.installKind === undefined ? "" : `, ${entry.installKind}`;
+      return `${entry.command}: ${entry.availability} via ${entry.source}${index}${install}`;
+    };
+    if (
+      value.schemaVersion !== 1 ||
+      value.privacy !== "paths-and-environment-values-redacted" ||
+      !["coven", "codex", "claude"].includes(String(value.runner)) ||
+      !value.failure ||
+      value.failure.kind !== "process-exit" ||
+      (value.failure.exitCode !== null && !Number.isInteger(value.failure.exitCode)) ||
+      typeof value.failure.emittedDiagnostic !== "boolean"
+    ) return null;
+    const exit = value.failure.exitCode === null ? "exit code unavailable" : `exit code ${value.failure.exitCode}`;
+    const entries = [command(value.launcher), command(value.adapter)].filter((entry): entry is string => Boolean(entry));
+    return entries.length ? `${exit}; ${entries.join("; ")}.` : exit;
+  } catch {
+    return null;
+  }
 }
 
 /** Inline error/debug strip between the transcript and the composer. Shows the
@@ -1428,6 +1501,20 @@ function ContextMeterChip({ usage, model }: { usage?: TurnUsage; model?: string 
   );
 }
 
+function ComposerContextMeter({ usage, model }: { usage?: TurnUsage; model?: string }) {
+  const meter = computeContextMeter(usage, model);
+  if (!meter) return null;
+  const title = `Context ${meter.percent}% full — ${meter.usedTokens.toLocaleString()} of ${meter.windowTokens.toLocaleString()} tokens${meter.known ? "" : " (window size estimated)"}`;
+  return (
+    <span className="cave-composer-context-meter" data-level={meter.level} title={title}>
+      <meter className="cave-composer-context-meter__track" min={0} max={100} value={meter.percent}>
+        {meter.percent}%
+      </meter>
+      <span>{`Context ${meter.percent}%`}</span>
+    </span>
+  );
+}
+
 function UsagePlanChip({ usagePlan }: { usagePlan: ChatUsagePlanSnapshot | null }) {
   // Ultra-minimal header: an "unconfigured" plan is the common, uninformative
   // case — suppress the "No plan limits" chip entirely and only surface the
@@ -1827,7 +1914,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -2181,11 +2268,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return parsed?.kind === "ssh" ? parsed.host : null;
   }, [session?.runtime]);
   const composerHostValue = runtimeHost ?? sessionRuntimeHost ?? LOCAL_HOST_ID;
-  const [input, setInput] = useState(() => readComposerDraft(COMPOSER_DRAFT_KEY));
+  const [input, setInput] = useState(() => readComposerDraft(composerDraftKey));
   // Persist the composer draft so a reload restores a half-written message.
   // Cleared (key removed) when the input empties — e.g. after a send. Shared
   // hook — debounce + remove-on-empty semantics live in use-composer-draft.
-  const { clearNow: clearDraft } = useDraftPersistence(COMPOSER_DRAFT_KEY, input, COMPOSER_DRAFT_WRITE_DELAY_MS);
+  const { clearNow: clearDraft } = useDraftPersistence(composerDraftKey, input, COMPOSER_DRAFT_WRITE_DELAY_MS);
   // CHAT-D11-04: Input history navigation (↑↓) — shared hook (use-composer-history);
   // chat deliberately never records slash commands (send() returns before the push).
   const { push: pushHistory, handleArrowKey } = useComposerHistory(COMPOSER_HISTORY_KEY);
@@ -3770,20 +3857,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return extractChatRenderedText(last.text).nextPaths.find((path) => path.kind === "reply") ?? null;
   }, [activePath]);
 
-  // Chat-revamp 1b: the LATEST settled turn's follow-up suggestions render as
-  // typed cards directly above the composer (aligned to the reading column) —
-  // the most actionable element sits closest to the input. That turn's in-turn
-  // card row is suppressed (followUp.turnId → TurnRow) so the suggestions
-  // never render twice; older turns keep their in-turn rows. The parser owns
-  // the product cap so every renderer stays aligned.
+  // The latest settled turn's follow-up suggestions render directly above the
+  // composer. Suggestions are ephemeral actions, not transcript history, so
+  // assistant rows only strip their control blocks and never render old cards.
   const followUp = useMemo(() => {
-    const empty = { turnId: null as string | null, suggestions: [] as NextPath[] };
+    const empty = { suggestions: [] as NextPath[] };
     const last = [...activePath]
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return empty;
     const suggestions = extractChatRenderedText(last.text).nextPaths;
-    return suggestions.length ? { turnId: last.id, suggestions } : empty;
+    return suggestions.length ? { suggestions } : empty;
   }, [activePath]);
 
   const handleFollowUp = useCallback((path: NextPath) => {
@@ -5056,6 +5140,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       sessionAliases: new Set(initialLiveSessionId ? [initialLiveSessionId] : []),
       controller,
       runId,
+      responseText: createCanonicalResponseBuffer(),
       clearWatermark: now,
       streamHealth: () => generationStreamHealth,
       markAttentionCleared: (sessionId) => {
@@ -5360,7 +5445,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             { cache: "no-store", signal: controller.signal },
           );
           if (recovery.ok && recovery.body) {
-            const resumed = await consumeChatSse(recovery.body, applyStreamEvent);
+            const resumed = await consumeChatSse(recovery.body, applyStreamEvent, cursor);
             cursor = Math.max(cursor, resumed.cursor);
             sawDone = sawDone || resumed.sawDone;
           } else {
@@ -5927,7 +6012,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     readerPromptFor,
     rerunWithFor,
     send,
-    activateFollowUp: handleFollowUp,
   };
 
   // Auto-send a prompt handed off from the home composer. Deferred one
@@ -5946,8 +6030,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     if (!projectLaunchReady) return;
     if (initialPromptSentRef.current || (sessionId && !autoSendInitialPrompt)) return;
+    // A caller that can remount this view under a live handoff (the Task Work
+    // cockpit, whose Group is keyed by the visible pane set) supplies a stable
+    // id, and the latch moves out of the instance ref so the remount cannot
+    // re-send. Callers without one keep the instance-ref-only behaviour.
+    if (
+      initialPromptHandoffId
+      && initialPromptHandoffClaimed(CHAT_VIEW_HANDOFF_SCOPE, initialPromptHandoffId)
+    ) {
+      initialPromptSentRef.current = true;
+      return;
+    }
     const timer = window.setTimeout(() => {
       if (initialPromptSentRef.current) return;
+      if (
+        initialPromptHandoffId
+        && !claimInitialPromptHandoff(CHAT_VIEW_HANDOFF_SCOPE, initialPromptHandoffId)
+      ) {
+        initialPromptSentRef.current = true;
+        return;
+      }
       initialPromptSentRef.current = true;
       const normalized = initialControls ? normalizeCommandControls(initialControls) : null;
       if (normalized) {
@@ -5989,7 +6091,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }, 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSendInitialPrompt, initialPrompt, projectLaunchReady, sessionId]);
+  }, [autoSendInitialPrompt, initialPrompt, initialPromptHandoffId, projectLaunchReady, sessionId]);
 
   // "Start a task" tail end: the first send's "session" event hands over the
   // session id, and the card follows the chat. Fire-and-forget — a failed card
@@ -6040,14 +6142,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
    * Extracted from handleEvent's assistant_chunk case (cave-w50e) so the
    * stream loop's coalescer can flush a whole buffered window — dozens of
    * tokens — as a single turns map + registry advance instead of one per
-   * SSE frame. appendCollapsingNewlines is chunking-invariant (see
-   * stream-text.test.ts), so buffering never changes the final text.
+   * SSE frame. The canonical response buffer's append operation is
+   * chunking-invariant, so buffering never changes the final text.
    */
   const applyAssistantChunk = (
     text: string,
     assistantId: string,
     liveGeneration: LiveStreamGeneration,
   ) => {
+    const canonicalText = liveGeneration.responseText.append(text);
     setAssistantLifecycle(
       assistantId,
       "streaming",
@@ -6059,7 +6162,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         t.id === assistantId
           ? {
               ...t,
-              text: appendCollapsingNewlines(t.text, text),
+              text: canonicalText,
               pending: true,
               lifecycle: "streaming",
               // CHAT-D12-01: settle the synthetic row the moment text is
@@ -6089,6 +6192,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     assistantId: string,
     liveGeneration: LiveStreamGeneration,
   ) => {
+    const canonicalText = liveGeneration.responseText.replace(text);
     setAssistantLifecycle(
       assistantId,
       "streaming",
@@ -6100,7 +6204,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         t.id === assistantId
           ? {
               ...t,
-              text,
+              text: canonicalText,
               tools: rebaseToolTextOffsets(t.tools, correction),
               pending: true,
               lifecycle: "streaming",
@@ -6662,13 +6766,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
       onSessionsChanged?.();
-      onBack?.();
+      onSessionRemoved?.(sessionId, "archived");
+      onBack?.(sessionId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "archive failed");
     } finally {
       setArchivingChat(false);
     }
-  }, [sessionId, archivingChat, onSessionsChanged, onBack]);
+  }, [sessionId, archivingChat, onSessionsChanged, onSessionRemoved, onBack]);
 
   const deleteChat = async () => {
     if (!sessionId || deleting) return;
@@ -6682,7 +6787,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
       onSessionsDeleted([sessionId]);
-      onBack?.();
+      onSessionRemoved?.(sessionId, "deleted");
+      onBack?.(sessionId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "delete failed");
     } finally {
@@ -6787,7 +6893,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       announce(archived ? "Chat archived — it won't appear in the rail." : "Chat restored to the rail.");
       onSessionsChanged?.();
       // Leaving mirrors delete only for archive; unarchive keeps you in place.
-      if (archived) onBack?.();
+      if (archived) {
+        onSessionRemoved?.(sessionId, "archived");
+        onBack?.(sessionId);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
     } finally {
@@ -7167,6 +7276,88 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             />
 
             <div className="cave-composer-panel">
+              <div className="cave-composer-edge-actions">
+                <ComposerActionsMenu
+                  attach={{
+                    onSelect: () => fileInputRef.current?.click(),
+                    disabled: attachments.length >= 10,
+                    hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
+                  }}
+                  skills={{
+                    onPickSkill: (skill) => {
+                      setInput(`/skill ${skill.id} `);
+                      inputRef.current?.focus();
+                    },
+                  }}
+                  context={{
+                    projects,
+                    projectValue: resolvedProjectId,
+                    onProjectChange: setProjectIdDraft,
+                    familiarId: familiar.id ?? null,
+                    createProject,
+                    createProjectOrThrow,
+                    runtime: modelHarness,
+                    modelValue: composerModelValue,
+                    modelOptions: composerModelOptions,
+                    onPickRuntime: handleSelectRuntime,
+                    onPickModel: handleSelectModel,
+                    modelDisabled: busy,
+                    projectRoot: activeProjectRoot,
+                    onOpenUrl,
+                    popoverPlacement: composerPopoverPlacement,
+                  }}
+                  linkedWork={{
+                    linkedContext,
+                    onOpenTask,
+                    sessionId,
+                    onLinkedContextChange: setLinkedContext,
+                    handoff: { turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft },
+                    sessionSettled: !activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error,
+                  }}
+                  improve={{
+                    dictation: dictation.available
+                      ? {
+                          listening: dictation.listening,
+                          toggle: dictation.toggle,
+                          disabled: busy && !dictation.listening,
+                        }
+                      : undefined,
+                    promptSnippets: {
+                      onSelect: () => setPromptSnippetsOpen(true),
+                    },
+                    enhance: {
+                      onEnhance: promptEnhance.enhance,
+                      disabled: busy || !input.trim(),
+                      loading: promptEnhance.state.phase === "loading",
+                    },
+                  }}
+                  response={{
+                    hostValue: composerHostValue,
+                    onHostPick: setRuntimeHost,
+                    sections: composerResponseSections,
+                    onSaveAsTemplate: () => setSaveTemplateSeed(input),
+                    saveAsTemplateDisabled: !input.trim(),
+                    indicator:
+                      composerHostValue !== LOCAL_HOST_ID ||
+                      permissionMode !== DEFAULT_PERMISSION_MODE ||
+                      thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
+                      responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
+                  }}
+                  triggerVariant="tools"
+                />
+                {linkedContext?.task && onOpenTask ? (
+                  <button
+                    type="button"
+                    className="cave-composer-task-tab focus-ring"
+                    onClick={() => onOpenTask(linkedContext.task!.id)}
+                    title={`Open task: ${linkedContext.task.title}`}
+                    aria-label={`Open linked task: ${linkedContext.task.title}`}
+                  >
+                    <Icon name="ph:kanban" width={12} aria-hidden />
+                    <span>Task</span>
+                  </button>
+                ) : null}
+              </div>
               {attachments.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 border-b border-[var(--border-hairline)]/70 px-3 py-2">
                   {attachments.map((attachment) => (
@@ -7319,75 +7510,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     >
                       <Icon name="ph:phone" width="var(--icon-md)" aria-hidden />
                     </button>
-                    <ComposerActionsMenu
-                      attach={{
-                        onSelect: () => fileInputRef.current?.click(),
-                        disabled: attachments.length >= 10,
-                        hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
-                      }}
-                      skills={{
-                        onPickSkill: (skill) => {
-                          setInput(`/skill ${skill.id} `);
-                          inputRef.current?.focus();
-                        },
-                      }}
-                      context={{
-                        projects,
-                        projectValue: resolvedProjectId,
-                        onProjectChange: setProjectIdDraft,
-                        familiarId: familiar.id ?? null,
-                        createProject,
-                        createProjectOrThrow,
-                        runtime: modelHarness,
-                        modelValue: composerModelValue,
-                        modelOptions: composerModelOptions,
-                        onPickRuntime: handleSelectRuntime,
-                        onPickModel: handleSelectModel,
-                        modelDisabled: busy,
-                        projectRoot: activeProjectRoot,
-                        onOpenUrl,
-                        popoverPlacement: composerPopoverPlacement,
-                      }}
-                      linkedWork={{
-                        linkedContext,
-                        onOpenTask,
-                        sessionId,
-                        onLinkedContextChange: setLinkedContext,
-                        handoff: { turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft },
-                        sessionSettled: !activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error,
-                      }}
-                      improve={{
-                        dictation: dictation.available
-                          ? {
-                              listening: dictation.listening,
-                              toggle: dictation.toggle,
-                              disabled: busy && !dictation.listening,
-                            }
-                          : undefined,
-                        promptSnippets: {
-                          onSelect: () => setPromptSnippetsOpen(true),
-                        },
-                        enhance: {
-                          onEnhance: promptEnhance.enhance,
-                          disabled: busy || !input.trim(),
-                          loading: promptEnhance.state.phase === "loading",
-                        },
-                      }}
-                      response={{
-                        hostValue: composerHostValue,
-                        onHostPick: setRuntimeHost,
-                        sections: composerResponseSections,
-                        onSaveAsTemplate: () => setSaveTemplateSeed(input),
-                        saveAsTemplateDisabled: !input.trim(),
-                        indicator:
-                          composerHostValue !== LOCAL_HOST_ID ||
-                          permissionMode !== DEFAULT_PERMISSION_MODE ||
-                          thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
-                          responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
-                      }}
-                    />
                   </div>
+                  <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
                   <div className="cave-composer-submit-row">
+                    <EnhanceControl
+                      state={promptEnhance.state}
+                      onEnhance={promptEnhance.enhance}
+                      onCancel={promptEnhance.cancel}
+                      disabled={busy || !input.trim()}
+                    />
                     {/* The compact send keeps its queue/cancel behavior in one
                         stable action slot. */}
                     {busy ? (
@@ -7707,7 +7838,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <FlowSessionTranscriptFallback
                 transcript={flowTranscriptFallback}
                 onRetry={retryHistory}
-                onBack={onBack}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : historyState === "missing" ? (
               <ChatHistoryNotice
@@ -7716,14 +7847,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   ? "This flow session exists, but CovenCave could not find saved chat history or flow output for it yet."
                   : "This session exists, but CovenCave could not find a saved transcript for it yet."}
                 onRetry={retryHistory}
-                onBack={onBack}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : historyState === "error" ? (
               <ChatHistoryNotice
                 title="Could not load chat history"
                 body="The transcript request failed. You can still continue this session."
                 onRetry={retryHistory}
-                onBack={onBack}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : sessionId === null ? (
               // Brand-new chat (no session yet): the 2b launcher — hero, the
@@ -7794,7 +7925,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setExpandedAvatarTurnId={setExpandedAvatarTurnId}
             onOpenUrl={onOpenUrl}
             handlersRef={transcriptHandlersRef}
-            followUpTurnId={followUp.turnId}
           />
           {shouldShowChatArchiveNudge({
             taskLifecycle: linkedContext?.task?.lifecycle ?? null,
@@ -7879,6 +8009,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }}
         />
       ) : null}
+              {/* Run rail (Coven Cave - Chat Session handoff, cave-w716g): the
+                  timeline, tool mix and live step, derived from the SAME
+                  activePath the transcript renders. Shares the instruments
+                  toggle — it is the same class of furniture as the spine and
+                  minimap, and two settings for one idea is a choice nobody
+                  asked for.
+
+                  Mounted AFTER the transcript on purpose. It was briefly the
+                  row's first child with CSS `order` doing the visual placement,
+                  which put the rail ahead of the conversation for screen
+                  readers — `order` moves boxes, never reading order. DOM order
+                  is the accessible order, so the annotation follows the log. */}
+              {activePath.length > 0 && instrumentsVisible ? (
+                <ChatRunRail turns={activePath} conversationCreatedAt={session?.created_at} />
+              ) : null}
       </div>
       </CodeReadingContext.Provider>
       </FileLinkResolverContext.Provider>
@@ -7990,7 +8135,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   // Only yank the view back to compose when it's still
                   // parked on the session we just discarded — if the user
                   // has already switched away, leave them where they are.
-                  if (target === sessionId) onVoiceSessionDiscarded?.();
+                  if (target === sessionId) {
+                    onSessionRemoved?.(target, "discarded");
+                    onVoiceSessionDiscarded?.(target);
+                  }
                 }
               });
             }
@@ -8158,6 +8306,7 @@ function splitSegmentsForGitHub(
  */
 function splitSegmentsForSpecs(
   segments: MessageBubbleSegment[],
+  onOpenUrl?: (url: string) => void,
 ): MessageBubbleSegment[] {
   return segments.flatMap<MessageBubbleSegment>((segment, segmentIndex) => {
     if (segment.kind !== "text") return [segment];
@@ -8170,7 +8319,7 @@ function splitSegmentsForSpecs(
       return [{
         kind: "block" as const,
         key: `spec-${segmentIndex}-${pieceIndex}-${piece.spec.title}`,
-        node: <ChatSpecCard spec={piece.spec} />,
+        node: <ChatSpecCard spec={piece.spec} onOpenUrl={onOpenUrl} />,
       }];
     });
   });
@@ -8233,7 +8382,6 @@ type TranscriptHandlers = {
   readerPromptFor: (turn: Turn) => { text: string; createdAt?: string } | undefined;
   rerunWithFor: (turn: Turn) => ((prompt: string) => void) | undefined;
   send: (override?: string) => Promise<void>;
-  activateFollowUp: (path: NextPath) => void;
 };
 
 /**
@@ -8268,7 +8416,6 @@ const TranscriptRows = memo(function TranscriptRows({
   setExpandedAvatarTurnId,
   onOpenUrl,
   handlersRef,
-  followUpTurnId,
 }: {
   groupedTurns: TranscriptGroup[];
   turnIndexMap: Map<string, number>;
@@ -8286,9 +8433,6 @@ const TranscriptRows = memo(function TranscriptRows({
   setExpandedAvatarTurnId: React.Dispatch<React.SetStateAction<string | null>>;
   onOpenUrl?: (url: string) => void;
   handlersRef: React.RefObject<TranscriptHandlers>;
-  /** The turn whose follow-up pills render above the composer instead of
-   *  in-turn (chat-revamp 1b) — TurnRow suppresses its own row for it. */
-  followUpTurnId: string | null;
 }) {
   const handlers = () => handlersRef.current;
   // Earlier-turns fold ("Chat Session - Prototype.dc.html", cave-u5lq7). The
@@ -8355,13 +8499,11 @@ const TranscriptRows = memo(function TranscriptRows({
           readerPrompt={handlers().readerPromptFor(t)}
           onRerunWith={handlers().rerunWithFor(t)}
           onOpenUrl={onOpenUrl}
-          onSuggestion={(path) => handlers().activateFollowUp(path)}
           onRequest={(prompt) => void handlers().send(prompt)}
           feedbackContext={feedbackContext}
           expanded={expandedAvatarTurnId === t.id}
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
           branchNav={singleBranchNav}
-          suppressSuggestions={t.id === followUpTurnId}
         />
       );
       if (!gapLabel) return row;
@@ -8422,13 +8564,11 @@ const TranscriptRows = memo(function TranscriptRows({
               readerPrompt={handlers().readerPromptFor(t)}
               onRerunWith={handlers().rerunWithFor(t)}
               onOpenUrl={onOpenUrl}
-              onSuggestion={(path) => handlers().activateFollowUp(path)}
               onRequest={(prompt) => void handlers().send(prompt)}
               feedbackContext={feedbackContext}
               expanded={expandedAvatarTurnId === t.id}
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
               branchNav={groupBranchNav}
-              suppressSuggestions={t.id === followUpTurnId}
             />
           );
         })}
@@ -8479,19 +8619,13 @@ function TurnRowImpl({
   onOpenUrl,
   expanded = false,
   onToggleAvatar,
-  onSuggestion,
   onRequest,
   feedbackContext,
   branchNav,
-  suppressSuggestions = false,
 }: {
   turn: Turn;
-  onSuggestion?: (path: NextPath) => void;
   /** User-authored artifact feedback remains a normal chat send. */
   onRequest?: (prompt: string) => void;
-  /** Chat-revamp 1b: true for the latest settled turn, whose follow-up pills
-   *  render above the composer instead of at the turn's tail. */
-  suppressSuggestions?: boolean;
   familiar: Familiar;
   showTimestamp?: boolean;
   /** CHAT-D9-04: true while this turn is the just-jumped-to find match —
@@ -8611,14 +8745,15 @@ function TurnRowImpl({
                 onOpenUrl={onOpenUrl}
                 branchNav={branchNav}
               />
-              {/* An image you attached renders as the image, matching the
-                  assistant path — the chip list only carries what has no
-                  pixels to show (text files, oversize/undelivered images). */}
+              {/* An image or playable clip you attached renders as itself,
+                  matching the assistant path — the chip list only carries what
+                  has nothing to show (text files, oversize/undelivered). */}
               {turn.attachments?.length ? (
                 <>
                   <InlineImageAttachments attachments={turn.attachments} />
-                  {turn.attachments.some((a) => !isInlineImageAttachment(a)) ? (
-                    <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a))} />
+                  <InlineMediaAttachments attachments={turn.attachments} />
+                  {turn.attachments.some((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a)) ? (
+                    <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a))} />
                   ) : null}
                 </>
               ) : null}
@@ -8656,7 +8791,6 @@ function TurnRowImpl({
     inlineReasoning,
     skillUpdates,
     autoStatusUpdate,
-    nextPaths,
   } = extractChatRenderedText(turn.text, { pending: Boolean(turn.pending) });
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
@@ -8709,7 +8843,7 @@ function TurnRowImpl({
     const split = splitSegmentsForGitHub(
       splitSegmentsForArtifacts(
         splitSegmentsForImages(
-          splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }]),
+          splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }], onOpenUrl),
         ),
         artifactCtx,
       ),
@@ -8881,13 +9015,14 @@ function TurnRowImpl({
               </div>
             ) : null}
             {/* Agent-produced inline attachments: images render full-bleed
-                (e.g. /image generations), everything else stays a file chip
-                that opens the lightbox. */}
+                (e.g. /image generations), audio/video mount as players, and
+                everything else stays a file chip that opens the lightbox. */}
             {turn.attachments?.length ? (
               <>
                 <InlineImageAttachments attachments={turn.attachments} />
-                {turn.attachments.some((a) => !isInlineImageAttachment(a)) ? (
-                  <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a))} />
+                <InlineMediaAttachments attachments={turn.attachments} />
+                {turn.attachments.some((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a)) ? (
+                  <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a))} />
                 ) : null}
               </>
             ) : null}
@@ -8954,12 +9089,6 @@ function TurnRowImpl({
                   );
                 })()
               : null}
-            {/* Typed follow-ups render LAST — reply fills the composer, task
-                opens review, and action routes to Tasks; they sit closest to
-                the composer and aren't pushed up by tool activity. */}
-            {nextPaths.length > 0 && !turn.pending && !suppressSuggestions && onSuggestion ? (
-              <FollowUpCards paths={nextPaths} onActivate={onSuggestion} />
-            ) : null}
             {/* Comment on the markdown artifact this turn produced: select any
                 passage above to leave a comment, then request a revision that
                 sends every comment back to the agent. Settled, substantial
@@ -9597,7 +9726,6 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     prev.showTimestamp === next.showTimestamp &&
     prev.found === next.found &&
     prev.expanded === next.expanded &&
-    prev.suppressSuggestions === next.suppressSuggestions &&
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
     Boolean(prev.onReply) === Boolean(next.onReply) &&

@@ -1,8 +1,8 @@
 # Familiar identity context
 
-How a familiar's declared identity — `SOUL.md`, `IDENTITY.md`, and (for voice)
-`MEMORY.md` — reaches the model, and what that injection is explicitly *not*
-allowed to do.
+How a familiar's declared identity — `SOUL.md`, `IDENTITY.md`, familiar-local
+skill entrypoints, and (for voice) `MEMORY.md` — reaches the model, and what
+that injection is explicitly *not* allowed to do.
 
 Implementation: [`src/lib/server/familiar-contract-context.ts`](../src/lib/server/familiar-contract-context.ts).
 Consumers: the chat route (`src/app/api/chat/send/route.ts`) and voice
@@ -38,6 +38,7 @@ Both surfaces now share one builder, so the two cannot drift apart again.
 | --- | --- | --- |
 | `SOUL.md` | yes | yes |
 | `IDENTITY.md` | yes | yes |
+| `skills/*/SKILL.md` entrypoint index | yes | yes |
 | `MEMORY.md` | **no** | yes (`includeMemory: true`) |
 | `ward.toml` | never | never |
 
@@ -52,6 +53,20 @@ Both surfaces now share one builder, so the two cannot drift apart again.
 - **`ward.toml` is never inlined.** It is policy configuration carrying the
   `[protected]` file list and the invariants that bound self-modification.
   Injecting it hands the familiar the rules written to constrain it.
+- **Familiar-local skills are indexed, not inlined.** The block lists only real
+  `skills/<id>/SKILL.md` files contained by the familiar workspace and states
+  that a familiar-local same-name skill outranks a generic copy. This lets the
+  harness load the declared procedure from an already-granted root without
+  flooding every turn with every skill body. Because not every harness indexes
+  arbitrary workspace-local skill names, the block explicitly requires a
+  direct read of the listed `SKILL.md` when named dispatch is unavailable;
+  dispatcher absence alone is not a blocker. Symlink escapes are omitted.
+
+- **Core Coven recall is dispatcher-registered for direct Copilot chats.** Cave
+  loads the app-bundled, skill-only `coven-memory` plugin with `--plugin-dir`.
+  The bundle is validated to contain no agents, hooks, or MCP configuration
+  before launch, so registration cannot turn a writable familiar workspace into
+  a plugin-capability escalation path.
 
 ### Placement in the prompt
 

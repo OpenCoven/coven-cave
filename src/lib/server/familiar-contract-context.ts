@@ -43,6 +43,8 @@
 //      invariants that exist to constrain self-modification. Feeding those into
 //      the prompt would hand the familiar the exact rules meant to bound it.
 
+import { readdir, realpath, stat } from "node:fs/promises";
+import path from "node:path";
 import {
   isValidFamiliarId,
   readFamiliarContractFiles,
@@ -52,6 +54,8 @@ import {
 export const FAMILIAR_CONTRACT_FILE_CHARS = 6_000;
 /** Clamp for MEMORY.md, which drifts and can grow without bound. */
 export const FAMILIAR_CONTRACT_MEMORY_CHARS = 4_000;
+const MAX_FAMILIAR_LOCAL_SKILLS = 64;
+const SAFE_SKILL_ID = /^[a-z0-9][a-z0-9._-]{0,79}$/i;
 
 export const FAMILIAR_CONTRACT_OPEN = "<FAMILIAR_CONTRACT>";
 export const FAMILIAR_CONTRACT_CLOSE = "</FAMILIAR_CONTRACT>";
@@ -138,6 +142,71 @@ function section(heading: string, body: string, cap: number): string {
   return `## ${heading}\n${defangContractSentinels(clampContractBlock(body, cap))}`;
 }
 
+async function familiarLocalSkillsSection(workspace: string): Promise<{
+  section: string | null;
+  loaded: string[];
+}> {
+  const skillsRoot = path.join(workspace, "skills");
+  let workspaceRoot: string;
+  let root: string;
+  try {
+    workspaceRoot = await realpath(workspace);
+    root = await realpath(skillsRoot);
+    const relativeRoot = path.relative(workspaceRoot, root);
+    if (
+      !relativeRoot
+      || relativeRoot === ".."
+      || relativeRoot.startsWith(`..${path.sep}`)
+      || path.isAbsolute(relativeRoot)
+    ) {
+      return { section: null, loaded: [] };
+    }
+  } catch {
+    return { section: null, loaded: [] };
+  }
+
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch {
+    return { section: null, loaded: [] };
+  }
+  const rows: string[] = [];
+  const loaded: string[] = [];
+  for (const entry of entries
+    .filter((candidate) => candidate.isDirectory() && SAFE_SKILL_ID.test(candidate.name))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(0, MAX_FAMILIAR_LOCAL_SKILLS)) {
+    try {
+      const resolved = await realpath(path.join(root, entry.name, "SKILL.md"));
+      const relative = path.relative(root, resolved);
+      if (
+        !relative
+        || relative === ".."
+        || relative.startsWith(`..${path.sep}`)
+        || path.isAbsolute(relative)
+        || !(await stat(resolved)).isFile()
+      ) {
+        continue;
+      }
+      rows.push(`- ${entry.name}: ${resolved}`);
+      loaded.push(`skills/${entry.name}/SKILL.md`);
+    } catch {
+      // Missing, unreadable, or out-of-boundary entrypoints are omitted.
+    }
+  }
+  if (rows.length === 0) return { section: null, loaded: [] };
+  return {
+    section: [
+      "## Familiar-local skills",
+      "These are this familiar's declared skill entrypoints. When a task matches one, load this workspace-local copy before acting; a local same-name skill takes precedence over a generic skill unless the user explicitly requests the generic copy.",
+      "Harness dispatchers may not index workspace-local names. If invocation by name is unavailable, read the listed SKILL.md directly from the granted workspace and follow it; do not treat dispatcher absence alone as a blocker.",
+      ...rows,
+    ].join("\n"),
+    loaded,
+  };
+}
+
 export type FamiliarContractBlockOptions = {
   /**
    * Include MEMORY.md. Voice sets this: a realtime brain has no other memory
@@ -174,12 +243,13 @@ export async function buildFamiliarContractContext(
 ): Promise<FamiliarContractContext> {
   const empty: FamiliarContractContext = { block: null, loaded: [], clamped: [] };
   if (!familiarId || !isValidFamiliarId(familiarId)) return empty;
-  let files: Awaited<ReturnType<typeof readFamiliarContractFiles>>["files"];
+  let contract: Awaited<ReturnType<typeof readFamiliarContractFiles>>;
   try {
-    ({ files } = await readFamiliarContractFiles(familiarId));
+    contract = await readFamiliarContractFiles(familiarId);
   } catch {
     return empty;
   }
+  const { files, workspace } = contract;
 
   const sections: string[] = [];
   const loaded: string[] = [];
@@ -194,6 +264,11 @@ export async function buildFamiliarContractContext(
   if (files.identity?.trim()) add("IDENTITY.md", files.identity, FAMILIAR_CONTRACT_FILE_CHARS);
   if (options.includeMemory && files.memory?.trim()) {
     add("MEMORY.md", files.memory, FAMILIAR_CONTRACT_MEMORY_CHARS);
+  }
+  const localSkills = await familiarLocalSkillsSection(workspace);
+  if (localSkills.section) {
+    sections.push(localSkills.section);
+    loaded.push(...localSkills.loaded);
   }
   if (sections.length === 0) return empty;
 

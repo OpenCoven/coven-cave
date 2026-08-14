@@ -70,7 +70,7 @@ assert.match(
   "a home runtime switch fires the roster refresh (only on a successful PATCH)",
 );
 
-// ── The picker is always in the composer control row, wired to live state ───
+// ── The picker is always reachable from the composer Tools edge ─────────────
 assert.match(
   chatView,
   /<ComposerActionsMenu[\s\S]*?context=\{\{[\s\S]*?runtime: modelHarness,[\s\S]*?modelValue: composerModelValue,[\s\S]*?modelOptions: composerModelOptions,[\s\S]*?onPickRuntime: handleSelectRuntime,[\s\S]*?onPickModel: handleSelectModel,[\s\S]*?\}\}/,
@@ -78,8 +78,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /className="cave-composer-utility-row">[\s\S]{0,4000}?<ComposerActionsMenu/,
-  "the chat options trigger sits in the composer utility row — always visible, session or not",
+  /className="cave-composer-edge-actions">[\s\S]{0,4000}?<ComposerActionsMenu[\s\S]*?triggerVariant="tools"/,
+  "the chat options trigger sits at the composer edge — always visible, session or not",
 );
 assert.match(
   chatView,

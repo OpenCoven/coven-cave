@@ -44,6 +44,29 @@ struct ToastMessage: Identifiable, Equatable {
     var style: Style = .info
 }
 
+/// A one-shot, operator-reviewed transfer from Terminal to a new chat.
+///
+/// The value is prefilled into chat but is never submitted by this handoff.
+struct TerminalFamiliarHandoff: Equatable {
+    let draft: String
+    let cwd: String?
+
+    var chatDraft: String {
+        let location = cwd ?? "Home"
+        return """
+        Please review this terminal input before I run it.
+
+        Working directory: \(location)
+
+        ```shell
+        \(draft)
+        ```
+
+        Explain what it does and flag risks. Do not execute anything.
+        """
+    }
+}
+
 @Observable
 @MainActor
 final class AppModel {
@@ -152,6 +175,9 @@ final class AppModel {
     var navigationDrawerOpen = false
     var newChatRequested = false
     var chatSearchRequested = false
+    /// Held only while the New Chat flow is selecting a familiar and project.
+    /// `applyTerminalFamiliarHandoff` turns it into an ordinary unsent chat draft.
+    var terminalFamiliarHandoff: TerminalFamiliarHandoff?
 
     /// The active confirmation toast, auto-dismissed by the overlay.
     var toast: ToastMessage?
@@ -198,6 +224,24 @@ final class AppModel {
     func requestOpen(_ thread: ChatThread) {
         selectedTab = .chats
         threadToOpen = thread
+    }
+
+    func requestTerminalFamiliarHandoff(draft: String, cwd: String?) {
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        terminalFamiliarHandoff = TerminalFamiliarHandoff(draft: trimmed, cwd: cwd)
+        selectedTab = .chats
+        newChatRequested = true
+    }
+
+    func applyTerminalFamiliarHandoff(to thread: ChatThread) {
+        guard let handoff = terminalFamiliarHandoff else { return }
+        setThreadDraft(thread.id, text: handoff.chatDraft)
+        terminalFamiliarHandoff = nil
+    }
+
+    func cancelTerminalFamiliarHandoff() {
+        terminalFamiliarHandoff = nil
     }
 
     /// Switch the visible conversation to one chosen in the session picker.
@@ -1196,10 +1240,14 @@ final class AppModel {
             ? (connection?.baseURL == conn.baseURL)
             : (connection?.baseURL?.host?.lowercased() == conn.baseURL?.host?.lowercased())
         if let token {
-            CaveConnection.saveAccessToken(token)
-        } else if !isSameEndpoint {
-            // Tokens are stored globally, so never carry an old desktop's
-            // credential to a newly configured host from an uncredentialed input.
+            CaveConnection.saveAccessToken(token, for: conn.baseURL)
+        } else if CaveConnection.shouldClearStoredCredential(
+            suppliedToken: token,
+            isSameEndpoint: isSameEndpoint,
+            nextURL: conn.baseURL
+        ) {
+            // Never retain a credential when an uncredentialed configuration
+            // changes authority or downgrades the same authority to remote HTTP.
             CaveConnection.saveAccessToken(nil)
         }
         if !isSameEndpoint {
@@ -1402,6 +1450,7 @@ final class AppModel {
             switch outcome {
             case .found(let url): return .found(url)
             case .unauthorized: return .unauthorized
+            case .credentialFailure(let message): return .credentialFailure(message)
             case .unreachable(let failure): return .unreachable(failure)
             }
         }
@@ -1453,6 +1502,8 @@ final class AppModel {
             }
         case .unauthorized:
             connectionState = .needsAuth(pairingMessage())
+        case .credentialFailure(let message):
+            connectionState = .unreachable(.credentialFailure(message))
         case .unreachable(let failure):
             connectionState = .unreachable(.diagnosis(for: failure))
         }
@@ -1536,6 +1587,9 @@ final class AppModel {
         /// At least one candidate was a live Cave server that rejected our
         /// credential — pairing is the fix, not another address.
         case unauthorized
+        /// The stored credential cannot safely be sent to this endpoint.
+        /// This is terminal: never adopt a tokenless sibling origin.
+        case credentialFailure(String)
         /// No candidate answered as Cave. Carries the strongest failure class
         /// seen across candidates ("an HTTP server answered but wasn't Cave"
         /// beats "connection refused" beats "DNS failure" beats "timeout") so
@@ -1569,6 +1623,7 @@ final class AppModel {
         switch await Self.probe(preferred) {
         case .ok: return .found(preferred)
         case .unauthorized: return .unauthorized
+        case .credentialFailure(let message): return .credentialFailure(message)
         case .failed(let failure): strongest = failure
         }
 
@@ -1620,6 +1675,7 @@ final class AppModel {
             switch await Self.probe(base) {
             case .ok: return .found(base)
             case .unauthorized: return .unauthorized
+            case .credentialFailure(let message): return .credentialFailure(message)
             case .failed(let failure): strongest = max(strongest ?? failure, failure)
             }
         }
@@ -1639,6 +1695,7 @@ final class AppModel {
             switch result {
             case .ok: return .found(candidates[index])
             case .unauthorized: return .unauthorized
+            case .credentialFailure(let message): return .credentialFailure(message)
             case .failed(let failure): strongest = max(strongest ?? failure, failure)
             default: continue
             }
@@ -1674,7 +1731,12 @@ final class AppModel {
         return CaveConnection(host: compact).baseURL == url ? compact : url.absoluteString
     }
 
-    private enum ProbeResult { case ok, unauthorized, failed(ProbeFailure) }
+    private enum ProbeResult {
+        case ok
+        case unauthorized
+        case credentialFailure(String)
+        case failed(ProbeFailure)
+    }
 
     /// Shared session for discovery probes — ephemeral (no cache/cookie
     /// carry-over) and never recreated, so repeated discovery rounds don't
@@ -1698,8 +1760,14 @@ final class AppModel {
         var req = URLRequest(url: base.appendingPathComponent("api/familiars"))
         req.timeoutInterval = 6
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        if sendCredential, let token = CaveConnection.accessToken {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if sendCredential {
+            do {
+                if let token = try CaveConnection.credentialForRequest(to: req.url!) {
+                    req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                }
+            } catch {
+                return .credentialFailure(error.localizedDescription)
+            }
         }
         let data: Data
         let resp: URLResponse

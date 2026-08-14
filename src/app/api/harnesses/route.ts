@@ -10,7 +10,15 @@ import {
   type AdapterReport,
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
-import { covenLaunchCommand, covenSpawnEnv, pickWindowsLauncher, refreshCovenSpawnEnv, type CovenLaunchCommand } from "@/lib/coven-bin";
+import {
+  COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC,
+  covenLaunchCommand,
+  covenSpawnEnv,
+  covenWrapperSpawnEnv,
+  pickWindowsLauncher,
+  refreshCovenSpawnEnv,
+  type CovenLaunchCommand,
+} from "@/lib/coven-bin";
 import { COPILOT_NO_AUTO_UPDATE_ARG, copilotStreamSpec } from "@/lib/copilot-stream";
 import { probeCodexRuntimeAvailability } from "@/lib/codex-runtime-availability";
 import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
@@ -30,6 +38,10 @@ import {
   type HermesLaunchResolution,
   type RuntimeAvailabilitySummary,
 } from "@/lib/runtime-availability";
+import {
+  BoundedProcessOutput,
+  terminateProcessTree,
+} from "@/lib/process-execution";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +80,75 @@ type AdapterAvailability = {
   spawnEnv?: NodeJS.ProcessEnv;
 };
 
+function missingCovenAvailability(component?: "coven"): RuntimeAvailabilitySummary {
+  return {
+    state: "missing",
+    code: "runtime_missing",
+    message: COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC,
+    ...(component ? { component } : {}),
+  };
+}
+
+function resolvedCovenLaunch(): CovenLaunchCommand | null {
+  try {
+    return covenLaunchCommand();
+  } catch {
+    return null;
+  }
+}
+
+type ProbeResult = {
+  code: number | null;
+  output: string;
+};
+
+function runProbe(
+  command: string,
+  args: string[],
+  options: {
+    env: NodeJS.ProcessEnv;
+    timeoutMs: number;
+    captureStderr?: boolean;
+    redactOutput?: boolean;
+  },
+): Promise<ProbeResult | null> {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(command, args, {
+        windowsHide: true,
+        env: options.env,
+        stdio: ["ignore", "pipe", options.captureStderr === false ? "ignore" : "pipe"],
+        detached: process.platform !== "win32",
+      });
+    } catch {
+      resolve(null);
+      return;
+    }
+    const output = new BoundedProcessOutput(64 * 1024, {
+      redact: options.redactOutput !== false,
+    });
+    let settled = false;
+    let timedOut = false;
+    const finish = (result: ProbeResult | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    child.stdout?.on("data", (data) => output.append(data));
+    child.stderr?.on("data", (data) => output.append(data));
+    const timer = setTimeout(() => {
+      timedOut = true;
+      void terminateProcessTree(child).then(() => finish(null));
+    }, options.timeoutMs);
+    child.on("error", () => finish(null));
+    child.on("close", (code) =>
+      finish(timedOut ? null : { code, output: output.text() }),
+    );
+  });
+}
+
 // Mirrors the send route's launch dispatch: copilot/grok/hermes/opencode use
 // their direct CLI launch plans, everything else launches through `coven run`.
 // Same commands, same spawn env shape (no familiar → shared keys only), and
@@ -89,9 +170,11 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
   }
   const env = id === "opencode" ? openCodeSpawnEnv(null) : harnessSpawnEnv(null);
   if (id === "codex") {
+    const launch = resolvedCovenLaunch();
+    if (!launch) return { availability: missingCovenAvailability("coven") };
     return {
       availability: summarizeRuntimeAvailability(await probeCodexRuntimeAvailability({
-        launch: covenLaunchCommand(),
+        launch,
         env,
       })),
     };
@@ -123,7 +206,8 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
       hermesLaunch,
     };
   }
-  const launch = covenLaunchCommand();
+  const launch = resolvedCovenLaunch();
+  if (!launch) return { availability: missingCovenAvailability() };
   if (id === "claude") {
     // The chat route launches Claude through `coven run`, so readiness means
     // both the outer Coven command and Claude in that same scoped env exist.
@@ -147,21 +231,18 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
 }
 
 function whichWith(binary: string, env: NodeJS.ProcessEnv): Promise<string | null> {
-  return new Promise((resolve) => {
-    const command = process.platform === "win32" ? "where" : "which";
-    const child = spawn(command, [binary], { windowsHide: true, env, stdio: ["ignore", "pipe", "ignore"] });
-    let out = "";
-    child.stdout.on("data", (d) => (out += d.toString()));
-    child.on("close", (code) => {
-      if (code !== 0) return resolve(null);
-      const found = out.trim();
-      resolve(
-        process.platform === "win32"
-          ? pickWindowsLauncher(found.split(/\r?\n/))
-          : found || null,
-      );
-    });
-    child.on("error", () => resolve(null));
+  const command = process.platform === "win32" ? "where" : "which";
+  return runProbe(command, [binary], {
+    env,
+    timeoutMs: 1_500,
+    captureStderr: false,
+    redactOutput: false,
+  }).then((result) => {
+    if (result?.code !== 0) return null;
+    const found = result.output.trim();
+    return process.platform === "win32"
+      ? pickWindowsLauncher(found.split(/\r?\n/))
+      : found || null;
   });
 }
 
@@ -181,108 +262,56 @@ function probeVersion(
   fixedArgs: string[] = [],
   env: NodeJS.ProcessEnv = covenSpawnEnv(),
 ): Promise<string | null> {
-  return new Promise((resolve) => {
-    let child;
-    try {
-      child = spawn(binary, [...fixedArgs, ...args], { windowsHide: true, env, stdio: ["ignore", "pipe", "pipe"] });
-    } catch {
-      resolve(null);
-      return;
-    }
-    let out = "";
-    child.stdout.on("data", (d) => (out += d.toString()));
-    child.stderr.on("data", (d) => (out += d.toString()));
-    const t = setTimeout(() => {
-      child.kill("SIGTERM");
-      resolve(null);
-    }, 2500);
-    child.on("close", () => {
-      clearTimeout(t);
-      resolve(pickVersionLine(out));
-    });
-    child.on("error", () => {
-      clearTimeout(t);
-      resolve(null);
-    });
-  });
+  return runProbe(binary, [...fixedArgs, ...args], {
+    env,
+    timeoutMs: 2_500,
+  }).then((result) => result ? pickVersionLine(result.output) : null);
 }
 
 function probeGrokModels(
   launch: CovenLaunchCommand,
   env: NodeJS.ProcessEnv = covenSpawnEnv(),
 ): Promise<{ models: RuntimeModelOption[]; defaultModel: string | null }> {
-  return new Promise((resolve) => {
-    let child;
-    try {
-      child = spawn(launch.command, [...launch.fixedArgs, "--no-auto-update", "models"], { windowsHide: true, env, stdio: ["ignore", "pipe", "pipe"] });
-    } catch {
-      resolve({ models: [], defaultModel: null });
-      return;
-    }
-    let output = "";
-    child.stdout.on("data", (data) => (output += data.toString()));
-    child.stderr.on("data", (data) => (output += data.toString()));
-    const timeout = setTimeout(() => {
-      child.kill("SIGTERM");
-      resolve({ models: [], defaultModel: null });
-    }, 2500);
-    child.on("close", () => {
-      clearTimeout(timeout);
-      resolve(parseGrokModels(output));
-    });
-    child.on("error", () => {
-      clearTimeout(timeout);
-      resolve({ models: [], defaultModel: null });
-    });
-  });
+  return runProbe(
+    launch.command,
+    [...launch.fixedArgs, "--no-auto-update", "models"],
+    { env, timeoutMs: 2_500 },
+  ).then((result) =>
+    result
+      ? parseGrokModels(result.output)
+      : { models: [], defaultModel: null },
+  );
 }
 
 function covenSupportsAdapterList(): Promise<boolean> {
-  return new Promise((resolve) => {
-    const { command, fixedArgs } = covenLaunchCommand();
-    const child = spawn(command, [...fixedArgs, "--help"], { windowsHide: true, env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
-    let out = "";
-    child.stdout.on("data", (d) => (out += d.toString()));
-    child.stderr.on("data", (d) => (out += d.toString()));
-    const t = setTimeout(() => {
-      child.kill("SIGTERM");
-      resolve(false);
-    }, 1500);
-    child.on("close", (code) => {
-      clearTimeout(t);
-      resolve(code === 0 && covenHelpSupportsAdapterList(out));
-    });
-    child.on("error", () => {
-      clearTimeout(t);
-      resolve(false);
-    });
-  });
+  const launch = resolvedCovenLaunch();
+  if (!launch) return Promise.resolve(false);
+  const { command, fixedArgs } = launch;
+  return runProbe(command, [...fixedArgs, "--help"], {
+    env: covenWrapperSpawnEnv(),
+    timeoutMs: 1_500,
+  }).then((result) =>
+    result?.code === 0 && covenHelpSupportsAdapterList(result.output),
+  );
 }
 
 function loadCovenAdapterSummaries(): Promise<CovenAdapterSummary[]> {
-  return new Promise((resolve) => {
-    const { command, fixedArgs } = covenLaunchCommand();
-    const child = spawn(command, [...fixedArgs, "adapter", "list", "--json"], { windowsHide: true, env: covenSpawnEnv(), stdio: ["ignore", "pipe", "ignore"] });
-    let out = "";
-    const t = setTimeout(() => {
-      child.kill("SIGTERM");
-      resolve([]);
-    }, 3000);
-    child.stdout.on("data", (d) => (out += d.toString()));
-    child.on("close", (code) => {
-      clearTimeout(t);
-      if (code !== 0) return resolve([]);
-      try {
-        const parsed = JSON.parse(out);
-        resolve(Array.isArray(parsed) ? parsed as CovenAdapterSummary[] : []);
-      } catch {
-        resolve([]);
-      }
-    });
-    child.on("error", () => {
-      clearTimeout(t);
-      resolve([]);
-    });
+  const launch = resolvedCovenLaunch();
+  if (!launch) return Promise.resolve([]);
+  const { command, fixedArgs } = launch;
+  return runProbe(command, [...fixedArgs, "adapter", "list", "--json"], {
+    env: covenWrapperSpawnEnv(),
+    timeoutMs: 3_000,
+    captureStderr: false,
+    redactOutput: false,
+  }).then((result) => {
+    if (result?.code !== 0) return [];
+    try {
+      const parsed = JSON.parse(result.output);
+      return Array.isArray(parsed) ? parsed as CovenAdapterSummary[] : [];
+    } catch {
+      return [];
+    }
   });
 }
 

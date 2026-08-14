@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import "@/styles/quick-chat-glass.css";
 import { IconButton } from "@/components/ui/icon-button";
 import { Icon } from "@/lib/icon";
+import type { ModelControlCapability, ModelControlFamily, ModelControlValues } from "@/lib/model-control-capabilities";
 import type { Familiar } from "@/lib/types";
 import { useQuickChat } from "@/lib/use-quick-chat";
 import {
@@ -44,6 +45,24 @@ export type TabReport = {
   sessionId: string | null;
   sending: boolean;
 };
+
+// Short chip labels for the compact status row — "Reasoning"/"Reasoning
+// guidance" reads fine as a dropdown label but is too long for a one-line
+// hint; the tray only ever shows "Thinking"/"Speed" once a family is present.
+const CONTROL_CHIP_LABELS: Partial<Record<ModelControlFamily, string>> = {
+  reasoning: "Thinking",
+  performance: "Speed",
+};
+
+function controlChipLabel(capability: ModelControlCapability): string {
+  return CONTROL_CHIP_LABELS[capability.family] ?? capability.label;
+}
+
+function controlValueLabel(capability: ModelControlCapability, modelControls: ModelControlValues): string {
+  const selected = modelControls[capability.family];
+  if (!selected) return "Auto";
+  return capability.values.find((option) => option.value === selected)?.label ?? selected;
+}
 
 async function hideTrayWindow(): Promise<void> {
   try {
@@ -372,14 +391,29 @@ export function QuickChatTabPane({
               onClick={() => void openFullSession()}
             />
             {selectedFamiliar ? (
-              // The control selectors below are capability-gated; this compact
-              // chip keeps the selected model intent visible even when the
-              // runtime has no native or prompt-only controls to offer.
+              // Quiet meta chips: one per negotiated capability (Thinking,
+              // Speed — whichever the selected runtime/model actually offers)
+              // plus Model, which is always shown. The group carries one full
+              // accessible reading; individual chips stay aria-hidden with
+              // sighted tooltips.
               <span
                 className="quick-chat-meta-chips"
                 role="group"
-                aria-label={`Model ${modelLabel}`}
+                aria-label={`${modelCapabilities
+                  .map((capability) => `${controlChipLabel(capability)} ${controlValueLabel(capability, modelControls)}`)
+                  .concat(`Model ${modelLabel}`)
+                  .join(", ")}`}
               >
+                {modelCapabilities.map((capability) => (
+                  <span
+                    key={capability.family}
+                    aria-hidden
+                    className="quick-chat-meta-chip"
+                    title={controlChipLabel(capability)}
+                  >
+                    {controlValueLabel(capability, modelControls)}
+                  </span>
+                ))}
                 <span aria-hidden className="quick-chat-meta-chip" title="Model">
                   {modelLabel}
                 </span>

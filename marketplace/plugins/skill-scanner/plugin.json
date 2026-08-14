@@ -20,6 +20,7 @@
     "write_files",
     "shell"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/skill-scanner",
   "x-coven": {
     "displayName": "Skill Scanner",

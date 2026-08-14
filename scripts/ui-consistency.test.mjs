@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  compareFindings,
+  readBaseline,
+  scanRepository,
+  scanSource,
+} from "./ui-consistency.mjs";
+import {
+  ACTIVE_RULES,
+  SEMANTIC_EXCEPTIONS,
+} from "./ui-consistency-policy.mjs";
 
 function exactHeadingPattern(heading) {
   const escapedHeading = heading.replace(/[.*+?^\${}()|[\]\\]/g, "\\$&");
@@ -235,6 +247,184 @@ assert.ok(
   "AGENTS.md names the drift-ratchet gate",
 );
 
+// ── scanner rule pins ──────────────────────────────────────────────────────
+// Each active rule gets a positive and negative fixture. These assertions
+// prove the policy can reject drift without treating syntax or technical
+// diagnostics as user-facing copy.
+
+const tsxFindings = scanSource({
+  path: "src/components/example.tsx",
+  source: [
+    'const spread = { title: "History", ...shared };',
+    '<input placeholder="Search tasks..." />',
+    '<EmptyState subtitle="Loading saved sketches..." />',
+    '<span>Waiting for Sage...</span>',
+    '<button>Submit</button>',
+    'return <select value={value}>',
+  ].join("\n"),
+});
+assert.deepEqual(
+  tsxFindings.map((finding) => finding.rule),
+  [
+    "components/no-native-select",
+    "copy/no-ascii-ellipsis",
+    "copy/no-ascii-ellipsis",
+    "copy/no-ascii-ellipsis",
+    "copy/no-generic-submit",
+  ],
+  "scanner finds every seeded React rule without treating spread syntax as copy",
+);
+
+const multilineTsxFindings = scanSource({
+  path: "src/components/multiline.tsx",
+  source: [
+    "return (",
+    "  <section>",
+    "    <button>",
+    '      {"Submit"}',
+    "    </button>",
+    "    <select",
+    "      value={value}",
+    "    />",
+    '    <div>{saving ? "Saving..." : "Save"}</div>',
+    '    <>{busy && "Still saving..."}</>',
+    '    <span>{`Waiting ${name}...`}</span>',
+    '    <>{`Status ${busy ? "Loading..." : "Idle"}`}</>',
+    '    <>{(busy && "Loading...") || fallback}</>',
+    '    <>{"Loading..." ?? fallback}</>',
+    '    <div title="Run">{debug && console.log("Waiting...")}</div>',
+    "  </section>",
+    ");",
+  ].join("\n"),
+});
+assert.deepEqual(
+  multilineTsxFindings.map((finding) => finding.rule),
+  [
+    "components/no-native-select",
+    "copy/no-ascii-ellipsis",
+    "copy/no-ascii-ellipsis",
+    "copy/no-ascii-ellipsis",
+    "copy/no-ascii-ellipsis",
+    "copy/no-ascii-ellipsis",
+    "copy/no-ascii-ellipsis",
+    "copy/no-generic-submit",
+  ],
+  "scanner follows rendered TSX across lines without flagging technical literals",
+);
+assert.match(
+  multilineTsxFindings[0]?.excerpt ?? "",
+  /^<select value=\{value\} \/>$/,
+  "native-select excerpts include the normalized opening element",
+);
+
+const swiftFindings = scanSource({
+  path: "apps/ios/CovenCave/CovenCave/Views/Example.swift",
+  source: [
+    'Button("Submit") { save() }',
+    'Text("Loading tasks...")',
+    'Button("Save") { logger.debug("Waiting...") }',
+  ].join("\n"),
+});
+assert.deepEqual(
+  swiftFindings.map((finding) => finding.rule),
+  ["copy/no-ascii-ellipsis", "copy/no-generic-submit"],
+  "scanner applies equivalent copy rules to SwiftUI literals",
+);
+
+const rustFindings = scanSource({
+  path: "src-tauri/src/example.rs",
+  source: [
+    'window.set_title("Loading tasks...");',
+    'window.set_title(title); println!("Waiting...");',
+    'println!("Loading tasks...");',
+    'tracing::error!("Failed to display alert...");',
+  ].join("\n"),
+});
+assert.deepEqual(
+  rustFindings.map((finding) => finding.rule),
+  ["copy/no-ascii-ellipsis"],
+  "scanner checks UI-bound Rust copy but ignores log-only diagnostics",
+);
+
+assert.deepEqual(
+  ACTIVE_RULES.map((rule) => rule.id),
+  [
+    "components/no-native-select",
+    "copy/no-ascii-ellipsis",
+    "copy/no-generic-submit",
+  ],
+  "Phase 0 activates the approved rules in deterministic order",
+);
+
+const finding = {
+  rule: "copy/no-ascii-ellipsis",
+  path: "src/components/example.tsx",
+  excerpt: '<input placeholder="Search tasks..." />',
+};
+assert.equal(compareFindings([finding], [finding], []).ok, true, "exact baseline is clean");
+assert.equal(compareFindings([finding], [], []).newFindings.length, 1, "new debt fails");
+assert.equal(
+  compareFindings([], [finding], []).resolvedBaseline.length,
+  1,
+  "stale baseline debt fails",
+);
+assert.equal(
+  compareFindings(
+    [finding],
+    [],
+    [{ ...finding, reason: "Browser-owned syntax example." }],
+  ).ok,
+  true,
+  "reasoned semantic exception suppresses a live finding",
+);
+assert.equal(
+  compareFindings(
+    [],
+    [],
+    [{ ...finding, reason: "Browser-owned syntax example." }],
+  ).staleExceptions.length,
+  1,
+  "stale exceptions fail",
+);
+assert.equal(
+  compareFindings([finding], [], [{ ...finding, reason: "" }]).invalidExceptions.length,
+  1,
+  "exceptions require reasons",
+);
+assert.throws(
+  () => scanRepository("/definitely-not-a-coven-repository"),
+  /ENOENT|source root is not a directory/,
+  "missing live roots fail closed",
+);
+
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const baseline = readBaseline(
+  path.join(repositoryRoot, "scripts/ui-consistency-baseline.json"),
+);
+const repositoryResult = compareFindings(
+  scanRepository(repositoryRoot),
+  baseline.findings,
+  SEMANTIC_EXCEPTIONS,
+);
+assert.equal(
+  repositoryResult.ok,
+  true,
+  JSON.stringify(
+    {
+      newFindings: repositoryResult.newFindings,
+      resolvedBaseline: repositoryResult.resolvedBaseline,
+      staleExceptions: repositoryResult.staleExceptions,
+      invalidExceptions: repositoryResult.invalidExceptions,
+      invalidBaselineFindings: repositoryResult.invalidBaselineFindings,
+      duplicateBaselineKeys: repositoryResult.duplicateBaselineKeys,
+      duplicateExceptionKeys: repositoryResult.duplicateExceptionKeys,
+      outOfOrderBaseline: repositoryResult.outOfOrderBaseline,
+    },
+    null,
+    2,
+  ),
+);
+
 console.log(
-  `ui-consistency.test.mjs: copy contract ok; fact pins ok (${paletteCount} palettes, ${iconCount} icons)`,
+  `ui-consistency.test.mjs: contract, scanner, and baseline ok (${paletteCount} palettes, ${iconCount} icons)`,
 );

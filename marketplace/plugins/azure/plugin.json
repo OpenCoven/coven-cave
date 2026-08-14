@@ -20,6 +20,7 @@
     "shell",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/azure",
   "x-coven": {
     "displayName": "Azure MCP Server",

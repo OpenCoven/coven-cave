@@ -24,6 +24,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { StandardSelect } from "@/components/ui/select";
 import { settleEnhance } from "@/lib/prompt-enhancer";
 import {
   defaultResearchPlan,
@@ -34,6 +35,8 @@ import {
   RESEARCH_INTENT_MIN_LENGTH,
   RESEARCH_MISSION_MODES,
   type CreateResearchMissionInput,
+  RESEARCH_HARNESS_IDS,
+  RESEARCH_RUNTIME_DEFAULT_HARNESS,
   type ResearchBounds,
   type ResearchMission,
   type ResearchMissionMode,
@@ -82,6 +85,19 @@ const MODE_LABELS: Record<ResearchMissionMode, string> = {
   sweep: "Sweep",
   paper: "Paper",
   autoresearch: "Deep loop",
+};
+
+/** Display names for the runtimes a mission may run on. Unknown ids fall back
+ *  to the raw id rather than being hidden, so a newly added adapter is still
+ *  selectable before it earns a label here. */
+const HARNESS_LABELS: Record<string, string> = {
+  codex: "Codex",
+  claude: "Claude",
+  copilot: "Copilot",
+  hermes: "Hermes",
+  grok: "Grok",
+  openclaw: "OpenClaw",
+  opencode: "OpenCode",
 };
 
 const MODE_DESCRIPTIONS: Record<ResearchMissionMode, string> = {
@@ -214,6 +230,11 @@ export function ResearchMissionComposer({
   // live in `bounds`. Parsing on every keystroke made fields uncloseable:
   // clearing snapped to 1, so typing "5" produced "15".
   const [boundDrafts, setBoundDrafts] = useState<Partial<Record<BoundKey, string>>>({});
+  // Runtime is part of the plan, not a hidden inheritance from the familiar's
+  // Coven binding. Defaulting to copilot keeps Research runnable on a daemon
+  // that lacks the sessionLaunchPolicy capability, which the codex path needs.
+  const [harness, setHarness] = useState<string>(RESEARCH_RUNTIME_DEFAULT_HARNESS);
+  const [model, setModel] = useState("");
   // Dirty latch: once a bound is hand-edited, auto-routing (which re-derives
   // the plan on every keystroke) must stop clobbering it. Explicit mode picks
   // clear the latch below, so a deliberate switch still resets.
@@ -427,6 +448,10 @@ export function ResearchMissionComposer({
         modeSource: mode === "auto" ? "auto" : "user",
         deliverable: plan.deliverables.join(" + "),
         bounds: submittedBounds,
+        harness,
+        // Empty means "the harness picks", so send nothing rather than an empty
+        // string the validator would reject.
+        ...(model.trim() ? { model: model.trim() } : {}),
       });
       if (!result.ok) {
         setError(result.error);
@@ -728,7 +753,7 @@ export function ResearchMissionComposer({
           aria-controls="research-bounds-editor"
           onClick={() => (boundsOpen ? setBoundsOpen(false) : focusBound("research-bound-minutes"))}
         >
-          {MODE_LABELS[effectiveMode]} · {bounds.maxIterations} iteration{bounds.maxIterations === 1 ? "" : "s"} · {bounds.wallClockMinutes} min · {bounds.sourceTarget} sources
+          {MODE_LABELS[effectiveMode]} · {bounds.maxIterations} iteration{bounds.maxIterations === 1 ? "" : "s"} · {bounds.wallClockMinutes} min · {bounds.sourceTarget} sources · {HARNESS_LABELS[harness] ?? harness}{model.trim() ? ` (${model.trim()})` : ""}
         </button>
       </div>
 
@@ -783,6 +808,29 @@ export function ResearchMissionComposer({
               onChange={(event) => editBound("checkpointEvery", event.target.value)}
               onBlur={() => commitBound("checkpointEvery")}
               onKeyDown={boundKeyDown("checkpointEvery")}
+            />
+          </label>
+          <label>
+            <span>Runtime</span>
+            <StandardSelect
+              id="research-runtime-harness"
+              label="Runtime"
+              value={harness}
+              onChange={setHarness}
+              options={RESEARCH_HARNESS_IDS.map((id) => ({
+                value: id,
+                label: HARNESS_LABELS[id] ?? id,
+              }))}
+            />
+          </label>
+          <label>
+            <span>Model</span>
+            <input
+              id="research-runtime-model"
+              type="text"
+              value={model}
+              placeholder="runtime default"
+              onChange={(event) => setModel(event.target.value)}
             />
           </label>
         </div>

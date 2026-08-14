@@ -21,6 +21,7 @@
     "shell",
     "network"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/higgsfield-generate",
   "x-coven": {
     "displayName": "Higgsfield Generate",

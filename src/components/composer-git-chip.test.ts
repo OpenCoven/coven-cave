@@ -125,6 +125,11 @@ assert.match(
 );
 assert.match(
   chip,
+  /ariaLabel = "Switch branch"[\s\S]*?menuLabel = "Branches"[\s\S]*?<Popover[\s\S]*?ariaLabel=\{ariaLabel\}[\s\S]*?<PopoverBody role="menu" ariaLabel=\{menuLabel\}>[\s\S]*?<PopoverLabel>\{ariaLabel\}<\/PopoverLabel>/,
+  "the shared branch menu exposes overridable popover and menu labels while preserving branch defaults",
+);
+assert.match(
+  chip,
   /\/api\/changes\?projectRoot=\$\{encodeURIComponent\(root\)\}&branches=1/,
   "opening the menu lists local branches via the changes route's ?branches=1 query",
 );

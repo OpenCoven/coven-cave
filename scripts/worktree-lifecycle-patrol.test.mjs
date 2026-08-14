@@ -13,14 +13,27 @@ import {
 import { devNull } from "node:os";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { maintenanceGateRoot } from "./maintenance-gate.mjs";
+import {
+  acquireMaintenanceGate,
+  maintenanceGateRoot,
+  releaseMaintenanceGate,
+} from "./maintenance-gate.mjs";
+import { refreshCovenBin } from "../src/lib/coven-bin.ts";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   evaluateRetirementApplyOutcome,
+  listExpiredOrphanedExceptions,
   renderApplyReport,
   runRetirementApply,
 } from "./worktree-lifecycle-patrol.ts";
+import { probeRecordedPathAbsence } from "./worktree-lifecycle-inventory.ts";
+import {
+  createMetadataRepairOperations,
+  probeMetadataRepairPathPresence,
+  removeLifecycleRecord,
+  repairOrphanedWorktreeMetadata,
+} from "./worktree-lifecycle-metadata-repair.ts";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(sourceRoot, "scripts", "worktree-lifecycle-patrol.ts");
@@ -30,11 +43,26 @@ const fixtureRoot = realpathSync(
 const repo = path.join(fixtureRoot, "repo");
 const origin = path.join(fixtureRoot, "origin.git");
 const bin = path.join(fixtureRoot, "bin");
+const repairBin = path.join(fixtureRoot, "repair-bin");
 const gitBin = path.join(fixtureRoot, "git-bin");
+// Putting `bin` on PATH is not enough to make the fixture's coven the one that
+// answers. covenBin() walks candidateDirs() — ~/.local/bin, /opt/homebrew/bin,
+// the nvm/fnm/pnpm/bun bins — and returns the first ABSOLUTE hit, falling back
+// to the bare name (and therefore to PATH) only when no candidate dir holds
+// one. That split the suite by machine: CI has no coven anywhere, so it reached
+// the stub and passed, while any developer box with one installed drove the
+// real CLI and asserted against its version. COVEN_BIN is the documented
+// override that always wins, so pin it wherever the stub is meant to answer.
+const covenStub = path.join(bin, "coven");
+const repairCovenStub = path.join(repairBin, "coven");
 const registeredDrift = path.join(fixtureRoot, "registered-drift");
 const duplicateRegisteredPath = path.join(fixtureRoot, "duplicate-registered");
 const duplicateWorktreeInventory = path.join(fixtureRoot, "duplicate-worktree-inventory");
 const metadataAlias = path.join(fixtureRoot, "old-alias");
+const orphanedMissingPath = path.join(fixtureRoot, "missing-orphan");
+const orphanedClosedPath = path.join(fixtureRoot, "missing-closed");
+const orphanedPresentPath = path.join(repo, ".worktrees", "orphaned-present");
+const orphanedDanglingPath = path.join(repo, ".worktrees", "orphaned-dangling");
 
 // No child of this test should ever run unbounded. `execFileSync` without a
 // timeout waits forever, so a wedged git or a stub that never exits used to
@@ -73,7 +101,685 @@ function executable(file, contents) {
   chmodSync(file, 0o755);
 }
 
+const orphanRecord = {
+  branch: "fix/cave-orphan-old",
+  path: "/repo/.worktrees/cave-orphan-old",
+  owner: "Kitty",
+  purpose: "Old managed worktree",
+  disposition: "active",
+  createdAt: "2026-08-01T12:00:00.000Z",
+};
+
+function repairCandidate(overrides = {}) {
+  const record = overrides.record ?? orphanRecord;
+  return {
+    beadId: "cave-orphan",
+    beadStatus: "open",
+    location: "primary",
+    branch: orphanRecord.branch,
+    path: orphanRecord.path,
+    record,
+    rawRecord: overrides.rawRecord ?? record,
+    repairable: true,
+    reasons: [],
+    ...overrides,
+  };
+}
+
+function repairOperations({
+  coven = { theme: "moon", worktree: orphanRecord },
+  statuses = ["open", "open"],
+  gateResults = [{ ok: true }, { ok: true }, { ok: true }],
+  branch = { ok: true, present: false },
+  registered = { ok: true, present: false },
+  filesystem = { ok: true, present: false },
+  persist = { ok: true },
+  persistMutation = persist.ok ? "intended" : "none",
+  verificationMetadata,
+} = {}) {
+  let storedCoven = coven;
+  let reads = 0;
+  let gates = 0;
+  const calls = [];
+  return {
+    calls,
+    operations: {
+      heartbeatAndVerifyGate() {
+        calls.push("gate");
+        const result = gateResults[gates] ?? gateResults.at(-1) ?? { ok: true };
+        gates += 1;
+        return result;
+      },
+      readBead(beadId) {
+        calls.push(`read:${beadId}`);
+        reads += 1;
+        return {
+          ok: true,
+          bead: {
+            id: beadId,
+            status:
+              reads <= statuses.length
+                ? statuses[reads - 1]
+                : statuses.length > 0
+                  ? statuses.at(-1)
+                  : "open",
+            metadata:
+              reads > 1 && verificationMetadata !== undefined
+                ? verificationMetadata
+                : { label: "preserve", coven: storedCoven },
+          },
+        };
+      },
+      probeLocalBranch() {
+        calls.push("branch");
+        return branch;
+      },
+      probeRegisteredPath() {
+        calls.push("registered");
+        return registered;
+      },
+      probeFilesystemPath() {
+        calls.push("filesystem");
+        return filesystem;
+      },
+      persistCoven(beadId, nextCoven) {
+        calls.push(`persist:${beadId}`);
+        if (persistMutation === "intended") storedCoven = nextCoven;
+        else if (persistMutation !== "none") storedCoven = persistMutation;
+        return persist;
+      },
+    },
+    get storedCoven() {
+      return storedCoven;
+    },
+  };
+}
+
 try {
+  {
+    const denied = probeMetadataRepairPathPresence("/fixture/denied", () => {
+      throw Object.assign(new Error("fixture denied"), { code: "EACCES" });
+    });
+    assert.equal(denied.ok, false);
+    assert.match(
+      denied.reason,
+      /could not establish path absence \(EACCES\): fixture denied/,
+      "production path probing fails closed for errors other than ENOENT and ENOTDIR",
+    );
+  }
+
+  {
+    const primary = { ...orphanRecord, purpose: "Primary" };
+    const firstAdditional = {
+      ...orphanRecord,
+      branch: "fix/cave-next",
+      path: "/repo/.worktrees/cave-next",
+      purpose: "Next",
+    };
+    const secondAdditional = {
+      ...orphanRecord,
+      branch: "fix/cave-last",
+      path: "/repo/.worktrees/cave-last",
+      purpose: "Last",
+    };
+    assert.deepEqual(
+      removeLifecycleRecord(
+        {
+          theme: "moon",
+          worktree: primary,
+          worktrees: [firstAdditional, secondAdditional],
+        },
+        "primary",
+        primary,
+      ),
+      {
+        theme: "moon",
+        worktree: firstAdditional,
+        worktrees: [secondAdditional],
+      },
+      "removing primary promotes the first additional record",
+    );
+    assert.deepEqual(
+      removeLifecycleRecord(
+        {
+          theme: "moon",
+          worktree: primary,
+          worktrees: [firstAdditional, secondAdditional],
+        },
+        "additional:0",
+        firstAdditional,
+      ),
+      {
+        theme: "moon",
+        worktree: primary,
+        worktrees: [secondAdditional],
+      },
+      "removing an additional record preserves the primary and sibling order",
+    );
+    assert.throws(
+      () =>
+        removeLifecycleRecord(
+          { worktree: { ...primary, purpose: "Changed" } },
+          "primary",
+          primary,
+        ),
+      /changed/,
+      "the transform refuses a changed fresh record",
+    );
+    assert.deepEqual(
+      removeLifecycleRecord({ worktree: primary }, "primary", primary),
+      {},
+      "removing the last lifecycle record leaves an empty coven object",
+    );
+    assert.throws(
+      () => removeLifecycleRecord({}, "primary", primary),
+      /missing/,
+      "the transform explicitly rejects a missing record",
+    );
+    assert.throws(
+      () =>
+        removeLifecycleRecord(
+          { worktree: firstAdditional, worktrees: [primary] },
+          "primary",
+          primary,
+        ),
+      /moved/,
+      "the transform explicitly rejects a moved record",
+    );
+    assert.throws(
+      () =>
+        removeLifecycleRecord(
+          {
+            worktree: primary,
+            worktrees: [{ ...primary, purpose: "Conflicting sibling" }],
+          },
+          "primary",
+          primary,
+        ),
+      /ambiguous/,
+      "the transform rejects a fresh branch/path identity collision",
+    );
+  }
+
+  {
+    const fixture = repairOperations();
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 3,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired.map((item) => item.beadId), ["cave-orphan"]);
+    assert.deepEqual(report.blocked, []);
+    assert.deepEqual(report.partial, []);
+    assert.deepEqual(report.pending, []);
+    assert.deepEqual(fixture.calls, [
+      "gate",
+      "read:cave-orphan",
+      "branch",
+      "registered",
+      "filesystem",
+      "gate",
+      "persist:cave-orphan",
+      "gate",
+      "read:cave-orphan",
+    ]);
+  }
+
+  {
+    const primary = { ...orphanRecord, purpose: "Primary" };
+    const firstAdditional = {
+      ...orphanRecord,
+      branch: "fix/cave-first-additional",
+      path: "/repo/.worktrees/cave-first-additional",
+      purpose: "First additional",
+    };
+    const secondAdditional = {
+      ...orphanRecord,
+      branch: "fix/cave-second-additional",
+      path: "/repo/.worktrees/cave-second-additional",
+      purpose: "Second additional",
+    };
+    const fixture = repairOperations({
+      coven: {
+        sibling: "preserved",
+        worktree: primary,
+        worktrees: [firstAdditional, secondAdditional],
+      },
+    });
+    const candidates = [
+      repairCandidate({ record: primary }),
+      repairCandidate({
+        location: "additional:0",
+        branch: firstAdditional.branch,
+        path: firstAdditional.path,
+        record: firstAdditional,
+      }),
+      repairCandidate({
+        location: "additional:1",
+        branch: secondAdditional.branch,
+        path: secondAdditional.path,
+        record: secondAdditional,
+      }),
+    ];
+    const report = repairOrphanedWorktreeMetadata({
+      candidates,
+      maxRepairs: 3,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired, candidates);
+    assert.deepEqual(report.blocked, []);
+    assert.deepEqual(report.partial, []);
+    assert.deepEqual(report.pending, []);
+    assert.deepEqual(
+      fixture.storedCoven,
+      { sibling: "preserved" },
+      "same-Bead candidates are removed without invalidating later locations",
+    );
+  }
+
+  {
+    const rawPrimary = {
+      ...orphanRecord,
+      path: `${orphanRecord.path}/`,
+      futureField: { preservedUntilRemoval: true },
+    };
+    const untouched = {
+      ...orphanRecord,
+      branch: "fix/cave-untouched",
+      path: "/repo/.worktrees/cave-untouched/",
+      purpose: "Untouched",
+      futureField: { preservedAfterPromotion: true },
+    };
+    const fixture = repairOperations({
+      coven: {
+        sibling: "preserved",
+        worktree: rawPrimary,
+        worktrees: [untouched],
+      },
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [
+        repairCandidate({
+          record: orphanRecord,
+          rawRecord: rawPrimary,
+        }),
+      ],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired.map((item) => item.beadId), ["cave-orphan"]);
+    assert.deepEqual(report.blocked, []);
+    assert.deepEqual(report.partial, []);
+    assert.deepEqual(fixture.storedCoven, {
+      sibling: "preserved",
+      worktree: untouched,
+    });
+  }
+
+  {
+    const primary = { ...orphanRecord, purpose: "Primary" };
+    const promoted = {
+      ...orphanRecord,
+      branch: "fix/cave-promoted",
+      path: "/repo/.worktrees/cave-promoted",
+      purpose: "Promoted",
+    };
+    const fixture = repairOperations({
+      coven: {
+        sibling: "preserved",
+        worktree: primary,
+        worktrees: [promoted],
+      },
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate({ record: primary })],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired.map((item) => item.beadId), ["cave-orphan"]);
+    assert.deepEqual(report.blocked, []);
+  }
+
+  {
+    const primary = { ...orphanRecord, purpose: "Primary" };
+    const fixture = repairOperations({
+      coven: {
+        worktree: primary,
+        worktrees: [
+          {
+            ...orphanRecord,
+            branch: "fix/cave-malformed-additional",
+            path: "/repo/.worktrees/cave-malformed-additional",
+            owner: " ",
+          },
+        ],
+      },
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate({ record: primary })],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired, []);
+    assert.match(report.blocked[0]?.reason ?? "", /additional:0.*owner.*nonblank/i);
+    assert.equal(
+      fixture.calls.includes("persist:cave-orphan"),
+      false,
+      "a malformed additional sibling blocks primary repair before persistence",
+    );
+  }
+
+  for (const [name, first, second, reason] of [
+    [
+      "duplicate sibling branch",
+      {
+        ...orphanRecord,
+        branch: "fix/cave-duplicate-sibling",
+        path: "/repo/.worktrees/cave-duplicate-sibling-a",
+      },
+      {
+        ...orphanRecord,
+        branch: "fix/cave-duplicate-sibling",
+        path: "/repo/.worktrees/cave-duplicate-sibling-b",
+      },
+      /duplicate branch/i,
+    ],
+    [
+      "duplicate normalized sibling path",
+      {
+        ...orphanRecord,
+        branch: "fix/cave-duplicate-path-a",
+        path: "/repo/.worktrees/cave-duplicate-sibling-path",
+      },
+      {
+        ...orphanRecord,
+        branch: "fix/cave-duplicate-path-b",
+        path: "/repo/.worktrees/cave-duplicate-sibling-path/",
+      },
+      /duplicate normalized path/i,
+    ],
+  ]) {
+    const primary = { ...orphanRecord, purpose: "Primary" };
+    const fixture = repairOperations({
+      coven: {
+        worktree: primary,
+        worktrees: [first, second],
+      },
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate({ record: primary })],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired, [], `${name} must not report success`);
+    assert.match(report.blocked[0]?.reason ?? "", reason, name);
+    assert.equal(
+      fixture.calls.includes("persist:cave-orphan"),
+      false,
+      `${name} blocks primary repair before persistence`,
+    );
+  }
+
+  {
+    const primary = { ...orphanRecord, purpose: "Primary" };
+    const additional = {
+      ...orphanRecord,
+      branch: "fix/cave-additional",
+      path: "/repo/.worktrees/cave-additional",
+      purpose: "Additional",
+    };
+    const fixture = repairOperations({
+      coven: {
+        sibling: "preserved",
+        worktree: primary,
+        worktrees: [additional],
+      },
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [
+        repairCandidate({
+          location: "additional:0",
+          branch: additional.branch,
+          path: additional.path,
+          record: additional,
+        }),
+      ],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired.map((item) => item.beadId), ["cave-orphan"]);
+    assert.deepEqual(report.blocked, []);
+  }
+
+  for (const [name, options, reason] of [
+    ["new local branch", { branch: { ok: true, present: true } }, /local branch/i],
+    [
+      "new registered path",
+      { registered: { ok: true, present: true } },
+      /registered path/i,
+    ],
+    [
+      "present directory path",
+      { filesystem: { ok: true, present: true } },
+      /exists on disk/i,
+    ],
+    [
+      "dangling symlink path",
+      { filesystem: { ok: true, present: true } },
+      /exists on disk/i,
+    ],
+    [
+      "filesystem path probe error",
+      { filesystem: { ok: false, reason: "EACCES fixture denied" } },
+      /EACCES fixture denied/,
+    ],
+    ["update failure", { persist: { ok: false, reason: "fixture update failed" } }, /fixture update failed/],
+  ]) {
+    const fixture = repairOperations(options);
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired, [], `${name} must not report success`);
+    assert.match(report.blocked[0]?.reason ?? "", reason, name);
+    assert.deepEqual(report.partial, [], `${name} must not report a partial mutation`);
+  }
+
+  {
+    const updateFailedAfterMutation = repairOperations({
+      persist: { ok: false, reason: "fixture update response failed" },
+      persistMutation: "intended",
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: updateFailedAfterMutation.operations,
+    });
+    assert.deepEqual(report.repaired, []);
+    assert.deepEqual(report.blocked, []);
+    assert.match(report.partial[0]?.reason ?? "", /update response failed.*landed/i);
+  }
+
+  {
+    const verificationFailed = repairOperations({
+      verificationMetadata: {
+        label: "preserve",
+        coven: { worktree: { ...orphanRecord, purpose: "Unexpected" } },
+      },
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: verificationFailed.operations,
+    });
+    assert.deepEqual(report.repaired, []);
+    assert.deepEqual(report.blocked, []);
+    assert.match(report.partial[0]?.reason ?? "", /verification failed/i);
+  }
+
+  {
+    const changed = repairOperations({
+      coven: { worktree: { ...orphanRecord, purpose: "Changed during reread" } },
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: changed.operations,
+    });
+    assert.deepEqual(report.repaired, []);
+    assert.match(report.blocked[0]?.reason ?? "", /changed/);
+  }
+
+  {
+    const closedBeforePersistence = repairOperations({
+      statuses: ["closed"],
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: closedBeforePersistence.operations,
+    });
+    assert.deepEqual(report.repaired, []);
+    assert.match(
+      report.blocked[0]?.reason ?? "",
+      /closed before metadata persistence/,
+    );
+    assert.equal(
+      closedBeforePersistence.calls.includes("persist:cave-orphan"),
+      false,
+      "a Bead closed after inventory is never mutated",
+    );
+  }
+
+  {
+    const closedDuringVerification = repairOperations({
+      statuses: ["open", "closed"],
+    });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: closedDuringVerification.operations,
+    });
+    assert.deepEqual(report.repaired, []);
+    assert.deepEqual(report.blocked, []);
+    assert.match(
+      report.partial[0]?.reason ?? "",
+      /verification failed.*closed after persistence.*partial/,
+    );
+    assert.equal(
+      closedDuringVerification.calls.includes("persist:cave-orphan"),
+      true,
+      "closure discovered during verification is reported after persistence",
+    );
+  }
+
+  for (const status of ["unknown", null]) {
+    const invalidStatus = repairOperations({ statuses: [status] });
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: invalidStatus.operations,
+    });
+    assert.deepEqual(report.repaired, []);
+    assert.match(report.blocked[0]?.reason ?? "", /status is malformed or unknown/);
+    assert.equal(
+      invalidStatus.calls.includes("persist:cave-orphan"),
+      false,
+      "unknown or malformed Bead status blocks mutation",
+    );
+  }
+
+  for (const [phase, index] of [
+    ["before exact Bead reread", 0],
+    ["before metadata persistence", 1],
+    ["before post-persistence verification", 2],
+  ]) {
+    for (const failure of ["heartbeat", "ownership verification"]) {
+      const gateResults = [{ ok: true }, { ok: true }, { ok: true }];
+      gateResults[index] = {
+        ok: false,
+        reason: `${failure} failed at ${phase}`,
+      };
+      const fixture = repairOperations({ gateResults });
+      const report = repairOrphanedWorktreeMetadata({
+        candidates: [repairCandidate()],
+        maxRepairs: 1,
+        gateHandle: { generation: 7, token: "token" },
+        operations: fixture.operations,
+      });
+      assert.deepEqual(report.repaired, []);
+      const failureEntry =
+        index === 2 ? report.partial[0] : report.blocked[0];
+      assert.match(failureEntry?.reason ?? "", new RegExp(failure));
+      assert.match(failureEntry?.reason ?? "", new RegExp(phase));
+      assert.equal(report.partial.length, index === 2 ? 1 : 0);
+      assert.equal(report.blocked.length, index === 2 ? 0 : 1);
+      assert.equal(
+        fixture.calls.includes("persist:cave-orphan"),
+        index === 2,
+        `${failure} failure ${phase} must ${index === 2 ? "" : "not "}follow persistence`,
+      );
+      assert.equal(
+        fixture.calls.filter((call) => call === "read:cave-orphan").length,
+        index === 0 ? 0 : 1,
+        `${failure} failure ${phase} must stop before the next exact Bead read`,
+      );
+    }
+  }
+
+  {
+    const first = repairCandidate();
+    const second = repairCandidate({
+      beadId: "cave-second",
+      branch: "fix/cave-second-old",
+      path: "/repo/.worktrees/cave-second-old",
+      record: {
+        ...orphanRecord,
+        branch: "fix/cave-second-old",
+        path: "/repo/.worktrees/cave-second-old",
+      },
+    });
+    const notRepairable = repairCandidate({
+      beadId: "cave-unsafe",
+      repairable: false,
+      reasons: ["path is present"],
+    });
+    const fixture = repairOperations();
+    const report = repairOrphanedWorktreeMetadata({
+      candidates: [first, second, notRepairable],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.repaired, [first]);
+    assert.deepEqual(report.pending, [second]);
+    assert.equal(
+      report.pending.includes(notRepairable),
+      false,
+      "non-repairable diagnostics are never selected or queued for mutation",
+    );
+    assert.equal(
+      fixture.calls.filter((call) => call === "persist:cave-orphan").length,
+      1,
+      "the batch cap permits exactly one repair attempt",
+    );
+  }
+
   const packageJson = JSON.parse(
     readFileSync(path.join(sourceRoot, "package.json"), "utf8"),
   );
@@ -110,10 +816,19 @@ try {
     claude,
     /Manually `git worktree remove .*` then `git branch -D/,
   );
+  const deniedPathProbe = probeRecordedPathAbsence("/fixture/denied", () => {
+    throw Object.assign(new Error("fixture denied"), { code: "EACCES" });
+  });
+  assert.equal(deniedPathProbe.absent, false);
+  assert.match(
+    deniedPathProbe.reason,
+    /could not establish recorded path absence for \/fixture\/denied.*EACCES.*fixture denied/i,
+  );
 
   mkdirSync(repo);
   mkdirSync(origin);
   mkdirSync(bin);
+  mkdirSync(repairBin);
   mkdirSync(gitBin);
 
   git(["init", "-q", "-b", "main"], repo);
@@ -131,6 +846,381 @@ try {
   git(["remote", "add", "origin", origin], repo);
   git(["push", "-q", "-u", "origin", "main"], repo);
   git(["--git-dir", origin, "symbolic-ref", "HEAD", "refs/heads/main"], fixtureRoot);
+
+  const repairState = path.join(fixtureRoot, "metadata-repair-state.json");
+  const repairLog = path.join(fixtureRoot, "metadata-repair-commands.jsonl");
+  const adapterRecord = {
+    ...orphanRecord,
+    branch: "fix/cave-adapter-old",
+    path: path.join(repo, ".worktrees", "cave-adapter-old"),
+  };
+  writeFileSync(
+    repairState,
+    JSON.stringify({
+      id: "cave-adapter",
+      status: "open",
+      metadata: {
+        unrelated: "preserved",
+        coven: { sibling: "preserved", worktree: adapterRecord },
+      },
+    }),
+  );
+  executable(
+    path.join(repairBin, "bd"),
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+const statePath = process.env.METADATA_REPAIR_STATE;
+const logPath = process.env.METADATA_REPAIR_LOG;
+if (!statePath || !logPath) {
+  console.error("metadata repair fixture paths are required");
+  process.exit(90);
+}
+fs.appendFileSync(logPath, JSON.stringify(args) + "\\n");
+const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+const mode = process.env.METADATA_REPAIR_BD_MODE ?? "";
+if (args[0] === "show") {
+  if (mode === "show-stderr") {
+    console.error("fixture show warning");
+  }
+  if (mode === "show-whitespace-stderr") {
+    process.stderr.write(" \\n\\t\\n");
+  }
+  if (mode === "show-ambiguous") {
+    console.log(JSON.stringify([state, state]));
+    process.exit(0);
+  }
+  if (mode === "show-unknown-status") {
+    console.log(JSON.stringify([{ ...state, status: "unknown" }]));
+    process.exit(0);
+  }
+  if (mode === "show-malformed-status") {
+    console.log(JSON.stringify([{ ...state, status: null }]));
+    process.exit(0);
+  }
+  console.log(JSON.stringify([state]));
+  process.exit(0);
+}
+if (args[0] === "update") {
+  if (
+    args.length !== 5 ||
+    args[2] !== "--metadata" ||
+    args[4] !== "--json"
+  ) {
+    console.error("unexpected bd update arguments");
+    process.exit(91);
+  }
+  if (mode === "update-failure") {
+    console.error("fixture update failed");
+    process.exit(92);
+  }
+  const patch = JSON.parse(args[3]);
+  state.metadata = { ...state.metadata, ...patch };
+  fs.writeFileSync(statePath, JSON.stringify(state));
+  if (mode === "update-stderr") {
+    console.error("fixture update warning");
+  }
+  console.log(JSON.stringify([state]));
+  process.exit(0);
+}
+console.error("unexpected bd command");
+process.exit(93);
+`,
+  );
+  executable(
+    repairCovenStub,
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const statePath = ${JSON.stringify(path.join(fixtureRoot, "metadata-repair-coven.json"))};
+const args = process.argv.slice(2);
+if (args[0] === "--version") {
+  console.log("coven 0.2.5");
+  process.exit(0);
+}
+const state = fs.existsSync(statePath)
+  ? JSON.parse(fs.readFileSync(statePath, "utf8"))
+  : { owner: null, writers: [] };
+const save = () => fs.writeFileSync(statePath, JSON.stringify(state));
+const print = () => console.log(JSON.stringify(state));
+if (args[0] !== "maintenance") process.exit(2);
+if (args[1] === "acquire") {
+  state.owner = {
+    owner_id: args[2],
+    generation: "metadata-repair-generation",
+    expires_at: Math.floor(Date.now() / 1000) + 120,
+    phase: "held",
+  };
+  save();
+  print();
+  process.exit(0);
+}
+if (args[1] === "status") {
+  print();
+  process.exit(0);
+}
+if (args[1] === "heartbeat") {
+  state.owner.expires_at = Math.floor(Date.now() / 1000) + 120;
+  save();
+  print();
+  process.exit(0);
+}
+if (args[1] === "release") {
+  state.owner = null;
+  save();
+  process.exit(0);
+}
+process.exit(2);
+`,
+  );
+
+  const originalPath = process.env.PATH;
+  const originalCovenBin = process.env.COVEN_BIN;
+  process.env.PATH = `${repairBin}${path.delimiter}${originalPath ?? ""}`;
+  // Same override as the spawned patrols, plus one wrinkle unique to running
+  // IN-PROCESS: covenBin() memoises into cachedBin and returns that cache
+  // before it ever consults COVEN_BIN, so setting the variable after anything
+  // in this process has already resolved the binary is a silent no-op. Drop the
+  // cache as well. The spawned helpers need no refresh — each spawn is a fresh
+  // process whose cache starts empty.
+  process.env.COVEN_BIN = repairCovenStub;
+  refreshCovenBin();
+  process.env.METADATA_REPAIR_STATE = repairState;
+  process.env.METADATA_REPAIR_LOG = repairLog;
+  try {
+    const operations = createMetadataRepairOperations({ root: repo });
+    assert.deepEqual(operations.probeLocalBranch("main"), {
+      ok: true,
+      present: true,
+    });
+    assert.deepEqual(operations.probeLocalBranch("fix/cave-adapter-missing"), {
+      ok: true,
+      present: false,
+    });
+    const hostileGitEnvironment = {
+      GIT_DIR: process.env.GIT_DIR,
+      GIT_WORK_TREE: process.env.GIT_WORK_TREE,
+      GIT_INDEX_FILE: process.env.GIT_INDEX_FILE,
+    };
+    process.env.GIT_DIR = origin;
+    process.env.GIT_WORK_TREE = fixtureRoot;
+    process.env.GIT_INDEX_FILE = path.join(fixtureRoot, "hostile-index");
+    try {
+      assert.deepEqual(
+        operations.probeLocalBranch("main"),
+        { ok: true, present: true },
+        "metadata repair branch probes ignore ambient repository overrides",
+      );
+      assert.deepEqual(
+        operations.probeRegisteredPath(repo),
+        { ok: true, present: true },
+        "metadata repair worktree probes ignore ambient repository overrides",
+      );
+    } finally {
+      for (const [key, value] of Object.entries(hostileGitEnvironment)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+    assert.equal(
+      operations.probeLocalBranch("refs/heads/main").ok,
+      false,
+      "the branch adapter rejects full refs instead of probing a different name",
+    );
+
+    assert.deepEqual(operations.probeRegisteredPath(repo), {
+      ok: true,
+      present: true,
+    });
+    assert.deepEqual(
+      operations.probeRegisteredPath(path.join(repo, ".worktrees", "missing")),
+      { ok: true, present: false },
+    );
+    assert.equal(
+      operations.probeRegisteredPath("relative/worktree").ok,
+      false,
+      "the registered-path adapter requires an absolute path",
+    );
+
+    const adapterDanglingPath = path.join(fixtureRoot, "adapter-dangling");
+    symlinkSync(
+      path.join(fixtureRoot, "adapter-missing-target"),
+      adapterDanglingPath,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    assert.deepEqual(operations.probeFilesystemPath(repo), {
+      ok: true,
+      present: true,
+    });
+    assert.deepEqual(operations.probeFilesystemPath(adapterDanglingPath), {
+      ok: true,
+      present: true,
+    });
+    assert.deepEqual(
+      operations.probeFilesystemPath(path.join(repo, "adapter-missing")),
+      { ok: true, present: false },
+    );
+    assert.deepEqual(
+      operations.probeFilesystemPath(path.join(repo, "README.md", "child")),
+      { ok: true, present: false },
+      "ENOTDIR is trustworthy path absence",
+    );
+    const invalidPath = operations.probeFilesystemPath(`${repo}\0invalid`);
+    assert.equal(invalidPath.ok, false);
+    assert.match(
+      invalidPath.reason,
+      /contain no NUL bytes/,
+      "invalid paths are never treated as absent",
+    );
+
+    const read = operations.readBead("cave-adapter");
+    assert.equal(read.ok, true);
+    assert.equal(read.ok ? read.bead.status : null, "open");
+    assert.deepEqual(read.ok ? read.bead.metadata : null, {
+      unrelated: "preserved",
+      coven: { sibling: "preserved", worktree: adapterRecord },
+    });
+    assert.deepEqual(
+      operations.persistCoven("cave-adapter", { sibling: "updated" }),
+      { ok: true },
+    );
+    const reread = operations.readBead("cave-adapter");
+    assert.deepEqual(reread.ok ? reread.bead.metadata : null, {
+      unrelated: "preserved",
+      coven: { sibling: "updated" },
+    });
+    const commandLog = readFileSync(repairLog, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(commandLog, [
+      ["show", "cave-adapter", "--json"],
+      [
+        "update",
+        "cave-adapter",
+        "--metadata",
+        JSON.stringify({ coven: { sibling: "updated" } }),
+        "--json",
+      ],
+      ["show", "cave-adapter", "--json"],
+    ]);
+
+    process.env.METADATA_REPAIR_BD_MODE = "show-stderr";
+    const warnedRead = operations.readBead("cave-adapter");
+    assert.equal(warnedRead.ok, false);
+    assert.match(warnedRead.reason, /wrote to stderr despite reporting success/);
+
+    process.env.METADATA_REPAIR_BD_MODE = "show-whitespace-stderr";
+    const whitespaceRead = operations.readBead("cave-adapter");
+    assert.equal(whitespaceRead.ok, false);
+    assert.match(whitespaceRead.reason, /wrote to stderr despite reporting success/);
+    const whitespaceRepair = repairOrphanedWorktreeMetadata({
+      candidates: [repairCandidate()],
+      maxRepairs: 1,
+      gateHandle: { generation: 7, token: "token" },
+      operations: {
+        ...repairOperations().operations,
+        readBead: operations.readBead,
+      },
+    });
+    assert.deepEqual(whitespaceRepair.repaired, []);
+    assert.match(
+      whitespaceRepair.blocked[0]?.reason ?? "",
+      /wrote to stderr despite reporting success/,
+    );
+
+    process.env.METADATA_REPAIR_BD_MODE = "show-ambiguous";
+    const ambiguousRead = operations.readBead("cave-adapter");
+    assert.equal(ambiguousRead.ok, false);
+    assert.match(ambiguousRead.reason, /must contain one issue/);
+
+    process.env.METADATA_REPAIR_BD_MODE = "show-unknown-status";
+    const unknownStatusRead = operations.readBead("cave-adapter");
+    assert.equal(unknownStatusRead.ok, false);
+    assert.match(unknownStatusRead.reason, /status is malformed or unknown/);
+
+    process.env.METADATA_REPAIR_BD_MODE = "show-malformed-status";
+    const malformedStatusRead = operations.readBead("cave-adapter");
+    assert.equal(malformedStatusRead.ok, false);
+    assert.match(malformedStatusRead.reason, /status is malformed or unknown/);
+
+    process.env.METADATA_REPAIR_BD_MODE = "update-failure";
+    const failedUpdate = operations.persistCoven("cave-adapter", {});
+    assert.equal(failedUpdate.ok, false);
+    assert.match(failedUpdate.reason, /fixture update failed/);
+
+    process.env.METADATA_REPAIR_BD_MODE = "update-stderr";
+    const warnedUpdate = operations.persistCoven("cave-adapter", {});
+    assert.equal(warnedUpdate.ok, false);
+    assert.match(warnedUpdate.reason, /wrote to stderr despite reporting success/);
+
+    delete process.env.METADATA_REPAIR_BD_MODE;
+    writeFileSync(
+      repairState,
+      JSON.stringify({
+        id: "cave-adapter",
+        status: "open",
+        metadata: {
+          unrelated: "preserved",
+          coven: { sibling: "preserved", worktree: adapterRecord },
+        },
+      }),
+    );
+    const repairGateRepo = path.join(fixtureRoot, "metadata-repair-gate-repo");
+    mkdirSync(repairGateRepo);
+    git(["init", "-q", "-b", "main"], repairGateRepo);
+    const acquiredRepairGate = acquireMaintenanceGate({
+      ownerId: "metadata-repair-adapter-test",
+      purpose: "verify production metadata repair gate handling",
+      repoDir: repairGateRepo,
+    });
+    assert.equal(acquiredRepairGate.ok, true);
+    try {
+      const productionRepair = repairOrphanedWorktreeMetadata({
+        candidates: [
+          repairCandidate({
+            beadId: "cave-adapter",
+            branch: adapterRecord.branch,
+            path: adapterRecord.path,
+            record: adapterRecord,
+            rawRecord: adapterRecord,
+          }),
+        ],
+        maxRepairs: 1,
+        gateHandle: acquiredRepairGate.handle,
+        repositoryRoot: repo,
+        operations,
+      });
+      assert.deepEqual(
+        productionRepair.repaired.map((candidate) => candidate.beadId),
+        ["cave-adapter"],
+        "production repair operations accept the complete acquired gate handle",
+      );
+    } finally {
+      if (acquiredRepairGate.ok) {
+        assert.deepEqual(releaseMaintenanceGate(acquiredRepairGate.handle), {
+          ok: true,
+        });
+      }
+    }
+    const invalidGate = operations.heartbeatAndVerifyGate({
+      root: maintenanceGateRoot(repairGateRepo),
+      ownerId: "metadata-repair-adapter-test",
+      generation: 7,
+      token: "token",
+    });
+    assert.equal(invalidGate.ok, false);
+    assert.match(invalidGate.reason, /heartbeat failed: invalid-composite-handle/);
+  } finally {
+    process.env.PATH = originalPath;
+    if (originalCovenBin === undefined) delete process.env.COVEN_BIN;
+    else process.env.COVEN_BIN = originalCovenBin;
+    // Drop the cache again so the repair fixture's binary does not leak into
+    // whatever resolves coven next in this process.
+    refreshCovenBin();
+    delete process.env.METADATA_REPAIR_STATE;
+    delete process.env.METADATA_REPAIR_LOG;
+    delete process.env.METADATA_REPAIR_BD_MODE;
+  }
 
   const old = path.join(repo, ".worktrees", "old");
   git(["worktree", "add", "-q", "-b", "feat/old", old], repo);
@@ -303,6 +1393,12 @@ try {
   git(["worktree", "add", "-q", "--detach", detached, "origin/main"], repo);
   const defaultHead = git(["rev-parse", "refs/remotes/origin/main"], repo).trim();
   git(["update-ref", "refs/remotes/origin/trunk", defaultHead], repo);
+  mkdirSync(orphanedPresentPath, { recursive: true });
+  symlinkSync(
+    path.join(fixtureRoot, "missing-dangling-target"),
+    orphanedDanglingPath,
+    process.platform === "win32" ? "junction" : "dir",
+  );
   const worktreeInventory = git(["worktree", "list", "--porcelain", "-z"], repo);
   writeFileSync(
     duplicateWorktreeInventory,
@@ -469,6 +1565,25 @@ try {
       },
     ]),
   );
+  // The scenario cave-p6wkk demonstrated on 2026-08-10: a bug report is filed
+  // about a unit, quotes its branch name as evidence, and the unit flips from
+  // cleanup-ready to active on the next run — so the better the documentation,
+  // the less retirable the unit.
+  writeFileSync(
+    path.join(fixtureRoot, "tasks-branch-mention.json"),
+    JSON.stringify([
+      branchOnlyMetadataTask,
+      {
+        id: "cave-branch-mention",
+        status: "open",
+        title: "Post-mortem: retirement stalled",
+        description:
+          "The unit on feat/branch-only sat past its cooldown. Quoting the branch here as evidence.",
+        notes: "",
+        external_ref: null,
+      },
+    ]),
+  );
   writeFileSync(
     path.join(fixtureRoot, "tasks-nul-metadata-path.json"),
     JSON.stringify([
@@ -612,6 +1727,29 @@ if [ "\${LIFECYCLE_REF_INVENTORY_STDERR:-0}" = "1" ]; then
       STATUS=$?
       printf '%s\n' 'git ref inventory omitted refs' >&2
       exit "$STATUS"
+      ;;
+  esac
+fi
+
+if [ "\${LIFECYCLE_ORPHANED_METADATA_RACE:-0}" = "1" ]; then
+  case " $* " in
+    *" for-each-ref --format=%(refname)%0a%(objectname)%00 refs/heads "*)
+      COUNT_FILE=${JSON.stringify(
+        path.join(fixtureRoot, "orphaned-race-ref-count-"),
+      )}"\${LIFECYCLE_TEST_INVOCATION:-unknown}"
+      COUNT=0
+      if [ -e "$COUNT_FILE" ]; then
+        COUNT=$(cat "$COUNT_FILE")
+      fi
+      COUNT=$((COUNT + 1))
+      printf '%s' "$COUNT" > "$COUNT_FILE"
+      if [ "$COUNT" -eq 2 ]; then
+        PATH=\${PATH#${gitBin}:}
+        export PATH
+        git --no-replace-objects -c advice.graftFileDeprecated=false -C ${JSON.stringify(repo)} update-ref refs/heads/feat/orphaned "$OLD_OID"
+        git "$@"
+        exit $?
+      fi
       ;;
   esac
 fi
@@ -1303,6 +2441,8 @@ if [ "\${LIFECYCLE_OID_ONLY_TASK:-0}" = "1" ]; then
   cat ${JSON.stringify(path.join(fixtureRoot, "tasks-oid-only.json"))}
 elif [ "\${LIFECYCLE_SHORT_OID_TASK:-0}" = "1" ]; then
   cat ${JSON.stringify(path.join(fixtureRoot, "tasks-short-oid.json"))}
+elif [ "\${LIFECYCLE_BRANCH_MENTION_TASK:-0}" = "1" ]; then
+  cat ${JSON.stringify(path.join(fixtureRoot, "tasks-branch-mention.json"))}
 elif [ "\${LIFECYCLE_NUL_METADATA_PATH:-0}" = "1" ]; then
   cat ${JSON.stringify(path.join(fixtureRoot, "tasks-nul-metadata-path.json"))}
 elif [ "\${LIFECYCLE_NUL_EXCEPTION_PATH:-0}" = "1" ]; then
@@ -1313,8 +2453,14 @@ elif [ -n "\${LIFECYCLE_BAD_METADATA_DATE_CASE:-}" ]; then
   cat "${path.join(fixtureRoot, "metadata-")}\${LIFECYCLE_BAD_METADATA_DATE_CASE}.json"
 elif [ "\${LIFECYCLE_MULTI_WORKTREE_METADATA:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Multi-worktree fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z","exception":{"owner":"Kitty","reason":"Shared split","expiresAt":"2026-08-11T00:00:00.1Z","additionalPaths":["${old}","${live}"]}},"worktrees":[{"branch":"feat/live","path":"${live}","owner":"Kitty","purpose":"Additional fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z","exception":{"owner":"Kitty","reason":"Shared split","expiresAt":"2026-08-11T00:00:00.1Z","additionalPaths":["${live}","${old}"]}}]}}}]'
+elif [ "\${LIFECYCLE_ORPHANED_METADATA_UNSCOPED:-0}" = "1" ]; then
+printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-orphan-unscoped","status":"open","title":"Unscoped malformed orphan fixture","metadata":{"coven":"malformed"}}]'
+elif [ "\${LIFECYCLE_ORPHANED_METADATA_AMBIGUOUS:-0}" = "1" ]; then
+printf '%s\n' '[{"id":"cave-old","status":"closed","title":"Old work","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Landed fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-orphan-malformed-sibling","status":"open","title":"Malformed sibling orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-malformed","path":"${path.join(fixtureRoot, "missing-orphan-malformed")}","owner":"Kitty","purpose":"Malformed sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-malformed-sibling","path":"relative/orphaned","owner":"Kitty","purpose":"Malformed sibling fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}},{"id":"cave-orphan-duplicate-branch","status":"open","title":"Duplicate branch orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-duplicate-branch","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Duplicate branch fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-duplicate-branch","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Duplicate branch fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}},{"id":"cave-orphan-duplicate-path","status":"open","title":"Duplicate path orphan fixture","metadata":{"coven":{"worktree":{"branch":"feat/orphaned-duplicate-path","path":"${orphanedMissingPath}","owner":"Kitty","purpose":"Duplicate path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/orphaned-duplicate-path-sibling","path":"${orphanedMissingPath}/","owner":"Kitty","purpose":"Duplicate path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}]}}}]'
+elif [ "\${LIFECYCLE_ORPHANED_METADATA:-0}" = "1" ]; then
+printf '%s\n' '[{"id":"cave-orphan","status":"open","title":"Orphaned metadata fixture","metadata":{"unrelated":"preserved","coven":{"sibling":"preserved","worktree":{"branch":"feat/orphaned","path":"${orphanedMissingPath}/","owner":"Kitty","purpose":"Orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z","futureField":{"preserve":true}}}}},{"id":"cave-present-path","status":"open","title":"Present path fixture","metadata":{"coven":{"worktree":{"branch":"feat/present-path","path":"${orphanedPresentPath}","owner":"Kitty","purpose":"Present path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-dangling-path","status":"open","title":"Dangling path fixture","metadata":{"coven":{"worktree":{"branch":"feat/dangling-path","path":"${orphanedDanglingPath}","owner":"Kitty","purpose":"Dangling path fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}},{"id":"cave-closed-orphan","status":"closed","title":"Closed orphaned metadata fixture","metadata":{"coven":{"worktree":{"branch":"feat/closed-orphan","path":"${orphanedClosedPath}","owner":"Kitty","purpose":"Closed orphaned metadata fixture","disposition":"active","createdAt":"2026-07-20T12:00:00Z"}}}}]'
 elif [ "\${LIFECYCLE_MALFORMED_WORKTREES:-0}" = "1" ]; then
-  printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Malformed array","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":{}}}}]'
+printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Malformed array","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":{}}}}]'
 elif [ "\${LIFECYCLE_DUPLICATE_WORKTREE_BRANCH:-0}" = "1" ]; then
   printf '%s\n' '[{"id":"cave-multi","status":"closed","title":"Duplicate branch","metadata":{"coven":{"worktree":{"branch":"feat/old","path":"${old}","owner":"Kitty","purpose":"Primary fixture","disposition":"pr","createdAt":"2026-07-20T12:00:00Z"},"worktrees":[{"branch":"feat/old","path":"${live}","owner":"Kitty","purpose":"Duplicate fixture","disposition":"active","createdAt":"2026-07-20T13:00:00Z"}]}}}]'
 elif [ "\${LIFECYCLE_DUPLICATE_WORKTREE_PATH:-0}" = "1" ]; then
@@ -1356,9 +2502,11 @@ fi
 `,
   );
   executable(
-    path.join(bin, "coven"),
+    covenStub,
     `#!/bin/sh
-if [ "$1" = "sessions" ] && [ "$2" = "--json" ]; then
+if [ "$1" = "--version" ]; then
+  printf '%s\n' 'coven 0.2.5'
+elif [ "$1" = "sessions" ] && [ "$2" = "--json" ]; then
   if [ "\${LIFECYCLE_WORKTREE_DRIFT:-0}" = "1" ] && [ ! -e "${path.join(fixtureRoot, "worktree-drift-once")}" ]; then
     touch "${path.join(fixtureRoot, "worktree-drift-once")}"
     git -C "${repo}" worktree add -q --detach "${registeredDrift}" origin/main
@@ -1523,6 +2671,7 @@ exit 0
         env: {
           ...process.env,
           PATH: `${gitBin}${path.delimiter}${bin}${path.delimiter}${process.env.PATH}`,
+          COVEN_BIN: covenStub,
           LIFECYCLE_TEST_INVOCATION: lastPatrolInvocation,
           ...extraEnv,
         },
@@ -1554,6 +2703,7 @@ exit 0
           ...process.env,
           NODE_NO_WARNINGS: "1",
           PATH: `${gitBin}${path.delimiter}${bin}${path.delimiter}${process.env.PATH}`,
+          COVEN_BIN: covenStub,
           LIFECYCLE_TEST_INVOCATION: lastPatrolInvocation,
           ...extraEnv,
         },
@@ -1622,6 +2772,120 @@ exit 0
     "cooldown",
     "recent worktree-local HEAD activity keeps an old landed commit inside the cooldown",
   );
+  const orphanedMetadataReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_ORPHANED_METADATA: "1" }),
+  );
+  assert.equal(orphanedMetadataReport.orphanedMetadata.length, 3);
+  assert.equal(orphanedMetadataReport.orphanedMetadataCount, 3);
+  assert.deepEqual(orphanedMetadataReport.orphanedMetadataErrors, []);
+  assert.equal(orphanedMetadataReport.orphanedMetadataErrorCount, 0);
+  const orphanedByBead = new Map(
+    orphanedMetadataReport.orphanedMetadata.map((entry) => [entry.beadId, entry]),
+  );
+  assert.equal(orphanedByBead.get("cave-orphan").location, "primary");
+  assert.equal(orphanedByBead.get("cave-orphan").repairable, true);
+  assert.deepEqual(orphanedByBead.get("cave-orphan").reasons, []);
+  assert.equal(orphanedByBead.get("cave-orphan").path, orphanedMissingPath);
+  assert.equal(
+    orphanedByBead.get("cave-orphan").rawRecord.path,
+    `${orphanedMissingPath}/`,
+  );
+  assert.deepEqual(
+    orphanedByBead.get("cave-orphan").rawRecord.futureField,
+    { preserve: true },
+  );
+  assert.equal(orphanedByBead.get("cave-present-path").repairable, false);
+  assert.match(
+    orphanedByBead.get("cave-present-path").reasons.join("\n"),
+    /path/i,
+  );
+  assert.equal(orphanedByBead.get("cave-dangling-path").repairable, false);
+  assert.match(
+    orphanedByBead.get("cave-dangling-path").reasons.join("\n"),
+    /exists on disk/i,
+  );
+  assert.equal(orphanedByBead.has("cave-closed-orphan"), false);
+  const ambiguousOrphanedMetadataReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_ORPHANED_METADATA_AMBIGUOUS: "1" }),
+  );
+  assert.equal(ambiguousOrphanedMetadataReport.orphanedMetadata.length, 5);
+  assert.equal(ambiguousOrphanedMetadataReport.orphanedMetadataCount, 5);
+  assert.match(
+    ambiguousOrphanedMetadataReport.orphanedMetadataErrors.join("\n"),
+    /cave-orphan-malformed-sibling worktrees\[0\].*path must be absolute/i,
+  );
+  assert.equal(ambiguousOrphanedMetadataReport.orphanedMetadataErrorCount, 1);
+  for (const entry of ambiguousOrphanedMetadataReport.orphanedMetadata) {
+    assert.equal(entry.repairable, false);
+  }
+  const malformedSibling = ambiguousOrphanedMetadataReport.orphanedMetadata.find(
+    (entry) => entry.beadId === "cave-orphan-malformed-sibling",
+  );
+  assert.match(malformedSibling.reasons.join("\n"), /path must be absolute/i);
+  const duplicateBranchEntries =
+    ambiguousOrphanedMetadataReport.orphanedMetadata.filter(
+      (entry) => entry.beadId === "cave-orphan-duplicate-branch",
+    );
+  assert.equal(duplicateBranchEntries.length, 2);
+  assert.match(
+    duplicateBranchEntries[0].reasons.join("\n"),
+    /branch .* appears in 2 structured metadata records/i,
+  );
+  const duplicatePathEntries =
+    ambiguousOrphanedMetadataReport.orphanedMetadata.filter(
+      (entry) => entry.beadId === "cave-orphan-duplicate-path",
+    );
+  assert.equal(duplicatePathEntries.length, 2);
+  assert.match(
+    duplicatePathEntries[0].reasons.join("\n"),
+    /path .* appears in [2-9]\d* structured metadata records/i,
+  );
+  const ambiguousByBranch = new Map(
+    ambiguousOrphanedMetadataReport.items.map((item) => [item.branch, item]),
+  );
+  assert.equal(
+    ambiguousByBranch.get("feat/old").lane,
+    "retire-after-gate",
+    JSON.stringify({
+      message:
+        "unrelated ambiguous orphan metadata does not disturb feat/old's retirement lane",
+      metadataErrors: ambiguousByBranch.get("feat/old").metadataErrors,
+      probeErrors: ambiguousByBranch.get("feat/old").probeErrors,
+      reasons: ambiguousByBranch.get("feat/old").reasons,
+    }),
+  );
+  const unscopedOrphanedMetadataReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_ORPHANED_METADATA_UNSCOPED: "1" }),
+  );
+  assert.deepEqual(unscopedOrphanedMetadataReport.orphanedMetadata, []);
+  assert.deepEqual(unscopedOrphanedMetadataReport.orphanedMetadataErrors, [
+    "Bead cave-orphan-unscoped coven metadata: coven must be an object",
+  ]);
+  assert.equal(unscopedOrphanedMetadataReport.orphanedMetadataErrorCount, 1);
+  const unscopedOldItem = unscopedOrphanedMetadataReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.equal(
+    unscopedOldItem.lane,
+    "uncertain",
+    "unscoped malformed metadata remains a repository-wide fail-closed error",
+  );
+  assert.deepEqual(
+    unscopedOldItem.metadataErrors,
+    ["Bead cave-orphan-unscoped coven metadata: coven must be an object"],
+  );
+  const racedOrphanedMetadataReport = JSON.parse(
+    patrol(["--json"], {
+      LIFECYCLE_ORPHANED_METADATA: "1",
+      LIFECYCLE_ORPHANED_METADATA_RACE: "1",
+    }),
+  );
+  const racedOrphan = racedOrphanedMetadataReport.orphanedMetadata.find(
+    (entry) => entry.beadId === "cave-orphan",
+  );
+  assert.equal(racedOrphan.repairable, false);
+  assert.match(racedOrphan.reasons.join("\n"), /local branch .* exists/i);
+  git(["update-ref", "-d", "refs/heads/feat/orphaned"], repo);
   const detachedItem = report.items.find(
     (item) => item.kind === "worktree" && item.branch === null,
   );
@@ -1677,9 +2941,9 @@ exit 0
   );
   assert.deepEqual(report.budgets, {
     // cave-oenag: 8 registered, one of them detached, so 7 are assessed.
-    worktrees: { count: 7, registered: 8, detached: 1, warning: 20, exceeded: false },
+    worktrees: { count: 7, registered: 8, detached: 1, warning: 28, exceeded: false },
 
-    branches: { count: 11, warning: 30, exceeded: false },
+    branches: { count: 11, warning: 38, exceeded: false },
     exceptions: { active: 0, expired: 0 },
   }, "the exact budget object survives patrol JSON serialization");
   const nullExceptionReport = JSON.parse(
@@ -1743,11 +3007,14 @@ exit 0
     { active: 1, expired: 0 },
     "semantically shared exceptions across flattened records count once",
   );
+  // Each of these disqualifies `feat/old` on its own terms: the first is a
+  // failure in the shape of the bead's metadata, naming no branch and no path,
+  // so nothing can scope it and it stays repository-wide; the other two are
+  // records that name `feat/old` or its path.
   for (const [environment, expectedError] of [
     ["LIFECYCLE_MALFORMED_WORKTREES", /worktrees must be an array/i],
     ["LIFECYCLE_DUPLICATE_WORKTREE_BRANCH", /duplicate.*(?:branch|records)/i],
     ["LIFECYCLE_DUPLICATE_WORKTREE_PATH", /conflicting structured path ownership/i],
-    ["LIFECYCLE_UNUSABLE_ADDITIONAL_BRANCH", /branch/i],
   ]) {
     const malformedMultiReport = JSON.parse(
       patrol(["--json"], { [environment]: "1" }),
@@ -1761,6 +3028,40 @@ exit 0
       expectedError,
     );
   }
+  // Which unit a malformed record disqualifies is the whole question. Charging
+  // every task's record errors to every unit is what let one bead's invalid
+  // `disposition` deny the entire checkout, `beads:worktrees:create` included,
+  // with no repair available that the worktree rules permit (cave-g9byt).
+  //
+  // Here the unusable branch sits on the *additional* record, which names path
+  // `${live}`. A record names the branch and path it claims even when the rest
+  // of it is invalid, so it disqualifies that unit — and leaves `feat/old`,
+  // whose own record is valid, alone. `feat/live` is dirty in this fixture, so
+  // it lands in `active` before metadata is consulted at all; assert on where
+  // the error landed rather than on the lane it produced.
+  const unusableBranchReport = JSON.parse(
+    patrol(["--json"], { LIFECYCLE_UNUSABLE_ADDITIONAL_BRANCH: "1" }),
+  );
+  assert.match(
+    unusableBranchReport.items
+      .find((item) => item.branch === "feat/live")
+      .metadataErrors.join("\n"),
+    /conflicting structured path ownership/i,
+    "the malformed record disqualifies the unit whose path it claims",
+  );
+  const unusableBranchBystander = unusableBranchReport.items.find(
+    (item) => item.branch === "feat/old",
+  );
+  assert.deepEqual(
+    unusableBranchBystander.metadataErrors,
+    [],
+    "a malformed record naming another unit's path leaves this unit's metadata intact",
+  );
+  assert.notEqual(
+    unusableBranchBystander.lane,
+    "uncertain",
+    "a malformed record describing another unit must not hold this one out of its lane",
+  );
   assert.equal(typeof report.inventoryFingerprint, "string");
   assert.ok(report.inventoryFingerprint.length > 0);
   const humanReport = patrol();
@@ -1770,12 +3071,12 @@ exit 0
     // cave-oenag: this fixture registers one detached unit, so the assessed
     // count is 7 of 8 and the line says which one it dropped. Anchored end-of-line
     // so the note has to be present and exact, not merely tolerated.
-    /^Worktree budget: 7\/20 \(within budget\) — 1 detached unit not counted \(8 registered\)$/m,
+    /^Worktree budget: 7\/28 \(within budget\) — 1 detached unit not counted \(8 registered\)$/m,
     "the routine report uses the lifecycle renderer's exact worktree budget line",
   );
   assert.match(
     humanReport,
-    /^Local branch budget: 11\/30 \(within budget\)$/m,
+    /^Local branch budget: 11\/38 \(within budget\)$/m,
     "the routine report uses the lifecycle renderer's exact local branch budget line",
   );
   assert.doesNotMatch(
@@ -1937,15 +3238,41 @@ exit 0
   }
 
 
-  verifySafetyRegression("exact OID Bead ownership", () => {
+  verifySafetyRegression("exact OID in Bead text is a mention, not ownership", () => {
+    // The fixture bead is titled "Investigate captured commit" and carries the
+    // head OID in external_ref. That is a bead ABOUT the unit, not a claim on
+    // it, and treating it as open work is what made documenting a unit enough
+    // to make the unit unretirable. It is now reported and does not block.
     const oidOwnerReport = JSON.parse(
       patrol(["--json"], { LIFECYCLE_OID_ONLY_TASK: "1" }),
     );
     const oidOwnedBranch = oidOwnerReport.items.find(
       (item) => item.branch === "feat/branch-only",
     );
-    assert.equal(oidOwnedBranch.lane, "active");
-    assert.deepEqual(oidOwnedBranch.taskIds, ["cave-oid-owner"]);
+    assert.equal(oidOwnedBranch.lane, "retire-after-gate");
+    assert.deepEqual(oidOwnedBranch.taskIds, []);
+    assert.deepEqual(oidOwnedBranch.mentionTaskIds, ["cave-oid-owner"]);
+    assert.doesNotMatch(
+      oidOwnedBranch.reasons.join("\n"),
+      /cave-oid-owner/,
+      "a mention must not appear among the reasons that hold a unit active",
+    );
+  });
+
+  verifySafetyRegression("quoting a branch name does not make the unit active", () => {
+    const mentionReport = JSON.parse(
+      patrol(["--json"], { LIFECYCLE_BRANCH_MENTION_TASK: "1" }),
+    );
+    const mentionedBranch = mentionReport.items.find(
+      (item) => item.branch === "feat/branch-only",
+    );
+    assert.equal(
+      mentionedBranch.lane,
+      "retire-after-gate",
+      "filing a post-mortem about a unit must not reclassify it as in-flight work",
+    );
+    assert.deepEqual(mentionedBranch.taskIds, []);
+    assert.deepEqual(mentionedBranch.mentionTaskIds, ["cave-branch-mention"]);
   });
 
   verifySafetyRegression("abbreviated OID is not Bead ownership", () => {
@@ -1957,6 +3284,11 @@ exit 0
     );
     assert.equal(shortOidBranch.lane, "retire-after-gate");
     assert.deepEqual(shortOidBranch.taskIds, []);
+    assert.deepEqual(
+      shortOidBranch.mentionTaskIds,
+      [],
+      "an abbreviated OID is not even a mention — the match must stay exact",
+    );
   });
 
   verifySafetyRegression("duplicate registered local branch ref", () => {
@@ -2911,7 +4243,24 @@ exit 0
     apply: true,
     maxRetire: 3,
   };
-  const applyInventory = { items: report.items };
+  const applyInventory = {
+    items: report.items,
+    orphanedMetadata: [],
+    orphanedMetadataErrors: [],
+  };
+  const emptyMetadataRepair = {
+    repaired: [],
+    blocked: [],
+    partial: [],
+    pending: [],
+  };
+  const metadataApplyDependencies = {
+    createMetadataRepairOperations: () => ({ fixture: "metadata-ops" }),
+    repairOrphanedWorktreeMetadata: ({ maxRepairs }) => {
+      assert.equal(maxRepairs, 0);
+      return emptyMetadataRepair;
+    },
+  };
   const acquiredHandle = {
     root: repo,
     ownerId: "fixture-owner",
@@ -2950,6 +4299,26 @@ exit 0
     ok: true,
     status: 0,
   });
+  assert.deepEqual(
+    evaluateRetirementApplyOutcome({
+      metadataRepair: {
+        ...emptyMetadataRepair,
+        blocked: [
+          {
+            beadId: "cave-orphan",
+            location: "primary",
+            reason: "fixture repair blocked",
+          },
+        ],
+      },
+      retirement: fakeRetirement,
+    }),
+    {
+      ok: false,
+      status: 1,
+      reason: "metadata-repair-blocked",
+    },
+  );
   assert.deepEqual(evaluateRetirementApplyOutcome({ retirement: blockedRetirement }), {
     ok: false,
     status: 1,
@@ -3103,6 +4472,7 @@ exit 0
     let releasedHandle = null;
     let createOpsHandle = null;
     const result = runRetirementApply(applyOptions, applyInventory, {
+      ...metadataApplyDependencies,
       acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
       heartbeatMaintenanceGate: () => {
         events.push("heartbeat");
@@ -3133,6 +4503,7 @@ exit 0
       },
     });
     assert.deepEqual(result, {
+      metadataRepair: emptyMetadataRepair,
       retirement: fakeRetirement,
       postInventory: fakePostInventory,
     });
@@ -3157,7 +4528,53 @@ exit 0
   }
 
   {
+    const repairedCandidate = repairCandidate();
+    const events = [];
+    const result = runRetirementApply(
+      { ...applyOptions, maxRetire: 1 },
+      {
+        ...applyInventory,
+        orphanedMetadata: [repairedCandidate],
+      },
+      {
+        ...metadataApplyDependencies,
+        acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+        heartbeatMaintenanceGate: () => ({ ok: true }),
+        verifyMaintenanceGateOwnership: () => ({ ok: true }),
+        releaseMaintenanceGate: () => ({ ok: true }),
+        createMetadataRepairOperations: () => ({ fixture: "metadata-ops" }),
+        repairOrphanedWorktreeMetadata: ({ maxRepairs, operations }) => {
+          events.push("repair");
+          assert.equal(maxRepairs, 1);
+          assert.deepEqual(operations, { fixture: "metadata-ops" });
+          return {
+            ...emptyMetadataRepair,
+            repaired: [repairedCandidate],
+          };
+        },
+        createGitRetirementOperations: () => ({ fixture: "git-ops" }),
+        retireLifecycleUnits: () => {
+          assert.fail("metadata repair consumes the only shared batch slot");
+        },
+        collectWorktreeLifecycleInventory: () => {
+          events.push("post-inventory");
+          return { ...fakePostInventory, orphanedMetadata: [] };
+        },
+      },
+    );
+    assert.deepEqual(events, ["repair", "post-inventory"]);
+    assert.deepEqual(result.metadataRepair.repaired, [repairedCandidate]);
+    assert.deepEqual(result.retirement.retired, []);
+    assert.equal(
+      result.retirement.cleanupReady.length,
+      report.counts["retire-after-gate"],
+      "Git candidates remain cleanup-ready when metadata consumes the batch",
+    );
+  }
+
+  {
     const result = runRetirementApply(applyOptions, applyInventory, {
+      ...metadataApplyDependencies,
       acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
       heartbeatMaintenanceGate: () => ({ ok: true }),
       verifyMaintenanceGateOwnership: () => ({ ok: true }),
@@ -3181,6 +4598,7 @@ exit 0
   {
     const events = [];
     const result = runRetirementApply(applyOptions, applyInventory, {
+      ...metadataApplyDependencies,
       acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
       heartbeatMaintenanceGate: () => {
         events.push("heartbeat");
@@ -3234,6 +4652,7 @@ exit 0
   {
     let ownershipChecks = 0;
     const result = runRetirementApply(applyOptions, applyInventory, {
+      ...metadataApplyDependencies,
       acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
       heartbeatMaintenanceGate: () => ({ ok: true }),
       verifyMaintenanceGateOwnership: () => {
@@ -3261,6 +4680,7 @@ exit 0
   assert.throws(
     () =>
       runRetirementApply(applyOptions, applyInventory, {
+        ...metadataApplyDependencies,
         acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
         heartbeatMaintenanceGate: () => {
           assert.fail("heartbeat must not run after retirement throws");
@@ -3284,19 +4704,289 @@ exit 0
     "runRetirementApply preserves both retirement and release failures",
   );
 
+  // ── Metadata repair must not eat the whole retirement budget (cave-1si7i) ───
+  //
+  // --max-retire is one allowance shared by repair and retirement, and repair
+  // is served first. With at least maxRetire repairable records, repair took
+  // all of it and retireLifecycleUnits was never called, so a run reported
+  // "Locally retired (0)" beside the units it could have retired. Two
+  // consecutive real runs did exactly that: 3 repaired, 0 retired.
+  {
+    const retirableInventory = {
+      ...applyInventory,
+      // Enough repairable records to consume maxRetire several times over.
+      orphanedMetadata: Array.from({ length: 12 }, (_, index) => ({
+        beadId: `cave-fixture-${index}`,
+        location: "primary",
+        branch: `feat/fixture-${index}`,
+        path: `${repo}/.worktrees/fixture-${index}`,
+        repairable: true,
+      })),
+      orphanedMetadataErrors: [],
+    };
+    assert.ok(
+      retirableInventory.items.some((item) => item.lane === "retire-after-gate"),
+      "fixture inventory must contain a unit retirement would actually select",
+    );
+
+    let repairBudget = null;
+    let retireBudget = null;
+    runRetirementApply(applyOptions, retirableInventory, {
+      createMetadataRepairOperations: () => ({ fixture: "metadata-ops" }),
+      repairOrphanedWorktreeMetadata: ({ maxRepairs }) => {
+        repairBudget = maxRepairs;
+        return emptyMetadataRepair;
+      },
+      acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+      heartbeatMaintenanceGate: () => ({ ok: true }),
+      verifyMaintenanceGateOwnership: () => ({ ok: true }),
+      releaseMaintenanceGate: () => ({ ok: true }),
+      createGitRetirementOperations: () => ({ fixture: "ops" }),
+      retireLifecycleUnits: ({ maxRetire }) => {
+        retireBudget = Number(maxRetire);
+        return fakeRetirement;
+      },
+      collectWorktreeLifecycleInventory: () => fakePostInventory,
+    });
+
+    assert.equal(
+      retireBudget,
+      1,
+      "retirement must get a slot even when repairable records outnumber the budget — it used to get none",
+    );
+    assert.equal(
+      repairBudget,
+      applyOptions.maxRetire - 1,
+      "repair takes the remainder, not the whole allowance",
+    );
+    assert.ok(
+      repairBudget + retireBudget <= applyOptions.maxRetire,
+      "the reservation must not widen the blast radius --max-retire exists to bound",
+    );
+  }
+
+  // A single-slot run still spends it on repair. Reserving out of a budget of
+  // one would not share it, it would only move the starvation onto repair --
+  // the same defect wearing the other hat. Pinned here because it is a
+  // deliberate choice rather than a fallout of the arithmetic.
+  {
+    let repairBudget = null;
+    let retirementRan = false;
+    runRetirementApply(
+      { ...applyOptions, maxRetire: 1 },
+      {
+        ...applyInventory,
+        orphanedMetadata: [
+          {
+            beadId: "cave-fixture-single",
+            location: "primary",
+            branch: "feat/fixture-single",
+            path: `${repo}/.worktrees/fixture-single`,
+            repairable: true,
+          },
+        ],
+        orphanedMetadataErrors: [],
+      },
+      {
+        createMetadataRepairOperations: () => ({ fixture: "metadata-ops" }),
+        repairOrphanedWorktreeMetadata: ({ maxRepairs }) => {
+          repairBudget = maxRepairs;
+          return emptyMetadataRepair;
+        },
+        acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+        heartbeatMaintenanceGate: () => ({ ok: true }),
+        verifyMaintenanceGateOwnership: () => ({ ok: true }),
+        releaseMaintenanceGate: () => ({ ok: true }),
+        createGitRetirementOperations: () => ({ fixture: "ops" }),
+        retireLifecycleUnits: () => {
+          retirementRan = true;
+          return fakeRetirement;
+        },
+        collectWorktreeLifecycleInventory: () => fakePostInventory,
+      },
+    );
+
+    assert.equal(repairBudget, 1, "a single slot goes to repair, as it did before the reservation");
+    assert.equal(retirementRan, false, "and retirement is not invoked with no slot left");
+  }
+
+  // With nothing retirable, the whole allowance still goes to repair: the
+  // reservation is for work that can actually happen, not a standing tax.
+  {
+    const nothingRetirable = {
+      ...applyInventory,
+      items: applyInventory.items.filter((item) => item.lane !== "retire-after-gate"),
+      orphanedMetadata: Array.from({ length: 12 }, (_, index) => ({
+        beadId: `cave-fixture-${index}`,
+        location: "primary",
+        branch: `feat/fixture-${index}`,
+        path: `${repo}/.worktrees/fixture-${index}`,
+        repairable: true,
+      })),
+      orphanedMetadataErrors: [],
+    };
+
+    let repairBudget = null;
+    let retirementRan = false;
+    runRetirementApply(applyOptions, nothingRetirable, {
+      createMetadataRepairOperations: () => ({ fixture: "metadata-ops" }),
+      repairOrphanedWorktreeMetadata: ({ maxRepairs }) => {
+        repairBudget = maxRepairs;
+        return emptyMetadataRepair;
+      },
+      acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+      heartbeatMaintenanceGate: () => ({ ok: true }),
+      verifyMaintenanceGateOwnership: () => ({ ok: true }),
+      releaseMaintenanceGate: () => ({ ok: true }),
+      createGitRetirementOperations: () => ({ fixture: "ops" }),
+      retireLifecycleUnits: () => {
+        retirementRan = true;
+        return fakeRetirement;
+      },
+      collectWorktreeLifecycleInventory: () => fakePostInventory,
+    });
+
+    assert.equal(
+      repairBudget,
+      applyOptions.maxRetire,
+      "no reservation is taken when nothing is retirable",
+    );
+    assert.equal(retirementRan, false, "and retirement is not invoked for an empty candidate set");
+  }
+
+  // ── The post-apply inventory renews the fence AS it works (cave-ykj47) ──────
+  //
+  // The inventory is the longest operation inside the fence and on a real
+  // checkout outruns the 120s Coven lease by itself (measured 141s). Before the
+  // fix it ran with no progress hook: the gate was heartbeated once before it
+  // and verified after, so the lease was already gone by the time it returned
+  // and the release failed with "maintenance lease expired".
+  //
+  // The renewal factory is injected unthrottled here on purpose. The real
+  // createFenceRenewal skips its first call and then renews at most every
+  // FENCE_RENEWAL_INTERVAL_MS, so in a test that finishes in milliseconds every
+  // call is throttled and a missing hook is indistinguishable from a working
+  // one.
+  {
+    const heartbeats = [];
+    let sawProgressHook = null;
+    const result = runRetirementApply(applyOptions, applyInventory, {
+      ...metadataApplyDependencies,
+      acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+      heartbeatMaintenanceGate: (handle) => {
+        heartbeats.push(handle);
+        return { ok: true };
+      },
+      verifyMaintenanceGateOwnership: () => ({ ok: true }),
+      releaseMaintenanceGate: () => ({ ok: true }),
+      createGitRetirementOperations: () => ({ fixture: "ops" }),
+      retireLifecycleUnits: () => fakeRetirement,
+      createFenceRenewal: (renew) => renew,
+      collectWorktreeLifecycleInventory: (options) => {
+        sawProgressHook = options.onProgress;
+        // Stand in for the inventory's own progress reporting.
+        for (let index = 0; index < 4; index += 1) options.onProgress?.();
+        return fakePostInventory;
+      },
+    });
+
+    assert.equal(
+      typeof sawProgressHook,
+      "function",
+      "the post-apply inventory must receive a progress hook — without one nothing renews the fence while it runs",
+    );
+    assert.equal(
+      heartbeats.length,
+      5,
+      "one heartbeat before the inventory plus one per progress report",
+    );
+    assert.ok(
+      heartbeats.every((handle) => handle === acquiredHandle),
+      "every renewal renews the fence this run actually holds",
+    );
+    assert.deepEqual(result.postInventory, fakePostInventory);
+    assert.equal(result.postInventoryError, undefined);
+    assert.equal(result.warning, undefined, "the release succeeds when the fence is still held");
+  }
+
+  // A fence that dies mid-inventory must stop the inventory, not be ridden out.
+  // createFenceRenewal is documented fail-closed: work continuing past a lost
+  // fence is no longer excluding the writers it believes it is. The retirement
+  // above has already happened, so this surfaces as a reported error rather
+  // than an abort.
+  {
+    let heartbeatCalls = 0;
+    let progressCalls = 0;
+    const result = runRetirementApply(applyOptions, applyInventory, {
+      ...metadataApplyDependencies,
+      acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+      heartbeatMaintenanceGate: () => {
+        heartbeatCalls += 1;
+        // Succeed for the pre-inventory heartbeat, then lose the fence.
+        return heartbeatCalls === 1
+          ? { ok: true }
+          : { ok: false, reason: "maintenance lease expired" };
+      },
+      verifyMaintenanceGateOwnership: () => ({ ok: true }),
+      releaseMaintenanceGate: () => ({ ok: true }),
+      createGitRetirementOperations: () => ({ fixture: "ops" }),
+      retireLifecycleUnits: () => fakeRetirement,
+      createFenceRenewal: (renew) => renew,
+      collectWorktreeLifecycleInventory: (options) => {
+        for (let index = 0; index < 4; index += 1) {
+          progressCalls += 1;
+          options.onProgress?.();
+        }
+        return fakePostInventory;
+      },
+    });
+
+    assert.equal(
+      progressCalls,
+      1,
+      "the inventory stops at the first progress report after the fence is lost",
+    );
+    assert.match(
+      result.postInventoryError,
+      /failed to heartbeat maintenance gate during post-apply inventory: maintenance lease expired/,
+    );
+    assert.equal(
+      result.postInventory,
+      undefined,
+      "an inventory collected behind a dead fence is never reported as authoritative",
+    );
+    assert.deepEqual(
+      result.retirement,
+      fakeRetirement,
+      "retirement already completed before the fence was lost and is still reported",
+    );
+  }
+
   const gateRoot = maintenanceGateRoot(repo);
   const applyResult = patrolResult(["--apply", "--json"]);
   assert.equal(applyResult.status, 2);
-  assert.equal(applyResult.stderr.trim(), "");
+  const unexpectedApplyStderr = applyResult.stderr
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter(
+      (line) =>
+        !line.includes("cannot set terminal process group") &&
+        line !== "bash: no job control in this shell",
+    );
+  assert.deepEqual(unexpectedApplyStderr, []);
   const applyJson = JSON.parse(applyResult.stdout);
   assert.equal(applyJson.ok, false);
   assert.equal(applyJson.reason, "gate-incomplete");
-  assert.deepEqual(applyJson.missingPlanes, ["coven", "beads", "github"]);
+  assert.deepEqual(applyJson.missingPlanes, ["beads", "github"]);
   assert.deepEqual(applyJson.local, {
     enforced: true,
-    source: "scripts/maintenance-gate.mjs",
+    source: "scripts/local-maintenance-gate.mjs via composite coordinator",
   });
-  assert.deepEqual(applyJson.coven, { enforced: false, source: "cave-wqa0b.2" });
+  assert.deepEqual(applyJson.coven, {
+    enforced: true,
+    source: "@opencoven/cli@0.2.5 maintenance",
+  });
   assert.deepEqual(applyJson.beads, { enforced: false, source: "cave-wqa0b.3" });
   assert.deepEqual(applyJson.github, { enforced: false, source: "cave-wqa0b.4" });
   assert.equal(applyJson.complete, false);
@@ -3447,6 +5137,87 @@ exit 0
     git(["worktree", "remove", registeredDrift], repo);
   }
   rmSync(fixtureRoot, { recursive: true, force: true });
+}
+
+// cave-4oor6: expired exceptions on beads whose worktrees are gone must surface
+// in the read-only report, not vanish because inventory only tallies unit-matched
+// exceptions.
+{
+  const nowMs = Date.parse("2026-08-12T00:00:00.000Z");
+  const inventory = {
+    orphanedMetadata: [
+      {
+        beadId: "cave-oenag",
+        beadStatus: "open",
+        location: "metadata.coven.worktree",
+        branch: "fix/cave-oenag-detached-budget",
+        path: "/repo/.worktrees/cave-oenag-detached-budget",
+        rawRecord: {},
+        record: {
+          branch: "fix/cave-oenag-detached-budget",
+          path: "/repo/.worktrees/cave-oenag-detached-budget",
+          owner: "kitty",
+          purpose: "budget exception",
+          disposition: "active",
+          createdAt: "2026-08-07T00:00:00.000Z",
+          exception: {
+            owner: "kitty",
+            reason: "over budget",
+            expiresAt: "2026-08-08T00:00:00.000Z",
+            additionalPaths: ["/repo/.worktrees/cave-oenag-detached-budget"],
+          },
+        },
+        repairable: false,
+        reasons: ["worktree path is not registered"],
+      },
+      {
+        beadId: "cave-live-exception",
+        beadStatus: "open",
+        location: "metadata.coven.worktree",
+        branch: "fix/live",
+        path: "/repo/.worktrees/live",
+        rawRecord: {},
+        record: {
+          branch: "fix/live",
+          path: "/repo/.worktrees/live",
+          owner: "kitty",
+          purpose: "still active grant",
+          disposition: "active",
+          createdAt: "2026-08-10T00:00:00.000Z",
+          exception: {
+            owner: "kitty",
+            reason: "still live",
+            expiresAt: "2026-08-15T00:00:00.000Z",
+            additionalPaths: ["/repo/.worktrees/live"],
+          },
+        },
+        repairable: false,
+        reasons: ["worktree path is not registered"],
+      },
+      {
+        beadId: "cave-no-exception",
+        beadStatus: "open",
+        location: "metadata.coven.worktree",
+        branch: "fix/plain",
+        path: "/repo/.worktrees/plain",
+        rawRecord: {},
+        record: {
+          branch: "fix/plain",
+          path: "/repo/.worktrees/plain",
+          owner: "kitty",
+          purpose: "no exception",
+          disposition: "active",
+          createdAt: "2026-08-01T00:00:00.000Z",
+        },
+        repairable: false,
+        reasons: ["worktree path is not registered"],
+      },
+    ],
+  };
+  const listed = listExpiredOrphanedExceptions(inventory, nowMs);
+  assert.equal(listed.length, 1, "only expired exceptions on orphaned records surface");
+  assert.equal(listed[0].beadId, "cave-oenag");
+  assert.equal(listed[0].expiresAt, "2026-08-08T00:00:00.000Z");
 }
 
 console.log("worktree-lifecycle-patrol.test.mjs: ok");

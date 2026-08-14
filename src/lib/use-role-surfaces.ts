@@ -24,6 +24,7 @@ import {
   type SurfaceMemoryEntry,
   type ToolRegistry,
 } from "@/lib/role-surfaces";
+import { roomEnabledInBuild } from "@/lib/room-flags";
 
 /** `/api/roles` entry fields this bridge consumes. */
 type RoleEntryWire = FamiliarRoleManifest & {
@@ -362,7 +363,10 @@ export function useRoleSurfaceSession(input: {
     ? contextsByFamiliarId.get(familiar.id) ?? null
     : null;
   const { visibleSurfaces, surfaceFamiliarIds } = useMemo(() => {
-    const surfaces = listRoleSurfaces();
+    // Build visibility is the outer gate: a room registered but not shipped in
+    // this build never reaches role matching, so it appears in no sidebar row,
+    // no command-palette entry, and no restored `surface:<id>` mode.
+    const surfaces = listRoleSurfaces().filter((surface) => roomEnabledInBuild(surface.id));
     const visibleById = new Map<string, RoleSurface>();
     const owners = new Map<string, string[]>();
     for (const candidate of candidateFamiliars) {

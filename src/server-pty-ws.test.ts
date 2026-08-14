@@ -54,12 +54,25 @@ assert.match(
   "PTY WebSocket access-token auth fails closed when no access token is configured, reading the token lazily so mid-session arming (cave-os73) reaches the gate",
 );
 // The 401 applies when a remote/mobile credential is configured. With neither
-// token (the local desktop app / dev server) the loopback host+origin gate is
-// the protection, preserving credential-less local connections — #714 dropped
-// that guard and 401'd every local terminal. Native mobile mode configures
-// only COVEN_CAVE_AUTH_TOKEN, so it must also trigger auth.
+// token (plain local development) the loopback host+origin gate is the
+// protection. Once either credential exists, even loopback callers must prove
+// they hold it before the server will spawn or adopt a shell.
 assert.match(src, /function isPtyAuthRequired\(\): boolean \{\s*return Boolean\(accessToken\(\) \|\| SIDECAR_TOKEN\);\s*\}/, "PTY auth is required when either the mobile access token or sidecar token is configured");
-assert.match(src, /if \(isPtyAuthRequired\(\) && !tokenAuthenticated && !isDirectLoopbackRequest\(req\)\)/, "PTY upgrade 401s on missing credentials when any PTY auth token is configured, except for a socket-verified direct loopback peer (cave-vn2r)");
+assert.match(
+  src,
+  /sidecarTokenConfigured: Boolean\(SIDECAR_TOKEN\),\s*accessTokenConfigured: Boolean\(accessToken\(\)\),\s*tokenAuthenticated,/,
+  "PTY upgrade authentication closes the credential-less path whenever either token is configured",
+);
+// ...and it decides that WITHOUT consulting loopback at all. The positive
+// assertion above would still pass if someone re-introduced a direct-loopback
+// escape hatch beside it, which is exactly the bypass cave-ruw4z removed: TCP
+// loopback proves the caller is on this machine, never which OS user it is, so
+// any local account could otherwise adopt a shell as the Cave process owner.
+assert.doesNotMatch(
+  src,
+  /shouldRejectUnauthenticatedPtyUpgrade\([\s\S]{0,400}?isDirectLoopbackRequest/,
+  "no direct-loopback term may re-enter the PTY rejection decision",
+);
 // Direct-loopback classification (cave-vn2r): trusted only because ALL three
 // hold — the socket peer is loopback, no forwarding markers are present
 // (tailscale serve delivers remote phones over loopback WITH x-forwarded-*),
@@ -100,16 +113,13 @@ assert.match(src, /SIDECAR_QUERY_PARAM = "covenCaveToken"/, "PTY WebSocket auth 
 // tab never connects" bug (cave-iz1j).
 assert.match(
   src,
-  /const tokenAuthenticated =\s*tailnetAuthenticated \|\| \(isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false\);/,
-  "PTY upgrade verifies the access/sidecar token, or an allowlisted tailnet device, before the source gate",
+  /const tokenAuthenticated = isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false;/,
+  "PTY upgrade requires a cryptographic access or sidecar credential before relaxing the source gate",
 );
-// An allowlisted tailnet device is a credential in its own right (cave-zm6pn):
-// resolved off the raw socket, it is stronger evidence than the shared bearer
-// token, so the terminal must not 403 a device the REST surface already admits.
-assert.match(
+assert.doesNotMatch(
   src,
-  /const tailnetAuthenticated = resolveTailnetPeer\(req\) !== null;/,
-  "PTY upgrade treats an allowlisted tailnet device as authenticated",
+  /tailnetAuthenticated \|\|/,
+  "spoofable forwarding headers cannot substitute for a PTY bearer credential",
 );
 assert.match(
   src,
@@ -173,7 +183,8 @@ assert.match(src, /isAllowedUpgradeSource/, "server validates WebSocket upgrade 
 assert.match(src, /if \(!isLoopbackHost\(host\)\)/, "server classifies loopback WebSocket hosts");
 assert.match(src, /isLoopbackAddress\(req\.socket\.remoteAddress\)/, "server verifies the WebSocket peer address, not only the Host header");
 assert.match(src, /sameOrigin\(req\.headers\.origin/, "server rejects cross-origin WebSocket upgrades");
-assert.match(src, /process\.env\.HOSTNAME \?\? "127\.0\.0\.1"/, "server binds to loopback by default");
+assert.match(src, /const hostname = loopbackHostname\(\)/, "server binds only through the loopback selector");
+assert.doesNotMatch(src, /process\.env\.HOSTNAME \?\?/, "ambient HOSTNAME values cannot bypass validation");
 assert.match(src, /pty\.spawn\(defaultShell\(\),\s*defaultShellArgs\(\)/, "server hardcodes shell and args");
 assert.doesNotMatch(src, /query\.command|query\.args|query\.env/, "renderer must not supply process authority through query params");
 assert.match(src, /statSync\(raw\)/, "projectRoot is stat-validated before use as cwd");
@@ -226,7 +237,11 @@ assert.match(src, /isLoopbackAddress\(req\.socket\.remoteAddress\)/, "server ver
 // Tailscale Serve forwards the <host>.ts.net Host. The iOS terminal may use
 // that host only after the mobile access token authenticates the upgrade;
 // tailnet membership alone must not relax the host gate.
-assert.match(src, /const tokenAuthenticated =\s*tailnetAuthenticated \|\| \(isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false\)/, "the upgrade credential — token or allowlisted tailnet device — is verified before the host gate");
+assert.match(
+  src,
+  /const tokenAuthenticated = isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false;/,
+  "a cryptographic upgrade credential is verified before the host gate",
+);
 assert.match(
   src,
   /if \(tokenAuthenticated\) return sameOrigin\(req\.headers\.origin, `http:\/\/\$\{host\}`\);\s*\n\s*return false;/,
@@ -403,6 +418,22 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
 // Execute the parser itself without starting Next or the PTY server. Extracting
 // this inline block keeps the production build bundle-free while covering the
 // legacy maxKeys behavior that URLSearchParams does not preserve by default.
+{
+  const hostnameBlock = src.match(
+    /function loopbackHostname\([\s\S]*?return "127\.0\.0\.1";\n}/,
+  );
+  assert.ok(hostnameBlock, "server defines a testable loopback-only hostname selector");
+  const loopbackHostname = new Function(
+    `${hostnameBlock[0]}; return loopbackHostname;`,
+  )();
+  for (const hostname of ["127.0.0.1", "localhost", "::1"]) {
+    assert.equal(loopbackHostname(hostname), hostname, `${hostname} remains a supported loopback bind`);
+  }
+  for (const hostname of ["0.0.0.0", "192.168.1.20", "cave-host", ""]) {
+    assert.equal(loopbackHostname(hostname), "127.0.0.1", `${hostname || "empty"} cannot expose the server`);
+  }
+}
+
 {
   const parserBlock = src.match(
     /type UpgradeQuery[\s\S]+?(?=\nfunction isPtyAuthRequired)/,

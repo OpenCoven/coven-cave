@@ -37,3 +37,54 @@ export class RuntimeStartupThrottle {
     this.failures = this.failures.filter((failedAt) => now - failedAt < this.windowMs);
   }
 }
+
+/**
+ * Owns one process-local startup lane. Concurrent callers share the same
+ * operation, failures consume the bounded restart budget, and a proven
+ * recovery clears it for a later unrelated incident.
+ */
+export class RuntimeStartupCoordinator<T> {
+  private active: Promise<T> | null = null;
+  private readonly throttle: RuntimeStartupThrottle;
+
+  constructor(throttle = new RuntimeStartupThrottle()) {
+    this.throttle = throttle;
+  }
+
+  run(
+    operation: () => Promise<T>,
+    throttled: (retryAfterMs: number) => T,
+    succeeded: (result: T) => boolean,
+  ): Promise<T> {
+    if (this.active) return this.active;
+
+    const decision = this.throttle.allow();
+    if (!decision.allowed) {
+      return Promise.resolve().then(() => throttled(decision.retryAfterMs));
+    }
+
+    let pending: Promise<T>;
+    try {
+      pending = operation();
+    } catch (error) {
+      this.throttle.recordFailure();
+      return Promise.reject(error);
+    }
+    let tracked: Promise<T>;
+    tracked = pending.then(
+      (result) => {
+        if (succeeded(result)) this.throttle.recordSuccess();
+        else this.throttle.recordFailure();
+        return result;
+      },
+      (error) => {
+        this.throttle.recordFailure();
+        throw error;
+      },
+    ).finally(() => {
+      if (this.active === tracked) this.active = null;
+    });
+    this.active = tracked;
+    return tracked;
+  }
+}

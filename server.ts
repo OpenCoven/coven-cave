@@ -157,14 +157,9 @@ type PtySession = {
 };
 
 const sessions = new Map<string, PtySession>();
+const PACKAGED_CHILD_SHUTDOWN_BUDGET_MS = 1_200;
 
-// Packaged Unix sidecars receive stdin as a private pipe whose write end is
-// owned only by the Tauri GUI. EOF therefore identifies the exact parent
-// lifetime without polling a reusable PID. The sidecar is also launched as
-// its own process-group leader, so one signal removes the root and ordinary
-// descendants; node-pty sessions are asked to stop explicitly because a PTY
-// may create a separate session/process group.
-function terminatePackagedUnixSidecarTree(): void {
+function terminatePtySessions(): void {
   for (const session of sessions.values()) {
     try {
       session.pty.kill();
@@ -173,10 +168,45 @@ function terminatePackagedUnixSidecarTree(): void {
     }
   }
   sessions.clear();
+}
+
+// Packaged Unix sidecars receive stdin as a private pipe whose write end is
+// owned only by the Tauri GUI. EOF therefore identifies the exact parent
+// lifetime without polling a reusable PID. The sidecar is also launched as
+// its own process-group leader, so one signal removes the root and ordinary
+// descendants; node-pty sessions are asked to stop explicitly because a PTY
+// may create a separate session/process group.
+async function terminatePackagedUnixSidecarTree(): Promise<void> {
+  // PTYs may own sessions/groups outside the server group. Stop them before
+  // awaiting any JavaScript cleanup, and repeat in finally so an exception or
+  // hung persistence path can never skip this OS boundary.
+  terminatePtySessions();
   try {
-    process.kill(-process.pid, "SIGKILL");
-  } catch {
-    process.exit(1);
+    const terminateDirectRuns = globalThis.__covenCaveTerminateCopilotFlowRuns;
+    if (terminateDirectRuns) {
+      await Promise.race([
+        terminateDirectRuns(),
+        new Promise<never>((_resolve, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error("direct Copilot shutdown exceeded its native parent lease")),
+            PACKAGED_CHILD_SHUTDOWN_BUDGET_MS,
+          );
+          timer.unref?.();
+        }),
+      ]);
+    }
+  } catch (error) {
+    // Direct runs are each owned by a native supervisor whose stdin closes when
+    // this server dies. Report the failed graceful proof, then let that exact
+    // EOF/Job boundary finish cleanup instead of waiting past Tauri's lease.
+    console.error("[cave] direct Copilot process-tree shutdown could not be proved", error);
+  } finally {
+    terminatePtySessions();
+    try {
+      process.kill(-process.pid, "SIGKILL");
+    } catch {
+      process.exit(1);
+    }
   }
 }
 
@@ -184,8 +214,14 @@ if (
   process.platform !== "win32" &&
   process.env.COVEN_CAVE_PARENT_WATCHDOG === "stdin-eof"
 ) {
-  process.stdin.once("end", terminatePackagedUnixSidecarTree);
-  process.stdin.once("error", terminatePackagedUnixSidecarTree);
+  let parentShutdownStarted = false;
+  const onParentShutdown = () => {
+    if (parentShutdownStarted) return;
+    parentShutdownStarted = true;
+    void terminatePackagedUnixSidecarTree();
+  };
+  process.stdin.once("end", onParentShutdown);
+  process.stdin.once("error", onParentShutdown);
   process.stdin.resume();
 }
 
@@ -267,7 +303,12 @@ function getTokensFromCookie(header: string | undefined): string[] {
   for (const part of header.split(";")) {
     const [key, ...rest] = part.trim().split("=");
     if (key === ACCESS_COOKIE || key === LEGACY_ACCESS_COOKIE) {
-      tokens.push(decodeURIComponent(rest.join("=") ?? ""));
+      const raw = rest.join("=") ?? "";
+      try {
+        tokens.push(decodeURIComponent(raw));
+      } catch {
+        // Ignore malformed percent-encoding.
+      }
     }
   }
   return tokens;
@@ -430,7 +471,7 @@ async function refreshTailnetPeers(): Promise<void> {
     const { stdout } = await execFileAsync(
       process.env.COVEN_CAVE_TAILSCALE_BIN ?? "tailscale",
       ["status", "--json"],
-      { timeout: 10_000, maxBuffer: 16 * 1024 * 1024 },
+      { timeout: 10_000, maxBuffer: 16 * 1024 * 1024, windowsHide: true },
     );
     const status = JSON.parse(stdout) as {
       Peer?: Record<string, { ID?: string; TailscaleIPs?: string[] }>;
@@ -622,6 +663,15 @@ function parseUpgradeTarget(rawUrl: string): { pathname: string; query: UpgradeQ
 
 function isPtyAuthRequired(): boolean {
   return Boolean(accessToken() || SIDECAR_TOKEN);
+}
+
+function shouldRejectUnauthenticatedPtyUpgrade({
+  sidecarTokenConfigured = false,
+  accessTokenConfigured = false,
+  tokenAuthenticated = false,
+} = {}) {
+  if (tokenAuthenticated) return false;
+  return sidecarTokenConfigured || accessTokenConfigured;
 }
 
 function isAuthorized(req: IncomingMessage, query: Record<string, string | string[] | undefined>): boolean {
@@ -1051,8 +1101,15 @@ function handlePtyConnection(
   });
 }
 
+function loopbackHostname(raw = process.env.HOSTNAME) {
+  if (raw === "127.0.0.1" || raw === "localhost" || raw === "::1") {
+    return raw;
+  }
+  return "127.0.0.1";
+}
+
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME ?? "127.0.0.1";
+const hostname = loopbackHostname();
 const port = cavePort();
 
 const app = next({ dev, hostname, port });
@@ -1101,14 +1158,10 @@ server.on("upgrade", (req, socket, head) => {
   // forwards the `<host>.ts.net` Host) legitimately arrives with a
   // non-loopback Host and must pass the source gate on the strength of its
   // token — mirroring proxy.ts's isAllowedApiHost relaxation on REST.
-  //
-  // An allowlisted tailnet node is a credential in its own right (cave-zm6pn):
-  // its WireGuard-backed device identity is strictly stronger evidence than the
-  // shared bearer token this branch was built for, so it satisfies both the
-  // source gate below and the auth requirement after it.
-  const tailnetAuthenticated = resolveTailnetPeer(req) !== null;
-  const tokenAuthenticated =
-    tailnetAuthenticated || (isPtyAuthRequired() ? isAuthorized(req, query) : false);
+  // Forwarding headers are not credentials at this boundary: a local process
+  // can forge them, so allowlisted tailnet identity alone must never authorize
+  // spawning or adopting a shell.
+  const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
 
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
@@ -1116,19 +1169,22 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  // Enforce token auth whenever the server has a remote/mobile credential.
-  // With no token set — the local desktop app and dev server — the loopback
-  // host+origin gate above is the protection, and credential-less connections
-  // are the local app itself. #714 dropped this and 401'd every local terminal
-  // (reintroducing the v0.0.72 "Terminal connection failed" regression that
-  // server-pty-ws.test.ts warns about). Native mobile mode configures only
-  // COVEN_CAVE_AUTH_TOKEN; require that sidecar token here too so
-  // Tailscale-forwarded PTY upgrades cannot become credential-less shells.
-  // A direct loopback peer (verified off the socket, never forwarded — see
-  // isDirectLoopbackRequest) is the local app or a local browser and is
-  // exempt, mirroring proxy.ts's local-peer exemption on REST (cave-vn2r);
-  // Tailscale-forwarded upgrades carry forwarding headers and stay gated.
-  if (isPtyAuthRequired() && !tokenAuthenticated && !isDirectLoopbackRequest(req)) {
+  // Any configured PTY credential closes the credential-less path, including
+  // direct loopback: another local account or process is not the paired app.
+  // Plain development remains credential-less only when neither token exists.
+  //
+  // Keep the credential-less case exactly that narrow. #714 removed it and
+  // 401'd every local terminal, reintroducing the v0.0.72 "Terminal connection
+  // failed" regression that server-pty-ws.test.ts still guards. What makes
+  // closing it safe HERE is that both peers now have a credential to present:
+  // the Tauri shell its per-launch sidecar token, and a local browser the
+  // access gate. TCP loopback proves only that the caller is on this machine,
+  // never which OS user it is.
+  if (shouldRejectUnauthenticatedPtyUpgrade({
+    sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
+    accessTokenConfigured: Boolean(accessToken()),
+    tokenAuthenticated,
+  })) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;

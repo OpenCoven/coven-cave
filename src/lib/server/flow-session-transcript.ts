@@ -8,7 +8,7 @@
 
 import { loadConversation } from "../cave-conversations.ts";
 import { loadState } from "../cave-config.ts";
-import { callDaemon } from "../coven-daemon.ts";
+import { callDaemon, callDaemonTarget, type DaemonTarget } from "../coven-daemon.ts";
 import { loadConversationFromJsonl } from "../openclaw-conversation.ts";
 import { stripAnsi } from "../ansi.ts";
 
@@ -40,11 +40,17 @@ function eventOutputTranscript(events: CovenEvent[]): string {
   return parts.join("");
 }
 
-async function daemonEventTranscript(sessionId: string): Promise<string> {
-  const res = await callDaemon<{ events: CovenEvent[] }>({
+async function daemonEventTranscript(
+  sessionId: string,
+  daemonTarget?: DaemonTarget,
+): Promise<string> {
+  const request = {
     path: `/api/v1/events?sessionId=${encodeURIComponent(sessionId)}&afterSeq=0&limit=500`,
     timeoutMs: 4000,
-  });
+  } as const;
+  const res = daemonTarget
+    ? await callDaemonTarget<{ events: CovenEvent[] }>(daemonTarget, request)
+    : await callDaemon<{ events: CovenEvent[] }>(request);
   if (!res.ok || !res.data?.events) return "";
   return eventOutputTranscript(res.data.events);
 }
@@ -54,7 +60,10 @@ async function daemonEventTranscript(sessionId: string): Promise<string> {
  * surfaced yet. Daemon events are only consulted for sessions Cave owns, the
  * same ownership gate the transcript route applies.
  */
-export async function flowSessionTranscript(sessionId: string): Promise<string> {
+export async function flowSessionTranscript(
+  sessionId: string,
+  daemonTarget?: DaemonTarget,
+): Promise<string> {
   const conversation = await loadConversation(sessionId);
   const conversationText = assistantTranscript(conversation);
   if (conversationText.trim()) return conversationText;
@@ -72,7 +81,7 @@ export async function flowSessionTranscript(sessionId: string): Promise<string> 
     Boolean(state.sessionFamiliar?.[sessionId]) ||
     Boolean(state.sessionTitles?.[sessionId]);
   if (owned) {
-    const eventTranscript = await daemonEventTranscript(sessionId);
+    const eventTranscript = await daemonEventTranscript(sessionId, daemonTarget);
     if (eventTranscript.trim()) return eventTranscript;
   }
 

@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
 import QRCode from "qrcode";
-import { stripAnsi } from "@/lib/ansi";
+import {
+  BoundedProcessOutput,
+  safeProcessErrorMessage,
+  terminateProcessTree,
+} from "@/lib/process-execution";
 import { readMobileLastSeen } from "@/lib/server/mobile-paired";
 import {
   armMobileAccessSecret,
@@ -19,6 +23,7 @@ import {
   MOBILE_INVITE_TTL_MS,
   nativeAppDiscoveryProof,
   resolveIosInstallUrl,
+  serveRouteFailure,
   shouldAllowMagicDnsFallback,
   tailnetDiscoveryProof,
   tailscaleBin,
@@ -42,44 +47,62 @@ function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: tailscaleSpawnEnv(),
+      detached: process.platform !== "win32",
     });
-    let stdout = "";
-    let stderr = "";
+    const stdout = new BoundedProcessOutput(64 * 1024);
+    const stderr = new BoundedProcessOutput(64 * 1024);
+    let settled = false;
+    let timedOut = false;
+    const finish = (result: TailscaleResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
     const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      resolve({
-        ok: false,
-        status: null,
-        stdout: stripAnsi(stdout),
-        stderr: `tailscale ${args.join(" ")} timed out`,
+      timedOut = true;
+      void terminateProcessTree(child).then(() => {
+        finish({
+          ok: false,
+          status: null,
+          stdout: stdout.text(),
+          stderr: "Tailscale command timed out",
+        });
       });
     }, timeoutMs);
 
     child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
+      stdout.append(chunk);
     });
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+      stderr.append(chunk);
     });
     child.on("error", (error) => {
-      clearTimeout(timer);
       const missing = (error as NodeJS.ErrnoException).code === "ENOENT";
-      resolve({
+      finish({
         ok: false,
         status: null,
-        stdout: stripAnsi(stdout),
+        stdout: stdout.text(),
         stderr: missing
           ? "Tailscale CLI not found. Install Tailscale or set TAILSCALE_BIN to the tailscale executable."
-          : error.message,
+          : safeProcessErrorMessage(error, "Tailscale CLI"),
       });
     });
     child.on("close", (status) => {
-      clearTimeout(timer);
-      resolve({
+      if (timedOut) {
+        finish({
+          ok: false,
+          status: null,
+          stdout: stdout.text(),
+          stderr: "Tailscale command timed out",
+        });
+        return;
+      }
+      finish({
         ok: status === 0,
         status,
-        stdout: stripAnsi(stdout),
-        stderr: stripAnsi(stderr),
+        stdout: stdout.text(),
+        stderr: stderr.text(),
       });
     });
   });
@@ -343,7 +366,6 @@ async function ensureNativeAppServeReady(
     // the loopback backend.
     allowMagicDnsFallback: shouldAllowMagicDnsFallback({
       serveOk: serve.ok,
-      serveError: serveWarning ?? "",
       statusOk: status.ok,
     }),
   });
@@ -378,12 +400,18 @@ async function ensureNativeAppServeReady(
   }
 
   if (!discovery.ok) {
-    const routeDetail = fallbackWarning ?? serveWarning ?? discovery.reason;
+    const routeFailure = serveRouteFailure({
+      backendUrl: backend,
+      serveError: fallbackWarning ?? serveWarning,
+      statusError: status.stderr,
+      routeReason: discovery.reason,
+    });
+    const routeDetail = routeFailure.error;
     return NextResponse.json(
       {
         ok: false,
         error: routeDetail,
-        stderr: fallbackWarning ?? serveWarning ?? status.stderr,
+        stderr: routeFailure.stderr,
         backendUrl: backend,
         steps: buildPairingSteps({
           access: { ok: true },
@@ -521,18 +549,23 @@ async function mobileHandoffReady(
     backendUrl: backend,
     allowMagicDnsFallback: shouldAllowMagicDnsFallback({
       serveOk: serve.ok,
-      serveError: serveWarning ?? "",
       statusOk: status.ok,
     }),
   });
 
   if (!discovery.ok) {
+    const routeFailure = serveRouteFailure({
+      backendUrl: backend,
+      serveError: serveWarning,
+      statusError: status.stderr,
+      routeReason: discovery.reason,
+    });
     // Nothing usable — surface the most actionable error we have.
     return NextResponse.json(
       {
         ok: false,
-        error: serveWarning ?? discovery.reason,
-        stderr: serveWarning ?? status.stderr,
+        error: routeFailure.error,
+        stderr: routeFailure.stderr,
         backendUrl: backend,
       },
       { status: 500 },

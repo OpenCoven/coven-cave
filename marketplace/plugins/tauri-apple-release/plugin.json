@@ -19,6 +19,7 @@
     "read_files",
     "shell"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/tauri-apple-release",
   "x-coven": {
     "displayName": "Tauri Apple Release",

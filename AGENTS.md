@@ -18,7 +18,7 @@
   the fallback.** Telling them apart is the whole game, because the wrong choice
   creates a worktree nothing can ever retire.
   - **Exit 2 — refused by the admission gate** (`creating a worktree would
-    exceed the 20-worktree budget`, or `Bead … already owns a registered
+    exceed the 28-worktree budget`, or `Bead … already owns a registered
     worktree`). The gate ran fine and declined. **Do not fall back to `git worktree add` here.** Every refusal
     from this path is lifted by an attributed, expiring exception, and the
     refusal itself now prints the exact rerun. The budget counts every
@@ -57,8 +57,12 @@
     So the order is **check quota → rerun → only then fall back**. Genuinely
     structural failures name the repository itself (`canonical repository
     identity mismatch`, `canonical repository identity changed between pages`);
-    those do not improve with a retry. Reach for the fallback only after a
-    retry failed:
+    those do not improve with a retry. A malformed worktree record on a bead
+    (`Bead cave-… worktree metadata: …`) is structural too, but since
+    `cave-g9byt` it is charged only to the unit it names — so if one reaches
+    you, it claims the exact branch or path you asked for. Pick another branch
+    or have its owner repair it; do not hand-edit someone else's record. Reach
+    for the fallback only after a retry failed:
 
     ```bash
     git worktree add -b <branch> .worktrees/<branch> origin/main   # last resort
@@ -72,11 +76,13 @@
     Bead — that record is the evidence the retirement gate checks.
 - After a PR merges, run `pnpm beads:worktrees` and record the merged unit's
   disposition. **`pnpm beads:worktrees:apply` cannot retire anything today** — it
-  exits 2 with `missing maintenance planes: coven, beads, github`, which
-  `scripts/maintenance-gate.mjs` hard-codes off pending `cave-wqa0b.2/.3/.4`
-  (all BLOCKED). That is not a local fault and a retry will not clear it, so
+  exits 2 with `missing maintenance planes: beads, github`. Cave now holds its
+  local writer-intent fence together with Coven's released 0.2.5 maintenance
+  protocol; the remaining Beads and GitHub planes are still unenforced. That is
+  not a local fault and a retry will not clear it, so
   hand-retirement through the archive-tag route in [`CLAUDE.md`](CLAUDE.md) is
-  the expected path until those land (`cave-3aqvr`). Prove retention first: a
+  the expected path until those land (`cave-wqa0b.3` and `cave-wqa0b.4`; the
+  residue they leave behind is `cave-xbc87`). Prove retention first: a
   squash-merge leaves the branch commits on no remote ref, so a merged PR is not
   retention and a pushed archive tag is. Local cleanup is bounded and exact-OID
   guarded; remote deletion remains proposal-only.
@@ -86,8 +92,43 @@
   authority. Automatic retirement requires the full maintenance gate. Explicit
   maintainer authorization in the current task may activate Branch Curator's
   bounded manual deletion proof.
+- Before you assume a dirty worktree is another session's live work, run
+  `pnpm wt:status`. It is network-free and sub-second, and it separates real
+  in-flight edits from a worktree **wedged** in an abandoned merge or rebase —
+  a state that otherwise reads as ordinary dirtiness and gets stepped around
+  indefinitely. See the `pnpm wt:status` section of [`CLAUDE.md`](CLAUDE.md).
+- **If a branch you pushed disappears from `origin`, there are exactly two
+  causes — neither of them lost your work.** Nothing local explains either, which
+  is why they are named here (`cave-iy3l7`).
+  1. **The PR merged.** `delete_branch_on_merge` is on, so GitHub drops the head
+     branch. A squash merge lands a *different* commit on `main`, so the branch's
+     own tip is then on no remote ref — retire the worktree through the
+     archive-tag route, and expect the guard to block until a tag exists.
+  2. **The 40-branch cap rolled it back.** `.github/workflows/branch-cap.yml`
+     deletes a *newly created* branch when the repository exceeds 40
+     (`scripts/enforce-branch-cap.mjs`). The deletion is **remote-only** — your
+     local branch and worktree still hold every commit — and the workflow run
+     now says so in its error and its run summary. Push again after freeing
+     capacity; a `retention/<branch>-<sha>` tag may already hold the head, and
+     tags are exempt from the cap.
+
+  Tell them apart with `gh pr list --head <branch> --state all`: a merged PR is
+  cause 1, no PR at all is cause 2. Check the headroom before it bites with
+  `git ls-remote --heads origin | wc -l` — the workflow warns from three
+  creations out, but only on the run page.
 - Do not push directly to `main`; use the protected PR path for repository changes.
 - Before release or TestFlight work, reconcile through clean `main`, then verify from that state.
+
+## Pull-request Review Standard
+
+When asked to review or assess a pull request, treat the request as **read-only**
+unless the user separately authorizes repairs. Review the exact current
+`headRefOid`: inspect the scoped diff and relevant code paths, check mergeability
+and conflicts, read every review thread (including paginated thread comments),
+and inspect the current check runs. Pending, missing, stale, cancelled, or
+failed checks are incomplete—not green. Report the exact head, evidence, and
+remaining blockers; never edit, push, merge, resolve threads, or change PR state
+as part of a review-only request.
 
 ## Design System (any UI work)
 
@@ -310,6 +351,25 @@ bd prime                # Refresh Beads context
 - Record branch/worktree, session, familiar owner, and verification evidence in the bead before handoff.
 - Close with `bd close <id>` only after merge or explicit completion criteria are satisfied.
 - Never put secrets in bead text, and never treat `.beads/issues.jsonl` as the sync source of truth.
+
+Create new Beads through the canonical wrapper so ownership is set exactly once:
+
+```bash
+pnpm beads:create --surface shared "Short title" \
+  --description "Why this exists and what needs to be done" \
+  --type task --priority 2
+```
+
+- Choose exactly one ownership surface: `ios`, `desktop`, or `shared`.
+- `surface:shared` covers API, backend, workflow, and other cross-platform work.
+- Narrower non-platform labels may coexist, but they do **not** satisfy ownership.
+- Do not pass `surface:ios`, `surface:desktop`, or `surface:shared` manually in
+  `--labels`; canonical creation appends the single ownership label for you.
+- `pnpm beads:surfaces` is the non-mutating audit for raw-CLI or legacy rows
+  that introduce new missing/conflicting ownership labels.
+- Existing backlog rows are grandfathered only through
+  `config/beads-surface-grandfather.json`; do not backfill the old queue as
+  part of routine implementation work.
 
 ### `in_progress` means actively worked *right now* (cave-1mxw4)
 

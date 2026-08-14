@@ -32,6 +32,7 @@ const commandPermissions = readFileSync(new URL("./pty.toml", import.meta.url), 
 const speechPermissions = readFileSync(new URL("./speech.toml", import.meta.url), "utf8");
 const microphonePermissions = readFileSync(new URL("./microphone.toml", import.meta.url), "utf8");
 const reachabilityPermissions = readFileSync(new URL("./desktop-reachability.toml", import.meta.url), "utf8");
+const reliabilityPermissions = readFileSync(new URL("./reliability.toml", import.meta.url), "utf8");
 const browserRust = readFileSync(new URL("../src/browser.rs", import.meta.url), "utf8");
 const browserCommandsRust = readFileSync(new URL("../src/browser_commands.rs", import.meta.url), "utf8");
 const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
@@ -71,6 +72,7 @@ const requiredPermissionIds = [
   "allow-speech-stt-stop",
   "allow-desktop-reachability-status",
   "allow-desktop-reachability-configure",
+  "allow-record-daemon-reliability-measurement",
 ];
 
 const requiredCommands = [
@@ -95,6 +97,7 @@ const requiredCommands = [
   "cancel_sidecar_startup",
   "desktop_reachability_status",
   "desktop_reachability_configure",
+  "record_daemon_reliability_measurement",
 ];
 
 // Match capability remote URL patterns component-wise, the way Tauri's
@@ -158,7 +161,9 @@ test("packaged desktop app can use native browser and terminal commands", () => 
     const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const permissionSource = command.startsWith("desktop_reachability_")
       ? reachabilityPermissions
-      : commandPermissions;
+      : command === "record_daemon_reliability_measurement"
+        ? reliabilityPermissions
+        : commandPermissions;
     assert.match(
       permissionSource,
       new RegExp(String.raw`commands\.allow\s*=\s*\[[^\]]*"${escapedCommand}"[^\]]*\]`),
@@ -250,6 +255,7 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
     "allow-browser-reload",
     "allow-desktop-reachability-status",
     "allow-desktop-reachability-configure",
+    "allow-record-daemon-reliability-measurement",
   ]) {
     assert.ok(
       loopbackBrowserCapability.permissions.includes(permission),

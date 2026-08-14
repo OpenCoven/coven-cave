@@ -34,16 +34,23 @@ function setNavigator(value) {
   let copiedValue = null;
   let appended = 0;
   let removed = 0;
+  let focused = null;
+  const copyButton = {
+    isConnected: true,
+    focus() { focused = copyButton; },
+  };
   const fakeTextarea = {
     value: "",
     style: {},
     setAttribute() {},
-    select() {},
+    select() { focused = fakeTextarea; },
     setSelectionRange() {},
   };
+  focused = copyButton;
   globalThis.document = {
     createElement: () => fakeTextarea,
     body: { appendChild() { appended++; }, removeChild() { removed++; } },
+    get activeElement() { return focused; },
     getSelection: () => ({ rangeCount: 0 }),
     execCommand: (cmd) => { if (cmd === "copy") { copiedValue = fakeTextarea.value; return true; } return false; },
   };
@@ -52,6 +59,7 @@ function setNavigator(value) {
   assert.equal(copiedValue, "hello fallback", "fallback copies the text via a textarea");
   assert.equal(appended, 1, "fallback appends exactly one textarea");
   assert.equal(removed, 1, "fallback removes the textarea it added");
+  assert.equal(focused, copyButton, "fallback restores focus to the triggering control");
   restore();
 }
 
@@ -82,6 +90,37 @@ function setNavigator(value) {
   const ok = await copyText("retry");
   assert.equal(ok, true, "a rejected secure write still succeeds via fallback");
   assert.equal(fellBack, true, "rejected secure write falls through to execCommand");
+  restore();
+}
+
+// 5. A throwing legacy copy still removes its transient control and restores focus.
+{
+  setNavigator({});
+  let focused = null;
+  let removed = 0;
+  const copyButton = {
+    isConnected: true,
+    focus() { focused = copyButton; },
+  };
+  const fakeTextarea = {
+    value: "",
+    style: {},
+    setAttribute() {},
+    select() { focused = fakeTextarea; },
+    setSelectionRange() {},
+  };
+  focused = copyButton;
+  globalThis.document = {
+    get activeElement() { return focused; },
+    createElement: () => fakeTextarea,
+    body: { appendChild() {}, removeChild() { removed++; } },
+    getSelection: () => null,
+    execCommand: () => { throw new Error("webview copy failed"); },
+  };
+  const ok = await copyText("throwing fallback");
+  assert.equal(ok, false, "a throwing fallback reports failure");
+  assert.equal(removed, 1, "a throwing fallback removes its transient textarea");
+  assert.equal(focused, copyButton, "a throwing fallback restores the triggering control");
   restore();
 }
 

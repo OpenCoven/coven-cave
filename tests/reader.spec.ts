@@ -142,7 +142,8 @@ async function openReader(page: Page, turn: TurnSpec) {
   await expect(page.locator(".cave-artifact-content").last()).toContainText(marker.slice(0, 24), { timeout: 30_000 });
 
   await page.locator(".cave-artifact-content").last().hover();
-  await page.locator('button[aria-label="Expand message"]').last().click({ force: true });
+  await page.getByRole("button", { name: "More response actions" }).last().click({ force: true });
+  await page.getByRole("menuitem", { name: "Open reader" }).click();
   // The reader is loaded through next/dynamic so its chunk (and stylesheet)
   // stay off the / route's first paint (#4255) — the FIRST open in a run pays
   // for `next dev` to compile that chunk on demand, which measured well past
@@ -166,33 +167,6 @@ async function openReader(page: Page, turn: TurnSpec) {
     timeout: 30_000,
   });
 
-  // ...and finally for the CITATION CHIPS, which the prose wait does not reach.
-  //
-  // Two separate steps produce them, and the prose wait covers neither:
-  // the footnote pipeline rewrites `[^mdn]` into an `a[href^="#cite-"]`, and
-  // then a useEffect in ui/citation.tsx walks those anchors and adds
-  // `cave-citation-chip`. Measured on a cold server, at the instant the prose
-  // marker settles the document holds ZERO citation anchors — not undecorated
-  // ones, none at all. So prose-is-present is a proxy for a milestone it has
-  // not reached, and callers then assert on the result inside expect()'s
-  // default 5s window. That is the race that reds this spec: `toHaveCount(2)`
-  // read 0 with the prose fully rendered, twice on 2026-08-08 in unrelated PRs
-  // (cave-t69ok) — a second round on the cold-start race cave-n7wm5 hardened.
-  //
-  // Deriving the count from the fixture's own footnote definitions keeps this
-  // fixture-agnostic the way the prose wait is: BARE_ANSWER declares none, so
-  // the wait is skipped rather than hanging on a turn that never had chips.
-  // Counting undecorated anchors instead would be vacuous — with zero anchors
-  // present, "none are undecorated" is satisfied instantly and guards nothing.
-  const expectedCitations = new Set(
-    [...turn.text.matchAll(/^\[\^([^\]]+)\]:/gm)].map((match) => match[1]),
-  ).size;
-  if (expectedCitations > 0) {
-    await expect(page.locator(".cave-reader-doc .cave-md a.cave-citation-chip")).toHaveCount(
-      expectedCitations,
-      { timeout: 30_000 },
-    );
-  }
 }
 
 test("cited sources render as chips, with no footnote plumbing left in the prose", async ({ page }) => {
@@ -200,9 +174,32 @@ test("cited sources render as chips, with no footnote plumbing left in the prose
   const body = page.locator(".cave-reader-doc .cave-md");
 
   // #4265: the reader rendered through MarkdownBlock, which does not mount the
-  // citation previews, so these were plain underlined links.
-  await expect(body.locator("a.cave-citation-chip")).toHaveCount(2);
+  // citation previews, so these were plain underlined links. Wait for the chips
+  // themselves: prose can settle before the async markdown and preview effects.
+  // Keep this wait scoped to the only test whose contract is citation chips;
+  // making every reader test wait on them multiplied one flaky assertion across
+  // the serial suite and failed different unrelated cases on each CI attempt.
+  await expect(body.locator("a.cave-citation-chip")).toHaveCount(2, { timeout: 30_000 });
   await expect(body.locator("a.cave-citation-chip").first()).toHaveText("developer.mozilla.org");
+
+  // The markdown renderer may replace injected DOM after the preview effect's
+  // first pass. A fresh raw anchor must be reconciled in place rather than
+  // remaining an inert footnote until another React render happens.
+  await body.locator("a.cave-citation-chip").first().evaluate((link) => {
+    const replacement = document.createElement("a");
+    replacement.dataset.lateCitation = "1";
+    replacement.href = "#cite-1";
+    replacement.textContent = link.textContent;
+    link.replaceWith(replacement);
+  });
+  const lateCitation = body.locator('[data-late-citation="1"]');
+  await expect(lateCitation).toHaveClass(/cave-citation-chip/);
+  await expect(lateCitation).toHaveAttribute(
+    "href",
+    "https://developer.mozilla.org/docs/Web/CSS/grid-auto-flow",
+  );
+  await expect(lateCitation).toHaveAttribute("aria-haspopup", "dialog");
+  await expect(body.locator("a.cave-citation-chip")).toHaveCount(2);
 
   // #4264: the reader was handed raw `text`, so the markers survived into the
   // prose and the definition block was dumped at the end of the document.

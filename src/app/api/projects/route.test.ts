@@ -160,6 +160,30 @@ assert.match(
 );
 assert.match(itemRoute, /not found/, "project item route should return not-found errors");
 assert.match(itemRoute, /rejectNonLocalRequest/, "project item route must enforce loopback before mutating project roots");
+// cave-eonxy: cascade must run even when the registry row is already gone, so
+// residue grants stay reachable. 404 only when BOTH the row and residue are absent.
+assert.match(
+  itemRoute,
+  /revokeAllGrantsForProject\(id\)/,
+  "DELETE /api/projects/[id] must cascade grants",
+);
+assert.match(
+  itemRoute,
+  /!deleted\s*&&\s*cleaned\.grants\s*===\s*0\s*&&\s*cleaned\.groupGrants\s*===\s*0\s*&&\s*cleaned\.proposals\s*===\s*0/,
+  "DELETE /api/projects/[id] 404s only when the registry row and grant residue are both gone",
+);
+{
+  const deleteStart = itemRoute.indexOf("export async function DELETE");
+  assert.ok(deleteStart >= 0, "DELETE handler must exist");
+  const deleteFn = itemRoute.slice(deleteStart);
+  const revokeAt = deleteFn.indexOf("revokeAllGrantsForProject");
+  const notFoundAt = deleteFn.indexOf('error: "not found"');
+  assert.ok(revokeAt >= 0 && notFoundAt >= 0, "DELETE should contain cascade and not-found branches");
+  assert.ok(
+    revokeAt < notFoundAt,
+    "DELETE must cascade before deciding 404 so orphaned grants stay cleanable (cave-eonxy)",
+  );
+}
 
 assert.match(seedRoute, /seedDefaultProjectsIfEmpty/, "seed route should invoke default seeding");
 assert.match(seedRoute, /export async function POST\(\)/, "seed route should expose POST only");

@@ -18,6 +18,11 @@ assert.match(
   /aria-label=\{breadcrumb \? undefined : ariaLabel\}/,
   "dialog falls back to ariaLabel only when there's no breadcrumb",
 );
+assert.match(
+  src,
+  /aria-describedby=\{ariaDescribedBy\}/,
+  "dialog can expose a useful body description",
+);
 assert.match(src, /const headingId = useId\(\)/, "modal mints a stable id via useId");
 assert.match(
   src,

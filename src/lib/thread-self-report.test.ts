@@ -98,6 +98,26 @@ describe("buildReflectTranscript", () => {
     assert.equal(out, "user: hi there\nassistant: hello");
   });
 
+  it("records visible attachment evidence, including attachment-only turns", () => {
+    const out = buildReflectTranscript([
+      {
+        role: "assistant",
+        text: "The banner is shown below.",
+        attachments: [{ name: "launch-banner.png", mimeType: "image/png" }],
+      },
+      {
+        role: "assistant",
+        text: "",
+        attachments: [{ name: "alternate.webp", type: "image/webp" }],
+      },
+    ]);
+    assert.equal(
+      out,
+      "assistant: The banner is shown below. [visible attachments: launch-banner.png (image/png)]\n"
+        + "assistant: [visible attachments: alternate.webp (image/webp)]",
+    );
+  });
+
   it("keeps only the most recent turns and truncates long ones", () => {
     const many = Array.from({ length: 40 }, (_, i) => ({ role: "user" as const, text: `m${i}` }));
     const out = buildReflectTranscript(many);
@@ -154,6 +174,25 @@ describe("buildThreadReflectPrompt", () => {
     );
   });
 
+  it("requires concrete delivery evidence instead of inferring completion from narration", () => {
+    const prompt = buildThreadReflectPrompt({
+      sessionId: "sess-delivery",
+      transcript: "assistant: I am about to push the branch and schedule the reminder.",
+    });
+    assert.match(prompt, /Do NOT infer completion from plans, narration, or intent/i);
+    assert.match(prompt, /remote ref, artifact path, receipt, message id, or equivalent/i);
+    assert.match(prompt, /incomplete or unverified/i);
+  });
+
+  it("treats rendered attachment metadata as delivery proof instead of trusting prose", () => {
+    const prompt = buildThreadReflectPrompt({
+      sessionId: "sess-image",
+      transcript: "assistant: The banner is complete.",
+    });
+    assert.match(prompt, /A prose claim that an image was shown is not delivery evidence/i);
+    assert.match(prompt, /\[visible attachments:/i);
+  });
+
   it("builds a resolution prompt that directs the thread to fix a selected review item", () => {
     const prompt = buildThreadSignalResolutionPrompt({
       kind: "skill-access",
@@ -168,6 +207,8 @@ describe("buildThreadReflectPrompt", () => {
     assert.ok(/root cause/i.test(prompt), "asks for a root-cause diagnosis");
     assert.ok(/apply the concrete fix/i.test(prompt), "instructs the thread to actually apply the fix");
     assert.ok(/verify the fix/i.test(prompt), "requires verification, not just discussion");
+    assert.match(prompt, /classify every requested deliverable/i);
+    assert.match(prompt, /verified with exact evidence, incomplete, or blocked/i);
     assert.match(prompt, /^Resolve this /, "opens as a resolution directive");
     // every review kind maps to a label (no "undefined" leaking into the prompt)
     for (const kind of ["blocker", "skill-clarity", "capability", "context-pressure", "low-score"] as const) {

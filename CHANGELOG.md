@@ -7,12 +7,275 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-08-12
+
+> Closes an access-gate bypass on mobile, keeps chat attachments and skills
+> inside their runtime boundaries, revives Research Desk missions that had been
+> failing at their first iteration, and dresses every surface in the Coven crown.
+
+Patch release on top of v0.3.2. Headline: the mobile access gate is restored
+without locking the desktop webview out, and the chat runtime no longer stages
+files or resolves resume roots outside the boundaries it grants.
+
+### Added
+
+- The Coven crown is now the app icon on every surface — the Tauri desktop set,
+  Windows tiles, Android mipmaps, the iOS asset catalog, the PWA icons, the
+  macOS tray glyph, and the Tauri startup splash, all regenerated from the
+  brand art as rounded-rect tiles with transparent corners (#4577).
+- Familiar avatars are now stored host-authoritatively in the desktop host
+  workspace and refresh from it, replacing the split model where desktop
+  uploads lived in IndexedDB while host avatars lived in the workspace (#4579).
+- Research Desk short videos now default to the ElevenLabs Rachel voice (#4581).
+- Research diagnostics now carry a fuller trace (#4585).
+- Release automation can publish an authenticated TestFlight build (#4587).
+
+### Security
+
+- Restored the mobile access gates that had been removed, closing an auth
+  bypass, and fixed the gate's own blind spot in the same change: a document
+  navigation is not a fetch, so it never carried the sidecar token and could
+  not exchange it for a cookie. The gate now admits that one request shape
+  rather than refusing the desktop webview outright (#4571).
+- Chat attachments and advertised skills now stay inside runtime boundaries.
+  Per-turn image files stage beneath the familiar workspace instead of
+  `os.tmpdir`, which sat outside every runtime grant; narrow skill roots are
+  granted read-only; and staged files a crashed turn stranded are swept on the
+  next delivery, matched strictly against the names Cave itself writes (#4576).
+- A hidden generation's resume root is now authorized rather than exempted.
+  Canvas, enhance, and journal turns skipped the project-launch check because
+  they run in the familiar's own workspace — but with no Cave conversation
+  record the resume root falls back to the daemon's global session list, which
+  is not the familiar's directory (#4582).
+
 ### Fixed
 
-- Windows: console windows no longer pop up over the app when Cave runs a CLI.
-  Every child process now launches with `windowsHide: true`. Most visible in the
-  Research Desk, where a single mission iteration opened one window per familiar
-  step (cave-7jb).
+- Chat sandboxes now refresh after grant changes instead of holding the
+  boundaries they were created with (#4580).
+- Both chat expand lightboxes — attachment and carousel — now sit above the
+  reader overlay band. They portal to `body`, which puts them in the root
+  stacking context competing with every other portalled overlay rather than
+  with the transcript (#4584).
+- Research missions fall back to a direct Copilot spawn when Coven's native
+  process supervisor is absent. Every mission had failed at its first iteration
+  since #4524 with advice — update the Coven CLI — that no published CLI could
+  satisfy, so the feature was dead for every user (#4578).
+- The worktree auto-lock now counts a **pushed tag** as retention, matching the
+  guard it claimed to mirror. It had used `git rev-list --count HEAD --not
+  --remotes`, which consults only remote-tracking *branches* — git keeps no
+  remote-tracking refs for tags — so a branch archived as a pushed tag was still
+  treated as at-risk (#4573).
+- A refused maintenance fence now explains itself and prints the admissible
+  rerun instead of failing with an opaque message (#4572).
+- Deleting a project now cascades correctly, the worktree lifecycle patrol
+  reports managed-creation exceptions, and a flaky standalone-budget assertion
+  was stabilised (#4567).
+
+## [0.3.2] - 2026-08-12
+
+> A maintenance patch: worktree-lifecycle reporting states a repository-wide
+> failure once rather than once per unit, and the Coven brand assets now live
+> in the repository.
+
+Patch release on top of v0.3.1. Headline: a single checkout-level probe failure
+no longer reads as N independent problems in the worktree lifecycle report.
+
+### Added
+
+- Added the Coven brand assets under `assets/brand` — logo, Discord banner, and
+  a wordmark banner variant.
+
+### Fixed
+
+- The worktree lifecycle inventory now reports a repository-wide default-branch
+  probe failure in its global errors, and the patrol states it once under its
+  own heading instead of stamping the identical sentence onto every affected
+  unit. Classification is deliberately unchanged: each unit still fails closed
+  on the error and still carries it in its own probe errors (#4565).
+- Retargeted a stale comment that cited the removed
+  `scripts/worktree-sweep-prompt.md` to `scripts/worktree-sweep.sh`, and the
+  patrol report now hints that a retired worktree's bead may still be open so a
+  human can close it from the sweep log (#4568).
+- Resolved Chat model application state when the downstream harness echoes the
+  request, so the applied model is reported from the harness response rather
+  than assumed from what was sent (#4569).
+
+## [0.3.1] - 2026-08-12
+
+> ⚠️ Removes the access-token requirement. A Cave published over Tailscale
+> Serve is reachable by anything on the tailnet with no credential. This
+> partly reverts the loopback authorization added in 0.3.0 (#4533).
+
+Patch release on top of v0.3.0. Note that it is **not** additive in the sense
+the preamble above describes: it removes a security control rather than adding
+behavior.
+
+### Removed
+
+- Removed the `COVEN_CAVE_ACCESS_TOKEN` request gate, access page, and
+  query-to-cookie exchange. Remote ingress remains classified separately so
+  host, passkey-presence, automation, and desktop-only route policies can keep
+  applying at their existing boundaries (#4559).
+
+### Security
+
+- Remote deployments no longer authenticate callers with an access token:
+  anything that can reach the Cave port can reach the app unless
+  `COVEN_CAVE_PASSKEY_REQUIRED=1` is enabled. The PTY sidecar-token gate remains
+  in place, which also means paired phones cannot open the packaged terminal
+  without a sidecar credential (#4559).
+
+## [0.3.0] - 2026-08-11
+
+> Search that understands Cave's workspace, more legible multi-agent Chat,
+> safer operator-controlled handoffs, and sturdier local runtime boundaries.
+
+Coven Cave 0.3.0 is a minor release on top of v0.2.5.
+
+### Added
+
+- Added workspace-wide Search with a deterministic query parser, SQLite FTS5
+  index, provider registry, file-backed sources, and a ranked `/api/search`
+  surface (#4481, #4482, #4484, #4490, #4502).
+- Added Cave agent filesystem surfaces, a Chat run rail, inline audio and video
+  playback, and grouped multi-agent runs with earlier runs folded into the
+  transcript (#4457, #4460, #4461, #4486, #4504).
+- Added orchestration validation at the Board write boundary, including
+  actionable failure blockers while preserving human-authored direction (#4527).
+- Added an accessible iOS terminal composer and macOS CI compilation for iOS
+  changes (#4475, #4446, #4516).
+
+### Changed
+
+- Redesigned streamed Chat responses with stable rendering, accessible status
+  controls, copy/retry/collapse affordances, and clearer task-work and code
+  rails (#4515, #4462, #4463, #4478).
+- Made first-run setup more guided and diagnosable, including honest progress,
+  managed-NPM timeout diagnosis, checksums, and Windows CLI repair (#4477,
+  #4476, #4518, #4523, #4539).
+- Improved worktree lifecycle operation with bounded reprobes, explicit
+  deferred states, retention proof, local-plane apply, and more precise
+  per-unit metadata diagnostics (#4471, #4480, #4499, #4519, #4520, #4526,
+  #4529, #4530, #4532, #4536, #4538, #4540).
+
+### Security
+
+- Loopback access-token deployments now require user-bound authorization, and
+  familiar handoffs are operator-approved proposals rather than automatic work
+  dispatch (#4533, #4551).
+- Hardened local process and workspace boundaries: private research ownership,
+  cross-platform process launches, resolved-CWD authorization, bounded prompt
+  transport, constrained worktree handoffs, and authenticated sidecar readiness
+  (#4524, #4531, #4537, #4543, #4546, #4550).
+
+### Fixed
+
+- Stabilized daemon connectivity, lifecycle diagnostics, sidecar recovery, and
+  iOS credential-failure handling (#4487, #4489, #4495, #4496, #4497, #4498,
+  #4500, #4506, #4509, #4510).
+- Corrected Board mirrored-card retention, stored Asana/GitHub titles, Chat
+  reply ordering, reader typography, and task/journal controls (#4469, #4507,
+  #4508, #4514, #4535, #4459).
+
+### Build and release
+
+- Decoupled Cave release readiness from the daemon's version while retaining
+  the requirement that a published daemon package is available (#4450).
+- Reduced routine CI fan-out, recovered cancelled coverage safely, and added
+  regression coverage for Chat-to-Coding workflows (#4503, #4505, #4517,
+  #4549).
+
+
+## [0.2.5] - 2026-08-08
+
+> A reading-first Coding Desk, a rebuilt Research Desk, safer remote access,
+> steadier navigation, and release and runtime checks that name what went wrong.
+
+Patch release on top of v0.2.4.
+
+### Added
+
+- Rebuilt the Coding Desk around a worktree-aware file tree, source viewer,
+  resizable Changes/PR rail, persistent terminal drawer, session picker,
+  per-version viewed state, and rebindable shortcuts; narrow layouts now use
+  the room's measured width (#4418, #4423, #4443).
+- Rebuilt the Research Desk with structured briefs, recommendations, resizable
+  rails, richer mission progress, searchable and pageable Library results,
+  truthful provider readiness, and improved resource cards and grids
+  (#4417, #4419).
+- Added the full familiar activity lattice, comparing a 52-week density grid,
+  eight-week trend, and 14-day pulse from one shared data model (#4425).
+- Added app-wide loaded-data search and richer project/task context to iOS, and
+  made contextual New Chat reuse the visible familiar with recoverable project
+  loading (#4397, #4424).
+- Added sub-surface Back/Forward history, beginning with the Chat scope strip
+  (#4407).
+- Added durable Chat attention states and an **Awaiting you** group for explicit
+  requests, conversations left hanging, and overdue replies, with persistence,
+  replay, and stream reconciliation that clears requests on a newer human reply
+  rather than merely opening the chat (#4391).
+- Enabled Discord Rich Presence consistently in local and release builds, with
+  links to OpenCoven and Coven Cave (#4403, #4409, #4410, #4411).
+
+### Changed
+
+- Unified the Home and Chat sidebar header, kept the rail open when navigating
+  away from Chat, and made desktop collapse leave a usable icon rail with
+  hover-to-peek instead of hiding navigation entirely (#4404, #4405, #4406).
+- Restored the prior familiar creation and avatar flow by removing the
+  experimental image-driven summoning, scrying, rite, and foil-card path
+  (#4412).
+- Made Grimoire Relations counts explicitly scope-aware and expanded the
+  bounded graph window while preserving the renderer's measured performance
+  ceiling (#4431).
+- Kept unfinished Role Surface rooms out of production builds while preserving
+  them for development, with an explicit build allowlist and honest
+  under-construction messaging; Research Desk and Chart Room remain available
+  in production (#4440).
+
+### Fixed
+
+- Refused a proven occupied daemon address before spawning, now returning an
+  actionable `address_in_use` result while preserving conservative recovery
+  and ownership behavior (#4429).
+- Stopped Windows child-process console windows from appearing over Cave and
+  made macOS report an already-running second GUI instead of aborting
+  (#4413, #4416).
+- Made `dev:app` reject ANSI-contaminated port captures and report a desktop
+  shell that dies before setup completes instead of claiming a successful
+  launch (#4401, #4426).
+- Closed spoken-text normalization edge cases from the reader and voice paths
+  (#4399).
+- Made reader citation chips reliably reconcile anchors added or replaced after
+  rendering, without making unrelated reader behavior depend on citation
+  enhancement timing (#4441).
+
+### Security
+
+- Added fail-closed Tailscale device authorization using an explicit stable
+  node-ID allowlist rather than trusting a client-controlled host header
+  (#4402).
+- Added an opt-in WebAuthn presence gate that binds a user-verified passkey to
+  the allowlisted tailnet device; local access and first enrollment remain
+  deliberately recoverable (#4415).
+
+### Build and release
+
+- Added preview, transactional preparation, and fail-closed verification for
+  releases. The stamp now updates every canonical desktop, Cargo, and iOS
+  version source plus the changelog; release CI accepts only a verified
+  annotated tag on `main` and builds every artifact from its immutable commit
+  (#4433, #4437).
+- Split frontend and Windows-native CI work, sharded Playwright, stabilized
+  citation-chip waits, restored two Windows source guards, and added
+  repository-wide protection against committed merge-conflict markers
+  (#4420, #4421, #4422, #4427, #4430, #4434, #4436).
+- Added fail-closed recovery for same-repository pull requests whose CI event
+  never arrived, with explicit apply mode, cooldowns, and shared head-SHA
+  concurrency (#4435).
+- Excluded detached worktrees from managed-creation admission, required verified
+  remote retention before retiring units whose branch is gone, and documented
+  the current gate-blocked retirement path (#4414, #4432, #4438).
 
 ## [0.2.4] - 2026-08-06
 

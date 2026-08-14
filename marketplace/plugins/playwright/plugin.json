@@ -20,6 +20,7 @@
     "shell",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/playwright",
   "x-coven": {
     "displayName": "Playwright",

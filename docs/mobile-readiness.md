@@ -115,12 +115,16 @@ see `docs/mobile-tailscale.md`.
 
 (Only if you have Xcode installed. The mobile client is the native Swift app
 at `apps/ios/CovenCave` — see [`ios-native-rebuild.md`](ios-native-rebuild.md).
-Run it with `pnpm mobile:ios:sim`.)
+Run it with `pnpm mobile:ios:sim`. The automated performance evidence and
+remaining physical-device gates are tracked in
+[`performance/ios-performance-audit.md`](performance/ios-performance-audit.md).)
 
 - [ ] iOS simulator: app launches, pairs to the daemon exposed via
   `pnpm mobile:tailscale:app`, primary flows (chat, board, inbox) work.
 - [ ] First push notification: OS permission sheet appears once; after
   granted, local notifications fire.
+- [ ] Real iPhone: complete the cold-launch, memory-pressure, thermal, energy,
+  and Wi-Fi/cellular handoff gates listed in the native performance audit.
 
 ## Perf budget (phase 7)
 

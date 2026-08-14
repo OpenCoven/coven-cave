@@ -75,6 +75,12 @@ const loadFamiliarsView = () =>
 const loadGrimoireView = () => import("@/components/grimoire-view").then((m) => m.GrimoireView);
 const loadInboxEscalationsView = () =>
   import("@/components/inbox-escalations-view").then((m) => m.InboxEscalationsView);
+const loadDashboardSurface = () =>
+  import("@/components/dashboard/dashboard-surface").then((m) => m.DashboardSurface);
+const loadSettingsShell = () =>
+  import("@/components/settings-shell").then((m) => m.SettingsShell);
+const loadRailTerminalPanel = () =>
+  import("@/components/rail-terminal-panel").then((m) => m.RailTerminalPanel);
 
 /** Canonical sidebar surfaces whose chunks can be warmed before navigation. */
 export type WarmableSidebarSurface =
@@ -146,6 +152,21 @@ export const InboxEscalationsView = dynamic(
   { ssr: false, loading: SurfaceFallback },
 );
 
+export const DashboardSurface = dynamic(
+  timed("dashboard", loadDashboardSurface),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const SettingsShell = dynamic(
+  timed("settings", loadSettingsShell),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const RailTerminalPanel = dynamic(
+  timed("terminal", loadRailTerminalPanel),
+  { ssr: false, loading: SurfaceFallback },
+);
+
 /**
  * Fetch a canonical sidebar surface's chunks without mounting it. These use
  * the same import specifiers as their `next/dynamic` wrappers, so the module
@@ -208,7 +229,9 @@ export const CommandPalette = dynamic(
 
 export const OnboardingOverlay = dynamic(
   timed("onboarding", () =>
-    import("@/components/onboarding-overlay").then((m) => m.OnboardingOverlay),
+    import("@/components/onboarding-bootstrap-overlay").then(
+      (m) => m.OnboardingOverlay,
+    ),
   ),
   { ssr: false, loading: () => null },
 );

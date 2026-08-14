@@ -1,23 +1,32 @@
-import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { promisify } from "node:util";
 import { callDaemonTarget, localDaemonTarget, socketPath } from "./coven-daemon.ts";
-import { covenBin, covenLaunchCommand } from "./coven-bin.ts";
+import {
+  covenLaunchCommand,
+  covenWrapperSpawnEnv,
+  type CovenLaunchCommand,
+} from "./coven-bin.ts";
 import { covenCliMissingError, isMissingExecutableError } from "./coven-spawn-error.ts";
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 import { waitForDaemonReadiness } from "./daemon-readiness.ts";
 import { sanitizeAboutDiagnosticText } from "./about-diagnostics.ts";
-import { installedCovenVersion } from "./coven-version.ts";
 import {
   assessDaemonStartupCompatibility,
   type DaemonStartupCompatibility,
   type DaemonStartupHealth,
 } from "./daemon-startup-contract.ts";
-import { RuntimeStartupThrottle } from "./runtime-startup-throttle.ts";
+import { RuntimeStartupCoordinator } from "./runtime-startup-throttle.ts";
 import {
   inspectDaemonAddress,
   reportsDaemonAddressInUse,
   type DaemonAddressOccupancy,
 } from "./daemon-socket-occupancy.ts";
+import {
+  createDaemonDiagnosticContext,
+  diagnosticError,
+  recordDaemonDiagnosticEvent,
+  type DaemonDiagnosticContext,
+} from "./server/daemon-diagnostics.ts";
 
 export type DaemonStartResult =
   | { ok: true; alreadyRunning: true; readinessAttempts: number; elapsedMs: number; launchMode: "none" }
@@ -68,6 +77,8 @@ type DaemonLaunchCleanupDependencies = {
   terminateWindowsTree?: (pid: number) => Promise<boolean>;
   killProcessGroup?: (pid: number, signal: NodeJS.Signals) => void;
   waitForExit?: (child: ChildProcess, timeoutMs: number) => Promise<boolean>;
+  processGroupAlive?: (pid: number) => boolean;
+  waitForProcessGroupExit?: (pid: number, timeoutMs: number) => Promise<boolean>;
 };
 
 const execFileAsync = promisify(execFile);
@@ -120,9 +131,27 @@ function isMissingProcess(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ESRCH";
 }
 
+function processGroupAlive(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    return !isMissingProcess(error);
+  }
+}
+
+async function waitForProcessGroupExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processGroupAlive(pid)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return !processGroupAlive(pid);
+}
+
 /**
  * Terminates only the process tree Cave started after readiness has failed a
- * final health check. Windows taskkill owns the shell and all descendants;
+ * final health check. Windows taskkill owns the launcher and all descendants;
  * POSIX launches use an isolated process group so a foreground shell cannot
  * strand its daemon child. This is intentionally not used for a healthy
  * daemon, even if its launcher is still foregrounded.
@@ -133,6 +162,8 @@ export async function terminateDaemonLaunchTree(
 ): Promise<DaemonLaunchCleanup> {
   const platform = dependencies.platform ?? process.platform;
   const waitForExit = dependencies.waitForExit ?? waitForChildExit;
+  const groupAlive = dependencies.processGroupAlive ?? processGroupAlive;
+  const waitForGroupExit = dependencies.waitForProcessGroupExit ?? waitForProcessGroupExit;
   const pid = child.pid;
 
   if (platform === "win32") {
@@ -157,7 +188,8 @@ export async function terminateDaemonLaunchTree(
     }
     return { attempted: true, completed: false, mode: "process-group" };
   }
-  if (await waitForExit(child, 500)) {
+  await waitForExit(child, 500);
+  if (!groupAlive(pid)) {
     return { attempted: true, completed: true, mode: "process-group" };
   }
   try {
@@ -167,7 +199,11 @@ export async function terminateDaemonLaunchTree(
       return { attempted: true, completed: false, mode: "process-group" };
     }
   }
-  return { attempted: true, completed: await waitForExit(child, 500), mode: "process-group" };
+  return {
+    attempted: true,
+    completed: await waitForGroupExit(pid, 500),
+    mode: "process-group",
+  };
 }
 
 type StartLocalDaemonOptions = {
@@ -181,15 +217,40 @@ type StartLocalDaemonOptions = {
   probe?: () => Promise<{ ok: boolean }>;
   /** Injectable health document that still exercises compatibility assessment. */
   readHealthDocument?: () => Promise<DaemonStartupHealth | null>;
-  /** Injectable installed-version seam for deterministic startup coherence tests. */
-  installedVersion?: () => Promise<string | null>;
   /** Injectable address-occupancy seam for deterministic already-bound tests. */
   inspectAddress?: () => Promise<DaemonAddressOccupancy>;
-  spawnImpl?: typeof spawn;
+  /** Injectable command seam keeps fault scenarios independent of host PATH state. */
+  launchCommand?: () => { command: string; args: string[]; shell?: boolean };
+  /** Injectable environment seam keeps fault scenarios independent of credential stores. */
+  spawnEnvironment?: () => NodeJS.ProcessEnv;
+  spawnImpl?: (command: string, args: string[], options: SpawnOptions) => ChildProcess;
   terminateLaunchTree?: (child: ChildProcess) => Promise<DaemonLaunchCleanup>;
   inspectLifecycle?: () => Promise<DaemonLifecycleInspection>;
   platform?: NodeJS.Platform;
+  diagnostics?: DaemonDiagnosticContext;
 };
+
+const WINDOWS_SHIM_LAUNCH_DIAGNOSTIC =
+  "Cave could not safely resolve the Coven Windows command shim. Reinstall or update Coven, then restart Cave and try again.";
+
+/**
+ * Convert Coven discovery into a daemon command that never asks a command
+ * shell to reinterpret paths or arguments. An unknown .cmd/.bat target is not
+ * launchable: cmd.exe would both reintroduce the console popup and make
+ * dynamic argv subject to shell parsing.
+ */
+export function directDaemonLaunchCommand(
+  launch: CovenLaunchCommand = covenLaunchCommand(),
+): { command: string; args: string[]; shell: false } {
+  if (launch.unresolvedWindowsShim) {
+    throw new Error(WINDOWS_SHIM_LAUNCH_DIAGNOSTIC);
+  }
+  return {
+    command: launch.command,
+    args: [...launch.fixedArgs, "daemon", "start"],
+    shell: false,
+  };
+}
 
 export type DaemonLifecycleInspection = {
   status: "running" | "stopped" | "stale" | "unknown";
@@ -205,13 +266,30 @@ export function parseDaemonLifecycleInspection(value: unknown): DaemonLifecycleI
     : { status: "unknown" };
 }
 
-async function inspectDaemonLifecycle(): Promise<DaemonLifecycleInspection> {
+async function inspectDaemonLifecycle(
+  diagnostics?: DaemonDiagnosticContext,
+  operation?: string,
+  attempt?: number,
+): Promise<DaemonLifecycleInspection> {
   try {
     const { command, fixedArgs } = covenLaunchCommand();
     const { stdout } = await execFileAsync(
       command,
       [...fixedArgs, "daemon", "status", "--json"],
-      { encoding: "utf8", env: harnessSpawnEnv(), timeout: 2_500, windowsHide: true },
+      {
+        encoding: "utf8",
+        env: covenWrapperSpawnEnv({
+          ...harnessSpawnEnv(),
+          ...(diagnostics ? {
+            COVEN_CAVE_CORRELATION_ID: diagnostics.correlationId,
+            COVEN_CAVE_DIAGNOSTIC_GENERATION: String(diagnostics.generation),
+            ...(operation != null ? { COVEN_CAVE_DIAGNOSTIC_OPERATION: operation } : {}),
+            ...(attempt != null ? { COVEN_CAVE_DIAGNOSTIC_ATTEMPT: String(attempt) } : {}),
+          } : {}),
+        }),
+        timeout: 2_500,
+        windowsHide: true,
+      },
     );
     return parseDaemonLifecycleInspection(JSON.parse(stdout));
   } catch {
@@ -228,8 +306,12 @@ export function sanitizeDaemonStartDiagnostic(value: string): string {
   return sanitizeAboutDiagnosticText(value);
 }
 
-const daemonStartThrottle = new RuntimeStartupThrottle();
-let activeDaemonStart: Promise<DaemonStartResult> | null = null;
+const daemonStartCoordinator = new RuntimeStartupCoordinator<DaemonStartResult>();
+export type DaemonStartOperation = {
+  diagnostics: DaemonDiagnosticContext;
+  result: Promise<DaemonStartResult>;
+};
+let activeDaemonStart: DaemonStartOperation | null = null;
 
 function hasTestSeam(options: StartLocalDaemonOptions): boolean {
   return Boolean(
@@ -237,8 +319,9 @@ function hasTestSeam(options: StartLocalDaemonOptions): boolean {
     || options.readHealthDocument
     || options.spawnImpl
     || options.terminateLaunchTree
-    || options.installedVersion
     || options.inspectAddress
+    || options.launchCommand
+    || options.spawnEnvironment
     || options.platform,
   );
 }
@@ -252,40 +335,116 @@ function hasTestSeam(options: StartLocalDaemonOptions): boolean {
 const ADDRESS_IN_USE_DIAGNOSTIC =
   "Another process is already using the local Coven daemon address. Stop that process, or restart Cave so it can reconnect, then try again.";
 
-export function startLocalDaemon(options: StartLocalDaemonOptions = {}): Promise<DaemonStartResult> {
-  if (hasTestSeam(options)) return runLocalDaemonStart(options);
+export function startLocalDaemonOperation(
+  options: StartLocalDaemonOptions = {},
+): DaemonStartOperation {
+  const diagnostics = options.diagnostics ?? createDaemonDiagnosticContext();
+  if (hasTestSeam(options)) {
+    return {
+      diagnostics,
+      result: runLocalDaemonStart({ ...options, diagnostics }),
+    };
+  }
   if (activeDaemonStart) return activeDaemonStart;
 
-  const decision = daemonStartThrottle.allow();
-  if (!decision.allowed) {
-    return Promise.resolve({
-      ok: false,
-      code: "restart_throttled",
-      error: `Cave paused repeated daemon restarts. Try again in ${Math.ceil(decision.retryAfterMs / 1_000)} seconds.`,
-      stdout: "",
-      stderr: "",
-      status: 429,
-      readinessAttempts: 0,
-      elapsedMs: 0,
-      launchMode: "none",
-    });
-  }
-
-  const operation = runLocalDaemonStart(options);
-  activeDaemonStart = operation;
-  void operation.then(
-    (result) => {
-      if (result.ok) daemonStartThrottle.recordSuccess();
-      else daemonStartThrottle.recordFailure();
+  const result = daemonStartCoordinator.run(
+    () => runLocalDaemonStart({ ...options, diagnostics }),
+    (retryAfterMs) => {
+      const throttledResult: DaemonStartResult = {
+        ok: false,
+        code: "restart_throttled",
+        error: `Cave paused repeated daemon restarts. Try again in ${Math.ceil(retryAfterMs / 1_000)} seconds.`,
+        stdout: "",
+        stderr: "",
+        status: 429,
+        readinessAttempts: 0,
+        elapsedMs: 0,
+        launchMode: "none",
+      };
+      recordDaemonDiagnosticEvent(diagnostics, {
+        component: "next",
+        operation: options.automatic ? "daemon-recovery" : "daemon-start",
+        phase: "admission",
+        outcome: "deferred",
+        process: { pid: process.pid },
+        endpoint: { kind: "local-socket", classification: "restart-throttled" },
+        error: diagnosticError(throttledResult.error, throttledResult.code),
+      });
+      return throttledResult;
     },
-    () => daemonStartThrottle.recordFailure(),
-  ).finally(() => {
+    (operationResult) => operationResult.ok,
+  );
+  const operation: DaemonStartOperation = {
+    diagnostics,
+    result,
+  };
+  activeDaemonStart = operation;
+  const releaseOperation = () => {
     if (activeDaemonStart === operation) activeDaemonStart = null;
-  });
+  };
+  void result.then(releaseOperation, releaseOperation);
   return operation;
 }
 
-async function runLocalDaemonStart({
+export function startLocalDaemon(
+  options: StartLocalDaemonOptions = {},
+): Promise<DaemonStartResult> {
+  return startLocalDaemonOperation(options).result;
+}
+
+async function runLocalDaemonStart(
+  options: StartLocalDaemonOptions,
+): Promise<DaemonStartResult> {
+  const diagnostics = options.diagnostics ?? createDaemonDiagnosticContext();
+  const operation = options.automatic ? "daemon-recovery" : "daemon-start";
+  const startedAt = Date.now();
+  recordDaemonDiagnosticEvent(diagnostics, {
+    component: "next",
+    operation,
+    phase: "startup",
+    outcome: "started",
+    process: { pid: process.pid },
+    endpoint: { kind: "local-socket", classification: "local-daemon" },
+  });
+  try {
+    const result = await runLocalDaemonStartCore({ ...options, diagnostics });
+    recordDaemonDiagnosticEvent(diagnostics, {
+      component: "next",
+      operation,
+      phase: "startup",
+      durationMs: Date.now() - startedAt,
+      outcome: result.ok ? "succeeded" : result.code === "readiness_timeout"
+        ? "timed-out"
+        : result.code === "owner_unreachable" || result.code === "restart_throttled"
+          ? "deferred"
+          : "failed",
+      process: { pid: process.pid },
+      endpoint: {
+        kind: "local-socket",
+        classification: result.ok
+          ? result.alreadyRunning ? "already-running" : "ready"
+          : result.code,
+        status: result.ok ? 200 : result.status,
+      },
+      error: result.ok ? null : diagnosticError(result.error, result.code),
+    });
+    return result;
+  } catch (error) {
+    recordDaemonDiagnosticEvent(diagnostics, {
+      component: "next",
+      operation,
+      phase: "startup",
+      durationMs: Date.now() - startedAt,
+      outcome: "failed",
+      process: { pid: process.pid },
+      endpoint: { kind: "local-socket", classification: "unexpected-error" },
+      error: diagnosticError(error, "unexpected-error"),
+    });
+    throw error;
+  }
+}
+
+async function runLocalDaemonStartCore({
   restart: restartRequested = false,
   automatic = false,
   healthTimeoutMs = 1500,
@@ -293,12 +452,14 @@ async function runLocalDaemonStart({
   readinessPollMs = 250,
   probe: probeOverride,
   readHealthDocument: readHealthDocumentOverride,
-  installedVersion,
   inspectAddress = () => inspectDaemonAddress({ socketPath: socketPath() }),
+  launchCommand = directDaemonLaunchCommand,
+  spawnEnvironment = harnessSpawnEnv,
   spawnImpl = spawn,
   terminateLaunchTree = terminateDaemonLaunchTree,
-  inspectLifecycle = inspectDaemonLifecycle,
+  inspectLifecycle,
   platform = process.platform,
+  diagnostics = createDaemonDiagnosticContext(),
 }: StartLocalDaemonOptions = {}): Promise<DaemonStartResult> {
   // The lifecycle preflight below is the whole point of the automatic path, and
   // `restart` skips it. Both flags arrive from a request body, so an automatic
@@ -307,19 +468,20 @@ async function runLocalDaemonStart({
   const restart = automatic ? false : restartRequested;
   const compatibilityState: { current: DaemonStartupCompatibility | null } = { current: null };
   const currentCompatibility = (): DaemonStartupCompatibility | null => compatibilityState.current;
-  const expectedVersion = probeOverride ? null : await (installedVersion ?? installedCovenVersion)();
   const readHealthDocument = readHealthDocumentOverride ?? (async () => {
     const response = await callDaemonTarget<DaemonStartupHealth>(localDaemonTarget(), {
       path: "/api/v1/health",
       timeoutMs: healthTimeoutMs,
       retryTransportFailure: false,
+      diagnostics,
+      diagnosticOperation: automatic ? "daemon-recovery-health" : "daemon-start-health",
     });
     return response.ok && response.data ? response.data : null;
   });
   const probe = probeOverride ?? (async () => {
     const health = await readHealthDocument();
     if (!health) return { ok: false };
-    compatibilityState.current = assessDaemonStartupCompatibility(health, expectedVersion);
+    compatibilityState.current = assessDaemonStartupCompatibility(health);
     return { ok: compatibilityState.current.ok };
   });
   const startedAt = Date.now();
@@ -345,7 +507,7 @@ async function runLocalDaemonStart({
   }
 
   if (automatic && !restart) {
-    const lifecycle = await inspectLifecycle();
+    const lifecycle = await (inspectLifecycle ?? (() => inspectDaemonLifecycle(diagnostics, automatic ? "daemon-recovery" : "daemon-start", 1)))();
     if (lifecycle.status === "running") {
       return { ok: true, alreadyRunning: true, readinessAttempts: 2, elapsedMs: Date.now() - startedAt, launchMode: "none" };
     }
@@ -389,18 +551,47 @@ async function runLocalDaemonStart({
     }
   }
 
-  const launchMode = platform === "win32" ? "shell" : "direct";
-  const child = spawnImpl(covenBin(), ["daemon", "start"], {
+  const launchMode = "direct";
+  let launch: ReturnType<NonNullable<StartLocalDaemonOptions["launchCommand"]>>;
+  try {
+    launch = launchCommand();
+    if (launch.shell) {
+      throw new Error(WINDOWS_SHIM_LAUNCH_DIAGNOSTIC);
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      code: "spawn_failed",
+      error: sanitizeDaemonStartDiagnostic(
+        error instanceof Error ? error.message : WINDOWS_SHIM_LAUNCH_DIAGNOSTIC,
+      ),
+      stdout: "",
+      stderr: "",
+      status: 500,
+      readinessAttempts: restart ? 0 : automatic ? 2 : 1,
+      elapsedMs: Date.now() - startedAt,
+      launchMode,
+    };
+  }
+  const spawnEnv = spawnEnvironment();
+  const child = spawnImpl(launch.command, launch.args, {
     stdio: ["ignore", "pipe", "pipe"],
     // POSIX uses an owned process group so timeout cleanup cannot strand a
-    // foreground shell's daemon descendant. Windows owns its shell tree via
+    // foreground launcher's daemon descendant. Windows owns its launch tree via
     // taskkill /T instead, where detached process groups do not provide this.
-    detached: launchMode === "direct",
+    detached: platform !== "win32",
     // The daemon must never hold scoped vault secrets: daemon-launched
     // sessions would inherit them wholesale. Scoped keys flow only through
     // Cave's own per-familiar spawn path (cave-4nu6).
-    env: harnessSpawnEnv(),
-    shell: launchMode === "shell",
+    env: covenWrapperSpawnEnv({
+      ...spawnEnv,
+      COVEN_CAVE_CORRELATION_ID: diagnostics.correlationId,
+      COVEN_CAVE_DIAGNOSTIC_GENERATION: String(diagnostics.generation),
+      COVEN_CAVE_DIAGNOSTIC_OPERATION: automatic ? "daemon-recovery" : "daemon-start",
+      COVEN_CAVE_DIAGNOSTIC_ATTEMPT: "1",
+    }, platform),
+    shell: false,
+    windowsHide: true,
   });
   let stdout = "";
   let stderr = "";
@@ -419,7 +610,12 @@ async function runLocalDaemonStart({
     probe,
     timeoutMs: startTimeoutMs,
     pollMs: readinessPollMs,
-    runnerExitGraceMs: Math.min(1_500, startTimeoutMs),
+    // `coven daemon start` deliberately exits after handing its detached
+    // service to the OS. Under a cold first-run filesystem, that service can
+    // take longer than the old 1.5 s launcher grace to publish its socket.
+    // Health—not the short-lived launcher—is the authority for the entire
+    // startup deadline.
+    runnerExitGraceMs: startTimeoutMs,
     runnerExited: () => spawnError !== null || exitCode !== undefined,
   });
   if (readiness.ready) {

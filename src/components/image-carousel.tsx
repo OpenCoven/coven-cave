@@ -74,9 +74,17 @@ function ImageLightbox({
 
   // The transcript establishes containing blocks, so a viewport-sized fixed
   // overlay has to portal to body (same reason as the attachment lightbox).
+  // Portalling puts this in the ROOT stacking context, alongside every other
+  // portalled overlay, so the z-index competes with them directly. It has to
+  // clear the surfaces an image can be expanded from underneath: the message
+  // reader backdrop (60), the research-studio backdrops (65-70), the research
+  // reader (70), and .rr-kroverlay / the daily-report PR modal (80). At z-50 an
+  // image expanded inside the reader rendered BEHIND the reader's scrim
+  // (cave-yin71). Kept below the full-surface layers that should still cover a
+  // lightbox — inspector-pane (100) and directory-picker-modal (200).
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--backdrop-scrim)] backdrop-blur-sm"
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-[var(--backdrop-scrim)] backdrop-blur-sm"
       onClick={onClose}
       role="presentation"
     >

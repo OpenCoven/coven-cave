@@ -19,6 +19,7 @@
     "network",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/activepieces",
   "x-coven": {
     "displayName": "Activepieces",

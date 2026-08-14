@@ -82,8 +82,22 @@ assert.match(
 // ── Enter on a command: autocomplete-then-run ────────────────────────────────
 assert.match(
   src,
-  /canonicalize\(activeInvocation\?\.commandToken \?\? ""\) !== cmd\.name[\s\S]*?completeCommand\(cmd\.name, true\);[\s\S]*?\} else if \(cmd\) \{[\s\S]*?cbRef\.current\.onRunCommand\(cmd\);/,
+  /canonicalize\(activeInvocation\?\.commandToken \?\? ""\) !== cmd\.name[\s\S]*?completeCommand\(cmd\.name, Boolean\(cmd\.argPlaceholder\)\);[\s\S]*?\} else if \(cmd\) \{[\s\S]*?cbRef\.current\.onRunCommand\(cmd\);/,
   "Enter autocompletes argument-taking commands, runs exact ones, picks skills, and defers no-match to the caller (home submits; chat consumes)",
+);
+
+// ── A mid-draft slash completes, it never runs (cave-y7rg0) ──────────────────
+// Running an intent from a slash that follows prose discards the draft, and
+// /clear also wipes the transcript. Only a command that owns the draft runs.
+assert.match(
+  src,
+  /const commandOwnsDraft = \(activeInvocation\?\.start \?\? 0\) === 0;/,
+  "Enter distinguishes a command that owns the draft from one typed after prose",
+);
+assert.match(
+  src,
+  /if \(\s*\n?\s*cmd &&\s*\n?\s*\(!commandOwnsDraft \|\|/,
+  "a slash that does not own the draft takes the completion branch, never onRunCommand",
 );
 
 // ── Shared listbox id + fetches ──────────────────────────────────────────────
