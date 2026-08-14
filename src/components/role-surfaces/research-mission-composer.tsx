@@ -32,6 +32,7 @@ import {
 } from "@/lib/research-mission-routing";
 import {
   RESEARCH_BOUND_LIMITS,
+  RESEARCH_INTENT_MAX_LENGTH,
   RESEARCH_INTENT_MIN_LENGTH,
   RESEARCH_MISSION_MODES,
   type CreateResearchMissionInput,
@@ -274,6 +275,18 @@ export function ResearchMissionComposer({
   const plan = useMemo(() => defaultResearchPlan(effectiveMode), [effectiveMode]);
   const trimmedIntent = intent.trim();
   const intentTooShort = trimmedIntent.length > 0 && trimmedIntent.length < RESEARCH_INTENT_MIN_LENGTH;
+  // Grow the box with the brief instead of scrolling three fixed rows. The CSS
+  // caps it at ~12 lines, so `auto` then scrollHeight settles at the smaller of
+  // content height and that ceiling; past it the element scrolls as before.
+  // Measured on every intent change, including programmatic ones (slash
+  // completions, /improve rewrites, restored drafts), not just typing.
+  const intentBoxRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const el = intentBoxRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [intent]);
 
   // Strength + assembled brief are pure reads of the textarea, so they track
   // hand edits made after the builder closed.
@@ -477,6 +490,8 @@ export function ResearchMissionComposer({
           <label htmlFor="research-intent" className="sr-only">What should we investigate?</label>
           <textarea
             id="research-intent"
+            ref={intentBoxRef}
+            maxLength={RESEARCH_INTENT_MAX_LENGTH}
             value={intent}
             onChange={(event) => {
               setIntent(event.target.value);
@@ -525,6 +540,16 @@ export function ResearchMissionComposer({
               Add at least {RESEARCH_INTENT_MIN_LENGTH} characters so the familiar has a real question to investigate.
             </p>
           ) : null}
+          {/* Static text, deliberately not a live region — announcing every
+              keystroke would drown the composer. The ceiling is visible while
+              writing rather than discovered as a server rejection afterwards. */}
+          <span
+            className={`research-intent-count${
+              intent.length >= RESEARCH_INTENT_MAX_LENGTH * 0.9 ? " research-intent-count--near" : ""
+            }`}
+          >
+            {intent.length.toLocaleString()} / {RESEARCH_INTENT_MAX_LENGTH.toLocaleString()}
+          </span>
         </div>
 
         {attachedLinks.length > 0 ? (
