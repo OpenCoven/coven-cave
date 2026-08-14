@@ -140,8 +140,23 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /readPersisted<unknown>\(PROJECT_SIDEBAR_KEYS\.expanded, null\)[\s\S]*projectSelectionKeys\(sidebarGroups\)/,
-  "ChatRouter defaults project folders open when there is no persisted expanded-state value",
+  /if \(sessionsLoaded === false\) return;\s*sidebarPrefsLoadedRef\.current = true;/,
+  "ChatRouter hydrates raw sidebar preferences after the first session attempt without waiting for projects",
+);
+assert.match(
+  chatRouter,
+  /const storedExpansionVersion = readPersisted<unknown>\(\s*PROJECT_SIDEBAR_KEYS\.expandedVersion,\s*null,\s*\);[\s\S]*if \(Array\.isArray\(storedExpanded\)\) \{\s*setExpandedKeys\(storedExpanded\.filter\(\(k\): k is string => typeof k === "string"\)\);\s*sidebarOrganizationMigrationPendingRef\.current =\s*storedExpansionVersion !== PROJECT_SIDEBAR_EXPANSION_VERSION;\s*\} else \{\s*setExpandedKeys\(projectSelectionKeys\(sidebarGroups\)\);\s*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}[\s\S]*if \(!sidebarOrganizationMigrationPendingRef\.current\) \{[\s\S]*PROJECT_SIDEBAR_KEYS\.expandedVersion,[\s\S]*JSON\.stringify\(PROJECT_SIDEBAR_EXPANSION_VERSION\)/,
+  "ChatRouter migrates only stored arrays from an older expansion version and marks defaults/current arrays current",
+);
+assert.match(
+  chatRouter,
+  /const sidebarSessions = useMemo\(\s*\(\) => filterVisibleChatSessions\(sessions, familiar\?\.id \?\? null\),[\s\S]*const sidebarGroups = useMemo\([\s\S]*const migrationSessions = useMemo\(\s*\(\) => filterVisibleChatSessions\(sessions, null\),[\s\S]*const migrationGroups = useMemo\(/,
+  "ChatRouter keeps visible rail groups familiar-filtered while deriving migration groups from every visible familiar",
+);
+assert.match(
+  chatRouter,
+  /const migratedExpandedKeys = migrateOrganizationExpansionKeys\(\s*expandedKeys,\s*migrationGroups,\s*projects,\s*\);[\s\S]*PROJECT_SIDEBAR_KEYS\.expanded,\s*JSON\.stringify\(migratedExpandedKeys\),[\s\S]*PROJECT_SIDEBAR_KEYS\.expandedVersion,\s*JSON\.stringify\(PROJECT_SIDEBAR_EXPANSION_VERSION\),[\s\S]*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}, \[[^\]]*migrationGroups[^\]]*projects[^\]]*\]\);/,
+  "ChatRouter migrates against all-session groups plus the unscoped project registry before marking the global organization version current",
 );
 assert.match(
   chatRouter,
@@ -150,8 +165,8 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /const syncSidebarProjectRoot = useCallback\([\s\S]*setSelection\(nextSelection\)[\s\S]*setExpandedKeys/,
-  "ChatRouter keeps the selected rail folder aligned with the ChatView project dropdown root",
+  /const syncSidebarProjectRoot = useCallback\([\s\S]*setSelection\(nextSelection\)[\s\S]*organizationExpansionKey\(group\.organization\.key\)[\s\S]*if \(!next\.includes\(organizationKey\)\) next\.push\(organizationKey\);[\s\S]*if \(!next\.includes\(nextSelection\)\) next\.push\(nextSelection\);/,
+  "ChatRouter opens both the organization ancestor and project without toggling already-expanded keys",
 );
 assert.match(
   chatRouter,
@@ -159,16 +174,46 @@ assert.match(
   "ChatView must report project-root changes back to the rail owner",
 );
 assert.match(
+  chatRouter,
+  /<ChatList[\s\S]*selection=\{selection\}[\s\S]*expandedKeys=\{expandedKeys\}[\s\S]*onSelectionChange=\{setSelection\}[\s\S]*onToggleExpanded=\{toggleSidebarExpanded\}/,
+  "ChatRouter passes its project selection and disclosure state into ChatList",
+);
+assert.match(
   chatList,
-  /readPersisted<unknown>\(PROJECT_SIDEBAR_KEYS\.expanded, null\)[\s\S]*projectSelectionKeys\(sidebarGroups\)/,
-  "ChatList defaults project folders open when there is no persisted expanded-state value",
+  /selection: ProjectSelection;[\s\S]*expandedKeys: string\[\];[\s\S]*onSelectionChange: \(selection: ProjectSelection\) => void;[\s\S]*onToggleExpanded: \(key: string\) => void;/,
+  "ChatList requires Router-owned project selection and disclosure props",
+);
+assert.match(
+  chatList,
+  /<ChatProjectSidebar[\s\S]*selection=\{effectiveSelection\}[\s\S]*expandedKeys=\{expandedKeys\}[\s\S]*onSelect=\{onSelectionChange\}[\s\S]*onToggleExpanded=\{onToggleExpanded\}/,
+  "ChatList consumes Router-owned project selection and disclosure callbacks",
+);
+assert.doesNotMatch(
+  chatList,
+  /PROJECT_SIDEBAR_KEYS|migrateOrganizationExpansionKeys|useAutoExpandNewGroups/,
+  "ChatList must not hydrate, migrate, auto-expand, or persist Router-owned project disclosure state",
 );
 
 // ── Preserved contracts other suites rely on ─────────────────────────────────
 assert.match(
   source,
-  /onClick=\{\(\) => \{[\s\S]*onSelect\(key\);[\s\S]*onToggleExpanded\(key\);[\s\S]*\}\}[\s\S]*aria-expanded=\{expanded\}/,
-  "Project folder rows must keep the label/count collapse trigger contract",
+  /const projectExpanded = expandedKeys\.includes\(key\);[\s\S]*const projectVisible = hasSearch \|\| projectExpanded;[\s\S]*const projectLabel = hasSearch[\s\S]*Select \$\{label\}; sessions shown for search/,
+  "Project folders distinguish stored expansion from search-forced visibility",
+);
+assert.match(
+  source,
+  /onClick=\{\(\) => \{\s*onSelect\(key\);\s*if \(!hasSearch\) onToggleExpanded\(key\);\s*\}\}[\s\S]*aria-expanded=\{projectVisible\}[\s\S]*aria-label=\{projectLabel\}/,
+  "Project rows stay selectable during search while suppressing persisted expansion toggles",
+);
+assert.doesNotMatch(
+  source,
+  /onClick=\{\(\) => \{\s*onSelect\(key\);\s*if \(!hasSearch\) onToggleExpanded\(key\);\s*\}\}[\s\S]{0,160}disabled=\{hasSearch\}/,
+  "Search-visible project rows remain enabled and keyboard-focusable",
+);
+assert.match(
+  source,
+  /name=\{projectVisible \? "ph:caret-down" : "ph:caret-right"\}[\s\S]*\{projectVisible \? \([\s\S]*<SortableContext/,
+  "Effective project visibility drives the caret and session rendering together",
 );
 assert.match(
   source,
@@ -184,8 +229,8 @@ assert.match(
 // activating one re-expands the rail and opens that group.
 assert.match(
   source,
-  /\{!open && groups\.length > 0 \?[\s\S]{0,700}setOpen\(true\);\s*\n\s*onSelect\(key\);\s*\n\s*if \(!expandedKeys\.includes\(key\)\) onToggleExpanded\(key\);/,
-  "Collapsed rail renders group tiles that expand the rail and open the group",
+  /const organizationKey = organizationExpansionKey\(group\.organization\.key\);[\s\S]*setOpen\(true\);\s*\n\s*onSelect\(key\);[\s\S]*if \(!expandedKeys\.includes\(organizationKey\)\) onToggleExpanded\(organizationKey\);[\s\S]*if \(!expandedKeys\.includes\(key\)\) onToggleExpanded\(key\);/,
+  "Collapsed rail renders group tiles that expand the rail, select the project, and open the ancestor organization",
 );
 assert.match(
   source,
@@ -208,6 +253,44 @@ assert.match(
   source,
   /normalizeChatRailMode\(window\.localStorage\.getItem\(CHAT_RAIL_MODE_KEY\)\)/,
   "The rail mode hydrates from its persisted key",
+);
+
+// Open project mode nests the existing project folders beneath organization
+// disclosures without changing the folders' own interaction contracts.
+assert.match(
+  source,
+  /const organizationGroups = useMemo\(\(\) => chatProjectOrganizationGroups\(groups\), \[groups\]\)/,
+  "The rail memoizes organization groups derived from the existing project groups",
+);
+assert.match(
+  source,
+  /organizationExpansionKey\(organization\.key\)/,
+  "Organization disclosure state shares the persisted expanded-key list",
+);
+assert.match(
+  source,
+  /const organizationKey = organizationExpansionKey\(organization\.key\);[\s\S]*const organizationVisible = hasSearch \|\| organizationExpanded;[\s\S]*const organizationLabel = hasSearch[\s\S]*projects shown for search[\s\S]*<button[\s\S]*onClick=\{hasSearch \? undefined : \(\) => onToggleExpanded\(organizationKey\)\}[\s\S]*disabled=\{hasSearch\}[\s\S]*aria-expanded=\{organizationVisible\}[\s\S]*aria-label=\{organizationLabel\}/,
+  "Search-forced organization disclosures should be disabled and labelled as search results",
+);
+assert.match(
+  source,
+  /onClick=\{hasSearch \? undefined : \(\) => onToggleExpanded\(organizationKey\)\}/,
+  "Normal organization disclosures should still toggle persisted expanded state",
+);
+assert.match(
+  source,
+  /organizationGroup\.items\.map\(\(group\) => renderProjectGroup\(group\)\)/,
+  "Organization descendants reuse the unchanged project-group renderer",
+);
+assert.match(
+  source,
+  /const organizationVisible = hasSearch \|\| organizationExpanded;/,
+  "Search visibility should be collapsed into one effective disclosure state",
+);
+assert.match(
+  source,
+  /aria-expanded=\{organizationVisible\}[\s\S]*aria-label=\{organizationLabel\}[\s\S]*name=\{organizationVisible \? "ph:caret-down" : "ph:caret-right"\}[\s\S]*\{organizationVisible \? \([\s\S]*organizationGroup\.items\.map\(\(group\) => renderProjectGroup\(group\)\)/,
+  "Search visibility should drive descendant rendering and disclosure semantics together",
 );
 
 // The open conversation row announces itself to assistive tech (was visual-only:
