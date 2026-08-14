@@ -5,9 +5,9 @@ import {
   buildChangeTree,
   changeTotal,
   commitAvailability,
-  commitPreview,
   defaultCommitBranch,
   groupTimelineByTurn,
+  mergeTimelinePages,
   mountAvailability,
   readAfsCapabilities,
   unattributedPaths,
@@ -94,18 +94,6 @@ test("the default branch mirrors the daemon's own rule", () => {
   assert.equal(defaultCommitBranch({ id: "afs-1", name: "tidy" }), "afs/tidy");
 });
 
-test("the commit preview declares that it is not a real dry run", () => {
-  const counts = { added: 2, modified: 1, deleted: 0, bytes: 30 };
-  const preview = commitPreview(session(), { counts });
-  assert.equal(preview.branch, "afs/afs-1");
-  assert.deepEqual(preview.counts, counts);
-  // coven-y7a adds a real dryRun; until then the UI must not imply one.
-  assert.equal(preview.exact, false);
-  assert.match(preview.caveat, /can still be refused/);
-  assert.equal(commitPreview(session(), { counts }, "  custom/branch  ").branch, "custom/branch");
-  assert.equal(commitPreview(session(), { counts }, "   ").branch, "afs/afs-1");
-});
-
 test("unattributed changes are reported so they can be marked", () => {
   const changes = [change(), change({ path: "/src/b.rs", attribution: "unknown" })];
   assert.deepEqual(unattributedPaths({ changes }), ["/src/b.rs"]);
@@ -136,6 +124,30 @@ test("timeline groups by turn and keeps unbound entries last", () => {
   );
   // An operation nobody can account for is kept, never dropped.
   assert.equal(groups[2].entries.length, 1);
+});
+
+test("timeline pages merge by daemon sequence and replace duplicate rows", () => {
+  const entry = (seq: number, op: string): AfsTimelineEntry => ({
+    seq,
+    op,
+    path: `/f${seq}`,
+    bytes: 1,
+    at: seq,
+  });
+  const merged = mergeTimelinePages(
+    { entries: [entry(1, "write"), entry(2, "write")], nextCursor: 2, hasMore: true },
+    { entries: [entry(2, "rename"), entry(3, "delete")], nextCursor: 3, hasMore: false },
+  );
+  assert.deepEqual(
+    merged.entries.map(({ seq, op }) => ({ seq, op })),
+    [
+      { seq: 1, op: "write" },
+      { seq: 2, op: "rename" },
+      { seq: 3, op: "delete" },
+    ],
+  );
+  assert.equal(merged.nextCursor, 3);
+  assert.equal(merged.hasMore, false);
 });
 
 test("the change tree nests paths with directories before files", () => {

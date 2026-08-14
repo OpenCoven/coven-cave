@@ -63,8 +63,8 @@ assert.match(
 // A style-only accent change must re-style without a full re-render.
 assert.match(
   webview,
-  /let styleKey = .*accentHex \?\? ""/,
-  "An accent change should be part of the style key (re-styles in place)",
+  /MarkdownStyleSignature\(fontScale: fontScale, theme: theme, accentHex: accentHex\)/,
+  "An accent change should be part of the typed style signature (re-styles in place)",
 );
 
 // --- entry.mjs overrides --accent from the published accent -----------------

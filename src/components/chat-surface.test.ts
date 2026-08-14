@@ -135,13 +135,13 @@ assert.doesNotMatch(
 
 assert.match(
   chatSurface,
-  /useSurfaceHistory<FamiliarsScope>\(\{[\s\S]*?initial:\s*"conversation"/,
+  /initialScope = "conversation"[\s\S]*?useSurfaceHistory<FamiliarsScope>\(\{[\s\S]*?initial:\s*initialScope/,
   "ChatSurface should default the scope to conversation so the ChatList shows when Chat is selected",
 );
 
 assert.match(
   chatSurface,
-  /id:\s*"chat:scope"/,
+  /scopeHistoryId = "chat:scope"[\s\S]*?id:\s*scopeHistoryId/,
   "ChatSurface should register its scope strip as a navigation level so Back steps between tabs instead of leaving Chat",
 );
 
@@ -384,4 +384,15 @@ assert.doesNotMatch(
   chatSurface,
   /<ChatRouter\b[\s\S]*?onSessionStarted=/,
   "ChatSurface must not forward onSessionStarted to ChatRouter (single-chat path uses creation-refresh helper)",
+);
+
+assert.match(
+  chatSurface,
+  /initialScope\?: FamiliarsScope/,
+  "split Chat pages accept a concrete initial scope instead of relying on window events",
+);
+assert.match(
+  chatSurface,
+  /scopeHistoryId\?: string/,
+  "split Chat pages keep their scope history isolated by pane instance",
 );

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -9,8 +9,10 @@ const NULL_DEVICE = process.platform === "win32" ? "NUL" : "/dev/null";
 
 import {
   hadRemoteTracking,
+  hasUpstreamConfig,
   headSha,
   parseWorktrees,
+  previouslyPushedBranches,
   remoteBranchNames,
   remoteTagCommits,
   retain,
@@ -257,6 +259,132 @@ test("unpushedCountIgnoring counts everything when the ignored ref was the only 
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// The resurrection this fixes (cave-xjuup). A merged branch is deleted by
+// GitHub, a routine `fetch --prune` erases the tracking ref, and the hook then
+// reads the branch as "never pushed" and re-creates a head that was deleted on
+// purpose. Measured before the fix: 9 of 36 remote branches were resurrected
+// merged heads, 29 pushes across them, one branch re-created three times.
+test("the hook archives rather than resurrects a merged branch whose tracking ref was pruned", () => {
+  const { root, remote, work } = scaffold();
+  try {
+    const unit = path.join(work, ".worktrees", "topic");
+    git(["worktree", "add", "-q", "-b", "feat/topic", unit], work);
+    configure(unit);
+    commit(unit, "one");
+    git(["push", "-q", "-u", "origin", "feat/topic"], unit);
+    const head = git(["rev-parse", "HEAD"], unit).trim();
+
+    const mainWork = path.join(root, "mainwork");
+    git(["clone", "-q", remote, mainWork], root);
+    configure(mainWork);
+    git(["merge", "-q", "--squash", "origin/feat/topic"], mainWork);
+    git(["commit", "-q", "-m", "squashed topic (#1)"], mainWork);
+    git(["push", "-q", "origin", "main"], mainWork);
+    bare(["update-ref", "-d", "refs/heads/feat/topic"], remote);
+
+    // The prune that erases the evidence — and, with it, every ref-based signal.
+    git(["fetch", "-q", "--prune", "origin"], work);
+    assert.equal(
+      hadRemoteTracking(work, "feat/topic"),
+      false,
+      "the tracking ref is gone: this is the state that used to read as 'never pushed'",
+    );
+    // The upstream config survives the prune, so clear it too — otherwise this
+    // fixture proves the weaker signal rather than the log-based one.
+    git(["config", "--unset", "branch.feat/topic.remote"], work);
+    git(["config", "--unset", "branch.feat/topic.merge"], work);
+    assert.equal(hasUpstreamConfig(work, "feat/topic"), false);
+
+    // What remains is this hook's own record that it pushed the branch.
+    mkdirSync(path.join(work, ".claude"), { recursive: true });
+    writeFileSync(
+      path.join(work, ".claude", "worktree-retention-push.log"),
+      `${JSON.stringify({ at: "2026-08-13T04:11:15.000Z", verdict: "pushed-branch", branch: "feat/topic", sha: head })}\n`,
+    );
+    assert.ok(previouslyPushedBranches(work).has("feat/topic"), "the log is the surviving evidence");
+
+    execFileSync(process.execPath, [path.join(import.meta.dirname, "worktree-retention-push.mjs")], {
+      cwd: work,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...ISOLATED, CLAUDE_PROJECT_DIR: work },
+    });
+
+    assert.equal(
+      bare(["for-each-ref", "--format=%(refname)", "refs/heads/feat/topic"], remote).trim(),
+      "",
+      "the deliberately deleted branch is NOT resurrected",
+    );
+    assert.equal(
+      bare(["rev-parse", `refs/tags/${retentionTag("feat/topic", head)}`], remote).trim(),
+      head,
+      "and the head is retained as a tag instead",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a branch that genuinely never left the machine is still retained as a branch", () => {
+  const { root, remote, work } = scaffold();
+  try {
+    const unit = path.join(work, ".worktrees", "fresh");
+    git(["worktree", "add", "-q", "-b", "feat/fresh", unit], work);
+    configure(unit);
+    commit(unit, "one");
+    // No push, no tracking ref, no upstream config, and nothing in the log.
+    execFileSync(process.execPath, [path.join(import.meta.dirname, "worktree-retention-push.mjs")], {
+      cwd: work,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...ISOLATED, CLAUDE_PROJECT_DIR: work },
+    });
+    assert.equal(
+      bare(["rev-parse", "refs/heads/feat/fresh"], remote).trim(),
+      git(["rev-parse", "HEAD"], unit).trim(),
+      "no evidence of a previous push means branch-first, exactly as before",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("previouslyPushedBranches reads only real pushed-branch records", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "retention-log-"));
+  try {
+    mkdirSync(path.join(dir, ".claude"), { recursive: true });
+    writeFileSync(
+      path.join(dir, ".claude", "worktree-retention-push.log"),
+      [
+        JSON.stringify({ verdict: "pushed-branch", branch: "feat/pushed" }),
+        JSON.stringify({ verdict: "pushed-tag", branch: "feat/tagged" }),
+        JSON.stringify({ verdict: "retention-failed", branch: "feat/failed" }),
+        JSON.stringify({ verdict: "skipped-tag-retained", count: 2, branches: ["feat/skipped"] }),
+        "{ this line is truncated",
+      ].join("\n") + "\n",
+    );
+    const pushed = previouslyPushedBranches(dir);
+    assert.ok(pushed.has("feat/pushed"));
+    // A tag push proves nothing about the BRANCH ever existing on the remote,
+    // and a failure proves the opposite.
+    assert.ok(!pushed.has("feat/tagged"));
+    assert.ok(!pushed.has("feat/failed"));
+    assert.ok(!pushed.has("feat/skipped"), "the summary line names branches it did not push");
+    assert.equal(pushed.size, 1, "a truncated final line is survivable, not fatal");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("previouslyPushedBranches is empty when there is no log at all", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "retention-nolog-"));
+  try {
+    assert.equal(previouslyPushedBranches(dir).size, 0, "absence is no evidence, never an error");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

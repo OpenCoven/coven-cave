@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 export const SUITES = {
   app: [
     "src/lib/afs.test.ts",
+    "src/components/afs-pane.test.ts",
     "src/lib/array-content-equal.test.ts",
     "src/lib/native-notify.test.ts",
     "src/lib/session-list-equal.test.ts",
@@ -31,6 +32,7 @@ export const SUITES = {
     "src/lib/use-undo-delete-deferred.test.ts",
     "src/lib/tool-edit-stat.test.ts",
     "src/lib/split-snap.test.ts",
+    "src/lib/split-geometry.test.ts",
     "src/lib/chat-split.test.ts",
     "src/lib/chat-creation-refresh.test.ts",
     "src/lib/chat-session-ownership.test.ts",
@@ -50,6 +52,9 @@ export const SUITES = {
     "src/lib/sidebar-nav-state.test.ts",
     "src/lib/nav-section.test.ts",
     "src/lib/workspace-mode.test.ts",
+    "src/lib/workspace-page-registry.test.ts",
+    "src/lib/workspace-pane-request.test.ts",
+    "src/lib/workspace-pane-error.test.ts",
     "src/lib/workspace-url-state.test.ts",
     "src/lib/pending-code-navigation.test.ts",
     "src/lib/workspace-navigation.test.ts",
@@ -69,7 +74,10 @@ export const SUITES = {
     "scripts/fence-refusal-message.test.mjs",
     "scripts/check-beads-jsonl-duplicates.test.mjs",
     "scripts/check-conflict-markers.test.mjs",
+    "scripts/onboarding-feedback-report.test.mjs",
     "scripts/beads-jsonl-merge-driver.test.mjs",
+    "scripts/beads-create.test.mjs",
+    "scripts/beads-surface-audit.test.mjs",
     "scripts/install-git-hooks.test.mjs",
     "scripts/worktree-lifecycle-retirement.test.mjs",
     "scripts/worktree-lifecycle-patrol.test.mjs",
@@ -83,6 +91,8 @@ export const SUITES = {
     "src/components/workspace-canonical-memory-navigation.test.ts",
     "src/components/workspace-canonical-memory-navigation-behavior.test.tsx",
     "src/components/workspace-canonical-memory-lazy-familiar.test.tsx",
+    "src/components/workspace-pane-page.test.ts",
+    "src/components/workspace-page-registry-wiring.test.ts",
     "src/lib/workspace-github-task-context.test.ts",
     "src/lib/role-surfaces.test.ts",
     "src/lib/room-flags.test.ts",
@@ -247,6 +257,7 @@ export const SUITES = {
     "src/lib/github-subscriptions.test.ts",
     "src/lib/beads-pr-management.test.ts",
     "src/lib/beads-pr-patrol.test.ts",
+    "src/lib/beads-delivery.test.ts",
     "src/lib/worktree-lifecycle.test.ts",
     "src/lib/beads-work-queue.test.ts",
     "src/components/familiar-work-queue-view.test.ts",
@@ -697,6 +708,7 @@ export const SUITES = {
     "src/lib/use-attachment-staging.test.ts",
     "src/lib/slash-command-inline.test.ts",
     "src/lib/use-inline-slash-menus.test.ts",
+    "src/lib/use-inline-slash-menus-behavior.test.tsx",
     "src/lib/prompt-enhancer.test.ts",
     "src/lib/prompt-placeholders.test.ts",
     "src/lib/prompt-prefs.test.ts",
@@ -1203,6 +1215,7 @@ export const SUITES = {
     "src/components/calendar-view-primitives.test.ts",
     "src/components/familiar-summoning-model.test.ts",
     "src/components/bento-dashboard.test.ts",
+    "src/components/dashboard/dashboard-surface.test.ts",
     "src/components/github-view-data.test.ts",
     "src/components/grimoire-nav-state.test.ts",
     "src/components/marketplace/marketplace-view-model.test.ts",
@@ -1214,6 +1227,7 @@ export const SUITES = {
     "src/components/settings-multihost.test.ts",
   ],
   api: [
+    "src/app/api/afs/afs-routes.test.ts",
     "scripts/dependency-policy.test.mjs",
     "scripts/build-sandbox-runtime.test.mjs",
     "scripts/dev-app.test.mjs",
@@ -1260,6 +1274,8 @@ export const SUITES = {
     "src/lib/server/global-npm-install-lane.test.ts",
     "src/app/api/cave-home-migration/route.test.ts",
     "src/app/api/beads/route.test.ts",
+    "src/app/api/beads/overview/route.test.ts",
+    "src/lib/server/beads-delivery-source.test.ts",
     "src/app/api/queue/readiness/route.test.ts",
     "src/lib/server/agent-attachments.test.ts",
     "src/lib/server/voice-chat-create.test.ts",
@@ -1808,6 +1824,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/proposals-flow-e2e.test.ts",
   "src/app/api/prompts/route.test.ts",
   "src/app/api/marketplace/pack-prompts-route.test.ts",
+  "src/app/api/beads/overview/route.test.ts",
   "src/lib/cave-backdrop.test.ts",
   "src/lib/cave-backdrop-blaze.test.ts",
   "src/lib/wiki-link-parser.test.ts",
@@ -1987,6 +2004,8 @@ const VITEST_TESTS = new Set([
   // renders the hook through react-test-renderer
   "src/lib/use-surface-history.test.tsx",
   "src/lib/use-focus-trap-stack.test.tsx",
+  // drives the inline slash menu's keydown path through react-test-renderer
+  "src/lib/use-inline-slash-menus-behavior.test.tsx",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */
