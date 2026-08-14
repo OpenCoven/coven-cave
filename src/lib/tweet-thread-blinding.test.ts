@@ -171,17 +171,51 @@ function reveal(
   envelope: BlindingEnvelope,
   observedVoteCount: number,
   currentTime = GENERATED_AT,
+  secret = SECRET,
 ) {
   return revealBlindedTweetThreadTrial({
     publicTrial,
     envelope,
     observedVoteCount,
     currentTime,
+    secret,
   });
+}
+
+function canonicalizeJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeJson);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map((key) => [
+        key,
+        canonicalizeJson((value as Record<string, unknown>)[key]),
+      ]),
+  );
+}
+
+function publicTrialSha256(publicTrial: PublicBlindedTweetThreadTrial): string {
+  return createHash("sha256")
+    .update(JSON.stringify(canonicalizeJson(publicTrial)), "utf8")
+    .digest("hex");
+}
+
+function expectInvalidPublicMutation(
+  mutate: (publicTrial: PublicBlindedTweetThreadTrial) => void,
+): void {
+  const { publicTrial, envelope } = createTrial();
+  mutate(publicTrial);
+  expectCode(
+    () => reveal(publicTrial, envelope, 12),
+    "INVALID_PUBLIC_TRIAL",
+  );
 }
 
 {
   const { publicTrial, envelope } = createTrial();
+  assert.match(publicTrial.revealCommitment, /^[a-f0-9]{64}$/);
+  assert.equal(envelope.revealCommitment, publicTrial.revealCommitment);
   assert.equal(publicTrial.protocolVersion, TWEET_THREAD_BLINDING_PROTOCOL_VERSION);
   assert.equal(publicTrial.trialId, TRIAL_ID);
   assert.equal(
@@ -267,6 +301,213 @@ function reveal(
     alphaArm?.content.posts.map((post) => post.text),
     ["alpha reviewable post 1", "alpha reviewable post 2", "alpha reviewable post 3"],
   );
+}
+
+{
+  const { publicTrial, envelope } = createTrial();
+
+  const remappedEnvelope = structuredClone(envelope);
+  const [firstToken, secondToken] = publicTrial.arms.map((arm) => arm.armToken);
+  const firstReference = remappedEnvelope.mapping[firstToken!]!;
+  remappedEnvelope.mapping[firstToken!] = remappedEnvelope.mapping[secondToken!]!;
+  remappedEnvelope.mapping[secondToken!] = firstReference;
+  expectCode(
+    () => reveal(publicTrial, remappedEnvelope, 12),
+    "REVEAL_COMMITMENT_MISMATCH",
+  );
+
+  const alteredThresholdTrial = structuredClone(publicTrial);
+  const alteredThresholdEnvelope = structuredClone(envelope);
+  alteredThresholdTrial.stoppingRule.minimumVotes = 13;
+  alteredThresholdEnvelope.revealThresholds.minimumVotes = 13;
+  alteredThresholdEnvelope.publicTrialSha256 = publicTrialSha256(alteredThresholdTrial);
+  expectCode(
+    () => reveal(alteredThresholdTrial, alteredThresholdEnvelope, 13),
+    "REVEAL_COMMITMENT_MISMATCH",
+  );
+
+  const alteredContentTrial = structuredClone(publicTrial);
+  const alteredContentEnvelope = structuredClone(envelope);
+  alteredContentTrial.arms[0]!.content.posts[0]!.text = "Altered after voting";
+  alteredContentEnvelope.publicTrialSha256 = publicTrialSha256(alteredContentTrial);
+  expectCode(
+    () => reveal(alteredContentTrial, alteredContentEnvelope, 12),
+    "REVEAL_COMMITMENT_MISMATCH",
+  );
+
+  const wrongSecretError = expectCode(
+    () => reveal(publicTrial, envelope, 12, GENERATED_AT, "wrong-reveal-secret"),
+    "REVEAL_COMMITMENT_MISMATCH",
+  );
+  assert.equal(wrongSecretError.message.includes(SECRET), false);
+  assert.equal(wrongSecretError.message.includes("wrong-reveal-secret"), false);
+  expectCode(
+    () => revealBlindedTweetThreadTrial({
+      publicTrial,
+      envelope,
+      observedVoteCount: 12,
+      currentTime: GENERATED_AT,
+    } as unknown as Parameters<typeof revealBlindedTweetThreadTrial>[0]),
+    "INVALID_SECRET",
+  );
+}
+
+{
+  const { publicTrial, envelope } = createTrial();
+  const [firstToken, secondToken] = publicTrial.arms.map((arm) => arm.armToken);
+
+  const duplicateCandidateId = structuredClone(envelope);
+  duplicateCandidateId.mapping[secondToken!]!.candidateId =
+    duplicateCandidateId.mapping[firstToken!]!.candidateId;
+  expectCode(
+    () => reveal(publicTrial, duplicateCandidateId, 12),
+    "INVALID_BLINDING_ENVELOPE",
+  );
+
+  const duplicateCandidateSha = structuredClone(envelope);
+  duplicateCandidateSha.mapping[secondToken!]!.candidateSha256 =
+    duplicateCandidateSha.mapping[firstToken!]!.candidateSha256;
+  expectCode(
+    () => reveal(publicTrial, duplicateCandidateSha, 12),
+    "INVALID_BLINDING_ENVELOPE",
+  );
+
+  const noncanonicalCandidateId = structuredClone(envelope);
+  noncanonicalCandidateId.mapping[firstToken!]!.candidateId = "candidate-Alpha";
+  expectCode(
+    () => reveal(publicTrial, noncanonicalCandidateId, 12),
+    "INVALID_BLINDING_ENVELOPE",
+  );
+
+  const overlongCandidateId = structuredClone(envelope);
+  overlongCandidateId.mapping[firstToken!]!.candidateId =
+    `candidate-${"a".repeat(119)}`;
+  expectCode(
+    () => reveal(publicTrial, overlongCandidateId, 12),
+    "INVALID_BLINDING_ENVELOPE",
+  );
+
+  const noncanonicalCandidateSha = structuredClone(envelope);
+  noncanonicalCandidateSha.mapping[firstToken!]!.candidateSha256 = "A".repeat(64);
+  expectCode(
+    () => reveal(publicTrial, noncanonicalCandidateSha, 12),
+    "INVALID_BLINDING_ENVELOPE",
+  );
+}
+
+{
+    expectInvalidPublicMutation((trial) => {
+      const post = structuredClone(trial.arms[0]!.content.posts[0]!);
+      trial.arms[0]!.content.posts = Array.from(
+        { length: 51 },
+        () => structuredClone(post),
+      );
+    });
+    expectInvalidPublicMutation((trial) => {
+      trial.arms[0]!.content.posts[0]!.text = "x".repeat(25_001);
+    });
+    expectInvalidPublicMutation((trial) => {
+      trial.arms[0]!.content.posts[0]!.claimIds = Array.from(
+        { length: 33 },
+        (_, index) => `claim-extra-${index}`,
+      );
+    });
+    expectInvalidPublicMutation((trial) => {
+      trial.arms[0]!.content.posts[0]!.claimIds = [
+        `claim-${"a".repeat(123)}`,
+      ];
+    });
+    expectInvalidPublicMutation((trial) => {
+      trial.arms[0]!.content.posts[0]!.claimIds = ["claim-alpha", "claim-alpha"];
+    });
+    expectInvalidPublicMutation((trial) => {
+      trial.arms[0]!.content.posts[0]!.claimIds = ["claim-Alpha"];
+    });
+    expectInvalidPublicMutation((trial) => {
+      const media = structuredClone(trial.arms[0]!.content.posts[0]!.media![0]!);
+      trial.arms[0]!.content.posts[0]!.media = Array.from(
+        { length: 5 },
+        () => structuredClone(media),
+      );
+    });
+    expectInvalidPublicMutation((trial) => {
+      trial.arms[0]!.content.posts[0]!.media![0]!.description = "x".repeat(501);
+    });
+    expectInvalidPublicMutation((trial) => {
+      trial.arms[0]!.content.posts[0]!.media![0]!.altText = "x".repeat(1_001);
+    });
+    expectInvalidPublicMutation((trial) => {
+      const firstEvidence = structuredClone(trial.arms[0]!.content.evidence[0]!);
+      trial.arms[0]!.content.evidence = Array.from(
+        { length: 513 },
+        (_, index) => ({
+          ...structuredClone(firstEvidence),
+          claimId: index === 0 ? firstEvidence.claimId : `claim-evidence-${index}`,
+        }),
+      );
+    });
+    expectInvalidPublicMutation((trial) => {
+      const duplicate = structuredClone(trial.arms[0]!.content.evidence[0]!);
+      trial.arms[0]!.content.evidence.push(duplicate);
+    });
+    expectInvalidPublicMutation((trial) => {
+      trial.arms[0]!.content.evidence[0]!.summary = "x".repeat(2_001);
+    });
+    expectInvalidPublicMutation((trial) => {
+      trial.arms[0]!.content.evidence[0]!.sourceLabel = "x".repeat(201);
+    });
+    expectInvalidPublicMutation((trial) => {
+      trial.arms[0]!.content.evidence[0]!.sourceUrl = "not a URL";
+    });
+    expectInvalidPublicMutation((trial) => {
+      trial.arms[0]!.content.evidence[0]!.sourceUrl = "https://example.com/%zz";
+    });
+    expectInvalidPublicMutation((trial) => {
+      trial.arms[0]!.content.evidence[0]!.sourceUrl = "ftp://example.com/source";
+    });
+    expectInvalidPublicMutation((trial) => {
+      trial.arms[0]!.content.evidence[0]!.sourceUrl =
+        `https://example.com/${"x".repeat(1_981)}`;
+    });
+    expectInvalidPublicMutation((trial) => {
+      trial.arms[0]!.content.posts[0]!.claimIds = ["claim-orphan"];
+    });
+
+    const unknownKeyMutations: Array<
+      (trial: PublicBlindedTweetThreadTrial) => void
+    > = [
+      (trial) => {
+        (trial as unknown as Record<string, unknown>).unknown = true;
+      },
+      (trial) => {
+        (trial.stoppingRule as unknown as Record<string, unknown>).unknown = true;
+      },
+      (trial) => {
+        (trial.arms[0] as unknown as Record<string, unknown>).unknown = true;
+      },
+      (trial) => {
+        (trial.arms[0]!.content as unknown as Record<string, unknown>).unknown = true;
+      },
+      (trial) => {
+        (trial.arms[0]!.content.posts[0] as unknown as Record<string, unknown>).unknown = true;
+      },
+      (trial) => {
+        (
+          trial.arms[0]!.content.posts[0]!.media![0] as unknown as Record<
+            string,
+            unknown
+          >
+        ).unknown = true;
+      },
+      (trial) => {
+        (
+          trial.arms[0]!.content.evidence[0] as unknown as Record<string, unknown>
+        ).unknown = true;
+      },
+    ];
+    for (const mutate of unknownKeyMutations) {
+      expectInvalidPublicMutation(mutate);
+    }
 }
 
 {

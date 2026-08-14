@@ -38,6 +38,7 @@ export type TweetThreadBlindingErrorCode =
   | "INVALID_CURRENT_TIME"
   | "TRIAL_ID_MISMATCH"
   | "TRIAL_COMMITMENT_MISMATCH"
+  | "REVEAL_COMMITMENT_MISMATCH"
   | "TOKEN_SET_MISMATCH"
   | "REVEAL_LOCKED";
 
@@ -88,6 +89,7 @@ export interface PublicBlindedTweetThreadTrial {
   protocolVersion: typeof TWEET_THREAD_BLINDING_PROTOCOL_VERSION;
   trialId: string;
   seedHash: string;
+  revealCommitment: string;
   stoppingRule: TweetThreadTrialStoppingRule;
   arms: PublicBlindedTweetThreadArm[];
 }
@@ -101,6 +103,7 @@ export interface BlindingEnvelope {
   protocolVersion: typeof TWEET_THREAD_BLINDING_PROTOCOL_VERSION;
   trialId: string;
   publicTrialSha256: string;
+  revealCommitment: string;
   mapping: Record<string, BlindedCandidateReference>;
   revealThresholds: TweetThreadTrialStoppingRule;
 }
@@ -123,6 +126,7 @@ export interface RevealBlindedTweetThreadTrialInput {
   envelope: BlindingEnvelope;
   observedVoteCount: number;
   currentTime: string;
+  secret: string;
 }
 
 export interface RevealedBlindedTweetThreadArm extends BlindedCandidateReference {
@@ -154,6 +158,33 @@ function hasExactKeys(value: UnknownRecord, expected: readonly string[]): boolea
 
 function isNonWhitespaceString(value: unknown): value is string {
   return typeof value === "string" && /\S/u.test(value);
+}
+
+function isBoundedNonWhitespaceString(
+  value: unknown,
+  maxLength: number,
+): value is string {
+  return isNonWhitespaceString(value) && value.length <= maxLength;
+}
+
+function isCanonicalClaimId(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length <= 128
+    && CLAIM_ID_RE.test(value);
+}
+
+function isBoundedHttpUrl(value: unknown): value is string {
+  if (!isBoundedNonWhitespaceString(value, 2_000) || /\s/u.test(value)) {
+    return false;
+  }
+  try {
+    decodeURI(value);
+    const parsed = new URL(value);
+    return (parsed.protocol === "http:" || parsed.protocol === "https:")
+      && parsed.hostname.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 function isStrictRfc3339Timestamp(value: unknown): value is string {
@@ -199,6 +230,24 @@ function canonicalizeJson(value: unknown): unknown {
 function publicTrialCommitment(publicTrial: PublicBlindedTweetThreadTrial): string {
   return createHash("sha256")
     .update(JSON.stringify(canonicalizeJson(publicTrial)), "utf8")
+    .digest("hex");
+}
+
+function revealCommitment(
+  secret: string,
+  publicTrial: Omit<PublicBlindedTweetThreadTrial, "revealCommitment">,
+  mapping: Record<string, BlindedCandidateReference>,
+  revealThresholds: TweetThreadTrialStoppingRule,
+): string {
+  return createHmac("sha256", secret)
+    .update(
+      `tweet-thread-reveal\u0000${JSON.stringify(canonicalizeJson({
+        publicTrial,
+        mapping,
+        revealThresholds,
+      }))}`,
+      "utf8",
+    )
     .digest("hex");
 }
 
@@ -272,8 +321,11 @@ function assertValidPublicMedia(value: unknown): asserts value is PublicThreadPo
       value,
       Object.hasOwn(value, "altText") ? ["description", "altText"] : ["description"],
     )
-    || !isNonWhitespaceString(value.description)
-    || (Object.hasOwn(value, "altText") && !isNonWhitespaceString(value.altText))
+    || !isBoundedNonWhitespaceString(value.description, 500)
+    || (
+      Object.hasOwn(value, "altText")
+      && !isBoundedNonWhitespaceString(value.altText, 1_000)
+    )
   ) {
     fail("INVALID_PUBLIC_TRIAL", "A public media item is malformed.");
   }
@@ -288,17 +340,16 @@ function assertValidPublicPost(value: unknown): asserts value is PublicThreadPos
     : ["text", "claimIds"];
   if (
     !hasExactKeys(value, expectedKeys)
-    || !isNonWhitespaceString(value.text)
+    || !isBoundedNonWhitespaceString(value.text, 25_000)
     || !Array.isArray(value.claimIds)
-    || !value.claimIds.every((claimId) =>
-      typeof claimId === "string" && CLAIM_ID_RE.test(claimId)
-    )
+    || value.claimIds.length > 32
+    || !value.claimIds.every(isCanonicalClaimId)
     || new Set(value.claimIds).size !== value.claimIds.length
   ) {
     fail("INVALID_PUBLIC_TRIAL", "A public post is malformed.");
   }
   if (Object.hasOwn(value, "media")) {
-    if (!Array.isArray(value.media)) {
+    if (!Array.isArray(value.media) || value.media.length > 4) {
       fail("INVALID_PUBLIC_TRIAL", "Public post media must be an array.");
     }
     for (const media of value.media) assertValidPublicMedia(media);
@@ -314,11 +365,10 @@ function assertValidPublicEvidence(value: unknown): asserts value is PublicThrea
     : ["claimId", "summary", "sourceLabel"];
   if (
     !hasExactKeys(value, expectedKeys)
-    || typeof value.claimId !== "string"
-    || !CLAIM_ID_RE.test(value.claimId)
-    || !isNonWhitespaceString(value.summary)
-    || !isNonWhitespaceString(value.sourceLabel)
-    || (Object.hasOwn(value, "sourceUrl") && !isNonWhitespaceString(value.sourceUrl))
+    || !isCanonicalClaimId(value.claimId)
+    || !isBoundedNonWhitespaceString(value.summary, 2_000)
+    || !isBoundedNonWhitespaceString(value.sourceLabel, 200)
+    || (Object.hasOwn(value, "sourceUrl") && !isBoundedHttpUrl(value.sourceUrl))
   ) {
     fail("INVALID_PUBLIC_TRIAL", "A public evidence item is malformed.");
   }
@@ -329,13 +379,18 @@ function assertValidPublicTrial(
 ): asserts value is PublicBlindedTweetThreadTrial {
   if (
     !isRecord(value)
-    || !hasExactKeys(value, ["protocolVersion", "trialId", "seedHash", "stoppingRule", "arms"])
+    || !hasExactKeys(
+      value,
+      ["protocolVersion", "trialId", "seedHash", "revealCommitment", "stoppingRule", "arms"],
+    )
     || value.protocolVersion !== TWEET_THREAD_BLINDING_PROTOCOL_VERSION
     || typeof value.trialId !== "string"
     || value.trialId.length > 128
     || !TRIAL_ID_RE.test(value.trialId)
     || typeof value.seedHash !== "string"
     || !SHA256_RE.test(value.seedHash)
+    || typeof value.revealCommitment !== "string"
+    || !SHA256_RE.test(value.revealCommitment)
     || !Array.isArray(value.arms)
     || value.arms.length < 2
   ) {
@@ -365,14 +420,28 @@ function assertValidPublicTrial(
       || !hasExactKeys(arm.content, ["posts", "evidence"])
       || !Array.isArray(arm.content.posts)
       || arm.content.posts.length < 1
+      || arm.content.posts.length > 50
       || !Array.isArray(arm.content.evidence)
       || arm.content.evidence.length < 1
+      || arm.content.evidence.length > 512
     ) {
       fail("INVALID_PUBLIC_TRIAL", "A public arm is malformed.");
     }
     tokens.add(arm.armToken);
+    const evidenceClaimIds = new Set<string>();
+    for (const evidence of arm.content.evidence) {
+      assertValidPublicEvidence(evidence);
+      if (evidenceClaimIds.has(evidence.claimId)) {
+        fail("INVALID_PUBLIC_TRIAL", "Public evidence claim identifiers must be unique.");
+      }
+      evidenceClaimIds.add(evidence.claimId);
+    }
     for (const post of arm.content.posts) assertValidPublicPost(post);
-    for (const evidence of arm.content.evidence) assertValidPublicEvidence(evidence);
+    for (const post of arm.content.posts) {
+      if (post.claimIds.some((claimId: string) => !evidenceClaimIds.has(claimId))) {
+        fail("INVALID_PUBLIC_TRIAL", "A public post references missing evidence.");
+      }
+    }
   }
 }
 
@@ -381,7 +450,14 @@ function assertValidEnvelope(value: unknown): asserts value is BlindingEnvelope 
     !isRecord(value)
     || !hasExactKeys(
       value,
-      ["protocolVersion", "trialId", "publicTrialSha256", "mapping", "revealThresholds"],
+      [
+        "protocolVersion",
+        "trialId",
+        "publicTrialSha256",
+        "revealCommitment",
+        "mapping",
+        "revealThresholds",
+      ],
     )
     || value.protocolVersion !== TWEET_THREAD_BLINDING_PROTOCOL_VERSION
     || typeof value.trialId !== "string"
@@ -389,6 +465,8 @@ function assertValidEnvelope(value: unknown): asserts value is BlindingEnvelope 
     || !TRIAL_ID_RE.test(value.trialId)
     || typeof value.publicTrialSha256 !== "string"
     || !SHA256_RE.test(value.publicTrialSha256)
+    || typeof value.revealCommitment !== "string"
+    || !SHA256_RE.test(value.revealCommitment)
     || !isRecord(value.mapping)
   ) {
     fail("INVALID_BLINDING_ENVELOPE", "The blinding envelope is malformed.");
@@ -399,18 +477,25 @@ function assertValidEnvelope(value: unknown): asserts value is BlindingEnvelope 
     fail("INVALID_BLINDING_ENVELOPE", "The envelope reveal thresholds are malformed.");
   }
 
+  const candidateIds = new Set<string>();
+  const candidateShas = new Set<string>();
   for (const [token, reference] of Object.entries(value.mapping)) {
     if (
       !ARM_TOKEN_RE.test(token)
       || !isRecord(reference)
       || !hasExactKeys(reference, ["candidateId", "candidateSha256"])
       || typeof reference.candidateId !== "string"
+      || reference.candidateId.length > 128
       || !CANDIDATE_ID_RE.test(reference.candidateId)
       || typeof reference.candidateSha256 !== "string"
       || !SHA256_RE.test(reference.candidateSha256)
+      || candidateIds.has(reference.candidateId)
+      || candidateShas.has(reference.candidateSha256)
     ) {
       fail("INVALID_BLINDING_ENVELOPE", "The envelope mapping is malformed.");
     }
+    candidateIds.add(reference.candidateId);
+    candidateShas.add(reference.candidateSha256);
   }
 }
 
@@ -502,7 +587,10 @@ export function createBlindedTweetThreadTrial(
   });
 
   const stoppingRule = copyStoppingRule(input.stoppingRule);
-  const publicTrial: PublicBlindedTweetThreadTrial = {
+  const publicTrialWithoutCommitment: Omit<
+    PublicBlindedTweetThreadTrial,
+    "revealCommitment"
+  > = {
     protocolVersion: TWEET_THREAD_BLINDING_PROTOCOL_VERSION,
     trialId: input.trialId,
     seedHash: createHash("sha256").update(input.seed, "utf8").digest("hex"),
@@ -521,10 +609,21 @@ export function createBlindedTweetThreadTrial(
       },
     ]),
   );
+  const committedReveal = revealCommitment(
+    input.secret,
+    publicTrialWithoutCommitment,
+    mapping,
+    input.stoppingRule,
+  );
+  const publicTrial: PublicBlindedTweetThreadTrial = {
+    ...publicTrialWithoutCommitment,
+    revealCommitment: committedReveal,
+  };
   const envelope: BlindingEnvelope = {
     protocolVersion: TWEET_THREAD_BLINDING_PROTOCOL_VERSION,
     trialId: input.trialId,
     publicTrialSha256: publicTrialCommitment(publicTrial),
+    revealCommitment: committedReveal,
     mapping,
     revealThresholds: copyStoppingRule(input.stoppingRule),
   };
@@ -541,6 +640,9 @@ export function revealBlindedTweetThreadTrial(
   }
   if (!isStrictRfc3339Timestamp(input.currentTime)) {
     fail("INVALID_CURRENT_TIME", "currentTime must be a real RFC3339 UTC timestamp with milliseconds.");
+  }
+  if (!isNonWhitespaceString(input.secret)) {
+    fail("INVALID_SECRET", "The reveal secret must be a non-empty string.");
   }
   if (input.publicTrial.trialId !== input.envelope.trialId) {
     fail("TRIAL_ID_MISMATCH", "The public trial and envelope trial identifiers differ.");
@@ -568,6 +670,31 @@ export function revealBlindedTweetThreadTrial(
     )
   ) {
     fail("INVALID_BLINDING_ENVELOPE", "Envelope reveal thresholds differ from the public stopping rule.");
+  }
+
+  const {
+    revealCommitment: _publicRevealCommitment,
+    ...publicTrialWithoutCommitment
+  } = input.publicTrial;
+  const computedRevealCommitment = revealCommitment(
+    input.secret,
+    publicTrialWithoutCommitment,
+    input.envelope.mapping,
+    input.envelope.revealThresholds,
+  );
+  const publicCommitmentMatches = hashesEqual(
+    computedRevealCommitment,
+    input.publicTrial.revealCommitment,
+  );
+  const envelopeCommitmentMatches = hashesEqual(
+    computedRevealCommitment,
+    input.envelope.revealCommitment,
+  );
+  if (!publicCommitmentMatches || !envelopeCommitmentMatches) {
+    fail(
+      "REVEAL_COMMITMENT_MISMATCH",
+      "The reveal inputs no longer match their secret-backed commitment.",
+    );
   }
 
   const voteThresholdReached =
