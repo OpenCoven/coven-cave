@@ -101,8 +101,6 @@ type Props = {
    *  Shell nav/sidebar already owns the project-grouped chat list, so the
    *  in-surface rail would duplicate it. */
   hideThreadRail?: boolean;
-  initialScope?: FamiliarsScope;
-  scopeHistoryId?: string;
 };
 
 // ── Main view ─────────────────────────────────────────────────────────────────
@@ -135,8 +133,6 @@ export function ChatSurface({
   onOpenUrl,
   onActiveSessionChange,
   hideThreadRail = false,
-  initialScope = "conversation",
-  scopeHistoryId = "chat:scope",
 }: Props) {
   // The in-surface project/thread rail is dropped when the outer WorkspaceSidebar
   // already owns chats beside the surface.
@@ -152,8 +148,8 @@ export function ChatSurface({
     select: selectScope,
     show: showScope,
   } = useSurfaceHistory<FamiliarsScope>({
-    id: scopeHistoryId,
-    initial: initialScope,
+    id: "chat:scope",
+    initial: "conversation",
   });
   const setScope = showScope;
   // The Workspace traverses its chat-session stack before any registered level.

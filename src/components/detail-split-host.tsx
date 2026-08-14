@@ -32,7 +32,6 @@ import {
   resolveSplitRelease,
   dividerOffset,
 } from "@/lib/split-snap";
-import { halfSplitGeometry, splitPresentation } from "@/lib/split-geometry";
 import { workspaceTileVariant } from "@/lib/workspace-tiles";
 
 export type DetailSplitTile = {
@@ -133,23 +132,10 @@ export function DetailSplitHost({
   // drag — resolve it to snap / close / collapse.
   const secRef = usePanelRef();
   const groupElRef = React.useRef<HTMLDivElement | null>(null);
-  const [hostWidth, setHostWidth] = React.useState(720);
   const ratioRef = React.useRef(SPLIT_DEFAULT_RATIO);
   const pointerDownRef = React.useRef(false);
   const dragStartRatioRef = React.useRef(SPLIT_DEFAULT_RATIO);
   const [dragRatio, setDragRatio] = React.useState<number | null>(null);
-  const presentation = splitPresentation(hostWidth);
-
-  const resizeToEvenSplit = React.useCallback(() => {
-    const group = groupElRef.current;
-    if (!group) return;
-    const hostWidth = group.getBoundingClientRect().width;
-    if (hostWidth <= 0) return;
-    const separatorWidth = group.querySelector(".split-host__sep")?.getBoundingClientRect().width ?? 0;
-    const geometry = halfSplitGeometry(hostWidth, separatorWidth);
-    if (Math.abs(geometry.left - geometry.right) > 1) return;
-    secRef.current?.resize(PCT(SPLIT_DEFAULT_RATIO));
-  }, [secondarySide, secRef]);
 
   // Reset the live divider tracking whenever a fresh split opens.
   React.useEffect(() => {
@@ -157,27 +143,8 @@ export function DetailSplitHost({
       ratioRef.current = SPLIT_DEFAULT_RATIO;
       setDragRatio(null);
       pointerDownRef.current = false;
-      const frame = window.requestAnimationFrame(resizeToEvenSplit);
-      return () => window.cancelAnimationFrame(frame);
     }
-  }, [resizeToEvenSplit, secondaryTiles.length, secondarySide]);
-
-  React.useEffect(() => {
-    if (!hasSplit) {
-      setHostWidth(720);
-      return;
-    }
-    const group = groupElRef.current;
-    if (!group || typeof ResizeObserver === "undefined") return;
-
-    const updateWidth = () => {
-      setHostWidth(Math.round(group.getBoundingClientRect().width));
-    };
-    const observer = new ResizeObserver(updateWidth);
-    observer.observe(group);
-    updateWidth();
-    return () => observer.disconnect();
-  }, [hasSplit]);
+  }, [secondaryTiles.length, secondarySide]);
 
   const onSecondaryResize = React.useCallback(
     (size: { asPercentage: number }) => {
@@ -220,8 +187,7 @@ export function DetailSplitHost({
     const onDblClick = (e: MouseEvent) => {
       const target = e.target;
       if (target instanceof Element && target.closest(".split-host__sep")) {
-      ratioRef.current = SPLIT_DEFAULT_RATIO;
-      resizeToEvenSplit();
+        secRef.current?.resize(PCT(SPLIT_DEFAULT_RATIO));
       }
     };
     window.addEventListener("pointerdown", onDown, true);
@@ -232,7 +198,7 @@ export function DetailSplitHost({
       window.removeEventListener("pointerup", onUp, true);
       window.removeEventListener("dblclick", onDblClick, true);
     };
-  }, [secondaryTiles, onClose, onPromoteTile, resizeToEvenSplit, secRef]);
+  }, [secondaryTiles, onClose, onPromoteTile, secRef]);
 
   // Re-fit guard: react-resizable-panels sizes its panes in pixels from a
   // ResizeObserver on the group. In some embedded webviews (observed on the
@@ -251,10 +217,7 @@ export function DetailSplitHost({
     const refit = () => {
       if (pointerDownRef.current) return; // don't interrupt an active divider drag
       const r = ratioRef.current;
-      if (r > 0.02 && r < 0.98) {
-        if (Math.abs(r - SPLIT_DEFAULT_RATIO) < 0.002) resizeToEvenSplit();
-        else secRef.current?.resize(PCT(r));
-      }
+      if (r > 0.02 && r < 0.98) secRef.current?.resize(PCT(r));
     };
 
     let raf = 0;
@@ -275,7 +238,7 @@ export function DetailSplitHost({
       window.clearTimeout(t);
       ro.disconnect();
     };
-  }, [resizeToEvenSplit, secondaryTiles.length, secondarySide, secRef]);
+  }, [secondaryTiles.length, secondarySide, secRef]);
 
   const separator = (
     <Separator className="shell-separator split-host__sep">
@@ -289,7 +252,7 @@ export function DetailSplitHost({
   );
 
   const legacySecondaryTile = secondaryTiles[0] ?? null;
-  const mobileSwitcher = hasSplit && presentation === "tabs" ? (
+  const mobileSwitcher = hasSplit ? (
     <div className="split-host__mobile-switcher" role="tablist" aria-label="Open pages">
       {tiles.map((tile) => (
         <button
@@ -418,7 +381,7 @@ export function DetailSplitHost({
         secondaryTiles.length === 1 ? (
           <>
             {mobileSwitcher}
-            <Group className="split-host__group" data-variant={variant} data-presentation={presentation} data-resizing={dragRatio != null ? "" : undefined} orientation="horizontal" elementRef={groupElRef}>
+            <Group className="split-host__group" data-variant={variant} data-resizing={dragRatio != null ? "" : undefined} orientation="horizontal" elementRef={groupElRef}>
               {secondarySide === "left" ? (
                 <>
                   {secondaryPanel}
@@ -450,7 +413,6 @@ export function DetailSplitHost({
               key={tiles.map((tile) => tile.id).join("|")}
               className="split-host__group"
               data-variant={variant}
-              data-presentation={presentation}
               orientation="horizontal"
             >
               {tiles.map((tile, i) => (
@@ -464,7 +426,11 @@ export function DetailSplitHost({
                     id={`split-tile-${tile.id}`}
                     className="split-host__pane-panel split-host__tile-panel flex min-h-0 min-w-0"
                     data-active={activeTileId === tile.id}
-                    minSize="10%"
+                    // Pixel floor (cave-hivd): a 12% min let dividers crush a
+                    // tile to ~110px letter soup on wide windows. Tiles on this
+                    // multi-tile path close via their ✕ (not the drag-past-edge
+                    // gesture), so a hard floor costs nothing.
+                    minSize="300px"
                   >
                     {renderGridTile(tile)}
                   </Panel>

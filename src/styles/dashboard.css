@@ -97,15 +97,6 @@
     var(--bg-base);
 }
 
-.settings-shell--embedded {
-  min-width: 0;
-  min-height: 0;
-}
-
-.settings-shell--embedded .settings-shell__header {
-  -webkit-app-region: no-drag;
-}
-
 .settings-shell__header {
   /* Subtle titlebar glass, matching the workspace shell's native band: a
      translucent panel-to-base wash with blur+saturate instead of the old

@@ -41,7 +41,7 @@ test("the divider is seamless: no ratio buttons, magnetic even-split, double-cli
   assert.doesNotMatch(src, /snapTo\(/, "no per-ratio snap button handler");
   // Double-click the divider resets to an even split (replaces the ½ button).
   assert.match(src, /addEventListener\("dblclick"/, "double-click handled");
-  assert.match(src, /closest\(".split-host__sep"\)[\s\S]*resizeToEvenSplit\(\)/, "double-click resets to exact even geometry");
+  assert.match(src, /closest\(".split-host__sep"\)[\s\S]*resize\(PCT\(SPLIT_DEFAULT_RATIO\)\)/, "double-click resets to even");
   // A hover/drag grip affordance on the seam.
   assert.match(src, /split-host__grip/, "divider shows a grip affordance");
   assert.match(src, /data-resizing=/, "group flags an active resize for grip feedback");
@@ -64,23 +64,23 @@ test("Shell hosts the split inside the detail main with a drop zone", () => {
   assert.match(src, /enableDrop=\{!isMobile\}/, "drop zone is desktop-only");
 });
 
-test("workspace owns normalized split state and renders every registered request", () => {
+test("workspace owns split state and the drop handler, and reuses renderSurface", () => {
   const src = read("./workspace.tsx");
-  assert.match(src, /const \[splitTargets, setSplitTargets\] = useState<WorkspacePaneRequest\[\]>\(\[\]\)/);
-  assert.match(src, /normalizeWorkspacePaneRequest\(nextPaneInstanceId\(\), m\)/);
-  assert.match(src, /addSecondaryWorkspaceTile\(prev, target, workspacePaneRequestKey\)/);
-  assert.match(src, /function splitTargetRendersMode\(target: WorkspacePaneRequest, mode: WorkspaceMode\): boolean \{[\s\S]*target\.pageId === mode/);
+  assert.match(src, /const \[splitTargets, setSplitTargets\] = useState<SplitTarget\[\]>\(\[\]\)/);
+  assert.match(src, /function splitTargetRendersMode\(target: SplitTarget, mode: CanonicalWorkspaceMode\): boolean \{[\s\S]*resolveWorkspaceModeAlias\(target\.mode\) === mode/, "split-target mode guards canonicalize aliases before matching");
+  assert.match(src, /const addSplitTarget = useCallback\(\(target: SplitTarget, side: "left" \| "right" = "right"\) => \{[\s\S]*if \(chatProjectBlockedRef\.current && splitTargetRendersMode\(target, "chat"\)\) \{[\s\S]*setMode\("home"\);[\s\S]*return;[\s\S]*\}[\s\S]*addSecondaryWorkspaceTile/, "blocked chat surfaces bounce to Home instead of entering the split");
   assert.match(src, /const openSplitPage = useCallback/);
-  assert.match(src, /if \(!request \|\| \(primary && workspacePaneRequestKey\(request\) === workspacePaneRequestKey\(primary\)\)\)/, "split drops reject unknown and exact duplicate pages");
-  assert.match(src, /const renderSurface = \(\s*mode: CaveMode,/);
-  assert.match(src, /workspacePageDefinition\(request\.requestedPageId\)/, "secondary title and state come from the registry");
-  assert.match(src, /WorkspacePanePage[\s\S]*unavailable=/, "unsupported runtime dependencies have an honest pane-local state");
-  assert.match(src, /renderSurface\(request\.pageId, \{ variant: request\.variant, instanceId: request\.instanceId \}\)/, "secondary pages reuse the canonical renderer");
+  assert.match(src, /if \(!m \|\| m === mode \|\| !isWorkspaceMode\(m\)\) return;[\s\S]*addSplitTarget\(\{ kind: "page", mode: m \}, side\);/, "split drops validate the workspace mode before adding a page tile");
+  assert.match(src, /addSecondaryWorkspaceTile/, "workspace appends split pages up to the secondary tile cap");
+  assert.match(src, /const renderSurface = \(mode: CaveMode\): ReactNode =>/);
+  assert.match(src, /const detailContent = renderSurface\(mode\);[\s\S]*\{detailContent\}/, "primary renders the direct detail child from renderSurface");
+  assert.match(src, /renderSurface\(target\.mode\)/, "secondary tiles reuse the same machinery");
   assert.match(src, /onDropSplitPage=\{openSplitPage\}/);
+  assert.match(src, /addSplitTarget\(\{ kind: "salem" \}\)/, "Salem re-homed into the split (not the removed rail)");
+  // Far-edge collapse promotes a page split to the primary via setMode.
   assert.match(src, /const promoteSplitTile = useCallback/, "workspace owns the promote handler");
-  assert.match(src, /if \(target && isWorkspaceMode\(target\.requestedPageId\)\) setMode\(target\.requestedPageId\)/, "promoting a workspace page switches the primary mode");
+  assert.match(src, /if \(target\?\.kind === "page"\) setMode\(target\.mode\)/, "promoting a page switches the primary mode");
   assert.match(src, /onPromoteSplitTile=\{promoteSplitTile\}/, "promote handler is passed to Shell");
-  assert.doesNotMatch(src, /type SplitTarget/);
 });
 
 test("the right companion (agent) panel is no longer mounted", () => {
@@ -89,7 +89,7 @@ test("the right companion (agent) panel is no longer mounted", () => {
   assert.doesNotMatch(src, /<CompanionRail/, "CompanionRail is not rendered");
 });
 
-test("split panes use their container instead of generic overflow floors", () => {
+test("split tiles keep a usability floor (cave-hivd)", () => {
   const host = read("./detail-split-host.tsx");
   // The pane-body rules' owning split module behind the globals.css facade
   // (cave-xd2kg: source contracts read owning modules, not the facade).
@@ -97,10 +97,15 @@ test("split panes use their container instead of generic overflow floors", () =>
     new URL("../styles/globals/surface-chat-overlays.css", import.meta.url),
     "utf8",
   );
-  assert.doesNotMatch(host, /minSize="300px"/, "tiles must adapt rather than force an overflow floor");
+  // Multi-tile panels floor at 300px — a 12% min let dividers crush a tile to
+  // ~110px letter soup on wide windows (tiles close via ✕, not drag-past-edge).
+  assert.match(host, /id=\{`split-tile-\$\{tile\.id\}`\}[\s\S]{0,500}minSize="300px"/, "multi-tile panels have a pixel min");
+  // The legacy two-pane path keeps its ratio min (the drag-to-close zone needs
+  // it) — its CONTENT floors instead: pane bodies scroll horizontally under 300px.
   assert.match(host, /id="split-secondary"[\s\S]{0,300}minSize="10%"/, "legacy secondary keeps the ratio min for the close gesture");
-  assert.doesNotMatch(css, /\.split-host__pane-body \{[\s\S]{0,220}overflow-x: auto/, "generic pane bodies do not claim horizontal scrolling");
-  assert.doesNotMatch(css, /\.split-host__pane-body > \* \{[\s\S]{0,400}min-width: 300px/, "generic pane content has no minimum-width floor");
+  assert.match(css, /\.split-host__pane-body \{[\s\S]{0,220}overflow-x: auto/, "pane bodies scroll instead of crushing");
+  assert.match(css, /\.split-host__pane-body > \* \{[\s\S]{0,400}min-width: 300px/, "pane content has the 300px floor");
+  // The legacy primary shares the same body treatment.
   assert.match(host, /<div className="split-host__pane-body">\{primary\}<\/div>/, "legacy primary content uses the pane body class");
 });
 

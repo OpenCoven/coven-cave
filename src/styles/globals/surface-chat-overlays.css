@@ -483,55 +483,6 @@
  * ====================================================================== */
 .shell-detail { position: relative; }
 
-.workspace-pane-page {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  container: workspace-pane / inline-size;
-  overflow: hidden;
-}
-
-.workspace-pane-page__state {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: var(--space-3);
-  min-width: 0;
-  min-height: 0;
-  padding: var(--space-5);
-}
-
-.workspace-pane-page__state-copy {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.workspace-pane-page__state-title,
-.workspace-pane-page__state-description {
-  margin: 0;
-}
-
-.workspace-pane-page__state-title {
-  color: var(--text-primary);
-  font-size: var(--text-base);
-  font-weight: 600;
-}
-
-.workspace-pane-page__state-description {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
-.workspace-pane-page__state--error {
-  color: var(--color-danger);
-}
-
 /* The resizable split group fills the detail panel like the solo surface.
  * `width: 100%` is belt-and-suspenders: react-resizable-panels normally sets
  * it inline, but if that inline style is missing/late (observed in the desktop
@@ -648,11 +599,15 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overflow-x: auto;
 }
 .split-host__pane-body > * {
   flex: 1 1 auto;
   min-height: 0;
-  min-width: 0;
+  /* Usability floor (cave-hivd): below ~300px every surface crushes into
+     letter soup — the pane scrolls horizontally instead. Pure CSS so the
+     divider's drag-to-close zones (ratio-based) stay reachable. */
+  min-width: 300px;
 }
 
 /* ── Split divider: a calm hairline that reveals a grip on hover/drag ──────── */
@@ -946,62 +901,63 @@
   .chat-split__preview { transition: none; }
 }
 
-.split-host__mobile-switcher {
-  flex: 0 0 auto;
-  display: flex;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  overflow-x: auto;
-  border-bottom: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-panel) 92%, transparent);
-}
+@media (max-width: 1023px) {
+  .split-host__mobile-switcher {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+    padding: 6px var(--space-2);
+    overflow-x: auto;
+    border-bottom: 1px solid var(--border-hairline);
+    background: color-mix(in oklch, var(--bg-panel) 92%, transparent);
+  }
 
-.split-host__mobile-tab {
-  flex: 0 0 auto;
-  max-width: 48cqw;
-  min-height: var(--touch-target);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+  .split-host__mobile-tab {
+    flex: 0 0 auto;
+    max-width: 48vw;
+    min-height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
-.split-host__mobile-tab[aria-selected="true"] {
-  background: var(--bg-raised);
-  color: var(--text-primary);
-  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
-}
+  .split-host__mobile-tab[aria-selected="true"] {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+    border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+  }
 
-.split-host__group[data-presentation="tabs"] {
-  height: calc(100% - var(--touch-target));
-  display: block !important;
-  background: transparent;
-}
+  .split-host__group {
+    height: calc(100% - 43px);
+  }
 
-.split-host__group[data-presentation="tabs"] .split-host__sep {
-  display: none !important;
-}
+  .split-host__grid,
+  .split-host__group[data-variant] {
+    display: block !important;
+    background: transparent;
+  }
 
-.split-host__group[data-presentation="tabs"] .split-host__tile-panel,
-.split-host__group[data-presentation="tabs"] .split-host__tile {
-  height: 100%;
-  width: 100% !important;
-}
+  .split-host__sep {
+    display: none !important;
+  }
 
-.split-host__group[data-presentation="tabs"] .split-host__tile-panel[data-active="false"],
-.split-host__group[data-presentation="tabs"] .split-host__tile[data-active="false"] {
-  position: absolute !important;
-  inline-size: 0 !important;
-  block-size: 0 !important;
-  overflow: hidden !important;
-  visibility: hidden;
-  pointer-events: none;
+  .split-host__tile-panel,
+  .split-host__tile {
+    height: 100%;
+    width: 100% !important;
+  }
+
+  .split-host__tile-panel[data-active="false"],
+  .split-host__tile[data-active="false"] {
+    display: none !important;
+  }
 }
 
 /* ── Drag a familiar into the thread (cave-76yfq) ──────────────────────────

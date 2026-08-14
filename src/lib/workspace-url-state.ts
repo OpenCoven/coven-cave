@@ -1,4 +1,5 @@
-import { isWorkspacePageId, type WorkspacePageId } from "@/lib/workspace-page-registry";
+import { isWorkspaceMode, type WorkspaceMode } from "@/lib/workspace-mode";
+import { isRoleSurfaceMode, type RoleSurfaceMode } from "@/lib/role-surfaces";
 
 const CHAT_HASH_PREFIX = "#chat-";
 
@@ -16,33 +17,18 @@ export function clearChatHash() {
   window.history.replaceState(null, "", window.location.pathname + window.location.search);
 }
 
-function readWorkspacePageParam(name: string): WorkspacePageId | null {
+export function readModeParam(): WorkspaceMode | RoleSurfaceMode | null {
   if (typeof window === "undefined") return null;
-  const raw = new URLSearchParams(window.location.search).get(name);
+  const raw = new URLSearchParams(window.location.search).get("mode");
   if (!raw) return null;
-  return isWorkspacePageId(raw) ? raw : null;
-}
-
-export function readModeParam(): WorkspacePageId | null {
-  return readWorkspacePageParam("mode");
-}
-
-export function readSplitPageParam(): WorkspacePageId | null {
-  return readWorkspacePageParam("split");
-}
-
-export function readSplitSideParam(): "left" | "right" {
-  if (typeof window === "undefined") return "right";
-  return new URLSearchParams(window.location.search).get("splitSide") === "left" ? "left" : "right";
+  return isWorkspaceMode(raw) || isRoleSurfaceMode(raw) ? raw : null;
 }
 
 export function clearModeParam() {
   if (typeof window === "undefined") return;
   const params = new URLSearchParams(window.location.search);
-  if (!params.has("mode") && !params.has("split") && !params.has("splitSide")) return;
+  if (!params.has("mode")) return;
   params.delete("mode");
-  params.delete("split");
-  params.delete("splitSide");
   const query = params.toString();
   window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
 }

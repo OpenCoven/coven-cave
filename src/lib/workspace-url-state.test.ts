@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { readModeParam, readSplitPageParam, readSplitSideParam } from "./workspace-url-state.ts";
+import { readModeParam } from "./workspace-url-state.ts";
 
 function withSearch(search: string, run: () => void): void {
   const previousWindow = globalThis.window;
@@ -26,13 +26,5 @@ test("readModeParam still rejects empty and unknown modes", () => {
   });
   withSearch("?mode=not-a-workspace", () => {
     assert.equal(readModeParam(), null);
-  });
-});
-
-test("page deep links support supplemental primary and secondary pages", () => {
-  withSearch("?mode=settings&split=terminal&splitSide=left", () => {
-    assert.equal(readModeParam(), "settings");
-    assert.equal(readSplitPageParam(), "terminal");
-    assert.equal(readSplitSideParam(), "left");
   });
 });

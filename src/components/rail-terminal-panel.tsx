@@ -10,22 +10,19 @@ export function RailTerminalPanel({
   sessionId,
   projectRoot,
   active,
-  paneInstanceId,
 }: {
   sessionId: string | null;
   projectRoot: string | null;
   active: boolean;
-  paneInstanceId?: string;
 }) {
   if (!sessionId) {
     return (
       <p className="workspace-rail__terminal-empty">Open a session to use the terminal</p>
     );
   }
-  const threadId = paneInstanceId ? `cave.pane.${paneInstanceId}.${sessionId}` : `cave.rail.${sessionId}`;
   return (
     <BottomTerminal
-      threadId={threadId}
+      threadId={`cave.rail.${sessionId}`}
       projectRoot={projectRoot ?? undefined}
       active={active}
     />
